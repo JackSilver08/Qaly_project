@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Qaly.Domain.Interfaces;
 using Qaly.Infrastructure.Data;
 using Qaly.Infrastructure.Data.Repositories;
+using Qaly.Infrastructure.Services;
 
 namespace Qaly.Infrastructure;
 
@@ -28,6 +29,10 @@ public static class DependencyInjection
         // Repositories
         services.AddScoped(typeof(IRepository<>), typeof(GenericRepository<>));
         services.AddScoped<IUnitOfWork, UnitOfWork>();
+
+        // Services
+        services.AddHttpContextAccessor();
+        services.AddScoped<ICurrentUserService, CurrentUserService>();
 
         return services;
     }

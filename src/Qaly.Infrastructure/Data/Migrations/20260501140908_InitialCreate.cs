@@ -8,6 +8,11 @@ namespace Qaly.Infrastructure.Data.Migrations
     /// <inheritdoc />
     public partial class InitialCreate : Migration
     {
+        private static readonly string[] AuditLogEntityTypeEntityIdColumns = new[] { "EntityType", "EntityId" };
+        private static readonly bool[] NoDescendingColumns = Array.Empty<bool>();
+        private static readonly string[] NotificationUserIdIsReadColumns = new[] { "UserId", "IsRead" };
+        private static readonly string[] ProjectMemberProjectIdUserIdColumns = new[] { "ProjectId", "UserId" };
+
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
@@ -239,13 +244,13 @@ namespace Qaly.Infrastructure.Data.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_AuditLogs_EntityType_EntityId",
                 table: "AuditLogs",
-                columns: new[] { "EntityType", "EntityId" });
+                columns: AuditLogEntityTypeEntityIdColumns);
 
             migrationBuilder.CreateIndex(
                 name: "IX_AuditLogs_Timestamp",
                 table: "AuditLogs",
                 column: "Timestamp",
-                descending: new bool[0]);
+                descending: NoDescendingColumns);
 
             migrationBuilder.CreateIndex(
                 name: "IX_AuditLogs_UserId",
@@ -255,12 +260,12 @@ namespace Qaly.Infrastructure.Data.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_Notifications_UserId_IsRead",
                 table: "Notifications",
-                columns: new[] { "UserId", "IsRead" });
+                columns: NotificationUserIdIsReadColumns);
 
             migrationBuilder.CreateIndex(
                 name: "IX_ProjectMembers_ProjectId_UserId",
                 table: "ProjectMembers",
-                columns: new[] { "ProjectId", "UserId" },
+                columns: ProjectMemberProjectIdUserIdColumns,
                 unique: true);
 
             migrationBuilder.CreateIndex(

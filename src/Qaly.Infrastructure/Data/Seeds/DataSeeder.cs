@@ -5,7 +5,7 @@ using Qaly.Domain.Entities;
 
 namespace Qaly.Infrastructure.Data.Seeds;
 
-public class DataSeeder
+public partial class DataSeeder
 {
     private readonly QalyDbContext _context;
     private readonly ILogger<DataSeeder> _logger;
@@ -19,18 +19,18 @@ public class DataSeeder
     public async Task SeedAsync()
     {
         await _context.Database.MigrateAsync();
-        _logger.LogInformation("Database migrated successfully.");
+        LogDatabaseMigrated(_logger);
 
         if (!await _context.Users.AnyAsync())
         {
             await SeedUsersAsync();
             await SeedProjectsAsync();
             await _context.SaveChangesAsync();
-            _logger.LogInformation("Seed data created successfully.");
+            LogSeedDataCreated(_logger);
         }
         else
         {
-            _logger.LogInformation("Database already contains data. Skipping seed.");
+            LogSeedSkipped(_logger);
         }
     }
 
@@ -64,7 +64,7 @@ public class DataSeeder
 
         await _context.Users.AddRangeAsync(users);
         await _context.SaveChangesAsync();
-        _logger.LogInformation("Seeded {Count} users.", users.Count);
+        LogSeededUsers(_logger, users.Count);
     }
 
     private async Task SeedProjectsAsync()
@@ -107,7 +107,7 @@ public class DataSeeder
         };
 
         await _context.TaskItems.AddRangeAsync(tasks);
-        _logger.LogInformation("Seeded project '{Name}' with {Count} tasks.", project.Name, tasks.Count);
+        LogSeededProject(_logger, project.Name, tasks.Count);
     }
 
     private static string HashPassword(string password)
@@ -116,4 +116,19 @@ public class DataSeeder
         var hash = Rfc2898DeriveBytes.Pbkdf2(password, salt, 10000, HashAlgorithmName.SHA256, 32);
         return $"{Convert.ToBase64String(salt)}.{Convert.ToBase64String(hash)}";
     }
+
+    [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Database migrated successfully.")]
+    private static partial void LogDatabaseMigrated(ILogger logger);
+
+    [LoggerMessage(EventId = 2, Level = LogLevel.Information, Message = "Seed data created successfully.")]
+    private static partial void LogSeedDataCreated(ILogger logger);
+
+    [LoggerMessage(EventId = 3, Level = LogLevel.Information, Message = "Database already contains data. Skipping seed.")]
+    private static partial void LogSeedSkipped(ILogger logger);
+
+    [LoggerMessage(EventId = 4, Level = LogLevel.Information, Message = "Seeded {UserCount} users.")]
+    private static partial void LogSeededUsers(ILogger logger, int userCount);
+
+    [LoggerMessage(EventId = 5, Level = LogLevel.Information, Message = "Seeded project '{ProjectName}' with {TaskCount} tasks.")]
+    private static partial void LogSeededProject(ILogger logger, string projectName, int taskCount);
 }

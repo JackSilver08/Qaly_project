@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using Qaly.Application.Common.Interfaces;
+using Qaly.Application.Services;
 
 namespace Qaly.Application;
 
@@ -10,10 +12,11 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
-        // Service registrations sẽ được thêm khi implement
-        // Ví dụ:
-        // services.AddScoped<IProjectService, ProjectService>();
-        // services.AddScoped<ITaskService, TaskService>();
+        // Services
+        services.AddScoped<IProjectService, ProjectService>();
+        services.AddScoped<ITaskService, TaskService>();
+        services.AddScoped<IAiService, AiService>();
+        
         // services.AddScoped<ICommentService, CommentService>();
         // services.AddScoped<INotificationService, NotificationService>();
         // services.AddScoped<IAuditLogService, AuditLogService>();

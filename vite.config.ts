@@ -17,6 +17,11 @@ export default defineConfig({
       input: {
         main: './src/Qaly.Web/ClientApp/main.ts',
       },
+      output: {
+        entryFileNames: `assets/[name].js`,
+        chunkFileNames: `assets/[name].js`,
+        assetFileNames: `assets/[name].[ext]`
+      }
     },
   },
   server: {

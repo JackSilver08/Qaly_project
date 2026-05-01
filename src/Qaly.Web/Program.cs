@@ -39,6 +39,9 @@ builder.Services.AddScoped<DataSeeder>();
 // Razor Pages
 builder.Services.AddRazorPages();
 
+// Controllers
+builder.Services.AddControllers();
+
 // SignalR (realtime notifications)
 builder.Services.AddSignalR();
 
@@ -89,6 +92,7 @@ app.UseAuthorization();
 
 app.MapStaticAssets();
 app.MapRazorPages().WithStaticAssets();
+app.MapControllers();
 
 // Health Checks Endpoints
 app.MapHealthChecks("/health", new HealthCheckOptions

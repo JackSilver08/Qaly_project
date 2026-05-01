@@ -6,38 +6,51 @@ namespace Qaly.Application.Common.Models;
 /// </summary>
 public class Result<T>
 {
-    public bool IsSuccess { get; private set; }
-    public T? Data { get; private set; }
-    public string? Error { get; private set; }
-    public int StatusCode { get; private set; }
+    internal Result(bool isSuccess, T? data, string? error, int statusCode)
+    {
+        IsSuccess = isSuccess;
+        Data = data;
+        Error = error;
+        StatusCode = statusCode;
+    }
 
-    private Result() { }
-
-    public static Result<T> Success(T data)
-        => new() { IsSuccess = true, Data = data, StatusCode = 200 };
-
-    public static Result<T> Created(T data)
-        => new() { IsSuccess = true, Data = data, StatusCode = 201 };
-
-    public static Result<T> Failure(string error, int statusCode = 400)
-        => new() { IsSuccess = false, Error = error, StatusCode = statusCode };
-
-    public static Result<T> NotFound(string message = "Resource not found")
-        => new() { IsSuccess = false, Error = message, StatusCode = 404 };
-
-    public static Result<T> Forbidden(string message = "Access denied")
-        => new() { IsSuccess = false, Error = message, StatusCode = 403 };
+    public bool IsSuccess { get; }
+    public T? Data { get; }
+    public string? Error { get; }
+    public int StatusCode { get; }
 }
 
 public class Result
 {
-    public bool IsSuccess { get; private set; }
-    public string? Error { get; private set; }
-    public int StatusCode { get; private set; }
+    private Result(bool isSuccess, string? error, int statusCode)
+    {
+        IsSuccess = isSuccess;
+        Error = error;
+        StatusCode = statusCode;
+    }
+
+    public bool IsSuccess { get; }
+    public string? Error { get; }
+    public int StatusCode { get; }
+
+    public static Result<T> Success<T>(T data)
+        => new(true, data, null, 200);
+
+    public static Result<T> Created<T>(T data)
+        => new(true, data, null, 201);
+
+    public static Result<T> Failure<T>(string error, int statusCode = 400)
+        => new(false, default, error, statusCode);
+
+    public static Result<T> NotFound<T>(string message = "Resource not found")
+        => new(false, default, message, 404);
+
+    public static Result<T> Forbidden<T>(string message = "Access denied")
+        => new(false, default, message, 403);
 
     public static Result Success()
-        => new() { IsSuccess = true, StatusCode = 200 };
+        => new(true, null, 200);
 
     public static Result Failure(string error, int statusCode = 400)
-        => new() { IsSuccess = false, Error = error, StatusCode = statusCode };
+        => new(false, error, statusCode);
 }
