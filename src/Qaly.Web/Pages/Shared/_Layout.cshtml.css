@@ -35,7 +35,7 @@ a {
 }
 
 button.accept-policy {
-  font-size: 1rem;
+  font-size: var(--font-body, 13px);
   line-height: inherit;
 }
 

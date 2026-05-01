@@ -133,12 +133,12 @@ public class DashboardController : ControllerBase
                 var activeAssignments = assignedTasks.Count(task => !IsDone(task));
                 var capacityPercent = Math.Min(100, activeAssignments * 22 + overdueAssigned * 8);
                 var focusArea = ownedProjects > 0
-                    ? "Project coordination"
+                    ? "Điều phối dự án"
                     : activeAssignments == 0
-                        ? "Capacity available"
+                        ? "Còn năng lực tiếp nhận"
                         : inProgressAssigned >= 2
-                            ? "Execution stream"
-                            : "Support lane";
+                            ? "Luồng triển khai"
+                            : "Hỗ trợ vận hành";
 
                 return new DashboardMemberResponse(
                     user.Id,
@@ -158,14 +158,14 @@ public class DashboardController : ControllerBase
         var notifications = BuildNotifications(projectResponses, now);
 
         var summary = projects.Count == 0
-            ? "Workspace is ready. Create your first project to start tracking delivery."
-            : $"Qaly is tracking {activeProjects} active project(s) with {completedTasks}/{allTasks.Count} tasks completed. " +
-              $"{overdueTasks} overdue item(s) need attention, and {topContributor?.FullName ?? "the team"} is carrying the heaviest workload.";
+            ? "Không gian làm việc đã sẵn sàng. Hãy tạo dự án đầu tiên để bắt đầu theo dõi tiến độ."
+            : $"Qaly đang theo dõi {activeProjects} dự án đang chạy với {completedTasks}/{allTasks.Count} công việc đã hoàn tất. " +
+              $"{overdueTasks} mục quá hạn cần được chú ý, và {DisplayName(topContributor?.FullName) ?? "đội ngũ"} đang có tải công việc cao nhất.";
 
         var riskDigest = overdueTasks == 0 && highPriorityOpenTasks == 0
-            ? "Delivery risk is stable. Keep momentum on the active board and maintain assignment balance."
-            : $"{overdueTasks} overdue task(s) and {highPriorityOpenTasks} high-priority open item(s) are shaping the current delivery risk. " +
-              "Review due dates, rebalance ownership, and clear blockers in the current sprint.";
+            ? "Rủi ro triển khai đang ổn định. Hãy giữ nhịp trên bảng công việc và duy trì cân bằng phân công."
+            : $"{overdueTasks} công việc quá hạn và {highPriorityOpenTasks} mục ưu tiên cao đang mở đang định hình rủi ro hiện tại. " +
+              "Cần rà soát hạn chót, cân bằng lại người phụ trách và gỡ các điểm nghẽn trong chu kỳ làm việc hiện tại.";
 
         var response = new DashboardOverviewResponse(
             now,
@@ -198,8 +198,8 @@ public class DashboardController : ControllerBase
             {
                 notifications.Add(new DashboardNotificationResponse(
                     $"{project.Id}-overdue",
-                    "Deadline pressure",
-                    $"{project.Name} has {project.OverdueTaskCount} overdue task(s). Replan the next sprint checkpoint.",
+                    "Áp lực hạn chót",
+                    $"{DisplayText(project.Name)} có {project.OverdueTaskCount} công việc quá hạn. Hãy lập lại kế hoạch cho mốc tiếp theo.",
                     "critical",
                     now));
             }
@@ -213,8 +213,8 @@ public class DashboardController : ControllerBase
             {
                 notifications.Add(new DashboardNotificationResponse(
                     $"{project.Id}-staffing",
-                    "Assignment gap",
-                    $"{unassignedHighPriority} high-priority task(s) in {project.Name} still have no assignee.",
+                    "Thiếu người phụ trách",
+                    $"{unassignedHighPriority} công việc ưu tiên cao trong {DisplayText(project.Name)} vẫn chưa có người phụ trách.",
                     "warning",
                     now.AddMinutes(-20)));
             }
@@ -224,8 +224,8 @@ public class DashboardController : ControllerBase
         {
             notifications.Add(new DashboardNotificationResponse(
                 "workspace-ready",
-                "Workspace synced",
-                "Seed data is loaded and the dashboard is ready for sprint planning.",
+                "Không gian đã đồng bộ",
+                "Dữ liệu mẫu đã được nạp và bảng điều khiển đã sẵn sàng cho lập kế hoạch chu kỳ làm việc.",
                 "info",
                 now));
         }
@@ -259,6 +259,24 @@ public class DashboardController : ControllerBase
 
     private static bool EqualsIgnoreCase(string? left, string right)
         => string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+
+    private static string? DisplayName(string? value)
+        => value switch
+        {
+            "Admin User" => "Quản trị viên",
+            "Nguyen Van A" => "Nguyễn Văn A",
+            "Tran Thi B" => "Trần Thị B",
+            null => null,
+            _ => value
+        };
+
+    private static string DisplayText(string value)
+        => value switch
+        {
+            "Identity Hardening" => "Gia cố định danh",
+            "Design Language" => "Ngôn ngữ thiết kế",
+            _ => value
+        };
 }
 
 public sealed record DashboardOverviewResponse(

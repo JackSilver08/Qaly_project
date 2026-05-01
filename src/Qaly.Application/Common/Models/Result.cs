@@ -1,8 +1,8 @@
 namespace Qaly.Application.Common.Models;
 
 /// <summary>
-/// Generic result wrapper cho tất cả operations.
-/// Thay vì throw exception, service trả về Result<T>.
+/// Bộ bao kết quả dùng chung cho tất cả thao tác.
+/// Thay vì ném exception, service trả về Result<T>.
 /// </summary>
 public class Result<T>
 {
@@ -42,10 +42,10 @@ public class Result
     public static Result<T> Failure<T>(string error, int statusCode = 400)
         => new(false, default, error, statusCode);
 
-    public static Result<T> NotFound<T>(string message = "Resource not found")
+    public static Result<T> NotFound<T>(string message = "Không tìm thấy tài nguyên")
         => new(false, default, message, 404);
 
-    public static Result<T> Forbidden<T>(string message = "Access denied")
+    public static Result<T> Forbidden<T>(string message = "Không có quyền truy cập")
         => new(false, default, message, 403);
 
     public static Result Success()

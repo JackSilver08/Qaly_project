@@ -3,6 +3,49 @@ body {
   min-height: 100%;
 }
 
+:root {
+  --font-title-lg: 16px;
+  --font-title-sm: 14px;
+  --font-body: 13px;
+  --line-title: 1.35;
+  --line-body: 1.5;
+}
+
 body {
   margin: 0;
+  font-size: var(--font-body);
+  line-height: var(--line-body);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-size: var(--font-title-lg);
+  line-height: var(--line-title);
+}
+
+legend,
+caption,
+th,
+label {
+  font-size: var(--font-title-sm);
+  line-height: var(--line-title);
+}
+
+p,
+a,
+span,
+small,
+strong,
+button,
+input,
+textarea,
+select,
+td,
+li {
+  font-size: var(--font-body);
+  line-height: var(--line-body);
 }

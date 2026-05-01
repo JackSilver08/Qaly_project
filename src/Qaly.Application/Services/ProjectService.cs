@@ -107,7 +107,7 @@ public class ProjectService : IProjectService
         await _projectRepo.AddAsync(project, ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
-        // Re-fetch to get Owner info for DTO
+        // Tải lại để có thông tin người phụ trách trong DTO.
         return await GetByIdAsync(project.Id, ct);
     }
 
@@ -128,9 +128,9 @@ public class ProjectService : IProjectService
     public async Task<Result> DeleteAsync(Guid id, CancellationToken ct = default)
     {
         var project = await _projectRepo.GetByIdAsync(id, ct);
-        if (project == null) return Result.Failure("Project not found", 404);
+        if (project == null) return Result.Failure("Không tìm thấy dự án", 404);
 
-        if (project.OwnerId != _currentUserService.UserId) return Result.Failure("Access denied", 403);
+        if (project.OwnerId != _currentUserService.UserId) return Result.Failure("Không có quyền truy cập", 403);
 
         await _projectRepo.DeleteAsync(project, ct);
         await _unitOfWork.SaveChangesAsync(ct);
@@ -141,9 +141,9 @@ public class ProjectService : IProjectService
     public async Task<Result> AddMemberAsync(Guid projectId, Guid userId, string role, CancellationToken ct = default)
     {
         var project = await _projectRepo.GetByIdAsync(projectId, ct);
-        if (project == null) return Result.Failure("Project not found", 404);
+        if (project == null) return Result.Failure("Không tìm thấy dự án", 404);
 
-        if (project.OwnerId != _currentUserService.UserId) return Result.Failure("Access denied", 403);
+        if (project.OwnerId != _currentUserService.UserId) return Result.Failure("Không có quyền truy cập", 403);
 
         var member = new ProjectMember
         {
@@ -163,10 +163,10 @@ public class ProjectService : IProjectService
         var member = await _memberRepo.GetQueryable()
             .FirstOrDefaultAsync(m => m.ProjectId == projectId && m.UserId == userId, ct);
 
-        if (member == null) return Result.Failure("Member not found", 404);
+        if (member == null) return Result.Failure("Không tìm thấy thành viên", 404);
 
         var project = await _projectRepo.GetByIdAsync(projectId, ct);
-        if (project?.OwnerId != _currentUserService.UserId) return Result.Failure("Access denied", 403);
+        if (project?.OwnerId != _currentUserService.UserId) return Result.Failure("Không có quyền truy cập", 403);
 
         await _memberRepo.DeleteAsync(member, ct);
         await _unitOfWork.SaveChangesAsync(ct);

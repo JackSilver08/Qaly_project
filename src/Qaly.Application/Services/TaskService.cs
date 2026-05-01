@@ -120,7 +120,7 @@ public class TaskService : ITaskService
     public async Task<Result> UpdateStatusAsync(Guid id, string newStatus, CancellationToken ct = default)
     {
         var task = await _taskRepo.GetByIdAsync(id, ct);
-        if (task == null) return Result.Failure("Task not found", 404);
+        if (task == null) return Result.Failure("Không tìm thấy công việc", 404);
 
         task.Status = newStatus;
         await _taskRepo.UpdateAsync(task, ct);
@@ -132,7 +132,7 @@ public class TaskService : ITaskService
     public async Task<Result> DeleteAsync(Guid id, CancellationToken ct = default)
     {
         var task = await _taskRepo.GetByIdAsync(id, ct);
-        if (task == null) return Result.Failure("Task not found", 404);
+        if (task == null) return Result.Failure("Không tìm thấy công việc", 404);
 
         await _taskRepo.DeleteAsync(task, ct);
         await _unitOfWork.SaveChangesAsync(ct);

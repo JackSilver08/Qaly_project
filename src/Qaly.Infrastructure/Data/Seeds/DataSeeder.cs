@@ -40,7 +40,7 @@ public partial class DataSeeder
         {
             new()
             {
-                FullName = "Admin User",
+                FullName = "Quản trị viên",
                 Email = "admin@qaly.dev",
                 PasswordHash = HashPassword("Admin@123"),
                 Role = "Admin",
@@ -48,14 +48,14 @@ public partial class DataSeeder
             },
             new()
             {
-                FullName = "Nguyen Van A",
+                FullName = "Nguyễn Văn A",
                 Email = "nguyenvana@qaly.dev",
                 PasswordHash = HashPassword("User@123"),
                 Role = "Member"
             },
             new()
             {
-                FullName = "Tran Thi B",
+                FullName = "Trần Thị B",
                 Email = "tranthib@qaly.dev",
                 PasswordHash = HashPassword("User@123"),
                 Role = "Member"
@@ -74,7 +74,7 @@ public partial class DataSeeder
         var project = new Project
         {
             Name = "Qaly MVP",
-            Description = "Dự án quản lý công việc nội bộ - Minimum Viable Product",
+            Description = "Dự án quản lý công việc nội bộ - sản phẩm khả dụng tối thiểu",
             Status = "Active",
             OwnerId = admin.Id,
             StartDate = DateTimeOffset.UtcNow,
@@ -84,7 +84,7 @@ public partial class DataSeeder
         await _context.Projects.AddAsync(project);
         await _context.SaveChangesAsync();
 
-        // Add members
+        // Thêm thành viên
         var members = await _context.Users.Where(u => u.Role != "Admin").ToListAsync();
         foreach (var member in members)
         {
@@ -96,14 +96,14 @@ public partial class DataSeeder
             });
         }
 
-        // Add sample tasks
+        // Thêm công việc mẫu
         var tasks = new List<TaskItem>
         {
-            new() { Title = "Thiết kế database schema", Status = "Done", Priority = "High", ProjectId = project.Id, ReporterId = admin.Id, AssigneeId = admin.Id },
-            new() { Title = "Implement Authentication", Status = "InProgress", Priority = "High", ProjectId = project.Id, ReporterId = admin.Id },
-            new() { Title = "Tạo Dashboard UI", Status = "Todo", Priority = "Medium", ProjectId = project.Id, ReporterId = admin.Id },
-            new() { Title = "Tích hợp AI Assistant", Status = "Todo", Priority = "High", ProjectId = project.Id, ReporterId = admin.Id, DueDate = DateTimeOffset.UtcNow.AddDays(30) },
-            new() { Title = "Viết Unit Tests", Status = "Todo", Priority = "Medium", ProjectId = project.Id, ReporterId = admin.Id },
+            new() { Title = "Thiết kế lược đồ cơ sở dữ liệu", Status = "Done", Priority = "High", ProjectId = project.Id, ReporterId = admin.Id, AssigneeId = admin.Id },
+            new() { Title = "Triển khai xác thực", Status = "InProgress", Priority = "High", ProjectId = project.Id, ReporterId = admin.Id },
+            new() { Title = "Tạo giao diện bảng điều khiển", Status = "Todo", Priority = "Medium", ProjectId = project.Id, ReporterId = admin.Id },
+            new() { Title = "Tích hợp trợ lý AI", Status = "Todo", Priority = "High", ProjectId = project.Id, ReporterId = admin.Id, DueDate = DateTimeOffset.UtcNow.AddDays(30) },
+            new() { Title = "Viết kiểm thử đơn vị", Status = "Todo", Priority = "Medium", ProjectId = project.Id, ReporterId = admin.Id },
         };
 
         await _context.TaskItems.AddRangeAsync(tasks);
@@ -117,18 +117,18 @@ public partial class DataSeeder
         return $"{Convert.ToBase64String(salt)}.{Convert.ToBase64String(hash)}";
     }
 
-    [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Database migrated successfully.")]
+    [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Cơ sở dữ liệu đã migrate thành công.")]
     private static partial void LogDatabaseMigrated(ILogger logger);
 
-    [LoggerMessage(EventId = 2, Level = LogLevel.Information, Message = "Seed data created successfully.")]
+    [LoggerMessage(EventId = 2, Level = LogLevel.Information, Message = "Dữ liệu mẫu đã được tạo thành công.")]
     private static partial void LogSeedDataCreated(ILogger logger);
 
-    [LoggerMessage(EventId = 3, Level = LogLevel.Information, Message = "Database already contains data. Skipping seed.")]
+    [LoggerMessage(EventId = 3, Level = LogLevel.Information, Message = "Cơ sở dữ liệu đã có dữ liệu. Bỏ qua bước seed.")]
     private static partial void LogSeedSkipped(ILogger logger);
 
-    [LoggerMessage(EventId = 4, Level = LogLevel.Information, Message = "Seeded {UserCount} users.")]
+    [LoggerMessage(EventId = 4, Level = LogLevel.Information, Message = "Đã seed {UserCount} người dùng.")]
     private static partial void LogSeededUsers(ILogger logger, int userCount);
 
-    [LoggerMessage(EventId = 5, Level = LogLevel.Information, Message = "Seeded project '{ProjectName}' with {TaskCount} tasks.")]
+    [LoggerMessage(EventId = 5, Level = LogLevel.Information, Message = "Đã seed dự án '{ProjectName}' với {TaskCount} công việc.")]
     private static partial void LogSeededProject(ILogger logger, string projectName, int taskCount);
 }
