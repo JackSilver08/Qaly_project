@@ -15,6 +15,7 @@
 | 5 | [05_Risk_Analysis.md](./05_Risk_Analysis.md) | Phân tích rủi ro: risk matrix, mitigation | ✅ Hoàn thành |
 | 6 | [06_Docker_Setup.md](./06_Docker_Setup.md) | Docker: services, commands, connection strings | ✅ Hoàn thành |
 | 7 | [07_CICD_Workflow.md](./07_CICD_Workflow.md) | CI/CD pipeline, Git workflow, branch protection | ✅ Hoàn thành |
+| 8 | [08_AI_Integration.md](./08_AI_Integration.md) | Kế hoạch tích hợp AI: 7 điểm tích hợp, lộ trình, chi phí | ✅ Hoàn thành |
 
 ---
 
