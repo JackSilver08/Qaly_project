@@ -1,0 +1,28 @@
+# ========================================
+# Qaly Project - PR Label Configuration
+# Tự động gắn label dựa trên file thay đổi
+# ========================================
+
+backend:
+  - changed-files:
+    - any-glob-to-any-file: ['src/Qaly.Domain/**', 'src/Qaly.Application/**', 'src/Qaly.Infrastructure/**']
+
+frontend:
+  - changed-files:
+    - any-glob-to-any-file: ['src/Qaly.Web/wwwroot/**', 'src/Qaly.Web/Pages/**']
+
+database:
+  - changed-files:
+    - any-glob-to-any-file: ['src/Qaly.Infrastructure/Data/**', 'docker/sqlserver/**']
+
+tests:
+  - changed-files:
+    - any-glob-to-any-file: ['tests/**']
+
+documentation:
+  - changed-files:
+    - any-glob-to-any-file: ['docs/**', '*.md']
+
+devops:
+  - changed-files:
+    - any-glob-to-any-file: ['.github/**', 'Dockerfile', 'docker-compose*', '.dockerignore']

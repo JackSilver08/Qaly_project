@@ -1,0 +1,80 @@
+# ========================================
+# Qaly Project - .gitignore
+# ========================================
+
+## .NET / C#
+bin/
+obj/
+out/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.dll
+*.exe
+*.pdb
+*.cache
+
+## NuGet
+**/packages/*
+*.nupkg
+**/[Pp]ackages/build/
+
+## IDE
+.vs/
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+## OS
+Thumbs.db
+desktop.ini
+.DS_Store
+ehthumbs.db
+
+## Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+## Test results
+TestResults/
+coverage/
+*.trx
+*.coveragexml
+
+## User-specific
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+launchSettings.json
+
+## Environment
+.env
+*.local
+
+## Docker
+docker-compose.override.local.yml
+
+## Secrets (QUAN TRỌNG)
+**/appsettings.Production.json
+**/secrets/
+*.pfx
+*.key
+*.pem
+
+## Uploads
+uploads/
+temp/

@@ -14,6 +14,7 @@
 | 4 | [04_Implementation_Plan.md](./04_Implementation_Plan.md) | Kế hoạch triển khai: timeline, phân công, milestones | ✅ Hoàn thành |
 | 5 | [05_Risk_Analysis.md](./05_Risk_Analysis.md) | Phân tích rủi ro: risk matrix, mitigation | ✅ Hoàn thành |
 | 6 | [06_Docker_Setup.md](./06_Docker_Setup.md) | Docker: services, commands, connection strings | ✅ Hoàn thành |
+| 7 | [07_CICD_Workflow.md](./07_CICD_Workflow.md) | CI/CD pipeline, Git workflow, branch protection | ✅ Hoàn thành |
 
 ---
 
@@ -29,8 +30,8 @@
 
 | # | File (dự kiến) | Nội dung |
 |---|---|---|
-| 6 | `06_API_Specification.md` | API endpoints, request/response format |
-| 7 | `07_UI_Wireframes.md` | Wireframe các trang chính |
-| 8 | `08_Testing_Strategy.md` | Test plan, test cases |
-| 9 | `09_Deployment_Guide.md` | Hướng dẫn deploy |
-| 10 | `10_Changelog.md` | Lịch sử thay đổi |
+| 8 | `08_API_Specification.md` | API endpoints, request/response format |
+| 9 | `09_UI_Wireframes.md` | Wireframe các trang chính |
+| 10 | `10_Testing_Strategy.md` | Test plan, test cases |
+| 11 | `11_Deployment_Guide.md` | Hướng dẫn deploy |
+| 12 | `12_Changelog.md` | Lịch sử thay đổi |

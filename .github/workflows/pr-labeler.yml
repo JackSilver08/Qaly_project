@@ -1,0 +1,24 @@
+# ========================================
+# Qaly Project - PR Auto-labeler
+# Tự động gắn label cho Pull Request
+# ========================================
+
+name: 🏷️ PR Labeler
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: 🏷️ Auto-label PR
+        uses: actions/labeler@v5
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          configuration-path: .github/labeler.yml
