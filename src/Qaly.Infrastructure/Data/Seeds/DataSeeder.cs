@@ -63,6 +63,7 @@ public class DataSeeder
         };
 
         await _context.Users.AddRangeAsync(users);
+        await _context.SaveChangesAsync();
         _logger.LogInformation("Seeded {Count} users.", users.Count);
     }
 

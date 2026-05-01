@@ -19,7 +19,6 @@ services:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: "Qaly@Dev2026!"
       MSSQL_PID: "Developer"
-      MSSQL_COLLATION: "Vietnamese_CI_AS"
     ports:
       - "1434:1433"    # Dùng port 1434 để tránh conflict với SQL Server local (1433)
     volumes:
