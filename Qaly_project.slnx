@@ -1,3 +1,12 @@
 <Solution>
-  <Project Path="Qaly_project.csproj" />
+  <Folder Name="/src/">
+    <Project Path="src/Qaly.Application/Qaly.Application.csproj" />
+    <Project Path="src/Qaly.Domain/Qaly.Domain.csproj" />
+    <Project Path="src/Qaly.Infrastructure/Qaly.Infrastructure.csproj" />
+    <Project Path="src/Qaly.Web/Qaly.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Qaly.IntegrationTests/Qaly.IntegrationTests.csproj" />
+    <Project Path="tests/Qaly.UnitTests/Qaly.UnitTests.csproj" />
+  </Folder>
 </Solution>
