@@ -1,0 +1,48 @@
+# ========================================
+# Qaly Project - Docker Ignore
+# ========================================
+
+# Build artifacts
+**/bin/
+**/obj/
+**/out/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.sln.docstates
+
+# Git
+.git/
+.gitignore
+
+# Docker
+**/Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Documentation (không cần trong image)
+docs/
+*.md
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Tests (không cần trong production image)
+tests/
+**/TestResults/
+
+# Misc
+node_modules/
+*.tmp
+*.bak
+*.swp

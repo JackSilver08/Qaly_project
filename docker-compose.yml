@@ -1,0 +1,138 @@
+# ========================================
+# Qaly Project - Docker Compose
+# Development Environment
+# ========================================
+# Sử dụng: docker compose up -d
+# Dừng:    docker compose down
+# Reset:   docker compose down -v (xóa cả data)
+# ========================================
+
+services:
+  # ----------------------------------------
+  # SQL Server 2022
+  # ----------------------------------------
+  qaly-sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: qaly-sqlserver
+    hostname: qaly-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Qaly@Dev2026!"
+      MSSQL_PID: "Developer"
+      MSSQL_COLLATION: "Vietnamese_CI_AS"
+    ports:
+      - "1434:1433"    # Dùng port 1434 để tránh conflict với SQL Server local (1433)
+    volumes:
+      - qaly-sqlserver-data:/var/opt/mssql
+      - ./docker/sqlserver/init:/docker-entrypoint-initdb.d
+    networks:
+      - qaly-network
+    healthcheck:
+      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "Qaly@Dev2026!" -C -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # ----------------------------------------
+  # Redis (Cache + SignalR Backplane)
+  # ----------------------------------------
+  qaly-redis:
+    image: redis:7-alpine
+    container_name: qaly-redis
+    ports:
+      - "6380:6379"    # Port 6380 để tránh conflict
+    volumes:
+      - qaly-redis-data:/data
+    networks:
+      - qaly-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ----------------------------------------
+  # Seq (Structured Logging Dashboard)
+  # ----------------------------------------
+  qaly-seq:
+    image: datalust/seq:latest
+    container_name: qaly-seq
+    environment:
+      ACCEPT_EULA: "Y"
+    ports:
+      - "5341:5341"    # Ingestion API
+      - "8081:80"      # Web UI: http://localhost:8081
+    volumes:
+      - qaly-seq-data:/data
+    networks:
+      - qaly-network
+    restart: unless-stopped
+
+  # ----------------------------------------
+  # MailHog (Fake SMTP cho dev)
+  # ----------------------------------------
+  qaly-mailhog:
+    image: mailhog/mailhog:latest
+    container_name: qaly-mailhog
+    ports:
+      - "1025:1025"    # SMTP server
+      - "8025:8025"    # Web UI: http://localhost:8025
+    networks:
+      - qaly-network
+    restart: unless-stopped
+
+  # ----------------------------------------
+  # Qaly Web App (Build từ source)
+  # ----------------------------------------
+  qaly-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: qaly-web
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5000
+      - ConnectionStrings__DefaultConnection=Server=qaly-sqlserver,1433;Database=QalyDb;User Id=sa;Password=Qaly@Dev2026!;TrustServerCertificate=True;MultipleActiveResultSets=true
+      - Redis__ConnectionString=qaly-redis:6379
+      - Seq__ServerUrl=http://qaly-seq:5341
+      - Email__SmtpHost=qaly-mailhog
+      - Email__SmtpPort=1025
+    ports:
+      - "5000:5000"    # Web App: http://localhost:5000
+    volumes:
+      - .:/app
+      - /app/bin
+      - /app/obj
+    networks:
+      - qaly-network
+    depends_on:
+      qaly-sqlserver:
+        condition: service_healthy
+      qaly-redis:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - full          # Chỉ chạy khi: docker compose --profile full up
+
+# ----------------------------------------
+# Volumes (Persistent Data)
+# ----------------------------------------
+volumes:
+  qaly-sqlserver-data:
+    driver: local
+  qaly-redis-data:
+    driver: local
+  qaly-seq-data:
+    driver: local
+
+# ----------------------------------------
+# Networks
+# ----------------------------------------
+networks:
+  qaly-network:
+    driver: bridge
+    name: qaly-network

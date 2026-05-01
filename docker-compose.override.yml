@@ -1,0 +1,16 @@
+# ========================================
+# Qaly Project - Docker Compose Override
+# Chỉ dùng cho môi trường Development
+# ========================================
+# File này tự động được Docker Compose đọc
+# khi chạy: docker compose up
+# ========================================
+
+services:
+  qaly-sqlserver:
+    environment:
+      # Dev: password đơn giản hơn nếu cần
+      MSSQL_SA_PASSWORD: "Qaly@Dev2026!"
+
+  qaly-redis:
+    command: redis-server --save 60 1 --loglevel warning
