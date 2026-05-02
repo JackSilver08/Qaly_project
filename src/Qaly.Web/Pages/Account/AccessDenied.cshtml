@@ -1,0 +1,16 @@
+@page
+@model Qaly.Web.Pages.Account.AccessDeniedModel
+@{
+    ViewData["Title"] = "Access denied";
+}
+
+<main class="auth-page">
+    <section class="auth-card">
+        <div class="auth-card__brand">
+            <span>Qaly</span>
+            <h1>Access denied</h1>
+            <p>Your account does not have permission to open this workspace area.</p>
+        </div>
+        <p class="auth-link"><a asp-page="/Index">Back to dashboard</a></p>
+    </section>
+</main>

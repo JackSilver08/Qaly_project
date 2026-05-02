@@ -1,11 +1,14 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Qaly.Domain.Entities;
 using Qaly.Infrastructure.Data;
+using Qaly.Web.Auth;
 
 namespace Qaly.Web.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/dashboard")]
 public class DashboardController : ControllerBase
 {
@@ -20,8 +23,10 @@ public class DashboardController : ControllerBase
     public async Task<ActionResult<DashboardOverviewResponse>> GetOverview(CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
+        var currentUserId = User.GetUserId();
+        var isAdmin = User.IsInRole("Admin");
 
-        var projects = await _context.Projects
+        var projectQuery = _context.Projects
             .AsNoTracking()
             .AsSplitQuery()
             .Include(project => project.Owner)
@@ -35,6 +40,16 @@ public class DashboardController : ControllerBase
                 .ThenInclude(task => task.Comments)
             .Include(project => project.Tasks)
                 .ThenInclude(task => task.Attachments)
+            .AsQueryable();
+
+        if (!isAdmin && currentUserId.HasValue)
+        {
+            projectQuery = projectQuery.Where(project =>
+                project.OwnerId == currentUserId ||
+                project.Members.Any(member => member.UserId == currentUserId));
+        }
+
+        var projects = await projectQuery
             .OrderByDescending(project => project.CreatedAt)
             .ToListAsync(cancellationToken);
 
@@ -44,7 +59,7 @@ public class DashboardController : ControllerBase
             .ToListAsync(cancellationToken);
 
         var allTasks = projects
-            .SelectMany(project => project.Tasks)
+            .SelectMany(project => project.Tasks.Where(task => CanDisplayTask(task, project.OwnerId, currentUserId, isAdmin)))
             .ToList();
 
         var activeProjects = projects.Count(project => !EqualsIgnoreCase(project.Status, "Archived"));
@@ -75,6 +90,7 @@ public class DashboardController : ControllerBase
             .Select(project =>
             {
                 var projectTasks = project.Tasks
+                    .Where(task => CanDisplayTask(task, project.OwnerId, currentUserId, isAdmin))
                     .OrderBy(task => SortStatus(task.Status))
                     .ThenBy(task => task.DueDate ?? DateTimeOffset.MaxValue)
                     .ThenBy(task => task.Title)
@@ -156,6 +172,27 @@ public class DashboardController : ControllerBase
             .ToList();
 
         var notifications = BuildNotifications(projectResponses, now);
+        if (currentUserId.HasValue)
+        {
+            var storedNotifications = await _context.Notifications
+                .AsNoTracking()
+                .Where(notification => notification.UserId == currentUserId.Value && !notification.IsRead)
+                .OrderByDescending(notification => notification.CreatedAt)
+                .Take(6)
+                .Select(notification => new DashboardNotificationResponse(
+                    notification.Id.ToString(),
+                    notification.Type,
+                    notification.Message,
+                    NotificationTone(notification.Type),
+                    notification.CreatedAt))
+                .ToListAsync(cancellationToken);
+
+            notifications = storedNotifications
+                .Concat(notifications)
+                .OrderByDescending(notification => notification.CreatedAt)
+                .Take(6)
+                .ToList();
+        }
 
         var summary = projects.Count == 0
             ? "Không gian làm việc đã sẵn sàng. Hãy tạo dự án đầu tiên để bắt đầu theo dõi tiến độ."
@@ -247,6 +284,27 @@ public class DashboardController : ControllerBase
 
     private static bool IsHighPriority(string? priority)
         => EqualsIgnoreCase(priority, "High") || EqualsIgnoreCase(priority, "Critical");
+
+    private static bool CanDisplayTask(TaskItem task, Guid projectOwnerId, Guid? currentUserId, bool isAdmin)
+    {
+        if (!task.IsPrivate || isAdmin)
+        {
+            return true;
+        }
+
+        return currentUserId.HasValue &&
+            (task.ReporterId == currentUserId.Value ||
+             task.AssigneeId == currentUserId.Value ||
+             projectOwnerId == currentUserId.Value);
+    }
+
+    private static string NotificationTone(string type)
+        => type switch
+        {
+            "TaskAssigned" or "TaskStatusChanged" or "CommentAdded" => "warning",
+            "DueDateReminder" => "critical",
+            _ => "info"
+        };
 
     private static int SortStatus(string? status)
         => status switch

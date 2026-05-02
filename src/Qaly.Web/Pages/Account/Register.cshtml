@@ -1,0 +1,42 @@
+@page
+@model Qaly.Web.Pages.Account.RegisterModel
+@{
+    ViewData["Title"] = "Create account";
+}
+
+<main class="auth-page">
+    <section class="auth-card">
+        <div class="auth-card__brand">
+            <span>Qaly</span>
+            <h1>Create account</h1>
+            <p>Join the workspace and start planning work.</p>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+        {
+            <div class="auth-error">@Model.ErrorMessage</div>
+        }
+
+        <form method="post" class="auth-form">
+            <label>
+                <span>Full name</span>
+                <input asp-for="FullName" type="text" autocomplete="name" required />
+            </label>
+            <label>
+                <span>Email</span>
+                <input asp-for="Email" type="email" autocomplete="email" required />
+            </label>
+            <label>
+                <span>Password</span>
+                <input asp-for="Password" type="password" autocomplete="new-password" required minlength="8" />
+            </label>
+            <label>
+                <span>Confirm password</span>
+                <input asp-for="ConfirmPassword" type="password" autocomplete="new-password" required minlength="8" />
+            </label>
+            <button type="submit">Create account</button>
+        </form>
+
+        <p class="auth-link">Already have an account? <a asp-page="/Account/Login">Sign in</a></p>
+    </section>
+</main>

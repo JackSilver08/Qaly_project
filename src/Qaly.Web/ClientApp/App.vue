@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { HubConnectionBuilder } from '@microsoft/signalr'
 import {
   ClipboardList,
   FolderKanban,
   LayoutDashboard,
+  MessageSquare,
+  Plus,
+  Send,
   Users,
   X,
 } from 'lucide-vue-next'
@@ -14,9 +18,20 @@ import ProjectList from './components/ProjectList.vue'
 import ProjectToolbar from './components/ProjectToolbar.vue'
 import TeamMiniSection from './components/TeamMiniSection.vue'
 import { fallbackDashboard } from './fallback-dashboard'
-import type { DashboardNotification, DashboardProject, DashboardResponse } from './types'
 import type { ProjectCardModel, SummaryCardModel, TeamMiniMemberModel } from './components/dashboard-models'
 import type { ShellNavItem } from './components/shell-models'
+import type {
+  ApiResult,
+  AttachmentDto,
+  CommentDto,
+  DashboardNotification,
+  DashboardProject,
+  DashboardResponse,
+  DashboardTask,
+  NotificationDto,
+  ProjectDto,
+  UserDto,
+} from './types'
 
 interface ChatMessage {
   id: string
@@ -28,50 +43,54 @@ type ProjectFilter = 'all' | 'active' | 'planned' | 'at-risk'
 type ProjectSort = 'recent' | 'risk' | 'progress' | 'name'
 
 const navigation: ShellNavItem[] = [
-  { label: 'Tổng quan', target: 'overview', icon: LayoutDashboard },
-  { label: 'Dự án', target: 'projects', icon: FolderKanban },
-  { label: 'Công việc', target: 'tasks', icon: ClipboardList },
-  { label: 'Đội ngũ', target: 'team', icon: Users },
+  { label: 'Overview', target: 'overview', icon: LayoutDashboard },
+  { label: 'Projects', target: 'projects', icon: FolderKanban },
+  { label: 'Tasks', target: 'tasks', icon: ClipboardList },
+  { label: 'Team', target: 'team', icon: Users },
 ]
 
-const knownTextMap: Record<string, string> = {
-  'Admin User': 'Quản trị viên',
-  'Nguyen Van A': 'Nguyễn Văn A',
-  'Tran Thi B': 'Trần Thị B',
-  'Identity Hardening': 'Gia cố định danh',
-  'Design Language': 'Ngôn ngữ thiết kế',
-  'Internal project management workspace for sprint execution, team planning, and AI-assisted delivery.':
-    'Không gian quản lý công việc nội bộ cho triển khai chu kỳ làm việc, lập kế hoạch đội ngũ và hỗ trợ quyết định bằng AI.',
-  'Role-based access, session safety, and login/register experience.':
-    'Phân quyền theo vai trò, an toàn phiên đăng nhập và trải nghiệm đăng nhập/đăng ký.',
-  'Landing the visual system, typography, and reusable UI patterns for admin workflows.':
-    'Hoàn thiện hệ thống hình ảnh, kiểu chữ và các mẫu giao diện tái sử dụng cho quy trình quản trị.',
-  'Qaly MVP': 'Qaly MVP',
-  'Design workspace shell': 'Thiết kế khung làm việc',
-  'Implement dashboard metrics API': 'Triển khai API chỉ số bảng điều khiển',
-  'Create Kanban interaction states': 'Tạo trạng thái tương tác Kanban',
-  'Integrate AI insight surfaces': 'Tích hợp bề mặt gợi ý AI',
-  'Project coordination': 'Điều phối dự án',
-  'Capacity available': 'Còn năng lực tiếp nhận',
-  'Execution stream': 'Luồng triển khai',
-  'Support lane': 'Hỗ trợ vận hành',
-  'Design systems': 'Hệ thống thiết kế',
-}
+const statusColumns = ['Todo', 'InProgress', 'InReview', 'Done']
+const priorities = ['Low', 'Medium', 'High', 'Critical']
 
 const dashboard = ref<DashboardResponse>(fallbackDashboard)
+const currentUser = ref<UserDto | null>(null)
+const users = ref<UserDto[]>([])
+const notifications = ref<NotificationDto[]>([])
+const comments = ref<CommentDto[]>([])
+const attachments = ref<AttachmentDto[]>([])
 const isLoading = ref(true)
 const usingFallback = ref(true)
 const chatOpen = ref(false)
 const notificationsOpen = ref(false)
 const createProjectOpen = ref(false)
+const createTaskOpen = ref(false)
 const projectBeingEditedId = ref<string | null>(null)
+const selectedTaskId = ref<string | null>(null)
 const activeNavTarget = ref('overview')
 const searchQuery = ref('')
 const projectFilter = ref<ProjectFilter>('all')
 const projectSort = ref<ProjectSort>('recent')
 const activeProjectId = ref<string | null>(null)
-const newProjectName = ref('')
+const viewingProjectDetails = ref(false)
+const activeProjectTab = ref('tasks')
+const projectName = ref('')
+const projectDescription = ref('')
+const projectEndDate = ref('')
+
+const tabs = [
+  { id: 'tasks', label: 'Tasks' },
+  { id: 'team', label: 'Team' },
+  { id: 'wiki', label: 'Wiki' },
+]
+
 const editProjectName = ref('')
+const editProjectDescription = ref('')
+const newTaskTitle = ref('')
+const newTaskDescription = ref('')
+const newTaskPriority = ref('Medium')
+const newTaskAssigneeId = ref('')
+const newTaskDueDate = ref('')
+const newComment = ref('')
 const actionNotice = ref('')
 const chatDraft = ref('')
 const chatBodyRef = ref<HTMLElement | null>(null)
@@ -80,45 +99,44 @@ const chatMessages = ref<ChatMessage[]>([
   {
     id: 'assistant-welcome',
     role: 'assistant',
-    text: 'Tôi có thể tóm tắt rủi ro, việc quá hạn và bước tiếp theo cho dự án đang chọn.',
+    text: 'Ask me about project risk, overdue work, priority, or assignment suggestions.',
   },
 ])
 
-let actionNoticeTimer: ReturnType<typeof window.setTimeout> | undefined
-let assistantThinkingTimer: ReturnType<typeof window.setTimeout> | undefined
+let actionNoticeTimer: number | undefined
+let notificationConnectionStarted = false
 
 const projects = computed(() => dashboard.value.projects)
 const team = computed(() => dashboard.value.team)
 const activeProjectsCount = computed(() => projects.value.filter((project) => project.status !== 'Archived').length)
 const totalTasks = computed(() => projects.value.reduce((sum, project) => sum + project.tasks.length, 0))
 const completedTasks = computed(() =>
-  projects.value.reduce((sum, project) => sum + project.tasks.filter((task) => normalizeStatus(task.status) === 'Done').length, 0),
+  projects.value.reduce((sum, project) => sum + project.tasks.filter((task) => task.status === 'Done').length, 0),
 )
 const overdueTasks = computed(() =>
   projects.value.reduce((sum, project) => sum + project.tasks.filter((task) => isTaskOverdue(task)).length, 0),
 )
 
-// Homepage hierarchy: three high-signal KPIs, then project controls and the project list.
 const summaryCards = computed<SummaryCardModel[]>(() => [
   {
     key: 'projects',
-    label: 'Total Projects',
+    label: 'Projects',
     value: String(projects.value.length),
-    detail: `${activeProjectsCount.value} đang chạy`,
+    detail: `${activeProjectsCount.value} active`,
     tone: 'blue',
   },
   {
     key: 'tasks',
-    label: 'Total Tasks',
+    label: 'Tasks',
     value: String(totalTasks.value),
-    detail: `${completedTasks.value} đã hoàn tất`,
+    detail: `${completedTasks.value} done`,
     tone: 'mint',
   },
   {
     key: 'team',
-    label: 'Team Members',
+    label: 'Team',
     value: String(team.value.length),
-    detail: 'đang tham gia workspace',
+    detail: 'workspace members',
     tone: 'violet',
   },
 ])
@@ -128,45 +146,21 @@ const filteredProjects = computed(() => {
 
   return projects.value
     .filter((project) => {
-      if (projectFilter.value === 'active' && !['Active', 'InProgress'].includes(project.status)) {
-        return false
-      }
+      if (projectFilter.value === 'active' && !['Active', 'InProgress'].includes(project.status)) return false
+      if (projectFilter.value === 'planned' && project.status !== 'Planned') return false
+      if (projectFilter.value === 'at-risk' && project.overdueTaskCount === 0) return false
 
-      if (projectFilter.value === 'planned' && project.status !== 'Planned') {
-        return false
-      }
+      if (!query) return true
 
-      if (projectFilter.value === 'at-risk' && project.overdueTaskCount === 0) {
-        return false
-      }
-
-      if (!query) {
-        return true
-      }
-
-      return [
-        displayText(project.name),
-        displayText(project.description),
-        displayName(project.ownerName),
-        ...project.memberNames.map(displayName),
-      ]
+      return [project.name, project.description, project.ownerName, ...project.memberNames]
         .join(' ')
         .toLowerCase()
         .includes(query)
     })
     .sort((left, right) => {
-      if (projectSort.value === 'name') {
-        return displayText(left.name).localeCompare(displayText(right.name), 'vi')
-      }
-
-      if (projectSort.value === 'progress') {
-        return right.progressPercentage - left.progressPercentage
-      }
-
-      if (projectSort.value === 'risk') {
-        return right.overdueTaskCount - left.overdueTaskCount
-      }
-
+      if (projectSort.value === 'name') return left.name.localeCompare(right.name)
+      if (projectSort.value === 'progress') return right.progressPercentage - left.progressPercentage
+      if (projectSort.value === 'risk') return right.overdueTaskCount - left.overdueTaskCount
       return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
     })
 })
@@ -174,44 +168,40 @@ const filteredProjects = computed(() => {
 const projectCards = computed<ProjectCardModel[]>(() =>
   filteredProjects.value.map((project) => ({
     id: project.id,
-    name: displayText(project.name),
-    description: displayText(project.description) || 'Chưa có mô tả ngắn cho dự án này.',
+    name: project.name,
+    description: project.description || 'No description yet.',
     status: project.status,
     statusLabel: displayStatus(project.status),
     statusTone: statusTone(project.status),
-    ownerName: displayName(project.ownerName),
-    dueDateLabel: project.endDate ? `Hạn ${formatDate(project.endDate)}` : 'Chưa có hạn',
+    ownerName: project.ownerName,
+    dueDateLabel: project.endDate ? `Due ${formatDate(project.endDate)}` : 'No due date',
     completedTaskCount: project.completedTaskCount,
     taskCount: project.taskCount,
     overdueTaskCount: project.overdueTaskCount,
     progressPercentage: project.progressPercentage,
-    memberInitials: project.memberNames.slice(0, 4).map((name) => initials(displayName(name))),
+    memberInitials: project.memberNames.slice(0, 4).map(initials),
   })),
 )
 
 const selectedProject = computed(() => {
   if (activeProjectId.value) {
     const active = projects.value.find((project) => project.id === activeProjectId.value)
-    if (active) {
-      return active
-    }
+    if (active) return active
   }
 
   return filteredProjects.value[0] ?? projects.value[0] ?? null
 })
 
 const selectedProjectTasks = computed(() => selectedProject.value?.tasks ?? [])
-const selectedOpenTasks = computed(() =>
-  selectedProjectTasks.value.filter((task) => normalizeStatus(task.status) !== 'Done').slice(0, 4),
-)
+const selectedTask = computed(() => {
+  if (!selectedProjectTasks.value.length) return null
+  return selectedProjectTasks.value.find((task) => task.id === selectedTaskId.value) ?? selectedProjectTasks.value[0]
+})
+
 const selectedProjectSummary = computed(() => {
   const project = selectedProject.value
-
-  if (!project) {
-    return 'Chọn một dự án để xem công việc trọng tâm.'
-  }
-
-  return `${displayText(project.name)} có ${project.completedTaskCount}/${project.taskCount} công việc đã hoàn tất.`
+  if (!project) return 'Select a project to inspect its work.'
+  return `${project.name}: ${project.completedTaskCount}/${project.taskCount} tasks complete.`
 })
 
 const teamMiniMembers = computed<TeamMiniMemberModel[]>(() =>
@@ -220,26 +210,36 @@ const teamMiniMembers = computed<TeamMiniMemberModel[]>(() =>
     .slice(0, 4)
     .map((member) => ({
       id: member.id,
-      name: displayName(member.fullName),
+      name: member.fullName,
       role: displayRole(member.role),
-      focusArea: displayText(member.focusArea),
+      focusArea: member.focusArea,
       capacityPercent: member.capacityPercent,
-      initials: initials(displayName(member.fullName)),
+      initials: initials(member.fullName),
     })),
 )
 
+const notificationItems = computed<DashboardNotification[]>(() => {
+  const realtime = notifications.value.map(toDashboardNotification)
+  const dashboardItems = dashboard.value.notifications
+  const seen = new Set<string>()
+
+  return [...realtime, ...dashboardItems]
+    .filter((item) => {
+      if (seen.has(item.id)) return false
+      seen.add(item.id)
+      return true
+    })
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+})
+
 const notificationCount = computed(
-  () => dashboard.value.notifications.filter((notification) => notification.tone !== 'info').length,
+  () => notifications.value.filter((notification) => !notification.isRead).length +
+    dashboard.value.notifications.filter((notification) => notification.tone !== 'info').length,
 )
 
 const quickPrompts = computed(() => {
-  const projectName = selectedProject.value ? displayText(selectedProject.value.name) : 'workspace này'
-
-  return [
-    `Tóm tắt rủi ro của ${projectName}`,
-    'Dự án nào đang có rủi ro?',
-    'Việc nào nên ưu tiên hôm nay?',
-  ]
+  const projectName = selectedProject.value?.name ?? 'this workspace'
+  return [`Summarize ${projectName}`, `Analyze risk for ${projectName}`, 'Which task should be next?']
 })
 
 watch(
@@ -253,6 +253,21 @@ watch(
 )
 
 watch(
+  selectedTask,
+  (task) => {
+    selectedTaskId.value = task?.id ?? null
+    if (task && !usingFallback.value) {
+      void loadComments(task.id)
+      void loadAttachments(task.id)
+    } else {
+      comments.value = []
+      attachments.value = []
+    }
+  },
+  { immediate: true },
+)
+
+watch(
   () => [chatMessages.value.length, isAssistantThinking.value],
   () => {
     void scrollChatToBottom()
@@ -260,38 +275,90 @@ watch(
 )
 
 onMounted(async () => {
-  await loadDashboard()
+  await Promise.all([loadMe(), loadDashboard(), loadUsers(), loadNotifications()])
+  await connectNotifications()
 })
 
 async function loadDashboard() {
   isLoading.value = true
+  const previousProjectId = activeProjectId.value
 
   try {
-    const response = await fetch('/api/dashboard/overview', {
-      headers: {
-        Accept: 'application/json',
-      },
-    })
-
-    if (!response.ok) {
-      throw new Error(`Dashboard request failed with status ${response.status}`)
-    }
-
-    const data = (await response.json()) as DashboardResponse
-
-    if (!data.projects?.length) {
-      throw new Error('Dashboard did not return projects')
-    }
-
-    dashboard.value = data
+    dashboard.value = await apiJson<DashboardResponse>('/api/dashboard/overview')
     usingFallback.value = false
   } catch (error) {
     console.warn('Using fallback dashboard data.', error)
     dashboard.value = fallbackDashboard
     usingFallback.value = true
   } finally {
-    activeProjectId.value = dashboard.value.projects[0]?.id ?? null
+    activeProjectId.value = dashboard.value.projects.some((project) => project.id === previousProjectId)
+      ? previousProjectId
+      : dashboard.value.projects[0]?.id ?? null
     isLoading.value = false
+  }
+}
+
+async function loadMe() {
+  try {
+    currentUser.value = await apiResult<UserDto>('/api/auth/me')
+  } catch (error) {
+    console.warn('Could not load current user.', error)
+  }
+}
+
+async function loadUsers() {
+  try {
+    users.value = await apiResult<UserDto[]>('/api/users')
+  } catch (error) {
+    console.warn('Could not load users.', error)
+  }
+}
+
+async function loadNotifications() {
+  try {
+    notifications.value = await apiResult<NotificationDto[]>('/api/notifications')
+  } catch (error) {
+    console.warn('Could not load notifications.', error)
+  }
+}
+
+async function loadComments(taskId: string) {
+  try {
+    comments.value = await apiResult<CommentDto[]>(`/api/comments/task/${taskId}`)
+  } catch (error) {
+    console.warn('Could not load comments.', error)
+    comments.value = []
+  }
+}
+
+async function loadAttachments(taskId: string) {
+  try {
+    attachments.value = await apiResult<AttachmentDto[]>(`/api/attachments/task/${taskId}`)
+  } catch (error) {
+    console.warn('Could not load attachments.', error)
+    attachments.value = []
+  }
+}
+
+async function connectNotifications() {
+  if (notificationConnectionStarted) return
+  notificationConnectionStarted = true
+
+  const connection = new HubConnectionBuilder()
+    .withUrl('/hubs/notification')
+    .withAutomaticReconnect()
+    .build()
+
+  connection.on('notificationReceived', (notification: NotificationDto) => {
+    notifications.value = [notification, ...notifications.value.filter((item) => item.id !== notification.id)]
+    showActionNotice(notification.message)
+    void loadDashboard()
+  })
+
+  try {
+    await connection.start()
+  } catch (error) {
+    console.warn('SignalR notification connection failed.', error)
   }
 }
 
@@ -302,8 +369,13 @@ function scrollToSection(sectionId: string) {
 
 function selectProject(projectId: string) {
   activeProjectId.value = projectId
-  activeNavTarget.value = 'tasks'
-  document.getElementById('tasks')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  selectedTaskId.value = projects.value.find((project) => project.id === projectId)?.tasks[0]?.id ?? null
+  viewingProjectDetails.value = true
+  activeProjectTab.value = 'tasks'
+}
+
+function closeProjectDetails() {
+  viewingProjectDetails.value = false
 }
 
 function openCreateProject() {
@@ -313,221 +385,393 @@ function openCreateProject() {
   document.getElementById('projects')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-function createProject() {
-  const name = newProjectName.value.trim()
+async function createProject() {
+  const name = projectName.value.trim()
+  if (!name) return
 
-  if (!name) {
-    return
+  try {
+    const project = await apiResult<ProjectDto>('/api/projects', {
+      method: 'POST',
+      body: JSON.stringify({
+        name,
+        description: projectDescription.value.trim() || null,
+        startDate: null,
+        endDate: projectEndDate.value ? new Date(projectEndDate.value).toISOString() : null,
+      }),
+    })
+
+    clearProjectForm()
+    createProjectOpen.value = false
+    await loadDashboard()
+    activeProjectId.value = project.id
+    showActionNotice(`Created project "${project.name}".`)
+  } catch (error) {
+    showActionNotice(errorMessage(error))
   }
-
-  const ownerName = dashboard.value.team[0]?.fullName ?? 'Quản trị viên'
-  const memberNames = dashboard.value.team.slice(0, 3).map((member) => member.fullName)
-  const project: DashboardProject = {
-    id: `local-project-${Date.now()}`,
-    name,
-    description: 'Dự án mới đang chờ bổ sung phạm vi và kế hoạch triển khai.',
-    status: 'Active',
-    ownerName,
-    memberCount: Math.max(memberNames.length, 1),
-    taskCount: 0,
-    completedTaskCount: 0,
-    overdueTaskCount: 0,
-    progressPercentage: 0,
-    memberNames: memberNames.length ? memberNames : [ownerName],
-    tasks: [],
-    createdAt: new Date().toISOString(),
-    endDate: null,
-  }
-
-  dashboard.value.projects.unshift(project)
-  activeProjectId.value = project.id
-  newProjectName.value = ''
-  createProjectOpen.value = false
-  showActionNotice(`Đã tạo dự án "${displayText(project.name)}".`)
 }
 
 function beginEditProject(projectId: string) {
   const project = projects.value.find((item) => item.id === projectId)
-
-  if (!project) {
-    return
-  }
+  if (!project) return
 
   activeProjectId.value = projectId
   createProjectOpen.value = false
   projectBeingEditedId.value = projectId
-  editProjectName.value = displayText(project.name)
+  editProjectName.value = project.name
+  editProjectDescription.value = project.description ?? ''
 }
 
-function saveProjectEdit() {
+async function saveProjectEdit() {
   const project = projects.value.find((item) => item.id === projectBeingEditedId.value)
   const name = editProjectName.value.trim()
 
-  if (!project || !name) {
-    return
-  }
+  if (!project || !name) return
 
-  project.name = name
-  projectBeingEditedId.value = null
-  editProjectName.value = ''
-  showActionNotice(`Đã cập nhật tên dự án thành "${displayText(project.name)}".`)
+  try {
+    await apiResult<ProjectDto>(`/api/projects/${project.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        name,
+        description: editProjectDescription.value.trim() || null,
+        status: project.status,
+        startDate: null,
+        endDate: project.endDate,
+      }),
+    })
+
+    projectBeingEditedId.value = null
+    await loadDashboard()
+    activeProjectId.value = project.id
+    showActionNotice(`Updated project "${name}".`)
+  } catch (error) {
+    showActionNotice(errorMessage(error))
+  }
 }
 
-function deleteProject(projectId: string) {
+async function deleteProject(projectId: string) {
   const project = projects.value.find((item) => item.id === projectId)
+  if (!project) return
 
-  if (!project) {
-    return
+  try {
+    await apiCommand(`/api/projects/${projectId}`, { method: 'DELETE' })
+    await loadDashboard()
+    showActionNotice(`Deleted project "${project.name}".`)
+  } catch (error) {
+    showActionNotice(errorMessage(error))
   }
-
-  dashboard.value.projects = dashboard.value.projects.filter((item) => item.id !== projectId)
-  activeProjectId.value = dashboard.value.projects[0]?.id ?? null
-  showActionNotice(`Đã ẩn dự án "${displayText(project.name)}" khỏi danh sách.`)
 }
 
-function dismissNotification(notificationId: string) {
-  dashboard.value.notifications = dashboard.value.notifications.filter(
-    (notification) => notification.id !== notificationId,
-  )
+async function createTask() {
+  const project = selectedProject.value
+  const title = newTaskTitle.value.trim()
+  if (!project || !title) return
+
+  try {
+    const task = await apiResult<{ aiPrioritySuggestion: string | null }>('/api/tasks', {
+      method: 'POST',
+      body: JSON.stringify({
+        title,
+        description: newTaskDescription.value.trim() || null,
+        priority: newTaskPriority.value,
+        dueDate: newTaskDueDate.value ? new Date(newTaskDueDate.value).toISOString() : null,
+        estimatedHours: null,
+        projectId: project.id,
+        assigneeId: newTaskAssigneeId.value || null,
+        isPrivate: false,
+      }),
+    })
+
+    clearTaskForm()
+    createTaskOpen.value = false
+    await loadDashboard()
+    showActionNotice(task.aiPrioritySuggestion ?? 'Task created.')
+  } catch (error) {
+    showActionNotice(errorMessage(error))
+  }
 }
 
-function clearActionableNotifications() {
-  dashboard.value.notifications = dashboard.value.notifications.filter(
-    (notification) => notification.tone === 'info',
-  )
+async function moveTask(task: DashboardTask, status: string) {
+  try {
+    await apiCommand(`/api/tasks/${task.id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    })
+
+    await loadDashboard()
+    selectedTaskId.value = task.id
+    showActionNotice(`Moved "${task.title}" to ${displayStatus(status)}.`)
+  } catch (error) {
+    showActionNotice(errorMessage(error))
+  }
+}
+
+async function submitComment() {
+  const task = selectedTask.value
+  const content = newComment.value.trim()
+  if (!task || !content) return
+
+  try {
+    await apiResult<CommentDto>('/api/comments', {
+      method: 'POST',
+      body: JSON.stringify({
+        taskItemId: task.id,
+        content,
+      }),
+    })
+
+    newComment.value = ''
+    await loadComments(task.id)
+    await loadDashboard()
+  } catch (error) {
+    showActionNotice(errorMessage(error))
+  }
+}
+
+async function uploadAttachment(event: Event) {
+  const task = selectedTask.value
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!task || !file) return
+
+  const formData = new FormData()
+  formData.append('file', file)
+
+  try {
+    await apiResult<AttachmentDto>(`/api/attachments/task/${task.id}`, {
+      method: 'POST',
+      body: formData,
+    })
+
+    input.value = ''
+    await loadAttachments(task.id)
+    await loadDashboard()
+    showActionNotice(`Uploaded "${file.name}".`)
+  } catch (error) {
+    showActionNotice(errorMessage(error))
+  }
+}
+
+async function deleteAttachment(attachment: AttachmentDto) {
+  const taskId = selectedTask.value?.id
+
+  try {
+    await apiCommand(`/api/attachments/${attachment.id}`, { method: 'DELETE' })
+    if (taskId) await loadAttachments(taskId)
+    await loadDashboard()
+    showActionNotice(`Deleted "${attachment.fileName}".`)
+  } catch (error) {
+    showActionNotice(errorMessage(error))
+  }
+}
+
+async function dismissNotification(notificationId: string) {
+  notifications.value = notifications.value.filter((notification) => notification.id !== notificationId)
+  dashboard.value.notifications = dashboard.value.notifications.filter((notification) => notification.id !== notificationId)
+
+  if (isGuid(notificationId)) {
+    try {
+      await apiCommand(`/api/notifications/${notificationId}/read`, { method: 'PATCH' })
+    } catch (error) {
+      console.warn('Could not mark notification as read.', error)
+    }
+  }
+}
+
+async function clearActionableNotifications() {
+  notifications.value = []
+  dashboard.value.notifications = dashboard.value.notifications.filter((notification) => notification.tone === 'info')
   notificationsOpen.value = false
+
+  try {
+    await apiCommand('/api/notifications/read-all', { method: 'PATCH' })
+  } catch (error) {
+    console.warn('Could not mark notifications as read.', error)
+  }
+}
+
+async function logout() {
+  try {
+    await apiCommand('/api/auth/logout', { method: 'POST' })
+  } finally {
+    window.location.href = '/Account/Login'
+  }
 }
 
 function openChatWithPrompt(prompt?: string) {
   chatOpen.value = true
-
-  if (prompt) {
-    submitChat(prompt)
-  } else {
-    void scrollChatToBottom()
-  }
+  if (prompt) void submitChat(prompt)
+  else void scrollChatToBottom()
 }
 
-function submitChat(explicitPrompt?: string) {
+async function submitChat(explicitPrompt?: string) {
   const prompt = (explicitPrompt ?? chatDraft.value).trim()
+  if (!prompt || isAssistantThinking.value) return
 
-  if (!prompt) {
-    return
-  }
-
-  if (isAssistantThinking.value) {
-    return
-  }
-
-  chatMessages.value.push({
-    id: `user-${Date.now()}`,
-    role: 'user',
-    text: prompt,
-  })
-
+  chatMessages.value.push({ id: `user-${Date.now()}`, role: 'user', text: prompt })
   chatDraft.value = ''
   isAssistantThinking.value = true
 
-  if (assistantThinkingTimer) {
-    window.clearTimeout(assistantThinkingTimer)
-  }
-
-  assistantThinkingTimer = window.setTimeout(() => {
-    chatMessages.value.push({
-      id: `assistant-${Date.now()}`,
-      role: 'assistant',
-      text: createAssistantReply(prompt),
+  try {
+    const response = await apiJson<{ reply: string }>('/api/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify({
+        message: prompt,
+        projectId: selectedProject.value?.id ?? null,
+      }),
     })
+
+    chatMessages.value.push({ id: `assistant-${Date.now()}`, role: 'assistant', text: response.reply })
+  } catch (error) {
+    chatMessages.value.push({ id: `assistant-${Date.now()}`, role: 'assistant', text: createAssistantReply(prompt) })
+  } finally {
     isAssistantThinking.value = false
-  }, 850)
+  }
 }
 
 async function scrollChatToBottom() {
   await nextTick()
-  chatBodyRef.value?.scrollTo({
-    top: chatBodyRef.value.scrollHeight,
-    behavior: 'smooth',
+  chatBodyRef.value?.scrollTo({ top: chatBodyRef.value.scrollHeight, behavior: 'smooth' })
+}
+
+async function apiJson<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const headers = new Headers(options.headers)
+
+  if (options.body && !(options.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json')
+  }
+
+  headers.set('Accept', 'application/json')
+
+  const response = await fetch(url, {
+    credentials: 'same-origin',
+    ...options,
+    headers,
   })
+
+  if (response.status === 401) {
+    window.location.href = `/Account/Login?returnUrl=${encodeURIComponent(window.location.pathname)}`
+    throw new Error('Authentication required.')
+  }
+
+  const text = await response.text()
+  const payload = text ? JSON.parse(text) : null
+
+  if (!response.ok) {
+    throw new Error(payload?.error ?? `Request failed with status ${response.status}`)
+  }
+
+  return payload as T
+}
+
+async function apiResult<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const result = await apiJson<ApiResult<T>>(url, options)
+  if (!result.isSuccess || result.data == null) {
+    throw new Error(result.error ?? 'Request failed.')
+  }
+
+  return result.data
+}
+
+async function apiCommand(url: string, options: RequestInit = {}) {
+  const result = await apiJson<ApiResult<unknown> | { ok: boolean }>(url, options)
+
+  if ('isSuccess' in result && !result.isSuccess) {
+    throw new Error(result.error ?? 'Request failed.')
+  }
+}
+
+function tasksByStatus(status: string) {
+  return selectedProjectTasks.value.filter((task) => task.status === status)
+}
+
+function nextStatuses(status: string) {
+  switch (status) {
+    case 'Todo':
+      return ['InProgress']
+    case 'InProgress':
+      return ['InReview', 'Done']
+    case 'InReview':
+      return ['InProgress', 'Done']
+    case 'Done':
+      return ['InReview']
+    default:
+      return ['Todo']
+  }
+}
+
+function clearProjectForm() {
+  projectName.value = ''
+  projectDescription.value = ''
+  projectEndDate.value = ''
+}
+
+function clearTaskForm() {
+  newTaskTitle.value = ''
+  newTaskDescription.value = ''
+  newTaskPriority.value = 'Medium'
+  newTaskAssigneeId.value = ''
+  newTaskDueDate.value = ''
 }
 
 function createAssistantReply(prompt: string) {
   const query = prompt.toLowerCase()
   const project = selectedProject.value
 
-  if (query.includes('rủi ro') || query.includes('risk')) {
-    return `${overdueTasks.value} công việc đang quá hạn trên toàn workspace. Dự án nên xem trước là ${project ? displayText(project.name) : 'dự án có nhiều việc quá hạn nhất'}.`
+  const keywords = [
+    'risk', 'rủi ro', 'rui ro', 'summary', 'tóm tắt', 'tom tat', 'overdue', 'quá hạn', 'qua han',
+    'priority', 'ưu tiên', 'u tien', 'assignment', 'phân công', 'phan cong', 'task', 'công việc', 'cong viec',
+    'project', 'dự án', 'du an', 'status', 'trạng thái', 'trang thai', 'deadline', 'hạn', 'han chot',
+    'progress', 'tiến độ', 'tien do', 'member', 'thành viên', 'thanh vien', 'done', 'hoàn thành', 'hoan thanh',
+    'todo', 'cần làm', 'can lam', 'doing', 'đang làm', 'dang lam'
+  ]
+  const isRelevant = keywords.some(k => query.includes(k))
+
+  if (!isRelevant) {
+    return 'Tao đéo biết'
   }
 
-  if (query.includes('ưu tiên') || query.includes('priority')) {
-    const task = selectedOpenTasks.value[0]
-    return task
-      ? `Nên ưu tiên "${displayText(task.title)}" vì đây là việc mở gần nhất trong ${displayText(project?.name)}.`
-      : 'Không có công việc mở trong dự án đang chọn.'
+  if (query.includes('risk') || query.includes('rủi ro') || query.includes('rui ro')) {
+    return `${overdueTasks.value} tasks are overdue across the workspace. Review ${project?.name ?? 'the highest-risk project'} first.`
   }
 
-  return selectedProjectSummary.value
+  const task = selectedProjectTasks.value.find((item) => item.status !== 'Done')
+  return task ? `Next candidate: "${task.title}" in ${project?.name}.` : selectedProjectSummary.value
 }
 
 function showActionNotice(message: string) {
   actionNotice.value = message
 
-  if (actionNoticeTimer) {
-    window.clearTimeout(actionNoticeTimer)
-  }
-
+  if (actionNoticeTimer) window.clearTimeout(actionNoticeTimer)
   actionNoticeTimer = window.setTimeout(() => {
     actionNotice.value = ''
-  }, 3000)
-}
-
-function normalizeStatus(status: string) {
-  return status === 'InProgress' ? 'InProgress' : status === 'Done' ? 'Done' : 'Todo'
-}
-
-function isTaskOverdue(task: { dueDate: string | null; status: string }) {
-  return Boolean(task.dueDate) && new Date(task.dueDate as string).getTime() < Date.now() && normalizeStatus(task.status) !== 'Done'
-}
-
-function displayText(value: string | null | undefined) {
-  if (!value) {
-    return ''
-  }
-
-  return knownTextMap[value] ?? value
-}
-
-function displayName(value: string | null | undefined) {
-  return displayText(value)
+  }, 3800)
 }
 
 function displayStatus(status: string | null | undefined) {
   switch (status) {
     case 'Active':
-      return 'Đang chạy'
+      return 'Active'
     case 'InProgress':
-      return 'Đang làm'
+      return 'In progress'
+    case 'InReview':
+      return 'In review'
     case 'Done':
-      return 'Hoàn tất'
+      return 'Done'
     case 'Planned':
-      return 'Đã lên kế hoạch'
+      return 'Planned'
     case 'Archived':
-      return 'Lưu trữ'
+      return 'Archived'
     case 'Todo':
-      return 'Cần làm'
+      return 'Todo'
+    case 'Cancelled':
+      return 'Cancelled'
     default:
-      return status ? displayText(status) : 'Không xác định'
+      return status || 'Unknown'
   }
 }
 
 function displayRole(role: string | null | undefined) {
-  switch (role) {
-    case 'Admin':
-      return 'Quản trị viên'
-    case 'Member':
-      return 'Thành viên'
-    default:
-      return role ? displayText(role) : ''
-  }
+  return role === 'Admin' ? 'Admin' : role === 'Member' ? 'Member' : role || ''
 }
 
 function statusTone(status: string) {
@@ -545,21 +789,25 @@ function statusTone(status: string) {
 }
 
 function formatDate(value: string | null) {
-  if (!value) {
-    return 'Chưa có ngày'
-  }
+  if (!value) return 'No date'
 
-  return new Intl.DateTimeFormat('vi-VN', {
+  return new Intl.DateTimeFormat('en', {
     month: 'short',
     day: 'numeric',
   }).format(new Date(value))
 }
 
 function formatTime(value: string) {
-  return new Intl.DateTimeFormat('vi-VN', {
+  return new Intl.DateTimeFormat('en', {
     hour: 'numeric',
     minute: '2-digit',
   }).format(new Date(value))
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
 function initials(name: string) {
@@ -571,8 +819,30 @@ function initials(name: string) {
     .join('')
 }
 
+function isTaskOverdue(task: { dueDate: string | null; status: string }) {
+  return Boolean(task.dueDate) && new Date(task.dueDate as string).getTime() < Date.now() && task.status !== 'Done'
+}
+
 function notificationClass(notification: DashboardNotification) {
   return `notice notice--${notification.tone}`
+}
+
+function toDashboardNotification(notification: NotificationDto): DashboardNotification {
+  return {
+    id: notification.id,
+    title: notification.type,
+    message: notification.message,
+    tone: notification.type === 'DueDateReminder' ? 'critical' : notification.type === 'Info' ? 'info' : 'warning',
+    createdAt: notification.createdAt,
+  }
+}
+
+function isGuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'Request failed.'
 }
 </script>
 
@@ -584,39 +854,40 @@ function notificationClass(notification: DashboardNotification) {
     :notification-count="notificationCount"
     :using-fallback="usingFallback"
     :team-initials="teamMiniMembers.map((member) => member.initials)"
-    user-name="Quan tri vien"
-    user-initials="QT"
+    :user-name="currentUser?.fullName ?? 'Qaly user'"
+    :user-initials="initials(currentUser?.fullName ?? 'QU')"
     @navigate="scrollToSection"
     @create="openCreateProject"
     @notifications="notificationsOpen = !notificationsOpen"
     @assistant="openChatWithPrompt()"
   >
-    <div class="dashboard-scroll dashboard-scroll--embedded no-scrollbar">
+    <div v-if="!viewingProjectDetails" class="dashboard-scroll dashboard-scroll--embedded no-scrollbar">
       <div class="dashboard-main project-home-main no-scrollbar">
-        <!-- Project-focused homepage: summary, controls, project list, then lightweight secondary context. -->
         <header class="home-topbar">
           <div class="topbar-title">
             <div>
-              <span>Project management</span>
-              <h1>Quan ly du an</h1>
-              <p>{{ isLoading ? 'Dang dong bo du lieu...' : selectedProjectSummary }}</p>
+              <span>Workspace</span>
+              <h1>Qaly project cockpit</h1>
+              <p>{{ isLoading ? 'Syncing live data...' : 'Select a project to view detailed work.' }}</p>
             </div>
           </div>
 
           <button class="secondary-button" type="button" @click="openChatWithPrompt()">
             <ChatbotAvatar size="launcher" />
-            <span>Tro ly Qaly</span>
+            <span>Qaly assistant</span>
           </button>
+          <button class="text-button" type="button" @click="logout">Sign out</button>
         </header>
+
         <DashboardSummaryCards id="overview" :cards="summaryCards" />
 
         <section id="projects" class="project-workspace glass-card">
           <div class="project-workspace__header">
             <div>
-              <span>Dự án</span>
-              <h2>Danh sách dự án</h2>
+              <span>Projects</span>
+              <h2>Project portfolio</h2>
             </div>
-            <p>{{ filteredProjects.length }} trong {{ projects.length }} dự án</p>
+            <p>{{ filteredProjects.length }} of {{ projects.length }} projects</p>
           </div>
 
           <ProjectToolbar
@@ -627,20 +898,23 @@ function notificationClass(notification: DashboardNotification) {
             @create="openCreateProject"
           />
 
-          <form v-if="createProjectOpen" class="project-inline-form" @submit.prevent="createProject">
-            <input v-model="newProjectName" type="text" placeholder="Tên dự án mới..." />
-            <button class="primary-button primary-button--compact" type="submit" :disabled="!newProjectName.trim()">
-              Tạo
+          <form v-if="createProjectOpen" class="project-inline-form project-inline-form--stacked" @submit.prevent="createProject">
+            <input v-model="projectName" type="text" placeholder="Project name" />
+            <input v-model="projectDescription" type="text" placeholder="Short description" />
+            <input v-model="projectEndDate" type="date" />
+            <button class="primary-button primary-button--compact" type="submit" :disabled="!projectName.trim()">
+              Create
             </button>
-            <button class="text-button" type="button" @click="createProjectOpen = false">Hủy</button>
+            <button class="text-button" type="button" @click="createProjectOpen = false">Cancel</button>
           </form>
 
-          <form v-if="projectBeingEditedId" class="project-inline-form" @submit.prevent="saveProjectEdit">
-            <input v-model="editProjectName" type="text" aria-label="Tên dự án" />
+          <form v-if="projectBeingEditedId" class="project-inline-form project-inline-form--stacked" @submit.prevent="saveProjectEdit">
+            <input v-model="editProjectName" type="text" aria-label="Project name" />
+            <input v-model="editProjectDescription" type="text" aria-label="Project description" />
             <button class="primary-button primary-button--compact" type="submit" :disabled="!editProjectName.trim()">
-              Lưu
+              Save
             </button>
-            <button class="text-button" type="button" @click="projectBeingEditedId = null">Hủy</button>
+            <button class="text-button" type="button" @click="projectBeingEditedId = null">Cancel</button>
           </form>
 
           <ProjectList
@@ -651,54 +925,193 @@ function notificationClass(notification: DashboardNotification) {
             @delete="deleteProject"
           />
         </section>
+      </div>
+    </div>
 
-        <section class="home-secondary-grid">
-          <section id="tasks" class="task-snapshot glass-card">
+    <div v-else class="dashboard-scroll dashboard-scroll--embedded no-scrollbar">
+      <div class="dashboard-main project-home-main no-scrollbar">
+        <header class="home-topbar">
+          <div class="topbar-title">
+            <button class="text-button" type="button" style="padding-left: 0; margin-right: 12px; font-size: 1.2rem;" @click="closeProjectDetails">←</button>
+            <div>
+              <span>Project Details</span>
+              <h1>{{ selectedProject?.name }}</h1>
+              <p>{{ selectedProjectSummary }}</p>
+            </div>
+          </div>
+
+          <nav class="task-tabs">
+            <button
+              v-for="tab in tabs"
+              :key="tab.id"
+              type="button"
+              :class="{ 'is-active': activeProjectTab === tab.id }"
+              @click="activeProjectTab = tab.id"
+            >
+              {{ tab.label }}
+            </button>
+          </nav>
+
+          <button class="secondary-button" type="button" @click="openChatWithPrompt()">
+            <ChatbotAvatar size="launcher" />
+            <span>Assistant</span>
+          </button>
+        </header>
+
+        <div v-if="activeProjectTab === 'tasks'">
+          <section id="tasks" class="task-board-shell glass-card">
             <div class="panel-heading">
               <div>
-                <span>Công việc</span>
-                <h2>{{ selectedProject ? displayText(selectedProject.name) : 'Dự án đang chọn' }}</h2>
+                <span>Tasks</span>
+                <h2>Board</h2>
               </div>
-              <span class="count-pill">{{ selectedOpenTasks.length }}</span>
+              <button class="primary-button primary-button--compact" type="button" @click="createTaskOpen = !createTaskOpen">
+                <Plus :size="16" />
+                <span>Task</span>
+              </button>
             </div>
 
-            <div class="task-snapshot-list">
-              <article v-for="task in selectedOpenTasks" :key="task.id" class="task-snapshot-row">
-                <div>
-                  <strong>{{ displayText(task.title) }}</strong>
-                  <p>{{ task.assigneeName ? displayName(task.assigneeName) : 'Chưa giao' }} - {{ formatDate(task.dueDate) }}</p>
+            <form v-if="createTaskOpen" class="task-create-form" @submit.prevent="createTask">
+              <input v-model="newTaskTitle" type="text" placeholder="Task title" />
+              <input v-model="newTaskDescription" type="text" placeholder="Description" />
+              <select v-model="newTaskPriority" aria-label="Priority">
+                <option v-for="priority in priorities" :key="priority" :value="priority">{{ priority }}</option>
+              </select>
+              <select v-model="newTaskAssigneeId" aria-label="Assignee">
+                <option value="">Unassigned</option>
+                <option v-for="user in users" :key="user.id" :value="user.id">{{ user.fullName }}</option>
+              </select>
+              <input v-model="newTaskDueDate" type="date" />
+              <button class="primary-button primary-button--compact" type="submit" :disabled="!newTaskTitle.trim()">Create</button>
+            </form>
+
+            <div class="kanban-board">
+              <section v-for="status in statusColumns" :key="status" class="kanban-column">
+                <div class="kanban-column__header">
+                  <strong>{{ displayStatus(status) }}</strong>
+                  <span>{{ tasksByStatus(status).length }}</span>
                 </div>
-                <span>{{ displayStatus(task.status) }}</span>
-              </article>
-              <div v-if="selectedOpenTasks.length === 0" class="empty-state">Dự án này không còn công việc đang mở.</div>
+
+                <article
+                  v-for="task in tasksByStatus(status)"
+                  :key="task.id"
+                  class="kanban-card"
+                  :class="{ 'is-selected': selectedTask?.id === task.id }"
+                  @click="selectedTaskId = task.id"
+                >
+                  <div class="kanban-card__top">
+                    <strong>{{ task.title }}</strong>
+                    <span :class="`priority priority--${task.priority.toLowerCase()}`">{{ task.priority }}</span>
+                  </div>
+                  <p>{{ task.assigneeName || 'Unassigned' }} - {{ formatDate(task.dueDate) }}</p>
+                  <div class="kanban-card__meta">
+                    <span>{{ task.commentCount }} comments</span>
+                    <span v-if="task.isPrivate">Private</span>
+                    <span v-if="isTaskOverdue(task)" class="project-risk">Overdue</span>
+                  </div>
+                  <div class="kanban-card__actions">
+                    <button
+                      v-for="nextStatus in nextStatuses(task.status)"
+                      :key="nextStatus"
+                      type="button"
+                      @click.stop="moveTask(task, nextStatus)"
+                    >
+                      {{ displayStatus(nextStatus) }}
+                    </button>
+                  </div>
+                </article>
+
+                <div v-if="tasksByStatus(status).length === 0" class="empty-state">No tasks</div>
+              </section>
             </div>
           </section>
 
+          <section class="task-detail-panel glass-card" style="margin-top: 24px;">
+            <div class="panel-heading">
+              <div>
+                <span>Task detail</span>
+                <h2>{{ selectedTask?.title ?? 'No task selected' }}</h2>
+              </div>
+              <MessageSquare :size="18" />
+            </div>
+
+            <div v-if="selectedTask" class="comment-list">
+              <div class="attachment-panel">
+                <div class="attachment-panel__header">
+                  <strong>Attachments</strong>
+                  <label class="attachment-upload">
+                    <input type="file" @change="uploadAttachment" />
+                    <span>Upload</span>
+                  </label>
+                </div>
+                <article v-for="attachment in attachments" :key="attachment.id" class="attachment-row">
+                  <div>
+                    <strong>{{ attachment.fileName }}</strong>
+                    <span>{{ formatFileSize(attachment.fileSize) }} - {{ attachment.uploadedByName }}</span>
+                  </div>
+                  <button type="button" @click="deleteAttachment(attachment)">Delete</button>
+                </article>
+                <div v-if="attachments.length === 0" class="empty-state">No attachments.</div>
+              </div>
+
+              <article v-for="comment in comments" :key="comment.id" class="comment-row">
+                <strong>{{ comment.authorName }}</strong>
+                <p>{{ comment.content }}</p>
+                <span>{{ formatTime(comment.createdAt) }}</span>
+              </article>
+              <div v-if="comments.length === 0" class="empty-state">No comments yet.</div>
+
+              <form class="comment-form" @submit.prevent="submitComment">
+                <input v-model="newComment" type="text" placeholder="Add a comment..." />
+                <button class="primary-button primary-button--compact" type="submit" :disabled="!newComment.trim()">
+                  <Send :size="15" />
+                </button>
+              </form>
+            </div>
+
+            <div v-else class="empty-state">Select a task from the board.</div>
+          </section>
+        </div>
+
+        <div v-if="activeProjectTab === 'team'">
           <TeamMiniSection id="team" :members="teamMiniMembers" />
-        </section>
+        </div>
+
+        <div v-if="activeProjectTab === 'wiki'">
+          <section class="glass-card panel-heading" style="padding: 24px;">
+            <div>
+              <span>Project Wiki</span>
+              <h2>{{ selectedProject?.name }} Documentation</h2>
+            </div>
+            <div class="empty-state" style="margin-top: 20px;">
+              <p>Project Wiki is currently under development. You will soon be able to manage your project documentation here.</p>
+            </div>
+          </section>
+        </div>
       </div>
+    </div>
 
       <div v-if="notificationsOpen" class="notification-popover glass-card home-notification-popover">
         <div class="panel-heading">
           <div>
-            <span>Thông báo</span>
-            <h2>Tín hiệu hiện tại</h2>
+            <span>Notifications</span>
+            <h2>Current signals</h2>
           </div>
           <div class="popover-actions">
-            <button class="text-button" type="button" @click="clearActionableNotifications">Đã đọc</button>
+            <button class="text-button" type="button" @click="clearActionableNotifications">Read all</button>
             <button class="icon-button icon-button--small" type="button" @click="notificationsOpen = false">
               <X :size="16" />
             </button>
           </div>
         </div>
         <article
-          v-for="notification in dashboard.notifications.slice(0, 4)"
+          v-for="notification in notificationItems.slice(0, 6)"
           :key="notification.id"
           :class="notificationClass(notification)"
         >
           <div class="notice__top">
             <strong>{{ notification.title }}</strong>
-            <button type="button" aria-label="Ẩn thông báo" @click="dismissNotification(notification.id)">
+            <button type="button" aria-label="Dismiss notification" @click="dismissNotification(notification.id)">
               <X :size="14" />
             </button>
           </div>
@@ -706,17 +1119,16 @@ function notificationClass(notification: DashboardNotification) {
           <span>{{ formatTime(notification.createdAt) }}</span>
         </article>
       </div>
-    </div>
 
     <div v-if="actionNotice" class="action-toast">{{ actionNotice }}</div>
 
-      <aside class="chat-drawer glass-card" :class="{ 'is-open': chatOpen }">
-        <div class="chat-drawer__header">
+    <aside class="chat-drawer glass-card" :class="{ 'is-open': chatOpen }">
+      <div class="chat-drawer__header">
         <div class="chat-drawer__identity">
           <ChatbotAvatar size="medium" />
           <div>
-            <span>Trợ lý AI</span>
-            <h2>Trợ lý Qaly</h2>
+            <span>AI assistant</span>
+            <h2>Qaly assistant</h2>
           </div>
         </div>
         <button class="icon-button" type="button" @click="chatOpen = false">
@@ -735,18 +1147,18 @@ function notificationClass(notification: DashboardNotification) {
             <ChatbotAvatar size="small" />
           </div>
 
-          <div class="chat-bubble" :class="`chat-bubble--${message.role}`">
-            {{ message.text }}
-          </div>
+          <div class="chat-bubble" :class="`chat-bubble--${message.role}`">{{ message.text }}</div>
 
-          <div v-if="message.role === 'user'" class="chat-avatar chat-avatar--user" aria-hidden="true">QT</div>
+          <div v-if="message.role === 'user'" class="chat-avatar chat-avatar--user" aria-hidden="true">
+            {{ initials(currentUser?.fullName ?? 'QU') }}
+          </div>
         </article>
 
         <article v-if="isAssistantThinking" class="chat-message chat-message--assistant">
           <div class="chat-avatar chat-avatar--robot is-thinking" aria-hidden="true">
             <ChatbotAvatar size="small" />
           </div>
-          <div class="chat-bubble chat-bubble--assistant chat-bubble--thinking" aria-label="Trợ lý đang suy nghĩ">
+          <div class="chat-bubble chat-bubble--assistant chat-bubble--thinking" aria-label="Assistant is thinking">
             <span></span>
             <span></span>
             <span></span>
@@ -768,8 +1180,8 @@ function notificationClass(notification: DashboardNotification) {
       </div>
 
       <form class="chat-drawer__composer" @submit.prevent="submitChat()">
-        <input v-model="chatDraft" type="text" :disabled="isAssistantThinking" placeholder="Hỏi về dự án, rủi ro, ưu tiên..." />
-        <button class="primary-button" type="submit" :disabled="isAssistantThinking || !chatDraft.trim()">Hỏi</button>
+        <input v-model="chatDraft" type="text" :disabled="isAssistantThinking" placeholder="Ask about risk, priority, work..." />
+        <button class="primary-button" type="submit" :disabled="isAssistantThinking || !chatDraft.trim()">Ask</button>
       </form>
     </aside>
   </AppShell>

@@ -13,13 +13,15 @@ public static class DependencyInjection
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
         // Services
+        services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IUserService, UserService>();
         services.AddScoped<IProjectService, ProjectService>();
         services.AddScoped<ITaskService, TaskService>();
+        services.AddScoped<ICommentService, CommentService>();
+        services.AddScoped<IAttachmentService, AttachmentService>();
+        services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IAiService, AiService>();
-        
-        // services.AddScoped<ICommentService, CommentService>();
-        // services.AddScoped<INotificationService, NotificationService>();
-        // services.AddScoped<IAuditLogService, AuditLogService>();
+        services.AddSingleton<INotificationPublisher, NullNotificationPublisher>();
 
         return services;
     }

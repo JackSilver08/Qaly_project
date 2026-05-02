@@ -21,8 +21,20 @@ export default defineConfig({
         entryFileNames: `assets/[name].js`,
         chunkFileNames: `assets/[name].js`,
         assetFileNames: `assets/[name].[ext]`
-      }
-    },
+      },
+      onwarn(warning, warn) {
+  const message = warning.message || ''
+
+  if (
+    message.includes('/*#__PURE__*/') &&
+    message.includes('@microsoft/signalr')
+  ) {
+    return
+  }
+
+  warn(warning)
+}
+    }
   },
   server: {
     port: 5173,

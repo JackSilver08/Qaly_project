@@ -1,3 +1,4 @@
+using Qaly.Application.DTOs.Attachment;
 using Qaly.Application.DTOs.Comment;
 using Qaly.Application.DTOs.Project;
 using Qaly.Application.DTOs.Task;
@@ -108,4 +109,16 @@ public static class MappingExtensions
             comment.Author?.AvatarUrl,
             comment.CreatedAt,
             comment.UpdatedAt);
+
+    public static TaskAttachmentDto ToDto(this TaskAttachment attachment)
+        => new(
+            attachment.Id,
+            attachment.FileName,
+            attachment.FilePath,
+            attachment.FileSize,
+            attachment.ContentType,
+            attachment.TaskItemId,
+            attachment.UploadedById,
+            attachment.UploadedBy?.FullName ?? string.Empty,
+            attachment.UploadedAt);
 }

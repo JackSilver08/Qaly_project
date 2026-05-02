@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Qaly.Application.Common.Interfaces;
+using Qaly.Application.Services;
 using Qaly.Domain.Interfaces;
 using Qaly.Infrastructure.Data;
 using Qaly.Infrastructure.Data.Repositories;
@@ -33,6 +35,8 @@ public static class DependencyInjection
         // Services
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
+        services.AddScoped<IAuditLogService, AuditLogService>();
+        services.AddScoped<IFileStorageService, LocalFileStorageService>();
 
         return services;
     }
