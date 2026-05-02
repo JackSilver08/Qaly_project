@@ -30,7 +30,12 @@ public class AuthController : ControllerBase
         }
 
         var result = await _authService.GetCurrentUserAsync(userId.Value, ct);
-        return StatusCode(result.StatusCode, result);
+        if (!result.IsSuccess)
+        {
+            return StatusCode(result.StatusCode, result);
+        }
+
+        return Ok(result.Data);
     }
 
     [HttpPost("login")]

@@ -10,7 +10,7 @@
 </head>
 <body>
     @RenderBody()
-    <script type="module" src="~/dist/assets/main.js"></script>
+    <script type="module" src="~/dist/assets/main.js" asp-append-version="true"></script>
     @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>

@@ -118,6 +118,19 @@ if (app.Environment.IsDevelopment())
     using var scope = app.Services.CreateScope();
     var seeder = scope.ServiceProvider.GetRequiredService<DataSeeder>();
     await seeder.SeedAsync();
+
+    // Trigger AI Ingestion Sync
+    var ingestionService = scope.ServiceProvider.GetRequiredService<IAiIngestionService>();
+    try 
+    {
+        Log.Information("Bắt đầu đồng bộ dữ liệu vào Vector Database...");
+        await ingestionService.SyncAllDataAsync();
+        Log.Information("Đồng bộ dữ liệu AI hoàn tất.");
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Không thể đồng bộ dữ liệu AI. Hãy đảm bảo Ollama và Qdrant đang chạy.");
+    }
     
     // OpenAPI UI
     app.MapOpenApi();

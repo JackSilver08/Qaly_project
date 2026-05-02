@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Qaly.Application.Common.Interfaces;
+using Qaly.Application.Services;
 
 namespace Qaly.Web.Controllers;
 
@@ -10,10 +11,19 @@ namespace Qaly.Web.Controllers;
 public class AiController : ControllerBase
 {
     private readonly IAiService _aiService;
+    private readonly IAiIngestionService _ingestionService;
 
-    public AiController(IAiService aiService)
+    public AiController(IAiService aiService, IAiIngestionService ingestionService)
     {
         _aiService = aiService;
+        _ingestionService = ingestionService;
+    }
+
+    [HttpPost("sync")]
+    public async Task<IActionResult> Sync()
+    {
+        await _ingestionService.SyncAllDataAsync();
+        return Ok(new { message = "Đã hoàn thành đồng bộ dữ liệu vào Vector Database." });
     }
 
     [HttpPost("priority")]
@@ -50,6 +60,38 @@ public class AiController : ControllerBase
     [HttpPost("chat")]
     public async Task<IActionResult> Chat(AiChatRequest request)
         => Ok(new { reply = await _aiService.ChatAsync(request.Message, request.ProjectId) });
+
+    [HttpPost("chat/stream")]
+    public async Task ChatStreaming(AiChatRequest request)
+    {
+        Response.ContentType = "text/plain";
+        await foreach (var token in _aiService.ChatStreamingAsync(request.Message, request.ProjectId))
+        {
+            await Response.WriteAsync(token);
+            await Response.Body.FlushAsync();
+        }
+    }
+
+    [HttpGet("export/{projectId:guid}")]
+    public async Task<IActionResult> Export(Guid projectId, [FromQuery] string format = "excel")
+    {
+        // This is a simplified export endpoint. In a real app, we'd use the service.
+        // For now, let's just implement the Excel part.
+        var project = await _aiService.GetProjectWithTasksAsync(projectId);
+        if (project == null) return NotFound();
+
+        var exportService = HttpContext.RequestServices.GetRequiredService<IAiExportService>();
+        var bytes = format.ToLower() == "word" 
+            ? await exportService.ExportProjectToWordAsync(project)
+            : await exportService.ExportProjectToExcelAsync(project);
+
+        var fileName = $"{project.Name}_{DateTime.Now:yyyyMMdd}.{(format.ToLower() == "word" ? "docx" : "xlsx")}";
+        var contentType = format.ToLower() == "word"
+            ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+        return File(bytes, contentType, fileName);
+    }
 }
 
 public sealed record AiPriorityRequest(string Title, string? Description, string? ProjectContext);

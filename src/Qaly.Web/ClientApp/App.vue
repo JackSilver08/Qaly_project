@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { HubConnectionBuilder } from '@microsoft/signalr'
+import MarkdownIt from 'markdown-it'
+import DOMPurify from 'dompurify'
 import {
   ClipboardList,
   FolderKanban,
@@ -130,6 +132,16 @@ function tagProject(project: DashboardProject) {
   showProjectSuggestions.value = false
 }
 
+const markdownRenderer = new (MarkdownIt as any)({
+  html: false,
+  linkify: true,
+  typographer: true
+})
+
+function renderMarkdown(content: string) {
+  return DOMPurify.sanitize(markdownRenderer.render(content))
+}
+
 const isAssistantThinking = ref(false)
 const chatMessages = ref<ChatMessage[]>([
   {
@@ -216,7 +228,7 @@ const projectCards = computed<ProjectCardModel[]>(() =>
     taskCount: project.taskCount,
     overdueTaskCount: project.overdueTaskCount,
     progressPercentage: project.progressPercentage,
-    memberInitials: project.members.slice(0, 4).map(m => initials(m.fullName)),
+    memberInitials: (project.members || []).slice(0, 4).map(m => initials(m.fullName)),
   })),
 )
 
@@ -319,8 +331,33 @@ const notificationCount = computed(
 )
 
 const quickPrompts = computed(() => {
-  const projectName = selectedProject.value?.name ?? 'this workspace'
-  return [`Summarize ${projectName}`, `Analyze risk for ${projectName}`, 'Which task should be next?']
+  const prompts: string[] = []
+  
+  // 1. Gợi ý cho dự án đang chọn
+  if (selectedProject.value) {
+    prompts.push(`Tóm tắt dự án ${selectedProject.value.name}`)
+  }
+
+  // 2. Gợi ý cho dự án MỚI NHẤT
+  const latestProject = [...projects.value]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
+  
+  if (latestProject && latestProject.id !== selectedProject.value?.id) {
+    prompts.push(`Xem dự án mới: ${latestProject.name}`)
+  }
+
+  // 3. Gợi ý dựa trên rủi ro (quá hạn)
+  const highRiskProject = projects.value.find(p => p.overdueTaskCount > 0)
+  if (highRiskProject) {
+    prompts.push(`Phân tích rủi ro ${highRiskProject.name}`)
+  }
+
+  // 4. Gợi ý chung
+  prompts.push('Tôi nên làm gì tiếp theo?')
+  prompts.push('Phân bổ công việc có đều không?')
+
+  // Trả về tối đa 3 gợi ý để đảm bảo giao diện đẹp
+  return prompts.slice(0, 3)
 })
 
 watch(
@@ -818,15 +855,41 @@ async function submitChat(explicitPrompt?: string) {
   }
 
   try {
-    const response = await apiJson<{ reply: string }>('/api/ai/chat', {
+    const assistantMsgId = `assistant-${Date.now()}`
+    chatMessages.value.push({ id: assistantMsgId, role: 'assistant', text: '' })
+    
+    const response = await fetch('/api/ai/chat/stream', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message: prompt,
         projectId: taggedProjectId ?? selectedProject.value?.id ?? null,
       }),
     })
 
-    chatMessages.value.push({ id: `assistant-${Date.now()}`, role: 'assistant', text: response.reply })
+    if (!response.ok) throw new Error('Streaming failed')
+
+    const reader = response.body?.getReader()
+    const decoder = new TextDecoder()
+    let assistantReply = ''
+
+    if (reader) {
+      isAssistantThinking.value = false
+      
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        
+        const chunk = decoder.decode(value, { stream: true })
+        assistantReply += chunk
+        
+        const msgIndex = chatMessages.value.findIndex(m => m.id === assistantMsgId)
+        if (msgIndex !== -1) {
+          chatMessages.value[msgIndex].text = assistantReply
+        }
+        void scrollChatToBottom()
+      }
+    }
   } catch (error) {
     chatMessages.value.push({ id: `assistant-${Date.now()}`, role: 'assistant', text: createAssistantReply(prompt) })
   } finally {
