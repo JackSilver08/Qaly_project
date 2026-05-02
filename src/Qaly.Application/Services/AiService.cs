@@ -230,7 +230,7 @@ public class AiService : IAiService
             "priority", "ưu tiên", "u tien", "assignment", "phân công", "phan cong", "task", "công việc", "cong viec", 
             "project", "dự án", "du an", "status", "trạng thái", "trang thai", "deadline", "hạn", "han chot", 
             "progress", "tiến độ", "tien do", "member", "thành viên", "thanh vien", "done", "hoàn thành", "hoan thanh",
-            "todo", "cần làm", "can lam", "doing", "đang làm", "dang lam"
+            "todo", "cần làm", "can lam", "doing", "đang làm", "dang lam", "ai", "phân tích", "phan tich"
         };
 
         if (!keywords.Any(normalized.Contains))
@@ -238,14 +238,23 @@ public class AiService : IAiService
             return "Tao đéo biết";
         }
 
-        if (projectId.HasValue && (normalized.Contains("risk") || normalized.Contains("rủi ro") || normalized.Contains("rui ro")))
+        if (projectId.HasValue)
         {
-            return await AnalyzeProjectRisksAsync(projectId.Value);
-        }
+            var context = await GetDetailedProjectContextAsync(projectId.Value);
+            
+            if (normalized.Contains("risk") || normalized.Contains("rủi ro") || normalized.Contains("rui ro"))
+                return await AnalyzeProjectRisksAsync(projectId.Value);
+            
+            if (normalized.Contains("summary") || normalized.Contains("tóm tắt") || normalized.Contains("tom tat"))
+                return await GenerateProjectSummaryAsync(projectId.Value);
 
-        if (projectId.HasValue && (normalized.Contains("summary") || normalized.Contains("tóm tắt") || normalized.Contains("tom tat")))
-        {
-            return await GenerateProjectSummaryAsync(projectId.Value);
+            if (normalized.Contains("member") || normalized.Contains("thành viên") || normalized.Contains("thanh vien"))
+                return $"{context.ProjectName} has {context.MemberCount} members: {string.Join(", ", context.Members)}. Owner is {context.OwnerName}.";
+
+            if (normalized.Contains("task") || normalized.Contains("công việc") || normalized.Contains("cong viec"))
+                return $"{context.ProjectName} has {context.TaskCount} total tasks. Recent tasks include: {string.Join(", ", context.RecentTasks.Take(3))}.";
+
+            return $"I have analyzed project \"{context.ProjectName}\". It is currently \"{context.Status}\" with {context.Progress}% completion. What would you like to know about its tasks, risks, or members?";
         }
 
         if (normalized.Contains("overdue") || normalized.Contains("quá hạn") || normalized.Contains("qua han"))
@@ -258,13 +267,45 @@ public class AiService : IAiService
             return $"There are {overdue} overdue open tasks across the workspace.";
         }
 
-        if (projectId.HasValue)
-        {
-            return await GenerateProjectSummaryAsync(projectId.Value);
-        }
-
         return "Ask me about project summary, risk, overdue tasks, priority, or assignment suggestions.";
     }
+
+    private async Task<ProjectDetailedContext> GetDetailedProjectContextAsync(Guid projectId)
+    {
+        var project = await _projectRepo.GetQueryable()
+            .AsNoTracking()
+            .Include(p => p.Owner)
+            .Include(p => p.Members).ThenInclude(m => m.User)
+            .Include(p => p.Tasks)
+            .FirstOrDefaultAsync(p => p.Id == projectId);
+
+        if (project == null) return new ProjectDetailedContext("Unknown", "None", 0, 0, 0, "Unknown", new List<string>(), new List<string>());
+
+        var done = project.Tasks.Count(IsDone);
+        var total = project.Tasks.Count;
+        var progress = total == 0 ? 0 : (int)Math.Round(done * 100d / total);
+
+        return new ProjectDetailedContext(
+            project.Name,
+            project.Status,
+            progress,
+            total,
+            project.Members.Count + 1,
+            project.Owner.FullName,
+            project.Members.Select(m => m.User.FullName).ToList(),
+            project.Tasks.OrderByDescending(t => t.CreatedAt).Select(t => t.Title).ToList()
+        );
+    }
+
+    private record ProjectDetailedContext(
+        string ProjectName,
+        string Status,
+        int Progress,
+        int TaskCount,
+        int MemberCount,
+        string OwnerName,
+        List<string> Members,
+        List<string> RecentTasks);
 
     private static int CountAny(string value, params string[] needles)
         => needles.Count(value.Contains);

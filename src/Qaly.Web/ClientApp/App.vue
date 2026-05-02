@@ -6,6 +6,7 @@ import {
   FolderKanban,
   LayoutDashboard,
   MessageSquare,
+  MoreHorizontal,
   Plus,
   Send,
   Users,
@@ -17,6 +18,10 @@ import DashboardSummaryCards from './components/DashboardSummaryCards.vue'
 import ProjectList from './components/ProjectList.vue'
 import ProjectToolbar from './components/ProjectToolbar.vue'
 import TeamMiniSection from './components/TeamMiniSection.vue'
+import ProjectDetailHeader from './components/ProjectDetailHeader.vue'
+import ProjectStatsTab from './components/ProjectStatsTab.vue'
+import ProjectMembersTab from './components/ProjectMembersTab.vue'
+import ProjectWikiTab from './components/ProjectWikiTab.vue'
 import { fallbackDashboard } from './fallback-dashboard'
 import type { ProjectCardModel, SummaryCardModel, TeamMiniMemberModel } from './components/dashboard-models'
 import type { ShellNavItem } from './components/shell-models'
@@ -66,20 +71,26 @@ const createProjectOpen = ref(false)
 const createTaskOpen = ref(false)
 const projectBeingEditedId = ref<string | null>(null)
 const selectedTaskId = ref<string | null>(null)
+const activeTaskMenu = ref<string | null>(null)
 const activeNavTarget = ref('overview')
+
+function toggleTaskMenu(taskId: string) {
+  activeTaskMenu.value = activeTaskMenu.value === taskId ? null : taskId
+}
 const searchQuery = ref('')
 const projectFilter = ref<ProjectFilter>('all')
 const projectSort = ref<ProjectSort>('recent')
 const activeProjectId = ref<string | null>(null)
 const viewingProjectDetails = ref(false)
-const activeProjectTab = ref('tasks')
+const activeProjectTab = ref('stats')
 const projectName = ref('')
 const projectDescription = ref('')
 const projectEndDate = ref('')
 
 const tabs = [
-  { id: 'tasks', label: 'Tasks' },
-  { id: 'team', label: 'Team' },
+  { id: 'stats', label: 'Thống kê' },
+  { id: 'tasks', label: 'Task' },
+  { id: 'members', label: 'Member' },
   { id: 'wiki', label: 'Wiki' },
 ]
 
@@ -93,7 +104,32 @@ const newTaskDueDate = ref('')
 const newComment = ref('')
 const actionNotice = ref('')
 const chatDraft = ref('')
+const showProjectSuggestions = ref(false)
 const chatBodyRef = ref<HTMLElement | null>(null)
+
+const projectSuggestions = computed(() => {
+  const parts = chatDraft.value.split(' ')
+  const lastPart = parts[parts.length - 1]
+  if (lastPart.startsWith('@')) {
+    const query = lastPart.slice(1).toLowerCase()
+    return projects.value.filter(p => p.name.toLowerCase().includes(query))
+  }
+  return []
+})
+
+watch(chatDraft, (val) => {
+  const parts = val.split(' ')
+  const lastPart = parts[parts.length - 1]
+  showProjectSuggestions.value = lastPart.startsWith('@')
+})
+
+function tagProject(project: DashboardProject) {
+  const parts = chatDraft.value.split(' ')
+  parts[parts.length - 1] = `@${project.name} `
+  chatDraft.value = parts.join(' ')
+  showProjectSuggestions.value = false
+}
+
 const isAssistantThinking = ref(false)
 const chatMessages = ref<ChatMessage[]>([
   {
@@ -173,13 +209,14 @@ const projectCards = computed<ProjectCardModel[]>(() =>
     status: project.status,
     statusLabel: displayStatus(project.status),
     statusTone: statusTone(project.status),
+    ownerId: project.ownerId,
     ownerName: project.ownerName,
     dueDateLabel: project.endDate ? `Due ${formatDate(project.endDate)}` : 'No due date',
     completedTaskCount: project.completedTaskCount,
     taskCount: project.taskCount,
     overdueTaskCount: project.overdueTaskCount,
     progressPercentage: project.progressPercentage,
-    memberInitials: project.memberNames.slice(0, 4).map(initials),
+    memberInitials: project.members.slice(0, 4).map(m => initials(m.fullName)),
   })),
 )
 
@@ -202,6 +239,50 @@ const selectedProjectSummary = computed(() => {
   const project = selectedProject.value
   if (!project) return 'Select a project to inspect its work.'
   return `${project.name}: ${project.completedTaskCount}/${project.taskCount} tasks complete.`
+})
+
+const isProjectAdmin = computed(() => {
+  const project = selectedProject.value
+  const user = currentUser.value
+  if (!project || !user) return false
+  return project.ownerId === user.id
+})
+
+const selectedProjectMembers = computed(() => {
+  const project = selectedProject.value
+  if (!project) return []
+
+  return project.members.map((member) => ({
+    id: member.userId,
+    fullName: member.fullName,
+    role: member.role,
+    email: member.email,
+    initials: initials(member.fullName),
+  }))
+})
+
+const selectedProjectStats = computed(() => {
+  const project = selectedProject.value
+  if (!project) return { total: 0, todo: 0, inProgress: 0, inReview: 0, done: 0, overdue: 0, completionRate: 0 }
+
+  const tasks = project.tasks
+  const total = tasks.length
+  const todo = tasks.filter(t => t.status === 'Todo').length
+  const inProgress = tasks.filter(t => t.status === 'InProgress').length
+  const inReview = tasks.filter(t => t.status === 'InReview').length
+  const done = tasks.filter(t => t.status === 'Done').length
+  const overdue = tasks.filter(t => isTaskOverdue(t)).length
+  const completionRate = total > 0 ? Math.round((done / total) * 100) : 0
+
+  return {
+    total,
+    todo,
+    inProgress,
+    inReview,
+    done,
+    overdue,
+    completionRate
+  }
 })
 
 const teamMiniMembers = computed<TeamMiniMemberModel[]>(() =>
@@ -371,7 +452,7 @@ function selectProject(projectId: string) {
   activeProjectId.value = projectId
   selectedTaskId.value = projects.value.find((project) => project.id === projectId)?.tasks[0]?.id ?? null
   viewingProjectDetails.value = true
-  activeProjectTab.value = 'tasks'
+  activeProjectTab.value = 'stats'
 }
 
 function closeProjectDetails() {
@@ -466,6 +547,11 @@ async function createTask() {
   const title = newTaskTitle.value.trim()
   if (!project || !title) return
 
+  if (taskBeingEdited.value) {
+    await saveTaskEdit()
+    return
+  }
+
   try {
     const task = await apiResult<{ aiPrioritySuggestion: string | null }>('/api/tasks', {
       method: 'POST',
@@ -505,6 +591,56 @@ async function moveTask(task: DashboardTask, status: string) {
   }
 }
 
+const taskBeingEdited = ref<DashboardTask | null>(null)
+
+function beginEditTask(task: DashboardTask) {
+  taskBeingEdited.value = task
+  newTaskTitle.value = task.title
+  newTaskDescription.value = '' // We don't have desc in DashboardTask, but we could load it if needed
+  newTaskPriority.value = task.priority
+  newTaskAssigneeId.value = '' // Need to find assignee ID
+  newTaskDueDate.value = task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : ''
+  createTaskOpen.value = true
+}
+
+async function saveTaskEdit() {
+  if (!taskBeingEdited.value) return
+  
+  try {
+    await apiResult<TaskItemDto>(`/api/tasks/${taskBeingEdited.value.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        title: newTaskTitle.value.trim(),
+        description: newTaskDescription.value.trim() || null,
+        status: taskBeingEdited.value.status,
+        priority: newTaskPriority.value,
+        dueDate: newTaskDueDate.value ? new Date(newTaskDueDate.value).toISOString() : null,
+        assigneeId: newTaskAssigneeId.value || null,
+      }),
+    })
+
+    clearTaskForm()
+    createTaskOpen.value = false
+    taskBeingEdited.value = null
+    await loadDashboard()
+    showActionNotice('Task updated.')
+  } catch (error) {
+    showActionNotice(errorMessage(error))
+  }
+}
+
+async function deleteTask(taskId: string) {
+  if (!confirm('Bạn có chắc chắn muốn xóa task này?')) return
+
+  try {
+    await apiCommand(`/api/tasks/${taskId}`, { method: 'DELETE' })
+    await loadDashboard()
+    showActionNotice('Task deleted.')
+  } catch (error) {
+    showActionNotice(errorMessage(error))
+  }
+}
+
 async function submitComment() {
   const task = selectedTask.value
   const content = newComment.value.trim()
@@ -522,6 +658,65 @@ async function submitComment() {
     newComment.value = ''
     await loadComments(task.id)
     await loadDashboard()
+  } catch (error) {
+    showActionNotice(errorMessage(error))
+  }
+}
+
+async function deleteComment(commentId: string) {
+  if (!confirm('Bạn có chắc chắn muốn xóa bình luận này?')) return
+
+  try {
+    await apiCommand(`/api/comments/${commentId}`, { method: 'DELETE' })
+    if (selectedTask.value) await loadComments(selectedTask.value.id)
+    await loadDashboard()
+    showActionNotice('Comment deleted.')
+  } catch (error) {
+    showActionNotice(errorMessage(error))
+  }
+}
+
+async function addMember(userId: string) {
+  const project = selectedProject.value
+  if (!project) return
+
+  try {
+    await apiCommand(`/api/projects/${project.id}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, role: 'Member' }),
+    })
+    await loadDashboard()
+    showActionNotice('Member added.')
+  } catch (error) {
+    showActionNotice(errorMessage(error))
+  }
+}
+
+async function removeMember(userId: string) {
+  const project = selectedProject.value
+  if (!project) return
+  if (!confirm('Bạn có chắc chắn muốn xóa thành viên này khỏi dự án?')) return
+
+  try {
+    await apiCommand(`/api/projects/${project.id}/members/${userId}`, { method: 'DELETE' })
+    await loadDashboard()
+    showActionNotice('Member removed.')
+  } catch (error) {
+    showActionNotice(errorMessage(error))
+  }
+}
+
+async function updateMemberRole(userId: string, role: string) {
+  const project = selectedProject.value
+  if (!project) return
+
+  try {
+    await apiCommand(`/api/projects/${project.id}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, role }),
+    })
+    await loadDashboard()
+    showActionNotice(`Updated role to ${role}.`)
   } catch (error) {
     showActionNotice(errorMessage(error))
   }
@@ -611,12 +806,23 @@ async function submitChat(explicitPrompt?: string) {
   chatDraft.value = ''
   isAssistantThinking.value = true
 
+  // Extract project ID if tagged with @
+  let taggedProjectId: string | null = null
+  const tagMatch = prompt.match(/@([\w\s]+)/)
+  if (tagMatch) {
+    const taggedName = tagMatch[1].trim().toLowerCase()
+    const project = projects.value.find(p => p.name.toLowerCase() === taggedName)
+    if (project) {
+      taggedProjectId = project.id
+    }
+  }
+
   try {
     const response = await apiJson<{ reply: string }>('/api/ai/chat', {
       method: 'POST',
       body: JSON.stringify({
         message: prompt,
-        projectId: selectedProject.value?.id ?? null,
+        projectId: taggedProjectId ?? selectedProject.value?.id ?? null,
       }),
     })
 
@@ -930,33 +1136,34 @@ function errorMessage(error: unknown) {
 
     <div v-else class="dashboard-scroll dashboard-scroll--embedded no-scrollbar">
       <div class="dashboard-main project-home-main no-scrollbar">
-        <header class="home-topbar">
-          <div class="topbar-title">
-            <button class="text-button" type="button" style="padding-left: 0; margin-right: 12px; font-size: 1.2rem;" @click="closeProjectDetails">←</button>
-            <div>
-              <span>Project Details</span>
-              <h1>{{ selectedProject?.name }}</h1>
-              <p>{{ selectedProjectSummary }}</p>
-            </div>
-          </div>
+        <ProjectDetailHeader
+          v-if="selectedProject"
+          :project-name="selectedProject.name"
+          :description="selectedProject.description"
+          :status-label="displayStatus(selectedProject.status)"
+          :status-tone="statusTone(selectedProject.status)"
+          :progress-label="`${selectedProject.completedTaskCount}/${selectedProject.taskCount} task hoàn thành`"
+          :progress-percentage="selectedProject.progressPercentage"
+          @back="closeProjectDetails"
+          @assistant="openChatWithPrompt()"
+        />
 
-          <nav class="task-tabs">
-            <button
-              v-for="tab in tabs"
-              :key="tab.id"
-              type="button"
-              :class="{ 'is-active': activeProjectTab === tab.id }"
-              @click="activeProjectTab = tab.id"
-            >
-              {{ tab.label }}
-            </button>
-          </nav>
-
-          <button class="secondary-button" type="button" @click="openChatWithPrompt()">
-            <ChatbotAvatar size="launcher" />
-            <span>Assistant</span>
+        <nav class="project-tabs glass-card">
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            type="button"
+            class="tab-link"
+            :class="{ 'is-active': activeProjectTab === tab.id }"
+            @click="activeProjectTab = tab.id"
+          >
+            {{ tab.label }}
           </button>
-        </header>
+        </nav>
+
+        <div v-if="activeProjectTab === 'stats'" class="tab-pane reveal">
+          <ProjectStatsTab :stats="selectedProjectStats" />
+        </div>
 
         <div v-if="activeProjectTab === 'tasks'">
           <section id="tasks" class="task-board-shell glass-card">
@@ -1001,7 +1208,20 @@ function errorMessage(error: unknown) {
                 >
                   <div class="kanban-card__top">
                     <strong>{{ task.title }}</strong>
-                    <span :class="`priority priority--${task.priority.toLowerCase()}`">{{ task.priority }}</span>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <span :class="`priority priority--${task.priority.toLowerCase()}`">{{ task.priority }}</span>
+                      
+                      <!-- Task Context Menu (Admin Only) -->
+                      <div v-if="isProjectAdmin" class="task-menu-dropdown">
+                        <button class="icon-button icon-button--small" type="button" @click.stop="toggleTaskMenu(task.id)">
+                          <MoreHorizontal :size="14" />
+                        </button>
+                        <div v-if="activeTaskMenu === task.id" class="dropdown-content glass-card">
+                          <button type="button" @click.stop="beginEditTask(task)">Sửa</button>
+                          <button type="button" style="color: var(--peach-500)" @click.stop="deleteTask(task.id)">Xóa</button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                   <p>{{ task.assigneeName || 'Unassigned' }} - {{ formatDate(task.dueDate) }}</p>
                   <div class="kanban-card__meta">
@@ -1055,7 +1275,18 @@ function errorMessage(error: unknown) {
               </div>
 
               <article v-for="comment in comments" :key="comment.id" class="comment-row">
-                <strong>{{ comment.authorName }}</strong>
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; width: 100%;">
+                  <strong>{{ comment.authorName }}</strong>
+                  <button 
+                    v-if="isProjectAdmin || comment.authorId === currentUser?.id" 
+                    class="text-button" 
+                    style="color: var(--peach-500); padding: 0 4px; height: auto;" 
+                    type="button" 
+                    @click="deleteComment(comment.id)"
+                  >
+                    Xóa
+                  </button>
+                </div>
                 <p>{{ comment.content }}</p>
                 <span>{{ formatTime(comment.createdAt) }}</span>
               </article>
@@ -1073,20 +1304,22 @@ function errorMessage(error: unknown) {
           </section>
         </div>
 
-        <div v-if="activeProjectTab === 'team'">
-          <TeamMiniSection id="team" :members="teamMiniMembers" />
+        <div v-if="activeProjectTab === 'members'" class="tab-pane reveal">
+          <ProjectMembersTab 
+            :members="selectedProjectMembers" 
+            :users="users"
+            :is-admin="isProjectAdmin"
+            @add="addMember"
+            @remove="removeMember"
+            @update-role="updateMemberRole"
+          />
         </div>
 
-        <div v-if="activeProjectTab === 'wiki'">
-          <section class="glass-card panel-heading" style="padding: 24px;">
-            <div>
-              <span>Project Wiki</span>
-              <h2>{{ selectedProject?.name }} Documentation</h2>
-            </div>
-            <div class="empty-state" style="margin-top: 20px;">
-              <p>Project Wiki is currently under development. You will soon be able to manage your project documentation here.</p>
-            </div>
-          </section>
+        <div v-if="activeProjectTab === 'wiki'" class="tab-pane reveal">
+          <ProjectWikiTab 
+            :project-name="selectedProject?.name ?? ''" 
+            :is-admin="isProjectAdmin"
+          />
         </div>
       </div>
     </div>
@@ -1179,8 +1412,20 @@ function errorMessage(error: unknown) {
         </button>
       </div>
 
+      <div v-if="showProjectSuggestions && projectSuggestions.length > 0" class="project-suggestions glass-card">
+        <button 
+          v-for="p in projectSuggestions" 
+          :key="p.id" 
+          type="button"
+          @click="tagProject(p)"
+        >
+          <strong>@{{ p.name }}</strong>
+          <span>{{ p.status }}</span>
+        </button>
+      </div>
+
       <form class="chat-drawer__composer" @submit.prevent="submitChat()">
-        <input v-model="chatDraft" type="text" :disabled="isAssistantThinking" placeholder="Ask about risk, priority, work..." />
+        <input v-model="chatDraft" type="text" :disabled="isAssistantThinking" placeholder="Ask about risk, priority, work... Use @ to tag project" />
         <button class="primary-button" type="submit" :disabled="isAssistantThinking || !chatDraft.trim()">Ask</button>
       </form>
     </aside>

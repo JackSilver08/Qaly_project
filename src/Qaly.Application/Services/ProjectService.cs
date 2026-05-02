@@ -224,15 +224,24 @@ public class ProjectService : IProjectService
             return Result.Failure("User was not found.", 404);
         }
 
-        var exists = await _memberRepo.GetQueryable()
-            .AnyAsync(member => member.ProjectId == projectId && member.UserId == userId, ct);
+        var memberRole = NormalizeMemberRole(role);
+        var existingMember = await _memberRepo.GetQueryable()
+            .FirstOrDefaultAsync(member => member.ProjectId == projectId && member.UserId == userId, ct);
 
-        if (exists)
+        if (existingMember != null)
         {
-            return Result.Failure("User is already a project member.", 409);
+            if (project.OwnerId == userId && memberRole != "Owner")
+            {
+                return Result.Failure("Project owner role cannot be changed via this method.", 400);
+            }
+
+            existingMember.Role = memberRole;
+            await _memberRepo.UpdateAsync(existingMember, ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+            await _auditLogService.LogAsync("UpdateMemberRole", nameof(Project), projectId.ToString(), new { userId, role = memberRole }, ct);
+            return Result.Success();
         }
 
-        var memberRole = NormalizeMemberRole(role);
         await _memberRepo.AddAsync(new ProjectMember
         {
             ProjectId = projectId,

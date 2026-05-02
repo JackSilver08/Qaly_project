@@ -23,16 +23,24 @@ export interface DashboardProject {
   name: string
   description: string | null
   status: string
+  ownerId: string
   ownerName: string
   memberCount: number
   taskCount: number
   completedTaskCount: number
   overdueTaskCount: number
   progressPercentage: number
-  memberNames: string[]
+  members: DashboardProjectMember[]
   tasks: DashboardTask[]
   createdAt: string
   endDate: string | null
+}
+
+export interface DashboardProjectMember {
+  userId: string
+  fullName: string
+  role: string
+  email: string
 }
 
 export interface DashboardTask {

@@ -13,6 +13,7 @@ export interface ProjectCardModel {
   status: string
   statusLabel: string
   statusTone: string
+  ownerId: string
   ownerName: string
   dueDateLabel: string
   completedTaskCount: number

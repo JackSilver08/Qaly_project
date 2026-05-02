@@ -96,11 +96,20 @@ public class DashboardController : ControllerBase
                     .ThenBy(task => task.Title)
                     .ToList();
 
-                var memberNames = project.Members
-                    .Select(member => member.User.FullName)
-                    .Append(project.Owner.FullName)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(name => name)
+                var projectMembers = project.Members
+                    .Select(m => new DashboardProjectMemberResponse(
+                        m.UserId,
+                        m.User.FullName,
+                        m.Role,
+                        m.User.Email))
+                    .Append(new DashboardProjectMemberResponse(
+                        project.OwnerId,
+                        project.Owner.FullName,
+                        "Owner",
+                        project.Owner.Email))
+                    .GroupBy(m => m.UserId)
+                    .Select(g => g.First())
+                    .OrderBy(m => m.FullName)
                     .ToList();
 
                 var completedCount = projectTasks.Count(IsDone);
@@ -114,13 +123,14 @@ public class DashboardController : ControllerBase
                     project.Name,
                     project.Description,
                     project.Status,
+                    project.OwnerId,
                     project.Owner.FullName,
-                    memberNames.Count,
+                    projectMembers.Count,
                     projectTasks.Count,
                     completedCount,
                     overdueCount,
                     progressPercentage,
-                    memberNames,
+                    projectMembers,
                     projectTasks.Select(task => new DashboardTaskResponse(
                         task.Id,
                         task.Title,
@@ -360,16 +370,23 @@ public sealed record DashboardProjectResponse(
     string Name,
     string? Description,
     string Status,
+    Guid OwnerId,
     string OwnerName,
     int MemberCount,
     int TaskCount,
     int CompletedTaskCount,
     int OverdueTaskCount,
     int ProgressPercentage,
-    IReadOnlyList<string> MemberNames,
+    IReadOnlyList<DashboardProjectMemberResponse> Members,
     IReadOnlyList<DashboardTaskResponse> Tasks,
     DateTimeOffset CreatedAt,
     DateTimeOffset? EndDate);
+
+public sealed record DashboardProjectMemberResponse(
+    Guid UserId,
+    string FullName,
+    string Role,
+    string Email);
 
 public sealed record DashboardTaskResponse(
     Guid Id,
