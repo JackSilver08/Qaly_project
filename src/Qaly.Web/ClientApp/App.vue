@@ -1,33 +1,22 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import {
-  Bell,
-  Bot,
-  BriefcaseBusiness,
-  CalendarDays,
-  ChartNoAxesCombined,
-  CheckCheck,
-  ChevronRight,
   ClipboardList,
   FolderKanban,
   LayoutDashboard,
-  Menu,
-  MessageSquareText,
-  Search,
-  ShieldAlert,
-  SlidersHorizontal,
-  Sparkles,
   Users,
   X,
-  Zap,
 } from 'lucide-vue-next'
+import AppShell from './components/AppShell.vue'
+import ChatbotAvatar from './components/ChatbotAvatar.vue'
+import DashboardSummaryCards from './components/DashboardSummaryCards.vue'
+import ProjectList from './components/ProjectList.vue'
+import ProjectToolbar from './components/ProjectToolbar.vue'
+import TeamMiniSection from './components/TeamMiniSection.vue'
 import { fallbackDashboard } from './fallback-dashboard'
-import type {
-  DashboardMember,
-  DashboardNotification,
-  DashboardResponse,
-  DashboardTask,
-} from './types'
+import type { DashboardNotification, DashboardProject, DashboardResponse } from './types'
+import type { ProjectCardModel, SummaryCardModel, TeamMiniMemberModel } from './components/dashboard-models'
+import type { ShellNavItem } from './components/shell-models'
 
 interface ChatMessage {
   id: string
@@ -35,59 +24,15 @@ interface ChatMessage {
   text: string
 }
 
-interface NavItem {
-  label: string
-  target: string
-  icon: object
-}
+type ProjectFilter = 'all' | 'active' | 'planned' | 'at-risk'
+type ProjectSort = 'recent' | 'risk' | 'progress' | 'name'
 
-interface MetricCard {
-  label: string
-  value: string
-  detail: string
-  tone: string
-  icon: object
-}
-
-interface RiskSignal {
-  title: string
-  detail: string
-  tone: string
-}
-
-interface CalendarDay {
-  key: string
-  label: number
-  isCurrentMonth: boolean
-  isToday: boolean
-  isSelected: boolean
-  hasDueTask: boolean
-}
-
-const navigation: NavItem[] = [
+const navigation: ShellNavItem[] = [
   { label: 'Tổng quan', target: 'overview', icon: LayoutDashboard },
   { label: 'Dự án', target: 'projects', icon: FolderKanban },
-  { label: 'Bảng công việc', target: 'tasks', icon: ClipboardList },
-  { label: 'Nhịp đội ngũ', target: 'team', icon: Users },
-  { label: 'Tín hiệu AI', target: 'insights', icon: Sparkles },
+  { label: 'Công việc', target: 'tasks', icon: ClipboardList },
+  { label: 'Đội ngũ', target: 'team', icon: Users },
 ]
-
-const dashboard = ref<DashboardResponse>(fallbackDashboard)
-const isLoading = ref(true)
-const usingFallback = ref(true)
-const sidebarOpen = ref(false)
-const chatOpen = ref(false)
-const notificationsOpen = ref(false)
-const searchQuery = ref('')
-const activeProjectId = ref<string | null>(null)
-const chatDraft = ref('')
-const chatMessages = ref<ChatMessage[]>([
-  {
-    id: 'assistant-welcome',
-    role: 'assistant',
-    text: 'Tôi có thể tóm tắt rủi ro triển khai, chỉ ra công việc quá hạn và gợi ý hành động tiếp theo cho dự án đang chọn.',
-  },
-])
 
 const knownTextMap: Record<string, string> = {
   'Admin User': 'Quản trị viên',
@@ -101,21 +46,11 @@ const knownTextMap: Record<string, string> = {
     'Phân quyền theo vai trò, an toàn phiên đăng nhập và trải nghiệm đăng nhập/đăng ký.',
   'Landing the visual system, typography, and reusable UI patterns for admin workflows.':
     'Hoàn thiện hệ thống hình ảnh, kiểu chữ và các mẫu giao diện tái sử dụng cho quy trình quản trị.',
-  'Dự án quản lý công việc nội bộ - Minimum Viable Product':
-    'Dự án quản lý công việc nội bộ - sản phẩm khả dụng tối thiểu',
+  'Qaly MVP': 'Qaly MVP',
   'Design workspace shell': 'Thiết kế khung làm việc',
   'Implement dashboard metrics API': 'Triển khai API chỉ số bảng điều khiển',
   'Create Kanban interaction states': 'Tạo trạng thái tương tác Kanban',
   'Integrate AI insight surfaces': 'Tích hợp bề mặt gợi ý AI',
-  'Register page validation': 'Xác thực trang đăng ký',
-  'Permission middleware rollout': 'Triển khai middleware phân quyền',
-  'Craft color system': 'Xây dựng hệ màu',
-  'Responsive shell audit': 'Rà soát khung tương thích đa màn hình',
-  'Thiết kế database schema': 'Thiết kế lược đồ cơ sở dữ liệu',
-  'Implement Authentication': 'Triển khai xác thực',
-  'Tạo Dashboard UI': 'Tạo giao diện bảng điều khiển',
-  'Tích hợp AI Assistant': 'Tích hợp trợ lý AI',
-  'Viết Unit Tests': 'Viết kiểm thử đơn vị',
   'Project coordination': 'Điều phối dự án',
   'Capacity available': 'Còn năng lực tiếp nhận',
   'Execution stream': 'Luồng triển khai',
@@ -123,328 +58,206 @@ const knownTextMap: Record<string, string> = {
   'Design systems': 'Hệ thống thiết kế',
 }
 
-const allProjects = computed(() => dashboard.value.projects)
-const sortedTeam = computed(() =>
-  [...dashboard.value.team].sort((left, right) => right.capacityPercent - left.capacityPercent),
+const dashboard = ref<DashboardResponse>(fallbackDashboard)
+const isLoading = ref(true)
+const usingFallback = ref(true)
+const chatOpen = ref(false)
+const notificationsOpen = ref(false)
+const createProjectOpen = ref(false)
+const projectBeingEditedId = ref<string | null>(null)
+const activeNavTarget = ref('overview')
+const searchQuery = ref('')
+const projectFilter = ref<ProjectFilter>('all')
+const projectSort = ref<ProjectSort>('recent')
+const activeProjectId = ref<string | null>(null)
+const newProjectName = ref('')
+const editProjectName = ref('')
+const actionNotice = ref('')
+const chatDraft = ref('')
+const chatBodyRef = ref<HTMLElement | null>(null)
+const isAssistantThinking = ref(false)
+const chatMessages = ref<ChatMessage[]>([
+  {
+    id: 'assistant-welcome',
+    role: 'assistant',
+    text: 'Tôi có thể tóm tắt rủi ro, việc quá hạn và bước tiếp theo cho dự án đang chọn.',
+  },
+])
+
+let actionNoticeTimer: ReturnType<typeof window.setTimeout> | undefined
+let assistantThinkingTimer: ReturnType<typeof window.setTimeout> | undefined
+
+const projects = computed(() => dashboard.value.projects)
+const team = computed(() => dashboard.value.team)
+const activeProjectsCount = computed(() => projects.value.filter((project) => project.status !== 'Archived').length)
+const totalTasks = computed(() => projects.value.reduce((sum, project) => sum + project.tasks.length, 0))
+const completedTasks = computed(() =>
+  projects.value.reduce((sum, project) => sum + project.tasks.filter((task) => normalizeStatus(task.status) === 'Done').length, 0),
 )
+const overdueTasks = computed(() =>
+  projects.value.reduce((sum, project) => sum + project.tasks.filter((task) => isTaskOverdue(task)).length, 0),
+)
+
+// Homepage hierarchy: three high-signal KPIs, then project controls and the project list.
+const summaryCards = computed<SummaryCardModel[]>(() => [
+  {
+    key: 'projects',
+    label: 'Total Projects',
+    value: String(projects.value.length),
+    detail: `${activeProjectsCount.value} đang chạy`,
+    tone: 'blue',
+  },
+  {
+    key: 'tasks',
+    label: 'Total Tasks',
+    value: String(totalTasks.value),
+    detail: `${completedTasks.value} đã hoàn tất`,
+    tone: 'mint',
+  },
+  {
+    key: 'team',
+    label: 'Team Members',
+    value: String(team.value.length),
+    detail: 'đang tham gia workspace',
+    tone: 'violet',
+  },
+])
 
 const filteredProjects = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
 
-  if (!query) {
-    return allProjects.value
-  }
+  return projects.value
+    .filter((project) => {
+      if (projectFilter.value === 'active' && !['Active', 'InProgress'].includes(project.status)) {
+        return false
+      }
 
-  return allProjects.value.filter((project) => {
-    const projectText = [
-      displayText(project.name),
-      displayText(project.description ?? ''),
-      displayName(project.ownerName),
-      ...project.memberNames.map(displayName),
-    ]
-      .join(' ')
-      .toLowerCase()
+      if (projectFilter.value === 'planned' && project.status !== 'Planned') {
+        return false
+      }
 
-    if (projectText.includes(query)) {
-      return true
-    }
+      if (projectFilter.value === 'at-risk' && project.overdueTaskCount === 0) {
+        return false
+      }
 
-    return project.tasks.some((task) =>
-      [
-        displayText(task.title),
-        task.priority,
-        task.status,
-        displayPriority(task.priority),
-        displayStatus(task.status),
-        displayName(task.assigneeName),
-        displayName(task.reporterName),
+      if (!query) {
+        return true
+      }
+
+      return [
+        displayText(project.name),
+        displayText(project.description),
+        displayName(project.ownerName),
+        ...project.memberNames.map(displayName),
       ]
         .join(' ')
         .toLowerCase()
-        .includes(query),
-    )
-  })
+        .includes(query)
+    })
+    .sort((left, right) => {
+      if (projectSort.value === 'name') {
+        return displayText(left.name).localeCompare(displayText(right.name), 'vi')
+      }
+
+      if (projectSort.value === 'progress') {
+        return right.progressPercentage - left.progressPercentage
+      }
+
+      if (projectSort.value === 'risk') {
+        return right.overdueTaskCount - left.overdueTaskCount
+      }
+
+      return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+    })
 })
 
-watch(
-  filteredProjects,
-  (projects) => {
-    if (!projects.some((project) => project.id === activeProjectId.value)) {
-      activeProjectId.value = projects[0]?.id ?? allProjects.value[0]?.id ?? null
-    }
-  },
-  { immediate: true },
+const projectCards = computed<ProjectCardModel[]>(() =>
+  filteredProjects.value.map((project) => ({
+    id: project.id,
+    name: displayText(project.name),
+    description: displayText(project.description) || 'Chưa có mô tả ngắn cho dự án này.',
+    status: project.status,
+    statusLabel: displayStatus(project.status),
+    statusTone: statusTone(project.status),
+    ownerName: displayName(project.ownerName),
+    dueDateLabel: project.endDate ? `Hạn ${formatDate(project.endDate)}` : 'Chưa có hạn',
+    completedTaskCount: project.completedTaskCount,
+    taskCount: project.taskCount,
+    overdueTaskCount: project.overdueTaskCount,
+    progressPercentage: project.progressPercentage,
+    memberInitials: project.memberNames.slice(0, 4).map((name) => initials(displayName(name))),
+  })),
 )
 
 const selectedProject = computed(() => {
   if (activeProjectId.value) {
-    const active = filteredProjects.value.find((project) => project.id === activeProjectId.value)
+    const active = projects.value.find((project) => project.id === activeProjectId.value)
     if (active) {
       return active
     }
   }
 
-  return filteredProjects.value[0] ?? allProjects.value[0] ?? null
+  return filteredProjects.value[0] ?? projects.value[0] ?? null
 })
 
-const visibleTasks = computed(() => {
-  const project = selectedProject.value
-  const query = searchQuery.value.trim().toLowerCase()
-
-  if (!project) {
-    return []
-  }
-
-  if (!query) {
-    return project.tasks
-  }
-
-  return project.tasks.filter((task) =>
-    [
-      displayText(task.title),
-      task.priority,
-      task.status,
-      displayPriority(task.priority),
-      displayStatus(task.status),
-      displayName(task.assigneeName),
-      displayName(task.reporterName),
-      displayText(task.projectName),
-    ]
-      .join(' ')
-      .toLowerCase()
-      .includes(query),
-  )
-})
-
-const metrics = computed<MetricCard[]>(() => [
-  {
-    label: 'Dự án đang chạy',
-    value: String(dashboard.value.stats.activeProjects),
-    detail: 'Luồng công việc liên phòng ban đang tiến triển',
-    tone: 'amber',
-    icon: BriefcaseBusiness,
-  },
-  {
-    label: 'Tỷ lệ hoàn thành',
-    value: `${dashboard.value.stats.completionRate}%`,
-    detail: `${dashboard.value.stats.completedTasks} công việc đã hoàn tất trên toàn bảng`,
-    tone: 'teal',
-    icon: CheckCheck,
-  },
-  {
-    label: 'Công việc rủi ro',
-    value: String(dashboard.value.stats.tasksAtRisk),
-    detail: `${dashboard.value.stats.overdueTasks} mục đã quá hạn`,
-    tone: 'coral',
-    icon: ShieldAlert,
-  },
-  {
-    label: 'Nhịp đội ngũ',
-    value: String(dashboard.value.stats.teamMembers),
-    detail: 'Thành viên đang đóng góp trong không gian làm việc',
-    tone: 'ink',
-    icon: Users,
-  },
-])
-
-const kanbanColumns = computed(() => {
-  const columns = [
-    { key: 'Todo', label: 'Cần làm', items: [] as DashboardTask[] },
-    { key: 'InProgress', label: 'Đang làm', items: [] as DashboardTask[] },
-    { key: 'Done', label: 'Hoàn tất', items: [] as DashboardTask[] },
-  ]
-
-  for (const task of visibleTasks.value) {
-    const match = columns.find((column) => normalizeStatus(task.status) === column.key) ?? columns[0]
-    match.items.push(task)
-  }
-
-  return columns
-})
-
-const riskSignals = computed<RiskSignal[]>(() => {
+const selectedProjectTasks = computed(() => selectedProject.value?.tasks ?? [])
+const selectedOpenTasks = computed(() =>
+  selectedProjectTasks.value.filter((task) => normalizeStatus(task.status) !== 'Done').slice(0, 4),
+)
+const selectedProjectSummary = computed(() => {
   const project = selectedProject.value
 
   if (!project) {
-    return []
+    return 'Chọn một dự án để xem công việc trọng tâm.'
   }
 
-  const unassigned = project.tasks.filter(
-    (task) => normalizeStatus(task.status) !== 'Done' && !task.assigneeName,
-  )
-  const overdue = project.tasks.filter((task) => isTaskOverdue(task))
-  const highPriority = project.tasks.filter(
-    (task) => normalizeStatus(task.status) !== 'Done' && isHighPriority(task.priority),
-  )
-
-  const signals: RiskSignal[] = []
-
-  if (overdue.length > 0) {
-    signals.push({
-      title: 'Trễ hạn triển khai',
-      detail: `${overdue.length} công việc quá hạn đang làm chậm ${displayText(project.name)}.`,
-      tone: 'critical',
-    })
-  }
-
-  if (unassigned.length > 0) {
-    signals.push({
-      title: 'Thiếu người phụ trách',
-      detail: `${unassigned.length} mục đang mở vẫn cần người phụ trách rõ ràng.`,
-      tone: 'warning',
-    })
-  }
-
-  if (highPriority.length > 0) {
-    signals.push({
-      title: 'Luồng ưu tiên cao',
-      detail: `${highPriority.length} công việc ưu tiên cao cần được theo dõi hằng ngày.`,
-      tone: 'info',
-    })
-  }
-
-  if (signals.length === 0) {
-    signals.push({
-      title: 'Triển khai ổn định',
-      detail: `${displayText(project.name)} chưa có cảnh báo giao hàng khẩn cấp trong ảnh chụp hiện tại.`,
-      tone: 'positive',
-    })
-  }
-
-  return signals.slice(0, 3)
+  return `${displayText(project.name)} có ${project.completedTaskCount}/${project.taskCount} công việc đã hoàn tất.`
 })
 
-const quickPrompts = computed(() => {
-  const project = selectedProject.value
-  const projectName = project ? displayText(project.name) : 'không gian làm việc này'
+const teamMiniMembers = computed<TeamMiniMemberModel[]>(() =>
+  [...team.value]
+    .sort((left, right) => right.capacityPercent - left.capacityPercent)
+    .slice(0, 4)
+    .map((member) => ({
+      id: member.id,
+      name: displayName(member.fullName),
+      role: displayRole(member.role),
+      focusArea: displayText(member.focusArea),
+      capacityPercent: member.capacityPercent,
+      initials: initials(displayName(member.fullName)),
+    })),
+)
 
-  return [
-    `Tóm tắt rủi ro của ${projectName}`,
-    'Công việc nào đang quá hạn?',
-    'Ai đang có tải công việc cao nhất?',
-  ]
-})
-
-const highlightedMembers = computed(() => sortedTeam.value.slice(0, 4))
 const notificationCount = computed(
   () => dashboard.value.notifications.filter((notification) => notification.tone !== 'info').length,
 )
 
-const projectNarrative = computed(() => {
-  const project = selectedProject.value
+const quickPrompts = computed(() => {
+  const projectName = selectedProject.value ? displayText(selectedProject.value.name) : 'workspace này'
 
-  if (!project) {
-    return 'Chưa chọn dự án nào.'
-  }
-
-  const dueSoon = project.tasks
-    .filter((task) => normalizeStatus(task.status) !== 'Done' && task.dueDate)
-    .sort((left, right) => new Date(left.dueDate ?? '').getTime() - new Date(right.dueDate ?? '').getTime())
-    .at(0)
-
-  if (!dueSoon) {
-    return `${displayText(project.name)} đã hoàn thành ${project.progressPercentage}% và hiện chưa có áp lực hạn chót khẩn cấp.`
-  }
-
-  return `${displayText(project.name)} đã hoàn thành ${project.progressPercentage}%. Mốc quan trọng tiếp theo là "${displayText(dueSoon.title)}" đến hạn ${formatRelativeDate(dueSoon.dueDate)}.`
+  return [
+    `Tóm tắt rủi ro của ${projectName}`,
+    'Dự án nào đang có rủi ro?',
+    'Việc nào nên ưu tiên hôm nay?',
+  ]
 })
 
-const activeTasks = computed(() =>
-  visibleTasks.value
-    .filter((task) => normalizeStatus(task.status) !== 'Done')
-    .slice(0, 5),
-)
-
-const completedPreviewTasks = computed(() =>
-  visibleTasks.value
-    .filter((task) => normalizeStatus(task.status) === 'Done')
-    .slice(0, 3),
-)
-
-const selectedProgress = computed(() => selectedProject.value?.progressPercentage ?? dashboard.value.stats.completionRate)
-
-const donutStyle = computed(() => ({
-  '--progress': `${selectedProgress.value}%`,
-}))
-
-const chartBars = computed(() => {
-  const total = Math.max(visibleTasks.value.length, 1)
-
-  return kanbanColumns.value.map((column, index) => ({
-    label: column.label,
-    value: column.items.length,
-    percent: Math.max(10, Math.round((column.items.length / total) * 100)),
-    tone: ['blue', 'violet', 'mint'][index],
-  }))
-})
-
-const rightPanelStats = computed(() => [
-  {
-    value: dashboard.value.stats.overdueTasks,
-    label: 'Quá hạn',
-    detail: 'Cần xử lý',
-    tone: 'peach',
-  },
-  {
-    value: dashboard.value.stats.completedTasks,
-    label: 'Hoàn tất',
-    detail: 'Đã đóng',
-    tone: 'violet',
-  },
-  {
-    value: dashboard.value.stats.tasksAtRisk,
-    label: 'Rủi ro',
-    detail: 'Theo dõi',
-    tone: 'mint',
-  },
-  {
-    value: dashboard.value.stats.totalTasks,
-    label: 'Tổng việc',
-    detail: 'Toàn hệ thống',
-    tone: 'blue',
-  },
-])
-
-const calendarMonth = computed(() =>
-  new Intl.DateTimeFormat('vi-VN', {
-    month: 'long',
-    year: 'numeric',
-  }).format(new Date(dashboard.value.generatedAt)),
-)
-
-const calendarDays = computed<CalendarDay[]>(() => {
-  const base = new Date(dashboard.value.generatedAt)
-  const year = base.getFullYear()
-  const month = base.getMonth()
-  const firstDay = new Date(year, month, 1)
-  const mondayOffset = (firstDay.getDay() + 6) % 7
-  const start = new Date(year, month, 1 - mondayOffset)
-  const dueDates = new Set(visibleTasks.value.filter((task) => task.dueDate).map((task) => dateKey(new Date(task.dueDate as string))))
-
-  return Array.from({ length: 35 }, (_, index) => {
-    const date = new Date(start)
-    date.setDate(start.getDate() + index)
-    const key = dateKey(date)
-
-    return {
-      key,
-      label: date.getDate(),
-      isCurrentMonth: date.getMonth() === month,
-      isToday: key === dateKey(new Date()),
-      isSelected: key === dateKey(base),
-      hasDueTask: dueDates.has(key),
+watch(
+  filteredProjects,
+  (items) => {
+    if (!items.some((project) => project.id === activeProjectId.value)) {
+      activeProjectId.value = items[0]?.id ?? projects.value[0]?.id ?? null
     }
-  })
-})
+  },
+  { immediate: true },
+)
 
-const todayAgenda = computed(() => {
-  const urgent = activeTasks.value[0]
-
-  return {
-    title: urgent ? displayText(urgent.title) : 'Không có việc khẩn cấp',
-    caption: urgent ? `${displayPriority(urgent.priority)} - ${formatRelativeDate(urgent.dueDate)}` : 'Đội có thể tập trung vào cải thiện chất lượng.',
-  }
-})
+watch(
+  () => [chatMessages.value.length, isAssistantThinking.value],
+  () => {
+    void scrollChatToBottom()
+  },
+)
 
 onMounted(async () => {
   await loadDashboard()
@@ -461,19 +274,19 @@ async function loadDashboard() {
     })
 
     if (!response.ok) {
-      throw new Error(`Yêu cầu bảng điều khiển thất bại với mã ${response.status}`)
+      throw new Error(`Dashboard request failed with status ${response.status}`)
     }
 
     const data = (await response.json()) as DashboardResponse
 
     if (!data.projects?.length) {
-      throw new Error('Bảng điều khiển không trả về dự án nào')
+      throw new Error('Dashboard did not return projects')
     }
 
     dashboard.value = data
     usingFallback.value = false
   } catch (error) {
-    console.warn('Đang dùng dữ liệu mẫu của bảng điều khiển.', error)
+    console.warn('Using fallback dashboard data.', error)
     dashboard.value = fallbackDashboard
     usingFallback.value = true
   } finally {
@@ -483,8 +296,106 @@ async function loadDashboard() {
 }
 
 function scrollToSection(sectionId: string) {
-  sidebarOpen.value = false
+  activeNavTarget.value = sectionId
   document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function selectProject(projectId: string) {
+  activeProjectId.value = projectId
+  activeNavTarget.value = 'tasks'
+  document.getElementById('tasks')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+}
+
+function openCreateProject() {
+  activeNavTarget.value = 'projects'
+  createProjectOpen.value = true
+  projectBeingEditedId.value = null
+  document.getElementById('projects')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function createProject() {
+  const name = newProjectName.value.trim()
+
+  if (!name) {
+    return
+  }
+
+  const ownerName = dashboard.value.team[0]?.fullName ?? 'Quản trị viên'
+  const memberNames = dashboard.value.team.slice(0, 3).map((member) => member.fullName)
+  const project: DashboardProject = {
+    id: `local-project-${Date.now()}`,
+    name,
+    description: 'Dự án mới đang chờ bổ sung phạm vi và kế hoạch triển khai.',
+    status: 'Active',
+    ownerName,
+    memberCount: Math.max(memberNames.length, 1),
+    taskCount: 0,
+    completedTaskCount: 0,
+    overdueTaskCount: 0,
+    progressPercentage: 0,
+    memberNames: memberNames.length ? memberNames : [ownerName],
+    tasks: [],
+    createdAt: new Date().toISOString(),
+    endDate: null,
+  }
+
+  dashboard.value.projects.unshift(project)
+  activeProjectId.value = project.id
+  newProjectName.value = ''
+  createProjectOpen.value = false
+  showActionNotice(`Đã tạo dự án "${displayText(project.name)}".`)
+}
+
+function beginEditProject(projectId: string) {
+  const project = projects.value.find((item) => item.id === projectId)
+
+  if (!project) {
+    return
+  }
+
+  activeProjectId.value = projectId
+  createProjectOpen.value = false
+  projectBeingEditedId.value = projectId
+  editProjectName.value = displayText(project.name)
+}
+
+function saveProjectEdit() {
+  const project = projects.value.find((item) => item.id === projectBeingEditedId.value)
+  const name = editProjectName.value.trim()
+
+  if (!project || !name) {
+    return
+  }
+
+  project.name = name
+  projectBeingEditedId.value = null
+  editProjectName.value = ''
+  showActionNotice(`Đã cập nhật tên dự án thành "${displayText(project.name)}".`)
+}
+
+function deleteProject(projectId: string) {
+  const project = projects.value.find((item) => item.id === projectId)
+
+  if (!project) {
+    return
+  }
+
+  dashboard.value.projects = dashboard.value.projects.filter((item) => item.id !== projectId)
+  activeProjectId.value = dashboard.value.projects[0]?.id ?? null
+  showActionNotice(`Đã ẩn dự án "${displayText(project.name)}" khỏi danh sách.`)
+}
+
+function dismissNotification(notificationId: string) {
+  dashboard.value.notifications = dashboard.value.notifications.filter(
+    (notification) => notification.id !== notificationId,
+  )
+}
+
+function clearActionableNotifications() {
+  dashboard.value.notifications = dashboard.value.notifications.filter(
+    (notification) => notification.tone === 'info',
+  )
+  notificationsOpen.value = false
 }
 
 function openChatWithPrompt(prompt?: string) {
@@ -492,6 +403,8 @@ function openChatWithPrompt(prompt?: string) {
 
   if (prompt) {
     submitChat(prompt)
+  } else {
+    void scrollChatToBottom()
   }
 }
 
@@ -502,108 +415,77 @@ function submitChat(explicitPrompt?: string) {
     return
   }
 
+  if (isAssistantThinking.value) {
+    return
+  }
+
   chatMessages.value.push({
     id: `user-${Date.now()}`,
     role: 'user',
     text: prompt,
   })
 
-  chatMessages.value.push({
-    id: `assistant-${Date.now() + 1}`,
-    role: 'assistant',
-    text: createAssistantReply(prompt),
-  })
-
   chatDraft.value = ''
+  isAssistantThinking.value = true
+
+  if (assistantThinkingTimer) {
+    window.clearTimeout(assistantThinkingTimer)
+  }
+
+  assistantThinkingTimer = window.setTimeout(() => {
+    chatMessages.value.push({
+      id: `assistant-${Date.now()}`,
+      role: 'assistant',
+      text: createAssistantReply(prompt),
+    })
+    isAssistantThinking.value = false
+  }, 850)
+}
+
+async function scrollChatToBottom() {
+  await nextTick()
+  chatBodyRef.value?.scrollTo({
+    top: chatBodyRef.value.scrollHeight,
+    behavior: 'smooth',
+  })
 }
 
 function createAssistantReply(prompt: string) {
   const query = prompt.toLowerCase()
   const project = selectedProject.value
-  const topMember = sortedTeam.value[0]
 
-  if (includesAny(query, ['overdue', 'quá hạn', 'qua han'])) {
-    return `${dashboard.value.stats.overdueTasks} công việc đang quá hạn. Hãy ưu tiên ${riskSignals.value[0]?.title.toLowerCase() ?? 'gỡ các việc đang bị chặn'} trong ${project ? displayText(project.name) : 'không gian làm việc'}.`
+  if (query.includes('rủi ro') || query.includes('risk')) {
+    return `${overdueTasks.value} công việc đang quá hạn trên toàn workspace. Dự án nên xem trước là ${project ? displayText(project.name) : 'dự án có nhiều việc quá hạn nhất'}.`
   }
 
-  if (includesAny(query, ['workload', 'highest', 'tải', 'tai', 'cao nhất', 'cao nhat'])) {
-    return `${displayName(topMember?.fullName) || 'Trưởng nhóm'} đang có tải công việc cao nhất ở mức ${topMember?.capacityPercent ?? 0}%. Nếu rủi ro còn cao, nên điều phối lại một việc đang làm.`
+  if (query.includes('ưu tiên') || query.includes('priority')) {
+    const task = selectedOpenTasks.value[0]
+    return task
+      ? `Nên ưu tiên "${displayText(task.title)}" vì đây là việc mở gần nhất trong ${displayText(project?.name)}.`
+      : 'Không có công việc mở trong dự án đang chọn.'
   }
 
-  if (includesAny(query, ['risk', 'block', 'rủi ro', 'rui ro', 'chặn', 'chan'])) {
-    return `${dashboard.value.riskDigest} Tín hiệu mạnh nhất trong ${project ? displayText(project.name) : 'dự án đang chọn'} là ${riskSignals.value[0]?.detail.toLowerCase() ?? 'triển khai ổn định'}.`
-  }
-
-  if (includesAny(query, ['summary', 'tóm tắt', 'tom tat'])) {
-    return dashboard.value.summary
-  }
-
-  return `Với ${project ? displayText(project.name) : 'không gian làm việc đang chọn'}, tôi sẽ ưu tiên việc quá hạn, xác nhận người phụ trách cho các mục chưa giao và rà lại mốc tiếp theo so với năng lực hiện tại của đội.`
+  return selectedProjectSummary.value
 }
 
-function includesAny(value: string, needles: string[]) {
-  return needles.some((needle) => value.includes(needle))
+function showActionNotice(message: string) {
+  actionNotice.value = message
+
+  if (actionNoticeTimer) {
+    window.clearTimeout(actionNoticeTimer)
+  }
+
+  actionNoticeTimer = window.setTimeout(() => {
+    actionNotice.value = ''
+  }, 3000)
 }
 
 function normalizeStatus(status: string) {
   return status === 'InProgress' ? 'InProgress' : status === 'Done' ? 'Done' : 'Todo'
 }
 
-function isHighPriority(priority: string) {
-  return priority === 'High' || priority === 'Critical'
-}
-
-function isTaskOverdue(task: DashboardTask) {
+function isTaskOverdue(task: { dueDate: string | null; status: string }) {
   return Boolean(task.dueDate) && new Date(task.dueDate as string).getTime() < Date.now() && normalizeStatus(task.status) !== 'Done'
-}
-
-function formatRelativeDate(value: string | null) {
-  if (!value) {
-    return 'khi chưa có hạn chót'
-  }
-
-  const date = new Date(value)
-  const deltaDays = Math.round((date.getTime() - Date.now()) / 86400000)
-
-  if (deltaDays === 0) {
-    return 'hôm nay'
-  }
-
-  if (deltaDays === 1) {
-    return 'ngày mai'
-  }
-
-  if (deltaDays === -1) {
-    return 'hôm qua'
-  }
-
-  if (deltaDays < 0) {
-    return `${Math.abs(deltaDays)} ngày trước`
-  }
-
-  return `sau ${deltaDays} ngày`
-}
-
-function formatDate(value: string | null) {
-  if (!value) {
-    return 'Chưa có ngày'
-  }
-
-  return new Intl.DateTimeFormat('vi-VN', {
-    month: 'short',
-    day: 'numeric',
-  }).format(new Date(value))
-}
-
-function dateKey(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
-function formatTime(value: string) {
-  return new Intl.DateTimeFormat('vi-VN', {
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(value))
 }
 
 function displayText(value: string | null | undefined) {
@@ -637,21 +519,6 @@ function displayStatus(status: string | null | undefined) {
   }
 }
 
-function displayPriority(priority: string | null | undefined) {
-  switch (priority) {
-    case 'Critical':
-      return 'Khẩn cấp'
-    case 'High':
-      return 'Cao'
-    case 'Medium':
-      return 'Trung bình'
-    case 'Low':
-      return 'Thấp'
-    default:
-      return priority ? displayText(priority) : 'Không xác định'
-  }
-}
-
 function displayRole(role: string | null | undefined) {
   switch (role) {
     case 'Admin':
@@ -663,6 +530,38 @@ function displayRole(role: string | null | undefined) {
   }
 }
 
+function statusTone(status: string) {
+  switch (status) {
+    case 'Active':
+    case 'InProgress':
+      return 'active'
+    case 'Planned':
+      return 'planned'
+    case 'Archived':
+      return 'archived'
+    default:
+      return 'neutral'
+  }
+}
+
+function formatDate(value: string | null) {
+  if (!value) {
+    return 'Chưa có ngày'
+  }
+
+  return new Intl.DateTimeFormat('vi-VN', {
+    month: 'short',
+    day: 'numeric',
+  }).format(new Date(value))
+}
+
+function formatTime(value: string) {
+  return new Intl.DateTimeFormat('vi-VN', {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
 function initials(name: string) {
   return name
     .split(' ')
@@ -672,431 +571,206 @@ function initials(name: string) {
     .join('')
 }
 
-function memberTone(index: number) {
-  return ['ember', 'teal', 'ink', 'gold'][index % 4]
-}
-
-function metricToneClass(tone: string) {
-  return `metric-card--${tone}`
-}
-
-function statusClass(status: string) {
-  switch (normalizeStatus(status)) {
-    case 'Done':
-      return 'badge badge--done'
-    case 'InProgress':
-      return 'badge badge--progress'
-    default:
-      return 'badge badge--todo'
-  }
-}
-
-function priorityClass(priority: string) {
-  switch (priority) {
-    case 'Critical':
-      return 'badge badge--critical'
-    case 'High':
-      return 'badge badge--warning'
-    case 'Medium':
-      return 'badge badge--info'
-    default:
-      return 'badge badge--neutral'
-  }
-}
-
 function notificationClass(notification: DashboardNotification) {
   return `notice notice--${notification.tone}`
-}
-
-function loadClass(index: number) {
-  return `reveal delay-${Math.min(index + 1, 6)}`
-}
-
-function memberLoad(member: DashboardMember) {
-  if (member.capacityPercent >= 80) {
-    return 'Đang chịu áp lực'
-  }
-
-  if (member.capacityPercent >= 60) {
-    return 'Tải công việc cân bằng'
-  }
-
-  return 'Còn năng lực tiếp nhận'
 }
 </script>
 
 <template>
-  <div class="dashboard-shell">
-    <aside class="app-sidebar" :class="{ 'is-open': sidebarOpen }">
-      <div class="brand-row">
-        <div class="brand-bars" aria-hidden="true">
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
-        <strong>QALY</strong>
-      </div>
+  <AppShell
+    v-model:search="searchQuery"
+    :nav-items="navigation"
+    :active-target="activeNavTarget"
+    :notification-count="notificationCount"
+    :using-fallback="usingFallback"
+    :team-initials="teamMiniMembers.map((member) => member.initials)"
+    user-name="Quan tri vien"
+    user-initials="QT"
+    @navigate="scrollToSection"
+    @create="openCreateProject"
+    @notifications="notificationsOpen = !notificationsOpen"
+    @assistant="openChatWithPrompt()"
+  >
+    <div class="dashboard-scroll dashboard-scroll--embedded no-scrollbar">
+      <div class="dashboard-main project-home-main no-scrollbar">
+        <!-- Project-focused homepage: summary, controls, project list, then lightweight secondary context. -->
+        <header class="home-topbar">
+          <div class="topbar-title">
+            <div>
+              <span>Project management</span>
+              <h1>Quan ly du an</h1>
+              <p>{{ isLoading ? 'Dang dong bo du lieu...' : selectedProjectSummary }}</p>
+            </div>
+          </div>
 
-      <section class="profile-card">
-        <div class="profile-avatar">QT</div>
-        <strong>Quản trị viên</strong>
-        <span>Chủ không gian làm việc</span>
-        <small>{{ usingFallback ? 'Dữ liệu mẫu' : 'Dữ liệu trực tiếp' }}</small>
-      </section>
-
-      <nav class="sidebar-section" aria-label="Điều hướng chính">
-        <p>Dự án & công việc</p>
-        <button
-          v-for="item in navigation"
-          :key="item.target"
-          class="sidebar-link"
-          type="button"
-          @click="scrollToSection(item.target)"
-        >
-          <component :is="item.icon" :size="17" />
-          <span>{{ item.label }}</span>
-        </button>
-      </nav>
-
-      <section class="sidebar-section sidebar-section--bottom">
-        <p>Đội ngũ</p>
-        <div class="team-preview">
-          <span
-            v-for="(member, index) in highlightedMembers"
-            :key="member.id"
-            class="avatar-token"
-            :class="`avatar-token--${memberTone(index)}`"
-          >
-            {{ initials(displayName(member.fullName)) }}
-          </span>
-        </div>
-        <button class="ai-chip" type="button" @click="openChatWithPrompt()">
-          <Bot :size="16" />
-          <span>Trợ lý Qaly</span>
-        </button>
-      </section>
-    </aside>
-
-    <div v-if="sidebarOpen" class="workspace-backdrop" @click="sidebarOpen = false"></div>
-
-    <main class="dashboard-main">
-      <header class="topbar">
-        <div class="topbar-title">
-          <button class="icon-button mobile-only" type="button" @click="sidebarOpen = true">
-            <Menu :size="18" />
+          <button class="secondary-button" type="button" @click="openChatWithPrompt()">
+            <ChatbotAvatar size="launcher" />
+            <span>Tro ly Qaly</span>
           </button>
-          <div>
-            <h1>Xin chào, Qaly.</h1>
-            <p>{{ projectNarrative }}</p>
-          </div>
-        </div>
+        </header>
+        <DashboardSummaryCards id="overview" :cards="summaryCards" />
 
-        <label class="search-box" aria-label="Tìm kiếm dashboard">
-          <Search :size="17" />
-          <input v-model="searchQuery" type="search" placeholder="Tìm dự án, công việc, thành viên..." />
-          <SlidersHorizontal :size="16" />
-        </label>
-      </header>
-
-      <section id="overview" class="hero-grid">
-        <article class="project-hero glass-card">
-          <div class="card-icon card-icon--sun">
-            <Sparkles :size="18" />
-          </div>
-          <button class="more-button" type="button" aria-label="Mở tùy chọn">•••</button>
-          <div class="project-hero__body">
-            <span>Dự án trọng tâm</span>
-            <h2>{{ selectedProject ? displayText(selectedProject.name) : 'Chưa có dự án' }}</h2>
-            <p>{{ selectedProject?.description ? displayText(selectedProject.description) : dashboard.summary }}</p>
-          </div>
-          <div class="avatar-row">
-            <span
-              v-for="(memberName, index) in selectedProject?.memberNames.slice(0, 4) ?? []"
-              :key="memberName"
-              class="avatar-token"
-              :class="`avatar-token--${memberTone(index)}`"
-            >
-              {{ initials(displayName(memberName)) }}
-            </span>
-          </div>
-        </article>
-
-        <article class="chart-card glass-card">
-          <div class="card-icon card-icon--violet">
-            <ChartNoAxesCombined :size="18" />
-          </div>
-          <div class="donut-chart" :style="donutStyle">
-            <strong>{{ selectedProgress }}%</strong>
-          </div>
-          <div class="chart-copy">
-            <span>Tỷ lệ hoàn thành</span>
-            <h2>{{ selectedProject ? displayText(selectedProject.name) : 'Toàn bộ workspace' }}</h2>
-            <p>{{ dashboard.riskDigest }}</p>
-          </div>
-        </article>
-      </section>
-
-      <section class="metric-grid">
-        <article
-          v-for="(metric, index) in metrics"
-          :key="metric.label"
-          class="metric-card glass-card"
-          :class="[metricToneClass(metric.tone), loadClass(index)]"
-        >
-          <div class="metric-card__icon">
-            <component :is="metric.icon" :size="18" />
-          </div>
-          <span>{{ metric.label }}</span>
-          <strong>{{ metric.value }}</strong>
-          <p>{{ metric.detail }}</p>
-        </article>
-      </section>
-
-      <section class="content-grid">
-        <article id="tasks" class="task-panel glass-card">
-          <div class="panel-heading">
+        <section id="projects" class="project-workspace glass-card">
+          <div class="project-workspace__header">
             <div>
-              <span>Công việc</span>
-              <h2>Active Tasks</h2>
+              <span>Dự án</span>
+              <h2>Danh sách dự án</h2>
             </div>
-            <div class="task-tabs">
-              <button class="is-active" type="button">Đang làm</button>
-              <button type="button">Hoàn tất {{ completedPreviewTasks.length }}</button>
-            </div>
+            <p>{{ filteredProjects.length }} trong {{ projects.length }} dự án</p>
           </div>
 
-          <div class="task-list">
-            <article v-for="(task, index) in activeTasks" :key="task.id" class="task-row">
-              <div class="task-logo" :class="`task-logo--${memberTone(index)}`">
-                {{ initials(displayText(task.title)) }}
-              </div>
-              <div class="task-row__content">
-                <strong>{{ displayText(task.title) }}</strong>
-                <span>{{ task.assigneeName ? displayName(task.assigneeName) : 'Chưa giao' }} - {{ formatRelativeDate(task.dueDate) }}</span>
-              </div>
-              <div class="task-row__meta">
-                <span :class="priorityClass(task.priority)">{{ displayPriority(task.priority) }}</span>
-                <div class="mini-avatars">
-                  <span>{{ initials(displayName(task.reporterName)) }}</span>
-                  <span v-if="task.assigneeName">{{ initials(displayName(task.assigneeName)) }}</span>
-                </div>
-              </div>
-            </article>
+          <ProjectToolbar
+            v-model:search="searchQuery"
+            v-model:sort="projectSort"
+            v-model:filter="projectFilter"
+            :project-count="filteredProjects.length"
+            @create="openCreateProject"
+          />
 
-            <div v-if="activeTasks.length === 0" class="empty-state">
-              Không có công việc đang mở trong chế độ xem hiện tại.
-            </div>
-          </div>
-        </article>
-
-        <article id="projects" class="project-panel glass-card">
-          <div class="panel-heading">
-            <div>
-              <span>Danh mục</span>
-              <h2>Dự án</h2>
-            </div>
-            <span class="count-pill">{{ filteredProjects.length }}</span>
-          </div>
-
-          <div class="project-list">
-            <button
-              v-for="project in filteredProjects"
-              :key="project.id"
-              type="button"
-              class="project-strip"
-              :class="{ 'is-active': selectedProject?.id === project.id }"
-              @click="activeProjectId = project.id"
-            >
-              <div>
-                <strong>{{ displayText(project.name) }}</strong>
-                <span>{{ displayName(project.ownerName) }} - {{ project.completedTaskCount }}/{{ project.taskCount }} hoàn tất</span>
-              </div>
-              <div class="strip-progress">
-                <span :style="{ width: `${project.progressPercentage}%` }"></span>
-              </div>
+          <form v-if="createProjectOpen" class="project-inline-form" @submit.prevent="createProject">
+            <input v-model="newProjectName" type="text" placeholder="Tên dự án mới..." />
+            <button class="primary-button primary-button--compact" type="submit" :disabled="!newProjectName.trim()">
+              Tạo
             </button>
-          </div>
-        </article>
-      </section>
+            <button class="text-button" type="button" @click="createProjectOpen = false">Hủy</button>
+          </form>
 
-      <section id="team" class="team-panel glass-card">
-        <div class="panel-heading">
-          <div>
-            <span>Nhịp đội ngũ</span>
-            <h2>Năng lực hiện tại</h2>
-          </div>
-          <Users :size="18" />
-        </div>
+          <form v-if="projectBeingEditedId" class="project-inline-form" @submit.prevent="saveProjectEdit">
+            <input v-model="editProjectName" type="text" aria-label="Tên dự án" />
+            <button class="primary-button primary-button--compact" type="submit" :disabled="!editProjectName.trim()">
+              Lưu
+            </button>
+            <button class="text-button" type="button" @click="projectBeingEditedId = null">Hủy</button>
+          </form>
 
-        <div class="team-grid">
-          <article v-for="(member, index) in sortedTeam" :key="member.id" class="team-card">
-            <span class="avatar-token" :class="`avatar-token--${memberTone(index)}`">
-              {{ initials(displayName(member.fullName)) }}
-            </span>
-            <div>
-              <strong>{{ displayName(member.fullName) }}</strong>
-              <p>{{ displayRole(member.role) }} - {{ displayText(member.focusArea) }}</p>
+          <ProjectList
+            :projects="projectCards"
+            :active-project-id="selectedProject?.id ?? null"
+            @view="selectProject"
+            @edit="beginEditProject"
+            @delete="deleteProject"
+          />
+        </section>
+
+        <section class="home-secondary-grid">
+          <section id="tasks" class="task-snapshot glass-card">
+            <div class="panel-heading">
+              <div>
+                <span>Công việc</span>
+                <h2>{{ selectedProject ? displayText(selectedProject.name) : 'Dự án đang chọn' }}</h2>
+              </div>
+              <span class="count-pill">{{ selectedOpenTasks.length }}</span>
             </div>
-            <div class="strip-progress">
-              <span :style="{ width: `${member.capacityPercent}%` }"></span>
-            </div>
-          </article>
-        </div>
-      </section>
-    </main>
 
-    <aside class="dashboard-aside">
-      <div class="aside-actions">
-        <button class="icon-button" type="button" @click="notificationsOpen = !notificationsOpen">
-          <Bell :size="18" />
-          <span v-if="notificationCount > 0" class="action-badge">{{ notificationCount }}</span>
-        </button>
-        <button class="icon-button" type="button" @click="openChatWithPrompt()">
-          <MessageSquareText :size="18" />
-        </button>
-        <div class="user-avatar">QT</div>
+            <div class="task-snapshot-list">
+              <article v-for="task in selectedOpenTasks" :key="task.id" class="task-snapshot-row">
+                <div>
+                  <strong>{{ displayText(task.title) }}</strong>
+                  <p>{{ task.assigneeName ? displayName(task.assigneeName) : 'Chưa giao' }} - {{ formatDate(task.dueDate) }}</p>
+                </div>
+                <span>{{ displayStatus(task.status) }}</span>
+              </article>
+              <div v-if="selectedOpenTasks.length === 0" class="empty-state">Dự án này không còn công việc đang mở.</div>
+            </div>
+          </section>
+
+          <TeamMiniSection id="team" :members="teamMiniMembers" />
+        </section>
       </div>
 
-      <section class="meeting-card glass-card">
-        <span>{{ isLoading ? 'Đang đồng bộ dữ liệu' : 'Cập nhật lúc ' + formatTime(dashboard.generatedAt) }}</span>
-        <h2>{{ todayAgenda.title }}</h2>
-        <p>{{ todayAgenda.caption }}</p>
-        <button class="call-button" type="button" @click="openChatWithPrompt('Tóm tắt rủi ro của không gian làm việc')">
-          <Sparkles :size="17" />
-          <span>Phân tích nhanh</span>
-          <ChevronRight :size="16" />
-        </button>
-      </section>
-
-      <section class="aside-stat-grid">
-        <article
-          v-for="stat in rightPanelStats"
-          :key="stat.label"
-          class="aside-stat glass-card"
-          :class="`aside-stat--${stat.tone}`"
-        >
-          <strong>{{ stat.value }}</strong>
-          <span>{{ stat.label }}</span>
-          <p>{{ stat.detail }}</p>
-        </article>
-      </section>
-
-      <section class="calendar-card glass-card">
-        <div class="panel-heading">
-          <div>
-            <span>Lịch</span>
-            <h2>{{ calendarMonth }}</h2>
-          </div>
-          <CalendarDays :size="18" />
-        </div>
-
-        <div class="calendar-grid calendar-grid--weekdays">
-          <span>T2</span>
-          <span>T3</span>
-          <span>T4</span>
-          <span>T5</span>
-          <span>T6</span>
-          <span>T7</span>
-          <span>CN</span>
-        </div>
-        <div class="calendar-grid">
-          <span
-            v-for="day in calendarDays"
-            :key="day.key"
-            class="calendar-day"
-            :class="{
-              'is-muted': !day.isCurrentMonth,
-              'is-today': day.isToday,
-              'is-selected': day.isSelected,
-              'has-task': day.hasDueTask,
-            }"
-          >
-            {{ day.label }}
-          </span>
-        </div>
-      </section>
-
-      <section id="insights" class="insight-card glass-card">
-        <div class="panel-heading">
-          <div>
-            <span>Tín hiệu AI</span>
-            <h2>Rủi ro & luồng việc</h2>
-          </div>
-          <Zap :size="18" />
-        </div>
-
-        <div class="bar-chart">
-          <div v-for="bar in chartBars" :key="bar.label" class="bar-row">
-            <span>{{ bar.label }}</span>
-            <div>
-              <i :class="`bar-fill bar-fill--${bar.tone}`" :style="{ width: `${bar.percent}%` }"></i>
-            </div>
-            <strong>{{ bar.value }}</strong>
-          </div>
-        </div>
-
-        <div class="signal-list">
-          <article v-for="signal in riskSignals" :key="signal.title" class="signal-item" :class="`signal-item--${signal.tone}`">
-            <strong>{{ signal.title }}</strong>
-            <p>{{ signal.detail }}</p>
-          </article>
-        </div>
-      </section>
-
-      <div v-if="notificationsOpen" class="notification-popover glass-card">
+      <div v-if="notificationsOpen" class="notification-popover glass-card home-notification-popover">
         <div class="panel-heading">
           <div>
             <span>Thông báo</span>
             <h2>Tín hiệu hiện tại</h2>
           </div>
-          <button class="icon-button icon-button--small" type="button" @click="notificationsOpen = false">
-            <X :size="16" />
-          </button>
+          <div class="popover-actions">
+            <button class="text-button" type="button" @click="clearActionableNotifications">Đã đọc</button>
+            <button class="icon-button icon-button--small" type="button" @click="notificationsOpen = false">
+              <X :size="16" />
+            </button>
+          </div>
         </div>
         <article
           v-for="notification in dashboard.notifications.slice(0, 4)"
           :key="notification.id"
           :class="notificationClass(notification)"
         >
-          <strong>{{ notification.title }}</strong>
+          <div class="notice__top">
+            <strong>{{ notification.title }}</strong>
+            <button type="button" aria-label="Ẩn thông báo" @click="dismissNotification(notification.id)">
+              <X :size="14" />
+            </button>
+          </div>
           <p>{{ notification.message }}</p>
           <span>{{ formatTime(notification.createdAt) }}</span>
         </article>
       </div>
-    </aside>
+    </div>
 
-    <aside class="chat-drawer glass-card" :class="{ 'is-open': chatOpen }">
-      <div class="chat-drawer__header">
-        <div>
-          <span>Trợ lý AI</span>
-          <h2>Trợ lý Qaly</h2>
+    <div v-if="actionNotice" class="action-toast">{{ actionNotice }}</div>
+
+      <aside class="chat-drawer glass-card" :class="{ 'is-open': chatOpen }">
+        <div class="chat-drawer__header">
+        <div class="chat-drawer__identity">
+          <ChatbotAvatar size="medium" />
+          <div>
+            <span>Trợ lý AI</span>
+            <h2>Trợ lý Qaly</h2>
+          </div>
         </div>
         <button class="icon-button" type="button" @click="chatOpen = false">
           <X :size="18" />
         </button>
       </div>
 
-      <div class="chat-drawer__body">
+      <div ref="chatBodyRef" class="chat-drawer__body no-scrollbar">
         <article
           v-for="message in chatMessages"
           :key="message.id"
-          class="chat-bubble"
-          :class="`chat-bubble--${message.role}`"
+          class="chat-message"
+          :class="`chat-message--${message.role}`"
         >
-          {{ message.text }}
+          <div v-if="message.role === 'assistant'" class="chat-avatar chat-avatar--robot" aria-hidden="true">
+            <ChatbotAvatar size="small" />
+          </div>
+
+          <div class="chat-bubble" :class="`chat-bubble--${message.role}`">
+            {{ message.text }}
+          </div>
+
+          <div v-if="message.role === 'user'" class="chat-avatar chat-avatar--user" aria-hidden="true">QT</div>
+        </article>
+
+        <article v-if="isAssistantThinking" class="chat-message chat-message--assistant">
+          <div class="chat-avatar chat-avatar--robot is-thinking" aria-hidden="true">
+            <ChatbotAvatar size="small" />
+          </div>
+          <div class="chat-bubble chat-bubble--assistant chat-bubble--thinking" aria-label="Trợ lý đang suy nghĩ">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
         </article>
       </div>
 
       <div class="prompt-list">
-        <button v-for="prompt in quickPrompts" :key="prompt" type="button" class="prompt-chip" @click="submitChat(prompt)">
+        <button
+          v-for="prompt in quickPrompts"
+          :key="prompt"
+          type="button"
+          class="prompt-chip"
+          :disabled="isAssistantThinking"
+          @click="submitChat(prompt)"
+        >
           {{ prompt }}
         </button>
       </div>
 
       <form class="chat-drawer__composer" @submit.prevent="submitChat()">
-        <input v-model="chatDraft" type="text" placeholder="Hỏi về rủi ro, tải công việc..." />
-        <button class="primary-button" type="submit">Hỏi</button>
+        <input v-model="chatDraft" type="text" :disabled="isAssistantThinking" placeholder="Hỏi về dự án, rủi ro, ưu tiên..." />
+        <button class="primary-button" type="submit" :disabled="isAssistantThinking || !chatDraft.trim()">Hỏi</button>
       </form>
     </aside>
-  </div>
+  </AppShell>
 </template>
