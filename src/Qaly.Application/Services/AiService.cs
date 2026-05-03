@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
@@ -14,6 +15,9 @@ public class AiService : IAiService
     private readonly IVectorStorageService _vectorStorage;
     private readonly IRepository<Project> _projectRepo;
     private readonly IRepository<TaskItem> _taskRepo;
+    private readonly IRepository<ProjectMember> _memberRepo;
+    private readonly ICurrentUserService _currentUserService;
+    private readonly ILogger<AiService> _logger;
     private const string CollectionName = "qaly_context";
 
     public AiService(
@@ -21,13 +25,19 @@ public class AiService : IAiService
         IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
         IVectorStorageService vectorStorage,
         IRepository<Project> projectRepo,
-        IRepository<TaskItem> taskRepo)
+        IRepository<TaskItem> taskRepo,
+        IRepository<ProjectMember> memberRepo,
+        ICurrentUserService currentUserService,
+        ILogger<AiService> logger)
     {
         _chatClient = chatClient;
         _embeddingGenerator = embeddingGenerator;
         _vectorStorage = vectorStorage;
         _projectRepo = projectRepo;
         _taskRepo = taskRepo;
+        _memberRepo = memberRepo;
+        _currentUserService = currentUserService;
+        _logger = logger;
     }
 
     public async Task<string> SuggestTaskPriorityAsync(string title, string description, string projectContext)
@@ -45,6 +55,12 @@ Trả lời theo định dạng: [Priority] - [Lý do]";
 
     public async Task<string> GenerateProjectSummaryAsync(Guid projectId)
     {
+        if (!await CanAccessProjectAsync(projectId))
+        {
+            _logger.LogWarning("Unauthorized AI summary request for project {ProjectId} by user {UserId}", projectId, _currentUserService.UserId);
+            return "Bạn không có quyền truy cập thông tin dự án này.";
+        }
+
         var project = await _projectRepo.GetByIdAsync(projectId);
         if (project == null) return "Không tìm thấy dự án.";
 
@@ -55,6 +71,12 @@ Trả lời theo định dạng: [Priority] - [Lý do]";
 
     public async Task<string> AnalyzeProjectRisksAsync(Guid projectId)
     {
+        if (!await CanAccessProjectAsync(projectId))
+        {
+            _logger.LogWarning("Unauthorized AI risk analysis request for project {ProjectId} by user {UserId}", projectId, _currentUserService.UserId);
+            return "Bạn không có quyền truy cập dữ liệu dự án này để phân tích rủi ro.";
+        }
+
         var project = await GetProjectWithTasksAsync(projectId);
         if (project == null) return "Không tìm thấy dự án.";
 
@@ -66,6 +88,11 @@ Trả lời theo định dạng: [Priority] - [Lý do]";
 
     public async Task<string> SuggestTaskAssignmentAsync(Guid taskId, Guid projectId)
     {
+        if (!await CanAccessProjectAsync(projectId))
+        {
+            return "Bạn không có quyền truy cập dự án này.";
+        }
+
         var task = await _taskRepo.GetByIdAsync(taskId);
         if (task == null) return "Không tìm thấy công việc.";
 
@@ -76,6 +103,11 @@ Trả lời theo định dạng: [Priority] - [Lý do]";
 
     public async Task<IReadOnlyList<string>> SmartSearchAsync(string query, Guid? projectId = null)
     {
+        if (projectId.HasValue && !await CanAccessProjectAsync(projectId.Value))
+        {
+            return new List<string> { "Bạn không có quyền tìm kiếm trong dự án này." };
+        }
+
         var queryEmbedding = await _embeddingGenerator.GenerateAsync(new[] { query });
         var vector = queryEmbedding[0].Vector.ToArray();
 
@@ -101,6 +133,11 @@ Trả lời dưới dạng danh sách gạch đầu dòng.";
 
     public async Task<string> ChatAsync(string userMessage, Guid? projectId = null)
     {
+        if (projectId.HasValue && !await CanAccessProjectAsync(projectId.Value))
+        {
+            return "Bạn không có quyền truy cập vào dữ liệu của dự án này.";
+        }
+
         var queryEmbedding = await _embeddingGenerator.GenerateAsync(new[] { userMessage });
         var vector = queryEmbedding[0].Vector.ToArray();
 
@@ -148,6 +185,12 @@ Thời gian hiện tại: {DateTime.Now:dd/MM/yyyy HH:mm}";
 
     public async IAsyncEnumerable<string> ChatStreamingAsync(string userMessage, Guid? projectId = null)
     {
+        if (projectId.HasValue && !await CanAccessProjectAsync(projectId.Value))
+        {
+            yield return "Bạn không có quyền truy cập vào dữ liệu của dự án này.";
+            yield break;
+        }
+
         var queryEmbedding = await _embeddingGenerator.GenerateAsync(new[] { userMessage });
         var vector = queryEmbedding[0].Vector.ToArray();
 
@@ -200,9 +243,31 @@ Thời gian: {DateTime.Now:dd/MM/yyyy HH:mm}";
 
     public async Task<Project?> GetProjectWithTasksAsync(Guid projectId)
     {
+        if (!await CanAccessProjectAsync(projectId))
+        {
+            return null;
+        }
+
         return await _projectRepo.GetQueryable()
             .Include(p => p.Tasks)
             .FirstOrDefaultAsync(p => p.Id == projectId);
+    }
+
+    private async Task<bool> CanAccessProjectAsync(Guid projectId)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null) return false;
+
+        if (string.Equals(_currentUserService.Role, "Admin", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var project = await _projectRepo.GetByIdAsync(projectId);
+        if (project == null) return false;
+
+        if (project.OwnerId == currentUserId) return true;
+
+        return await _memberRepo.GetQueryable()
+            .AnyAsync(m => m.ProjectId == projectId && m.UserId == currentUserId);
     }
 
     private static bool IsDone(TaskItem task)
@@ -214,3 +279,4 @@ Thời gian: {DateTime.Now:dd/MM/yyyy HH:mm}";
     private static bool IsTaskOverdue(TaskItem task)
         => task.DueDate.HasValue && task.DueDate.Value < DateTimeOffset.UtcNow && !IsDone(task);
 }
+
