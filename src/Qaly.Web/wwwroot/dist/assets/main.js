@@ -606,6 +606,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
         const notifications = ref([]);
         const comments = ref([]);
         const attachments = ref([]);
+        const wikiPages = ref([]);
         const isLoading = ref(true);
         const usingFallback = ref(true);
         const chatOpen = ref(false);
@@ -802,7 +803,19 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             const user = currentUser.value;
             if (!project || !user)
                 return false;
-            return project.ownerId === user.id;
+            const userRole = String(user.role || '').toLowerCase();
+            if (userRole === 'admin' || user.email === 'admin@qaly.dev')
+                return true;
+            const userId = String(user.id || '').toLowerCase();
+            if (project.ownerId?.toLowerCase() === userId)
+                return true;
+            const member = project.members?.find(m => String(m.userId || '').toLowerCase() === userId);
+            if (member) {
+                const memberRole = String(member.role || '').toLowerCase();
+                if (memberRole === 'owner' || memberRole === 'manager')
+                    return true;
+            }
+            return false;
         });
         const selectedProjectMembers = computed(() => {
             const project = selectedProject.value;
@@ -903,6 +916,11 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             else {
                 comments.value = [];
                 attachments.value = [];
+            }
+        }, { immediate: true });
+        watch(() => [activeProjectId.value, activeProjectTab.value], ([projectId, tab]) => {
+            if (projectId && tab === 'wiki' && !usingFallback.value) {
+                void loadWikiPages(String(projectId));
             }
         }, { immediate: true });
         watch(() => [chatMessages.value.length, isAssistantThinking.value], () => {
@@ -1266,6 +1284,60 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                 });
                 await loadDashboard();
                 showActionNotice(`Updated role to ${role}.`);
+            }
+            catch (error) {
+                showActionNotice(errorMessage(error));
+            }
+        }
+        async function loadWikiPages(projectId) {
+            try {
+                wikiPages.value = await apiResult(`/api/projects/${projectId}/wiki`);
+            }
+            catch (error) {
+                console.warn('Could not load wiki pages.', error);
+                wikiPages.value = [];
+            }
+        }
+        async function createWikiPage(title, content = '') {
+            const project = selectedProject.value;
+            if (!project || !title)
+                return;
+            try {
+                await apiResult(`/api/projects/${project.id}/wiki`, {
+                    method: 'POST',
+                    body: JSON.stringify({ title, content }),
+                });
+                await loadWikiPages(project.id);
+                showActionNotice(`Created wiki page "${title}".`);
+            }
+            catch (error) {
+                showActionNotice(errorMessage(error));
+            }
+        }
+        async function updateWikiPage(pageId, title, content) {
+            const project = selectedProject.value;
+            if (!project || !title)
+                return;
+            try {
+                await apiCommand(`/api/projects/${project.id}/wiki/${pageId}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ title, content }),
+                });
+                await loadWikiPages(project.id);
+                showActionNotice(`Updated wiki page "${title}".`);
+            }
+            catch (error) {
+                showActionNotice(errorMessage(error));
+            }
+        }
+        async function deleteWikiPage(pageId) {
+            const project = selectedProject.value;
+            if (!project)
+                return;
+            try {
+                await apiCommand(`/api/projects/${project.id}/wiki/${pageId}`, { method: 'DELETE' });
+                await loadWikiPages(project.id);
+                showActionNotice('Wiki page deleted.');
             }
             catch (error) {
                 showActionNotice(errorMessage(error));
@@ -1670,6 +1742,11 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             updateMemberRole,
             uploadAttachment,
             users,
+            wikiPages,
+            loadWikiPages,
+            createWikiPage,
+            updateWikiPage,
+            deleteWikiPage,
         });
         return (_ctx, _cache) => {
             const _component_RouterView = resolveComponent("RouterView");

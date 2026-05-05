@@ -41,7 +41,7 @@ const roles = ['Manager', 'Member', 'Viewer']
     <div class="panel-heading">
       <div>
         <span>Members</span>
-        <h2>Thành viên dự án</h2>
+        <h2>DANH SÁCH THÀNH VIÊN</h2>
       </div>
       <button v-if="isAdmin" class="primary-button primary-button--compact" type="button" @click="showAddForm = !showAddForm">
         <UserPlus :size="16" />

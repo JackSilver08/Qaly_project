@@ -12,7 +12,7 @@ public class TaskItem : BaseEntity
     public DateTimeOffset? DueDate { get; set; }
     public int? EstimatedHours { get; set; }
     public int? ActualHours { get; set; }
-    public bool IsPrivate { get; set; } = false;
+    public bool IsPrivate { get; set; }
 
     // Foreign keys
     public Guid ProjectId { get; set; }

@@ -174,3 +174,11 @@ export interface AttachmentDto {
   uploadedByName: string
   uploadedAt: string
 }
+
+export interface WikiPageDto {
+  id: string
+  title: string
+  content: string
+  authorName: string
+  updatedAt: string
+}

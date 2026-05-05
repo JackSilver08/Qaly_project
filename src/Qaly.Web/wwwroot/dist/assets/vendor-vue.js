@@ -6162,6 +6162,28 @@ const withModifiers = (fn, modifiers) => {
         return fn(event, ...args);
     }));
 };
+const keyNames = {
+    esc: "escape",
+    space: " ",
+    up: "arrow-up",
+    left: "arrow-left",
+    right: "arrow-right",
+    down: "arrow-down",
+    delete: "backspace"
+};
+const withKeys = (fn, modifiers) => {
+    const cache = fn._withKeys || (fn._withKeys = {});
+    const cacheKey = modifiers.join(".");
+    return cache[cacheKey] || (cache[cacheKey] = ((event) => {
+        if (!("key" in event)) {
+            return;
+        }
+        const eventKey = hyphenate(event.key);
+        if (modifiers.some((k) => k === eventKey || keyNames[k] === eventKey)) {
+            return fn(event);
+        }
+    }));
+};
 const rendererOptions = /* @__PURE__ */ extend({ patchProp }, nodeOps);
 let renderer;
 function ensureRenderer() {
@@ -8354,5 +8376,5 @@ function useRouter() {
 function useRoute(_name) {
     return inject(routeLocationKey);
 }
-export { computed as A, provide as B, createRouter as C, createWebHistory as D, createApp as E, Fragment as F, isRef as G, normalizeStyle as H, vModelSelect as I, createTextVNode as J, createBaseVNode as a, renderList as b, createElementBlock as c, defineComponent as d, createBlock as e, resolveDynamicComponent as f, createVNode as g, h, unref as i, createCommentVNode as j, renderSlot as k, ref as l, inject as m, normalizeClass as n, openBlock as o, watch as p, useRouter as q, resolveComponent as r, onMounted as s, toDisplayString as t, useRoute as u, nextTick as v, withCtx as w, withModifiers as x, withDirectives as y, vModelText as z };
+export { computed as A, provide as B, createRouter as C, createWebHistory as D, createApp as E, Fragment as F, isRef as G, normalizeStyle as H, vModelSelect as I, createTextVNode as J, withKeys as K, createBaseVNode as a, renderList as b, createElementBlock as c, defineComponent as d, createBlock as e, resolveDynamicComponent as f, createVNode as g, h, unref as i, createCommentVNode as j, renderSlot as k, ref as l, inject as m, normalizeClass as n, openBlock as o, watch as p, useRouter as q, resolveComponent as r, onMounted as s, toDisplayString as t, useRoute as u, nextTick as v, withCtx as w, withModifiers as x, withDirectives as y, vModelText as z };
 //# sourceMappingURL=vendor-vue.js.map

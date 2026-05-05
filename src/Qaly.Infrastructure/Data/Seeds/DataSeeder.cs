@@ -27,7 +27,7 @@ public partial class DataSeeder
             var admin = await _context.Users.FirstOrDefaultAsync(u => u.Email == "admin@qaly.dev");
             if (admin != null && admin.FullName != "Quản trị viên hệ thống")
             {
-                _logger.LogInformation("Phát hiện dữ liệu cũ, tiến hành xóa để re-seed bản Tiếng Việt mới...");
+                LogStaleDataDetected(_logger);
                 _context.TaskComments.RemoveRange(_context.TaskComments);
                 _context.TaskItems.RemoveRange(_context.TaskItems);
                 _context.ProjectMembers.RemoveRange(_context.ProjectMembers);
@@ -246,4 +246,7 @@ public partial class DataSeeder
 
     [LoggerMessage(EventId = 5, Level = LogLevel.Information, Message = "Đã seed dự án '{ProjectName}' với {TaskCount} công việc.")]
     private static partial void LogSeededProject(ILogger logger, string projectName, int taskCount);
+
+    [LoggerMessage(EventId = 6, Level = LogLevel.Information, Message = "Phát hiện dữ liệu cũ, tiến hành xóa để re-seed bản Tiếng Việt mới...")]
+    private static partial void LogStaleDataDetected(ILogger logger);
 }

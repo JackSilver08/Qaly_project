@@ -36,7 +36,7 @@ public class VectorSyncInterceptor : SaveChangesInterceptor
             .Select(e => new { e.Entity.Id, Type = e.Entity.GetType().Name })
             .ToList();
 
-        if (entries.Any())
+        if (entries.Count > 0)
         {
             // Run sync in background to not block the main request
             _ = Task.Run(async () =>

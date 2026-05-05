@@ -40,7 +40,7 @@ public class AiExportService : IAiExportService
             worksheet.Cell(currentRow, 1).Value = task.Title;
             worksheet.Cell(currentRow, 2).Value = task.Status;
             worksheet.Cell(currentRow, 3).Value = task.Priority;
-            worksheet.Cell(currentRow, 4).Value = task.DueDate?.ToString("dd/MM/yyyy") ?? "N/A";
+            worksheet.Cell(currentRow, 4).Value = task.DueDate?.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture) ?? "N/A";
         }
 
         worksheet.Columns().AdjustToContents();

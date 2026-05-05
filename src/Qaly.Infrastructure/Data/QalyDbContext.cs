@@ -16,6 +16,7 @@ public class QalyDbContext : DbContext
     public DbSet<TaskComment> TaskComments => Set<TaskComment>();
     public DbSet<TaskAttachment> TaskAttachments => Set<TaskAttachment>();
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<WikiPage> WikiPages => Set<WikiPage>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

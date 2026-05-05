@@ -81,12 +81,12 @@ public class AiController : ControllerBase
         if (project == null) return NotFound();
 
         var exportService = HttpContext.RequestServices.GetRequiredService<IAiExportService>();
-        var bytes = format.ToLower() == "word" 
+        var bytes = string.Equals(format, "word", StringComparison.OrdinalIgnoreCase) 
             ? await exportService.ExportProjectToWordAsync(project)
             : await exportService.ExportProjectToExcelAsync(project);
 
-        var fileName = $"{project.Name}_{DateTime.Now:yyyyMMdd}.{(format.ToLower() == "word" ? "docx" : "xlsx")}";
-        var contentType = format.ToLower() == "word"
+        var fileName = $"{project.Name}_{DateTime.Now:yyyyMMdd}.{(string.Equals(format, "word", StringComparison.OrdinalIgnoreCase) ? "docx" : "xlsx")}";
+        var contentType = string.Equals(format, "word", StringComparison.OrdinalIgnoreCase)
             ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 

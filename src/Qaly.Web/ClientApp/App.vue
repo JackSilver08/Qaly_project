@@ -29,6 +29,7 @@ import type {
   ProjectDto,
   TaskItemDto,
   UserDto,
+  WikiPageDto,
 } from './types'
 
 interface ChatMessage {
@@ -56,6 +57,7 @@ const users = ref<UserDto[]>([])
 const notifications = ref<NotificationDto[]>([])
 const comments = ref<CommentDto[]>([])
 const attachments = ref<AttachmentDto[]>([])
+const wikiPages = ref<WikiPageDto[]>([])
 const isLoading = ref(true)
 const usingFallback = ref(true)
 const chatOpen = ref(false)
@@ -284,7 +286,20 @@ const isProjectAdmin = computed(() => {
   const project = selectedProject.value
   const user = currentUser.value
   if (!project || !user) return false
-  return project.ownerId === user.id
+  
+  const userRole = String(user.role || '').toLowerCase()
+  if (userRole === 'admin' || user.email === 'admin@qaly.dev') return true
+  
+  const userId = String(user.id || '').toLowerCase()
+  if (project.ownerId?.toLowerCase() === userId) return true
+  
+  const member = project.members?.find(m => String(m.userId || '').toLowerCase() === userId)
+  if (member) {
+    const memberRole = String(member.role || '').toLowerCase()
+    if (memberRole === 'owner' || memberRole === 'manager') return true
+  }
+  
+  return false
 })
 
 const selectedProjectMembers = computed(() => {
@@ -299,6 +314,7 @@ const selectedProjectMembers = computed(() => {
     initials: initials(member.fullName),
   }))
 })
+
 
 const selectedProjectStats = computed(() => {
   const project = selectedProject.value
@@ -419,6 +435,16 @@ watch(
     }
   },
   { immediate: true },
+)
+
+watch(
+  () => [activeProjectId.value, activeProjectTab.value],
+  ([projectId, tab]) => {
+    if (projectId && tab === 'wiki' && !usingFallback.value) {
+      void loadWikiPages(String(projectId))
+    }
+  },
+  { immediate: true }
 )
 
 watch(
@@ -805,6 +831,60 @@ async function updateMemberRole(userId: string, role: string) {
     })
     await loadDashboard()
     showActionNotice(`Updated role to ${role}.`)
+  } catch (error) {
+    showActionNotice(errorMessage(error))
+  }
+}
+
+async function loadWikiPages(projectId: string) {
+  try {
+    wikiPages.value = await apiResult<WikiPageDto[]>(`/api/projects/${projectId}/wiki`)
+  } catch (error) {
+    console.warn('Could not load wiki pages.', error)
+    wikiPages.value = []
+  }
+}
+
+async function createWikiPage(title: string, content: string = '') {
+  const project = selectedProject.value
+  if (!project || !title) return
+
+  try {
+    await apiResult<WikiPageDto>(`/api/projects/${project.id}/wiki`, {
+      method: 'POST',
+      body: JSON.stringify({ title, content }),
+    })
+    await loadWikiPages(project.id)
+    showActionNotice(`Created wiki page "${title}".`)
+  } catch (error) {
+    showActionNotice(errorMessage(error))
+  }
+}
+
+async function updateWikiPage(pageId: string, title: string, content: string) {
+  const project = selectedProject.value
+  if (!project || !title) return
+
+  try {
+    await apiCommand(`/api/projects/${project.id}/wiki/${pageId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ title, content }),
+    })
+    await loadWikiPages(project.id)
+    showActionNotice(`Updated wiki page "${title}".`)
+  } catch (error) {
+    showActionNotice(errorMessage(error))
+  }
+}
+
+async function deleteWikiPage(pageId: string) {
+  const project = selectedProject.value
+  if (!project) return
+
+  try {
+    await apiCommand(`/api/projects/${project.id}/wiki/${pageId}`, { method: 'DELETE' })
+    await loadWikiPages(project.id)
+    showActionNotice('Wiki page deleted.')
   } catch (error) {
     showActionNotice(errorMessage(error))
   }
@@ -1251,6 +1331,11 @@ provide(dashboardContextKey, {
   updateMemberRole,
   uploadAttachment,
   users,
+  wikiPages,
+  loadWikiPages,
+  createWikiPage,
+  updateWikiPage,
+  deleteWikiPage,
 })
 </script>
 

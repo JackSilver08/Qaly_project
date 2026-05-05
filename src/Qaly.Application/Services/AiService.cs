@@ -8,7 +8,7 @@ using System.Text;
 
 namespace Qaly.Application.Services;
 
-public class AiService : IAiService
+public partial class AiService : IAiService
 {
     private readonly IChatClient _chatClient;
     private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddingGenerator;
@@ -40,12 +40,12 @@ public class AiService : IAiService
         _logger = logger;
     }
 
-    public async Task<string> SuggestTaskPriorityAsync(string title, string description, string projectContext)
+    public async Task<string> SuggestTaskPriorityAsync(string taskTitle, string taskDescription, string projectContext)
     {
         var prompt = $@"Dựa trên thông tin công việc sau, hãy đề xuất độ ưu tiên (Low, Medium, High, Critical) và giải thích lý do ngắn gọn.
 Dự án: {projectContext}
-Công việc: {title}
-Mô tả: {description}
+Công việc: {taskTitle}
+Mô tả: {taskDescription}
 
 Trả lời theo định dạng: [Priority] - [Lý do]";
 
@@ -57,7 +57,7 @@ Trả lời theo định dạng: [Priority] - [Lý do]";
     {
         if (!await CanAccessProjectAsync(projectId))
         {
-            _logger.LogWarning("Unauthorized AI summary request for project {ProjectId} by user {UserId}", projectId, _currentUserService.UserId);
+            LogUnauthorizedSummaryRequest(_logger, projectId, _currentUserService.UserId ?? Guid.Empty);
             return "Bạn không có quyền truy cập thông tin dự án này.";
         }
 
@@ -73,7 +73,7 @@ Trả lời theo định dạng: [Priority] - [Lý do]";
     {
         if (!await CanAccessProjectAsync(projectId))
         {
-            _logger.LogWarning("Unauthorized AI risk analysis request for project {ProjectId} by user {UserId}", projectId, _currentUserService.UserId);
+            LogUnauthorizedRiskAnalysisRequest(_logger, projectId, _currentUserService.UserId ?? Guid.Empty);
             return "Bạn không có quyền truy cập dữ liệu dự án này để phân tích rủi ro.";
         }
 
@@ -146,7 +146,8 @@ Trả lời dưới dạng danh sách gạch đầu dòng.";
         var contextBuilder = new StringBuilder();
         foreach (var res in results)
         {
-            contextBuilder.AppendLine($"- [Loại: {res.Payload.GetValueOrDefault("Type")}]: {res.Payload.GetValueOrDefault("Content")}");
+            contextBuilder.Append(System.Globalization.CultureInfo.InvariantCulture, $"- [Loại: {res.Payload.GetValueOrDefault("Type")}]: {res.Payload.GetValueOrDefault("Content")}");
+            contextBuilder.AppendLine();
         }
 
         var exportLink = projectId != null ? $"/api/ai/export/{projectId}?format=excel" : "#";
@@ -171,7 +172,7 @@ HƯỚNG DẪN TRẢ LỜI:
 - Sử dụng bảng Markdown nếu cần so sánh dữ liệu.
 - Nếu người dùng muốn xuất file, hãy đưa ra link tải như hướng dẫn trên.
 
-Thời gian hiện tại: {DateTime.Now:dd/MM/yyyy HH:mm}";
+Thời gian hiện tại: {DateTime.Now.ToString("dd/MM/yyyy HH:mm", System.Globalization.CultureInfo.InvariantCulture)}";
 
         var chatHistory = new List<ChatMessage>
         {
@@ -199,7 +200,8 @@ Thời gian hiện tại: {DateTime.Now:dd/MM/yyyy HH:mm}";
         var contextBuilder = new StringBuilder();
         foreach (var res in results)
         {
-            contextBuilder.AppendLine($"- [Loại: {res.Payload.GetValueOrDefault("Type")}]: {res.Payload.GetValueOrDefault("Content")}");
+            contextBuilder.Append(System.Globalization.CultureInfo.InvariantCulture, $"- [Loại: {res.Payload.GetValueOrDefault("Type")}]: {res.Payload.GetValueOrDefault("Content")}");
+            contextBuilder.AppendLine();
         }
 
         var exportLink = projectId != null ? $"/api/ai/export/{projectId}?format=excel" : "#";
@@ -224,7 +226,7 @@ HƯỚNG DẪN:
 - Sử dụng bảng Markdown nếu cần so sánh dữ liệu.
 - Nếu người dùng muốn xuất file, hãy đưa ra link tải như hướng dẫn trên.
 
-Thời gian: {DateTime.Now:dd/MM/yyyy HH:mm}";
+Thời gian: {DateTime.Now.ToString("dd/MM/yyyy HH:mm", System.Globalization.CultureInfo.InvariantCulture)}";
 
         var chatHistory = new List<ChatMessage>
         {
@@ -278,5 +280,11 @@ Thời gian: {DateTime.Now:dd/MM/yyyy HH:mm}";
 
     private static bool IsTaskOverdue(TaskItem task)
         => task.DueDate.HasValue && task.DueDate.Value < DateTimeOffset.UtcNow && !IsDone(task);
+
+    [LoggerMessage(EventId = 1, Level = LogLevel.Warning, Message = "Unauthorized AI summary request for project {ProjectId} by user {UserId}")]
+    private static partial void LogUnauthorizedSummaryRequest(ILogger logger, Guid projectId, Guid userId);
+
+    [LoggerMessage(EventId = 2, Level = LogLevel.Warning, Message = "Unauthorized AI risk analysis request for project {ProjectId} by user {UserId}")]
+    private static partial void LogUnauthorizedRiskAnalysisRequest(ILogger logger, Guid projectId, Guid userId);
 }
 

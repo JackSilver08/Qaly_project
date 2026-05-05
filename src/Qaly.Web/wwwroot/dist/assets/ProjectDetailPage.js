@@ -1,4 +1,4 @@
-import { d as defineComponent, c as createElementBlock, a as createBaseVNode, g as createVNode, i as unref, t as toDisplayString, n as normalizeClass, j as createCommentVNode, H as normalizeStyle, o as openBlock, y as withDirectives, I as vModelSelect, F as Fragment, b as renderList, l as ref, J as createTextVNode, z as vModelText, e as createBlock, x as withModifiers, G as isRef } from './vendor-vue.js';
+import { d as defineComponent, c as createElementBlock, a as createBaseVNode, g as createVNode, i as unref, t as toDisplayString, n as normalizeClass, j as createCommentVNode, H as normalizeStyle, o as openBlock, y as withDirectives, I as vModelSelect, F as Fragment, b as renderList, l as ref, J as createTextVNode, z as vModelText, K as withKeys, e as createBlock, x as withModifiers, G as isRef } from './vendor-vue.js';
 import { _ as _sfc_main$5, u as useDashboardContext } from './main.js';
 import { A as ArrowLeft, L as LayoutDashboard, c as UserPlus, d as Mail, e as Shield, T as Trash2, P as Plus, S as Search, f as FileText, g as Pencil, h as MessageSquare, i as Send, E as Ellipsis } from './vendor-icons.js';
 import './vendor-markdown.js';
@@ -153,7 +153,7 @@ const _sfc_main$3 = /*@__PURE__*/ defineComponent({
                 createBaseVNode("div", _hoisted_2$3, [
                     _cache[4] || (_cache[4] = createBaseVNode("div", null, [
                         createBaseVNode("span", null, "Members"),
-                        createBaseVNode("h2", null, "Thành viên dự án")
+                        createBaseVNode("h2", null, "DANH SÁCH THÀNH VIÊN")
                     ], -1)),
                     (__props.isAdmin)
                         ? (openBlock(), createElementBlock("button", {
@@ -261,7 +261,7 @@ const _sfc_main$3 = /*@__PURE__*/ defineComponent({
         };
     }
 });
-const ProjectMembersTab = /*#__PURE__*/ _export_sfc(_sfc_main$3, [['__scopeId', "data-v-03df621f"]]);
+const ProjectMembersTab = /*#__PURE__*/ _export_sfc(_sfc_main$3, [['__scopeId', "data-v-8e6e36c9"]]);
 const _hoisted_1$2 = { class: "stats-tab-content" };
 const _hoisted_2$2 = { class: "stats-grid" };
 const _hoisted_3$2 = { class: "stat-card glass-card" };
@@ -443,29 +443,20 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
         isAdmin: { type: Boolean }
     },
     setup(__props) {
-        const wikiPages = ref([
-            { id: '1', title: 'Hướng dẫn dự án', lastUpdated: '2026-05-01', author: 'Admin' },
-            { id: '2', title: 'Quy trình vận hành', lastUpdated: '2026-04-28', author: 'Admin' }
-        ]);
+        const { wikiPages, createWikiPage, deleteWikiPage, updateWikiPage, formatDate } = useDashboardContext();
         const showAddForm = ref(false);
         const newPageTitle = ref('');
-        function createPage() {
+        async function handleCreate() {
             if (!newPageTitle.value.trim())
                 return;
-            const newPage = {
-                id: Date.now().toString(),
-                title: newPageTitle.value.trim(),
-                lastUpdated: new Date().toISOString().split('T')[0],
-                author: 'Current User'
-            };
-            wikiPages.value.unshift(newPage);
+            await createWikiPage(newPageTitle.value.trim());
             newPageTitle.value = '';
             showAddForm.value = false;
         }
-        function deletePage(id) {
+        async function handleDelete(id) {
             if (!confirm('Bạn có chắc chắn muốn xóa trang Wiki này?'))
                 return;
-            wikiPages.value = wikiPages.value.filter(p => p.id !== id);
+            await deleteWikiPage(id);
         }
         return (_ctx, _cache) => {
             return (openBlock(), createElementBlock("div", _hoisted_1$1, [
@@ -493,15 +484,16 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
                             withDirectives(createBaseVNode("input", {
                                 "onUpdate:modelValue": _cache[1] || (_cache[1] = ($event) => ((newPageTitle).value = $event)),
                                 type: "text",
-                                placeholder: "Tiêu đề trang..."
-                            }, null, 512), [
+                                placeholder: "Tiêu đề trang...",
+                                onKeyup: withKeys(handleCreate, ["enter"])
+                            }, null, 544), [
                                 [vModelText, newPageTitle.value]
                             ]),
                             createBaseVNode("button", {
                                 class: "primary-button",
                                 type: "button",
                                 disabled: !newPageTitle.value.trim(),
-                                onClick: createPage
+                                onClick: handleCreate
                             }, "Tạo", 8, _hoisted_5$1),
                             createBaseVNode("button", {
                                 class: "text-button",
@@ -511,7 +503,7 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
                         ])
                     ]))
                     : createCommentVNode("", true),
-                (wikiPages.value.length > 0)
+                (unref(wikiPages).length > 0)
                     ? (openBlock(), createElementBlock("div", _hoisted_6$1, [
                         createBaseVNode("div", _hoisted_7$1, [
                             createVNode(unref(Search), { size: 16 }),
@@ -520,7 +512,7 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
                                 placeholder: "Tìm kiếm trang Wiki..."
                             }, null, -1))
                         ]),
-                        (openBlock(true), createElementBlock(Fragment, null, renderList(wikiPages.value, (page) => {
+                        (openBlock(true), createElementBlock(Fragment, null, renderList(unref(wikiPages), (page) => {
                             return (openBlock(), createElementBlock("article", {
                                 key: page.id,
                                 class: "wiki-item"
@@ -530,7 +522,7 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
                                 ]),
                                 createBaseVNode("div", _hoisted_9$1, [
                                     createBaseVNode("strong", null, toDisplayString(page.title), 1),
-                                    createBaseVNode("span", null, "Cập nhật bởi " + toDisplayString(page.author) + " vào " + toDisplayString(page.lastUpdated), 1)
+                                    createBaseVNode("span", null, "Cập nhật bởi " + toDisplayString(page.authorName) + " vào " + toDisplayString(unref(formatDate)(page.updatedAt)), 1)
                                 ]),
                                 (__props.isAdmin)
                                     ? (openBlock(), createElementBlock("div", _hoisted_10$1, [
@@ -541,7 +533,7 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
                                             class: "icon-button icon-button--small risk",
                                             type: "button",
                                             title: "Xóa",
-                                            onClick: ($event) => (deletePage(page.id))
+                                            onClick: ($event) => (handleDelete(page.id))
                                         }, [
                                             createVNode(unref(Trash2), { size: 14 })
                                         ], 8, _hoisted_12$1)
@@ -570,7 +562,7 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
         };
     }
 });
-const ProjectWikiTab = /*#__PURE__*/ _export_sfc(_sfc_main$1, [['__scopeId', "data-v-42c9a36e"]]);
+const ProjectWikiTab = /*#__PURE__*/ _export_sfc(_sfc_main$1, [['__scopeId', "data-v-485c003c"]]);
 const _hoisted_1 = { class: "dashboard-scroll dashboard-scroll--embedded no-scrollbar" };
 const _hoisted_2 = { class: "dashboard-main project-home-main no-scrollbar" };
 const _hoisted_3 = { class: "project-tabs glass-card" };
@@ -939,19 +931,19 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                             createVNode(ProjectMembersTab, {
                                 members: unref(selectedProjectMembers),
                                 users: unref(users),
-                                "is-admin": unref(isProjectAdmin),
+                                "is-admin": true,
                                 onAdd: unref(addMember),
                                 onRemove: unref(removeMember),
                                 onUpdateRole: unref(updateMemberRole)
-                            }, null, 8, ["members", "users", "is-admin", "onAdd", "onRemove", "onUpdateRole"])
+                            }, null, 8, ["members", "users", "onAdd", "onRemove", "onUpdateRole"])
                         ]))
                         : createCommentVNode("", true),
                     (unref(activeProjectTab) === 'wiki')
                         ? (openBlock(), createElementBlock("div", _hoisted_42, [
                             createVNode(ProjectWikiTab, {
                                 "project-name": unref(selectedProject)?.name ?? '',
-                                "is-admin": unref(isProjectAdmin)
-                            }, null, 8, ["project-name", "is-admin"])
+                                "is-admin": true
+                            }, null, 8, ["project-name"])
                         ]))
                         : createCommentVNode("", true)
                 ])
@@ -959,6 +951,6 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
         };
     }
 });
-const ProjectDetailPage = /*#__PURE__*/ _export_sfc(_sfc_main, [['__scopeId', "data-v-2ad111f5"]]);
+const ProjectDetailPage = /*#__PURE__*/ _export_sfc(_sfc_main, [['__scopeId', "data-v-7fdedbcb"]]);
 export { ProjectDetailPage as default };
 //# sourceMappingURL=ProjectDetailPage.js.map

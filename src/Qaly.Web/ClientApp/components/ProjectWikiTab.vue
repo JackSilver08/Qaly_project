@@ -1,43 +1,34 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { FileText, Plus, Pencil, Trash2, Search } from 'lucide-vue-next'
+import { useDashboardContext } from '../composables/dashboard-context'
 
 const props = defineProps<{
   projectName: string
   isAdmin: boolean
 }>()
 
-interface WikiPage {
-  id: string
-  title: string
-  lastUpdated: string
-  author: string
-}
-
-const wikiPages = ref<WikiPage[]>([
-  { id: '1', title: 'Hướng dẫn dự án', lastUpdated: '2026-05-01', author: 'Admin' },
-  { id: '2', title: 'Quy trình vận hành', lastUpdated: '2026-04-28', author: 'Admin' }
-])
+const {
+  wikiPages,
+  createWikiPage,
+  deleteWikiPage,
+  updateWikiPage,
+  formatDate
+} = useDashboardContext()
 
 const showAddForm = ref(false)
 const newPageTitle = ref('')
 
-function createPage() {
+async function handleCreate() {
   if (!newPageTitle.value.trim()) return
-  const newPage: WikiPage = {
-    id: Date.now().toString(),
-    title: newPageTitle.value.trim(),
-    lastUpdated: new Date().toISOString().split('T')[0],
-    author: 'Current User'
-  }
-  wikiPages.value.unshift(newPage)
+  await createWikiPage(newPageTitle.value.trim())
   newPageTitle.value = ''
   showAddForm.value = false
 }
 
-function deletePage(id: string) {
+async function handleDelete(id: string) {
   if (!confirm('Bạn có chắc chắn muốn xóa trang Wiki này?')) return
-  wikiPages.value = wikiPages.value.filter(p => p.id !== id)
+  await deleteWikiPage(id)
 }
 </script>
 
@@ -58,8 +49,8 @@ function deletePage(id: string) {
     <div v-if="showAddForm" class="wiki-add-form glass-card reveal">
       <h3>Tạo trang Wiki mới</h3>
       <div class="form-row">
-        <input v-model="newPageTitle" type="text" placeholder="Tiêu đề trang..." />
-        <button class="primary-button" type="button" :disabled="!newPageTitle.trim()" @click="createPage">Tạo</button>
+        <input v-model="newPageTitle" type="text" placeholder="Tiêu đề trang..." @keyup.enter="handleCreate" />
+        <button class="primary-button" type="button" :disabled="!newPageTitle.trim()" @click="handleCreate">Tạo</button>
         <button class="text-button" type="button" @click="showAddForm = false">Hủy</button>
       </div>
     </div>
@@ -76,13 +67,13 @@ function deletePage(id: string) {
         </div>
         <div class="wiki-item__main">
           <strong>{{ page.title }}</strong>
-          <span>Cập nhật bởi {{ page.author }} vào {{ page.lastUpdated }}</span>
+          <span>Cập nhật bởi {{ page.authorName }} vào {{ formatDate(page.updatedAt) }}</span>
         </div>
         <div v-if="isAdmin" class="wiki-item__actions">
           <button class="icon-button icon-button--small" type="button" title="Sửa">
             <Pencil :size="14" />
           </button>
-          <button class="icon-button icon-button--small risk" type="button" title="Xóa" @click="deletePage(page.id)">
+          <button class="icon-button icon-button--small risk" type="button" title="Xóa" @click="handleDelete(page.id)">
             <Trash2 :size="14" />
           </button>
         </div>

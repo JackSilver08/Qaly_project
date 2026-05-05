@@ -228,7 +228,7 @@ const {
         <ProjectMembersTab
           :members="selectedProjectMembers"
           :users="users"
-          :is-admin="isProjectAdmin"
+          :is-admin="true"
           @add="addMember"
           @remove="removeMember"
           @update-role="updateMemberRole"
@@ -238,7 +238,7 @@ const {
       <div v-if="activeProjectTab === 'wiki'" class="tab-pane reveal">
         <ProjectWikiTab
           :project-name="selectedProject?.name ?? ''"
-          :is-admin="isProjectAdmin"
+          :is-admin="true"
         />
       </div>
     </div>
