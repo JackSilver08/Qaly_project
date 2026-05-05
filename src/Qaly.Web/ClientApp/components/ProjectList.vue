@@ -5,6 +5,7 @@ import type { ProjectCardModel } from './dashboard-models'
 defineProps<{
   projects: ProjectCardModel[]
   activeProjectId: string | null
+  readOnly?: boolean
 }>()
 
 defineEmits<{
@@ -21,6 +22,7 @@ defineEmits<{
       :key="project.id"
       :project="project"
       :is-active="project.id === activeProjectId"
+      :read-only="readOnly"
       @view="$emit('view', $event)"
       @edit="$emit('edit', $event)"
       @delete="$emit('delete', $event)"

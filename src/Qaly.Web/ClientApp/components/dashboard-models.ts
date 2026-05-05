@@ -23,6 +23,20 @@ export interface ProjectCardModel {
   memberInitials: string[]
 }
 
+export interface TaskListItemModel {
+  id: string
+  projectId: string
+  title: string
+  projectName: string
+  assignedAtLabel: string
+  priority: string
+  dueDateLabel: string
+  reporterName: string
+  reporterInitials: string
+  statusLabel: string
+  isOverdue: boolean
+}
+
 export interface TeamMiniMemberModel {
   id: string
   name: string

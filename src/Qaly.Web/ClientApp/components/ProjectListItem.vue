@@ -5,6 +5,7 @@ import type { ProjectCardModel } from './dashboard-models'
 defineProps<{
   project: ProjectCardModel
   isActive: boolean
+  readOnly?: boolean
 }>()
 
 defineEmits<{
@@ -38,7 +39,7 @@ defineEmits<{
       <span v-for="member in project.memberInitials" :key="member">{{ member }}</span>
     </div>
 
-    <div class="project-list-item__actions">
+    <div v-if="!readOnly" class="project-list-item__actions">
       <button type="button" aria-label="Xem dự án" @click="$emit('view', project.id)">
         <Eye :size="17" />
       </button>
@@ -47,6 +48,12 @@ defineEmits<{
       </button>
       <button type="button" aria-label="Xóa dự án" @click="$emit('delete', project.id)">
         <Trash2 :size="17" />
+      </button>
+    </div>
+
+    <div v-else class="project-list-item__actions">
+      <button type="button" aria-label="Xem dự án" @click="$emit('view', project.id)">
+        <Eye :size="17" />
       </button>
     </div>
   </article>

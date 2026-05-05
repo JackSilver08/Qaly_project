@@ -43,6 +43,13 @@ builder.Services.AddScoped<DataSeeder>();
 builder.Services.AddRazorPages(options =>
 {
     options.Conventions.AuthorizePage("/Index");
+    options.Conventions.AddPageRoute("/Index", "dashboard");
+    options.Conventions.AddPageRoute("/Index", "projects");
+    options.Conventions.AddPageRoute("/Index", "projects/archived");
+    options.Conventions.AddPageRoute("/Index", "projects/{projectId}");
+    options.Conventions.AddPageRoute("/Index", "projects/{projectId}/tasks/{taskId}");
+    options.Conventions.AddPageRoute("/Index", "tasks");
+    options.Conventions.AddPageRoute("/Index", "teams");
     options.Conventions.AllowAnonymousToPage("/Account/Login");
     options.Conventions.AllowAnonymousToPage("/Account/Register");
     options.Conventions.AllowAnonymousToPage("/Account/AccessDenied");

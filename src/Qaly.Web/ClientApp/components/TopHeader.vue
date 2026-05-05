@@ -25,8 +25,10 @@ defineEmits<{
       <button class="shell-menu-button" type="button" aria-label="Mo menu" @click="$emit('toggleSidebar')">
         <Menu :size="20" />
       </button>
-      <div class="shell-brand-mark" aria-hidden="true">Q</div>
-      <strong>{{ brandName }}</strong>
+      <RouterLink class="shell-brand-link" to="/dashboard" aria-label="QALY trang chu">
+        <div class="shell-brand-mark" aria-hidden="true">Q</div>
+        <strong>{{ brandName }}</strong>
+      </RouterLink>
     </div>
 
     <label class="shell-search" aria-label="Tim du an, cong viec, thanh vien">

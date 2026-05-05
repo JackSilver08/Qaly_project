@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, provide, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { HubConnectionBuilder } from '@microsoft/signalr'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
@@ -7,25 +8,14 @@ import {
   ClipboardList,
   FolderKanban,
   LayoutDashboard,
-  MessageSquare,
-  MoreHorizontal,
-  Plus,
-  Send,
   Users,
   X,
 } from 'lucide-vue-next'
 import AppShell from './components/AppShell.vue'
 import ChatbotAvatar from './components/ChatbotAvatar.vue'
-import DashboardSummaryCards from './components/DashboardSummaryCards.vue'
-import ProjectList from './components/ProjectList.vue'
-import ProjectToolbar from './components/ProjectToolbar.vue'
-import TeamMiniSection from './components/TeamMiniSection.vue'
-import ProjectDetailHeader from './components/ProjectDetailHeader.vue'
-import ProjectStatsTab from './components/ProjectStatsTab.vue'
-import ProjectMembersTab from './components/ProjectMembersTab.vue'
-import ProjectWikiTab from './components/ProjectWikiTab.vue'
+import { dashboardContextKey } from './composables/dashboard-context'
 import { fallbackDashboard } from './fallback-dashboard'
-import type { ProjectCardModel, SummaryCardModel, TeamMiniMemberModel } from './components/dashboard-models'
+import type { ProjectCardModel, SummaryCardModel, TaskListItemModel } from './components/dashboard-models'
 import type { ShellNavItem } from './components/shell-models'
 import type {
   ApiResult,
@@ -37,6 +27,7 @@ import type {
   DashboardTask,
   NotificationDto,
   ProjectDto,
+  TaskItemDto,
   UserDto,
 } from './types'
 
@@ -50,10 +41,10 @@ type ProjectFilter = 'all' | 'active' | 'planned' | 'at-risk'
 type ProjectSort = 'recent' | 'risk' | 'progress' | 'name'
 
 const navigation: ShellNavItem[] = [
-  { label: 'Overview', target: 'overview', icon: LayoutDashboard },
-  { label: 'Projects', target: 'projects', icon: FolderKanban },
-  { label: 'Tasks', target: 'tasks', icon: ClipboardList },
-  { label: 'Team', target: 'team', icon: Users },
+  { label: 'Tổng quan', to: '/dashboard', icon: LayoutDashboard },
+  { label: 'Dự án', to: '/projects', icon: FolderKanban },
+  { label: 'Nhiệm vụ', to: '/tasks', icon: ClipboardList },
+  { label: 'Nhóm', to: '/teams', icon: Users },
 ]
 
 const statusColumns = ['Todo', 'InProgress', 'InReview', 'Done']
@@ -74,7 +65,6 @@ const createTaskOpen = ref(false)
 const projectBeingEditedId = ref<string | null>(null)
 const selectedTaskId = ref<string | null>(null)
 const activeTaskMenu = ref<string | null>(null)
-const activeNavTarget = ref('overview')
 
 function toggleTaskMenu(taskId: string) {
   activeTaskMenu.value = activeTaskMenu.value === taskId ? null : taskId
@@ -83,7 +73,6 @@ const searchQuery = ref('')
 const projectFilter = ref<ProjectFilter>('all')
 const projectSort = ref<ProjectSort>('recent')
 const activeProjectId = ref<string | null>(null)
-const viewingProjectDetails = ref(false)
 const activeProjectTab = ref('stats')
 const projectName = ref('')
 const projectDescription = ref('')
@@ -153,6 +142,8 @@ const chatMessages = ref<ChatMessage[]>([
 
 let actionNoticeTimer: number | undefined
 let notificationConnectionStarted = false
+const router = useRouter()
+const route = useRoute()
 
 const projects = computed(() => dashboard.value.projects)
 const team = computed(() => dashboard.value.team)
@@ -200,7 +191,7 @@ const filteredProjects = computed(() => {
 
       if (!query) return true
 
-      return [project.name, project.description, project.ownerName, ...project.memberNames]
+      return [project.name, project.description, project.ownerName, ...project.members.map((member) => member.fullName)]
         .join(' ')
         .toLowerCase()
         .includes(query)
@@ -213,8 +204,8 @@ const filteredProjects = computed(() => {
     })
 })
 
-const projectCards = computed<ProjectCardModel[]>(() =>
-  filteredProjects.value.map((project) => ({
+function toProjectCard(project: DashboardProject): ProjectCardModel {
+  return {
     id: project.id,
     name: project.name,
     description: project.description || 'No description yet.',
@@ -229,7 +220,43 @@ const projectCards = computed<ProjectCardModel[]>(() =>
     overdueTaskCount: project.overdueTaskCount,
     progressPercentage: project.progressPercentage,
     memberInitials: (project.members || []).slice(0, 4).map(m => initials(m.fullName)),
-  })),
+  }
+}
+
+const projectCards = computed<ProjectCardModel[]>(() =>
+  filteredProjects.value.map(toProjectCard),
+)
+
+const activeProjectCards = computed<ProjectCardModel[]>(() =>
+  filteredProjects.value
+    .filter((project) => project.status !== 'Archived')
+    .map(toProjectCard),
+)
+
+const archivedProjectCards = computed<ProjectCardModel[]>(() =>
+  filteredProjects.value
+    .filter((project) => project.status === 'Archived')
+    .map(toProjectCard),
+)
+
+const assignedTaskCards = computed<TaskListItemModel[]>(() =>
+  projects.value.flatMap((project) =>
+    project.tasks
+      .filter((task) => !currentUser.value || task.assigneeName === currentUser.value.fullName)
+      .map((task) => ({
+        id: task.id,
+        projectId: project.id,
+        title: task.title,
+        projectName: project.name,
+        assignedAtLabel: formatDate(project.createdAt),
+        priority: task.priority,
+        dueDateLabel: formatDate(task.dueDate),
+        reporterName: task.reporterName,
+        reporterInitials: initials(task.reporterName),
+        statusLabel: displayStatus(task.status),
+        isOverdue: isTaskOverdue(task),
+      })),
+  ),
 )
 
 const selectedProject = computed(() => {
@@ -297,20 +324,6 @@ const selectedProjectStats = computed(() => {
   }
 })
 
-const teamMiniMembers = computed<TeamMiniMemberModel[]>(() =>
-  [...team.value]
-    .sort((left, right) => right.capacityPercent - left.capacityPercent)
-    .slice(0, 4)
-    .map((member) => ({
-      id: member.id,
-      name: member.fullName,
-      role: displayRole(member.role),
-      focusArea: member.focusArea,
-      capacityPercent: member.capacityPercent,
-      initials: initials(member.fullName),
-    })),
-)
-
 const notificationItems = computed<DashboardNotification[]>(() => {
   const realtime = notifications.value.map(toDashboardNotification)
   const dashboardItems = dashboard.value.notifications
@@ -363,8 +376,31 @@ const quickPrompts = computed(() => {
 watch(
   filteredProjects,
   (items) => {
+    if (!['dashboard', 'projects'].includes(String(route.name ?? ''))) return
+
     if (!items.some((project) => project.id === activeProjectId.value)) {
       activeProjectId.value = items[0]?.id ?? projects.value[0]?.id ?? null
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => route.params.projectId,
+  (projectId) => {
+    if (typeof projectId === 'string') {
+      activeProjectId.value = projectId
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => route.params.taskId,
+  (taskId) => {
+    if (typeof taskId === 'string') {
+      selectedTaskId.value = taskId
+      activeProjectTab.value = 'tasks'
     }
   },
   { immediate: true },
@@ -409,8 +445,11 @@ async function loadDashboard() {
     dashboard.value = fallbackDashboard
     usingFallback.value = true
   } finally {
-    activeProjectId.value = dashboard.value.projects.some((project) => project.id === previousProjectId)
-      ? previousProjectId
+    const routeProjectId = typeof route.params.projectId === 'string' ? route.params.projectId : null
+    const preferredProjectId = routeProjectId ?? previousProjectId
+
+    activeProjectId.value = dashboard.value.projects.some((project) => project.id === preferredProjectId)
+      ? preferredProjectId
       : dashboard.value.projects[0]?.id ?? null
     isLoading.value = false
   }
@@ -480,27 +519,38 @@ async function connectNotifications() {
   }
 }
 
-function scrollToSection(sectionId: string) {
-  activeNavTarget.value = sectionId
-  document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-
 function selectProject(projectId: string) {
   activeProjectId.value = projectId
   selectedTaskId.value = projects.value.find((project) => project.id === projectId)?.tasks[0]?.id ?? null
-  viewingProjectDetails.value = true
   activeProjectTab.value = 'stats'
+  void router.push(`/projects/${projectId}`)
 }
 
 function closeProjectDetails() {
-  viewingProjectDetails.value = false
+  void router.push('/projects')
+}
+
+function selectTaskInProject(taskId: string) {
+  const projectId = selectedProject.value?.id
+  selectedTaskId.value = taskId
+  activeProjectTab.value = 'tasks'
+
+  if (projectId) {
+    void router.push(`/projects/${projectId}/tasks/${taskId}`)
+  }
+}
+
+function openTask(projectId: string, taskId: string) {
+  activeProjectId.value = projectId
+  selectedTaskId.value = taskId
+  activeProjectTab.value = 'tasks'
+  void router.push(`/projects/${projectId}/tasks/${taskId}`)
 }
 
 function openCreateProject() {
-  activeNavTarget.value = 'projects'
   createProjectOpen.value = true
   projectBeingEditedId.value = null
-  document.getElementById('projects')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  void router.push('/projects')
 }
 
 async function createProject() {
@@ -522,6 +572,7 @@ async function createProject() {
     createProjectOpen.value = false
     await loadDashboard()
     activeProjectId.value = project.id
+    void router.push(`/projects/${project.id}`)
     showActionNotice(`Created project "${project.name}".`)
   } catch (error) {
     showActionNotice(errorMessage(error))
@@ -1113,279 +1164,108 @@ function isGuid(value: string) {
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Request failed.'
 }
+
+provide(dashboardContextKey, {
+  actionNotice,
+  activeProjectCards,
+  activeProjectId,
+  activeProjectTab,
+  activeTaskMenu,
+  addMember,
+  archivedProjectCards,
+  assignedTaskCards,
+  attachments,
+  beginEditProject,
+  beginEditTask,
+  chatDraft,
+  chatMessages,
+  chatOpen,
+  clearActionableNotifications,
+  closeProjectDetails,
+  comments,
+  createProject,
+  createProjectOpen,
+  createTask,
+  createTaskOpen,
+  currentUser,
+  deleteAttachment,
+  deleteComment,
+  deleteProject,
+  deleteTask,
+  displayRole,
+  displayStatus,
+  editProjectDescription,
+  editProjectName,
+  filteredProjects,
+  formatDate,
+  formatFileSize,
+  formatTime,
+  isAssistantThinking,
+  isLoading,
+  isProjectAdmin,
+  isTaskOverdue,
+  logout,
+  moveTask,
+  newComment,
+  newTaskAssigneeId,
+  newTaskDescription,
+  newTaskDueDate,
+  newTaskPriority,
+  newTaskTitle,
+  nextStatuses,
+  openChatWithPrompt,
+  openCreateProject,
+  openTask,
+  priorities,
+  projectBeingEditedId,
+  projectCards,
+  projectDescription,
+  projectEndDate,
+  projectFilter,
+  projectName,
+  projectSort,
+  projectSuggestions,
+  projects,
+  quickPrompts,
+  removeMember,
+  saveProjectEdit,
+  searchQuery,
+  selectProject,
+  selectedProject,
+  selectedProjectMembers,
+  selectedProjectStats,
+  selectedTask,
+  selectedTaskId,
+  selectTaskInProject,
+  showProjectSuggestions,
+  statusColumns,
+  statusTone,
+  submitChat,
+  submitComment,
+  summaryCards,
+  tabs,
+  tagProject,
+  tasksByStatus,
+  team,
+  toggleTaskMenu,
+  updateMemberRole,
+  uploadAttachment,
+  users,
+})
 </script>
 
 <template>
   <AppShell
     v-model:search="searchQuery"
     :nav-items="navigation"
-    :active-target="activeNavTarget"
     :notification-count="notificationCount"
-    :using-fallback="usingFallback"
-    :team-initials="teamMiniMembers.map((member) => member.initials)"
     :user-name="currentUser?.fullName ?? 'Qaly user'"
     :user-initials="initials(currentUser?.fullName ?? 'QU')"
-    @navigate="scrollToSection"
     @create="openCreateProject"
     @notifications="notificationsOpen = !notificationsOpen"
     @assistant="openChatWithPrompt()"
   >
-    <div v-if="!viewingProjectDetails" class="dashboard-scroll dashboard-scroll--embedded no-scrollbar">
-      <div class="dashboard-main project-home-main no-scrollbar">
-        <header class="home-topbar">
-          <div class="topbar-title">
-            <div>
-              <span>Workspace</span>
-              <h1>Qaly project cockpit</h1>
-              <p>{{ isLoading ? 'Syncing live data...' : 'Select a project to view detailed work.' }}</p>
-            </div>
-          </div>
-
-          <button class="secondary-button" type="button" @click="openChatWithPrompt()">
-            <ChatbotAvatar size="launcher" />
-            <span>Qaly assistant</span>
-          </button>
-          <button class="text-button" type="button" @click="logout">Sign out</button>
-        </header>
-
-        <DashboardSummaryCards id="overview" :cards="summaryCards" />
-
-        <section id="projects" class="project-workspace glass-card">
-          <div class="project-workspace__header">
-            <div>
-              <span>Projects</span>
-              <h2>Project portfolio</h2>
-            </div>
-            <p>{{ filteredProjects.length }} of {{ projects.length }} projects</p>
-          </div>
-
-          <ProjectToolbar
-            v-model:search="searchQuery"
-            v-model:sort="projectSort"
-            v-model:filter="projectFilter"
-            :project-count="filteredProjects.length"
-            @create="openCreateProject"
-          />
-
-          <form v-if="createProjectOpen" class="project-inline-form project-inline-form--stacked" @submit.prevent="createProject">
-            <input v-model="projectName" type="text" placeholder="Project name" />
-            <input v-model="projectDescription" type="text" placeholder="Short description" />
-            <input v-model="projectEndDate" type="date" />
-            <button class="primary-button primary-button--compact" type="submit" :disabled="!projectName.trim()">
-              Create
-            </button>
-            <button class="text-button" type="button" @click="createProjectOpen = false">Cancel</button>
-          </form>
-
-          <form v-if="projectBeingEditedId" class="project-inline-form project-inline-form--stacked" @submit.prevent="saveProjectEdit">
-            <input v-model="editProjectName" type="text" aria-label="Project name" />
-            <input v-model="editProjectDescription" type="text" aria-label="Project description" />
-            <button class="primary-button primary-button--compact" type="submit" :disabled="!editProjectName.trim()">
-              Save
-            </button>
-            <button class="text-button" type="button" @click="projectBeingEditedId = null">Cancel</button>
-          </form>
-
-          <ProjectList
-            :projects="projectCards"
-            :active-project-id="selectedProject?.id ?? null"
-            @view="selectProject"
-            @edit="beginEditProject"
-            @delete="deleteProject"
-          />
-        </section>
-      </div>
-    </div>
-
-    <div v-else class="dashboard-scroll dashboard-scroll--embedded no-scrollbar">
-      <div class="dashboard-main project-home-main no-scrollbar">
-        <ProjectDetailHeader
-          v-if="selectedProject"
-          :project-name="selectedProject.name"
-          :description="selectedProject.description"
-          :status-label="displayStatus(selectedProject.status)"
-          :status-tone="statusTone(selectedProject.status)"
-          :progress-label="`${selectedProject.completedTaskCount}/${selectedProject.taskCount} task hoàn thành`"
-          :progress-percentage="selectedProject.progressPercentage"
-          @back="closeProjectDetails"
-          @assistant="openChatWithPrompt()"
-        />
-
-        <nav class="project-tabs glass-card">
-          <button
-            v-for="tab in tabs"
-            :key="tab.id"
-            type="button"
-            class="tab-link"
-            :class="{ 'is-active': activeProjectTab === tab.id }"
-            @click="activeProjectTab = tab.id"
-          >
-            {{ tab.label }}
-          </button>
-        </nav>
-
-        <div v-if="activeProjectTab === 'stats'" class="tab-pane reveal">
-          <ProjectStatsTab :stats="selectedProjectStats" />
-        </div>
-
-        <div v-if="activeProjectTab === 'tasks'">
-          <section id="tasks" class="task-board-shell glass-card">
-            <div class="panel-heading">
-              <div>
-                <span>Tasks</span>
-                <h2>Board</h2>
-              </div>
-              <button class="primary-button primary-button--compact" type="button" @click="createTaskOpen = !createTaskOpen">
-                <Plus :size="16" />
-                <span>Task</span>
-              </button>
-            </div>
-
-            <form v-if="createTaskOpen" class="task-create-form" @submit.prevent="createTask">
-              <input v-model="newTaskTitle" type="text" placeholder="Task title" />
-              <input v-model="newTaskDescription" type="text" placeholder="Description" />
-              <select v-model="newTaskPriority" aria-label="Priority">
-                <option v-for="priority in priorities" :key="priority" :value="priority">{{ priority }}</option>
-              </select>
-              <select v-model="newTaskAssigneeId" aria-label="Assignee">
-                <option value="">Unassigned</option>
-                <option v-for="user in users" :key="user.id" :value="user.id">{{ user.fullName }}</option>
-              </select>
-              <input v-model="newTaskDueDate" type="date" />
-              <button class="primary-button primary-button--compact" type="submit" :disabled="!newTaskTitle.trim()">Create</button>
-            </form>
-
-            <div class="kanban-board">
-              <section v-for="status in statusColumns" :key="status" class="kanban-column">
-                <div class="kanban-column__header">
-                  <strong>{{ displayStatus(status) }}</strong>
-                  <span>{{ tasksByStatus(status).length }}</span>
-                </div>
-
-                <article
-                  v-for="task in tasksByStatus(status)"
-                  :key="task.id"
-                  class="kanban-card"
-                  :class="{ 'is-selected': selectedTask?.id === task.id }"
-                  @click="selectedTaskId = task.id"
-                >
-                  <div class="kanban-card__top">
-                    <strong>{{ task.title }}</strong>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                      <span :class="`priority priority--${task.priority.toLowerCase()}`">{{ task.priority }}</span>
-                      
-                      <!-- Task Context Menu (Admin Only) -->
-                      <div v-if="isProjectAdmin" class="task-menu-dropdown">
-                        <button class="icon-button icon-button--small" type="button" @click.stop="toggleTaskMenu(task.id)">
-                          <MoreHorizontal :size="14" />
-                        </button>
-                        <div v-if="activeTaskMenu === task.id" class="dropdown-content glass-card">
-                          <button type="button" @click.stop="beginEditTask(task)">Sửa</button>
-                          <button type="button" style="color: var(--peach-500)" @click.stop="deleteTask(task.id)">Xóa</button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <p>{{ task.assigneeName || 'Unassigned' }} - {{ formatDate(task.dueDate) }}</p>
-                  <div class="kanban-card__meta">
-                    <span>{{ task.commentCount }} comments</span>
-                    <span v-if="task.isPrivate">Private</span>
-                    <span v-if="isTaskOverdue(task)" class="project-risk">Overdue</span>
-                  </div>
-                  <div class="kanban-card__actions">
-                    <button
-                      v-for="nextStatus in nextStatuses(task.status)"
-                      :key="nextStatus"
-                      type="button"
-                      @click.stop="moveTask(task, nextStatus)"
-                    >
-                      {{ displayStatus(nextStatus) }}
-                    </button>
-                  </div>
-                </article>
-
-                <div v-if="tasksByStatus(status).length === 0" class="empty-state">No tasks</div>
-              </section>
-            </div>
-          </section>
-
-          <section class="task-detail-panel glass-card" style="margin-top: 24px;">
-            <div class="panel-heading">
-              <div>
-                <span>Task detail</span>
-                <h2>{{ selectedTask?.title ?? 'No task selected' }}</h2>
-              </div>
-              <MessageSquare :size="18" />
-            </div>
-
-            <div v-if="selectedTask" class="comment-list">
-              <div class="attachment-panel">
-                <div class="attachment-panel__header">
-                  <strong>Attachments</strong>
-                  <label class="attachment-upload">
-                    <input type="file" @change="uploadAttachment" />
-                    <span>Upload</span>
-                  </label>
-                </div>
-                <article v-for="attachment in attachments" :key="attachment.id" class="attachment-row">
-                  <div>
-                    <strong>{{ attachment.fileName }}</strong>
-                    <span>{{ formatFileSize(attachment.fileSize) }} - {{ attachment.uploadedByName }}</span>
-                  </div>
-                  <button type="button" @click="deleteAttachment(attachment)">Delete</button>
-                </article>
-                <div v-if="attachments.length === 0" class="empty-state">No attachments.</div>
-              </div>
-
-              <article v-for="comment in comments" :key="comment.id" class="comment-row">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; width: 100%;">
-                  <strong>{{ comment.authorName }}</strong>
-                  <button 
-                    v-if="isProjectAdmin || comment.authorId === currentUser?.id" 
-                    class="text-button" 
-                    style="color: var(--peach-500); padding: 0 4px; height: auto;" 
-                    type="button" 
-                    @click="deleteComment(comment.id)"
-                  >
-                    Xóa
-                  </button>
-                </div>
-                <p>{{ comment.content }}</p>
-                <span>{{ formatTime(comment.createdAt) }}</span>
-              </article>
-              <div v-if="comments.length === 0" class="empty-state">No comments yet.</div>
-
-              <form class="comment-form" @submit.prevent="submitComment">
-                <input v-model="newComment" type="text" placeholder="Add a comment..." />
-                <button class="primary-button primary-button--compact" type="submit" :disabled="!newComment.trim()">
-                  <Send :size="15" />
-                </button>
-              </form>
-            </div>
-
-            <div v-else class="empty-state">Select a task from the board.</div>
-          </section>
-        </div>
-
-        <div v-if="activeProjectTab === 'members'" class="tab-pane reveal">
-          <ProjectMembersTab 
-            :members="selectedProjectMembers" 
-            :users="users"
-            :is-admin="isProjectAdmin"
-            @add="addMember"
-            @remove="removeMember"
-            @update-role="updateMemberRole"
-          />
-        </div>
-
-        <div v-if="activeProjectTab === 'wiki'" class="tab-pane reveal">
-          <ProjectWikiTab 
-            :project-name="selectedProject?.name ?? ''" 
-            :is-admin="isProjectAdmin"
-          />
-        </div>
-      </div>
-    </div>
+    <RouterView />
 
       <div v-if="notificationsOpen" class="notification-popover glass-card home-notification-popover">
         <div class="panel-heading">

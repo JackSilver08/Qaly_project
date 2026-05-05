@@ -22,13 +22,33 @@ export const fallbackDashboard: DashboardResponse = {
       description:
         'Không gian quản lý công việc nội bộ cho triển khai chu kỳ làm việc, lập kế hoạch đội ngũ và hỗ trợ quyết định bằng AI.',
       status: 'Active',
+      ownerId: '9f8e7d6c-1a2b-4f3c-9c8b-7a6d5e4f3001',
       ownerName: 'Quản trị viên',
       memberCount: 3,
       taskCount: 8,
       completedTaskCount: 3,
       overdueTaskCount: 1,
       progressPercentage: 38,
-      memberNames: ['Quản trị viên', 'Nguyễn Văn A', 'Trần Thị B'],
+      members: [
+        {
+          userId: '9f8e7d6c-1a2b-4f3c-9c8b-7a6d5e4f3001',
+          fullName: 'Quản trị viên',
+          role: 'Owner',
+          email: 'admin@qaly.dev',
+        },
+        {
+          userId: '9f8e7d6c-1a2b-4f3c-9c8b-7a6d5e4f3002',
+          fullName: 'Nguyễn Văn A',
+          role: 'Member',
+          email: 'nguyenvana@qaly.dev',
+        },
+        {
+          userId: '9f8e7d6c-1a2b-4f3c-9c8b-7a6d5e4f3003',
+          fullName: 'Trần Thị B',
+          role: 'Member',
+          email: 'tranthib@qaly.dev',
+        },
+      ],
       createdAt: '2026-04-20T09:00:00Z',
       endDate: '2026-07-31T17:00:00Z',
       tasks: [
@@ -91,13 +111,27 @@ export const fallbackDashboard: DashboardResponse = {
       name: 'Gia cố định danh',
       description: 'Phân quyền theo vai trò, an toàn phiên đăng nhập và trải nghiệm đăng nhập/đăng ký.',
       status: 'InProgress',
+      ownerId: '9f8e7d6c-1a2b-4f3c-9c8b-7a6d5e4f3002',
       ownerName: 'Nguyễn Văn A',
       memberCount: 2,
       taskCount: 5,
       completedTaskCount: 2,
       overdueTaskCount: 1,
       progressPercentage: 40,
-      memberNames: ['Nguyễn Văn A', 'Trần Thị B'],
+      members: [
+        {
+          userId: '9f8e7d6c-1a2b-4f3c-9c8b-7a6d5e4f3002',
+          fullName: 'Nguyễn Văn A',
+          role: 'Owner',
+          email: 'nguyenvana@qaly.dev',
+        },
+        {
+          userId: '9f8e7d6c-1a2b-4f3c-9c8b-7a6d5e4f3003',
+          fullName: 'Trần Thị B',
+          role: 'Member',
+          email: 'tranthib@qaly.dev',
+        },
+      ],
       createdAt: '2026-04-18T09:00:00Z',
       endDate: '2026-06-14T17:00:00Z',
       tasks: [
@@ -135,13 +169,27 @@ export const fallbackDashboard: DashboardResponse = {
       description:
         'Hoàn thiện hệ thống hình ảnh, kiểu chữ và các mẫu giao diện tái sử dụng cho quy trình quản trị.',
       status: 'Planned',
+      ownerId: '9f8e7d6c-1a2b-4f3c-9c8b-7a6d5e4f3003',
       ownerName: 'Trần Thị B',
       memberCount: 2,
       taskCount: 5,
       completedTaskCount: 2,
       overdueTaskCount: 0,
       progressPercentage: 40,
-      memberNames: ['Trần Thị B', 'Quản trị viên'],
+      members: [
+        {
+          userId: '9f8e7d6c-1a2b-4f3c-9c8b-7a6d5e4f3003',
+          fullName: 'Trần Thị B',
+          role: 'Owner',
+          email: 'tranthib@qaly.dev',
+        },
+        {
+          userId: '9f8e7d6c-1a2b-4f3c-9c8b-7a6d5e4f3001',
+          fullName: 'Quản trị viên',
+          role: 'Member',
+          email: 'admin@qaly.dev',
+        },
+      ],
       createdAt: '2026-04-15T09:00:00Z',
       endDate: '2026-06-28T17:00:00Z',
       tasks: [

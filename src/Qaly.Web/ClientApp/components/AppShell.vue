@@ -6,18 +6,15 @@ import type { ShellNavItem } from './shell-models'
 
 defineProps<{
   navItems: ShellNavItem[]
-  activeTarget: string
   search: string
   notificationCount: number
-  usingFallback: boolean
   userName: string
   userInitials: string
-  teamInitials: string[]
 }>()
 
 const emit = defineEmits<{
   'update:search': [value: string]
-  navigate: [target: string]
+  navigate: []
   create: []
   notifications: []
   assistant: []
@@ -25,9 +22,9 @@ const emit = defineEmits<{
 
 const sidebarOpen = ref(false)
 
-function handleNavigate(target: string) {
+function handleNavigate() {
   sidebarOpen.value = false
-  emit('navigate', target)
+  emit('navigate')
 }
 </script>
 
@@ -50,11 +47,7 @@ function handleNavigate(target: string) {
     <SidebarNav
       :class="{ 'is-open': sidebarOpen }"
       :items="navItems"
-      :active-target="activeTarget"
-      :team-initials="teamInitials"
-      :assistant-label="usingFallback ? 'Qaly sample data' : 'Qaly live data'"
       @navigate="handleNavigate"
-      @assistant="$emit('assistant')"
     />
 
     <div v-if="sidebarOpen" class="shell-backdrop" @click="sidebarOpen = false"></div>

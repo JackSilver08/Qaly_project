@@ -1,54 +1,66 @@
 <script setup lang="ts">
 import { Box } from 'lucide-vue-next'
-import ChatbotAvatar from './ChatbotAvatar.vue'
+import { useRoute, type NavigationFailure } from 'vue-router'
 import type { ShellNavItem } from './shell-models'
 
 defineProps<{
   items: ShellNavItem[]
-  activeTarget: string
-  teamInitials: string[]
-  assistantLabel: string
 }>()
 
-defineEmits<{
-  navigate: [target: string]
-  assistant: []
+const emit = defineEmits<{
+  navigate: []
 }>()
+
+const route = useRoute()
+
+function handleNavigate(
+  event: MouseEvent,
+  navigate: (event?: MouseEvent) => void | Promise<void | NavigationFailure>,
+) {
+  void navigate(event)
+  emit('navigate')
+}
+
+function isItemActive(item: ShellNavItem, isActive: boolean, isExactActive: boolean) {
+  if (item.to === '/dashboard') return isExactActive
+  if (item.to === '/projects') return isActive && !route.path.startsWith('/projects/archived')
+
+  return isActive
+}
 </script>
 
 <template>
   <aside class="shell-sidebar no-scrollbar">
     <nav class="shell-nav" aria-label="Main navigation">
-      <button
+      <RouterLink
         v-for="item in items"
-        :key="item.target"
-        class="shell-nav-item"
-        :class="{ 'is-active': item.target === activeTarget }"
-        type="button"
-        @click="$emit('navigate', item.target)"
+        :key="item.to"
+        v-slot="{ href, navigate, isActive, isExactActive }"
+        :to="item.to"
+        custom
       >
-        <component :is="item.icon" :size="20" />
-        <span>{{ item.label }}</span>
-      </button>
+        <a
+          :href="href"
+          class="shell-nav-item"
+          :class="{ 'is-active': isItemActive(item, isActive, isExactActive) }"
+          @click="handleNavigate($event, navigate)"
+        >
+          <component :is="item.icon" :size="20" />
+          <span>{{ item.label }}</span>
+        </a>
+      </RouterLink>
     </nav>
 
-    <div class="shell-sidebar-divider"></div>
-
-    <section class="shell-team-block" aria-label="Team snapshot">
-      <p>Team</p>
-      <div class="shell-team-avatars">
-        <span v-for="member in teamInitials" :key="member">{{ member }}</span>
-      </div>
-    </section>
-
-    <button class="shell-assistant-card" type="button" @click="$emit('assistant')">
-      <ChatbotAvatar size="launcher" />
-      <span>{{ assistantLabel }}</span>
-    </button>
-
-    <button class="shell-archive-button" type="button">
-      <Box :size="19" />
-      <span>Archived Projects</span>
-    </button>
+    <RouterLink v-slot="{ href, navigate, isExactActive }" to="/projects/archived" custom>
+      <a
+        :href="href"
+        class="shell-archive-button"
+        :class="{ 'is-active': isExactActive }"
+        @click="handleNavigate($event, navigate)"
+      >
+        <Box :size="19" />
+        <span>Dự án đã lưu trữ</span>
+      </a>
+    </RouterLink>
   </aside>
 </template>

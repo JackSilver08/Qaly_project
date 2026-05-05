@@ -2,6 +2,6 @@ import type { Component } from 'vue'
 
 export interface ShellNavItem {
   label: string
-  target: string
+  to: string
   icon: Component
 }
