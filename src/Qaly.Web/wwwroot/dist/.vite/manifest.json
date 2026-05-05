@@ -3,8 +3,8 @@
     "file": "assets/ProjectList.vue_vue_type_script_setup_true_lang.js",
     "name": "ProjectList.vue_vue_type_script_setup_true_lang",
     "imports": [
-      "_vendor-vue.js",
-      "_vendor-icons.js"
+      "_vendor-icons.js",
+      "_vendor-vue.js"
     ]
   },
   "_ProjectToolbar.vue_vue_type_script_setup_true_lang.js": {
@@ -79,7 +79,6 @@
     "imports": [
       "_vendor-vue.js",
       "_vendor-icons.js",
-      "_ProjectList.vue_vue_type_script_setup_true_lang.js",
       "_ProjectToolbar.vue_vue_type_script_setup_true_lang.js",
       "src/Qaly.Web/ClientApp/main.ts",
       "_vendor-markdown.js",

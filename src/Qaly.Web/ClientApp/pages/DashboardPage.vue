@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import DashboardSummaryCards from '../components/DashboardSummaryCards.vue'
-import ProjectList from '../components/ProjectList.vue'
+import ProjectGrid from '../components/ProjectGrid.vue'
 import ProjectToolbar from '../components/ProjectToolbar.vue'
 import { useDashboardContext } from '../composables/dashboard-context'
 
@@ -70,7 +70,7 @@ const {
           <button class="text-button" type="button" @click="projectBeingEditedId = null">Cancel</button>
         </form>
 
-        <ProjectList
+        <ProjectGrid
           :projects="projectCards"
           :active-project-id="selectedProject?.id ?? null"
           @view="selectProject"

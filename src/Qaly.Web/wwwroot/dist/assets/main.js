@@ -1,4 +1,4 @@
-const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/ArchivedProjectsPage.js","assets/ProjectList.vue_vue_type_script_setup_true_lang.js","assets/vendor-vue.js","assets/vendor-icons.js","assets/vendor-markdown.js","assets/vendor-realtime.js","assets/DashboardPage.js","assets/ProjectToolbar.vue_vue_type_script_setup_true_lang.js","assets/ProjectDetailPage.js","assets/ProjectDetailPage.css","assets/ProjectsPage.js","assets/TasksPage.js","assets/TeamsPage.js"])))=>i.map(i=>d[i]);
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/ArchivedProjectsPage.js","assets/ProjectList.vue_vue_type_script_setup_true_lang.js","assets/vendor-icons.js","assets/vendor-vue.js","assets/vendor-markdown.js","assets/vendor-realtime.js","assets/DashboardPage.js","assets/ProjectToolbar.vue_vue_type_script_setup_true_lang.js","assets/ProjectDetailPage.js","assets/ProjectDetailPage.css","assets/ProjectsPage.js","assets/TasksPage.js","assets/TeamsPage.js"])))=>i.map(i=>d[i]);
 import { d as defineComponent, u as useRoute, r as resolveComponent, o as openBlock, c as createElementBlock, a as createBaseVNode, F as Fragment, b as renderList, e as createBlock, w as withCtx, n as normalizeClass, f as resolveDynamicComponent, t as toDisplayString, g as createVNode, i as unref, j as createCommentVNode, k as renderSlot, l as ref, m as inject, p as watch, q as useRouter, s as onMounted, v as nextTick, x as withModifiers, y as withDirectives, z as vModelText, A as computed, B as provide, C as createRouter, D as createWebHistory, E as createApp } from './vendor-vue.js';
 import { M as MarkdownIt } from './vendor-markdown.js';
 import { B as Box, M as Menu, S as Search, X, a as Bell, P as Plus, C as ChevronDown, L as LayoutDashboard, F as FolderKanban, b as ClipboardList, U as Users } from './vendor-icons.js';
@@ -1978,11 +1978,11 @@ const __vitePreload = function preload(baseModule, deps, importerUrl) {
     });
 };
 const ArchivedProjectsPage = () => __vitePreload(() => import('./ArchivedProjectsPage.js'), true ? __vite__mapDeps([0,1,2,3,4,5]) : void 0);
-const DashboardPage = () => __vitePreload(() => import('./DashboardPage.js'), true ? __vite__mapDeps([6,2,3,1,7,4,5]) : void 0);
-const ProjectDetailPage = () => __vitePreload(() => import('./ProjectDetailPage.js'), true ? __vite__mapDeps([8,2,3,4,5,9]) : void 0);
-const ProjectsPage = () => __vitePreload(() => import('./ProjectsPage.js'), true ? __vite__mapDeps([10,2,1,3,7,4,5]) : void 0);
-const TasksPage = () => __vitePreload(() => import('./TasksPage.js'), true ? __vite__mapDeps([11,3,2,4,5]) : void 0);
-const TeamsPage = () => __vitePreload(() => import('./TeamsPage.js'), true ? __vite__mapDeps([12,3,2,4,5]) : void 0);
+const DashboardPage = () => __vitePreload(() => import('./DashboardPage.js'), true ? __vite__mapDeps([6,3,2,7,4,5]) : void 0);
+const ProjectDetailPage = () => __vitePreload(() => import('./ProjectDetailPage.js'), true ? __vite__mapDeps([8,3,2,4,5,9]) : void 0);
+const ProjectsPage = () => __vitePreload(() => import('./ProjectsPage.js'), true ? __vite__mapDeps([10,3,1,2,7,4,5]) : void 0);
+const TasksPage = () => __vitePreload(() => import('./TasksPage.js'), true ? __vite__mapDeps([11,2,3,4,5]) : void 0);
+const TeamsPage = () => __vitePreload(() => import('./TeamsPage.js'), true ? __vite__mapDeps([12,2,3,4,5]) : void 0);
 const router = createRouter({
     history: createWebHistory(),
     routes: [

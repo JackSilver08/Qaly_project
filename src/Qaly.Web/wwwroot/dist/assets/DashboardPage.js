@@ -1,16 +1,15 @@
-import { d as defineComponent, c as createElementBlock, F as Fragment, b as renderList, o as openBlock, n as normalizeClass, a as createBaseVNode, e as createBlock, f as resolveDynamicComponent, t as toDisplayString, g as createVNode, i as unref, G as isRef, x as withModifiers, y as withDirectives, z as vModelText, j as createCommentVNode } from './vendor-vue.js';
-import { U as Users, b as ClipboardList, F as FolderKanban } from './vendor-icons.js';
-import { _ as _sfc_main$3 } from './ProjectList.vue_vue_type_script_setup_true_lang.js';
-import { _ as _sfc_main$2 } from './ProjectToolbar.vue_vue_type_script_setup_true_lang.js';
+import { d as defineComponent, c as createElementBlock, F as Fragment, b as renderList, o as openBlock, n as normalizeClass, a as createBaseVNode, e as createBlock, f as resolveDynamicComponent, t as toDisplayString, j as createCommentVNode, G as withKeys, x as withModifiers, g as createVNode, i as unref, H as createTextVNode, I as normalizeStyle, J as isRef, y as withDirectives, z as vModelText } from './vendor-vue.js';
+import { U as Users, b as ClipboardList, F as FolderKanban, c as UserRound, d as CircleCheck, e as CalendarDays, E as Eye, f as Pencil, T as Trash2 } from './vendor-icons.js';
+import { _ as _sfc_main$3 } from './ProjectToolbar.vue_vue_type_script_setup_true_lang.js';
 import { u as useDashboardContext } from './main.js';
 import './vendor-markdown.js';
 import './vendor-realtime.js';
-const _hoisted_1$1 = {
+const _hoisted_1$2 = {
     class: "summary-card-grid",
     "aria-label": "Tổng quan dự án"
 };
-const _hoisted_2$1 = { class: "summary-card__icon" };
-const _sfc_main$1 = /*@__PURE__*/ defineComponent({
+const _hoisted_2$2 = { class: "summary-card__icon" };
+const _sfc_main$2 = /*@__PURE__*/ defineComponent({
     __name: 'DashboardSummaryCards',
     props: {
         cards: {}
@@ -22,13 +21,13 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
             team: Users,
         };
         return (_ctx, _cache) => {
-            return (openBlock(), createElementBlock("section", _hoisted_1$1, [
+            return (openBlock(), createElementBlock("section", _hoisted_1$2, [
                 (openBlock(true), createElementBlock(Fragment, null, renderList(__props.cards, (card) => {
                     return (openBlock(), createElementBlock("article", {
                         key: card.key,
                         class: normalizeClass(["summary-card glass-card", `summary-card--${card.tone}`])
                     }, [
-                        createBaseVNode("div", _hoisted_2$1, [
+                        createBaseVNode("div", _hoisted_2$2, [
                             (openBlock(), createBlock(resolveDynamicComponent(cardIcons[card.key]), { size: 18 }))
                         ]),
                         createBaseVNode("span", null, toDisplayString(card.label), 1),
@@ -36,6 +35,127 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
                         createBaseVNode("p", null, toDisplayString(card.detail), 1)
                     ], 2));
                 }), 128))
+            ]));
+        };
+    }
+});
+const _hoisted_1$1 = { class: "project-grid-shell" };
+const _hoisted_2$1 = ["onClick", "onKeydown"];
+const _hoisted_3$1 = { class: "project-grid-card__body" };
+const _hoisted_4$1 = { class: "project-grid-card__title-row" };
+const _hoisted_5$1 = { class: "project-grid-card__meta" };
+const _hoisted_6$1 = {
+    class: "project-grid-card__progress",
+    "aria-hidden": "true"
+};
+const _hoisted_7 = { class: "project-grid-card__footer" };
+const _hoisted_8 = {
+    class: "project-grid-card__team",
+    "aria-label": "Thành viên dự án"
+};
+const _hoisted_9 = { class: "project-grid-card__actions" };
+const _hoisted_10 = ["onClick"];
+const _hoisted_11 = ["onClick"];
+const _hoisted_12 = ["onClick"];
+const _hoisted_13 = {
+    key: 0,
+    class: "empty-state"
+};
+const _sfc_main$1 = /*@__PURE__*/ defineComponent({
+    __name: 'ProjectGrid',
+    props: {
+        projects: {},
+        activeProjectId: {},
+        readOnly: { type: Boolean }
+    },
+    emits: ["view", "edit", "delete"],
+    setup(__props) {
+        return (_ctx, _cache) => {
+            return (openBlock(), createElementBlock("div", _hoisted_1$1, [
+                (openBlock(true), createElementBlock(Fragment, null, renderList(__props.projects, (project) => {
+                    return (openBlock(), createElementBlock("article", {
+                        key: project.id,
+                        class: normalizeClass(["project-grid-card", { 'is-active': project.id === __props.activeProjectId }]),
+                        role: "button",
+                        tabindex: "0",
+                        onClick: ($event) => (_ctx.$emit('view', project.id)),
+                        onKeydown: [
+                            withKeys(($event) => (_ctx.$emit('view', project.id)), ["enter"]),
+                            withKeys(withModifiers(($event) => (_ctx.$emit('view', project.id)), ["prevent"]), ["space"])
+                        ]
+                    }, [
+                        createBaseVNode("span", {
+                            class: normalizeClass(`project-grid-card__status-tab project-grid-card__status-tab--${project.statusTone}`)
+                        }, toDisplayString(project.statusLabel), 3),
+                        createBaseVNode("div", _hoisted_3$1, [
+                            createBaseVNode("div", _hoisted_4$1, [
+                                createBaseVNode("strong", null, toDisplayString(project.name), 1),
+                                createBaseVNode("span", null, toDisplayString(project.progressPercentage) + "%", 1)
+                            ]),
+                            createBaseVNode("p", null, toDisplayString(project.description), 1),
+                            createBaseVNode("div", _hoisted_5$1, [
+                                createBaseVNode("span", null, [
+                                    createVNode(unref(UserRound), { size: 13 }),
+                                    createTextVNode(" " + toDisplayString(project.ownerName), 1)
+                                ]),
+                                createBaseVNode("span", null, [
+                                    createVNode(unref(CircleCheck), { size: 13 }),
+                                    createTextVNode(" " + toDisplayString(project.completedTaskCount) + "/" + toDisplayString(project.taskCount) + " task ", 1)
+                                ]),
+                                createBaseVNode("span", null, [
+                                    createVNode(unref(CalendarDays), { size: 13 }),
+                                    createTextVNode(" " + toDisplayString(project.dueDateLabel), 1)
+                                ])
+                            ]),
+                            createBaseVNode("div", _hoisted_6$1, [
+                                createBaseVNode("span", {
+                                    style: normalizeStyle({ width: `${project.progressPercentage}%` })
+                                }, null, 4)
+                            ]),
+                            createBaseVNode("div", _hoisted_7, [
+                                createBaseVNode("div", _hoisted_8, [
+                                    (openBlock(true), createElementBlock(Fragment, null, renderList(project.memberInitials, (member, index) => {
+                                        return (openBlock(), createElementBlock("span", {
+                                            key: `${member}-${index}`
+                                        }, toDisplayString(member), 1));
+                                    }), 128))
+                                ]),
+                                createBaseVNode("div", _hoisted_9, [
+                                    createBaseVNode("button", {
+                                        type: "button",
+                                        "aria-label": "Xem dự án",
+                                        onClick: withModifiers(($event) => (_ctx.$emit('view', project.id)), ["stop"])
+                                    }, [
+                                        createVNode(unref(Eye), { size: 16 })
+                                    ], 8, _hoisted_10),
+                                    (!__props.readOnly)
+                                        ? (openBlock(), createElementBlock("button", {
+                                            key: 0,
+                                            type: "button",
+                                            "aria-label": "Sửa dự án",
+                                            onClick: withModifiers(($event) => (_ctx.$emit('edit', project.id)), ["stop"])
+                                        }, [
+                                            createVNode(unref(Pencil), { size: 16 })
+                                        ], 8, _hoisted_11))
+                                        : createCommentVNode("", true),
+                                    (!__props.readOnly)
+                                        ? (openBlock(), createElementBlock("button", {
+                                            key: 1,
+                                            type: "button",
+                                            "aria-label": "Xóa dự án",
+                                            onClick: withModifiers(($event) => (_ctx.$emit('delete', project.id)), ["stop"])
+                                        }, [
+                                            createVNode(unref(Trash2), { size: 16 })
+                                        ], 8, _hoisted_12))
+                                        : createCommentVNode("", true)
+                                ])
+                            ])
+                        ])
+                    ], 42, _hoisted_2$1));
+                }), 128)),
+                (__props.projects.length === 0)
+                    ? (openBlock(), createElementBlock("div", _hoisted_13, " Không tìm thấy dự án phù hợp với bộ lọc hiện tại. "))
+                    : createCommentVNode("", true)
             ]));
         };
     }
@@ -56,7 +176,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
         return (_ctx, _cache) => {
             return (openBlock(), createElementBlock("div", _hoisted_1, [
                 createBaseVNode("div", _hoisted_2, [
-                    createVNode(_sfc_main$1, {
+                    createVNode(_sfc_main$2, {
                         id: "overview",
                         cards: unref(summaryCards)
                     }, null, 8, ["cards"]),
@@ -68,7 +188,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                             ], -1)),
                             createBaseVNode("p", null, toDisplayString(unref(filteredProjects).length) + " of " + toDisplayString(unref(projects).length) + " projects", 1)
                         ]),
-                        createVNode(_sfc_main$2, {
+                        createVNode(_sfc_main$3, {
                             search: unref(searchQuery),
                             "onUpdate:search": _cache[0] || (_cache[0] = ($event) => (isRef(searchQuery) ? (searchQuery).value = $event : null)),
                             sort: unref(projectSort),
@@ -152,7 +272,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                                 }, "Cancel")
                             ], 32))
                             : createCommentVNode("", true),
-                        createVNode(_sfc_main$3, {
+                        createVNode(_sfc_main$1, {
                             projects: unref(projectCards),
                             "active-project-id": unref(selectedProject)?.id ?? null,
                             onView: unref(selectProject),

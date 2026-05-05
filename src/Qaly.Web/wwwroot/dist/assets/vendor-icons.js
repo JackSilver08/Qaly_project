@@ -176,6 +176,16 @@ const ChevronDown = createLucideIcon("chevron-down", [
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
+const CircleCheck = createLucideIcon("circle-check", [
+    ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
+    ["path", { d: "m9 12 2 2 4-4", key: "dzmm74" }]
+]);
+/**
+ * @license lucide-vue-next v1.0.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
 const ClipboardList = createLucideIcon("clipboard-list", [
     ["rect", { width: "8", height: "4", x: "8", y: "2", rx: "1", ry: "1", key: "tgr4d6" }],
     [
@@ -502,5 +512,5 @@ const X = createLucideIcon("x", [
     ["path", { d: "M18 6 6 18", key: "1bl5f8" }],
     ["path", { d: "m6 6 12 12", key: "d8bk6v" }]
 ]);
-export { ArrowLeft as A, Box as B, ChevronDown as C, Ellipsis as E, FolderKanban as F, LayoutDashboard as L, Menu as M, Plus as P, Search as S, Trash2 as T, Users as U, Vote as V, X, Bell as a, ClipboardList as b, UserPlus as c, Mail as d, Shield as e, FileText as f, Pencil as g, MessageSquare as h, Send as i, SlidersHorizontal as j, Eye as k, CalendarDays as l, UserRound as m, Pin as n, FileUp as o, SmilePlus as p };
+export { ArrowLeft as A, Box as B, ChevronDown as C, Eye as E, FolderKanban as F, LayoutDashboard as L, Menu as M, Plus as P, Search as S, Trash2 as T, Users as U, Vote as V, X, Bell as a, ClipboardList as b, UserRound as c, CircleCheck as d, CalendarDays as e, Pencil as f, UserPlus as g, Mail as h, Shield as i, FileText as j, MessageSquare as k, Send as l, Ellipsis as m, SlidersHorizontal as n, Pin as o, FileUp as p, SmilePlus as q };
 //# sourceMappingURL=vendor-icons.js.map
