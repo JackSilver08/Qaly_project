@@ -9,6 +9,7 @@ namespace Qaly.Domain.Interfaces;
 /// </summary>
 public interface IRepository<T> where T : BaseEntity
 {
+    IQueryable<T> GetQueryable();
     Task<T?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<T>> GetAllAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<T>> FindAsync(Expression<Func<T, bool>> predicate, CancellationToken cancellationToken = default);

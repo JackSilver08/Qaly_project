@@ -1,3 +1,5 @@
+using Qaly.Domain.Entities;
+
 namespace Qaly.Application.Common.Interfaces;
 
 /// <summary>
@@ -24,6 +26,12 @@ public interface IAiService
     /// <summary>Tự động tạo subtasks từ mô tả task lớn</summary>
     Task<IReadOnlyList<string>> GenerateSubtasksAsync(string taskTitle, string taskDescription);
 
-    /// <summary>Chat assistant - hỏi đáp về dự án</summary>
+    /// <summary>Chat assistant - hỏi đáp về dự án (Streaming version)</summary>
     Task<string> ChatAsync(string userMessage, Guid? projectId = null);
+
+    /// <summary>Chat assistant - hỏi đáp về dự án với phản hồi trực tiếp (Streaming)</summary>
+    IAsyncEnumerable<string> ChatStreamingAsync(string userMessage, Guid? projectId = null);
+
+    /// <summary>Lấy thông tin project kèm tasks để phục vụ export</summary>
+    Task<Project?> GetProjectWithTasksAsync(Guid projectId);
 }

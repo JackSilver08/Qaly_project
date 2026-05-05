@@ -84,6 +84,35 @@ services:
     restart: unless-stopped
 
   # ----------------------------------------
+  # Qdrant (Vector Database for AI RAG)
+  # ----------------------------------------
+  qaly-qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qaly-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qaly-qdrant-data:/qdrant/storage
+    networks:
+      - qaly-network
+    restart: unless-stopped
+
+  # ----------------------------------------
+  # Ollama (AI Model Server - Docker Version)
+  # ----------------------------------------
+  qaly-ollama:
+    image: ollama/ollama:latest
+    container_name: qaly-ollama
+    volumes:
+      - qaly-ollama-data:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - qaly-network
+    restart: unless-stopped
+
+  # ----------------------------------------
   # Qaly Web App (Build từ source)
   # ----------------------------------------
   qaly-web:
@@ -100,8 +129,10 @@ services:
       - Seq__ServerUrl=http://qaly-seq:5341
       - Email__SmtpHost=qaly-mailhog
       - Email__SmtpPort=1025
+      - Ai__OllamaUrl=http://qaly-ollama:11434
+      - Ai__QdrantUrl=http://qaly-qdrant:6333
     ports:
-      - "5000:5000"    # Web App: http://localhost:5000
+      - "5000:5000"
     volumes:
       - .:/app
       - /app/bin
@@ -113,9 +144,13 @@ services:
         condition: service_healthy
       qaly-redis:
         condition: service_healthy
+      qaly-qdrant:
+        condition: service_started
+      qaly-ollama:
+        condition: service_started
     restart: unless-stopped
     profiles:
-      - full          # Chỉ chạy khi: docker compose --profile full up
+      - full
 
 # ----------------------------------------
 # Volumes (Persistent Data)
@@ -126,6 +161,10 @@ volumes:
   qaly-redis-data:
     driver: local
   qaly-seq-data:
+    driver: local
+  qaly-qdrant-data:
+    driver: local
+  qaly-ollama-data:
     driver: local
 
 # ----------------------------------------

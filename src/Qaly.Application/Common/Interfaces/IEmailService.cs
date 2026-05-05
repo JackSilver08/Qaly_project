@@ -2,7 +2,7 @@ namespace Qaly.Application.Common.Interfaces;
 
 public interface IEmailService
 {
-    Task SendAsync(string to, string subject, string body, CancellationToken cancellationToken = default);
-    Task SendTaskAssignmentNotificationAsync(string to, string taskTitle, string projectName);
-    Task SendDueDateReminderAsync(string to, string taskTitle, DateTimeOffset dueDate);
+    Task SendAsync(string recipientEmail, string subject, string body, CancellationToken cancellationToken = default);
+    Task SendTaskAssignmentNotificationAsync(string recipientEmail, string taskTitle, string projectName);
+    Task SendDueDateReminderAsync(string recipientEmail, string taskTitle, DateTimeOffset dueDate);
 }

@@ -1,16 +1,9 @@
 import { createApp } from 'vue'
+import App from './App.vue'
 import './style.css'
 
-// Ví dụ về "Island" component
-// import KanbanBoard from './components/KanbanBoard.vue'
+const target = document.getElementById('qaly-dashboard-app')
 
-const app = createApp({})
-
-// app.component('kanban-board', KanbanBoard)
-
-// Mount app vào một element nếu tồn tại (ví dụ: <div id="app"></div> trong Razor Page)
-if (document.getElementById('app')) {
-  app.mount('#app')
+if (target) {
+  createApp(App).mount(target)
 }
-
-console.log('Qaly Frontend Initialized')

@@ -1,0 +1,41 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Qaly.Application.Services;
+
+namespace Qaly.Web.Controllers;
+
+[ApiController]
+[Authorize]
+[Route("api/attachments")]
+public class AttachmentsController : ControllerBase
+{
+    private readonly IAttachmentService _attachmentService;
+
+    public AttachmentsController(IAttachmentService attachmentService)
+    {
+        _attachmentService = attachmentService;
+    }
+
+    [HttpGet("task/{taskItemId:guid}")]
+    public async Task<IActionResult> GetByTask(Guid taskItemId, CancellationToken ct)
+    {
+        var result = await _attachmentService.GetByTaskAsync(taskItemId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("task/{taskItemId:guid}")]
+    [RequestSizeLimit(25_000_000)]
+    public async Task<IActionResult> Upload(Guid taskItemId, IFormFile file, CancellationToken ct)
+    {
+        await using var stream = file.OpenReadStream();
+        var result = await _attachmentService.UploadAsync(taskItemId, file.FileName, file.ContentType, file.Length, stream, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
+    {
+        var result = await _attachmentService.DeleteAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+}

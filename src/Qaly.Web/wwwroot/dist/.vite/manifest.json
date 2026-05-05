@@ -1,0 +1,11 @@
+{
+  "src/Qaly.Web/ClientApp/main.ts": {
+    "file": "assets/main.js",
+    "name": "main",
+    "src": "src/Qaly.Web/ClientApp/main.ts",
+    "isEntry": true,
+    "css": [
+      "assets/main.css"
+    ]
+  }
+}

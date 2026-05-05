@@ -1,0 +1,36 @@
+@page
+@model Qaly.Web.Pages.Account.LoginModel
+@{
+    ViewData["Title"] = "Sign in";
+}
+
+<main class="auth-page">
+    <section class="auth-card">
+        <div class="auth-card__brand">
+            <span>Qaly</span>
+            <h1>Sign in</h1>
+            <p>Use your workspace account to continue.</p>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+        {
+            <div class="auth-error">@Model.ErrorMessage</div>
+        }
+
+        <form method="post" class="auth-form">
+            <input type="hidden" asp-for="ReturnUrl" />
+            <label>
+                <span>Email</span>
+                <input asp-for="Email" type="email" autocomplete="email" required />
+            </label>
+            <label>
+                <span>Password</span>
+                <input asp-for="Password" type="password" autocomplete="current-password" required />
+            </label>
+            <button type="submit">Sign in</button>
+        </form>
+
+        <p class="auth-link">New to Qaly? <a asp-page="/Account/Register">Create an account</a></p>
+        <p class="auth-hint">Seed admin: admin@qaly.dev / Admin@123</p>
+    </section>
+</main>
