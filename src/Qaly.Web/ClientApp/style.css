@@ -505,18 +505,6 @@ p {
   display: none;
 }
 
-.app-shell .home-topbar {
-  padding: 20px;
-  border: 1px solid rgba(221, 229, 239, 0.8);
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.58);
-}
-
-.app-shell .home-topbar .topbar-actions,
-.app-shell .home-topbar .mobile-only {
-  display: none;
-}
-
 .secondary-button {
   min-height: 44px;
   justify-content: center;
@@ -560,8 +548,6 @@ p {
 .brand-row,
 .sidebar-link,
 .ai-chip,
-.topbar,
-.topbar-title,
 .search-box,
 .hero-grid,
 .project-hero,
@@ -761,23 +747,6 @@ p {
 
 .dashboard-main.no-scrollbar {
   scrollbar-width: none;
-}
-
-.topbar {
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.topbar-title {
-  min-width: 0;
-  gap: var(--space-1);
-}
-
-.topbar-title p {
-  max-width: 56ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .search-box {
@@ -1944,8 +1913,6 @@ p {
   align-self: start;
 }
 
-.home-topbar,
-.topbar-actions,
 .project-workspace__header,
 .project-toolbar,
 .project-toolbar__filters,
@@ -1961,28 +1928,9 @@ p {
   align-items: center;
 }
 
-.home-topbar {
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.home-topbar .topbar-title > div {
-  display: grid;
-  gap: 3px;
-}
-
-.home-topbar .topbar-title span,
 .project-workspace__header span {
   color: var(--blue-700);
   font-weight: 800;
-}
-
-.home-topbar h1 {
-  font-size: 22px;
-}
-
-.topbar-actions {
-  gap: var(--space-1);
 }
 
 .summary-card-grid {
@@ -2542,17 +2490,11 @@ p {
     display: inline-grid;
   }
 
-  .topbar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
   .search-box {
     width: 100%;
     min-width: 0;
   }
 
-  .home-topbar,
   .project-toolbar,
   .project-toolbar__filters,
   .project-list-item {

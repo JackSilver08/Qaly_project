@@ -1,11 +1,146 @@
 {
+  "_ProjectList.vue_vue_type_script_setup_true_lang.js": {
+    "file": "assets/ProjectList.vue_vue_type_script_setup_true_lang.js",
+    "name": "ProjectList.vue_vue_type_script_setup_true_lang",
+    "imports": [
+      "_vendor-vue.js",
+      "_vendor-icons.js"
+    ]
+  },
+  "_ProjectToolbar.vue_vue_type_script_setup_true_lang.js": {
+    "file": "assets/ProjectToolbar.vue_vue_type_script_setup_true_lang.js",
+    "name": "ProjectToolbar.vue_vue_type_script_setup_true_lang",
+    "imports": [
+      "_vendor-icons.js",
+      "_vendor-vue.js"
+    ]
+  },
+  "_vendor-icons.js": {
+    "file": "assets/vendor-icons.js",
+    "name": "vendor-icons",
+    "imports": [
+      "_vendor-vue.js"
+    ]
+  },
+  "_vendor-markdown.js": {
+    "file": "assets/vendor-markdown.js",
+    "name": "vendor-markdown"
+  },
+  "_vendor-realtime.js": {
+    "file": "assets/vendor-realtime.js",
+    "name": "vendor-realtime"
+  },
+  "_vendor-vue.js": {
+    "file": "assets/vendor-vue.js",
+    "name": "vendor-vue"
+  },
   "src/Qaly.Web/ClientApp/main.ts": {
     "file": "assets/main.js",
     "name": "main",
     "src": "src/Qaly.Web/ClientApp/main.ts",
     "isEntry": true,
+    "imports": [
+      "_vendor-vue.js",
+      "_vendor-markdown.js",
+      "_vendor-icons.js",
+      "_vendor-realtime.js"
+    ],
+    "dynamicImports": [
+      "src/Qaly.Web/ClientApp/pages/ArchivedProjectsPage.vue",
+      "src/Qaly.Web/ClientApp/pages/DashboardPage.vue",
+      "src/Qaly.Web/ClientApp/pages/ProjectDetailPage.vue",
+      "src/Qaly.Web/ClientApp/pages/ProjectsPage.vue",
+      "src/Qaly.Web/ClientApp/pages/TasksPage.vue",
+      "src/Qaly.Web/ClientApp/pages/TeamsPage.vue"
+    ],
     "css": [
       "assets/main.css"
+    ]
+  },
+  "src/Qaly.Web/ClientApp/pages/ArchivedProjectsPage.vue": {
+    "file": "assets/ArchivedProjectsPage.js",
+    "name": "ArchivedProjectsPage",
+    "src": "src/Qaly.Web/ClientApp/pages/ArchivedProjectsPage.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "_ProjectList.vue_vue_type_script_setup_true_lang.js",
+      "src/Qaly.Web/ClientApp/main.ts",
+      "_vendor-vue.js",
+      "_vendor-icons.js",
+      "_vendor-markdown.js",
+      "_vendor-realtime.js"
+    ]
+  },
+  "src/Qaly.Web/ClientApp/pages/DashboardPage.vue": {
+    "file": "assets/DashboardPage.js",
+    "name": "DashboardPage",
+    "src": "src/Qaly.Web/ClientApp/pages/DashboardPage.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "_vendor-vue.js",
+      "_vendor-icons.js",
+      "_ProjectList.vue_vue_type_script_setup_true_lang.js",
+      "_ProjectToolbar.vue_vue_type_script_setup_true_lang.js",
+      "src/Qaly.Web/ClientApp/main.ts",
+      "_vendor-markdown.js",
+      "_vendor-realtime.js"
+    ]
+  },
+  "src/Qaly.Web/ClientApp/pages/ProjectDetailPage.vue": {
+    "file": "assets/ProjectDetailPage.js",
+    "name": "ProjectDetailPage",
+    "src": "src/Qaly.Web/ClientApp/pages/ProjectDetailPage.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "_vendor-vue.js",
+      "src/Qaly.Web/ClientApp/main.ts",
+      "_vendor-icons.js",
+      "_vendor-markdown.js",
+      "_vendor-realtime.js"
+    ],
+    "css": [
+      "assets/ProjectDetailPage.css"
+    ]
+  },
+  "src/Qaly.Web/ClientApp/pages/ProjectsPage.vue": {
+    "file": "assets/ProjectsPage.js",
+    "name": "ProjectsPage",
+    "src": "src/Qaly.Web/ClientApp/pages/ProjectsPage.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "_vendor-vue.js",
+      "_ProjectList.vue_vue_type_script_setup_true_lang.js",
+      "_ProjectToolbar.vue_vue_type_script_setup_true_lang.js",
+      "src/Qaly.Web/ClientApp/main.ts",
+      "_vendor-icons.js",
+      "_vendor-markdown.js",
+      "_vendor-realtime.js"
+    ]
+  },
+  "src/Qaly.Web/ClientApp/pages/TasksPage.vue": {
+    "file": "assets/TasksPage.js",
+    "name": "TasksPage",
+    "src": "src/Qaly.Web/ClientApp/pages/TasksPage.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "_vendor-icons.js",
+      "_vendor-vue.js",
+      "src/Qaly.Web/ClientApp/main.ts",
+      "_vendor-markdown.js",
+      "_vendor-realtime.js"
+    ]
+  },
+  "src/Qaly.Web/ClientApp/pages/TeamsPage.vue": {
+    "file": "assets/TeamsPage.js",
+    "name": "TeamsPage",
+    "src": "src/Qaly.Web/ClientApp/pages/TeamsPage.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "_vendor-icons.js",
+      "_vendor-vue.js",
+      "src/Qaly.Web/ClientApp/main.ts",
+      "_vendor-markdown.js",
+      "_vendor-realtime.js"
     ]
   }
 }

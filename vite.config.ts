@@ -27,7 +27,13 @@ export default defineConfig({
       output: {
         entryFileNames: `assets/[name].js`,
         chunkFileNames: `assets/[name].js`,
-        assetFileNames: `assets/[name].[ext]`
+        assetFileNames: `assets/[name].[ext]`,
+        manualChunks: {
+          'vendor-vue': ['vue', 'vue-router'],
+          'vendor-markdown': ['markdown-it', 'dompurify'],
+          'vendor-realtime': ['@microsoft/signalr'],
+          'vendor-icons': ['lucide-vue-next'],
+        },
       },
       onwarn(warning, warn) {
   const message = warning.message || ''

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import ChatbotAvatar from '../components/ChatbotAvatar.vue'
 import DashboardSummaryCards from '../components/DashboardSummaryCards.vue'
 import ProjectList from '../components/ProjectList.vue'
 import ProjectToolbar from '../components/ProjectToolbar.vue'
@@ -13,9 +12,6 @@ const {
   editProjectDescription,
   editProjectName,
   filteredProjects,
-  isLoading,
-  logout,
-  openChatWithPrompt,
   openCreateProject,
   projectBeingEditedId,
   projectCards,
@@ -36,22 +32,6 @@ const {
 <template>
   <div class="dashboard-scroll dashboard-scroll--embedded no-scrollbar">
     <div class="dashboard-main project-home-main no-scrollbar">
-      <header class="home-topbar">
-        <div class="topbar-title">
-          <div>
-            <span>Workspace</span>
-            <h1>Qaly project cockpit</h1>
-            <p>{{ isLoading ? 'Syncing live data...' : 'Select a project to view detailed work.' }}</p>
-          </div>
-        </div>
-
-        <button class="secondary-button" type="button" @click="openChatWithPrompt()">
-          <ChatbotAvatar size="launcher" />
-          <span>Qaly assistant</span>
-        </button>
-        <button class="text-button" type="button" @click="logout">Sign out</button>
-      </header>
-
       <DashboardSummaryCards id="overview" :cards="summaryCards" />
 
       <section id="projects" class="project-workspace glass-card">
