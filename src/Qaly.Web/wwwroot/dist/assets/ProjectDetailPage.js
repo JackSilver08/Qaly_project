@@ -1,21 +1,24 @@
 import { d as defineComponent, c as createElementBlock, a as createBaseVNode, g as createVNode, i as unref, t as toDisplayString, n as normalizeClass, j as createCommentVNode, H as normalizeStyle, o as openBlock, y as withDirectives, I as vModelSelect, F as Fragment, b as renderList, l as ref, J as createTextVNode, z as vModelText, e as createBlock, x as withModifiers, G as isRef } from './vendor-vue.js';
 import { _ as _sfc_main$5, u as useDashboardContext } from './main.js';
-import { A as ArrowLeft, c as UserPlus, d as Mail, e as Shield, T as Trash2, P as Plus, S as Search, f as FileText, g as Pencil, h as MessageSquare, i as Send, E as Ellipsis } from './vendor-icons.js';
+import { A as ArrowLeft, L as LayoutDashboard, c as UserPlus, d as Mail, e as Shield, T as Trash2, P as Plus, S as Search, f as FileText, g as Pencil, h as MessageSquare, i as Send, E as Ellipsis } from './vendor-icons.js';
 import './vendor-markdown.js';
 import './vendor-realtime.js';
-const _hoisted_1$4 = { class: "project-detail-header glass-card" };
+const _hoisted_1$4 = { class: "project-detail-header glass-card reveal" };
 const _hoisted_2$4 = { class: "project-detail-header__top" };
-const _hoisted_3$4 = { class: "project-detail-header__actions" };
-const _hoisted_4$4 = { class: "project-detail-header__main" };
-const _hoisted_5$4 = { class: "project-info" };
-const _hoisted_6$4 = { class: "project-info__title-row" };
-const _hoisted_7$4 = {
+const _hoisted_3$4 = { class: "back-icon" };
+const _hoisted_4$4 = { class: "project-detail-header__actions" };
+const _hoisted_5$4 = { class: "project-detail-header__main" };
+const _hoisted_6$4 = { class: "project-info" };
+const _hoisted_7$4 = { class: "project-info__title-row" };
+const _hoisted_8$4 = { class: "project-icon-box" };
+const _hoisted_9$4 = { class: "title-stack" };
+const _hoisted_10$4 = {
     key: 0,
     class: "project-info__desc"
 };
-const _hoisted_8$4 = { class: "project-progress-summary" };
-const _hoisted_9$4 = { class: "progress-info" };
-const _hoisted_10$4 = { class: "progress-bar-rail" };
+const _hoisted_11$4 = { class: "project-progress-summary" };
+const _hoisted_12$4 = { class: "progress-info" };
+const _hoisted_13$4 = { class: "progress-bar-rail" };
 const _sfc_main$4 = /*@__PURE__*/ defineComponent({
     __name: 'ProjectDetailHeader',
     props: {
@@ -36,42 +39,54 @@ const _sfc_main$4 = /*@__PURE__*/ defineComponent({
                         type: "button",
                         onClick: _cache[0] || (_cache[0] = ($event) => (_ctx.$emit('back')))
                     }, [
-                        createVNode(unref(ArrowLeft), { size: 18 }),
+                        createBaseVNode("div", _hoisted_3$4, [
+                            createVNode(unref(ArrowLeft), { size: 18 })
+                        ]),
                         _cache[2] || (_cache[2] = createBaseVNode("span", null, "Quay lại danh sách", -1))
                     ]),
-                    createBaseVNode("div", _hoisted_3$4, [
+                    createBaseVNode("div", _hoisted_4$4, [
                         createBaseVNode("button", {
-                            class: "secondary-button",
+                            class: "assistant-button",
                             type: "button",
                             onClick: _cache[1] || (_cache[1] = ($event) => (_ctx.$emit('assistant')))
                         }, [
                             createVNode(_sfc_main$5, { size: "launcher" }),
-                            _cache[3] || (_cache[3] = createBaseVNode("span", null, "Qaly Assistant", -1))
+                            _cache[3] || (_cache[3] = createBaseVNode("span", null, "Qaly AI Assistant", -1))
                         ])
                     ])
                 ]),
-                createBaseVNode("div", _hoisted_4$4, [
-                    createBaseVNode("div", _hoisted_5$4, [
-                        createBaseVNode("div", _hoisted_6$4, [
-                            createBaseVNode("h1", null, toDisplayString(__props.projectName), 1),
-                            createBaseVNode("span", {
-                                class: normalizeClass(`project-status project-status--${__props.statusTone}`)
-                            }, toDisplayString(__props.statusLabel), 3)
+                createBaseVNode("div", _hoisted_5$4, [
+                    createBaseVNode("div", _hoisted_6$4, [
+                        createBaseVNode("div", _hoisted_7$4, [
+                            createBaseVNode("div", _hoisted_8$4, [
+                                createVNode(unref(LayoutDashboard), {
+                                    size: 24,
+                                    class: "text-primary"
+                                })
+                            ]),
+                            createBaseVNode("div", _hoisted_9$4, [
+                                createBaseVNode("h1", null, toDisplayString(__props.projectName), 1),
+                                createBaseVNode("span", {
+                                    class: normalizeClass(`project-status project-status--${__props.statusTone}`)
+                                }, toDisplayString(__props.statusLabel), 3)
+                            ])
                         ]),
                         (__props.description)
-                            ? (openBlock(), createElementBlock("p", _hoisted_7$4, toDisplayString(__props.description), 1))
+                            ? (openBlock(), createElementBlock("p", _hoisted_10$4, toDisplayString(__props.description), 1))
                             : createCommentVNode("", true)
                     ]),
-                    createBaseVNode("div", _hoisted_8$4, [
-                        createBaseVNode("div", _hoisted_9$4, [
-                            _cache[4] || (_cache[4] = createBaseVNode("span", null, "Tiến độ tổng quan", -1)),
+                    createBaseVNode("div", _hoisted_11$4, [
+                        createBaseVNode("div", _hoisted_12$4, [
+                            _cache[4] || (_cache[4] = createBaseVNode("span", null, "Tiến độ hoàn thành", -1)),
                             createBaseVNode("strong", null, toDisplayString(__props.progressLabel), 1)
                         ]),
-                        createBaseVNode("div", _hoisted_10$4, [
+                        createBaseVNode("div", _hoisted_13$4, [
                             createBaseVNode("div", {
                                 class: "progress-bar-fill",
                                 style: normalizeStyle({ width: `${__props.progressPercentage}%` })
-                            }, null, 4)
+                            }, [...(_cache[5] || (_cache[5] = [
+                                    createBaseVNode("div", { class: "progress-shimmer" }, null, -1)
+                                ]))], 4)
                         ])
                     ])
                 ])
@@ -86,7 +101,7 @@ const _export_sfc = (sfc, props) => {
     }
     return target;
 };
-const ProjectDetailHeader = /*#__PURE__*/ _export_sfc(_sfc_main$4, [['__scopeId', "data-v-69069d9a"]]);
+const ProjectDetailHeader = /*#__PURE__*/ _export_sfc(_sfc_main$4, [['__scopeId', "data-v-3ceb04d7"]]);
 const _hoisted_1$3 = { class: "members-tab-content glass-card" };
 const _hoisted_2$3 = { class: "panel-heading" };
 const _hoisted_3$3 = {
@@ -390,7 +405,7 @@ const _sfc_main$2 = /*@__PURE__*/ defineComponent({
         };
     }
 });
-const ProjectStatsTab = /*#__PURE__*/ _export_sfc(_sfc_main$2, [['__scopeId', "data-v-278e51ec"]]);
+const ProjectStatsTab = /*#__PURE__*/ _export_sfc(_sfc_main$2, [['__scopeId', "data-v-cde34b5f"]]);
 const _hoisted_1$1 = { class: "wiki-tab-content glass-card" };
 const _hoisted_2$1 = { class: "panel-heading" };
 const _hoisted_3$1 = {
@@ -944,5 +959,6 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
         };
     }
 });
-export { _sfc_main as default };
+const ProjectDetailPage = /*#__PURE__*/ _export_sfc(_sfc_main, [['__scopeId', "data-v-2ad111f5"]]);
+export { ProjectDetailPage as default };
 //# sourceMappingURL=ProjectDetailPage.js.map

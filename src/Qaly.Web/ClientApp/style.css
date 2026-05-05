@@ -40,20 +40,20 @@
   --shadow-card: 0 14px 36px rgba(15, 23, 42, 0.08);
 
   /* Radius */
-  --radius-shell: 24px;
-  --radius-panel: 18px;
-  --radius-card: 14px;
+  --radius-shell: 20px;
+  --radius-panel: 16px;
+  --radius-card: 12px;
   --radius-pill: 999px;
 
   /* Spacing - responsive scale */
-  --space-1: 8px;
-  --space-2: 16px;
-  --space-3: 24px;
-  --space-4: 32px;
+  --space-1: 6px;
+  --space-2: 12px;
+  --space-3: 20px;
+  --space-4: 28px;
 
   /* Typography */
   --font-title-lg: 16px;
-  --font-title-sm: 14px;
+  --font-title-sm: 15px;
   --font-body: 13px;
   --line-title: 1.35;
   --line-body: 1.5;

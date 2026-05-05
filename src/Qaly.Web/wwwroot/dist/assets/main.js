@@ -1841,7 +1841,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
     }
 });
 const scriptRel = 'modulepreload';
-const assetsURL = function (dep) { return "/" + dep; };
+const assetsURL = function (dep) { return "/dist/" + dep; };
 const seen = {};
 const __vitePreload = function preload(baseModule, deps, importerUrl) {
     let promise = Promise.resolve();
