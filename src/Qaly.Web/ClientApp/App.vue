@@ -1343,8 +1343,8 @@ provide(dashboardContextKey, {
   <AppShell
     :nav-items="navigation"
     :notification-count="notificationCount"
-    :user-name="currentUser?.fullName ?? 'Qaly user'"
-    :user-initials="initials(currentUser?.fullName ?? 'QU')"
+    :user-name="currentUser?.fullName || currentUser?.email || 'Qaly user'"
+    :user-initials="initials(currentUser?.fullName || currentUser?.email || 'QU')"
     @notifications="notificationsOpen = !notificationsOpen"
     @assistant="openChatWithPrompt()"
     @logout="logout"
@@ -1410,7 +1410,7 @@ provide(dashboardContextKey, {
           <div class="chat-bubble" :class="`chat-bubble--${message.role}`">{{ message.text }}</div>
 
           <div v-if="message.role === 'user'" class="chat-avatar chat-avatar--user" aria-hidden="true">
-            {{ initials(currentUser?.fullName ?? 'QU') }}
+            {{ initials(currentUser?.fullName || currentUser?.email || 'QU') }}
           </div>
         </article>
 

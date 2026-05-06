@@ -7,7 +7,7 @@ const { currentUser, displayRole, formatDate } = useDashboardContext()
 
 const user = computed(() => currentUser.value)
 const userInitials = computed(() => {
-  const name = user.value?.fullName ?? 'Qaly user'
+  const name = user.value?.fullName || user.value?.email || 'Qaly user'
 
   return name
     .split(' ')
@@ -27,7 +27,7 @@ const userInitials = computed(() => {
           <div>
             <span>Profile</span>
             <h2>Trang cá nhân</h2>
-            <p>{{ user?.fullName ?? 'Qaly user' }}</p>
+            <p>{{ user?.fullName || user?.email || 'Qaly user' }}</p>
           </div>
         </header>
 
@@ -36,7 +36,7 @@ const userInitials = computed(() => {
             <UserRound :size="20" />
             <div>
               <span>Họ tên</span>
-              <strong>{{ user?.fullName ?? 'Qaly user' }}</strong>
+              <strong>{{ user?.fullName || user?.email || 'Qaly user' }}</strong>
             </div>
           </article>
 

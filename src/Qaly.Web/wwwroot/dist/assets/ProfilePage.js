@@ -19,7 +19,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
         const { currentUser, displayRole, formatDate } = useDashboardContext();
         const user = computed(() => currentUser.value);
         const userInitials = computed(() => {
-            const name = user.value?.fullName ?? 'Qaly user';
+            const name = user.value?.fullName || user.value?.email || 'Qaly user';
             return name
                 .split(' ')
                 .filter(Boolean)
@@ -36,7 +36,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                             createBaseVNode("div", null, [
                                 _cache[0] || (_cache[0] = createBaseVNode("span", null, "Profile", -1)),
                                 _cache[1] || (_cache[1] = createBaseVNode("h2", null, "Trang cá nhân", -1)),
-                                createBaseVNode("p", null, toDisplayString(user.value?.fullName ?? 'Qaly user'), 1)
+                                createBaseVNode("p", null, toDisplayString(user.value?.fullName || user.value?.email || 'Qaly user'), 1)
                             ])
                         ]),
                         createBaseVNode("div", _hoisted_6, [
@@ -44,7 +44,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                                 createVNode(unref(UserRound), { size: 20 }),
                                 createBaseVNode("div", null, [
                                     _cache[2] || (_cache[2] = createBaseVNode("span", null, "Họ tên", -1)),
-                                    createBaseVNode("strong", null, toDisplayString(user.value?.fullName ?? 'Qaly user'), 1)
+                                    createBaseVNode("strong", null, toDisplayString(user.value?.fullName || user.value?.email || 'Qaly user'), 1)
                                 ])
                             ]),
                             createBaseVNode("article", _hoisted_8, [

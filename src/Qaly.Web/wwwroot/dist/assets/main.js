@@ -1788,8 +1788,8 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             return (openBlock(), createBlock(_sfc_main$1, {
                 "nav-items": navigation,
                 "notification-count": notificationCount.value,
-                "user-name": currentUser.value?.fullName ?? 'Qaly user',
-                "user-initials": initials(currentUser.value?.fullName ?? 'QU'),
+                "user-name": currentUser.value?.fullName || currentUser.value?.email || 'Qaly user',
+                "user-initials": initials(currentUser.value?.fullName || currentUser.value?.email || 'QU'),
                 onNotifications: _cache[4] || (_cache[4] = ($event) => (notificationsOpen.value = !notificationsOpen.value)),
                 onAssistant: _cache[5] || (_cache[5] = ($event) => (openChatWithPrompt())),
                 onLogout: logout
@@ -1880,7 +1880,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                                         class: normalizeClass(["chat-bubble", `chat-bubble--${message.role}`])
                                     }, toDisplayString(message.text), 3),
                                     (message.role === 'user')
-                                        ? (openBlock(), createElementBlock("div", _hoisted_10, toDisplayString(initials(currentUser.value?.fullName ?? 'QU')), 1))
+                                        ? (openBlock(), createElementBlock("div", _hoisted_10, toDisplayString(initials(currentUser.value?.fullName || currentUser.value?.email || 'QU')), 1))
                                         : createCommentVNode("", true)
                                 ], 2));
                             }), 128)),
