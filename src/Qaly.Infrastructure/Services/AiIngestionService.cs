@@ -14,8 +14,8 @@ public class AiIngestionService : IAiIngestionService
     private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddingGenerator;
     private readonly IVectorStorageService _vectorStorage;
 
-    private const string CollectionName = "qaly_knowledge_base";
-    private const int VectorSize = 768; // nomic-embed-text size
+    private const string CollectionName = "qaly_context";
+    private const int VectorSize = 768;
 
     public AiIngestionService(
         IRepository<Project> projectRepo,
@@ -37,7 +37,26 @@ public class AiIngestionService : IAiIngestionService
         if (project == null) return;
 
         var text = $"Dự án: {project.Name}. Mô tả: {project.Description}. Trạng thái: {project.Status}.";
-        await UpsertToVectorDb(project.Id, "Project", project.Name, text);
+        
+        var metadata = new Dictionary<string, object>
+        {
+            { "ProjectId", project.Id },
+            { "OwnerId", project.OwnerId },
+            { "IsPrivate", false },
+            { "Visibility", "member" },
+            { "ContentType", "Project" }
+        };
+
+        await UpsertToVectorDb(project.Id, project.Name, text, metadata);
+    }
+
+    public async Task DeleteProjectAsync(Guid projectId)
+    {
+        // Delete project entry
+        await _vectorStorage.DeleteAsync(projectId, CollectionName);
+        
+        // Delete all items related to this project
+        await _vectorStorage.DeleteByFilterAsync(new VectorFilter { ProjectId = projectId }, CollectionName);
     }
 
     public async Task SyncTaskAsync(Guid taskId)
@@ -49,19 +68,53 @@ public class AiIngestionService : IAiIngestionService
         if (task == null) return;
 
         var text = $"Công việc: {task.Title} (trong dự án {task.Project.Name}). Mô tả: {task.Description}. Trạng thái: {task.Status}. Độ ưu tiên: {task.Priority}. Hạn chót: {task.DueDate}.";
-        await UpsertToVectorDb(task.Id, "Task", task.Title, text);
+        
+        var metadata = new Dictionary<string, object>
+        {
+            { "ProjectId", task.ProjectId },
+            { "TaskId", task.Id },
+            { "OwnerId", task.ReporterId },
+            { "IsPrivate", task.IsPrivate },
+            { "Visibility", task.IsPrivate ? "private" : "member" },
+            { "ContentType", "Task" }
+        };
+
+        await UpsertToVectorDb(task.Id, task.Title, text, metadata);
+    }
+
+    public async Task DeleteTaskAsync(Guid taskId)
+    {
+        await _vectorStorage.DeleteAsync(taskId, CollectionName);
+        await _vectorStorage.DeleteByFilterAsync(new VectorFilter { TaskId = taskId }, CollectionName);
     }
 
     public async Task SyncCommentAsync(Guid commentId)
     {
         var comment = await _commentRepo.GetQueryable()
             .Include(c => c.TaskItem)
+            .ThenInclude(t => t.Project)
             .FirstOrDefaultAsync(c => c.Id == commentId);
             
         if (comment == null) return;
 
         var text = $"Bình luận về công việc '{comment.TaskItem.Title}': {comment.Content}.";
-        await UpsertToVectorDb(comment.Id, "Comment", comment.TaskItem.Title, text);
+        
+        var metadata = new Dictionary<string, object>
+        {
+            { "ProjectId", comment.TaskItem.ProjectId },
+            { "TaskId", comment.TaskItemId },
+            { "OwnerId", comment.AuthorId },
+            { "IsPrivate", comment.TaskItem.IsPrivate },
+            { "Visibility", comment.TaskItem.IsPrivate ? "private" : "member" },
+            { "ContentType", "Comment" }
+        };
+
+        await UpsertToVectorDb(comment.Id, comment.TaskItem.Title, text, metadata);
+    }
+
+    public async Task DeleteCommentAsync(Guid commentId)
+    {
+        await _vectorStorage.DeleteAsync(commentId, CollectionName);
     }
 
     public async Task SyncAllDataAsync()
@@ -78,26 +131,22 @@ public class AiIngestionService : IAiIngestionService
         foreach (var c in comments) await SyncCommentAsync(c.Id);
     }
 
-    private async Task UpsertToVectorDb(Guid id, string type, string title, string content)
+    private async Task UpsertToVectorDb(Guid id, string title, string content, Dictionary<string, object> metadata)
     {
         try 
         {
             var embeddings = await _embeddingGenerator.GenerateAsync(new[] { content });
             var vector = embeddings[0].Vector.ToArray();
 
-            var payload = new Dictionary<string, object>
-            {
-                { "Type", type },
-                { "Title", title },
-                { "Content", content },
-                { "LastUpdated", DateTime.UtcNow.ToString("O") }
-            };
+            metadata["Title"] = title;
+            metadata["Content"] = content;
+            metadata["LastUpdated"] = DateTime.UtcNow.ToString("O");
 
-            await _vectorStorage.UpsertAsync(id, vector, payload, CollectionName);
+            await _vectorStorage.UpsertAsync(id, vector, metadata, CollectionName);
         }
         catch (Exception)
         {
-            // Log error or handle gracefully if Ollama is offline
+            // Log error
         }
     }
 }

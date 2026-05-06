@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { MessageSquare, MoreHorizontal, Plus, Send } from 'lucide-vue-next'
+import { MessageSquare, MoreHorizontal, Plus, Send, Search, Clock, Play, Square, Calendar } from 'lucide-vue-next'
 import ProjectDetailHeader from '../components/ProjectDetailHeader.vue'
 import ProjectMembersTab from '../components/ProjectMembersTab.vue'
 import ProjectStatsTab from '../components/ProjectStatsTab.vue'
 import ProjectWikiTab from '../components/ProjectWikiTab.vue'
 import { useDashboardContext } from '../composables/dashboard-context'
+import { ref } from 'vue'
 
 const {
   activeProjectTab,
@@ -51,7 +52,76 @@ const {
   updateMemberRole,
   uploadAttachment,
   users,
+  taskSearchQuery,
+  taskBeingQuickEditedId,
+  timeEntries,
+  activeTimer,
+  startTimer,
+  stopTimer,
+  loadTimeEntries,
 } = useDashboardContext()
+
+const quickEditTitle = ref('')
+const manualMinutes = ref<number>(0)
+const manualNote = ref('')
+const showManualForm = ref(false)
+
+function startQuickEdit(task: any) {
+  taskBeingQuickEditedId.value = task.id
+  quickEditTitle.value = task.title
+}
+
+async function saveQuickEdit() {
+  if (!taskBeingQuickEditedId.value || !selectedTask.value) return
+  
+  try {
+    const taskId = taskBeingQuickEditedId.value
+    await fetch(`/api/tasks/${taskId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: quickEditTitle.value.trim(),
+        description: selectedTask.value.description,
+        status: selectedTask.value.status,
+        priority: selectedTask.value.priority,
+        dueDate: selectedTask.value.dueDate,
+        assigneeId: selectedTask.value.assigneeId,
+        isPrivate: selectedTask.value.isPrivate
+      })
+    })
+    window.location.reload() 
+  } catch (e) {
+    console.error(e)
+  } finally {
+    taskBeingQuickEditedId.value = null
+  }
+}
+
+async function submitManualEntry() {
+  if (!selectedTask.value || manualMinutes.value <= 0) return
+
+  try {
+    const res = await fetch(`/api/tasks/${selectedTask.value.id}/time-entries/manual`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        taskId: selectedTask.value.id,
+        startedAt: new Date().toISOString(),
+        manualMinutes: manualMinutes.value,
+        note: manualNote.value.trim() || null
+      })
+    })
+
+    if (res.ok) {
+      manualMinutes.value = 0
+      manualNote.value = ''
+      showManualForm.value = false
+      await loadTimeEntries(selectedTask.value.id)
+    }
+  } catch (e) {
+    console.error(e)
+  }
+}
 </script>
 
 <template>
@@ -93,10 +163,16 @@ const {
               <span>Tasks</span>
               <h2>Board</h2>
             </div>
-            <button class="primary-button primary-button--compact" type="button" @click="createTaskOpen = !createTaskOpen">
-              <Plus :size="16" />
-              <span>Task</span>
-            </button>
+            <div class="board-actions">
+              <div class="search-box">
+                <Search :size="16" />
+                <input v-model="taskSearchQuery" type="text" placeholder="Tìm task..." />
+              </div>
+              <button class="primary-button primary-button--compact" type="button" @click="createTaskOpen = !createTaskOpen">
+                <Plus :size="16" />
+                <span>Task</span>
+              </button>
+            </div>
           </div>
 
           <form v-if="createTaskOpen" class="task-create-form" @submit.prevent="createTask">
@@ -128,7 +204,17 @@ const {
                 @click="selectTaskInProject(task.id)"
               >
                 <div class="kanban-card__top">
-                  <strong>{{ task.title }}</strong>
+                  <input
+                    v-if="taskBeingQuickEditedId === task.id"
+                    v-model="quickEditTitle"
+                    type="text"
+                    class="quick-edit-input"
+                    @blur="saveQuickEdit"
+                    @keyup.enter="saveQuickEdit"
+                    @click.stop
+                  />
+                  <strong v-else @dblclick.stop="startQuickEdit(task)">{{ task.title }}</strong>
+                  
                   <div class="task-card-actions">
                     <span :class="`priority priority--${task.priority.toLowerCase()}`">{{ task.priority }}</span>
 
@@ -176,6 +262,49 @@ const {
           </div>
 
           <div v-if="selectedTask" class="comment-list">
+            <!-- Time Tracking Section -->
+            <div class="time-tracking-panel">
+              <div class="panel-subheading">
+                <Clock :size="16" />
+                <strong>Time Tracking</strong>
+              </div>
+              
+              <div class="timer-controls">
+                <div v-if="activeTimer" class="active-timer">
+                  <span>Đang tính giờ cho: <strong>{{ activeTimer.taskTitle }}</strong></span>
+                  <button class="stop-button" @click="stopTimer(activeTimer.id)">
+                    <Square :size="14" /> Stop
+                  </button>
+                </div>
+                <div v-else class="timer-actions">
+                  <button class="start-button" @click="startTimer(selectedTask.id)">
+                    <Play :size="14" /> Start Timer
+                  </button>
+                  <button class="text-button" @click="showManualForm = !showManualForm">
+                    {{ showManualForm ? 'Cancel' : 'Manual Entry' }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Manual Entry Form -->
+              <div v-if="showManualForm" class="manual-entry-form">
+                <div class="form-row">
+                  <input v-model.number="manualMinutes" type="number" placeholder="Phút" />
+                  <input v-model="manualNote" type="text" placeholder="Ghi chú..." />
+                  <button class="primary-button primary-button--compact" @click="submitManualEntry">Log</button>
+                </div>
+              </div>
+
+              <div v-if="timeEntries.length > 0" class="time-logs">
+                <div v-for="entry in timeEntries.slice(0, 5)" :key="entry.id" class="time-log-row">
+                  <span>{{ entry.userName }}</span>
+                  <span v-if="entry.manualMinutes"><strong>{{ entry.manualMinutes }}m</strong> (Manual)</span>
+                  <span v-else>{{ entry.totalMinutes }} phút</span>
+                  <span>{{ formatDate(entry.startedAt) }}</span>
+                </div>
+              </div>
+            </div>
+
             <div class="attachment-panel">
               <div class="attachment-panel__header">
                 <strong>Attachments</strong>
@@ -321,6 +450,29 @@ const {
   color: var(--text);
 }
 
+.board-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: white;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+}
+
+.search-box input {
+  border: none;
+  outline: none;
+  font-size: 13px;
+  width: 150px;
+}
+
 .task-create-form {
   display: grid;
   grid-template-columns: 2fr 3fr 1fr 1.5fr 1.5fr auto;
@@ -434,6 +586,15 @@ const {
   padding-right: 8px;
 }
 
+.quick-edit-input {
+  width: 100%;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--primary);
+  font-size: 14px;
+  outline: none;
+}
+
 .priority {
   font-size: 11px;
   padding: 3px 8px;
@@ -517,6 +678,106 @@ const {
 
 .dropdown-content button:hover {
   background: var(--surface-warm);
+}
+
+/* Time Tracking Styles */
+.time-tracking-panel {
+  background: #fdf2f8;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid #fbcfe8;
+}
+
+.panel-subheading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: #db2777;
+}
+
+.timer-controls {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.start-button {
+  background: #db2777;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.active-timer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.stop-button {
+  background: #ef4444;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.timer-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.manual-entry-form {
+  background: white;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  border: 1px solid #fbcfe8;
+}
+
+.form-row {
+  display: flex;
+  gap: 8px;
+}
+
+.form-row input[type="number"] {
+  width: 60px;
+}
+
+.form-row input {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.time-logs {
+  border-top: 1px solid #fbcfe8;
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.time-log-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #831843;
 }
 
 /* Detail Panel */

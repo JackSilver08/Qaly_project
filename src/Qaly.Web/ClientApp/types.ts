@@ -182,3 +182,25 @@ export interface WikiPageDto {
   authorName: string
   updatedAt: string
 }
+
+export interface TimeEntryDto {
+  id: string
+  taskId: string
+  taskTitle: string
+  userId: string
+  userName: string
+  startedAt: string
+  endedAt: string | null
+  manualMinutes: number | null
+  totalMinutes: number
+  note: string | null
+  createdAt: string
+}
+
+export interface CreateTimeEntryDto {
+  taskId: string
+  startedAt: string
+  endedAt?: string | null
+  manualMinutes?: number | null
+  note?: string | null
+}

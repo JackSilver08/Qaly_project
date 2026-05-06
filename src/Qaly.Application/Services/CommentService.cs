@@ -4,6 +4,7 @@ using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Comment;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
+using System.Text.Json;
 
 namespace Qaly.Application.Services;
 
@@ -12,6 +13,7 @@ public class CommentService : ICommentService
     private readonly IRepository<TaskComment> _commentRepo;
     private readonly IRepository<TaskItem> _taskRepo;
     private readonly IRepository<ProjectMember> _memberRepo;
+    private readonly IRepository<VectorSyncOutbox> _outboxRepo;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
     private readonly INotificationService _notificationService;
@@ -21,6 +23,7 @@ public class CommentService : ICommentService
         IRepository<TaskComment> commentRepo,
         IRepository<TaskItem> taskRepo,
         IRepository<ProjectMember> memberRepo,
+        IRepository<VectorSyncOutbox> outboxRepo,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
         INotificationService notificationService,
@@ -29,6 +32,7 @@ public class CommentService : ICommentService
         _commentRepo = commentRepo;
         _taskRepo = taskRepo;
         _memberRepo = memberRepo;
+        _outboxRepo = outboxRepo;
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
         _notificationService = notificationService;
@@ -90,6 +94,7 @@ public class CommentService : ICommentService
         };
 
         await _commentRepo.AddAsync(comment, ct);
+        await AddToOutboxAsync("CommentAdded", new { Id = comment.Id }, ct);
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("Create", nameof(TaskComment), comment.Id.ToString(), new { dto.TaskItemId }, ct);
 
@@ -125,10 +130,21 @@ public class CommentService : ICommentService
         }
 
         await _commentRepo.DeleteAsync(comment, ct);
+        await AddToOutboxAsync("CommentDeleted", new { Id = comment.Id }, ct);
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("Delete", nameof(TaskComment), id.ToString(), new { comment.TaskItemId }, ct);
 
         return Result.Success();
+    }
+
+    private async Task AddToOutboxAsync(string eventType, object payload, CancellationToken ct)
+    {
+        var message = new VectorSyncOutbox
+        {
+            EventType = eventType,
+            Payload = JsonSerializer.Serialize(payload)
+        };
+        await _outboxRepo.AddAsync(message, ct);
     }
 
     private async Task<TaskItem?> LoadTaskAsync(Guid taskItemId, CancellationToken ct)

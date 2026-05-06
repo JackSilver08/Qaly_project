@@ -16,6 +16,19 @@ public class NotificationHub : Hub
         await base.OnConnectedAsync();
     }
 
+    public async Task JoinProject(Guid projectId)
+    {
+        await Groups.AddToGroupAsync(Context.ConnectionId, ProjectGroup(projectId.ToString()));
+    }
+
+    public async Task LeaveProject(Guid projectId)
+    {
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, ProjectGroup(projectId.ToString()));
+    }
+
     public static string UserGroup(string userId)
         => $"user:{userId}";
+
+    public static string ProjectGroup(string projectId)
+        => $"project:{projectId}";
 }

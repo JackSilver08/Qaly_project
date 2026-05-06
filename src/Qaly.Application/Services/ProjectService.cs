@@ -4,6 +4,7 @@ using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Project;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
+using System.Text.Json;
 
 namespace Qaly.Application.Services;
 
@@ -12,6 +13,7 @@ public class ProjectService : IProjectService
     private readonly IRepository<Project> _projectRepo;
     private readonly IRepository<ProjectMember> _memberRepo;
     private readonly IRepository<User> _userRepo;
+    private readonly IRepository<VectorSyncOutbox> _outboxRepo;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
     private readonly INotificationService _notificationService;
@@ -21,6 +23,7 @@ public class ProjectService : IProjectService
         IRepository<Project> projectRepo,
         IRepository<ProjectMember> memberRepo,
         IRepository<User> userRepo,
+        IRepository<VectorSyncOutbox> outboxRepo,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
         INotificationService notificationService,
@@ -29,6 +32,7 @@ public class ProjectService : IProjectService
         _projectRepo = projectRepo;
         _memberRepo = memberRepo;
         _userRepo = userRepo;
+        _outboxRepo = outboxRepo;
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
         _notificationService = notificationService;
@@ -142,6 +146,7 @@ public class ProjectService : IProjectService
         project.OwnerId = currentUserId.Value;
 
         await _projectRepo.AddAsync(project, ct);
+        await AddToOutboxAsync("ProjectCreated", new { Id = project.Id }, ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
         await _memberRepo.AddAsync(new ProjectMember
@@ -179,6 +184,7 @@ public class ProjectService : IProjectService
         project.Name = dto.Name.Trim();
 
         await _projectRepo.UpdateAsync(project, ct);
+        await AddToOutboxAsync("ProjectUpdated", new { Id = project.Id }, ct);
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("Update", nameof(Project), project.Id.ToString(), dto, ct);
 
@@ -199,6 +205,7 @@ public class ProjectService : IProjectService
         }
 
         await _projectRepo.DeleteAsync(project, ct);
+        await AddToOutboxAsync("ProjectDeleted", new { Id = project.Id }, ct);
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("Delete", nameof(Project), id.ToString(), new { project.Name }, ct);
 
@@ -287,6 +294,16 @@ public class ProjectService : IProjectService
         await _auditLogService.LogAsync("RemoveMember", nameof(Project), projectId.ToString(), new { userId }, ct);
 
         return Result.Success();
+    }
+
+    private async Task AddToOutboxAsync(string eventType, object payload, CancellationToken ct)
+    {
+        var message = new VectorSyncOutbox
+        {
+            EventType = eventType,
+            Payload = JsonSerializer.Serialize(payload)
+        };
+        await _outboxRepo.AddAsync(message, ct);
     }
 
     private IQueryable<Project> ProjectDetailsQuery()

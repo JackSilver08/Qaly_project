@@ -56,6 +56,10 @@ public static class DependencyInjection
         
         services.AddSingleton<IVectorStorageService, QdrantVectorStorageService>();
         services.AddScoped<IAiIngestionService, AiIngestionService>();
+        services.AddScoped<AiTools>();
+
+        // Background Workers
+        services.AddHostedService<VectorSyncWorker>();
 
         return services;
     }
