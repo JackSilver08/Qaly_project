@@ -1192,8 +1192,8 @@ provide(dashboardContextKey, {
   <AppShell
     :nav-items="navigation"
     :notification-count="notificationCount"
-    :user-name="currentUser?.fullName ?? 'Qaly user'"
-    :user-initials="initials(currentUser?.fullName ?? 'QU')"
+    :user-name="currentUser?.fullName || currentUser?.email || 'Qaly user'"
+    :user-initials="initials(currentUser?.fullName || currentUser?.email || 'QU')"
     @notifications="notificationsOpen = !notificationsOpen"
     @assistant="() => {}"
     @logout="logout"
