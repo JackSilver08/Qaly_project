@@ -1,7 +1,7 @@
-const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/ArchivedProjectsPage.js","assets/ProjectList.vue_vue_type_script_setup_true_lang.js","assets/vendor-icons.js","assets/vendor-vue.js","assets/vendor-markdown.js","assets/vendor-realtime.js","assets/DashboardPage.js","assets/ProjectToolbar.vue_vue_type_script_setup_true_lang.js","assets/ProjectDetailPage.js","assets/ProjectDetailPage.css","assets/ProjectsPage.js","assets/TasksPage.js","assets/TeamsPage.js"])))=>i.map(i=>d[i]);
-import { d as defineComponent, u as useRoute, r as resolveComponent, o as openBlock, c as createElementBlock, a as createBaseVNode, F as Fragment, b as renderList, e as createBlock, w as withCtx, n as normalizeClass, f as resolveDynamicComponent, t as toDisplayString, g as createVNode, i as unref, j as createCommentVNode, k as renderSlot, l as ref, m as inject, p as watch, q as useRouter, s as onMounted, v as nextTick, x as withModifiers, y as withDirectives, z as vModelText, A as computed, B as provide, C as createRouter, D as createWebHistory, E as createApp } from './vendor-vue.js';
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/ArchivedProjectsPage.js","assets/ProjectList.vue_vue_type_script_setup_true_lang.js","assets/vendor-icons.js","assets/vendor-vue.js","assets/vendor-markdown.js","assets/vendor-realtime.js","assets/DashboardPage.js","assets/ProjectToolbar.vue_vue_type_script_setup_true_lang.js","assets/ProfilePage.js","assets/ProjectDetailPage.js","assets/ProjectDetailPage.css","assets/ProjectsPage.js","assets/TasksPage.js","assets/TeamsPage.js"])))=>i.map(i=>d[i]);
+import { d as defineComponent, u as useRoute, r as resolveComponent, o as openBlock, c as createElementBlock, a as createBaseVNode, F as Fragment, b as renderList, e as createBlock, w as withCtx, n as normalizeClass, f as resolveDynamicComponent, t as toDisplayString, g as createVNode, i as unref, j as onMounted, k as onBeforeUnmount, l as createCommentVNode, m as ref, p as renderSlot, q as inject, s as watch, v as useRouter, x as nextTick, y as withModifiers, z as withDirectives, A as vModelText, B as computed, C as provide, D as createRouter, E as createWebHistory, G as createApp } from './vendor-vue.js';
 import { M as MarkdownIt } from './vendor-markdown.js';
-import { B as Box, M as Menu, S as Search, X, a as Bell, P as Plus, C as ChevronDown, L as LayoutDashboard, F as FolderKanban, b as ClipboardList, U as Users } from './vendor-icons.js';
+import { B as Box, M as Menu, a as Bell, C as ChevronDown, U as User, L as LogOut, X, b as LayoutDashboard, F as FolderKanban, c as ClipboardList, d as Users } from './vendor-icons.js';
 import { H as HubConnectionBuilder } from './vendor-realtime.js';
 const _hoisted_1$3 = { class: "shell-sidebar no-scrollbar" };
 const _hoisted_2$3 = {
@@ -95,31 +95,59 @@ const _sfc_main$3 = /*@__PURE__*/ defineComponent({
 });
 const _hoisted_1$2 = { class: "shell-header" };
 const _hoisted_2$2 = { class: "shell-brand" };
-const _hoisted_3$1 = {
-    class: "shell-search",
-    "aria-label": "Tim du an, cong viec, thanh vien"
-};
-const _hoisted_4$1 = ["value"];
-const _hoisted_5$1 = { class: "shell-header-actions" };
-const _hoisted_6$1 = {
+const _hoisted_3$1 = { class: "shell-header-actions" };
+const _hoisted_4$1 = {
     key: 0,
     class: "shell-action-badge"
 };
-const _hoisted_7$1 = {
-    class: "shell-user-menu",
-    type: "button"
+const _hoisted_5$1 = ["aria-expanded"];
+const _hoisted_6$1 = {
+    key: 0,
+    class: "shell-user-dropdown-menu",
+    role: "menu"
 };
 const _sfc_main$2 = /*@__PURE__*/ defineComponent({
     __name: 'TopHeader',
     props: {
         brandName: {},
-        search: {},
         notificationCount: {},
         userInitials: {},
         userName: {}
     },
-    emits: ["update:search", "toggleSidebar", "create", "notifications", "assistant"],
-    setup(__props) {
+    emits: ["toggleSidebar", "notifications", "assistant", "logout"],
+    setup(__props, { emit: __emit }) {
+        const emit = __emit;
+        const userMenuOpen = ref(false);
+        const userMenuRef = ref(null);
+        function closeUserMenu() {
+            userMenuOpen.value = false;
+        }
+        function toggleUserMenu() {
+            userMenuOpen.value = !userMenuOpen.value;
+        }
+        function handleLogout() {
+            closeUserMenu();
+            emit('logout');
+        }
+        function handleDocumentPointerDown(event) {
+            const target = event.target;
+            if (target && userMenuRef.value?.contains(target))
+                return;
+            closeUserMenu();
+        }
+        function handleDocumentKeydown(event) {
+            if (event.key === 'Escape') {
+                closeUserMenu();
+            }
+        }
+        onMounted(() => {
+            document.addEventListener('pointerdown', handleDocumentPointerDown);
+            document.addEventListener('keydown', handleDocumentKeydown);
+        });
+        onBeforeUnmount(() => {
+            document.removeEventListener('pointerdown', handleDocumentPointerDown);
+            document.removeEventListener('keydown', handleDocumentKeydown);
+        });
         return (_ctx, _cache) => {
             const _component_RouterLink = resolveComponent("RouterLink");
             return (openBlock(), createElementBlock("header", _hoisted_1$2, [
@@ -138,7 +166,7 @@ const _sfc_main$2 = /*@__PURE__*/ defineComponent({
                         "aria-label": "QALY trang chu"
                     }, {
                         default: withCtx(() => [
-                            _cache[6] || (_cache[6] = createBaseVNode("div", {
+                            _cache[3] || (_cache[3] = createBaseVNode("div", {
                                 class: "shell-brand-mark",
                                 "aria-hidden": "true"
                             }, "Q", -1)),
@@ -147,58 +175,68 @@ const _sfc_main$2 = /*@__PURE__*/ defineComponent({
                         _: 1
                     })
                 ]),
-                createBaseVNode("label", _hoisted_3$1, [
-                    createVNode(unref(Search), { size: 18 }),
-                    createBaseVNode("input", {
-                        value: __props.search,
-                        type: "search",
-                        placeholder: "Search projects, tasks, members...",
-                        onInput: _cache[1] || (_cache[1] = ($event) => (_ctx.$emit('update:search', $event.target.value)))
-                    }, null, 40, _hoisted_4$1),
-                    (__props.search)
-                        ? (openBlock(), createElementBlock("button", {
-                            key: 0,
-                            type: "button",
-                            "aria-label": "Xoa tim kiem",
-                            onClick: _cache[2] || (_cache[2] = ($event) => (_ctx.$emit('update:search', '')))
-                        }, [
-                            createVNode(unref(X), { size: 15 })
-                        ]))
-                        : createCommentVNode("", true)
-                ]),
-                createBaseVNode("div", _hoisted_5$1, [
+                createBaseVNode("div", _hoisted_3$1, [
                     createBaseVNode("button", {
                         class: "shell-icon-button",
                         type: "button",
                         "aria-label": "Thong bao",
-                        onClick: _cache[3] || (_cache[3] = ($event) => (_ctx.$emit('notifications')))
+                        onClick: _cache[1] || (_cache[1] = ($event) => (_ctx.$emit('notifications')))
                     }, [
                         createVNode(unref(Bell), { size: 18 }),
                         (__props.notificationCount > 0)
-                            ? (openBlock(), createElementBlock("span", _hoisted_6$1, toDisplayString(__props.notificationCount), 1))
+                            ? (openBlock(), createElementBlock("span", _hoisted_4$1, toDisplayString(__props.notificationCount), 1))
                             : createCommentVNode("", true)
                     ]),
                     createBaseVNode("button", {
                         class: "shell-icon-button",
                         type: "button",
                         "aria-label": "Tro ly Qaly",
-                        onClick: _cache[4] || (_cache[4] = ($event) => (_ctx.$emit('assistant')))
+                        onClick: _cache[2] || (_cache[2] = ($event) => (_ctx.$emit('assistant')))
                     }, [
                         createVNode(_sfc_main$3, { size: "launcher" })
                     ]),
-                    createBaseVNode("button", {
-                        class: "shell-create-button",
-                        type: "button",
-                        onClick: _cache[5] || (_cache[5] = ($event) => (_ctx.$emit('create')))
+                    createBaseVNode("div", {
+                        ref_key: "userMenuRef",
+                        ref: userMenuRef,
+                        class: "shell-user-dropdown"
                     }, [
-                        createVNode(unref(Plus), { size: 18 }),
-                        _cache[7] || (_cache[7] = createBaseVNode("span", null, "Create", -1))
-                    ]),
-                    createBaseVNode("button", _hoisted_7$1, [
-                        createBaseVNode("span", null, toDisplayString(__props.userInitials), 1),
-                        createBaseVNode("strong", null, toDisplayString(__props.userName), 1),
-                        createVNode(unref(ChevronDown), { size: 16 })
-                    ])
+                        createBaseVNode("button", {
+                            class: normalizeClass(["shell-user-menu", { 'is-open': userMenuOpen.value }]),
+                            type: "button",
+                            "aria-haspopup": "menu",
+                            "aria-expanded": userMenuOpen.value,
+                            onClick: toggleUserMenu
+                        }, [
+                            createBaseVNode("span", null, toDisplayString(__props.userInitials), 1),
+                            createBaseVNode("strong", null, toDisplayString(__props.userName), 1),
+                            createVNode(unref(ChevronDown), { size: 16 })
+                        ], 10, _hoisted_5$1),
+                        (userMenuOpen.value)
+                            ? (openBlock(), createElementBlock("div", _hoisted_6$1, [
+                                createVNode(_component_RouterLink, {
+                                    class: "shell-user-dropdown-item",
+                                    to: "/profile",
+                                    role: "menuitem",
+                                    onClick: closeUserMenu
+                                }, {
+                                    default: withCtx(() => [
+                                        createVNode(unref(User), { size: 17 }),
+                                        _cache[4] || (_cache[4] = createBaseVNode("span", null, "Trang cá nhân", -1))
+                                    ]),
+                                    _: 1
+                                }),
+                                createBaseVNode("button", {
+                                    class: "shell-user-dropdown-item shell-user-dropdown-item--danger",
+                                    type: "button",
+                                    role: "menuitem",
+                                    onClick: handleLogout
+                                }, [
+                                    createVNode(unref(LogOut), { size: 17 }),
+                                    _cache[5] || (_cache[5] = createBaseVNode("span", null, "Đăng xuất", -1))
+                                ])
+                            ]))
+                            : createCommentVNode("", true)
+                    ], 512)
                 ])
             ]));
         };
@@ -210,12 +248,11 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
     __name: 'AppShell',
     props: {
         navItems: {},
-        search: {},
         notificationCount: {},
         userName: {},
         userInitials: {}
     },
-    emits: ["update:search", "navigate", "create", "notifications", "assistant"],
+    emits: ["navigate", "notifications", "assistant", "logout"],
     setup(__props, { emit: __emit }) {
         const emit = __emit;
         const sidebarOpen = ref(false);
@@ -227,16 +264,14 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
             return (openBlock(), createElementBlock("div", _hoisted_1$1, [
                 createVNode(_sfc_main$2, {
                     "brand-name": "QALY",
-                    search: __props.search,
                     "notification-count": __props.notificationCount,
                     "user-name": __props.userName,
                     "user-initials": __props.userInitials,
-                    "onUpdate:search": _cache[0] || (_cache[0] = ($event) => (_ctx.$emit('update:search', $event))),
-                    onToggleSidebar: _cache[1] || (_cache[1] = ($event) => (sidebarOpen.value = true)),
-                    onCreate: _cache[2] || (_cache[2] = ($event) => (_ctx.$emit('create'))),
-                    onNotifications: _cache[3] || (_cache[3] = ($event) => (_ctx.$emit('notifications'))),
-                    onAssistant: _cache[4] || (_cache[4] = ($event) => (_ctx.$emit('assistant')))
-                }, null, 8, ["search", "notification-count", "user-name", "user-initials"]),
+                    onToggleSidebar: _cache[0] || (_cache[0] = ($event) => (sidebarOpen.value = true)),
+                    onNotifications: _cache[1] || (_cache[1] = ($event) => (_ctx.$emit('notifications'))),
+                    onAssistant: _cache[2] || (_cache[2] = ($event) => (_ctx.$emit('assistant'))),
+                    onLogout: _cache[3] || (_cache[3] = ($event) => (_ctx.$emit('logout')))
+                }, null, 8, ["notification-count", "user-name", "user-initials"]),
                 createVNode(_sfc_main$4, {
                     class: normalizeClass({ 'is-open': sidebarOpen.value }),
                     items: __props.navItems,
@@ -246,7 +281,7 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
                     ? (openBlock(), createElementBlock("div", {
                         key: 0,
                         class: "shell-backdrop",
-                        onClick: _cache[5] || (_cache[5] = ($event) => (sidebarOpen.value = false))
+                        onClick: _cache[4] || (_cache[4] = ($event) => (sidebarOpen.value = false))
                     }))
                     : createCommentVNode("", true),
                 createBaseVNode("main", _hoisted_2$1, [
@@ -1751,22 +1786,20 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
         return (_ctx, _cache) => {
             const _component_RouterView = resolveComponent("RouterView");
             return (openBlock(), createBlock(_sfc_main$1, {
-                search: searchQuery.value,
-                "onUpdate:search": _cache[4] || (_cache[4] = ($event) => ((searchQuery).value = $event)),
                 "nav-items": navigation,
                 "notification-count": notificationCount.value,
                 "user-name": currentUser.value?.fullName ?? 'Qaly user',
                 "user-initials": initials(currentUser.value?.fullName ?? 'QU'),
-                onCreate: openCreateProject,
-                onNotifications: _cache[5] || (_cache[5] = ($event) => (notificationsOpen.value = !notificationsOpen.value)),
-                onAssistant: _cache[6] || (_cache[6] = ($event) => (openChatWithPrompt()))
+                onNotifications: _cache[4] || (_cache[4] = ($event) => (notificationsOpen.value = !notificationsOpen.value)),
+                onAssistant: _cache[5] || (_cache[5] = ($event) => (openChatWithPrompt())),
+                onLogout: logout
             }, {
                 default: withCtx(() => [
                     createVNode(_component_RouterView),
                     (notificationsOpen.value)
                         ? (openBlock(), createElementBlock("div", _hoisted_1, [
                             createBaseVNode("div", _hoisted_2, [
-                                _cache[7] || (_cache[7] = createBaseVNode("div", null, [
+                                _cache[6] || (_cache[6] = createBaseVNode("div", null, [
                                     createBaseVNode("span", null, "Notifications"),
                                     createBaseVNode("h2", null, "Current signals")
                                 ], -1)),
@@ -1815,7 +1848,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                         createBaseVNode("div", _hoisted_7, [
                             createBaseVNode("div", _hoisted_8, [
                                 createVNode(_sfc_main$3, { size: "medium" }),
-                                _cache[8] || (_cache[8] = createBaseVNode("div", null, [
+                                _cache[7] || (_cache[7] = createBaseVNode("div", null, [
                                     createBaseVNode("span", null, "AI assistant"),
                                     createBaseVNode("h2", null, "Qaly assistant")
                                 ], -1))
@@ -1856,7 +1889,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                                     createBaseVNode("div", _hoisted_12, [
                                         createVNode(_sfc_main$3, { size: "small" })
                                     ]),
-                                    _cache[9] || (_cache[9] = createBaseVNode("div", {
+                                    _cache[8] || (_cache[8] = createBaseVNode("div", {
                                         class: "chat-bubble chat-bubble--assistant chat-bubble--thinking",
                                         "aria-label": "Assistant is thinking"
                                     }, [
@@ -1913,7 +1946,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                     ], 2)
                 ]),
                 _: 1
-            }, 8, ["search", "notification-count", "user-name", "user-initials"]));
+            }, 8, ["notification-count", "user-name", "user-initials"]));
         };
     }
 });
@@ -1979,15 +2012,17 @@ const __vitePreload = function preload(baseModule, deps, importerUrl) {
 };
 const ArchivedProjectsPage = () => __vitePreload(() => import('./ArchivedProjectsPage.js'), true ? __vite__mapDeps([0,1,2,3,4,5]) : void 0);
 const DashboardPage = () => __vitePreload(() => import('./DashboardPage.js'), true ? __vite__mapDeps([6,3,2,7,4,5]) : void 0);
-const ProjectDetailPage = () => __vitePreload(() => import('./ProjectDetailPage.js'), true ? __vite__mapDeps([8,3,2,4,5,9]) : void 0);
-const ProjectsPage = () => __vitePreload(() => import('./ProjectsPage.js'), true ? __vite__mapDeps([10,3,1,2,7,4,5]) : void 0);
-const TasksPage = () => __vitePreload(() => import('./TasksPage.js'), true ? __vite__mapDeps([11,2,3,4,5]) : void 0);
-const TeamsPage = () => __vitePreload(() => import('./TeamsPage.js'), true ? __vite__mapDeps([12,2,3,4,5]) : void 0);
+const ProfilePage = () => __vitePreload(() => import('./ProfilePage.js'), true ? __vite__mapDeps([8,2,3,4,5]) : void 0);
+const ProjectDetailPage = () => __vitePreload(() => import('./ProjectDetailPage.js'), true ? __vite__mapDeps([9,3,2,4,5,10]) : void 0);
+const ProjectsPage = () => __vitePreload(() => import('./ProjectsPage.js'), true ? __vite__mapDeps([11,3,1,2,7,4,5]) : void 0);
+const TasksPage = () => __vitePreload(() => import('./TasksPage.js'), true ? __vite__mapDeps([12,2,3,4,5]) : void 0);
+const TeamsPage = () => __vitePreload(() => import('./TeamsPage.js'), true ? __vite__mapDeps([13,2,3,4,5]) : void 0);
 const router = createRouter({
     history: createWebHistory(),
     routes: [
         { path: '/', redirect: '/dashboard' },
         { path: '/dashboard', name: 'dashboard', component: DashboardPage },
+        { path: '/profile', name: 'profile', component: ProfilePage },
         { path: '/projects', name: 'projects', component: ProjectsPage },
         { path: '/projects/archived', name: 'projects-archived', component: ArchivedProjectsPage },
         { path: '/projects/:projectId', name: 'project-detail', component: ProjectDetailPage },

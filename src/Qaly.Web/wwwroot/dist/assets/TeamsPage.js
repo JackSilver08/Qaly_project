@@ -1,5 +1,5 @@
-import { P as Plus, o as Pin, p as FileUp, q as SmilePlus, V as Vote, l as Send } from './vendor-icons.js';
-import { d as defineComponent, c as createElementBlock, a as createBaseVNode, g as createVNode, i as unref, F as Fragment, b as renderList, o as openBlock, n as normalizeClass, t as toDisplayString, j as createCommentVNode, p as watch, y as withDirectives, z as vModelText, x as withModifiers, l as ref, A as computed, e as createBlock, v as nextTick } from './vendor-vue.js';
+import { k as Plus, r as Pin, s as FileUp, t as SmilePlus, V as Vote, o as Send } from './vendor-icons.js';
+import { d as defineComponent, c as createElementBlock, a as createBaseVNode, g as createVNode, i as unref, F as Fragment, b as renderList, o as openBlock, n as normalizeClass, t as toDisplayString, l as createCommentVNode, s as watch, z as withDirectives, A as vModelText, y as withModifiers, m as ref, B as computed, e as createBlock, x as nextTick } from './vendor-vue.js';
 import { u as useDashboardContext } from './main.js';
 import './vendor-markdown.js';
 import './vendor-realtime.js';

@@ -48,6 +48,7 @@
     "dynamicImports": [
       "src/Qaly.Web/ClientApp/pages/ArchivedProjectsPage.vue",
       "src/Qaly.Web/ClientApp/pages/DashboardPage.vue",
+      "src/Qaly.Web/ClientApp/pages/ProfilePage.vue",
       "src/Qaly.Web/ClientApp/pages/ProjectDetailPage.vue",
       "src/Qaly.Web/ClientApp/pages/ProjectsPage.vue",
       "src/Qaly.Web/ClientApp/pages/TasksPage.vue",
@@ -81,6 +82,19 @@
       "_vendor-icons.js",
       "_ProjectToolbar.vue_vue_type_script_setup_true_lang.js",
       "src/Qaly.Web/ClientApp/main.ts",
+      "_vendor-markdown.js",
+      "_vendor-realtime.js"
+    ]
+  },
+  "src/Qaly.Web/ClientApp/pages/ProfilePage.vue": {
+    "file": "assets/ProfilePage.js",
+    "name": "ProfilePage",
+    "src": "src/Qaly.Web/ClientApp/pages/ProfilePage.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/Qaly.Web/ClientApp/main.ts",
+      "_vendor-icons.js",
+      "_vendor-vue.js",
       "_vendor-markdown.js",
       "_vendor-realtime.js"
     ]

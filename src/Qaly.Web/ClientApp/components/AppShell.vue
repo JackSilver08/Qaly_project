@@ -6,18 +6,16 @@ import type { ShellNavItem } from './shell-models'
 
 defineProps<{
   navItems: ShellNavItem[]
-  search: string
   notificationCount: number
   userName: string
   userInitials: string
 }>()
 
 const emit = defineEmits<{
-  'update:search': [value: string]
   navigate: []
-  create: []
   notifications: []
   assistant: []
+  logout: []
 }>()
 
 const sidebarOpen = ref(false)
@@ -33,15 +31,13 @@ function handleNavigate() {
   <div class="app-shell">
     <TopHeader
       brand-name="QALY"
-      :search="search"
       :notification-count="notificationCount"
       :user-name="userName"
       :user-initials="userInitials"
-      @update:search="$emit('update:search', $event)"
       @toggle-sidebar="sidebarOpen = true"
-      @create="$emit('create')"
       @notifications="$emit('notifications')"
       @assistant="$emit('assistant')"
+      @logout="$emit('logout')"
     />
 
     <SidebarNav

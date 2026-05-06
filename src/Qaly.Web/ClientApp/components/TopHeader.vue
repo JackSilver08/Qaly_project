@@ -1,22 +1,59 @@
 <script setup lang="ts">
-import { Bell, ChevronDown, Menu, Plus, Search, X } from 'lucide-vue-next'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { Bell, ChevronDown, LogOut, Menu, User } from 'lucide-vue-next'
 import ChatbotAvatar from './ChatbotAvatar.vue'
 
 defineProps<{
   brandName: string
-  search: string
   notificationCount: number
   userInitials: string
   userName: string
 }>()
 
-defineEmits<{
-  'update:search': [value: string]
+const emit = defineEmits<{
   toggleSidebar: []
-  create: []
   notifications: []
   assistant: []
+  logout: []
 }>()
+
+const userMenuOpen = ref(false)
+const userMenuRef = ref<HTMLElement | null>(null)
+
+function closeUserMenu() {
+  userMenuOpen.value = false
+}
+
+function toggleUserMenu() {
+  userMenuOpen.value = !userMenuOpen.value
+}
+
+function handleLogout() {
+  closeUserMenu()
+  emit('logout')
+}
+
+function handleDocumentPointerDown(event: PointerEvent) {
+  const target = event.target as Node | null
+  if (target && userMenuRef.value?.contains(target)) return
+  closeUserMenu()
+}
+
+function handleDocumentKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    closeUserMenu()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('pointerdown', handleDocumentPointerDown)
+  document.addEventListener('keydown', handleDocumentKeydown)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', handleDocumentPointerDown)
+  document.removeEventListener('keydown', handleDocumentKeydown)
+})
 </script>
 
 <template>
@@ -31,19 +68,6 @@ defineEmits<{
       </RouterLink>
     </div>
 
-    <label class="shell-search" aria-label="Tim du an, cong viec, thanh vien">
-      <Search :size="18" />
-      <input
-        :value="search"
-        type="search"
-        placeholder="Search projects, tasks, members..."
-        @input="$emit('update:search', ($event.target as HTMLInputElement).value)"
-      />
-      <button v-if="search" type="button" aria-label="Xoa tim kiem" @click="$emit('update:search', '')">
-        <X :size="15" />
-      </button>
-    </label>
-
     <div class="shell-header-actions">
       <button class="shell-icon-button" type="button" aria-label="Thong bao" @click="$emit('notifications')">
         <Bell :size="18" />
@@ -54,16 +78,37 @@ defineEmits<{
         <ChatbotAvatar size="launcher" />
       </button>
 
-      <button class="shell-create-button" type="button" @click="$emit('create')">
-        <Plus :size="18" />
-        <span>Create</span>
-      </button>
+      <div ref="userMenuRef" class="shell-user-dropdown">
+        <button
+          class="shell-user-menu"
+          :class="{ 'is-open': userMenuOpen }"
+          type="button"
+          aria-haspopup="menu"
+          :aria-expanded="userMenuOpen"
+          @click="toggleUserMenu"
+        >
+          <span>{{ userInitials }}</span>
+          <strong>{{ userName }}</strong>
+          <ChevronDown :size="16" />
+        </button>
 
-      <button class="shell-user-menu" type="button">
-        <span>{{ userInitials }}</span>
-        <strong>{{ userName }}</strong>
-        <ChevronDown :size="16" />
-      </button>
+        <div v-if="userMenuOpen" class="shell-user-dropdown-menu" role="menu">
+          <RouterLink class="shell-user-dropdown-item" to="/profile" role="menuitem" @click="closeUserMenu">
+            <User :size="17" />
+            <span>Trang cá nhân</span>
+          </RouterLink>
+
+          <button
+            class="shell-user-dropdown-item shell-user-dropdown-item--danger"
+            type="button"
+            role="menuitem"
+            @click="handleLogout"
+          >
+            <LogOut :size="17" />
+            <span>Đăng xuất</span>
+          </button>
+        </div>
+      </div>
     </div>
   </header>
 </template>

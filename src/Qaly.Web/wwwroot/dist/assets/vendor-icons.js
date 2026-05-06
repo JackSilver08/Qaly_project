@@ -300,6 +300,17 @@ const LayoutDashboard = createLucideIcon("layout-dashboard", [
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
+const LogOut = createLucideIcon("log-out", [
+    ["path", { d: "m16 17 5-5-5-5", key: "1bji2h" }],
+    ["path", { d: "M21 12H9", key: "dn1m92" }],
+    ["path", { d: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4", key: "1uf3rs" }]
+]);
+/**
+ * @license lucide-vue-next v1.0.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
 const Mail = createLucideIcon("mail", [
     ["path", { d: "m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7", key: "132q7q" }],
     ["rect", { x: "2", y: "4", width: "20", height: "16", rx: "2", key: "izxlao" }]
@@ -404,6 +415,22 @@ const Send = createLucideIcon("send", [
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
+const ShieldCheck = createLucideIcon("shield-check", [
+    [
+        "path",
+        {
+            d: "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z",
+            key: "oel41y"
+        }
+    ],
+    ["path", { d: "m9 12 2 2 4-4", key: "dzmm74" }]
+]);
+/**
+ * @license lucide-vue-next v1.0.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
 const Shield = createLucideIcon("shield", [
     [
         "path",
@@ -485,6 +512,16 @@ const UserRound = createLucideIcon("user-round", [
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
+const User = createLucideIcon("user", [
+    ["path", { d: "M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2", key: "975kel" }],
+    ["circle", { cx: "12", cy: "7", r: "4", key: "17ys0d" }]
+]);
+/**
+ * @license lucide-vue-next v1.0.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
 const Users = createLucideIcon("users", [
     ["path", { d: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2", key: "1yyitq" }],
     ["path", { d: "M16 3.128a4 4 0 0 1 0 7.744", key: "16gr8j" }],
@@ -512,5 +549,5 @@ const X = createLucideIcon("x", [
     ["path", { d: "M18 6 6 18", key: "1bl5f8" }],
     ["path", { d: "m6 6 12 12", key: "d8bk6v" }]
 ]);
-export { ArrowLeft as A, Box as B, ChevronDown as C, Eye as E, FolderKanban as F, LayoutDashboard as L, Menu as M, Plus as P, Search as S, Trash2 as T, Users as U, Vote as V, X, Bell as a, ClipboardList as b, UserRound as c, CircleCheck as d, CalendarDays as e, Pencil as f, UserPlus as g, Mail as h, Shield as i, FileText as j, MessageSquare as k, Send as l, Ellipsis as m, SlidersHorizontal as n, Pin as o, FileUp as p, SmilePlus as q };
+export { ArrowLeft as A, Box as B, ChevronDown as C, Eye as E, FolderKanban as F, LogOut as L, Menu as M, Pencil as P, ShieldCheck as S, Trash2 as T, User as U, Vote as V, X, Bell as a, LayoutDashboard as b, ClipboardList as c, Users as d, UserRound as e, CircleCheck as f, CalendarDays as g, Mail as h, UserPlus as i, Shield as j, Plus as k, Search as l, FileText as m, MessageSquare as n, Send as o, Ellipsis as p, SlidersHorizontal as q, Pin as r, FileUp as s, SmilePlus as t };
 //# sourceMappingURL=vendor-icons.js.map

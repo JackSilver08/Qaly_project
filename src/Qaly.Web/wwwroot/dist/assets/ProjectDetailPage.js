@@ -1,6 +1,6 @@
-import { d as defineComponent, c as createElementBlock, a as createBaseVNode, g as createVNode, i as unref, t as toDisplayString, n as normalizeClass, j as createCommentVNode, I as normalizeStyle, o as openBlock, y as withDirectives, K as vModelSelect, F as Fragment, b as renderList, l as ref, H as createTextVNode, z as vModelText, G as withKeys, e as createBlock, x as withModifiers, J as isRef } from './vendor-vue.js';
+import { d as defineComponent, c as createElementBlock, a as createBaseVNode, g as createVNode, i as unref, t as toDisplayString, n as normalizeClass, l as createCommentVNode, J as normalizeStyle, o as openBlock, z as withDirectives, L as vModelSelect, F as Fragment, b as renderList, m as ref, I as createTextVNode, A as vModelText, H as withKeys, e as createBlock, y as withModifiers, K as isRef } from './vendor-vue.js';
 import { _ as _sfc_main$5, u as useDashboardContext } from './main.js';
-import { A as ArrowLeft, L as LayoutDashboard, g as UserPlus, h as Mail, i as Shield, T as Trash2, P as Plus, S as Search, j as FileText, f as Pencil, k as MessageSquare, l as Send, m as Ellipsis } from './vendor-icons.js';
+import { A as ArrowLeft, b as LayoutDashboard, i as UserPlus, h as Mail, j as Shield, T as Trash2, k as Plus, l as Search, m as FileText, P as Pencil, n as MessageSquare, o as Send, p as Ellipsis } from './vendor-icons.js';
 import './vendor-markdown.js';
 import './vendor-realtime.js';
 const _hoisted_1$4 = { class: "project-detail-header glass-card reveal" };

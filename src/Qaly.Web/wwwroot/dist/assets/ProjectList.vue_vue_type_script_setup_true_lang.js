@@ -1,5 +1,5 @@
-import { c as UserRound, d as CircleCheck, e as CalendarDays, E as Eye, f as Pencil, T as Trash2 } from './vendor-icons.js';
-import { d as defineComponent, o as openBlock, c as createElementBlock, n as normalizeClass, a as createBaseVNode, t as toDisplayString, g as createVNode, i as unref, H as createTextVNode, j as createCommentVNode, I as normalizeStyle, F as Fragment, b as renderList, e as createBlock } from './vendor-vue.js';
+import { e as UserRound, f as CircleCheck, g as CalendarDays, E as Eye, P as Pencil, T as Trash2 } from './vendor-icons.js';
+import { d as defineComponent, o as openBlock, c as createElementBlock, n as normalizeClass, a as createBaseVNode, t as toDisplayString, g as createVNode, i as unref, I as createTextVNode, l as createCommentVNode, J as normalizeStyle, F as Fragment, b as renderList, e as createBlock } from './vendor-vue.js';
 const _hoisted_1$1 = { class: "project-list-item__title-row" };
 const _hoisted_2$1 = { class: "project-list-item__title" };
 const _hoisted_3 = { class: "project-list-item__progress-label" };

@@ -54,6 +54,7 @@ builder.Services.AddRazorPages(options =>
 {
     options.Conventions.AuthorizePage("/Index");
     options.Conventions.AddPageRoute("/Index", "dashboard");
+    options.Conventions.AddPageRoute("/Index", "profile");
     options.Conventions.AddPageRoute("/Index", "projects");
     options.Conventions.AddPageRoute("/Index", "projects/archived");
     options.Conventions.AddPageRoute("/Index", "projects/{projectId}");

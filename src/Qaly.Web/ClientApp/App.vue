@@ -1341,14 +1341,13 @@ provide(dashboardContextKey, {
 
 <template>
   <AppShell
-    v-model:search="searchQuery"
     :nav-items="navigation"
     :notification-count="notificationCount"
     :user-name="currentUser?.fullName ?? 'Qaly user'"
     :user-initials="initials(currentUser?.fullName ?? 'QU')"
-    @create="openCreateProject"
     @notifications="notificationsOpen = !notificationsOpen"
     @assistant="openChatWithPrompt()"
+    @logout="logout"
   >
     <RouterView />
 
