@@ -31,9 +31,9 @@ public class QdrantVectorStorageService : IVectorStorageService, IDisposable
         await _client.UpsertAsync(collectionName, new[] { point });
     }
 
-    public async Task<List<VectorSearchResult>> SearchAsync(float[] queryVector, string collectionName, VectorFilter? filter = null, int limit = 5)
+    public async Task<List<VectorSearchResult>> SearchAsync(float[] queryVector, string collectionName, VectorFilter filter, int limit = 5)
     {
-        Filter? qdrantFilter = BuildFilter(filter);
+        var qdrantFilter = BuildSearchFilter(filter);
 
         var results = await _client.SearchAsync(
             collectionName: collectionName,
@@ -79,6 +79,18 @@ public class QdrantVectorStorageService : IVectorStorageService, IDisposable
             });
         }
 
+        if (filter.TaskId.HasValue)
+        {
+            qdrantFilter.Must.Add(new Condition
+            {
+                Field = new FieldCondition
+                {
+                    Key = "TaskId",
+                    Match = new Match { Keyword = filter.TaskId.Value.ToString() }
+                }
+            });
+        }
+
         if (filter.ContentType != null)
         {
             qdrantFilter.Must.Add(new Condition 
@@ -110,6 +122,74 @@ public class QdrantVectorStorageService : IVectorStorageService, IDisposable
         }
 
         return qdrantFilter.Must.Count > 0 ? qdrantFilter : null;
+    }
+
+    private static Filter BuildSearchFilter(VectorFilter filter)
+    {
+        if (!filter.ProjectId.HasValue)
+        {
+            throw new ArgumentException("Vector search requires a project filter.", nameof(filter));
+        }
+
+        if (!filter.OwnerId.HasValue)
+        {
+            throw new ArgumentException("Vector search requires the current user filter.", nameof(filter));
+        }
+
+        var qdrantFilter = new Filter();
+
+        qdrantFilter.Must.Add(new Condition
+        {
+            Field = new FieldCondition
+            {
+                Key = "ProjectId",
+                Match = new Match { Keyword = filter.ProjectId.Value.ToString() }
+            }
+        });
+
+        if (filter.TaskId.HasValue)
+        {
+            qdrantFilter.Must.Add(new Condition
+            {
+                Field = new FieldCondition
+                {
+                    Key = "TaskId",
+                    Match = new Match { Keyword = filter.TaskId.Value.ToString() }
+                }
+            });
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.ContentType))
+        {
+            qdrantFilter.Must.Add(new Condition
+            {
+                Field = new FieldCondition
+                {
+                    Key = "ContentType",
+                    Match = new Match { Keyword = filter.ContentType }
+                }
+            });
+        }
+
+        qdrantFilter.Should.Add(new Condition
+        {
+            Field = new FieldCondition
+            {
+                Key = "IsPrivate",
+                Match = new Match { Boolean = false }
+            }
+        });
+
+        qdrantFilter.Should.Add(new Condition
+        {
+            Field = new FieldCondition
+            {
+                Key = "OwnerId",
+                Match = new Match { Keyword = filter.OwnerId.Value.ToString() }
+            }
+        });
+
+        return qdrantFilter;
     }
 
     private static Value ToValue(object? value)

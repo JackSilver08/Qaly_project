@@ -154,7 +154,7 @@ API: POST /api/projects/{id}/webhooks để đăng ký. GET /api/projects/{id}/w
 Mục tiêu: Mở REST API ra cho CI/CD pipelines, scripts nội bộ, hoặc các công cụ khác của công ty tích hợp với Qaly mà không cần đăng nhập bằng UI.
 API Key entity: Id, UserId (key thuộc về user nào), Name (label dễ nhớ), KeyHash (BCrypt hash — tuyệt đối không lưu plaintext), Prefix (8 ký tự đầu để hiển thị trong UI, ví dụ qaly_sk_), Scopes (JSON array: tasks:read, tasks:write, projects:read, comments:write), ExpiresAt (nullable), LastUsedAt, CreatedAt, IsRevoked.
 Key format: qaly_sk_<32-char-random> — prefix qaly_sk_ giúp detect key bị leak trong code repository (dùng GitHub secret scanning).
-Authentication middleware: Khi request có header Authorization: Bearer qaly_sk_..., hệ thống tách prefix 8 ký tự để lookup key trong DB (tránh full table scan), sau đó BCrypt verify toàn bộ key, check scope, check expiry, update L  astUsedAt.
+Authentication middleware: Khi request có header Authorization: Bearer qaly_sk_..., hệ thống tách prefix 8 ký tự để lookup key trong DB (tránh full table scan), sau đó BCrypt verify toàn bộ key, check scope, check expiry, update LastUsedAt.
 Rate limiting: 100 requests/phút per API key cho standard scope. Dùng ASP.NET Core Rate Limiter với Redis làm backing store để rate limit hoạt động đúng trên multi-instance deployment.
 API versioning: Implement từ đầu bằng Asp.Versioning.Http. Mọi endpoint bắt đầu từ /api/v1/.... Khi có breaking change thì ra /api/v2/... và maintain v1 ít nhất 6 tháng với deprecation notice trong response header.
 OpenAPI docs: Nâng cấp Swagger/Scalar hiện có để có: authentication example (Bearer token), request/response examples cho mọi endpoint, error response schemas, rate limit headers documentation.

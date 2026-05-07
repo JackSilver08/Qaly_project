@@ -51,15 +51,15 @@ public class AiTools
         _embeddingGenerator = embeddingGenerator;
     }
 
-    [Description("Lấy tóm tắt thống kê của một dự án.")]
+    [Description("Láº¥y tÃ³m táº¯t thá»‘ng kÃª cá»§a má»™t dá»± Ã¡n.")]
     public async Task<string> GetProjectSummary(
-        [Description("ID của dự án")] Guid projectId)
+        [Description("ID cá»§a dá»± Ã¡n")] Guid projectId)
     {
         var result = await _projectService.GetByIdAsync(projectId);
-        if (!result.IsSuccess || result.Data == null) return "Không tìm thấy dự án hoặc bạn không có quyền truy cập.";
+        if (!result.IsSuccess || result.Data == null) return "KhÃ´ng tÃ¬m tháº¥y dá»± Ã¡n hoáº·c báº¡n khÃ´ng cÃ³ quyá»n truy cáº­p.";
 
         var tasksResult = await _taskService.GetByProjectAsync(projectId, pageSize: 1000);
-        if (!tasksResult.IsSuccess) return $"Dự án: {result.Data.Name}. Không thể lấy danh sách task.";
+        if (!tasksResult.IsSuccess) return $"Dá»± Ã¡n: {result.Data.Name}. KhÃ´ng thá»ƒ láº¥y danh sÃ¡ch task.";
 
         var tasks = tasksResult.Data!.Items;
         var total = tasks.Count;
@@ -67,65 +67,65 @@ public class AiTools
         var inProgress = tasks.Count(t => t.Status == "InProgress");
         var overdue = tasks.Count(t => t.DueDate < DateTimeOffset.UtcNow && t.Status != "Done");
 
-        return $"Dự án: {result.Data.Name}. Tổng số công việc: {total}. Hoàn thành: {done}. Đang làm: {inProgress}. Quá hạn: {overdue}. Mô tả: {result.Data.Description}";
+        return $"Dá»± Ã¡n: {result.Data.Name}. Tá»•ng sá»‘ cÃ´ng viá»‡c: {total}. HoÃ n thÃ nh: {done}. Äang lÃ m: {inProgress}. QuÃ¡ háº¡n: {overdue}. MÃ´ táº£: {result.Data.Description}";
     }
 
-    [Description("Lấy danh sách các công việc quá hạn của một dự án.")]
+    [Description("Láº¥y danh sÃ¡ch cÃ¡c cÃ´ng viá»‡c quÃ¡ háº¡n cá»§a má»™t dá»± Ã¡n.")]
     public async Task<string> GetOverdueTasks(
-        [Description("ID của dự án")] Guid projectId)
+        [Description("ID cá»§a dá»± Ã¡n")] Guid projectId)
     {
         var tasksResult = await _taskService.GetByProjectAsync(projectId, pageSize: 1000);
-        if (!tasksResult.IsSuccess) return "Không thể lấy danh sách công việc.";
+        if (!tasksResult.IsSuccess) return "KhÃ´ng thá»ƒ láº¥y danh sÃ¡ch cÃ´ng viá»‡c.";
 
         var overdueTasks = tasksResult.Data!.Items
             .Where(t => t.DueDate < DateTimeOffset.UtcNow && t.Status != "Done")
-            .Select(t => $"- {t.Title} (Hạn: {t.DueDate:dd/MM/yyyy}, Người làm: {t.AssigneeName ?? \"Chưa phân công\"})")
+            .Select(t => $"- {t.Title} (Háº¡n: {t.DueDate:dd/MM/yyyy}, NgÆ°á»i lÃ m: {t.AssigneeName ?? "ChÆ°a phÃ¢n cÃ´ng"})")
             .ToList();
 
-        if (overdueTasks.Count == 0) return "Hiện tại không có công việc nào quá hạn.";
-        return "Các công việc quá hạn:\n" + string.Join("\n", overdueTasks);
+        if (overdueTasks.Count == 0) return "Hiá»‡n táº¡i khÃ´ng cÃ³ cÃ´ng viá»‡c nÃ o quÃ¡ háº¡n.";
+        return "CÃ¡c cÃ´ng viá»‡c quÃ¡ háº¡n:\n" + string.Join("\n", overdueTasks);
     }
 
-    [Description("Tạo một công việc mới trong dự án.")]
+    [Description("Táº¡o má»™t cÃ´ng viá»‡c má»›i trong dá»± Ã¡n.")]
     public async Task<string> CreateTask(
-        [Description("ID của dự án")] Guid projectId,
-        [Description("Tiêu đề công việc")] string title,
-        [Description("Mô tả chi tiết")] string? description = null,
-        [Description("Độ ưu tiên (Low, Medium, High, Critical)")] string priority = "Medium",
-        [Description("ID người thực hiện")] Guid? assigneeId = null,
-        [Description("Hạn chót (định dạng ISO 8601)")] DateTimeOffset? dueDate = null)
+        [Description("ID cá»§a dá»± Ã¡n")] Guid projectId,
+        [Description("TiÃªu Ä‘á» cÃ´ng viá»‡c")] string title,
+        [Description("MÃ´ táº£ chi tiáº¿t")] string? description = null,
+        [Description("Äá»™ Æ°u tiÃªn (Low, Medium, High, Critical)")] string priority = "Medium",
+        [Description("ID ngÆ°á»i thá»±c hiá»‡n")] Guid? assigneeId = null,
+        [Description("Háº¡n chÃ³t (Ä‘á»‹nh dáº¡ng ISO 8601)")] DateTimeOffset? dueDate = null)
     {
         var dto = new CreateTaskDto(title, description, priority, dueDate, null, projectId, assigneeId);
         var result = await _taskService.CreateAsync(dto);
 
         if (result.IsSuccess)
         {
-            return $"Đã tạo công việc thành công: {title} (ID: {result.Data!.Id})";
+            return $"ÄÃ£ táº¡o cÃ´ng viá»‡c thÃ nh cÃ´ng: {title} (ID: {result.Data!.Id})";
         }
 
-        return $"Lỗi khi tạo công việc: {result.Error}";
+        return $"Lá»—i khi táº¡o cÃ´ng viá»‡c: {result.Error}";
     }
 
-    [Description("Cập nhật trạng thái của một công việc.")]
+    [Description("Cáº­p nháº­t tráº¡ng thÃ¡i cá»§a má»™t cÃ´ng viá»‡c.")]
     public async Task<string> UpdateTaskStatus(
-        [Description("ID của công việc")] Guid taskId,
-        [Description("Trạng thái mới (Todo, InProgress, InReview, Done, Cancelled)")] string status)
+        [Description("ID cá»§a cÃ´ng viá»‡c")] Guid taskId,
+        [Description("Tráº¡ng thÃ¡i má»›i (Todo, InProgress, InReview, Done, Cancelled)")] string status)
     {
         var result = await _taskService.UpdateStatusAsync(taskId, status);
         if (result.IsSuccess)
         {
-            return $"Đã cập nhật trạng thái công việc sang: {status}";
+            return $"ÄÃ£ cáº­p nháº­t tráº¡ng thÃ¡i cÃ´ng viá»‡c sang: {status}";
         }
-        return $"Lỗi khi cập nhật trạng thái: {result.Error}";
+        return $"Lá»—i khi cáº­p nháº­t tráº¡ng thÃ¡i: {result.Error}";
     }
 
-    [Description("Phân công công việc cho một thành viên.")]
+    [Description("PhÃ¢n cÃ´ng cÃ´ng viá»‡c cho má»™t thÃ nh viÃªn.")]
     public async Task<string> AssignTask(
-        [Description("ID của công việc")] Guid taskId,
-        [Description("ID của người thực hiện")] Guid assigneeId)
+        [Description("ID cá»§a cÃ´ng viá»‡c")] Guid taskId,
+        [Description("ID cá»§a ngÆ°á»i thá»±c hiá»‡n")] Guid assigneeId)
     {
         var taskResult = await _taskService.GetByIdAsync(taskId);
-        if (!taskResult.IsSuccess) return "Không tìm thấy công việc.";
+        if (!taskResult.IsSuccess) return "KhÃ´ng tÃ¬m tháº¥y cÃ´ng viá»‡c.";
 
         var task = taskResult.Data!;
         var dto = new UpdateTaskDto(task.Title, task.Description, task.Status, task.Priority, task.DueDate, task.EstimatedHours, task.ActualHours, assigneeId, task.IsPrivate);
@@ -133,18 +133,18 @@ public class AiTools
         var result = await _taskService.UpdateAsync(taskId, dto);
         if (result.IsSuccess)
         {
-            return $"Đã phân công công việc cho thành viên (ID: {assigneeId})";
+            return $"ÄÃ£ phÃ¢n cÃ´ng cÃ´ng viá»‡c cho thÃ nh viÃªn (ID: {assigneeId})";
         }
-        return $"Lỗi khi phân công: {result.Error}";
+        return $"Lá»—i khi phÃ¢n cÃ´ng: {result.Error}";
     }
 
-    [Description("Đặt độ ưu tiên cho công việc.")]
+    [Description("Äáº·t Ä‘á»™ Æ°u tiÃªn cho cÃ´ng viá»‡c.")]
     public async Task<string> SetTaskPriority(
-        [Description("ID của công việc")] Guid taskId,
-        [Description("Độ ưu tiên (Low, Medium, High, Critical)")] string priority)
+        [Description("ID cá»§a cÃ´ng viá»‡c")] Guid taskId,
+        [Description("Äá»™ Æ°u tiÃªn (Low, Medium, High, Critical)")] string priority)
     {
         var taskResult = await _taskService.GetByIdAsync(taskId);
-        if (!taskResult.IsSuccess) return "Không tìm thấy công việc.";
+        if (!taskResult.IsSuccess) return "KhÃ´ng tÃ¬m tháº¥y cÃ´ng viá»‡c.";
 
         var task = taskResult.Data!;
         var dto = new UpdateTaskDto(task.Title, task.Description, task.Status, priority, task.DueDate, task.EstimatedHours, task.ActualHours, task.AssigneeId, task.IsPrivate);
@@ -152,18 +152,18 @@ public class AiTools
         var result = await _taskService.UpdateAsync(taskId, dto);
         if (result.IsSuccess)
         {
-            return $"Đã cập nhật độ ưu tiên thành: {priority}";
+            return $"ÄÃ£ cáº­p nháº­t Ä‘á»™ Æ°u tiÃªn thÃ nh: {priority}";
         }
-        return $"Lỗi khi cập nhật độ ưu tiên: {result.Error}";
+        return $"Lá»—i khi cáº­p nháº­t Ä‘á»™ Æ°u tiÃªn: {result.Error}";
     }
 
-    [Description("Đặt hạn chót cho công việc.")]
+    [Description("Äáº·t háº¡n chÃ³t cho cÃ´ng viá»‡c.")]
     public async Task<string> AddDueDate(
-        [Description("ID của công việc")] Guid taskId,
-        [Description("Hạn chót (ISO 8601)")] DateTimeOffset dueDate)
+        [Description("ID cá»§a cÃ´ng viá»‡c")] Guid taskId,
+        [Description("Háº¡n chÃ³t (ISO 8601)")] DateTimeOffset dueDate)
     {
         var taskResult = await _taskService.GetByIdAsync(taskId);
-        if (!taskResult.IsSuccess) return "Không tìm thấy công việc.";
+        if (!taskResult.IsSuccess) return "KhÃ´ng tÃ¬m tháº¥y cÃ´ng viá»‡c.";
 
         var task = taskResult.Data!;
         var dto = new UpdateTaskDto(task.Title, task.Description, task.Status, task.Priority, dueDate, task.EstimatedHours, task.ActualHours, task.AssigneeId, task.IsPrivate);
@@ -171,28 +171,28 @@ public class AiTools
         var result = await _taskService.UpdateAsync(taskId, dto);
         if (result.IsSuccess)
         {
-            return $"Đã cập nhật hạn chót thành: {dueDate:dd/MM/yyyy HH:mm}";
+            return $"ÄÃ£ cáº­p nháº­t háº¡n chÃ³t thÃ nh: {dueDate:dd/MM/yyyy HH:mm}";
         }
-        return $"Lỗi khi cập nhật hạn chót: {result.Error}";
+        return $"Lá»—i khi cáº­p nháº­t háº¡n chÃ³t: {result.Error}";
     }
 
-    [Description("Thêm bình luận vào một công việc.")]
+    [Description("ThÃªm bÃ¬nh luáº­n vÃ o má»™t cÃ´ng viá»‡c.")]
     public async Task<string> AddComment(
-        [Description("ID của công việc")] Guid taskId,
-        [Description("Nội dung bình luận")] string content)
+        [Description("ID cá»§a cÃ´ng viá»‡c")] Guid taskId,
+        [Description("Ná»™i dung bÃ¬nh luáº­n")] string content)
     {
-        var dto = new CreateCommentDto(taskId, content);
+        var dto = new CreateCommentDto(content, taskId);
         var result = await _commentService.CreateAsync(dto);
         if (result.IsSuccess)
         {
-            return "Đã thêm bình luận thành công.";
+            return "ÄÃ£ thÃªm bÃ¬nh luáº­n thÃ nh cÃ´ng.";
         }
-        return $"Lỗi khi thêm bình luận: {result.Error}";
+        return $"Lá»—i khi thÃªm bÃ¬nh luáº­n: {result.Error}";
     }
 
-    [Description("Kiểm tra khối lượng công việc của các thành viên trong dự án.")]
+    [Description("Kiá»ƒm tra khá»‘i lÆ°á»£ng cÃ´ng viá»‡c cá»§a cÃ¡c thÃ nh viÃªn trong dá»± Ã¡n.")]
     public async Task<string> GetMemberWorkload(
-        [Description("ID của dự án")] Guid projectId)
+        [Description("ID cá»§a dá»± Ã¡n")] Guid projectId)
     {
         var members = await _memberRepo.GetQueryable()
             .Include(m => m.User)
@@ -205,47 +205,52 @@ public class AiTools
 
         var report = members.Select(m => {
             var count = tasks.Count(t => t.AssigneeId == m.UserId);
-            return $"- {m.User.FullName}: {count} công việc đang thực hiện.";
+            return $"- {m.User.FullName}: {count} cÃ´ng viá»‡c Ä‘ang thá»±c hiá»‡n.";
         });
 
-        return "Khối lượng công việc hiện tại:\n" + string.Join("\n", report);
+        return "Khá»‘i lÆ°á»£ng cÃ´ng viá»‡c hiá»‡n táº¡i:\n" + string.Join("\n", report);
     }
 
-    [Description("Lấy danh sách công việc của một thành viên cụ thể.")]
+    [Description("Láº¥y danh sÃ¡ch cÃ´ng viá»‡c cá»§a má»™t thÃ nh viÃªn cá»¥ thá»ƒ.")]
     public async Task<string> ListTasksByAssignee(
-        [Description("ID của thành viên")] Guid assigneeId)
+        [Description("ID cá»§a thÃ nh viÃªn")] Guid assigneeId)
     {
         var result = await _taskService.GetByAssigneeAsync(assigneeId);
-        if (!result.IsSuccess) return "Không thể lấy danh sách công việc.";
+        if (!result.IsSuccess) return "KhÃ´ng thá»ƒ láº¥y danh sÃ¡ch cÃ´ng viá»‡c.";
 
-        var tasks = result.Data!.Items.Select(t => $"- {t.Title} (Trạng thái: {t.Status}, Dự án: {t.ProjectName})");
-        return $"Danh sách công việc của thành viên:\n" + string.Join("\n", tasks);
+        var tasks = result.Data!.Items.Select(t => $"- {t.Title} (Tráº¡ng thÃ¡i: {t.Status}, Dá»± Ã¡n: {t.ProjectName})");
+        return $"Danh sÃ¡ch cÃ´ng viá»‡c cá»§a thÃ nh viÃªn:\n" + string.Join("\n", tasks);
     }
 
-    [Description("Tìm kiếm thông tin, kiến thức trong dự án (Wiki, Tasks, Comments).")]
+    [Description("TÃ¬m kiáº¿m thÃ´ng tin, kiáº¿n thá»©c trong dá»± Ã¡n (Wiki, Tasks, Comments).")]
     public async Task<string> SearchKnowledge(
-        [Description("Câu truy vấn tìm kiếm")] string query,
-        [Description("ID của dự án (tùy chọn)")] Guid? projectId = null)
+        [Description("CÃ¢u truy váº¥n tÃ¬m kiáº¿m")] string query,
+        [Description("ID cá»§a dá»± Ã¡n (tÃ¹y chá»n)")] Guid? projectId = null)
     {
+        if (!projectId.HasValue)
+        {
+            return "Please select a project before searching project knowledge.";
+        }
+
         var queryEmbedding = await _embeddingGenerator.GenerateAsync(new[] { query });
         var vector = queryEmbedding[0].Vector.ToArray();
 
         var filter = new VectorFilter
         {
-            ProjectId = projectId,
+            ProjectId = projectId.Value,
             OwnerId = _currentUserService.UserId
         };
 
         var results = await _vectorStorage.SearchAsync(vector, CollectionName, filter, limit: 5);
-        if (results.Count == 0) return "Không tìm thấy thông tin liên quan.";
+        if (results.Count == 0) return "KhÃ´ng tÃ¬m tháº¥y thÃ´ng tin liÃªn quan.";
 
         var response = results.Select(r => $"- [{r.Payload.GetValueOrDefault("ContentType")}]: {r.Payload.GetValueOrDefault("Content")}");
-        return "Kết quả tìm kiếm:\n" + string.Join("\n", response);
+        return "Káº¿t quáº£ tÃ¬m kiáº¿m:\n" + string.Join("\n", response);
     }
 
-    [Description("Xuất báo cáo dự án ra file Excel.")]
+    [Description("Xuáº¥t bÃ¡o cÃ¡o dá»± Ã¡n ra file Excel.")]
     public async Task<string> GenerateExcelReport(
-        [Description("ID của dự án")] Guid projectId)
+        [Description("ID cá»§a dá»± Ã¡n")] Guid projectId)
     {
         var project = await _projectRepo.GetQueryable()
             .Include(p => p.Tasks)
@@ -256,12 +261,12 @@ public class AiTools
             await _exportService.ExportProjectToExcelAsync(project);
         }
 
-        return $"Báo cáo Excel đã sẵn sàng. Bạn có thể tải tại đây: [📥 Tải báo cáo Excel](/api/ai/export/{projectId}?format=excel)";
+        return $"BÃ¡o cÃ¡o Excel Ä‘Ã£ sáºµn sÃ ng. Báº¡n cÃ³ thá»ƒ táº£i táº¡i Ä‘Ã¢y: [ðŸ“¥ Táº£i bÃ¡o cÃ¡o Excel](/api/ai/export/{projectId}?format=excel)";
     }
 
-    [Description("Xuất báo cáo dự án ra file Word.")]
+    [Description("Xuáº¥t bÃ¡o cÃ¡o dá»± Ã¡n ra file Word.")]
     public async Task<string> GenerateWordReport(
-        [Description("ID của dự án")] Guid projectId)
+        [Description("ID cá»§a dá»± Ã¡n")] Guid projectId)
     {
         var project = await _projectRepo.GetQueryable()
             .Include(p => p.Tasks)
@@ -272,47 +277,47 @@ public class AiTools
             await _exportService.ExportProjectToWordAsync(project);
         }
 
-        return $"Báo cáo Word đã sẵn sàng. Bạn có thể tải tại đây: [📥 Tải báo cáo Word](/api/ai/export/{projectId}?format=word)";
+        return $"BÃ¡o cÃ¡o Word Ä‘Ã£ sáºµn sÃ ng. Báº¡n cÃ³ thá»ƒ táº£i táº¡i Ä‘Ã¢y: [ðŸ“¥ Táº£i bÃ¡o cÃ¡o Word](/api/ai/export/{projectId}?format=word)";
     }
 
-    [Description("Bắt đầu tính giờ làm việc cho một công việc.")]
+    [Description("Báº¯t Ä‘áº§u tÃ­nh giá» lÃ m viá»‡c cho má»™t cÃ´ng viá»‡c.")]
     public async Task<string> StartTimeTracking(
-        [Description("ID của công việc")] Guid taskId)
+        [Description("ID cá»§a cÃ´ng viá»‡c")] Guid taskId)
     {
         var result = await _timeTrackingService.StartTimerAsync(taskId);
         if (result.IsSuccess)
         {
-            return "Đã bắt đầu tính giờ làm việc.";
+            return "ÄÃ£ báº¯t Ä‘áº§u tÃ­nh giá» lÃ m viá»‡c.";
         }
-        return $"Lỗi khi bắt đầu tính giờ: {result.Error}";
+        return $"Lá»—i khi báº¯t Ä‘áº§u tÃ­nh giá»: {result.Error}";
     }
 
-    [Description("Dừng tính giờ làm việc hiện tại.")]
+    [Description("Dá»«ng tÃ­nh giá» lÃ m viá»‡c hiá»‡n táº¡i.")]
     public async Task<string> StopTimeTracking(
-        [Description("ID của bản ghi tính giờ (entry Id)")] Guid entryId)
+        [Description("ID cá»§a báº£n ghi tÃ­nh giá» (entry Id)")] Guid entryId)
     {
         var result = await _timeTrackingService.StopTimerAsync(entryId);
         if (result.IsSuccess)
         {
-            return $"Đã dừng tính giờ. Tổng thời gian: {result.Data!.TotalMinutes} phút.";
+            return $"ÄÃ£ dá»«ng tÃ­nh giá». Tá»•ng thá»i gian: {result.Data!.TotalMinutes} phÃºt.";
         }
-        return $"Lỗi khi dừng tính giờ: {result.Error}";
+        return $"Lá»—i khi dá»«ng tÃ­nh giá»: {result.Error}";
     }
 
-    [Description("Lấy lịch sử ghi nhận thời gian của bản thân trong một dự án.")]
+    [Description("Láº¥y lá»‹ch sá»­ ghi nháº­n thá»i gian cá»§a báº£n thÃ¢n trong má»™t dá»± Ã¡n.")]
     public async Task<string> GetMyTimeLogs(
-        [Description("ID của dự án")] Guid projectId)
+        [Description("ID cá»§a dá»± Ã¡n")] Guid projectId)
     {
         var result = await _timeTrackingService.GetByProjectAsync(projectId);
         if (result.IsSuccess)
         {
             var myLogs = result.Data!.Where(l => l.UserId == _currentUserService.UserId).ToList();
-            if (myLogs.Count == 0) return "Bạn chưa có ghi nhận thời gian nào trong dự án này.";
+            if (myLogs.Count == 0) return "Báº¡n chÆ°a cÃ³ ghi nháº­n thá»i gian nÃ o trong dá»± Ã¡n nÃ y.";
 
             var total = myLogs.Sum(l => l.TotalMinutes);
-            var logs = myLogs.Take(10).Select(l => $"- {l.TaskTitle}: {l.TotalMinutes} phút ({l.StartedAt:dd/MM/yyyy})");
-            return $"Tổng thời gian ghi nhận: {total} phút.\nChi tiết (10 bản ghi gần nhất):\n" + string.Join("\n", logs);
+            var logs = myLogs.Take(10).Select(l => $"- {l.TaskTitle}: {l.TotalMinutes} phÃºt ({l.StartedAt:dd/MM/yyyy})");
+            return $"Tá»•ng thá»i gian ghi nháº­n: {total} phÃºt.\nChi tiáº¿t (10 báº£n ghi gáº§n nháº¥t):\n" + string.Join("\n", logs);
         }
-        return $"Lỗi khi lấy lịch sử thời gian: {result.Error}";
+        return $"Lá»—i khi láº¥y lá»‹ch sá»­ thá»i gian: {result.Error}";
     }
 }

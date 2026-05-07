@@ -10,7 +10,7 @@ public interface IVectorStorageService
     /// <summary>
     /// Search for the most relevant points in the vector database with mandatory filtering.
     /// </summary>
-    Task<List<VectorSearchResult>> SearchAsync(float[] queryVector, string collectionName, VectorFilter? filter = null, int limit = 5);
+    Task<List<VectorSearchResult>> SearchAsync(float[] queryVector, string collectionName, VectorFilter filter, int limit = 5);
 
     /// <summary>
     /// Delete a point by ID.

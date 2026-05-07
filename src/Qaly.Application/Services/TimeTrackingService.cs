@@ -124,7 +124,7 @@ public class TimeTrackingService : ITimeTrackingService
         return Result.Success(entries.Select(e => MapToDto(e, e.Task.Title, e.User.FullName)).ToList());
     }
 
-    public async Task<Result<List<TimeEntryDto>>> GetByProjectAsync(Guid projectId, DateTimeOffset? from = null, DateTimeOffset? to = null, CancellationToken ct = default)
+    public async Task<Result<List<TimeEntryDto>>> GetByProjectAsync(Guid projectId, DateTimeOffset? from = null, DateTimeOffset? endAt = null, CancellationToken ct = default)
     {
         var query = _timeRepo.GetQueryable()
             .Include(te => te.Task)
@@ -132,7 +132,7 @@ public class TimeTrackingService : ITimeTrackingService
             .Where(te => te.Task.ProjectId == projectId);
 
         if (from.HasValue) query = query.Where(te => te.StartedAt >= from.Value);
-        if (to.HasValue) query = query.Where(te => te.StartedAt <= to.Value);
+        if (endAt.HasValue) query = query.Where(te => te.StartedAt <= endAt.Value);
 
         var entries = await query.OrderByDescending(te => te.StartedAt).ToListAsync(ct);
         return Result.Success(entries.Select(e => MapToDto(e, e.Task.Title, e.User.FullName)).ToList());

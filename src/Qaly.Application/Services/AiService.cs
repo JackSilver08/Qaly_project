@@ -32,9 +32,7 @@ public partial class AiService : IAiService
         ILogger<AiService> logger,
         AiTools aiTools)
     {
-        _chatClient = chatClient.AsBuilder()
-            .UseFunctionCalling()
-            .Build();
+        _chatClient = chatClient;
 
         _embeddingGenerator = embeddingGenerator;
         _vectorStorage = vectorStorage;
@@ -109,6 +107,11 @@ Trả lời theo định dạng: [Priority] - [Lý do]";
 
     public async Task<IReadOnlyList<string>> SmartSearchAsync(string query, Guid? projectId = null)
     {
+        if (!projectId.HasValue)
+        {
+            return new List<string> { "Please select a project before using AI search." };
+        }
+
         if (projectId.HasValue && !await CanAccessProjectAsync(projectId.Value))
         {
             return new List<string> { "Bạn không có quyền tìm kiếm trong dự án này." };
@@ -119,7 +122,8 @@ Trả lời theo định dạng: [Priority] - [Lý do]";
 
         var filter = new VectorFilter
         {
-            ProjectId = projectId,
+            ProjectId = projectId.Value,
+            OwnerId = _currentUserService.UserId,
             IsPrivate = false // By default, smart search only shows non-private items
         };
 
@@ -137,7 +141,7 @@ Trả lời dưới dạng danh sách gạch đầu dòng.";
 
         var response = await _chatClient.CompleteAsync(prompt);
         var text = response.Message.Text ?? "";
-        return text.Split('\n', SystemSplitOptions.RemoveEmptyEntries)
+        return text.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                    .Select(s => s.TrimStart('-', ' ', '1', '2', '3', '.', '*'))
                    .Where(s => !string.IsNullOrWhiteSpace(s))
                    .ToList();
@@ -145,6 +149,11 @@ Trả lời dưới dạng danh sách gạch đầu dòng.";
 
     public async Task<string> ChatAsync(string userMessage, Guid? projectId = null)
     {
+        if (!projectId.HasValue)
+        {
+            return "Please select a project before using Erumi with project data.";
+        }
+
         if (projectId.HasValue && !await CanAccessProjectAsync(projectId.Value))
         {
             return "Bạn không có quyền truy cập vào dữ liệu của dự án này.";
@@ -161,7 +170,7 @@ Trả lời dưới dạng danh sách gạch đầu dòng.";
 
             var filter = new VectorFilter
             {
-                ProjectId = projectId,
+                ProjectId = projectId.Value,
                 OwnerId = _currentUserService.UserId
             };
 
@@ -220,6 +229,12 @@ Thời gian hiện tại: {DateTime.Now.ToString("dd/MM/yyyy HH:mm", System.Glob
 
     public async IAsyncEnumerable<string> ChatStreamingAsync(string userMessage, Guid? projectId = null)
     {
+        if (!projectId.HasValue)
+        {
+            yield return "Please select a project before using Erumi with project data.";
+            yield break;
+        }
+
         if (projectId.HasValue && !await CanAccessProjectAsync(projectId.Value))
         {
             yield return "Bạn không có quyền truy cập vào dữ liệu của dự án này.";
@@ -232,7 +247,7 @@ Thời gian hiện tại: {DateTime.Now.ToString("dd/MM/yyyy HH:mm", System.Glob
 
         var filter = new VectorFilter
         {
-            ProjectId = projectId,
+            ProjectId = projectId.Value,
             OwnerId = _currentUserService.UserId
         };
 
@@ -298,7 +313,7 @@ Tin nhắn: {userMessage}";
 
         var response = await _chatClient.CompleteAsync(prompt);
         var text = response.Message.Text ?? userMessage;
-        return text.Split('\n', SystemSplitOptions.RemoveEmptyEntries)
+        return text.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                    .Select(s => s.Trim().TrimStart('-'))
                    .Take(2)
                    .ToList();

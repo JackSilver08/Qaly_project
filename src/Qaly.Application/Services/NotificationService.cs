@@ -108,6 +108,9 @@ public class NotificationService : INotificationService
         await _notificationPublisher.PublishAsync(userId, ToDto(notification), ct);
     }
 
+    public Task BroadcastToProjectAsync(Guid projectId, string message, string eventType, object? payload = null, CancellationToken ct = default)
+        => _notificationPublisher.BroadcastToProjectAsync(projectId, message, eventType, payload, ct);
+
     private static NotificationDto ToDto(Notification notification)
         => new(
             notification.Id,
