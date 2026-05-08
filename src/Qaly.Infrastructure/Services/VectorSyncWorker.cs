@@ -9,7 +9,7 @@ using System.Text.Json;
 
 namespace Qaly.Infrastructure.Services;
 
-public class VectorSyncWorker : BackgroundService
+public partial class VectorSyncWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<VectorSyncWorker> _logger;
@@ -22,7 +22,7 @@ public class VectorSyncWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Vector Sync Worker is starting.");
+        VectorSyncWorkerStarting(_logger);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -32,13 +32,13 @@ public class VectorSyncWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error occurred while processing vector sync outbox.");
+                ErrorProcessingVectorSyncOutbox(_logger, ex);
             }
 
             await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
         }
 
-        _logger.LogInformation("Vector Sync Worker is stopping.");
+        VectorSyncWorkerStopping(_logger);
     }
 
     private async Task ProcessOutboxMessagesAsync(CancellationToken ct)
@@ -66,7 +66,7 @@ public class VectorSyncWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to process outbox message {MessageId}", message.Id);
+                FailedToProcessOutboxMessage(_logger, ex, message.Id);
                 message.RetryCount++;
                 message.ErrorMessage = ex.Message;
             }
@@ -103,8 +103,23 @@ public class VectorSyncWorker : BackgroundService
                 await ingestionService.DeleteProjectAsync(id);
                 break;
             default:
-                _logger.LogWarning("Unknown event type: {EventType}", message.EventType);
+                UnknownEventType(_logger, message.EventType);
                 break;
         }
     }
+
+    [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Vector Sync Worker is starting.")]
+    private static partial void VectorSyncWorkerStarting(ILogger logger);
+
+    [LoggerMessage(EventId = 2, Level = LogLevel.Error, Message = "Error occurred while processing vector sync outbox.")]
+    private static partial void ErrorProcessingVectorSyncOutbox(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 3, Level = LogLevel.Information, Message = "Vector Sync Worker is stopping.")]
+    private static partial void VectorSyncWorkerStopping(ILogger logger);
+
+    [LoggerMessage(EventId = 4, Level = LogLevel.Error, Message = "Failed to process outbox message {MessageId}")]
+    private static partial void FailedToProcessOutboxMessage(ILogger logger, Exception exception, Guid messageId);
+
+    [LoggerMessage(EventId = 5, Level = LogLevel.Warning, Message = "Unknown event type: {EventType}")]
+    private static partial void UnknownEventType(ILogger logger, string eventType);
 }

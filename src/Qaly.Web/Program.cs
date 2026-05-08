@@ -8,8 +8,6 @@ using Scalar.AspNetCore;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using HealthChecks.UI.Client;
-using System.Net;
-using System.Net.Sockets;
 
 // Load environment variables from .env file
 DotNetEnv.Env.Load();
@@ -227,31 +225,4 @@ catch (Exception ex)
 finally
 {
     Log.CloseAndFlush();
-}
-
-static int GetAvailableHttpPort(int preferredPort)
-{
-    for (var port = preferredPort; port <= preferredPort + 50; port++)
-    {
-        if (IsPortAvailable(port))
-        {
-            return port;
-        }
-    }
-
-    return preferredPort;
-}
-
-static bool IsPortAvailable(int port)
-{
-    try
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, port);
-        listener.Start();
-        return true;
-    }
-    catch (SocketException)
-    {
-        return false;
-    }
 }
