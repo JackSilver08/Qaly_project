@@ -206,6 +206,16 @@ const ClipboardList = createLucideIcon("clipboard-list", [
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
+const Clock = createLucideIcon("clock", [
+    ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
+    ["path", { d: "M12 6v6l4 2", key: "mmk7yg" }]
+]);
+/**
+ * @license lucide-vue-next v1.0.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
 const Ellipsis = createLucideIcon("ellipsis", [
     ["circle", { cx: "12", cy: "12", r: "1", key: "41hilf" }],
     ["circle", { cx: "19", cy: "12", r: "1", key: "1wjl8i" }],
@@ -379,6 +389,21 @@ const Pin = createLucideIcon("pin", [
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
+const Play = createLucideIcon("play", [
+    [
+        "path",
+        {
+            d: "M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z",
+            key: "10ikf1"
+        }
+    ]
+]);
+/**
+ * @license lucide-vue-next v1.0.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
 const Plus = createLucideIcon("plus", [
     ["path", { d: "M5 12h14", key: "1ays0h" }],
     ["path", { d: "M12 5v14", key: "s699le" }]
@@ -477,6 +502,33 @@ const SmilePlus = createLucideIcon("smile-plus", [
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
+const Sparkles = createLucideIcon("sparkles", [
+    [
+        "path",
+        {
+            d: "M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z",
+            key: "1s2grr"
+        }
+    ],
+    ["path", { d: "M20 2v4", key: "1rf3ol" }],
+    ["path", { d: "M22 4h-4", key: "gwowj6" }],
+    ["circle", { cx: "4", cy: "20", r: "2", key: "6kqj1y" }]
+]);
+/**
+ * @license lucide-vue-next v1.0.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const Square = createLucideIcon("square", [
+    ["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2", key: "afitv7" }]
+]);
+/**
+ * @license lucide-vue-next v1.0.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
 const Trash2 = createLucideIcon("trash-2", [
     ["path", { d: "M10 11v6", key: "nco0om" }],
     ["path", { d: "M14 11v6", key: "outv1u" }],
@@ -549,5 +601,5 @@ const X = createLucideIcon("x", [
     ["path", { d: "M18 6 6 18", key: "1bl5f8" }],
     ["path", { d: "m6 6 12 12", key: "d8bk6v" }]
 ]);
-export { ArrowLeft as A, Box as B, ChevronDown as C, Eye as E, FolderKanban as F, LogOut as L, Menu as M, Pencil as P, ShieldCheck as S, Trash2 as T, User as U, Vote as V, X, Bell as a, LayoutDashboard as b, ClipboardList as c, Users as d, UserRound as e, CircleCheck as f, CalendarDays as g, Mail as h, UserPlus as i, Shield as j, Plus as k, Search as l, FileText as m, MessageSquare as n, Send as o, Ellipsis as p, SlidersHorizontal as q, Pin as r, FileUp as s, SmilePlus as t };
+export { ArrowLeft as A, Box as B, ChevronDown as C, Eye as E, FolderKanban as F, LogOut as L, Menu as M, Pencil as P, Sparkles as S, Trash2 as T, User as U, Vote as V, X, Bell as a, Send as b, LayoutDashboard as c, ClipboardList as d, Users as e, UserRound as f, CircleCheck as g, CalendarDays as h, Mail as i, ShieldCheck as j, UserPlus as k, Shield as l, Plus as m, Search as n, FileText as o, MessageSquare as p, Clock as q, Square as r, Play as s, Ellipsis as t, SlidersHorizontal as u, Pin as v, FileUp as w, SmilePlus as x };
 //# sourceMappingURL=vendor-icons.js.map

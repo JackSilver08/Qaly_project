@@ -1,6 +1,6 @@
-import { d as defineComponent, c as createElementBlock, a as createBaseVNode, g as createVNode, i as unref, t as toDisplayString, n as normalizeClass, l as createCommentVNode, J as normalizeStyle, o as openBlock, z as withDirectives, L as vModelSelect, F as Fragment, b as renderList, m as ref, I as createTextVNode, A as vModelText, H as withKeys, e as createBlock, y as withModifiers, K as isRef } from './vendor-vue.js';
-import { _ as _sfc_main$5, u as useDashboardContext } from './main.js';
-import { A as ArrowLeft, b as LayoutDashboard, i as UserPlus, h as Mail, j as Shield, T as Trash2, k as Plus, l as Search, m as FileText, P as Pencil, n as MessageSquare, o as Send, p as Ellipsis } from './vendor-icons.js';
+import { d as defineComponent, c as createElementBlock, a as createBaseVNode, g as createVNode, i as unref, t as toDisplayString, n as normalizeClass, l as createCommentVNode, J as normalizeStyle, o as openBlock, y as withDirectives, L as vModelSelect, F as Fragment, b as renderList, m as ref, v as createTextVNode, z as vModelText, I as withKeys, e as createBlock, K as isRef, x as withModifiers } from './vendor-vue.js';
+import { _ as _sfc_main$5, a as _export_sfc, u as useDashboardContext } from './main.js';
+import { A as ArrowLeft, c as LayoutDashboard, k as UserPlus, i as Mail, l as Shield, T as Trash2, m as Plus, n as Search, o as FileText, P as Pencil, p as MessageSquare, q as Clock, r as Square, s as Play, b as Send, t as Ellipsis } from './vendor-icons.js';
 import './vendor-markdown.js';
 import './vendor-realtime.js';
 const _hoisted_1$4 = { class: "project-detail-header glass-card reveal" };
@@ -94,13 +94,6 @@ const _sfc_main$4 = /*@__PURE__*/ defineComponent({
         };
     }
 });
-const _export_sfc = (sfc, props) => {
-    const target = sfc.__vccOpts || sfc;
-    for (const [key, val] of props) {
-        target[key] = val;
-    }
-    return target;
-};
 const ProjectDetailHeader = /*#__PURE__*/ _export_sfc(_sfc_main$4, [['__scopeId', "data-v-3ceb04d7"]]);
 const _hoisted_1$3 = { class: "members-tab-content glass-card" };
 const _hoisted_2$3 = { class: "panel-heading" };
@@ -577,77 +570,162 @@ const _hoisted_7 = {
     class: "task-board-shell glass-card"
 };
 const _hoisted_8 = { class: "panel-heading" };
-const _hoisted_9 = ["value"];
-const _hoisted_10 = ["value"];
-const _hoisted_11 = ["disabled"];
-const _hoisted_12 = { class: "kanban-board" };
-const _hoisted_13 = { class: "kanban-column__header" };
-const _hoisted_14 = ["onClick"];
-const _hoisted_15 = { class: "kanban-card__top" };
-const _hoisted_16 = { class: "task-card-actions" };
-const _hoisted_17 = {
+const _hoisted_9 = { class: "board-actions" };
+const _hoisted_10 = { class: "search-box" };
+const _hoisted_11 = ["value"];
+const _hoisted_12 = ["value"];
+const _hoisted_13 = ["disabled"];
+const _hoisted_14 = { class: "kanban-board" };
+const _hoisted_15 = { class: "kanban-column__header" };
+const _hoisted_16 = ["onClick"];
+const _hoisted_17 = { class: "kanban-card__top" };
+const _hoisted_18 = ["onDblclick"];
+const _hoisted_19 = { class: "task-card-actions" };
+const _hoisted_20 = {
     key: 0,
     class: "task-menu-dropdown"
 };
-const _hoisted_18 = ["onClick"];
-const _hoisted_19 = {
+const _hoisted_21 = ["onClick"];
+const _hoisted_22 = {
     key: 0,
     class: "dropdown-content glass-card"
 };
-const _hoisted_20 = ["onClick"];
-const _hoisted_21 = ["onClick"];
-const _hoisted_22 = { class: "kanban-card__meta" };
-const _hoisted_23 = { key: 0 };
-const _hoisted_24 = {
+const _hoisted_23 = ["onClick"];
+const _hoisted_24 = ["onClick"];
+const _hoisted_25 = { class: "kanban-card__meta" };
+const _hoisted_26 = { key: 0 };
+const _hoisted_27 = {
     key: 1,
     class: "project-risk"
 };
-const _hoisted_25 = { class: "kanban-card__actions" };
-const _hoisted_26 = ["onClick"];
-const _hoisted_27 = {
+const _hoisted_28 = { class: "kanban-card__actions" };
+const _hoisted_29 = ["onClick"];
+const _hoisted_30 = {
     key: 0,
     class: "empty-state"
 };
-const _hoisted_28 = {
+const _hoisted_31 = {
     class: "task-detail-panel glass-card",
     style: { "margin-top": "24px" }
 };
-const _hoisted_29 = { class: "panel-heading" };
-const _hoisted_30 = {
+const _hoisted_32 = { class: "panel-heading" };
+const _hoisted_33 = {
     key: 0,
     class: "comment-list"
 };
-const _hoisted_31 = { class: "attachment-panel" };
-const _hoisted_32 = { class: "attachment-panel__header" };
-const _hoisted_33 = { class: "attachment-upload" };
-const _hoisted_34 = ["onClick"];
-const _hoisted_35 = {
+const _hoisted_34 = { class: "time-tracking-panel" };
+const _hoisted_35 = { class: "panel-subheading" };
+const _hoisted_36 = { class: "timer-controls" };
+const _hoisted_37 = {
     key: 0,
-    class: "empty-state"
+    class: "active-timer"
 };
-const _hoisted_36 = { class: "comment-row__top" };
-const _hoisted_37 = ["onClick"];
 const _hoisted_38 = {
+    key: 1,
+    class: "timer-actions"
+};
+const _hoisted_39 = {
+    key: 0,
+    class: "manual-entry-form"
+};
+const _hoisted_40 = { class: "form-row" };
+const _hoisted_41 = {
+    key: 1,
+    class: "time-logs"
+};
+const _hoisted_42 = { key: 0 };
+const _hoisted_43 = { key: 1 };
+const _hoisted_44 = { class: "attachment-panel" };
+const _hoisted_45 = { class: "attachment-panel__header" };
+const _hoisted_46 = { class: "attachment-upload" };
+const _hoisted_47 = ["onClick"];
+const _hoisted_48 = {
     key: 0,
     class: "empty-state"
 };
-const _hoisted_39 = ["disabled"];
-const _hoisted_40 = {
+const _hoisted_49 = { class: "comment-row__top" };
+const _hoisted_50 = ["onClick"];
+const _hoisted_51 = {
+    key: 0,
+    class: "empty-state"
+};
+const _hoisted_52 = ["disabled"];
+const _hoisted_53 = {
     key: 1,
     class: "empty-state"
 };
-const _hoisted_41 = {
+const _hoisted_54 = {
     key: 3,
     class: "tab-pane reveal"
 };
-const _hoisted_42 = {
+const _hoisted_55 = {
     key: 4,
     class: "tab-pane reveal"
 };
 const _sfc_main = /*@__PURE__*/ defineComponent({
     __name: 'ProjectDetailPage',
     setup(__props) {
-        const { activeProjectTab, activeTaskMenu, addMember, attachments, beginEditTask, closeProjectDetails, comments, createTask, createTaskOpen, currentUser, deleteAttachment, deleteComment, deleteTask, displayStatus, formatDate, formatFileSize, formatTime, isProjectAdmin, isTaskOverdue, moveTask, newComment, newTaskAssigneeId, newTaskDescription, newTaskDueDate, newTaskPriority, newTaskTitle, nextStatuses, openChatWithPrompt, priorities, removeMember, selectTaskInProject, selectedProject, selectedProjectMembers, selectedProjectStats, selectedTask, statusTone, statusColumns, submitComment, tabs, tasksByStatus, toggleTaskMenu, updateMemberRole, uploadAttachment, users, } = useDashboardContext();
+        const { activeProjectTab, activeTaskMenu, addMember, attachments, beginEditTask, closeProjectDetails, comments, createTask, createTaskOpen, currentUser, deleteAttachment, deleteComment, deleteTask, displayStatus, formatDate, formatFileSize, formatTime, isProjectAdmin, isTaskOverdue, moveTask, newComment, newTaskAssigneeId, newTaskDescription, newTaskDueDate, newTaskPriority, newTaskTitle, nextStatuses, openChatWithPrompt, priorities, removeMember, selectTaskInProject, selectedProject, selectedProjectMembers, selectedProjectStats, selectedTask, statusTone, statusColumns, submitComment, tabs, tasksByStatus, toggleTaskMenu, updateMemberRole, uploadAttachment, users, taskSearchQuery, taskBeingQuickEditedId, timeEntries, activeTimer, startTimer, stopTimer, loadTimeEntries, } = useDashboardContext();
+        const quickEditTitle = ref('');
+        const manualMinutes = ref(0);
+        const manualNote = ref('');
+        const showManualForm = ref(false);
+        function startQuickEdit(task) {
+            taskBeingQuickEditedId.value = task.id;
+            quickEditTitle.value = task.title;
+        }
+        async function saveQuickEdit() {
+            if (!taskBeingQuickEditedId.value || !selectedTask.value)
+                return;
+            try {
+                const taskId = taskBeingQuickEditedId.value;
+                await fetch(`/api/tasks/${taskId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: quickEditTitle.value.trim(),
+                        description: selectedTask.value.description,
+                        status: selectedTask.value.status,
+                        priority: selectedTask.value.priority,
+                        dueDate: selectedTask.value.dueDate,
+                        assigneeId: selectedTask.value.assigneeId,
+                        isPrivate: selectedTask.value.isPrivate
+                    })
+                });
+                window.location.reload();
+            }
+            catch (e) {
+                console.error(e);
+            }
+            finally {
+                taskBeingQuickEditedId.value = null;
+            }
+        }
+        async function submitManualEntry() {
+            if (!selectedTask.value || manualMinutes.value <= 0)
+                return;
+            try {
+                const res = await fetch(`/api/tasks/${selectedTask.value.id}/time-entries/manual`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        taskId: selectedTask.value.id,
+                        startedAt: new Date().toISOString(),
+                        manualMinutes: manualMinutes.value,
+                        note: manualNote.value.trim() || null
+                    })
+                });
+                if (res.ok) {
+                    manualMinutes.value = 0;
+                    manualNote.value = '';
+                    showManualForm.value = false;
+                    await loadTimeEntries(selectedTask.value.id);
+                }
+            }
+            catch (e) {
+                console.error(e);
+            }
+        }
         return (_ctx, _cache) => {
             return (openBlock(), createElementBlock("div", _hoisted_1, [
                 createBaseVNode("div", _hoisted_2, [
@@ -683,70 +761,82 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                         ? (openBlock(), createElementBlock("div", _hoisted_6, [
                             createBaseVNode("section", _hoisted_7, [
                                 createBaseVNode("div", _hoisted_8, [
-                                    _cache[12] || (_cache[12] = createBaseVNode("div", null, [
+                                    _cache[20] || (_cache[20] = createBaseVNode("div", null, [
                                         createBaseVNode("span", null, "Tasks"),
                                         createBaseVNode("h2", null, "Board")
                                     ], -1)),
-                                    createBaseVNode("button", {
-                                        class: "primary-button primary-button--compact",
-                                        type: "button",
-                                        onClick: _cache[1] || (_cache[1] = ($event) => (createTaskOpen.value = !unref(createTaskOpen)))
-                                    }, [
-                                        createVNode(unref(Plus), { size: 16 }),
-                                        _cache[11] || (_cache[11] = createBaseVNode("span", null, "Task", -1))
+                                    createBaseVNode("div", _hoisted_9, [
+                                        createBaseVNode("div", _hoisted_10, [
+                                            createVNode(unref(Search), { size: 16 }),
+                                            withDirectives(createBaseVNode("input", {
+                                                "onUpdate:modelValue": _cache[1] || (_cache[1] = ($event) => (isRef(taskSearchQuery) ? (taskSearchQuery).value = $event : null)),
+                                                type: "text",
+                                                placeholder: "Tìm task..."
+                                            }, null, 512), [
+                                                [vModelText, unref(taskSearchQuery)]
+                                            ])
+                                        ]),
+                                        createBaseVNode("button", {
+                                            class: "primary-button primary-button--compact",
+                                            type: "button",
+                                            onClick: _cache[2] || (_cache[2] = ($event) => (createTaskOpen.value = !unref(createTaskOpen)))
+                                        }, [
+                                            createVNode(unref(Plus), { size: 16 }),
+                                            _cache[19] || (_cache[19] = createBaseVNode("span", null, "Task", -1))
+                                        ])
                                     ])
                                 ]),
                                 (unref(createTaskOpen))
                                     ? (openBlock(), createElementBlock("form", {
                                         key: 0,
                                         class: "task-create-form",
-                                        onSubmit: _cache[7] || (_cache[7] = withModifiers(
+                                        onSubmit: _cache[8] || (_cache[8] = withModifiers(
                                         //@ts-ignore
                                         (...args) => (unref(createTask) && unref(createTask)(...args)), ["prevent"]))
                                     }, [
                                         withDirectives(createBaseVNode("input", {
-                                            "onUpdate:modelValue": _cache[2] || (_cache[2] = ($event) => (isRef(newTaskTitle) ? (newTaskTitle).value = $event : null)),
+                                            "onUpdate:modelValue": _cache[3] || (_cache[3] = ($event) => (isRef(newTaskTitle) ? (newTaskTitle).value = $event : null)),
                                             type: "text",
                                             placeholder: "Task title"
                                         }, null, 512), [
                                             [vModelText, unref(newTaskTitle)]
                                         ]),
                                         withDirectives(createBaseVNode("input", {
-                                            "onUpdate:modelValue": _cache[3] || (_cache[3] = ($event) => (isRef(newTaskDescription) ? (newTaskDescription).value = $event : null)),
+                                            "onUpdate:modelValue": _cache[4] || (_cache[4] = ($event) => (isRef(newTaskDescription) ? (newTaskDescription).value = $event : null)),
                                             type: "text",
                                             placeholder: "Description"
                                         }, null, 512), [
                                             [vModelText, unref(newTaskDescription)]
                                         ]),
                                         withDirectives(createBaseVNode("select", {
-                                            "onUpdate:modelValue": _cache[4] || (_cache[4] = ($event) => (isRef(newTaskPriority) ? (newTaskPriority).value = $event : null)),
+                                            "onUpdate:modelValue": _cache[5] || (_cache[5] = ($event) => (isRef(newTaskPriority) ? (newTaskPriority).value = $event : null)),
                                             "aria-label": "Priority"
                                         }, [
                                             (openBlock(true), createElementBlock(Fragment, null, renderList(unref(priorities), (priority) => {
                                                 return (openBlock(), createElementBlock("option", {
                                                     key: priority,
                                                     value: priority
-                                                }, toDisplayString(priority), 9, _hoisted_9));
+                                                }, toDisplayString(priority), 9, _hoisted_11));
                                             }), 128))
                                         ], 512), [
                                             [vModelSelect, unref(newTaskPriority)]
                                         ]),
                                         withDirectives(createBaseVNode("select", {
-                                            "onUpdate:modelValue": _cache[5] || (_cache[5] = ($event) => (isRef(newTaskAssigneeId) ? (newTaskAssigneeId).value = $event : null)),
+                                            "onUpdate:modelValue": _cache[6] || (_cache[6] = ($event) => (isRef(newTaskAssigneeId) ? (newTaskAssigneeId).value = $event : null)),
                                             "aria-label": "Assignee"
                                         }, [
-                                            _cache[13] || (_cache[13] = createBaseVNode("option", { value: "" }, "Unassigned", -1)),
+                                            _cache[21] || (_cache[21] = createBaseVNode("option", { value: "" }, "Unassigned", -1)),
                                             (openBlock(true), createElementBlock(Fragment, null, renderList(unref(users), (user) => {
                                                 return (openBlock(), createElementBlock("option", {
                                                     key: user.id,
                                                     value: user.id
-                                                }, toDisplayString(user.fullName), 9, _hoisted_10));
+                                                }, toDisplayString(user.fullName), 9, _hoisted_12));
                                             }), 128))
                                         ], 512), [
                                             [vModelSelect, unref(newTaskAssigneeId)]
                                         ]),
                                         withDirectives(createBaseVNode("input", {
-                                            "onUpdate:modelValue": _cache[6] || (_cache[6] = ($event) => (isRef(newTaskDueDate) ? (newTaskDueDate).value = $event : null)),
+                                            "onUpdate:modelValue": _cache[7] || (_cache[7] = ($event) => (isRef(newTaskDueDate) ? (newTaskDueDate).value = $event : null)),
                                             type: "date"
                                         }, null, 512), [
                                             [vModelText, unref(newTaskDueDate)]
@@ -755,16 +845,16 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                                             class: "primary-button primary-button--compact",
                                             type: "submit",
                                             disabled: !unref(newTaskTitle).trim()
-                                        }, "Create", 8, _hoisted_11)
+                                        }, "Create", 8, _hoisted_13)
                                     ], 32))
                                     : createCommentVNode("", true),
-                                createBaseVNode("div", _hoisted_12, [
+                                createBaseVNode("div", _hoisted_14, [
                                     (openBlock(true), createElementBlock(Fragment, null, renderList(unref(statusColumns), (status) => {
                                         return (openBlock(), createElementBlock("section", {
                                             key: status,
                                             class: "kanban-column"
                                         }, [
-                                            createBaseVNode("div", _hoisted_13, [
+                                            createBaseVNode("div", _hoisted_15, [
                                                 createBaseVNode("strong", null, toDisplayString(unref(displayStatus)(status)), 1),
                                                 createBaseVNode("span", null, toDisplayString(unref(tasksByStatus)(status).length), 1)
                                             ]),
@@ -774,32 +864,47 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                                                     class: normalizeClass(["kanban-card", { 'is-selected': unref(selectedTask)?.id === task.id }]),
                                                     onClick: ($event) => (unref(selectTaskInProject)(task.id))
                                                 }, [
-                                                    createBaseVNode("div", _hoisted_15, [
-                                                        createBaseVNode("strong", null, toDisplayString(task.title), 1),
-                                                        createBaseVNode("div", _hoisted_16, [
+                                                    createBaseVNode("div", _hoisted_17, [
+                                                        (unref(taskBeingQuickEditedId) === task.id)
+                                                            ? withDirectives((openBlock(), createElementBlock("input", {
+                                                                key: 0,
+                                                                "onUpdate:modelValue": _cache[9] || (_cache[9] = ($event) => ((quickEditTitle).value = $event)),
+                                                                type: "text",
+                                                                class: "quick-edit-input",
+                                                                onBlur: saveQuickEdit,
+                                                                onKeyup: withKeys(saveQuickEdit, ["enter"]),
+                                                                onClick: _cache[10] || (_cache[10] = withModifiers(() => { }, ["stop"]))
+                                                            }, null, 544)), [
+                                                                [vModelText, quickEditTitle.value]
+                                                            ])
+                                                            : (openBlock(), createElementBlock("strong", {
+                                                                key: 1,
+                                                                onDblclick: withModifiers(($event) => (startQuickEdit(task)), ["stop"])
+                                                            }, toDisplayString(task.title), 41, _hoisted_18)),
+                                                        createBaseVNode("div", _hoisted_19, [
                                                             createBaseVNode("span", {
                                                                 class: normalizeClass(`priority priority--${task.priority.toLowerCase()}`)
                                                             }, toDisplayString(task.priority), 3),
                                                             (unref(isProjectAdmin))
-                                                                ? (openBlock(), createElementBlock("div", _hoisted_17, [
+                                                                ? (openBlock(), createElementBlock("div", _hoisted_20, [
                                                                     createBaseVNode("button", {
                                                                         class: "icon-button icon-button--small",
                                                                         type: "button",
                                                                         onClick: withModifiers(($event) => (unref(toggleTaskMenu)(task.id)), ["stop"])
                                                                     }, [
                                                                         createVNode(unref(Ellipsis), { size: 14 })
-                                                                    ], 8, _hoisted_18),
+                                                                    ], 8, _hoisted_21),
                                                                     (unref(activeTaskMenu) === task.id)
-                                                                        ? (openBlock(), createElementBlock("div", _hoisted_19, [
+                                                                        ? (openBlock(), createElementBlock("div", _hoisted_22, [
                                                                             createBaseVNode("button", {
                                                                                 type: "button",
                                                                                 onClick: withModifiers(($event) => (unref(beginEditTask)(task)), ["stop"])
-                                                                            }, "Sửa", 8, _hoisted_20),
+                                                                            }, "Sửa", 8, _hoisted_23),
                                                                             createBaseVNode("button", {
                                                                                 type: "button",
                                                                                 style: { "color": "var(--peach-500)" },
                                                                                 onClick: withModifiers(($event) => (unref(deleteTask)(task.id)), ["stop"])
-                                                                            }, "Xóa", 8, _hoisted_21)
+                                                                            }, "Xóa", 8, _hoisted_24)
                                                                         ]))
                                                                         : createCommentVNode("", true)
                                                                 ]))
@@ -807,54 +912,137 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                                                         ])
                                                     ]),
                                                     createBaseVNode("p", null, toDisplayString(task.assigneeName || 'Unassigned') + " - " + toDisplayString(unref(formatDate)(task.dueDate)), 1),
-                                                    createBaseVNode("div", _hoisted_22, [
+                                                    createBaseVNode("div", _hoisted_25, [
                                                         createBaseVNode("span", null, toDisplayString(task.commentCount) + " comments", 1),
                                                         (task.isPrivate)
-                                                            ? (openBlock(), createElementBlock("span", _hoisted_23, "Private"))
+                                                            ? (openBlock(), createElementBlock("span", _hoisted_26, "Private"))
                                                             : createCommentVNode("", true),
                                                         (unref(isTaskOverdue)(task))
-                                                            ? (openBlock(), createElementBlock("span", _hoisted_24, "Overdue"))
+                                                            ? (openBlock(), createElementBlock("span", _hoisted_27, "Overdue"))
                                                             : createCommentVNode("", true)
                                                     ]),
-                                                    createBaseVNode("div", _hoisted_25, [
+                                                    createBaseVNode("div", _hoisted_28, [
                                                         (openBlock(true), createElementBlock(Fragment, null, renderList(unref(nextStatuses)(task.status), (nextStatus) => {
                                                             return (openBlock(), createElementBlock("button", {
                                                                 key: nextStatus,
                                                                 type: "button",
                                                                 onClick: withModifiers(($event) => (unref(moveTask)(task, nextStatus)), ["stop"])
-                                                            }, toDisplayString(unref(displayStatus)(nextStatus)), 9, _hoisted_26));
+                                                            }, toDisplayString(unref(displayStatus)(nextStatus)), 9, _hoisted_29));
                                                         }), 128))
                                                     ])
-                                                ], 10, _hoisted_14));
+                                                ], 10, _hoisted_16));
                                             }), 128)),
                                             (unref(tasksByStatus)(status).length === 0)
-                                                ? (openBlock(), createElementBlock("div", _hoisted_27, "No tasks"))
+                                                ? (openBlock(), createElementBlock("div", _hoisted_30, "No tasks"))
                                                 : createCommentVNode("", true)
                                         ]));
                                     }), 128))
                                 ])
                             ]),
-                            createBaseVNode("section", _hoisted_28, [
-                                createBaseVNode("div", _hoisted_29, [
+                            createBaseVNode("section", _hoisted_31, [
+                                createBaseVNode("div", _hoisted_32, [
                                     createBaseVNode("div", null, [
-                                        _cache[14] || (_cache[14] = createBaseVNode("span", null, "Task detail", -1)),
+                                        _cache[22] || (_cache[22] = createBaseVNode("span", null, "Task detail", -1)),
                                         createBaseVNode("h2", null, toDisplayString(unref(selectedTask)?.title ?? 'No task selected'), 1)
                                     ]),
                                     createVNode(unref(MessageSquare), { size: 18 })
                                 ]),
                                 (unref(selectedTask))
-                                    ? (openBlock(), createElementBlock("div", _hoisted_30, [
-                                        createBaseVNode("div", _hoisted_31, [
-                                            createBaseVNode("div", _hoisted_32, [
-                                                _cache[16] || (_cache[16] = createBaseVNode("strong", null, "Attachments", -1)),
-                                                createBaseVNode("label", _hoisted_33, [
+                                    ? (openBlock(), createElementBlock("div", _hoisted_33, [
+                                        createBaseVNode("div", _hoisted_34, [
+                                            createBaseVNode("div", _hoisted_35, [
+                                                createVNode(unref(Clock), { size: 16 }),
+                                                _cache[23] || (_cache[23] = createBaseVNode("strong", null, "Time Tracking", -1))
+                                            ]),
+                                            createBaseVNode("div", _hoisted_36, [
+                                                (unref(activeTimer))
+                                                    ? (openBlock(), createElementBlock("div", _hoisted_37, [
+                                                        createBaseVNode("span", null, [
+                                                            _cache[24] || (_cache[24] = createTextVNode("Đang tính giờ cho: ", -1)),
+                                                            createBaseVNode("strong", null, toDisplayString(unref(activeTimer).taskTitle), 1)
+                                                        ]),
+                                                        createBaseVNode("button", {
+                                                            class: "stop-button",
+                                                            onClick: _cache[11] || (_cache[11] = ($event) => (unref(stopTimer)(unref(activeTimer).id)))
+                                                        }, [
+                                                            createVNode(unref(Square), { size: 14 }),
+                                                            _cache[25] || (_cache[25] = createTextVNode(" Stop ", -1))
+                                                        ])
+                                                    ]))
+                                                    : (openBlock(), createElementBlock("div", _hoisted_38, [
+                                                        createBaseVNode("button", {
+                                                            class: "start-button",
+                                                            onClick: _cache[12] || (_cache[12] = ($event) => (unref(startTimer)(unref(selectedTask).id)))
+                                                        }, [
+                                                            createVNode(unref(Play), { size: 14 }),
+                                                            _cache[26] || (_cache[26] = createTextVNode(" Start Timer ", -1))
+                                                        ]),
+                                                        createBaseVNode("button", {
+                                                            class: "text-button",
+                                                            onClick: _cache[13] || (_cache[13] = ($event) => (showManualForm.value = !showManualForm.value))
+                                                        }, toDisplayString(showManualForm.value ? 'Cancel' : 'Manual Entry'), 1)
+                                                    ]))
+                                            ]),
+                                            (showManualForm.value)
+                                                ? (openBlock(), createElementBlock("div", _hoisted_39, [
+                                                    createBaseVNode("div", _hoisted_40, [
+                                                        withDirectives(createBaseVNode("input", {
+                                                            "onUpdate:modelValue": _cache[14] || (_cache[14] = ($event) => ((manualMinutes).value = $event)),
+                                                            type: "number",
+                                                            placeholder: "Phút"
+                                                        }, null, 512), [
+                                                            [
+                                                                vModelText,
+                                                                manualMinutes.value,
+                                                                void 0,
+                                                                { number: true }
+                                                            ]
+                                                        ]),
+                                                        withDirectives(createBaseVNode("input", {
+                                                            "onUpdate:modelValue": _cache[15] || (_cache[15] = ($event) => ((manualNote).value = $event)),
+                                                            type: "text",
+                                                            placeholder: "Ghi chú..."
+                                                        }, null, 512), [
+                                                            [vModelText, manualNote.value]
+                                                        ]),
+                                                        createBaseVNode("button", {
+                                                            class: "primary-button primary-button--compact",
+                                                            onClick: submitManualEntry
+                                                        }, "Log")
+                                                    ])
+                                                ]))
+                                                : createCommentVNode("", true),
+                                            (unref(timeEntries).length > 0)
+                                                ? (openBlock(), createElementBlock("div", _hoisted_41, [
+                                                    (openBlock(true), createElementBlock(Fragment, null, renderList(unref(timeEntries).slice(0, 5), (entry) => {
+                                                        return (openBlock(), createElementBlock("div", {
+                                                            key: entry.id,
+                                                            class: "time-log-row"
+                                                        }, [
+                                                            createBaseVNode("span", null, toDisplayString(entry.userName), 1),
+                                                            (entry.manualMinutes)
+                                                                ? (openBlock(), createElementBlock("span", _hoisted_42, [
+                                                                    createBaseVNode("strong", null, toDisplayString(entry.manualMinutes) + "m", 1),
+                                                                    _cache[27] || (_cache[27] = createTextVNode(" (Manual)", -1))
+                                                                ]))
+                                                                : (openBlock(), createElementBlock("span", _hoisted_43, toDisplayString(entry.totalMinutes) + " phút", 1)),
+                                                            createBaseVNode("span", null, toDisplayString(unref(formatDate)(entry.startedAt)), 1)
+                                                        ]));
+                                                    }), 128))
+                                                ]))
+                                                : createCommentVNode("", true)
+                                        ]),
+                                        createBaseVNode("div", _hoisted_44, [
+                                            createBaseVNode("div", _hoisted_45, [
+                                                _cache[29] || (_cache[29] = createBaseVNode("strong", null, "Attachments", -1)),
+                                                createBaseVNode("label", _hoisted_46, [
                                                     createBaseVNode("input", {
                                                         type: "file",
-                                                        onChange: _cache[8] || (_cache[8] =
+                                                        onChange: _cache[16] || (_cache[16] =
                                                             //@ts-ignore
                                                             (...args) => (unref(uploadAttachment) && unref(uploadAttachment)(...args)))
                                                     }, null, 32),
-                                                    _cache[15] || (_cache[15] = createBaseVNode("span", null, "Upload", -1))
+                                                    _cache[28] || (_cache[28] = createBaseVNode("span", null, "Upload", -1))
                                                 ])
                                             ]),
                                             (openBlock(true), createElementBlock(Fragment, null, renderList(unref(attachments), (attachment) => {
@@ -869,11 +1057,11 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                                                     createBaseVNode("button", {
                                                         type: "button",
                                                         onClick: ($event) => (unref(deleteAttachment)(attachment))
-                                                    }, "Delete", 8, _hoisted_34)
+                                                    }, "Delete", 8, _hoisted_47)
                                                 ]));
                                             }), 128)),
                                             (unref(attachments).length === 0)
-                                                ? (openBlock(), createElementBlock("div", _hoisted_35, "No attachments."))
+                                                ? (openBlock(), createElementBlock("div", _hoisted_48, "No attachments."))
                                                 : createCommentVNode("", true)
                                         ]),
                                         (openBlock(true), createElementBlock(Fragment, null, renderList(unref(comments), (comment) => {
@@ -881,7 +1069,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                                                 key: comment.id,
                                                 class: "comment-row"
                                             }, [
-                                                createBaseVNode("div", _hoisted_36, [
+                                                createBaseVNode("div", _hoisted_49, [
                                                     createBaseVNode("strong", null, toDisplayString(comment.authorName), 1),
                                                     (unref(isProjectAdmin) || comment.authorId === unref(currentUser)?.id)
                                                         ? (openBlock(), createElementBlock("button", {
@@ -890,7 +1078,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                                                             style: { "color": "var(--peach-500)", "padding": "0 4px", "height": "auto" },
                                                             type: "button",
                                                             onClick: ($event) => (unref(deleteComment)(comment.id))
-                                                        }, " Xóa ", 8, _hoisted_37))
+                                                        }, " Xóa ", 8, _hoisted_50))
                                                         : createCommentVNode("", true)
                                                 ]),
                                                 createBaseVNode("p", null, toDisplayString(comment.content), 1),
@@ -898,16 +1086,16 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                                             ]));
                                         }), 128)),
                                         (unref(comments).length === 0)
-                                            ? (openBlock(), createElementBlock("div", _hoisted_38, "No comments yet."))
+                                            ? (openBlock(), createElementBlock("div", _hoisted_51, "No comments yet."))
                                             : createCommentVNode("", true),
                                         createBaseVNode("form", {
                                             class: "comment-form",
-                                            onSubmit: _cache[10] || (_cache[10] = withModifiers(
+                                            onSubmit: _cache[18] || (_cache[18] = withModifiers(
                                             //@ts-ignore
                                             (...args) => (unref(submitComment) && unref(submitComment)(...args)), ["prevent"]))
                                         }, [
                                             withDirectives(createBaseVNode("input", {
-                                                "onUpdate:modelValue": _cache[9] || (_cache[9] = ($event) => (isRef(newComment) ? (newComment).value = $event : null)),
+                                                "onUpdate:modelValue": _cache[17] || (_cache[17] = ($event) => (isRef(newComment) ? (newComment).value = $event : null)),
                                                 type: "text",
                                                 placeholder: "Add a comment..."
                                             }, null, 512), [
@@ -919,15 +1107,15 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                                                 disabled: !unref(newComment).trim()
                                             }, [
                                                 createVNode(unref(Send), { size: 15 })
-                                            ], 8, _hoisted_39)
+                                            ], 8, _hoisted_52)
                                         ], 32)
                                     ]))
-                                    : (openBlock(), createElementBlock("div", _hoisted_40, "Select a task from the board."))
+                                    : (openBlock(), createElementBlock("div", _hoisted_53, "Select a task from the board."))
                             ])
                         ]))
                         : createCommentVNode("", true),
                     (unref(activeProjectTab) === 'members')
-                        ? (openBlock(), createElementBlock("div", _hoisted_41, [
+                        ? (openBlock(), createElementBlock("div", _hoisted_54, [
                             createVNode(ProjectMembersTab, {
                                 members: unref(selectedProjectMembers),
                                 users: unref(users),
@@ -939,7 +1127,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                         ]))
                         : createCommentVNode("", true),
                     (unref(activeProjectTab) === 'wiki')
-                        ? (openBlock(), createElementBlock("div", _hoisted_42, [
+                        ? (openBlock(), createElementBlock("div", _hoisted_55, [
                             createVNode(ProjectWikiTab, {
                                 "project-name": unref(selectedProject)?.name ?? '',
                                 "is-admin": true
@@ -951,6 +1139,6 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
         };
     }
 });
-const ProjectDetailPage = /*#__PURE__*/ _export_sfc(_sfc_main, [['__scopeId', "data-v-7fdedbcb"]]);
+const ProjectDetailPage = /*#__PURE__*/ _export_sfc(_sfc_main, [['__scopeId', "data-v-f6c129e4"]]);
 export { ProjectDetailPage as default };
 //# sourceMappingURL=ProjectDetailPage.js.map

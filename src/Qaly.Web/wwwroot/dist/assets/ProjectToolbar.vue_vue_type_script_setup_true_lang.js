@@ -1,4 +1,4 @@
-import { l as Search, X, q as SlidersHorizontal, k as Plus } from './vendor-icons.js';
+import { n as Search, X, u as SlidersHorizontal, m as Plus } from './vendor-icons.js';
 import { d as defineComponent, c as createElementBlock, a as createBaseVNode, g as createVNode, i as unref, l as createCommentVNode, t as toDisplayString, o as openBlock } from './vendor-vue.js';
 const _hoisted_1 = { class: "project-toolbar" };
 const _hoisted_2 = {

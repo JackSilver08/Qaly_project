@@ -41,8 +41,8 @@
     "isEntry": true,
     "imports": [
       "_vendor-vue.js",
-      "_vendor-markdown.js",
       "_vendor-icons.js",
+      "_vendor-markdown.js",
       "_vendor-realtime.js"
     ],
     "dynamicImports": [

@@ -30,7 +30,7 @@ public class TaskService : ITaskService
     private readonly ICurrentUserService _currentUserService;
     private readonly INotificationService _notificationService;
     private readonly IAuditLogService _auditLogService;
-    private readonly IAiService _aiService;
+    private readonly ITaskPrioritySuggestionService _taskPrioritySuggestionService;
 
     public TaskService(
         IRepository<TaskItem> taskRepo,
@@ -42,7 +42,7 @@ public class TaskService : ITaskService
         ICurrentUserService currentUserService,
         INotificationService notificationService,
         IAuditLogService auditLogService,
-        IAiService aiService)
+        ITaskPrioritySuggestionService taskPrioritySuggestionService)
     {
         _taskRepo = taskRepo;
         _projectRepo = projectRepo;
@@ -53,7 +53,7 @@ public class TaskService : ITaskService
         _currentUserService = currentUserService;
         _notificationService = notificationService;
         _auditLogService = auditLogService;
-        _aiService = aiService;
+        _taskPrioritySuggestionService = taskPrioritySuggestionService;
     }
 
     public async Task<Result<TaskItemDto>> GetByIdAsync(Guid id, CancellationToken ct = default)
@@ -205,7 +205,7 @@ public class TaskService : ITaskService
             return result;
         }
 
-        var suggestion = await _aiService.SuggestTaskPriorityAsync(task.Title, task.Description ?? string.Empty, project.Name);
+        var suggestion = await _taskPrioritySuggestionService.SuggestAsync(task.Title, task.Description ?? string.Empty, project.Name);
         return Result.Created(result.Data with { AiPrioritySuggestion = suggestion });
     }
 

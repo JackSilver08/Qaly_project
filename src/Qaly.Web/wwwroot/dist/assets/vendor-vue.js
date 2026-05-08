@@ -86,6 +86,10 @@ const looseToNumber = (val) => {
     const n = parseFloat(val);
     return isNaN(n) ? val : n;
 };
+const toNumber = (val) => {
+    const n = isString(val) ? Number(val) : NaN;
+    return isNaN(n) ? val : n;
+};
 let _globalThis;
 const getGlobalThis = () => {
     return _globalThis || (_globalThis = typeof globalThis !== "undefined" ? globalThis : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : typeof global !== "undefined" ? global : {});
@@ -2360,6 +2364,298 @@ function createPathGetter(ctx, path) {
 const TeleportEndKey = /* @__PURE__ */ Symbol("_vte");
 const isTeleport = (type) => type.__isTeleport;
 const leaveCbKey = /* @__PURE__ */ Symbol("_leaveCb");
+const enterCbKey = /* @__PURE__ */ Symbol("_enterCb");
+function useTransitionState() {
+    const state = {
+        isMounted: false,
+        isLeaving: false,
+        isUnmounting: false,
+        leavingVNodes: /* @__PURE__ */ new Map()
+    };
+    onMounted(() => {
+        state.isMounted = true;
+    });
+    onBeforeUnmount(() => {
+        state.isUnmounting = true;
+    });
+    return state;
+}
+const TransitionHookValidator = [Function, Array];
+const BaseTransitionPropsValidators = {
+    mode: String,
+    appear: Boolean,
+    persisted: Boolean,
+    // enter
+    onBeforeEnter: TransitionHookValidator,
+    onEnter: TransitionHookValidator,
+    onAfterEnter: TransitionHookValidator,
+    onEnterCancelled: TransitionHookValidator,
+    // leave
+    onBeforeLeave: TransitionHookValidator,
+    onLeave: TransitionHookValidator,
+    onAfterLeave: TransitionHookValidator,
+    onLeaveCancelled: TransitionHookValidator,
+    // appear
+    onBeforeAppear: TransitionHookValidator,
+    onAppear: TransitionHookValidator,
+    onAfterAppear: TransitionHookValidator,
+    onAppearCancelled: TransitionHookValidator
+};
+const recursiveGetSubtree = (instance) => {
+    const subTree = instance.subTree;
+    return subTree.component ? recursiveGetSubtree(subTree.component) : subTree;
+};
+const BaseTransitionImpl = {
+    name: `BaseTransition`,
+    props: BaseTransitionPropsValidators,
+    setup(props, { slots }) {
+        const instance = getCurrentInstance();
+        const state = useTransitionState();
+        return () => {
+            const children = slots.default && getTransitionRawChildren(slots.default(), true);
+            const child = children && children.length ? findNonCommentChild(children) : (
+            // Keep explicit default-slot conditionals on the same transition path
+            // as regular v-if branches, which render a comment placeholder.
+            instance.subTree ? createCommentVNode() : void 0);
+            if (!child) {
+                return;
+            }
+            const rawProps = toRaw(props);
+            const { mode } = rawProps;
+            if (state.isLeaving) {
+                return emptyPlaceholder(child);
+            }
+            const innerChild = getInnerChild$1(child);
+            if (!innerChild) {
+                return emptyPlaceholder(child);
+            }
+            let enterHooks = resolveTransitionHooks(innerChild, rawProps, state, instance, 
+            // #11061, ensure enterHooks is fresh after clone
+            (hooks) => enterHooks = hooks);
+            if (innerChild.type !== Comment) {
+                setTransitionHooks(innerChild, enterHooks);
+            }
+            let oldInnerChild = instance.subTree && getInnerChild$1(instance.subTree);
+            if (oldInnerChild && oldInnerChild.type !== Comment && !isSameVNodeType(oldInnerChild, innerChild) && recursiveGetSubtree(instance).type !== Comment) {
+                let leavingHooks = resolveTransitionHooks(oldInnerChild, rawProps, state, instance);
+                setTransitionHooks(oldInnerChild, leavingHooks);
+                if (mode === "out-in" && innerChild.type !== Comment) {
+                    state.isLeaving = true;
+                    leavingHooks.afterLeave = () => {
+                        state.isLeaving = false;
+                        if (!(instance.job.flags & 8)) {
+                            instance.update();
+                        }
+                        delete leavingHooks.afterLeave;
+                        oldInnerChild = void 0;
+                    };
+                    return emptyPlaceholder(child);
+                }
+                else if (mode === "in-out" && innerChild.type !== Comment) {
+                    leavingHooks.delayLeave = (el, earlyRemove, delayedLeave) => {
+                        const leavingVNodesCache = getLeavingNodesForType(state, oldInnerChild);
+                        leavingVNodesCache[String(oldInnerChild.key)] = oldInnerChild;
+                        el[leaveCbKey] = () => {
+                            earlyRemove();
+                            el[leaveCbKey] = void 0;
+                            delete enterHooks.delayedLeave;
+                            oldInnerChild = void 0;
+                        };
+                        enterHooks.delayedLeave = () => {
+                            delayedLeave();
+                            delete enterHooks.delayedLeave;
+                            oldInnerChild = void 0;
+                        };
+                    };
+                }
+                else {
+                    oldInnerChild = void 0;
+                }
+            }
+            else if (oldInnerChild) {
+                oldInnerChild = void 0;
+            }
+            return child;
+        };
+    }
+};
+function findNonCommentChild(children) {
+    let child = children[0];
+    if (children.length > 1) {
+        for (const c of children) {
+            if (c.type !== Comment) {
+                child = c;
+                break;
+            }
+        }
+    }
+    return child;
+}
+const BaseTransition = BaseTransitionImpl;
+function getLeavingNodesForType(state, vnode) {
+    const { leavingVNodes } = state;
+    let leavingVNodesCache = leavingVNodes.get(vnode.type);
+    if (!leavingVNodesCache) {
+        leavingVNodesCache = /* @__PURE__ */ Object.create(null);
+        leavingVNodes.set(vnode.type, leavingVNodesCache);
+    }
+    return leavingVNodesCache;
+}
+function resolveTransitionHooks(vnode, props, state, instance, postClone) {
+    const { appear, mode, persisted = false, onBeforeEnter, onEnter, onAfterEnter, onEnterCancelled, onBeforeLeave, onLeave, onAfterLeave, onLeaveCancelled, onBeforeAppear, onAppear, onAfterAppear, onAppearCancelled } = props;
+    const key = String(vnode.key);
+    const leavingVNodesCache = getLeavingNodesForType(state, vnode);
+    const callHook = (hook, args) => {
+        hook && callWithAsyncErrorHandling(hook, instance, 9, args);
+    };
+    const callAsyncHook = (hook, args) => {
+        const done = args[1];
+        callHook(hook, args);
+        if (isArray$1(hook)) {
+            if (hook.every((hook2) => hook2.length <= 1))
+                done();
+        }
+        else if (hook.length <= 1) {
+            done();
+        }
+    };
+    const hooks = {
+        mode,
+        persisted,
+        beforeEnter(el) {
+            let hook = onBeforeEnter;
+            if (!state.isMounted) {
+                if (appear) {
+                    hook = onBeforeAppear || onBeforeEnter;
+                }
+                else {
+                    return;
+                }
+            }
+            if (el[leaveCbKey]) {
+                el[leaveCbKey](true
+                /* cancelled */
+                );
+            }
+            const leavingVNode = leavingVNodesCache[key];
+            if (leavingVNode && isSameVNodeType(vnode, leavingVNode) && leavingVNode.el[leaveCbKey]) {
+                leavingVNode.el[leaveCbKey]();
+            }
+            callHook(hook, [el]);
+        },
+        enter(el) {
+            if (leavingVNodesCache[key] === vnode)
+                return;
+            let hook = onEnter;
+            let afterHook = onAfterEnter;
+            let cancelHook = onEnterCancelled;
+            if (!state.isMounted) {
+                if (appear) {
+                    hook = onAppear || onEnter;
+                    afterHook = onAfterAppear || onAfterEnter;
+                    cancelHook = onAppearCancelled || onEnterCancelled;
+                }
+                else {
+                    return;
+                }
+            }
+            let called = false;
+            el[enterCbKey] = (cancelled) => {
+                if (called)
+                    return;
+                called = true;
+                if (cancelled) {
+                    callHook(cancelHook, [el]);
+                }
+                else {
+                    callHook(afterHook, [el]);
+                }
+                if (hooks.delayedLeave) {
+                    hooks.delayedLeave();
+                }
+                el[enterCbKey] = void 0;
+            };
+            const done = el[enterCbKey].bind(null, false);
+            if (hook) {
+                callAsyncHook(hook, [el, done]);
+            }
+            else {
+                done();
+            }
+        },
+        leave(el, remove) {
+            const key2 = String(vnode.key);
+            if (el[enterCbKey]) {
+                el[enterCbKey](true
+                /* cancelled */
+                );
+            }
+            if (state.isUnmounting) {
+                return remove();
+            }
+            callHook(onBeforeLeave, [el]);
+            let called = false;
+            el[leaveCbKey] = (cancelled) => {
+                if (called)
+                    return;
+                called = true;
+                remove();
+                if (cancelled) {
+                    callHook(onLeaveCancelled, [el]);
+                }
+                else {
+                    callHook(onAfterLeave, [el]);
+                }
+                el[leaveCbKey] = void 0;
+                if (leavingVNodesCache[key2] === vnode) {
+                    delete leavingVNodesCache[key2];
+                }
+            };
+            const done = el[leaveCbKey].bind(null, false);
+            leavingVNodesCache[key2] = vnode;
+            if (onLeave) {
+                callAsyncHook(onLeave, [el, done]);
+            }
+            else {
+                done();
+            }
+        },
+        clone(vnode2) {
+            const hooks2 = resolveTransitionHooks(vnode2, props, state, instance, postClone);
+            if (postClone)
+                postClone(hooks2);
+            return hooks2;
+        }
+    };
+    return hooks;
+}
+function emptyPlaceholder(vnode) {
+    if (isKeepAlive(vnode)) {
+        vnode = cloneVNode(vnode);
+        vnode.children = null;
+        return vnode;
+    }
+}
+function getInnerChild$1(vnode) {
+    if (!isKeepAlive(vnode)) {
+        if (isTeleport(vnode.type) && vnode.children) {
+            return findNonCommentChild(vnode.children);
+        }
+        return vnode;
+    }
+    if (vnode.component) {
+        return vnode.component.subTree;
+    }
+    const { shapeFlag, children } = vnode;
+    if (children) {
+        if (shapeFlag & 16) {
+            return children[0];
+        }
+        if (shapeFlag & 32 && isFunction(children.default)) {
+            return children.default();
+        }
+    }
+}
 function setTransitionHooks(vnode, hooks) {
     if (vnode.shapeFlag & 6 && vnode.component) {
         vnode.transition = hooks;
@@ -2372,6 +2668,28 @@ function setTransitionHooks(vnode, hooks) {
     else {
         vnode.transition = hooks;
     }
+}
+function getTransitionRawChildren(children, keepComment = false, parentKey) {
+    let ret = [];
+    let keyedFragmentCount = 0;
+    for (let i = 0; i < children.length; i++) {
+        let child = children[i];
+        const key = parentKey == null ? child.key : String(parentKey) + String(child.key != null ? child.key : i);
+        if (child.type === Fragment) {
+            if (child.patchFlag & 128)
+                keyedFragmentCount++;
+            ret = ret.concat(getTransitionRawChildren(child.children, keepComment, key));
+        }
+        else if (keepComment || child.type !== Comment) {
+            ret.push(key != null ? cloneVNode(child, { key }) : child);
+        }
+    }
+    if (keyedFragmentCount > 1) {
+        for (let i = 0; i < ret.length; i++) {
+            ret[i].patchFlag = -2;
+        }
+    }
+    return ret;
 }
 // @__NO_SIDE_EFFECTS__
 function defineComponent(options, extraOptions) {
@@ -2850,7 +3168,7 @@ function applyOptions(instance) {
     const ctx = instance.ctx;
     shouldCacheAccess = false;
     if (options.beforeCreate) {
-        callHook(options.beforeCreate, instance, "bc");
+        callHook$1(options.beforeCreate, instance, "bc");
     }
     const { 
     // state
@@ -2913,7 +3231,7 @@ function applyOptions(instance) {
         });
     }
     if (created) {
-        callHook(created, instance, "c");
+        callHook$1(created, instance, "c");
     }
     function registerLifecycleHook(register, hook) {
         if (isArray$1(hook)) {
@@ -2995,7 +3313,7 @@ function resolveInjections(injectOptions, ctx, checkDuplicateProperties = NOOP) 
         }
     }
 }
-function callHook(hook, instance, type) {
+function callHook$1(hook, instance, type) {
     callWithAsyncErrorHandling(isArray$1(hook) ? hook.map((h) => h.bind(instance.proxy)) : hook.bind(instance.proxy), instance, type);
 }
 function createWatcher(raw, ctx, publicThis, key) {
@@ -5660,7 +5978,260 @@ const nodeOps = {
         ];
     }
 };
+const TRANSITION = "transition";
+const ANIMATION = "animation";
 const vtcKey = /* @__PURE__ */ Symbol("_vtc");
+const DOMTransitionPropsValidators = {
+    name: String,
+    type: String,
+    css: {
+        type: Boolean,
+        default: true
+    },
+    duration: [String, Number, Object],
+    enterFromClass: String,
+    enterActiveClass: String,
+    enterToClass: String,
+    appearFromClass: String,
+    appearActiveClass: String,
+    appearToClass: String,
+    leaveFromClass: String,
+    leaveActiveClass: String,
+    leaveToClass: String
+};
+const TransitionPropsValidators = /* @__PURE__ */ extend({}, BaseTransitionPropsValidators, DOMTransitionPropsValidators);
+const decorate$1 = (t) => {
+    t.displayName = "Transition";
+    t.props = TransitionPropsValidators;
+    return t;
+};
+const Transition = /* @__PURE__ */ decorate$1((props, { slots }) => h(BaseTransition, resolveTransitionProps(props), slots));
+const callHook = (hook, args = []) => {
+    if (isArray$1(hook)) {
+        hook.forEach((h2) => h2(...args));
+    }
+    else if (hook) {
+        hook(...args);
+    }
+};
+const hasExplicitCallback = (hook) => {
+    return hook ? isArray$1(hook) ? hook.some((h2) => h2.length > 1) : hook.length > 1 : false;
+};
+function resolveTransitionProps(rawProps) {
+    const baseProps = {};
+    for (const key in rawProps) {
+        if (!(key in DOMTransitionPropsValidators)) {
+            baseProps[key] = rawProps[key];
+        }
+    }
+    if (rawProps.css === false) {
+        return baseProps;
+    }
+    const { name = "v", type, duration, enterFromClass = `${name}-enter-from`, enterActiveClass = `${name}-enter-active`, enterToClass = `${name}-enter-to`, appearFromClass = enterFromClass, appearActiveClass = enterActiveClass, appearToClass = enterToClass, leaveFromClass = `${name}-leave-from`, leaveActiveClass = `${name}-leave-active`, leaveToClass = `${name}-leave-to` } = rawProps;
+    const durations = normalizeDuration(duration);
+    const enterDuration = durations && durations[0];
+    const leaveDuration = durations && durations[1];
+    const { onBeforeEnter, onEnter, onEnterCancelled, onLeave, onLeaveCancelled, onBeforeAppear = onBeforeEnter, onAppear = onEnter, onAppearCancelled = onEnterCancelled } = baseProps;
+    const finishEnter = (el, isAppear, done, isCancelled) => {
+        el._enterCancelled = isCancelled;
+        removeTransitionClass(el, isAppear ? appearToClass : enterToClass);
+        removeTransitionClass(el, isAppear ? appearActiveClass : enterActiveClass);
+        done && done();
+    };
+    const finishLeave = (el, done) => {
+        el._isLeaving = false;
+        removeTransitionClass(el, leaveFromClass);
+        removeTransitionClass(el, leaveToClass);
+        removeTransitionClass(el, leaveActiveClass);
+        done && done();
+    };
+    const makeEnterHook = (isAppear) => {
+        return (el, done) => {
+            const hook = isAppear ? onAppear : onEnter;
+            const resolve = () => finishEnter(el, isAppear, done);
+            callHook(hook, [el, resolve]);
+            nextFrame(() => {
+                removeTransitionClass(el, isAppear ? appearFromClass : enterFromClass);
+                addTransitionClass(el, isAppear ? appearToClass : enterToClass);
+                if (!hasExplicitCallback(hook)) {
+                    whenTransitionEnds(el, type, enterDuration, resolve);
+                }
+            });
+        };
+    };
+    return extend(baseProps, {
+        onBeforeEnter(el) {
+            callHook(onBeforeEnter, [el]);
+            addTransitionClass(el, enterFromClass);
+            addTransitionClass(el, enterActiveClass);
+        },
+        onBeforeAppear(el) {
+            callHook(onBeforeAppear, [el]);
+            addTransitionClass(el, appearFromClass);
+            addTransitionClass(el, appearActiveClass);
+        },
+        onEnter: makeEnterHook(false),
+        onAppear: makeEnterHook(true),
+        onLeave(el, done) {
+            el._isLeaving = true;
+            const resolve = () => finishLeave(el, done);
+            addTransitionClass(el, leaveFromClass);
+            if (!el._enterCancelled) {
+                forceReflow(el);
+                addTransitionClass(el, leaveActiveClass);
+            }
+            else {
+                addTransitionClass(el, leaveActiveClass);
+                forceReflow(el);
+            }
+            nextFrame(() => {
+                if (!el._isLeaving) {
+                    return;
+                }
+                removeTransitionClass(el, leaveFromClass);
+                addTransitionClass(el, leaveToClass);
+                if (!hasExplicitCallback(onLeave)) {
+                    whenTransitionEnds(el, type, leaveDuration, resolve);
+                }
+            });
+            callHook(onLeave, [el, resolve]);
+        },
+        onEnterCancelled(el) {
+            finishEnter(el, false, void 0, true);
+            callHook(onEnterCancelled, [el]);
+        },
+        onAppearCancelled(el) {
+            finishEnter(el, true, void 0, true);
+            callHook(onAppearCancelled, [el]);
+        },
+        onLeaveCancelled(el) {
+            finishLeave(el);
+            callHook(onLeaveCancelled, [el]);
+        }
+    });
+}
+function normalizeDuration(duration) {
+    if (duration == null) {
+        return null;
+    }
+    else if (isObject(duration)) {
+        return [NumberOf(duration.enter), NumberOf(duration.leave)];
+    }
+    else {
+        const n = NumberOf(duration);
+        return [n, n];
+    }
+}
+function NumberOf(val) {
+    const res = toNumber(val);
+    return res;
+}
+function addTransitionClass(el, cls) {
+    cls.split(/\s+/).forEach((c) => c && el.classList.add(c));
+    (el[vtcKey] || (el[vtcKey] = /* @__PURE__ */ new Set())).add(cls);
+}
+function removeTransitionClass(el, cls) {
+    cls.split(/\s+/).forEach((c) => c && el.classList.remove(c));
+    const _vtc = el[vtcKey];
+    if (_vtc) {
+        _vtc.delete(cls);
+        if (!_vtc.size) {
+            el[vtcKey] = void 0;
+        }
+    }
+}
+function nextFrame(cb) {
+    requestAnimationFrame(() => {
+        requestAnimationFrame(cb);
+    });
+}
+let endId = 0;
+function whenTransitionEnds(el, expectedType, explicitTimeout, resolve) {
+    const id = el._endId = ++endId;
+    const resolveIfNotStale = () => {
+        if (id === el._endId) {
+            resolve();
+        }
+    };
+    if (explicitTimeout != null) {
+        return setTimeout(resolveIfNotStale, explicitTimeout);
+    }
+    const { type, timeout, propCount } = getTransitionInfo(el, expectedType);
+    if (!type) {
+        return resolve();
+    }
+    const endEvent = type + "end";
+    let ended = 0;
+    const end = () => {
+        el.removeEventListener(endEvent, onEnd);
+        resolveIfNotStale();
+    };
+    const onEnd = (e) => {
+        if (e.target === el && ++ended >= propCount) {
+            end();
+        }
+    };
+    setTimeout(() => {
+        if (ended < propCount) {
+            end();
+        }
+    }, timeout + 1);
+    el.addEventListener(endEvent, onEnd);
+}
+function getTransitionInfo(el, expectedType) {
+    const styles = window.getComputedStyle(el);
+    const getStyleProperties = (key) => (styles[key] || "").split(", ");
+    const transitionDelays = getStyleProperties(`${TRANSITION}Delay`);
+    const transitionDurations = getStyleProperties(`${TRANSITION}Duration`);
+    const transitionTimeout = getTimeout(transitionDelays, transitionDurations);
+    const animationDelays = getStyleProperties(`${ANIMATION}Delay`);
+    const animationDurations = getStyleProperties(`${ANIMATION}Duration`);
+    const animationTimeout = getTimeout(animationDelays, animationDurations);
+    let type = null;
+    let timeout = 0;
+    let propCount = 0;
+    if (expectedType === TRANSITION) {
+        if (transitionTimeout > 0) {
+            type = TRANSITION;
+            timeout = transitionTimeout;
+            propCount = transitionDurations.length;
+        }
+    }
+    else if (expectedType === ANIMATION) {
+        if (animationTimeout > 0) {
+            type = ANIMATION;
+            timeout = animationTimeout;
+            propCount = animationDurations.length;
+        }
+    }
+    else {
+        timeout = Math.max(transitionTimeout, animationTimeout);
+        type = timeout > 0 ? transitionTimeout > animationTimeout ? TRANSITION : ANIMATION : null;
+        propCount = type ? type === TRANSITION ? transitionDurations.length : animationDurations.length : 0;
+    }
+    const hasTransform = type === TRANSITION && /\b(?:transform|all)(?:,|$)/.test(getStyleProperties(`${TRANSITION}Property`).toString());
+    return {
+        type,
+        timeout,
+        propCount,
+        hasTransform
+    };
+}
+function getTimeout(delays, durations) {
+    while (delays.length < durations.length) {
+        delays = delays.concat(delays);
+    }
+    return Math.max(...durations.map((d, i) => toMs(d) + toMs(delays[i])));
+}
+function toMs(s) {
+    if (s === "auto")
+        return 0;
+    return Number(s.slice(0, -1).replace(",", ".")) * 1e3;
+}
+function forceReflow(el) {
+    const targetDocument = el ? el.ownerDocument : document;
+    return targetDocument.body.offsetHeight;
+}
 function patchClass(el, value, isSVG) {
     const transitionClasses = el[vtcKey];
     if (transitionClasses) {
@@ -8376,5 +8947,5 @@ function useRouter() {
 function useRoute(_name) {
     return inject(routeLocationKey);
 }
-export { vModelText as A, computed as B, provide as C, createRouter as D, createWebHistory as E, Fragment as F, createApp as G, withKeys as H, createTextVNode as I, normalizeStyle as J, isRef as K, vModelSelect as L, createBaseVNode as a, renderList as b, createElementBlock as c, defineComponent as d, createBlock as e, resolveDynamicComponent as f, createVNode as g, h, unref as i, onMounted as j, onBeforeUnmount as k, createCommentVNode as l, ref as m, normalizeClass as n, openBlock as o, renderSlot as p, inject as q, resolveComponent as r, watch as s, toDisplayString as t, useRoute as u, useRouter as v, withCtx as w, nextTick as x, withModifiers as y, withDirectives as z };
+export { computed as A, nextTick as B, useRouter as C, provide as D, createRouter as E, Fragment as F, createWebHistory as G, createApp as H, withKeys as I, normalizeStyle as J, isRef as K, vModelSelect as L, Transition as T, createBaseVNode as a, renderList as b, createElementBlock as c, defineComponent as d, createBlock as e, resolveDynamicComponent as f, createVNode as g, h, unref as i, onMounted as j, onBeforeUnmount as k, createCommentVNode as l, ref as m, normalizeClass as n, openBlock as o, renderSlot as p, inject as q, resolveComponent as r, watch as s, toDisplayString as t, useRoute as u, createTextVNode as v, withCtx as w, withModifiers as x, withDirectives as y, vModelText as z };
 //# sourceMappingURL=vendor-vue.js.map

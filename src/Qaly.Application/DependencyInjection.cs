@@ -21,6 +21,7 @@ public static class DependencyInjection
         services.AddScoped<IAttachmentService, AttachmentService>();
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<ITimeTrackingService, TimeTrackingService>();
+        services.AddScoped<ITaskPrioritySuggestionService, TaskPrioritySuggestionService>();
         services.AddScoped<IAiService, AiService>();
         services.AddSingleton<INotificationPublisher, NullNotificationPublisher>();
 
