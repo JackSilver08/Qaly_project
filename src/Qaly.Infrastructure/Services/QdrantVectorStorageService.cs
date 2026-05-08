@@ -25,21 +25,187 @@ public class QdrantVectorStorageService : IVectorStorageService, IDisposable
 
         foreach (var kvp in payload)
         {
-            point.Payload.Add(kvp.Key, kvp.Value?.ToString() ?? string.Empty);
+            point.Payload.Add(kvp.Key, ToValue(kvp.Value));
         }
 
         await _client.UpsertAsync(collectionName, new[] { point });
     }
 
-    public async Task<List<VectorSearchResult>> SearchAsync(float[] queryVector, string collectionName, int limit = 5)
+    public async Task<List<VectorSearchResult>> SearchAsync(float[] queryVector, string collectionName, VectorFilter filter, int limit = 5)
     {
-        var results = await _client.SearchAsync(collectionName, queryVector, limit: (ulong)limit);
+        var qdrantFilter = BuildSearchFilter(filter);
+
+        var results = await _client.SearchAsync(
+            collectionName: collectionName,
+            vector: queryVector,
+            filter: qdrantFilter,
+            limit: (ulong)limit);
 
         return results.Select(r => new VectorSearchResult(
             Guid.Parse(r.Id.Uuid),
             r.Score,
             r.Payload.ToDictionary(kvp => kvp.Key, kvp => (object)kvp.Value.ToString())
         )).ToList();
+    }
+
+    public async Task DeleteAsync(Guid id, string collectionName)
+    {
+        await _client.DeleteAsync(collectionName, id);
+    }
+
+    public async Task DeleteByFilterAsync(VectorFilter filter, string collectionName)
+    {
+        var qdrantFilter = BuildFilter(filter);
+        if (qdrantFilter == null) return;
+
+        await _client.DeleteAsync(collectionName, qdrantFilter);
+    }
+
+    private static Filter? BuildFilter(VectorFilter? filter)
+    {
+        if (filter == null) return null;
+
+        var qdrantFilter = new Filter();
+
+        if (filter.ProjectId.HasValue)
+        {
+            qdrantFilter.Must.Add(new Condition 
+            { 
+                Field = new FieldCondition 
+                { 
+                    Key = "ProjectId", 
+                    Match = new Match { Keyword = filter.ProjectId.Value.ToString() } 
+                } 
+            });
+        }
+
+        if (filter.TaskId.HasValue)
+        {
+            qdrantFilter.Must.Add(new Condition
+            {
+                Field = new FieldCondition
+                {
+                    Key = "TaskId",
+                    Match = new Match { Keyword = filter.TaskId.Value.ToString() }
+                }
+            });
+        }
+
+        if (filter.ContentType != null)
+        {
+            qdrantFilter.Must.Add(new Condition 
+            { 
+                Field = new FieldCondition 
+                { 
+                    Key = "ContentType", 
+                    Match = new Match { Keyword = filter.ContentType } 
+                } 
+            });
+        }
+
+        // Security Filter: Visibility & Privacy
+        // (Visibility == 'public') OR (Visibility == 'member' AND UserInProject) OR (Visibility == 'private' AND OwnerId == currentUserId)
+        // Simplified for RAG: Usually we filter by ProjectId (must) and then filter out Private tasks unless user has access.
+        
+        if (filter.IsPrivate.HasValue)
+        {
+            if (filter.IsPrivate == true && filter.OwnerId.HasValue)
+            {
+                // If we specifically want private items for a user
+                qdrantFilter.Must.Add(new Condition { Field = new FieldCondition { Key = "IsPrivate", Match = new Match { Boolean = true } } });
+                qdrantFilter.Must.Add(new Condition { Field = new FieldCondition { Key = "OwnerId", Match = new Match { Keyword = filter.OwnerId.Value.ToString() } } });
+            }
+            else if (filter.IsPrivate == false)
+            {
+                qdrantFilter.Must.Add(new Condition { Field = new FieldCondition { Key = "IsPrivate", Match = new Match { Boolean = false } } });
+            }
+        }
+
+        return qdrantFilter.Must.Count > 0 ? qdrantFilter : null;
+    }
+
+    private static Filter BuildSearchFilter(VectorFilter filter)
+    {
+        if (!filter.ProjectId.HasValue)
+        {
+            throw new ArgumentException("Vector search requires a project filter.", nameof(filter));
+        }
+
+        if (!filter.OwnerId.HasValue)
+        {
+            throw new ArgumentException("Vector search requires the current user filter.", nameof(filter));
+        }
+
+        var qdrantFilter = new Filter();
+
+        qdrantFilter.Must.Add(new Condition
+        {
+            Field = new FieldCondition
+            {
+                Key = "ProjectId",
+                Match = new Match { Keyword = filter.ProjectId.Value.ToString() }
+            }
+        });
+
+        if (filter.TaskId.HasValue)
+        {
+            qdrantFilter.Must.Add(new Condition
+            {
+                Field = new FieldCondition
+                {
+                    Key = "TaskId",
+                    Match = new Match { Keyword = filter.TaskId.Value.ToString() }
+                }
+            });
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.ContentType))
+        {
+            qdrantFilter.Must.Add(new Condition
+            {
+                Field = new FieldCondition
+                {
+                    Key = "ContentType",
+                    Match = new Match { Keyword = filter.ContentType }
+                }
+            });
+        }
+
+        qdrantFilter.Should.Add(new Condition
+        {
+            Field = new FieldCondition
+            {
+                Key = "IsPrivate",
+                Match = new Match { Boolean = false }
+            }
+        });
+
+        qdrantFilter.Should.Add(new Condition
+        {
+            Field = new FieldCondition
+            {
+                Key = "OwnerId",
+                Match = new Match { Keyword = filter.OwnerId.Value.ToString() }
+            }
+        });
+
+        return qdrantFilter;
+    }
+
+    private static Value ToValue(object? value)
+    {
+        return value switch
+        {
+            null => new Value { NullValue = NullValue.NullValue },
+            string s => new Value { StringValue = s },
+            bool b => new Value { BoolValue = b },
+            int i => new Value { IntegerValue = i },
+            long l => new Value { IntegerValue = l },
+            float f => new Value { DoubleValue = f },
+            double d => new Value { DoubleValue = d },
+            Guid g => new Value { StringValue = g.ToString() },
+            _ => new Value { StringValue = value.ToString() ?? string.Empty }
+        };
     }
 
     public async Task EnsureCollectionExistsAsync(string collectionName, ulong vectorSize)

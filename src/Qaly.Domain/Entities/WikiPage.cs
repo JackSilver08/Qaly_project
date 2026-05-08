@@ -20,5 +20,5 @@ public class WikiPage : BaseEntity
     public Project Project { get; set; } = null!;
     public User Author { get; set; } = null!;
 
-    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public new DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

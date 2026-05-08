@@ -8943,6 +8943,6 @@ function createDOMPurify() {
     };
     return DOMPurify;
 }
-createDOMPurify();
-export { MarkdownIt as M };
+var purify = createDOMPurify();
+export { MarkdownIt as M, purify as p };
 //# sourceMappingURL=vendor-markdown.js.map

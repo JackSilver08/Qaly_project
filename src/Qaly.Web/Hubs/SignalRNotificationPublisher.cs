@@ -19,4 +19,17 @@ public class SignalRNotificationPublisher : INotificationPublisher
             .Group(NotificationHub.UserGroup(userId.ToString()))
             .SendAsync("notificationReceived", notification, ct);
     }
+
+    public async Task BroadcastToProjectAsync(Guid projectId, string message, string eventType, object? payload = null, CancellationToken ct = default)
+    {
+        await _hubContext.Clients
+            .Group(NotificationHub.ProjectGroup(projectId.ToString()))
+            .SendAsync("projectUpdated", new { message, eventType, projectId, payload }, ct);
+    }
+
+    public async Task BroadcastToAllAsync(string message, string eventType, object? payload = null, CancellationToken ct = default)
+    {
+        await _hubContext.Clients.All
+            .SendAsync("systemUpdate", new { message, eventType, payload }, ct);
+    }
 }

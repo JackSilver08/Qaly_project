@@ -6,6 +6,7 @@ using Qaly.Application.DTOs.Task;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Enums;
 using Qaly.Domain.Interfaces;
+using System.Text.Json;
 
 namespace Qaly.Application.Services;
 
@@ -24,32 +25,35 @@ public class TaskService : ITaskService
     private readonly IRepository<Project> _projectRepo;
     private readonly IRepository<ProjectMember> _memberRepo;
     private readonly IRepository<User> _userRepo;
+    private readonly IRepository<VectorSyncOutbox> _outboxRepo;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
     private readonly INotificationService _notificationService;
     private readonly IAuditLogService _auditLogService;
-    private readonly IAiService _aiService;
+    private readonly ITaskPrioritySuggestionService _taskPrioritySuggestionService;
 
     public TaskService(
         IRepository<TaskItem> taskRepo,
         IRepository<Project> projectRepo,
         IRepository<ProjectMember> memberRepo,
         IRepository<User> userRepo,
+        IRepository<VectorSyncOutbox> outboxRepo,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
         INotificationService notificationService,
         IAuditLogService auditLogService,
-        IAiService aiService)
+        ITaskPrioritySuggestionService taskPrioritySuggestionService)
     {
         _taskRepo = taskRepo;
         _projectRepo = projectRepo;
         _memberRepo = memberRepo;
         _userRepo = userRepo;
+        _outboxRepo = outboxRepo;
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
         _notificationService = notificationService;
         _auditLogService = auditLogService;
-        _aiService = aiService;
+        _taskPrioritySuggestionService = taskPrioritySuggestionService;
     }
 
     public async Task<Result<TaskItemDto>> GetByIdAsync(Guid id, CancellationToken ct = default)
@@ -181,6 +185,9 @@ public class TaskService : ITaskService
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("Create", nameof(TaskItem), task.Id.ToString(), new { task.Title, task.ProjectId }, ct);
 
+        // Realtime broadcast
+        await _notificationService.BroadcastToProjectAsync(task.ProjectId, $"Task \"{task.Title}\" was created.", "TaskCreated", new { task.Id }, ct);
+
         if (task.AssigneeId.HasValue && task.AssigneeId != currentUserId)
         {
             await _notificationService.CreateAsync(
@@ -198,7 +205,7 @@ public class TaskService : ITaskService
             return result;
         }
 
-        var suggestion = await _aiService.SuggestTaskPriorityAsync(task.Title, task.Description ?? string.Empty, project.Name);
+        var suggestion = await _taskPrioritySuggestionService.SuggestAsync(task.Title, task.Description ?? string.Empty, project.Name);
         return Result.Created(result.Data with { AiPrioritySuggestion = suggestion });
     }
 
@@ -235,6 +242,7 @@ public class TaskService : ITaskService
         task.Priority = NormalizePriority(dto.Priority);
 
         await _taskRepo.UpdateAsync(task, ct);
+        await AddToOutboxAsync("TaskUpdated", new { Id = task.Id }, ct);
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("Update", nameof(TaskItem), task.Id.ToString(), dto, ct);
 
@@ -282,6 +290,7 @@ public class TaskService : ITaskService
         task.Status = normalizedStatus;
 
         await _taskRepo.UpdateAsync(task, ct);
+        await AddToOutboxAsync("TaskUpdated", new { Id = task.Id }, ct);
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("StatusChange", nameof(TaskItem), task.Id.ToString(), new { oldStatus, newStatus = normalizedStatus }, ct);
 
@@ -305,11 +314,28 @@ public class TaskService : ITaskService
             return Result.Failure("Access denied.", 403);
         }
 
+        var projectId = task.ProjectId;
+        var title = task.Title;
+
         await _taskRepo.DeleteAsync(task, ct);
+        await AddToOutboxAsync("TaskDeleted", new { Id = task.Id }, ct);
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("Delete", nameof(TaskItem), id.ToString(), new { task.Title }, ct);
 
+        // Realtime broadcast
+        await _notificationService.BroadcastToProjectAsync(projectId, $"Task \"{title}\" was deleted.", "TaskDeleted", new { id }, ct);
+
         return Result.Success();
+    }
+
+    private async Task AddToOutboxAsync(string eventType, object payload, CancellationToken ct)
+    {
+        var message = new VectorSyncOutbox
+        {
+            EventType = eventType,
+            Payload = JsonSerializer.Serialize(payload)
+        };
+        await _outboxRepo.AddAsync(message, ct);
     }
 
     private IQueryable<TaskItem> TaskDetailsQuery()
@@ -443,6 +469,8 @@ public class TaskService : ITaskService
     private async Task NotifyStatusChangeAsync(TaskItem task, string oldStatus, string newStatus, CancellationToken ct)
     {
         var currentUserId = _currentUserService.UserId;
+        
+        // Personal notifications
         var recipients = new[] { task.ReporterId, task.AssigneeId }
             .Where(userId => userId.HasValue && userId.Value != currentUserId)
             .Select(userId => userId!.Value)
@@ -459,6 +487,14 @@ public class TaskService : ITaskService
                 nameof(TaskItem),
                 ct);
         }
+
+        // Realtime broadcast to project
+        await _notificationService.BroadcastToProjectAsync(
+            task.ProjectId, 
+            $"Task \"{task.Title}\" status changed to {newStatus}.", 
+            "TaskStatusChanged", 
+            new { task.Id, oldStatus, newStatus }, 
+            ct);
     }
 
     private bool IsAdmin()

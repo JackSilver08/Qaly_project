@@ -2,8 +2,6 @@
 import { computed, nextTick, onMounted, provide, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { HubConnectionBuilder } from '@microsoft/signalr'
-import MarkdownIt from 'markdown-it'
-import DOMPurify from 'dompurify'
 import {
   ClipboardList,
   FolderKanban,
@@ -12,7 +10,7 @@ import {
   X,
 } from 'lucide-vue-next'
 import AppShell from './components/AppShell.vue'
-import ChatbotAvatar from './components/ChatbotAvatar.vue'
+import FloatingChatbot from './components/chat/FloatingChatbot.vue'
 import { dashboardContextKey } from './composables/dashboard-context'
 import { fallbackDashboard } from './fallback-dashboard'
 import type { ProjectCardModel, SummaryCardModel, TaskListItemModel } from './components/dashboard-models'
@@ -30,13 +28,8 @@ import type {
   TaskItemDto,
   UserDto,
   WikiPageDto,
+  TimeEntryDto,
 } from './types'
-
-interface ChatMessage {
-  id: string
-  role: 'assistant' | 'user'
-  text: string
-}
 
 type ProjectFilter = 'all' | 'active' | 'planned' | 'at-risk'
 type ProjectSort = 'recent' | 'risk' | 'progress' | 'name'
@@ -58,14 +51,18 @@ const notifications = ref<NotificationDto[]>([])
 const comments = ref<CommentDto[]>([])
 const attachments = ref<AttachmentDto[]>([])
 const wikiPages = ref<WikiPageDto[]>([])
+const timeEntries = ref<TimeEntryDto[]>([])
+const activeTimer = ref<TimeEntryDto | null>(null)
+
 const isLoading = ref(true)
 const usingFallback = ref(true)
-const chatOpen = ref(false)
 const notificationsOpen = ref(false)
 const createProjectOpen = ref(false)
 const createTaskOpen = ref(false)
 const projectBeingEditedId = ref<string | null>(null)
 const selectedTaskId = ref<string | null>(null)
+const taskSearchQuery = ref('')
+const taskBeingQuickEditedId = ref<string | null>(null)
 const activeTaskMenu = ref<string | null>(null)
 
 function toggleTaskMenu(taskId: string) {
@@ -96,51 +93,6 @@ const newTaskAssigneeId = ref('')
 const newTaskDueDate = ref('')
 const newComment = ref('')
 const actionNotice = ref('')
-const chatDraft = ref('')
-const showProjectSuggestions = ref(false)
-const chatBodyRef = ref<HTMLElement | null>(null)
-
-const projectSuggestions = computed(() => {
-  const parts = chatDraft.value.split(' ')
-  const lastPart = parts[parts.length - 1]
-  if (lastPart.startsWith('@')) {
-    const query = lastPart.slice(1).toLowerCase()
-    return projects.value.filter(p => p.name.toLowerCase().includes(query))
-  }
-  return []
-})
-
-watch(chatDraft, (val) => {
-  const parts = val.split(' ')
-  const lastPart = parts[parts.length - 1]
-  showProjectSuggestions.value = lastPart.startsWith('@')
-})
-
-function tagProject(project: DashboardProject) {
-  const parts = chatDraft.value.split(' ')
-  parts[parts.length - 1] = `@${project.name} `
-  chatDraft.value = parts.join(' ')
-  showProjectSuggestions.value = false
-}
-
-const markdownRenderer = new (MarkdownIt as any)({
-  html: false,
-  linkify: true,
-  typographer: true
-})
-
-function renderMarkdown(content: string) {
-  return DOMPurify.sanitize(markdownRenderer.render(content))
-}
-
-const isAssistantThinking = ref(false)
-const chatMessages = ref<ChatMessage[]>([
-  {
-    id: 'assistant-welcome',
-    role: 'assistant',
-    text: 'Ask me about project risk, overdue work, priority, or assignment suggestions.',
-  },
-])
 
 let actionNoticeTimer: number | undefined
 let notificationConnectionStarted = false
@@ -276,12 +228,6 @@ const selectedTask = computed(() => {
   return selectedProjectTasks.value.find((task) => task.id === selectedTaskId.value) ?? selectedProjectTasks.value[0]
 })
 
-const selectedProjectSummary = computed(() => {
-  const project = selectedProject.value
-  if (!project) return 'Select a project to inspect its work.'
-  return `${project.name}: ${project.completedTaskCount}/${project.taskCount} tasks complete.`
-})
-
 const isProjectAdmin = computed(() => {
   const project = selectedProject.value
   const user = currentUser.value
@@ -359,36 +305,6 @@ const notificationCount = computed(
     dashboard.value.notifications.filter((notification) => notification.tone !== 'info').length,
 )
 
-const quickPrompts = computed(() => {
-  const prompts: string[] = []
-  
-  // 1. Gợi ý cho dự án đang chọn
-  if (selectedProject.value) {
-    prompts.push(`Tóm tắt dự án ${selectedProject.value.name}`)
-  }
-
-  // 2. Gợi ý cho dự án MỚI NHẤT
-  const latestProject = [...projects.value]
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
-  
-  if (latestProject && latestProject.id !== selectedProject.value?.id) {
-    prompts.push(`Xem dự án mới: ${latestProject.name}`)
-  }
-
-  // 3. Gợi ý dựa trên rủi ro (quá hạn)
-  const highRiskProject = projects.value.find(p => p.overdueTaskCount > 0)
-  if (highRiskProject) {
-    prompts.push(`Phân tích rủi ro ${highRiskProject.name}`)
-  }
-
-  // 4. Gợi ý chung
-  prompts.push('Tôi nên làm gì tiếp theo?')
-  prompts.push('Phân bổ công việc có đều không?')
-
-  // Trả về tối đa 3 gợi ý để đảm bảo giao diện đẹp
-  return prompts.slice(0, 3)
-})
-
 watch(
   filteredProjects,
   (items) => {
@@ -429,9 +345,11 @@ watch(
     if (task && !usingFallback.value) {
       void loadComments(task.id)
       void loadAttachments(task.id)
+      void loadTimeEntries(task.id)
     } else {
       comments.value = []
       attachments.value = []
+      timeEntries.value = []
     }
   },
   { immediate: true },
@@ -445,13 +363,6 @@ watch(
     }
   },
   { immediate: true }
-)
-
-watch(
-  () => [chatMessages.value.length, isAssistantThinking.value],
-  () => {
-    void scrollChatToBottom()
-  },
 )
 
 onMounted(async () => {
@@ -520,6 +431,40 @@ async function loadAttachments(taskId: string) {
   } catch (error) {
     console.warn('Could not load attachments.', error)
     attachments.value = []
+  }
+}
+
+async function loadTimeEntries(taskId: string) {
+  try {
+    const entries = await apiJson<TimeEntryDto[]>(`/api/tasks/${taskId}/time-entries`)
+    timeEntries.value = entries
+    activeTimer.value = entries.find(e => e.endedAt === null) ?? null
+  } catch (error) {
+    console.warn('Could not load time entries.', error)
+    timeEntries.value = []
+    activeTimer.value = null
+  }
+}
+
+async function startTimer(taskId: string) {
+  try {
+    const entry = await apiJson<TimeEntryDto>(`/api/tasks/${taskId}/time-entries`, { method: 'POST' })
+    activeTimer.value = entry
+    await loadTimeEntries(taskId)
+    showActionNotice('Timer started.')
+  } catch (error) {
+    showActionNotice(errorMessage(error))
+  }
+}
+
+async function stopTimer(entryId: string) {
+  try {
+    await apiJson<TimeEntryDto>(`/api/time-entries/${entryId}/stop`, { method: 'PATCH' })
+    activeTimer.value = null
+    if (selectedTaskId.value) await loadTimeEntries(selectedTaskId.value)
+    showActionNotice('Timer stopped.')
+  } catch (error) {
+    showActionNotice(errorMessage(error))
   }
 }
 
@@ -710,9 +655,9 @@ const taskBeingEdited = ref<DashboardTask | null>(null)
 function beginEditTask(task: DashboardTask) {
   taskBeingEdited.value = task
   newTaskTitle.value = task.title
-  newTaskDescription.value = '' // We don't have desc in DashboardTask, but we could load it if needed
+  newTaskDescription.value = '' 
   newTaskPriority.value = task.priority
-  newTaskAssigneeId.value = '' // Need to find assignee ID
+  newTaskAssigneeId.value = '' 
   newTaskDueDate.value = task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : ''
   createTaskOpen.value = true
 }
@@ -960,79 +905,6 @@ async function logout() {
   }
 }
 
-function openChatWithPrompt(prompt?: string) {
-  chatOpen.value = true
-  if (prompt) void submitChat(prompt)
-  else void scrollChatToBottom()
-}
-
-async function submitChat(explicitPrompt?: string) {
-  const prompt = (explicitPrompt ?? chatDraft.value).trim()
-  if (!prompt || isAssistantThinking.value) return
-
-  chatMessages.value.push({ id: `user-${Date.now()}`, role: 'user', text: prompt })
-  chatDraft.value = ''
-  isAssistantThinking.value = true
-
-  // Extract project ID if tagged with @
-  let taggedProjectId: string | null = null
-  const tagMatch = prompt.match(/@([\w\s]+)/)
-  if (tagMatch) {
-    const taggedName = tagMatch[1].trim().toLowerCase()
-    const project = projects.value.find(p => p.name.toLowerCase() === taggedName)
-    if (project) {
-      taggedProjectId = project.id
-    }
-  }
-
-  try {
-    const assistantMsgId = `assistant-${Date.now()}`
-    chatMessages.value.push({ id: assistantMsgId, role: 'assistant', text: '' })
-    
-    const response = await fetch('/api/ai/chat/stream', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: prompt,
-        projectId: taggedProjectId ?? selectedProject.value?.id ?? null,
-      }),
-    })
-
-    if (!response.ok) throw new Error('Streaming failed')
-
-    const reader = response.body?.getReader()
-    const decoder = new TextDecoder()
-    let assistantReply = ''
-
-    if (reader) {
-      isAssistantThinking.value = false
-      
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        
-        const chunk = decoder.decode(value, { stream: true })
-        assistantReply += chunk
-        
-        const msgIndex = chatMessages.value.findIndex(m => m.id === assistantMsgId)
-        if (msgIndex !== -1) {
-          chatMessages.value[msgIndex].text = assistantReply
-        }
-        void scrollChatToBottom()
-      }
-    }
-  } catch (error) {
-    chatMessages.value.push({ id: `assistant-${Date.now()}`, role: 'assistant', text: createAssistantReply(prompt) })
-  } finally {
-    isAssistantThinking.value = false
-  }
-}
-
-async function scrollChatToBottom() {
-  await nextTick()
-  chatBodyRef.value?.scrollTo({ top: chatBodyRef.value.scrollHeight, behavior: 'smooth' })
-}
-
 async function apiJson<T>(url: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers)
 
@@ -1081,7 +953,12 @@ async function apiCommand(url: string, options: RequestInit = {}) {
 }
 
 function tasksByStatus(status: string) {
-  return selectedProjectTasks.value.filter((task) => task.status === status)
+  const query = taskSearchQuery.value.trim().toLowerCase()
+  return selectedProjectTasks.value.filter((task) => {
+    if (task.status !== status) return false
+    if (!query) return true
+    return task.title.toLowerCase().includes(query)
+  })
 }
 
 function nextStatuses(status: string) {
@@ -1111,31 +988,6 @@ function clearTaskForm() {
   newTaskPriority.value = 'Medium'
   newTaskAssigneeId.value = ''
   newTaskDueDate.value = ''
-}
-
-function createAssistantReply(prompt: string) {
-  const query = prompt.toLowerCase()
-  const project = selectedProject.value
-
-  const keywords = [
-    'risk', 'rủi ro', 'rui ro', 'summary', 'tóm tắt', 'tom tat', 'overdue', 'quá hạn', 'qua han',
-    'priority', 'ưu tiên', 'u tien', 'assignment', 'phân công', 'phan cong', 'task', 'công việc', 'cong viec',
-    'project', 'dự án', 'du an', 'status', 'trạng thái', 'trang thai', 'deadline', 'hạn', 'han chot',
-    'progress', 'tiến độ', 'tien do', 'member', 'thành viên', 'thanh vien', 'done', 'hoàn thành', 'hoan thanh',
-    'todo', 'cần làm', 'can lam', 'doing', 'đang làm', 'dang lam'
-  ]
-  const isRelevant = keywords.some(k => query.includes(k))
-
-  if (!isRelevant) {
-    return 'Tao đéo biết'
-  }
-
-  if (query.includes('risk') || query.includes('rủi ro') || query.includes('rui ro')) {
-    return `${overdueTasks.value} tasks are overdue across the workspace. Review ${project?.name ?? 'the highest-risk project'} first.`
-  }
-
-  const task = selectedProjectTasks.value.find((item) => item.status !== 'Done')
-  return task ? `Next candidate: "${task.title}" in ${project?.name}.` : selectedProjectSummary.value
 }
 
 function showActionNotice(message: string) {
@@ -1238,7 +1090,7 @@ function toDashboardNotification(notification: NotificationDto): DashboardNotifi
 }
 
 function isGuid(value: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
 }
 
 function errorMessage(error: unknown) {
@@ -1257,9 +1109,6 @@ provide(dashboardContextKey, {
   attachments,
   beginEditProject,
   beginEditTask,
-  chatDraft,
-  chatMessages,
-  chatOpen,
   clearActionableNotifications,
   closeProjectDetails,
   comments,
@@ -1280,7 +1129,6 @@ provide(dashboardContextKey, {
   formatDate,
   formatFileSize,
   formatTime,
-  isAssistantThinking,
   isLoading,
   isProjectAdmin,
   isTaskOverdue,
@@ -1293,7 +1141,6 @@ provide(dashboardContextKey, {
   newTaskPriority,
   newTaskTitle,
   nextStatuses,
-  openChatWithPrompt,
   openCreateProject,
   openTask,
   priorities,
@@ -1304,9 +1151,7 @@ provide(dashboardContextKey, {
   projectFilter,
   projectName,
   projectSort,
-  projectSuggestions,
   projects,
-  quickPrompts,
   removeMember,
   saveProjectEdit,
   searchQuery,
@@ -1317,14 +1162,11 @@ provide(dashboardContextKey, {
   selectedTask,
   selectedTaskId,
   selectTaskInProject,
-  showProjectSuggestions,
   statusColumns,
   statusTone,
-  submitChat,
   submitComment,
   summaryCards,
   tabs,
-  tagProject,
   tasksByStatus,
   team,
   toggleTaskMenu,
@@ -1336,6 +1178,13 @@ provide(dashboardContextKey, {
   createWikiPage,
   updateWikiPage,
   deleteWikiPage,
+  taskSearchQuery,
+  taskBeingQuickEditedId,
+  timeEntries,
+  activeTimer,
+  startTimer,
+  stopTimer,
+  loadTimeEntries,
 })
 </script>
 
@@ -1343,10 +1192,10 @@ provide(dashboardContextKey, {
   <AppShell
     :nav-items="navigation"
     :notification-count="notificationCount"
-    :user-name="currentUser?.fullName ?? 'Qaly user'"
-    :user-initials="initials(currentUser?.fullName ?? 'QU')"
+    :user-name="currentUser?.fullName || currentUser?.email || 'Qaly user'"
+    :user-initials="initials(currentUser?.fullName || currentUser?.email || 'QU')"
     @notifications="notificationsOpen = !notificationsOpen"
-    @assistant="openChatWithPrompt()"
+    @assistant="() => {}"
     @logout="logout"
   >
     <RouterView />
@@ -1382,79 +1231,6 @@ provide(dashboardContextKey, {
 
     <div v-if="actionNotice" class="action-toast">{{ actionNotice }}</div>
 
-    <aside class="chat-drawer glass-card" :class="{ 'is-open': chatOpen }">
-      <div class="chat-drawer__header">
-        <div class="chat-drawer__identity">
-          <ChatbotAvatar size="medium" />
-          <div>
-            <span>AI assistant</span>
-            <h2>Qaly assistant</h2>
-          </div>
-        </div>
-        <button class="icon-button" type="button" @click="chatOpen = false">
-          <X :size="18" />
-        </button>
-      </div>
-
-      <div ref="chatBodyRef" class="chat-drawer__body no-scrollbar">
-        <article
-          v-for="message in chatMessages"
-          :key="message.id"
-          class="chat-message"
-          :class="`chat-message--${message.role}`"
-        >
-          <div v-if="message.role === 'assistant'" class="chat-avatar chat-avatar--robot" aria-hidden="true">
-            <ChatbotAvatar size="small" />
-          </div>
-
-          <div class="chat-bubble" :class="`chat-bubble--${message.role}`">{{ message.text }}</div>
-
-          <div v-if="message.role === 'user'" class="chat-avatar chat-avatar--user" aria-hidden="true">
-            {{ initials(currentUser?.fullName ?? 'QU') }}
-          </div>
-        </article>
-
-        <article v-if="isAssistantThinking" class="chat-message chat-message--assistant">
-          <div class="chat-avatar chat-avatar--robot is-thinking" aria-hidden="true">
-            <ChatbotAvatar size="small" />
-          </div>
-          <div class="chat-bubble chat-bubble--assistant chat-bubble--thinking" aria-label="Assistant is thinking">
-            <span></span>
-            <span></span>
-            <span></span>
-          </div>
-        </article>
-      </div>
-
-      <div class="prompt-list">
-        <button
-          v-for="prompt in quickPrompts"
-          :key="prompt"
-          type="button"
-          class="prompt-chip"
-          :disabled="isAssistantThinking"
-          @click="submitChat(prompt)"
-        >
-          {{ prompt }}
-        </button>
-      </div>
-
-      <div v-if="showProjectSuggestions && projectSuggestions.length > 0" class="project-suggestions glass-card">
-        <button 
-          v-for="p in projectSuggestions" 
-          :key="p.id" 
-          type="button"
-          @click="tagProject(p)"
-        >
-          <strong>@{{ p.name }}</strong>
-          <span>{{ p.status }}</span>
-        </button>
-      </div>
-
-      <form class="chat-drawer__composer" @submit.prevent="submitChat()">
-        <input v-model="chatDraft" type="text" :disabled="isAssistantThinking" placeholder="Ask about risk, priority, work... Use @ to tag project" />
-        <button class="primary-button" type="submit" :disabled="isAssistantThinking || !chatDraft.trim()">Ask</button>
-      </form>
-    </aside>
+    <FloatingChatbot />
   </AppShell>
 </template>

@@ -33,6 +33,23 @@ builder.Host.UseSerilog();
 // Service Registration
 // =============================================
 
+// Redis & Session
+var redisConn = builder.Configuration.GetValue<string>("Redis:ConnectionString") ?? "localhost:6379";
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = redisConn;
+    options.InstanceName = "Qaly_";
+});
+
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromMinutes(30);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    options.Cookie.SameSite = SameSiteMode.Lax;
+});
+
 // Application layer (Services, Validators)
 builder.Services.AddApplication();
 
@@ -75,6 +92,9 @@ builder.Services
     .AddCookie(options =>
     {
         options.Cookie.Name = "Qaly.Auth";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        options.Cookie.SameSite = SameSiteMode.Lax;
         options.LoginPath = "/Account/Login";
         options.AccessDeniedPath = "/Account/AccessDenied";
         options.SlidingExpiration = true;
@@ -121,7 +141,7 @@ builder.Services.AddOpenApi();
 // Health Checks
 builder.Services.AddHealthChecks()
     .AddSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")!)
-    .AddRedis(builder.Configuration.GetValue<string>("Redis:ConnectionString") ?? "localhost:6379");
+    .AddRedis(redisConn);
 
 var app = builder.Build();
 
@@ -180,6 +200,7 @@ app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseSession();
 
 // app.MapStaticAssets();
 app.MapRazorPages(); // .WithStaticAssets();

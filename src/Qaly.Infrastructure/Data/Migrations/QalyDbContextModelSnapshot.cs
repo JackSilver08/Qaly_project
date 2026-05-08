@@ -202,6 +202,45 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.ToTable("ProjectMembers");
                 });
 
+            modelBuilder.Entity("Qaly.Domain.Entities.PushSubscription", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Auth")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Device")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Endpoint")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset>("LastUsedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("P256dh")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("PushSubscriptions");
+                });
+
             modelBuilder.Entity("Qaly.Domain.Entities.TaskAttachment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -358,6 +397,46 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.ToTable("TaskItems");
                 });
 
+            modelBuilder.Entity("Qaly.Domain.Entities.TimeEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("EndedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int?>("ManualMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("TaskId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TaskId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("TimeEntries");
+                });
+
             modelBuilder.Entity("Qaly.Domain.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -406,6 +485,40 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("Qaly.Domain.Entities.VectorSyncOutbox", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset?>("ProcessedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("RetryCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("VectorSyncOutbox");
                 });
 
             modelBuilder.Entity("Qaly.Domain.Entities.WikiPage", b =>
@@ -495,6 +608,17 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Qaly.Domain.Entities.PushSubscription", b =>
+                {
+                    b.HasOne("Qaly.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Qaly.Domain.Entities.TaskAttachment", b =>
                 {
                     b.HasOne("Qaly.Domain.Entities.TaskItem", "TaskItem")
@@ -557,6 +681,25 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Navigation("Project");
 
                     b.Navigation("Reporter");
+                });
+
+            modelBuilder.Entity("Qaly.Domain.Entities.TimeEntry", b =>
+                {
+                    b.HasOne("Qaly.Domain.Entities.TaskItem", "Task")
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Qaly.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Task");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Qaly.Domain.Entities.WikiPage", b =>

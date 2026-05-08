@@ -1,16 +1,16 @@
 const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/ArchivedProjectsPage.js","assets/ProjectList.vue_vue_type_script_setup_true_lang.js","assets/vendor-icons.js","assets/vendor-vue.js","assets/vendor-markdown.js","assets/vendor-realtime.js","assets/DashboardPage.js","assets/ProjectToolbar.vue_vue_type_script_setup_true_lang.js","assets/ProfilePage.js","assets/ProjectDetailPage.js","assets/ProjectDetailPage.css","assets/ProjectsPage.js","assets/TasksPage.js","assets/TeamsPage.js"])))=>i.map(i=>d[i]);
-import { d as defineComponent, u as useRoute, r as resolveComponent, o as openBlock, c as createElementBlock, a as createBaseVNode, F as Fragment, b as renderList, e as createBlock, w as withCtx, n as normalizeClass, f as resolveDynamicComponent, t as toDisplayString, g as createVNode, i as unref, j as onMounted, k as onBeforeUnmount, l as createCommentVNode, m as ref, p as renderSlot, q as inject, s as watch, v as useRouter, x as nextTick, y as withModifiers, z as withDirectives, A as vModelText, B as computed, C as provide, D as createRouter, E as createWebHistory, G as createApp } from './vendor-vue.js';
-import { M as MarkdownIt } from './vendor-markdown.js';
-import { B as Box, M as Menu, a as Bell, C as ChevronDown, U as User, L as LogOut, X, b as LayoutDashboard, F as FolderKanban, c as ClipboardList, d as Users } from './vendor-icons.js';
+import { d as defineComponent, u as useRoute, r as resolveComponent, o as openBlock, c as createElementBlock, a as createBaseVNode, F as Fragment, b as renderList, e as createBlock, w as withCtx, n as normalizeClass, f as resolveDynamicComponent, t as toDisplayString, g as createVNode, i as unref, j as onMounted, k as onBeforeUnmount, l as createCommentVNode, m as ref, p as renderSlot, q as inject, s as watch, v as createTextVNode, x as withModifiers, y as withDirectives, z as vModelText, T as Transition, A as computed, B as nextTick, C as useRouter, D as provide, E as createRouter, G as createWebHistory, H as createApp } from './vendor-vue.js';
+import { B as Box, M as Menu, a as Bell, C as ChevronDown, U as User, L as LogOut, X, S as Sparkles, b as Send, c as LayoutDashboard, F as FolderKanban, d as ClipboardList, e as Users } from './vendor-icons.js';
+import { M as MarkdownIt, p as purify } from './vendor-markdown.js';
 import { H as HubConnectionBuilder } from './vendor-realtime.js';
-const _hoisted_1$3 = { class: "shell-sidebar no-scrollbar" };
-const _hoisted_2$3 = {
+const _hoisted_1$4 = { class: "shell-sidebar no-scrollbar" };
+const _hoisted_2$4 = {
     class: "shell-nav",
     "aria-label": "Main navigation"
 };
-const _hoisted_3$2 = ["href", "onClick"];
-const _hoisted_4$2 = ["href", "onClick"];
-const _sfc_main$4 = /*@__PURE__*/ defineComponent({
+const _hoisted_3$3 = ["href", "onClick"];
+const _hoisted_4$3 = ["href", "onClick"];
+const _sfc_main$5 = /*@__PURE__*/ defineComponent({
     __name: 'SidebarNav',
     props: {
         items: {}
@@ -32,8 +32,8 @@ const _sfc_main$4 = /*@__PURE__*/ defineComponent({
         }
         return (_ctx, _cache) => {
             const _component_RouterLink = resolveComponent("RouterLink");
-            return (openBlock(), createElementBlock("aside", _hoisted_1$3, [
-                createBaseVNode("nav", _hoisted_2$3, [
+            return (openBlock(), createElementBlock("aside", _hoisted_1$4, [
+                createBaseVNode("nav", _hoisted_2$4, [
                     (openBlock(true), createElementBlock(Fragment, null, renderList(__props.items, (item) => {
                         return (openBlock(), createBlock(_component_RouterLink, {
                             key: item.to,
@@ -48,7 +48,7 @@ const _sfc_main$4 = /*@__PURE__*/ defineComponent({
                                 }, [
                                     (openBlock(), createBlock(resolveDynamicComponent(item.icon), { size: 20 })),
                                     createBaseVNode("span", null, toDisplayString(item.label), 1)
-                                ], 10, _hoisted_3$2)
+                                ], 10, _hoisted_3$3)
                             ]),
                             _: 2
                         }, 1032, ["to"]));
@@ -66,7 +66,7 @@ const _sfc_main$4 = /*@__PURE__*/ defineComponent({
                         }, [
                             createVNode(unref(Box), { size: 19 }),
                             _cache[0] || (_cache[0] = createBaseVNode("span", null, "Dự án đã lưu trữ", -1))
-                        ], 10, _hoisted_4$2)
+                        ], 10, _hoisted_4$3)
                     ]),
                     _: 1
                 })
@@ -75,7 +75,7 @@ const _sfc_main$4 = /*@__PURE__*/ defineComponent({
     }
 });
 const erumiRobotUrl = '/images/erumi-chatbot.png';
-const _sfc_main$3 = /*@__PURE__*/ defineComponent({
+const _sfc_main$4 = /*@__PURE__*/ defineComponent({
     __name: 'ChatbotAvatar',
     props: {
         size: { default: 'small' }
@@ -93,20 +93,20 @@ const _sfc_main$3 = /*@__PURE__*/ defineComponent({
         };
     }
 });
-const _hoisted_1$2 = { class: "shell-header" };
-const _hoisted_2$2 = { class: "shell-brand" };
-const _hoisted_3$1 = { class: "shell-header-actions" };
-const _hoisted_4$1 = {
+const _hoisted_1$3 = { class: "shell-header" };
+const _hoisted_2$3 = { class: "shell-brand" };
+const _hoisted_3$2 = { class: "shell-header-actions" };
+const _hoisted_4$2 = {
     key: 0,
     class: "shell-action-badge"
 };
-const _hoisted_5$1 = ["aria-expanded"];
-const _hoisted_6$1 = {
+const _hoisted_5$2 = ["aria-expanded"];
+const _hoisted_6$2 = {
     key: 0,
     class: "shell-user-dropdown-menu",
     role: "menu"
 };
-const _sfc_main$2 = /*@__PURE__*/ defineComponent({
+const _sfc_main$3 = /*@__PURE__*/ defineComponent({
     __name: 'TopHeader',
     props: {
         brandName: {},
@@ -150,8 +150,8 @@ const _sfc_main$2 = /*@__PURE__*/ defineComponent({
         });
         return (_ctx, _cache) => {
             const _component_RouterLink = resolveComponent("RouterLink");
-            return (openBlock(), createElementBlock("header", _hoisted_1$2, [
-                createBaseVNode("div", _hoisted_2$2, [
+            return (openBlock(), createElementBlock("header", _hoisted_1$3, [
+                createBaseVNode("div", _hoisted_2$3, [
                     createBaseVNode("button", {
                         class: "shell-menu-button",
                         type: "button",
@@ -175,7 +175,7 @@ const _sfc_main$2 = /*@__PURE__*/ defineComponent({
                         _: 1
                     })
                 ]),
-                createBaseVNode("div", _hoisted_3$1, [
+                createBaseVNode("div", _hoisted_3$2, [
                     createBaseVNode("button", {
                         class: "shell-icon-button",
                         type: "button",
@@ -184,7 +184,7 @@ const _sfc_main$2 = /*@__PURE__*/ defineComponent({
                     }, [
                         createVNode(unref(Bell), { size: 18 }),
                         (__props.notificationCount > 0)
-                            ? (openBlock(), createElementBlock("span", _hoisted_4$1, toDisplayString(__props.notificationCount), 1))
+                            ? (openBlock(), createElementBlock("span", _hoisted_4$2, toDisplayString(__props.notificationCount), 1))
                             : createCommentVNode("", true)
                     ]),
                     createBaseVNode("button", {
@@ -193,7 +193,7 @@ const _sfc_main$2 = /*@__PURE__*/ defineComponent({
                         "aria-label": "Tro ly Qaly",
                         onClick: _cache[2] || (_cache[2] = ($event) => (_ctx.$emit('assistant')))
                     }, [
-                        createVNode(_sfc_main$3, { size: "launcher" })
+                        createVNode(_sfc_main$4, { size: "launcher" })
                     ]),
                     createBaseVNode("div", {
                         ref_key: "userMenuRef",
@@ -210,9 +210,9 @@ const _sfc_main$2 = /*@__PURE__*/ defineComponent({
                             createBaseVNode("span", null, toDisplayString(__props.userInitials), 1),
                             createBaseVNode("strong", null, toDisplayString(__props.userName), 1),
                             createVNode(unref(ChevronDown), { size: 16 })
-                        ], 10, _hoisted_5$1),
+                        ], 10, _hoisted_5$2),
                         (userMenuOpen.value)
-                            ? (openBlock(), createElementBlock("div", _hoisted_6$1, [
+                            ? (openBlock(), createElementBlock("div", _hoisted_6$2, [
                                 createVNode(_component_RouterLink, {
                                     class: "shell-user-dropdown-item",
                                     to: "/profile",
@@ -242,9 +242,9 @@ const _sfc_main$2 = /*@__PURE__*/ defineComponent({
         };
     }
 });
-const _hoisted_1$1 = { class: "app-shell" };
-const _hoisted_2$1 = { class: "shell-main no-scrollbar" };
-const _sfc_main$1 = /*@__PURE__*/ defineComponent({
+const _hoisted_1$2 = { class: "app-shell" };
+const _hoisted_2$2 = { class: "shell-main no-scrollbar" };
+const _sfc_main$2 = /*@__PURE__*/ defineComponent({
     __name: 'AppShell',
     props: {
         navItems: {},
@@ -261,8 +261,8 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
             emit('navigate');
         }
         return (_ctx, _cache) => {
-            return (openBlock(), createElementBlock("div", _hoisted_1$1, [
-                createVNode(_sfc_main$2, {
+            return (openBlock(), createElementBlock("div", _hoisted_1$2, [
+                createVNode(_sfc_main$3, {
                     "brand-name": "QALY",
                     "notification-count": __props.notificationCount,
                     "user-name": __props.userName,
@@ -272,7 +272,7 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
                     onAssistant: _cache[2] || (_cache[2] = ($event) => (_ctx.$emit('assistant'))),
                     onLogout: _cache[3] || (_cache[3] = ($event) => (_ctx.$emit('logout')))
                 }, null, 8, ["notification-count", "user-name", "user-initials"]),
-                createVNode(_sfc_main$4, {
+                createVNode(_sfc_main$5, {
                     class: normalizeClass({ 'is-open': sidebarOpen.value }),
                     items: __props.navItems,
                     onNavigate: handleNavigate
@@ -284,7 +284,7 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
                         onClick: _cache[4] || (_cache[4] = ($event) => (sidebarOpen.value = false))
                     }))
                     : createCommentVNode("", true),
-                createBaseVNode("main", _hoisted_2$1, [
+                createBaseVNode("main", _hoisted_2$2, [
                     renderSlot(_ctx.$slots, "default")
                 ]),
                 renderSlot(_ctx.$slots, "overlays")
@@ -300,6 +300,300 @@ function useDashboardContext() {
     }
     return context;
 }
+const _hoisted_1$1 = { class: "floating-erumi" };
+const _hoisted_2$1 = {
+    key: 2,
+    class: "launcher-badge"
+};
+const _hoisted_3$1 = {
+    key: 0,
+    class: "erumi-window glass-card shadow-2xl"
+};
+const _hoisted_4$1 = { class: "erumi-header" };
+const _hoisted_5$1 = { class: "erumi-identity" };
+const _hoisted_6$1 = { class: "header-actions" };
+const _hoisted_7 = {
+    key: 0,
+    class: "msg-avatar"
+};
+const _hoisted_8 = ["innerHTML"];
+const _hoisted_9 = {
+    key: 1,
+    class: "msg-avatar user-icon"
+};
+const _hoisted_10 = {
+    key: 0,
+    class: "msg-row msg-assistant"
+};
+const _hoisted_11 = { class: "msg-avatar" };
+const _hoisted_12 = { class: "erumi-footer" };
+const _hoisted_13 = { class: "quick-prompts no-scrollbar" };
+const _hoisted_14 = ["onClick"];
+const _hoisted_15 = {
+    key: 0,
+    class: "mention-suggestions"
+};
+const _hoisted_16 = ["onClick"];
+const _hoisted_17 = ["disabled"];
+const _hoisted_18 = ["disabled"];
+const _sfc_main$1 = /*@__PURE__*/ defineComponent({
+    __name: 'FloatingChatbot',
+    setup(__props) {
+        const { projects, selectedProject, currentUser } = useDashboardContext();
+        const isOpen = ref(false);
+        const isThinking = ref(false);
+        const draft = ref('');
+        const messages = ref([
+            {
+                id: 'welcome',
+                role: 'assistant',
+                text: 'Chào bạn! Mình là Erumi, trợ lý AI của Qaly. Bạn cần mình giúp gì hôm nay?'
+            }
+        ]);
+        const bodyRef = ref(null);
+        const showSuggestions = ref(false);
+        const markdown = new MarkdownIt({
+            html: false,
+            linkify: true,
+            typographer: true
+        });
+        function renderMarkdown(content) {
+            return purify.sanitize(markdown.render(content));
+        }
+        const suggestions = computed(() => {
+            const parts = draft.value.split(' ');
+            const lastPart = parts[parts.length - 1];
+            if (lastPart.startsWith('@')) {
+                const query = lastPart.slice(1).toLowerCase();
+                return projects.value.filter((p) => p.name.toLowerCase().includes(query));
+            }
+            return [];
+        });
+        watch(draft, (val) => {
+            const parts = val.split(' ');
+            const lastPart = parts[parts.length - 1];
+            showSuggestions.value = lastPart.startsWith('@');
+        });
+        function tagProject(project) {
+            const parts = draft.value.split(' ');
+            parts[parts.length - 1] = `@${project.name} `;
+            draft.value = parts.join(' ');
+            showSuggestions.value = false;
+        }
+        async function submitChat(explicit) {
+            const prompt = (explicit ?? draft.value).trim();
+            if (!prompt || isThinking.value)
+                return;
+            messages.value.push({ id: `u-${Date.now()}`, role: 'user', text: prompt });
+            draft.value = '';
+            isThinking.value = true;
+            await scrollBottom();
+            let taggedProjectId = null;
+            const tagMatch = prompt.match(/@([\w\s]+)/);
+            if (tagMatch) {
+                const name = tagMatch[1].trim().toLowerCase();
+                const p = projects.value.find((x) => x.name.toLowerCase() === name);
+                if (p)
+                    taggedProjectId = p.id;
+            }
+            try {
+                const assistantId = `a-${Date.now()}`;
+                messages.value.push({ id: assistantId, role: 'assistant', text: '' });
+                const response = await fetch('/api/ai/chat/stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: prompt,
+                        projectId: taggedProjectId ?? selectedProject.value?.id ?? null
+                    })
+                });
+                if (!response.ok)
+                    throw new Error('Streaming failed');
+                const reader = response.body?.getReader();
+                const decoder = new TextDecoder();
+                let fullText = '';
+                if (reader) {
+                    isThinking.value = false;
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done)
+                            break;
+                        fullText += decoder.decode(value, { stream: true });
+                        const idx = messages.value.findIndex(m => m.id === assistantId);
+                        if (idx !== -1)
+                            messages.value[idx].text = fullText;
+                        void scrollBottom();
+                    }
+                }
+            }
+            catch (e) {
+                messages.value.push({ id: `err-${Date.now()}`, role: 'assistant', text: 'Xin lỗi, Erumi đang gặp chút trục trặc. Thử lại sau nhé!' });
+            }
+            finally {
+                isThinking.value = false;
+            }
+        }
+        async function scrollBottom() {
+            await nextTick();
+            if (bodyRef.value) {
+                bodyRef.value.scrollTo({ top: bodyRef.value.scrollHeight, behavior: 'smooth' });
+            }
+        }
+        function toggle() {
+            isOpen.value = !isOpen.value;
+            if (isOpen.value)
+                void scrollBottom();
+        }
+        function initials(name) {
+            return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+        }
+        const quickPrompts = [
+            'Tóm tắt dự án hiện tại',
+            'Có task nào quá hạn không?',
+            'Ai đang rảnh để nhận việc?'
+        ];
+        return (_ctx, _cache) => {
+            return (openBlock(), createElementBlock("div", _hoisted_1$1, [
+                createBaseVNode("button", {
+                    class: normalizeClass(["erumi-launcher shadow-lg", { 'is-active': isOpen.value }]),
+                    onClick: toggle,
+                    "aria-label": "Toggle AI Assistant"
+                }, [
+                    (!isOpen.value)
+                        ? (openBlock(), createBlock(_sfc_main$4, {
+                            key: 0,
+                            size: "medium"
+                        }))
+                        : (openBlock(), createBlock(unref(X), {
+                            key: 1,
+                            size: 24
+                        })),
+                    (!isOpen.value)
+                        ? (openBlock(), createElementBlock("span", _hoisted_2$1))
+                        : createCommentVNode("", true)
+                ], 2),
+                createVNode(Transition, { name: "fade-up" }, {
+                    default: withCtx(() => [
+                        (isOpen.value)
+                            ? (openBlock(), createElementBlock("div", _hoisted_3$1, [
+                                createBaseVNode("header", _hoisted_4$1, [
+                                    createBaseVNode("div", _hoisted_5$1, [
+                                        createVNode(_sfc_main$4, { size: "small" }),
+                                        _cache[2] || (_cache[2] = createBaseVNode("div", null, [
+                                            createBaseVNode("h3", null, "Erumi Agent"),
+                                            createBaseVNode("div", { class: "status-indicator" }, [
+                                                createBaseVNode("span", { class: "pulse" }),
+                                                createTextVNode(" Trực tuyến ")
+                                            ])
+                                        ], -1))
+                                    ]),
+                                    createBaseVNode("div", _hoisted_6$1, [
+                                        createBaseVNode("button", {
+                                            class: "icon-btn",
+                                            onClick: toggle
+                                        }, [
+                                            createVNode(unref(X), { size: 18 })
+                                        ])
+                                    ])
+                                ]),
+                                createBaseVNode("div", {
+                                    ref_key: "bodyRef",
+                                    ref: bodyRef,
+                                    class: "erumi-body no-scrollbar"
+                                }, [
+                                    (openBlock(true), createElementBlock(Fragment, null, renderList(messages.value, (m) => {
+                                        return (openBlock(), createElementBlock("div", {
+                                            key: m.id,
+                                            class: normalizeClass(['msg-row', `msg-${m.role}`])
+                                        }, [
+                                            (m.role === 'assistant')
+                                                ? (openBlock(), createElementBlock("div", _hoisted_7, [
+                                                    createVNode(_sfc_main$4, { size: "small" })
+                                                ]))
+                                                : createCommentVNode("", true),
+                                            createBaseVNode("div", {
+                                                class: "msg-bubble",
+                                                innerHTML: renderMarkdown(m.text)
+                                            }, null, 8, _hoisted_8),
+                                            (m.role === 'user')
+                                                ? (openBlock(), createElementBlock("div", _hoisted_9, toDisplayString(unref(currentUser) ? initials(unref(currentUser).fullName) : 'U'), 1))
+                                                : createCommentVNode("", true)
+                                        ], 2));
+                                    }), 128)),
+                                    (isThinking.value)
+                                        ? (openBlock(), createElementBlock("div", _hoisted_10, [
+                                            createBaseVNode("div", _hoisted_11, [
+                                                createVNode(_sfc_main$4, { size: "small" })
+                                            ]),
+                                            _cache[3] || (_cache[3] = createBaseVNode("div", { class: "msg-bubble thinking-dots" }, [
+                                                createBaseVNode("span"),
+                                                createBaseVNode("span"),
+                                                createBaseVNode("span")
+                                            ], -1))
+                                        ]))
+                                        : createCommentVNode("", true)
+                                ], 512),
+                                createBaseVNode("div", _hoisted_12, [
+                                    createBaseVNode("div", _hoisted_13, [
+                                        (openBlock(), createElementBlock(Fragment, null, renderList(quickPrompts, (p) => {
+                                            return createBaseVNode("button", {
+                                                key: p,
+                                                class: "prompt-btn",
+                                                onClick: ($event) => (submitChat(p))
+                                            }, [
+                                                createVNode(unref(Sparkles), { size: 12 }),
+                                                createTextVNode(" " + toDisplayString(p), 1)
+                                            ], 8, _hoisted_14);
+                                        }), 64))
+                                    ]),
+                                    (showSuggestions.value && suggestions.value.length)
+                                        ? (openBlock(), createElementBlock("div", _hoisted_15, [
+                                            (openBlock(true), createElementBlock(Fragment, null, renderList(suggestions.value, (s) => {
+                                                return (openBlock(), createElementBlock("button", {
+                                                    key: s.id,
+                                                    onClick: ($event) => (tagProject(s))
+                                                }, " @" + toDisplayString(s.name), 9, _hoisted_16));
+                                            }), 128))
+                                        ]))
+                                        : createCommentVNode("", true),
+                                    createBaseVNode("form", {
+                                        class: "composer",
+                                        onSubmit: _cache[1] || (_cache[1] = withModifiers(($event) => (submitChat()), ["prevent"]))
+                                    }, [
+                                        withDirectives(createBaseVNode("input", {
+                                            "onUpdate:modelValue": _cache[0] || (_cache[0] = ($event) => ((draft).value = $event)),
+                                            placeholder: "Hỏi Erumi... (Dùng @ để tag dự án)",
+                                            disabled: isThinking.value,
+                                            ref: "inputRef"
+                                        }, null, 8, _hoisted_17), [
+                                            [vModelText, draft.value]
+                                        ]),
+                                        createBaseVNode("button", {
+                                            type: "submit",
+                                            disabled: !draft.value.trim() || isThinking.value,
+                                            class: "send-btn"
+                                        }, [
+                                            createVNode(unref(Send), { size: 18 })
+                                        ], 8, _hoisted_18)
+                                    ], 32)
+                                ])
+                            ]))
+                            : createCommentVNode("", true)
+                    ]),
+                    _: 1
+                })
+            ]));
+        };
+    }
+});
+const _export_sfc = (sfc, props) => {
+    const target = sfc.__vccOpts || sfc;
+    for (const [key, val] of props) {
+        target[key] = val;
+    }
+    return target;
+};
+const FloatingChatbot = /*#__PURE__*/ _export_sfc(_sfc_main$1, [['__scopeId', "data-v-97b09120"]]);
 const fallbackDashboard = {
     generatedAt: '2026-05-01T16:20:00Z',
     stats: {
@@ -595,35 +889,6 @@ const _hoisted_6 = {
     key: 1,
     class: "action-toast"
 };
-const _hoisted_7 = { class: "chat-drawer__header" };
-const _hoisted_8 = { class: "chat-drawer__identity" };
-const _hoisted_9 = {
-    key: 0,
-    class: "chat-avatar chat-avatar--robot",
-    "aria-hidden": "true"
-};
-const _hoisted_10 = {
-    key: 1,
-    class: "chat-avatar chat-avatar--user",
-    "aria-hidden": "true"
-};
-const _hoisted_11 = {
-    key: 0,
-    class: "chat-message chat-message--assistant"
-};
-const _hoisted_12 = {
-    class: "chat-avatar chat-avatar--robot is-thinking",
-    "aria-hidden": "true"
-};
-const _hoisted_13 = { class: "prompt-list" };
-const _hoisted_14 = ["disabled", "onClick"];
-const _hoisted_15 = {
-    key: 0,
-    class: "project-suggestions glass-card"
-};
-const _hoisted_16 = ["onClick"];
-const _hoisted_17 = ["disabled"];
-const _hoisted_18 = ["disabled"];
 const _sfc_main = /*@__PURE__*/ defineComponent({
     __name: 'App',
     setup(__props) {
@@ -642,14 +907,17 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
         const comments = ref([]);
         const attachments = ref([]);
         const wikiPages = ref([]);
+        const timeEntries = ref([]);
+        const activeTimer = ref(null);
         const isLoading = ref(true);
         const usingFallback = ref(true);
-        const chatOpen = ref(false);
         const notificationsOpen = ref(false);
         const createProjectOpen = ref(false);
         const createTaskOpen = ref(false);
         const projectBeingEditedId = ref(null);
         const selectedTaskId = ref(null);
+        const taskSearchQuery = ref('');
+        const taskBeingQuickEditedId = ref(null);
         const activeTaskMenu = ref(null);
         function toggleTaskMenu(taskId) {
             activeTaskMenu.value = activeTaskMenu.value === taskId ? null : taskId;
@@ -677,42 +945,6 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
         const newTaskDueDate = ref('');
         const newComment = ref('');
         const actionNotice = ref('');
-        const chatDraft = ref('');
-        const showProjectSuggestions = ref(false);
-        const chatBodyRef = ref(null);
-        const projectSuggestions = computed(() => {
-            const parts = chatDraft.value.split(' ');
-            const lastPart = parts[parts.length - 1];
-            if (lastPart.startsWith('@')) {
-                const query = lastPart.slice(1).toLowerCase();
-                return projects.value.filter(p => p.name.toLowerCase().includes(query));
-            }
-            return [];
-        });
-        watch(chatDraft, (val) => {
-            const parts = val.split(' ');
-            const lastPart = parts[parts.length - 1];
-            showProjectSuggestions.value = lastPart.startsWith('@');
-        });
-        function tagProject(project) {
-            const parts = chatDraft.value.split(' ');
-            parts[parts.length - 1] = `@${project.name} `;
-            chatDraft.value = parts.join(' ');
-            showProjectSuggestions.value = false;
-        }
-        new MarkdownIt({
-            html: false,
-            linkify: true,
-            typographer: true
-        });
-        const isAssistantThinking = ref(false);
-        const chatMessages = ref([
-            {
-                id: 'assistant-welcome',
-                role: 'assistant',
-                text: 'Ask me about project risk, overdue work, priority, or assignment suggestions.',
-            },
-        ]);
         let actionNoticeTimer;
         let notificationConnectionStarted = false;
         const router = useRouter();
@@ -722,7 +954,6 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
         const activeProjectsCount = computed(() => projects.value.filter((project) => project.status !== 'Archived').length);
         const totalTasks = computed(() => projects.value.reduce((sum, project) => sum + project.tasks.length, 0));
         const completedTasks = computed(() => projects.value.reduce((sum, project) => sum + project.tasks.filter((task) => task.status === 'Done').length, 0));
-        const overdueTasks = computed(() => projects.value.reduce((sum, project) => sum + project.tasks.filter((task) => isTaskOverdue(task)).length, 0));
         const summaryCards = computed(() => [
             {
                 key: 'projects',
@@ -827,12 +1058,6 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                 return null;
             return selectedProjectTasks.value.find((task) => task.id === selectedTaskId.value) ?? selectedProjectTasks.value[0];
         });
-        const selectedProjectSummary = computed(() => {
-            const project = selectedProject.value;
-            if (!project)
-                return 'Select a project to inspect its work.';
-            return `${project.name}: ${project.completedTaskCount}/${project.taskCount} tasks complete.`;
-        });
         const isProjectAdmin = computed(() => {
             const project = selectedProject.value;
             const user = currentUser.value;
@@ -901,29 +1126,6 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
         });
         const notificationCount = computed(() => notifications.value.filter((notification) => !notification.isRead).length +
             dashboard.value.notifications.filter((notification) => notification.tone !== 'info').length);
-        const quickPrompts = computed(() => {
-            const prompts = [];
-            // 1. Gợi ý cho dự án đang chọn
-            if (selectedProject.value) {
-                prompts.push(`Tóm tắt dự án ${selectedProject.value.name}`);
-            }
-            // 2. Gợi ý cho dự án MỚI NHẤT
-            const latestProject = [...projects.value]
-                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-            if (latestProject && latestProject.id !== selectedProject.value?.id) {
-                prompts.push(`Xem dự án mới: ${latestProject.name}`);
-            }
-            // 3. Gợi ý dựa trên rủi ro (quá hạn)
-            const highRiskProject = projects.value.find(p => p.overdueTaskCount > 0);
-            if (highRiskProject) {
-                prompts.push(`Phân tích rủi ro ${highRiskProject.name}`);
-            }
-            // 4. Gợi ý chung
-            prompts.push('Tôi nên làm gì tiếp theo?');
-            prompts.push('Phân bổ công việc có đều không?');
-            // Trả về tối đa 3 gợi ý để đảm bảo giao diện đẹp
-            return prompts.slice(0, 3);
-        });
         watch(filteredProjects, (items) => {
             if (!['dashboard', 'projects'].includes(String(route.name ?? '')))
                 return;
@@ -947,10 +1149,12 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             if (task && !usingFallback.value) {
                 void loadComments(task.id);
                 void loadAttachments(task.id);
+                void loadTimeEntries(task.id);
             }
             else {
                 comments.value = [];
                 attachments.value = [];
+                timeEntries.value = [];
             }
         }, { immediate: true });
         watch(() => [activeProjectId.value, activeProjectTab.value], ([projectId, tab]) => {
@@ -958,9 +1162,6 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                 void loadWikiPages(String(projectId));
             }
         }, { immediate: true });
-        watch(() => [chatMessages.value.length, isAssistantThinking.value], () => {
-            void scrollChatToBottom();
-        });
         onMounted(async () => {
             await Promise.all([loadMe(), loadDashboard(), loadUsers(), loadNotifications()]);
             await connectNotifications();
@@ -1026,6 +1227,41 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             catch (error) {
                 console.warn('Could not load attachments.', error);
                 attachments.value = [];
+            }
+        }
+        async function loadTimeEntries(taskId) {
+            try {
+                const entries = await apiJson(`/api/tasks/${taskId}/time-entries`);
+                timeEntries.value = entries;
+                activeTimer.value = entries.find(e => e.endedAt === null) ?? null;
+            }
+            catch (error) {
+                console.warn('Could not load time entries.', error);
+                timeEntries.value = [];
+                activeTimer.value = null;
+            }
+        }
+        async function startTimer(taskId) {
+            try {
+                const entry = await apiJson(`/api/tasks/${taskId}/time-entries`, { method: 'POST' });
+                activeTimer.value = entry;
+                await loadTimeEntries(taskId);
+                showActionNotice('Timer started.');
+            }
+            catch (error) {
+                showActionNotice(errorMessage(error));
+            }
+        }
+        async function stopTimer(entryId) {
+            try {
+                await apiJson(`/api/time-entries/${entryId}/stop`, { method: 'PATCH' });
+                activeTimer.value = null;
+                if (selectedTaskId.value)
+                    await loadTimeEntries(selectedTaskId.value);
+                showActionNotice('Timer stopped.');
+            }
+            catch (error) {
+                showActionNotice(errorMessage(error));
             }
         }
         async function connectNotifications() {
@@ -1199,9 +1435,9 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
         function beginEditTask(task) {
             taskBeingEdited.value = task;
             newTaskTitle.value = task.title;
-            newTaskDescription.value = ''; // We don't have desc in DashboardTask, but we could load it if needed
+            newTaskDescription.value = '';
             newTaskPriority.value = task.priority;
-            newTaskAssigneeId.value = ''; // Need to find assignee ID
+            newTaskAssigneeId.value = '';
             newTaskDueDate.value = task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '';
             createTaskOpen.value = true;
         }
@@ -1444,73 +1680,6 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                 window.location.href = '/Account/Login';
             }
         }
-        function openChatWithPrompt(prompt) {
-            chatOpen.value = true;
-            if (prompt)
-                void submitChat(prompt);
-            else
-                void scrollChatToBottom();
-        }
-        async function submitChat(explicitPrompt) {
-            const prompt = (explicitPrompt ?? chatDraft.value).trim();
-            if (!prompt || isAssistantThinking.value)
-                return;
-            chatMessages.value.push({ id: `user-${Date.now()}`, role: 'user', text: prompt });
-            chatDraft.value = '';
-            isAssistantThinking.value = true;
-            // Extract project ID if tagged with @
-            let taggedProjectId = null;
-            const tagMatch = prompt.match(/@([\w\s]+)/);
-            if (tagMatch) {
-                const taggedName = tagMatch[1].trim().toLowerCase();
-                const project = projects.value.find(p => p.name.toLowerCase() === taggedName);
-                if (project) {
-                    taggedProjectId = project.id;
-                }
-            }
-            try {
-                const assistantMsgId = `assistant-${Date.now()}`;
-                chatMessages.value.push({ id: assistantMsgId, role: 'assistant', text: '' });
-                const response = await fetch('/api/ai/chat/stream', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        message: prompt,
-                        projectId: taggedProjectId ?? selectedProject.value?.id ?? null,
-                    }),
-                });
-                if (!response.ok)
-                    throw new Error('Streaming failed');
-                const reader = response.body?.getReader();
-                const decoder = new TextDecoder();
-                let assistantReply = '';
-                if (reader) {
-                    isAssistantThinking.value = false;
-                    while (true) {
-                        const { done, value } = await reader.read();
-                        if (done)
-                            break;
-                        const chunk = decoder.decode(value, { stream: true });
-                        assistantReply += chunk;
-                        const msgIndex = chatMessages.value.findIndex(m => m.id === assistantMsgId);
-                        if (msgIndex !== -1) {
-                            chatMessages.value[msgIndex].text = assistantReply;
-                        }
-                        void scrollChatToBottom();
-                    }
-                }
-            }
-            catch (error) {
-                chatMessages.value.push({ id: `assistant-${Date.now()}`, role: 'assistant', text: createAssistantReply(prompt) });
-            }
-            finally {
-                isAssistantThinking.value = false;
-            }
-        }
-        async function scrollChatToBottom() {
-            await nextTick();
-            chatBodyRef.value?.scrollTo({ top: chatBodyRef.value.scrollHeight, behavior: 'smooth' });
-        }
         async function apiJson(url, options = {}) {
             const headers = new Headers(options.headers);
             if (options.body && !(options.body instanceof FormData)) {
@@ -1547,7 +1716,14 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             }
         }
         function tasksByStatus(status) {
-            return selectedProjectTasks.value.filter((task) => task.status === status);
+            const query = taskSearchQuery.value.trim().toLowerCase();
+            return selectedProjectTasks.value.filter((task) => {
+                if (task.status !== status)
+                    return false;
+                if (!query)
+                    return true;
+                return task.title.toLowerCase().includes(query);
+            });
         }
         function nextStatuses(status) {
             switch (status) {
@@ -1574,26 +1750,6 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             newTaskPriority.value = 'Medium';
             newTaskAssigneeId.value = '';
             newTaskDueDate.value = '';
-        }
-        function createAssistantReply(prompt) {
-            const query = prompt.toLowerCase();
-            const project = selectedProject.value;
-            const keywords = [
-                'risk', 'rủi ro', 'rui ro', 'summary', 'tóm tắt', 'tom tat', 'overdue', 'quá hạn', 'qua han',
-                'priority', 'ưu tiên', 'u tien', 'assignment', 'phân công', 'phan cong', 'task', 'công việc', 'cong viec',
-                'project', 'dự án', 'du an', 'status', 'trạng thái', 'trang thai', 'deadline', 'hạn', 'han chot',
-                'progress', 'tiến độ', 'tien do', 'member', 'thành viên', 'thanh vien', 'done', 'hoàn thành', 'hoan thanh',
-                'todo', 'cần làm', 'can lam', 'doing', 'đang làm', 'dang lam'
-            ];
-            const isRelevant = keywords.some(k => query.includes(k));
-            if (!isRelevant) {
-                return 'Tao đéo biết';
-            }
-            if (query.includes('risk') || query.includes('rủi ro') || query.includes('rui ro')) {
-                return `${overdueTasks.value} tasks are overdue across the workspace. Review ${project?.name ?? 'the highest-risk project'} first.`;
-            }
-            const task = selectedProjectTasks.value.find((item) => item.status !== 'Done');
-            return task ? `Next candidate: "${task.title}" in ${project?.name}.` : selectedProjectSummary.value;
         }
         function showActionNotice(message) {
             actionNotice.value = message;
@@ -1686,7 +1842,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             };
         }
         function isGuid(value) {
-            return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+            return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
         }
         function errorMessage(error) {
             return error instanceof Error ? error.message : 'Request failed.';
@@ -1703,9 +1859,6 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             attachments,
             beginEditProject,
             beginEditTask,
-            chatDraft,
-            chatMessages,
-            chatOpen,
             clearActionableNotifications,
             closeProjectDetails,
             comments,
@@ -1726,7 +1879,6 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             formatDate,
             formatFileSize,
             formatTime,
-            isAssistantThinking,
             isLoading,
             isProjectAdmin,
             isTaskOverdue,
@@ -1739,7 +1891,6 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             newTaskPriority,
             newTaskTitle,
             nextStatuses,
-            openChatWithPrompt,
             openCreateProject,
             openTask,
             priorities,
@@ -1750,9 +1901,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             projectFilter,
             projectName,
             projectSort,
-            projectSuggestions,
             projects,
-            quickPrompts,
             removeMember,
             saveProjectEdit,
             searchQuery,
@@ -1763,14 +1912,11 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             selectedTask,
             selectedTaskId,
             selectTaskInProject,
-            showProjectSuggestions,
             statusColumns,
             statusTone,
-            submitChat,
             submitComment,
             summaryCards,
             tabs,
-            tagProject,
             tasksByStatus,
             team,
             toggleTaskMenu,
@@ -1782,16 +1928,23 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             createWikiPage,
             updateWikiPage,
             deleteWikiPage,
+            taskSearchQuery,
+            taskBeingQuickEditedId,
+            timeEntries,
+            activeTimer,
+            startTimer,
+            stopTimer,
+            loadTimeEntries,
         });
         return (_ctx, _cache) => {
             const _component_RouterView = resolveComponent("RouterView");
-            return (openBlock(), createBlock(_sfc_main$1, {
+            return (openBlock(), createBlock(_sfc_main$2, {
                 "nav-items": navigation,
                 "notification-count": notificationCount.value,
-                "user-name": currentUser.value?.fullName ?? 'Qaly user',
-                "user-initials": initials(currentUser.value?.fullName ?? 'QU'),
-                onNotifications: _cache[4] || (_cache[4] = ($event) => (notificationsOpen.value = !notificationsOpen.value)),
-                onAssistant: _cache[5] || (_cache[5] = ($event) => (openChatWithPrompt())),
+                "user-name": currentUser.value?.fullName || currentUser.value?.email || 'Qaly user',
+                "user-initials": initials(currentUser.value?.fullName || currentUser.value?.email || 'QU'),
+                onNotifications: _cache[1] || (_cache[1] = ($event) => (notificationsOpen.value = !notificationsOpen.value)),
+                onAssistant: () => { },
                 onLogout: logout
             }, {
                 default: withCtx(() => [
@@ -1799,7 +1952,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                     (notificationsOpen.value)
                         ? (openBlock(), createElementBlock("div", _hoisted_1, [
                             createBaseVNode("div", _hoisted_2, [
-                                _cache[6] || (_cache[6] = createBaseVNode("div", null, [
+                                _cache[2] || (_cache[2] = createBaseVNode("div", null, [
                                     createBaseVNode("span", null, "Notifications"),
                                     createBaseVNode("h2", null, "Current signals")
                                 ], -1)),
@@ -1842,108 +1995,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                     (actionNotice.value)
                         ? (openBlock(), createElementBlock("div", _hoisted_6, toDisplayString(actionNotice.value), 1))
                         : createCommentVNode("", true),
-                    createBaseVNode("aside", {
-                        class: normalizeClass(["chat-drawer glass-card", { 'is-open': chatOpen.value }])
-                    }, [
-                        createBaseVNode("div", _hoisted_7, [
-                            createBaseVNode("div", _hoisted_8, [
-                                createVNode(_sfc_main$3, { size: "medium" }),
-                                _cache[7] || (_cache[7] = createBaseVNode("div", null, [
-                                    createBaseVNode("span", null, "AI assistant"),
-                                    createBaseVNode("h2", null, "Qaly assistant")
-                                ], -1))
-                            ]),
-                            createBaseVNode("button", {
-                                class: "icon-button",
-                                type: "button",
-                                onClick: _cache[1] || (_cache[1] = ($event) => (chatOpen.value = false))
-                            }, [
-                                createVNode(unref(X), { size: 18 })
-                            ])
-                        ]),
-                        createBaseVNode("div", {
-                            ref_key: "chatBodyRef",
-                            ref: chatBodyRef,
-                            class: "chat-drawer__body no-scrollbar"
-                        }, [
-                            (openBlock(true), createElementBlock(Fragment, null, renderList(chatMessages.value, (message) => {
-                                return (openBlock(), createElementBlock("article", {
-                                    key: message.id,
-                                    class: normalizeClass(["chat-message", `chat-message--${message.role}`])
-                                }, [
-                                    (message.role === 'assistant')
-                                        ? (openBlock(), createElementBlock("div", _hoisted_9, [
-                                            createVNode(_sfc_main$3, { size: "small" })
-                                        ]))
-                                        : createCommentVNode("", true),
-                                    createBaseVNode("div", {
-                                        class: normalizeClass(["chat-bubble", `chat-bubble--${message.role}`])
-                                    }, toDisplayString(message.text), 3),
-                                    (message.role === 'user')
-                                        ? (openBlock(), createElementBlock("div", _hoisted_10, toDisplayString(initials(currentUser.value?.fullName ?? 'QU')), 1))
-                                        : createCommentVNode("", true)
-                                ], 2));
-                            }), 128)),
-                            (isAssistantThinking.value)
-                                ? (openBlock(), createElementBlock("article", _hoisted_11, [
-                                    createBaseVNode("div", _hoisted_12, [
-                                        createVNode(_sfc_main$3, { size: "small" })
-                                    ]),
-                                    _cache[8] || (_cache[8] = createBaseVNode("div", {
-                                        class: "chat-bubble chat-bubble--assistant chat-bubble--thinking",
-                                        "aria-label": "Assistant is thinking"
-                                    }, [
-                                        createBaseVNode("span"),
-                                        createBaseVNode("span"),
-                                        createBaseVNode("span")
-                                    ], -1))
-                                ]))
-                                : createCommentVNode("", true)
-                        ], 512),
-                        createBaseVNode("div", _hoisted_13, [
-                            (openBlock(true), createElementBlock(Fragment, null, renderList(quickPrompts.value, (prompt) => {
-                                return (openBlock(), createElementBlock("button", {
-                                    key: prompt,
-                                    type: "button",
-                                    class: "prompt-chip",
-                                    disabled: isAssistantThinking.value,
-                                    onClick: ($event) => (submitChat(prompt))
-                                }, toDisplayString(prompt), 9, _hoisted_14));
-                            }), 128))
-                        ]),
-                        (showProjectSuggestions.value && projectSuggestions.value.length > 0)
-                            ? (openBlock(), createElementBlock("div", _hoisted_15, [
-                                (openBlock(true), createElementBlock(Fragment, null, renderList(projectSuggestions.value, (p) => {
-                                    return (openBlock(), createElementBlock("button", {
-                                        key: p.id,
-                                        type: "button",
-                                        onClick: ($event) => (tagProject(p))
-                                    }, [
-                                        createBaseVNode("strong", null, "@" + toDisplayString(p.name), 1),
-                                        createBaseVNode("span", null, toDisplayString(p.status), 1)
-                                    ], 8, _hoisted_16));
-                                }), 128))
-                            ]))
-                            : createCommentVNode("", true),
-                        createBaseVNode("form", {
-                            class: "chat-drawer__composer",
-                            onSubmit: _cache[3] || (_cache[3] = withModifiers(($event) => (submitChat()), ["prevent"]))
-                        }, [
-                            withDirectives(createBaseVNode("input", {
-                                "onUpdate:modelValue": _cache[2] || (_cache[2] = ($event) => ((chatDraft).value = $event)),
-                                type: "text",
-                                disabled: isAssistantThinking.value,
-                                placeholder: "Ask about risk, priority, work... Use @ to tag project"
-                            }, null, 8, _hoisted_17), [
-                                [vModelText, chatDraft.value]
-                            ]),
-                            createBaseVNode("button", {
-                                class: "primary-button",
-                                type: "submit",
-                                disabled: isAssistantThinking.value || !chatDraft.value.trim()
-                            }, "Ask", 8, _hoisted_18)
-                        ], 32)
-                    ], 2)
+                    createVNode(FloatingChatbot)
                 ]),
                 _: 1
             }, 8, ["notification-count", "user-name", "user-initials"]));
@@ -2039,5 +2091,5 @@ const target = document.getElementById('qaly-dashboard-app');
 if (target) {
     createApp(_sfc_main).use(router).mount(target);
 }
-export { _sfc_main$3 as _, useDashboardContext as u };
+export { _sfc_main$4 as _, _export_sfc as a, useDashboardContext as u };
 //# sourceMappingURL=main.js.map

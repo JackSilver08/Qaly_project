@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Qaly.Domain.Entities;
 
 namespace Qaly.Infrastructure.Data;
@@ -18,18 +18,21 @@ public class QalyDbContext : DbContext
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<WikiPage> WikiPages => Set<WikiPage>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<VectorSyncOutbox> VectorSyncOutbox => Set<VectorSyncOutbox>();
+    public DbSet<TimeEntry> TimeEntries => Set<TimeEntry>();
+    public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
-        // Apply tất cả IEntityTypeConfiguration từ assembly này
+        // Apply táº¥t cáº£ IEntityTypeConfiguration tá»« assembly nÃ y
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(QalyDbContext).Assembly);
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        // Tự động cập nhật UpdatedAt cho các entity bị modify
+        // Tá»± Ä‘á»™ng cáº­p nháº­t UpdatedAt cho cÃ¡c entity bá»‹ modify
         foreach (var entry in ChangeTracker.Entries<BaseEntity>())
         {
             if (entry.State == EntityState.Modified)
@@ -41,3 +44,5 @@ public class QalyDbContext : DbContext
         return base.SaveChangesAsync(cancellationToken);
     }
 }
+
+

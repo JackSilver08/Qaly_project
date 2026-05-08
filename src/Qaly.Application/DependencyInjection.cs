@@ -1,12 +1,12 @@
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Services;
 
 namespace Qaly.Application;
 
 /// <summary>
-/// Extension method để đăng ký tất cả services của Application layer.
-/// Gọi trong Program.cs: builder.Services.AddApplication();
+/// Extension method Ä‘á»ƒ Ä‘Äƒng kÃ½ táº¥t cáº£ services cá»§a Application layer.
+/// Gá»i trong Program.cs: builder.Services.AddApplication();
 /// </summary>
 public static class DependencyInjection
 {
@@ -20,9 +20,12 @@ public static class DependencyInjection
         services.AddScoped<ICommentService, CommentService>();
         services.AddScoped<IAttachmentService, AttachmentService>();
         services.AddScoped<INotificationService, NotificationService>();
+        services.AddScoped<ITimeTrackingService, TimeTrackingService>();
+        services.AddScoped<ITaskPrioritySuggestionService, TaskPrioritySuggestionService>();
         services.AddScoped<IAiService, AiService>();
         services.AddSingleton<INotificationPublisher, NullNotificationPublisher>();
 
         return services;
     }
 }
+
