@@ -15,6 +15,7 @@ using System.Net.Sockets;
 DotNetEnv.Env.Load();
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Environment.EnvironmentName = "Development"; // Force Development for debugging
 
 // =============================================
 // Serilog Configuration
@@ -41,6 +42,7 @@ builder.Services.AddInfrastructure(builder.Configuration);
 // Data Seeder
 builder.Services.AddScoped<DataSeeder>();
 
+/*
 if (builder.Environment.IsDevelopment())
 {
     var preferredPort = 5055;
@@ -48,6 +50,7 @@ if (builder.Environment.IsDevelopment())
     builder.WebHost.UseUrls($"http://127.0.0.1:{selectedPort}");
     Log.Information("Development HTTP port selected: {Port}", selectedPort);
 }
+*/
 
 // Razor Pages
 builder.Services.AddRazorPages(options =>
@@ -135,7 +138,14 @@ if (app.Environment.IsDevelopment())
 {
     using var scope = app.Services.CreateScope();
     var seeder = scope.ServiceProvider.GetRequiredService<DataSeeder>();
-    await seeder.SeedAsync();
+    try 
+    {
+        await seeder.SeedAsync();
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Lỗi khi seed dữ liệu. Hãy kiểm tra kết nối SQL Server.");
+    }
 
     // Trigger AI Ingestion Sync
     var ingestionService = scope.ServiceProvider.GetRequiredService<IAiIngestionService>();
@@ -166,12 +176,13 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapStaticAssets();
-app.MapRazorPages().WithStaticAssets();
+// app.MapStaticAssets();
+app.MapRazorPages(); // .WithStaticAssets();
 app.MapControllers();
 
 // Health Checks Endpoints

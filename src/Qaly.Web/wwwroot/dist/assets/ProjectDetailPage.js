@@ -101,7 +101,7 @@ const _export_sfc = (sfc, props) => {
     }
     return target;
 };
-const ProjectDetailHeader = /*#__PURE__*/ _export_sfc(_sfc_main$4, [['__scopeId', "data-v-3ceb04d7"]]);
+const ProjectDetailHeader = /*#__PURE__*/ _export_sfc(_sfc_main$4, [['__scopeId', "data-v-bf397d7c"]]);
 const _hoisted_1$3 = { class: "members-tab-content glass-card" };
 const _hoisted_2$3 = { class: "panel-heading" };
 const _hoisted_3$3 = {
@@ -562,7 +562,7 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
         };
     }
 });
-const ProjectWikiTab = /*#__PURE__*/ _export_sfc(_sfc_main$1, [['__scopeId', "data-v-485c003c"]]);
+const ProjectWikiTab = /*#__PURE__*/ _export_sfc(_sfc_main$1, [['__scopeId', "data-v-4525fcbe"]]);
 const _hoisted_1 = { class: "dashboard-scroll dashboard-scroll--embedded no-scrollbar" };
 const _hoisted_2 = { class: "dashboard-main project-home-main no-scrollbar" };
 const _hoisted_3 = { class: "project-tabs glass-card" };
@@ -951,6 +951,6 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
         };
     }
 });
-const ProjectDetailPage = /*#__PURE__*/ _export_sfc(_sfc_main, [['__scopeId', "data-v-7fdedbcb"]]);
+const ProjectDetailPage = /*#__PURE__*/ _export_sfc(_sfc_main, [['__scopeId', "data-v-2e540a9a"]]);
 export { ProjectDetailPage as default };
 //# sourceMappingURL=ProjectDetailPage.js.map
