@@ -1,6 +1,6 @@
-import { d as defineComponent, c as createElementBlock, a as createBaseVNode, g as createVNode, i as unref, t as toDisplayString, n as normalizeClass, l as createCommentVNode, J as normalizeStyle, o as openBlock, y as withDirectives, L as vModelSelect, F as Fragment, b as renderList, m as ref, v as createTextVNode, z as vModelText, I as withKeys, e as createBlock, K as isRef, x as withModifiers } from './vendor-vue.js';
+import { d as defineComponent, c as createElementBlock, a as createBaseVNode, g as createVNode, i as unref, t as toDisplayString, n as normalizeClass, l as createCommentVNode, G as normalizeStyle, o as openBlock, z as withDirectives, O as vModelSelect, F as Fragment, b as renderList, m as ref, x as createTextVNode, A as vModelText, M as withKeys, e as createBlock, N as isRef, y as withModifiers } from './vendor-vue.js';
 import { _ as _sfc_main$5, a as _export_sfc, u as useDashboardContext } from './main.js';
-import { A as ArrowLeft, c as LayoutDashboard, k as UserPlus, i as Mail, l as Shield, T as Trash2, m as Plus, n as Search, o as FileText, P as Pencil, p as MessageSquare, q as Clock, r as Square, s as Play, b as Send, t as Ellipsis } from './vendor-icons.js';
+import { A as ArrowLeft, c as LayoutDashboard, m as UserPlus, k as Mail, n as Shield, j as Trash2, o as Plus, p as Search, q as FileText, P as Pencil, r as MessageSquare, s as Clock, t as Square, u as Play, b as Send, v as Ellipsis } from './vendor-icons.js';
 import './vendor-markdown.js';
 import './vendor-realtime.js';
 const _hoisted_1$4 = { class: "project-detail-header glass-card reveal" };
@@ -665,7 +665,7 @@ const _hoisted_55 = {
 const _sfc_main = /*@__PURE__*/ defineComponent({
     __name: 'ProjectDetailPage',
     setup(__props) {
-        const { activeProjectTab, activeTaskMenu, addMember, attachments, beginEditTask, closeProjectDetails, comments, createTask, createTaskOpen, currentUser, deleteAttachment, deleteComment, deleteTask, displayStatus, formatDate, formatFileSize, formatTime, isProjectAdmin, isTaskOverdue, moveTask, newComment, newTaskAssigneeId, newTaskDescription, newTaskDueDate, newTaskPriority, newTaskTitle, nextStatuses, openChatWithPrompt, priorities, removeMember, selectTaskInProject, selectedProject, selectedProjectMembers, selectedProjectStats, selectedTask, statusTone, statusColumns, submitComment, tabs, tasksByStatus, toggleTaskMenu, updateMemberRole, uploadAttachment, users, taskSearchQuery, taskBeingQuickEditedId, timeEntries, activeTimer, startTimer, stopTimer, loadTimeEntries, } = useDashboardContext();
+        const { activeProjectTab, activeTaskMenu, addManualTimeEntry, addMember, attachments, beginEditTask, closeProjectDetails, comments, createTask, createTaskOpen, currentUser, deleteAttachment, deleteComment, deleteTask, displayStatus, formatDate, formatFileSize, formatTime, isProjectAdmin, isTaskOverdue, moveTask, newComment, newTaskAssigneeId, newTaskDescription, newTaskDueDate, newTaskPriority, newTaskTitle, nextStatuses, openChatWithPrompt, priorities, quickEditTaskTitle, removeMember, selectTaskInProject, selectedProject, selectedProjectMembers, selectedProjectStats, selectedTask, statusTone, statusColumns, submitComment, tabs, tasksByStatus, toggleTaskMenu, updateMemberRole, uploadAttachment, users, taskSearchQuery, taskBeingQuickEditedId, timeEntries, activeTimer, startTimer, stopTimer, } = useDashboardContext();
         const quickEditTitle = ref('');
         const manualMinutes = ref(0);
         const manualNote = ref('');
@@ -677,50 +677,29 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
         async function saveQuickEdit() {
             if (!taskBeingQuickEditedId.value || !selectedTask.value)
                 return;
+            let saved = false;
             try {
                 const taskId = taskBeingQuickEditedId.value;
-                await fetch(`/api/tasks/${taskId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        title: quickEditTitle.value.trim(),
-                        description: selectedTask.value.description,
-                        status: selectedTask.value.status,
-                        priority: selectedTask.value.priority,
-                        dueDate: selectedTask.value.dueDate,
-                        assigneeId: selectedTask.value.assigneeId,
-                        isPrivate: selectedTask.value.isPrivate
-                    })
-                });
-                window.location.reload();
+                saved = await quickEditTaskTitle(taskId, quickEditTitle.value);
             }
             catch (e) {
                 console.error(e);
             }
             finally {
-                taskBeingQuickEditedId.value = null;
+                if (saved)
+                    taskBeingQuickEditedId.value = null;
             }
         }
         async function submitManualEntry() {
             if (!selectedTask.value || manualMinutes.value <= 0)
                 return;
             try {
-                const res = await fetch(`/api/tasks/${selectedTask.value.id}/time-entries/manual`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        taskId: selectedTask.value.id,
-                        startedAt: new Date().toISOString(),
-                        manualMinutes: manualMinutes.value,
-                        note: manualNote.value.trim() || null
-                    })
-                });
-                if (res.ok) {
-                    manualMinutes.value = 0;
-                    manualNote.value = '';
-                    showManualForm.value = false;
-                    await loadTimeEntries(selectedTask.value.id);
-                }
+                const saved = await addManualTimeEntry(selectedTask.value.id, manualMinutes.value, manualNote.value);
+                if (!saved)
+                    return;
+                manualMinutes.value = 0;
+                manualNote.value = '';
+                showManualForm.value = false;
             }
             catch (e) {
                 console.error(e);
@@ -1139,6 +1118,6 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
         };
     }
 });
-const ProjectDetailPage = /*#__PURE__*/ _export_sfc(_sfc_main, [['__scopeId', "data-v-f6c129e4"]]);
+const ProjectDetailPage = /*#__PURE__*/ _export_sfc(_sfc_main, [['__scopeId', "data-v-2c2a298d"]]);
 export { ProjectDetailPage as default };
 //# sourceMappingURL=ProjectDetailPage.js.map

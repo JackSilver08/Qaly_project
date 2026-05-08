@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, provide, ref, watch } from 'vue'
+import { computed, onMounted, provide, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { HubConnectionBuilder } from '@microsoft/signalr'
 import {
@@ -12,6 +12,7 @@ import {
 import AppShell from './components/AppShell.vue'
 import FloatingChatbot from './components/chat/FloatingChatbot.vue'
 import { dashboardContextKey } from './composables/dashboard-context'
+import { showError, showInfo, showSuccess } from './composables/use-toast'
 import { fallbackDashboard } from './fallback-dashboard'
 import type { ProjectCardModel, SummaryCardModel, TaskListItemModel } from './components/dashboard-models'
 import type { ShellNavItem } from './components/shell-models'
@@ -92,9 +93,7 @@ const newTaskPriority = ref('Medium')
 const newTaskAssigneeId = ref('')
 const newTaskDueDate = ref('')
 const newComment = ref('')
-const actionNotice = ref('')
 
-let actionNoticeTimer: number | undefined
 let notificationConnectionStarted = false
 const router = useRouter()
 const route = useRoute()
@@ -451,9 +450,9 @@ async function startTimer(taskId: string) {
     const entry = await apiJson<TimeEntryDto>(`/api/tasks/${taskId}/time-entries`, { method: 'POST' })
     activeTimer.value = entry
     await loadTimeEntries(taskId)
-    showActionNotice('Timer started.')
+    showSuccess('Đã bắt đầu ghi thời gian')
   } catch (error) {
-    showActionNotice(errorMessage(error))
+    showError(errorMessage(error, 'Không thể bắt đầu ghi thời gian'))
   }
 }
 
@@ -462,9 +461,33 @@ async function stopTimer(entryId: string) {
     await apiJson<TimeEntryDto>(`/api/time-entries/${entryId}/stop`, { method: 'PATCH' })
     activeTimer.value = null
     if (selectedTaskId.value) await loadTimeEntries(selectedTaskId.value)
-    showActionNotice('Timer stopped.')
+    showSuccess('Đã dừng ghi thời gian')
   } catch (error) {
-    showActionNotice(errorMessage(error))
+    showError(errorMessage(error, 'Không thể dừng ghi thời gian'))
+  }
+}
+
+async function addManualTimeEntry(taskId: string, manualMinutes: number, note: string) {
+  if (!taskId || manualMinutes <= 0) return false
+
+  try {
+    await apiJson<TimeEntryDto>(`/api/tasks/${taskId}/time-entries/manual`, {
+      method: 'POST',
+      body: JSON.stringify({
+        taskId,
+        startedAt: new Date().toISOString(),
+        manualMinutes,
+        note: note.trim() || null,
+      }),
+    })
+
+    await loadTimeEntries(taskId)
+    await loadDashboard()
+    showSuccess('Ghi thời gian thủ công thành công')
+    return true
+  } catch (error) {
+    showError(errorMessage(error, 'Không thể ghi thời gian thủ công'))
+    return false
   }
 }
 
@@ -479,7 +502,7 @@ async function connectNotifications() {
 
   connection.on('notificationReceived', (notification: NotificationDto) => {
     notifications.value = [notification, ...notifications.value.filter((item) => item.id !== notification.id)]
-    showActionNotice(notification.message)
+    showInfo(notification.message)
     void loadDashboard()
   })
 
@@ -544,9 +567,9 @@ async function createProject() {
     await loadDashboard()
     activeProjectId.value = project.id
     void router.push(`/projects/${project.id}`)
-    showActionNotice(`Created project "${project.name}".`)
+    showSuccess(`Thêm dự án "${project.name}" thành công`)
   } catch (error) {
-    showActionNotice(errorMessage(error))
+    showError(errorMessage(error, 'Không thể thêm dự án'))
   }
 }
 
@@ -582,9 +605,9 @@ async function saveProjectEdit() {
     projectBeingEditedId.value = null
     await loadDashboard()
     activeProjectId.value = project.id
-    showActionNotice(`Updated project "${name}".`)
+    showSuccess(`Cập nhật dự án "${name}" thành công`)
   } catch (error) {
-    showActionNotice(errorMessage(error))
+    showError(errorMessage(error, 'Không thể cập nhật dự án'))
   }
 }
 
@@ -595,9 +618,9 @@ async function deleteProject(projectId: string) {
   try {
     await apiCommand(`/api/projects/${projectId}`, { method: 'DELETE' })
     await loadDashboard()
-    showActionNotice(`Deleted project "${project.name}".`)
+    showSuccess(`Xóa dự án "${project.name}" thành công`)
   } catch (error) {
-    showActionNotice(errorMessage(error))
+    showError(errorMessage(error, 'Không thể xóa dự án'))
   }
 }
 
@@ -629,9 +652,9 @@ async function createTask() {
     clearTaskForm()
     createTaskOpen.value = false
     await loadDashboard()
-    showActionNotice(task.aiPrioritySuggestion ?? 'Task created.')
+    showSuccess(task.aiPrioritySuggestion ? `Thêm nhiệm vụ thành công. ${task.aiPrioritySuggestion}` : 'Thêm nhiệm vụ thành công')
   } catch (error) {
-    showActionNotice(errorMessage(error))
+    showError(errorMessage(error, 'Không thể thêm nhiệm vụ'))
   }
 }
 
@@ -644,9 +667,9 @@ async function moveTask(task: DashboardTask, status: string) {
 
     await loadDashboard()
     selectedTaskId.value = task.id
-    showActionNotice(`Moved "${task.title}" to ${displayStatus(status)}.`)
+    showSuccess(`Đã chuyển nhiệm vụ sang ${displayStatus(status)}`)
   } catch (error) {
-    showActionNotice(errorMessage(error))
+    showError(errorMessage(error, 'Không thể cập nhật trạng thái nhiệm vụ'))
   }
 }
 
@@ -682,9 +705,40 @@ async function saveTaskEdit() {
     createTaskOpen.value = false
     taskBeingEdited.value = null
     await loadDashboard()
-    showActionNotice('Task updated.')
+    showSuccess('Cập nhật nhiệm vụ thành công')
   } catch (error) {
-    showActionNotice(errorMessage(error))
+    showError(errorMessage(error, 'Không thể cập nhật nhiệm vụ'))
+  }
+}
+
+async function quickEditTaskTitle(taskId: string, title: string) {
+  const nextTitle = title.trim()
+  if (!taskId || !nextTitle) return false
+
+  try {
+    const currentTask = await apiResult<TaskItemDto>(`/api/tasks/${taskId}`)
+    await apiResult<TaskItemDto>(`/api/tasks/${taskId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        title: nextTitle,
+        description: currentTask.description,
+        status: currentTask.status,
+        priority: currentTask.priority,
+        dueDate: currentTask.dueDate,
+        estimatedHours: currentTask.estimatedHours,
+        actualHours: currentTask.actualHours,
+        assigneeId: currentTask.assigneeId,
+        isPrivate: currentTask.isPrivate,
+      }),
+    })
+
+    await loadDashboard()
+    selectedTaskId.value = taskId
+    showSuccess('Cập nhật nhiệm vụ thành công')
+    return true
+  } catch (error) {
+    showError(errorMessage(error, 'Không thể cập nhật nhiệm vụ'))
+    return false
   }
 }
 
@@ -694,9 +748,9 @@ async function deleteTask(taskId: string) {
   try {
     await apiCommand(`/api/tasks/${taskId}`, { method: 'DELETE' })
     await loadDashboard()
-    showActionNotice('Task deleted.')
+    showSuccess('Xóa nhiệm vụ thành công')
   } catch (error) {
-    showActionNotice(errorMessage(error))
+    showError(errorMessage(error, 'Không thể xóa nhiệm vụ'))
   }
 }
 
@@ -717,8 +771,9 @@ async function submitComment() {
     newComment.value = ''
     await loadComments(task.id)
     await loadDashboard()
+    showSuccess('Thêm bình luận thành công')
   } catch (error) {
-    showActionNotice(errorMessage(error))
+    showError(errorMessage(error, 'Không thể thêm bình luận'))
   }
 }
 
@@ -729,9 +784,9 @@ async function deleteComment(commentId: string) {
     await apiCommand(`/api/comments/${commentId}`, { method: 'DELETE' })
     if (selectedTask.value) await loadComments(selectedTask.value.id)
     await loadDashboard()
-    showActionNotice('Comment deleted.')
+    showSuccess('Xóa bình luận thành công')
   } catch (error) {
-    showActionNotice(errorMessage(error))
+    showError(errorMessage(error, 'Không thể xóa bình luận'))
   }
 }
 
@@ -745,9 +800,9 @@ async function addMember(userId: string) {
       body: JSON.stringify({ userId, role: 'Member' }),
     })
     await loadDashboard()
-    showActionNotice('Member added.')
+    showSuccess('Thêm thành viên thành công')
   } catch (error) {
-    showActionNotice(errorMessage(error))
+    showError(errorMessage(error, 'Không thể thêm thành viên'))
   }
 }
 
@@ -759,9 +814,9 @@ async function removeMember(userId: string) {
   try {
     await apiCommand(`/api/projects/${project.id}/members/${userId}`, { method: 'DELETE' })
     await loadDashboard()
-    showActionNotice('Member removed.')
+    showSuccess('Xóa thành viên khỏi dự án thành công')
   } catch (error) {
-    showActionNotice(errorMessage(error))
+    showError(errorMessage(error, 'Không thể xóa thành viên khỏi dự án'))
   }
 }
 
@@ -775,9 +830,9 @@ async function updateMemberRole(userId: string, role: string) {
       body: JSON.stringify({ userId, role }),
     })
     await loadDashboard()
-    showActionNotice(`Updated role to ${role}.`)
+    showSuccess(`Cập nhật vai trò thành ${role} thành công`)
   } catch (error) {
-    showActionNotice(errorMessage(error))
+    showError(errorMessage(error, 'Không thể cập nhật vai trò thành viên'))
   }
 }
 
@@ -800,9 +855,9 @@ async function createWikiPage(title: string, content: string = '') {
       body: JSON.stringify({ title, content }),
     })
     await loadWikiPages(project.id)
-    showActionNotice(`Created wiki page "${title}".`)
+    showSuccess(`Tạo trang Wiki "${title}" thành công`)
   } catch (error) {
-    showActionNotice(errorMessage(error))
+    showError(errorMessage(error, 'Không thể tạo trang Wiki'))
   }
 }
 
@@ -816,9 +871,9 @@ async function updateWikiPage(pageId: string, title: string, content: string) {
       body: JSON.stringify({ title, content }),
     })
     await loadWikiPages(project.id)
-    showActionNotice(`Updated wiki page "${title}".`)
+    showSuccess(`Cập nhật trang Wiki "${title}" thành công`)
   } catch (error) {
-    showActionNotice(errorMessage(error))
+    showError(errorMessage(error, 'Không thể cập nhật trang Wiki'))
   }
 }
 
@@ -829,9 +884,9 @@ async function deleteWikiPage(pageId: string) {
   try {
     await apiCommand(`/api/projects/${project.id}/wiki/${pageId}`, { method: 'DELETE' })
     await loadWikiPages(project.id)
-    showActionNotice('Wiki page deleted.')
+    showSuccess('Xóa trang Wiki thành công')
   } catch (error) {
-    showActionNotice(errorMessage(error))
+    showError(errorMessage(error, 'Không thể xóa trang Wiki'))
   }
 }
 
@@ -853,9 +908,9 @@ async function uploadAttachment(event: Event) {
     input.value = ''
     await loadAttachments(task.id)
     await loadDashboard()
-    showActionNotice(`Uploaded "${file.name}".`)
+    showSuccess(`Tải tệp "${file.name}" lên thành công`)
   } catch (error) {
-    showActionNotice(errorMessage(error))
+    showError(errorMessage(error, 'Không thể tải tệp lên'))
   }
 }
 
@@ -866,9 +921,9 @@ async function deleteAttachment(attachment: AttachmentDto) {
     await apiCommand(`/api/attachments/${attachment.id}`, { method: 'DELETE' })
     if (taskId) await loadAttachments(taskId)
     await loadDashboard()
-    showActionNotice(`Deleted "${attachment.fileName}".`)
+    showSuccess(`Xóa tệp "${attachment.fileName}" thành công`)
   } catch (error) {
-    showActionNotice(errorMessage(error))
+    showError(errorMessage(error, 'Không thể xóa tệp'))
   }
 }
 
@@ -881,6 +936,7 @@ async function dismissNotification(notificationId: string) {
       await apiCommand(`/api/notifications/${notificationId}/read`, { method: 'PATCH' })
     } catch (error) {
       console.warn('Could not mark notification as read.', error)
+      showError(errorMessage(error, 'Không thể đánh dấu thông báo đã đọc'))
     }
   }
 }
@@ -892,8 +948,10 @@ async function clearActionableNotifications() {
 
   try {
     await apiCommand('/api/notifications/read-all', { method: 'PATCH' })
+    showSuccess('Đã đánh dấu tất cả thông báo là đã đọc')
   } catch (error) {
     console.warn('Could not mark notifications as read.', error)
+    showError(errorMessage(error, 'Không thể đánh dấu tất cả thông báo đã đọc'))
   }
 }
 
@@ -926,30 +984,79 @@ async function apiJson<T>(url: string, options: RequestInit = {}): Promise<T> {
   }
 
   const text = await response.text()
-  const payload = text ? JSON.parse(text) : null
+  const payload = parseApiPayload(text)
 
   if (!response.ok) {
-    throw new Error(payload?.error ?? `Request failed with status ${response.status}`)
+    throw new Error(apiPayloadError(payload, response.status))
   }
 
   return payload as T
 }
 
 async function apiResult<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const result = await apiJson<ApiResult<T>>(url, options)
-  if (!result.isSuccess || result.data == null) {
-    throw new Error(result.error ?? 'Request failed.')
+  const result = await apiJson<ApiResult<T> | T>(url, options)
+
+  if (isApiResult<T>(result)) {
+    if (!result.isSuccess || result.data == null) {
+      throw new Error(result.error ?? 'Không thể hoàn tất yêu cầu.')
+    }
+
+    return result.data
   }
 
-  return result.data
+  return result as T
 }
 
 async function apiCommand(url: string, options: RequestInit = {}) {
-  const result = await apiJson<ApiResult<unknown> | { ok: boolean }>(url, options)
+  const result = await apiJson<ApiResult<unknown> | { ok: boolean } | null>(url, options)
 
-  if ('isSuccess' in result && !result.isSuccess) {
-    throw new Error(result.error ?? 'Request failed.')
+  if (isApiResult(result) && !result.isSuccess) {
+    throw new Error(result.error ?? 'Không thể hoàn tất yêu cầu.')
   }
+
+  if (result && typeof result === 'object' && 'ok' in result && result.ok === false) {
+    throw new Error('Không thể hoàn tất yêu cầu.')
+  }
+}
+
+function parseApiPayload(text: string) {
+  if (!text) return null
+
+  try {
+    return JSON.parse(text)
+  } catch {
+    return text
+  }
+}
+
+function apiPayloadError(payload: unknown, status: number) {
+  if (typeof payload === 'string' && payload.trim()) return payload.trim()
+
+  if (payload && typeof payload === 'object') {
+    if ('error' in payload && typeof payload.error === 'string' && payload.error.trim()) return payload.error
+    if ('message' in payload && typeof payload.message === 'string' && payload.message.trim()) return payload.message
+    if ('title' in payload && typeof payload.title === 'string' && payload.title.trim()) {
+      const validationMessage = validationErrorMessage(payload)
+      return validationMessage ?? payload.title
+    }
+  }
+
+  return `Không thể hoàn tất yêu cầu (mã ${status}).`
+}
+
+function validationErrorMessage(payload: object) {
+  if (!('errors' in payload) || !payload.errors || typeof payload.errors !== 'object') return null
+
+  for (const value of Object.values(payload.errors)) {
+    if (Array.isArray(value) && typeof value[0] === 'string') return value[0]
+    if (typeof value === 'string') return value
+  }
+
+  return null
+}
+
+function isApiResult<T>(payload: unknown): payload is ApiResult<T> {
+  return Boolean(payload && typeof payload === 'object' && 'isSuccess' in payload)
 }
 
 function tasksByStatus(status: string) {
@@ -988,15 +1095,6 @@ function clearTaskForm() {
   newTaskPriority.value = 'Medium'
   newTaskAssigneeId.value = ''
   newTaskDueDate.value = ''
-}
-
-function showActionNotice(message: string) {
-  actionNotice.value = message
-
-  if (actionNoticeTimer) window.clearTimeout(actionNoticeTimer)
-  actionNoticeTimer = window.setTimeout(() => {
-    actionNotice.value = ''
-  }, 3800)
 }
 
 function displayStatus(status: string | null | undefined) {
@@ -1093,16 +1191,27 @@ function isGuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Request failed.'
+function errorMessage(error: unknown, fallback = 'Đã xảy ra lỗi khi lưu dữ liệu') {
+  const message = error instanceof Error ? error.message.trim() : ''
+
+  if (
+    !message ||
+    message === 'Request failed.' ||
+    message.startsWith('Request failed with status') ||
+    message.startsWith('Không thể hoàn tất yêu cầu')
+  ) {
+    return fallback
+  }
+
+  return message
 }
 
 provide(dashboardContextKey, {
-  actionNotice,
   activeProjectCards,
   activeProjectId,
   activeProjectTab,
   activeTaskMenu,
+  addManualTimeEntry,
   addMember,
   archivedProjectCards,
   assignedTaskCards,
@@ -1152,6 +1261,7 @@ provide(dashboardContextKey, {
   projectName,
   projectSort,
   projects,
+  quickEditTaskTitle,
   removeMember,
   saveProjectEdit,
   searchQuery,
@@ -1228,8 +1338,6 @@ provide(dashboardContextKey, {
           <span>{{ formatTime(notification.createdAt) }}</span>
         </article>
       </div>
-
-    <div v-if="actionNotice" class="action-toast">{{ actionNotice }}</div>
 
     <FloatingChatbot />
   </AppShell>

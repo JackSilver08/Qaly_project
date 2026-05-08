@@ -39,7 +39,7 @@ public class LoginModel : PageModel
         var result = await _authService.LoginAsync(new LoginDto(Email, Password), ct);
         if (!result.IsSuccess || result.Data == null)
         {
-            ErrorMessage = result.Error ?? "Unable to sign in.";
+            ErrorMessage = result.Error ?? "Không thể đăng nhập.";
             return Page();
         }
 
@@ -47,6 +47,7 @@ public class LoginModel : PageModel
             CookieAuthenticationDefaults.AuthenticationScheme,
             AuthClaimsFactory.CreatePrincipal(result.Data));
 
+        TempData["ToastSuccess"] = "Đăng nhập thành công";
         return LocalRedirect(SafeReturnUrl(ReturnUrl));
     }
 

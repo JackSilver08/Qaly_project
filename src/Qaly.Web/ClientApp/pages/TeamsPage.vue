@@ -4,6 +4,7 @@ import ChatSidebar from '../components/chat/ChatSidebar.vue'
 import ChatWindow from '../components/chat/ChatWindow.vue'
 import type { ChatGroupModel, TeamChatAttachment, TeamChatMessage, TeamChatPoll } from '../components/chat/chat-types'
 import { useDashboardContext } from '../composables/dashboard-context'
+import { showSuccess } from '../composables/use-toast'
 
 const { currentUser } = useDashboardContext()
 
@@ -72,6 +73,7 @@ function createGroup() {
 
   groups.value = [group, ...groups.value]
   activeGroupId.value = group.id
+  showSuccess(`Tạo nhóm "${group.name}" thành công`)
 }
 
 function sendMessage(payload: { text: string; attachments: TeamChatAttachment[]; poll?: TeamChatPoll }) {
@@ -97,9 +99,11 @@ function sendMessage(payload: { text: string; attachments: TeamChatAttachment[];
 }
 
 function togglePin(messageId: string) {
+  const target = messages.value.find((message) => message.id === messageId)
   messages.value = messages.value.map((message) =>
     message.id === messageId ? { ...message, pinned: !message.pinned } : message,
   )
+  if (target) showSuccess(target.pinned ? 'Đã bỏ ghim tin nhắn' : 'Đã ghim tin nhắn')
 }
 </script>
 

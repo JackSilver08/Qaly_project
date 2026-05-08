@@ -2361,10 +2361,275 @@ function createPathGetter(ctx, path) {
         return cur;
     };
 }
+const pendingMounts = /* @__PURE__ */ new WeakMap();
 const TeleportEndKey = /* @__PURE__ */ Symbol("_vte");
 const isTeleport = (type) => type.__isTeleport;
+const isTeleportDisabled = (props) => props && (props.disabled || props.disabled === "");
+const isTeleportDeferred = (props) => props && (props.defer || props.defer === "");
+const isTargetSVG = (target) => typeof SVGElement !== "undefined" && target instanceof SVGElement;
+const isTargetMathML = (target) => typeof MathMLElement === "function" && target instanceof MathMLElement;
+const resolveTarget = (props, select) => {
+    const targetSelector = props && props.to;
+    if (isString(targetSelector)) {
+        if (!select) {
+            return null;
+        }
+        else {
+            const target = select(targetSelector);
+            return target;
+        }
+    }
+    else {
+        return targetSelector;
+    }
+};
+const TeleportImpl = {
+    name: "Teleport",
+    __isTeleport: true,
+    process(n1, n2, container, anchor, parentComponent, parentSuspense, namespace, slotScopeIds, optimized, internals) {
+        const { mc: mountChildren, pc: patchChildren, pbc: patchBlockChildren, o: { insert, querySelector, createText, createComment, parentNode } } = internals;
+        const disabled = isTeleportDisabled(n2.props);
+        let { dynamicChildren } = n2;
+        const mount = (vnode, container2, anchor2) => {
+            if (vnode.shapeFlag & 16) {
+                mountChildren(vnode.children, container2, anchor2, parentComponent, parentSuspense, namespace, slotScopeIds, optimized);
+            }
+        };
+        const mountToTarget = (vnode = n2) => {
+            const disabled2 = isTeleportDisabled(vnode.props);
+            const target = vnode.target = resolveTarget(vnode.props, querySelector);
+            const targetAnchor = prepareAnchor(target, vnode, createText, insert);
+            if (target) {
+                if (namespace !== "svg" && isTargetSVG(target)) {
+                    namespace = "svg";
+                }
+                else if (namespace !== "mathml" && isTargetMathML(target)) {
+                    namespace = "mathml";
+                }
+                if (parentComponent && parentComponent.isCE) {
+                    (parentComponent.ce._teleportTargets || (parentComponent.ce._teleportTargets = /* @__PURE__ */ new Set())).add(target);
+                }
+                if (!disabled2) {
+                    mount(vnode, target, targetAnchor);
+                    updateCssVars(vnode, false);
+                }
+            }
+        };
+        const queuePendingMount = (vnode) => {
+            const mountJob = () => {
+                if (pendingMounts.get(vnode) !== mountJob)
+                    return;
+                pendingMounts.delete(vnode);
+                if (isTeleportDisabled(vnode.props)) {
+                    const mountContainer = parentNode(vnode.el) || container;
+                    mount(vnode, mountContainer, vnode.anchor);
+                    updateCssVars(vnode, true);
+                }
+                mountToTarget(vnode);
+            };
+            pendingMounts.set(vnode, mountJob);
+            queuePostRenderEffect(mountJob, parentSuspense);
+        };
+        if (n1 == null) {
+            const placeholder = n2.el = createText("");
+            const mainAnchor = n2.anchor = createText("");
+            insert(placeholder, container, anchor);
+            insert(mainAnchor, container, anchor);
+            if (isTeleportDeferred(n2.props) || parentSuspense && parentSuspense.pendingBranch) {
+                queuePendingMount(n2);
+                return;
+            }
+            if (disabled) {
+                mount(n2, container, mainAnchor);
+                updateCssVars(n2, true);
+            }
+            mountToTarget();
+        }
+        else {
+            n2.el = n1.el;
+            const mainAnchor = n2.anchor = n1.anchor;
+            const pendingMount = pendingMounts.get(n1);
+            if (pendingMount) {
+                pendingMount.flags |= 8;
+                pendingMounts.delete(n1);
+                queuePendingMount(n2);
+                return;
+            }
+            n2.targetStart = n1.targetStart;
+            const target = n2.target = n1.target;
+            const targetAnchor = n2.targetAnchor = n1.targetAnchor;
+            const wasDisabled = isTeleportDisabled(n1.props);
+            const currentContainer = wasDisabled ? container : target;
+            const currentAnchor = wasDisabled ? mainAnchor : targetAnchor;
+            if (namespace === "svg" || isTargetSVG(target)) {
+                namespace = "svg";
+            }
+            else if (namespace === "mathml" || isTargetMathML(target)) {
+                namespace = "mathml";
+            }
+            if (dynamicChildren) {
+                patchBlockChildren(n1.dynamicChildren, dynamicChildren, currentContainer, parentComponent, parentSuspense, namespace, slotScopeIds);
+                traverseStaticChildren(n1, n2, true);
+            }
+            else if (!optimized) {
+                patchChildren(n1, n2, currentContainer, currentAnchor, parentComponent, parentSuspense, namespace, slotScopeIds, false);
+            }
+            if (disabled) {
+                if (!wasDisabled) {
+                    moveTeleport(n2, container, mainAnchor, internals, 1);
+                }
+                else {
+                    if (n2.props && n1.props && n2.props.to !== n1.props.to) {
+                        n2.props.to = n1.props.to;
+                    }
+                }
+            }
+            else {
+                if ((n2.props && n2.props.to) !== (n1.props && n1.props.to)) {
+                    const nextTarget = n2.target = resolveTarget(n2.props, querySelector);
+                    if (nextTarget) {
+                        moveTeleport(n2, nextTarget, null, internals, 0);
+                    }
+                }
+                else if (wasDisabled) {
+                    moveTeleport(n2, target, targetAnchor, internals, 1);
+                }
+            }
+            updateCssVars(n2, disabled);
+        }
+    },
+    remove(vnode, parentComponent, parentSuspense, { um: unmount, o: { remove: hostRemove } }, doRemove) {
+        const { shapeFlag, children, anchor, targetStart, targetAnchor, target, props } = vnode;
+        let shouldRemove = doRemove || !isTeleportDisabled(props);
+        const pendingMount = pendingMounts.get(vnode);
+        if (pendingMount) {
+            pendingMount.flags |= 8;
+            pendingMounts.delete(vnode);
+            shouldRemove = false;
+        }
+        if (target) {
+            hostRemove(targetStart);
+            hostRemove(targetAnchor);
+        }
+        doRemove && hostRemove(anchor);
+        if (shapeFlag & 16) {
+            for (let i = 0; i < children.length; i++) {
+                const child = children[i];
+                unmount(child, parentComponent, parentSuspense, shouldRemove, !!child.dynamicChildren);
+            }
+        }
+    },
+    move: moveTeleport,
+    hydrate: hydrateTeleport
+};
+function moveTeleport(vnode, container, parentAnchor, { o: { insert }, m: move }, moveType = 2) {
+    if (moveType === 0) {
+        insert(vnode.targetAnchor, container, parentAnchor);
+    }
+    const { el, anchor, shapeFlag, children, props } = vnode;
+    const isReorder = moveType === 2;
+    if (isReorder) {
+        insert(el, container, parentAnchor);
+    }
+    if (!pendingMounts.has(vnode) && (!isReorder || isTeleportDisabled(props))) {
+        if (shapeFlag & 16) {
+            for (let i = 0; i < children.length; i++) {
+                move(children[i], container, parentAnchor, 2);
+            }
+        }
+    }
+    if (isReorder) {
+        insert(anchor, container, parentAnchor);
+    }
+}
+function hydrateTeleport(node, vnode, parentComponent, parentSuspense, slotScopeIds, optimized, { o: { nextSibling, parentNode, querySelector, insert, createText } }, hydrateChildren) {
+    function hydrateAnchor(target2, targetNode) {
+        let targetAnchor = targetNode;
+        while (targetAnchor) {
+            if (targetAnchor && targetAnchor.nodeType === 8) {
+                if (targetAnchor.data === "teleport start anchor") {
+                    vnode.targetStart = targetAnchor;
+                }
+                else if (targetAnchor.data === "teleport anchor") {
+                    vnode.targetAnchor = targetAnchor;
+                    target2._lpa = vnode.targetAnchor && nextSibling(vnode.targetAnchor);
+                    break;
+                }
+            }
+            targetAnchor = nextSibling(targetAnchor);
+        }
+    }
+    function hydrateDisabledTeleport(node2, vnode2) {
+        vnode2.anchor = hydrateChildren(nextSibling(node2), vnode2, parentNode(node2), parentComponent, parentSuspense, slotScopeIds, optimized);
+    }
+    const target = vnode.target = resolveTarget(vnode.props, querySelector);
+    const disabled = isTeleportDisabled(vnode.props);
+    if (target) {
+        const targetNode = target._lpa || target.firstChild;
+        if (vnode.shapeFlag & 16) {
+            if (disabled) {
+                hydrateDisabledTeleport(node, vnode);
+                hydrateAnchor(target, targetNode);
+                if (!vnode.targetAnchor) {
+                    prepareAnchor(target, vnode, createText, insert, 
+                    // if target is the same as the main view, insert anchors before current node
+                    // to avoid hydrating mismatch
+                    parentNode(node) === target ? node : null);
+                }
+            }
+            else {
+                vnode.anchor = nextSibling(node);
+                hydrateAnchor(target, targetNode);
+                if (!vnode.targetAnchor) {
+                    prepareAnchor(target, vnode, createText, insert);
+                }
+                hydrateChildren(targetNode && nextSibling(targetNode), vnode, target, parentComponent, parentSuspense, slotScopeIds, optimized);
+            }
+        }
+        updateCssVars(vnode, disabled);
+    }
+    else if (disabled) {
+        if (vnode.shapeFlag & 16) {
+            hydrateDisabledTeleport(node, vnode);
+            vnode.targetStart = node;
+            vnode.targetAnchor = nextSibling(node);
+        }
+    }
+    return vnode.anchor && nextSibling(vnode.anchor);
+}
+const Teleport = TeleportImpl;
+function updateCssVars(vnode, isDisabled) {
+    const ctx = vnode.ctx;
+    if (ctx && ctx.ut) {
+        let node, anchor;
+        if (isDisabled) {
+            node = vnode.el;
+            anchor = vnode.anchor;
+        }
+        else {
+            node = vnode.targetStart;
+            anchor = vnode.targetAnchor;
+        }
+        while (node && node !== anchor) {
+            if (node.nodeType === 1)
+                node.setAttribute("data-v-owner", ctx.uid);
+            node = node.nextSibling;
+        }
+        ctx.ut();
+    }
+}
+function prepareAnchor(target, vnode, createText, insert, anchor = null) {
+    const targetStart = vnode.targetStart = createText("");
+    const targetAnchor = vnode.targetAnchor = createText("");
+    targetStart[TeleportEndKey] = targetAnchor;
+    if (target) {
+        insert(targetStart, target, anchor);
+        insert(targetAnchor, target, anchor);
+    }
+    return targetAnchor;
+}
 const leaveCbKey = /* @__PURE__ */ Symbol("_leaveCb");
-const enterCbKey = /* @__PURE__ */ Symbol("_enterCb");
+const enterCbKey$1 = /* @__PURE__ */ Symbol("_enterCb");
 function useTransitionState() {
     const state = {
         isMounted: false,
@@ -2560,7 +2825,7 @@ function resolveTransitionHooks(vnode, props, state, instance, postClone) {
                 }
             }
             let called = false;
-            el[enterCbKey] = (cancelled) => {
+            el[enterCbKey$1] = (cancelled) => {
                 if (called)
                     return;
                 called = true;
@@ -2573,9 +2838,9 @@ function resolveTransitionHooks(vnode, props, state, instance, postClone) {
                 if (hooks.delayedLeave) {
                     hooks.delayedLeave();
                 }
-                el[enterCbKey] = void 0;
+                el[enterCbKey$1] = void 0;
             };
-            const done = el[enterCbKey].bind(null, false);
+            const done = el[enterCbKey$1].bind(null, false);
             if (hook) {
                 callAsyncHook(hook, [el, done]);
             }
@@ -2585,8 +2850,8 @@ function resolveTransitionHooks(vnode, props, state, instance, postClone) {
         },
         leave(el, remove) {
             const key2 = String(vnode.key);
-            if (el[enterCbKey]) {
-                el[enterCbKey](true
+            if (el[enterCbKey$1]) {
+                el[enterCbKey$1](true
                 /* cancelled */
                 );
             }
@@ -6573,6 +6838,147 @@ function shouldSetAsPropForVueCE(el, key) {
     const camelKey = camelize(key);
     return Array.isArray(props) ? props.some((prop) => camelize(prop) === camelKey) : Object.keys(props).some((prop) => camelize(prop) === camelKey);
 }
+const positionMap = /* @__PURE__ */ new WeakMap();
+const newPositionMap = /* @__PURE__ */ new WeakMap();
+const moveCbKey = /* @__PURE__ */ Symbol("_moveCb");
+const enterCbKey = /* @__PURE__ */ Symbol("_enterCb");
+const decorate = (t) => {
+    delete t.props.mode;
+    return t;
+};
+const TransitionGroupImpl = /* @__PURE__ */ decorate({
+    name: "TransitionGroup",
+    props: /* @__PURE__ */ extend({}, TransitionPropsValidators, {
+        tag: String,
+        moveClass: String
+    }),
+    setup(props, { slots }) {
+        const instance = getCurrentInstance();
+        const state = useTransitionState();
+        let prevChildren;
+        let children;
+        onUpdated(() => {
+            if (!prevChildren.length) {
+                return;
+            }
+            const moveClass = props.moveClass || `${props.name || "v"}-move`;
+            if (!hasCSSTransform(prevChildren[0].el, instance.vnode.el, moveClass)) {
+                prevChildren = [];
+                return;
+            }
+            prevChildren.forEach(callPendingCbs);
+            prevChildren.forEach(recordPosition);
+            const movedChildren = prevChildren.filter(applyTranslation);
+            forceReflow(instance.vnode.el);
+            movedChildren.forEach((c) => {
+                const el = c.el;
+                const style = el.style;
+                addTransitionClass(el, moveClass);
+                style.transform = style.webkitTransform = style.transitionDuration = "";
+                const cb = el[moveCbKey] = (e) => {
+                    if (e && e.target !== el) {
+                        return;
+                    }
+                    if (!e || e.propertyName.endsWith("transform")) {
+                        el.removeEventListener("transitionend", cb);
+                        el[moveCbKey] = null;
+                        removeTransitionClass(el, moveClass);
+                    }
+                };
+                el.addEventListener("transitionend", cb);
+            });
+            prevChildren = [];
+        });
+        return () => {
+            const rawProps = toRaw(props);
+            const cssTransitionProps = resolveTransitionProps(rawProps);
+            let tag = rawProps.tag || Fragment;
+            prevChildren = [];
+            if (children) {
+                for (let i = 0; i < children.length; i++) {
+                    const child = children[i];
+                    if (child.el && child.el instanceof Element) {
+                        prevChildren.push(child);
+                        setTransitionHooks(child, resolveTransitionHooks(child, cssTransitionProps, state, instance));
+                        positionMap.set(child, getPosition(child.el));
+                    }
+                }
+            }
+            children = slots.default ? getTransitionRawChildren(slots.default()) : [];
+            for (let i = 0; i < children.length; i++) {
+                const child = children[i];
+                if (child.key != null) {
+                    setTransitionHooks(child, resolveTransitionHooks(child, cssTransitionProps, state, instance));
+                }
+            }
+            return createVNode(tag, null, children);
+        };
+    }
+});
+const TransitionGroup = TransitionGroupImpl;
+function callPendingCbs(c) {
+    const el = c.el;
+    if (el[moveCbKey]) {
+        el[moveCbKey]();
+    }
+    if (el[enterCbKey]) {
+        el[enterCbKey]();
+    }
+}
+function recordPosition(c) {
+    newPositionMap.set(c, getPosition(c.el));
+}
+function applyTranslation(c) {
+    const oldPos = positionMap.get(c);
+    const newPos = newPositionMap.get(c);
+    const dx = oldPos.left - newPos.left;
+    const dy = oldPos.top - newPos.top;
+    if (dx || dy) {
+        const el = c.el;
+        const s = el.style;
+        const rect = el.getBoundingClientRect();
+        let scaleX = 1;
+        let scaleY = 1;
+        if (el.offsetWidth)
+            scaleX = rect.width / el.offsetWidth;
+        if (el.offsetHeight)
+            scaleY = rect.height / el.offsetHeight;
+        if (!Number.isFinite(scaleX) || scaleX === 0)
+            scaleX = 1;
+        if (!Number.isFinite(scaleY) || scaleY === 0)
+            scaleY = 1;
+        if (Math.abs(scaleX - 1) < 0.01)
+            scaleX = 1;
+        if (Math.abs(scaleY - 1) < 0.01)
+            scaleY = 1;
+        s.transform = s.webkitTransform = `translate(${dx / scaleX}px,${dy / scaleY}px)`;
+        s.transitionDuration = "0s";
+        return c;
+    }
+}
+function getPosition(el) {
+    const rect = el.getBoundingClientRect();
+    return {
+        left: rect.left,
+        top: rect.top
+    };
+}
+function hasCSSTransform(el, root, moveClass) {
+    const clone = el.cloneNode();
+    const _vtc = el[vtcKey];
+    if (_vtc) {
+        _vtc.forEach((cls) => {
+            cls.split(/\s+/).forEach((c) => c && clone.classList.remove(c));
+        });
+    }
+    moveClass.split(/\s+/).forEach((c) => c && clone.classList.add(c));
+    clone.style.display = "none";
+    const container = root.nodeType === 1 ? root : root.parentNode;
+    container.appendChild(clone);
+    const { hasTransform } = getTransitionInfo(clone);
+    container.removeChild(clone);
+    return hasTransform;
+}
 const getModelAssigner = (vnode) => {
     const fn = vnode.props["onUpdate:modelValue"] || false;
     return isArray$1(fn) ? (value) => invokeArrayFns(fn, value) : fn;
@@ -8947,5 +9353,5 @@ function useRouter() {
 function useRoute(_name) {
     return inject(routeLocationKey);
 }
-export { computed as A, nextTick as B, useRouter as C, provide as D, createRouter as E, Fragment as F, createWebHistory as G, createApp as H, withKeys as I, normalizeStyle as J, isRef as K, vModelSelect as L, Transition as T, createBaseVNode as a, renderList as b, createElementBlock as c, defineComponent as d, createBlock as e, resolveDynamicComponent as f, createVNode as g, h, unref as i, onMounted as j, onBeforeUnmount as k, createCommentVNode as l, ref as m, normalizeClass as n, openBlock as o, renderSlot as p, inject as q, resolveComponent as r, watch as s, toDisplayString as t, useRoute as u, createTextVNode as v, withCtx as w, withModifiers as x, withDirectives as y, vModelText as z };
+export { vModelText as A, computed as B, nextTick as C, useRouter as D, provide as E, Fragment as F, normalizeStyle as G, TransitionGroup as H, Teleport as I, createRouter as J, createWebHistory as K, createApp as L, withKeys as M, isRef as N, vModelSelect as O, Transition as T, createBaseVNode as a, renderList as b, createElementBlock as c, defineComponent as d, createBlock as e, resolveDynamicComponent as f, createVNode as g, h, unref as i, onMounted as j, onBeforeUnmount as k, createCommentVNode as l, ref as m, normalizeClass as n, openBlock as o, renderSlot as p, inject as q, resolveComponent as r, readonly as s, toDisplayString as t, useRoute as u, watch as v, withCtx as w, createTextVNode as x, withModifiers as y, withDirectives as z };
 //# sourceMappingURL=vendor-vue.js.map

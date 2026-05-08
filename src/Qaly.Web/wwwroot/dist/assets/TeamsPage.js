@@ -1,6 +1,6 @@
-import { m as Plus, v as Pin, w as FileUp, x as SmilePlus, V as Vote, b as Send } from './vendor-icons.js';
-import { d as defineComponent, c as createElementBlock, a as createBaseVNode, g as createVNode, i as unref, F as Fragment, b as renderList, o as openBlock, n as normalizeClass, t as toDisplayString, l as createCommentVNode, s as watch, y as withDirectives, z as vModelText, x as withModifiers, m as ref, A as computed, e as createBlock, B as nextTick } from './vendor-vue.js';
-import { u as useDashboardContext } from './main.js';
+import { o as Plus, x as Pin, y as FileUp, z as SmilePlus, V as Vote, b as Send } from './vendor-icons.js';
+import { d as defineComponent, c as createElementBlock, a as createBaseVNode, g as createVNode, i as unref, F as Fragment, b as renderList, o as openBlock, n as normalizeClass, t as toDisplayString, l as createCommentVNode, v as watch, z as withDirectives, A as vModelText, y as withModifiers, m as ref, B as computed, e as createBlock, C as nextTick } from './vendor-vue.js';
+import { u as useDashboardContext, s as showSuccess } from './main.js';
 import './vendor-markdown.js';
 import './vendor-realtime.js';
 const _hoisted_1$3 = { class: "team-chat-sidebar glass-card" };
@@ -398,6 +398,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             };
             groups.value = [group, ...groups.value];
             activeGroupId.value = group.id;
+            showSuccess(`Tạo nhóm "${group.name}" thành công`);
         }
         function sendMessage(payload) {
             if (!activeGroupId.value)
@@ -421,7 +422,10 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             });
         }
         function togglePin(messageId) {
+            const target = messages.value.find((message) => message.id === messageId);
             messages.value = messages.value.map((message) => message.id === messageId ? { ...message, pinned: !message.pinned } : message);
+            if (target)
+                showSuccess(target.pinned ? 'Đã bỏ ghim tin nhắn' : 'Đã ghim tin nhắn');
         }
         return (_ctx, _cache) => {
             return (openBlock(), createElementBlock("div", _hoisted_1, [

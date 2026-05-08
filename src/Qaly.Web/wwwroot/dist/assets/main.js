@@ -1,16 +1,16 @@
 const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/ArchivedProjectsPage.js","assets/ProjectList.vue_vue_type_script_setup_true_lang.js","assets/vendor-icons.js","assets/vendor-vue.js","assets/vendor-markdown.js","assets/vendor-realtime.js","assets/DashboardPage.js","assets/ProjectToolbar.vue_vue_type_script_setup_true_lang.js","assets/ProfilePage.js","assets/ProjectDetailPage.js","assets/ProjectDetailPage.css","assets/ProjectsPage.js","assets/TasksPage.js","assets/TeamsPage.js"])))=>i.map(i=>d[i]);
-import { d as defineComponent, u as useRoute, r as resolveComponent, o as openBlock, c as createElementBlock, a as createBaseVNode, F as Fragment, b as renderList, e as createBlock, w as withCtx, n as normalizeClass, f as resolveDynamicComponent, t as toDisplayString, g as createVNode, i as unref, j as onMounted, k as onBeforeUnmount, l as createCommentVNode, m as ref, p as renderSlot, q as inject, s as watch, v as createTextVNode, x as withModifiers, y as withDirectives, z as vModelText, T as Transition, A as computed, B as nextTick, C as useRouter, D as provide, E as createRouter, G as createWebHistory, H as createApp } from './vendor-vue.js';
-import { B as Box, M as Menu, a as Bell, C as ChevronDown, U as User, L as LogOut, X, S as Sparkles, b as Send, c as LayoutDashboard, F as FolderKanban, d as ClipboardList, e as Users } from './vendor-icons.js';
+import { d as defineComponent, u as useRoute, r as resolveComponent, o as openBlock, c as createElementBlock, a as createBaseVNode, F as Fragment, b as renderList, e as createBlock, w as withCtx, n as normalizeClass, f as resolveDynamicComponent, t as toDisplayString, g as createVNode, i as unref, j as onMounted, k as onBeforeUnmount, l as createCommentVNode, m as ref, p as renderSlot, q as inject, s as readonly, v as watch, x as createTextVNode, y as withModifiers, z as withDirectives, A as vModelText, T as Transition, B as computed, C as nextTick, D as useRouter, E as provide, G as normalizeStyle, H as TransitionGroup, I as Teleport, J as createRouter, K as createWebHistory, L as createApp } from './vendor-vue.js';
+import { B as Box, M as Menu, a as Bell, C as ChevronDown, U as User, L as LogOut, X, S as Sparkles, b as Send, c as LayoutDashboard, F as FolderKanban, d as ClipboardList, e as Users, I as Info, T as TriangleAlert, f as CircleX, g as CircleCheck } from './vendor-icons.js';
 import { M as MarkdownIt, p as purify } from './vendor-markdown.js';
 import { H as HubConnectionBuilder } from './vendor-realtime.js';
-const _hoisted_1$4 = { class: "shell-sidebar no-scrollbar" };
-const _hoisted_2$4 = {
+const _hoisted_1$5 = { class: "shell-sidebar no-scrollbar" };
+const _hoisted_2$5 = {
     class: "shell-nav",
     "aria-label": "Main navigation"
 };
-const _hoisted_3$3 = ["href", "onClick"];
-const _hoisted_4$3 = ["href", "onClick"];
-const _sfc_main$5 = /*@__PURE__*/ defineComponent({
+const _hoisted_3$4 = ["href", "onClick"];
+const _hoisted_4$4 = ["href", "onClick"];
+const _sfc_main$6 = /*@__PURE__*/ defineComponent({
     __name: 'SidebarNav',
     props: {
         items: {}
@@ -32,8 +32,8 @@ const _sfc_main$5 = /*@__PURE__*/ defineComponent({
         }
         return (_ctx, _cache) => {
             const _component_RouterLink = resolveComponent("RouterLink");
-            return (openBlock(), createElementBlock("aside", _hoisted_1$4, [
-                createBaseVNode("nav", _hoisted_2$4, [
+            return (openBlock(), createElementBlock("aside", _hoisted_1$5, [
+                createBaseVNode("nav", _hoisted_2$5, [
                     (openBlock(true), createElementBlock(Fragment, null, renderList(__props.items, (item) => {
                         return (openBlock(), createBlock(_component_RouterLink, {
                             key: item.to,
@@ -48,7 +48,7 @@ const _sfc_main$5 = /*@__PURE__*/ defineComponent({
                                 }, [
                                     (openBlock(), createBlock(resolveDynamicComponent(item.icon), { size: 20 })),
                                     createBaseVNode("span", null, toDisplayString(item.label), 1)
-                                ], 10, _hoisted_3$3)
+                                ], 10, _hoisted_3$4)
                             ]),
                             _: 2
                         }, 1032, ["to"]));
@@ -66,7 +66,7 @@ const _sfc_main$5 = /*@__PURE__*/ defineComponent({
                         }, [
                             createVNode(unref(Box), { size: 19 }),
                             _cache[0] || (_cache[0] = createBaseVNode("span", null, "Dự án đã lưu trữ", -1))
-                        ], 10, _hoisted_4$3)
+                        ], 10, _hoisted_4$4)
                     ]),
                     _: 1
                 })
@@ -75,7 +75,7 @@ const _sfc_main$5 = /*@__PURE__*/ defineComponent({
     }
 });
 const erumiRobotUrl = '/images/erumi-chatbot.png';
-const _sfc_main$4 = /*@__PURE__*/ defineComponent({
+const _sfc_main$5 = /*@__PURE__*/ defineComponent({
     __name: 'ChatbotAvatar',
     props: {
         size: { default: 'small' }
@@ -93,20 +93,20 @@ const _sfc_main$4 = /*@__PURE__*/ defineComponent({
         };
     }
 });
-const _hoisted_1$3 = { class: "shell-header" };
-const _hoisted_2$3 = { class: "shell-brand" };
-const _hoisted_3$2 = { class: "shell-header-actions" };
-const _hoisted_4$2 = {
+const _hoisted_1$4 = { class: "shell-header" };
+const _hoisted_2$4 = { class: "shell-brand" };
+const _hoisted_3$3 = { class: "shell-header-actions" };
+const _hoisted_4$3 = {
     key: 0,
     class: "shell-action-badge"
 };
 const _hoisted_5$2 = ["aria-expanded"];
-const _hoisted_6$2 = {
+const _hoisted_6$1 = {
     key: 0,
     class: "shell-user-dropdown-menu",
     role: "menu"
 };
-const _sfc_main$3 = /*@__PURE__*/ defineComponent({
+const _sfc_main$4 = /*@__PURE__*/ defineComponent({
     __name: 'TopHeader',
     props: {
         brandName: {},
@@ -150,8 +150,8 @@ const _sfc_main$3 = /*@__PURE__*/ defineComponent({
         });
         return (_ctx, _cache) => {
             const _component_RouterLink = resolveComponent("RouterLink");
-            return (openBlock(), createElementBlock("header", _hoisted_1$3, [
-                createBaseVNode("div", _hoisted_2$3, [
+            return (openBlock(), createElementBlock("header", _hoisted_1$4, [
+                createBaseVNode("div", _hoisted_2$4, [
                     createBaseVNode("button", {
                         class: "shell-menu-button",
                         type: "button",
@@ -175,7 +175,7 @@ const _sfc_main$3 = /*@__PURE__*/ defineComponent({
                         _: 1
                     })
                 ]),
-                createBaseVNode("div", _hoisted_3$2, [
+                createBaseVNode("div", _hoisted_3$3, [
                     createBaseVNode("button", {
                         class: "shell-icon-button",
                         type: "button",
@@ -184,7 +184,7 @@ const _sfc_main$3 = /*@__PURE__*/ defineComponent({
                     }, [
                         createVNode(unref(Bell), { size: 18 }),
                         (__props.notificationCount > 0)
-                            ? (openBlock(), createElementBlock("span", _hoisted_4$2, toDisplayString(__props.notificationCount), 1))
+                            ? (openBlock(), createElementBlock("span", _hoisted_4$3, toDisplayString(__props.notificationCount), 1))
                             : createCommentVNode("", true)
                     ]),
                     createBaseVNode("button", {
@@ -193,7 +193,7 @@ const _sfc_main$3 = /*@__PURE__*/ defineComponent({
                         "aria-label": "Tro ly Qaly",
                         onClick: _cache[2] || (_cache[2] = ($event) => (_ctx.$emit('assistant')))
                     }, [
-                        createVNode(_sfc_main$4, { size: "launcher" })
+                        createVNode(_sfc_main$5, { size: "launcher" })
                     ]),
                     createBaseVNode("div", {
                         ref_key: "userMenuRef",
@@ -212,7 +212,7 @@ const _sfc_main$3 = /*@__PURE__*/ defineComponent({
                             createVNode(unref(ChevronDown), { size: 16 })
                         ], 10, _hoisted_5$2),
                         (userMenuOpen.value)
-                            ? (openBlock(), createElementBlock("div", _hoisted_6$2, [
+                            ? (openBlock(), createElementBlock("div", _hoisted_6$1, [
                                 createVNode(_component_RouterLink, {
                                     class: "shell-user-dropdown-item",
                                     to: "/profile",
@@ -242,9 +242,9 @@ const _sfc_main$3 = /*@__PURE__*/ defineComponent({
         };
     }
 });
-const _hoisted_1$2 = { class: "app-shell" };
-const _hoisted_2$2 = { class: "shell-main no-scrollbar" };
-const _sfc_main$2 = /*@__PURE__*/ defineComponent({
+const _hoisted_1$3 = { class: "app-shell" };
+const _hoisted_2$3 = { class: "shell-main no-scrollbar" };
+const _sfc_main$3 = /*@__PURE__*/ defineComponent({
     __name: 'AppShell',
     props: {
         navItems: {},
@@ -261,8 +261,8 @@ const _sfc_main$2 = /*@__PURE__*/ defineComponent({
             emit('navigate');
         }
         return (_ctx, _cache) => {
-            return (openBlock(), createElementBlock("div", _hoisted_1$2, [
-                createVNode(_sfc_main$3, {
+            return (openBlock(), createElementBlock("div", _hoisted_1$3, [
+                createVNode(_sfc_main$4, {
                     "brand-name": "QALY",
                     "notification-count": __props.notificationCount,
                     "user-name": __props.userName,
@@ -272,7 +272,7 @@ const _sfc_main$2 = /*@__PURE__*/ defineComponent({
                     onAssistant: _cache[2] || (_cache[2] = ($event) => (_ctx.$emit('assistant'))),
                     onLogout: _cache[3] || (_cache[3] = ($event) => (_ctx.$emit('logout')))
                 }, null, 8, ["notification-count", "user-name", "user-initials"]),
-                createVNode(_sfc_main$5, {
+                createVNode(_sfc_main$6, {
                     class: normalizeClass({ 'is-open': sidebarOpen.value }),
                     items: __props.navItems,
                     onNavigate: handleNavigate
@@ -284,7 +284,7 @@ const _sfc_main$2 = /*@__PURE__*/ defineComponent({
                         onClick: _cache[4] || (_cache[4] = ($event) => (sidebarOpen.value = false))
                     }))
                     : createCommentVNode("", true),
-                createBaseVNode("main", _hoisted_2$2, [
+                createBaseVNode("main", _hoisted_2$3, [
                     renderSlot(_ctx.$slots, "default")
                 ]),
                 renderSlot(_ctx.$slots, "overlays")
@@ -300,18 +300,81 @@ function useDashboardContext() {
     }
     return context;
 }
-const _hoisted_1$1 = { class: "floating-erumi" };
-const _hoisted_2$1 = {
+const DEFAULT_DURATION = 4600;
+const MAX_TOASTS = 5;
+const toasts = ref([]);
+const timers = new Map();
+let toastSequence = 0;
+function clearToastTimer(id) {
+    const timer = timers.get(id);
+    if (timer !== undefined) {
+        if (typeof window !== 'undefined')
+            window.clearTimeout(timer);
+        timers.delete(id);
+    }
+}
+function dismissToast(id) {
+    clearToastTimer(id);
+    toasts.value = toasts.value.filter((toast) => toast.id !== id);
+}
+function showToast(input) {
+    const message = input.message.trim();
+    if (!message)
+        return '';
+    const id = `toast-${Date.now()}-${toastSequence++}`;
+    const toast = {
+        id,
+        type: input.type ?? 'info',
+        message,
+        title: input.title,
+        duration: input.duration ?? DEFAULT_DURATION,
+    };
+    toasts.value = [toast, ...toasts.value];
+    if (toasts.value.length > MAX_TOASTS) {
+        const overflow = toasts.value.slice(MAX_TOASTS);
+        overflow.forEach((item) => clearToastTimer(item.id));
+        toasts.value = toasts.value.slice(0, MAX_TOASTS);
+    }
+    if (typeof window !== 'undefined') {
+        timers.set(id, window.setTimeout(() => dismissToast(id), toast.duration));
+    }
+    return id;
+}
+function showSuccess(message, options = {}) {
+    return showToast({ ...options, type: 'success', message });
+}
+function showError(message, options = {}) {
+    return showToast({ ...options, type: 'error', message });
+}
+function showWarning(message, options = {}) {
+    return showToast({ ...options, type: 'warning', message });
+}
+function showInfo(message, options = {}) {
+    return showToast({ ...options, type: 'info', message });
+}
+function useToast() {
+    return {
+        toasts: readonly(toasts),
+        showToast,
+        showSuccess,
+        showError,
+        showWarning,
+        showInfo,
+        dismissToast,
+    };
+}
+const _hoisted_1$2 = { class: "floating-erumi" };
+const _hoisted_2$2 = {
     key: 2,
     class: "launcher-badge"
 };
-const _hoisted_3$1 = {
+const _hoisted_3$2 = {
     key: 0,
     class: "erumi-window glass-card shadow-2xl"
 };
-const _hoisted_4$1 = { class: "erumi-header" };
+const _hoisted_4$2 = { class: "erumi-header" };
 const _hoisted_5$1 = { class: "erumi-identity" };
-const _hoisted_6$1 = { class: "header-actions" };
+const _hoisted_6 = { class: "header-actions" };
 const _hoisted_7 = {
     key: 0,
     class: "msg-avatar"
@@ -336,7 +399,7 @@ const _hoisted_15 = {
 const _hoisted_16 = ["onClick"];
 const _hoisted_17 = ["disabled"];
 const _hoisted_18 = ["disabled"];
-const _sfc_main$1 = /*@__PURE__*/ defineComponent({
+const _sfc_main$2 = /*@__PURE__*/ defineComponent({
     __name: 'FloatingChatbot',
     setup(__props) {
         const { projects, selectedProject, currentUser } = useDashboardContext();
@@ -428,6 +491,7 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
             }
             catch (e) {
                 messages.value.push({ id: `err-${Date.now()}`, role: 'assistant', text: 'Xin lỗi, Erumi đang gặp chút trục trặc. Thử lại sau nhé!' });
+                showError('Không thể gửi yêu cầu tới trợ lý AI');
             }
             finally {
                 isThinking.value = false;
@@ -453,14 +517,14 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
             'Ai đang rảnh để nhận việc?'
         ];
         return (_ctx, _cache) => {
-            return (openBlock(), createElementBlock("div", _hoisted_1$1, [
+            return (openBlock(), createElementBlock("div", _hoisted_1$2, [
                 createBaseVNode("button", {
                     class: normalizeClass(["erumi-launcher shadow-lg", { 'is-active': isOpen.value }]),
                     onClick: toggle,
                     "aria-label": "Toggle AI Assistant"
                 }, [
                     (!isOpen.value)
-                        ? (openBlock(), createBlock(_sfc_main$4, {
+                        ? (openBlock(), createBlock(_sfc_main$5, {
                             key: 0,
                             size: "medium"
                         }))
@@ -469,16 +533,16 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
                             size: 24
                         })),
                     (!isOpen.value)
-                        ? (openBlock(), createElementBlock("span", _hoisted_2$1))
+                        ? (openBlock(), createElementBlock("span", _hoisted_2$2))
                         : createCommentVNode("", true)
                 ], 2),
                 createVNode(Transition, { name: "fade-up" }, {
                     default: withCtx(() => [
                         (isOpen.value)
-                            ? (openBlock(), createElementBlock("div", _hoisted_3$1, [
-                                createBaseVNode("header", _hoisted_4$1, [
+                            ? (openBlock(), createElementBlock("div", _hoisted_3$2, [
+                                createBaseVNode("header", _hoisted_4$2, [
                                     createBaseVNode("div", _hoisted_5$1, [
-                                        createVNode(_sfc_main$4, { size: "small" }),
+                                        createVNode(_sfc_main$5, { size: "small" }),
                                         _cache[2] || (_cache[2] = createBaseVNode("div", null, [
                                             createBaseVNode("h3", null, "Erumi Agent"),
                                             createBaseVNode("div", { class: "status-indicator" }, [
@@ -487,7 +551,7 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
                                             ])
                                         ], -1))
                                     ]),
-                                    createBaseVNode("div", _hoisted_6$1, [
+                                    createBaseVNode("div", _hoisted_6, [
                                         createBaseVNode("button", {
                                             class: "icon-btn",
                                             onClick: toggle
@@ -508,7 +572,7 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
                                         }, [
                                             (m.role === 'assistant')
                                                 ? (openBlock(), createElementBlock("div", _hoisted_7, [
-                                                    createVNode(_sfc_main$4, { size: "small" })
+                                                    createVNode(_sfc_main$5, { size: "small" })
                                                 ]))
                                                 : createCommentVNode("", true),
                                             createBaseVNode("div", {
@@ -523,7 +587,7 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
                                     (isThinking.value)
                                         ? (openBlock(), createElementBlock("div", _hoisted_10, [
                                             createBaseVNode("div", _hoisted_11, [
-                                                createVNode(_sfc_main$4, { size: "small" })
+                                                createVNode(_sfc_main$5, { size: "small" })
                                             ]),
                                             _cache[3] || (_cache[3] = createBaseVNode("div", { class: "msg-bubble thinking-dots" }, [
                                                 createBaseVNode("span"),
@@ -593,7 +657,7 @@ const _export_sfc = (sfc, props) => {
     }
     return target;
 };
-const FloatingChatbot = /*#__PURE__*/ _export_sfc(_sfc_main$1, [['__scopeId', "data-v-97b09120"]]);
+const FloatingChatbot = /*#__PURE__*/ _export_sfc(_sfc_main$2, [['__scopeId', "data-v-1b8183d1"]]);
 const fallbackDashboard = {
     generatedAt: '2026-05-01T16:20:00Z',
     stats: {
@@ -877,19 +941,15 @@ const fallbackDashboard = {
         },
     ],
 };
-const _hoisted_1 = {
+const _hoisted_1$1 = {
     key: 0,
     class: "notification-popover glass-card home-notification-popover"
 };
-const _hoisted_2 = { class: "panel-heading" };
-const _hoisted_3 = { class: "popover-actions" };
-const _hoisted_4 = { class: "notice__top" };
+const _hoisted_2$1 = { class: "panel-heading" };
+const _hoisted_3$1 = { class: "popover-actions" };
+const _hoisted_4$1 = { class: "notice__top" };
 const _hoisted_5 = ["onClick"];
-const _hoisted_6 = {
-    key: 1,
-    class: "action-toast"
-};
-const _sfc_main = /*@__PURE__*/ defineComponent({
+const _sfc_main$1 = /*@__PURE__*/ defineComponent({
     __name: 'App',
     setup(__props) {
         const navigation = [
@@ -944,8 +1004,6 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
         const newTaskAssigneeId = ref('');
         const newTaskDueDate = ref('');
         const newComment = ref('');
-        const actionNotice = ref('');
-        let actionNoticeTimer;
         let notificationConnectionStarted = false;
         const router = useRouter();
         const route = useRoute();
@@ -1246,10 +1304,10 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                 const entry = await apiJson(`/api/tasks/${taskId}/time-entries`, { method: 'POST' });
                 activeTimer.value = entry;
                 await loadTimeEntries(taskId);
-                showActionNotice('Timer started.');
+                showSuccess('Đã bắt đầu ghi thời gian');
             }
             catch (error) {
-                showActionNotice(errorMessage(error));
+                showError(errorMessage(error, 'Không thể bắt đầu ghi thời gian'));
             }
         }
         async function stopTimer(entryId) {
@@ -1258,10 +1316,33 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                 activeTimer.value = null;
                 if (selectedTaskId.value)
                     await loadTimeEntries(selectedTaskId.value);
-                showActionNotice('Timer stopped.');
+                showSuccess('Đã dừng ghi thời gian');
             }
             catch (error) {
-                showActionNotice(errorMessage(error));
+                showError(errorMessage(error, 'Không thể dừng ghi thời gian'));
+            }
+        }
+        async function addManualTimeEntry(taskId, manualMinutes, note) {
+            if (!taskId || manualMinutes <= 0)
+                return false;
+            try {
+                await apiJson(`/api/tasks/${taskId}/time-entries/manual`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        taskId,
+                        startedAt: new Date().toISOString(),
+                        manualMinutes,
+                        note: note.trim() || null,
+                    }),
+                });
+                await loadTimeEntries(taskId);
+                await loadDashboard();
+                showSuccess('Ghi thời gian thủ công thành công');
+                return true;
+            }
+            catch (error) {
+                showError(errorMessage(error, 'Không thể ghi thời gian thủ công'));
+                return false;
             }
         }
         async function connectNotifications() {
@@ -1274,7 +1355,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                 .build();
             connection.on('notificationReceived', (notification) => {
                 notifications.value = [notification, ...notifications.value.filter((item) => item.id !== notification.id)];
-                showActionNotice(notification.message);
+                showInfo(notification.message);
                 void loadDashboard();
             });
             try {
@@ -1331,10 +1412,10 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                 await loadDashboard();
                 activeProjectId.value = project.id;
                 void router.push(`/projects/${project.id}`);
-                showActionNotice(`Created project "${project.name}".`);
+                showSuccess(`Thêm dự án "${project.name}" thành công`);
             }
             catch (error) {
-                showActionNotice(errorMessage(error));
+                showError(errorMessage(error, 'Không thể thêm dự án'));
             }
         }
         function beginEditProject(projectId) {
@@ -1366,10 +1447,10 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                 projectBeingEditedId.value = null;
                 await loadDashboard();
                 activeProjectId.value = project.id;
-                showActionNotice(`Updated project "${name}".`);
+                showSuccess(`Cập nhật dự án "${name}" thành công`);
             }
             catch (error) {
-                showActionNotice(errorMessage(error));
+                showError(errorMessage(error, 'Không thể cập nhật dự án'));
             }
         }
         async function deleteProject(projectId) {
@@ -1379,10 +1460,10 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             try {
                 await apiCommand(`/api/projects/${projectId}`, { method: 'DELETE' });
                 await loadDashboard();
-                showActionNotice(`Deleted project "${project.name}".`);
+                showSuccess(`Xóa dự án "${project.name}" thành công`);
             }
             catch (error) {
-                showActionNotice(errorMessage(error));
+                showError(errorMessage(error, 'Không thể xóa dự án'));
             }
         }
         async function createTask() {
@@ -1411,10 +1492,10 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                 clearTaskForm();
                 createTaskOpen.value = false;
                 await loadDashboard();
-                showActionNotice(task.aiPrioritySuggestion ?? 'Task created.');
+                showSuccess(task.aiPrioritySuggestion ? `Thêm nhiệm vụ thành công. ${task.aiPrioritySuggestion}` : 'Thêm nhiệm vụ thành công');
             }
             catch (error) {
-                showActionNotice(errorMessage(error));
+                showError(errorMessage(error, 'Không thể thêm nhiệm vụ'));
             }
         }
         async function moveTask(task, status) {
@@ -1425,10 +1506,10 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                 });
                 await loadDashboard();
                 selectedTaskId.value = task.id;
-                showActionNotice(`Moved "${task.title}" to ${displayStatus(status)}.`);
+                showSuccess(`Đã chuyển nhiệm vụ sang ${displayStatus(status)}`);
             }
             catch (error) {
-                showActionNotice(errorMessage(error));
+                showError(errorMessage(error, 'Không thể cập nhật trạng thái nhiệm vụ'));
             }
         }
         const taskBeingEdited = ref(null);
@@ -1460,10 +1541,40 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                 createTaskOpen.value = false;
                 taskBeingEdited.value = null;
                 await loadDashboard();
-                showActionNotice('Task updated.');
+                showSuccess('Cập nhật nhiệm vụ thành công');
             }
             catch (error) {
-                showActionNotice(errorMessage(error));
+                showError(errorMessage(error, 'Không thể cập nhật nhiệm vụ'));
+            }
+        }
+        async function quickEditTaskTitle(taskId, title) {
+            const nextTitle = title.trim();
+            if (!taskId || !nextTitle)
+                return false;
+            try {
+                const currentTask = await apiResult(`/api/tasks/${taskId}`);
+                await apiResult(`/api/tasks/${taskId}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        title: nextTitle,
+                        description: currentTask.description,
+                        status: currentTask.status,
+                        priority: currentTask.priority,
+                        dueDate: currentTask.dueDate,
+                        estimatedHours: currentTask.estimatedHours,
+                        actualHours: currentTask.actualHours,
+                        assigneeId: currentTask.assigneeId,
+                        isPrivate: currentTask.isPrivate,
+                    }),
+                });
+                await loadDashboard();
+                selectedTaskId.value = taskId;
+                showSuccess('Cập nhật nhiệm vụ thành công');
+                return true;
+            }
+            catch (error) {
+                showError(errorMessage(error, 'Không thể cập nhật nhiệm vụ'));
+                return false;
             }
         }
         async function deleteTask(taskId) {
@@ -1472,10 +1583,10 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             try {
                 await apiCommand(`/api/tasks/${taskId}`, { method: 'DELETE' });
                 await loadDashboard();
-                showActionNotice('Task deleted.');
+                showSuccess('Xóa nhiệm vụ thành công');
             }
             catch (error) {
-                showActionNotice(errorMessage(error));
+                showError(errorMessage(error, 'Không thể xóa nhiệm vụ'));
             }
         }
         async function submitComment() {
@@ -1494,9 +1605,10 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                 newComment.value = '';
                 await loadComments(task.id);
                 await loadDashboard();
+                showSuccess('Thêm bình luận thành công');
             }
             catch (error) {
-                showActionNotice(errorMessage(error));
+                showError(errorMessage(error, 'Không thể thêm bình luận'));
             }
         }
         async function deleteComment(commentId) {
@@ -1507,10 +1619,10 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                 if (selectedTask.value)
                     await loadComments(selectedTask.value.id);
                 await loadDashboard();
-                showActionNotice('Comment deleted.');
+                showSuccess('Xóa bình luận thành công');
             }
             catch (error) {
-                showActionNotice(errorMessage(error));
+                showError(errorMessage(error, 'Không thể xóa bình luận'));
             }
         }
         async function addMember(userId) {
@@ -1523,10 +1635,10 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                     body: JSON.stringify({ userId, role: 'Member' }),
                 });
                 await loadDashboard();
-                showActionNotice('Member added.');
+                showSuccess('Thêm thành viên thành công');
             }
             catch (error) {
-                showActionNotice(errorMessage(error));
+                showError(errorMessage(error, 'Không thể thêm thành viên'));
             }
         }
         async function removeMember(userId) {
@@ -1538,10 +1650,10 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             try {
                 await apiCommand(`/api/projects/${project.id}/members/${userId}`, { method: 'DELETE' });
                 await loadDashboard();
-                showActionNotice('Member removed.');
+                showSuccess('Xóa thành viên khỏi dự án thành công');
             }
             catch (error) {
-                showActionNotice(errorMessage(error));
+                showError(errorMessage(error, 'Không thể xóa thành viên khỏi dự án'));
             }
         }
         async function updateMemberRole(userId, role) {
@@ -1554,10 +1666,10 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                     body: JSON.stringify({ userId, role }),
                 });
                 await loadDashboard();
-                showActionNotice(`Updated role to ${role}.`);
+                showSuccess(`Cập nhật vai trò thành ${role} thành công`);
             }
             catch (error) {
-                showActionNotice(errorMessage(error));
+                showError(errorMessage(error, 'Không thể cập nhật vai trò thành viên'));
             }
         }
         async function loadWikiPages(projectId) {
@@ -1579,10 +1691,10 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                     body: JSON.stringify({ title, content }),
                 });
                 await loadWikiPages(project.id);
-                showActionNotice(`Created wiki page "${title}".`);
+                showSuccess(`Tạo trang Wiki "${title}" thành công`);
             }
             catch (error) {
-                showActionNotice(errorMessage(error));
+                showError(errorMessage(error, 'Không thể tạo trang Wiki'));
             }
         }
         async function updateWikiPage(pageId, title, content) {
@@ -1595,10 +1707,10 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                     body: JSON.stringify({ title, content }),
                 });
                 await loadWikiPages(project.id);
-                showActionNotice(`Updated wiki page "${title}".`);
+                showSuccess(`Cập nhật trang Wiki "${title}" thành công`);
             }
             catch (error) {
-                showActionNotice(errorMessage(error));
+                showError(errorMessage(error, 'Không thể cập nhật trang Wiki'));
             }
         }
         async function deleteWikiPage(pageId) {
@@ -1608,10 +1720,10 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             try {
                 await apiCommand(`/api/projects/${project.id}/wiki/${pageId}`, { method: 'DELETE' });
                 await loadWikiPages(project.id);
-                showActionNotice('Wiki page deleted.');
+                showSuccess('Xóa trang Wiki thành công');
             }
             catch (error) {
-                showActionNotice(errorMessage(error));
+                showError(errorMessage(error, 'Không thể xóa trang Wiki'));
             }
         }
         async function uploadAttachment(event) {
@@ -1630,10 +1742,10 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                 input.value = '';
                 await loadAttachments(task.id);
                 await loadDashboard();
-                showActionNotice(`Uploaded "${file.name}".`);
+                showSuccess(`Tải tệp "${file.name}" lên thành công`);
             }
             catch (error) {
-                showActionNotice(errorMessage(error));
+                showError(errorMessage(error, 'Không thể tải tệp lên'));
             }
         }
         async function deleteAttachment(attachment) {
@@ -1643,10 +1755,10 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                 if (taskId)
                     await loadAttachments(taskId);
                 await loadDashboard();
-                showActionNotice(`Deleted "${attachment.fileName}".`);
+                showSuccess(`Xóa tệp "${attachment.fileName}" thành công`);
             }
             catch (error) {
-                showActionNotice(errorMessage(error));
+                showError(errorMessage(error, 'Không thể xóa tệp'));
             }
         }
         async function dismissNotification(notificationId) {
@@ -1658,6 +1770,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                 }
                 catch (error) {
                     console.warn('Could not mark notification as read.', error);
+                    showError(errorMessage(error, 'Không thể đánh dấu thông báo đã đọc'));
                 }
             }
         }
@@ -1667,9 +1780,11 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             notificationsOpen.value = false;
             try {
                 await apiCommand('/api/notifications/read-all', { method: 'PATCH' });
+                showSuccess('Đã đánh dấu tất cả thông báo là đã đọc');
             }
             catch (error) {
                 console.warn('Could not mark notifications as read.', error);
+                showError(errorMessage(error, 'Không thể đánh dấu tất cả thông báo đã đọc'));
             }
         }
         async function logout() {
@@ -1696,24 +1811,69 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                 throw new Error('Authentication required.');
             }
             const text = await response.text();
-            const payload = text ? JSON.parse(text) : null;
+            const payload = parseApiPayload(text);
             if (!response.ok) {
-                throw new Error(payload?.error ?? `Request failed with status ${response.status}`);
+                throw new Error(apiPayloadError(payload, response.status));
             }
             return payload;
         }
         async function apiResult(url, options = {}) {
             const result = await apiJson(url, options);
-            if (!result.isSuccess || result.data == null) {
-                throw new Error(result.error ?? 'Request failed.');
+            if (isApiResult(result)) {
+                if (!result.isSuccess || result.data == null) {
+                    throw new Error(result.error ?? 'Không thể hoàn tất yêu cầu.');
+                }
+                return result.data;
             }
-            return result.data;
+            return result;
         }
         async function apiCommand(url, options = {}) {
             const result = await apiJson(url, options);
-            if ('isSuccess' in result && !result.isSuccess) {
-                throw new Error(result.error ?? 'Request failed.');
+            if (isApiResult(result) && !result.isSuccess) {
+                throw new Error(result.error ?? 'Không thể hoàn tất yêu cầu.');
             }
+            if (result && typeof result === 'object' && 'ok' in result && result.ok === false) {
+                throw new Error('Không thể hoàn tất yêu cầu.');
+            }
+        }
+        function parseApiPayload(text) {
+            if (!text)
+                return null;
+            try {
+                return JSON.parse(text);
+            }
+            catch {
+                return text;
+            }
+        }
+        function apiPayloadError(payload, status) {
+            if (typeof payload === 'string' && payload.trim())
+                return payload.trim();
+            if (payload && typeof payload === 'object') {
+                if ('error' in payload && typeof payload.error === 'string' && payload.error.trim())
+                    return payload.error;
+                if ('message' in payload && typeof payload.message === 'string' && payload.message.trim())
+                    return payload.message;
+                if ('title' in payload && typeof payload.title === 'string' && payload.title.trim()) {
+                    const validationMessage = validationErrorMessage(payload);
+                    return validationMessage ?? payload.title;
+                }
+            }
+            return `Không thể hoàn tất yêu cầu (mã ${status}).`;
+        }
+        function validationErrorMessage(payload) {
+            if (!('errors' in payload) || !payload.errors || typeof payload.errors !== 'object')
+                return null;
+            for (const value of Object.values(payload.errors)) {
+                if (Array.isArray(value) && typeof value[0] === 'string')
+                    return value[0];
+                if (typeof value === 'string')
+                    return value;
+            }
+            return null;
+        }
+        function isApiResult(payload) {
+            return Boolean(payload && typeof payload === 'object' && 'isSuccess' in payload);
         }
         function tasksByStatus(status) {
             const query = taskSearchQuery.value.trim().toLowerCase();
@@ -1750,14 +1910,6 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             newTaskPriority.value = 'Medium';
             newTaskAssigneeId.value = '';
             newTaskDueDate.value = '';
-        }
-        function showActionNotice(message) {
-            actionNotice.value = message;
-            if (actionNoticeTimer)
-                window.clearTimeout(actionNoticeTimer);
-            actionNoticeTimer = window.setTimeout(() => {
-                actionNotice.value = '';
-            }, 3800);
         }
         function displayStatus(status) {
             switch (status) {
@@ -1844,15 +1996,22 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
         function isGuid(value) {
             return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
         }
-        function errorMessage(error) {
-            return error instanceof Error ? error.message : 'Request failed.';
+        function errorMessage(error, fallback = 'Đã xảy ra lỗi khi lưu dữ liệu') {
+            const message = error instanceof Error ? error.message.trim() : '';
+            if (!message ||
+                message === 'Request failed.' ||
+                message.startsWith('Request failed with status') ||
+                message.startsWith('Không thể hoàn tất yêu cầu')) {
+                return fallback;
+            }
+            return message;
         }
         provide(dashboardContextKey, {
-            actionNotice,
             activeProjectCards,
             activeProjectId,
             activeProjectTab,
             activeTaskMenu,
+            addManualTimeEntry,
             addMember,
             archivedProjectCards,
             assignedTaskCards,
@@ -1902,6 +2061,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
             projectName,
             projectSort,
             projects,
+            quickEditTaskTitle,
             removeMember,
             saveProjectEdit,
             searchQuery,
@@ -1938,7 +2098,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
         });
         return (_ctx, _cache) => {
             const _component_RouterView = resolveComponent("RouterView");
-            return (openBlock(), createBlock(_sfc_main$2, {
+            return (openBlock(), createBlock(_sfc_main$3, {
                 "nav-items": navigation,
                 "notification-count": notificationCount.value,
                 "user-name": currentUser.value?.fullName || currentUser.value?.email || 'Qaly user',
@@ -1950,13 +2110,13 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                 default: withCtx(() => [
                     createVNode(_component_RouterView),
                     (notificationsOpen.value)
-                        ? (openBlock(), createElementBlock("div", _hoisted_1, [
-                            createBaseVNode("div", _hoisted_2, [
+                        ? (openBlock(), createElementBlock("div", _hoisted_1$1, [
+                            createBaseVNode("div", _hoisted_2$1, [
                                 _cache[2] || (_cache[2] = createBaseVNode("div", null, [
                                     createBaseVNode("span", null, "Notifications"),
                                     createBaseVNode("h2", null, "Current signals")
                                 ], -1)),
-                                createBaseVNode("div", _hoisted_3, [
+                                createBaseVNode("div", _hoisted_3$1, [
                                     createBaseVNode("button", {
                                         class: "text-button",
                                         type: "button",
@@ -1976,7 +2136,7 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                                     key: notification.id,
                                     class: normalizeClass(notificationClass(notification))
                                 }, [
-                                    createBaseVNode("div", _hoisted_4, [
+                                    createBaseVNode("div", _hoisted_4$1, [
                                         createBaseVNode("strong", null, toDisplayString(notification.title), 1),
                                         createBaseVNode("button", {
                                             type: "button",
@@ -1992,13 +2152,76 @@ const _sfc_main = /*@__PURE__*/ defineComponent({
                             }), 128))
                         ]))
                         : createCommentVNode("", true),
-                    (actionNotice.value)
-                        ? (openBlock(), createElementBlock("div", _hoisted_6, toDisplayString(actionNotice.value), 1))
-                        : createCommentVNode("", true),
                     createVNode(FloatingChatbot)
                 ]),
                 _: 1
             }, 8, ["notification-count", "user-name", "user-initials"]));
+        };
+    }
+});
+const _hoisted_1 = ["role"];
+const _hoisted_2 = {
+    class: "toast-card__icon",
+    "aria-hidden": "true"
+};
+const _hoisted_3 = { class: "toast-card__content" };
+const _hoisted_4 = ["onClick"];
+const _sfc_main = /*@__PURE__*/ defineComponent({
+    __name: 'ToastContainer',
+    setup(__props) {
+        const { toasts, dismissToast } = useToast();
+        const iconByType = {
+            success: CircleCheck,
+            error: CircleX,
+            warning: TriangleAlert,
+            info: Info,
+        };
+        const titleByType = {
+            success: 'Thành công',
+            error: 'Thất bại',
+            warning: 'Cần chú ý',
+            info: 'Thông báo',
+        };
+        return (_ctx, _cache) => {
+            return (openBlock(), createBlock(Teleport, { to: "body" }, [
+                createVNode(TransitionGroup, {
+                    name: "toast-stack",
+                    tag: "div",
+                    class: "toast-viewport",
+                    "aria-live": "polite"
+                }, {
+                    default: withCtx(() => [
+                        (openBlock(true), createElementBlock(Fragment, null, renderList(unref(toasts), (toast) => {
+                            return (openBlock(), createElementBlock("article", {
+                                key: toast.id,
+                                class: normalizeClass(["toast-card", `toast-card--${toast.type}`]),
+                                role: toast.type === 'error' ? 'alert' : 'status'
+                            }, [
+                                createBaseVNode("div", _hoisted_2, [
+                                    (openBlock(), createBlock(resolveDynamicComponent(iconByType[toast.type]), { size: 19 }))
+                                ]),
+                                createBaseVNode("div", _hoisted_3, [
+                                    createBaseVNode("strong", null, toDisplayString(toast.title ?? titleByType[toast.type]), 1),
+                                    createBaseVNode("p", null, toDisplayString(toast.message), 1)
+                                ]),
+                                createBaseVNode("button", {
+                                    class: "toast-card__close",
+                                    type: "button",
+                                    "aria-label": "Đóng thông báo",
+                                    onClick: ($event) => (unref(dismissToast)(toast.id))
+                                }, [
+                                    createVNode(unref(X), { size: 16 })
+                                ], 8, _hoisted_4),
+                                createBaseVNode("span", {
+                                    class: "toast-card__progress",
+                                    style: normalizeStyle({ animationDuration: `${toast.duration}ms` })
+                                }, null, 4)
+                            ], 10, _hoisted_1));
+                        }), 128))
+                    ]),
+                    _: 1
+                })
+            ]));
         };
     }
 });
@@ -2087,9 +2310,29 @@ const router = createRouter({
         return { top: 0 };
     },
 });
+const toastTarget = document.getElementById('qaly-toast-root');
 const target = document.getElementById('qaly-dashboard-app');
-if (target) {
-    createApp(_sfc_main).use(router).mount(target);
+if (toastTarget) {
+    createApp(_sfc_main).mount(toastTarget);
 }
-export { _sfc_main$4 as _, _export_sfc as a, useDashboardContext as u };
+window.qalyToast = {
+    showToast,
+    showSuccess,
+    showError,
+};
+document.querySelectorAll('[data-toast-message]').forEach((element) => {
+    const message = element.dataset.toastMessage?.trim();
+    if (!message || element.dataset.toastConsumed === 'true')
+        return;
+    const type = normalizeToastType(element.dataset.toastType);
+    element.dataset.toastConsumed = 'true';
+    showToast({ type, message });
+});
+if (target) {
+    createApp(_sfc_main$1).use(router).mount(target);
+}
+function normalizeToastType(type) {
+    return type === 'success' || type === 'error' || type === 'warning' || type === 'info' ? type : 'info';
+}
+export { _sfc_main$5 as _, _export_sfc as a, showSuccess as s, useDashboardContext as u };
 //# sourceMappingURL=main.js.map

@@ -186,6 +186,17 @@ const CircleCheck = createLucideIcon("circle-check", [
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
+const CircleX = createLucideIcon("circle-x", [
+    ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
+    ["path", { d: "m15 9-6 6", key: "1uzhvr" }],
+    ["path", { d: "m9 9 6 6", key: "z0biqf" }]
+]);
+/**
+ * @license lucide-vue-next v1.0.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
 const ClipboardList = createLucideIcon("clipboard-list", [
     ["rect", { width: "8", height: "4", x: "8", y: "2", rx: "1", ry: "1", key: "tgr4d6" }],
     [
@@ -291,6 +302,17 @@ const FolderKanban = createLucideIcon("folder-kanban", [
     ["path", { d: "M8 10v4", key: "tgpxqk" }],
     ["path", { d: "M12 10v2", key: "hh53o1" }],
     ["path", { d: "M16 10v6", key: "1d6xys" }]
+]);
+/**
+ * @license lucide-vue-next v1.0.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const Info = createLucideIcon("info", [
+    ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
+    ["path", { d: "M12 16v-4", key: "1dtifu" }],
+    ["path", { d: "M12 8h.01", key: "e9boi3" }]
 ]);
 /**
  * @license lucide-vue-next v1.0.0 - ISC
@@ -542,6 +564,23 @@ const Trash2 = createLucideIcon("trash-2", [
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
+const TriangleAlert = createLucideIcon("triangle-alert", [
+    [
+        "path",
+        {
+            d: "m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3",
+            key: "wmoenq"
+        }
+    ],
+    ["path", { d: "M12 9v4", key: "juzpu7" }],
+    ["path", { d: "M12 17h.01", key: "p32p05" }]
+]);
+/**
+ * @license lucide-vue-next v1.0.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
 const UserPlus = createLucideIcon("user-plus", [
     ["path", { d: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2", key: "1yyitq" }],
     ["circle", { cx: "9", cy: "7", r: "4", key: "nufk8" }],
@@ -601,5 +640,5 @@ const X = createLucideIcon("x", [
     ["path", { d: "M18 6 6 18", key: "1bl5f8" }],
     ["path", { d: "m6 6 12 12", key: "d8bk6v" }]
 ]);
-export { ArrowLeft as A, Box as B, ChevronDown as C, Eye as E, FolderKanban as F, LogOut as L, Menu as M, Pencil as P, Sparkles as S, Trash2 as T, User as U, Vote as V, X, Bell as a, Send as b, LayoutDashboard as c, ClipboardList as d, Users as e, UserRound as f, CircleCheck as g, CalendarDays as h, Mail as i, ShieldCheck as j, UserPlus as k, Shield as l, Plus as m, Search as n, FileText as o, MessageSquare as p, Clock as q, Square as r, Play as s, Ellipsis as t, SlidersHorizontal as u, Pin as v, FileUp as w, SmilePlus as x };
+export { ArrowLeft as A, Box as B, ChevronDown as C, Eye as E, FolderKanban as F, Info as I, LogOut as L, Menu as M, Pencil as P, Sparkles as S, TriangleAlert as T, User as U, Vote as V, X, Bell as a, Send as b, LayoutDashboard as c, ClipboardList as d, Users as e, CircleX as f, CircleCheck as g, UserRound as h, CalendarDays as i, Trash2 as j, Mail as k, ShieldCheck as l, UserPlus as m, Shield as n, Plus as o, Search as p, FileText as q, MessageSquare as r, Clock as s, Square as t, Play as u, Ellipsis as v, SlidersHorizontal as w, Pin as x, FileUp as y, SmilePlus as z };
 //# sourceMappingURL=vendor-icons.js.map

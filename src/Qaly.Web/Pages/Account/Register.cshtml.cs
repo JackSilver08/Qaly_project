@@ -42,7 +42,7 @@ public class RegisterModel : PageModel
         var result = await _authService.RegisterAsync(new RegisterDto(FullName, Email, Password, ConfirmPassword), ct);
         if (!result.IsSuccess || result.Data == null)
         {
-            ErrorMessage = result.Error ?? "Unable to create account.";
+            ErrorMessage = result.Error ?? "Không thể tạo tài khoản.";
             return Page();
         }
 
@@ -50,6 +50,7 @@ public class RegisterModel : PageModel
             CookieAuthenticationDefaults.AuthenticationScheme,
             AuthClaimsFactory.CreatePrincipal(result.Data));
 
+        TempData["ToastSuccess"] = "Tạo tài khoản thành công";
         return LocalRedirect("/");
     }
 }

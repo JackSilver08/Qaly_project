@@ -10,6 +10,7 @@ import { ref } from 'vue'
 const {
   activeProjectTab,
   activeTaskMenu,
+  addManualTimeEntry,
   addMember,
   attachments,
   beginEditTask,
@@ -37,6 +38,7 @@ const {
   nextStatuses,
   openChatWithPrompt,
   priorities,
+  quickEditTaskTitle,
   removeMember,
   selectTaskInProject,
   selectedProject,
@@ -58,7 +60,6 @@ const {
   activeTimer,
   startTimer,
   stopTimer,
-  loadTimeEntries,
 } = useDashboardContext()
 
 const quickEditTitle = ref('')
@@ -73,27 +74,15 @@ function startQuickEdit(task: any) {
 
 async function saveQuickEdit() {
   if (!taskBeingQuickEditedId.value || !selectedTask.value) return
+  let saved = false
   
   try {
     const taskId = taskBeingQuickEditedId.value
-    await fetch(`/api/tasks/${taskId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: quickEditTitle.value.trim(),
-        description: selectedTask.value.description,
-        status: selectedTask.value.status,
-        priority: selectedTask.value.priority,
-        dueDate: selectedTask.value.dueDate,
-        assigneeId: selectedTask.value.assigneeId,
-        isPrivate: selectedTask.value.isPrivate
-      })
-    })
-    window.location.reload() 
+    saved = await quickEditTaskTitle(taskId, quickEditTitle.value)
   } catch (e) {
     console.error(e)
   } finally {
-    taskBeingQuickEditedId.value = null
+    if (saved) taskBeingQuickEditedId.value = null
   }
 }
 
@@ -101,23 +90,12 @@ async function submitManualEntry() {
   if (!selectedTask.value || manualMinutes.value <= 0) return
 
   try {
-    const res = await fetch(`/api/tasks/${selectedTask.value.id}/time-entries/manual`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        taskId: selectedTask.value.id,
-        startedAt: new Date().toISOString(),
-        manualMinutes: manualMinutes.value,
-        note: manualNote.value.trim() || null
-      })
-    })
+    const saved = await addManualTimeEntry(selectedTask.value.id, manualMinutes.value, manualNote.value)
+    if (!saved) return
 
-    if (res.ok) {
-      manualMinutes.value = 0
-      manualNote.value = ''
-      showManualForm.value = false
-      await loadTimeEntries(selectedTask.value.id)
-    }
+    manualMinutes.value = 0
+    manualNote.value = ''
+    showManualForm.value = false
   } catch (e) {
     console.error(e)
   }

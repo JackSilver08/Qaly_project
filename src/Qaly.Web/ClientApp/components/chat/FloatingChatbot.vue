@@ -5,6 +5,7 @@ import DOMPurify from 'dompurify'
 import { Send, X, MessageSquare, Sparkles } from 'lucide-vue-next'
 import ChatbotAvatar from '../ChatbotAvatar.vue'
 import { useDashboardContext } from '../../composables/dashboard-context'
+import { showError } from '../../composables/use-toast'
 
 const { projects, selectedProject, currentUser } = useDashboardContext()
 
@@ -111,6 +112,7 @@ async function submitChat(explicit?: string) {
     }
   } catch (e) {
     messages.value.push({ id: `err-${Date.now()}`, role: 'assistant', text: 'Xin lỗi, Erumi đang gặp chút trục trặc. Thử lại sau nhé!' })
+    showError('Không thể gửi yêu cầu tới trợ lý AI')
   } finally {
     isThinking.value = false
   }

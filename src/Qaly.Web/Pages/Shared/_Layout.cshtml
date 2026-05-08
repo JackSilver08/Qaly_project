@@ -10,6 +10,15 @@
 </head>
 <body>
     @RenderBody()
+    <div id="qaly-toast-root"></div>
+    @if (TempData["ToastSuccess"] is string toastSuccess)
+    {
+        <div hidden data-toast-message="@toastSuccess" data-toast-type="success"></div>
+    }
+    @if (TempData["ToastError"] is string toastError)
+    {
+        <div hidden data-toast-message="@toastError" data-toast-type="error"></div>
+    }
     <script type="module" src="~/dist/assets/main.js" asp-append-version="true"></script>
     @await RenderSectionAsync("Scripts", required: false)
 </body>

@@ -10,7 +10,8 @@ export default defineConfig({
   plugins: [vue()],
   define: {
     'process.env.NODE_ENV': JSON.stringify('production'),
-  },
+  }, 
+  
   resolve: {
     preserveSymlinks: true,
     alias: {

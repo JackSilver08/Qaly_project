@@ -1,6 +1,6 @@
 import { u as useDashboardContext } from './main.js';
-import { f as UserRound, i as Mail, j as ShieldCheck, h as CalendarDays } from './vendor-icons.js';
-import { d as defineComponent, c as createElementBlock, a as createBaseVNode, t as toDisplayString, g as createVNode, i as unref, n as normalizeClass, A as computed, o as openBlock } from './vendor-vue.js';
+import { h as UserRound, k as Mail, l as ShieldCheck, i as CalendarDays } from './vendor-icons.js';
+import { d as defineComponent, c as createElementBlock, a as createBaseVNode, t as toDisplayString, g as createVNode, i as unref, n as normalizeClass, B as computed, o as openBlock } from './vendor-vue.js';
 import './vendor-markdown.js';
 import './vendor-realtime.js';
 const _hoisted_1 = { class: "dashboard-scroll dashboard-scroll--embedded no-scrollbar" };
