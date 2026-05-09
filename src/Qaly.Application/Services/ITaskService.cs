@@ -11,5 +11,6 @@ public interface ITaskService
     Task<Result<TaskItemDto>> CreateAsync(CreateTaskDto dto, CancellationToken ct = default);
     Task<Result<TaskItemDto>> UpdateAsync(Guid id, UpdateTaskDto dto, CancellationToken ct = default);
     Task<Result> UpdateStatusAsync(Guid id, string newStatus, CancellationToken ct = default);
+    Task<Result> UpdateSortOrderAsync(Guid id, int sortOrder, CancellationToken ct = default);
     Task<Result> DeleteAsync(Guid id, CancellationToken ct = default);
 }

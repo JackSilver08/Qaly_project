@@ -299,6 +299,26 @@ public class TaskService : ITaskService
         return Result.Success();
     }
 
+    public async Task<Result> UpdateSortOrderAsync(Guid id, int sortOrder, CancellationToken ct = default)
+    {
+        var task = await _taskRepo.GetByIdAsync(id, ct);
+        if (task == null)
+        {
+            return Result.Failure("Task was not found.", 404);
+        }
+
+        if (!await CanManageTaskAsync(task, ct))
+        {
+            return Result.Failure("Access denied.", 403);
+        }
+
+        task.SortOrder = sortOrder;
+        await _taskRepo.UpdateAsync(task, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        return Result.Success();
+    }
+
     public async Task<Result> DeleteAsync(Guid id, CancellationToken ct = default)
     {
         var task = await TaskDetailsQuery()

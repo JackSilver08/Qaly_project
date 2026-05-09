@@ -13,6 +13,7 @@ public class TaskItem : BaseEntity
     public int? EstimatedHours { get; set; }
     public int? ActualHours { get; set; }
     public bool IsPrivate { get; set; }
+    public int SortOrder { get; set; }
 
     // Foreign keys
     public Guid ProjectId { get; set; }

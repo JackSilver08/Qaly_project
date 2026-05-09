@@ -59,6 +59,13 @@ public class TasksController : ControllerBase
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpPatch("{id}/sort-order")]
+    public async Task<IActionResult> UpdateSortOrder(Guid id, [FromBody] UpdateTaskSortOrderRequest request, CancellationToken ct)
+    {
+        var result = await _taskService.UpdateSortOrderAsync(id, request.SortOrder, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
@@ -68,3 +75,4 @@ public class TasksController : ControllerBase
 }
 
 public sealed record UpdateTaskStatusRequest(string Status);
+public sealed record UpdateTaskSortOrderRequest(int SortOrder);

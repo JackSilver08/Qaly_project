@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { MessageSquare, MoreHorizontal, Plus, Send, Search, Clock, Play, Square, Calendar } from 'lucide-vue-next'
+import { MessageSquare, MoreHorizontal, Plus, Send, Search, Clock, Play, Square, Calendar, X, ClipboardList } from 'lucide-vue-next'
+import { VueDraggable } from 'vue-draggable-plus'
 import ProjectDetailHeader from '../components/ProjectDetailHeader.vue'
 import ProjectMembersTab from '../components/ProjectMembersTab.vue'
 import ProjectStatsTab from '../components/ProjectStatsTab.vue'
 import ProjectWikiTab from '../components/ProjectWikiTab.vue'
 import { useDashboardContext } from '../composables/dashboard-context'
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 
 const {
   activeProjectTab,
@@ -73,33 +74,45 @@ function startQuickEdit(task: any) {
 }
 
 async function saveQuickEdit() {
-  if (!taskBeingQuickEditedId.value || !selectedTask.value) return
-  let saved = false
-  
-  try {
-    const taskId = taskBeingQuickEditedId.value
-    saved = await quickEditTaskTitle(taskId, quickEditTitle.value)
-  } catch (e) {
-    console.error(e)
-  } finally {
-    if (saved) taskBeingQuickEditedId.value = null
-  }
+  if (!taskBeingQuickEditedId.value) return
+  const saved = await quickEditTaskTitle(taskBeingQuickEditedId.value, quickEditTitle.value)
+  if (saved) taskBeingQuickEditedId.value = null
 }
 
 async function submitManualEntry() {
   if (!selectedTask.value || manualMinutes.value <= 0) return
-
-  try {
-    const saved = await addManualTimeEntry(selectedTask.value.id, manualMinutes.value, manualNote.value)
-    if (!saved) return
-
-    manualMinutes.value = 0
-    manualNote.value = ''
-    showManualForm.value = false
-  } catch (e) {
-    console.error(e)
+  const saved = await addManualTimeEntry(selectedTask.value.id, manualMinutes.value, manualNote.value)
+  if (saved) {
+    manualMinutes.value = 0; manualNote.value = ''; showManualForm.value = false
   }
 }
+
+const onDragEnd = async (evt: any, status: string) => {
+  const taskId = evt.item.getAttribute('data-id')
+  const task = tasksByStatus(status).find(t => t.id === taskId)
+  if (task && evt.to !== evt.from) {
+    const newStatus = evt.to.getAttribute('data-status')
+    await moveTask(task, newStatus)
+  }
+}
+
+// Keyboard Shortcuts
+const handleKeyDown = (e: KeyboardEvent) => {
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+  
+  if (e.key.toLowerCase() === 'n') {
+    e.preventDefault()
+    createTaskOpen.value = true
+  }
+  if (e.key === 'Escape') {
+    createTaskOpen.value = false
+    showManualForm.value = false
+    activeTaskMenu.value = null
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', handleKeyDown))
+onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 </script>
 
 <template>
@@ -144,7 +157,7 @@ async function submitManualEntry() {
             <div class="board-actions">
               <div class="search-box">
                 <Search :size="16" />
-                <input v-model="taskSearchQuery" type="text" placeholder="Tìm task..." />
+                <input v-model="taskSearchQuery" type="text" placeholder="Tìm task (N: mới)..." />
               </div>
               <button class="primary-button primary-button--compact" type="button" @click="createTaskOpen = !createTaskOpen">
                 <Plus :size="16" />
@@ -153,181 +166,178 @@ async function submitManualEntry() {
             </div>
           </div>
 
-          <form v-if="createTaskOpen" class="task-create-form" @submit.prevent="createTask">
-            <input v-model="newTaskTitle" type="text" placeholder="Task title" />
-            <input v-model="newTaskDescription" type="text" placeholder="Description" />
-            <select v-model="newTaskPriority" aria-label="Priority">
-              <option v-for="priority in priorities" :key="priority" :value="priority">{{ priority }}</option>
-            </select>
-            <select v-model="newTaskAssigneeId" aria-label="Assignee">
-              <option value="">Unassigned</option>
-              <option v-for="user in users" :key="user.id" :value="user.id">{{ user.fullName }}</option>
-            </select>
-            <input v-model="newTaskDueDate" type="date" />
-            <button class="primary-button primary-button--compact" type="submit" :disabled="!newTaskTitle.trim()">Create</button>
-          </form>
+          <transition name="expand">
+            <form v-if="createTaskOpen" class="task-create-form glass-card" @submit.prevent="createTask">
+              <input v-model="newTaskTitle" type="text" placeholder="Task title" required />
+              <input v-model="newTaskDescription" type="text" placeholder="Description" />
+              <select v-model="newTaskPriority">
+                <option v-for="priority in priorities" :key="priority" :value="priority">{{ priority }}</option>
+              </select>
+              <select v-model="newTaskAssigneeId">
+                <option value="">Unassigned</option>
+                <option v-for="user in users" :key="user.id" :value="user.id">{{ user.fullName }}</option>
+              </select>
+              <input v-model="newTaskDueDate" type="date" />
+              <button class="primary-button primary-button--compact" type="submit">Create</button>
+            </form>
+          </transition>
 
           <div class="kanban-board">
             <section v-for="status in statusColumns" :key="status" class="kanban-column">
               <div class="kanban-column__header">
                 <strong>{{ displayStatus(status) }}</strong>
-                <span>{{ tasksByStatus(status).length }}</span>
+                <span class="count-badge">{{ tasksByStatus(status).length }}</span>
               </div>
 
-              <article
-                v-for="task in tasksByStatus(status)"
-                :key="task.id"
-                class="kanban-card"
-                :class="{ 'is-selected': selectedTask?.id === task.id }"
-                @click="selectTaskInProject(task.id)"
+              <VueDraggable
+                v-model="selectedProject.tasks"
+                :animation="200"
+                group="tasks"
+                ghost-class="ghost-card"
+                drag-class="dragging-card"
+                class="kanban-column__list"
+                :data-status="status"
+                @end="(evt) => onDragEnd(evt, status)"
               >
-                <div class="kanban-card__top">
-                  <input
-                    v-if="taskBeingQuickEditedId === task.id"
-                    v-model="quickEditTitle"
-                    type="text"
-                    class="quick-edit-input"
-                    @blur="saveQuickEdit"
-                    @keyup.enter="saveQuickEdit"
-                    @click.stop
-                  />
-                  <strong v-else @dblclick.stop="startQuickEdit(task)">{{ task.title }}</strong>
-                  
-                  <div class="task-card-actions">
-                    <span :class="`priority priority--${task.priority.toLowerCase()}`">{{ task.priority }}</span>
+                <article
+                  v-for="task in tasksByStatus(status)"
+                  :key="task.id"
+                  class="kanban-card draggable-item"
+                  :class="{ 'is-selected': selectedTask?.id === task.id }"
+                  :data-id="task.id"
+                  @click="selectTaskInProject(task.id)"
+                >
+                  <div class="kanban-card__top">
+                    <input
+                      v-if="taskBeingQuickEditedId === task.id"
+                      v-model="quickEditTitle"
+                      type="text"
+                      class="quick-edit-input"
+                      @blur="saveQuickEdit"
+                      @keyup.enter="saveQuickEdit"
+                      @click.stop
+                    />
+                    <strong v-else @dblclick.stop="startQuickEdit(task)">{{ task.title }}</strong>
+                    
+                    <div class="task-card-actions">
+                      <span :class="`priority priority--${task.priority.toLowerCase()}`">{{ task.priority }}</span>
 
-                    <div v-if="isProjectAdmin" class="task-menu-dropdown">
-                      <button class="icon-button icon-button--small" type="button" @click.stop="toggleTaskMenu(task.id)">
-                        <MoreHorizontal :size="14" />
-                      </button>
-                      <div v-if="activeTaskMenu === task.id" class="dropdown-content glass-card">
-                        <button type="button" @click.stop="beginEditTask(task)">Sửa</button>
-                        <button type="button" style="color: var(--peach-500)" @click.stop="deleteTask(task.id)">Xóa</button>
+                      <div v-if="isProjectAdmin" class="task-menu-dropdown">
+                        <button class="icon-button icon-button--small" type="button" @click.stop="toggleTaskMenu(task.id)">
+                          <MoreHorizontal :size="14" />
+                        </button>
+                        <div v-if="activeTaskMenu === task.id" class="dropdown-content glass-card">
+                          <button type="button" @click.stop="beginEditTask(task)">Sửa</button>
+                          <button type="button" style="color: var(--peach-500)" @click.stop="deleteTask(task.id)">Xóa</button>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-                <p>{{ task.assigneeName || 'Unassigned' }} - {{ formatDate(task.dueDate) }}</p>
-                <div class="kanban-card__meta">
-                  <span>{{ task.commentCount }} comments</span>
-                  <span v-if="task.isPrivate">Private</span>
-                  <span v-if="isTaskOverdue(task)" class="project-risk">Overdue</span>
-                </div>
-                <div class="kanban-card__actions">
-                  <button
-                    v-for="nextStatus in nextStatuses(task.status)"
-                    :key="nextStatus"
-                    type="button"
-                    @click.stop="moveTask(task, nextStatus)"
-                  >
-                    {{ displayStatus(nextStatus) }}
-                  </button>
-                </div>
-              </article>
-
-              <div v-if="tasksByStatus(status).length === 0" class="empty-state">No tasks</div>
+                  <p class="assignee-text">{{ task.assigneeName || 'Unassigned' }} • {{ formatDate(task.dueDate) }}</p>
+                  <div class="kanban-card__meta">
+                    <span class="meta-item"><MessageSquare :size="12" /> {{ task.commentCount }}</span>
+                    <span v-if="isTaskOverdue(task)" class="overdue-tag">Overdue</span>
+                  </div>
+                </article>
+                <div v-if="tasksByStatus(status).length === 0" class="empty-column-placeholder">Drop task here</div>
+              </VueDraggable>
             </section>
           </div>
         </section>
 
-        <section class="task-detail-panel glass-card" style="margin-top: 24px;">
+        <section class="task-detail-panel glass-card">
           <div class="panel-heading">
             <div>
               <span>Task detail</span>
               <h2>{{ selectedTask?.title ?? 'No task selected' }}</h2>
             </div>
-            <MessageSquare :size="18" />
+            <div v-if="selectedTask" class="task-id-badge">#{{ selectedTask.id.slice(0, 4) }}</div>
           </div>
 
           <div v-if="selectedTask" class="comment-list">
-            <!-- Time Tracking Section -->
-            <div class="time-tracking-panel">
-              <div class="panel-subheading">
+            <div class="time-tracking-section">
+              <div class="section-header">
                 <Clock :size="16" />
-                <strong>Time Tracking</strong>
+                <strong>Activity Log</strong>
               </div>
               
-              <div class="timer-controls">
-                <div v-if="activeTimer" class="active-timer">
-                  <span>Đang tính giờ cho: <strong>{{ activeTimer.taskTitle }}</strong></span>
-                  <button class="stop-button" @click="stopTimer(activeTimer.id)">
-                    <Square :size="14" /> Stop
+              <div class="timer-display glass-card">
+                <div v-if="activeTimer" class="timer-active">
+                  <div class="timer-pulse"></div>
+                  <span>Ghi giờ: <strong>{{ activeTimer.taskTitle }}</strong></span>
+                  <button class="stop-pill" @click="stopTimer(activeTimer.id)">
+                    <Square :size="14" fill="currentColor" /> Stop
                   </button>
                 </div>
-                <div v-else class="timer-actions">
-                  <button class="start-button" @click="startTimer(selectedTask.id)">
-                    <Play :size="14" /> Start Timer
+                <div v-else class="timer-idle">
+                  <button class="start-pill" @click="startTimer(selectedTask.id)">
+                    <Play :size="14" fill="currentColor" /> Start
                   </button>
-                  <button class="text-button" @click="showManualForm = !showManualForm">
-                    {{ showManualForm ? 'Cancel' : 'Manual Entry' }}
-                  </button>
-                </div>
-              </div>
-
-              <!-- Manual Entry Form -->
-              <div v-if="showManualForm" class="manual-entry-form">
-                <div class="form-row">
-                  <input v-model.number="manualMinutes" type="number" placeholder="Phút" />
-                  <input v-model="manualNote" type="text" placeholder="Ghi chú..." />
-                  <button class="primary-button primary-button--compact" @click="submitManualEntry">Log</button>
+                  <button class="ghost-pill" @click="showManualForm = !showManualForm">Manual</button>
                 </div>
               </div>
 
-              <div v-if="timeEntries.length > 0" class="time-logs">
-                <div v-for="entry in timeEntries.slice(0, 5)" :key="entry.id" class="time-log-row">
+              <transition name="fade">
+                <div v-if="showManualForm" class="manual-log-form glass-card">
+                  <div class="form-row">
+                    <input v-model.number="manualMinutes" type="number" placeholder="Min" />
+                    <input v-model="manualNote" type="text" placeholder="Ghi chú..." />
+                    <button class="primary-button primary-button--compact" @click="submitManualEntry">Log</button>
+                  </div>
+                </div>
+              </transition>
+
+              <div v-if="timeEntries.length > 0" class="entry-history">
+                <div v-for="entry in timeEntries.slice(0, 3)" :key="entry.id" class="entry-row">
                   <span>{{ entry.userName }}</span>
-                  <span v-if="entry.manualMinutes"><strong>{{ entry.manualMinutes }}m</strong> (Manual)</span>
-                  <span v-else>{{ entry.totalMinutes }} phút</span>
-                  <span>{{ formatDate(entry.startedAt) }}</span>
+                  <span class="minutes-badge">{{ entry.manualMinutes || entry.totalMinutes }}m</span>
+                  <span class="time-date">{{ formatDate(entry.startedAt) }}</span>
                 </div>
               </div>
             </div>
 
-            <div class="attachment-panel">
-              <div class="attachment-panel__header">
+            <div class="attachment-section glass-card">
+              <div class="section-header">
                 <strong>Attachments</strong>
-                <label class="attachment-upload">
+                <label class="upload-pill">
                   <input type="file" @change="uploadAttachment" />
-                  <span>Upload</span>
+                  <span>+ Add</span>
                 </label>
               </div>
-              <article v-for="attachment in attachments" :key="attachment.id" class="attachment-row">
-                <div>
-                  <strong>{{ attachment.fileName }}</strong>
-                  <span>{{ formatFileSize(attachment.fileSize) }} - {{ attachment.uploadedByName }}</span>
-                </div>
-                <button type="button" @click="deleteAttachment(attachment)">Delete</button>
-              </article>
-              <div v-if="attachments.length === 0" class="empty-state">No attachments.</div>
+              <div class="attachment-grid">
+                <article v-for="attachment in attachments" :key="attachment.id" class="file-chip">
+                  <div class="file-info">
+                    <strong class="truncate">{{ attachment.fileName }}</strong>
+                    <span>{{ formatFileSize(attachment.fileSize) }}</span>
+                  </div>
+                  <button class="close-pill" @click="deleteAttachment(attachment)"><X :size="12" /></button>
+                </article>
+              </div>
             </div>
 
-            <article v-for="comment in comments" :key="comment.id" class="comment-row">
-              <div class="comment-row__top">
-                <strong>{{ comment.authorName }}</strong>
-                <button
-                  v-if="isProjectAdmin || comment.authorId === currentUser?.id"
-                  class="text-button"
-                  style="color: var(--peach-500); padding: 0 4px; height: auto;"
-                  type="button"
-                  @click="deleteComment(comment.id)"
-                >
-                  Xóa
-                </button>
+            <div class="discussion-section">
+              <div class="section-header"><strong>Discussion</strong></div>
+              <div class="comments-scroll">
+                <article v-for="comment in comments" :key="comment.id" class="comment-bubble">
+                  <div class="bubble-top">
+                    <strong>{{ comment.authorName }}</strong>
+                    <span class="bubble-time">{{ formatTime(comment.createdAt) }}</span>
+                  </div>
+                  <p>{{ comment.content }}</p>
+                  <button v-if="isProjectAdmin || comment.authorId === currentUser?.id" class="bubble-delete" @click="deleteComment(comment.id)">Delete</button>
+                </article>
               </div>
-              <p>{{ comment.content }}</p>
-              <span>{{ formatTime(comment.createdAt) }}</span>
-            </article>
-            <div v-if="comments.length === 0" class="empty-state">No comments yet.</div>
 
-            <form class="comment-form" @submit.prevent="submitComment">
-              <input v-model="newComment" type="text" placeholder="Add a comment..." />
-              <button class="primary-button primary-button--compact" type="submit" :disabled="!newComment.trim()">
-                <Send :size="15" />
-              </button>
-            </form>
+              <form class="comment-input-area" @submit.prevent="submitComment">
+                <input v-model="newComment" type="text" placeholder="Type a message..." />
+                <button class="send-pill" type="submit" :disabled="!newComment.trim()"><Send :size="16" /></button>
+              </form>
+            </div>
           </div>
-
-          <div v-else class="empty-state">Select a task from the board.</div>
+          <div v-else class="empty-state-panel">
+            <ClipboardList :size="48" />
+            <p>Select a task to see details</p>
+          </div>
         </section>
       </div>
 
@@ -335,7 +345,7 @@ async function submitManualEntry() {
         <ProjectMembersTab
           :members="selectedProjectMembers"
           :users="users"
-          :is-admin="true"
+          :is-admin="isProjectAdmin"
           @add="addMember"
           @remove="removeMember"
           @update-role="updateMemberRole"
@@ -343,631 +353,163 @@ async function submitManualEntry() {
       </div>
 
       <div v-if="activeProjectTab === 'wiki'" class="tab-pane reveal">
-        <ProjectWikiTab
-          :project-name="selectedProject?.name ?? ''"
-          :is-admin="true"
-        />
+        <ProjectWikiTab :project-name="selectedProject?.name ?? ''" :is-admin="isProjectAdmin" />
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* Project Details Page Premium Styles */
-.project-home-main {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3);
+/* Beauty Enhancements */
+.kanban-column__list {
+  min-height: 300px;
+  padding: 4px;
 }
 
-.project-tabs {
-  display: flex;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
-  margin-bottom: var(--space-3);
-  background: var(--glass-strong);
-  border-radius: var(--radius-pill);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-  backdrop-filter: blur(20px);
-  width: fit-content;
+.ghost-card {
+  opacity: 0.4;
+  border: 2px dashed var(--primary) !important;
+  transform: scale(0.98);
 }
 
-.tab-link {
-  padding: 10px 24px;
-  border: none;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--muted);
-  font-weight: 600;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-  overflow: hidden;
+.dragging-card {
+  transform: rotate(2deg);
+  box-shadow: 0 20px 40px rgba(0,0,0,0.15) !important;
 }
 
-.tab-link:hover {
+.count-badge {
+  background: var(--primary-soft);
   color: var(--primary);
-  background: rgba(31, 128, 255, 0.05);
-}
-
-.tab-link.is-active {
-  color: white;
-  background: linear-gradient(135deg, var(--primary), var(--blue-600));
-  box-shadow: 0 6px 15px rgba(31, 128, 255, 0.3);
-  transform: translateY(-1px);
-}
-
-/* Kanban Board Styling */
-.task-board-shell {
-  padding: var(--space-3);
-  background: var(--glass);
-  border-radius: var(--radius-shell);
-}
-
-.panel-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--space-3);
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--glass-border);
-}
-
-.panel-heading span {
-  font-size: 12px;
-  text-transform: uppercase;
-  color: var(--primary);
-  font-weight: 800;
-  letter-spacing: 0.5px;
-}
-
-.panel-heading h2 {
-  font-size: 22px;
-  color: var(--text);
-}
-
-.board-actions {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: white;
-  padding: 6px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-}
-
-.search-box input {
-  border: none;
-  outline: none;
-  font-size: 13px;
-  width: 150px;
-}
-
-.task-create-form {
-  display: grid;
-  grid-template-columns: 2fr 3fr 1fr 1.5fr 1.5fr auto;
-  gap: var(--space-2);
-  margin-bottom: var(--space-4);
-  padding: var(--space-2);
-  background: rgba(255, 255, 255, 0.5);
-  border-radius: var(--radius-card);
-  border: 1px solid var(--glass-border);
-}
-
-@media (max-width: 1024px) {
-  .task-create-form {
-    grid-template-columns: 1fr;
-  }
-}
-
-.task-create-form input,
-.task-create-form select {
-  padding: 10px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: white;
-  color: var(--text);
-  font-size: 13px;
-  outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.task-create-form input:focus,
-.task-create-form select:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-}
-
-.kanban-board {
-  display: flex;
-  gap: var(--space-3);
-  overflow-x: auto;
-  padding-bottom: var(--space-2);
-  min-height: 400px;
-}
-
-.kanban-column {
-  flex: 0 0 320px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  background: rgba(248, 250, 252, 0.6);
-  padding: var(--space-2);
-  border-radius: var(--radius-panel);
-  border: 1px solid var(--glass-border);
-}
-
-.kanban-column__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 4px;
-  margin-bottom: 8px;
-}
-
-.kanban-column__header strong {
-  font-size: 14px;
-  color: var(--text);
-}
-
-.kanban-column__header span {
-  background: var(--blue-100);
-  color: var(--blue-700);
   padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 12px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.overdue-tag {
+  background: #fee2e2;
+  color: #ef4444;
+  font-size: 10px;
   font-weight: 700;
-}
-
-.kanban-card {
-  background: white;
-  border-radius: var(--radius-card);
-  padding: 16px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
-  border: 1px solid transparent;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  position: relative;
-}
-
-.kanban-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 8px 24px rgba(31, 128, 255, 0.1);
-  border-color: var(--primary-soft);
-}
-
-.kanban-card.is-selected {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 2px var(--primary-soft);
-}
-
-.kanban-card__top {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 12px;
-}
-
-.kanban-card__top strong {
-  font-size: 14px;
-  color: var(--text);
-  line-height: 1.4;
-  flex: 1;
-  padding-right: 8px;
-}
-
-.quick-edit-input {
-  width: 100%;
-  padding: 4px 8px;
+  padding: 2px 6px;
   border-radius: 4px;
-  border: 1px solid var(--primary);
-  font-size: 14px;
-  outline: none;
-}
-
-.priority {
-  font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-weight: 700;
-  text-transform: uppercase;
-  display: inline-block;
-  white-space: nowrap;
-}
-
-.priority--high { background: var(--peach-100); color: var(--peach-500); }
-.priority--medium { background: #fef08a; color: #ca8a04; }
-.priority--low { background: var(--mint-100); color: var(--mint-500); }
-
-.kanban-card p {
-  font-size: 12px;
-  margin-bottom: 12px;
-  color: var(--muted);
-}
-
-.kanban-card__meta {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.kanban-card__actions {
-  display: flex;
-  gap: 6px;
-  border-top: 1px solid var(--line);
-  padding-top: 12px;
-}
-
-.kanban-card__actions button {
-  flex: 1;
-  background: var(--surface-warm);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 4px 0;
-  font-size: 11px;
-  color: var(--text);
-  transition: all 0.2s;
-  cursor: pointer;
-}
-
-.kanban-card__actions button:hover {
-  background: var(--primary-soft);
-  color: var(--primary);
-  border-color: var(--primary-soft);
-}
-
-.task-menu-dropdown {
-  position: relative;
-}
-
-.dropdown-content {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  width: 120px;
-  display: flex;
-  flex-direction: column;
-  padding: 8px;
-  z-index: 10;
-  gap: 4px;
-}
-
-.dropdown-content button {
-  text-align: left;
-  padding: 6px 10px;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  color: var(--text);
-  transition: background 0.2s;
-  cursor: pointer;
-}
-
-.dropdown-content button:hover {
-  background: var(--surface-warm);
-}
-
-/* Time Tracking Styles */
-.time-tracking-panel {
-  background: #fdf2f8;
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 16px;
-  border: 1px solid #fbcfe8;
-}
-
-.panel-subheading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  color: #db2777;
-}
-
-.timer-controls {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 12px;
-}
-
-.start-button {
-  background: #db2777;
-  color: white;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 20px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.active-timer {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-
-.stop-button {
-  background: #ef4444;
-  color: white;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 20px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-}
-
-.timer-actions {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.manual-entry-form {
-  background: white;
-  padding: 12px;
-  border-radius: 8px;
-  margin-bottom: 12px;
-  border: 1px solid #fbcfe8;
-}
-
-.form-row {
-  display: flex;
-  gap: 8px;
-}
-
-.form-row input[type="number"] {
-  width: 60px;
-}
-
-.form-row input {
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-  font-size: 12px;
-}
-
-.time-logs {
-  border-top: 1px solid #fbcfe8;
-  padding-top: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.time-log-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: #831843;
-}
-
-/* Detail Panel */
-.task-detail-panel {
-  padding: var(--space-4);
-  margin-bottom: var(--space-4);
-}
-
-.comment-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.attachment-panel {
-  background: var(--surface-milk);
-  border-radius: var(--radius-card);
-  padding: var(--space-3);
-  border: 1px dashed var(--glass-border);
-}
-
-.attachment-panel__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.attachment-upload input {
-  display: none;
-}
-
-.attachment-upload span {
-  background: var(--primary-soft);
-  color: var(--primary);
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.attachment-upload span:hover {
-  background: var(--blue-100);
-}
-
-.attachment-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 16px;
-  background: white;
-  border-radius: 10px;
-  margin-bottom: 8px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.02);
-  border: 1px solid var(--line);
-}
-
-.attachment-row button {
-  color: var(--peach-500);
-  background: transparent;
-  border: none;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 6px;
-  transition: background 0.2s;
-}
-
-.attachment-row button:hover {
-  background: var(--peach-100);
-}
-
-.comment-row {
-  background: rgba(255,255,255,0.7);
-  padding: 16px 20px;
-  border-radius: var(--radius-card);
-  border: 1px solid var(--glass-border);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.02);
-}
-
-.comment-row__top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.comment-row__top strong {
-  color: var(--primary);
-  font-size: 14px;
-}
-
-.comment-row p {
-  color: var(--text);
-  margin-bottom: 10px;
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-.comment-row span {
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.comment-form {
-  display: flex;
-  gap: 12px;
-  margin-top: var(--space-2);
-}
-
-.comment-form input {
-  flex: 1;
-  padding: 14px 20px;
-  border-radius: 24px;
-  border: 1px solid var(--glass-border);
-  background: white;
-  outline: none;
-  box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
-  font-size: 14px;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.comment-form input:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-}
-
-/* Utilities */
-.primary-button {
-  background: linear-gradient(135deg, var(--primary), var(--blue-600));
-  color: white;
-  border: none;
-  border-radius: 12px;
-  padding: 10px 20px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: all 0.2s;
-  box-shadow: 0 4px 12px rgba(31, 128, 255, 0.2);
-  cursor: pointer;
-}
-
-.primary-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(31, 128, 255, 0.3);
-}
-
-.primary-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.primary-button--compact {
-  padding: 8px 16px;
-  font-size: 13px;
-  border-radius: 10px;
-}
-
-.icon-button {
-  background: white;
-  border: 1px solid var(--glass-border);
-  border-radius: 8px;
-  width: 28px;
-  height: 28px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  color: var(--muted);
-  transition: all 0.2s;
-  cursor: pointer;
-}
-
-.icon-button:hover {
-  color: var(--primary);
-  border-color: var(--primary);
-  background: var(--primary-soft);
-}
-
-.empty-state {
-  text-align: center;
-  padding: 40px;
-  color: var(--muted);
-  font-size: 14px;
-  background: rgba(255,255,255,0.4);
-  border-radius: var(--radius-card);
-  border: 1px dashed var(--glass-border);
-}
-
-.text-button {
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 13px;
-}
-
-.text-button:hover {
-  text-decoration: underline;
 }
 
 /* Animations */
-.reveal {
-  animation: fade-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+.expand-enter-active, .expand-leave-active { transition: all 0.3s ease; }
+.expand-enter-from, .expand-leave-to { opacity: 0; transform: translateY(-10px); }
+
+/* Task Details Modernization */
+.task-detail-panel {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-height: 600px;
 }
 
-@keyframes fade-in-up {
-  0% { opacity: 0; transform: translateY(10px); }
-  100% { opacity: 1; transform: translateY(0); }
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.timer-display {
+  padding: 16px;
+  background: linear-gradient(to right, #fff1f2, #fff);
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+}
+
+.timer-pulse {
+  width: 8px; height: 8px;
+  background: #ef4444;
+  border-radius: 50%;
+  animation: pulse 1.5s infinite;
+  margin-right: 10px;
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+.start-pill {
+  background: #db2777; color: white;
+  border: none; padding: 6px 16px; border-radius: 20px;
+  font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px;
+}
+
+.stop-pill {
+  background: #ef4444; color: white;
+  border: none; padding: 6px 16px; border-radius: 20px;
+  font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px;
+}
+
+.ghost-pill {
+  background: transparent; border: 1px solid var(--line);
+  padding: 6px 12px; border-radius: 20px; font-size: 12px;
+  cursor: pointer; margin-left: 8px;
+}
+
+.send-pill {
+  background: var(--primary); color: white;
+  border: none; width: 40px; height: 40px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: transform 0.2s;
+}
+
+.send-pill:hover:not(:disabled) { transform: scale(1.1); }
+.send-pill:disabled { opacity: 0.5; }
+
+.comment-bubble {
+  background: white;
+  padding: 12px 16px;
+  border-radius: 12px 12px 12px 0;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+
+.bubble-top { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 12px; }
+.bubble-time { color: var(--muted); }
+.bubble-delete { border: none; background: transparent; color: #ef4444; font-size: 10px; cursor: pointer; padding: 0; margin-top: 4px; }
+
+.comment-input-area { display: flex; gap: 12px; align-items: center; margin-top: 12px; }
+.comment-input-area input { flex: 1; border: 1px solid var(--line); border-radius: 20px; padding: 10px 16px; outline: none; }
+
+.attachment-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.file-chip { 
+  display: flex; align-items: center; gap: 8px; background: white; 
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px;
+}
+.file-info { display: flex; flex-direction: column; line-height: 1.2; }
+.file-info span { font-size: 10px; color: var(--muted); }
+.close-pill { border: none; background: transparent; color: var(--muted); cursor: pointer; }
+
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; }
+
+.empty-state-panel {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 400px; color: var(--muted); opacity: 0.6;
+}
+
+/* Keeping the requested beauty */
+.project-tabs { width: 100%; justify-content: center; }
+.kanban-card { border: 1px solid transparent; }
+.kanban-card:hover { border-color: var(--primary-soft); }
+
+.project-home-main { gap: 24px; padding: 24px; }
+.tab-link.is-active { box-shadow: 0 4px 15px rgba(31, 128, 255, 0.25); }
+.empty-column-placeholder {
+  height: 100px; border: 2px dashed var(--line); border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 13px; margin: 8px 0;
 }
 </style>
