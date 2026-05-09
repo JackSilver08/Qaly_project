@@ -33,6 +33,10 @@ builder.Host.UseSerilog();
 
 // Redis & Session
 var redisConn = builder.Configuration.GetValue<string>("Redis:ConnectionString") ?? "localhost:6379";
+if (!redisConn.Contains("abortConnect="))
+{
+    redisConn += redisConn.Contains("?") ? "&abortConnect=false" : ",abortConnect=false";
+}
 builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(StackExchange.Redis.ConnectionMultiplexer.Connect(redisConn));
 builder.Services.AddStackExchangeRedisCache(options =>
 {

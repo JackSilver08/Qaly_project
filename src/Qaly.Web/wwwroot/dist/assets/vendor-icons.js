@@ -640,5 +640,5 @@ const X = createLucideIcon("x", [
     ["path", { d: "M18 6 6 18", key: "1bl5f8" }],
     ["path", { d: "m6 6 12 12", key: "d8bk6v" }]
 ]);
-export { ArrowLeft as A, Box as B, ChevronDown as C, Eye as E, FolderKanban as F, Info as I, LogOut as L, Menu as M, Pencil as P, Sparkles as S, TriangleAlert as T, User as U, Vote as V, X, Bell as a, Send as b, LayoutDashboard as c, ClipboardList as d, Users as e, CircleX as f, CircleCheck as g, UserRound as h, CalendarDays as i, Trash2 as j, Mail as k, ShieldCheck as l, UserPlus as m, Shield as n, Plus as o, Search as p, FileText as q, MessageSquare as r, Clock as s, Square as t, Play as u, Ellipsis as v, SlidersHorizontal as w, Pin as x, FileUp as y, SmilePlus as z };
+export { ArrowLeft as A, Box as B, ChevronDown as C, Eye as E, FolderKanban as F, Info as I, LogOut as L, Menu as M, Pencil as P, Sparkles as S, TriangleAlert as T, User as U, Vote as V, X, Bell as a, Send as b, LayoutDashboard as c, ClipboardList as d, Users as e, CircleX as f, CircleCheck as g, UserRound as h, CalendarDays as i, Trash2 as j, Mail as k, ShieldCheck as l, UserPlus as m, Shield as n, Plus as o, Search as p, FileText as q, Clock as r, Square as s, Play as t, Ellipsis as u, MessageSquare as v, SlidersHorizontal as w, Pin as x, FileUp as y, SmilePlus as z };
 //# sourceMappingURL=vendor-icons.js.map
