@@ -53,4 +53,10 @@ public class Result
 
     public static Result Failure(string error, int statusCode = 400)
         => new(false, error, statusCode);
+
+    public static Result NotFound(string message = "Không tìm thấy tài nguyên")
+        => new(false, message, 404);
+
+    public static Result Forbidden(string message = "Không có quyền truy cập")
+        => new(false, message, 403);
 }

@@ -37,5 +37,9 @@ public class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
         builder.HasIndex(t => t.ProjectId);
         builder.HasIndex(t => t.AssigneeId);
         builder.HasIndex(t => t.Status);
+
+        // Optimization: Kanban board query (CH 2.2)
+        builder.HasIndex(t => new { t.ProjectId, t.Status })
+            .IncludeProperties(t => new { t.Title, t.Priority, t.AssigneeId, t.DueDate });
     }
 }

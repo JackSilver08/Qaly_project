@@ -33,6 +33,7 @@ builder.Host.UseSerilog();
 
 // Redis & Session
 var redisConn = builder.Configuration.GetValue<string>("Redis:ConnectionString") ?? "localhost:6379";
+builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(StackExchange.Redis.ConnectionMultiplexer.Connect(redisConn));
 builder.Services.AddStackExchangeRedisCache(options =>
 {
     options.Configuration = redisConn;
@@ -97,6 +98,7 @@ builder.Services
         options.AccessDeniedPath = "/Account/AccessDenied";
         options.SlidingExpiration = true;
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
+
         options.Events.OnRedirectToLogin = context =>
         {
             if (context.Request.Path.StartsWithSegments("/api"))
@@ -120,6 +122,10 @@ builder.Services
             return Task.CompletedTask;
         };
     });
+
+// Use Redis-backed Ticket Store with DI
+builder.Services.AddOptions<CookieAuthenticationOptions>(CookieAuthenticationDefaults.AuthenticationScheme)
+    .Configure<ITicketStore>((options, ticketStore) => options.SessionStore = ticketStore);
 
 builder.Services.AddAuthorization(options =>
 {

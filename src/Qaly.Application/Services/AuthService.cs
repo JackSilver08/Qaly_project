@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Mappings;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.User;
@@ -16,15 +17,18 @@ public class AuthService : IAuthService
     private readonly IRepository<User> _userRepo;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogService _auditLogService;
+    private readonly ISessionService _sessionService;
 
     public AuthService(
         IRepository<User> userRepo,
         IUnitOfWork unitOfWork,
-        IAuditLogService auditLogService)
+        IAuditLogService auditLogService,
+        ISessionService sessionService)
     {
         _userRepo = userRepo;
         _unitOfWork = unitOfWork;
         _auditLogService = auditLogService;
+        _sessionService = sessionService;
     }
 
     public async Task<Result<UserDto>> RegisterAsync(RegisterDto dto, CancellationToken ct = default)
@@ -117,6 +121,48 @@ public class AuthService : IAuthService
         await _auditLogService.LogAsync("Update", nameof(User), user.Id.ToString(), new { user.FullName, user.AvatarUrl }, ct);
 
         return Result.Success(user.ToDto());
+    }
+
+    public async Task<Result> ChangePasswordAsync(Guid userId, ChangePasswordDto dto, CancellationToken ct = default)
+    {
+        var user = await _userRepo.GetByIdAsync(userId, ct);
+        if (user == null)
+        {
+            return Result.NotFound();
+        }
+
+        if (!VerifyPassword(dto.CurrentPassword, user.PasswordHash))
+        {
+            return Result.Failure("Current password is incorrect.", 400);
+        }
+
+        if (dto.NewPassword.Length < 8)
+        {
+            return Result.Failure("New password must be at least 8 characters.", 400);
+        }
+
+        if (!string.Equals(dto.NewPassword, dto.ConfirmNewPassword, StringComparison.Ordinal))
+        {
+            return Result.Failure("Password confirmation does not match.", 400);
+        }
+
+        user.PasswordHash = HashPassword(dto.NewPassword);
+        await _userRepo.UpdateAsync(user, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        await _auditLogService.LogAsync("ChangePassword", nameof(User), user.Id.ToString(), null, ct);
+
+        // Security: Revoke all other sessions after password change
+        await RevokeSessionsAsync(userId, ct);
+
+        return Result.Success();
+    }
+
+    public async Task<Result> RevokeSessionsAsync(Guid userId, CancellationToken ct = default)
+    {
+        await _sessionService.RevokeAllUserSessionsAsync(userId, ct);
+        await _auditLogService.LogAsync("RevokeSessions", nameof(User), userId.ToString(), null, ct);
+        return Result.Success();
     }
 
     private static string NormalizeEmail(string email)

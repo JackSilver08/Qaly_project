@@ -21,18 +21,9 @@ public class ErumiTaskTools
         [Description("Mô tả chi tiết nhiệm vụ")] string? description = null,
         [Description("ID của người được giao")] Guid? assigneeId = null,
         [Description("Độ ưu tiên: Low, Medium, High, Critical")] string priority = "Medium",
-        [Description("Ngày hết hạn (ISO 8601)")] DateTime? dueDate = null)
+        [Description("Ngày hết hạn (ISO 8601)")] DateTimeOffset? dueDate = null)
     {
-        var dto = new CreateTaskDto
-        {
-            Title = title,
-            Description = description,
-            ProjectId = projectId,
-            AssigneeId = assigneeId,
-            Priority = priority,
-            DueDate = dueDate,
-            IsPrivate = false
-        };
+        var dto = new CreateTaskDto(title, description, priority, dueDate, null, projectId, assigneeId, false);
 
         var result = await _taskService.CreateAsync(dto);
         if (result.IsSuccess)

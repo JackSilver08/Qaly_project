@@ -45,6 +45,7 @@ public static class DependencyInjection
         services.AddScoped<IAuditLogService, AuditLogService>();
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
         services.AddScoped<IAiExportService, AiExportService>();
+        services.AddScoped<ISessionService, RedisSessionService>();
 
         // AI Services
         var ollamaUrl = configuration["Ai:OllamaUrl"] ?? "http://localhost:11434";
@@ -57,6 +58,7 @@ public static class DependencyInjection
         services.AddSingleton<IVectorStorageService, QdrantVectorStorageService>();
         services.AddScoped<IAiIngestionService, AiIngestionService>();
         services.AddScoped<AiTools>();
+        services.AddScoped<Microsoft.AspNetCore.Authentication.Cookies.ITicketStore, Auth.RedisTicketStore>();
 
         // Background Workers
         services.AddHostedService<VectorSyncWorker>();

@@ -21,6 +21,9 @@ public class NotificationConfiguration : IEntityTypeConfiguration<Notification>
             .HasForeignKey(n => n.UserId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasIndex(n => new { n.UserId, n.IsRead });
+        // Optimization: Unread count query (CH 2.2)
+        builder.HasIndex(n => new { n.UserId, n.IsRead })
+            .HasFilter("[IsRead] = 0")
+            .IncludeProperties(n => new { n.CreatedAt, n.Message });
     }
 }

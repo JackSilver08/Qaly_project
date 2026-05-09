@@ -95,4 +95,42 @@ public class AuthController : ControllerBase
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         return Ok(new { ok = true });
     }
+
+    [HttpDelete("sessions")]
+    [Authorize]
+    public async Task<IActionResult> DeleteSessions(CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        if (userId == null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await _authService.RevokeSessionsAsync(userId.Value, ct);
+        
+        // Also sign out the current request
+        await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("change-password")]
+    [Authorize]
+    public async Task<IActionResult> ChangePassword(ChangePasswordDto dto, CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        if (userId == null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await _authService.ChangePasswordAsync(userId.Value, dto, ct);
+        if (result.IsSuccess)
+        {
+            // After password change, sessions are revoked, so sign out the current one too
+            await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        }
+
+        return StatusCode(result.StatusCode, result);
+    }
 }

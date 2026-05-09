@@ -73,7 +73,7 @@ public class QdrantVectorStorageService : IVectorStorageService, IDisposable
             { 
                 Field = new FieldCondition 
                 { 
-                    Key = "ProjectId", 
+                    Key = "project_id", 
                     Match = new Match { Keyword = filter.ProjectId.Value.ToString() } 
                 } 
             });
@@ -85,7 +85,7 @@ public class QdrantVectorStorageService : IVectorStorageService, IDisposable
             {
                 Field = new FieldCondition
                 {
-                    Key = "TaskId",
+                    Key = "task_id",
                     Match = new Match { Keyword = filter.TaskId.Value.ToString() }
                 }
             });
@@ -97,27 +97,22 @@ public class QdrantVectorStorageService : IVectorStorageService, IDisposable
             { 
                 Field = new FieldCondition 
                 { 
-                    Key = "ContentType", 
-                    Match = new Match { Keyword = filter.ContentType } 
+                    Key = "content_type", 
+                    Match = new Match { Keyword = filter.ContentType.ToLowerInvariant() } 
                 } 
             });
         }
 
-        // Security Filter: Visibility & Privacy
-        // (Visibility == 'public') OR (Visibility == 'member' AND UserInProject) OR (Visibility == 'private' AND OwnerId == currentUserId)
-        // Simplified for RAG: Usually we filter by ProjectId (must) and then filter out Private tasks unless user has access.
-        
         if (filter.IsPrivate.HasValue)
         {
             if (filter.IsPrivate == true && filter.OwnerId.HasValue)
             {
-                // If we specifically want private items for a user
-                qdrantFilter.Must.Add(new Condition { Field = new FieldCondition { Key = "IsPrivate", Match = new Match { Boolean = true } } });
-                qdrantFilter.Must.Add(new Condition { Field = new FieldCondition { Key = "OwnerId", Match = new Match { Keyword = filter.OwnerId.Value.ToString() } } });
+                qdrantFilter.Must.Add(new Condition { Field = new FieldCondition { Key = "is_private", Match = new Match { Boolean = true } } });
+                qdrantFilter.Must.Add(new Condition { Field = new FieldCondition { Key = "owner_id", Match = new Match { Keyword = filter.OwnerId.Value.ToString() } } });
             }
             else if (filter.IsPrivate == false)
             {
-                qdrantFilter.Must.Add(new Condition { Field = new FieldCondition { Key = "IsPrivate", Match = new Match { Boolean = false } } });
+                qdrantFilter.Must.Add(new Condition { Field = new FieldCondition { Key = "is_private", Match = new Match { Boolean = false } } });
             }
         }
 
@@ -138,11 +133,12 @@ public class QdrantVectorStorageService : IVectorStorageService, IDisposable
 
         var qdrantFilter = new Filter();
 
+        // Mandatory Project Filter
         qdrantFilter.Must.Add(new Condition
         {
             Field = new FieldCondition
             {
-                Key = "ProjectId",
+                Key = "project_id",
                 Match = new Match { Keyword = filter.ProjectId.Value.ToString() }
             }
         });
@@ -153,7 +149,7 @@ public class QdrantVectorStorageService : IVectorStorageService, IDisposable
             {
                 Field = new FieldCondition
                 {
-                    Key = "TaskId",
+                    Key = "task_id",
                     Match = new Match { Keyword = filter.TaskId.Value.ToString() }
                 }
             });
@@ -165,27 +161,22 @@ public class QdrantVectorStorageService : IVectorStorageService, IDisposable
             {
                 Field = new FieldCondition
                 {
-                    Key = "ContentType",
-                    Match = new Match { Keyword = filter.ContentType }
+                    Key = "content_type",
+                    Match = new Match { Keyword = filter.ContentType.ToLowerInvariant() }
                 }
             });
         }
 
-        qdrantFilter.Should.Add(new Condition
+        // Security: (is_private == false) OR (owner_id == currentUser)
+        qdrantFilter.Must.Add(new Condition
         {
-            Field = new FieldCondition
+            Filter = new Filter
             {
-                Key = "IsPrivate",
-                Match = new Match { Boolean = false }
-            }
-        });
-
-        qdrantFilter.Should.Add(new Condition
-        {
-            Field = new FieldCondition
-            {
-                Key = "OwnerId",
-                Match = new Match { Keyword = filter.OwnerId.Value.ToString() }
+                Should = 
+                {
+                    new Condition { Field = new FieldCondition { Key = "is_private", Match = new Match { Boolean = false } } },
+                    new Condition { Field = new FieldCondition { Key = "owner_id", Match = new Match { Keyword = filter.OwnerId.Value.ToString() } } }
+                }
             }
         });
 

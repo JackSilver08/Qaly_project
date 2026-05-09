@@ -40,15 +40,10 @@ public class AiIngestionService : IAiIngestionService
         
         var metadata = new Dictionary<string, object>
         {
-            { "ProjectId", project.Id },
             { "project_id", project.Id },
-            { "OwnerId", project.OwnerId },
             { "owner_id", project.OwnerId },
-            { "IsPrivate", false },
             { "is_private", false },
-            { "Visibility", "member" },
             { "visibility", "member" },
-            { "ContentType", "Project" },
             { "content_type", "project" },
             { "created_at", project.CreatedAt.ToString("O") }
         };
@@ -77,17 +72,11 @@ public class AiIngestionService : IAiIngestionService
         
         var metadata = new Dictionary<string, object>
         {
-            { "ProjectId", task.ProjectId },
             { "project_id", task.ProjectId },
-            { "TaskId", task.Id },
             { "task_id", task.Id },
-            { "OwnerId", task.ReporterId },
             { "owner_id", task.ReporterId },
-            { "IsPrivate", task.IsPrivate },
             { "is_private", task.IsPrivate },
-            { "Visibility", task.IsPrivate ? "private" : "member" },
             { "visibility", task.IsPrivate ? "private" : "member" },
-            { "ContentType", "Task" },
             { "content_type", "task" },
             { "created_at", task.CreatedAt.ToString("O") }
         };
@@ -114,17 +103,11 @@ public class AiIngestionService : IAiIngestionService
         
         var metadata = new Dictionary<string, object>
         {
-            { "ProjectId", comment.TaskItem.ProjectId },
             { "project_id", comment.TaskItem.ProjectId },
-            { "TaskId", comment.TaskItemId },
             { "task_id", comment.TaskItemId },
-            { "OwnerId", comment.AuthorId },
             { "owner_id", comment.AuthorId },
-            { "IsPrivate", comment.TaskItem.IsPrivate },
             { "is_private", comment.TaskItem.IsPrivate },
-            { "Visibility", comment.TaskItem.IsPrivate ? "private" : "member" },
             { "visibility", comment.TaskItem.IsPrivate ? "private" : "member" },
-            { "ContentType", "Comment" },
             { "content_type", "comment" },
             { "created_at", comment.CreatedAt.ToString("O") }
         };

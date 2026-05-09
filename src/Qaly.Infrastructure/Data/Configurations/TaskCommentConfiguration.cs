@@ -23,6 +23,7 @@ public class TaskCommentConfiguration : IEntityTypeConfiguration<TaskComment>
             .HasForeignKey(c => c.AuthorId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        builder.HasIndex(c => c.TaskItemId);
+        // Optimization: Comment pagination (CH 2.2)
+        builder.HasIndex(c => new { c.TaskItemId, c.CreatedAt }).IsDescending(false, true);
     }
 }
