@@ -72,7 +72,29 @@ public class TasksController : ControllerBase
         var result = await _taskService.DeleteAsync(id, ct);
         return StatusCode(result.StatusCode, result);
     }
+    [HttpPatch("{id}/dates")]
+    public async Task<IActionResult> UpdateDates(Guid id, [FromBody] UpdateTaskDatesRequest request, CancellationToken ct)
+    {
+        var result = await _taskService.UpdateDatesAsync(id, request.StartDate, request.EndDate, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("{id}/dependencies")]
+    public async Task<IActionResult> AddDependency(Guid id, [FromBody] AddTaskDependencyRequest request, CancellationToken ct)
+    {
+        var result = await _taskService.AddDependencyAsync(request.PredecessorId, id, request.Type ?? "FinishToStart", ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpDelete("{id}/dependencies/{dependencyId:guid}")]
+    public async Task<IActionResult> RemoveDependency(Guid id, Guid dependencyId, CancellationToken ct)
+    {
+        var result = await _taskService.RemoveDependencyAsync(dependencyId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
 }
 
 public sealed record UpdateTaskStatusRequest(string Status);
 public sealed record UpdateTaskSortOrderRequest(int SortOrder);
+public sealed record UpdateTaskDatesRequest(DateTimeOffset? StartDate, DateTimeOffset? EndDate);
+public sealed record AddTaskDependencyRequest(Guid PredecessorId, string? Type);

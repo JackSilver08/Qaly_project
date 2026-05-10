@@ -12,10 +12,19 @@ namespace Qaly.Web.Controllers;
 public class ProjectsController : ControllerBase
 {
     private readonly IProjectService _projectService;
+    private readonly ITaskService _taskService;
 
-    public ProjectsController(IProjectService projectService)
+    public ProjectsController(IProjectService projectService, ITaskService taskService)
     {
         _projectService = projectService;
+        _taskService = taskService;
+    }
+
+    [HttpGet("{id}/gantt")]
+    public async Task<IActionResult> GetGanttData(Guid id, CancellationToken ct)
+    {
+        var result = await _taskService.GetGanttDataAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
     }
 
     [HttpGet]

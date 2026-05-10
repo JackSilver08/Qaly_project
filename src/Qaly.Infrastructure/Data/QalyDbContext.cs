@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Qaly.Domain.Entities;
 
 namespace Qaly.Infrastructure.Data;
@@ -21,6 +21,10 @@ public class QalyDbContext : DbContext
     public DbSet<VectorSyncOutbox> VectorSyncOutbox => Set<VectorSyncOutbox>();
     public DbSet<TimeEntry> TimeEntries => Set<TimeEntry>();
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
+    public DbSet<TaskDependency> TaskDependencies => Set<TaskDependency>();
+    public DbSet<WebhookSubscription> WebhookSubscriptions => Set<WebhookSubscription>();
+    public DbSet<WebhookDeliveryLog> WebhookDeliveryLogs => Set<WebhookDeliveryLog>();
+    public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

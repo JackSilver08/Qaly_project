@@ -46,6 +46,9 @@ public static class DependencyInjection
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
         services.AddScoped<IAiExportService, AiExportService>();
         services.AddScoped<ISessionService, RedisSessionService>();
+        services.AddScoped<IWebhookPublisher, WebhookPublisher>();
+        
+        services.AddHttpClient("WebhookClient");
 
         // AI Services
         var ollamaUrl = configuration["Ai:OllamaUrl"] ?? "http://localhost:11434";
@@ -62,6 +65,7 @@ public static class DependencyInjection
 
         // Background Workers
         services.AddHostedService<VectorSyncWorker>();
+        services.AddHostedService<EmailDigestWorker>();
 
         return services;
     }

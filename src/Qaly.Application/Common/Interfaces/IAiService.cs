@@ -34,4 +34,7 @@ public interface IAiService
 
     /// <summary>Lấy thông tin project kèm tasks để phục vụ export</summary>
     Task<Project?> GetProjectWithTasksAsync(Guid projectId);
+
+    /// <summary>Tạo nhận xét AI dựa trên dữ liệu phân tích (Analytics)</summary>
+    Task<string> GenerateAnalyticsInsightsAsync(Guid projectId, string analyticsData);
 }

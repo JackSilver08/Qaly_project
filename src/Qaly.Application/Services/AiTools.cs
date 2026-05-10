@@ -320,4 +320,33 @@ public class AiTools
         }
         return $"Lá»—i khi láº¥y lá»‹ch sá»­ thá»i gian: {result.Error}";
     }
+    [Description("Đề xuất thành viên phù hợp nhất để làm một công việc cụ thể dựa vào khối lượng công việc hiện tại.")]
+    public async Task<string> SuggestTaskAssignment(
+        [Description("ID của công việc cần phân công")] Guid taskId,
+        [Description("ID của dự án")] Guid projectId)
+    {
+        var taskResult = await _taskService.GetByIdAsync(taskId);
+        if (!taskResult.IsSuccess) return "Không tìm thấy công việc.";
+
+        var members = await _memberRepo.GetQueryable()
+            .Where(m => m.ProjectId == projectId)
+            .Include(m => m.User)
+            .ToListAsync();
+
+        var activeTasks = await _taskRepo.GetQueryable()
+            .Where(t => t.ProjectId == projectId && t.Status != "Done" && t.Status != "Cancelled" && t.AssigneeId != null)
+            .ToListAsync();
+
+        var workload = members.Select(m => new
+        {
+            m.User.FullName,
+            m.Role,
+            ActiveCount = activeTasks.Count(t => t.AssigneeId == m.UserId)
+        }).ToList();
+
+        var membersContext = string.Join("\n", workload.Select(w => $"- {w.FullName} (Vai trò: {w.Role}): Đang có {w.ActiveCount} task(s) chưa hoàn thành."));
+
+        return $"Thông tin công việc: {taskResult.Data!.Title}. Danh sách thành viên và khối lượng công việc:\n{membersContext}\n\nHãy tự phân tích và đưa ra đề xuất người phù hợp nhất cho người dùng.";
+    }
 }
+
