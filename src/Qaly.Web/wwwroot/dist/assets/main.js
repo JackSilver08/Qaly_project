@@ -657,7 +657,7 @@ const _export_sfc = (sfc, props) => {
     }
     return target;
 };
-const FloatingChatbot = /*#__PURE__*/ _export_sfc(_sfc_main$2, [['__scopeId', "data-v-1b8183d1"]]);
+const FloatingChatbot = /*#__PURE__*/ _export_sfc(_sfc_main$2, [['__scopeId', "data-v-418db581"]]);
 const fallbackDashboard = {
     generatedAt: '2026-05-01T16:20:00Z',
     stats: {
@@ -941,6 +941,489 @@ const fallbackDashboard = {
         },
     ],
 };
+async function apiJson(url, options = {}) {
+    const headers = new Headers(options.headers);
+    if (options.body && !(options.body instanceof FormData)) {
+        headers.set('Content-Type', 'application/json');
+    }
+    headers.set('Accept', 'application/json');
+    const response = await fetch(url, {
+        credentials: 'same-origin',
+        ...options,
+        headers,
+    });
+    if (response.status === 401) {
+        window.location.href = `/Account/Login?returnUrl=${encodeURIComponent(window.location.pathname)}`;
+        throw new Error('Authentication required.');
+    }
+    const text = await response.text();
+    const payload = parseApiPayload(text);
+    if (!response.ok) {
+        throw new Error(apiPayloadError(payload, response.status));
+    }
+    return payload;
+}
+async function apiResult(url, options = {}) {
+    const result = await apiJson(url, options);
+    if (isApiResult(result)) {
+        if (!result.isSuccess || result.data == null) {
+            throw new Error(result.error ?? 'Không thể hoàn tất yêu cầu.');
+        }
+        return result.data;
+    }
+    return result;
+}
+async function apiCommand(url, options = {}) {
+    const result = await apiJson(url, options);
+    if (isApiResult(result) && !result.isSuccess) {
+        throw new Error(result.error ?? 'Không thể hoàn tất yêu cầu.');
+    }
+    if (result && typeof result === 'object' && 'ok' in result && result.ok === false) {
+        throw new Error('Không thể hoàn tất yêu cầu.');
+    }
+}
+function parseApiPayload(text) {
+    if (!text)
+        return null;
+    try {
+        return JSON.parse(text);
+    }
+    catch {
+        return text;
+    }
+}
+function apiPayloadError(payload, status) {
+    if (typeof payload === 'string' && payload.trim())
+        return payload.trim();
+    if (payload && typeof payload === 'object') {
+        if ('error' in payload && typeof payload.error === 'string' && payload.error.trim())
+            return payload.error;
+        if ('message' in payload && typeof payload.message === 'string' && payload.message.trim())
+            return payload.message;
+        if ('title' in payload && typeof payload.title === 'string' && payload.title.trim()) {
+            const validationMessage = validationErrorMessage(payload);
+            return validationMessage ?? payload.title;
+        }
+    }
+    return `Không thể hoàn tất yêu cầu (mã ${status}).`;
+}
+function validationErrorMessage(payload) {
+    if (!('errors' in payload) || !payload.errors || typeof payload.errors !== 'object')
+        return null;
+    for (const value of Object.values(payload.errors)) {
+        if (Array.isArray(value) && typeof value[0] === 'string')
+            return value[0];
+        if (typeof value === 'string')
+            return value;
+    }
+    return null;
+}
+function isApiResult(payload) {
+    return Boolean(payload && typeof payload === 'object' && 'isSuccess' in payload);
+}
+function errorMessage(error, fallback = 'Đã xảy ra lỗi khi lưu dữ liệu') {
+    const message = error instanceof Error ? error.message.trim() : '';
+    if (!message ||
+        message === 'Request failed.' ||
+        message.startsWith('Request failed with status') ||
+        message.startsWith('Không thể hoàn tất yêu cầu')) {
+        return fallback;
+    }
+    return message;
+}
+function formatDate(value) {
+    if (!value)
+        return 'No date';
+    return new Intl.DateTimeFormat('en', {
+        month: 'short',
+        day: 'numeric',
+    }).format(new Date(value));
+}
+function formatTime(value) {
+    if (!value)
+        return '';
+    return new Intl.DateTimeFormat('en', {
+        hour: 'numeric',
+        minute: '2-digit',
+    }).format(new Date(value));
+}
+function formatFileSize(bytes) {
+    if (bytes < 1024)
+        return `${bytes} B`;
+    if (bytes < 1024 * 1024)
+        return `${Math.round(bytes / 1024)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+function initials(name) {
+    if (!name)
+        return '?';
+    return name
+        .split(' ')
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase() ?? '')
+        .join('');
+}
+function isTaskOverdue(task) {
+    return Boolean(task.dueDate) && new Date(task.dueDate).getTime() < Date.now() && task.status !== 'Done';
+}
+function displayStatus(status) {
+    switch (status) {
+        case 'Active':
+            return 'Active';
+        case 'InProgress':
+            return 'In progress';
+        case 'InReview':
+            return 'In review';
+        case 'Done':
+            return 'Done';
+        case 'Planned':
+            return 'Planned';
+        case 'Archived':
+            return 'Archived';
+        case 'Todo':
+            return 'Todo';
+        case 'Cancelled':
+            return 'Cancelled';
+        default:
+            return status || 'Unknown';
+    }
+}
+function displayRole(role) {
+    return role === 'Admin' ? 'Admin' : role === 'Member' ? 'Member' : role || '';
+}
+function statusTone(status) {
+    switch (status) {
+        case 'Active':
+        case 'InProgress':
+            return 'active';
+        case 'Planned':
+            return 'planned';
+        case 'Archived':
+            return 'archived';
+        default:
+            return 'neutral';
+    }
+}
+function useDashboard() {
+    const dashboard = ref(fallbackDashboard);
+    const currentUser = ref(null);
+    const users = ref([]);
+    const isLoading = ref(true);
+    const usingFallback = ref(true);
+    const projects = computed(() => dashboard.value.projects);
+    const team = computed(() => dashboard.value.team);
+    const activeProjectsCount = computed(() => projects.value.filter((p) => p.status !== 'Archived').length);
+    const totalTasks = computed(() => projects.value.reduce((sum, p) => sum + p.tasks.length, 0));
+    const completedTasks = computed(() => projects.value.reduce((sum, p) => sum + p.tasks.filter((t) => t.status === 'Done').length, 0));
+    const overdueTasksCount = computed(() => projects.value.reduce((sum, p) => sum + p.tasks.filter((t) => isTaskOverdue(t)).length, 0));
+    const summaryCards = computed(() => [
+        {
+            key: 'projects',
+            label: 'Projects',
+            value: String(projects.value.length),
+            detail: `${activeProjectsCount.value} active`,
+            tone: 'blue',
+        },
+        {
+            key: 'tasks',
+            label: 'Tasks',
+            value: String(totalTasks.value),
+            detail: `${completedTasks.value} done`,
+            tone: 'mint',
+        },
+        {
+            key: 'team',
+            label: 'Team',
+            value: String(team.value.length),
+            detail: 'workspace members',
+            tone: 'violet',
+        },
+    ]);
+    async function loadDashboard() {
+        isLoading.value = true;
+        try {
+            dashboard.value = await apiJson('/api/dashboard/overview');
+            usingFallback.value = false;
+        }
+        catch (error) {
+            console.warn('Using fallback dashboard data.', error);
+            dashboard.value = fallbackDashboard;
+            usingFallback.value = true;
+        }
+        finally {
+            isLoading.value = false;
+        }
+    }
+    async function loadMe() {
+        try {
+            currentUser.value = await apiResult('/api/auth/me');
+        }
+        catch (error) {
+            console.warn('Could not load current user.', error);
+        }
+    }
+    async function loadUsers() {
+        try {
+            users.value = await apiResult('/api/users');
+        }
+        catch (error) {
+            console.warn('Could not load users.', error);
+        }
+    }
+    return {
+        dashboard,
+        currentUser,
+        users,
+        isLoading,
+        usingFallback,
+        projects,
+        team,
+        activeProjectsCount,
+        totalTasks,
+        completedTasks,
+        overdueTasksCount,
+        summaryCards,
+        loadDashboard,
+        loadMe,
+        loadUsers,
+    };
+}
+function useProjectActions(projects, activeProjectId, loadDashboard) {
+    const router = useRouter();
+    const createProjectOpen = ref(false);
+    const projectBeingEditedId = ref(null);
+    const projectName = ref('');
+    const projectDescription = ref('');
+    const projectEndDate = ref('');
+    const editProjectName = ref('');
+    const editProjectDescription = ref('');
+    function openCreateProject() {
+        createProjectOpen.value = true;
+        projectBeingEditedId.value = null;
+        void router.push('/projects');
+    }
+    function clearProjectForm() {
+        projectName.value = '';
+        projectDescription.value = '';
+        projectEndDate.value = '';
+    }
+    async function createProject() {
+        const name = projectName.value.trim();
+        if (!name)
+            return;
+        try {
+            const project = await apiResult('/api/projects', {
+                method: 'POST',
+                body: JSON.stringify({
+                    name,
+                    description: projectDescription.value.trim() || null,
+                    startDate: null,
+                    endDate: projectEndDate.value ? new Date(projectEndDate.value).toISOString() : null,
+                }),
+            });
+            clearProjectForm();
+            createProjectOpen.value = false;
+            await loadDashboard();
+            activeProjectId.value = project.id;
+            void router.push(`/projects/${project.id}`);
+            showSuccess(`Thêm dự án "${project.name}" thành công`);
+        }
+        catch (error) {
+            showError(errorMessage(error, 'Không thể thêm dự án'));
+        }
+    }
+    function beginEditProject(projectId) {
+        const project = projects.value.find((item) => item.id === projectId);
+        if (!project)
+            return;
+        activeProjectId.value = projectId;
+        createProjectOpen.value = false;
+        projectBeingEditedId.value = projectId;
+        editProjectName.value = project.name;
+        editProjectDescription.value = project.description ?? '';
+    }
+    async function saveProjectEdit() {
+        const project = projects.value.find((item) => item.id === projectBeingEditedId.value);
+        const name = editProjectName.value.trim();
+        if (!project || !name)
+            return;
+        try {
+            await apiResult(`/api/projects/${project.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    name,
+                    description: editProjectDescription.value.trim() || null,
+                    status: project.status,
+                    startDate: null,
+                    endDate: project.endDate,
+                }),
+            });
+            projectBeingEditedId.value = null;
+            await loadDashboard();
+            activeProjectId.value = project.id;
+            showSuccess(`Cập nhật dự án "${name}" thành công`);
+        }
+        catch (error) {
+            showError(errorMessage(error, 'Không thể cập nhật dự án'));
+        }
+    }
+    async function deleteProject(projectId) {
+        const project = projects.value.find((item) => item.id === projectId);
+        if (!project)
+            return;
+        if (!confirm(`Bạn có chắc muốn xóa dự án "${project.name}"?`))
+            return;
+        try {
+            await apiCommand(`/api/projects/${projectId}`, { method: 'DELETE' });
+            await loadDashboard();
+            showSuccess(`Xóa dự án "${project.name}" thành công`);
+        }
+        catch (error) {
+            showError(errorMessage(error, 'Không thể xóa dự án'));
+        }
+    }
+    function selectProject(projectId) {
+        activeProjectId.value = projectId;
+        void router.push(`/projects/${projectId}`);
+    }
+    return {
+        createProjectOpen,
+        projectBeingEditedId,
+        projectName,
+        projectDescription,
+        projectEndDate,
+        editProjectName,
+        editProjectDescription,
+        openCreateProject,
+        createProject,
+        beginEditProject,
+        saveProjectEdit,
+        deleteProject,
+        selectProject,
+    };
+}
+function useTaskActions(selectedTaskId, loadDashboard) {
+    const createTaskOpen = ref(false);
+    const taskBeingEdited = ref(null);
+    const newTaskTitle = ref('');
+    const newTaskDescription = ref('');
+    const newTaskPriority = ref('Medium');
+    const newTaskAssigneeId = ref('');
+    const newTaskDueDate = ref('');
+    function clearTaskForm() {
+        newTaskTitle.value = '';
+        newTaskDescription.value = '';
+        newTaskPriority.value = 'Medium';
+        newTaskAssigneeId.value = '';
+        newTaskDueDate.value = '';
+    }
+    async function createTask(projectId) {
+        const title = newTaskTitle.value.trim();
+        if (!projectId || !title)
+            return;
+        if (taskBeingEdited.value) {
+            await saveTaskEdit();
+            return;
+        }
+        try {
+            const task = await apiResult('/api/tasks', {
+                method: 'POST',
+                body: JSON.stringify({
+                    title,
+                    description: newTaskDescription.value.trim() || null,
+                    priority: newTaskPriority.value,
+                    dueDate: newTaskDueDate.value ? new Date(newTaskDueDate.value).toISOString() : null,
+                    estimatedHours: null,
+                    projectId,
+                    assigneeId: newTaskAssigneeId.value || null,
+                    isPrivate: false,
+                }),
+            });
+            clearTaskForm();
+            createTaskOpen.value = false;
+            await loadDashboard();
+            showSuccess(task.aiPrioritySuggestion ? `Thêm nhiệm vụ thành công. ${task.aiPrioritySuggestion}` : 'Thêm nhiệm vụ thành công');
+        }
+        catch (error) {
+            showError(errorMessage(error, 'Không thể thêm nhiệm vụ'));
+        }
+    }
+    async function moveTask(task, status) {
+        try {
+            await apiCommand(`/api/tasks/${task.id}/status`, {
+                method: 'PATCH',
+                body: JSON.stringify({ status }),
+            });
+            await loadDashboard();
+            selectedTaskId.value = task.id;
+            showSuccess(`Đã chuyển nhiệm vụ sang ${displayStatus(status)}`);
+        }
+        catch (error) {
+            showError(errorMessage(error, 'Không thể cập nhật trạng thái nhiệm vụ'));
+        }
+    }
+    function beginEditTask(task) {
+        taskBeingEdited.value = task;
+        newTaskTitle.value = task.title;
+        newTaskDescription.value = '';
+        newTaskPriority.value = task.priority;
+        newTaskAssigneeId.value = '';
+        newTaskDueDate.value = task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '';
+        createTaskOpen.value = true;
+    }
+    async function saveTaskEdit() {
+        if (!taskBeingEdited.value)
+            return;
+        try {
+            await apiResult(`/api/tasks/${taskBeingEdited.value.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    title: newTaskTitle.value.trim(),
+                    description: newTaskDescription.value.trim() || null,
+                    status: taskBeingEdited.value.status,
+                    priority: newTaskPriority.value,
+                    dueDate: newTaskDueDate.value ? new Date(newTaskDueDate.value).toISOString() : null,
+                    assigneeId: newTaskAssigneeId.value || null,
+                }),
+            });
+            clearTaskForm();
+            createTaskOpen.value = false;
+            taskBeingEdited.value = null;
+            await loadDashboard();
+            showSuccess('Cập nhật nhiệm vụ thành công');
+        }
+        catch (error) {
+            showError(errorMessage(error, 'Không thể cập nhật nhiệm vụ'));
+        }
+    }
+    async function deleteTask(taskId) {
+        if (!confirm('Bạn có chắc chắn muốn xóa task này?'))
+            return;
+        try {
+            await apiCommand(`/api/tasks/${taskId}`, { method: 'DELETE' });
+            await loadDashboard();
+            showSuccess('Xóa nhiệm vụ thành công');
+        }
+        catch (error) {
+            showError(errorMessage(error, 'Không thể xóa nhiệm vụ'));
+        }
+    }
+    return {
+        createTaskOpen,
+        taskBeingEdited,
+        newTaskTitle,
+        newTaskDescription,
+        newTaskPriority,
+        newTaskAssigneeId,
+        newTaskDueDate,
+        createTask,
+        moveTask,
+        beginEditTask,
+        saveTaskEdit,
+        deleteTask,
+    };
+}
 const _hoisted_1$1 = {
     key: 0,
     class: "notification-popover glass-card home-notification-popover"
@@ -952,6 +1435,11 @@ const _hoisted_5 = ["onClick"];
 const _sfc_main$1 = /*@__PURE__*/ defineComponent({
     __name: 'App',
     setup(__props) {
+        const { dashboard, currentUser, users, isLoading, usingFallback, projects, team, summaryCards, loadDashboard, loadMe, loadUsers, } = useDashboard();
+        const activeProjectId = ref(null);
+        const selectedTaskId = ref(null);
+        const { createProjectOpen, projectName, projectDescription, projectEndDate, editProjectName, editProjectDescription, projectBeingEditedId, openCreateProject, createProject, beginEditProject, saveProjectEdit, deleteProject, selectProject: baseSelectProject, } = useProjectActions(projects, activeProjectId, loadDashboard);
+        const { createTaskOpen, newTaskTitle, newTaskDescription, newTaskPriority, newTaskAssigneeId, newTaskDueDate, createTask: baseCreateTask, moveTask, beginEditTask, deleteTask, } = useTaskActions(selectedTaskId, loadDashboard);
         const navigation = [
             { label: 'Tổng quan', to: '/dashboard', icon: LayoutDashboard },
             { label: 'Dự án', to: '/projects', icon: FolderKanban },
@@ -960,22 +1448,13 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
         ];
         const statusColumns = ['Todo', 'InProgress', 'InReview', 'Done'];
         const priorities = ['Low', 'Medium', 'High', 'Critical'];
-        const dashboard = ref(fallbackDashboard);
-        const currentUser = ref(null);
-        const users = ref([]);
         const notifications = ref([]);
         const comments = ref([]);
         const attachments = ref([]);
         const wikiPages = ref([]);
         const timeEntries = ref([]);
         const activeTimer = ref(null);
-        const isLoading = ref(true);
-        const usingFallback = ref(true);
         const notificationsOpen = ref(false);
-        const createProjectOpen = ref(false);
-        const createTaskOpen = ref(false);
-        const projectBeingEditedId = ref(null);
-        const selectedTaskId = ref(null);
         const taskSearchQuery = ref('');
         const taskBeingQuickEditedId = ref(null);
         const activeTaskMenu = ref(null);
@@ -985,56 +1464,17 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
         const searchQuery = ref('');
         const projectFilter = ref('all');
         const projectSort = ref('recent');
-        const activeProjectId = ref(null);
         const activeProjectTab = ref('stats');
-        const projectName = ref('');
-        const projectDescription = ref('');
-        const projectEndDate = ref('');
         const tabs = [
             { id: 'stats', label: 'Thống kê' },
             { id: 'tasks', label: 'Task' },
             { id: 'members', label: 'Member' },
             { id: 'wiki', label: 'Wiki' },
         ];
-        const editProjectName = ref('');
-        const editProjectDescription = ref('');
-        const newTaskTitle = ref('');
-        const newTaskDescription = ref('');
-        const newTaskPriority = ref('Medium');
-        const newTaskAssigneeId = ref('');
-        const newTaskDueDate = ref('');
         const newComment = ref('');
         let notificationConnectionStarted = false;
         const router = useRouter();
         const route = useRoute();
-        const projects = computed(() => dashboard.value.projects);
-        const team = computed(() => dashboard.value.team);
-        const activeProjectsCount = computed(() => projects.value.filter((project) => project.status !== 'Archived').length);
-        const totalTasks = computed(() => projects.value.reduce((sum, project) => sum + project.tasks.length, 0));
-        const completedTasks = computed(() => projects.value.reduce((sum, project) => sum + project.tasks.filter((task) => task.status === 'Done').length, 0));
-        const summaryCards = computed(() => [
-            {
-                key: 'projects',
-                label: 'Projects',
-                value: String(projects.value.length),
-                detail: `${activeProjectsCount.value} active`,
-                tone: 'blue',
-            },
-            {
-                key: 'tasks',
-                label: 'Tasks',
-                value: String(totalTasks.value),
-                detail: `${completedTasks.value} done`,
-                tone: 'mint',
-            },
-            {
-                key: 'team',
-                label: 'Team',
-                value: String(team.value.length),
-                detail: 'workspace members',
-                tone: 'violet',
-            },
-        ]);
         const filteredProjects = computed(() => {
             const query = searchQuery.value.trim().toLowerCase();
             return projects.value
@@ -1081,12 +1521,8 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
             };
         }
         const projectCards = computed(() => filteredProjects.value.map(toProjectCard));
-        const activeProjectCards = computed(() => filteredProjects.value
-            .filter((project) => project.status !== 'Archived')
-            .map(toProjectCard));
-        const archivedProjectCards = computed(() => filteredProjects.value
-            .filter((project) => project.status === 'Archived')
-            .map(toProjectCard));
+        const activeProjectCards = computed(() => filteredProjects.value.filter((p) => p.status !== 'Archived').map(toProjectCard));
+        const archivedProjectCards = computed(() => filteredProjects.value.filter((p) => p.status === 'Archived').map(toProjectCard));
         const assignedTaskCards = computed(() => projects.value.flatMap((project) => project.tasks
             .filter((task) => !currentUser.value || task.assigneeName === currentUser.value.fullName)
             .map((task) => ({
@@ -1128,12 +1564,7 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
             if (project.ownerId?.toLowerCase() === userId)
                 return true;
             const member = project.members?.find(m => String(m.userId || '').toLowerCase() === userId);
-            if (member) {
-                const memberRole = String(member.role || '').toLowerCase();
-                if (memberRole === 'owner' || memberRole === 'manager')
-                    return true;
-            }
-            return false;
+            return member ? ['owner', 'manager'].includes(String(member.role || '').toLowerCase()) : false;
         });
         const selectedProjectMembers = computed(() => {
             const project = selectedProject.value;
@@ -1153,20 +1584,15 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
                 return { total: 0, todo: 0, inProgress: 0, inReview: 0, done: 0, overdue: 0, completionRate: 0 };
             const tasks = project.tasks;
             const total = tasks.length;
-            const todo = tasks.filter(t => t.status === 'Todo').length;
-            const inProgress = tasks.filter(t => t.status === 'InProgress').length;
-            const inReview = tasks.filter(t => t.status === 'InReview').length;
             const done = tasks.filter(t => t.status === 'Done').length;
-            const overdue = tasks.filter(t => isTaskOverdue(t)).length;
-            const completionRate = total > 0 ? Math.round((done / total) * 100) : 0;
             return {
                 total,
-                todo,
-                inProgress,
-                inReview,
+                todo: tasks.filter(t => t.status === 'Todo').length,
+                inProgress: tasks.filter(t => t.status === 'InProgress').length,
+                inReview: tasks.filter(t => t.status === 'InReview').length,
                 done,
-                overdue,
-                completionRate
+                overdue: tasks.filter(t => isTaskOverdue(t)).length,
+                completionRate: total > 0 ? Math.round((done / total) * 100) : 0
             };
         });
         const notificationItems = computed(() => {
@@ -1182,23 +1608,22 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
             })
                 .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
         });
-        const notificationCount = computed(() => notifications.value.filter((notification) => !notification.isRead).length +
-            dashboard.value.notifications.filter((notification) => notification.tone !== 'info').length);
+        const notificationCount = computed(() => notifications.value.filter((n) => !n.isRead).length +
+            dashboard.value.notifications.filter((n) => n.tone !== 'info').length);
         watch(filteredProjects, (items) => {
             if (!['dashboard', 'projects'].includes(String(route.name ?? '')))
                 return;
-            if (!items.some((project) => project.id === activeProjectId.value)) {
+            if (!items.some((p) => p.id === activeProjectId.value)) {
                 activeProjectId.value = items[0]?.id ?? projects.value[0]?.id ?? null;
             }
         }, { immediate: true });
-        watch(() => route.params.projectId, (projectId) => {
-            if (typeof projectId === 'string') {
-                activeProjectId.value = projectId;
-            }
+        watch(() => route.params.projectId, (id) => {
+            if (typeof id === 'string')
+                activeProjectId.value = id;
         }, { immediate: true });
-        watch(() => route.params.taskId, (taskId) => {
-            if (typeof taskId === 'string') {
-                selectedTaskId.value = taskId;
+        watch(() => route.params.taskId, (id) => {
+            if (typeof id === 'string') {
+                selectedTaskId.value = id;
                 activeProjectTab.value = 'tasks';
             }
         }, { immediate: true });
@@ -1215,66 +1640,27 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
                 timeEntries.value = [];
             }
         }, { immediate: true });
-        watch(() => [activeProjectId.value, activeProjectTab.value], ([projectId, tab]) => {
-            if (projectId && tab === 'wiki' && !usingFallback.value) {
-                void loadWikiPages(String(projectId));
-            }
+        watch(() => [activeProjectId.value, activeProjectTab.value], ([id, tab]) => {
+            if (id && tab === 'wiki' && !usingFallback.value)
+                void loadWikiPages(String(id));
         }, { immediate: true });
         onMounted(async () => {
             await Promise.all([loadMe(), loadDashboard(), loadUsers(), loadNotifications()]);
             await connectNotifications();
         });
-        async function loadDashboard() {
-            isLoading.value = true;
-            const previousProjectId = activeProjectId.value;
-            try {
-                dashboard.value = await apiJson('/api/dashboard/overview');
-                usingFallback.value = false;
-            }
-            catch (error) {
-                console.warn('Using fallback dashboard data.', error);
-                dashboard.value = fallbackDashboard;
-                usingFallback.value = true;
-            }
-            finally {
-                const routeProjectId = typeof route.params.projectId === 'string' ? route.params.projectId : null;
-                const preferredProjectId = routeProjectId ?? previousProjectId;
-                activeProjectId.value = dashboard.value.projects.some((project) => project.id === preferredProjectId)
-                    ? preferredProjectId
-                    : dashboard.value.projects[0]?.id ?? null;
-                isLoading.value = false;
-            }
-        }
-        async function loadMe() {
-            try {
-                currentUser.value = await apiResult('/api/auth/me');
-            }
-            catch (error) {
-                console.warn('Could not load current user.', error);
-            }
-        }
-        async function loadUsers() {
-            try {
-                users.value = await apiResult('/api/users');
-            }
-            catch (error) {
-                console.warn('Could not load users.', error);
-            }
-        }
         async function loadNotifications() {
             try {
                 notifications.value = await apiResult('/api/notifications');
             }
-            catch (error) {
-                console.warn('Could not load notifications.', error);
+            catch (e) {
+                console.warn(e);
             }
         }
         async function loadComments(taskId) {
             try {
                 comments.value = await apiResult(`/api/comments/task/${taskId}`);
             }
-            catch (error) {
-                console.warn('Could not load comments.', error);
+            catch (e) {
                 comments.value = [];
             }
         }
@@ -1282,8 +1668,7 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
             try {
                 attachments.value = await apiResult(`/api/attachments/task/${taskId}`);
             }
-            catch (error) {
-                console.warn('Could not load attachments.', error);
+            catch (e) {
                 attachments.value = [];
             }
         }
@@ -1293,21 +1678,19 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
                 timeEntries.value = entries;
                 activeTimer.value = entries.find(e => e.endedAt === null) ?? null;
             }
-            catch (error) {
-                console.warn('Could not load time entries.', error);
+            catch (e) {
                 timeEntries.value = [];
                 activeTimer.value = null;
             }
         }
         async function startTimer(taskId) {
             try {
-                const entry = await apiJson(`/api/tasks/${taskId}/time-entries`, { method: 'POST' });
-                activeTimer.value = entry;
+                activeTimer.value = await apiJson(`/api/tasks/${taskId}/time-entries`, { method: 'POST' });
                 await loadTimeEntries(taskId);
                 showSuccess('Đã bắt đầu ghi thời gian');
             }
-            catch (error) {
-                showError(errorMessage(error, 'Không thể bắt đầu ghi thời gian'));
+            catch (e) {
+                showError(errorMessage(e, 'Không thể bắt đầu'));
             }
         }
         async function stopTimer(entryId) {
@@ -1318,30 +1701,25 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
                     await loadTimeEntries(selectedTaskId.value);
                 showSuccess('Đã dừng ghi thời gian');
             }
-            catch (error) {
-                showError(errorMessage(error, 'Không thể dừng ghi thời gian'));
+            catch (e) {
+                showError(errorMessage(e, 'Không thể dừng'));
             }
         }
-        async function addManualTimeEntry(taskId, manualMinutes, note) {
-            if (!taskId || manualMinutes <= 0)
+        async function addManualTimeEntry(taskId, minutes, note) {
+            if (!taskId || minutes <= 0)
                 return false;
             try {
                 await apiJson(`/api/tasks/${taskId}/time-entries/manual`, {
                     method: 'POST',
-                    body: JSON.stringify({
-                        taskId,
-                        startedAt: new Date().toISOString(),
-                        manualMinutes,
-                        note: note.trim() || null,
-                    }),
+                    body: JSON.stringify({ taskId, startedAt: new Date().toISOString(), manualMinutes: minutes, note: note.trim() || null }),
                 });
                 await loadTimeEntries(taskId);
                 await loadDashboard();
-                showSuccess('Ghi thời gian thủ công thành công');
+                showSuccess('Thành công');
                 return true;
             }
-            catch (error) {
-                showError(errorMessage(error, 'Không thể ghi thời gian thủ công'));
+            catch (e) {
+                showError(errorMessage(e, 'Lỗi'));
                 return false;
             }
         }
@@ -1349,442 +1727,218 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
             if (notificationConnectionStarted)
                 return;
             notificationConnectionStarted = true;
-            const connection = new HubConnectionBuilder()
-                .withUrl('/hubs/notification')
-                .withAutomaticReconnect()
-                .build();
-            connection.on('notificationReceived', (notification) => {
-                notifications.value = [notification, ...notifications.value.filter((item) => item.id !== notification.id)];
-                showInfo(notification.message);
+            const connection = new HubConnectionBuilder().withUrl('/hubs/notification').withAutomaticReconnect().build();
+            connection.on('notificationReceived', (n) => {
+                notifications.value = [n, ...notifications.value.filter((item) => item.id !== n.id)];
+                showInfo(n.message);
                 void loadDashboard();
             });
             try {
                 await connection.start();
             }
-            catch (error) {
-                console.warn('SignalR notification connection failed.', error);
+            catch (e) {
+                console.warn(e);
             }
         }
-        function selectProject(projectId) {
-            activeProjectId.value = projectId;
-            selectedTaskId.value = projects.value.find((project) => project.id === projectId)?.tasks[0]?.id ?? null;
+        function selectProject(id) {
+            baseSelectProject(id);
+            selectedTaskId.value = projects.value.find((p) => p.id === id)?.tasks[0]?.id ?? null;
             activeProjectTab.value = 'stats';
-            void router.push(`/projects/${projectId}`);
         }
-        function closeProjectDetails() {
-            void router.push('/projects');
-        }
-        function selectTaskInProject(taskId) {
-            const projectId = selectedProject.value?.id;
-            selectedTaskId.value = taskId;
+        function closeProjectDetails() { void router.push('/projects'); }
+        function selectTaskInProject(id) {
+            selectedTaskId.value = id;
             activeProjectTab.value = 'tasks';
-            if (projectId) {
-                void router.push(`/projects/${projectId}/tasks/${taskId}`);
-            }
+            if (selectedProject.value?.id)
+                void router.push(`/projects/${selectedProject.value.id}/tasks/${id}`);
         }
-        function openTask(projectId, taskId) {
-            activeProjectId.value = projectId;
-            selectedTaskId.value = taskId;
+        function openTask(pId, tId) {
+            activeProjectId.value = pId;
+            selectedTaskId.value = tId;
             activeProjectTab.value = 'tasks';
-            void router.push(`/projects/${projectId}/tasks/${taskId}`);
-        }
-        function openCreateProject() {
-            createProjectOpen.value = true;
-            projectBeingEditedId.value = null;
-            void router.push('/projects');
-        }
-        async function createProject() {
-            const name = projectName.value.trim();
-            if (!name)
-                return;
-            try {
-                const project = await apiResult('/api/projects', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        name,
-                        description: projectDescription.value.trim() || null,
-                        startDate: null,
-                        endDate: projectEndDate.value ? new Date(projectEndDate.value).toISOString() : null,
-                    }),
-                });
-                clearProjectForm();
-                createProjectOpen.value = false;
-                await loadDashboard();
-                activeProjectId.value = project.id;
-                void router.push(`/projects/${project.id}`);
-                showSuccess(`Thêm dự án "${project.name}" thành công`);
-            }
-            catch (error) {
-                showError(errorMessage(error, 'Không thể thêm dự án'));
-            }
-        }
-        function beginEditProject(projectId) {
-            const project = projects.value.find((item) => item.id === projectId);
-            if (!project)
-                return;
-            activeProjectId.value = projectId;
-            createProjectOpen.value = false;
-            projectBeingEditedId.value = projectId;
-            editProjectName.value = project.name;
-            editProjectDescription.value = project.description ?? '';
-        }
-        async function saveProjectEdit() {
-            const project = projects.value.find((item) => item.id === projectBeingEditedId.value);
-            const name = editProjectName.value.trim();
-            if (!project || !name)
-                return;
-            try {
-                await apiResult(`/api/projects/${project.id}`, {
-                    method: 'PUT',
-                    body: JSON.stringify({
-                        name,
-                        description: editProjectDescription.value.trim() || null,
-                        status: project.status,
-                        startDate: null,
-                        endDate: project.endDate,
-                    }),
-                });
-                projectBeingEditedId.value = null;
-                await loadDashboard();
-                activeProjectId.value = project.id;
-                showSuccess(`Cập nhật dự án "${name}" thành công`);
-            }
-            catch (error) {
-                showError(errorMessage(error, 'Không thể cập nhật dự án'));
-            }
-        }
-        async function deleteProject(projectId) {
-            const project = projects.value.find((item) => item.id === projectId);
-            if (!project)
-                return;
-            try {
-                await apiCommand(`/api/projects/${projectId}`, { method: 'DELETE' });
-                await loadDashboard();
-                showSuccess(`Xóa dự án "${project.name}" thành công`);
-            }
-            catch (error) {
-                showError(errorMessage(error, 'Không thể xóa dự án'));
-            }
+            void router.push(`/projects/${pId}/tasks/${tId}`);
         }
         async function createTask() {
-            const project = selectedProject.value;
-            const title = newTaskTitle.value.trim();
-            if (!project || !title)
-                return;
-            if (taskBeingEdited.value) {
-                await saveTaskEdit();
-                return;
-            }
-            try {
-                const task = await apiResult('/api/tasks', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        title,
-                        description: newTaskDescription.value.trim() || null,
-                        priority: newTaskPriority.value,
-                        dueDate: newTaskDueDate.value ? new Date(newTaskDueDate.value).toISOString() : null,
-                        estimatedHours: null,
-                        projectId: project.id,
-                        assigneeId: newTaskAssigneeId.value || null,
-                        isPrivate: false,
-                    }),
-                });
-                clearTaskForm();
-                createTaskOpen.value = false;
-                await loadDashboard();
-                showSuccess(task.aiPrioritySuggestion ? `Thêm nhiệm vụ thành công. ${task.aiPrioritySuggestion}` : 'Thêm nhiệm vụ thành công');
-            }
-            catch (error) {
-                showError(errorMessage(error, 'Không thể thêm nhiệm vụ'));
-            }
-        }
-        async function moveTask(task, status) {
-            try {
-                await apiCommand(`/api/tasks/${task.id}/status`, {
-                    method: 'PATCH',
-                    body: JSON.stringify({ status }),
-                });
-                await loadDashboard();
-                selectedTaskId.value = task.id;
-                showSuccess(`Đã chuyển nhiệm vụ sang ${displayStatus(status)}`);
-            }
-            catch (error) {
-                showError(errorMessage(error, 'Không thể cập nhật trạng thái nhiệm vụ'));
-            }
-        }
-        const taskBeingEdited = ref(null);
-        function beginEditTask(task) {
-            taskBeingEdited.value = task;
-            newTaskTitle.value = task.title;
-            newTaskDescription.value = '';
-            newTaskPriority.value = task.priority;
-            newTaskAssigneeId.value = '';
-            newTaskDueDate.value = task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '';
-            createTaskOpen.value = true;
-        }
-        async function saveTaskEdit() {
-            if (!taskBeingEdited.value)
-                return;
-            try {
-                await apiResult(`/api/tasks/${taskBeingEdited.value.id}`, {
-                    method: 'PUT',
-                    body: JSON.stringify({
-                        title: newTaskTitle.value.trim(),
-                        description: newTaskDescription.value.trim() || null,
-                        status: taskBeingEdited.value.status,
-                        priority: newTaskPriority.value,
-                        dueDate: newTaskDueDate.value ? new Date(newTaskDueDate.value).toISOString() : null,
-                        assigneeId: newTaskAssigneeId.value || null,
-                    }),
-                });
-                clearTaskForm();
-                createTaskOpen.value = false;
-                taskBeingEdited.value = null;
-                await loadDashboard();
-                showSuccess('Cập nhật nhiệm vụ thành công');
-            }
-            catch (error) {
-                showError(errorMessage(error, 'Không thể cập nhật nhiệm vụ'));
-            }
+            if (selectedProject.value)
+                await baseCreateTask(selectedProject.value.id);
         }
         async function quickEditTaskTitle(taskId, title) {
-            const nextTitle = title.trim();
-            if (!taskId || !nextTitle)
+            const t = title.trim();
+            if (!taskId || !t)
                 return false;
             try {
-                const currentTask = await apiResult(`/api/tasks/${taskId}`);
-                await apiResult(`/api/tasks/${taskId}`, {
-                    method: 'PUT',
-                    body: JSON.stringify({
-                        title: nextTitle,
-                        description: currentTask.description,
-                        status: currentTask.status,
-                        priority: currentTask.priority,
-                        dueDate: currentTask.dueDate,
-                        estimatedHours: currentTask.estimatedHours,
-                        actualHours: currentTask.actualHours,
-                        assigneeId: currentTask.assigneeId,
-                        isPrivate: currentTask.isPrivate,
-                    }),
-                });
+                const current = await apiResult(`/api/tasks/${taskId}`);
+                await apiResult(`/api/tasks/${taskId}`, { method: 'PUT', body: JSON.stringify({ ...current, title: t }) });
                 await loadDashboard();
                 selectedTaskId.value = taskId;
-                showSuccess('Cập nhật nhiệm vụ thành công');
+                showSuccess('Thành công');
                 return true;
             }
-            catch (error) {
-                showError(errorMessage(error, 'Không thể cập nhật nhiệm vụ'));
+            catch (e) {
+                showError(errorMessage(e, 'Lỗi'));
                 return false;
-            }
-        }
-        async function deleteTask(taskId) {
-            if (!confirm('Bạn có chắc chắn muốn xóa task này?'))
-                return;
-            try {
-                await apiCommand(`/api/tasks/${taskId}`, { method: 'DELETE' });
-                await loadDashboard();
-                showSuccess('Xóa nhiệm vụ thành công');
-            }
-            catch (error) {
-                showError(errorMessage(error, 'Không thể xóa nhiệm vụ'));
             }
         }
         async function submitComment() {
-            const task = selectedTask.value;
-            const content = newComment.value.trim();
-            if (!task || !content)
+            const t = selectedTask.value;
+            const c = newComment.value.trim();
+            if (!t || !c)
                 return;
             try {
-                await apiResult('/api/comments', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        taskItemId: task.id,
-                        content,
-                    }),
-                });
+                await apiResult('/api/comments', { method: 'POST', body: JSON.stringify({ taskItemId: t.id, content: c }) });
                 newComment.value = '';
-                await loadComments(task.id);
+                await loadComments(t.id);
                 await loadDashboard();
-                showSuccess('Thêm bình luận thành công');
+                showSuccess('Thành công');
             }
-            catch (error) {
-                showError(errorMessage(error, 'Không thể thêm bình luận'));
+            catch (e) {
+                showError(errorMessage(e, 'Lỗi'));
             }
         }
-        async function deleteComment(commentId) {
-            if (!confirm('Bạn có chắc chắn muốn xóa bình luận này?'))
+        async function deleteComment(id) {
+            if (!confirm('Xóa?'))
                 return;
             try {
-                await apiCommand(`/api/comments/${commentId}`, { method: 'DELETE' });
+                await apiCommand(`/api/comments/${id}`, { method: 'DELETE' });
                 if (selectedTask.value)
                     await loadComments(selectedTask.value.id);
                 await loadDashboard();
-                showSuccess('Xóa bình luận thành công');
+                showSuccess('Thành công');
             }
-            catch (error) {
-                showError(errorMessage(error, 'Không thể xóa bình luận'));
+            catch (e) {
+                showError(errorMessage(e, 'Lỗi'));
             }
         }
-        async function addMember(userId) {
-            const project = selectedProject.value;
-            if (!project)
+        async function addMember(uId) {
+            if (!selectedProject.value)
                 return;
             try {
-                await apiCommand(`/api/projects/${project.id}/members`, {
-                    method: 'POST',
-                    body: JSON.stringify({ userId, role: 'Member' }),
-                });
+                await apiCommand(`/api/projects/${selectedProject.value.id}/members`, { method: 'POST', body: JSON.stringify({ userId: uId, role: 'Member' }) });
                 await loadDashboard();
-                showSuccess('Thêm thành viên thành công');
+                showSuccess('Thành công');
             }
-            catch (error) {
-                showError(errorMessage(error, 'Không thể thêm thành viên'));
+            catch (e) {
+                showError(errorMessage(e, 'Lỗi'));
             }
         }
-        async function removeMember(userId) {
-            const project = selectedProject.value;
-            if (!project)
-                return;
-            if (!confirm('Bạn có chắc chắn muốn xóa thành viên này khỏi dự án?'))
+        async function removeMember(uId) {
+            if (!selectedProject.value || !confirm('Xóa?'))
                 return;
             try {
-                await apiCommand(`/api/projects/${project.id}/members/${userId}`, { method: 'DELETE' });
+                await apiCommand(`/api/projects/${selectedProject.value.id}/members/${uId}`, { method: 'DELETE' });
                 await loadDashboard();
-                showSuccess('Xóa thành viên khỏi dự án thành công');
+                showSuccess('Thành công');
             }
-            catch (error) {
-                showError(errorMessage(error, 'Không thể xóa thành viên khỏi dự án'));
+            catch (e) {
+                showError(errorMessage(e, 'Lỗi'));
             }
         }
-        async function updateMemberRole(userId, role) {
-            const project = selectedProject.value;
-            if (!project)
+        async function updateMemberRole(uId, role) {
+            if (!selectedProject.value)
                 return;
             try {
-                await apiCommand(`/api/projects/${project.id}/members`, {
-                    method: 'POST',
-                    body: JSON.stringify({ userId, role }),
-                });
+                await apiCommand(`/api/projects/${selectedProject.value.id}/members`, { method: 'POST', body: JSON.stringify({ userId: uId, role }) });
                 await loadDashboard();
-                showSuccess(`Cập nhật vai trò thành ${role} thành công`);
+                showSuccess('Thành công');
             }
-            catch (error) {
-                showError(errorMessage(error, 'Không thể cập nhật vai trò thành viên'));
+            catch (e) {
+                showError(errorMessage(e, 'Lỗi'));
             }
         }
-        async function loadWikiPages(projectId) {
+        async function loadWikiPages(id) {
             try {
-                wikiPages.value = await apiResult(`/api/projects/${projectId}/wiki`);
+                wikiPages.value = await apiResult(`/api/projects/${id}/wiki`);
             }
-            catch (error) {
-                console.warn('Could not load wiki pages.', error);
+            catch (e) {
                 wikiPages.value = [];
             }
         }
         async function createWikiPage(title, content = '') {
-            const project = selectedProject.value;
-            if (!project || !title)
+            if (!selectedProject.value || !title)
                 return;
             try {
-                await apiResult(`/api/projects/${project.id}/wiki`, {
-                    method: 'POST',
-                    body: JSON.stringify({ title, content }),
-                });
-                await loadWikiPages(project.id);
-                showSuccess(`Tạo trang Wiki "${title}" thành công`);
+                await apiResult(`/api/projects/${selectedProject.value.id}/wiki`, { method: 'POST', body: JSON.stringify({ title, content }) });
+                await loadWikiPages(selectedProject.value.id);
+                showSuccess('Thành công');
             }
-            catch (error) {
-                showError(errorMessage(error, 'Không thể tạo trang Wiki'));
+            catch (e) {
+                showError(errorMessage(e, 'Lỗi'));
             }
         }
-        async function updateWikiPage(pageId, title, content) {
-            const project = selectedProject.value;
-            if (!project || !title)
+        async function updateWikiPage(id, title, content) {
+            if (!selectedProject.value || !title)
                 return;
             try {
-                await apiCommand(`/api/projects/${project.id}/wiki/${pageId}`, {
-                    method: 'PUT',
-                    body: JSON.stringify({ title, content }),
-                });
-                await loadWikiPages(project.id);
-                showSuccess(`Cập nhật trang Wiki "${title}" thành công`);
+                await apiCommand(`/api/projects/${selectedProject.value.id}/wiki/${id}`, { method: 'PUT', body: JSON.stringify({ title, content }) });
+                await loadWikiPages(selectedProject.value.id);
+                showSuccess('Thành công');
             }
-            catch (error) {
-                showError(errorMessage(error, 'Không thể cập nhật trang Wiki'));
+            catch (e) {
+                showError(errorMessage(e, 'Lỗi'));
             }
         }
-        async function deleteWikiPage(pageId) {
-            const project = selectedProject.value;
-            if (!project)
+        async function deleteWikiPage(id) {
+            if (!selectedProject.value)
                 return;
             try {
-                await apiCommand(`/api/projects/${project.id}/wiki/${pageId}`, { method: 'DELETE' });
-                await loadWikiPages(project.id);
-                showSuccess('Xóa trang Wiki thành công');
+                await apiCommand(`/api/projects/${selectedProject.value.id}/wiki/${id}`, { method: 'DELETE' });
+                await loadWikiPages(selectedProject.value.id);
+                showSuccess('Thành công');
             }
-            catch (error) {
-                showError(errorMessage(error, 'Không thể xóa trang Wiki'));
+            catch (e) {
+                showError(errorMessage(e, 'Lỗi'));
             }
         }
-        async function uploadAttachment(event) {
-            const task = selectedTask.value;
-            const input = event.target;
-            const file = input.files?.[0];
-            if (!task || !file)
+        async function uploadAttachment(e) {
+            const t = selectedTask.value;
+            const f = e.target.files?.[0];
+            if (!t || !f)
                 return;
-            const formData = new FormData();
-            formData.append('file', file);
+            const data = new FormData();
+            data.append('file', f);
             try {
-                await apiResult(`/api/attachments/task/${task.id}`, {
-                    method: 'POST',
-                    body: formData,
-                });
-                input.value = '';
-                await loadAttachments(task.id);
+                await apiResult(`/api/attachments/task/${t.id}`, { method: 'POST', body: data });
+                await loadAttachments(t.id);
                 await loadDashboard();
-                showSuccess(`Tải tệp "${file.name}" lên thành công`);
+                showSuccess('Thành công');
             }
-            catch (error) {
-                showError(errorMessage(error, 'Không thể tải tệp lên'));
+            catch (err) {
+                showError(errorMessage(err, 'Lỗi'));
             }
         }
-        async function deleteAttachment(attachment) {
-            const taskId = selectedTask.value?.id;
+        async function deleteAttachment(a) {
             try {
-                await apiCommand(`/api/attachments/${attachment.id}`, { method: 'DELETE' });
-                if (taskId)
-                    await loadAttachments(taskId);
+                await apiCommand(`/api/attachments/${a.id}`, { method: 'DELETE' });
+                if (selectedTask.value)
+                    await loadAttachments(selectedTask.value.id);
                 await loadDashboard();
-                showSuccess(`Xóa tệp "${attachment.fileName}" thành công`);
+                showSuccess('Thành công');
             }
-            catch (error) {
-                showError(errorMessage(error, 'Không thể xóa tệp'));
+            catch (err) {
+                showError(errorMessage(err, 'Lỗi'));
             }
         }
-        async function dismissNotification(notificationId) {
-            notifications.value = notifications.value.filter((notification) => notification.id !== notificationId);
-            dashboard.value.notifications = dashboard.value.notifications.filter((notification) => notification.id !== notificationId);
-            if (isGuid(notificationId)) {
+        async function dismissNotification(id) {
+            notifications.value = notifications.value.filter((n) => n.id !== id);
+            dashboard.value.notifications = dashboard.value.notifications.filter((n) => n.id !== id);
+            if (isGuid(id))
                 try {
-                    await apiCommand(`/api/notifications/${notificationId}/read`, { method: 'PATCH' });
+                    await apiCommand(`/api/notifications/${id}/read`, { method: 'PATCH' });
                 }
-                catch (error) {
-                    console.warn('Could not mark notification as read.', error);
-                    showError(errorMessage(error, 'Không thể đánh dấu thông báo đã đọc'));
+                catch (e) {
+                    console.warn(e);
                 }
-            }
         }
         async function clearActionableNotifications() {
             notifications.value = [];
-            dashboard.value.notifications = dashboard.value.notifications.filter((notification) => notification.tone === 'info');
+            dashboard.value.notifications = dashboard.value.notifications.filter((n) => n.tone === 'info');
             notificationsOpen.value = false;
             try {
                 await apiCommand('/api/notifications/read-all', { method: 'PATCH' });
-                showSuccess('Đã đánh dấu tất cả thông báo là đã đọc');
+                showSuccess('Thành công');
             }
-            catch (error) {
-                console.warn('Could not mark notifications as read.', error);
-                showError(errorMessage(error, 'Không thể đánh dấu tất cả thông báo đã đọc'));
+            catch (e) {
+                console.warn(e);
             }
         }
         async function logout() {
@@ -1795,314 +1949,38 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
                 window.location.href = '/Account/Login';
             }
         }
-        async function apiJson(url, options = {}) {
-            const headers = new Headers(options.headers);
-            if (options.body && !(options.body instanceof FormData)) {
-                headers.set('Content-Type', 'application/json');
-            }
-            headers.set('Accept', 'application/json');
-            const response = await fetch(url, {
-                credentials: 'same-origin',
-                ...options,
-                headers,
-            });
-            if (response.status === 401) {
-                window.location.href = `/Account/Login?returnUrl=${encodeURIComponent(window.location.pathname)}`;
-                throw new Error('Authentication required.');
-            }
-            const text = await response.text();
-            const payload = parseApiPayload(text);
-            if (!response.ok) {
-                throw new Error(apiPayloadError(payload, response.status));
-            }
-            return payload;
-        }
-        async function apiResult(url, options = {}) {
-            const result = await apiJson(url, options);
-            if (isApiResult(result)) {
-                if (!result.isSuccess || result.data == null) {
-                    throw new Error(result.error ?? 'Không thể hoàn tất yêu cầu.');
-                }
-                return result.data;
-            }
-            return result;
-        }
-        async function apiCommand(url, options = {}) {
-            const result = await apiJson(url, options);
-            if (isApiResult(result) && !result.isSuccess) {
-                throw new Error(result.error ?? 'Không thể hoàn tất yêu cầu.');
-            }
-            if (result && typeof result === 'object' && 'ok' in result && result.ok === false) {
-                throw new Error('Không thể hoàn tất yêu cầu.');
-            }
-        }
-        function parseApiPayload(text) {
-            if (!text)
-                return null;
-            try {
-                return JSON.parse(text);
-            }
-            catch {
-                return text;
-            }
-        }
-        function apiPayloadError(payload, status) {
-            if (typeof payload === 'string' && payload.trim())
-                return payload.trim();
-            if (payload && typeof payload === 'object') {
-                if ('error' in payload && typeof payload.error === 'string' && payload.error.trim())
-                    return payload.error;
-                if ('message' in payload && typeof payload.message === 'string' && payload.message.trim())
-                    return payload.message;
-                if ('title' in payload && typeof payload.title === 'string' && payload.title.trim()) {
-                    const validationMessage = validationErrorMessage(payload);
-                    return validationMessage ?? payload.title;
-                }
-            }
-            return `Không thể hoàn tất yêu cầu (mã ${status}).`;
-        }
-        function validationErrorMessage(payload) {
-            if (!('errors' in payload) || !payload.errors || typeof payload.errors !== 'object')
-                return null;
-            for (const value of Object.values(payload.errors)) {
-                if (Array.isArray(value) && typeof value[0] === 'string')
-                    return value[0];
-                if (typeof value === 'string')
-                    return value;
-            }
-            return null;
-        }
-        function isApiResult(payload) {
-            return Boolean(payload && typeof payload === 'object' && 'isSuccess' in payload);
-        }
         function tasksByStatus(status) {
             const query = taskSearchQuery.value.trim().toLowerCase();
-            return selectedProjectTasks.value.filter((task) => {
-                if (task.status !== status)
-                    return false;
-                if (!query)
-                    return true;
-                return task.title.toLowerCase().includes(query);
-            });
+            return selectedProjectTasks.value.filter((t) => (t.status === status) && (!query || t.title.toLowerCase().includes(query)));
         }
         function nextStatuses(status) {
-            switch (status) {
-                case 'Todo':
-                    return ['InProgress'];
-                case 'InProgress':
-                    return ['InReview', 'Done'];
-                case 'InReview':
-                    return ['InProgress', 'Done'];
-                case 'Done':
-                    return ['InReview'];
-                default:
-                    return ['Todo'];
-            }
+            const map = { Todo: ['InProgress'], InProgress: ['InReview', 'Done'], InReview: ['InProgress', 'Done'], Done: ['InReview'] };
+            return map[status] || ['Todo'];
         }
-        function clearProjectForm() {
-            projectName.value = '';
-            projectDescription.value = '';
-            projectEndDate.value = '';
+        function toDashboardNotification(n) {
+            return { id: n.id, title: n.type, message: n.message, tone: n.type === 'DueDateReminder' ? 'critical' : n.type === 'Info' ? 'info' : 'warning', createdAt: n.createdAt };
         }
-        function clearTaskForm() {
-            newTaskTitle.value = '';
-            newTaskDescription.value = '';
-            newTaskPriority.value = 'Medium';
-            newTaskAssigneeId.value = '';
-            newTaskDueDate.value = '';
-        }
-        function displayStatus(status) {
-            switch (status) {
-                case 'Active':
-                    return 'Active';
-                case 'InProgress':
-                    return 'In progress';
-                case 'InReview':
-                    return 'In review';
-                case 'Done':
-                    return 'Done';
-                case 'Planned':
-                    return 'Planned';
-                case 'Archived':
-                    return 'Archived';
-                case 'Todo':
-                    return 'Todo';
-                case 'Cancelled':
-                    return 'Cancelled';
-                default:
-                    return status || 'Unknown';
-            }
-        }
-        function displayRole(role) {
-            return role === 'Admin' ? 'Admin' : role === 'Member' ? 'Member' : role || '';
-        }
-        function statusTone(status) {
-            switch (status) {
-                case 'Active':
-                case 'InProgress':
-                    return 'active';
-                case 'Planned':
-                    return 'planned';
-                case 'Archived':
-                    return 'archived';
-                default:
-                    return 'neutral';
-            }
-        }
-        function formatDate(value) {
-            if (!value)
-                return 'No date';
-            return new Intl.DateTimeFormat('en', {
-                month: 'short',
-                day: 'numeric',
-            }).format(new Date(value));
-        }
-        function formatTime(value) {
-            return new Intl.DateTimeFormat('en', {
-                hour: 'numeric',
-                minute: '2-digit',
-            }).format(new Date(value));
-        }
-        function formatFileSize(bytes) {
-            if (bytes < 1024)
-                return `${bytes} B`;
-            if (bytes < 1024 * 1024)
-                return `${Math.round(bytes / 1024)} KB`;
-            return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-        }
-        function initials(name) {
-            return name
-                .split(' ')
-                .filter(Boolean)
-                .slice(0, 2)
-                .map((part) => part[0]?.toUpperCase() ?? '')
-                .join('');
-        }
-        function isTaskOverdue(task) {
-            return Boolean(task.dueDate) && new Date(task.dueDate).getTime() < Date.now() && task.status !== 'Done';
-        }
-        function notificationClass(notification) {
-            return `notice notice--${notification.tone}`;
-        }
-        function toDashboardNotification(notification) {
-            return {
-                id: notification.id,
-                title: notification.type,
-                message: notification.message,
-                tone: notification.type === 'DueDateReminder' ? 'critical' : notification.type === 'Info' ? 'info' : 'warning',
-                createdAt: notification.createdAt,
-            };
-        }
-        function isGuid(value) {
-            return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
-        }
-        function errorMessage(error, fallback = 'Đã xảy ra lỗi khi lưu dữ liệu') {
-            const message = error instanceof Error ? error.message.trim() : '';
-            if (!message ||
-                message === 'Request failed.' ||
-                message.startsWith('Request failed with status') ||
-                message.startsWith('Không thể hoàn tất yêu cầu')) {
-                return fallback;
-            }
-            return message;
-        }
+        function isGuid(v) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v); }
         provide(dashboardContextKey, {
-            activeProjectCards,
-            activeProjectId,
-            activeProjectTab,
-            activeTaskMenu,
-            addManualTimeEntry,
-            addMember,
-            archivedProjectCards,
-            assignedTaskCards,
-            attachments,
-            beginEditProject,
-            beginEditTask,
-            clearActionableNotifications,
-            closeProjectDetails,
-            comments,
-            createProject,
-            createProjectOpen,
-            createTask,
-            createTaskOpen,
-            currentUser,
-            deleteAttachment,
-            deleteComment,
-            deleteProject,
-            deleteTask,
-            displayRole,
-            displayStatus,
-            editProjectDescription,
-            editProjectName,
-            filteredProjects,
-            formatDate,
-            formatFileSize,
-            formatTime,
-            isLoading,
-            isProjectAdmin,
-            isTaskOverdue,
-            logout,
-            moveTask,
-            newComment,
-            newTaskAssigneeId,
-            newTaskDescription,
-            newTaskDueDate,
-            newTaskPriority,
-            newTaskTitle,
-            nextStatuses,
-            openCreateProject,
-            openTask,
-            priorities,
-            projectBeingEditedId,
-            projectCards,
-            projectDescription,
-            projectEndDate,
-            projectFilter,
-            projectName,
-            projectSort,
-            projects,
-            quickEditTaskTitle,
-            removeMember,
-            saveProjectEdit,
-            searchQuery,
-            selectProject,
-            selectedProject,
-            selectedProjectMembers,
-            selectedProjectStats,
-            selectedTask,
-            selectedTaskId,
-            selectTaskInProject,
-            statusColumns,
-            statusTone,
-            submitComment,
-            summaryCards,
-            tabs,
-            tasksByStatus,
-            team,
-            toggleTaskMenu,
-            updateMemberRole,
-            uploadAttachment,
-            users,
-            wikiPages,
-            loadWikiPages,
-            createWikiPage,
-            updateWikiPage,
-            deleteWikiPage,
-            taskSearchQuery,
-            taskBeingQuickEditedId,
-            timeEntries,
-            activeTimer,
-            startTimer,
-            stopTimer,
-            loadTimeEntries,
+            activeProjectCards, activeProjectId, activeProjectTab, activeTaskMenu, addManualTimeEntry, addMember, archivedProjectCards, assignedTaskCards,
+            attachments, beginEditProject, beginEditTask, clearActionableNotifications, closeProjectDetails, comments, createProject, createProjectOpen,
+            createTask, createTaskOpen, currentUser, deleteAttachment, deleteComment, deleteProject, deleteTask, displayRole, displayStatus,
+            editProjectDescription, editProjectName, filteredProjects, formatDate, formatFileSize, formatTime, isLoading, isProjectAdmin, isTaskOverdue,
+            logout, moveTask, newComment, newTaskAssigneeId, newTaskDescription, newTaskDueDate, newTaskPriority, newTaskTitle, nextStatuses,
+            openCreateProject, openTask, priorities, projectBeingEditedId, projectCards, projectDescription, projectEndDate, projectFilter,
+            projectName, projectSort, projects, quickEditTaskTitle, removeMember, saveProjectEdit, searchQuery, selectProject, selectedProject,
+            selectedProjectMembers, selectedProjectStats, selectedTask, selectedTaskId, selectTaskInProject, statusColumns, statusTone,
+            submitComment, summaryCards, tabs, tasksByStatus, team, toggleTaskMenu, updateMemberRole, uploadAttachment, users, wikiPages,
+            loadWikiPages, createWikiPage, updateWikiPage, deleteWikiPage, taskSearchQuery, taskBeingQuickEditedId, timeEntries, activeTimer,
+            startTimer, stopTimer, loadTimeEntries,
         });
         return (_ctx, _cache) => {
             const _component_RouterView = resolveComponent("RouterView");
             return (openBlock(), createBlock(_sfc_main$3, {
                 "nav-items": navigation,
                 "notification-count": notificationCount.value,
-                "user-name": currentUser.value?.fullName || currentUser.value?.email || 'Qaly user',
-                "user-initials": initials(currentUser.value?.fullName || currentUser.value?.email || 'QU'),
+                "user-name": unref(currentUser)?.fullName || unref(currentUser)?.email || 'Qaly user',
+                "user-initials": unref(initials)(unref(currentUser)?.fullName || unref(currentUser)?.email || 'QU'),
                 onNotifications: _cache[1] || (_cache[1] = ($event) => (notificationsOpen.value = !notificationsOpen.value)),
                 onAssistant: () => { },
                 onLogout: logout
@@ -2134,7 +2012,7 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
                             (openBlock(true), createElementBlock(Fragment, null, renderList(notificationItems.value.slice(0, 6), (notification) => {
                                 return (openBlock(), createElementBlock("article", {
                                     key: notification.id,
-                                    class: normalizeClass(notificationClass(notification))
+                                    class: normalizeClass(`notice notice--${notification.tone}`)
                                 }, [
                                     createBaseVNode("div", _hoisted_4$1, [
                                         createBaseVNode("strong", null, toDisplayString(notification.title), 1),
@@ -2147,7 +2025,7 @@ const _sfc_main$1 = /*@__PURE__*/ defineComponent({
                                         ], 8, _hoisted_5)
                                     ]),
                                     createBaseVNode("p", null, toDisplayString(notification.message), 1),
-                                    createBaseVNode("span", null, toDisplayString(formatTime(notification.createdAt)), 1)
+                                    createBaseVNode("span", null, toDisplayString(unref(formatTime)(notification.createdAt)), 1)
                                 ], 2));
                             }), 128))
                         ]))

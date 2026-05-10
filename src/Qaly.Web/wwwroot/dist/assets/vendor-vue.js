@@ -883,6 +883,10 @@ function trigger(target, type, key, newValue, oldValue, oldTarget) {
     }
     endBatch();
 }
+function getDepFromReactive(object, key) {
+    const depMap = targetMap.get(object);
+    return depMap && depMap.get(key);
+}
 function reactiveReadArray(array) {
     const raw = toRaw(array);
     if (raw === array)
@@ -1554,6 +1558,55 @@ const shallowUnwrapHandlers = {
 };
 function proxyRefs(objectWithRefs) {
     return isReactive(objectWithRefs) ? objectWithRefs : new Proxy(objectWithRefs, shallowUnwrapHandlers);
+}
+// @__NO_SIDE_EFFECTS__
+function toRefs(object) {
+    const ret = isArray$1(object) ? new Array(object.length) : {};
+    for (const key in object) {
+        ret[key] = propertyToRef(object, key);
+    }
+    return ret;
+}
+class ObjectRefImpl {
+    constructor(_object, key, _defaultValue) {
+        this._object = _object;
+        this._defaultValue = _defaultValue;
+        this["__v_isRef"] = true;
+        this._value = void 0;
+        this._key = isSymbol(key) ? key : String(key);
+        this._raw = toRaw(_object);
+        let shallow = true;
+        let obj = _object;
+        if (!isArray$1(_object) || isSymbol(this._key) || !isIntegerKey(this._key)) {
+            do {
+                shallow = !isProxy(obj) || isShallow(obj);
+            } while (shallow && (obj = obj["__v_raw"]));
+        }
+        this._shallow = shallow;
+    }
+    get value() {
+        let val = this._object[this._key];
+        if (this._shallow) {
+            val = unref(val);
+        }
+        return this._value = val === void 0 ? this._defaultValue : val;
+    }
+    set value(newVal) {
+        if (this._shallow && /* @__PURE__ */ isRef(this._raw[this._key])) {
+            const nestedRef = this._object[this._key];
+            if ( /* @__PURE__ */isRef(nestedRef)) {
+                nestedRef.value = newVal;
+                return;
+            }
+        }
+        this._object[this._key] = newVal;
+    }
+    get dep() {
+        return getDepFromReactive(this._raw, this._key);
+    }
+}
+function propertyToRef(source, key, defaultValue) {
+    return new ObjectRefImpl(source, key, defaultValue);
 }
 class ComputedRefImpl {
     constructor(fn, setter, isSSR) {
@@ -9353,5 +9406,5 @@ function useRouter() {
 function useRoute(_name) {
     return inject(routeLocationKey);
 }
-export { vModelText as A, computed as B, nextTick as C, useRouter as D, provide as E, Fragment as F, normalizeStyle as G, TransitionGroup as H, Teleport as I, createRouter as J, createWebHistory as K, createApp as L, withKeys as M, isRef as N, vModelSelect as O, Transition as T, createBaseVNode as a, renderList as b, createElementBlock as c, defineComponent as d, createBlock as e, resolveDynamicComponent as f, createVNode as g, h, unref as i, onMounted as j, onBeforeUnmount as k, createCommentVNode as l, ref as m, normalizeClass as n, openBlock as o, renderSlot as p, inject as q, resolveComponent as r, readonly as s, toDisplayString as t, useRoute as u, watch as v, withCtx as w, createTextVNode as x, withModifiers as y, withDirectives as z };
+export { vModelText as A, computed as B, nextTick as C, useRouter as D, provide as E, Fragment as F, normalizeStyle as G, TransitionGroup as H, Teleport as I, createRouter as J, createWebHistory as K, createApp as L, withKeys as M, isRef as N, reactive as O, getCurrentInstance as P, onUnmounted as Q, toRefs as R, vModelSelect as S, Transition as T, createBaseVNode as a, renderList as b, createElementBlock as c, defineComponent as d, createBlock as e, resolveDynamicComponent as f, createVNode as g, h, unref as i, onMounted as j, onBeforeUnmount as k, createCommentVNode as l, ref as m, normalizeClass as n, openBlock as o, renderSlot as p, inject as q, resolveComponent as r, readonly as s, toDisplayString as t, useRoute as u, watch as v, withCtx as w, createTextVNode as x, withModifiers as y, withDirectives as z };
 //# sourceMappingURL=vendor-vue.js.map
