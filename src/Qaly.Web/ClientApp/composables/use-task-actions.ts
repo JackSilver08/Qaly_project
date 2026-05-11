@@ -15,6 +15,7 @@ export function useTaskActions(
   const newTaskPriority = ref('Medium')
   const newTaskAssigneeId = ref('')
   const newTaskDueDate = ref('')
+  const selectedTaskIds = ref(new Set<string>())
 
   function clearTaskForm() {
     newTaskTitle.value = ''
@@ -22,6 +23,48 @@ export function useTaskActions(
     newTaskPriority.value = 'Medium'
     newTaskAssigneeId.value = ''
     newTaskDueDate.value = ''
+  }
+
+  function toggleTaskSelection(taskId: string) {
+    if (selectedTaskIds.value.has(taskId)) {
+      selectedTaskIds.value.delete(taskId)
+    } else {
+      selectedTaskIds.value.add(taskId)
+    }
+  }
+
+  async function batchDeleteTasks() {
+    if (selectedTaskIds.value.size === 0) return
+    if (!confirm(`Xóa ${selectedTaskIds.value.size} nhiệm vụ đã chọn?`)) return
+    try {
+      await apiCommand('/api/tasks/batch-delete', {
+        method: 'POST',
+        body: JSON.stringify({ ids: Array.from(selectedTaskIds.value) }),
+      })
+      selectedTaskIds.value.clear()
+      await loadDashboard()
+      showSuccess('Đã xóa thành công')
+    } catch (e) {
+      showError(errorMessage(e, 'Lỗi khi xóa hàng loạt'))
+    }
+  }
+
+  async function batchUpdateTaskStatus(status: string) {
+    if (selectedTaskIds.value.size === 0) return
+    try {
+      await apiCommand('/api/tasks/batch-status', {
+        method: 'POST',
+        body: JSON.stringify({
+          ids: Array.from(selectedTaskIds.value),
+          status,
+        }),
+      })
+      selectedTaskIds.value.clear()
+      await loadDashboard()
+      showSuccess(`Đã chuyển ${selectedTaskIds.value.size} sang ${displayStatus(status)}`)
+    } catch (e) {
+      showError(errorMessage(e, 'Lỗi khi cập nhật hàng loạt'))
+    }
   }
 
   async function createTask(projectId: string) {
@@ -128,6 +171,10 @@ export function useTaskActions(
     newTaskPriority,
     newTaskAssigneeId,
     newTaskDueDate,
+    selectedTaskIds,
+    toggleTaskSelection,
+    batchDeleteTasks,
+    batchUpdateTaskStatus,
     createTask,
     moveTask,
     beginEditTask,

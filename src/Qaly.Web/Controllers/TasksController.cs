@@ -72,6 +72,21 @@ public class TasksController : ControllerBase
         var result = await _taskService.DeleteAsync(id, ct);
         return StatusCode(result.StatusCode, result);
     }
+
+    [HttpPost("batch-delete")]
+    public async Task<IActionResult> BatchDelete([FromBody] BatchTaskRequest request, CancellationToken ct)
+    {
+        var result = await _taskService.BatchDeleteAsync(request.Ids, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("batch-status")]
+    public async Task<IActionResult> BatchUpdateStatus([FromBody] BatchUpdateStatusRequest request, CancellationToken ct)
+    {
+        var result = await _taskService.BatchUpdateStatusAsync(request.Ids, request.Status, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpPatch("{id}/dates")]
     public async Task<IActionResult> UpdateDates(Guid id, [FromBody] UpdateTaskDatesRequest request, CancellationToken ct)
     {
@@ -98,3 +113,5 @@ public sealed record UpdateTaskStatusRequest(string Status);
 public sealed record UpdateTaskSortOrderRequest(int SortOrder);
 public sealed record UpdateTaskDatesRequest(DateTimeOffset? StartDate, DateTimeOffset? EndDate);
 public sealed record AddTaskDependencyRequest(Guid PredecessorId, string? Type);
+public sealed record BatchTaskRequest(IEnumerable<Guid> Ids);
+public sealed record BatchUpdateStatusRequest(IEnumerable<Guid> Ids, string Status);

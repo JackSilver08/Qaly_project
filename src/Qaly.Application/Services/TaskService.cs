@@ -357,6 +357,66 @@ public class TaskService : ITaskService
         return Result.Success();
     }
 
+    public async Task<Result> BatchDeleteAsync(IEnumerable<Guid> ids, CancellationToken ct = default)
+    {
+        var tasks = await _taskRepo.GetQueryable()
+            .Include(t => t.Project)
+            .Where(t => ids.Contains(t.Id))
+            .ToListAsync(ct);
+
+        if (!tasks.Any()) return Result.Success();
+
+        foreach (var task in tasks)
+        {
+            if (!await CanManageTaskAsync(task, ct)) continue;
+
+            var projectId = task.ProjectId;
+            var title = task.Title;
+
+            await _taskRepo.DeleteAsync(task, ct);
+            await AddToOutboxAsync("TaskDeleted", new { Id = task.Id }, ct);
+            await _webhookPublisher.PublishAsync(projectId, "task.deleted", new { task.Id, title }, ct);
+            await _auditLogService.LogAsync("Delete", nameof(TaskItem), task.Id.ToString(), new { task.Title }, ct);
+            await _notificationService.BroadcastToProjectAsync(projectId, $"Task \"{title}\" was deleted.", "TaskDeleted", new { task.Id }, ct);
+        }
+
+        await _unitOfWork.SaveChangesAsync(ct);
+        return Result.Success();
+    }
+
+    public async Task<Result> BatchUpdateStatusAsync(IEnumerable<Guid> ids, string newStatus, CancellationToken ct = default)
+    {
+        var normalizedStatus = NormalizeStatus(newStatus);
+        if (!IsValidStatus(normalizedStatus))
+        {
+            return Result.Failure("Invalid task status.");
+        }
+
+        var tasks = await _taskRepo.GetQueryable()
+            .Include(t => t.Project)
+            .Where(t => ids.Contains(t.Id))
+            .ToListAsync(ct);
+
+        if (!tasks.Any()) return Result.Success();
+
+        foreach (var task in tasks)
+        {
+            if (!await CanManageTaskAsync(task, ct)) continue;
+            if (!CanTransition(task.Status, normalizedStatus)) continue;
+
+            var oldStatus = task.Status;
+            task.Status = normalizedStatus;
+
+            await _taskRepo.UpdateAsync(task, ct);
+            await AddToOutboxAsync("TaskUpdated", new { Id = task.Id }, ct);
+            await _auditLogService.LogAsync("StatusChange", nameof(TaskItem), task.Id.ToString(), new { oldStatus, newStatus = normalizedStatus }, ct);
+            await NotifyStatusChangeAsync(task, oldStatus, normalizedStatus, ct);
+        }
+
+        await _unitOfWork.SaveChangesAsync(ct);
+        return Result.Success();
+    }
+
     public async Task<Result<IEnumerable<GanttTaskDto>>> GetGanttDataAsync(Guid projectId, CancellationToken ct = default)
     {
         var project = await _projectRepo.GetByIdAsync(projectId, ct);
