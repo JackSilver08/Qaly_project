@@ -61,7 +61,7 @@ public static class DependencyInjection
         services.AddSingleton<IVectorStorageService, QdrantVectorStorageService>();
         services.AddScoped<IAiIngestionService, AiIngestionService>();
         services.AddScoped<AiTools>();
-        services.AddScoped<Microsoft.AspNetCore.Authentication.Cookies.ITicketStore, Auth.RedisTicketStore>();
+        services.AddSingleton<Microsoft.AspNetCore.Authentication.Cookies.ITicketStore, Auth.RedisTicketStore>();
 
         // Background Workers
         services.AddHostedService<VectorSyncWorker>();

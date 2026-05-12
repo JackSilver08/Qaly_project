@@ -15,6 +15,9 @@ DotNetEnv.Env.Load();
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Environment.EnvironmentName = "Development"; // Force Development for debugging
+var cookieSecurePolicy = builder.Environment.IsDevelopment()
+    ? CookieSecurePolicy.SameAsRequest
+    : CookieSecurePolicy.Always;
 
 // =============================================
 // Serilog Configuration
@@ -50,7 +53,7 @@ builder.Services.AddSession(options =>
     options.IdleTimeout = TimeSpan.FromMinutes(30);
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
-    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    options.Cookie.SecurePolicy = cookieSecurePolicy;
     options.Cookie.SameSite = SameSiteMode.Lax;
 });
 
@@ -101,7 +104,7 @@ builder.Services
     {
         options.Cookie.Name = "Qaly.Auth";
         options.Cookie.HttpOnly = true;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        options.Cookie.SecurePolicy = cookieSecurePolicy;
         options.Cookie.SameSite = SameSiteMode.Lax;
         options.LoginPath = "/Account/Login";
         options.AccessDeniedPath = "/Account/AccessDenied";

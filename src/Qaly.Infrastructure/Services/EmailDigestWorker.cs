@@ -68,11 +68,16 @@ public class EmailDigestWorker : BackgroundService
         var usersResult = await userService.GetActiveAsync(ct);
         if (!usersResult.IsSuccess)
         {
-            _logger.LogWarning("Could not fetch active users for email digest: {Message}", usersResult.Message);
+            _logger.LogWarning("Could not fetch active users for email digest: {Message}", usersResult.Error);
             return;
         }
 
-        foreach (var user in usersResult.Value)
+        if (usersResult.Data is not { } users)
+        {
+            return;
+        }
+
+        foreach (var user in users)
         {
             var digestContent = await BuildDigestContentAsync(user.Id, taskService, notificationService, ct);
             if (!string.IsNullOrEmpty(digestContent))
@@ -89,40 +94,45 @@ public class EmailDigestWorker : BackgroundService
 
         // 1. Tasks: Overdue or due in next 2 days
         var tasksResult = await taskService.GetByAssigneeAsync(userId, page: 1, pageSize: 100, ct: ct);
-        if (tasksResult.IsSuccess)
+        if (tasksResult.IsSuccess && tasksResult.Data is { } tasks)
         {
             var now = DateTimeOffset.Now;
             var threshold = now.AddDays(2);
-            var relevantTasks = tasksResult.Value.Items
+            var relevantTasks = tasks.Items
                 .Where(t => t.DueDate.HasValue && (t.DueDate.Value < threshold) && t.Status != "Done" && t.Status != "Completed")
                 .ToList();
 
-            if (relevantTasks.Any())
+            if (relevantTasks.Count > 0)
             {
                 hasContent = true;
                 sb.AppendLine("Tasks requiring attention:");
                 foreach (var task in relevantTasks)
                 {
-                    var status = task.DueDate.Value < now ? "[OVERDUE]" : "[UPCOMING]";
-                    sb.AppendLine($"- {status} {task.Title} (Due: {task.DueDate:yyyy-MM-dd HH:mm})");
+                    if (task.DueDate is not { } dueDate)
+                    {
+                        continue;
+                    }
+
+                    var status = dueDate < now ? "[OVERDUE]" : "[UPCOMING]";
+                    sb.AppendLine($"- {status} {task.Title} (Due: {dueDate:yyyy-MM-dd HH:mm})");
                 }
             }
         }
 
         // 2. Unread Notifications
         var notificationsResult = await notificationService.GetByUserAsync(userId, unreadOnly: true, ct: ct);
-        if (notificationsResult.IsSuccess && notificationsResult.Value.Any())
+        if (notificationsResult.IsSuccess && notificationsResult.Data is { Count: > 0 } notifications)
         {
             if (hasContent) sb.AppendLine();
             hasContent = true;
             sb.AppendLine("Recent unread notifications:");
-            foreach (var notification in notificationsResult.Value.Take(5))
+            foreach (var notification in notifications.Take(5))
             {
                 sb.AppendLine($"- {notification.Message} ({notification.CreatedAt:yyyy-MM-dd HH:mm})");
             }
-            if (notificationsResult.Value.Count > 5)
+            if (notifications.Count > 5)
             {
-                sb.AppendLine($"- ... and {notificationsResult.Value.Count - 5} more.");
+                sb.AppendLine($"- ... and {notifications.Count - 5} more.");
             }
         }
 

@@ -1,4 +1,8 @@
 <!DOCTYPE html>
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment WebHostEnvironment
+@{
+    var isDevelopment = WebHostEnvironment.EnvironmentName == "Development";
+}
 <html lang="vi">
 <head>
     <meta charset="utf-8" />
@@ -25,6 +29,19 @@
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
+                const isDevelopment = @isDevelopment.ToString().ToLowerInvariant();
+
+                if (isDevelopment) {
+                    navigator.serviceWorker.getRegistrations()
+                        .then(registrations => registrations.forEach(registration => registration.unregister()));
+
+                    if ('caches' in window) {
+                        caches.keys().then(keys => keys.forEach(key => caches.delete(key)));
+                    }
+
+                    return;
+                }
+
                 navigator.serviceWorker.register('/sw.js')
                     .then(reg => console.log('SW registered:', reg.scope))
                     .catch(err => console.warn('SW registration failed:', err));

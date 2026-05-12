@@ -1,7 +1,6 @@
 // Qaly Service Worker — PWA offline support
-const CACHE_NAME = 'qaly-cache-v1';
+const CACHE_NAME = 'qaly-cache-v2';
 const STATIC_ASSETS = [
-    '/',
     '/css/site.css',
     '/js/site.js',
     '/favicon.ico',
@@ -40,6 +39,13 @@ self.addEventListener('fetch', (event) => {
     // Skip non-GET requests
     if (request.method !== 'GET') return;
 
+    // Let the browser handle page navigations and auth redirects directly.
+    // Service workers cannot safely return redirected responses for some
+    // navigation requests, and caching "/" can trap users on stale auth pages.
+    if (request.mode === 'navigate' || request.destination === 'document') {
+        return;
+    }
+
     // API requests — Network First
     if (url.pathname.startsWith('/api/')) {
         event.respondWith(
@@ -56,7 +62,7 @@ self.addEventListener('fetch', (event) => {
                 })
                 .catch(() => {
                     // Offline fallback: serve cached API response if available
-                    return caches.match(request);
+                    return caches.match(request).then((cached) => cached || Response.error());
                 })
         );
         return;

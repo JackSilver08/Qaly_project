@@ -1,18 +1,16 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
-using Qaly.Domain.Interfaces;
+using Qaly.Web.Auth;
 
 namespace Qaly.Web.Middleware;
 
 public class CustomExceptionHandler : IExceptionHandler
 {
     private readonly ILogger<CustomExceptionHandler> _logger;
-    private readonly ICurrentUserService _currentUserService;
 
-    public CustomExceptionHandler(ILogger<CustomExceptionHandler> logger, ICurrentUserService currentUserService)
+    public CustomExceptionHandler(ILogger<CustomExceptionHandler> logger)
     {
         _logger = logger;
-        _currentUserService = currentUserService;
     }
 
     public async ValueTask<bool> TryHandleAsync(
@@ -21,7 +19,7 @@ public class CustomExceptionHandler : IExceptionHandler
         CancellationToken cancellationToken)
     {
         var correlationId = httpContext.Items["CorrelationId"] as string ?? "unknown";
-        var userId = _currentUserService.UserId?.ToString() ?? "anonymous";
+        var userId = httpContext.User.GetUserId()?.ToString() ?? "anonymous";
         var requestPath = httpContext.Request.Path;
 
         _logger.LogError(exception,
