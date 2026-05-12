@@ -7,13 +7,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   base: '/dist/',
+  publicDir: 'src/Qaly.Web/ClientApp/public',
   plugins: [vue()],
   define: {
     'process.env.NODE_ENV': JSON.stringify('production'),
   }, 
   
   resolve: {
-    preserveSymlinks: true,
     alias: {
       '@': path.resolve(__dirname, './src/Qaly.Web/ClientApp'),
     },
@@ -32,9 +32,9 @@ export default defineConfig({
         assetFileNames: `assets/[name].[ext]`,
         manualChunks: {
           'vendor-vue': ['vue', 'vue-router'],
+          'vendor-ui': ['vue-draggable-plus', 'lucide-vue-next'],
           'vendor-markdown': ['markdown-it', 'dompurify'],
           'vendor-realtime': ['@microsoft/signalr'],
-          'vendor-icons': ['lucide-vue-next'],
         },
       },
       onwarn(warning, warn) {

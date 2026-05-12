@@ -3,7 +3,7 @@
     "file": "assets/ProjectList.vue_vue_type_script_setup_true_lang.js",
     "name": "ProjectList.vue_vue_type_script_setup_true_lang",
     "imports": [
-      "_vendor-icons.js",
+      "_vendor-ui.js",
       "_vendor-vue.js"
     ]
   },
@@ -11,14 +11,7 @@
     "file": "assets/ProjectToolbar.vue_vue_type_script_setup_true_lang.js",
     "name": "ProjectToolbar.vue_vue_type_script_setup_true_lang",
     "imports": [
-      "_vendor-icons.js",
-      "_vendor-vue.js"
-    ]
-  },
-  "_vendor-icons.js": {
-    "file": "assets/vendor-icons.js",
-    "name": "vendor-icons",
-    "imports": [
+      "_vendor-ui.js",
       "_vendor-vue.js"
     ]
   },
@@ -29,6 +22,13 @@
   "_vendor-realtime.js": {
     "file": "assets/vendor-realtime.js",
     "name": "vendor-realtime"
+  },
+  "_vendor-ui.js": {
+    "file": "assets/vendor-ui.js",
+    "name": "vendor-ui",
+    "imports": [
+      "_vendor-vue.js"
+    ]
   },
   "_vendor-vue.js": {
     "file": "assets/vendor-vue.js",
@@ -41,7 +41,7 @@
     "isEntry": true,
     "imports": [
       "_vendor-vue.js",
-      "_vendor-icons.js",
+      "_vendor-ui.js",
       "_vendor-markdown.js",
       "_vendor-realtime.js"
     ],
@@ -67,7 +67,7 @@
       "_ProjectList.vue_vue_type_script_setup_true_lang.js",
       "src/Qaly.Web/ClientApp/main.ts",
       "_vendor-vue.js",
-      "_vendor-icons.js",
+      "_vendor-ui.js",
       "_vendor-markdown.js",
       "_vendor-realtime.js"
     ]
@@ -79,7 +79,7 @@
     "isDynamicEntry": true,
     "imports": [
       "_vendor-vue.js",
-      "_vendor-icons.js",
+      "_vendor-ui.js",
       "_ProjectToolbar.vue_vue_type_script_setup_true_lang.js",
       "src/Qaly.Web/ClientApp/main.ts",
       "_vendor-markdown.js",
@@ -93,7 +93,7 @@
     "isDynamicEntry": true,
     "imports": [
       "src/Qaly.Web/ClientApp/main.ts",
-      "_vendor-icons.js",
+      "_vendor-ui.js",
       "_vendor-vue.js",
       "_vendor-markdown.js",
       "_vendor-realtime.js"
@@ -107,7 +107,7 @@
     "imports": [
       "_vendor-vue.js",
       "src/Qaly.Web/ClientApp/main.ts",
-      "_vendor-icons.js",
+      "_vendor-ui.js",
       "_vendor-markdown.js",
       "_vendor-realtime.js"
     ],
@@ -125,7 +125,7 @@
       "_ProjectList.vue_vue_type_script_setup_true_lang.js",
       "_ProjectToolbar.vue_vue_type_script_setup_true_lang.js",
       "src/Qaly.Web/ClientApp/main.ts",
-      "_vendor-icons.js",
+      "_vendor-ui.js",
       "_vendor-markdown.js",
       "_vendor-realtime.js"
     ]
@@ -136,7 +136,7 @@
     "src": "src/Qaly.Web/ClientApp/pages/TasksPage.vue",
     "isDynamicEntry": true,
     "imports": [
-      "_vendor-icons.js",
+      "_vendor-ui.js",
       "_vendor-vue.js",
       "src/Qaly.Web/ClientApp/main.ts",
       "_vendor-markdown.js",
@@ -149,7 +149,7 @@
     "src": "src/Qaly.Web/ClientApp/pages/TeamsPage.vue",
     "isDynamicEntry": true,
     "imports": [
-      "_vendor-icons.js",
+      "_vendor-ui.js",
       "_vendor-vue.js",
       "src/Qaly.Web/ClientApp/main.ts",
       "_vendor-markdown.js",
