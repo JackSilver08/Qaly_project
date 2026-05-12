@@ -4,65 +4,64 @@
     ViewData["Title"] = "Sign in";
 }
 
-<main class="auth-page">
-
+<main class="auth-page login-page">
     <div class="auth-container">
-        <!-- Left: Form -->
         <section class="auth-side-form">
-            <div class="auth-card__brand">
-                <span class="brand-logo" style="letter-spacing: 2px; text-transform: uppercase; font-size: 14px; opacity: 0.8;">Qaly Workspace</span>
-                <h1 style="font-size: 40px; letter-spacing: -1px; margin-bottom: 12px;">Welcome back</h1>
-                <p style="font-weight: 500; opacity: 0.7;">Elevate your projects with high-precision management.</p>
-            </div>
-
-            @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
-            {
-                <div class="auth-error">@Model.ErrorMessage</div>
-            }
-
-            <form method="post" class="auth-form" id="loginForm">
-                <input type="hidden" asp-for="ReturnUrl" />
-                <label>
-                    <span>Email address</span>
-                    <input asp-for="Email" type="email" placeholder="name@company.com" autocomplete="email" required />
-                </label>
-                <label>
-                    <span>Password</span>
-                    <input asp-for="Password" type="password" placeholder="••••••••" autocomplete="current-password" required />
-                </label>
-                
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                    <label style="display: flex; flex-direction: row; align-items: center; gap: 8px; font-weight: 500; cursor: pointer;">
-                        <input type="checkbox" style="width: auto; min-height: auto;" /> Remember me
-                    </label>
-                    <a href="#" style="font-size: 13px; color: #0F52BA; font-weight: 600; text-decoration: none;">Forgot Password?</a>
+            <div class="login-form-shell">
+                <div class="auth-card__brand">
+                    <span class="brand-logo">Qaly Workspace</span>
+                    <h1>Welcome back</h1>
+                    <p>Elevate your projects with high-precision management.</p>
                 </div>
 
-                <button type="submit">Log In</button>
-            </form>
+                @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+                {
+                    <div class="auth-error">@Model.ErrorMessage</div>
+                }
 
-            <div class="auth-link">
-                Don't have an account? <a asp-page="/Account/Register">Sign Up</a>
-            </div>
+                <form method="post" class="auth-form" id="loginForm">
+                    <input type="hidden" asp-for="ReturnUrl" />
+                    <label>
+                        <span>Email address</span>
+                        <input asp-for="Email" type="email" placeholder="name@company.com" autocomplete="email" required />
+                    </label>
+                    <label>
+                        <span>Password</span>
+                        <input asp-for="Password" type="password" placeholder="Password" autocomplete="current-password" required />
+                    </label>
 
-            <div class="auth-hint">
-                <strong>Seed admin:</strong> admin@qaly.dev / Admin@123
+                    <div class="auth-options">
+                        <label class="remember-option">
+                            <input type="checkbox" />
+                            <span>Remember me</span>
+                        </label>
+                        <a href="#">Forgot password?</a>
+                    </div>
+
+                    <button type="submit">Log In</button>
+                </form>
+
+                <div class="auth-link">
+                    Don't have an account? <a asp-page="/Account/Register">Sign Up</a>
+                </div>
+
+                <div class="auth-hint">
+                    <strong>Seed admin</strong>
+                    <span>admin@qaly.dev / Admin@123</span>
+                </div>
             </div>
         </section>
 
-        <!-- Right: Visual -->
         <section class="auth-side-visual">
-            <!-- Premium Background Particles (Now inside visual side) -->
             <div class="auth-particles">
-                <div class="auth-particle" style="width: 10px; height: 10px; top: 20%; left: 15%; animation-duration: 8s;"></div>
-                <div class="auth-particle" style="width: 15px; height: 15px; top: 60%; left: 5%; animation-duration: 12s;"></div>
-                <div class="auth-particle" style="width: 8px; height: 8px; top: 80%; left: 25%; animation-duration: 6s;"></div>
-                <div class="auth-particle" style="width: 12px; height: 12px; top: 10%; left: 80%; animation-duration: 10s;"></div>
-                <div class="auth-particle" style="width: 6px; height: 6px; top: 40%; left: 90%; animation-duration: 7s;"></div>
+                <div class="auth-particle particle-one"></div>
+                <div class="auth-particle particle-two"></div>
+                <div class="auth-particle particle-three"></div>
+                <div class="auth-particle particle-four"></div>
             </div>
-            <!-- Floating 3D Pills -->
+
             <div class="floating-pill pill-deadline">
-                <div class="icon-dot" style="background: #0d9488;">✔</div>
+                <div class="icon-dot">OK</div>
                 <span>
                     <b>Deadline Met</b>
                     <small>Project A complete</small>
@@ -74,14 +73,16 @@
                     <b>Efficiency</b>
                     <small>+24%</small>
                 </span>
-                <div class="icon-dot">📈</div>
+                <div class="icon-dot">24</div>
             </div>
 
-            <img src="~/images/login-illustration-new.png" alt="Qaly 3D Illustration" style="max-width: 550px;" />
-            
-            <div class="auth-visual-content">
-                <h2>Calculated Precision</h2>
-                <p>Experience a workflow designed for high-stakes enterprise management with high-fidelity visualization.</p>
+            <div class="auth-visual-inner">
+                <img src="~/images/login-illustration-new.png" alt="Qaly workspace visualization" />
+
+                <div class="auth-visual-content">
+                    <h2>Calculated Precision</h2>
+                    <p>Experience a workflow designed for high-stakes enterprise management with high-fidelity visualization.</p>
+                </div>
             </div>
         </section>
     </div>
@@ -89,11 +90,8 @@
 
 @section Scripts {
     <script>
-        // Set a flag in localStorage when login form is submitted
-        // This will be used by the Vue app to trigger the welcome animation
         document.getElementById('loginForm').addEventListener('submit', function() {
             localStorage.setItem('qaly_new_login', 'true');
         });
     </script>
 }
-
