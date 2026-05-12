@@ -585,6 +585,61 @@ public class TaskService : ITaskService
                 .OrderByPlanningPriority()
         };
 
+    private async Task<bool> CanViewTaskDetailsAsync(TaskItem task, CancellationToken ct)
+        => await _taskAccessPolicy.CanAccessTaskAsync(task, ct);
+
+    private async Task<TaskInputValidation> ValidateTaskInputAsync(string title, string priority, Guid projectId, IReadOnlyList<Guid> assigneeIds, IReadOnlyList<Guid>? labelIds, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return TaskInputValidation.Failure("Task title is required.");
+        }
+
+        if (!TaskStatusRules.IsValidPriority(priority))
+        {
+            return TaskInputValidation.Failure("Invalid task priority.");
+        }
+
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null)
+        {
+            return TaskInputValidation.Failure("Project was not found.", 404);
+        }
+
+        foreach (var assigneeId in assigneeIds.Distinct())
+        {
+            var userExists = await _userRepo.GetQueryable()
+                .AnyAsync(user => user.Id == assigneeId && user.IsActive, ct);
+
+            if (!userExists)
+            {
+                return TaskInputValidation.Failure("Assignee was not found.", 404);
+            }
+
+            var isProjectUser = project.OwnerId == assigneeId ||
+                await _memberRepo.GetQueryable()
+                    .AnyAsync(member => member.ProjectId == projectId && member.UserId == assigneeId, ct);
+
+            if (!isProjectUser)
+            {
+                return TaskInputValidation.Failure("Assignee must be a project member.", 400);
+            }
+        }
+
+        if (labelIds is { Count: > 0 })
+        {
+            var distinctLabelIds = labelIds.Distinct().ToList();
+            var validLabelCount = await _projectLabelRepo.GetQueryable()
+                .CountAsync(label => label.ProjectId == projectId && distinctLabelIds.Contains(label.Id), ct);
+            if (validLabelCount != distinctLabelIds.Count)
+            {
+                return TaskInputValidation.Failure("One or more labels do not belong to this project.", 400);
+            }
+        }
+
+        return TaskInputValidation.Success(project);
+    }
+
     private static IReadOnlyList<Guid> NormalizeAssigneeIds(Guid? primaryAssigneeId, IReadOnlyList<Guid>? assigneeIds)
     {
         var normalized = new List<Guid>();
