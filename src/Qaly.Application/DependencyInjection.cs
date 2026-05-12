@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Services;
+using Qaly.Application.Services.Tasks;
 
 namespace Qaly.Application;
 
@@ -17,6 +18,7 @@ public static class DependencyInjection
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IProjectService, ProjectService>();
         services.AddScoped<ITaskService, TaskService>();
+        services.AddScoped<ITaskAccessPolicy, TaskAccessPolicy>();
         services.AddScoped<ICommentService, CommentService>();
         services.AddScoped<IAttachmentService, AttachmentService>();
         services.AddScoped<INotificationService, NotificationService>();
