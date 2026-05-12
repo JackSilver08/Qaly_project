@@ -1,4 +1,4 @@
-Được rồi, mình sẽ viết thẳng ra dạng text chi tiết, rõ ràng.
+Được rồi, mình sẽ viết thẳng ra      dạng text chi tiết, rõ ràng.
 
 QALY — Báo Cáo Kỹ Thuật Nâng Cấp Toàn Diện
 
@@ -176,7 +176,7 @@ Push notifications (Web Push): Khi user cho phép notification, backend lưu Pus
 5.6 Multi-tenant Architecture (Long-term)
 Mô tả: Nếu Qaly muốn mở rộng ra nhiều công ty khác sử dụng (SaaS), cần thiết kế multi-tenant. Với Modular Monolith hiện tại, có 2 hướng:
 Hướng 1 — Database per tenant (mạnh về isolation): mỗi công ty có database riêng trên cùng SQL Server instance. Khi request đến, middleware đọc tenant_id từ subdomain (ví dụ companya.qaly.io) hoặc JWT claim, resolve đúng connection string. Hoàn toàn isolated về data, dễ backup/restore per tenant. Nhược điểm: khó run cross-tenant reports.
-Hướng 2 — Row-level security (đơn giản hơn để migrate): thêm TenantId column vào tất cả bảng, thêm global query filter trong EF Core modelBuilder.Entity<TaskItem>().HasQueryFilter(t => t.TenantId == _currentTenant.Id). Dữ liệu chung một database nhưng tự động filter. Nhược điểm: rủi ro data leak nếu filter bị bypass, performance kém hơn ở scale lớn.
+Hướng 2 — Row-level security (đơn giản hơn để migrate): thêm TenantId column vào tất cả bảng, thêm global query filter trong EF Core modelBuilder.Entity<TaskItem>().HasQueryFilter(t => t.TenantId ==_currentTenant.Id). Dữ liệu chung một database nhưng tự động filter. Nhược điểm: rủi ro data leak nếu filter bị bypass, performance kém hơn ở scale lớn.
 Khuyến nghị: Nếu chỉ dùng nội bộ 1 công ty thì chưa cần. Nếu muốn mở rộng SaaS trong 12 tháng tới thì nên plan ngay từ bây giờ và chọn Hướng 1 vì isolation tốt hơn.
 
 CHƯƠNG 6 — TECH PROPOSALS & API DESIGN TỔNG HỢP
@@ -220,7 +220,6 @@ PATCH /api/webhooks/{id}
 DELETE /api/webhooks/{id}
 POST /api/webhooks/{id}/test
 GET /api/webhooks/{id}/deliveries
-
 
 6.2 Tech Stack Bổ sung Đề xuất
 Các thư viện/công nghệ nên thêm vào project:

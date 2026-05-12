@@ -3,8 +3,8 @@ using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Mappings;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Task;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
-using Qaly.Domain.Enums;
 using Qaly.Domain.Interfaces;
 using System.Text.Json;
 
@@ -12,24 +12,6 @@ namespace Qaly.Application.Services;
 
 public class TaskService : ITaskService
 {
-    private static readonly Dictionary<string, string[]> StatusTransitions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["Todo"] = ["InProgress", "OnHold", "Cancelled"],
-        ["InProgress"] = ["Todo", "OnHold", "InReview", "Done", "Cancelled"],
-        ["OnHold"] = ["Todo", "InProgress", "Cancelled"],
-        ["InReview"] = ["InProgress", "OnHold", "Done", "Cancelled"],
-        ["Done"] = ["InReview"],
-        ["Cancelled"] = ["Todo"]
-    };
-
-    private static readonly Dictionary<string, string[]> MemberStatusTransitions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["Todo"] = ["InProgress"],
-        ["InProgress"] = ["OnHold", "InReview"],
-        ["OnHold"] = ["InProgress"],
-        ["InReview"] = ["InProgress"]
-    };
-
     private readonly IRepository<TaskItem> _taskRepo;
     private readonly IRepository<TaskDependency> _dependencyRepo;
     private readonly IRepository<Project> _projectRepo;
@@ -40,7 +22,7 @@ public class TaskService : ITaskService
     private readonly IRepository<ProjectLabel> _projectLabelRepo;
     private readonly IRepository<VectorSyncOutbox> _outboxRepo;
     private readonly IUnitOfWork _unitOfWork;
-    private readonly ICurrentUserService _currentUserService;
+    private readonly ITaskAccessPolicy _taskAccessPolicy;
     private readonly INotificationService _notificationService;
     private readonly IAuditLogService _auditLogService;
     private readonly ITaskPrioritySuggestionService _taskPrioritySuggestionService;
@@ -57,7 +39,7 @@ public class TaskService : ITaskService
         IRepository<ProjectLabel> projectLabelRepo,
         IRepository<VectorSyncOutbox> outboxRepo,
         IUnitOfWork unitOfWork,
-        ICurrentUserService currentUserService,
+        ITaskAccessPolicy taskAccessPolicy,
         INotificationService notificationService,
         IAuditLogService auditLogService,
         ITaskPrioritySuggestionService taskPrioritySuggestionService,
@@ -73,7 +55,7 @@ public class TaskService : ITaskService
         _projectLabelRepo = projectLabelRepo;
         _outboxRepo = outboxRepo;
         _unitOfWork = unitOfWork;
-        _currentUserService = currentUserService;
+        _taskAccessPolicy = taskAccessPolicy;
         _notificationService = notificationService;
         _auditLogService = auditLogService;
         _taskPrioritySuggestionService = taskPrioritySuggestionService;
@@ -90,7 +72,7 @@ public class TaskService : ITaskService
             return Result.NotFound<TaskItemDto>();
         }
 
-        if (!await CanAccessProjectAsync(task.ProjectId, task.Project.OwnerId, ct))
+        if (!await _taskAccessPolicy.CanAccessTaskAsync(task, ct))
         {
             return Result.Forbidden<TaskItemDto>();
         }
@@ -107,7 +89,7 @@ public class TaskService : ITaskService
             return Result.NotFound<PagedResult<TaskItemDto>>();
         }
 
-        if (!await CanAccessProjectAsync(projectId, project.OwnerId, ct))
+        if (!await _taskAccessPolicy.CanAccessProjectAsync(projectId, project.OwnerId, ct))
         {
             return Result.Forbidden<PagedResult<TaskItemDto>>();
         }
@@ -118,6 +100,7 @@ public class TaskService : ITaskService
         var query = TaskDetailsQuery()
             .Where(t => t.ProjectId == projectId);
 
+        query = _taskAccessPolicy.ApplyVisibilityFilter(query);
         if (!string.IsNullOrWhiteSpace(status))
         {
             query = query.Where(t => t.Status == status);
@@ -148,6 +131,7 @@ public class TaskService : ITaskService
         query = ApplyTaskSort(query, sort);
 
         var items = await query
+            .OrderByPlanningPriority()
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(ct);
@@ -169,7 +153,7 @@ public class TaskService : ITaskService
 
     public async Task<Result<PagedResult<TaskItemDto>>> GetByAssigneeAsync(Guid assigneeId, int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
-        if (!IsAdmin() && _currentUserService.UserId != assigneeId)
+        if (!_taskAccessPolicy.IsAdmin && _taskAccessPolicy.CurrentUserId != assigneeId)
         {
             return Result.Forbidden<PagedResult<TaskItemDto>>();
         }
@@ -177,8 +161,8 @@ public class TaskService : ITaskService
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
-        var query = TaskDetailsQuery()
-            .Where(t => t.AssigneeId == assigneeId || t.Assignees.Any(assignment => assignment.UserId == assigneeId));
+        var query = _taskAccessPolicy.ApplyVisibilityFilter(TaskDetailsQuery())
+            .Where(t => t.AssigneeId == assigneeId);
 
         var totalCount = await query.CountAsync(ct);
         var items = await query
@@ -198,7 +182,7 @@ public class TaskService : ITaskService
 
     public async Task<Result<TaskItemDto>> CreateAsync(CreateTaskDto dto, CancellationToken ct = default)
     {
-        var currentUserId = _currentUserService.UserId;
+        var currentUserId = _taskAccessPolicy.CurrentUserId;
         if (currentUserId == null)
         {
             return Result.Forbidden<TaskItemDto>();
@@ -212,19 +196,14 @@ public class TaskService : ITaskService
         }
 
         var project = validation.Project!;
-        if (!await CanWriteProjectAsync(project.Id, project.OwnerId, ct))
+        if (!await _taskAccessPolicy.CanAccessProjectAsync(project.Id, project.OwnerId, ct))
         {
             return Result.Forbidden<TaskItemDto>();
         }
 
         var task = dto.ToEntity();
         task.Title = dto.Title.Trim();
-        task.Priority = NormalizePriority(dto.Priority);
-        task.AssigneeId = assigneeIds.Count > 0 ? assigneeIds[0] : null;
-        if (task.AssigneeId == Guid.Empty)
-        {
-            task.AssigneeId = null;
-        }
+        task.Priority = TaskStatusRules.NormalizePriority(dto.Priority);
         task.ReporterId = currentUserId.Value;
 
         await _taskRepo.AddAsync(task, ct);
@@ -269,7 +248,7 @@ public class TaskService : ITaskService
             return Result.NotFound<TaskItemDto>();
         }
 
-        if (!await CanEditTaskAsync(task, ct))
+        if (!await _taskAccessPolicy.CanManageTaskAsync(task, ct))
         {
             return Result.Forbidden<TaskItemDto>();
         }
@@ -281,7 +260,7 @@ public class TaskService : ITaskService
             return Result.Failure<TaskItemDto>(validation.Error ?? "Invalid task.", validation.StatusCode);
         }
 
-        if (!IsValidStatus(NormalizeStatus(dto.Status)))
+        if (!TaskStatusRules.IsValidStatus(dto.Status))
         {
             return Result.Failure<TaskItemDto>("Invalid task status.");
         }
@@ -289,13 +268,8 @@ public class TaskService : ITaskService
         var previousAssignees = task.Assignees.Select(assignment => assignment.UserId).ToHashSet();
         dto.ApplyTo(task);
         task.Title = dto.Title.Trim();
-        task.Status = NormalizeStatus(dto.Status);
-        task.Priority = NormalizePriority(dto.Priority);
-        task.AssigneeId = assigneeIds.Count > 0 ? assigneeIds[0] : null;
-        if (task.AssigneeId == Guid.Empty)
-        {
-            task.AssigneeId = null;
-        }
+        task.Status = TaskStatusRules.NormalizeStatus(dto.Status);
+        task.Priority = TaskStatusRules.NormalizePriority(dto.Priority);
 
         await _taskRepo.UpdateAsync(task, ct);
         await SyncAssignmentsAsync(task.Id, assigneeIds, ct);
@@ -329,18 +303,18 @@ public class TaskService : ITaskService
             return Result.Failure("Task was not found.", 404);
         }
 
-        if (!await CanChangeStatusAsync(task, newStatus, ct))
+        if (!await _taskAccessPolicy.CanManageTaskAsync(task, ct))
         {
             return Result.Failure("Access denied.", 403);
         }
 
-        var normalizedStatus = NormalizeStatus(newStatus);
-        if (!IsValidStatus(normalizedStatus))
+        if (!TaskStatusRules.IsValidStatus(newStatus))
         {
             return Result.Failure("Invalid task status.");
         }
 
-        if (!await CanTransitionAsync(task, normalizedStatus, ct))
+        var normalizedStatus = TaskStatusRules.NormalizeStatus(newStatus);
+        if (!TaskStatusRules.CanTransition(task.Status, normalizedStatus))
         {
             return Result.Failure($"Cannot move task from {task.Status} to {normalizedStatus}.", 409);
         }
@@ -360,13 +334,15 @@ public class TaskService : ITaskService
 
     public async Task<Result> UpdateSortOrderAsync(Guid id, int sortOrder, CancellationToken ct = default)
     {
-        var task = await _taskRepo.GetByIdAsync(id, ct);
+        var task = await _taskRepo.GetQueryable()
+            .WithProject()
+            .FirstOrDefaultAsync(item => item.Id == id, ct);
         if (task == null)
         {
             return Result.Failure("Task was not found.", 404);
         }
 
-        if (!await CanPinTaskAsync(task, ct))
+        if (!await _taskAccessPolicy.CanManageTaskAsync(task, ct))
         {
             return Result.Failure("Access denied.", 403);
         }
@@ -388,7 +364,7 @@ public class TaskService : ITaskService
             return Result.Failure("Task was not found.", 404);
         }
 
-        if (!await CanDeleteTaskAsync(task, ct))
+        if (!await _taskAccessPolicy.CanManageTaskAsync(task, ct))
         {
             return Result.Failure("Access denied.", 403);
         }
@@ -411,15 +387,15 @@ public class TaskService : ITaskService
     public async Task<Result> BatchDeleteAsync(IEnumerable<Guid> ids, CancellationToken ct = default)
     {
         var tasks = await _taskRepo.GetQueryable()
-            .Include(t => t.Project)
+            .WithProject()
             .Where(t => ids.Contains(t.Id))
             .ToListAsync(ct);
 
-        if (!tasks.Any()) return Result.Success();
+        if (tasks.Count == 0) return Result.Success();
 
         foreach (var task in tasks)
         {
-            if (!await CanDeleteTaskAsync(task, ct)) continue;
+            if (!await _taskAccessPolicy.CanManageTaskAsync(task, ct)) continue;
 
             var projectId = task.ProjectId;
             var title = task.Title;
@@ -437,23 +413,23 @@ public class TaskService : ITaskService
 
     public async Task<Result> BatchUpdateStatusAsync(IEnumerable<Guid> ids, string newStatus, CancellationToken ct = default)
     {
-        var normalizedStatus = NormalizeStatus(newStatus);
-        if (!IsValidStatus(normalizedStatus))
+        if (!TaskStatusRules.IsValidStatus(newStatus))
         {
             return Result.Failure("Invalid task status.");
         }
 
+        var normalizedStatus = TaskStatusRules.NormalizeStatus(newStatus);
         var tasks = await _taskRepo.GetQueryable()
-            .Include(t => t.Project)
+            .WithProject()
             .Where(t => ids.Contains(t.Id))
             .ToListAsync(ct);
 
-        if (!tasks.Any()) return Result.Success();
+        if (tasks.Count == 0) return Result.Success();
 
         foreach (var task in tasks)
         {
-            if (!await CanChangeStatusAsync(task, normalizedStatus, ct)) continue;
-            if (!await CanTransitionAsync(task, normalizedStatus, ct)) continue;
+            if (!await _taskAccessPolicy.CanManageTaskAsync(task, ct)) continue;
+            if (!TaskStatusRules.CanTransition(task.Status, normalizedStatus)) continue;
 
             var oldStatus = task.Status;
             task.Status = normalizedStatus;
@@ -473,10 +449,10 @@ public class TaskService : ITaskService
         var project = await _projectRepo.GetByIdAsync(projectId, ct);
         if (project == null) return Result.NotFound<IEnumerable<GanttTaskDto>>();
 
-        if (!await CanAccessProjectAsync(projectId, project.OwnerId, ct))
+        if (!await _taskAccessPolicy.CanAccessProjectAsync(projectId, project.OwnerId, ct))
             return Result.Forbidden<IEnumerable<GanttTaskDto>>();
 
-        var tasks = await ApplyPrivateTaskFilter(_taskRepo.GetQueryable())
+        var tasks = await _taskAccessPolicy.ApplyVisibilityFilter(_taskRepo.GetQueryable())
             .Where(t => t.ProjectId == projectId)
             .Include(t => t.PredecessorDependencies)
             .ToListAsync(ct);
@@ -493,75 +469,19 @@ public class TaskService : ITaskService
             IsCriticalPath = false
         }).ToList();
 
-        CalculateCriticalPath(dtos);
+        GanttCriticalPathCalculator.MarkCriticalPath(dtos);
 
         return Result.Success<IEnumerable<GanttTaskDto>>(dtos);
     }
 
-    private void CalculateCriticalPath(List<GanttTaskDto> tasks)
-    {
-        if (tasks == null || !tasks.Any()) return;
-
-        var tasksWithDates = tasks.Where(t => t.StartDate.HasValue && t.EndDate.HasValue).ToList();
-        if (!tasksWithDates.Any()) return;
-
-        // 1. Forward Pass: Earliest Start (ES) and Earliest Finish (EF)
-        var earlyStart = new Dictionary<Guid, DateTimeOffset>();
-        var earlyFinish = new Dictionary<Guid, DateTimeOffset>();
-
-        foreach (var task in tasksWithDates.OrderBy(t => t.StartDate))
-        {
-            var predecessors = tasksWithDates.Where(t => task.Dependencies.Contains(t.Id)).ToList();
-            var es = task.StartDate!.Value;
-
-            if (predecessors.Any())
-            {
-                var maxEF = predecessors.Max(p => earlyFinish.TryGetValue(p.Id, out var ef) ? ef : p.EndDate!.Value);
-                if (maxEF > es) es = maxEF;
-            }
-
-            earlyStart[task.Id] = es;
-            var duration = task.EndDate!.Value - task.StartDate!.Value;
-            earlyFinish[task.Id] = es.Add(duration);
-        }
-
-        // 2. Backward Pass: Latest Start (LS) and Latest Finish (LF)
-        var lateStart = new Dictionary<Guid, DateTimeOffset>();
-        var projectFinish = earlyFinish.Values.Any() ? earlyFinish.Values.Max() : DateTimeOffset.MinValue;
-
-        foreach (var task in tasksWithDates.OrderByDescending(t => t.EndDate))
-        {
-            var successors = tasksWithDates.Where(t => t.Dependencies.Contains(task.Id)).ToList();
-            var lf = projectFinish;
-
-            if (successors.Any())
-            {
-                lf = successors.Min(s => lateStart.TryGetValue(s.Id, out var ls) ? ls : s.StartDate!.Value);
-            }
-
-            var duration = task.EndDate!.Value - task.StartDate!.Value;
-            lateStart[task.Id] = lf.Subtract(duration);
-        }
-
-        // 3. Mark Critical Path: Slack (LS - ES) == 0
-        foreach (var task in tasksWithDates)
-        {
-            if (earlyStart.TryGetValue(task.Id, out var es) && lateStart.TryGetValue(task.Id, out var ls))
-            {
-                if (Math.Abs((ls - es).TotalHours) < 0.01)
-                {
-                    task.IsCriticalPath = true;
-                }
-            }
-        }
-    }
-
     public async Task<Result> UpdateDatesAsync(Guid taskId, DateTimeOffset? startDate, DateTimeOffset? endDate, CancellationToken ct = default)
     {
-        var task = await _taskRepo.GetByIdAsync(taskId, ct);
+        var task = await _taskRepo.GetQueryable()
+            .WithProject()
+            .FirstOrDefaultAsync(item => item.Id == taskId, ct);
         if (task == null) return Result.Failure("Task was not found.", 404);
 
-        if (!await CanManageTaskAsync(task, ct)) return Result.Failure("Access denied.", 403);
+        if (!await _taskAccessPolicy.CanManageTaskAsync(task, ct)) return Result.Failure("Access denied.", 403);
 
         if (startDate.HasValue && endDate.HasValue && startDate > endDate)
             return Result.Failure("Start date cannot be after end date.");
@@ -570,8 +490,8 @@ public class TaskService : ITaskService
         task.DueDate = endDate;
 
         await _taskRepo.UpdateAsync(task, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
         await AddToOutboxAsync("TaskUpdated", new { Id = task.Id }, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
 
         return Result.Success();
     }
@@ -580,15 +500,19 @@ public class TaskService : ITaskService
     {
         if (predecessorId == successorId) return Result.Failure("Cannot depend on itself.");
 
-        var predecessor = await _taskRepo.GetByIdAsync(predecessorId, ct);
-        var successor = await _taskRepo.GetByIdAsync(successorId, ct);
+        var predecessor = await _taskRepo.GetQueryable()
+            .WithProject()
+            .FirstOrDefaultAsync(task => task.Id == predecessorId, ct);
+        var successor = await _taskRepo.GetQueryable()
+            .WithProject()
+            .FirstOrDefaultAsync(task => task.Id == successorId, ct);
 
         if (predecessor == null || successor == null) return Result.Failure("Task not found.", 404);
 
         if (predecessor.ProjectId != successor.ProjectId)
             return Result.Failure("Tasks must be in the same project.");
 
-        if (!await CanManageTaskAsync(successor, ct)) return Result.Failure("Access denied.", 403);
+        if (!await _taskAccessPolicy.CanManageTaskAsync(successor, ct)) return Result.Failure("Access denied.", 403);
 
         var exists = await _dependencyRepo.GetQueryable()
             .AnyAsync(d => d.PredecessorId == predecessorId && d.SuccessorId == successorId, ct);
@@ -612,11 +536,12 @@ public class TaskService : ITaskService
     {
         var dependency = await _dependencyRepo.GetQueryable()
             .Include(d => d.Successor)
+            .ThenInclude(task => task.Project)
             .FirstOrDefaultAsync(d => d.Id == dependencyId, ct);
 
         if (dependency == null) return Result.Failure("Dependency not found.", 404);
 
-        if (!await CanManageTaskAsync(dependency.Successor, ct)) return Result.Failure("Access denied.", 403);
+        if (!await _taskAccessPolicy.CanManageTaskAsync(dependency.Successor, ct)) return Result.Failure("Access denied.", 403);
 
         await _dependencyRepo.DeleteAsync(dependency, ct);
         await _unitOfWork.SaveChangesAsync(ct);
@@ -636,6 +561,7 @@ public class TaskService : ITaskService
 
     private IQueryable<TaskItem> TaskDetailsQuery()
         => _taskRepo.GetQueryable()
+<<<<<<< HEAD
             .Include(t => t.Project)
             .Include(t => t.Assignee)
             .Include(t => t.Assignees)
@@ -818,22 +744,7 @@ public class TaskService : ITaskService
             allowed.Contains(newStatus, StringComparer.OrdinalIgnoreCase);
     }
 
-    private async Task<bool> CanAccessProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
-    {
-        var currentUserId = _currentUserService.UserId;
-        if (currentUserId == null)
-        {
-            return false;
-        }
-
-        if (IsAdmin() || ownerId == currentUserId)
-        {
-            return true;
-        }
-
-        return await _memberRepo.GetQueryable()
-            .AnyAsync(member => member.ProjectId == projectId && member.UserId == currentUserId, ct);
-    }
+            .WithDetails();
 
     private async Task<bool> CanWriteProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
     {
@@ -871,7 +782,7 @@ public class TaskService : ITaskService
             return TaskInputValidation.Failure("Task title is required.");
         }
 
-        if (!IsValidPriority(NormalizePriority(priority)))
+        if (!TaskStatusRules.IsValidPriority(priority))
         {
             return TaskInputValidation.Failure("Invalid task priority.");
         }
@@ -977,7 +888,7 @@ public class TaskService : ITaskService
 
     private async Task NotifyStatusChangeAsync(TaskItem task, string oldStatus, string newStatus, CancellationToken ct)
     {
-        var currentUserId = _currentUserService.UserId;
+        var currentUserId = _taskAccessPolicy.CurrentUserId;
         
         // Personal notifications
         var recipients = new[] { task.ReporterId, task.AssigneeId }
@@ -1004,49 +915,6 @@ public class TaskService : ITaskService
             "TaskStatusChanged", 
             new { task.Id, oldStatus, newStatus }, 
             ct);
-    }
-
-    private bool IsAdmin()
-        => ProjectRoleRules.IsSystemAdmin(_currentUserService.Role);
-
-    private static bool CanTransition(string oldStatus, string newStatus)
-        => string.Equals(oldStatus, newStatus, StringComparison.OrdinalIgnoreCase) ||
-           (StatusTransitions.TryGetValue(oldStatus, out var allowed) && allowed.Contains(newStatus, StringComparer.OrdinalIgnoreCase));
-
-    private static bool IsValidStatus(string status)
-        => Enum.TryParse<TaskItemStatus>(status, ignoreCase: true, out _);
-
-    private static bool IsValidPriority(string priority)
-        => Enum.TryParse<TaskPriority>(priority, ignoreCase: true, out _);
-
-    private static string NormalizeStatus(string status)
-    {
-        var normalized = (status ?? string.Empty).Trim().Replace(" ", string.Empty).Replace("-", string.Empty);
-        return normalized switch
-        {
-            "New" => nameof(TaskItemStatus.Todo),
-            "Doing" => nameof(TaskItemStatus.InProgress),
-            "InProgress" => nameof(TaskItemStatus.InProgress),
-            "OnHold" => nameof(TaskItemStatus.OnHold),
-            "Review" or "InReview" => nameof(TaskItemStatus.InReview),
-            "Completed" or "Complete" or "Hoànthành" => nameof(TaskItemStatus.Done),
-            "Done" => nameof(TaskItemStatus.Done),
-            "Cancelled" or "Canceled" => nameof(TaskItemStatus.Cancelled),
-            _ => status.Trim()
-        };
-    }
-
-    private static string NormalizePriority(string priority)
-    {
-        var normalized = (priority ?? string.Empty).Trim().Replace(" ", string.Empty).Replace("-", string.Empty);
-        return normalized switch
-        {
-            "Thấp" or "Thap" => nameof(TaskPriority.Low),
-            "Trungbình" or "Trungbinh" => nameof(TaskPriority.Medium),
-            "Cao" => nameof(TaskPriority.High),
-            "Khẩncấp" or "KhanCap" => nameof(TaskPriority.Critical),
-            _ => Enum.TryParse<TaskPriority>(priority, ignoreCase: true, out var parsed) ? parsed.ToString() : priority.Trim()
-        };
     }
 
     private sealed record TaskInputValidation(bool IsSuccess, string? Error, int StatusCode, Project? Project)
