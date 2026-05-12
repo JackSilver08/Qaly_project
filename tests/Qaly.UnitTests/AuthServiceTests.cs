@@ -3,6 +3,7 @@ using FluentAssertions;
 using Moq;
 using Qaly.Application.DTOs.User;
 using Qaly.Application.Services;
+using Qaly.Application.Common.Interfaces;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 
@@ -61,7 +62,9 @@ public class AuthServiceTests
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        return new AuthService(users, unitOfWork.Object, audit.Object);
+        var sessionService = new Mock<ISessionService>();
+        
+        return new AuthService(users, unitOfWork.Object, audit.Object, sessionService.Object);
     }
 
     private sealed class InMemoryRepository<T> : IRepository<T> where T : BaseEntity

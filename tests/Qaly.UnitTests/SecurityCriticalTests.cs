@@ -9,6 +9,7 @@ using System.Security.Claims;
 
 namespace Qaly.UnitTests;
 
+#pragma warning disable CA1707 // Identifiers should not contain underscores — Test method naming convention
 public class SecurityCriticalTests
 {
     [Fact]
@@ -52,3 +53,4 @@ public class SecurityCriticalTests
         db.Verify(d => d.KeyDeleteAsync(keys, CommandFlags.None), Times.Once);
     }
 }
+#pragma warning restore CA1707

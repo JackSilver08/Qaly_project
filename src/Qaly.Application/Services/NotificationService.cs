@@ -9,15 +9,18 @@ namespace Qaly.Application.Services;
 public class NotificationService : INotificationService
 {
     private readonly IRepository<Notification> _notificationRepo;
+    private readonly IRepository<PushSubscription> _pushRepo;
     private readonly IUnitOfWork _unitOfWork;
     private readonly INotificationPublisher _notificationPublisher;
 
     public NotificationService(
         IRepository<Notification> notificationRepo,
+        IRepository<PushSubscription> pushRepo,
         IUnitOfWork unitOfWork,
         INotificationPublisher notificationPublisher)
     {
         _notificationRepo = notificationRepo;
+        _pushRepo = pushRepo;
         _unitOfWork = unitOfWork;
         _notificationPublisher = notificationPublisher;
     }
@@ -106,10 +109,47 @@ public class NotificationService : INotificationService
         await _notificationRepo.AddAsync(notification, ct);
         await _unitOfWork.SaveChangesAsync(ct);
         await _notificationPublisher.PublishAsync(userId, ToDto(notification), ct);
+        await SendPushNotificationAsync(userId, "New Notification", message.Trim());
     }
 
     public Task BroadcastToProjectAsync(Guid projectId, string message, string eventType, object? payload = null, CancellationToken ct = default)
         => _notificationPublisher.BroadcastToProjectAsync(projectId, message, eventType, payload, ct);
+
+    public async Task<Result> SubscribePushAsync(Guid userId, string endpoint, string p256dh, string auth)
+    {
+        var subscription = await _pushRepo.GetQueryable()
+            .FirstOrDefaultAsync(s => s.Endpoint == endpoint);
+
+        if (subscription == null)
+        {
+            subscription = new PushSubscription
+            {
+                UserId = userId,
+                Endpoint = endpoint,
+                P256dh = p256dh,
+                Auth = auth
+            };
+            await _pushRepo.AddAsync(subscription);
+        }
+        else
+        {
+            subscription.UserId = userId;
+            subscription.P256dh = p256dh;
+            subscription.Auth = auth;
+            subscription.LastUsedAt = DateTimeOffset.UtcNow;
+            await _pushRepo.UpdateAsync(subscription);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+        return Result.Success();
+    }
+
+    public Task SendPushNotificationAsync(Guid userId, string title, string message)
+    {
+        // Placeholder: Log the notification
+        Console.WriteLine($"Sending Web Push to User {userId}: {title} - {message}");
+        return Task.CompletedTask;
+    }
 
     private static NotificationDto ToDto(Notification notification)
         => new(

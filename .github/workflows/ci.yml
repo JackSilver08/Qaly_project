@@ -42,6 +42,15 @@ jobs:
       - name: 🧪 Run Unit Tests
         run: dotnet test tests/Qaly.UnitTests/ --no-build --configuration Release --logger "trx;LogFileName=unit-test-results.trx" --collect:"XPlat Code Coverage"
 
+      - name: 🔍 Security Scan (Vulnerable Packages)
+        run: dotnet list package --vulnerable
+
+      - name: 📏 Check Code Coverage (Placeholder)
+        run: |
+          # TODO: Implement coverage check. Fail if coverage < 70%.
+          # Example: reportgenerator -reports:**/coverage.cobertura.xml -targetdir:coveragereport -reporttypes:Html
+          echo "Coverage check placeholder"
+
       - name: 📊 Upload test results
         uses: actions/upload-artifact@v4
         if: always()

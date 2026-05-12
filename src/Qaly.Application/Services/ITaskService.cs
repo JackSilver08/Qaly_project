@@ -13,4 +13,12 @@ public interface ITaskService
     Task<Result> UpdateStatusAsync(Guid id, string newStatus, CancellationToken ct = default);
     Task<Result> UpdateSortOrderAsync(Guid id, int sortOrder, CancellationToken ct = default);
     Task<Result> DeleteAsync(Guid id, CancellationToken ct = default);
+    Task<Result> BatchDeleteAsync(IEnumerable<Guid> ids, CancellationToken ct = default);
+    Task<Result> BatchUpdateStatusAsync(IEnumerable<Guid> ids, string newStatus, CancellationToken ct = default);
+    
+    // Gantt Chart
+    Task<Result<IEnumerable<GanttTaskDto>>> GetGanttDataAsync(Guid projectId, CancellationToken ct = default);
+    Task<Result> UpdateDatesAsync(Guid taskId, DateTimeOffset? startDate, DateTimeOffset? endDate, CancellationToken ct = default);
+    Task<Result> AddDependencyAsync(Guid predecessorId, Guid successorId, string type = "FinishToStart", CancellationToken ct = default);
+    Task<Result> RemoveDependencyAsync(Guid dependencyId, CancellationToken ct = default);
 }

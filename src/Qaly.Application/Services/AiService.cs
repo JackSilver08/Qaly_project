@@ -100,7 +100,36 @@ Trả lời theo định dạng: [Priority] - [Lý do]";
         var task = await _taskRepo.GetByIdAsync(taskId);
         if (task == null) return "Không tìm thấy công việc.";
 
-        var prompt = $"Đề xuất thành viên phù hợp để thực hiện task: {task.Title}";
+        var members = await _memberRepo.GetQueryable()
+            .Where(m => m.ProjectId == projectId)
+            .Include(m => m.User)
+            .ToListAsync();
+
+        var activeTasks = await _taskRepo.GetQueryable()
+            .Where(t => t.ProjectId == projectId && t.Status != "Done" && t.AssigneeId != null)
+            .ToListAsync();
+
+        var workload = members.Select(m => new
+        {
+            m.User.FullName,
+            m.Role,
+            ActiveCount = activeTasks.Count(t => t.AssigneeId == m.UserId)
+        }).ToList();
+
+        var membersContext = string.Join("\n", workload.Select(w => $"- {w.FullName} (Vai trò: {w.Role}): Đang có {w.ActiveCount} task(s) chưa hoàn thành."));
+
+        var prompt = $@"Bạn là trợ lý quản lý dự án xuất sắc. Hãy phân tích và đề xuất thành viên phù hợp nhất để thực hiện công việc sau:
+
+Công việc: {task.Title}
+Mô tả: {task.Description}
+
+Danh sách thành viên hiện tại trong dự án và khối lượng công việc:
+{membersContext}
+
+Yêu cầu:
+1. Đề xuất 1-2 người phù hợp nhất (ưu tiên người đang rảnh hoặc có vai trò phù hợp).
+2. Giải thích lý do chọn họ dựa trên thông tin trên.
+3. Trả lời ngắn gọn, chuyên nghiệp bằng Tiếng Việt.";
         var response = await _chatClient.CompleteAsync(prompt);
         return response.Message.Text ?? "Không thể đưa ra đề xuất.";
     }
@@ -328,6 +357,7 @@ Tin nhắn: {userMessage}";
             AIFunctionFactory.Create(_aiTools.CreateTask),
             AIFunctionFactory.Create(_aiTools.UpdateTaskStatus),
             AIFunctionFactory.Create(_aiTools.AssignTask),
+            AIFunctionFactory.Create(_aiTools.SuggestTaskAssignment),
             AIFunctionFactory.Create(_aiTools.SetTaskPriority),
             AIFunctionFactory.Create(_aiTools.AddDueDate),
             AIFunctionFactory.Create(_aiTools.AddComment),
@@ -349,6 +379,30 @@ Tin nhắn: {userMessage}";
         return await _projectRepo.GetQueryable()
             .Include(p => p.Tasks)
             .FirstOrDefaultAsync(p => p.Id == projectId);
+    }
+
+    public async Task<string> GenerateAnalyticsInsightsAsync(Guid projectId, string analyticsData)
+    {
+        if (!await CanAccessProjectAsync(projectId))
+        {
+            return "Bạn không có quyền truy cập dữ liệu phân tích của dự án này.";
+        }
+
+        var project = await _projectRepo.GetByIdAsync(projectId);
+        if (project == null) return "Không tìm thấy dự án.";
+
+        var prompt = $@"Bạn là chuyên gia phân tích dữ liệu dự án. Hãy xem xét dữ liệu phân tích sau đây của dự án '{project.Name}' và đưa ra các nhận xét thông minh, phát hiện xu hướng, rủi ro tiềm ẩn hoặc cơ hội cải thiện hiệu suất.
+
+Dữ liệu phân tích:
+{analyticsData}
+
+Yêu cầu:
+1. Đưa ra 3-4 nhận xét quan trọng nhất.
+2. Đề xuất hành động cụ thể để cải thiện dự án.
+3. Trả lời bằng Tiếng Việt, súc tích và mang tính hành động cao.";
+
+        var response = await _chatClient.CompleteAsync(prompt);
+        return response.Message.Text ?? "Không thể tạo nhận xét phân tích.";
     }
 
     private async Task<bool> CanAccessProjectAsync(Guid projectId)
@@ -383,3 +437,5 @@ Tin nhắn: {userMessage}";
     [LoggerMessage(EventId = 2, Level = LogLevel.Warning, Message = "Unauthorized AI risk analysis request for project {ProjectId} by user {UserId}")]
     private static partial void LogUnauthorizedRiskAnalysisRequest(ILogger logger, Guid projectId, Guid userId);
 }
+
+

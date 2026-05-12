@@ -12,11 +12,13 @@ public class AiController : ControllerBase
 {
     private readonly IAiService _aiService;
     private readonly IAiIngestionService _ingestionService;
+    private readonly IAnalyticsService _analyticsService;
 
-    public AiController(IAiService aiService, IAiIngestionService ingestionService)
+    public AiController(IAiService aiService, IAiIngestionService ingestionService, IAnalyticsService analyticsService)
     {
         _aiService = aiService;
         _ingestionService = ingestionService;
+        _analyticsService = analyticsService;
     }
 
     [HttpPost("sync")]
@@ -44,6 +46,17 @@ public class AiController : ControllerBase
     [HttpGet("projects/{projectId:guid}/risks")]
     public async Task<IActionResult> ProjectRisks(Guid projectId)
         => Ok(new { risks = await _aiService.AnalyzeProjectRisksAsync(projectId) });
+
+    [HttpGet("projects/{projectId:guid}/insights")]
+    public async Task<IActionResult> ProjectInsights(Guid projectId)
+    {
+        var analyticsResult = await _analyticsService.GetProjectAnalyticsAsync(projectId);
+        if (!analyticsResult.IsSuccess) return StatusCode(analyticsResult.StatusCode, analyticsResult.Error);
+
+        var dataJson = System.Text.Json.JsonSerializer.Serialize(analyticsResult.Data);
+        var insights = await _aiService.GenerateAnalyticsInsightsAsync(projectId, dataJson);
+        return Ok(new { insights });
+    }
 
     [HttpGet("tasks/{taskId:guid}/assignment")]
     public async Task<IActionResult> SuggestAssignment(Guid taskId, [FromQuery] Guid projectId)

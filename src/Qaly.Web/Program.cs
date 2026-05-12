@@ -3,6 +3,7 @@ using Qaly.Application.Common.Interfaces;
 using Qaly.Infrastructure;
 using Qaly.Infrastructure.Data.Seeds;
 using Qaly.Web.Hubs;
+using Qaly.Web.Middleware;
 using Serilog;
 using Scalar.AspNetCore;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -58,6 +59,10 @@ builder.Services.AddApplication();
 
 // Infrastructure layer (DbContext, Repositories)
 builder.Services.AddInfrastructure(builder.Configuration);
+
+// Exception Handling & Problem Details
+builder.Services.AddExceptionHandler<CustomExceptionHandler>();
+builder.Services.AddProblemDetails();
 
 // Data Seeder
 builder.Services.AddScoped<DataSeeder>();
@@ -131,6 +136,11 @@ builder.Services
 builder.Services.AddOptions<CookieAuthenticationOptions>(CookieAuthenticationDefaults.AuthenticationScheme)
     .Configure<ITicketStore>((options, ticketStore) => options.SessionStore = ticketStore);
 
+// API Key authentication scheme
+builder.Services.AddAuthentication()
+    .AddScheme<Qaly.Web.Auth.ApiKeyAuthenticationOptions, Qaly.Web.Auth.ApiKeyAuthenticationHandler>(
+        Qaly.Web.Auth.ApiKeyDefaults.AuthenticationScheme, _ => { });
+
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
@@ -157,6 +167,12 @@ var app = builder.Build();
 // Serilog Middleware
 // =============================================
 app.UseSerilogRequestLogging();
+
+// =============================================
+// Correlation ID & Exception Handling
+// =============================================
+app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseExceptionHandler();
 
 // =============================================
 // Database Migration & Seed (Development only)
@@ -199,7 +215,6 @@ if (app.Environment.IsDevelopment())
 
 if (!app.Environment.IsDevelopment())
 {
-    app.UseExceptionHandler("/Error");
     app.UseHsts();
 }
 

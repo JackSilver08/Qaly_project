@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Services;
 
@@ -23,6 +23,9 @@ public static class DependencyInjection
         services.AddScoped<ITimeTrackingService, TimeTrackingService>();
         services.AddScoped<ITaskPrioritySuggestionService, TaskPrioritySuggestionService>();
         services.AddScoped<IAiService, AiService>();
+        services.AddScoped<IWebhookService, WebhookService>();
+        services.AddScoped<IAnalyticsService, AnalyticsService>();
+        services.AddScoped<IApiKeyService, ApiKeyService>();
         services.AddSingleton<INotificationPublisher, NullNotificationPublisher>();
 
         return services;
