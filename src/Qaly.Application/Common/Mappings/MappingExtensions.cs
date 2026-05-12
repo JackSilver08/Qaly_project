@@ -23,7 +23,9 @@ public static class MappingExtensions
         => new(
             project.Id,
             project.Name,
+            project.Code,
             project.Description,
+            project.LogoUrl,
             project.Status,
             project.StartDate,
             project.EndDate,
@@ -31,13 +33,17 @@ public static class MappingExtensions
             project.Owner?.FullName ?? string.Empty,
             project.Members?.Count ?? 0,
             project.Tasks?.Count ?? 0,
+            CalculateProgress(project.Tasks),
+            project.Labels?.Select(label => label.ToDto()).ToList() ?? [],
             project.CreatedAt);
 
     public static Project ToEntity(this CreateProjectDto dto)
         => new()
         {
             Name = dto.Name,
+            Code = dto.Code ?? string.Empty,
             Description = dto.Description,
+            LogoUrl = dto.LogoUrl,
             StartDate = dto.StartDate,
             EndDate = dto.EndDate
         };
@@ -45,13 +51,98 @@ public static class MappingExtensions
     public static void ApplyTo(this UpdateProjectDto dto, Project project)
     {
         project.Name = dto.Name;
+        project.Code = dto.Code ?? project.Code;
         project.Description = dto.Description;
+        project.LogoUrl = dto.LogoUrl;
         project.Status = dto.Status;
         project.StartDate = dto.StartDate;
         project.EndDate = dto.EndDate;
     }
 
+    public static ProjectLabelDto ToDto(this ProjectLabel label)
+        => new(label.Id, label.Name, label.Color, label.CreatedAt);
+
+    public static TaskItemDto ToDto(this TaskItem task, bool isRestricted = false)
+    {
+        var restrictedTitle = $"Restricted Task #{task.Id.ToString()[..8]}";
+        var taskTitle = isRestricted ? restrictedTitle : task.Title;
+        var description = isRestricted ? null : task.Description;
+        var commentCount = isRestricted ? 0 : task.Comments?.Count ?? 0;
+        var attachmentCount = isRestricted ? 0 : task.Attachments?.Count ?? 0;
+        List<TaskAssigneeDto> assignees = isRestricted
+            ? []
+            : task.Assignees?.Select(assignment => new TaskAssigneeDto(
+                assignment.UserId,
+                assignment.User?.FullName ?? string.Empty,
+                assignment.User?.AvatarUrl)).ToList() ?? [];
+        List<TaskLabelDto> labels = isRestricted
+            ? []
+            : task.Labels?.Select(label => new TaskLabelDto(
+                label.ProjectLabelId,
+                label.ProjectLabel?.Name ?? string.Empty,
+                label.ProjectLabel?.Color ?? "#64748B")).ToList() ?? [];
+
+        return new(
+            task.Id,
+            taskTitle,
+            description,
+            task.Status,
+            task.Priority,
+            task.DueDate,
+            task.EstimatedHours,
+            task.ActualHours,
+            task.IsPrivate,
+            isRestricted,
+            task.IsPinned,
+            task.ContributesToProgress,
+            task.UpvoteCount,
+            task.DownvoteCount,
+            task.ProjectId,
+            task.Project?.Name ?? string.Empty,
+            isRestricted ? null : task.AssigneeId,
+            isRestricted ? null : task.Assignee?.FullName,
+            assignees,
+            labels,
+            task.ReporterId,
+            isRestricted ? string.Empty : task.Reporter?.FullName ?? string.Empty,
+            commentCount,
+            attachmentCount,
+            null,
+            task.CreatedAt);
+    }
+
     public static TaskItemDto ToDto(this TaskItem task)
+        => task.ToDto(false);
+
+    public static TaskItemDto ToRestrictedDto(this TaskItem task)
+        => task.ToDto(true);
+
+    private static int CalculateProgress(ICollection<TaskItem>? tasks)
+    {
+        if (tasks == null || tasks.Count == 0)
+        {
+            return 0;
+        }
+
+        var trackedTasks = tasks
+            .Where(task => task.ContributesToProgress && !string.Equals(task.Status, "Cancelled", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (trackedTasks.Count == 0)
+        {
+            return 0;
+        }
+
+        return (int)Math.Round(
+            trackedTasks.Count(task => string.Equals(task.Status, "Done", StringComparison.OrdinalIgnoreCase)) * 100d / trackedTasks.Count,
+            MidpointRounding.AwayFromZero);
+    }
+
+    /*
+     * Kept intentionally close to the old shape so callers that do not know about
+     * role-based masking still get the full DTO by default.
+     */
+    private static TaskItemDto LegacyToDto(this TaskItem task)
         => new(
             task.Id,
             task.Title,
@@ -62,10 +153,23 @@ public static class MappingExtensions
             task.EstimatedHours,
             task.ActualHours,
             task.IsPrivate,
+            false,
+            task.IsPinned,
+            task.ContributesToProgress,
+            task.UpvoteCount,
+            task.DownvoteCount,
             task.ProjectId,
             task.Project?.Name ?? string.Empty,
             task.AssigneeId,
             task.Assignee?.FullName,
+            task.Assignees?.Select(assignment => new TaskAssigneeDto(
+                assignment.UserId,
+                assignment.User?.FullName ?? string.Empty,
+                assignment.User?.AvatarUrl)).ToList() ?? [],
+            task.Labels?.Select(label => new TaskLabelDto(
+                label.ProjectLabelId,
+                label.ProjectLabel?.Name ?? string.Empty,
+                label.ProjectLabel?.Color ?? "#64748B")).ToList() ?? [],
             task.ReporterId,
             task.Reporter?.FullName ?? string.Empty,
             task.Comments?.Count ?? 0,
@@ -83,7 +187,9 @@ public static class MappingExtensions
             EstimatedHours = dto.EstimatedHours,
             ProjectId = dto.ProjectId,
             AssigneeId = dto.AssigneeId,
-            IsPrivate = dto.IsPrivate
+            IsPrivate = dto.IsPrivate,
+            IsPinned = dto.IsPinned,
+            ContributesToProgress = dto.ContributesToProgress
         };
 
     public static void ApplyTo(this UpdateTaskDto dto, TaskItem task)
@@ -97,6 +203,8 @@ public static class MappingExtensions
         task.ActualHours = dto.ActualHours;
         task.AssigneeId = dto.AssigneeId;
         task.IsPrivate = dto.IsPrivate;
+        task.IsPinned = dto.IsPinned;
+        task.ContributesToProgress = dto.ContributesToProgress;
     }
 
     public static CommentDto ToDto(this TaskComment comment)
@@ -107,6 +215,10 @@ public static class MappingExtensions
             comment.AuthorId,
             comment.Author?.FullName ?? string.Empty,
             comment.Author?.AvatarUrl,
+            comment.ParentCommentId,
+            comment.UpvoteCount,
+            comment.DownvoteCount,
+            comment.Attachments?.Count ?? 0,
             comment.CreatedAt,
             comment.UpdatedAt);
 
@@ -117,7 +229,10 @@ public static class MappingExtensions
             attachment.FilePath,
             attachment.FileSize,
             attachment.ContentType,
+            attachment.Scope,
+            attachment.ProjectId,
             attachment.TaskItemId,
+            attachment.CommentId,
             attachment.UploadedById,
             attachment.UploadedBy?.FullName ?? string.Empty,
             attachment.UploadedAt);

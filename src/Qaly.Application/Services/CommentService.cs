@@ -55,6 +55,7 @@ public class CommentService : ICommentService
         var comments = await _commentRepo.GetQueryable()
             .AsNoTracking()
             .Include(comment => comment.Author)
+            .Include(comment => comment.Attachments)
             .Where(comment => comment.TaskItemId == taskItemId)
             .OrderBy(comment => comment.CreatedAt)
             .ToListAsync(ct);
@@ -86,10 +87,21 @@ public class CommentService : ICommentService
             return Result.Forbidden<CommentDto>();
         }
 
+        if (dto.ParentCommentId.HasValue)
+        {
+            var parentExists = await _commentRepo.GetQueryable()
+                .AnyAsync(comment => comment.Id == dto.ParentCommentId.Value && comment.TaskItemId == dto.TaskItemId, ct);
+            if (!parentExists)
+            {
+                return Result.Failure<CommentDto>("Parent comment was not found.", 404);
+            }
+        }
+
         var comment = new TaskComment
         {
             TaskItemId = dto.TaskItemId,
             AuthorId = currentUserId.Value,
+            ParentCommentId = dto.ParentCommentId,
             Content = dto.Content.Trim()
         };
 
@@ -98,10 +110,11 @@ public class CommentService : ICommentService
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("Create", nameof(TaskComment), comment.Id.ToString(), new { dto.TaskItemId }, ct);
 
-        await NotifyParticipantsAsync(task, currentUserId.Value, ct);
+        await NotifyParticipantsAsync(task, currentUserId.Value, dto.MentionedUserIds, ct);
 
         var saved = await _commentRepo.GetQueryable()
             .Include(item => item.Author)
+            .Include(item => item.Attachments)
             .FirstAsync(item => item.Id == comment.Id, ct);
 
         return Result.Created(saved.ToDto());
@@ -177,13 +190,31 @@ public class CommentService : ICommentService
             .AnyAsync(member => member.ProjectId == task.ProjectId && member.UserId == currentUserId, ct);
     }
 
-    private async Task NotifyParticipantsAsync(TaskItem task, Guid currentUserId, CancellationToken ct)
+    private async Task NotifyParticipantsAsync(TaskItem task, Guid currentUserId, IReadOnlyList<Guid>? mentionedUserIds, CancellationToken ct)
     {
         var recipients = new[] { task.ReporterId, task.AssigneeId }
             .Where(userId => userId.HasValue && userId.Value != currentUserId)
             .Select(userId => userId!.Value)
             .Distinct()
             .ToList();
+
+        foreach (var mentionedUserId in mentionedUserIds?.Where(id => id != currentUserId).Distinct() ?? [])
+        {
+            var isProjectMember = task.Project.OwnerId == mentionedUserId ||
+                await _memberRepo.GetQueryable()
+                    .AnyAsync(member => member.ProjectId == task.ProjectId && member.UserId == mentionedUserId, ct);
+            if (isProjectMember && !recipients.Contains(mentionedUserId))
+            {
+                recipients.Add(mentionedUserId);
+                await _notificationService.CreateAsync(
+                    mentionedUserId,
+                    $"You were mentioned on task \"{task.Title}\".",
+                    "Mentioned",
+                    task.Id,
+                    nameof(TaskItem),
+                    ct);
+            }
+        }
 
         foreach (var recipientId in recipients)
         {

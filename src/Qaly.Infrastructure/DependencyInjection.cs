@@ -44,6 +44,7 @@ public static class DependencyInjection
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<IAuditLogService, AuditLogService>();
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
+        services.AddScoped<IEmailService, SmtpEmailService>();
         services.AddScoped<IAiExportService, AiExportService>();
         services.AddScoped<ISessionService, RedisSessionService>();
         services.AddScoped<IWebhookPublisher, WebhookPublisher>();

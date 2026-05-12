@@ -6,7 +6,7 @@ namespace Qaly.Application.Services;
 public interface ITaskService
 {
     Task<Result<TaskItemDto>> GetByIdAsync(Guid id, CancellationToken ct = default);
-    Task<Result<PagedResult<TaskItemDto>>> GetByProjectAsync(Guid projectId, string? status = null, string? priority = null, int page = 1, int pageSize = 20, CancellationToken ct = default);
+    Task<Result<PagedResult<TaskItemDto>>> GetByProjectAsync(Guid projectId, string? status = null, string? priority = null, int page = 1, int pageSize = 20, string? search = null, Guid? assigneeId = null, Guid? labelId = null, string sort = "default", CancellationToken ct = default);
     Task<Result<PagedResult<TaskItemDto>>> GetByAssigneeAsync(Guid assigneeId, int page = 1, int pageSize = 20, CancellationToken ct = default);
     Task<Result<TaskItemDto>> CreateAsync(CreateTaskDto dto, CancellationToken ct = default);
     Task<Result<TaskItemDto>> UpdateAsync(Guid id, UpdateTaskDto dto, CancellationToken ct = default);

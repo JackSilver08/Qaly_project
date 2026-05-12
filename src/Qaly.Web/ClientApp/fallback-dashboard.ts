@@ -1,6 +1,6 @@
 import type { DashboardResponse } from './types'
 
-export const fallbackDashboard: DashboardResponse = {
+export const fallbackDashboard = {
   generatedAt: '2026-05-01T16:20:00Z',
   stats: {
     activeProjects: 3,
@@ -287,4 +287,4 @@ export const fallbackDashboard: DashboardResponse = {
       createdAt: '2026-05-01T14:45:00Z',
     },
   ],
-}
+} as DashboardResponse

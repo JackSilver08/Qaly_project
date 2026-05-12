@@ -15,6 +15,10 @@ public class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
         builder.Property(t => t.Status).HasMaxLength(20).IsRequired().HasDefaultValue("Todo");
         builder.Property(t => t.Priority).HasMaxLength(20).IsRequired().HasDefaultValue("Medium");
         builder.Property(t => t.IsPrivate).HasDefaultValue(false);
+        builder.Property(t => t.IsPinned).HasDefaultValue(false);
+        builder.Property(t => t.ContributesToProgress).HasDefaultValue(true);
+        builder.Property(t => t.UpvoteCount).HasDefaultValue(0);
+        builder.Property(t => t.DownvoteCount).HasDefaultValue(0);
         builder.Property(t => t.CreatedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
 
         builder.HasOne(t => t.Project)
@@ -37,9 +41,10 @@ public class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
         builder.HasIndex(t => t.ProjectId);
         builder.HasIndex(t => t.AssigneeId);
         builder.HasIndex(t => t.Status);
+        builder.HasIndex(t => t.IsPinned);
 
         // Optimization: Kanban board query (CH 2.2)
         builder.HasIndex(t => new { t.ProjectId, t.Status })
-            .IncludeProperties(t => new { t.Title, t.Priority, t.AssigneeId, t.DueDate });
+            .IncludeProperties(t => new { t.Title, t.Priority, t.AssigneeId, t.DueDate, t.IsPinned, t.ContributesToProgress });
     }
 }

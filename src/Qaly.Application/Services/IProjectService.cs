@@ -13,4 +13,8 @@ public interface IProjectService
     Task<Result> DeleteAsync(Guid id, CancellationToken ct = default);
     Task<Result> AddMemberAsync(Guid projectId, Guid userId, string role, CancellationToken ct = default);
     Task<Result> RemoveMemberAsync(Guid projectId, Guid userId, CancellationToken ct = default);
+    Task<Result<IReadOnlyList<ProjectLabelDto>>> GetLabelsAsync(Guid projectId, CancellationToken ct = default);
+    Task<Result<ProjectLabelDto>> CreateLabelAsync(Guid projectId, CreateProjectLabelDto dto, CancellationToken ct = default);
+    Task<Result<ProjectLabelDto>> UpdateLabelAsync(Guid projectId, Guid labelId, UpdateProjectLabelDto dto, CancellationToken ct = default);
+    Task<Result> DeleteLabelAsync(Guid projectId, Guid labelId, CancellationToken ct = default);
 }

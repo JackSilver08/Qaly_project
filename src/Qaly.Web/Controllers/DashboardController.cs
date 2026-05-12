@@ -59,7 +59,7 @@ public class DashboardController : ControllerBase
             .ToListAsync(cancellationToken);
 
         var allTasks = projects
-            .SelectMany(project => project.Tasks.Where(task => CanDisplayTask(task, project.OwnerId, currentUserId, isAdmin)))
+            .SelectMany(project => project.Tasks)
             .ToList();
 
         var activeProjects = projects.Count(project => !EqualsIgnoreCase(project.Status, "Archived"));
@@ -90,7 +90,6 @@ public class DashboardController : ControllerBase
             .Select(project =>
             {
                 var projectTasks = project.Tasks
-                    .Where(task => CanDisplayTask(task, project.OwnerId, currentUserId, isAdmin))
                     .OrderBy(task => SortStatus(task.Status))
                     .ThenBy(task => task.DueDate ?? DateTimeOffset.MaxValue)
                     .ThenBy(task => task.Title)
@@ -112,16 +111,21 @@ public class DashboardController : ControllerBase
                     .OrderBy(m => m.FullName)
                     .ToList();
 
-                var completedCount = projectTasks.Count(IsDone);
+                var progressTasks = projectTasks
+                    .Where(task => task.ContributesToProgress && !EqualsIgnoreCase(task.Status, "Cancelled"))
+                    .ToList();
+                var completedCount = progressTasks.Count(IsDone);
                 var overdueCount = projectTasks.Count(task => IsOverdue(task, now));
-                var progressPercentage = projectTasks.Count == 0
+                var progressPercentage = progressTasks.Count == 0
                     ? 0
-                    : (int)Math.Round(completedCount * 100d / projectTasks.Count, MidpointRounding.AwayFromZero);
+                    : (int)Math.Round(completedCount * 100d / progressTasks.Count, MidpointRounding.AwayFromZero);
 
                 return new DashboardProjectResponse(
                     project.Id,
                     project.Name,
+                    project.Code,
                     project.Description,
+                    project.LogoUrl,
                     project.Status,
                     project.OwnerId,
                     project.Owner.FullName,
@@ -131,18 +135,27 @@ public class DashboardController : ControllerBase
                     overdueCount,
                     progressPercentage,
                     projectMembers,
-                    projectTasks.Select(task => new DashboardTaskResponse(
-                        task.Id,
-                        task.Title,
-                        task.Status,
-                        task.Priority,
-                        task.DueDate,
-                        task.Assignee?.FullName,
-                        task.Reporter.FullName,
-                        project.Name,
-                        task.IsPrivate,
-                        task.Comments.Count,
-                        task.Attachments.Count)).ToList(),
+                    projectTasks.Select(task =>
+                    {
+                        var isRestricted = IsTaskRestricted(task, project.OwnerId, currentUserId, isAdmin, projectMembers);
+                        return new DashboardTaskResponse(
+                            task.Id,
+                            isRestricted ? $"Restricted Task #{task.Id.ToString()[..8]}" : task.Title,
+                            task.Status,
+                            task.Priority,
+                            task.DueDate,
+                            isRestricted ? null : task.Assignee?.FullName,
+                            isRestricted ? string.Empty : task.Reporter.FullName,
+                            project.Name,
+                            task.IsPrivate,
+                            isRestricted,
+                            task.IsPinned,
+                            task.ContributesToProgress,
+                            task.UpvoteCount,
+                            task.DownvoteCount,
+                            isRestricted ? 0 : task.Comments.Count,
+                            isRestricted ? 0 : task.Attachments.Count);
+                    }).ToList(),
                     project.CreatedAt,
                     project.EndDate);
             })
@@ -295,17 +308,34 @@ public class DashboardController : ControllerBase
     private static bool IsHighPriority(string? priority)
         => EqualsIgnoreCase(priority, "High") || EqualsIgnoreCase(priority, "Critical");
 
-    private static bool CanDisplayTask(TaskItem task, Guid projectOwnerId, Guid? currentUserId, bool isAdmin)
+    private static bool IsTaskRestricted(
+        TaskItem task,
+        Guid projectOwnerId,
+        Guid? currentUserId,
+        bool isAdmin,
+        IReadOnlyList<DashboardProjectMemberResponse> projectMembers)
     {
         if (!task.IsPrivate || isAdmin)
+        {
+            return false;
+        }
+
+        if (!currentUserId.HasValue)
         {
             return true;
         }
 
-        return currentUserId.HasValue &&
+        var isProjectManager = projectMembers.Any(member =>
+            member.UserId == currentUserId.Value &&
+            (EqualsIgnoreCase(member.Role, "Owner") || EqualsIgnoreCase(member.Role, "Manager") || EqualsIgnoreCase(member.Role, "Admin")));
+
+        var canView =
             (task.ReporterId == currentUserId.Value ||
              task.AssigneeId == currentUserId.Value ||
-             projectOwnerId == currentUserId.Value);
+             projectOwnerId == currentUserId.Value ||
+             isProjectManager);
+
+        return !canView;
     }
 
     private static string NotificationTone(string type)
@@ -320,9 +350,12 @@ public class DashboardController : ControllerBase
         => status switch
         {
             "InProgress" => 0,
-            "Todo" => 1,
-            "Done" => 2,
-            _ => 3
+            "InReview" => 1,
+            "Todo" => 2,
+            "OnHold" => 3,
+            "Done" => 4,
+            "Cancelled" => 5,
+            _ => 6
         };
 
     private static bool EqualsIgnoreCase(string? left, string right)
@@ -368,7 +401,9 @@ public sealed record DashboardStatsResponse(
 public sealed record DashboardProjectResponse(
     Guid Id,
     string Name,
+    string Code,
     string? Description,
+    string? LogoUrl,
     string Status,
     Guid OwnerId,
     string OwnerName,
@@ -398,6 +433,11 @@ public sealed record DashboardTaskResponse(
     string ReporterName,
     string ProjectName,
     bool IsPrivate,
+    bool IsRestricted,
+    bool IsPinned,
+    bool ContributesToProgress,
+    int UpvoteCount,
+    int DownvoteCount,
     int CommentCount,
     int AttachmentCount);
 

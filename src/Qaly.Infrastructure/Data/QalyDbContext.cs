@@ -15,6 +15,10 @@ public class QalyDbContext : DbContext
     public DbSet<TaskItem> TaskItems => Set<TaskItem>();
     public DbSet<TaskComment> TaskComments => Set<TaskComment>();
     public DbSet<TaskAttachment> TaskAttachments => Set<TaskAttachment>();
+    public DbSet<TaskAssignment> TaskAssignments => Set<TaskAssignment>();
+    public DbSet<ProjectLabel> ProjectLabels => Set<ProjectLabel>();
+    public DbSet<TaskLabel> TaskLabels => Set<TaskLabel>();
+    public DbSet<Vote> Votes => Set<Vote>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<WikiPage> WikiPages => Set<WikiPage>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();

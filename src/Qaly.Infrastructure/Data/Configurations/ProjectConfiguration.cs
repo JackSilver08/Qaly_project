@@ -12,6 +12,8 @@ public class ProjectConfiguration : IEntityTypeConfiguration<Project>
         builder.Property(p => p.Id).HasDefaultValueSql("NEWID()");
 
         builder.Property(p => p.Name).HasMaxLength(200).IsRequired();
+        builder.Property(p => p.Code).HasMaxLength(80).IsRequired();
+        builder.Property(p => p.LogoUrl).HasMaxLength(1000);
         builder.Property(p => p.Status).HasMaxLength(20).IsRequired();
         builder.Property(p => p.CreatedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
 
@@ -19,5 +21,7 @@ public class ProjectConfiguration : IEntityTypeConfiguration<Project>
             .WithMany(u => u.OwnedProjects)
             .HasForeignKey(p => p.OwnerId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(p => p.Code).IsUnique();
     }
 }

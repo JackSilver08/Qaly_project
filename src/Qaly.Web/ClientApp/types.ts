@@ -21,7 +21,9 @@ export interface DashboardStats {
 export interface DashboardProject {
   id: string
   name: string
+  code: string
   description: string | null
+  logoUrl: string | null
   status: string
   ownerId: string
   ownerName: string
@@ -53,6 +55,11 @@ export interface DashboardTask {
   reporterName: string
   projectName: string
   isPrivate: boolean
+  isRestricted: boolean
+  isPinned: boolean
+  contributesToProgress: boolean
+  upvoteCount: number
+  downvoteCount: number
   commentCount: number
   attachmentCount: number
 }
@@ -109,7 +116,9 @@ export interface UserDto {
 export interface ProjectDto {
   id: string
   name: string
+  code: string
   description: string | null
+  logoUrl: string | null
   status: string
   startDate: string | null
   endDate: string | null
@@ -117,6 +126,8 @@ export interface ProjectDto {
   ownerName: string
   memberCount: number
   taskCount: number
+  progressPercentage: number
+  labels: ProjectLabelDto[]
   createdAt: string
 }
 
@@ -130,10 +141,17 @@ export interface TaskItemDto {
   estimatedHours: number | null
   actualHours: number | null
   isPrivate: boolean
+  isRestricted: boolean
+  isPinned: boolean
+  contributesToProgress: boolean
+  upvoteCount: number
+  downvoteCount: number
   projectId: string
   projectName: string
   assigneeId: string | null
   assigneeName: string | null
+  assignees: TaskAssigneeDto[]
+  labels: TaskLabelDto[]
   reporterId: string
   reporterName: string
   commentCount: number
@@ -149,6 +167,10 @@ export interface CommentDto {
   authorId: string
   authorName: string
   authorAvatarUrl: string | null
+  parentCommentId: string | null
+  upvoteCount: number
+  downvoteCount: number
+  attachmentCount: number
   createdAt: string
   updatedAt: string | null
 }
@@ -169,7 +191,10 @@ export interface AttachmentDto {
   filePath: string
   fileSize: number
   contentType: string | null
-  taskItemId: string
+  scope: string
+  projectId: string | null
+  taskItemId: string | null
+  commentId: string | null
   uploadedById: string
   uploadedByName: string
   uploadedAt: string
@@ -203,4 +228,41 @@ export interface CreateTimeEntryDto {
   endedAt?: string | null
   manualMinutes?: number | null
   note?: string | null
+}
+
+export interface ProjectLabelDto {
+  id: string
+  name: string
+  color: string
+  createdAt: string
+}
+
+export interface TaskAssigneeDto {
+  userId: string
+  fullName: string
+  avatarUrl: string | null
+}
+
+export interface TaskLabelDto {
+  id: string
+  name: string
+  color: string
+}
+
+export interface SearchResultDto {
+  type: string
+  id: string
+  title: string
+  summary: string | null
+  projectId: string | null
+  url: string
+}
+
+export interface VoteSummaryDto {
+  targetType: string
+  targetId: string
+  upvoteCount: number
+  downvoteCount: number
+  score: number
+  myVote: number
 }

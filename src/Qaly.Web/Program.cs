@@ -240,6 +240,7 @@ app.MapHealthChecks("/health", new HealthCheckOptions
 
 // SignalR hubs
 app.MapHub<NotificationHub>("/hubs/notification");
+app.MapHub<AiHub>("/hubs/ai");
 
 try
 {

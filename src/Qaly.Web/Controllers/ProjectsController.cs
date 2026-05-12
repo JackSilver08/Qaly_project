@@ -85,6 +85,34 @@ public class ProjectsController : ControllerBase
         var result = await _projectService.RemoveMemberAsync(id, userId, ct);
         return StatusCode(result.StatusCode, result);
     }
+
+    [HttpGet("{id}/labels")]
+    public async Task<IActionResult> GetLabels(Guid id, CancellationToken ct)
+    {
+        var result = await _projectService.GetLabelsAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("{id}/labels")]
+    public async Task<IActionResult> CreateLabel(Guid id, CreateProjectLabelDto dto, CancellationToken ct)
+    {
+        var result = await _projectService.CreateLabelAsync(id, dto, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPut("{id}/labels/{labelId:guid}")]
+    public async Task<IActionResult> UpdateLabel(Guid id, Guid labelId, UpdateProjectLabelDto dto, CancellationToken ct)
+    {
+        var result = await _projectService.UpdateLabelAsync(id, labelId, dto, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpDelete("{id}/labels/{labelId:guid}")]
+    public async Task<IActionResult> DeleteLabel(Guid id, Guid labelId, CancellationToken ct)
+    {
+        var result = await _projectService.DeleteLabelAsync(id, labelId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
 }
 
 public sealed record AddProjectMemberRequest(Guid UserId, string Role);

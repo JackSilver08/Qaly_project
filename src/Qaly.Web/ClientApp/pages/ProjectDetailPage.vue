@@ -1,12 +1,18 @@
 <script setup lang="ts">
 import { MessageSquare, MoreHorizontal, Plus, Send, Search, Clock, Play, Square, Calendar, X, ClipboardList } from 'lucide-vue-next'
+// @ts-ignore
 import { VueDraggable } from '../utils/vendor/vue-draggable-plus.js'
 import ProjectDetailHeader from '../components/ProjectDetailHeader.vue'
 import ProjectMembersTab from '../components/ProjectMembersTab.vue'
 import ProjectStatsTab from '../components/ProjectStatsTab.vue'
 import ProjectWikiTab from '../components/ProjectWikiTab.vue'
+import ProjectGanttTab from '../components/ProjectGanttTab.vue'
+import WebhooksTab from '../components/WebhooksTab.vue'
 import { useDashboardContext } from '../composables/dashboard-context'
 import { ref, onMounted, onUnmounted } from 'vue'
+import type { DashboardTask } from '../types'
+import MarkdownIt from 'markdown-it'
+import DOMPurify from 'dompurify'
 
 const {
   activeProjectTab,
@@ -34,6 +40,9 @@ const {
   newTaskAssigneeId,
   newTaskDescription,
   newTaskDueDate,
+  newTaskIsPrivate,
+  newTaskIsPinned,
+  newTaskContributesToProgress,
   newTaskPriority,
   newTaskTitle,
   nextStatuses,
@@ -67,8 +76,13 @@ const quickEditTitle = ref('')
 const manualMinutes = ref<number>(0)
 const manualNote = ref('')
 const showManualForm = ref(false)
+const markdown = new MarkdownIt({ linkify: true, breaks: true })
 
-function startQuickEdit(task: any) {
+function renderMarkdown(value: string) {
+  return DOMPurify.sanitize(markdown.render(value || ''))
+}
+
+function startQuickEdit(task: DashboardTask) {
   taskBeingQuickEditedId.value = task.id
   quickEditTitle.value = task.title
 }
@@ -87,12 +101,12 @@ async function submitManualEntry() {
   }
 }
 
-const onDragEnd = async (evt: any, status: string) => {
+const onDragEnd = async (evt: { item: HTMLElement; to: HTMLElement; from: HTMLElement }, status: string) => {
   const taskId = evt.item.getAttribute('data-id')
-  const task = tasksByStatus(status).find(t => t.id === taskId)
+  const task = (tasksByStatus(status) as DashboardTask[]).find((t: DashboardTask) => t.id === taskId)
   if (task && evt.to !== evt.from) {
     const newStatus = evt.to.getAttribute('data-status')
-    await moveTask(task, newStatus)
+    await moveTask(task, newStatus || '')
   }
 }
 
@@ -178,6 +192,18 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                 <option v-for="user in users" :key="user.id" :value="user.id">{{ user.fullName }}</option>
               </select>
               <input v-model="newTaskDueDate" type="date" />
+              <label class="task-option-toggle">
+                <input v-model="newTaskIsPrivate" type="checkbox" />
+                <span>Private</span>
+              </label>
+              <label class="task-option-toggle">
+                <input v-model="newTaskContributesToProgress" type="checkbox" />
+                <span>Progress</span>
+              </label>
+              <label v-if="isProjectAdmin" class="task-option-toggle">
+                <input v-model="newTaskIsPinned" type="checkbox" />
+                <span>Pin</span>
+              </label>
               <button class="primary-button primary-button--compact" type="submit">Create</button>
             </form>
           </transition>
@@ -197,7 +223,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                 drag-class="dragging-card"
                 class="kanban-column__list"
                 :data-status="status"
-                @end="(evt) => onDragEnd(evt, status)"
+                @end="onDragEnd($event, status)"
               >
                 <article
                   v-for="task in tasksByStatus(status)"
@@ -217,12 +243,16 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                       @keyup.enter="saveQuickEdit"
                       @click.stop
                     />
-                    <strong v-else @dblclick.stop="startQuickEdit(task)">{{ task.title }}</strong>
+                    <strong v-else @dblclick.stop="!task.isRestricted && startQuickEdit(task)">
+                      <span v-if="task.isPrivate" title="Private task">Lock</span>
+                      <span v-if="task.isPinned" title="Pinned task">Pin</span>
+                      {{ task.title }}
+                    </strong>
                     
                     <div class="task-card-actions">
                       <span :class="`priority priority--${task.priority.toLowerCase()}`">{{ task.priority }}</span>
 
-                      <div v-if="isProjectAdmin" class="task-menu-dropdown">
+                      <div v-if="isProjectAdmin && !task.isRestricted" class="task-menu-dropdown">
                         <button class="icon-button icon-button--small" type="button" @click.stop="toggleTaskMenu(task.id)">
                           <MoreHorizontal :size="14" />
                         </button>
@@ -233,9 +263,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                       </div>
                     </div>
                   </div>
-                  <p class="assignee-text">{{ task.assigneeName || 'Unassigned' }} • {{ formatDate(task.dueDate) }}</p>
+                  <p class="assignee-text">{{ task.isRestricted ? 'Restricted' : (task.assigneeName || 'Unassigned') }} • {{ formatDate(task.dueDate) }}</p>
                   <div class="kanban-card__meta">
                     <span class="meta-item"><MessageSquare :size="12" /> {{ task.commentCount }}</span>
+                    <span class="meta-item">▲ {{ task.upvoteCount || 0 }}</span>
                     <span v-if="isTaskOverdue(task)" class="overdue-tag">Overdue</span>
                   </div>
                 </article>
@@ -254,7 +285,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
             <div v-if="selectedTask" class="task-id-badge">#{{ selectedTask.id.slice(0, 4) }}</div>
           </div>
 
-          <div v-if="selectedTask" class="comment-list">
+          <div v-if="selectedTask && !selectedTask.isRestricted" class="comment-list">
             <div class="time-tracking-section">
               <div class="section-header">
                 <Clock :size="16" />
@@ -318,12 +349,18 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
             <div class="discussion-section">
               <div class="section-header"><strong>Discussion</strong></div>
               <div class="comments-scroll">
-                <article v-for="comment in comments" :key="comment.id" class="comment-bubble">
+                <article
+                  v-for="comment in comments"
+                  :key="comment.id"
+                  class="comment-bubble"
+                  :class="{ 'comment-bubble--reply': comment.parentCommentId }"
+                >
                   <div class="bubble-top">
                     <strong>{{ comment.authorName }}</strong>
                     <span class="bubble-time">{{ formatTime(comment.createdAt) }}</span>
                   </div>
-                  <p>{{ comment.content }}</p>
+                  <div class="comment-markdown" v-html="renderMarkdown(comment.content)"></div>
+                  <div class="comment-votes">▲ {{ comment.upvoteCount || 0 }} · ▼ {{ comment.downvoteCount || 0 }}</div>
                   <button v-if="isProjectAdmin || comment.authorId === currentUser?.id" class="bubble-delete" @click="deleteComment(comment.id)">Delete</button>
                 </article>
               </div>
@@ -336,7 +373,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
           </div>
           <div v-else class="empty-state-panel">
             <ClipboardList :size="48" />
-            <p>Select a task to see details</p>
+            <p>{{ selectedTask?.isRestricted ? 'This private task is restricted.' : 'Select a task to see details' }}</p>
           </div>
         </section>
       </div>
@@ -354,6 +391,14 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
       <div v-if="activeProjectTab === 'wiki'" class="tab-pane reveal">
         <ProjectWikiTab :project-name="selectedProject?.name ?? ''" :is-admin="isProjectAdmin" />
+      </div>
+
+      <div v-if="activeProjectTab === 'gantt' && selectedProject" class="tab-pane reveal">
+        <ProjectGanttTab :project-id="selectedProject.id" />
+      </div>
+
+      <div v-if="activeProjectTab === 'webhooks' && selectedProject" class="tab-pane reveal">
+        <WebhooksTab :project-id="selectedProject.id" />
       </div>
     </div>
   </div>
@@ -511,5 +556,15 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   height: 100px; border: 2px dashed var(--line); border-radius: 12px;
   display: flex; align-items: center; justify-content: center;
   color: var(--muted); font-size: 13px; margin: 8px 0;
+}
+
+.task-option-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
 }
 </style>

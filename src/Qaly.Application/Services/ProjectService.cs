@@ -5,6 +5,7 @@ using Qaly.Application.DTOs.Project;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Qaly.Application.Services;
 
@@ -13,6 +14,7 @@ public class ProjectService : IProjectService
     private readonly IRepository<Project> _projectRepo;
     private readonly IRepository<ProjectMember> _memberRepo;
     private readonly IRepository<User> _userRepo;
+    private readonly IRepository<ProjectLabel> _labelRepo;
     private readonly IRepository<VectorSyncOutbox> _outboxRepo;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
@@ -23,6 +25,7 @@ public class ProjectService : IProjectService
         IRepository<Project> projectRepo,
         IRepository<ProjectMember> memberRepo,
         IRepository<User> userRepo,
+        IRepository<ProjectLabel> labelRepo,
         IRepository<VectorSyncOutbox> outboxRepo,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
@@ -32,6 +35,7 @@ public class ProjectService : IProjectService
         _projectRepo = projectRepo;
         _memberRepo = memberRepo;
         _userRepo = userRepo;
+        _labelRepo = labelRepo;
         _outboxRepo = outboxRepo;
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
@@ -143,6 +147,8 @@ public class ProjectService : IProjectService
 
         var project = dto.ToEntity();
         project.Name = dto.Name.Trim();
+        project.Code = await GenerateUniqueCodeAsync(dto.Code, dto.Name, ct);
+        project.LogoUrl = NormalizeOptional(dto.LogoUrl);
         project.OwnerId = currentUserId.Value;
 
         await _projectRepo.AddAsync(project, ct);
@@ -170,7 +176,7 @@ public class ProjectService : IProjectService
             return Result.NotFound<ProjectDto>();
         }
 
-        if (!CanManageProject(project.OwnerId))
+        if (!await CanManageProjectAsync(project.Id, project.OwnerId, ct))
         {
             return Result.Forbidden<ProjectDto>();
         }
@@ -182,6 +188,8 @@ public class ProjectService : IProjectService
 
         dto.ApplyTo(project);
         project.Name = dto.Name.Trim();
+        project.Code = await GenerateUniqueCodeAsync(dto.Code, dto.Name, ct, id);
+        project.LogoUrl = NormalizeOptional(dto.LogoUrl);
 
         await _projectRepo.UpdateAsync(project, ct);
         await AddToOutboxAsync("ProjectUpdated", new { Id = project.Id }, ct);
@@ -199,7 +207,7 @@ public class ProjectService : IProjectService
             return Result.Failure("Project was not found.", 404);
         }
 
-        if (!CanManageProject(project.OwnerId))
+        if (!await CanManageProjectAsync(project.Id, project.OwnerId, ct))
         {
             return Result.Failure("Access denied.", 403);
         }
@@ -220,7 +228,7 @@ public class ProjectService : IProjectService
             return Result.Failure("Project was not found.", 404);
         }
 
-        if (!CanManageProject(project.OwnerId))
+        if (!await CanManageProjectAsync(project.Id, project.OwnerId, ct))
         {
             return Result.Failure("Access denied.", 403);
         }
@@ -231,7 +239,7 @@ public class ProjectService : IProjectService
             return Result.Failure("User was not found.", 404);
         }
 
-        var memberRole = NormalizeMemberRole(role);
+        var memberRole = ProjectRoleRules.NormalizeProjectRole(role);
         var existingMember = await _memberRepo.GetQueryable()
             .FirstOrDefaultAsync(member => member.ProjectId == projectId && member.UserId == userId, ct);
 
@@ -271,7 +279,7 @@ public class ProjectService : IProjectService
             return Result.Failure("Project was not found.", 404);
         }
 
-        if (!CanManageProject(project.OwnerId))
+        if (!await CanManageProjectAsync(project.Id, project.OwnerId, ct))
         {
             return Result.Failure("Access denied.", 403);
         }
@@ -296,6 +304,128 @@ public class ProjectService : IProjectService
         return Result.Success();
     }
 
+    public async Task<Result<IReadOnlyList<ProjectLabelDto>>> GetLabelsAsync(Guid projectId, CancellationToken ct = default)
+    {
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null)
+        {
+            return Result.NotFound<IReadOnlyList<ProjectLabelDto>>();
+        }
+
+        if (!await CanAccessProjectAsync(project.Id, project.OwnerId, ct))
+        {
+            return Result.Forbidden<IReadOnlyList<ProjectLabelDto>>();
+        }
+
+        var labels = await _labelRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(label => label.ProjectId == projectId)
+            .OrderBy(label => label.Name)
+            .ToListAsync(ct);
+
+        return Result.Success<IReadOnlyList<ProjectLabelDto>>(labels.Select(label => label.ToDto()).ToList());
+    }
+
+    public async Task<Result<ProjectLabelDto>> CreateLabelAsync(Guid projectId, CreateProjectLabelDto dto, CancellationToken ct = default)
+    {
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null)
+        {
+            return Result.NotFound<ProjectLabelDto>();
+        }
+
+        if (!await CanManageProjectAsync(project.Id, project.OwnerId, ct))
+        {
+            return Result.Forbidden<ProjectLabelDto>();
+        }
+
+        var validation = ValidateLabel(dto.Name, dto.Color);
+        if (!validation.IsSuccess)
+        {
+            return Result.Failure<ProjectLabelDto>(validation.Error!, validation.StatusCode);
+        }
+
+        var exists = await _labelRepo.GetQueryable()
+            .AnyAsync(label => label.ProjectId == projectId && label.Name == dto.Name.Trim(), ct);
+        if (exists)
+        {
+            return Result.Failure<ProjectLabelDto>("Label name already exists in this project.", 409);
+        }
+
+        var label = new ProjectLabel
+        {
+            ProjectId = projectId,
+            Name = dto.Name.Trim(),
+            Color = NormalizeHexColor(dto.Color)
+        };
+
+        await _labelRepo.AddAsync(label, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync("CreateLabel", nameof(Project), projectId.ToString(), new { label.Name, label.Color }, ct);
+
+        return Result.Created(label.ToDto());
+    }
+
+    public async Task<Result<ProjectLabelDto>> UpdateLabelAsync(Guid projectId, Guid labelId, UpdateProjectLabelDto dto, CancellationToken ct = default)
+    {
+        var label = await _labelRepo.GetQueryable()
+            .Include(item => item.Project)
+            .FirstOrDefaultAsync(item => item.Id == labelId && item.ProjectId == projectId, ct);
+        if (label == null)
+        {
+            return Result.NotFound<ProjectLabelDto>();
+        }
+
+        if (!await CanManageProjectAsync(projectId, label.Project.OwnerId, ct))
+        {
+            return Result.Forbidden<ProjectLabelDto>();
+        }
+
+        var validation = ValidateLabel(dto.Name, dto.Color);
+        if (!validation.IsSuccess)
+        {
+            return Result.Failure<ProjectLabelDto>(validation.Error!, validation.StatusCode);
+        }
+
+        var newName = dto.Name.Trim();
+        var duplicate = await _labelRepo.GetQueryable()
+            .AnyAsync(item => item.ProjectId == projectId && item.Id != labelId && item.Name == newName, ct);
+        if (duplicate)
+        {
+            return Result.Failure<ProjectLabelDto>("Label name already exists in this project.", 409);
+        }
+
+        label.Name = newName;
+        label.Color = NormalizeHexColor(dto.Color);
+        await _labelRepo.UpdateAsync(label, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync("UpdateLabel", nameof(Project), projectId.ToString(), new { label.Id, label.Name, label.Color }, ct);
+
+        return Result.Success(label.ToDto());
+    }
+
+    public async Task<Result> DeleteLabelAsync(Guid projectId, Guid labelId, CancellationToken ct = default)
+    {
+        var label = await _labelRepo.GetQueryable()
+            .Include(item => item.Project)
+            .FirstOrDefaultAsync(item => item.Id == labelId && item.ProjectId == projectId, ct);
+        if (label == null)
+        {
+            return Result.NotFound();
+        }
+
+        if (!await CanManageProjectAsync(projectId, label.Project.OwnerId, ct))
+        {
+            return Result.Forbidden();
+        }
+
+        await _labelRepo.DeleteAsync(label, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync("DeleteLabel", nameof(Project), projectId.ToString(), new { label.Id, label.Name }, ct);
+
+        return Result.Success();
+    }
+
     private async Task AddToOutboxAsync(string eventType, object payload, CancellationToken ct)
     {
         var message = new VectorSyncOutbox
@@ -310,6 +440,7 @@ public class ProjectService : IProjectService
         => _projectRepo.GetQueryable()
             .Include(p => p.Owner)
             .Include(p => p.Members)
+            .Include(p => p.Labels)
             .Include(p => p.Tasks);
 
     private async Task<bool> CanAccessProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
@@ -329,19 +460,82 @@ public class ProjectService : IProjectService
             .AnyAsync(member => member.ProjectId == projectId && member.UserId == currentUserId, ct);
     }
 
-    private bool CanManageProject(Guid ownerId)
-        => IsAdmin() || _currentUserService.UserId == ownerId;
+    private async Task<bool> CanManageProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return false;
+        }
+
+        if (IsAdmin() || ownerId == currentUserId)
+        {
+            return true;
+        }
+
+        var role = await GetProjectRoleAsync(projectId, currentUserId.Value, ct);
+        return ProjectRoleRules.CanManageProject(role);
+    }
+
+    private async Task<string?> GetProjectRoleAsync(Guid projectId, Guid userId, CancellationToken ct)
+        => await _memberRepo.GetQueryable()
+            .Where(member => member.ProjectId == projectId && member.UserId == userId)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
 
     private bool IsAdmin()
-        => string.Equals(_currentUserService.Role, "Admin", StringComparison.OrdinalIgnoreCase);
+        => ProjectRoleRules.IsSystemAdmin(_currentUserService.Role);
 
-    private static string NormalizeMemberRole(string role)
+    private async Task<string> GenerateUniqueCodeAsync(string? requestedCode, string name, CancellationToken ct, Guid? currentProjectId = null)
     {
-        var normalized = string.IsNullOrWhiteSpace(role) ? "Member" : role.Trim();
-        return normalized switch
+        var baseCode = Slugify(string.IsNullOrWhiteSpace(requestedCode) ? name : requestedCode);
+        if (string.IsNullOrWhiteSpace(baseCode))
         {
-            "Owner" or "Admin" or "Member" or "Viewer" => normalized,
-            _ => "Member"
-        };
+            baseCode = "project";
+        }
+
+        var candidate = baseCode;
+        var suffix = 2;
+        while (await _projectRepo.GetQueryable().AnyAsync(project => project.Code == candidate && project.Id != currentProjectId, ct))
+        {
+            candidate = $"{baseCode}-{suffix++}";
+        }
+
+        return candidate;
+    }
+
+    private static string Slugify(string value)
+    {
+        var normalized = value.Trim().ToLowerInvariant();
+        normalized = Regex.Replace(normalized, @"[^a-z0-9\s-]", string.Empty, RegexOptions.CultureInvariant);
+        normalized = Regex.Replace(normalized, @"[\s-]+", "-", RegexOptions.CultureInvariant).Trim('-');
+        return normalized.Length > 80 ? normalized[..80].Trim('-') : normalized;
+    }
+
+    private static string? NormalizeOptional(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string NormalizeHexColor(string color)
+        => string.IsNullOrWhiteSpace(color) ? "#64748B" : color.Trim().ToUpperInvariant();
+
+    private static Result ValidateLabel(string name, string color)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return Result.Failure("Label name is required.");
+        }
+
+        if (name.Trim().Length > 80)
+        {
+            return Result.Failure("Label name must be 80 characters or fewer.");
+        }
+
+        var normalized = NormalizeHexColor(color);
+        if (!Regex.IsMatch(normalized, "^#[0-9A-F]{6}$", RegexOptions.CultureInvariant))
+        {
+            return Result.Failure("Label color must be a hex color like #FF0000.");
+        }
+
+        return Result.Success();
     }
 }

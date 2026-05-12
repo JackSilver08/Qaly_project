@@ -144,7 +144,7 @@ public class NotificationService : INotificationService
         return Result.Success();
     }
 
-    public Task SendPushNotificationAsync(Guid userId, string title, string message)
+    public static Task SendPushNotificationAsync(Guid userId, string title, string message)
     {
         // Placeholder: Log the notification
         Console.WriteLine($"Sending Web Push to User {userId}: {title} - {message}");

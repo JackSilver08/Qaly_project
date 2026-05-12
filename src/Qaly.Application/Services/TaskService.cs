@@ -14,11 +14,20 @@ public class TaskService : ITaskService
 {
     private static readonly Dictionary<string, string[]> StatusTransitions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["Todo"] = ["InProgress", "Cancelled"],
-        ["InProgress"] = ["Todo", "InReview", "Done", "Cancelled"],
-        ["InReview"] = ["InProgress", "Done", "Cancelled"],
+        ["Todo"] = ["InProgress", "OnHold", "Cancelled"],
+        ["InProgress"] = ["Todo", "OnHold", "InReview", "Done", "Cancelled"],
+        ["OnHold"] = ["Todo", "InProgress", "Cancelled"],
+        ["InReview"] = ["InProgress", "OnHold", "Done", "Cancelled"],
         ["Done"] = ["InReview"],
         ["Cancelled"] = ["Todo"]
+    };
+
+    private static readonly Dictionary<string, string[]> MemberStatusTransitions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Todo"] = ["InProgress"],
+        ["InProgress"] = ["OnHold", "InReview"],
+        ["OnHold"] = ["InProgress"],
+        ["InReview"] = ["InProgress"]
     };
 
     private readonly IRepository<TaskItem> _taskRepo;
@@ -26,6 +35,9 @@ public class TaskService : ITaskService
     private readonly IRepository<Project> _projectRepo;
     private readonly IRepository<ProjectMember> _memberRepo;
     private readonly IRepository<User> _userRepo;
+    private readonly IRepository<TaskAssignment> _assignmentRepo;
+    private readonly IRepository<TaskLabel> _taskLabelRepo;
+    private readonly IRepository<ProjectLabel> _projectLabelRepo;
     private readonly IRepository<VectorSyncOutbox> _outboxRepo;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
@@ -40,6 +52,9 @@ public class TaskService : ITaskService
         IRepository<Project> projectRepo,
         IRepository<ProjectMember> memberRepo,
         IRepository<User> userRepo,
+        IRepository<TaskAssignment> assignmentRepo,
+        IRepository<TaskLabel> taskLabelRepo,
+        IRepository<ProjectLabel> projectLabelRepo,
         IRepository<VectorSyncOutbox> outboxRepo,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
@@ -53,6 +68,9 @@ public class TaskService : ITaskService
         _projectRepo = projectRepo;
         _memberRepo = memberRepo;
         _userRepo = userRepo;
+        _assignmentRepo = assignmentRepo;
+        _taskLabelRepo = taskLabelRepo;
+        _projectLabelRepo = projectLabelRepo;
         _outboxRepo = outboxRepo;
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
@@ -72,15 +90,16 @@ public class TaskService : ITaskService
             return Result.NotFound<TaskItemDto>();
         }
 
-        if (!await CanAccessTaskAsync(task, ct))
+        if (!await CanAccessProjectAsync(task.ProjectId, task.Project.OwnerId, ct))
         {
             return Result.Forbidden<TaskItemDto>();
         }
 
-        return Result.Success(task.ToDto());
+        var isRestricted = !await CanViewTaskDetailsAsync(task, ct);
+        return Result.Success(task.ToDto(isRestricted));
     }
 
-    public async Task<Result<PagedResult<TaskItemDto>>> GetByProjectAsync(Guid projectId, string? status = null, string? priority = null, int page = 1, int pageSize = 20, CancellationToken ct = default)
+    public async Task<Result<PagedResult<TaskItemDto>>> GetByProjectAsync(Guid projectId, string? status = null, string? priority = null, int page = 1, int pageSize = 20, string? search = null, Guid? assigneeId = null, Guid? labelId = null, string sort = "default", CancellationToken ct = default)
     {
         var project = await _projectRepo.GetByIdAsync(projectId, ct);
         if (project == null)
@@ -99,8 +118,6 @@ public class TaskService : ITaskService
         var query = TaskDetailsQuery()
             .Where(t => t.ProjectId == projectId);
 
-        query = ApplyPrivateTaskFilter(query);
-
         if (!string.IsNullOrWhiteSpace(status))
         {
             query = query.Where(t => t.Status == status);
@@ -111,22 +128,39 @@ public class TaskService : ITaskService
             query = query.Where(t => t.Priority == priority);
         }
 
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var normalizedSearch = search.Trim();
+            query = query.Where(t => t.Title.Contains(normalizedSearch) || (t.Description != null && t.Description.Contains(normalizedSearch)));
+        }
+
+        if (assigneeId.HasValue)
+        {
+            query = query.Where(t => t.AssigneeId == assigneeId || t.Assignees.Any(assignment => assignment.UserId == assigneeId.Value));
+        }
+
+        if (labelId.HasValue)
+        {
+            query = query.Where(t => t.Labels.Any(label => label.ProjectLabelId == labelId.Value));
+        }
+
         var totalCount = await query.CountAsync(ct);
+        query = ApplyTaskSort(query, sort);
+
         var items = await query
-            .OrderBy(t => t.Status == "InProgress" ? 0 :
-                t.Status == "InReview" ? 1 :
-                t.Status == "Todo" ? 2 :
-                t.Status == "Done" ? 3 :
-                t.Status == "Cancelled" ? 4 : 5)
-            .ThenBy(t => t.DueDate ?? DateTimeOffset.MaxValue)
-            .ThenByDescending(t => t.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(ct);
 
+        var mappedItems = new List<TaskItemDto>(items.Count);
+        foreach (var item in items)
+        {
+            mappedItems.Add(item.ToDto(!await CanViewTaskDetailsAsync(item, ct)));
+        }
+
         return Result.Success(new PagedResult<TaskItemDto>
         {
-            Items = items.Select(item => item.ToDto()).ToList(),
+            Items = mappedItems,
             TotalCount = totalCount,
             PageNumber = page,
             PageSize = pageSize
@@ -143,8 +177,8 @@ public class TaskService : ITaskService
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
-        var query = ApplyPrivateTaskFilter(TaskDetailsQuery())
-            .Where(t => t.AssigneeId == assigneeId);
+        var query = TaskDetailsQuery()
+            .Where(t => t.AssigneeId == assigneeId || t.Assignees.Any(assignment => assignment.UserId == assigneeId));
 
         var totalCount = await query.CountAsync(ct);
         var items = await query
@@ -155,7 +189,7 @@ public class TaskService : ITaskService
 
         return Result.Success(new PagedResult<TaskItemDto>
         {
-            Items = items.Select(item => item.ToDto()).ToList(),
+            Items = items.Select(item => item.ToDto(false)).ToList(),
             TotalCount = totalCount,
             PageNumber = page,
             PageSize = pageSize
@@ -170,14 +204,15 @@ public class TaskService : ITaskService
             return Result.Forbidden<TaskItemDto>();
         }
 
-        var validation = await ValidateTaskInputAsync(dto.Title, dto.Priority, dto.ProjectId, dto.AssigneeId, ct);
+        var assigneeIds = NormalizeAssigneeIds(dto.AssigneeId, dto.AssigneeIds);
+        var validation = await ValidateTaskInputAsync(dto.Title, dto.Priority, dto.ProjectId, assigneeIds, dto.LabelIds, ct);
         if (!validation.IsSuccess)
         {
             return Result.Failure<TaskItemDto>(validation.Error ?? "Invalid task.", validation.StatusCode);
         }
 
         var project = validation.Project!;
-        if (!await CanAccessProjectAsync(project.Id, project.OwnerId, ct))
+        if (!await CanWriteProjectAsync(project.Id, project.OwnerId, ct))
         {
             return Result.Forbidden<TaskItemDto>();
         }
@@ -185,9 +220,17 @@ public class TaskService : ITaskService
         var task = dto.ToEntity();
         task.Title = dto.Title.Trim();
         task.Priority = NormalizePriority(dto.Priority);
+        task.AssigneeId = assigneeIds.Count > 0 ? assigneeIds[0] : null;
+        if (task.AssigneeId == Guid.Empty)
+        {
+            task.AssigneeId = null;
+        }
         task.ReporterId = currentUserId.Value;
 
         await _taskRepo.AddAsync(task, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        await SyncAssignmentsAsync(task.Id, assigneeIds, ct);
+        await SyncLabelsAsync(task.Id, task.ProjectId, dto.LabelIds, ct);
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("Create", nameof(TaskItem), task.Id.ToString(), new { task.Title, task.ProjectId }, ct);
 
@@ -195,10 +238,10 @@ public class TaskService : ITaskService
         await _notificationService.BroadcastToProjectAsync(task.ProjectId, $"Task \"{task.Title}\" was created.", "TaskCreated", new { task.Id }, ct);
         await _webhookPublisher.PublishAsync(task.ProjectId, "task.created", new { task.Id, task.Title, task.Status }, ct);
 
-        if (task.AssigneeId.HasValue && task.AssigneeId != currentUserId)
+        foreach (var assigneeId in assigneeIds.Where(id => id != currentUserId).Distinct())
         {
             await _notificationService.CreateAsync(
-                task.AssigneeId.Value,
+                assigneeId,
                 $"You were assigned to task \"{task.Title}\".",
                 "TaskAssigned",
                 task.Id,
@@ -226,38 +269,46 @@ public class TaskService : ITaskService
             return Result.NotFound<TaskItemDto>();
         }
 
-        if (!await CanManageTaskAsync(task, ct))
+        if (!await CanEditTaskAsync(task, ct))
         {
             return Result.Forbidden<TaskItemDto>();
         }
 
-        var validation = await ValidateTaskInputAsync(dto.Title, dto.Priority, task.ProjectId, dto.AssigneeId, ct);
+        var assigneeIds = NormalizeAssigneeIds(dto.AssigneeId, dto.AssigneeIds);
+        var validation = await ValidateTaskInputAsync(dto.Title, dto.Priority, task.ProjectId, assigneeIds, dto.LabelIds, ct);
         if (!validation.IsSuccess)
         {
             return Result.Failure<TaskItemDto>(validation.Error ?? "Invalid task.", validation.StatusCode);
         }
 
-        if (!IsValidStatus(dto.Status))
+        if (!IsValidStatus(NormalizeStatus(dto.Status)))
         {
             return Result.Failure<TaskItemDto>("Invalid task status.");
         }
 
-        var previousAssignee = task.AssigneeId;
+        var previousAssignees = task.Assignees.Select(assignment => assignment.UserId).ToHashSet();
         dto.ApplyTo(task);
         task.Title = dto.Title.Trim();
         task.Status = NormalizeStatus(dto.Status);
         task.Priority = NormalizePriority(dto.Priority);
+        task.AssigneeId = assigneeIds.Count > 0 ? assigneeIds[0] : null;
+        if (task.AssigneeId == Guid.Empty)
+        {
+            task.AssigneeId = null;
+        }
 
         await _taskRepo.UpdateAsync(task, ct);
+        await SyncAssignmentsAsync(task.Id, assigneeIds, ct);
+        await SyncLabelsAsync(task.Id, task.ProjectId, dto.LabelIds, ct);
         await AddToOutboxAsync("TaskUpdated", new { Id = task.Id }, ct);
         await _webhookPublisher.PublishAsync(task.ProjectId, "task.updated", new { task.Id, task.Title, task.Status }, ct);
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("Update", nameof(TaskItem), task.Id.ToString(), dto, ct);
 
-        if (task.AssigneeId.HasValue && task.AssigneeId != previousAssignee)
+        foreach (var assigneeId in assigneeIds.Where(id => !previousAssignees.Contains(id)))
         {
             await _notificationService.CreateAsync(
-                task.AssigneeId.Value,
+                assigneeId,
                 $"You were assigned to task \"{task.Title}\".",
                 "TaskAssigned",
                 task.Id,
@@ -278,7 +329,7 @@ public class TaskService : ITaskService
             return Result.Failure("Task was not found.", 404);
         }
 
-        if (!await CanManageTaskAsync(task, ct))
+        if (!await CanChangeStatusAsync(task, newStatus, ct))
         {
             return Result.Failure("Access denied.", 403);
         }
@@ -289,7 +340,7 @@ public class TaskService : ITaskService
             return Result.Failure("Invalid task status.");
         }
 
-        if (!CanTransition(task.Status, normalizedStatus))
+        if (!await CanTransitionAsync(task, normalizedStatus, ct))
         {
             return Result.Failure($"Cannot move task from {task.Status} to {normalizedStatus}.", 409);
         }
@@ -315,7 +366,7 @@ public class TaskService : ITaskService
             return Result.Failure("Task was not found.", 404);
         }
 
-        if (!await CanManageTaskAsync(task, ct))
+        if (!await CanPinTaskAsync(task, ct))
         {
             return Result.Failure("Access denied.", 403);
         }
@@ -337,7 +388,7 @@ public class TaskService : ITaskService
             return Result.Failure("Task was not found.", 404);
         }
 
-        if (!await CanManageTaskAsync(task, ct))
+        if (!await CanDeleteTaskAsync(task, ct))
         {
             return Result.Failure("Access denied.", 403);
         }
@@ -368,7 +419,7 @@ public class TaskService : ITaskService
 
         foreach (var task in tasks)
         {
-            if (!await CanManageTaskAsync(task, ct)) continue;
+            if (!await CanDeleteTaskAsync(task, ct)) continue;
 
             var projectId = task.ProjectId;
             var title = task.Title;
@@ -401,8 +452,8 @@ public class TaskService : ITaskService
 
         foreach (var task in tasks)
         {
-            if (!await CanManageTaskAsync(task, ct)) continue;
-            if (!CanTransition(task.Status, normalizedStatus)) continue;
+            if (!await CanChangeStatusAsync(task, normalizedStatus, ct)) continue;
+            if (!await CanTransitionAsync(task, normalizedStatus, ct)) continue;
 
             var oldStatus = task.Status;
             task.Status = normalizedStatus;
@@ -587,9 +638,42 @@ public class TaskService : ITaskService
         => _taskRepo.GetQueryable()
             .Include(t => t.Project)
             .Include(t => t.Assignee)
+            .Include(t => t.Assignees)
+                .ThenInclude(a => a.User)
+            .Include(t => t.Labels)
+                .ThenInclude(l => l.ProjectLabel)
             .Include(t => t.Reporter)
             .Include(t => t.Comments)
             .Include(t => t.Attachments);
+
+    private static IQueryable<TaskItem> ApplyTaskSort(IQueryable<TaskItem> query, string? sort)
+        => (sort ?? "default").Trim().ToLowerInvariant() switch
+        {
+            "deadline" => query
+                .OrderByDescending(t => t.IsPinned)
+                .ThenBy(t => t.DueDate ?? DateTimeOffset.MaxValue)
+                .ThenByDescending(t => t.CreatedAt),
+            "newest" => query
+                .OrderByDescending(t => t.IsPinned)
+                .ThenByDescending(t => t.CreatedAt),
+            "oldest" => query
+                .OrderByDescending(t => t.IsPinned)
+                .ThenBy(t => t.CreatedAt),
+            "priority" => query
+                .OrderByDescending(t => t.IsPinned)
+                .ThenBy(t => t.Priority == "Critical" ? 0 : t.Priority == "High" ? 1 : t.Priority == "Medium" ? 2 : 3)
+                .ThenBy(t => t.DueDate ?? DateTimeOffset.MaxValue),
+            _ => query
+                .OrderByDescending(t => t.IsPinned)
+                .ThenBy(t => t.Status == "InProgress" ? 0 :
+                    t.Status == "InReview" ? 1 :
+                    t.Status == "Todo" ? 2 :
+                    t.Status == "OnHold" ? 3 :
+                    t.Status == "Done" ? 4 :
+                    t.Status == "Cancelled" ? 5 : 6)
+                .ThenBy(t => t.DueDate ?? DateTimeOffset.MaxValue)
+                .ThenByDescending(t => t.CreatedAt)
+        };
 
     private IQueryable<TaskItem> ApplyPrivateTaskFilter(IQueryable<TaskItem> query)
     {
@@ -612,6 +696,10 @@ public class TaskService : ITaskService
     }
 
     private async Task<bool> CanAccessTaskAsync(TaskItem task, CancellationToken ct)
+        => await CanAccessProjectAsync(task.ProjectId, task.Project.OwnerId, ct)
+           && (!task.IsPrivate || await CanViewTaskDetailsAsync(task, ct));
+
+    private async Task<bool> CanViewTaskDetailsAsync(TaskItem task, CancellationToken ct)
     {
         if (IsAdmin())
         {
@@ -629,10 +717,26 @@ public class TaskService : ITaskService
         }
 
         var currentUserId = _currentUserService.UserId;
-        return task.ReporterId == currentUserId || task.AssigneeId == currentUserId || task.Project.OwnerId == currentUserId;
+        if (currentUserId == null)
+        {
+            return false;
+        }
+
+        if (task.ReporterId == currentUserId ||
+            task.AssigneeId == currentUserId ||
+            task.Assignees.Any(assignment => assignment.UserId == currentUserId) ||
+            task.Project.OwnerId == currentUserId)
+        {
+            return true;
+        }
+
+        return await IsProjectManagerAsync(task.ProjectId, currentUserId.Value, ct);
     }
 
     private async Task<bool> CanManageTaskAsync(TaskItem task, CancellationToken ct)
+        => await CanEditTaskAsync(task, ct);
+
+    private async Task<bool> CanEditTaskAsync(TaskItem task, CancellationToken ct)
     {
         var currentUserId = _currentUserService.UserId;
         if (currentUserId == null)
@@ -640,17 +744,78 @@ public class TaskService : ITaskService
             return false;
         }
 
-        if (IsAdmin() || task.ReporterId == currentUserId || task.AssigneeId == currentUserId || task.Project.OwnerId == currentUserId)
+        if (IsAdmin() || task.Project.OwnerId == currentUserId || await IsProjectManagerAsync(task.ProjectId, currentUserId.Value, ct))
         {
             return true;
         }
 
-        return await _memberRepo.GetQueryable()
-            .AnyAsync(member =>
-                member.ProjectId == task.ProjectId &&
-                member.UserId == currentUserId &&
-                (member.Role == "Admin" || member.Role == "Owner"),
-                ct);
+        var role = await GetProjectRoleAsync(task.ProjectId, currentUserId.Value, ct);
+        if (!ProjectRoleRules.CanWrite(role))
+        {
+            return false;
+        }
+
+        return task.ReporterId == currentUserId ||
+            task.AssigneeId == currentUserId ||
+            task.Assignees.Any(assignment => assignment.UserId == currentUserId);
+    }
+
+    private async Task<bool> CanDeleteTaskAsync(TaskItem task, CancellationToken ct)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return false;
+        }
+
+        return IsAdmin() || task.Project.OwnerId == currentUserId || await IsProjectManagerAsync(task.ProjectId, currentUserId.Value, ct);
+    }
+
+    private Task<bool> CanPinTaskAsync(TaskItem task, CancellationToken ct)
+        => CanDeleteTaskAsync(task, ct);
+
+    private async Task<bool> CanChangeStatusAsync(TaskItem task, string newStatus, CancellationToken ct)
+    {
+        var normalized = NormalizeStatus(newStatus);
+        if (!IsValidStatus(normalized))
+        {
+            return false;
+        }
+
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return false;
+        }
+
+        if (IsAdmin() || task.Project.OwnerId == currentUserId || await IsProjectManagerAsync(task.ProjectId, currentUserId.Value, ct))
+        {
+            return true;
+        }
+
+        if (normalized is "Done" or "Cancelled")
+        {
+            return false;
+        }
+
+        return await CanEditTaskAsync(task, ct);
+    }
+
+    private async Task<bool> CanTransitionAsync(TaskItem task, string newStatus, CancellationToken ct)
+    {
+        if (string.Equals(task.Status, newStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var currentUserId = _currentUserService.UserId;
+        var transitions = currentUserId.HasValue &&
+            (IsAdmin() || task.Project.OwnerId == currentUserId || await IsProjectManagerAsync(task.ProjectId, currentUserId.Value, ct))
+            ? StatusTransitions
+            : MemberStatusTransitions;
+
+        return transitions.TryGetValue(task.Status, out var allowed) &&
+            allowed.Contains(newStatus, StringComparer.OrdinalIgnoreCase);
     }
 
     private async Task<bool> CanAccessProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
@@ -670,14 +835,43 @@ public class TaskService : ITaskService
             .AnyAsync(member => member.ProjectId == projectId && member.UserId == currentUserId, ct);
     }
 
-    private async Task<TaskInputValidation> ValidateTaskInputAsync(string title, string priority, Guid projectId, Guid? assigneeId, CancellationToken ct)
+    private async Task<bool> CanWriteProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return false;
+        }
+
+        if (IsAdmin() || ownerId == currentUserId)
+        {
+            return true;
+        }
+
+        var role = await GetProjectRoleAsync(projectId, currentUserId.Value, ct);
+        return ProjectRoleRules.CanWrite(role);
+    }
+
+    private async Task<bool> IsProjectManagerAsync(Guid projectId, Guid userId, CancellationToken ct)
+    {
+        var role = await GetProjectRoleAsync(projectId, userId, ct);
+        return ProjectRoleRules.IsProjectManager(role);
+    }
+
+    private async Task<string?> GetProjectRoleAsync(Guid projectId, Guid userId, CancellationToken ct)
+        => await _memberRepo.GetQueryable()
+            .Where(member => member.ProjectId == projectId && member.UserId == userId)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+
+    private async Task<TaskInputValidation> ValidateTaskInputAsync(string title, string priority, Guid projectId, IReadOnlyList<Guid> assigneeIds, IReadOnlyList<Guid>? labelIds, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(title))
         {
             return TaskInputValidation.Failure("Task title is required.");
         }
 
-        if (!IsValidPriority(priority))
+        if (!IsValidPriority(NormalizePriority(priority)))
         {
             return TaskInputValidation.Failure("Invalid task priority.");
         }
@@ -688,19 +882,19 @@ public class TaskService : ITaskService
             return TaskInputValidation.Failure("Project was not found.", 404);
         }
 
-        if (assigneeId.HasValue)
+        foreach (var assigneeId in assigneeIds.Distinct())
         {
             var userExists = await _userRepo.GetQueryable()
-                .AnyAsync(user => user.Id == assigneeId.Value && user.IsActive, ct);
+                .AnyAsync(user => user.Id == assigneeId && user.IsActive, ct);
 
             if (!userExists)
             {
                 return TaskInputValidation.Failure("Assignee was not found.", 404);
             }
 
-            var isProjectUser = project.OwnerId == assigneeId.Value ||
+            var isProjectUser = project.OwnerId == assigneeId ||
                 await _memberRepo.GetQueryable()
-                    .AnyAsync(member => member.ProjectId == projectId && member.UserId == assigneeId.Value, ct);
+                    .AnyAsync(member => member.ProjectId == projectId && member.UserId == assigneeId, ct);
 
             if (!isProjectUser)
             {
@@ -708,7 +902,77 @@ public class TaskService : ITaskService
             }
         }
 
+        if (labelIds is { Count: > 0 })
+        {
+            var distinctLabelIds = labelIds.Distinct().ToList();
+            var validLabelCount = await _projectLabelRepo.GetQueryable()
+                .CountAsync(label => label.ProjectId == projectId && distinctLabelIds.Contains(label.Id), ct);
+            if (validLabelCount != distinctLabelIds.Count)
+            {
+                return TaskInputValidation.Failure("One or more labels do not belong to this project.", 400);
+            }
+        }
+
         return TaskInputValidation.Success(project);
+    }
+
+    private static IReadOnlyList<Guid> NormalizeAssigneeIds(Guid? primaryAssigneeId, IReadOnlyList<Guid>? assigneeIds)
+    {
+        var normalized = new List<Guid>();
+        if (primaryAssigneeId.HasValue && primaryAssigneeId.Value != Guid.Empty)
+        {
+            normalized.Add(primaryAssigneeId.Value);
+        }
+
+        if (assigneeIds != null)
+        {
+            normalized.AddRange(assigneeIds.Where(id => id != Guid.Empty));
+        }
+
+        return normalized.Distinct().ToList();
+    }
+
+    private async Task SyncAssignmentsAsync(Guid taskId, IReadOnlyList<Guid> assigneeIds, CancellationToken ct)
+    {
+        var existing = await _assignmentRepo.GetQueryable()
+            .Where(assignment => assignment.TaskItemId == taskId)
+            .ToListAsync(ct);
+        var target = assigneeIds.ToHashSet();
+
+        foreach (var assignment in existing.Where(assignment => !target.Contains(assignment.UserId)))
+        {
+            await _assignmentRepo.DeleteAsync(assignment, ct);
+        }
+
+        var existingUserIds = existing.Select(assignment => assignment.UserId).ToHashSet();
+        foreach (var userId in target.Where(userId => !existingUserIds.Contains(userId)))
+        {
+            await _assignmentRepo.AddAsync(new TaskAssignment { TaskItemId = taskId, UserId = userId }, ct);
+        }
+    }
+
+    private async Task SyncLabelsAsync(Guid taskId, Guid projectId, IReadOnlyList<Guid>? labelIds, CancellationToken ct)
+    {
+        var existing = await _taskLabelRepo.GetQueryable()
+            .Where(label => label.TaskItemId == taskId)
+            .ToListAsync(ct);
+        var target = (labelIds ?? []).Where(id => id != Guid.Empty).Distinct().ToHashSet();
+
+        foreach (var label in existing.Where(label => !target.Contains(label.ProjectLabelId)))
+        {
+            await _taskLabelRepo.DeleteAsync(label, ct);
+        }
+
+        var existingLabelIds = existing.Select(label => label.ProjectLabelId).ToHashSet();
+        foreach (var labelId in target.Where(labelId => !existingLabelIds.Contains(labelId)))
+        {
+            var belongsToProject = await _projectLabelRepo.GetQueryable()
+                .AnyAsync(label => label.Id == labelId && label.ProjectId == projectId, ct);
+            if (belongsToProject)
+            {
+                await _taskLabelRepo.AddAsync(new TaskLabel { TaskItemId = taskId, ProjectLabelId = labelId }, ct);
+            }
+        }
     }
 
     private async Task NotifyStatusChangeAsync(TaskItem task, string oldStatus, string newStatus, CancellationToken ct)
@@ -743,7 +1007,7 @@ public class TaskService : ITaskService
     }
 
     private bool IsAdmin()
-        => string.Equals(_currentUserService.Role, "Admin", StringComparison.OrdinalIgnoreCase);
+        => ProjectRoleRules.IsSystemAdmin(_currentUserService.Role);
 
     private static bool CanTransition(string oldStatus, string newStatus)
         => string.Equals(oldStatus, newStatus, StringComparison.OrdinalIgnoreCase) ||
@@ -756,10 +1020,34 @@ public class TaskService : ITaskService
         => Enum.TryParse<TaskPriority>(priority, ignoreCase: true, out _);
 
     private static string NormalizeStatus(string status)
-        => Enum.Parse<TaskItemStatus>(status, ignoreCase: true).ToString();
+    {
+        var normalized = (status ?? string.Empty).Trim().Replace(" ", string.Empty).Replace("-", string.Empty);
+        return normalized switch
+        {
+            "New" => nameof(TaskItemStatus.Todo),
+            "Doing" => nameof(TaskItemStatus.InProgress),
+            "InProgress" => nameof(TaskItemStatus.InProgress),
+            "OnHold" => nameof(TaskItemStatus.OnHold),
+            "Review" or "InReview" => nameof(TaskItemStatus.InReview),
+            "Completed" or "Complete" or "Hoànthành" => nameof(TaskItemStatus.Done),
+            "Done" => nameof(TaskItemStatus.Done),
+            "Cancelled" or "Canceled" => nameof(TaskItemStatus.Cancelled),
+            _ => status.Trim()
+        };
+    }
 
     private static string NormalizePriority(string priority)
-        => Enum.Parse<TaskPriority>(priority, ignoreCase: true).ToString();
+    {
+        var normalized = (priority ?? string.Empty).Trim().Replace(" ", string.Empty).Replace("-", string.Empty);
+        return normalized switch
+        {
+            "Thấp" or "Thap" => nameof(TaskPriority.Low),
+            "Trungbình" or "Trungbinh" => nameof(TaskPriority.Medium),
+            "Cao" => nameof(TaskPriority.High),
+            "Khẩncấp" or "KhanCap" => nameof(TaskPriority.Critical),
+            _ => Enum.TryParse<TaskPriority>(priority, ignoreCase: true, out var parsed) ? parsed.ToString() : priority.Trim()
+        };
+    }
 
     private sealed record TaskInputValidation(bool IsSuccess, string? Error, int StatusCode, Project? Project)
     {

@@ -10,10 +10,17 @@ public record TaskItemDto(
     int? EstimatedHours,
     int? ActualHours,
     bool IsPrivate,
+    bool IsRestricted,
+    bool IsPinned,
+    bool ContributesToProgress,
+    int UpvoteCount,
+    int DownvoteCount,
     Guid ProjectId,
     string ProjectName,
     Guid? AssigneeId,
     string? AssigneeName,
+    IReadOnlyList<TaskAssigneeDto> Assignees,
+    IReadOnlyList<TaskLabelDto> Labels,
     Guid ReporterId,
     string ReporterName,
     int CommentCount,
@@ -29,7 +36,11 @@ public record CreateTaskDto(
     int? EstimatedHours,
     Guid ProjectId,
     Guid? AssigneeId,
-    bool IsPrivate = false);
+    bool IsPrivate = false,
+    bool IsPinned = false,
+    bool ContributesToProgress = true,
+    IReadOnlyList<Guid>? AssigneeIds = null,
+    IReadOnlyList<Guid>? LabelIds = null);
 
 public record UpdateTaskDto(
     string Title,
@@ -40,4 +51,18 @@ public record UpdateTaskDto(
     int? EstimatedHours,
     int? ActualHours,
     Guid? AssigneeId,
-    bool IsPrivate);
+    bool IsPrivate,
+    bool IsPinned = false,
+    bool ContributesToProgress = true,
+    IReadOnlyList<Guid>? AssigneeIds = null,
+    IReadOnlyList<Guid>? LabelIds = null);
+
+public record TaskAssigneeDto(
+    Guid UserId,
+    string FullName,
+    string? AvatarUrl);
+
+public record TaskLabelDto(
+    Guid Id,
+    string Name,
+    string Color);

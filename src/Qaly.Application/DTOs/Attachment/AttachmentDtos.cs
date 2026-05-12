@@ -6,7 +6,10 @@ public record TaskAttachmentDto(
     string FilePath,
     long FileSize,
     string? ContentType,
-    Guid TaskItemId,
+    string Scope,
+    Guid? ProjectId,
+    Guid? TaskItemId,
+    Guid? CommentId,
     Guid UploadedById,
     string UploadedByName,
     DateTimeOffset UploadedAt);

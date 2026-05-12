@@ -18,9 +18,19 @@ public class TasksController : ControllerBase
     }
 
     [HttpGet("project/{projectId}")]
-    public async Task<IActionResult> GetByProject(Guid projectId, [FromQuery] string? status = null, [FromQuery] string? priority = null, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
+    public async Task<IActionResult> GetByProject(
+        Guid projectId,
+        [FromQuery] string? status = null,
+        [FromQuery] string? priority = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null,
+        [FromQuery] Guid? assigneeId = null,
+        [FromQuery] Guid? labelId = null,
+        [FromQuery] string sort = "default",
+        CancellationToken ct = default)
     {
-        var result = await _taskService.GetByProjectAsync(projectId, status, priority, page, pageSize, ct);
+        var result = await _taskService.GetByProjectAsync(projectId, status, priority, page, pageSize, search, assigneeId, labelId, sort, ct);
         return StatusCode(result.StatusCode, result);
     }
 
@@ -107,7 +117,14 @@ public class TasksController : ControllerBase
         var result = await _taskService.RemoveDependencyAsync(dependencyId, ct);
         return StatusCode(result.StatusCode, result);
     }
-}
+
+    [HttpGet("project/{projectId}/gantt")]
+    public async Task<IActionResult> GetGanttData(Guid projectId, CancellationToken ct)
+    {
+        var result = await _taskService.GetGanttDataAsync(projectId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+    }
 
 public sealed record UpdateTaskStatusRequest(string Status);
 public sealed record UpdateTaskSortOrderRequest(int SortOrder);

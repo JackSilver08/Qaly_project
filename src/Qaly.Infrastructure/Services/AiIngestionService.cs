@@ -11,6 +11,7 @@ public class AiIngestionService : IAiIngestionService
     private readonly IRepository<Project> _projectRepo;
     private readonly IRepository<TaskItem> _taskRepo;
     private readonly IRepository<TaskComment> _commentRepo;
+    private readonly IRepository<TaskAttachment> _attachmentRepo;
     private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddingGenerator;
     private readonly IVectorStorageService _vectorStorage;
 
@@ -21,12 +22,14 @@ public class AiIngestionService : IAiIngestionService
         IRepository<Project> projectRepo,
         IRepository<TaskItem> taskRepo,
         IRepository<TaskComment> commentRepo,
+        IRepository<TaskAttachment> attachmentRepo,
         IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
         IVectorStorageService vectorStorage)
     {
         _projectRepo = projectRepo;
         _taskRepo = taskRepo;
         _commentRepo = commentRepo;
+        _attachmentRepo = attachmentRepo;
         _embeddingGenerator = embeddingGenerator;
         _vectorStorage = vectorStorage;
     }
@@ -120,6 +123,40 @@ public class AiIngestionService : IAiIngestionService
         await _vectorStorage.DeleteAsync(commentId, CollectionName);
     }
 
+    public async Task SyncAttachmentAsync(Guid attachmentId)
+    {
+        var attachment = await _attachmentRepo.GetQueryable()
+            .Include(a => a.TaskItem)
+            .Include(a => a.Project)
+            .FirstOrDefaultAsync(a => a.Id == attachmentId);
+            
+        if (attachment == null) return;
+
+        var projectId = attachment.ProjectId ?? attachment.TaskItem?.ProjectId;
+        if (projectId == null) return;
+
+        var isPrivate = attachment.TaskItem?.IsPrivate ?? false;
+        var text = $"Tệp đính kèm: {attachment.FileName}. Loại: {attachment.ContentType}. Phạm vi: {attachment.Scope}.";
+        
+        var metadata = new Dictionary<string, object>
+        {
+            { "project_id", projectId.Value },
+            { "task_id", attachment.TaskItemId ?? Guid.Empty },
+            { "owner_id", attachment.UploadedById },
+            { "is_private", isPrivate },
+            { "visibility", isPrivate ? "private" : "member" },
+            { "content_type", "attachment" },
+            { "created_at", attachment.CreatedAt.ToString("O") }
+        };
+
+        await UpsertToVectorDb(attachment.Id, attachment.FileName, text, metadata);
+    }
+
+    public async Task DeleteAttachmentAsync(Guid attachmentId)
+    {
+        await _vectorStorage.DeleteAsync(attachmentId, CollectionName);
+    }
+
     public async Task SyncAllDataAsync()
     {
         await _vectorStorage.EnsureCollectionExistsAsync(CollectionName, (ulong)VectorSize);
@@ -132,6 +169,9 @@ public class AiIngestionService : IAiIngestionService
 
         var comments = await _commentRepo.GetAllAsync();
         foreach (var c in comments) await SyncCommentAsync(c.Id);
+
+        var attachments = await _attachmentRepo.GetAllAsync();
+        foreach (var a in attachments) await SyncAttachmentAsync(a.Id);
     }
 
     private async Task UpsertToVectorDb(Guid id, string title, string content, Dictionary<string, object> metadata)

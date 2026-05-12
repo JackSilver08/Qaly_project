@@ -87,6 +87,7 @@ public class AttachmentService : IAttachmentService
         var attachment = new TaskAttachment
         {
             TaskItemId = taskItemId,
+            Scope = "Task",
             UploadedById = currentUserId.Value,
             FileName = Path.GetFileName(fileName),
             FilePath = storedPath,
@@ -117,7 +118,7 @@ public class AttachmentService : IAttachmentService
             return Result.Failure("Attachment was not found.", 404);
         }
 
-        if (!await CanAccessTaskAsync(attachment.TaskItem, ct))
+        if (attachment.TaskItem == null || !await CanAccessTaskAsync(attachment.TaskItem, ct))
         {
             return Result.Failure("Access denied.", 403);
         }

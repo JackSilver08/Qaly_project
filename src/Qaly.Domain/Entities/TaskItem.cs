@@ -14,6 +14,10 @@ public class TaskItem : BaseEntity
     public int? EstimatedHours { get; set; }
     public int? ActualHours { get; set; }
     public bool IsPrivate { get; set; }
+    public bool IsPinned { get; set; }
+    public bool ContributesToProgress { get; set; } = true;
+    public int UpvoteCount { get; set; }
+    public int DownvoteCount { get; set; }
     public int SortOrder { get; set; }
 
     // Foreign keys
@@ -27,6 +31,8 @@ public class TaskItem : BaseEntity
     public User Reporter { get; set; } = null!;
     public ICollection<TaskComment> Comments { get; set; } = new List<TaskComment>();
     public ICollection<TaskAttachment> Attachments { get; set; } = new List<TaskAttachment>();
+    public ICollection<TaskAssignment> Assignees { get; set; } = new List<TaskAssignment>();
+    public ICollection<TaskLabel> Labels { get; set; } = new List<TaskLabel>();
     public ICollection<TaskDependency> PredecessorDependencies { get; set; } = new List<TaskDependency>();
     public ICollection<TaskDependency> SuccessorDependencies { get; set; } = new List<TaskDependency>();
 }

@@ -1,12 +1,13 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Services;
 using System.Text;
 
 namespace Qaly.Infrastructure.Services;
 
-public class EmailDigestWorker : BackgroundService
+public partial class EmailDigestWorker : BackgroundService
 {
     private readonly ILogger<EmailDigestWorker> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
@@ -19,7 +20,7 @@ public class EmailDigestWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Email Digest Worker is starting.");
+        LogWorkerStarting(_logger);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -34,7 +35,7 @@ public class EmailDigestWorker : BackgroundService
             }
 
             var delay = nextRun - now;
-            _logger.LogInformation("Next email digest run scheduled for {NextRun} (in {Delay})", nextRun, delay);
+            LogNextRun(_logger, nextRun, delay);
 
             try
             {
@@ -51,11 +52,11 @@ public class EmailDigestWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error occurred while sending email digests.");
+                LogErrorSendingDigests(_logger, ex);
             }
         }
 
-        _logger.LogInformation("Email Digest Worker is stopping.");
+        LogWorkerStopping(_logger);
     }
 
     private async Task SendDigestsAsync(CancellationToken ct)
@@ -64,11 +65,12 @@ public class EmailDigestWorker : BackgroundService
         var userService = scope.ServiceProvider.GetRequiredService<IUserService>();
         var taskService = scope.ServiceProvider.GetRequiredService<ITaskService>();
         var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
+        var emailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
 
         var usersResult = await userService.GetActiveAsync(ct);
         if (!usersResult.IsSuccess)
         {
-            _logger.LogWarning("Could not fetch active users for email digest: {Message}", usersResult.Error);
+            LogFetchUsersWarning(_logger, usersResult.Error ?? "Unknown error");
             return;
         }
 
@@ -82,12 +84,13 @@ public class EmailDigestWorker : BackgroundService
             var digestContent = await BuildDigestContentAsync(user.Id, taskService, notificationService, ct);
             if (!string.IsNullOrEmpty(digestContent))
             {
-                _logger.LogInformation("Sending Email Digest to {Email}: {Content}", user.Email, digestContent);
+                await emailService.SendAsync(user.Email, "Qaly daily digest", digestContent, ct);
+                LogSentDigest(_logger, user.Email);
             }
         }
     }
 
-    private async Task<string?> BuildDigestContentAsync(Guid userId, ITaskService taskService, INotificationService notificationService, CancellationToken ct)
+    private static async Task<string?> BuildDigestContentAsync(Guid userId, ITaskService taskService, INotificationService notificationService, CancellationToken ct)
     {
         var sb = new StringBuilder();
         var hasContent = false;
@@ -105,7 +108,7 @@ public class EmailDigestWorker : BackgroundService
             if (relevantTasks.Count > 0)
             {
                 hasContent = true;
-                sb.AppendLine("Tasks requiring attention:");
+                sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"Tasks requiring attention:");
                 foreach (var task in relevantTasks)
                 {
                     if (task.DueDate is not { } dueDate)
@@ -114,7 +117,7 @@ public class EmailDigestWorker : BackgroundService
                     }
 
                     var status = dueDate < now ? "[OVERDUE]" : "[UPCOMING]";
-                    sb.AppendLine($"- {status} {task.Title} (Due: {dueDate:yyyy-MM-dd HH:mm})");
+                    sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- {status} {task.Title} (Due: {dueDate:yyyy-MM-dd HH:mm})");
                 }
             }
         }
@@ -125,17 +128,35 @@ public class EmailDigestWorker : BackgroundService
         {
             if (hasContent) sb.AppendLine();
             hasContent = true;
-            sb.AppendLine("Recent unread notifications:");
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"Recent unread notifications:");
             foreach (var notification in notifications.Take(5))
             {
-                sb.AppendLine($"- {notification.Message} ({notification.CreatedAt:yyyy-MM-dd HH:mm})");
+                sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- {notification.Message} ({notification.CreatedAt:yyyy-MM-dd HH:mm})");
             }
             if (notifications.Count > 5)
             {
-                sb.AppendLine($"- ... and {notifications.Count - 5} more.");
+                sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- ... and {notifications.Count - 5} more.");
             }
         }
 
         return hasContent ? sb.ToString() : null;
     }
+
+    [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Email Digest Worker is starting.")]
+    private static partial void LogWorkerStarting(ILogger logger);
+
+    [LoggerMessage(EventId = 2, Level = LogLevel.Information, Message = "Next email digest run scheduled for {NextRun} (in {Delay})")]
+    private static partial void LogNextRun(ILogger logger, DateTime nextRun, TimeSpan delay);
+
+    [LoggerMessage(EventId = 3, Level = LogLevel.Error, Message = "Error occurred while sending email digests.")]
+    private static partial void LogErrorSendingDigests(ILogger logger, Exception ex);
+
+    [LoggerMessage(EventId = 4, Level = LogLevel.Information, Message = "Email Digest Worker is stopping.")]
+    private static partial void LogWorkerStopping(ILogger logger);
+
+    [LoggerMessage(EventId = 5, Level = LogLevel.Warning, Message = "Could not fetch active users for email digest: {Message}")]
+    private static partial void LogFetchUsersWarning(ILogger logger, string message);
+
+    [LoggerMessage(EventId = 6, Level = LogLevel.Information, Message = "Sent Email Digest to {Email}")]
+    private static partial void LogSentDigest(ILogger logger, string email);
 }

@@ -15,6 +15,9 @@ export function useTaskActions(
   const newTaskPriority = ref('Medium')
   const newTaskAssigneeId = ref('')
   const newTaskDueDate = ref('')
+  const newTaskIsPrivate = ref(false)
+  const newTaskIsPinned = ref(false)
+  const newTaskContributesToProgress = ref(true)
   const selectedTaskIds = ref(new Set<string>())
 
   function clearTaskForm() {
@@ -23,6 +26,9 @@ export function useTaskActions(
     newTaskPriority.value = 'Medium'
     newTaskAssigneeId.value = ''
     newTaskDueDate.value = ''
+    newTaskIsPrivate.value = false
+    newTaskIsPinned.value = false
+    newTaskContributesToProgress.value = true
   }
 
   function toggleTaskSelection(taskId: string) {
@@ -87,7 +93,10 @@ export function useTaskActions(
           estimatedHours: null,
           projectId,
           assigneeId: newTaskAssigneeId.value || null,
-          isPrivate: false,
+          assigneeIds: newTaskAssigneeId.value ? [newTaskAssigneeId.value] : [],
+          isPrivate: newTaskIsPrivate.value,
+          isPinned: newTaskIsPinned.value,
+          contributesToProgress: newTaskContributesToProgress.value,
         }),
       })
 
@@ -122,6 +131,9 @@ export function useTaskActions(
     newTaskPriority.value = task.priority
     newTaskAssigneeId.value = ''
     newTaskDueDate.value = task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : ''
+    newTaskIsPrivate.value = task.isPrivate
+    newTaskIsPinned.value = task.isPinned
+    newTaskContributesToProgress.value = task.contributesToProgress
     createTaskOpen.value = true
   }
 
@@ -137,7 +149,13 @@ export function useTaskActions(
           status: taskBeingEdited.value.status,
           priority: newTaskPriority.value,
           dueDate: newTaskDueDate.value ? new Date(newTaskDueDate.value).toISOString() : null,
+          estimatedHours: null,
+          actualHours: null,
           assigneeId: newTaskAssigneeId.value || null,
+          assigneeIds: newTaskAssigneeId.value ? [newTaskAssigneeId.value] : [],
+          isPrivate: newTaskIsPrivate.value,
+          isPinned: newTaskIsPinned.value,
+          contributesToProgress: newTaskContributesToProgress.value,
         }),
       })
 
@@ -171,6 +189,9 @@ export function useTaskActions(
     newTaskPriority,
     newTaskAssigneeId,
     newTaskDueDate,
+    newTaskIsPrivate,
+    newTaskIsPinned,
+    newTaskContributesToProgress,
     selectedTaskIds,
     toggleTaskSelection,
     batchDeleteTasks,

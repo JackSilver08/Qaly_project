@@ -3,7 +3,8 @@ namespace Qaly.Domain.Enums;
 public enum ProjectRole
 {
     Owner,
-    Admin,
+    Manager,
     Member,
-    Viewer
+    Viewer,
+    Admin
 }

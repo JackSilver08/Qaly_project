@@ -33,6 +33,16 @@ public interface IAiIngestionService
     Task DeleteCommentAsync(Guid commentId);
 
     /// <summary>
+    /// Vectorize and sync a single attachment (metadata and potentially content).
+    /// </summary>
+    Task SyncAttachmentAsync(Guid attachmentId);
+
+    /// <summary>
+    /// Remove an attachment from the vector database.
+    /// </summary>
+    Task DeleteAttachmentAsync(Guid attachmentId);
+
+    /// <summary>
     /// Run a full sync of all existing data to the vector database.
     /// </summary>
     Task SyncAllDataAsync();

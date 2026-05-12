@@ -42,7 +42,7 @@ public class WikiController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> CreatePage(Guid projectId, [FromBody] CreateWikiPageRequest request)
     {
-        if (!await CanManageWiki(projectId)) return Forbid();
+        if (!await CanEditWiki(projectId)) return Forbid();
 
         var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
@@ -72,7 +72,7 @@ public class WikiController : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> UpdatePage(Guid projectId, Guid id, [FromBody] CreateWikiPageRequest request)
     {
-        if (!await CanManageWiki(projectId)) return Forbid();
+        if (!await CanEditWiki(projectId)) return Forbid();
 
         var page = await _context.WikiPages.FindAsync(id);
         if (page == null || page.ProjectId != projectId) return NotFound();
@@ -112,7 +112,24 @@ public class WikiController : ControllerBase
         var member = await _context.ProjectMembers
             .FirstOrDefaultAsync(m => m.ProjectId == projectId && m.UserId == userId);
         
-        return member != null && (member.Role == "Owner" || member.Role == "Manager");
+        return member != null && (member.Role == "Owner" || member.Role == "Manager" || member.Role == "Admin");
+    }
+
+    private async Task<bool> CanEditWiki(Guid projectId)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId)) return false;
+
+        var user = await _context.Users.FindAsync(userId);
+        if (user?.Role == "Admin") return true;
+
+        var isOwner = await _context.Projects.AnyAsync(p => p.Id == projectId && p.OwnerId == userId);
+        if (isOwner) return true;
+
+        var member = await _context.ProjectMembers
+            .FirstOrDefaultAsync(m => m.ProjectId == projectId && m.UserId == userId);
+
+        return member != null && member.Role != "Viewer";
     }
 }
 

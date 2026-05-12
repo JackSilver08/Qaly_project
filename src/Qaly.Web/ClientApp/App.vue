@@ -82,6 +82,9 @@ const {
   newTaskPriority,
   newTaskAssigneeId,
   newTaskDueDate,
+  newTaskIsPrivate,
+  newTaskIsPinned,
+  newTaskContributesToProgress,
   selectedTaskIds,
   toggleTaskSelection,
   batchDeleteTasks,
@@ -100,7 +103,7 @@ const navigation: ShellNavItem[] = [
   { label: 'Nhóm', to: '/teams', icon: Users },
 ]
 
-const statusColumns = ['Todo', 'InProgress', 'InReview', 'Done']
+const statusColumns = ['Todo', 'InProgress', 'OnHold', 'InReview', 'Done']
 const priorities = ['Low', 'Medium', 'High', 'Critical']
 
 const notifications = ref<NotificationDto[]>([])
@@ -125,9 +128,11 @@ const activeProjectTab = ref('stats')
 
 const tabs = [
   { id: 'stats', label: 'Thống kê' },
-  { id: 'tasks', label: 'Task' },
-  { id: 'members', label: 'Member' },
+  { id: 'tasks', label: 'Nhiệm vụ' },
+  { id: 'gantt', label: 'Timeline' },
+  { id: 'members', label: 'Thành viên' },
   { id: 'wiki', label: 'Wiki' },
+  { id: 'webhooks', label: 'Webhooks' },
 ]
 
 const newComment = ref('')
@@ -499,7 +504,7 @@ function tasksByStatus(status: string) {
 }
 
 function nextStatuses(status: string) {
-  const map: Record<string, string[]> = { Todo: ['InProgress'], InProgress: ['InReview', 'Done'], InReview: ['InProgress', 'Done'], Done: ['InReview'] }
+  const map: Record<string, string[]> = { Todo: ['InProgress', 'OnHold'], InProgress: ['OnHold', 'InReview', 'Done'], OnHold: ['InProgress'], InReview: ['InProgress', 'Done'], Done: ['InReview'] }
   return map[status] || ['Todo']
 }
 
@@ -514,7 +519,8 @@ provide(dashboardContextKey, {
   attachments, beginEditProject, beginEditTask, clearActionableNotifications, closeProjectDetails, comments, createProject, createProjectOpen,
   createTask, createTaskOpen, currentUser, deleteAttachment, deleteComment, deleteProject, deleteTask, displayRole, displayStatus,
   editProjectDescription, editProjectName, filteredProjects, formatDate, formatFileSize, formatTime, isLoading, isProjectAdmin, isTaskOverdue,
-  logout, moveTask, newComment, newTaskAssigneeId, newTaskDescription, newTaskDueDate, newTaskPriority, newTaskTitle, nextStatuses,
+  logout, moveTask, newComment, newTaskAssigneeId, newTaskDescription, newTaskDueDate, newTaskIsPrivate, newTaskIsPinned,
+  newTaskContributesToProgress, newTaskPriority, newTaskTitle, nextStatuses,
   openCreateProject, openTask, priorities, projectBeingEditedId, projectCards, projectDescription, projectEndDate, projectFilter,
   projectName, projectSort, projects, quickEditTaskTitle, removeMember, saveProjectEdit, searchQuery, selectProject, selectedProject,
   selectedProjectMembers, selectedProjectStats, selectedTask, selectedTaskId, selectTaskInProject, statusColumns, statusTone,

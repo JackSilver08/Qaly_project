@@ -95,6 +95,13 @@ public partial class VectorSyncWorker : BackgroundService
             case "CommentDeleted":
                 await ingestionService.DeleteCommentAsync(id);
                 break;
+            case "TaskAttachmentCreated":
+            case "TaskAttachmentUpdated":
+                await ingestionService.SyncAttachmentAsync(id);
+                break;
+            case "TaskAttachmentDeleted":
+                await ingestionService.DeleteAttachmentAsync(id);
+                break;
             case "ProjectCreated":
             case "ProjectUpdated":
                 await ingestionService.SyncProjectAsync(id);

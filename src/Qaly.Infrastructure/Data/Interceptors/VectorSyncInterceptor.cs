@@ -22,7 +22,7 @@ public class VectorSyncInterceptor : SaveChangesInterceptor
         foreach (var entry in entries)
         {
             var entityName = entry.Entity.GetType().Name;
-            if (entityName != nameof(Project) && entityName != nameof(TaskItem) && entityName != nameof(TaskComment))
+            if (entityName != nameof(Project) && entityName != nameof(TaskItem) && entityName != nameof(TaskComment) && entityName != nameof(TaskAttachment))
                 continue;
 
             var eventType = entry.State switch
