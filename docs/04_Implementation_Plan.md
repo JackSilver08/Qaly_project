@@ -8,12 +8,12 @@
 
 | Phase | Tên | Thời gian | Trạng thái |
 |---|---|---|---|
-| 0 | Setup môi trường + Init project | 1–2 ngày | ⬜ Chưa bắt đầu |
-| 1 | Domain Layer | 3 ngày | ⬜ Chưa bắt đầu |
-| 2 | Infrastructure + DB Migration | 1–2 tuần | ⬜ Chưa bắt đầu |
-| 3 | Application Layer (Services) | 2–3 tuần | ⬜ Chưa bắt đầu |
-| 4 | Web Layer (UI + Realtime) | 2 tuần | ⬜ Chưa bắt đầu |
-| 5 | Testing + Hardening | 2 tuần | ⬜ Chưa bắt đầu |
+| 0 | Setup môi trường + Init project | 1–2 ngày | ✅ Hoàn thành |
+| 1 | Domain Layer | 3 ngày | ✅ Hoàn thành |
+| 2 | Infrastructure + DB Migration | 1–2 tuần | ✅ Hoàn thành |
+| 3 | Application Layer (Services) | 2–3 tuần | ✅ Hoàn thành |
+| 4 | Web Layer (UI + Realtime) | 2 tuần | ✅ Hoàn thành |
+| 5 | Testing + Hardening | 2 tuần | 🔄 Đang thực hiện |
 
 ---
 
@@ -31,61 +31,61 @@
 ## III. CHI TIẾT TỪNG PHASE
 
 ### Phase 0 – Setup (1–2 ngày)
-- [ ] Fix PATH cho dotnet CLI
-- [ ] Khởi tạo solution Clean Architecture (4 projects)
-- [ ] Cài NuGet packages
-- [ ] Cấu hình .gitignore, .editorconfig
-- [ ] Setup SQL Server database
-- [ ] Commit initial structure
+- [x] Fix PATH cho dotnet CLI
+- [x] Khởi tạo solution Clean Architecture (4 projects)
+- [x] Cài NuGet packages
+- [x] Cấu hình .gitignore, .editorconfig
+- [x] Setup SQL Server database
+- [x] Commit initial structure
 
 ### Phase 1 – Domain Layer (3 ngày)
-- [ ] BaseEntity (Id, CreatedAt, UpdatedAt)
-- [ ] User entity
-- [ ] Project + ProjectMember entities
-- [ ] TaskItem + TaskComment + TaskAttachment entities
-- [ ] Notification entity
-- [ ] AuditLog entity
-- [ ] Enums (TaskStatus, TaskPriority, ProjectRole, NotificationType, AuditAction)
-- [ ] Interfaces (IRepository, IUnitOfWork, ICurrentUserService)
+- [x] BaseEntity (Id, CreatedAt, UpdatedAt)
+- [x] User entity
+- [x] Project + ProjectMember entities
+- [x] TaskItem + TaskComment + TaskAttachment entities
+- [x] Notification entity
+- [x] AuditLog entity
+- [x] Enums (TaskStatus, TaskPriority, ProjectRole, NotificationType, AuditAction)
+- [x] Interfaces (IRepository, IUnitOfWork, ICurrentUserService)
 
 ### Phase 2 – Infrastructure + Migration (1–2 tuần)
-- [ ] QalyDbContext
-- [ ] Entity Configurations (Fluent API)
-- [ ] GenericRepository + UnitOfWork
-- [ ] Initial Migration
-- [ ] DataSeeder (admin user, sample data)
-- [ ] CurrentUserService
-- [ ] Verify migration trên SQL Server
+- [x] QalyDbContext
+- [x] Entity Configurations (Fluent API)
+- [x] GenericRepository + UnitOfWork
+- [x] Initial Migration
+- [x] DataSeeder (admin user, sample data)
+- [x] CurrentUserService
+- [x] Verify migration trên SQL Server
 
 ### Phase 3 – Application Layer (2–3 tuần)
 
 #### Sprint 3.1 – User + Auth (Backend 1)
-- [ ] UserDto, RegisterDto
-- [ ] Auth service (login, register, password hash)
-- [ ] RBAC middleware
+- [x] UserDto, RegisterDto
+- [x] Auth service (login, register, password hash)
+- [x] RBAC middleware
 
 #### Sprint 3.2 – Project + Task (Backend 2)
-- [ ] ProjectService (CRUD + member management)
-- [ ] TaskService (CRUD + workflow: Todo → InProgress → Done)
-- [ ] CommentService
+- [x] ProjectService (CRUD + member management)
+- [x] TaskService (CRUD + workflow: Todo → InProgress → Done)
+- [x] CommentService
 
 #### Sprint 3.3 – Notification + Audit (Backend 3)
-- [ ] NotificationService
-- [ ] AuditLogService
-- [ ] AuditActionFilter
+- [x] NotificationService
+- [x] AuditLogService
+- [x] AuditActionFilter
 
 ### Phase 4 – Web Layer (2 tuần)
 
 #### Sprint 4.1 – Layout + Auth Pages (Frontend 1)
-- [ ] _Layout.cshtml (sidebar, topbar)
-- [ ] Login / Register pages
-- [ ] Dashboard page
+- [x] _Layout.cshtml (sidebar, topbar)
+- [x] Login / Register pages
+- [x] Dashboard page
 
 #### Sprint 4.2 – Project + Task Pages (Frontend 2)
-- [ ] Project list + create + details
-- [ ] Task list + Kanban board (Vue)
-- [ ] Task details + comments (Vue)
-- [ ] Notification bell (Vue + SignalR)
+- [x] Project list + create + details
+- [x] Task list + Kanban board (Vue)
+- [x] Task details + comments (Vue)
+- [x] Notification bell (Vue + SignalR)
 
 ### Phase 5 – Testing + Hardening (2 tuần)
 - [ ] Unit tests (Services)

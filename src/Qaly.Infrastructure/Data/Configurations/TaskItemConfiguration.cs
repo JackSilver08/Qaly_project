@@ -43,6 +43,14 @@ public class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
         builder.HasIndex(t => t.Status);
         builder.HasIndex(t => t.IsPinned);
 
+        builder.HasOne(t => t.ImportSession)
+            .WithMany(s => s.ImportedTasks)
+            .HasForeignKey(t => t.ImportSessionId)
+            .OnDelete(DeleteBehavior.SetNull)
+            .IsRequired(false);
+
+        builder.HasIndex(t => t.ImportSessionId);
+
         // Optimization: Kanban board query (CH 2.2)
         builder.HasIndex(t => new { t.ProjectId, t.Status })
             .IncludeProperties(t => new { t.Title, t.Priority, t.AssigneeId, t.DueDate, t.IsPinned, t.ContributesToProgress });

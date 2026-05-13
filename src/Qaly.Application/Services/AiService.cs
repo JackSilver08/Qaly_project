@@ -176,7 +176,7 @@ Trả lời dưới dạng danh sách gạch đầu dòng.";
                    .ToList();
     }
 
-    public async Task<string> ChatAsync(string userMessage, Guid? projectId = null)
+    public async Task<string> ChatAsync(string userMessage, Guid? projectId = null, string mode = "erumi")
     {
         if (!projectId.HasValue)
         {
@@ -249,14 +249,14 @@ Thời gian hiện tại: {DateTime.Now.ToString("dd/MM/yyyy HH:mm", System.Glob
 
         var options = new ChatOptions
         {
-            Tools = GetTools()
+            Tools = _aiTools.GetAvailableTools()
         };
 
         var response = await _chatClient.CompleteAsync(chatHistory, options);
         return response.Message.Text ?? "Xin lỗi, tôi gặp chút trục trặc khi kết nối với bộ não AI. Vui lòng thử lại sau giây lát.";
     }
 
-    public async IAsyncEnumerable<string> ChatStreamingAsync(string userMessage, Guid? projectId = null)
+    public async IAsyncEnumerable<string> ChatStreamingAsync(string userMessage, Guid? projectId = null, string mode = "erumi")
     {
         if (!projectId.HasValue)
         {
@@ -324,9 +324,47 @@ Thời gian: {DateTime.Now.ToString("dd/MM/yyyy HH:mm", System.Globalization.Cul
             Tools = GetTools()
         };
 
-        await foreach (var update in _chatClient.CompleteStreamingAsync(chatHistory, options))
+        IAsyncEnumerable<StreamingChatCompletionUpdate>? streamingResponse = null;
+        string? connectionError = null;
+        try
         {
-            if (update.Text != null)
+            streamingResponse = _chatClient.CompleteStreamingAsync(chatHistory, options);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error while starting AI stream.");
+            connectionError = "Xin lỗi, hiện tại tôi không thể kết nối tới máy chủ AI. Bạn hãy thử lại sau nhé.";
+        }
+
+        if (connectionError != null)
+        {
+            yield return connectionError;
+            yield break;
+        }
+
+        await using var enumerator = streamingResponse!.GetAsyncEnumerator();
+        while (true)
+        {
+            StreamingChatCompletionUpdate? update = null;
+            string? streamError = null;
+            try
+            {
+                if (!await enumerator.MoveNextAsync()) break;
+                update = enumerator.Current;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error while streaming AI response.");
+                streamError = "\n\n*[Kết nối AI bị gián đoạn giữa chừng]*";
+            }
+
+            if (streamError != null)
+            {
+                yield return streamError;
+                break;
+            }
+
+            if (update?.Text != null)
             {
                 yield return update.Text;
             }

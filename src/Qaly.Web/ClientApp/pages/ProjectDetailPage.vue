@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MessageSquare, MoreHorizontal, Plus, Send, Search, Clock, Play, Square, Calendar, X, ClipboardList } from 'lucide-vue-next'
+import { MessageSquare, MoreHorizontal, Plus, Send, Search, Clock, Play, Square, Calendar, X, ClipboardList, FileSpreadsheet } from 'lucide-vue-next'
 // @ts-ignore
 import { VueDraggable } from '../utils/vendor/vue-draggable-plus.js'
 import ProjectDetailHeader from '../components/ProjectDetailHeader.vue'
@@ -8,6 +8,7 @@ import ProjectStatsTab from '../components/ProjectStatsTab.vue'
 import ProjectWikiTab from '../components/ProjectWikiTab.vue'
 import ProjectGanttTab from '../components/ProjectGanttTab.vue'
 import WebhooksTab from '../components/WebhooksTab.vue'
+import ImportModal from '../components/import/ImportModal.vue'
 import { useDashboardContext } from '../composables/dashboard-context'
 import { ref, onMounted, onUnmounted } from 'vue'
 import type { DashboardTask } from '../types'
@@ -70,7 +71,10 @@ const {
   activeTimer,
   startTimer,
   stopTimer,
+  loadDashboard,
 } = useDashboardContext()
+
+const showImportModal = ref(false)
 
 const quickEditTitle = ref('')
 const manualMinutes = ref<number>(0)
@@ -176,6 +180,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
               <button class="primary-button primary-button--compact" type="button" @click="createTaskOpen = !createTaskOpen">
                 <Plus :size="16" />
                 <span>Task</span>
+              </button>
+              <button class="import-btn-sm" type="button" @click="showImportModal = true">
+                <FileSpreadsheet :size="14" /> Import
               </button>
             </div>
           </div>
@@ -400,6 +407,14 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
       <div v-if="activeProjectTab === 'webhooks' && selectedProject" class="tab-pane reveal">
         <WebhooksTab :project-id="selectedProject.id" />
       </div>
+
+      <ImportModal
+        v-if="showImportModal && selectedProject"
+        :project-id="selectedProject.id"
+        :project-name="selectedProject.name"
+        @close="showImportModal = false"
+        @imported="showImportModal = false; loadDashboard()"
+      />
     </div>
   </div>
 </template>
@@ -567,4 +582,13 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   color: var(--muted);
   white-space: nowrap;
 }
+
+.import-btn-sm {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
+  background: rgba(99,102,241,.1); color: #818cf8;
+  border: 1px solid rgba(99,102,241,.18); cursor: pointer;
+  transition: all .2s;
+}
+.import-btn-sm:hover { background: rgba(99,102,241,.18); }
 </style>

@@ -53,6 +53,7 @@ defineEmits<{
         <Plus :size="16" />
         <span>Tạo dự án</span>
       </button>
+      <slot name="actions" />
     </div>
 
     <span class="project-toolbar__count">{{ projectCount }} dự án</span>

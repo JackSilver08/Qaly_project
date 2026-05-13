@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import { ref } from 'vue'
+import { FileSpreadsheet } from 'lucide-vue-next'
 import ProjectList from '../components/ProjectList.vue'
 import ProjectToolbar from '../components/ProjectToolbar.vue'
+import ImportModal from '../components/import/ImportModal.vue'
 import { useDashboardContext } from '../composables/dashboard-context'
 
 const {
@@ -22,7 +25,15 @@ const {
   searchQuery,
   selectProject,
   selectedProject,
+  loadDashboard,
 } = useDashboardContext()
+
+const showImportModal = ref(false)
+
+function onImported() {
+  showImportModal.value = false
+  loadDashboard()
+}
 </script>
 
 <template>
@@ -43,7 +54,13 @@ const {
           v-model:filter="projectFilter"
           :project-count="activeProjectCards.length"
           @create="openCreateProject"
-        />
+        >
+          <template #actions>
+            <button class="btn-import" @click="showImportModal = true">
+              <FileSpreadsheet :size="15" /> Import CSV
+            </button>
+          </template>
+        </ProjectToolbar>
 
         <form v-if="createProjectOpen" class="project-inline-form project-inline-form--stacked" @submit.prevent="createProject">
           <input v-model="projectName" type="text" placeholder="Tên dự án" />
@@ -73,5 +90,22 @@ const {
         />
       </section>
     </div>
+
+    <ImportModal
+      v-if="showImportModal"
+      @close="showImportModal = false"
+      @imported="onImported"
+    />
   </div>
 </template>
+
+<style scoped>
+.btn-import {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: 8px; font-size: .8rem; font-weight: 500;
+  background: rgba(99,102,241,.12); color: #818cf8;
+  border: 1px solid rgba(99,102,241,.2); cursor: pointer;
+  transition: all .2s;
+}
+.btn-import:hover { background: rgba(99,102,241,.2); }
+</style>

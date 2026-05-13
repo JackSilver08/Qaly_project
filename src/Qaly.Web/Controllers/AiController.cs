@@ -72,13 +72,13 @@ public class AiController : ControllerBase
 
     [HttpPost("chat")]
     public async Task<IActionResult> Chat(AiChatRequest request)
-        => Ok(new { reply = await _aiService.ChatAsync(request.Message, request.ProjectId) });
+        => Ok(new { reply = await _aiService.ChatAsync(request.Message, request.ProjectId, request.Mode) });
 
     [HttpPost("chat/stream")]
     public async Task ChatStreaming(AiChatRequest request)
     {
         Response.ContentType = "text/plain";
-        await foreach (var token in _aiService.ChatStreamingAsync(request.Message, request.ProjectId))
+        await foreach (var token in _aiService.ChatStreamingAsync(request.Message, request.ProjectId, request.Mode))
         {
             await Response.WriteAsync(token);
             await Response.Body.FlushAsync();
@@ -111,4 +111,4 @@ public sealed record AiPriorityRequest(string Title, string? Description, string
 
 public sealed record AiSubtasksRequest(string Title, string? Description);
 
-public sealed record AiChatRequest(string Message, Guid? ProjectId);
+public sealed record AiChatRequest(string Message, Guid? ProjectId, string Mode = "erumi");
