@@ -9,6 +9,7 @@ import ProjectWikiTab from '../components/ProjectWikiTab.vue'
 import ProjectGanttTab from '../components/ProjectGanttTab.vue'
 import WebhooksTab from '../components/WebhooksTab.vue'
 import ImportModal from '../components/import/ImportModal.vue'
+import ImportUndoBanner from '../components/import/ImportUndoBanner.vue'
 import { useDashboardContext } from '../composables/dashboard-context'
 import { ref, onMounted, onUnmounted } from 'vue'
 import type { DashboardTask } from '../types'
@@ -75,6 +76,31 @@ const {
 } = useDashboardContext()
 
 const showImportModal = ref(false)
+const undoBannerData = ref<{ importSessionId: string; importedCount: number; createdAt: string } | null>(null)
+
+function onImported(result: any) {
+  showImportModal.value = false
+  if (result) {
+    undoBannerData.value = {
+      importSessionId: result.importSessionId,
+      importedCount: result.importedCount,
+      createdAt: new Date().toISOString(),
+    }
+  }
+  loadDashboard()
+}
+
+async function handleUndoFromBanner() {
+  if (!undoBannerData.value) return
+  try {
+    const res = await fetch(`/api/import/sessions/${undoBannerData.value.importSessionId}`, { method: 'DELETE' })
+    const data = await res.json()
+    if (data.isSuccess) {
+      undoBannerData.value = null
+      loadDashboard()
+    }
+  } catch { /* ignore */ }
+}
 
 const quickEditTitle = ref('')
 const manualMinutes = ref<number>(0)
@@ -413,7 +439,16 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
         :project-id="selectedProject.id"
         :project-name="selectedProject.name"
         @close="showImportModal = false"
-        @imported="showImportModal = false; loadDashboard()"
+        @imported="onImported"
+      />
+
+      <ImportUndoBanner
+        v-if="undoBannerData"
+        :import-session-id="undoBannerData.importSessionId"
+        :imported-count="undoBannerData.importedCount"
+        :created-at="undoBannerData.createdAt"
+        @undo="handleUndoFromBanner"
+        @dismiss="undoBannerData = null"
       />
     </div>
   </div>

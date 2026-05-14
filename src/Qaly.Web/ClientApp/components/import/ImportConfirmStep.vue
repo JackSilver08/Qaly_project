@@ -1,0 +1,360 @@
+<script setup lang="ts">
+import { ArrowLeft, Check, AlertTriangle } from 'lucide-vue-next'
+import { computed } from 'vue'
+
+const props = defineProps<{
+  parseResult: any
+  mappings: { columnIndex: number; targetField: string }[]
+  skipDuplicates: boolean
+  isNewProject: boolean
+  newProjectName: string
+  projectName?: string
+  isLoading: boolean
+}>()
+
+const emit = defineEmits<{
+  back: []
+  confirm: []
+}>()
+
+// ─── Client-side preview summary ──────────────────────────
+// We compute the preview from parseResult + mappings locally,
+// no extra API call needed.
+
+const statusAliases: Record<string, string> = {
+  'todo': 'Todo', 'backlog': 'Todo', 'new': 'Todo', 'mới': 'Todo', 'open': 'Todo',
+  'in progress': 'InProgress', 'inprogress': 'InProgress', 'doing': 'InProgress',
+  'đang làm': 'InProgress', 'wip': 'InProgress', 'active': 'InProgress',
+  'review': 'InReview', 'in review': 'InReview', 'inreview': 'InReview',
+  'đang review': 'InReview',
+  'done': 'Done', 'completed': 'Done', 'hoàn thành': 'Done', 'xong': 'Done',
+  'finished': 'Done', 'closed': 'Done',
+  'hold': 'OnHold', 'on hold': 'OnHold', 'onhold': 'OnHold',
+  'blocked': 'OnHold', 'tạm dừng': 'OnHold', 'paused': 'OnHold',
+}
+
+const validStatuses = ['Todo', 'InProgress', 'OnHold', 'InReview', 'Done']
+
+function normalizeStatus(raw: string | null): { status: string; unmapped: boolean } {
+  if (!raw || !raw.trim()) return { status: 'Todo', unmapped: false }
+  const trimmed = raw.trim()
+  const directMatch = validStatuses.find(s => s.toLowerCase() === trimmed.toLowerCase())
+  if (directMatch) return { status: directMatch, unmapped: false }
+  const aliasMatch = statusAliases[trimmed.toLowerCase()]
+  if (aliasMatch) return { status: aliasMatch, unmapped: false }
+  return { status: 'Todo', unmapped: true }
+}
+
+const fieldMap = computed(() => {
+  const map: Record<string, number> = {}
+  for (const m of props.mappings) {
+    if (m.targetField !== 'Skip') map[m.targetField] = m.columnIndex
+  }
+  return map
+})
+
+const previewSummary = computed(() => {
+  const rows = props.parseResult?.previewRows ?? []
+  const totalRowCount = props.parseResult?.totalRowCount ?? 0
+  const allRows = totalRowCount // We only have preview rows but know the total
+
+  const statusIdx = fieldMap.value['Status']
+  const titleIdx = fieldMap.value['Title']
+  const labelsIdx = fieldMap.value['Labels']
+
+  // Analyze preview rows to estimate distribution
+  const statusDist: Record<string, number> = {}
+  const unmappedStatuses = new Set<string>()
+  const labelsSet = new Set<string>()
+  let emptyTitleCount = 0
+
+  // Use all available preview rows for analysis
+  for (const row of rows) {
+    // Check title
+    if (titleIdx !== undefined) {
+      const title = row[titleIdx]?.trim()
+      if (!title) emptyTitleCount++
+    }
+
+    // Analyze status
+    if (statusIdx !== undefined) {
+      const rawStatus = row[statusIdx]
+      const { status, unmapped } = normalizeStatus(rawStatus)
+      statusDist[status] = (statusDist[status] || 0) + 1
+      if (unmapped && rawStatus?.trim()) unmappedStatuses.add(rawStatus.trim())
+    } else {
+      statusDist['Todo'] = (statusDist['Todo'] || 0) + 1
+    }
+
+    // Collect labels
+    if (labelsIdx !== undefined && row[labelsIdx]) {
+      const parts = row[labelsIdx].split(/[,;]/).map((l: string) => l.trim()).filter(Boolean)
+      for (const p of parts) labelsSet.add(p)
+    }
+  }
+
+  return {
+    totalRows: totalRowCount,
+    estimatedImport: totalRowCount - emptyTitleCount,
+    estimatedSkip: emptyTitleCount,
+    statusDistribution: statusDist,
+    unmappedStatuses: [...unmappedStatuses],
+    newLabelsEstimate: labelsSet.size,
+    previewRowCount: rows.length,
+    targetProjectName: props.isNewProject ? props.newProjectName : props.projectName,
+  }
+})
+
+const statusIcons: Record<string, string> = {
+  'Todo': '📌',
+  'InProgress': '🔄',
+  'OnHold': '⏸️',
+  'InReview': '👀',
+  'Done': '✅',
+}
+
+const statusLabels: Record<string, string> = {
+  'Todo': 'Todo',
+  'InProgress': 'In Progress',
+  'OnHold': 'On Hold',
+  'InReview': 'In Review',
+  'Done': 'Done',
+}
+</script>
+
+<template>
+  <div class="import-step">
+    <div class="confirm-hero">
+      <div class="confirm-icon">📋</div>
+      <h3>Xác nhận Import</h3>
+      <p class="confirm-subtitle">
+        Kiểm tra thông tin trước khi import vào
+        <strong>{{ previewSummary.targetProjectName }}</strong>
+      </p>
+    </div>
+
+    <!-- Summary stats -->
+    <div class="confirm-stats">
+      <div class="confirm-stat">
+        <span class="confirm-stat__label">Tổng số dòng đọc được</span>
+        <span class="confirm-stat__value">{{ previewSummary.totalRows }}</span>
+      </div>
+      <div class="confirm-stat confirm-stat--success">
+        <span class="confirm-stat__label">Tasks sẽ được tạo</span>
+        <span class="confirm-stat__value">~{{ previewSummary.estimatedImport }}</span>
+      </div>
+      <div v-if="previewSummary.estimatedSkip > 0" class="confirm-stat confirm-stat--warn">
+        <span class="confirm-stat__label">Dòng bỏ qua (trống/lỗi)</span>
+        <span class="confirm-stat__value">~{{ previewSummary.estimatedSkip }}</span>
+      </div>
+      <div v-if="previewSummary.newLabelsEstimate > 0" class="confirm-stat">
+        <span class="confirm-stat__label">Labels phát hiện</span>
+        <span class="confirm-stat__value">{{ previewSummary.newLabelsEstimate }}</span>
+      </div>
+    </div>
+
+    <!-- Status distribution -->
+    <div v-if="Object.keys(previewSummary.statusDistribution).length" class="confirm-distribution">
+      <p class="confirm-section-title">Phân bố theo cột Kanban <span class="hint">(dựa trên {{ previewSummary.previewRowCount }} dòng preview)</span></p>
+      <div v-for="(count, status) in previewSummary.statusDistribution" :key="status" class="dist-row">
+        <span class="dist-status">{{ statusIcons[status as string] || '📌' }} {{ statusLabels[status as string] || status }}</span>
+        <div class="dist-bar-wrap">
+          <div class="dist-bar" :style="{ width: (count / previewSummary.previewRowCount * 100) + '%' }"></div>
+        </div>
+        <span class="dist-count">{{ count }}</span>
+      </div>
+    </div>
+
+    <!-- Unmapped statuses warning -->
+    <div v-if="previewSummary.unmappedStatuses.length" class="import-warning">
+      <AlertTriangle :size="16" />
+      <div>
+        <strong>Status không nhận diện được</strong> (sẽ đặt về Todo):
+        <span class="unmapped-list">{{ previewSummary.unmappedStatuses.join(', ') }}</span>
+      </div>
+    </div>
+
+    <!-- Options reminder -->
+    <div class="confirm-options">
+      <span v-if="skipDuplicates" class="option-badge option-badge--active">✓ Bỏ qua task trùng tên</span>
+      <span v-else class="option-badge">Append tất cả (không check trùng)</span>
+      <span v-if="isNewProject" class="option-badge option-badge--new">+ Tạo dự án mới</span>
+      <span v-else class="option-badge option-badge--merge">↗ Merge vào dự án có sẵn</span>
+    </div>
+
+    <!-- Safety notice -->
+    <div class="confirm-notice">
+      <span>⚠️</span>
+      <p>Card cũ không bị thay đổi. Bạn có thể hoàn tác (undo) trong vòng 30 phút sau khi import.</p>
+    </div>
+
+    <div class="import-actions">
+      <button class="btn btn--ghost" type="button" @click="emit('back')"><ArrowLeft :size="16" /> Quay lại</button>
+      <button class="btn btn--primary btn--import-confirm" :disabled="isLoading" @click="emit('confirm')">
+        <template v-if="isLoading">
+          <span class="spinner"></span> Đang import...
+        </template>
+        <template v-else>
+          Import {{ previewSummary.totalRows }} task <Check :size="16" />
+        </template>
+      </button>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.confirm-hero {
+  text-align: center;
+  padding: 16px 0 12px;
+}
+.confirm-icon {
+  font-size: 2.5rem;
+  margin-bottom: 6px;
+  animation: bounceIn .5s ease;
+}
+.confirm-hero h3 {
+  margin: 0 0 4px;
+  font-size: 1.15rem;
+}
+.confirm-subtitle {
+  font-size: .82rem;
+  color: rgba(255,255,255,.5);
+  margin: 0;
+}
+
+.confirm-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin: 18px 0 14px;
+}
+.confirm-stat {
+  padding: 14px;
+  border-radius: 12px;
+  text-align: center;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.06);
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+.confirm-stat:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,.2);
+}
+.confirm-stat--success {
+  border-color: rgba(34,197,94,.25);
+  background: rgba(34,197,94,.06);
+}
+.confirm-stat--warn {
+  border-color: rgba(245,158,11,.25);
+  background: rgba(245,158,11,.06);
+}
+.confirm-stat__label {
+  display: block;
+  font-size: .72rem;
+  color: rgba(255,255,255,.45);
+  margin-bottom: 6px;
+}
+.confirm-stat__value {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.confirm-distribution {
+  margin: 14px 0;
+}
+.confirm-section-title {
+  font-size: .82rem;
+  font-weight: 600;
+  color: rgba(255,255,255,.6);
+  margin: 0 0 10px;
+}
+.confirm-section-title .hint {
+  font-weight: 400;
+  font-size: .72rem;
+  color: rgba(255,255,255,.3);
+}
+
+.dist-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.dist-status { font-size: .8rem; width: 110px; color: rgba(255,255,255,.6); }
+.dist-bar-wrap { flex: 1; height: 8px; border-radius: 4px; background: rgba(255,255,255,.05); overflow: hidden; }
+.dist-bar {
+  height: 100%; border-radius: 4px;
+  background: linear-gradient(90deg, #6366f1, #818cf8);
+  transition: width .6s cubic-bezier(.22,1,.36,1);
+}
+.dist-count { font-size: .78rem; width: 28px; text-align: right; color: rgba(255,255,255,.5); }
+
+.confirm-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+.option-badge {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: .72rem;
+  font-weight: 500;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.08);
+  color: rgba(255,255,255,.5);
+}
+.option-badge--active {
+  background: rgba(34,197,94,.08);
+  border-color: rgba(34,197,94,.2);
+  color: #22c55e;
+}
+.option-badge--new {
+  background: rgba(99,102,241,.08);
+  border-color: rgba(99,102,241,.2);
+  color: #818cf8;
+}
+.option-badge--merge {
+  background: rgba(245,158,11,.08);
+  border-color: rgba(245,158,11,.2);
+  color: #f59e0b;
+}
+
+.confirm-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: rgba(99,102,241,.05);
+  border: 1px solid rgba(99,102,241,.12);
+  font-size: .8rem;
+  color: rgba(255,255,255,.6);
+  margin: 8px 0;
+}
+.confirm-notice p { margin: 0; }
+
+.unmapped-list {
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.btn--import-confirm {
+  padding: 10px 24px;
+  font-size: .9rem;
+  font-weight: 600;
+}
+
+.spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes bounceIn {
+  0% { transform: scale(0.3); opacity: 0; }
+  50% { transform: scale(1.05); }
+  70% { transform: scale(0.95); }
+  100% { transform: scale(1); opacity: 1; }
+}
+</style>
