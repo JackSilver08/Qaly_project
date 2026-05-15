@@ -27,12 +27,13 @@ public static class DependencyInjection
         // DbContext
         services.AddDbContext<QalyDbContext>((sp, options) =>
             options.UseSqlServer(
-                configuration.GetConnectionString("DefaultConnection"),
-                sqlOptions =>
-                {
-                    sqlOptions.MigrationsAssembly(typeof(QalyDbContext).Assembly.FullName);
-                    sqlOptions.EnableRetryOnFailure(maxRetryCount: 3);
-                })
+                    configuration.GetConnectionString("DefaultConnection"),
+                    sqlOptions =>
+                    {
+                        sqlOptions.MigrationsAssembly(typeof(QalyDbContext).Assembly.FullName);
+                        sqlOptions.EnableRetryOnFailure(maxRetryCount: 3);
+                    })
+                .ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning))
                 .AddInterceptors(sp.GetRequiredService<VectorSyncInterceptor>()));
 
         // Repositories

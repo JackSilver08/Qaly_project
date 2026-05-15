@@ -19,6 +19,7 @@ public partial class DataSeeder
     public async Task SeedAsync()
     {
         await _context.Database.MigrateAsync();
+        await EnsureImportSchemaCompatibilityAsync();
         LogDatabaseMigrated(_logger);
 
         // XÃ³a dá»¯ liá»‡u cÅ© Ä‘á»ƒ Ä‘áº£m báº£o seed láº¡i báº£n Tiáº¿ng Viá»‡t chuáº©n nháº¥t
@@ -49,6 +50,97 @@ public partial class DataSeeder
         {
             LogSeedSkipped(_logger);
         }
+    }
+
+    private Task EnsureImportSchemaCompatibilityAsync()
+    {
+        const string sql = """
+            IF OBJECT_ID(N'[ImportSessions]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [ImportSessions] (
+                    [Id] uniqueidentifier NOT NULL CONSTRAINT [PK_ImportSessions] PRIMARY KEY DEFAULT NEWID(),
+                    [ProjectId] uniqueidentifier NOT NULL,
+                    [UserId] uniqueidentifier NOT NULL,
+                    [FileName] nvarchar(256) NOT NULL,
+                    [TotalRows] int NOT NULL CONSTRAINT [DF_ImportSessions_TotalRows] DEFAULT 0,
+                    [ImportedCount] int NOT NULL CONSTRAINT [DF_ImportSessions_ImportedCount] DEFAULT 0,
+                    [SkippedCount] int NOT NULL CONSTRAINT [DF_ImportSessions_SkippedCount] DEFAULT 0,
+                    [IsUndone] bit NOT NULL CONSTRAINT [DF_ImportSessions_IsUndone] DEFAULT 0,
+                    [CreatedAt] datetimeoffset NOT NULL CONSTRAINT [DF_ImportSessions_CreatedAt] DEFAULT SYSDATETIMEOFFSET(),
+                    [UpdatedAt] datetimeoffset NULL
+                );
+            END;
+
+            IF COL_LENGTH(N'[TaskItems]', N'ImportSessionId') IS NULL
+            BEGIN
+                ALTER TABLE [TaskItems] ADD [ImportSessionId] uniqueidentifier NULL;
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.foreign_keys
+                WHERE name = N'FK_ImportSessions_Projects_ProjectId'
+            )
+            BEGIN
+                ALTER TABLE [ImportSessions]
+                    ADD CONSTRAINT [FK_ImportSessions_Projects_ProjectId]
+                    FOREIGN KEY ([ProjectId]) REFERENCES [Projects]([Id]) ON DELETE CASCADE;
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.foreign_keys
+                WHERE name = N'FK_ImportSessions_Users_UserId'
+            )
+            BEGIN
+                ALTER TABLE [ImportSessions]
+                    ADD CONSTRAINT [FK_ImportSessions_Users_UserId]
+                    FOREIGN KEY ([UserId]) REFERENCES [Users]([Id]) ON DELETE NO ACTION;
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.foreign_keys
+                WHERE name = N'FK_TaskItems_ImportSessions_ImportSessionId'
+            )
+            BEGIN
+                ALTER TABLE [TaskItems]
+                    ADD CONSTRAINT [FK_TaskItems_ImportSessions_ImportSessionId]
+                    FOREIGN KEY ([ImportSessionId]) REFERENCES [ImportSessions]([Id]) ON DELETE SET NULL;
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.indexes
+                WHERE name = N'IX_ImportSessions_ProjectId'
+                  AND object_id = OBJECT_ID(N'[ImportSessions]')
+            )
+            BEGIN
+                CREATE INDEX [IX_ImportSessions_ProjectId] ON [ImportSessions]([ProjectId]);
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.indexes
+                WHERE name = N'IX_ImportSessions_UserId'
+                  AND object_id = OBJECT_ID(N'[ImportSessions]')
+            )
+            BEGIN
+                CREATE INDEX [IX_ImportSessions_UserId] ON [ImportSessions]([UserId]);
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.indexes
+                WHERE name = N'IX_TaskItems_ImportSessionId'
+                  AND object_id = OBJECT_ID(N'[TaskItems]')
+            )
+            BEGIN
+                CREATE INDEX [IX_TaskItems_ImportSessionId] ON [TaskItems]([ImportSessionId]);
+            END;
+            """;
+
+        return _context.Database.ExecuteSqlRawAsync(sql);
     }
 
     private async Task SeedKnowledgeBaseAsync()

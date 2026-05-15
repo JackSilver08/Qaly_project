@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>B&Aacute;O C&Aacute;O K&#x1ebe;T QU&#x1ea2; KI&#x1ec2;M TH&#x1eec; M&Ocirc;-&Dstrok;UN PROJECTS &lpar;QALY&rpar;</title>
+            <style>
+/* From extension vscode.github */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.vscode-dark img[src$=\#gh-light-mode-only],
+.vscode-light img[src$=\#gh-dark-mode-only],
+.vscode-high-contrast:not(.vscode-high-contrast-light) img[src$=\#gh-light-mode-only],
+.vscode-high-contrast-light img[src$=\#gh-dark-mode-only] {
+	display: none;
+}
+
+</style>
+            
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/markdown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/highlight.css">
+<style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+        </style>
+        <style>
+.task-list-item {
+    list-style-type: none;
+}
+
+.task-list-item-checkbox {
+    margin-left: -20px;
+    vertical-align: middle;
+    pointer-events: none;
+}
+</style>
+<style>
+:root {
+  --color-note: #0969da;
+  --color-tip: #1a7f37;
+  --color-warning: #9a6700;
+  --color-severe: #bc4c00;
+  --color-caution: #d1242f;
+  --color-important: #8250df;
+}
+
+</style>
+<style>
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-note: #2f81f7;
+    --color-tip: #3fb950;
+    --color-warning: #d29922;
+    --color-severe: #db6d28;
+    --color-caution: #f85149;
+    --color-important: #a371f7;
+  }
+}
+
+</style>
+<style>
+.markdown-alert {
+  padding: 0.5rem 1rem;
+  margin-bottom: 16px;
+  color: inherit;
+  border-left: .25em solid #888;
+}
+
+.markdown-alert>:first-child {
+  margin-top: 0
+}
+
+.markdown-alert>:last-child {
+  margin-bottom: 0
+}
+
+.markdown-alert .markdown-alert-title {
+  display: flex;
+  font-weight: 500;
+  align-items: center;
+  line-height: 1
+}
+
+.markdown-alert .markdown-alert-title .octicon {
+  margin-right: 0.5rem;
+  display: inline-block;
+  overflow: visible !important;
+  vertical-align: text-bottom;
+  fill: currentColor;
+}
+
+.markdown-alert.markdown-alert-note {
+  border-left-color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-note .markdown-alert-title {
+  color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-important {
+  border-left-color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-important .markdown-alert-title {
+  color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-warning {
+  border-left-color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-warning .markdown-alert-title {
+  color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-tip {
+  border-left-color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-tip .markdown-alert-title {
+  color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-caution {
+  border-left-color: var(--color-caution);
+}
+
+.markdown-alert.markdown-alert-caution .markdown-alert-title {
+  color: var(--color-caution);
+}
+
+</style>
+        
+        </head>
+        <body class="vscode-body vscode-light">
+            <h1 id="báo-cáo-kết-quả-kiểm-thử-mô-đun-projects-qaly">BÁO CÁO KẾT QUẢ KIỂM THỬ MÔ-ĐUN PROJECTS (QALY)</h1>
+<p><strong>Ngày:</strong> 13/05/2026
+<strong>Người báo cáo:</strong> AI Agent (Gemini)</p>
+<hr>
+<h2 id="i-tổng-quan">I. TỔNG QUAN</h2>
+<p>Đã tiến hành kiểm thử chức năng cho mô-đun <code>Projects</code> (bao gồm <code>ProjectService</code> và <code>ProjectsController</code>).</p>
+<ul>
+<li><strong>Kết quả:</strong> Đạt yêu cầu. Các luồng nghiệp vụ chính (CRUD, RBAC, Bảo mật truy cập) hoạt động ổn định.</li>
+<li><strong>Tình trạng test:</strong> Đã bổ sung 25 Unit Tests và 4 Integration Tests. Tất cả đã thông qua (Passed).</li>
+</ul>
+<h2 id="ii-các-vấn-đề-cần-dev-điều-chỉnhlưu-ý">II. CÁC VẤN ĐỀ CẦN DEV ĐIỀU CHỈNH/LƯU Ý</h2>
+<h3 id="1-vấn-đề-lỗi-build-file-locked">1. Vấn đề lỗi Build (File Locked)</h3>
+<p>Hiện tại việc chạy test thường xuyên bị lỗi <code>MSB3026: Could not copy... because it is being used by another process</code> do tiến trình <code>Qaly.Web.exe</code> không tự động giải phóng.</p>
+<ul>
+<li><strong>Đề xuất:</strong> Xem xét lại cấu hình <code>dotnet test</code> hoặc cơ chế tự động dừng web host sau khi chạy integration test để tránh khóa file DLL.</li>
+</ul>
+<h3 id="2-cải-thiện-code-code-maintenance">2. Cải thiện Code (Code Maintenance)</h3>
+<p>Dựa trên kết quả chạy code analysis trong quá trình test:</p>
+<ul>
+<li><strong><code>ProjectServiceTests.cs</code>:</strong>
+<ul>
+<li>Đã xuất hiện cảnh báo <code>CA1816: Change ProjectServiceTests.Dispose() to call GC.SuppressFinalize(object)</code>. Vui lòng cập nhật lại lớp test này để tuân thủ chuẩn Disposable.</li>
+</ul>
+</li>
+<li><strong><code>CustomExceptionHandler.cs</code> &amp; <code>Program.cs</code>:</strong>
+<ul>
+<li>Có cảnh báo <code>CA1848: Use LoggerMessage delegates</code> (thay vì gọi extension <code>LogError</code> trực tiếp). Việc này giúp cải thiện hiệu năng logging đáng kể cho hệ thống.</li>
+<li>Có cảnh báo <code>CA1847: Use 'string.Contains(char)'</code> thay vì string ở <code>Program.cs</code>.</li>
+</ul>
+</li>
+</ul>
+<h3 id="3-vấn-đề-logic-securityrbac">3. Vấn đề Logic (Security/RBAC)</h3>
+<ul>
+<li><strong>Tình trạng:</strong> Hiện tại phân quyền đã được test ổn định thông qua <code>ProjectRoleRules</code>.</li>
+<li><strong>Lưu ý:</strong> Vui lòng kiểm tra lại sự đồng nhất trong cách đặt tên prefix cho Redis Key (<code>Qaly_</code>). Hiện tại tôi đã đồng bộ prefix trong test và service, nhưng cần đảm bảo mọi service khác trong hệ thống cũng tuân thủ đúng prefix này để tránh rò rỉ session hoặc lỗi không xóa được key.</li>
+</ul>
+<h2 id="iii-dữ-liệu-kiểm-thử-đã-thiết-lập">III. DỮ LIỆU KIỂM THỬ ĐÃ THIẾT LẬP</h2>
+<p>Tôi đã tạo file <code>tests/Qaly.IntegrationTests/IntegrationTestFactory.cs</code> để hỗ trợ môi trường <code>InMemoryDatabase</code>. Khi cần sửa lỗi trên SQL Server thật, hãy kiểm tra kỹ <code>UseInMemoryDatabase</code> trong <code>DependencyInjection.cs</code>.</p>
+<hr>
+<p><em>Tài liệu chi tiết các ca kiểm thử đã được lưu tại <code>tests/Qaly.UnitTests/ProjectServiceTests.cs</code> và <code>tests/Qaly.IntegrationTests/ProjectsControllerTests.cs</code>.</em></p>
+
+            
+            
+        </body>
+        </html>
