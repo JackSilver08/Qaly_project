@@ -42,6 +42,7 @@ public class ImportService : IImportService
         ["DueDate"] = ["due", "deadline", "hạn", "han", "hạn chót", "han chot", "due_date", "duedate", "ngày hết hạn"],
         ["EstimatedHours"] = ["hours", "estimate", "giờ", "gio", "ước tính", "uoc tinh", "estimated"],
         ["Labels"] = ["label", "tag", "nhãn", "nhan", "tags", "labels", "thẻ", "the"],
+        ["Assignee"] = ["assignee", "user", "người", "nguoi", "người làm", "người thực hiện", "thực hiện", "member", "nhân viên"],
     };
 
     // Status value normalization
@@ -245,11 +246,39 @@ public class ImportService : IImportService
         };
         await _sessionRepo.AddAsync(session);
 
+        // Load project members to map Assignee
+        var projectMembers = await _memberRepo.GetQueryable()
+            .Include(m => m.User)
+            .Where(m => m.ProjectId == projectId)
+            .Select(m => m.User)
+            .ToListAsync(ct);
+
+        // Create quick lookup for Assignee (by Email or FullName)
+        var memberLookup = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+        foreach (var m in projectMembers)
+        {
+            if (m != null)
+            {
+                if (!string.IsNullOrWhiteSpace(m.Email))
+                    memberLookup[m.Email] = m.Id;
+                if (!string.IsNullOrWhiteSpace(m.FullName))
+                    memberLookup[m.FullName] = m.Id;
+            }
+        }
+
         int importedCount = 0;
         int skippedCount = 0;
         int newLabelsCreated = 0;
         var unmappedStatuses = new HashSet<string>();
         var statusDistribution = new Dictionary<string, int>();
+
+        // Lấy max SortOrder hiện tại của từng cột (status) để tối ưu hiển thị dòng
+        var maxSortOrders = await _taskRepo.GetQueryable()
+            .Where(t => t.ProjectId == projectId)
+            .GroupBy(t => t.Status)
+            .Select(g => new { Status = g.Key, MaxSort = g.Max(t => t.SortOrder) })
+            .ToDictionaryAsync(x => x.Status, x => x.MaxSort, ct);
+
         var random = new Random();
 
         foreach (var row in allRows)
@@ -276,6 +305,7 @@ public class ImportService : IImportService
             var rawDueDate = GetCellValue(row, fieldMap, "DueDate");
             var rawHours = GetCellValue(row, fieldMap, "EstimatedHours");
             var rawLabels = GetCellValue(row, fieldMap, "Labels");
+            var rawAssignee = GetCellValue(row, fieldMap, "Assignee")?.Trim();
 
             // Normalize status
             var status = NormalizeStatus(rawStatus, unmappedStatuses);
@@ -291,6 +321,21 @@ public class ImportService : IImportService
             if (int.TryParse(rawHours, out var hours))
                 estimatedHours = hours;
 
+            // Map Assignee
+            Guid? assigneeId = null;
+            if (!string.IsNullOrWhiteSpace(rawAssignee) && memberLookup.TryGetValue(rawAssignee, out var matchedUserId))
+            {
+                assigneeId = matchedUserId;
+            }
+
+            // Tính toán SortOrder để task nằm ở cuối cột (tối ưu dòng)
+            if (!maxSortOrders.TryGetValue(status, out int currentSortOrder))
+            {
+                currentSortOrder = 0;
+            }
+            currentSortOrder++;
+            maxSortOrders[status] = currentSortOrder;
+
             // Create task
             var task = new TaskItem
             {
@@ -302,7 +347,9 @@ public class ImportService : IImportService
                 EstimatedHours = estimatedHours,
                 ProjectId = projectId,
                 ReporterId = userId,
+                AssigneeId = assigneeId,
                 ImportSessionId = session.Id,
+                SortOrder = currentSortOrder
             };
             await _taskRepo.AddAsync(task);
 

@@ -249,7 +249,7 @@ Thời gian hiện tại: {DateTime.Now.ToString("dd/MM/yyyy HH:mm", System.Glob
 
         var options = new ChatOptions
         {
-            Tools = _aiTools.GetAvailableTools()
+            Tools = GetTools()
         };
 
         var response = await _chatClient.CompleteAsync(chatHistory, options);

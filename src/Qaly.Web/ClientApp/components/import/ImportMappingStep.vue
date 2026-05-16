@@ -27,6 +27,7 @@ const targetFields = [
   { value: 'DueDate', label: '📅 Hạn chót' },
   { value: 'EstimatedHours', label: '⏱️ Giờ ước tính' },
   { value: 'Labels', label: '🏷️ Nhãn (Labels)' },
+  { value: 'Assignee', label: '👤 Người thực hiện' },
   { value: 'Skip', label: '⏭️ Bỏ qua' },
 ]
 
