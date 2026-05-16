@@ -10,6 +10,9 @@ const props = defineProps<{
   newProjectName: string
   projectName?: string
   isLoading: boolean
+  assignToMeIfEmpty: boolean
+  defaultPriority: string | null
+  enableAiCategorization: boolean
 }>()
 
 const emit = defineEmits<{
@@ -178,6 +181,11 @@ const statusLabels: Record<string, string> = {
     <div class="confirm-options">
       <span v-if="skipDuplicates" class="option-badge option-badge--active">✓ Bỏ qua task trùng tên</span>
       <span v-else class="option-badge">Append tất cả (không check trùng)</span>
+
+      <span v-if="assignToMeIfEmpty" class="option-badge">Giao cho tôi (nếu trống)</span>
+      <span v-if="defaultPriority" class="option-badge">Ưu tiên mặc định: {{ defaultPriority }}</span>
+      <span v-if="enableAiCategorization" class="option-badge option-badge--ai">✨ Dùng AI phân loại</span>
+
       <span v-if="isNewProject" class="option-badge option-badge--new">+ Tạo dự án mới</span>
       <span v-else class="option-badge option-badge--merge">↗ Merge vào dự án có sẵn</span>
     </div>
@@ -314,6 +322,11 @@ const statusLabels: Record<string, string> = {
   background: rgba(245,158,11,.08);
   border-color: rgba(245,158,11,.2);
   color: #f59e0b;
+}
+.option-badge--ai {
+  background: rgba(167,139,250,.08);
+  border-color: rgba(167,139,250,.2);
+  color: #a78bfa;
 }
 
 .confirm-notice {

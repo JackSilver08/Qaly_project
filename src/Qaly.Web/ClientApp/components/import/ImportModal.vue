@@ -28,6 +28,9 @@ const parseResult = ref<any>(null)
 const firstRowIsHeader = ref(true)
 const skipDuplicates = ref(false)
 const selectedSheet = ref<string | null>(null)
+const assignToMeIfEmpty = ref(true)
+const defaultPriority = ref<string | null>(null)
+const enableAiCategorization = ref(false)
 const mappings = ref<{ columnIndex: number; targetField: string }[]>([])
 const newProjectName = ref('')
 
@@ -101,6 +104,9 @@ async function executeImport() {
       firstRowIsHeader: firstRowIsHeader.value,
       skipDuplicates: skipDuplicates.value,
       sheetName: selectedSheet.value,
+      assignToMeIfEmpty: assignToMeIfEmpty.value,
+      defaultPriority: defaultPriority.value,
+      enableAiCategorization: enableAiCategorization.value,
     }))
 
     const res = await fetch('/api/import/execute', {
@@ -208,10 +214,16 @@ function finish() {
           :first-row-is-header="firstRowIsHeader"
           :skip-duplicates="skipDuplicates"
           :selected-sheet="selectedSheet"
+          :assign-to-me-if-empty="assignToMeIfEmpty"
+          :default-priority="defaultPriority"
+          :enable-ai-categorization="enableAiCategorization"
           @update:mappings="mappings = $event"
           @update:first-row-is-header="firstRowIsHeader = $event"
           @update:skip-duplicates="skipDuplicates = $event"
           @update:selected-sheet="selectedSheet = $event"
+          @update:assign-to-me-if-empty="assignToMeIfEmpty = $event"
+          @update:default-priority="defaultPriority = $event"
+          @update:enable-ai-categorization="enableAiCategorization = $event"
           @back="step = 1"
           @next="goToConfirm"
         />
@@ -226,6 +238,9 @@ function finish() {
           :new-project-name="newProjectName"
           :project-name="projectName"
           :is-loading="isLoading"
+          :assign-to-me-if-empty="assignToMeIfEmpty"
+          :default-priority="defaultPriority"
+          :enable-ai-categorization="enableAiCategorization"
           @back="step = 2"
           @confirm="executeImport"
         />
@@ -265,6 +280,18 @@ function finish() {
           <div v-if="importResult.unmappedStatuses?.length" class="import-warning">
             <span>⚠️</span>
             <span>Các giá trị Status không nhận diện (đã đặt về Todo): {{ importResult.unmappedStatuses.join(', ') }}</span>
+          </div>
+
+          <!-- Skipped Rows Detail -->
+          <div v-if="importResult.skippedRows?.length" class="import-skipped-rows">
+            <details>
+              <summary>Hiển thị chi tiết {{ importResult.skippedRows.length }} dòng bị lỗi/bỏ qua</summary>
+              <ul class="skipped-list">
+                <li v-for="(row, idx) in importResult.skippedRows" :key="idx">
+                  <strong>Dòng {{ row.rowIndex }}:</strong> {{ row.reason }}
+                </li>
+              </ul>
+            </details>
           </div>
 
           <div class="import-actions">
@@ -507,6 +534,30 @@ function finish() {
 :deep(.btn--sm), .btn--sm { padding: 6px 14px; font-size: .8rem; }
 .btn--danger { color: #ef4444; border-color: rgba(239,68,68,.2); }
 .btn--danger:hover { background: rgba(239,68,68,.08); }
+
+.import-skipped-rows {
+  margin: 16px 0;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 8px;
+  padding: 12px;
+}
+.import-skipped-rows details summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #ef4444;
+  outline: none;
+}
+.skipped-list {
+  margin: 10px 0 0 0;
+  padding-left: 20px;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+.skipped-list li {
+  margin-bottom: 4px;
+}
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 </style>

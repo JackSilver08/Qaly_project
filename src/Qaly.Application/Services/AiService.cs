@@ -474,6 +474,50 @@ Yêu cầu:
 
     [LoggerMessage(EventId = 2, Level = LogLevel.Warning, Message = "Unauthorized AI risk analysis request for project {ProjectId} by user {UserId}")]
     private static partial void LogUnauthorizedRiskAnalysisRequest(ILogger logger, Guid projectId, Guid userId);
+
+    public async Task<List<Qaly.Application.DTOs.Import.AiCategorizationResult>> CategorizeTasksBatchAsync(List<Qaly.Application.DTOs.Import.AiCategorizationRequest> tasks)
+    {
+        if (!tasks.Any()) return new List<Qaly.Application.DTOs.Import.AiCategorizationResult>();
+
+        var taskJson = System.Text.Json.JsonSerializer.Serialize(tasks, new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = null });
+        var prompt = $@"Bạn là trợ lý AI chuyên môn về Agile/Kanban. Nhiệm vụ của bạn là đọc các task sau và phân loại chúng vào các cột (Status) phù hợp, độ ưu tiên (Priority) hợp lý, và tối đa 2 nhãn (Labels) cho mỗi task.
+
+Dữ liệu đầu vào:
+{taskJson}
+
+Bạn PHẢI trả về KẾT QUẢ ĐẦU RA dưới dạng một JSON Array HỢP LỆ, định dạng CHÍNH XÁC như mẫu sau (KHÔNG ĐƯỢC chứa thêm bất kỳ text nào khác ngoài mảng JSON):
+[
+  {{ ""RowIndex"": 1, ""Status"": ""Todo"", ""Priority"": ""High"", ""Labels"": [""Bug"", ""Frontend""] }}
+]
+Chỉ được chọn Status từ: Todo, InProgress, InReview, OnHold, Done.
+Chỉ được chọn Priority từ: Low, Medium, High, Critical.
+Chỉ xuất ra đúng mảng JSON, tuyệt đối không giải thích.";
+
+        try
+        {
+            var response = await _chatClient.CompleteAsync(prompt);
+            var text = response.Message.Text ?? "[]";
+            
+            // Extract json array if the AI enclosed it in markdown block ```json ... ```
+            var startIdx = text.IndexOf('[');
+            var endIdx = text.LastIndexOf(']');
+            if (startIdx >= 0 && endIdx >= startIdx)
+            {
+                var jsonStr = text.Substring(startIdx, endIdx - startIdx + 1);
+                var results = System.Text.Json.JsonSerializer.Deserialize<List<Qaly.Application.DTOs.Import.AiCategorizationResult>>(
+                    jsonStr, 
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+                );
+                return results ?? new List<Qaly.Application.DTOs.Import.AiCategorizationResult>();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error while executing AI categorization batch.");
+        }
+
+        return new List<Qaly.Application.DTOs.Import.AiCategorizationResult>();
+    }
 }
 
 

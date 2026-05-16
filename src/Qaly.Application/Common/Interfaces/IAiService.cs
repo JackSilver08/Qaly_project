@@ -37,4 +37,7 @@ public interface IAiService
 
     /// <summary>Tạo nhận xét AI dựa trên dữ liệu phân tích (Analytics)</summary>
     Task<string> GenerateAnalyticsInsightsAsync(Guid projectId, string analyticsData);
+
+    /// <summary>Tự động phân loại hàng loạt task (Status, Priority, Labels) dựa trên Title và Description</summary>
+    Task<List<Qaly.Application.DTOs.Import.AiCategorizationResult>> CategorizeTasksBatchAsync(List<Qaly.Application.DTOs.Import.AiCategorizationRequest> tasks);
 }

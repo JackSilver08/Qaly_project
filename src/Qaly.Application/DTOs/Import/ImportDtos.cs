@@ -27,12 +27,23 @@ public record ImportRequest(
     List<ColumnMapping> Mappings,
     bool FirstRowIsHeader,
     bool SkipDuplicates,
-    string? SheetName
+    string? SheetName,
+    bool AssignToMeIfEmpty = false,
+    string? DefaultPriority = null,
+    bool EnableAiCategorization = false
 );
 
 public record ColumnMapping(
     int ColumnIndex,
     string TargetField
+);
+
+/// <summary>
+/// Chi tiết dòng bị bỏ qua trong quá trình import
+/// </summary>
+public record SkippedRowDto(
+    int RowIndex,
+    string Reason
 );
 
 /// <summary>
@@ -46,7 +57,8 @@ public record ImportResult(
     int SkippedCount,
     int NewLabelsCreated,
     List<string> UnmappedStatuses,
-    Dictionary<string, int> StatusDistribution
+    Dictionary<string, int> StatusDistribution,
+    List<SkippedRowDto> SkippedRows
 );
 
 public record ImportSessionDto(
@@ -57,4 +69,17 @@ public record ImportSessionDto(
     bool IsUndone,
     bool CanUndo,
     DateTimeOffset CreatedAt
+);
+
+public record AiCategorizationRequest(
+    int RowIndex,
+    string Title,
+    string? Description
+);
+
+public record AiCategorizationResult(
+    int RowIndex,
+    string Status,
+    string Priority,
+    string[] Labels
 );

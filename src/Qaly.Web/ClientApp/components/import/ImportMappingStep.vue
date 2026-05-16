@@ -8,6 +8,9 @@ const props = defineProps<{
   firstRowIsHeader: boolean
   skipDuplicates: boolean
   selectedSheet: string | null
+  assignToMeIfEmpty: boolean
+  defaultPriority: string | null
+  enableAiCategorization: boolean
 }>()
 
 const emit = defineEmits<{
@@ -15,6 +18,9 @@ const emit = defineEmits<{
   'update:firstRowIsHeader': [val: boolean]
   'update:skipDuplicates': [val: boolean]
   'update:selectedSheet': [val: string | null]
+  'update:assignToMeIfEmpty': [val: boolean]
+  'update:defaultPriority': [val: string | null]
+  'update:enableAiCategorization': [val: boolean]
   back: []
   next: []
 }>()
@@ -76,6 +82,49 @@ function updateMappingField(index: number, targetField: string) {
       </label>
     </div>
 
+    <!-- Default Values Settings -->
+    <div class="import-settings-box">
+      <p class="import-settings-title">Cài đặt Mặc định (Nếu dữ liệu trống)</p>
+      
+      <div class="import-options-row">
+        <label class="import-toggle">
+          <input
+            type="checkbox"
+            :checked="assignToMeIfEmpty"
+            @change="emit('update:assignToMeIfEmpty', ($event.target as HTMLInputElement).checked)"
+          />
+          <span>Tự động giao cho tôi (Assignee)</span>
+        </label>
+      </div>
+
+      <div class="import-field">
+        <label>Độ ưu tiên mặc định (Priority)</label>
+        <select
+          :value="defaultPriority || ''"
+          class="import-select"
+          @change="emit('update:defaultPriority', ($event.target as HTMLSelectElement).value || null)"
+        >
+          <option value="">-- Bỏ qua (hoặc dùng Medium) --</option>
+          <option value="Low">Low</option>
+          <option value="Medium">Medium</option>
+          <option value="High">High</option>
+          <option value="Critical">Critical</option>
+        </select>
+      </div>
+
+      <!-- AI Option (Phase 2 preview) -->
+      <div class="import-options-row" style="margin-top: 10px;">
+        <label class="import-toggle ai-toggle">
+          <input
+            type="checkbox"
+            :checked="enableAiCategorization"
+            @change="emit('update:enableAiCategorization', ($event.target as HTMLInputElement).checked)"
+          />
+          <span>✨ Dùng AI để phân loại Kanban & Labels (Task trống sẽ được AI đọc nội dung)</span>
+        </label>
+      </div>
+    </div>
+
     <!-- Data preview -->
     <div class="import-preview-wrap">
       <p class="import-preview-title">Xem trước dữ liệu ({{ parseResult.totalRowCount }} dòng)</p>
@@ -124,3 +173,23 @@ function updateMappingField(index: number, targetField: string) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.import-settings-box {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+.import-settings-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0 0 12px 0;
+}
+.ai-toggle {
+  color: #a78bfa !important;
+  font-weight: 500;
+}
+</style>

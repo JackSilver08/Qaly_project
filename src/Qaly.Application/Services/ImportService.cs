@@ -24,6 +24,7 @@ public class ImportService : IImportService
     private readonly ICurrentUserService _currentUserService;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<ImportService> _logger;
+    private readonly IAiService _aiService;
 
     private const int MaxRows = 2000;
     private const int PreviewRowCount = 5;
@@ -83,7 +84,8 @@ public class ImportService : IImportService
         IRepository<ImportSession> sessionRepo,
         ICurrentUserService currentUserService,
         IUnitOfWork unitOfWork,
-        ILogger<ImportService> logger)
+        ILogger<ImportService> logger,
+        IAiService aiService)
     {
         _projectRepo = projectRepo;
         _taskRepo = taskRepo;
@@ -94,6 +96,7 @@ public class ImportService : IImportService
         _currentUserService = currentUserService;
         _unitOfWork = unitOfWork;
         _logger = logger;
+        _aiService = aiService;
     }
 
     public async Task<Result<ParsedFileResult>> ParseFileAsync(Stream fileStream, string fileName, CancellationToken ct = default)
@@ -271,6 +274,9 @@ public class ImportService : IImportService
         int newLabelsCreated = 0;
         var unmappedStatuses = new HashSet<string>();
         var statusDistribution = new Dictionary<string, int>();
+        var skippedRowsList = new List<SkippedRowDto>();
+        var tasksToInsert = new List<TaskItem>();
+        var taskLabelsToInsert = new List<TaskLabel>();
 
         // Lấy max SortOrder hiện tại của từng cột (status) để tối ưu hiển thị dòng
         var maxSortOrders = await _taskRepo.GetQueryable()
@@ -281,13 +287,83 @@ public class ImportService : IImportService
 
         var random = new Random();
 
-        foreach (var row in allRows)
+        // 1. Phân loại AI trước khi import (nếu được bật)
+        var aiCategorizationDict = new Dictionary<int, AiCategorizationResult>();
+        if (request.EnableAiCategorization)
         {
+            var tasksToCategorize = new List<AiCategorizationRequest>();
+            for (int i = 0; i < allRows.Count; i++)
+            {
+                var row = allRows[i];
+                int rowIndex = request.FirstRowIsHeader ? i + 2 : i + 1;
+                var title = GetCellValue(row, fieldMap, "Title")?.Trim();
+                if (string.IsNullOrWhiteSpace(title)) continue;
+
+                var rawStatus = GetCellValue(row, fieldMap, "Status");
+                var rawPriority = GetCellValue(row, fieldMap, "Priority");
+                
+                // Nếu thiếu Status hoặc Priority, thử đoán bằng Heuristic trước
+                if (string.IsNullOrWhiteSpace(rawStatus) || string.IsNullOrWhiteSpace(rawPriority))
+                {
+                    var heuristic = HeuristicGuess(title);
+                    
+                    bool stillNeedStatus = string.IsNullOrWhiteSpace(rawStatus) && string.IsNullOrWhiteSpace(heuristic.Status);
+                    bool stillNeedPriority = string.IsNullOrWhiteSpace(rawPriority) && string.IsNullOrWhiteSpace(heuristic.Priority) && string.IsNullOrWhiteSpace(request.DefaultPriority);
+                    
+                    if (stillNeedStatus || stillNeedPriority)
+                    {
+                        var desc = GetCellValue(row, fieldMap, "Description");
+                        tasksToCategorize.Add(new AiCategorizationRequest(rowIndex, title, desc));
+                    }
+                    else
+                    {
+                        // Đã đoán được bằng Rule-based Heuristic, không cần gọi LLM
+                        aiCategorizationDict[rowIndex] = new AiCategorizationResult(
+                            rowIndex, 
+                            heuristic.Status ?? string.Empty, 
+                            heuristic.Priority ?? string.Empty, 
+                            heuristic.Labels.ToArray()
+                        );
+                    }
+                }
+            }
+
+            if (tasksToCategorize.Any())
+            {
+                // Limit maximum tasks to send to AI per import to prevent long waiting times and spam
+                const int maxAiTasks = 100;
+                var aiTasksToProcess = tasksToCategorize.Take(maxAiTasks).ToList();
+                
+                // Chunk into smaller batches so Ollama context window doesn't overflow
+                const int batchSize = 20;
+                for (int j = 0; j < aiTasksToProcess.Count; j += batchSize)
+                {
+                    var chunk = aiTasksToProcess.Skip(j).Take(batchSize).ToList();
+                    var chunkResults = await _aiService.CategorizeTasksBatchAsync(chunk);
+                    foreach (var res in chunkResults)
+                    {
+                        aiCategorizationDict[res.RowIndex] = res;
+                    }
+
+                    // Wait 2 seconds between chunks to let Ollama cool down
+                    if (j + batchSize < aiTasksToProcess.Count)
+                    {
+                        await Task.Delay(2000, ct);
+                    }
+                }
+            }
+        }
+
+        for (int i = 0; i < allRows.Count; i++)
+        {
+            var row = allRows[i];
+            int rowIndex = request.FirstRowIsHeader ? i + 2 : i + 1;
             // Get title
             var title = GetCellValue(row, fieldMap, "Title")?.Trim();
             if (string.IsNullOrWhiteSpace(title))
             {
                 skippedCount++;
+                skippedRowsList.Add(new SkippedRowDto(rowIndex, "Thiếu tiêu đề (Title)"));
                 continue;
             }
 
@@ -295,6 +371,7 @@ public class ImportService : IImportService
             if (request.SkipDuplicates && existingTitles!.Contains(title.ToLower().Trim()))
             {
                 skippedCount++;
+                skippedRowsList.Add(new SkippedRowDto(rowIndex, "Trùng lặp tiêu đề"));
                 continue;
             }
 
@@ -311,7 +388,25 @@ public class ImportService : IImportService
             var status = NormalizeStatus(rawStatus, unmappedStatuses);
 
             // Normalize priority
-            var priority = NormalizePriority(rawPriority);
+            var priority = string.IsNullOrWhiteSpace(rawPriority) && !string.IsNullOrWhiteSpace(request.DefaultPriority)
+                ? request.DefaultPriority
+                : NormalizePriority(rawPriority);
+
+            // Apply AI classification if applicable
+            var aiLabels = new List<string>();
+            if (aiCategorizationDict.TryGetValue(rowIndex, out var aiResult))
+            {
+                if (string.IsNullOrWhiteSpace(rawStatus) && !string.IsNullOrWhiteSpace(aiResult.Status))
+                    status = NormalizeStatus(aiResult.Status, unmappedStatuses);
+                    
+                if (string.IsNullOrWhiteSpace(rawPriority) && !string.IsNullOrWhiteSpace(aiResult.Priority))
+                    priority = NormalizePriority(aiResult.Priority);
+                    
+                if (aiResult.Labels != null && aiResult.Labels.Any())
+                {
+                    aiLabels.AddRange(aiResult.Labels);
+                }
+            }
 
             // Parse due date
             DateTimeOffset? dueDate = ParseDate(rawDueDate);
@@ -327,6 +422,10 @@ public class ImportService : IImportService
             {
                 assigneeId = matchedUserId;
             }
+            else if (string.IsNullOrWhiteSpace(rawAssignee) && request.AssignToMeIfEmpty)
+            {
+                assigneeId = userId;
+            }
 
             // Tính toán SortOrder để task nằm ở cuối cột (tối ưu dòng)
             if (!maxSortOrders.TryGetValue(status, out int currentSortOrder))
@@ -339,6 +438,7 @@ public class ImportService : IImportService
             // Create task
             var task = new TaskItem
             {
+                Id = Guid.NewGuid(),
                 Title = title,
                 Description = description,
                 Status = status,
@@ -351,16 +451,24 @@ public class ImportService : IImportService
                 ImportSessionId = session.Id,
                 SortOrder = currentSortOrder
             };
-            await _taskRepo.AddAsync(task);
+            tasksToInsert.Add(task);
 
             // Handle labels
+            var labelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (!string.IsNullOrWhiteSpace(rawLabels))
             {
-                var labelNames = rawLabels.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries)
+                var csvLabels = rawLabels.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries)
                     .Select(l => l.Trim())
-                    .Where(l => !string.IsNullOrEmpty(l))
-                    .Distinct(StringComparer.OrdinalIgnoreCase);
+                    .Where(l => !string.IsNullOrEmpty(l));
+                foreach (var l in csvLabels) labelNames.Add(l);
+            }
+            foreach (var al in aiLabels)
+            {
+                if (!string.IsNullOrWhiteSpace(al)) labelNames.Add(al.Trim());
+            }
 
+            if (labelNames.Any())
+            {
                 foreach (var labelName in labelNames)
                 {
                     var existing = existingLabels.FirstOrDefault(
@@ -370,6 +478,7 @@ public class ImportService : IImportService
                     {
                         existing = new ProjectLabel
                         {
+                            Id = Guid.NewGuid(),
                             Name = labelName,
                             Color = LabelColors[random.Next(LabelColors.Length)],
                             ProjectId = projectId,
@@ -379,7 +488,7 @@ public class ImportService : IImportService
                         newLabelsCreated++;
                     }
 
-                    await _taskLabelRepo.AddAsync(new TaskLabel
+                    taskLabelsToInsert.Add(new TaskLabel
                     {
                         TaskItemId = task.Id,
                         ProjectLabelId = existing.Id,
@@ -392,8 +501,15 @@ public class ImportService : IImportService
             importedCount++;
 
             if (request.SkipDuplicates)
-                existingTitles!.Add(title.ToLower().Trim());
+                existingTitles!.Add(title.ToLowerInvariant().Trim());
         }
+
+        // Bulk insert
+        if (tasksToInsert.Any())
+            await _taskRepo.AddRangeAsync(tasksToInsert, ct);
+
+        if (taskLabelsToInsert.Any())
+            await _taskLabelRepo.AddRangeAsync(taskLabelsToInsert, ct);
 
         // Update session stats
         session.ImportedCount = importedCount;
@@ -409,7 +525,8 @@ public class ImportService : IImportService
             SkippedCount: skippedCount,
             NewLabelsCreated: newLabelsCreated,
             UnmappedStatuses: unmappedStatuses.ToList(),
-            StatusDistribution: statusDistribution
+            StatusDistribution: statusDistribution,
+            SkippedRows: skippedRowsList
         ));
     }
 
@@ -472,6 +589,53 @@ public class ImportService : IImportService
     }
 
     // ─── Private Helpers ────────────────────────────────────────────
+
+    private static (string? Status, string? Priority, List<string> Labels) HeuristicGuess(string title)
+    {
+        string? status = null;
+        string? priority = null;
+        var labels = new List<string>();
+        
+        var lowerTitle = title.ToLowerInvariant();
+
+        // 1. Guess Priority & Labels
+        if (lowerTitle.Contains("lỗi") || lowerTitle.Contains("bug") || lowerTitle.Contains("crash") || lowerTitle.Contains("fix") || lowerTitle.Contains("sửa"))
+        {
+            labels.Add("Bug");
+            priority ??= "High";
+        }
+        else if (lowerTitle.Contains("thêm") || lowerTitle.Contains("tạo") || lowerTitle.Contains("feature") || lowerTitle.Contains("chức năng"))
+        {
+            labels.Add("Feature");
+            priority ??= "Medium";
+        }
+
+        if (lowerTitle.Contains("gấp") || lowerTitle.Contains("urgent") || lowerTitle.Contains("asap") || lowerTitle.Contains("ngay"))
+        {
+            priority = "Critical";
+        }
+        else if (lowerTitle.Contains("hotfix"))
+        {
+            priority = "Critical";
+            labels.Add("Hotfix");
+        }
+
+        // 2. Guess Status
+        if (lowerTitle.Contains("hoàn thành") || lowerTitle.Contains("xong") || lowerTitle.Contains("[done]"))
+        {
+            status = "Done";
+        }
+        else if (lowerTitle.Contains("đang làm") || lowerTitle.Contains("đang xử lý") || lowerTitle.Contains("[wip]"))
+        {
+            status = "InProgress";
+        }
+        else if (lowerTitle.Contains("kiểm tra") || lowerTitle.Contains("review") || lowerTitle.Contains("test"))
+        {
+            status = "InReview";
+        }
+
+        return (status, priority, labels);
+    }
 
     private static (List<string> Headers, List<List<string>> Rows) ParseCsv(Stream stream, string delimiter)
     {
