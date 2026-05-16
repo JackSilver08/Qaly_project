@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
@@ -16,7 +17,7 @@ public class AiIngestionService : IAiIngestionService
     private readonly IVectorStorageService _vectorStorage;
 
     private const string CollectionName = "qaly_context";
-    private const int VectorSize = 768;
+    private readonly int _vectorSize;
 
     public AiIngestionService(
         IRepository<Project> projectRepo,
@@ -24,7 +25,8 @@ public class AiIngestionService : IAiIngestionService
         IRepository<TaskComment> commentRepo,
         IRepository<TaskAttachment> attachmentRepo,
         IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
-        IVectorStorageService vectorStorage)
+        IVectorStorageService vectorStorage,
+        IConfiguration configuration)
     {
         _projectRepo = projectRepo;
         _taskRepo = taskRepo;
@@ -32,6 +34,7 @@ public class AiIngestionService : IAiIngestionService
         _attachmentRepo = attachmentRepo;
         _embeddingGenerator = embeddingGenerator;
         _vectorStorage = vectorStorage;
+        _vectorSize = configuration.GetValue<int>("Ai:VectorSize", 768);
     }
 
     public async Task SyncProjectAsync(Guid projectId)
@@ -159,7 +162,7 @@ public class AiIngestionService : IAiIngestionService
 
     public async Task SyncAllDataAsync()
     {
-        await _vectorStorage.EnsureCollectionExistsAsync(CollectionName, (ulong)VectorSize);
+        await _vectorStorage.EnsureCollectionExistsAsync(CollectionName, (ulong)_vectorSize);
 
         var projects = await _projectRepo.GetAllAsync();
         foreach (var p in projects) await SyncProjectAsync(p.Id);

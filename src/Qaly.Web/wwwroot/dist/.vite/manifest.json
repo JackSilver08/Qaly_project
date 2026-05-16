@@ -1,4 +1,20 @@
 {
+  "_ImportUndoBanner.css": {
+    "file": "assets/ImportUndoBanner.css",
+    "src": "_ImportUndoBanner.css"
+  },
+  "_ImportUndoBanner.js": {
+    "file": "assets/ImportUndoBanner.js",
+    "name": "ImportUndoBanner",
+    "imports": [
+      "_vendor-vue.js",
+      "_vendor-ui.js",
+      "src/Qaly.Web/ClientApp/main.ts"
+    ],
+    "css": [
+      "assets/ImportUndoBanner.css"
+    ]
+  },
   "_ProjectList.vue_vue_type_script_setup_true_lang.js": {
     "file": "assets/ProjectList.vue_vue_type_script_setup_true_lang.js",
     "name": "ProjectList.vue_vue_type_script_setup_true_lang",
@@ -108,6 +124,7 @@
       "_vendor-vue.js",
       "src/Qaly.Web/ClientApp/main.ts",
       "_vendor-ui.js",
+      "_ImportUndoBanner.js",
       "_vendor-markdown.js",
       "_vendor-realtime.js"
     ],
@@ -124,10 +141,14 @@
       "_vendor-vue.js",
       "_ProjectList.vue_vue_type_script_setup_true_lang.js",
       "_ProjectToolbar.vue_vue_type_script_setup_true_lang.js",
+      "_ImportUndoBanner.js",
       "src/Qaly.Web/ClientApp/main.ts",
       "_vendor-ui.js",
       "_vendor-markdown.js",
       "_vendor-realtime.js"
+    ],
+    "css": [
+      "assets/ProjectsPage.css"
     ]
   },
   "src/Qaly.Web/ClientApp/pages/TasksPage.vue": {

@@ -17,6 +17,7 @@ interface ChatMessage {
 
 const isOpen = ref(false)
 const isThinking = ref(false)
+
 const draft = ref('')
 const messages = ref<ChatMessage[]>([
   {
@@ -162,7 +163,9 @@ const quickPrompts = [
           <div class="erumi-identity">
             <ChatbotAvatar size="small" />
             <div>
-              <h3>Erumi Agent</h3>
+              <div class="flex items-center gap-2">
+                <h3>Erumi Agent</h3>
+              </div>
               <div class="status-indicator">
                 <span class="pulse"></span>
                 Trực tuyến
@@ -317,6 +320,8 @@ const quickPrompts = [
   gap: 4px;
   font-weight: 600;
 }
+
+
 
 .pulse {
   width: 6px;

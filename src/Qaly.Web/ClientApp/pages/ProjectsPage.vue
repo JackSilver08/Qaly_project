@@ -1,6 +1,10 @@
 <script setup lang="ts">
+import { ref } from 'vue'
+import { FileSpreadsheet } from 'lucide-vue-next'
 import ProjectList from '../components/ProjectList.vue'
 import ProjectToolbar from '../components/ProjectToolbar.vue'
+import ImportModal from '../components/import/ImportModal.vue'
+import ImportUndoBanner from '../components/import/ImportUndoBanner.vue'
 import { useDashboardContext } from '../composables/dashboard-context'
 
 const {
@@ -22,7 +26,35 @@ const {
   searchQuery,
   selectProject,
   selectedProject,
+  loadDashboard,
 } = useDashboardContext()
+
+const showImportModal = ref(false)
+const undoBannerData = ref<{ importSessionId: string; importedCount: number; createdAt: string } | null>(null)
+
+function onImported(result: any) {
+  showImportModal.value = false
+  if (result) {
+    undoBannerData.value = {
+      importSessionId: result.importSessionId,
+      importedCount: result.importedCount,
+      createdAt: new Date().toISOString(),
+    }
+  }
+  loadDashboard()
+}
+
+async function handleUndoFromBanner() {
+  if (!undoBannerData.value) return
+  try {
+    const res = await fetch(`/api/import/sessions/${undoBannerData.value.importSessionId}`, { method: 'DELETE' })
+    const data = await res.json()
+    if (data.isSuccess) {
+      undoBannerData.value = null
+      loadDashboard()
+    }
+  } catch { /* ignore */ }
+}
 </script>
 
 <template>
@@ -43,7 +75,13 @@ const {
           v-model:filter="projectFilter"
           :project-count="activeProjectCards.length"
           @create="openCreateProject"
-        />
+        >
+          <template #actions>
+            <button class="btn-import" @click="showImportModal = true">
+              <FileSpreadsheet :size="15" /> Import CSV
+            </button>
+          </template>
+        </ProjectToolbar>
 
         <form v-if="createProjectOpen" class="project-inline-form project-inline-form--stacked" @submit.prevent="createProject">
           <input v-model="projectName" type="text" placeholder="Tên dự án" />
@@ -73,5 +111,31 @@ const {
         />
       </section>
     </div>
+
+    <ImportModal
+      v-if="showImportModal"
+      @close="showImportModal = false"
+      @imported="onImported"
+    />
+
+    <ImportUndoBanner
+      v-if="undoBannerData"
+      :import-session-id="undoBannerData.importSessionId"
+      :imported-count="undoBannerData.importedCount"
+      :created-at="undoBannerData.createdAt"
+      @undo="handleUndoFromBanner"
+      @dismiss="undoBannerData = null"
+    />
   </div>
 </template>
+
+<style scoped>
+.btn-import {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: 8px; font-size: .8rem; font-weight: 500;
+  background: rgba(99,102,241,.12); color: #818cf8;
+  border: 1px solid rgba(99,102,241,.2); cursor: pointer;
+  transition: all .2s;
+}
+.btn-import:hover { background: rgba(99,102,241,.2); }
+</style>

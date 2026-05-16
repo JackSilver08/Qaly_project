@@ -24,11 +24,13 @@ public class TaskItem : BaseEntity
     public Guid ProjectId { get; set; }
     public Guid? AssigneeId { get; set; }
     public Guid ReporterId { get; set; }
+    public Guid? ImportSessionId { get; set; }
 
     // Navigation properties
     public Project Project { get; set; } = null!;
     public User? Assignee { get; set; }
     public User Reporter { get; set; } = null!;
+    public ImportSession? ImportSession { get; set; }
     public ICollection<TaskComment> Comments { get; set; } = new List<TaskComment>();
     public ICollection<TaskAttachment> Attachments { get; set; } = new List<TaskAttachment>();
     public ICollection<TaskAssignment> Assignees { get; set; } = new List<TaskAssignment>();

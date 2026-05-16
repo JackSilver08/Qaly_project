@@ -29,6 +29,7 @@ public class QalyDbContext : DbContext
     public DbSet<WebhookSubscription> WebhookSubscriptions => Set<WebhookSubscription>();
     public DbSet<WebhookDeliveryLog> WebhookDeliveryLogs => Set<WebhookDeliveryLog>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
+    public DbSet<ImportSession> ImportSessions => Set<ImportSession>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

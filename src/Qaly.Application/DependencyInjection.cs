@@ -13,6 +13,8 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
+
+
         // Services
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IUserService, UserService>();
@@ -28,9 +30,8 @@ public static class DependencyInjection
         services.AddScoped<IWebhookService, WebhookService>();
         services.AddScoped<IAnalyticsService, AnalyticsService>();
         services.AddScoped<IApiKeyService, ApiKeyService>();
-        services.AddSingleton<INotificationPublisher, NullNotificationPublisher>();
+        services.AddScoped<IImportService, ImportService>();
 
         return services;
     }
 }
-

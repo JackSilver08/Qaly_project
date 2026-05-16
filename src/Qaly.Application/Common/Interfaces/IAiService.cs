@@ -27,14 +27,17 @@ public interface IAiService
     Task<IReadOnlyList<string>> GenerateSubtasksAsync(string taskTitle, string taskDescription);
 
     /// <summary>Chat assistant - hỏi đáp về dự án (Streaming version)</summary>
-    Task<string> ChatAsync(string userMessage, Guid? projectId = null);
+    Task<string> ChatAsync(string userMessage, Guid? projectId = null, string mode = "erumi");
 
     /// <summary>Chat assistant - hỏi đáp về dự án với phản hồi trực tiếp (Streaming)</summary>
-    IAsyncEnumerable<string> ChatStreamingAsync(string userMessage, Guid? projectId = null);
+    IAsyncEnumerable<string> ChatStreamingAsync(string userMessage, Guid? projectId = null, string mode = "erumi");
 
     /// <summary>Lấy thông tin project kèm tasks để phục vụ export</summary>
     Task<Project?> GetProjectWithTasksAsync(Guid projectId);
 
     /// <summary>Tạo nhận xét AI dựa trên dữ liệu phân tích (Analytics)</summary>
     Task<string> GenerateAnalyticsInsightsAsync(Guid projectId, string analyticsData);
+
+    /// <summary>Tự động phân loại hàng loạt task (Status, Priority, Labels) dựa trên Title và Description</summary>
+    Task<List<Qaly.Application.DTOs.Import.AiCategorizationResult>> CategorizeTasksBatchAsync(List<Qaly.Application.DTOs.Import.AiCategorizationRequest> tasks);
 }

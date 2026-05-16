@@ -113,6 +113,8 @@ services:
       - qaly-network
     restart: unless-stopped
 
+
+
   # ----------------------------------------
   # Qaly Web App (Build từ source)
   # ----------------------------------------
@@ -132,6 +134,7 @@ services:
       - Email__SmtpPort=1025
       - Ai__OllamaUrl=http://qaly-ollama:11434
       - Ai__QdrantUrl=http://qaly-qdrant:6333
+
     ports:
       - "5000:5000"
     volumes:
@@ -149,6 +152,7 @@ services:
         condition: service_started
       qaly-ollama:
         condition: service_started
+
     restart: unless-stopped
     profiles:
       - full

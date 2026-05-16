@@ -348,5 +348,26 @@ public class AiTools
 
         return $"Thông tin công việc: {taskResult.Data!.Title}. Danh sách thành viên và khối lượng công việc:\n{membersContext}\n\nHãy tự phân tích và đưa ra đề xuất người phù hợp nhất cho người dùng.";
     }
+
+    public List<AITool> GetAvailableTools()
+    {
+        return new List<AITool>
+        {
+            AIFunctionFactory.Create(GetProjectSummary),
+            AIFunctionFactory.Create(GetOverdueTasks),
+            AIFunctionFactory.Create(CreateTask),
+            AIFunctionFactory.Create(UpdateTaskStatus),
+            AIFunctionFactory.Create(AssignTask),
+            AIFunctionFactory.Create(SuggestTaskAssignment),
+            AIFunctionFactory.Create(SetTaskPriority),
+            AIFunctionFactory.Create(AddDueDate),
+            AIFunctionFactory.Create(AddComment),
+            AIFunctionFactory.Create(GetMemberWorkload),
+            AIFunctionFactory.Create(SearchKnowledge),
+            AIFunctionFactory.Create(StartTimeTracking),
+            AIFunctionFactory.Create(StopTimeTracking),
+            AIFunctionFactory.Create(GetMyTimeLogs)
+        };
+    }
 }
 
