@@ -46,7 +46,7 @@ public class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
         builder.HasOne(t => t.ImportSession)
             .WithMany(s => s.ImportedTasks)
             .HasForeignKey(t => t.ImportSessionId)
-            .OnDelete(DeleteBehavior.SetNull)
+            .OnDelete(DeleteBehavior.NoAction)
             .IsRequired(false);
 
         builder.HasIndex(t => t.ImportSessionId);

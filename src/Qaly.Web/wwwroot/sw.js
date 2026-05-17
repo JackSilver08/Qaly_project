@@ -1,5 +1,5 @@
 // Qaly Service Worker — PWA offline support
-const CACHE_NAME = 'qaly-cache-v2';
+const CACHE_NAME = 'qaly-cache-v3';
 const STATIC_ASSETS = [
     '/css/site.css',
     '/js/site.js',
@@ -65,6 +65,11 @@ self.addEventListener('fetch', (event) => {
                     return caches.match(request).then((cached) => cached || Response.error());
                 })
         );
+        return;
+    }
+
+    if (url.pathname.startsWith('/dist/')) {
+        event.respondWith(fetch(request));
         return;
     }
 

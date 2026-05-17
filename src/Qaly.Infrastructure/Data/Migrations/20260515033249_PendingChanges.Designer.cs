@@ -12,8 +12,8 @@ using Qaly.Infrastructure.Data;
 namespace Qaly.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(QalyDbContext))]
-    [Migration("20260515021421_FixPendingChanges")]
-    partial class FixPendingChanges
+    [Migration("20260515033249_PendingChanges")]
+    partial class PendingChanges
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

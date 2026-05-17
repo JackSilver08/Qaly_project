@@ -504,8 +504,7 @@ function tasksByStatus(status: string) {
 }
 
 function nextStatuses(status: string) {
-  const map: Record<string, string[]> = { Todo: ['InProgress', 'OnHold'], InProgress: ['OnHold', 'InReview', 'Done'], OnHold: ['InProgress'], InReview: ['InProgress', 'Done'], Done: ['InReview'] }
-  return map[status] || ['Todo']
+  return statusColumns.filter((item) => item !== status)
 }
 
 function toDashboardNotification(n: NotificationDto): DashboardNotification {

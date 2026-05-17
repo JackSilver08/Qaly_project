@@ -38,12 +38,24 @@ public partial class DataSeeder
             }
         }
 
+        var seededAnyData = false;
+
         if (!await _context.Users.AnyAsync())
         {
             await SeedUsersAsync();
+            seededAnyData = true;
+        }
+
+        if (!await _context.Projects.AnyAsync())
+        {
             await SeedProjectsAsync();
             await SeedKnowledgeBaseAsync(); // ThÃªm dá»¯ liá»‡u tri thá»©c má»Ÿ rá»™ng
             await _context.SaveChangesAsync();
+            seededAnyData = true;
+        }
+
+        if (seededAnyData)
+        {
             LogSeedDataCreated(_logger);
         }
         else
@@ -76,6 +88,66 @@ public partial class DataSeeder
                 ALTER TABLE [TaskItems] ADD [ImportSessionId] uniqueidentifier NULL;
             END;
 
+            IF COL_LENGTH(N'[Projects]', N'Code') IS NULL
+            BEGIN
+                ALTER TABLE [Projects] ADD [Code] nvarchar(80) NOT NULL CONSTRAINT [DF_Projects_Code] DEFAULT N'';
+            END;
+
+            IF COL_LENGTH(N'[Projects]', N'LogoUrl') IS NULL
+            BEGIN
+                ALTER TABLE [Projects] ADD [LogoUrl] nvarchar(1000) NULL;
+            END;
+
+            IF COL_LENGTH(N'[TaskItems]', N'IsPinned') IS NULL
+            BEGIN
+                ALTER TABLE [TaskItems] ADD [IsPinned] bit NOT NULL CONSTRAINT [DF_TaskItems_IsPinned] DEFAULT 0;
+            END;
+
+            IF COL_LENGTH(N'[TaskItems]', N'ContributesToProgress') IS NULL
+            BEGIN
+                ALTER TABLE [TaskItems] ADD [ContributesToProgress] bit NOT NULL CONSTRAINT [DF_TaskItems_ContributesToProgress] DEFAULT 1;
+            END;
+
+            IF COL_LENGTH(N'[TaskItems]', N'UpvoteCount') IS NULL
+            BEGIN
+                ALTER TABLE [TaskItems] ADD [UpvoteCount] int NOT NULL CONSTRAINT [DF_TaskItems_UpvoteCount] DEFAULT 0;
+            END;
+
+            IF COL_LENGTH(N'[TaskItems]', N'DownvoteCount') IS NULL
+            BEGIN
+                ALTER TABLE [TaskItems] ADD [DownvoteCount] int NOT NULL CONSTRAINT [DF_TaskItems_DownvoteCount] DEFAULT 0;
+            END;
+
+            IF COL_LENGTH(N'[TaskComments]', N'ParentCommentId') IS NULL
+            BEGIN
+                ALTER TABLE [TaskComments] ADD [ParentCommentId] uniqueidentifier NULL;
+            END;
+
+            IF COL_LENGTH(N'[TaskComments]', N'UpvoteCount') IS NULL
+            BEGIN
+                ALTER TABLE [TaskComments] ADD [UpvoteCount] int NOT NULL CONSTRAINT [DF_TaskComments_UpvoteCount] DEFAULT 0;
+            END;
+
+            IF COL_LENGTH(N'[TaskComments]', N'DownvoteCount') IS NULL
+            BEGIN
+                ALTER TABLE [TaskComments] ADD [DownvoteCount] int NOT NULL CONSTRAINT [DF_TaskComments_DownvoteCount] DEFAULT 0;
+            END;
+
+            IF COL_LENGTH(N'[TaskAttachments]', N'ProjectId') IS NULL
+            BEGIN
+                ALTER TABLE [TaskAttachments] ADD [ProjectId] uniqueidentifier NULL;
+            END;
+
+            IF COL_LENGTH(N'[TaskAttachments]', N'CommentId') IS NULL
+            BEGIN
+                ALTER TABLE [TaskAttachments] ADD [CommentId] uniqueidentifier NULL;
+            END;
+
+            IF COL_LENGTH(N'[TaskAttachments]', N'Scope') IS NULL
+            BEGIN
+                ALTER TABLE [TaskAttachments] ADD [Scope] nvarchar(20) NOT NULL CONSTRAINT [DF_TaskAttachments_Scope] DEFAULT N'Task';
+            END;
+
             IF NOT EXISTS (
                 SELECT 1
                 FROM sys.foreign_keys
@@ -106,7 +178,7 @@ public partial class DataSeeder
             BEGIN
                 ALTER TABLE [TaskItems]
                     ADD CONSTRAINT [FK_TaskItems_ImportSessions_ImportSessionId]
-                    FOREIGN KEY ([ImportSessionId]) REFERENCES [ImportSessions]([Id]) ON DELETE SET NULL;
+                    FOREIGN KEY ([ImportSessionId]) REFERENCES [ImportSessions]([Id]) ON DELETE NO ACTION;
             END;
 
             IF NOT EXISTS (
@@ -137,6 +209,16 @@ public partial class DataSeeder
             )
             BEGIN
                 CREATE INDEX [IX_TaskItems_ImportSessionId] ON [TaskItems]([ImportSessionId]);
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.indexes
+                WHERE name = N'IX_Projects_Code'
+                  AND object_id = OBJECT_ID(N'[Projects]')
+            )
+            BEGIN
+                CREATE UNIQUE INDEX [IX_Projects_Code] ON [Projects]([Code]);
             END;
             """;
 

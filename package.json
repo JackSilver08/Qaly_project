@@ -23,7 +23,7 @@
     "@types/dompurify": "^3.0.5",
     "@types/markdown-it": "^14.1.2",
     "dompurify": "^3.4.2",
-    "esbuild": "^0.28.0",
+    "esbuild": "0.25.12",
     "lucide-vue-next": "^1.0.0",
     "markdown-it": "^14.1.1",
     "sortablejs": "^1.15.7",

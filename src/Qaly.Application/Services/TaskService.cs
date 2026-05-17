@@ -314,11 +314,6 @@ public class TaskService : ITaskService
         }
 
         var normalizedStatus = TaskStatusRules.NormalizeStatus(newStatus);
-        if (!TaskStatusRules.CanTransition(task.Status, normalizedStatus))
-        {
-            return Result.Failure($"Cannot move task from {task.Status} to {normalizedStatus}.", 409);
-        }
-
         var oldStatus = task.Status;
         task.Status = normalizedStatus;
 
@@ -429,7 +424,6 @@ public class TaskService : ITaskService
         foreach (var task in tasks)
         {
             if (!await _taskAccessPolicy.CanManageTaskAsync(task, ct)) continue;
-            if (!TaskStatusRules.CanTransition(task.Status, normalizedStatus)) continue;
 
             var oldStatus = task.Status;
             task.Status = normalizedStatus;

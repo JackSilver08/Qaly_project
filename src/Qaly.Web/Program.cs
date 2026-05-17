@@ -8,6 +8,7 @@ using Serilog;
 using Scalar.AspNetCore;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using HealthChecks.UI.Client;
 
 // Load environment variables from .env file
@@ -34,6 +35,9 @@ builder.Host.UseSerilog();
 // =============================================
 // Service Registration
 // =============================================
+
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, ".keys")));
 
 // Redis & Session
 var redisConn = builder.Configuration.GetValue<string>("Redis:ConnectionString") ?? "localhost:6379";

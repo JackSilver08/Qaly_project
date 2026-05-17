@@ -131,13 +131,15 @@ async function submitManualEntry() {
   }
 }
 
-const onDragEnd = async (evt: { item: HTMLElement; to: HTMLElement; from: HTMLElement }, status: string) => {
+const onDragEnd = async (evt: { item: HTMLElement; to: HTMLElement; from: HTMLElement }) => {
   const taskId = evt.item.getAttribute('data-id')
-  const task = (tasksByStatus(status) as DashboardTask[]).find((t: DashboardTask) => t.id === taskId)
-  if (task && evt.to !== evt.from) {
-    const newStatus = evt.to.getAttribute('data-status')
-    await moveTask(task, newStatus || '')
-  }
+  const newStatus = evt.to.getAttribute('data-status')
+  if (!taskId || !newStatus || evt.to === evt.from || !statusColumns.includes(newStatus)) return
+
+  const task = selectedProject.value?.tasks.find((t: DashboardTask) => t.id === taskId)
+  if (!task || task.status === newStatus) return
+
+  await moveTask(task, newStatus)
 }
 
 // Keyboard Shortcuts
@@ -249,14 +251,15 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
               </div>
 
               <VueDraggable
-                v-model="selectedProject.tasks"
+                :model-value="tasksByStatus(status)"
                 :animation="200"
+                draggable=".kanban-card"
                 group="tasks"
                 ghost-class="ghost-card"
                 drag-class="dragging-card"
                 class="kanban-column__list"
                 :data-status="status"
-                @end="onDragEnd($event, status)"
+                @end="onDragEnd"
               >
                 <article
                   v-for="task in tasksByStatus(status)"
