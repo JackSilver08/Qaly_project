@@ -447,7 +447,9 @@ async function createWikiPage(title: string, content: string = '') {
   try {
     await apiResult<any>(`/api/projects/${selectedProject.value.id}/wiki`, { method: 'POST', body: JSON.stringify({ title, content }) })
     await loadWikiPages(selectedProject.value.id); showSuccess('Thành công')
+    return true
   } catch (e) { showError(errorMessage(e, 'Lỗi')) }
+  return false
 }
 
 async function updateWikiPage(id: string, title: string, content: string) {
@@ -455,7 +457,9 @@ async function updateWikiPage(id: string, title: string, content: string) {
   try {
     await apiCommand(`/api/projects/${selectedProject.value.id}/wiki/${id}`, { method: 'PUT', body: JSON.stringify({ title, content }) })
     await loadWikiPages(selectedProject.value.id); showSuccess('Thành công')
+    return true
   } catch (e) { showError(errorMessage(e, 'Lỗi')) }
+  return false
 }
 
 async function deleteWikiPage(id: string) {

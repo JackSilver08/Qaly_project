@@ -10,6 +10,7 @@ using Qaly.Web.Auth;
 namespace Qaly.Web.Pages.Account;
 
 [AllowAnonymous]
+[IgnoreAntiforgeryToken]
 public class LoginModel : PageModel
 {
     private readonly IAuthService _authService;
@@ -36,19 +37,27 @@ public class LoginModel : PageModel
 
     public async Task<IActionResult> OnPostAsync(CancellationToken ct)
     {
-        var result = await _authService.LoginAsync(new LoginDto(Email, Password), ct);
-        if (!result.IsSuccess || result.Data == null)
+        try
         {
-            ErrorMessage = result.Error ?? "Không thể đăng nhập.";
+            var result = await _authService.LoginAsync(new LoginDto(Email, Password), ct);
+            if (!result.IsSuccess || result.Data == null)
+            {
+                ErrorMessage = result.Error ?? "Không thể đăng nhập.";
+                return Page();
+            }
+
+            await HttpContext.SignInAsync(
+                CookieAuthenticationDefaults.AuthenticationScheme,
+                AuthClaimsFactory.CreatePrincipal(result.Data));
+
+            TempData["ToastSuccess"] = "Đăng nhập thành công";
+            return LocalRedirect(SafeReturnUrl(ReturnUrl));
+        }
+        catch
+        {
+            ErrorMessage = "Không thể đăng nhập lúc này. Vui lòng thử lại.";
             return Page();
         }
-
-        await HttpContext.SignInAsync(
-            CookieAuthenticationDefaults.AuthenticationScheme,
-            AuthClaimsFactory.CreatePrincipal(result.Data));
-
-        TempData["ToastSuccess"] = "Đăng nhập thành công";
-        return LocalRedirect(SafeReturnUrl(ReturnUrl));
     }
 
     private string SafeReturnUrl(string? returnUrl)

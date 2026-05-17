@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { Webhook, Trash2, Plus, Activity, ShieldCheck } from 'lucide-vue-next'
+import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
+import { showError, showSuccess } from '../composables/use-toast'
 
 const props = defineProps<{
   projectId: string
@@ -25,37 +27,57 @@ const availableEvents = [
 ]
 
 async function fetchWebhooks() {
-  const res = await fetch(`/api/projects/${props.projectId}/webhooks`)
-  if (res.ok) {
-    const data = await res.json()
-    webhooks.value = data.data
+  try {
+    webhooks.value = await apiResult<any[]>(`/api/projects/${props.projectId}/webhooks`)
+  } catch (e) {
+    showError(errorMessage(e, 'Không thể tải danh sách webhook.'))
+    webhooks.value = []
   }
 }
 
 async function createWebhook() {
+  if (isLoading.value) return
   isLoading.value = true
-  const res = await fetch(`/api/projects/${props.projectId}/webhooks`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(newWebhook.value)
-  })
-  if (res.ok) {
+
+  try {
+    await apiResult(`/api/projects/${props.projectId}/webhooks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newWebhook.value)
+    })
+
     showCreateForm.value = false
     newWebhook.value = { payloadUrl: '', secret: '', events: ['task.created', 'task.updated'] }
     await fetchWebhooks()
+    showSuccess('Đã tạo webhook thành công.')
+  } catch (e) {
+    showError(errorMessage(e, 'Không thể tạo webhook.'))
+  } finally {
+    isLoading.value = false
   }
-  isLoading.value = false
 }
 
 async function deleteWebhook(id: string) {
   if (!confirm('Xóa webhook này?')) return
-  const res = await fetch(`/api/projects/${props.projectId}/webhooks/${id}`, { method: 'DELETE' })
-  if (res.ok) await fetchWebhooks()
+
+  try {
+    await apiCommand(`/api/projects/${props.projectId}/webhooks/${id}`, { method: 'DELETE' })
+
+    await fetchWebhooks()
+    showSuccess('Đã xóa webhook.')
+  } catch (e) {
+    showError(errorMessage(e, 'Không thể xóa webhook.'))
+  }
 }
 
 async function testWebhook(id: string) {
-  const res = await fetch(`/api/projects/${props.projectId}/webhooks/${id}/test`, { method: 'POST' })
-  if (res.ok) alert('Đã gửi test payload thành công!')
+  try {
+    await apiCommand(`/api/projects/${props.projectId}/webhooks/${id}/test`, { method: 'POST' })
+
+    showSuccess('Đã gửi test payload thành công!')
+  } catch (e) {
+    showError(errorMessage(e, 'Không thể gửi webhook test.'))
+  }
 }
 
 onMounted(fetchWebhooks)
@@ -68,13 +90,13 @@ onMounted(fetchWebhooks)
         <Webhook :size="20" class="icon-primary" />
         <h3>Webhooks</h3>
       </div>
-      <button class="primary-button primary-button--compact" @click="showCreateForm = !showCreateForm">
+      <button class="primary-button primary-button--compact" type="button" @click="showCreateForm = !showCreateForm">
         <Plus :size="16" /> Add Webhook
       </button>
     </div>
 
     <transition name="expand">
-      <form v-if="showCreateForm" @submit.prevent="createWebhook" class="webhook-form glass-card">
+      <form v-if="showCreateForm" class="webhook-form glass-card" @submit.prevent="createWebhook">
         <div class="form-group">
           <label>Payload URL</label>
           <input v-model="newWebhook.payloadUrl" type="url" placeholder="https://your-app.com/webhook" required />
@@ -94,7 +116,9 @@ onMounted(fetchWebhooks)
         </div>
         <div class="form-actions">
           <button type="button" class="ghost-button" @click="showCreateForm = false">Cancel</button>
-          <button type="submit" class="primary-button" :disabled="isLoading">Create Webhook</button>
+          <button type="submit" class="primary-button" :disabled="isLoading">
+            {{ isLoading ? 'Đang tạo...' : 'Create Webhook' }}
+          </button>
         </div>
       </form>
     </transition>
@@ -111,10 +135,10 @@ onMounted(fetchWebhooks)
           </div>
         </div>
         <div class="hook-actions">
-          <button @click="testWebhook(hook.id)" class="icon-button" title="Test Connection">
+          <button type="button" @click="testWebhook(hook.id)" class="icon-button" title="Test Connection">
             <Activity :size="16" />
           </button>
-          <button @click="deleteWebhook(hook.id)" class="revoke-button" title="Delete">
+          <button type="button" @click="deleteWebhook(hook.id)" class="revoke-button" title="Delete">
             <Trash2 :size="16" />
           </button>
         </div>

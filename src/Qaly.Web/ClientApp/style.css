@@ -3532,12 +3532,13 @@ p {
 .task-list-item {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 240px) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px) auto;
   align-items: center;
-  gap: 18px;
+  column-gap: 24px;
+  row-gap: 12px;
   padding: 16px 18px;
   border: 1px solid rgba(221, 229, 239, 0.9);
-  border-radius: 8px;
+  border-radius: 14px;
   background: rgba(255, 255, 255, 0.76);
   cursor: pointer;
   transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
@@ -3555,6 +3556,10 @@ p {
   min-width: 0;
   display: grid;
   gap: 5px;
+}
+
+.task-list-item__main {
+  align-self: center;
 }
 
 .task-list-item__title,
@@ -3591,6 +3596,10 @@ p {
 
 .task-list-item__reporter {
   gap: 10px;
+  justify-self: end;
+  align-self: center;
+  justify-content: flex-start;
+  padding-inline-end: 4px;
 }
 
 .task-list-item__reporter > span {
@@ -3625,6 +3634,8 @@ p {
   background: rgba(248, 250, 252, 0.92);
   font-weight: 800;
   white-space: nowrap;
+  justify-self: end;
+  align-self: center;
 }
 
 .team-chat-page {
@@ -3790,7 +3801,14 @@ p {
 
 .team-message.is-mine .team-message__bubble {
   color: white;
-  background: var(--primary);
+  background: linear-gradient(135deg, var(--primary) 0%, var(--blue-600) 100%);
+}
+
+.team-message.is-mine .team-message__bubble strong,
+.team-message.is-mine .team-message__bubble p,
+.team-message.is-mine .team-message__bubble span,
+.team-message.is-mine .team-message__bubble button {
+  color: inherit;
 }
 
 .team-message__meta {
@@ -3810,6 +3828,11 @@ p {
   opacity: 0.72;
 }
 
+.team-message.is-mine .team-message__meta span,
+.team-message.is-mine .team-message__meta button {
+  opacity: 1;
+}
+
 .team-message__attachments,
 .team-message__poll {
   flex-wrap: wrap;
@@ -3824,6 +3847,13 @@ p {
   color: var(--text);
   background: rgba(255, 255, 255, 0.76);
   font-weight: 700;
+}
+
+.team-message.is-mine .team-message__attachments span,
+.team-message.is-mine .team-message__poll button {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .team-message__poll {
@@ -3899,11 +3929,13 @@ p {
 @media (max-width: 640px) {
   .task-list-item {
     align-items: stretch;
+    grid-template-columns: 1fr;
   }
 
   .task-list-item__reporter,
   .task-list-item__status {
     justify-content: flex-start;
+    justify-self: start;
   }
 
   .team-poll-composer {

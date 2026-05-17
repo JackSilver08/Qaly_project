@@ -10,6 +10,7 @@ using Qaly.Web.Auth;
 namespace Qaly.Web.Pages.Account;
 
 [AllowAnonymous]
+[IgnoreAntiforgeryToken]
 public class RegisterModel : PageModel
 {
     private readonly IAuthService _authService;
@@ -39,18 +40,26 @@ public class RegisterModel : PageModel
 
     public async Task<IActionResult> OnPostAsync(CancellationToken ct)
     {
-        var result = await _authService.RegisterAsync(new RegisterDto(FullName, Email, Password, ConfirmPassword), ct);
-        if (!result.IsSuccess || result.Data == null)
+        try
         {
-            ErrorMessage = result.Error ?? "Không thể tạo tài khoản.";
+            var result = await _authService.RegisterAsync(new RegisterDto(FullName, Email, Password, ConfirmPassword), ct);
+            if (!result.IsSuccess || result.Data == null)
+            {
+                ErrorMessage = result.Error ?? "Không thể tạo tài khoản.";
+                return Page();
+            }
+
+            await HttpContext.SignInAsync(
+                CookieAuthenticationDefaults.AuthenticationScheme,
+                AuthClaimsFactory.CreatePrincipal(result.Data));
+
+            TempData["ToastSuccess"] = "Tạo tài khoản thành công";
+            return LocalRedirect("/");
+        }
+        catch
+        {
+            ErrorMessage = "Không thể tạo tài khoản lúc này. Vui lòng thử lại.";
             return Page();
         }
-
-        await HttpContext.SignInAsync(
-            CookieAuthenticationDefaults.AuthenticationScheme,
-            AuthClaimsFactory.CreatePrincipal(result.Data));
-
-        TempData["ToastSuccess"] = "Tạo tài khoản thành công";
-        return LocalRedirect("/");
     }
 }
