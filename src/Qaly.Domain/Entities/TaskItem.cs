@@ -37,4 +37,5 @@ public class TaskItem : BaseEntity
     public ICollection<TaskLabel> Labels { get; set; } = new List<TaskLabel>();
     public ICollection<TaskDependency> PredecessorDependencies { get; set; } = new List<TaskDependency>();
     public ICollection<TaskDependency> SuccessorDependencies { get; set; } = new List<TaskDependency>();
+    public ICollection<TaskViewEvent> ViewEvents { get; set; } = new List<TaskViewEvent>();
 }

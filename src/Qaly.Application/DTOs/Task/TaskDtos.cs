@@ -66,3 +66,26 @@ public record TaskLabelDto(
     Guid Id,
     string Name,
     string Color);
+
+public record TaskAttentionDto(
+    Guid Id,
+    string Title,
+    Guid ProjectId,
+    string ProjectName,
+    string Status,
+    string Priority,
+    DateTimeOffset? StartDate,
+    DateTimeOffset? DueDate,
+    Guid ReporterId,
+    string ReporterName,
+    Guid? AssigneeId,
+    string? AssigneeName,
+    DateTimeOffset? AssignedAt,
+    DateTimeOffset? LastViewedAt,
+    bool IsDueSoon,
+    bool IsOverdue,
+    bool IsStaleTodo,
+    bool IsStaleInProgress,
+    bool IsUnseenByAssignee,
+    IReadOnlyList<string> Reasons,
+    IReadOnlyList<string> AllowedActions);

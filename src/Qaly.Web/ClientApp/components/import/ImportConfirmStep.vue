@@ -10,6 +10,7 @@ const props = defineProps<{
   newProjectName: string
   projectName?: string
   isLoading: boolean
+  defaultAssigneeId: string | null
   assignToMeIfEmpty: boolean
   defaultPriority: string | null
   enableAiCategorization: boolean
@@ -62,6 +63,7 @@ const previewSummary = computed(() => {
   const allRows = totalRowCount // We only have preview rows but know the total
 
   const statusIdx = fieldMap.value['Status']
+  const priorityIdx = fieldMap.value['Priority']
   const titleIdx = fieldMap.value['Title']
   const labelsIdx = fieldMap.value['Labels']
 
@@ -70,6 +72,7 @@ const previewSummary = computed(() => {
   const unmappedStatuses = new Set<string>()
   const labelsSet = new Set<string>()
   let emptyTitleCount = 0
+  let aiPreviewCount = 0
 
   // Use all available preview rows for analysis
   for (const row of rows) {
@@ -77,6 +80,11 @@ const previewSummary = computed(() => {
     if (titleIdx !== undefined) {
       const title = row[titleIdx]?.trim()
       if (!title) emptyTitleCount++
+      if (title && props.enableAiCategorization) {
+        const rawStatus = statusIdx !== undefined ? row[statusIdx]?.trim() : ''
+        const rawPriority = priorityIdx !== undefined ? row[priorityIdx]?.trim() : ''
+        if (!rawStatus || !rawPriority) aiPreviewCount++
+      }
     }
 
     // Analyze status
@@ -96,6 +104,10 @@ const previewSummary = computed(() => {
     }
   }
 
+  const estimatedAiCategorization = rows.length > 0
+    ? Math.round((aiPreviewCount / rows.length) * totalRowCount)
+    : 0
+
   return {
     totalRows: totalRowCount,
     estimatedImport: totalRowCount - emptyTitleCount,
@@ -103,6 +115,7 @@ const previewSummary = computed(() => {
     statusDistribution: statusDist,
     unmappedStatuses: [...unmappedStatuses],
     newLabelsEstimate: labelsSet.size,
+    estimatedAiCategorization,
     previewRowCount: rows.length,
     targetProjectName: props.isNewProject ? props.newProjectName : props.projectName,
   }
@@ -179,6 +192,10 @@ const statusLabels: Record<string, string> = {
 
     <!-- Options reminder -->
     <div class="confirm-options">
+      <span v-if="defaultAssigneeId" class="option-badge">Có người phụ trách mặc định</span>
+      <span v-if="enableAiCategorization" class="option-badge option-badge--ai">
+        AI sẽ phân loại khoảng {{ previewSummary.estimatedAiCategorization }} task
+      </span>
       <span v-if="skipDuplicates" class="option-badge option-badge--active">✓ Bỏ qua task trùng tên</span>
       <span v-else class="option-badge">Append tất cả (không check trùng)</span>
 

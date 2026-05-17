@@ -43,6 +43,10 @@ export interface DashboardProjectMember {
   fullName: string
   role: string
   email: string
+  canViewProjectTimeline: boolean
+  canViewTaskRisk: boolean
+  canNudgeAssignee: boolean
+  canViewUnseenTaskSignal: boolean
 }
 
 export interface DashboardTask {
@@ -247,6 +251,30 @@ export interface TaskLabelDto {
   id: string
   name: string
   color: string
+}
+
+export interface TaskAttentionDto {
+  id: string
+  title: string
+  projectId: string
+  projectName: string
+  status: string
+  priority: string
+  startDate: string | null
+  dueDate: string | null
+  reporterId: string
+  reporterName: string
+  assigneeId: string | null
+  assigneeName: string | null
+  assignedAt: string | null
+  lastViewedAt: string | null
+  isDueSoon: boolean
+  isOverdue: boolean
+  isStaleTodo: boolean
+  isStaleInProgress: boolean
+  isUnseenByAssignee: boolean
+  reasons: string[]
+  allowedActions: string[]
 }
 
 export interface SearchResultDto {

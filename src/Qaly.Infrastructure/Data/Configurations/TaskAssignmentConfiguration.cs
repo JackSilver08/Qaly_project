@@ -11,6 +11,7 @@ public class TaskAssignmentConfiguration : IEntityTypeConfiguration<TaskAssignme
         builder.HasKey(assignment => assignment.Id);
         builder.Property(assignment => assignment.Id).HasDefaultValueSql("NEWID()");
         builder.Property(assignment => assignment.CreatedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
+        builder.Property(assignment => assignment.AssignedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
 
         builder.HasOne(assignment => assignment.TaskItem)
             .WithMany(task => task.Assignees)
@@ -22,7 +23,13 @@ public class TaskAssignmentConfiguration : IEntityTypeConfiguration<TaskAssignme
             .HasForeignKey(assignment => assignment.UserId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(assignment => assignment.AssignedByUser)
+            .WithMany()
+            .HasForeignKey(assignment => assignment.AssignedByUserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
         builder.HasIndex(assignment => new { assignment.TaskItemId, assignment.UserId }).IsUnique();
         builder.HasIndex(assignment => assignment.UserId);
+        builder.HasIndex(assignment => assignment.AssignedAt);
     }
 }

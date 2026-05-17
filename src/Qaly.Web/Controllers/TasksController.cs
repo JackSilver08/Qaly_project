@@ -124,17 +124,63 @@ public class TasksController : ControllerBase
         var result = await _taskService.GetGanttDataAsync(projectId, ct);
         return StatusCode(result.StatusCode, result);
     }
-
     [HttpGet("{id}/time-entries")]
     public async Task<IActionResult> GetTimeEntries(Guid id, [FromServices] ITimeTrackingService timeTrackingService)
     {
         var result = await timeTrackingService.GetByTaskAsync(id);
         return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result.Error);
     }
+
+    [HttpGet("/api/projects/{projectId:guid}/task-attention")]
+    public async Task<IActionResult> GetProjectTaskAttention(
+        Guid projectId,
+        [FromQuery] Guid? assigneeId = null,
+        [FromQuery] Guid? reporterId = null,
+        [FromQuery] string? status = null,
+        [FromQuery] string? priority = null,
+        [FromQuery] string? riskType = null,
+        [FromQuery] DateTimeOffset? from = null,
+        [FromQuery] DateTimeOffset? to = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 25,
+        [FromQuery] string sort = "risk",
+        CancellationToken ct = default)
+    {
+        var result = await _taskService.GetAttentionByProjectAsync(
+            projectId,
+            assigneeId,
+            reporterId,
+            status,
+            priority,
+            riskType,
+            from,
+            to,
+            page,
+            pageSize,
+            sort,
+            ct);
+
+        return StatusCode(result.StatusCode, result);
     }
+
+    [HttpPost("/api/projects/{projectId:guid}/tasks/{taskId:guid}/viewed")]
+    public async Task<IActionResult> MarkViewed(Guid projectId, Guid taskId, CancellationToken ct)
+    {
+        var result = await _taskService.MarkViewedAsync(projectId, taskId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("/api/projects/{projectId:guid}/tasks/{taskId:guid}/nudge")]
+    public async Task<IActionResult> NudgeAssignee(Guid projectId, Guid taskId, [FromBody] NudgeTaskAssigneeRequest? request, CancellationToken ct)
+    {
+        var result = await _taskService.NudgeAssigneeAsync(projectId, taskId, request?.AssigneeId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+}
 public sealed record UpdateTaskStatusRequest(string Status);
 public sealed record UpdateTaskSortOrderRequest(int SortOrder);
 public sealed record UpdateTaskDatesRequest(DateTimeOffset? StartDate, DateTimeOffset? EndDate);
 public sealed record AddTaskDependencyRequest(Guid PredecessorId, string? Type);
 public sealed record BatchTaskRequest(IEnumerable<Guid> Ids);
 public sealed record BatchUpdateStatusRequest(IEnumerable<Guid> Ids, string Status);
+public sealed record NudgeTaskAssigneeRequest(Guid? AssigneeId);

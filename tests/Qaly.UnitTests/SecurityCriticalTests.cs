@@ -17,8 +17,7 @@ public class SecurityCriticalTests
     public async Task RedisTicketStore_StoreAsync_UsesUserIdInKey()
     {
         var cache = new Mock<IDistributedCache>();
-        var logger = new Mock<ILogger<RedisTicketStore>>();
-        var store = new RedisTicketStore(cache.Object, logger.Object);
+        var store = new RedisTicketStore(cache.Object, Mock.Of<ILogger<RedisTicketStore>>());
         var userId = Guid.NewGuid().ToString();
         var claims = new[] { new Claim(ClaimTypes.NameIdentifier, userId) };
         var identity = new ClaimsIdentity(claims, "Test");
@@ -46,7 +45,14 @@ public class SecurityCriticalTests
         redis.Setup(r => r.GetEndPoints(false)).Returns(new System.Net.EndPoint[] { new System.Net.DnsEndPoint("localhost", 6379) });
         redis.Setup(r => r.GetServer(It.IsAny<System.Net.EndPoint>(), null)).Returns(server.Object);
         redis.Setup(r => r.GetDatabase(-1, null)).Returns(db.Object);
-        server.Setup(s => s.Keys(It.IsAny<int>(), pattern, It.IsAny<int>(), It.IsAny<long>(), It.IsAny<int>(), CommandFlags.None)).Returns(keys);
+        server.Setup(s => s.Keys(
+            It.IsAny<int>(),
+            pattern,
+            It.IsAny<int>(),
+            It.IsAny<long>(),
+            It.IsAny<int>(),
+            It.IsAny<CommandFlags>()))
+            .Returns(keys);
 
         var service = new RedisSessionService(redis.Object, config.Object);
 

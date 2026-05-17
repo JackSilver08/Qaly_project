@@ -40,6 +40,7 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
             !task.IsPrivate ||
             task.ReporterId == currentUserId ||
             task.AssigneeId == currentUserId ||
+            task.Assignees.Any(assignment => assignment.UserId == currentUserId) ||
             task.Project.OwnerId == currentUserId);
     }
 
@@ -63,6 +64,7 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
         var currentUserId = CurrentUserId;
         return task.ReporterId == currentUserId ||
             task.AssigneeId == currentUserId ||
+            task.Assignees.Any(assignment => assignment.UserId == currentUserId) ||
             task.Project.OwnerId == currentUserId;
     }
 
@@ -77,6 +79,7 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
         if (IsAdmin ||
             task.ReporterId == currentUserId ||
             task.AssigneeId == currentUserId ||
+            task.Assignees.Any(assignment => assignment.UserId == currentUserId) ||
             task.Project.OwnerId == currentUserId)
         {
             return true;
@@ -106,4 +109,64 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
         return await _memberRepo.GetQueryable()
             .AnyAsync(member => member.ProjectId == projectId && member.UserId == currentUserId, ct);
     }
+
+    public async Task<bool> CanViewProjectTimelineAsync(Guid projectId, Guid ownerId, CancellationToken ct)
+        => await HasProjectPermissionAsync(
+            projectId,
+            ownerId,
+            member => member.CanViewProjectTimeline || IsElevatedProjectRole(member.Role),
+            ct);
+
+    public async Task<bool> CanViewTaskRiskAsync(Guid projectId, Guid ownerId, CancellationToken ct)
+        => await HasProjectPermissionAsync(
+            projectId,
+            ownerId,
+            member => member.CanViewTaskRisk || IsElevatedProjectRole(member.Role),
+            ct);
+
+    public async Task<bool> CanViewUnseenTaskSignalAsync(Guid projectId, Guid ownerId, CancellationToken ct)
+        => await HasProjectPermissionAsync(
+            projectId,
+            ownerId,
+            member => member.CanViewUnseenTaskSignal || IsElevatedProjectRole(member.Role),
+            ct);
+
+    public async Task<bool> CanNudgeAssigneeAsync(Guid projectId, Guid ownerId, CancellationToken ct)
+        => await HasProjectPermissionAsync(
+            projectId,
+            ownerId,
+            member => member.CanNudgeAssignee || IsElevatedProjectRole(member.Role),
+            ct);
+
+    private async Task<bool> HasProjectPermissionAsync(
+        Guid projectId,
+        Guid ownerId,
+        Func<ProjectMember, bool> predicate,
+        CancellationToken ct)
+    {
+        var currentUserId = CurrentUserId;
+        if (currentUserId == null)
+        {
+            return false;
+        }
+
+        if (IsAdmin || ownerId == currentUserId)
+        {
+            return true;
+        }
+
+        var member = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.ProjectId == projectId && item.UserId == currentUserId, ct);
+
+        return member != null && predicate(member);
+    }
+
+    private static bool IsElevatedProjectRole(string? role)
+        => string.Equals(role, "Owner", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(role, "ProjectOwner", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(role, "PM", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(role, "ProjectManager", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(role, "ScrumMaster", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase);
 }

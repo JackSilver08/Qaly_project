@@ -159,7 +159,11 @@ public class ProjectService : IProjectService
         {
             ProjectId = project.Id,
             UserId = currentUserId.Value,
-            Role = "Owner"
+            Role = "Owner",
+            CanViewProjectTimeline = true,
+            CanViewTaskRisk = true,
+            CanNudgeAssignee = true,
+            CanViewUnseenTaskSignal = true
         }, ct);
 
         await _unitOfWork.SaveChangesAsync(ct);
@@ -261,7 +265,11 @@ public class ProjectService : IProjectService
         {
             ProjectId = projectId,
             UserId = userId,
-            Role = memberRole
+            Role = memberRole,
+            CanViewProjectTimeline = ProjectRoleRules.CanManageProject(memberRole),
+            CanViewTaskRisk = ProjectRoleRules.CanManageProject(memberRole),
+            CanNudgeAssignee = ProjectRoleRules.CanManageProject(memberRole),
+            CanViewUnseenTaskSignal = ProjectRoleRules.CanManageProject(memberRole)
         }, ct);
 
         await _unitOfWork.SaveChangesAsync(ct);
@@ -300,6 +308,51 @@ public class ProjectService : IProjectService
         await _memberRepo.DeleteAsync(member, ct);
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("RemoveMember", nameof(Project), projectId.ToString(), new { userId }, ct);
+
+        return Result.Success();
+    }
+
+    public async Task<Result> UpdateMemberPermissionsAsync(Guid projectId, Guid userId, UpdateProjectMemberPermissionsDto dto, CancellationToken ct = default)
+    {
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null)
+        {
+            return Result.Failure("Không tìm thấy dự án.", 404);
+        }
+
+        if (!await CanManageProjectAsync(project.Id, project.OwnerId, ct))
+        {
+            return Result.Failure("Bạn không có quyền cấu hình quyền thành viên trong dự án này.", 403);
+        }
+
+        var member = await _memberRepo.GetQueryable()
+            .FirstOrDefaultAsync(item => item.ProjectId == projectId && item.UserId == userId, ct);
+
+        if (member == null)
+        {
+            return Result.Failure("Không tìm thấy thành viên trong dự án.", 404);
+        }
+
+        if (project.OwnerId == userId)
+        {
+            return Result.Failure("Không thể thu hồi quyền timeline của người tạo dự án.", 400);
+        }
+
+        member.CanViewProjectTimeline = dto.CanViewProjectTimeline;
+        member.CanViewTaskRisk = dto.CanViewTaskRisk;
+        member.CanNudgeAssignee = dto.CanNudgeAssignee;
+        member.CanViewUnseenTaskSignal = dto.CanViewUnseenTaskSignal;
+
+        await _memberRepo.UpdateAsync(member, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync("UpdateMemberPermissions", nameof(Project), projectId.ToString(), new
+        {
+            userId,
+            dto.CanViewProjectTimeline,
+            dto.CanViewTaskRisk,
+            dto.CanNudgeAssignee,
+            dto.CanViewUnseenTaskSignal
+        }, ct);
 
         return Result.Success();
     }

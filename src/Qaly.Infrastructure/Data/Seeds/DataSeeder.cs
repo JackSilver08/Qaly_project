@@ -20,6 +20,7 @@ public partial class DataSeeder
     {
         await _context.Database.MigrateAsync();
         await EnsureImportSchemaCompatibilityAsync();
+        await EnsureTimelineSchemaCompatibilityAsync();
         LogDatabaseMigrated(_logger);
 
         var admin = await _context.Users.FirstOrDefaultAsync(u => u.Email == "admin@qaly.dev");
@@ -281,6 +282,122 @@ public partial class DataSeeder
             )
             BEGIN
                 CREATE UNIQUE INDEX [IX_Projects_Code] ON [Projects]([Code]);
+            END;
+            """;
+
+        return _context.Database.ExecuteSqlRawAsync(sql);
+    }
+
+    private Task EnsureTimelineSchemaCompatibilityAsync()
+    {
+        const string sql = """
+            IF COL_LENGTH(N'[ProjectMembers]', N'CanViewProjectTimeline') IS NULL
+            BEGIN
+                ALTER TABLE [ProjectMembers] ADD [CanViewProjectTimeline] bit NOT NULL CONSTRAINT [DF_ProjectMembers_CanViewProjectTimeline] DEFAULT 0;
+            END;
+
+            IF COL_LENGTH(N'[ProjectMembers]', N'CanViewTaskRisk') IS NULL
+            BEGIN
+                ALTER TABLE [ProjectMembers] ADD [CanViewTaskRisk] bit NOT NULL CONSTRAINT [DF_ProjectMembers_CanViewTaskRisk] DEFAULT 0;
+            END;
+
+            IF COL_LENGTH(N'[ProjectMembers]', N'CanNudgeAssignee') IS NULL
+            BEGIN
+                ALTER TABLE [ProjectMembers] ADD [CanNudgeAssignee] bit NOT NULL CONSTRAINT [DF_ProjectMembers_CanNudgeAssignee] DEFAULT 0;
+            END;
+
+            IF COL_LENGTH(N'[ProjectMembers]', N'CanViewUnseenTaskSignal') IS NULL
+            BEGIN
+                ALTER TABLE [ProjectMembers] ADD [CanViewUnseenTaskSignal] bit NOT NULL CONSTRAINT [DF_ProjectMembers_CanViewUnseenTaskSignal] DEFAULT 0;
+            END;
+
+            IF COL_LENGTH(N'[TaskAssignments]', N'AssignedAt') IS NULL
+            BEGIN
+                ALTER TABLE [TaskAssignments] ADD [AssignedAt] datetimeoffset NOT NULL CONSTRAINT [DF_TaskAssignments_AssignedAt] DEFAULT SYSDATETIMEOFFSET();
+            END;
+
+            IF COL_LENGTH(N'[TaskAssignments]', N'AssignedByUserId') IS NULL
+            BEGIN
+                ALTER TABLE [TaskAssignments] ADD [AssignedByUserId] uniqueidentifier NULL;
+            END;
+
+            IF OBJECT_ID(N'[TaskViewEvents]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [TaskViewEvents] (
+                    [Id] uniqueidentifier NOT NULL CONSTRAINT [PK_TaskViewEvents] PRIMARY KEY DEFAULT NEWID(),
+                    [TaskItemId] uniqueidentifier NOT NULL,
+                    [UserId] uniqueidentifier NOT NULL,
+                    [ViewedAt] datetimeoffset NOT NULL CONSTRAINT [DF_TaskViewEvents_ViewedAt] DEFAULT SYSDATETIMEOFFSET(),
+                    [ViewCount] int NOT NULL CONSTRAINT [DF_TaskViewEvents_ViewCount] DEFAULT 1,
+                    [CreatedAt] datetimeoffset NOT NULL CONSTRAINT [DF_TaskViewEvents_CreatedAt] DEFAULT SYSDATETIMEOFFSET(),
+                    [UpdatedAt] datetimeoffset NULL
+                );
+            END;
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_TaskViewEvents_TaskItemId_UserId' AND object_id = OBJECT_ID(N'[TaskViewEvents]'))
+            BEGIN
+                CREATE UNIQUE INDEX [IX_TaskViewEvents_TaskItemId_UserId] ON [TaskViewEvents]([TaskItemId], [UserId]);
+            END;
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_TaskViewEvents_ViewedAt' AND object_id = OBJECT_ID(N'[TaskViewEvents]'))
+            BEGIN
+                CREATE INDEX [IX_TaskViewEvents_ViewedAt] ON [TaskViewEvents]([ViewedAt]);
+            END;
+
+            IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'FK_TaskViewEvents_TaskItems_TaskItemId')
+            BEGIN
+                ALTER TABLE [TaskViewEvents]
+                    ADD CONSTRAINT [FK_TaskViewEvents_TaskItems_TaskItemId]
+                    FOREIGN KEY ([TaskItemId]) REFERENCES [TaskItems]([Id]) ON DELETE CASCADE;
+            END;
+
+            IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'FK_TaskViewEvents_Users_UserId')
+            BEGIN
+                ALTER TABLE [TaskViewEvents]
+                    ADD CONSTRAINT [FK_TaskViewEvents_Users_UserId]
+                    FOREIGN KEY ([UserId]) REFERENCES [Users]([Id]) ON DELETE CASCADE;
+            END;
+
+            IF OBJECT_ID(N'[TaskAttentionSignals]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [TaskAttentionSignals] (
+                    [Id] uniqueidentifier NOT NULL CONSTRAINT [PK_TaskAttentionSignals] PRIMARY KEY DEFAULT NEWID(),
+                    [TaskItemId] uniqueidentifier NOT NULL,
+                    [UserId] uniqueidentifier NOT NULL,
+                    [SignalType] nvarchar(50) NOT NULL,
+                    [FirstDetectedAt] datetimeoffset NOT NULL CONSTRAINT [DF_TaskAttentionSignals_FirstDetectedAt] DEFAULT SYSDATETIMEOFFSET(),
+                    [LastSentAt] datetimeoffset NULL,
+                    [CooldownHours] int NOT NULL CONSTRAINT [DF_TaskAttentionSignals_CooldownHours] DEFAULT 24,
+                    [ResolvedAt] datetimeoffset NULL,
+                    [CreatedAt] datetimeoffset NOT NULL CONSTRAINT [DF_TaskAttentionSignals_CreatedAt] DEFAULT SYSDATETIMEOFFSET(),
+                    [UpdatedAt] datetimeoffset NULL
+                );
+            END;
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_TaskAttentionSignals_TaskItemId_UserId_SignalType' AND object_id = OBJECT_ID(N'[TaskAttentionSignals]'))
+            BEGIN
+                CREATE UNIQUE INDEX [IX_TaskAttentionSignals_TaskItemId_UserId_SignalType]
+                ON [TaskAttentionSignals]([TaskItemId], [UserId], [SignalType]);
+            END;
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_TaskAttentionSignals_UserId_ResolvedAt_LastSentAt' AND object_id = OBJECT_ID(N'[TaskAttentionSignals]'))
+            BEGIN
+                CREATE INDEX [IX_TaskAttentionSignals_UserId_ResolvedAt_LastSentAt]
+                ON [TaskAttentionSignals]([UserId], [ResolvedAt], [LastSentAt]);
+            END;
+
+            IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'FK_TaskAttentionSignals_TaskItems_TaskItemId')
+            BEGIN
+                ALTER TABLE [TaskAttentionSignals]
+                    ADD CONSTRAINT [FK_TaskAttentionSignals_TaskItems_TaskItemId]
+                    FOREIGN KEY ([TaskItemId]) REFERENCES [TaskItems]([Id]) ON DELETE CASCADE;
+            END;
+
+            IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'FK_TaskAttentionSignals_Users_UserId')
+            BEGIN
+                ALTER TABLE [TaskAttentionSignals]
+                    ADD CONSTRAINT [FK_TaskAttentionSignals_Users_UserId]
+                    FOREIGN KEY ([UserId]) REFERENCES [Users]([Id]) ON DELETE CASCADE;
             END;
             """;
 

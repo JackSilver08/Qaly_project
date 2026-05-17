@@ -100,12 +100,20 @@ public class DashboardController : ControllerBase
                         m.UserId,
                         m.User.FullName,
                         m.Role,
-                        m.User.Email))
+                        m.User.Email,
+                        m.CanViewProjectTimeline,
+                        m.CanViewTaskRisk,
+                        m.CanNudgeAssignee,
+                        m.CanViewUnseenTaskSignal))
                     .Append(new DashboardProjectMemberResponse(
                         project.OwnerId,
                         project.Owner.FullName,
                         "Owner",
-                        project.Owner.Email))
+                        project.Owner.Email,
+                        true,
+                        true,
+                        true,
+                        true))
                     .GroupBy(m => m.UserId)
                     .Select(g => g.First())
                     .OrderBy(m => m.FullName)
@@ -421,7 +429,11 @@ public sealed record DashboardProjectMemberResponse(
     Guid UserId,
     string FullName,
     string Role,
-    string Email);
+    string Email,
+    bool CanViewProjectTimeline,
+    bool CanViewTaskRisk,
+    bool CanNudgeAssignee,
+    bool CanViewUnseenTaskSignal);
 
 public sealed record DashboardTaskResponse(
     Guid Id,

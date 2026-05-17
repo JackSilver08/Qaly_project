@@ -12,6 +12,10 @@ public class ProjectMemberConfiguration : IEntityTypeConfiguration<ProjectMember
         builder.Property(pm => pm.Id).HasDefaultValueSql("NEWID()");
         builder.Property(pm => pm.Role).HasMaxLength(20).IsRequired();
         builder.Property(pm => pm.JoinedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
+        builder.Property(pm => pm.CanViewProjectTimeline).HasDefaultValue(false);
+        builder.Property(pm => pm.CanViewTaskRisk).HasDefaultValue(false);
+        builder.Property(pm => pm.CanNudgeAssignee).HasDefaultValue(false);
+        builder.Property(pm => pm.CanViewUnseenTaskSignal).HasDefaultValue(false);
 
         builder.HasOne(pm => pm.Project)
             .WithMany(p => p.Members)

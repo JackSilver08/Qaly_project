@@ -325,6 +325,26 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasDefaultValueSql("NEWID()");
 
+                    b.Property<bool>("CanNudgeAssignee")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("CanViewProjectTimeline")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("CanViewTaskRisk")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("CanViewUnseenTaskSignal")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -403,6 +423,14 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasDefaultValueSql("NEWID()");
 
+                    b.Property<DateTimeOffset>("AssignedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetimeoffset")
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET()");
+
+                    b.Property<Guid?>("AssignedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetimeoffset")
@@ -418,6 +446,10 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AssignedAt");
+
+                    b.HasIndex("AssignedByUserId");
 
                     b.HasIndex("UserId");
 
@@ -724,6 +756,49 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("TaskLabels");
+                });
+
+            modelBuilder.Entity("Qaly.Domain.Entities.TaskViewEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetimeoffset")
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET()");
+
+                    b.Property<Guid>("TaskItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ViewCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(1);
+
+                    b.Property<DateTimeOffset>("ViewedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetimeoffset")
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("ViewedAt");
+
+                    b.HasIndex("TaskItemId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("TaskViewEvents");
                 });
 
             modelBuilder.Entity("Qaly.Domain.Entities.TimeEntry", b =>
@@ -1122,6 +1197,11 @@ namespace Qaly.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("Qaly.Domain.Entities.TaskAssignment", b =>
                 {
+                    b.HasOne("Qaly.Domain.Entities.User", "AssignedByUser")
+                        .WithMany()
+                        .HasForeignKey("AssignedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("Qaly.Domain.Entities.TaskItem", "TaskItem")
                         .WithMany("Assignees")
                         .HasForeignKey("TaskItemId")
@@ -1133,6 +1213,8 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("AssignedByUser");
 
                     b.Navigation("TaskItem");
 
@@ -1226,7 +1308,7 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.HasOne("Qaly.Domain.Entities.ImportSession", "ImportSession")
                         .WithMany("ImportedTasks")
                         .HasForeignKey("ImportSessionId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("Qaly.Domain.Entities.Project", "Project")
                         .WithMany("Tasks")
@@ -1266,6 +1348,25 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Navigation("ProjectLabel");
 
                     b.Navigation("TaskItem");
+                });
+
+            modelBuilder.Entity("Qaly.Domain.Entities.TaskViewEvent", b =>
+                {
+                    b.HasOne("Qaly.Domain.Entities.TaskItem", "TaskItem")
+                        .WithMany("ViewEvents")
+                        .HasForeignKey("TaskItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Qaly.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("TaskItem");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Qaly.Domain.Entities.TimeEntry", b =>
@@ -1380,6 +1481,8 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Navigation("PredecessorDependencies");
 
                     b.Navigation("SuccessorDependencies");
+
+                    b.Navigation("ViewEvents");
                 });
 
             modelBuilder.Entity("Qaly.Domain.Entities.User", b =>

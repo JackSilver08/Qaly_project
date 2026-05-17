@@ -28,6 +28,7 @@ public record ImportRequest(
     bool FirstRowIsHeader,
     bool SkipDuplicates,
     string? SheetName,
+    Guid? DefaultAssigneeId = null,
     bool AssignToMeIfEmpty = false,
     string? DefaultPriority = null,
     bool EnableAiCategorization = false

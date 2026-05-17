@@ -47,3 +47,9 @@ public record CreateProjectLabelDto(
 public record UpdateProjectLabelDto(
     string Name,
     string Color);
+
+public record UpdateProjectMemberPermissionsDto(
+    bool CanViewProjectTimeline,
+    bool CanViewTaskRisk,
+    bool CanNudgeAssignee,
+    bool CanViewUnseenTaskSignal);

@@ -18,6 +18,7 @@ public class TaskService : ITaskService
     private readonly IRepository<ProjectMember> _memberRepo;
     private readonly IRepository<User> _userRepo;
     private readonly IRepository<TaskAssignment> _assignmentRepo;
+    private readonly IRepository<TaskViewEvent> _viewEventRepo;
     private readonly IRepository<TaskLabel> _taskLabelRepo;
     private readonly IRepository<ProjectLabel> _projectLabelRepo;
     private readonly IRepository<VectorSyncOutbox> _outboxRepo;
@@ -35,6 +36,7 @@ public class TaskService : ITaskService
         IRepository<ProjectMember> memberRepo,
         IRepository<User> userRepo,
         IRepository<TaskAssignment> assignmentRepo,
+        IRepository<TaskViewEvent> viewEventRepo,
         IRepository<TaskLabel> taskLabelRepo,
         IRepository<ProjectLabel> projectLabelRepo,
         IRepository<VectorSyncOutbox> outboxRepo,
@@ -51,6 +53,7 @@ public class TaskService : ITaskService
         _memberRepo = memberRepo;
         _userRepo = userRepo;
         _assignmentRepo = assignmentRepo;
+        _viewEventRepo = viewEventRepo;
         _taskLabelRepo = taskLabelRepo;
         _projectLabelRepo = projectLabelRepo;
         _outboxRepo = outboxRepo;
@@ -174,6 +177,124 @@ public class TaskService : ITaskService
         return Result.Success(new PagedResult<TaskItemDto>
         {
             Items = items.Select(item => item.ToDto(false)).ToList(),
+            TotalCount = totalCount,
+            PageNumber = page,
+            PageSize = pageSize
+        });
+    }
+
+    public async Task<Result<PagedResult<TaskAttentionDto>>> GetAttentionByProjectAsync(
+        Guid projectId,
+        Guid? assigneeId = null,
+        Guid? reporterId = null,
+        string? status = null,
+        string? priority = null,
+        string? riskType = null,
+        DateTimeOffset? from = null,
+        DateTimeOffset? toDate = null,
+        int page = 1,
+        int pageSize = 25,
+        string sort = "risk",
+        CancellationToken ct = default)
+    {
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null)
+        {
+            return Result.NotFound<PagedResult<TaskAttentionDto>>();
+        }
+
+        if (!await _taskAccessPolicy.CanAccessProjectAsync(projectId, project.OwnerId, ct))
+        {
+            return Result.Forbidden<PagedResult<TaskAttentionDto>>();
+        }
+
+        var currentUserId = _taskAccessPolicy.CurrentUserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<PagedResult<TaskAttentionDto>>();
+        }
+
+        var canViewProjectRisk =
+            await _taskAccessPolicy.CanViewProjectTimelineAsync(projectId, project.OwnerId, ct) &&
+            await _taskAccessPolicy.CanViewTaskRiskAsync(projectId, project.OwnerId, ct);
+        var canViewUnseenSignal =
+            await _taskAccessPolicy.CanViewProjectTimelineAsync(projectId, project.OwnerId, ct) &&
+            await _taskAccessPolicy.CanViewUnseenTaskSignalAsync(projectId, project.OwnerId, ct);
+        var canNudgeAssignee =
+            await _taskAccessPolicy.CanNudgeAssigneeAsync(projectId, project.OwnerId, ct);
+
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var now = DateTimeOffset.UtcNow;
+
+        var query = _taskAccessPolicy.ApplyVisibilityFilter(_taskRepo.GetQueryable())
+            .AsNoTracking()
+            .Where(task => task.ProjectId == projectId)
+            .Include(task => task.Project)
+            .Include(task => task.Reporter)
+            .Include(task => task.Assignee)
+            .Include(task => task.Assignees)
+                .ThenInclude(assignment => assignment.User)
+            .Include(task => task.ViewEvents)
+            .AsQueryable();
+
+        if (!canViewProjectRisk)
+        {
+            query = query.Where(task =>
+                task.ReporterId == currentUserId ||
+                task.AssigneeId == currentUserId ||
+                task.Assignees.Any(assignment => assignment.UserId == currentUserId));
+        }
+
+        if (assigneeId.HasValue)
+        {
+            query = query.Where(task => task.AssigneeId == assigneeId || task.Assignees.Any(assignment => assignment.UserId == assigneeId.Value));
+        }
+
+        if (reporterId.HasValue)
+        {
+            query = query.Where(task => task.ReporterId == reporterId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var normalizedStatus = TaskStatusRules.NormalizeStatus(status);
+            query = query.Where(task => task.Status == normalizedStatus);
+        }
+
+        if (!string.IsNullOrWhiteSpace(priority))
+        {
+            var normalizedPriority = TaskStatusRules.NormalizePriority(priority);
+            query = query.Where(task => task.Priority == normalizedPriority);
+        }
+
+        if (from.HasValue)
+        {
+            query = query.Where(task => task.DueDate >= from.Value || task.StartDate >= from.Value);
+        }
+
+        if (toDate.HasValue)
+        {
+            query = query.Where(task => task.DueDate <= toDate.Value || task.StartDate <= toDate.Value);
+        }
+
+        var tasks = await query.ToListAsync(ct);
+        var items = tasks
+            .SelectMany(task => BuildAttentionItems(task, now, currentUserId.Value, canViewProjectRisk, canViewUnseenSignal, canNudgeAssignee))
+            .Where(item => MatchesRiskType(item, riskType))
+            .ToList();
+
+        items = SortAttentionItems(items, sort);
+
+        var totalCount = items.Count;
+        var pageItems = items
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        return Result.Success(new PagedResult<TaskAttentionDto>
+        {
+            Items = pageItems,
             TotalCount = totalCount,
             PageNumber = page,
             PageSize = pageSize
@@ -490,6 +611,126 @@ public class TaskService : ITaskService
         return Result.Success();
     }
 
+    public async Task<Result> MarkViewedAsync(Guid projectId, Guid taskId, CancellationToken ct = default)
+    {
+        var currentUserId = _taskAccessPolicy.CurrentUserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden();
+        }
+
+        var task = await _taskRepo.GetQueryable()
+            .WithDetails()
+            .FirstOrDefaultAsync(item => item.Id == taskId && item.ProjectId == projectId, ct);
+
+        if (task == null)
+        {
+            return Result.NotFound();
+        }
+
+        if (!await _taskAccessPolicy.CanAccessTaskAsync(task, ct))
+        {
+            return Result.Forbidden();
+        }
+
+        var viewedAt = DateTimeOffset.UtcNow;
+        var existing = await _viewEventRepo.GetQueryable()
+            .FirstOrDefaultAsync(view => view.TaskItemId == taskId && view.UserId == currentUserId.Value, ct);
+
+        if (existing == null)
+        {
+            await _viewEventRepo.AddAsync(new TaskViewEvent
+            {
+                TaskItemId = taskId,
+                UserId = currentUserId.Value,
+                ViewedAt = viewedAt,
+                ViewCount = 1
+            }, ct);
+        }
+        else
+        {
+            existing.ViewedAt = viewedAt;
+            existing.ViewCount += 1;
+            await _viewEventRepo.UpdateAsync(existing, ct);
+        }
+
+        await _unitOfWork.SaveChangesAsync(ct);
+        return Result.Success();
+    }
+
+    public async Task<Result> NudgeAssigneeAsync(Guid projectId, Guid taskId, Guid? assigneeId = null, CancellationToken ct = default)
+    {
+        var currentUserId = _taskAccessPolicy.CurrentUserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden();
+        }
+
+        var task = await _taskRepo.GetQueryable()
+            .WithDetails()
+            .FirstOrDefaultAsync(item => item.Id == taskId && item.ProjectId == projectId, ct);
+
+        if (task == null)
+        {
+            return Result.NotFound();
+        }
+
+        if (!await _taskAccessPolicy.CanAccessTaskAsync(task, ct))
+        {
+            return Result.Forbidden();
+        }
+
+        var canNudge = await _taskAccessPolicy.CanNudgeAssigneeAsync(projectId, task.Project.OwnerId, ct) ||
+            task.ReporterId == currentUserId.Value;
+        if (!canNudge)
+        {
+            return Result.Forbidden("Bạn không có quyền nhắc người phụ trách task này.");
+        }
+
+        var assignedUserIds = task.Assignees.Select(assignment => assignment.UserId).ToHashSet();
+        if (task.AssigneeId.HasValue)
+        {
+            assignedUserIds.Add(task.AssigneeId.Value);
+        }
+
+        if (assigneeId.HasValue)
+        {
+            if (!assignedUserIds.Contains(assigneeId.Value))
+            {
+                return Result.Failure("Người dùng này không phải người phụ trách task.", 400);
+            }
+
+            assignedUserIds = [assigneeId.Value];
+        }
+
+        assignedUserIds.Remove(currentUserId.Value);
+        if (assignedUserIds.Count == 0)
+        {
+            return Result.Failure("Task không có người phụ trách phù hợp để nhắc.", 400);
+        }
+
+        var message = $"Task \"{task.Title}\" cần được kiểm tra lại trên timeline dự án.";
+        foreach (var userId in assignedUserIds)
+        {
+            await _notificationService.CreateAsync(
+                userId,
+                message,
+                "TaskAttentionNudge",
+                task.Id,
+                nameof(TaskItem),
+                ct);
+        }
+
+        await _notificationService.BroadcastToProjectAsync(
+            task.ProjectId,
+            message,
+            "TaskAttentionNudge",
+            new { task.Id, assigneeId },
+            ct);
+
+        return Result.Success();
+    }
+
     public async Task<Result> AddDependencyAsync(Guid predecessorId, Guid successorId, string type = "FinishToStart", CancellationToken ct = default)
     {
         if (predecessorId == successorId) return Result.Failure("Cannot depend on itself.");
@@ -665,7 +906,13 @@ public class TaskService : ITaskService
         var existingUserIds = existing.Select(assignment => assignment.UserId).ToHashSet();
         foreach (var userId in target.Where(userId => !existingUserIds.Contains(userId)))
         {
-            await _assignmentRepo.AddAsync(new TaskAssignment { TaskItemId = taskId, UserId = userId }, ct);
+            await _assignmentRepo.AddAsync(new TaskAssignment
+            {
+                TaskItemId = taskId,
+                UserId = userId,
+                AssignedAt = DateTimeOffset.UtcNow,
+                AssignedByUserId = _taskAccessPolicy.CurrentUserId
+            }, ct);
         }
     }
 
@@ -732,4 +979,243 @@ public class TaskService : ITaskService
         public static TaskInputValidation Failure(string error, int statusCode = 400)
             => new(false, error, statusCode, null);
     }
+
+    private static IEnumerable<TaskAttentionDto> BuildAttentionItems(
+        TaskItem task,
+        DateTimeOffset now,
+        Guid currentUserId,
+        bool canViewProjectRisk,
+        bool canViewUnseenSignal,
+        bool canNudgeAssignee)
+    {
+        var assignments = task.Assignees.Count > 0
+            ? task.Assignees.Select(assignment => new AttentionAssignee(
+                assignment.UserId,
+                assignment.User?.FullName,
+                assignment.AssignedAt == default ? task.CreatedAt : assignment.AssignedAt))
+            : new[]
+            {
+                new AttentionAssignee(task.AssigneeId, task.Assignee?.FullName, task.CreatedAt)
+            };
+
+        foreach (var assignment in assignments)
+        {
+            var userId = assignment.UserId;
+            var lastViewedAt = userId.HasValue
+                ? task.ViewEvents
+                    .Where(view => view.UserId == userId.Value)
+                    .Select(view => (DateTimeOffset?)view.ViewedAt)
+                    .OrderByDescending(viewedAt => viewedAt)
+                    .FirstOrDefault()
+                : null;
+
+            var isDueSoon = IsDueSoon(task, now);
+            var isOverdue = IsAttentionOverdue(task, now);
+            var isStaleTodo = task.StartDate.HasValue &&
+                task.StartDate.Value < now &&
+                IsAttentionStatus(task, "Todo");
+            var isStaleInProgress = IsStaleInProgress(task, now);
+            var canSeeThisUnseenSignal = canViewUnseenSignal ||
+                task.ReporterId == currentUserId ||
+                userId == currentUserId;
+            var isUnseen = canSeeThisUnseenSignal &&
+                userId.HasValue &&
+                !IsAttentionDone(task) &&
+                (!lastViewedAt.HasValue || lastViewedAt.Value < assignment.AssignedAt);
+
+            var reasons = BuildAttentionReasons(isDueSoon, isOverdue, isStaleTodo, isStaleInProgress, isUnseen);
+            if (reasons.Count == 0)
+            {
+                continue;
+            }
+
+            var canActOnTask = canViewProjectRisk ||
+                task.ReporterId == currentUserId ||
+                task.AssigneeId == currentUserId ||
+                task.Assignees.Any(item => item.UserId == currentUserId);
+
+            yield return new TaskAttentionDto(
+                task.Id,
+                task.Title,
+                task.ProjectId,
+                task.Project?.Name ?? string.Empty,
+                task.Status,
+                task.Priority,
+                task.StartDate,
+                task.DueDate,
+                task.ReporterId,
+                task.Reporter?.FullName ?? string.Empty,
+                userId,
+                assignment.FullName,
+                assignment.AssignedAt,
+                lastViewedAt,
+                isDueSoon,
+                isOverdue,
+                isStaleTodo,
+                isStaleInProgress,
+                isUnseen,
+                reasons,
+                BuildAllowedActions(task, currentUserId, userId, canActOnTask, canNudgeAssignee));
+        }
+    }
+
+    private static List<string> BuildAttentionReasons(
+        bool isDueSoon,
+        bool isOverdue,
+        bool isStaleTodo,
+        bool isStaleInProgress,
+        bool isUnseen)
+    {
+        var reasons = new List<string>();
+        if (isOverdue) reasons.Add("QuaHan");
+        if (isDueSoon) reasons.Add("SapToiHan");
+        if (isStaleTodo) reasons.Add("ChuaBatDau");
+        if (isStaleInProgress) reasons.Add("DangLamQuaLau");
+        if (isUnseen) reasons.Add("ChuaXem");
+        return reasons;
+    }
+
+    private static IReadOnlyList<string> BuildAllowedActions(
+        TaskItem task,
+        Guid currentUserId,
+        Guid? attentionAssigneeId,
+        bool canActOnTask,
+        bool canNudgeAssignee)
+    {
+        var actions = new List<string> { "MoChiTiet" };
+        if (!canActOnTask)
+        {
+            return actions;
+        }
+
+        actions.Add("BinhLuan");
+        if (!IsAttentionDone(task) &&
+            attentionAssigneeId.HasValue &&
+            attentionAssigneeId.Value != currentUserId &&
+            (canNudgeAssignee || task.ReporterId == currentUserId))
+        {
+            actions.Add("NhacNguoiPhuTrach");
+        }
+
+        if (IsAttentionStatus(task, "Todo") && (task.AssigneeId == currentUserId || task.Assignees.Any(assignment => assignment.UserId == currentUserId)))
+        {
+            actions.Add("BatDauLam");
+        }
+
+        return actions;
+    }
+
+    private static bool MatchesRiskType(TaskAttentionDto item, string? riskType)
+    {
+        if (string.IsNullOrWhiteSpace(riskType) || string.Equals(riskType, "all", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return riskType.Trim().ToLowerInvariant() switch
+        {
+            "overdue" or "quahan" => item.IsOverdue,
+            "duesoon" or "saptoihan" => item.IsDueSoon,
+            "staletodo" or "chuabatdau" => item.IsStaleTodo,
+            "staleinprogress" or "danglamqualau" => item.IsStaleInProgress,
+            "unseen" or "chuaxem" => item.IsUnseenByAssignee,
+            _ => true
+        };
+    }
+
+    private static List<TaskAttentionDto> SortAttentionItems(List<TaskAttentionDto> items, string? sort)
+        => (sort ?? "risk").Trim().ToLowerInvariant() switch
+        {
+            "duedate" => items
+                .OrderBy(item => item.DueDate ?? DateTimeOffset.MaxValue)
+                .ThenBy(item => item.StartDate ?? DateTimeOffset.MaxValue)
+                .ToList(),
+            "priority" => items
+                .OrderBy(PriorityRank)
+                .ThenBy(item => item.DueDate ?? DateTimeOffset.MaxValue)
+                .ToList(),
+            "assignee" => items
+                .OrderBy(item => item.AssigneeName ?? string.Empty)
+                .ThenByDescending(RiskRank)
+                .ThenBy(item => item.DueDate ?? DateTimeOffset.MaxValue)
+                .ToList(),
+            "status" => items
+                .OrderBy(item => item.Status)
+                .ThenByDescending(RiskRank)
+                .ThenBy(item => item.DueDate ?? DateTimeOffset.MaxValue)
+                .ToList(),
+            _ => items
+                .OrderByDescending(RiskRank)
+                .ThenBy(PriorityRank)
+                .ThenBy(item => item.DueDate ?? DateTimeOffset.MaxValue)
+                .ThenBy(item => item.StartDate ?? DateTimeOffset.MaxValue)
+                .ToList()
+        };
+
+    private static int RiskRank(TaskAttentionDto item)
+    {
+        var rank = 0;
+        if (item.IsOverdue) rank += 100;
+        if (item.IsStaleTodo) rank += 40;
+        if (item.IsUnseenByAssignee) rank += 30;
+        if (item.IsStaleInProgress) rank += 20;
+        if (item.IsDueSoon) rank += 10;
+
+        if (item.IsOverdue && item.DueDate.HasValue)
+        {
+            rank += Math.Min(30, Math.Max(0, (int)(DateTimeOffset.UtcNow - item.DueDate.Value).TotalDays));
+        }
+
+        return rank;
+    }
+
+    private static int PriorityRank(TaskAttentionDto item)
+        => item.Priority switch
+        {
+            "Critical" => 0,
+            "High" => 1,
+            "Medium" => 2,
+            "Low" => 3,
+            _ => 4
+        };
+
+    private static bool IsDueSoon(TaskItem task, DateTimeOffset now)
+        => task.DueDate.HasValue &&
+           task.DueDate.Value >= now &&
+           task.DueDate.Value <= now.AddHours(24) &&
+           !IsAttentionDone(task);
+
+    private static bool IsStaleInProgress(TaskItem task, DateTimeOffset now)
+    {
+        if (!IsAttentionStatus(task, "InProgress") || !task.StartDate.HasValue || !task.DueDate.HasValue)
+        {
+            return false;
+        }
+
+        var startDate = task.StartDate.Value;
+        var dueDate = task.DueDate.Value;
+        var total = dueDate - startDate;
+        if (total.TotalMinutes <= 0)
+        {
+            return false;
+        }
+
+        var elapsed = now - startDate;
+        return elapsed.TotalMinutes / total.TotalMinutes >= 0.7;
+    }
+
+    private static bool IsAttentionOverdue(TaskItem task, DateTimeOffset now)
+        => task.DueDate.HasValue &&
+           task.DueDate.Value < now &&
+           !IsAttentionDone(task);
+
+    private static bool IsAttentionDone(TaskItem task)
+        => IsAttentionStatus(task, "Done") ||
+           IsAttentionStatus(task, "Completed") ||
+           IsAttentionStatus(task, "Closed");
+
+    private static bool IsAttentionStatus(TaskItem task, string status)
+        => string.Equals(task.Status, status, StringComparison.OrdinalIgnoreCase);
+
+    private sealed record AttentionAssignee(Guid? UserId, string? FullName, DateTimeOffset AssignedAt);
 }
