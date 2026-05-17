@@ -18,6 +18,9 @@ insert_final_newline = true
 [*.cs]
 indent_size = 4
 
+[**/Data/Migrations/*.cs]
+dotnet_diagnostic.CA1861.severity = none
+
 # Namespace
 csharp_style_namespace_declarations = file_scoped:suggestion
 

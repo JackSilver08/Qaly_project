@@ -23,21 +23,29 @@ internal static class ProjectRoleRules
     public static bool IsProjectManager(string? projectRole)
         => string.Equals(projectRole, Owner, StringComparison.OrdinalIgnoreCase)
            || string.Equals(projectRole, Manager, StringComparison.OrdinalIgnoreCase)
-           || string.Equals(projectRole, "Admin", StringComparison.OrdinalIgnoreCase);
+           || string.Equals(projectRole, SystemAdmin, StringComparison.OrdinalIgnoreCase);
 
     public static string NormalizeProjectRole(string? role)
     {
         var normalized = string.IsNullOrWhiteSpace(role) ? Member : role.Trim();
-        return normalized switch
-        {
-            Owner => Owner,
-            Manager => Manager,
-            "Admin" => Manager,
-            Member => Member,
-            Viewer => Viewer,
-            "Project Manager" => Manager,
-            "Thành viên" => Member,
-            _ => Member
-        };
+
+        if (string.Equals(normalized, Owner, StringComparison.OrdinalIgnoreCase))
+            return Owner;
+
+        if (string.Equals(normalized, Manager, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, SystemAdmin, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "Project Manager", StringComparison.OrdinalIgnoreCase))
+            return Manager;
+
+        if (string.Equals(normalized, Viewer, StringComparison.OrdinalIgnoreCase))
+            return Viewer;
+
+        if (string.Equals(normalized, Member, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "Thanh vien", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "ThÃ nh viÃªn", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "Thành viên", StringComparison.OrdinalIgnoreCase))
+            return Member;
+
+        return Member;
     }
 }

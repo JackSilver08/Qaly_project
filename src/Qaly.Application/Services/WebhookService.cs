@@ -180,7 +180,7 @@ public class WebhookService : IWebhookService
             return Result.Forbidden();
         }
 
-        await _webhookPublisher.DispatchToWebhookAsync(webhook, "ping", new { message = "Test webhook from Qaly" }, ct);
+        await _webhookPublisher.DispatchToWebhookAsync(webhook.Id, "ping", new { message = "Test webhook from Qaly" }, ct);
         return Result.Success();
     }
 

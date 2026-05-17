@@ -4,7 +4,7 @@ using Qaly.Web.Auth;
 
 namespace Qaly.Web.Middleware;
 
-public class CustomExceptionHandler : IExceptionHandler
+public partial class CustomExceptionHandler : IExceptionHandler
 {
     private readonly ILogger<CustomExceptionHandler> _logger;
 
@@ -22,9 +22,7 @@ public class CustomExceptionHandler : IExceptionHandler
         var userId = httpContext.User.GetUserId()?.ToString() ?? "anonymous";
         var requestPath = httpContext.Request.Path;
 
-        _logger.LogError(exception,
-            "An unhandled exception occurred. UserId: {UserId}, RequestPath: {RequestPath}, CorrelationId: {CorrelationId}",
-            userId, requestPath, correlationId);
+        LogUnhandledException(_logger, exception, userId, requestPath, correlationId);
 
         var problemDetails = new ProblemDetails
         {
@@ -43,4 +41,12 @@ public class CustomExceptionHandler : IExceptionHandler
 
         return true;
     }
+
+    [LoggerMessage(EventId = 1, Level = LogLevel.Error, Message = "An unhandled exception occurred. UserId: {UserId}, RequestPath: {RequestPath}, CorrelationId: {CorrelationId}")]
+    private static partial void LogUnhandledException(
+        ILogger logger,
+        Exception exception,
+        string userId,
+        PathString requestPath,
+        string correlationId);
 }

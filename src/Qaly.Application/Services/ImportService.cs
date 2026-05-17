@@ -13,7 +13,7 @@ using Qaly.Domain.Interfaces;
 
 namespace Qaly.Application.Services;
 
-public class ImportService : IImportService
+public partial class ImportService : IImportService
 {
     private readonly IRepository<Project> _projectRepo;
     private readonly IRepository<TaskItem> _taskRepo;
@@ -141,7 +141,7 @@ public class ImportService : IImportService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error parsing file {FileName}", fileName);
+            LogParseFileFailed(_logger, ex, fileName);
             return Result.Failure<ParsedFileResult>($"Lỗi khi đọc file: {ex.Message}");
         }
     }
@@ -161,7 +161,7 @@ public class ImportService : IImportService
         if (request.ProjectId.HasValue)
         {
             // Flow 2: Merge into existing project
-            var project = await _projectRepo.GetByIdAsync(request.ProjectId.Value);
+            var project = await _projectRepo.GetByIdAsync(request.ProjectId.Value, ct);
             if (project == null)
                 return Result.Failure<ImportResult>("Không tìm thấy dự án.");
             projectId = project.Id;
@@ -180,7 +180,7 @@ public class ImportService : IImportService
                 OwnerId = userId,
                 Status = "Active",
             };
-            await _projectRepo.AddAsync(newProject);
+            await _projectRepo.AddAsync(newProject, ct);
 
             // Add owner as member
             await _memberRepo.AddAsync(new ProjectMember
@@ -188,7 +188,7 @@ public class ImportService : IImportService
                 ProjectId = newProject.Id,
                 UserId = userId,
                 Role = "Owner",
-            });
+            }, ct);
 
             projectId = newProject.Id;
         }
@@ -211,7 +211,7 @@ public class ImportService : IImportService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error parsing file during import");
+            LogImportParseFailed(_logger, ex);
             return Result.Failure<ImportResult>($"Lỗi khi đọc file: {ex.Message}");
         }
 
@@ -234,9 +234,10 @@ public class ImportService : IImportService
         {
             existingTitles = (await _taskRepo.GetQueryable()
                 .Where(t => t.ProjectId == projectId)
-                .Select(t => t.Title.ToLower().Trim())
+                .Select(t => t.Title)
                 .ToListAsync(ct))
-                .ToHashSet();
+                .Select(NormalizeTitle)
+                .ToHashSet(StringComparer.Ordinal);
         }
 
         // Create import session
@@ -247,7 +248,7 @@ public class ImportService : IImportService
             FileName = fileName,
             TotalRows = allRows.Count,
         };
-        await _sessionRepo.AddAsync(session);
+        await _sessionRepo.AddAsync(session, ct);
 
         // Load project members to map Assignee
         var projectMembers = await _memberRepo.GetQueryable()
@@ -328,7 +329,7 @@ public class ImportService : IImportService
                 }
             }
 
-            if (tasksToCategorize.Any())
+            if (tasksToCategorize.Count > 0)
             {
                 // Limit maximum tasks to send to AI per import to prevent long waiting times and spam
                 const int maxAiTasks = 100;
@@ -368,7 +369,7 @@ public class ImportService : IImportService
             }
 
             // Duplicate check
-            if (request.SkipDuplicates && existingTitles!.Contains(title.ToLower().Trim()))
+            if (request.SkipDuplicates && existingTitles!.Contains(NormalizeTitle(title)))
             {
                 skippedCount++;
                 skippedRowsList.Add(new SkippedRowDto(rowIndex, "Trùng lặp tiêu đề"));
@@ -402,7 +403,7 @@ public class ImportService : IImportService
                 if (string.IsNullOrWhiteSpace(rawPriority) && !string.IsNullOrWhiteSpace(aiResult.Priority))
                     priority = NormalizePriority(aiResult.Priority);
                     
-                if (aiResult.Labels != null && aiResult.Labels.Any())
+                if (aiResult.Labels != null && aiResult.Labels.Length > 0)
                 {
                     aiLabels.AddRange(aiResult.Labels);
                 }
@@ -467,7 +468,7 @@ public class ImportService : IImportService
                 if (!string.IsNullOrWhiteSpace(al)) labelNames.Add(al.Trim());
             }
 
-            if (labelNames.Any())
+            if (labelNames.Count > 0)
             {
                 foreach (var labelName in labelNames)
                 {
@@ -483,7 +484,7 @@ public class ImportService : IImportService
                             Color = LabelColors[random.Next(LabelColors.Length)],
                             ProjectId = projectId,
                         };
-                        await _labelRepo.AddAsync(existing);
+                        await _labelRepo.AddAsync(existing, ct);
                         existingLabels.Add(existing);
                         newLabelsCreated++;
                     }
@@ -501,14 +502,14 @@ public class ImportService : IImportService
             importedCount++;
 
             if (request.SkipDuplicates)
-                existingTitles!.Add(title.ToLowerInvariant().Trim());
+                existingTitles!.Add(NormalizeTitle(title));
         }
 
         // Bulk insert
-        if (tasksToInsert.Any())
+        if (tasksToInsert.Count > 0)
             await _taskRepo.AddRangeAsync(tasksToInsert, ct);
 
-        if (taskLabelsToInsert.Any())
+        if (taskLabelsToInsert.Count > 0)
             await _taskLabelRepo.AddRangeAsync(taskLabelsToInsert, ct);
 
         // Update session stats
@@ -532,7 +533,7 @@ public class ImportService : IImportService
 
     public async Task<Result<int>> UndoImportAsync(Guid importSessionId, CancellationToken ct = default)
     {
-        var session = await _sessionRepo.GetByIdAsync(importSessionId);
+        var session = await _sessionRepo.GetByIdAsync(importSessionId, ct);
         if (session == null)
             return Result.Failure<int>("Không tìm thấy phiên import.");
 
@@ -810,4 +811,13 @@ public class ImportService : IImportService
             return string.Join("", words.Take(3).Select(w => w[..1])).ToUpperInvariant();
         return name.Length >= 3 ? name[..3].ToUpperInvariant() : name.ToUpperInvariant();
     }
+
+    private static string NormalizeTitle(string title)
+        => title.Trim().ToLowerInvariant();
+
+    [LoggerMessage(EventId = 1, Level = LogLevel.Error, Message = "Error parsing file {FileName}")]
+    private static partial void LogParseFileFailed(ILogger logger, Exception exception, string fileName);
+
+    [LoggerMessage(EventId = 2, Level = LogLevel.Error, Message = "Error parsing file during import")]
+    private static partial void LogImportParseFailed(ILogger logger, Exception exception);
 }

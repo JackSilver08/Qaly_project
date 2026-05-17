@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Qaly.Infrastructure.Data;
 using StackExchange.Redis;
@@ -17,6 +18,7 @@ namespace Qaly.IntegrationTests;
 
 public class IntegrationTestFactory : WebApplicationFactory<Program>
 {
+    private readonly string _databaseName = $"QalyIntegrationTests-{Guid.NewGuid()}";
     public Guid TestUserId { get; } = Guid.Parse("B0000000-0000-0000-0000-000000000000");
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -38,8 +40,15 @@ public class IntegrationTestFactory : WebApplicationFactory<Program>
             var redisMock = new Mock<IConnectionMultiplexer>();
             var dbMock = new Mock<IDatabase>();
             redisMock.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>())).Returns(dbMock.Object);
-            redisMock.Setup(r => r.GetEndPoints(It.IsAny<bool>())).Returns(new System.Net.EndPoint[0]);
+            redisMock.Setup(r => r.GetEndPoints(It.IsAny<bool>())).Returns(Array.Empty<System.Net.EndPoint>());
             services.AddSingleton(redisMock.Object);
+
+            services.RemoveAll<QalyDbContext>();
+            services.RemoveAll<DbContextOptions>();
+            services.RemoveAll<DbContextOptions<QalyDbContext>>();
+            services.RemoveAll<Microsoft.EntityFrameworkCore.Storage.IDatabaseProvider>();
+            services.AddDbContext<QalyDbContext>(options =>
+                options.UseInMemoryDatabase(_databaseName));
 
             // Mock other heavy infrastructure
             services.AddSingleton(new Mock<IAiIngestionService>().Object);

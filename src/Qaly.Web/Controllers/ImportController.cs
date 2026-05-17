@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Qaly.Application.Common.Interfaces;
@@ -12,6 +13,10 @@ public class ImportController : ControllerBase
 {
     private readonly IImportService _importService;
     private const long MaxFileSize = 5 * 1024 * 1024; // 5 MB
+    private static readonly JsonSerializerOptions ImportRequestJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
 
     public ImportController(IImportService importService)
     {
@@ -53,8 +58,7 @@ public class ImportController : ControllerBase
         ImportRequest? importRequest;
         try
         {
-            importRequest = System.Text.Json.JsonSerializer.Deserialize<ImportRequest>(request,
-                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            importRequest = JsonSerializer.Deserialize<ImportRequest>(request, ImportRequestJsonOptions);
         }
         catch
         {

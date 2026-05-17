@@ -43,7 +43,7 @@ public class ProjectsControllerTests : IClassFixture<IntegrationTestFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<Qaly.Application.Common.Models.Result<ProjectDto>>();
+        var result = await response.Content.ReadFromJsonAsync<ApiResult<ProjectDto>>();
         result!.IsSuccess.Should().BeTrue();
         result.Data!.Name.Should().Be("Integration Project");
     }
@@ -69,7 +69,7 @@ public class ProjectsControllerTests : IClassFixture<IntegrationTestFactory>
         using (var scope = _factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
-            db.Projects.Add(new Project { Id = projectId, Name = "Secret Project", Code = "secret-" + Guid.NewGuid().ToString().Substring(0,8), OwnerId = otherUserId });
+            db.Projects.Add(new Project { Id = projectId, Name = "Secret Project", Code = $"secret-{Guid.NewGuid():N}", OwnerId = otherUserId });
             await db.SaveChangesAsync();
         }
 
@@ -91,7 +91,7 @@ public class ProjectsControllerTests : IClassFixture<IntegrationTestFactory>
         using (var scope = _factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
-            db.Projects.Add(new Project { Id = projectId, Name = "Old Name", Code = "old-code-" + Guid.NewGuid().ToString().Substring(0,8), OwnerId = userId });
+            db.Projects.Add(new Project { Id = projectId, Name = "Old Name", Code = $"old-code-{Guid.NewGuid():N}", OwnerId = userId });
             await db.SaveChangesAsync();
         }
 
@@ -102,9 +102,11 @@ public class ProjectsControllerTests : IClassFixture<IntegrationTestFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<Qaly.Application.Common.Models.Result<ProjectDto>>();
+        var result = await response.Content.ReadFromJsonAsync<ApiResult<ProjectDto>>();
         result!.IsSuccess.Should().BeTrue();
         result.Data!.Name.Should().Be("New Name");
     }
+
+    private sealed record ApiResult<T>(bool IsSuccess, T? Data, string? Error, int StatusCode);
 }
 #pragma warning restore CA1707

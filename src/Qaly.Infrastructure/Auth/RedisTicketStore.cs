@@ -8,7 +8,7 @@ using System.Text.Json;
 
 namespace Qaly.Infrastructure.Auth;
 
-public class RedisTicketStore : ITicketStore
+public partial class RedisTicketStore : ITicketStore
 {
     private const string KeyPrefix = "AuthTicket:";
     private static readonly ConcurrentDictionary<string, byte[]> FallbackTickets = new();
@@ -52,7 +52,7 @@ public class RedisTicketStore : ITicketStore
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Redis ticket store write failed, falling back to in-memory cache for {Key}.", key);
+            LogTicketStoreWriteFailed(_logger, ex, key);
             FallbackTickets[key] = val;
         }
     }
@@ -69,7 +69,7 @@ public class RedisTicketStore : ITicketStore
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Redis ticket store read failed for {Key}, using fallback cache.", key);
+            LogTicketStoreReadFailed(_logger, ex, key);
         }
 
         if (!FallbackTickets.TryGetValue(key, out var fallbackVal))
@@ -88,7 +88,7 @@ public class RedisTicketStore : ITicketStore
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Redis ticket store remove failed for {Key}, clearing fallback cache.", key);
+            LogTicketStoreRemoveFailed(_logger, ex, key);
         }
 
         FallbackTickets.TryRemove(key, out _);
@@ -103,4 +103,13 @@ public class RedisTicketStore : ITicketStore
     {
         return TicketSerializer.Default.Deserialize(data);
     }
+
+    [LoggerMessage(EventId = 1, Level = LogLevel.Warning, Message = "Redis ticket store write failed, falling back to in-memory cache for {Key}.")]
+    private static partial void LogTicketStoreWriteFailed(ILogger logger, Exception exception, string key);
+
+    [LoggerMessage(EventId = 2, Level = LogLevel.Warning, Message = "Redis ticket store read failed for {Key}, using fallback cache.")]
+    private static partial void LogTicketStoreReadFailed(ILogger logger, Exception exception, string key);
+
+    [LoggerMessage(EventId = 3, Level = LogLevel.Warning, Message = "Redis ticket store remove failed for {Key}, clearing fallback cache.")]
+    private static partial void LogTicketStoreRemoveFailed(ILogger logger, Exception exception, string key);
 }

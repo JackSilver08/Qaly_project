@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Domain.Entities;
@@ -12,28 +13,25 @@ namespace Qaly.Infrastructure.Services;
 public partial class WebhookPublisher : IWebhookPublisher
 {
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IRepository<WebhookSubscription> _webhookRepo;
-    private readonly IRepository<WebhookDeliveryLog> _logRepo;
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<WebhookPublisher> _logger;
 
     public WebhookPublisher(
         IHttpClientFactory httpClientFactory,
-        IRepository<WebhookSubscription> webhookRepo,
-        IRepository<WebhookDeliveryLog> logRepo,
-        IUnitOfWork unitOfWork,
+        IServiceScopeFactory scopeFactory,
         ILogger<WebhookPublisher> logger)
     {
         _httpClientFactory = httpClientFactory;
-        _webhookRepo = webhookRepo;
-        _logRepo = logRepo;
-        _unitOfWork = unitOfWork;
+        _scopeFactory = scopeFactory;
         _logger = logger;
     }
 
     public async Task PublishAsync(Guid projectId, string eventType, object payload, CancellationToken ct = default)
     {
-        var webhooks = await _webhookRepo.GetQueryable()
+        using var scope = _scopeFactory.CreateScope();
+        var webhookRepo = scope.ServiceProvider.GetRequiredService<IRepository<WebhookSubscription>>();
+
+        var webhooks = await webhookRepo.GetQueryable()
             .Where(w => w.ProjectId == projectId && w.IsActive)
             .ToListAsync(ct);
 
@@ -42,25 +40,34 @@ public partial class WebhookPublisher : IWebhookPublisher
             var events = DeserializeEvents(webhook.Events);
             if (events.Contains(eventType) || events.Contains("*"))
             {
-                _ = DispatchToWebhookSafeAsync(webhook, eventType, payload, ct);
+                // Dispatch in background with a NEW scope to avoid using the request scope
+                _ = Task.Run(async () => await DispatchToWebhookSafeAsync(webhook.Id, eventType, payload), CancellationToken.None);
             }
         }
     }
 
-    private async Task DispatchToWebhookSafeAsync(WebhookSubscription webhook, string eventType, object payload, CancellationToken ct)
+    private async Task DispatchToWebhookSafeAsync(Guid webhookId, string eventType, object payload)
     {
         try
         {
-            await DispatchToWebhookAsync(webhook, eventType, payload, ct);
+            await DispatchToWebhookAsync(webhookId, eventType, payload);
         }
         catch (Exception ex)
         {
-            LogWebhookDispatchFailed(_logger, webhook.Id, ex);
+            LogWebhookDispatchFailed(_logger, webhookId, ex);
         }
     }
 
-    public async Task DispatchToWebhookAsync(WebhookSubscription webhook, string eventType, object payload, CancellationToken ct = default)
+    public async Task DispatchToWebhookAsync(Guid webhookId, string eventType, object payload, CancellationToken ct = default)
     {
+        using var scope = _scopeFactory.CreateScope();
+        var webhookRepo = scope.ServiceProvider.GetRequiredService<IRepository<WebhookSubscription>>();
+        var logRepo = scope.ServiceProvider.GetRequiredService<IRepository<WebhookDeliveryLog>>();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+        var webhook = await webhookRepo.GetByIdAsync(webhookId, ct);
+        if (webhook == null) return;
+
         using var client = _httpClientFactory.CreateClient("WebhookClient");
         client.Timeout = TimeSpan.FromSeconds(10);
 
@@ -120,19 +127,19 @@ public partial class WebhookPublisher : IWebhookPublisher
                 {
                     webhook.IsActive = false;
                 }
-                await _webhookRepo.UpdateAsync(webhook, ct);
+                await webhookRepo.UpdateAsync(webhook, ct);
             }
             else
             {
                 if (webhook.FailureCount > 0)
                 {
                     webhook.FailureCount = 0;
-                    await _webhookRepo.UpdateAsync(webhook, ct);
+                    await webhookRepo.UpdateAsync(webhook, ct);
                 }
             }
 
-            await _logRepo.AddAsync(log, ct);
-            await _unitOfWork.SaveChangesAsync(ct);
+            await logRepo.AddAsync(log, ct);
+            await unitOfWork.SaveChangesAsync(ct);
         }
     }
 

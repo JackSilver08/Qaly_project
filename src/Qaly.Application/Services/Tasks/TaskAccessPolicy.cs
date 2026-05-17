@@ -86,7 +86,7 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
             .AnyAsync(member =>
                 member.ProjectId == task.ProjectId &&
                 member.UserId == currentUserId &&
-                (member.Role == "Admin" || member.Role == "Owner"),
+                (member.Role == "Admin" || member.Role == "Owner" || member.Role == "Manager"),
                 ct);
     }
 

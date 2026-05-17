@@ -124,8 +124,14 @@ public class TasksController : ControllerBase
         var result = await _taskService.GetGanttDataAsync(projectId, ct);
         return StatusCode(result.StatusCode, result);
     }
-    }
 
+    [HttpGet("{id}/time-entries")]
+    public async Task<IActionResult> GetTimeEntries(Guid id, [FromServices] ITimeTrackingService timeTrackingService)
+    {
+        var result = await timeTrackingService.GetByTaskAsync(id);
+        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result.Error);
+    }
+    }
 public sealed record UpdateTaskStatusRequest(string Status);
 public sealed record UpdateTaskSortOrderRequest(int SortOrder);
 public sealed record UpdateTaskDatesRequest(DateTimeOffset? StartDate, DateTimeOffset? EndDate);

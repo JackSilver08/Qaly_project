@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.DataProtection;
 using Qaly.Application;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Infrastructure;
@@ -46,7 +45,7 @@ builder.Services.AddDataProtection()
 var redisConn = builder.Configuration.GetValue<string>("Redis:ConnectionString") ?? "localhost:6379";
 if (!redisConn.Contains("abortConnect="))
 {
-    redisConn += redisConn.Contains("?") ? "&abortConnect=false" : ",abortConnect=false";
+    redisConn += redisConn.Contains('?') ? "&abortConnect=false" : ",abortConnect=false";
 }
 
 var dataProtectionKeysPath = Path.Combine(builder.Environment.ContentRootPath, "dp-keys");

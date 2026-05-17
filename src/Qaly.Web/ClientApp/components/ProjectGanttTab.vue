@@ -14,7 +14,7 @@ async function fetchGanttData() {
   const res = await fetch(`/api/tasks/project/${props.projectId}/gantt`)
   if (res.ok) {
     const data = await res.json()
-    tasks.value = data
+    tasks.value = Array.isArray(data) ? data : (data.data || [])
   }
   isLoading.value = false
 }

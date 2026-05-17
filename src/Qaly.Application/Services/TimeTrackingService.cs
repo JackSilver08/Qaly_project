@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Task;
 using Qaly.Domain.Entities;
@@ -114,6 +114,17 @@ public class TimeTrackingService : ITimeTrackingService
 
     public async Task<Result<List<TimeEntryDto>>> GetByTaskAsync(Guid taskId, CancellationToken ct = default)
     {
+        var userId = _currentUserService.UserId;
+        if (userId == null) return Result.Forbidden<List<TimeEntryDto>>();
+
+        var task = await _taskRepo.GetQueryable()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == taskId, ct);
+        if (task == null) return Result.NotFound<List<TimeEntryDto>>();
+
+        if (!await IsProjectMember(task.ProjectId, userId.Value, ct))
+            return Result.Forbidden<List<TimeEntryDto>>();
+
         var entries = await _timeRepo.GetQueryable()
             .Include(te => te.Task)
             .Include(te => te.User)
@@ -126,6 +137,12 @@ public class TimeTrackingService : ITimeTrackingService
 
     public async Task<Result<List<TimeEntryDto>>> GetByProjectAsync(Guid projectId, DateTimeOffset? from = null, DateTimeOffset? endAt = null, CancellationToken ct = default)
     {
+        var userId = _currentUserService.UserId;
+        if (userId == null) return Result.Forbidden<List<TimeEntryDto>>();
+
+        if (!await IsProjectMember(projectId, userId.Value, ct))
+            return Result.Forbidden<List<TimeEntryDto>>();
+
         var query = _timeRepo.GetQueryable()
             .Include(te => te.Task)
             .Include(te => te.User)
@@ -140,6 +157,16 @@ public class TimeTrackingService : ITimeTrackingService
 
     private async Task<bool> IsProjectMember(Guid projectId, Guid userId, CancellationToken ct)
     {
+        if (string.Equals(_currentUserService.Role, "Admin", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // Check if the user is the project owner
+        var isOwner = await _taskRepo.GetQueryable()
+            .AsNoTracking()
+            .Select(t => t.Project)
+            .AnyAsync(p => p.Id == projectId && p.OwnerId == userId, ct);
+        if (isOwner) return true;
+
         return await _memberRepo.GetQueryable()
             .AnyAsync(m => m.ProjectId == projectId && m.UserId == userId, ct);
     }

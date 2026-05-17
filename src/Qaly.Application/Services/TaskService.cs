@@ -634,7 +634,7 @@ public class TaskService : ITaskService
         return TaskInputValidation.Success(project);
     }
 
-    private static IReadOnlyList<Guid> NormalizeAssigneeIds(Guid? primaryAssigneeId, IReadOnlyList<Guid>? assigneeIds)
+    private static List<Guid> NormalizeAssigneeIds(Guid? primaryAssigneeId, IReadOnlyList<Guid>? assigneeIds)
     {
         var normalized = new List<Guid>();
         if (primaryAssigneeId.HasValue && primaryAssigneeId.Value != Guid.Empty)

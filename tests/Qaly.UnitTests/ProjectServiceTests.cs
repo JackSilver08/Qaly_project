@@ -61,6 +61,7 @@ public class ProjectServiceTests : IDisposable
     public void Dispose()
     {
         _context.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     [Fact]

@@ -110,7 +110,7 @@ public class AttachmentService : IAttachmentService
     {
         var attachment = await _attachmentRepo.GetQueryable()
             .Include(item => item.TaskItem)
-            .ThenInclude(task => task.Project)
+            .ThenInclude(task => task!.Project)
             .FirstOrDefaultAsync(item => item.Id == id, ct);
 
         if (attachment == null)

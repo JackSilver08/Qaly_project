@@ -224,7 +224,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
               </select>
               <select v-model="newTaskAssigneeId">
                 <option value="">Unassigned</option>
-                <option v-for="user in users" :key="user.id" :value="user.id">{{ user.fullName }}</option>
+                <option v-for="user in selectedProjectMembers" :key="user.id" :value="user.id">{{ user.fullName }}</option>
               </select>
               <input v-model="newTaskDueDate" type="date" />
               <label class="task-option-toggle">

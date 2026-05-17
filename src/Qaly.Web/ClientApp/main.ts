@@ -41,15 +41,6 @@ if (target) {
   createApp(App).use(router).mount(target)
 }
 
-// Register Service Worker for PWA
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(err => {
-      console.log('Service Worker registration failed: ', err)
-    })
-  })
-}
-
 function normalizeToastType(type: string | undefined): ToastType {
   return type === 'success' || type === 'error' || type === 'warning' || type === 'info' ? type : 'info'
 }

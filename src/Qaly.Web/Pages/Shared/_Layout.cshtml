@@ -30,19 +30,20 @@
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 const isDevelopment = @isDevelopment.ToString().ToLowerInvariant();
+                const isAuthPage = window.location.pathname.startsWith('/Account/');
 
-                if (isDevelopment) {
+                if (isDevelopment || isAuthPage) {
                     navigator.serviceWorker.getRegistrations()
                         .then(registrations => registrations.forEach(registration => registration.unregister()));
 
-                    if ('caches' in window) {
+                    if (isDevelopment && 'caches' in window) {
                         caches.keys().then(keys => keys.forEach(key => caches.delete(key)));
                     }
 
                     return;
                 }
 
-                navigator.serviceWorker.register('/sw.js')
+                navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
                     .then(reg => console.log('SW registered:', reg.scope))
                     .catch(err => console.warn('SW registration failed:', err));
             });

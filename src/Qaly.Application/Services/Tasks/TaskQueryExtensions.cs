@@ -11,7 +11,11 @@ public static class TaskQueryExtensions
             .Include(task => task.Assignee)
             .Include(task => task.Reporter)
             .Include(task => task.Comments)
-            .Include(task => task.Attachments);
+            .Include(task => task.Attachments)
+            .Include(task => task.Assignees)
+                .ThenInclude(a => a.User)
+            .Include(task => task.Labels)
+                .ThenInclude(l => l.ProjectLabel);
 
     public static IQueryable<TaskItem> WithProject(this IQueryable<TaskItem> query)
         => query.Include(task => task.Project);

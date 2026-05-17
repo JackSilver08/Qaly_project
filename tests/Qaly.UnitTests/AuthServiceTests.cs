@@ -89,6 +89,12 @@ public class AuthServiceTests
             return Task.FromResult(entity);
         }
 
+        public Task AddRangeAsync(IEnumerable<T> entities, CancellationToken cancellationToken = default)
+        {
+            _items.AddRange(entities);
+            return Task.CompletedTask;
+        }
+
         public Task UpdateAsync(T entity, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 

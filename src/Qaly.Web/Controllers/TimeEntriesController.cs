@@ -39,13 +39,6 @@ public class TimeEntriesController : ControllerBase
         return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result.Error);
     }
 
-    [HttpGet("tasks/{taskId:guid}/time-entries")]
-    public async Task<IActionResult> GetByTask(Guid taskId)
-    {
-        var result = await _timeTrackingService.GetByTaskAsync(taskId);
-        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result.Error);
-    }
-
     [HttpGet("projects/{projectId:guid}/time-entries")]
     public async Task<IActionResult> GetByProject(Guid projectId, [FromQuery] DateTimeOffset? from, [FromQuery] DateTimeOffset? to)
     {

@@ -11,13 +11,15 @@ namespace Qaly.Web.Pages.Account;
 
 [AllowAnonymous]
 [IgnoreAntiforgeryToken]
-public class LoginModel : PageModel
+public partial class LoginModel : PageModel
 {
     private readonly IAuthService _authService;
+    private readonly ILogger<LoginModel> _logger;
 
-    public LoginModel(IAuthService authService)
+    public LoginModel(IAuthService authService, ILogger<LoginModel> logger)
     {
         _authService = authService;
+        _logger = logger;
     }
 
     [BindProperty]
@@ -53,8 +55,9 @@ public class LoginModel : PageModel
             TempData["ToastSuccess"] = "Đăng nhập thành công";
             return LocalRedirect(SafeReturnUrl(ReturnUrl));
         }
-        catch
+        catch (Exception ex)
         {
+            LogLoginFailed(_logger, ex, Email);
             ErrorMessage = "Không thể đăng nhập lúc này. Vui lòng thử lại.";
             return Page();
         }
@@ -62,4 +65,7 @@ public class LoginModel : PageModel
 
     private string SafeReturnUrl(string? returnUrl)
         => Url.IsLocalUrl(returnUrl) ? returnUrl! : "/";
+
+    [LoggerMessage(EventId = 1, Level = LogLevel.Error, Message = "Login failed unexpectedly for {Email}.")]
+    private static partial void LogLoginFailed(ILogger logger, Exception exception, string email);
 }

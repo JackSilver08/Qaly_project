@@ -51,6 +51,11 @@ bld/
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
+qaly-*.log
+
+## Local toolchains
+.dotnet-sdk*/
+dotnet-sdk-*.zip
 
 ## Test results
 TestResults/

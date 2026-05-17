@@ -504,6 +504,7 @@ async function logout() { try { await apiCommand('/api/auth/logout', { method: '
 
 function tasksByStatus(status: string) {
   const query = taskSearchQuery.value.trim().toLowerCase()
+  if (!Array.isArray(selectedProjectTasks.value)) return []
   return selectedProjectTasks.value.filter((t) => (t.status === status) && (!query || t.title.toLowerCase().includes(query)))
 }
 

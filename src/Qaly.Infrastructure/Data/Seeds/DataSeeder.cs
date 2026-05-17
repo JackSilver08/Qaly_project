@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Qaly.Domain.Entities;
@@ -82,6 +82,67 @@ public partial class DataSeeder
                     [CreatedAt] datetimeoffset NOT NULL CONSTRAINT [DF_ImportSessions_CreatedAt] DEFAULT SYSDATETIMEOFFSET(),
                     [UpdatedAt] datetimeoffset NULL
                 );
+            END;
+
+            IF OBJECT_ID(N'[ProjectLabels]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [ProjectLabels] (
+                    [Id] uniqueidentifier NOT NULL CONSTRAINT [PK_ProjectLabels] PRIMARY KEY DEFAULT NEWID(),
+                    [Color] nvarchar(20) NOT NULL CONSTRAINT [DF_ProjectLabels_Color] DEFAULT N'#64748B',
+                    [Name] nvarchar(80) NOT NULL,
+                    [ProjectId] uniqueidentifier NOT NULL,
+                    [CreatedAt] datetimeoffset NOT NULL CONSTRAINT [DF_ProjectLabels_CreatedAt] DEFAULT SYSDATETIMEOFFSET(),
+                    [UpdatedAt] datetimeoffset NULL
+                );
+                CREATE UNIQUE INDEX [IX_ProjectLabels_ProjectId_Name] ON [ProjectLabels]([ProjectId], [Name]);
+                ALTER TABLE [ProjectLabels] ADD CONSTRAINT [FK_ProjectLabels_Projects_ProjectId] FOREIGN KEY ([ProjectId]) REFERENCES [Projects]([Id]) ON DELETE CASCADE;
+            END;
+
+            IF OBJECT_ID(N'[TaskAssignments]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [TaskAssignments] (
+                    [Id] uniqueidentifier NOT NULL CONSTRAINT [PK_TaskAssignments] PRIMARY KEY DEFAULT NEWID(),
+                    [TaskItemId] uniqueidentifier NOT NULL,
+                    [UserId] uniqueidentifier NOT NULL,
+                    [CreatedAt] datetimeoffset NOT NULL CONSTRAINT [DF_TaskAssignments_CreatedAt] DEFAULT SYSDATETIMEOFFSET(),
+                    [UpdatedAt] datetimeoffset NULL
+                );
+                CREATE INDEX [IX_TaskAssignments_UserId] ON [TaskAssignments]([UserId]);
+                CREATE UNIQUE INDEX [IX_TaskAssignments_TaskItemId_UserId] ON [TaskAssignments]([TaskItemId], [UserId]);
+                ALTER TABLE [TaskAssignments] ADD CONSTRAINT [FK_TaskAssignments_TaskItems_TaskItemId] FOREIGN KEY ([TaskItemId]) REFERENCES [TaskItems]([Id]) ON DELETE CASCADE;
+                ALTER TABLE [TaskAssignments] ADD CONSTRAINT [FK_TaskAssignments_Users_UserId] FOREIGN KEY ([UserId]) REFERENCES [Users]([Id]) ON DELETE NO ACTION;
+            END;
+
+            IF OBJECT_ID(N'[TaskLabels]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [TaskLabels] (
+                    [Id] uniqueidentifier NOT NULL CONSTRAINT [PK_TaskLabels] PRIMARY KEY DEFAULT NEWID(),
+                    [ProjectLabelId] uniqueidentifier NOT NULL,
+                    [TaskItemId] uniqueidentifier NOT NULL,
+                    [CreatedAt] datetimeoffset NOT NULL CONSTRAINT [DF_TaskLabels_CreatedAt] DEFAULT SYSDATETIMEOFFSET(),
+                    [UpdatedAt] datetimeoffset NULL
+                );
+                CREATE INDEX [IX_TaskLabels_ProjectLabelId] ON [TaskLabels]([ProjectLabelId]);
+                CREATE UNIQUE INDEX [IX_TaskLabels_TaskItemId_ProjectLabelId] ON [TaskLabels]([TaskItemId], [ProjectLabelId]);
+                ALTER TABLE [TaskLabels] ADD CONSTRAINT [FK_TaskLabels_ProjectLabels_ProjectLabelId] FOREIGN KEY ([ProjectLabelId]) REFERENCES [ProjectLabels]([Id]) ON DELETE NO ACTION;
+                ALTER TABLE [TaskLabels] ADD CONSTRAINT [FK_TaskLabels_TaskItems_TaskItemId] FOREIGN KEY ([TaskItemId]) REFERENCES [TaskItems]([Id]) ON DELETE CASCADE;
+            END;
+
+            IF OBJECT_ID(N'[Votes]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [Votes] (
+                    [Id] uniqueidentifier NOT NULL CONSTRAINT [PK_Votes] PRIMARY KEY DEFAULT NEWID(),
+                    [TargetId] uniqueidentifier NOT NULL,
+                    [TargetType] nvarchar(20) NOT NULL,
+                    [UserId] uniqueidentifier NOT NULL,
+                    [Value] int NOT NULL,
+                    [CreatedAt] datetimeoffset NOT NULL CONSTRAINT [DF_Votes_CreatedAt] DEFAULT SYSDATETIMEOFFSET(),
+                    [UpdatedAt] datetimeoffset NULL
+                );
+                CREATE INDEX [IX_Votes_UserId] ON [Votes]([UserId]);
+                CREATE INDEX [IX_Votes_TargetType_TargetId] ON [Votes]([TargetType], [TargetId]);
+                CREATE UNIQUE INDEX [IX_Votes_TargetType_TargetId_UserId] ON [Votes]([TargetType], [TargetId], [UserId]);
+                ALTER TABLE [Votes] ADD CONSTRAINT [FK_Votes_Users_UserId] FOREIGN KEY ([UserId]) REFERENCES [Users]([Id]) ON DELETE CASCADE;
             END;
 
             IF COL_LENGTH(N'[TaskItems]', N'ImportSessionId') IS NULL

@@ -26,15 +26,25 @@ public static class DependencyInjection
 
         // DbContext
         services.AddDbContext<QalyDbContext>((sp, options) =>
-            options.UseSqlServer(
-                    configuration.GetConnectionString("DefaultConnection"),
-                    sqlOptions =>
-                    {
-                        sqlOptions.MigrationsAssembly(typeof(QalyDbContext).Assembly.FullName);
-                        sqlOptions.EnableRetryOnFailure(maxRetryCount: 3);
-                    })
-                .ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning))
-                .AddInterceptors(sp.GetRequiredService<VectorSyncInterceptor>()));
+        {
+            if (configuration.GetValue<bool>("UseInMemoryDatabase"))
+            {
+                options.UseInMemoryDatabase("QalyInMemory");
+            }
+            else
+            {
+                options.UseSqlServer(
+                        configuration.GetConnectionString("DefaultConnection"),
+                        sqlOptions =>
+                        {
+                            sqlOptions.MigrationsAssembly(typeof(QalyDbContext).Assembly.FullName);
+                            sqlOptions.EnableRetryOnFailure(maxRetryCount: 3);
+                        })
+                    .ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning));
+            }
+
+            options.AddInterceptors(sp.GetRequiredService<VectorSyncInterceptor>());
+        });
 
         // Repositories
         services.AddScoped(typeof(IRepository<>), typeof(GenericRepository<>));

@@ -6,7 +6,7 @@ using Qaly.Application.Common.Interfaces;
 
 namespace Qaly.Infrastructure.Services;
 
-public class SmtpEmailService : IEmailService
+public partial class SmtpEmailService : IEmailService
 {
     private readonly IConfiguration _configuration;
     private readonly ILogger<SmtpEmailService> _logger;
@@ -47,7 +47,7 @@ public class SmtpEmailService : IEmailService
         }
         catch (SmtpException ex)
         {
-            _logger.LogWarning(ex, "Could not send email to {RecipientEmail}", recipientEmail);
+            LogEmailSendFailed(_logger, ex, recipientEmail);
         }
     }
 
@@ -56,4 +56,7 @@ public class SmtpEmailService : IEmailService
 
     public Task SendDueDateReminderAsync(string recipientEmail, string taskTitle, DateTimeOffset dueDate)
         => SendAsync(recipientEmail, $"Task due soon: {taskTitle}", $"'{taskTitle}' is due at {dueDate:yyyy-MM-dd HH:mm}.");
+
+    [LoggerMessage(EventId = 1, Level = LogLevel.Warning, Message = "Could not send email to {RecipientEmail}")]
+    private static partial void LogEmailSendFailed(ILogger logger, Exception exception, string recipientEmail);
 }

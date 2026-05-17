@@ -13,7 +13,7 @@ public class ImportSession : BaseEntity
     public int TotalRows { get; set; }
     public int ImportedCount { get; set; }
     public int SkippedCount { get; set; }
-    public bool IsUndone { get; set; } = false;
+    public bool IsUndone { get; set; }
 
     // Navigation
     public Project Project { get; set; } = null!;
