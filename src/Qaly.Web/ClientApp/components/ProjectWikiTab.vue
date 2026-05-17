@@ -11,19 +11,49 @@ const props = defineProps<{
 const {
   wikiPages,
   createWikiPage,
-  deleteWikiPage,
   updateWikiPage,
-  formatDate
+  deleteWikiPage,
+  formatDate,
 } = useDashboardContext()
 
 const showAddForm = ref(false)
 const newPageTitle = ref('')
+const editingPageId = ref<string | null>(null)
 
 async function handleCreate() {
-  if (!newPageTitle.value.trim()) return
-  await createWikiPage(newPageTitle.value.trim())
-  newPageTitle.value = ''
+  const title = newPageTitle.value.trim()
+  if (!title) return
+
+  const saved = editingPageId.value
+    ? await updateWikiPage(editingPageId.value, title, '')
+    : await createWikiPage(title)
+
+  if (saved) {
+    newPageTitle.value = ''
+    editingPageId.value = null
+    showAddForm.value = false
+  }
+}
+
+function startEdit(page: { id: string; title: string }) {
+  editingPageId.value = page.id
+  newPageTitle.value = page.title
+  showAddForm.value = true
+}
+
+function cancelEditor() {
   showAddForm.value = false
+  editingPageId.value = null
+  newPageTitle.value = ''
+}
+
+function toggleAddForm() {
+  if (showAddForm.value) {
+    cancelEditor()
+    return
+  }
+
+  showAddForm.value = true
 }
 
 async function handleDelete(id: string) {
@@ -36,22 +66,28 @@ async function handleDelete(id: string) {
   <div class="wiki-tab-content glass-card">
     <div class="panel-heading">
       <div>
-        <span>Knowledge Base</span>
+        <span class="panel-heading__eyebrow">Knowledge Base</span>
         <h2>{{ projectName }} Wiki</h2>
       </div>
-      <button v-if="isAdmin" class="primary-button primary-button--compact" type="button" @click="showAddForm = !showAddForm">
+      <button class="primary-button primary-button--compact" type="button" @click="toggleAddForm">
         <Plus :size="16" />
         <span>Tạo trang mới</span>
       </button>
     </div>
 
-    <!-- Add Wiki Form -->
     <div v-if="showAddForm" class="wiki-add-form glass-card reveal">
-      <h3>Tạo trang Wiki mới</h3>
+      <h3>{{ editingPageId ? 'Sửa trang Wiki' : 'Tạo trang Wiki mới' }}</h3>
       <div class="form-row">
-        <input v-model="newPageTitle" type="text" placeholder="Tiêu đề trang..." @keyup.enter="handleCreate" />
-        <button class="primary-button" type="button" :disabled="!newPageTitle.trim()" @click="handleCreate">Tạo</button>
-        <button class="text-button" type="button" @click="showAddForm = false">Hủy</button>
+        <input
+          v-model="newPageTitle"
+          type="text"
+          placeholder="Tiêu đề trang..."
+          @keyup.enter="handleCreate"
+        />
+        <button class="primary-button" type="button" :disabled="!newPageTitle.trim()" @click="handleCreate">
+          {{ editingPageId ? 'Cập nhật' : 'Tạo' }}
+        </button>
+        <button class="text-button" type="button" @click="cancelEditor">Hủy</button>
       </div>
     </div>
 
@@ -70,7 +106,7 @@ async function handleDelete(id: string) {
           <span>Cập nhật bởi {{ page.authorName }} vào {{ formatDate(page.updatedAt) }}</span>
         </div>
         <div v-if="isAdmin" class="wiki-item__actions">
-          <button class="icon-button icon-button--small" type="button" title="Sửa">
+          <button class="icon-button icon-button--small" type="button" title="Sửa" @click="startEdit(page)">
             <Pencil :size="14" />
           </button>
           <button class="icon-button icon-button--small risk" type="button" title="Xóa" @click="handleDelete(page.id)">
@@ -86,7 +122,7 @@ async function handleDelete(id: string) {
       </div>
       <h3>Chưa có trang Wiki nào</h3>
       <p>Wiki là nơi lưu trữ kiến thức dự án, guideline và quy trình làm việc của team.</p>
-      <button v-if="isAdmin" class="secondary-button" type="button" style="margin-top: 16px;" @click="showAddForm = true">Bắt đầu viết Wiki</button>
+      <button class="secondary-button" type="button" style="margin-top: 16px;" @click="showAddForm = true">Bắt đầu viết Wiki</button>
     </div>
   </div>
 </template>
@@ -96,6 +132,11 @@ async function handleDelete(id: string) {
   padding: 24px;
   background: white;
   border: 1px solid var(--glass-border);
+}
+
+.wiki-tab-content :deep(.primary-button),
+.wiki-tab-content :deep(.primary-button span) {
+  color: #fff;
 }
 
 .wiki-add-form {
@@ -240,7 +281,7 @@ async function handleDelete(id: string) {
   color: var(--text);
 }
 
-.panel-heading span {
+.panel-heading__eyebrow {
   color: var(--muted);
   font-size: 13px;
   font-weight: 600;

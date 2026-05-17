@@ -73,7 +73,7 @@ public class AuthService : IAuthService
 
         await _userRepo.AddAsync(user, ct);
         await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("Create", nameof(User), user.Id.ToString(), new { user.Email, user.Role }, ct);
+        await TryLogAuditAsync("Create", nameof(User), user.Id.ToString(), new { user.Email, user.Role }, ct);
 
         return Result.Created(user.ToDto());
     }
@@ -89,7 +89,7 @@ public class AuthService : IAuthService
             return Result.Failure<UserDto>("Invalid email or password.", 401);
         }
 
-        await _auditLogService.LogAsync("Login", nameof(User), user.Id.ToString(), new { user.Email }, ct);
+        await TryLogAuditAsync("Login", nameof(User), user.Id.ToString(), new { user.Email }, ct);
 
         return Result.Success(user.ToDto());
     }
@@ -118,7 +118,7 @@ public class AuthService : IAuthService
 
         await _userRepo.UpdateAsync(user, ct);
         await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("Update", nameof(User), user.Id.ToString(), new { user.FullName, user.AvatarUrl }, ct);
+        await TryLogAuditAsync("Update", nameof(User), user.Id.ToString(), new { user.FullName, user.AvatarUrl }, ct);
 
         return Result.Success(user.ToDto());
     }
@@ -150,7 +150,7 @@ public class AuthService : IAuthService
         await _userRepo.UpdateAsync(user, ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
-        await _auditLogService.LogAsync("ChangePassword", nameof(User), user.Id.ToString(), null, ct);
+        await TryLogAuditAsync("ChangePassword", nameof(User), user.Id.ToString(), null, ct);
 
         // Security: Revoke all other sessions after password change
         await RevokeSessionsAsync(userId, ct);
@@ -161,7 +161,7 @@ public class AuthService : IAuthService
     public async Task<Result> RevokeSessionsAsync(Guid userId, CancellationToken ct = default)
     {
         await _sessionService.RevokeAllUserSessionsAsync(userId, ct);
-        await _auditLogService.LogAsync("RevokeSessions", nameof(User), userId.ToString(), null, ct);
+        await TryLogAuditAsync("RevokeSessions", nameof(User), userId.ToString(), null, ct);
         return Result.Success();
     }
 
@@ -194,6 +194,18 @@ public class AuthService : IAuthService
         catch (FormatException)
         {
             return false;
+        }
+    }
+
+    private async Task TryLogAuditAsync(string action, string entityType, string entityId, object? changes, CancellationToken ct)
+    {
+        try
+        {
+            await _auditLogService.LogAsync(action, entityType, entityId, changes, ct);
+        }
+        catch
+        {
+            // Audit logging must never block authentication or profile updates.
         }
     }
 }

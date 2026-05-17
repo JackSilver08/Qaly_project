@@ -42,7 +42,17 @@ public class WikiController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> CreatePage(Guid projectId, [FromBody] CreateWikiPageRequest request)
     {
+        if (request == null)
+        {
+            return BadRequest(new { error = "Wiki request payload is required." });
+        }
+
         if (!await CanEditWiki(projectId)) return Forbid();
+
+        if (string.IsNullOrWhiteSpace(request.Title))
+        {
+            return BadRequest(new { error = "Wiki title is required." });
+        }
 
         var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
@@ -56,8 +66,19 @@ public class WikiController : ControllerBase
             UpdatedAt = DateTimeOffset.UtcNow
         };
 
-        _context.WikiPages.Add(page);
-        await _context.SaveChangesAsync();
+        try
+        {
+            _context.WikiPages.Add(page);
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            return BadRequest(new { error = "Unable to save wiki page. Please verify the project access and input values." });
+        }
+        catch (InvalidOperationException)
+        {
+            return BadRequest(new { error = "Unable to create wiki page because the current project state is invalid." });
+        }
 
         return Ok(new WikiPageDto
         {
@@ -72,16 +93,33 @@ public class WikiController : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> UpdatePage(Guid projectId, Guid id, [FromBody] CreateWikiPageRequest request)
     {
+        if (request == null)
+        {
+            return BadRequest(new { error = "Wiki request payload is required." });
+        }
+
         if (!await CanEditWiki(projectId)) return Forbid();
 
         var page = await _context.WikiPages.FindAsync(id);
         if (page == null || page.ProjectId != projectId) return NotFound();
 
+        if (string.IsNullOrWhiteSpace(request.Title))
+        {
+            return BadRequest(new { error = "Wiki title is required." });
+        }
+
         page.Title = request.Title;
         page.Content = request.Content ?? string.Empty;
         page.UpdatedAt = DateTimeOffset.UtcNow;
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            return BadRequest(new { error = "Unable to save wiki page changes. Please verify the project access and input values." });
+        }
         return Ok();
     }
 
