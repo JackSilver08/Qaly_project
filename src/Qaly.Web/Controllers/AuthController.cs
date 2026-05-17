@@ -37,34 +37,48 @@ public class AuthController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> Login(LoginDto dto, CancellationToken ct)
     {
-        var result = await _authService.LoginAsync(dto, ct);
-        if (!result.IsSuccess || result.Data == null)
+        try
         {
-            return StatusCode(result.StatusCode, result);
+            var result = await _authService.LoginAsync(dto, ct);
+            if (!result.IsSuccess || result.Data == null)
+            {
+                return StatusCode(result.StatusCode, result);
+            }
+
+            await HttpContext.SignInAsync(
+                CookieAuthenticationDefaults.AuthenticationScheme,
+                AuthClaimsFactory.CreatePrincipal(result.Data));
+
+            return Ok(result);
         }
-
-        await HttpContext.SignInAsync(
-            CookieAuthenticationDefaults.AuthenticationScheme,
-            AuthClaimsFactory.CreatePrincipal(result.Data));
-
-        return Ok(result);
+        catch
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new { error = "Không thể đăng nhập lúc này." });
+        }
     }
 
     [HttpPost("register")]
     [AllowAnonymous]
     public async Task<IActionResult> Register(RegisterDto dto, CancellationToken ct)
     {
-        var result = await _authService.RegisterAsync(dto, ct);
-        if (!result.IsSuccess || result.Data == null)
+        try
         {
+            var result = await _authService.RegisterAsync(dto, ct);
+            if (!result.IsSuccess || result.Data == null)
+            {
+                return StatusCode(result.StatusCode, result);
+            }
+
+            await HttpContext.SignInAsync(
+                CookieAuthenticationDefaults.AuthenticationScheme,
+                AuthClaimsFactory.CreatePrincipal(result.Data));
+
             return StatusCode(result.StatusCode, result);
         }
-
-        await HttpContext.SignInAsync(
-            CookieAuthenticationDefaults.AuthenticationScheme,
-            AuthClaimsFactory.CreatePrincipal(result.Data));
-
-        return StatusCode(result.StatusCode, result);
+        catch
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new { error = "Không thể tạo tài khoản lúc này." });
+        }
     }
 
     [HttpPut("profile")]

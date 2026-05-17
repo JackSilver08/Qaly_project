@@ -48,7 +48,7 @@ public class WebhookService : IWebhookService
             w.Id,
             w.ProjectId,
             w.PayloadUrl,
-            JsonSerializer.Deserialize<string[]>(w.Events) ?? Array.Empty<string>(),
+            DeserializeEvents(w.Events),
             w.IsActive,
             w.CreatedAt
         ));
@@ -58,6 +58,12 @@ public class WebhookService : IWebhookService
 
     public async Task<Result<WebhookDto>> CreateAsync(CreateWebhookDto dto, CancellationToken ct = default)
     {
+        var validation = ValidateWebhook(dto.PayloadUrl, dto.Events);
+        if (!validation.IsSuccess)
+        {
+            return Result.Failure<WebhookDto>(validation.Error!, validation.StatusCode);
+        }
+
         if (!await CanManageProjectAsync(dto.ProjectId, ct))
         {
             return Result.Forbidden<WebhookDto>();
@@ -71,8 +77,23 @@ public class WebhookService : IWebhookService
             Events = JsonSerializer.Serialize(dto.Events ?? Array.Empty<string>())
         };
 
-        await _webhookRepo.AddAsync(webhook, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
+        try
+        {
+            await _webhookRepo.AddAsync(webhook, ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            return Result.Failure<WebhookDto>(
+                "Unable to save webhook. Please check the project access and input values.",
+                400);
+        }
+        catch (InvalidOperationException)
+        {
+            return Result.Failure<WebhookDto>(
+                "Unable to create webhook because the current project state is invalid.",
+                400);
+        }
 
         return Result.Success(new WebhookDto(
             webhook.Id,
@@ -84,12 +105,23 @@ public class WebhookService : IWebhookService
         ));
     }
 
-    public async Task<Result<WebhookDto>> UpdateAsync(Guid id, UpdateWebhookDto dto, CancellationToken ct = default)
+    public async Task<Result<WebhookDto>> UpdateAsync(Guid projectId, Guid id, UpdateWebhookDto dto, CancellationToken ct = default)
     {
+        var validation = ValidateWebhook(dto.PayloadUrl, dto.Events);
+        if (!validation.IsSuccess)
+        {
+            return Result.Failure<WebhookDto>(validation.Error!, validation.StatusCode);
+        }
+
         var webhook = await _webhookRepo.GetByIdAsync(id, ct);
         if (webhook == null) return Result.NotFound<WebhookDto>();
 
-        if (!await CanManageProjectAsync(webhook.ProjectId, ct))
+        if (webhook.ProjectId != projectId)
+        {
+            return Result.NotFound<WebhookDto>();
+        }
+
+        if (!await CanManageProjectAsync(projectId, ct))
         {
             return Result.Forbidden<WebhookDto>();
         }
@@ -112,12 +144,17 @@ public class WebhookService : IWebhookService
         ));
     }
 
-    public async Task<Result> DeleteAsync(Guid id, CancellationToken ct = default)
+    public async Task<Result> DeleteAsync(Guid projectId, Guid id, CancellationToken ct = default)
     {
         var webhook = await _webhookRepo.GetByIdAsync(id, ct);
         if (webhook == null) return Result.NotFound();
 
-        if (!await CanManageProjectAsync(webhook.ProjectId, ct))
+        if (webhook.ProjectId != projectId)
+        {
+            return Result.NotFound();
+        }
+
+        if (!await CanManageProjectAsync(projectId, ct))
         {
             return Result.Forbidden();
         }
@@ -128,12 +165,17 @@ public class WebhookService : IWebhookService
         return Result.Success();
     }
 
-    public async Task<Result> TriggerTestAsync(Guid id, CancellationToken ct = default)
+    public async Task<Result> TriggerTestAsync(Guid projectId, Guid id, CancellationToken ct = default)
     {
         var webhook = await _webhookRepo.GetByIdAsync(id, ct);
         if (webhook == null) return Result.NotFound();
 
-        if (!await CanManageProjectAsync(webhook.ProjectId, ct))
+        if (webhook.ProjectId != projectId)
+        {
+            return Result.NotFound();
+        }
+
+        if (!await CanManageProjectAsync(projectId, ct))
         {
             return Result.Forbidden();
         }
@@ -156,6 +198,52 @@ public class WebhookService : IWebhookService
         if (project.OwnerId == currentUserId) return true;
 
         return await _memberRepo.GetQueryable()
-            .AnyAsync(m => m.ProjectId == projectId && m.UserId == currentUserId && (m.Role == "Admin" || m.Role == "Owner"), ct);
+            .AnyAsync(m =>
+                m.ProjectId == projectId &&
+                m.UserId == currentUserId &&
+                (
+                    m.Role == ProjectRoleRules.Owner ||
+                    m.Role == ProjectRoleRules.Manager ||
+                    m.Role == ProjectRoleRules.Member ||
+                    m.Role == "Admin"
+                ), ct);
+    }
+
+    private static Result ValidateWebhook(string payloadUrl, string[]? events)
+    {
+        if (string.IsNullOrWhiteSpace(payloadUrl))
+        {
+            return Result.Failure("Payload URL is required.");
+        }
+
+        if (!Uri.TryCreate(payloadUrl.Trim(), UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            return Result.Failure("Payload URL must be a valid http or https URL.");
+        }
+
+        if (events == null || events.Length == 0 || events.Any(e => string.IsNullOrWhiteSpace(e)))
+        {
+            return Result.Failure("At least one webhook event must be selected.");
+        }
+
+        return Result.Success();
+    }
+
+    private static string[] DeserializeEvents(string? eventsJson)
+    {
+        if (string.IsNullOrWhiteSpace(eventsJson))
+        {
+            return Array.Empty<string>();
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<string[]>(eventsJson) ?? Array.Empty<string>();
+        }
+        catch (JsonException)
+        {
+            return Array.Empty<string>();
+        }
     }
 }

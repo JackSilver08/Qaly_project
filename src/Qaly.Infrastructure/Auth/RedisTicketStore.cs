@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Logging;
 using System.Security.Claims;
+using System.Collections.Concurrent;
 using System.Text.Json;
 
 namespace Qaly.Infrastructure.Auth;
@@ -9,11 +11,14 @@ namespace Qaly.Infrastructure.Auth;
 public class RedisTicketStore : ITicketStore
 {
     private const string KeyPrefix = "AuthTicket:";
+    private static readonly ConcurrentDictionary<string, byte[]> FallbackTickets = new();
     private readonly IDistributedCache _cache;
+    private readonly ILogger<RedisTicketStore> _logger;
 
-    public RedisTicketStore(IDistributedCache cache)
+    public RedisTicketStore(IDistributedCache cache, ILogger<RedisTicketStore> logger)
     {
         _cache = cache;
+        _logger = logger;
     }
 
     public async Task<string> StoreAsync(AuthenticationTicket ticket)
@@ -40,20 +45,53 @@ public class RedisTicketStore : ITicketStore
         }
 
         var val = Serialize(ticket);
-        await _cache.SetAsync(key, val, options);
+        try
+        {
+            await _cache.SetAsync(key, val, options);
+            FallbackTickets.TryRemove(key, out _);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Redis ticket store write failed, falling back to in-memory cache for {Key}.", key);
+            FallbackTickets[key] = val;
+        }
     }
 
     public async Task<AuthenticationTicket?> RetrieveAsync(string key)
     {
-        var val = await _cache.GetAsync(key);
-        if (val == null) return null;
+        try
+        {
+            var val = await _cache.GetAsync(key);
+            if (val != null)
+            {
+                return Deserialize(val);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Redis ticket store read failed for {Key}, using fallback cache.", key);
+        }
 
-        return Deserialize(val);
+        if (!FallbackTickets.TryGetValue(key, out var fallbackVal))
+        {
+            return null;
+        }
+
+        return Deserialize(fallbackVal);
     }
 
     public async Task RemoveAsync(string key)
     {
-        await _cache.RemoveAsync(key);
+        try
+        {
+            await _cache.RemoveAsync(key);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Redis ticket store remove failed for {Key}, clearing fallback cache.", key);
+        }
+
+        FallbackTickets.TryRemove(key, out _);
     }
 
     private static byte[] Serialize(AuthenticationTicket ticket)

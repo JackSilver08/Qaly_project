@@ -39,7 +39,7 @@ public partial class WebhookPublisher : IWebhookPublisher
 
         foreach (var webhook in webhooks)
         {
-            var events = JsonSerializer.Deserialize<string[]>(webhook.Events) ?? Array.Empty<string>();
+            var events = DeserializeEvents(webhook.Events);
             if (events.Contains(eventType) || events.Contains("*"))
             {
                 _ = DispatchToWebhookSafeAsync(webhook, eventType, payload, ct);
@@ -138,4 +138,21 @@ public partial class WebhookPublisher : IWebhookPublisher
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Error, Message = "Failed to dispatch webhook {WebhookId}")]
     private static partial void LogWebhookDispatchFailed(ILogger logger, Guid webhookId, Exception ex);
+
+    private static string[] DeserializeEvents(string? eventsJson)
+    {
+        if (string.IsNullOrWhiteSpace(eventsJson))
+        {
+            return Array.Empty<string>();
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<string[]>(eventsJson) ?? Array.Empty<string>();
+        }
+        catch (JsonException)
+        {
+            return Array.Empty<string>();
+        }
+    }
 }

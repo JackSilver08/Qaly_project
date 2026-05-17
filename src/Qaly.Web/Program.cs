@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Qaly.Application;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Infrastructure;
@@ -19,6 +20,8 @@ builder.Environment.EnvironmentName = "Development"; // Force Development for de
 var cookieSecurePolicy = builder.Environment.IsDevelopment()
     ? CookieSecurePolicy.SameAsRequest
     : CookieSecurePolicy.Always;
+
+builder.Configuration.AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: true);
 
 // =============================================
 // Serilog Configuration
@@ -45,6 +48,14 @@ if (!redisConn.Contains("abortConnect="))
 {
     redisConn += redisConn.Contains("?") ? "&abortConnect=false" : ",abortConnect=false";
 }
+
+var dataProtectionKeysPath = Path.Combine(builder.Environment.ContentRootPath, "dp-keys");
+Directory.CreateDirectory(dataProtectionKeysPath);
+
+builder.Services.AddDataProtection()
+    .SetApplicationName("Qaly")
+    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));
+
 builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(StackExchange.Redis.ConnectionMultiplexer.Connect(redisConn));
 builder.Services.AddStackExchangeRedisCache(options =>
 {
