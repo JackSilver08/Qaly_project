@@ -9,7 +9,11 @@ public static class TaskQueryExtensions
         => query
             .Include(task => task.Project)
             .Include(task => task.Assignee)
+            .Include(task => task.Assignees)
+                .ThenInclude(assignment => assignment.User)
             .Include(task => task.Reporter)
+            .Include(task => task.Labels)
+                .ThenInclude(label => label.ProjectLabel)
             .Include(task => task.Comments)
             .Include(task => task.Attachments);
 

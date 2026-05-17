@@ -71,6 +71,7 @@ public static class DependencyInjection
         // Background Workers
         services.AddHostedService<VectorSyncWorker>();
         services.AddHostedService<EmailDigestWorker>();
+        services.AddHostedService<TaskAttentionSignalWorker>();
 
         return services;
     }

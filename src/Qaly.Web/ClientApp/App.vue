@@ -240,6 +240,10 @@ const selectedProjectMembers = computed(() => {
     role: member.role,
     email: member.email,
     initials: initials(member.fullName),
+    canViewProjectTimeline: member.canViewProjectTimeline,
+    canViewTaskRisk: member.canViewTaskRisk,
+    canNudgeAssignee: member.canNudgeAssignee,
+    canViewUnseenTaskSignal: member.canViewUnseenTaskSignal,
   }))
 })
 
@@ -291,6 +295,7 @@ watch(() => route.params.taskId, (id) => { if (typeof id === 'string') { selecte
 watch(selectedTask, (task) => {
   selectedTaskId.value = task?.id ?? null
   if (task && !usingFallback.value) {
+    if (selectedProject.value?.id) void markTaskViewed(selectedProject.value.id, task.id)
     void loadComments(task.id); void loadAttachments(task.id); void loadTimeEntries(task.id)
   } else {
     comments.value = []; attachments.value = []; timeEntries.value = []
@@ -324,6 +329,14 @@ async function loadTimeEntries(taskId: string) {
     timeEntries.value = entries
     activeTimer.value = entries.find(e => e.endedAt === null) ?? null
   } catch (e) { timeEntries.value = []; activeTimer.value = null }
+}
+
+async function markTaskViewed(projectId: string, taskId: string) {
+  try {
+    await apiCommand(`/api/projects/${projectId}/tasks/${taskId}/viewed`, { method: 'POST' })
+  } catch (e) {
+    console.warn('Khong the ghi nhan task da xem.', e)
+  }
 }
 
 async function startTimer(taskId: string) {
@@ -438,6 +451,20 @@ async function updateMemberRole(uId: string, role: string) {
   } catch (e) { showError(errorMessage(e, 'Lỗi')) }
 }
 
+async function updateMemberPermissions(uId: string, permissions: Record<string, boolean>) {
+  if (!selectedProject.value) return
+  try {
+    await apiCommand(`/api/projects/${selectedProject.value.id}/members/${uId}/permissions`, {
+      method: 'PATCH',
+      body: JSON.stringify(permissions),
+    })
+    await loadDashboard()
+    showSuccess('Đã cập nhật quyền theo dõi timeline')
+  } catch (e) {
+    showError(errorMessage(e, 'Không thể cập nhật quyền timeline'))
+  }
+}
+
 async function loadWikiPages(id: string) {
   try { wikiPages.value = await apiResult<WikiPageDto[]>(`/api/projects/${id}/wiki`) } catch (e) { wikiPages.value = [] }
 }
@@ -527,7 +554,7 @@ provide(dashboardContextKey, {
   openCreateProject, openTask, priorities, projectBeingEditedId, projectCards, projectDescription, projectEndDate, projectFilter,
   projectName, projectSort, projects, quickEditTaskTitle, removeMember, saveProjectEdit, searchQuery, selectProject, selectedProject,
   selectedProjectMembers, selectedProjectStats, selectedTask, selectedTaskId, selectTaskInProject, statusColumns, statusTone,
-  submitComment, summaryCards, tabs, tasksByStatus, team, toggleTaskMenu, updateMemberRole, uploadAttachment, users, wikiPages,
+  submitComment, summaryCards, tabs, tasksByStatus, team, toggleTaskMenu, updateMemberRole, updateMemberPermissions, uploadAttachment, users, wikiPages,
   loadWikiPages, createWikiPage, updateWikiPage, deleteWikiPage, taskSearchQuery, taskBeingQuickEditedId, timeEntries, activeTimer,
   startTimer, stopTimer, loadTimeEntries,
 })

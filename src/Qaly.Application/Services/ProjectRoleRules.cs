@@ -5,8 +5,13 @@ internal static class ProjectRoleRules
     public const string SystemAdmin = "Admin";
     public const string Owner = "Owner";
     public const string Manager = "Manager";
+    public const string ScrumMaster = "ScrumMaster";
+    public const string Developer = "Developer";
+    public const string Tester = "Tester";
+    public const string Reviewer = "Reviewer";
     public const string Member = "Member";
     public const string Viewer = "Viewer";
+    public const string Customer = "Customer";
 
     public static bool IsSystemAdmin(string? role)
         => string.Equals(role, SystemAdmin, StringComparison.OrdinalIgnoreCase);
@@ -23,6 +28,9 @@ internal static class ProjectRoleRules
     public static bool IsProjectManager(string? projectRole)
         => string.Equals(projectRole, Owner, StringComparison.OrdinalIgnoreCase)
            || string.Equals(projectRole, Manager, StringComparison.OrdinalIgnoreCase)
+           || string.Equals(projectRole, "PM", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(projectRole, "ProjectOwner", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(projectRole, ScrumMaster, StringComparison.OrdinalIgnoreCase)
            || string.Equals(projectRole, "Admin", StringComparison.OrdinalIgnoreCase);
 
     public static string NormalizeProjectRole(string? role)
@@ -31,10 +39,17 @@ internal static class ProjectRoleRules
         return normalized switch
         {
             Owner => Owner,
+            "ProjectOwner" => Owner,
             Manager => Manager,
+            "PM" => Manager,
+            ScrumMaster => ScrumMaster,
+            Developer => Developer,
+            Tester => Tester,
+            Reviewer => Reviewer,
             "Admin" => Manager,
             Member => Member,
             Viewer => Viewer,
+            Customer => Customer,
             "Project Manager" => Manager,
             "Thành viên" => Member,
             _ => Member

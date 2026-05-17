@@ -86,6 +86,13 @@ public class ProjectsController : ControllerBase
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpPatch("{id}/members/{userId:guid}/permissions")]
+    public async Task<IActionResult> UpdateMemberPermissions(Guid id, Guid userId, UpdateProjectMemberPermissionsDto dto, CancellationToken ct)
+    {
+        var result = await _projectService.UpdateMemberPermissionsAsync(id, userId, dto, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpGet("{id}/labels")]
     public async Task<IActionResult> GetLabels(Guid id, CancellationToken ct)
     {

@@ -9,6 +9,10 @@ interface Member {
   role: string
   email: string
   initials: string
+  canViewProjectTimeline: boolean
+  canViewTaskRisk: boolean
+  canNudgeAssignee: boolean
+  canViewUnseenTaskSignal: boolean
 }
 
 const props = defineProps<{
@@ -21,6 +25,7 @@ const emit = defineEmits<{
   add: [userId: string]
   remove: [userId: string]
   'update-role': [userId: string, role: string]
+  'update-permissions': [userId: string, permissions: Record<string, boolean>]
 }>()
 
 const showAddForm = ref(false)
@@ -34,6 +39,15 @@ function handleAdd() {
 }
 
 const roles = ['Manager', 'Member', 'Viewer']
+
+function toggleTimelinePermission(member: Member, enabled: boolean) {
+  emit('update-permissions', member.id, {
+    canViewProjectTimeline: enabled,
+    canViewTaskRisk: enabled,
+    canNudgeAssignee: enabled,
+    canViewUnseenTaskSignal: enabled,
+  })
+}
 </script>
 
 <template>
@@ -104,6 +118,15 @@ const roles = ['Manager', 'Member', 'Viewer']
             <Trash2 :size="16" />
           </button>
         </div>
+
+        <label v-if="isAdmin && member.role !== 'Owner'" class="timeline-permission-toggle">
+          <input
+            type="checkbox"
+            :checked="member.canViewProjectTimeline && member.canViewTaskRisk"
+            @change="e => toggleTimelinePermission(member, (e.target as HTMLInputElement).checked)"
+          />
+          <span>Được xem timeline dự án</span>
+        </label>
       </article>
 
       <div v-if="members.length === 0" class="empty-state">
@@ -157,6 +180,20 @@ const roles = ['Manager', 'Member', 'Viewer']
   display: flex;
   align-items: center;
 }
+
+.timeline-permission-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.timeline-permission-toggle input {
+  accent-color: var(--primary);
+}
 .members-tab-content {
   padding: 24px;
   background: white;
@@ -170,7 +207,8 @@ const roles = ['Manager', 'Member', 'Viewer']
 }
 
 .member-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: 16px;
   padding: 16px;

@@ -8,6 +8,8 @@ const props = defineProps<{
   firstRowIsHeader: boolean
   skipDuplicates: boolean
   selectedSheet: string | null
+  projectMembers?: { userId: string; fullName: string; email?: string }[]
+  defaultAssigneeId: string | null
   assignToMeIfEmpty: boolean
   defaultPriority: string | null
   enableAiCategorization: boolean
@@ -18,6 +20,7 @@ const emit = defineEmits<{
   'update:firstRowIsHeader': [val: boolean]
   'update:skipDuplicates': [val: boolean]
   'update:selectedSheet': [val: string | null]
+  'update:defaultAssigneeId': [val: string | null]
   'update:assignToMeIfEmpty': [val: boolean]
   'update:defaultPriority': [val: string | null]
   'update:enableAiCategorization': [val: boolean]
@@ -95,6 +98,20 @@ function updateMappingField(index: number, targetField: string) {
           />
           <span>Tự động giao cho tôi (Assignee)</span>
         </label>
+      </div>
+
+      <div v-if="projectMembers?.length" class="import-field">
+        <label>Người phụ trách mặc định</label>
+        <select
+          :value="defaultAssigneeId || ''"
+          class="import-select"
+          @change="emit('update:defaultAssigneeId', ($event.target as HTMLSelectElement).value || null)"
+        >
+          <option value="">Không chọn</option>
+          <option v-for="member in projectMembers" :key="member.userId" :value="member.userId">
+            {{ member.fullName }}{{ member.email ? ` (${member.email})` : '' }}
+          </option>
+        </select>
       </div>
 
       <div class="import-field">

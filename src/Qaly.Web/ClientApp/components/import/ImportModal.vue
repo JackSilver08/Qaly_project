@@ -9,6 +9,7 @@ import { showSuccess, showError } from '../../composables/use-toast'
 const props = defineProps<{
   projectId?: string
   projectName?: string
+  projectMembers?: { userId: string; fullName: string; email?: string }[]
 }>()
 
 const emit = defineEmits<{
@@ -28,6 +29,7 @@ const parseResult = ref<any>(null)
 const firstRowIsHeader = ref(true)
 const skipDuplicates = ref(false)
 const selectedSheet = ref<string | null>(null)
+const defaultAssigneeId = ref<string | null>(null)
 const assignToMeIfEmpty = ref(true)
 const defaultPriority = ref<string | null>(null)
 const enableAiCategorization = ref(false)
@@ -104,6 +106,7 @@ async function executeImport() {
       firstRowIsHeader: firstRowIsHeader.value,
       skipDuplicates: skipDuplicates.value,
       sheetName: selectedSheet.value,
+      defaultAssigneeId: defaultAssigneeId.value,
       assignToMeIfEmpty: assignToMeIfEmpty.value,
       defaultPriority: defaultPriority.value,
       enableAiCategorization: enableAiCategorization.value,
@@ -214,6 +217,8 @@ function finish() {
           :first-row-is-header="firstRowIsHeader"
           :skip-duplicates="skipDuplicates"
           :selected-sheet="selectedSheet"
+          :project-members="projectMembers"
+          :default-assignee-id="defaultAssigneeId"
           :assign-to-me-if-empty="assignToMeIfEmpty"
           :default-priority="defaultPriority"
           :enable-ai-categorization="enableAiCategorization"
@@ -221,6 +226,7 @@ function finish() {
           @update:first-row-is-header="firstRowIsHeader = $event"
           @update:skip-duplicates="skipDuplicates = $event"
           @update:selected-sheet="selectedSheet = $event"
+          @update:default-assignee-id="defaultAssigneeId = $event"
           @update:assign-to-me-if-empty="assignToMeIfEmpty = $event"
           @update:default-priority="defaultPriority = $event"
           @update:enable-ai-categorization="enableAiCategorization = $event"
@@ -238,6 +244,7 @@ function finish() {
           :new-project-name="newProjectName"
           :project-name="projectName"
           :is-loading="isLoading"
+          :default-assignee-id="defaultAssigneeId"
           :assign-to-me-if-empty="assignToMeIfEmpty"
           :default-priority="defaultPriority"
           :enable-ai-categorization="enableAiCategorization"

@@ -64,6 +64,7 @@ const {
   tasksByStatus,
   toggleTaskMenu,
   updateMemberRole,
+  updateMemberPermissions,
   uploadAttachment,
   users,
   taskSearchQuery,
@@ -422,6 +423,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
           @add="addMember"
           @remove="removeMember"
           @update-role="updateMemberRole"
+          @update-permissions="updateMemberPermissions"
         />
       </div>
 
@@ -430,7 +432,11 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
       </div>
 
       <div v-if="activeProjectTab === 'gantt' && selectedProject" class="tab-pane reveal">
-        <ProjectGanttTab :project-id="selectedProject.id" />
+        <ProjectGanttTab
+          :project-id="selectedProject.id"
+          :project-members="selectedProject.members"
+          @open-task="selectTaskInProject"
+        />
       </div>
 
       <div v-if="activeProjectTab === 'webhooks' && selectedProject" class="tab-pane reveal">
@@ -441,6 +447,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
         v-if="showImportModal && selectedProject"
         :project-id="selectedProject.id"
         :project-name="selectedProject.name"
+        :project-members="selectedProject.members"
         @close="showImportModal = false"
         @imported="onImported"
       />

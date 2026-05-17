@@ -256,6 +256,19 @@ public class ImportService : IImportService
             .Select(m => m.User)
             .ToListAsync(ct);
 
+        var defaultAssigneeId = request.DefaultAssigneeId;
+        if (defaultAssigneeId.HasValue)
+        {
+            var canUseDefaultAssignee = defaultAssigneeId.Value == userId ||
+                await _memberRepo.GetQueryable()
+                    .AnyAsync(m => m.ProjectId == projectId && m.UserId == defaultAssigneeId.Value, ct);
+
+            if (!canUseDefaultAssignee)
+            {
+                return Result.Failure<ImportResult>("Người phụ trách mặc định không thuộc dự án.");
+            }
+        }
+
         // Create quick lookup for Assignee (by Email or FullName)
         var memberLookup = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
         foreach (var m in projectMembers)
@@ -421,6 +434,10 @@ public class ImportService : IImportService
             if (!string.IsNullOrWhiteSpace(rawAssignee) && memberLookup.TryGetValue(rawAssignee, out var matchedUserId))
             {
                 assigneeId = matchedUserId;
+            }
+            else if (string.IsNullOrWhiteSpace(rawAssignee) && defaultAssigneeId.HasValue)
+            {
+                assigneeId = defaultAssigneeId.Value;
             }
             else if (string.IsNullOrWhiteSpace(rawAssignee) && request.AssignToMeIfEmpty)
             {
