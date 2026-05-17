@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Qaly.Infrastructure.Auth;
 using Qaly.Infrastructure.Services;
@@ -16,7 +17,7 @@ public class SecurityCriticalTests
     public async Task RedisTicketStore_StoreAsync_UsesUserIdInKey()
     {
         var cache = new Mock<IDistributedCache>();
-        var store = new RedisTicketStore(cache.Object);
+        var store = new RedisTicketStore(cache.Object, Mock.Of<ILogger<RedisTicketStore>>());
         var userId = Guid.NewGuid().ToString();
         var claims = new[] { new Claim(ClaimTypes.NameIdentifier, userId) };
         var identity = new ClaimsIdentity(claims, "Test");
@@ -44,7 +45,14 @@ public class SecurityCriticalTests
         redis.Setup(r => r.GetEndPoints(false)).Returns(new System.Net.EndPoint[] { new System.Net.DnsEndPoint("localhost", 6379) });
         redis.Setup(r => r.GetServer(It.IsAny<System.Net.EndPoint>(), null)).Returns(server.Object);
         redis.Setup(r => r.GetDatabase(-1, null)).Returns(db.Object);
-        server.Setup(s => s.Keys(0, pattern, 10, 0, 0, CommandFlags.None)).Returns(keys);
+        server.Setup(s => s.Keys(
+            It.IsAny<int>(),
+            pattern,
+            It.IsAny<int>(),
+            It.IsAny<long>(),
+            It.IsAny<int>(),
+            It.IsAny<CommandFlags>()))
+            .Returns(keys);
 
         var service = new RedisSessionService(redis.Object, config.Object);
 

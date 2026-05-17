@@ -5,6 +5,7 @@ using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Services;
 using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
+using Qaly.Domain.Interfaces;
 using Qaly.Infrastructure.Data;
 using Qaly.Infrastructure.Data.Repositories;
 

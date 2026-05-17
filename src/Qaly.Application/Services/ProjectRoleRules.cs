@@ -1,6 +1,6 @@
 namespace Qaly.Application.Services;
 
-internal static class ProjectRoleRules
+public static class ProjectRoleRules
 {
     public const string SystemAdmin = "Admin";
     public const string Owner = "Owner";
@@ -36,6 +36,16 @@ internal static class ProjectRoleRules
     public static string NormalizeProjectRole(string? role)
     {
         var normalized = string.IsNullOrWhiteSpace(role) ? Member : role.Trim();
+        if (string.Equals(normalized, Viewer, StringComparison.OrdinalIgnoreCase))
+            return Viewer;
+        if (string.Equals(normalized, Customer, StringComparison.OrdinalIgnoreCase))
+            return Customer;
+        if (string.Equals(normalized, Developer, StringComparison.OrdinalIgnoreCase))
+            return Developer;
+        if (string.Equals(normalized, Tester, StringComparison.OrdinalIgnoreCase))
+            return Tester;
+        if (string.Equals(normalized, Reviewer, StringComparison.OrdinalIgnoreCase))
+            return Reviewer;
         return normalized switch
         {
             Owner => Owner,
