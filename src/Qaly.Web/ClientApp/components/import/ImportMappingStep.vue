@@ -206,7 +206,7 @@ function updateMappingField(index: number, targetField: string) {
   margin: 0 0 12px 0;
 }
 .ai-toggle {
-  color: #a78bfa !important;
+  color: #7dd3fc !important;
   font-weight: 500;
 }
 </style>

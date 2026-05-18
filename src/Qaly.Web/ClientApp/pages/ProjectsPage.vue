@@ -131,11 +131,23 @@ async function handleUndoFromBanner() {
 
 <style scoped>
 .btn-import {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 14px; border-radius: 8px; font-size: .8rem; font-weight: 500;
-  background: rgba(99,102,241,.12); color: #818cf8;
-  border: 1px solid rgba(99,102,241,.2); cursor: pointer;
-  transition: all .2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid rgba(184, 219, 255, 0.34);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #d9e9ff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 220ms ease, border-color 220ms ease, background 220ms ease, box-shadow 220ms ease, color 220ms ease;
 }
-.btn-import:hover { background: rgba(99,102,241,.2); }
+.btn-import:hover {
+  transform: translateY(-1px);
+  border-color: rgba(117, 182, 255, 0.62);
+  background: rgba(31, 128, 255, 0.2);
+  box-shadow: 0 14px 28px rgba(15, 76, 255, 0.24);
+}
 </style>

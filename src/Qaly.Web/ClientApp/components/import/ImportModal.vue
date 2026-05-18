@@ -323,6 +323,7 @@ function finish() {
   animation: fadeIn .2s ease;
 }
 .import-modal {
+  --accent: #1f80ff;
   width: min(700px, 94vw); max-height: 88vh; overflow-y: auto;
   border-radius: 18px; padding: 0;
   background: var(--glass-bg, rgba(30,30,45,.94));

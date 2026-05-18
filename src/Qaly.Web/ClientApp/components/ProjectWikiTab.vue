@@ -130,7 +130,7 @@ async function handleDelete(id: string) {
 <style scoped>
 .wiki-tab-content {
   padding: 24px;
-  background: white;
+  background: rgba(8, 21, 39, 0.62);
   border: 1px solid var(--glass-border);
 }
 
@@ -142,15 +142,15 @@ async function handleDelete(id: string) {
 .wiki-add-form {
   padding: 20px;
   margin-bottom: 24px;
-  background: var(--surface-warm);
-  border: 1px solid var(--line);
+  background: rgba(31, 128, 255, 0.12);
+  border: 1px solid rgba(117, 182, 255, 0.3);
   border-radius: 12px;
 }
 
 .wiki-add-form h3 {
   font-size: 15px;
   margin-bottom: 12px;
-  color: var(--text);
+  color: var(--surface-milk);
   font-weight: 700;
 }
 
@@ -163,7 +163,9 @@ async function handleDelete(id: string) {
   flex: 1;
   padding: 8px 12px;
   border-radius: 8px;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(182, 194, 217, 0.24);
+  color: var(--surface-milk);
+  background: rgba(8, 21, 39, 0.74);
 }
 
 .wiki-list {
@@ -177,8 +179,8 @@ async function handleDelete(id: string) {
   align-items: center;
   gap: 10px;
   padding: 10px 16px;
-  background: var(--surface-milk);
-  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(182, 194, 217, 0.24);
   border-radius: 12px;
   margin-bottom: 8px;
   color: var(--muted);
@@ -190,6 +192,7 @@ async function handleDelete(id: string) {
   flex: 1;
   font-size: 14px;
   outline: none;
+  color: var(--surface-milk);
 }
 
 .wiki-item {
@@ -197,15 +200,15 @@ async function handleDelete(id: string) {
   align-items: center;
   gap: 16px;
   padding: 14px 18px;
-  background: white;
-  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(182, 194, 217, 0.24);
   border-radius: 14px;
   transition: all 0.2s;
 }
 
 .wiki-item:hover {
-  border-color: var(--primary);
-  box-shadow: var(--shadow-card);
+  border-color: rgba(117, 182, 255, 0.62);
+  box-shadow: 0 16px 32px rgba(15, 76, 255, 0.18);
 }
 
 .wiki-item__icon {
@@ -221,7 +224,7 @@ async function handleDelete(id: string) {
 
 .wiki-item__main strong {
   font-size: 15px;
-  color: var(--text);
+  color: var(--surface-milk);
 }
 
 .wiki-item__main span {
@@ -247,8 +250,8 @@ async function handleDelete(id: string) {
   width: 80px;
   height: 80px;
   border-radius: 20px;
-  background: var(--primary-soft);
-  color: var(--primary);
+  background: linear-gradient(135deg, #0f4cff, #22d3ee);
+  color: #f8fafc;
   display: grid;
   place-items: center;
   margin-bottom: 8px;
@@ -257,7 +260,7 @@ async function handleDelete(id: string) {
 .wiki-empty h3 {
   font-size: 18px;
   margin: 0;
-  color: var(--text);
+  color: var(--surface-milk);
   font-weight: 700;
 }
 
@@ -278,7 +281,7 @@ async function handleDelete(id: string) {
 .panel-heading h2 {
   font-size: 18px;
   font-weight: 800;
-  color: var(--text);
+  color: var(--surface-milk);
 }
 
 .panel-heading__eyebrow {
@@ -289,7 +292,7 @@ async function handleDelete(id: string) {
 }
 
 .icon-button.risk:hover {
-  color: var(--peach-500);
-  background: var(--peach-100);
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.2);
 }
 </style>

@@ -305,7 +305,7 @@ const statusLabels: Record<string, string> = {
 .dist-bar-wrap { flex: 1; height: 8px; border-radius: 4px; background: rgba(255,255,255,.05); overflow: hidden; }
 .dist-bar {
   height: 100%; border-radius: 4px;
-  background: linear-gradient(90deg, #6366f1, #818cf8);
+  background: linear-gradient(90deg, #0f4cff, #22d3ee);
   transition: width .6s cubic-bezier(.22,1,.36,1);
 }
 .dist-count { font-size: .78rem; width: 28px; text-align: right; color: rgba(255,255,255,.5); }
@@ -331,9 +331,9 @@ const statusLabels: Record<string, string> = {
   color: #22c55e;
 }
 .option-badge--new {
-  background: rgba(99,102,241,.08);
-  border-color: rgba(99,102,241,.2);
-  color: #818cf8;
+  background: rgba(31,128,255,.14);
+  border-color: rgba(117,182,255,.34);
+  color: #9fd3ff;
 }
 .option-badge--merge {
   background: rgba(245,158,11,.08);
@@ -341,9 +341,9 @@ const statusLabels: Record<string, string> = {
   color: #f59e0b;
 }
 .option-badge--ai {
-  background: rgba(167,139,250,.08);
-  border-color: rgba(167,139,250,.2);
-  color: #a78bfa;
+  background: rgba(34,211,238,.12);
+  border-color: rgba(34,211,238,.3);
+  color: #9deefb;
 }
 
 .confirm-notice {
@@ -352,8 +352,8 @@ const statusLabels: Record<string, string> = {
   gap: 10px;
   padding: 12px 16px;
   border-radius: 10px;
-  background: rgba(99,102,241,.05);
-  border: 1px solid rgba(99,102,241,.12);
+  background: rgba(31,128,255,.08);
+  border: 1px solid rgba(117,182,255,.24);
   font-size: .8rem;
   color: rgba(255,255,255,.6);
   margin: 8px 0;
@@ -374,7 +374,7 @@ const statusLabels: Record<string, string> = {
 .spinner {
   display: inline-block;
   width: 14px; height: 14px;
-  border: 2px solid rgba(255,255,255,.3);
+  border: 2px solid rgba(255,255,255,.34);
   border-top-color: #fff;
   border-radius: 50%;
   animation: spin .6s linear infinite;

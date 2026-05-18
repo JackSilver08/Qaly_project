@@ -59,7 +59,9 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #ffffff;
+  background:
+    radial-gradient(circle at 82% 8%, rgba(31, 128, 255, 0.28), transparent 35%),
+    linear-gradient(145deg, #050b18 0%, #081527 46%, #0b1e3a 100%);
   overflow: hidden;
 }
 
@@ -86,16 +88,17 @@ onMounted(() => {
   height: 140px;
   object-fit: contain;
   margin-bottom: 15px;
-  filter: drop-shadow(0 10px 25px rgba(15, 82, 186, 0.3));
+  filter: drop-shadow(0 14px 28px rgba(15, 76, 255, 0.4));
   animation: robot-float 3s ease-in-out infinite;
 }
 
 .speech-bubble {
-  background: #f1f5f9;
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(182, 194, 217, 0.24);
   padding: 20px 32px;
   border-radius: 24px;
   position: relative;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+  box-shadow: 0 16px 34px rgba(2, 8, 23, 0.42);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -110,19 +113,19 @@ onMounted(() => {
   transform: translateX(-50%);
   border-left: 12px solid transparent;
   border-right: 12px solid transparent;
-  border-bottom: 12px solid #f1f5f9;
+  border-bottom: 12px solid rgba(255, 255, 255, 0.09);
 }
 
 .hello-text {
   font-size: 24px;
   font-weight: 800;
-  color: #0d9488;
+  color: #22d3ee;
   display: block;
 }
 
 .welcome-text {
   font-size: 15px;
-  color: #64748b;
+  color: #d2def3;
   font-weight: 500;
 }
 
@@ -132,7 +135,7 @@ onMounted(() => {
   top: 0;
   height: 100%;
   width: 50%;
-  background: #0F52BA; /* Sapphire Blue */
+  background: linear-gradient(145deg, #0f4cff, #1f80ff);
   transition: transform 0.8s cubic-bezier(0.77, 0, 0.175, 1);
   transform: scaleX(0);
   z-index: 5;

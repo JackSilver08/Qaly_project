@@ -103,29 +103,37 @@ onMounted(fetchKeys)
 .panel-desc { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
 
 .create-key-form { display: flex; gap: 12px; margin-bottom: 24px; }
-.create-key-form input { flex: 1; border: 1px solid var(--line); border-radius: 8px; padding: 10px 16px; outline: none; }
+.create-key-form input { flex: 1; border: 1px solid rgba(182, 194, 217, 0.24); border-radius: 10px; padding: 10px 16px; outline: none; color: var(--surface-milk); background: rgba(8, 21, 39, 0.74); }
 
 .key-display-banner { 
   display: flex; gap: 16px; padding: 20px; border-left: 4px solid var(--warning);
   background: var(--warning-soft); margin-bottom: 24px;
+  border: 1px solid rgba(245, 158, 11, 0.34);
+  border-radius: 14px;
 }
 .key-box { 
-  display: flex; align-items: center; gap: 8px; background: white; 
-  padding: 8px 12px; border-radius: 6px; margin: 12px 0; border: 1px solid var(--warning);
+  display: flex; align-items: center; gap: 8px; background: rgba(8, 21, 39, 0.78); 
+  padding: 8px 12px; border-radius: 8px; margin: 12px 0; border: 1px solid rgba(245, 158, 11, 0.36);
 }
 .key-box code { font-family: monospace; font-weight: 700; color: var(--warning-dark); flex: 1; word-break: break-all; }
 
 .keys-list { display: flex; flex-direction: column; gap: 12px; }
-.key-item { display: flex; justify-content: space-between; align-items: center; padding: 16px; }
+.key-item { display: flex; justify-content: space-between; align-items: center; padding: 16px; border: 1px solid rgba(182, 194, 217, 0.24); border-radius: 12px; background: rgba(255, 255, 255, 0.05); }
 .key-info { display: flex; flex-direction: column; gap: 4px; }
+.key-info strong { color: var(--surface-milk); }
 .key-prefix { font-size: 12px; color: var(--muted); }
 .key-date { font-size: 11px; color: var(--muted); opacity: 0.8; }
 
 .revoke-button { 
-  border: none; background: transparent; color: var(--peach-500); 
-  cursor: pointer; padding: 8px; border-radius: 6px; transition: background 0.2s;
+  border: 1px solid rgba(239, 68, 68, 0.34);
+  background: rgba(239, 68, 68, 0.12);
+  color: #fda4af;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  transition: transform 220ms ease, border-color 220ms ease, background 220ms ease, color 220ms ease;
 }
-.revoke-button:hover { background: var(--peach-100); }
+.revoke-button:hover { transform: translateY(-1px); border-color: rgba(239, 68, 68, 0.56); background: rgba(239, 68, 68, 0.2); color: #fee2e2; }
 
-.empty-state { text-align: center; color: var(--muted); padding: 20px; font-style: italic; }
+.empty-state { text-align: center; color: var(--muted); padding: 20px; font-style: italic; border: 1px dashed rgba(182, 194, 217, 0.3); border-radius: 12px; background: rgba(255, 255, 255, 0.04); }
 </style>

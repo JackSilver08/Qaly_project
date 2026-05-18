@@ -71,10 +71,12 @@ defineEmits<{
   display: flex;
   flex-direction: column;
   gap: 28px;
-  background: var(--glass-strong);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(15, 76, 255, 0.1)),
+    rgba(8, 21, 39, 0.74);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-shell);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-card);
   backdrop-filter: blur(24px);
   position: relative;
   overflow: hidden;
@@ -114,8 +116,8 @@ defineEmits<{
   height: 36px;
   display: grid;
   place-items: center;
-  background: white;
-  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(182, 194, 217, 0.26);
   border-radius: 10px;
   transition: all 0.3s;
 }
@@ -125,8 +127,8 @@ defineEmits<{
 }
 
 .back-link:hover .back-icon {
-  border-color: var(--primary);
-  background: var(--primary-soft);
+  border-color: rgba(117, 182, 255, 0.62);
+  background: rgba(31, 128, 255, 0.22);
   transform: translateX(-4px);
 }
 
@@ -135,20 +137,21 @@ defineEmits<{
   align-items: center;
   gap: 10px;
   padding: 8px 16px;
-  background: white;
-  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(182, 194, 217, 0.26);
   border-radius: 14px;
   font-weight: 800;
-  color: var(--text);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+  color: var(--surface-milk);
+  box-shadow: 0 10px 24px rgba(2, 8, 23, 0.32);
   transition: all 0.3s;
   cursor: pointer;
 }
 
 .assistant-button:hover {
   transform: translateY(-2px);
-  border-color: var(--primary);
-  box-shadow: 0 10px 20px rgba(31, 128, 255, 0.1);
+  border-color: rgba(117, 182, 255, 0.68);
+  background: rgba(31, 128, 255, 0.2);
+  box-shadow: 0 14px 28px rgba(15, 76, 255, 0.3);
 }
 
 .project-detail-header__main {
@@ -174,11 +177,15 @@ defineEmits<{
 .project-icon-box {
   width: 56px;
   height: 56px;
-  background: var(--primary-soft);
+  background: linear-gradient(135deg, #0f4cff, #22d3ee);
   display: grid;
   place-items: center;
   border-radius: 18px;
   flex-shrink: 0;
+}
+
+.project-icon-box :deep(svg) {
+  color: #f8fafc;
 }
 
 .title-stack {
@@ -190,14 +197,14 @@ defineEmits<{
 .project-info h1 {
   font-size: 32px;
   margin: 0;
-  color: var(--text);
+  color: var(--surface-milk);
   font-weight: 800;
   line-height: 1.1;
   letter-spacing: -0.02em;
 }
 
 .project-info__desc {
-  color: var(--muted);
+  color: #b8c7de;
   font-size: 15px;
   line-height: 1.6;
   margin: 0;
@@ -224,20 +231,20 @@ defineEmits<{
 }
 
 .progress-info strong {
-  color: var(--text);
+  color: var(--surface-milk);
 }
 
 .progress-bar-rail {
   height: 12px;
-  background: var(--line);
+  background: rgba(148, 163, 184, 0.24);
   border-radius: 6px;
   overflow: hidden;
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+  box-shadow: inset 0 2px 6px rgba(2, 8, 23, 0.52);
 }
 
 .progress-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--primary), var(--blue-600));
+  background: linear-gradient(90deg, #0f4cff, #22d3ee);
   border-radius: 6px;
   transition: width 1s cubic-bezier(0.65, 0, 0.35, 1);
   position: relative;
@@ -270,18 +277,21 @@ defineEmits<{
 }
 
 .project-status--active {
-  background: #dcfce7;
-  color: #15803d;
+  border: 1px solid rgba(184, 219, 255, 0.44);
+  background: linear-gradient(135deg, #0f4cff, #22d3ee);
+  color: #f8fafc;
 }
 
 .project-status--planned {
-  background: #fef9c3;
-  color: #a16207;
+  border: 1px solid rgba(196, 181, 253, 0.5);
+  background: linear-gradient(135deg, #4f46e5, #8b5cf6);
+  color: #f8fafc;
 }
 
 .project-status--archived {
-  background: #f1f5f9;
-  color: #64748b;
+  border: 1px solid rgba(182, 194, 217, 0.4);
+  background: rgba(148, 163, 184, 0.24);
+  color: #d2dff3;
 }
 
 .reveal {

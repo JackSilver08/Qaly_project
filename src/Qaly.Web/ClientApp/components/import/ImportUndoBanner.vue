@@ -87,7 +87,7 @@ onUnmounted(() => {
   top: 0;
   left: 0;
   height: 3px;
-  background: linear-gradient(90deg, #6366f1, #818cf8);
+  background: linear-gradient(90deg, #0f4cff, #22d3ee);
   transition: width 1s linear;
   border-radius: 3px 0 0 0;
 }

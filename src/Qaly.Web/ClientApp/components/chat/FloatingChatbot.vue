@@ -245,7 +245,7 @@ const quickPrompts = [
   width: 60px;
   height: 60px;
   border-radius: 50%;
-  background: var(--primary);
+  background: linear-gradient(135deg, #0f4cff, #1f80ff);
   border: none;
   display: flex;
   align-items: center;
@@ -257,12 +257,12 @@ const quickPrompts = [
 
 .erumi-launcher:hover {
   transform: scale(1.1) rotate(5deg);
-  box-shadow: 0 10px 25px rgba(31, 128, 255, 0.4);
+  box-shadow: 0 16px 32px rgba(15, 76, 255, 0.46);
 }
 
 .erumi-launcher.is-active {
-  background: #f1f5f9;
-  color: var(--text);
+  background: rgba(8, 21, 39, 0.9);
+  color: var(--surface-milk);
   transform: rotate(90deg);
 }
 
@@ -273,7 +273,7 @@ const quickPrompts = [
   width: 14px;
   height: 14px;
   background: #10b981;
-  border: 2px solid white;
+  border: 2px solid rgba(8, 21, 39, 0.9);
   border-radius: 50%;
 }
 
@@ -287,14 +287,18 @@ const quickPrompts = [
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--glass-border);
-  background: var(--glass-strong);
+  border: 1px solid rgba(182, 194, 217, 0.24);
+  border-radius: 20px;
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(15, 76, 255, 0.08)),
+    rgba(8, 21, 39, 0.9);
+  box-shadow: 0 24px 52px rgba(2, 8, 23, 0.58);
 }
 
 .erumi-header {
   padding: 16px;
-  background: rgba(255, 255, 255, 0.6);
-  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(182, 194, 217, 0.2);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -308,13 +312,14 @@ const quickPrompts = [
 
 .erumi-identity h3 {
   margin: 0;
+  color: var(--surface-milk);
   font-size: 15px;
   font-weight: 700;
 }
 
 .status-indicator {
   font-size: 11px;
-  color: #10b981;
+  color: #22d3ee;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -326,16 +331,16 @@ const quickPrompts = [
 .pulse {
   width: 6px;
   height: 6px;
-  background: #10b981;
+  background: #22d3ee;
   border-radius: 50%;
   display: inline-block;
   animation: pulse 2s infinite;
 }
 
 @keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-  70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+  0% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.64); }
+  70% { box-shadow: 0 0 0 6px rgba(34, 211, 238, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); }
 }
 
 .erumi-body {
@@ -371,7 +376,7 @@ const quickPrompts = [
 }
 
 .user-icon {
-  background: var(--primary);
+  background: linear-gradient(135deg, #0f4cff, #1f80ff);
   color: white;
   display: flex;
   align-items: center;
@@ -386,17 +391,17 @@ const quickPrompts = [
   border-radius: 14px;
   font-size: 13px;
   line-height: 1.5;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  box-shadow: 0 10px 20px rgba(2, 8, 23, 0.36);
 }
 
 .msg-assistant .msg-bubble {
-  background: white;
-  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--surface-milk);
   border-top-left-radius: 2px;
 }
 
 .msg-user .msg-bubble {
-  background: var(--primary);
+  background: linear-gradient(135deg, #0f4cff, #22d3ee);
   color: white;
   border-top-right-radius: 2px;
 }
@@ -407,8 +412,8 @@ const quickPrompts = [
 
 .erumi-footer {
   padding: 12px;
-  background: rgba(255, 255, 255, 0.4);
-  border-top: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  border-top: 1px solid rgba(182, 194, 217, 0.2);
 }
 
 .quick-prompts {
@@ -421,12 +426,12 @@ const quickPrompts = [
 
 .prompt-btn {
   padding: 6px 12px;
-  background: white;
-  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(182, 194, 217, 0.24);
   border-radius: 20px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--primary);
+  color: #d7e6ff;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -434,18 +439,19 @@ const quickPrompts = [
 }
 
 .prompt-btn:hover {
-  background: var(--primary-soft);
-  border-color: var(--primary);
+  background: rgba(31, 128, 255, 0.22);
+  border-color: rgba(117, 182, 255, 0.62);
+  color: #f8fafc;
 }
 
 .composer {
   display: flex;
   gap: 8px;
-  background: white;
+  background: rgba(8, 21, 39, 0.74);
   padding: 4px 4px 4px 12px;
   border-radius: 24px;
-  border: 1px solid var(--line);
-  box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+  border: 1px solid rgba(182, 194, 217, 0.24);
+  box-shadow: 0 8px 16px rgba(2, 8, 23, 0.36);
 }
 
 .composer input {
@@ -453,13 +459,15 @@ const quickPrompts = [
   border: none;
   outline: none;
   font-size: 13px;
+  color: var(--surface-milk);
+  background: transparent;
 }
 
 .send-btn {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--primary);
+  background: linear-gradient(135deg, #0f4cff, #1f80ff);
   color: white;
   border: none;
   display: flex;
@@ -477,10 +485,10 @@ const quickPrompts = [
   bottom: 60px;
   left: 12px;
   right: 12px;
-  background: white;
+  background: rgba(8, 21, 39, 0.94);
   border-radius: 12px;
-  border: 1px solid var(--line);
-  box-shadow: 0 -5px 15px rgba(0,0,0,0.05);
+  border: 1px solid rgba(182, 194, 217, 0.24);
+  box-shadow: 0 -10px 26px rgba(2, 8, 23, 0.5);
   display: flex;
   flex-direction: column;
   z-index: 10;
@@ -492,11 +500,12 @@ const quickPrompts = [
   border: none;
   background: none;
   font-size: 12px;
-  border-bottom: 1px solid #f1f5f9;
+  color: var(--surface-milk);
+  border-bottom: 1px solid rgba(182, 194, 217, 0.16);
 }
 
 .mention-suggestions button:hover {
-  background: #f8fafc;
+  background: rgba(31, 128, 255, 0.2);
 }
 
 .fade-up-enter-active, .fade-up-leave-active {
@@ -516,7 +525,7 @@ const quickPrompts = [
 .thinking-dots span {
   width: 6px;
   height: 6px;
-  background: var(--muted);
+  background: #b8c7de;
   border-radius: 50%;
   animation: dots 1.4s infinite;
 }

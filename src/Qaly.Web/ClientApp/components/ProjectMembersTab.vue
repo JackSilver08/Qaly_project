@@ -140,15 +140,15 @@ function toggleTimelinePermission(member: Member, enabled: boolean) {
 .add-member-form {
   padding: 20px;
   margin-bottom: 24px;
-  background: var(--primary-soft);
-  border: 1px solid var(--blue-100);
+  background: rgba(31, 128, 255, 0.14);
+  border: 1px solid rgba(117, 182, 255, 0.32);
   border-radius: 12px;
 }
 
 .add-member-form h3 {
   font-size: 15px;
   margin-bottom: 12px;
-  color: var(--primary);
+  color: #d9ebff;
   font-weight: 700;
 }
 
@@ -162,18 +162,25 @@ function toggleTimelinePermission(member: Member, enabled: boolean) {
   flex: 1;
   padding: 8px 12px;
   border-radius: 8px;
-  border: 1px solid var(--blue-100);
-  background: white;
+  border: 1px solid rgba(182, 194, 217, 0.24);
+  color: var(--surface-milk);
+  background: rgba(8, 21, 39, 0.74);
 }
 
 .role-selector select {
   padding: 4px 8px;
   border-radius: 6px;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(182, 194, 217, 0.24);
   font-size: 12px;
   font-weight: 600;
-  color: var(--text);
-  background: white;
+  color: var(--surface-milk);
+  background: rgba(8, 21, 39, 0.74);
+}
+
+.form-row select option,
+.role-selector select option {
+  color: var(--surface-milk);
+  background: #081527;
 }
 
 .member-role-actions {
@@ -196,7 +203,7 @@ function toggleTimelinePermission(member: Member, enabled: boolean) {
 }
 .members-tab-content {
   padding: 24px;
-  background: white;
+  background: rgba(8, 21, 39, 0.62);
   border: 1px solid var(--glass-border);
 }
 
@@ -213,15 +220,15 @@ function toggleTimelinePermission(member: Member, enabled: boolean) {
   gap: 16px;
   padding: 16px;
   border-radius: 12px;
-  background: var(--surface-milk);
-  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(182, 194, 217, 0.24);
 }
 
 .member-avatar {
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  background: var(--primary);
+  background: linear-gradient(135deg, #0f4cff, #1f80ff);
   color: white;
   display: grid;
   place-items: center;
@@ -237,7 +244,7 @@ function toggleTimelinePermission(member: Member, enabled: boolean) {
   display: block;
   font-size: 16px;
   margin-bottom: 4px;
-  color: var(--text);
+  color: var(--surface-milk);
 }
 
 .member-meta {
@@ -264,13 +271,13 @@ function toggleTimelinePermission(member: Member, enabled: boolean) {
 }
 
 .role-badge--admin, .role-badge--manager {
-  background: var(--primary-soft);
-  color: var(--primary);
+  background: rgba(31, 128, 255, 0.2);
+  color: #d9ebff;
 }
 
 .role-badge--member {
-  background: var(--mint-100);
-  color: #047857;
+  background: rgba(34, 211, 238, 0.2);
+  color: #d8f8ff;
 }
 
 .panel-heading {
@@ -283,7 +290,7 @@ function toggleTimelinePermission(member: Member, enabled: boolean) {
 .panel-heading h2 {
   font-size: 18px;
   font-weight: 800;
-  color: var(--text);
+  color: var(--surface-milk);
 }
 
 .panel-heading span {
@@ -291,5 +298,13 @@ function toggleTimelinePermission(member: Member, enabled: boolean) {
   font-size: 13px;
   font-weight: 600;
   text-transform: uppercase;
+}
+
+.empty-state {
+  border: 1px dashed rgba(182, 194, 217, 0.34);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 16px;
+  color: var(--muted);
 }
 </style>
