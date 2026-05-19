@@ -198,49 +198,49 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
         <section id="tasks" class="task-board-shell glass-card">
           <div class="panel-heading">
             <div>
-              <span>Tasks</span>
-              <h2>Board</h2>
+              <span>Nhiệm vụ</span>
+              <h2>Bảng công việc</h2>
             </div>
             <div class="board-actions">
               <div class="search-box">
                 <Search :size="16" />
-                <input v-model="taskSearchQuery" type="text" placeholder="Tìm task (N: mới)..." />
+                <input v-model="taskSearchQuery" type="text" placeholder="Tìm nhiệm vụ (N: mới)..." />
               </div>
               <button class="primary-button primary-button--compact" type="button" @click="createTaskOpen = !createTaskOpen">
                 <Plus :size="16" />
-                <span>Task</span>
+                <span>Nhiệm vụ</span>
               </button>
               <button class="import-btn-sm" type="button" @click="showImportModal = true">
-                <FileSpreadsheet :size="14" /> Import
+                <FileSpreadsheet :size="14" /> Nhập file
               </button>
             </div>
           </div>
 
           <transition name="expand">
             <form v-if="createTaskOpen" class="task-create-form glass-card" @submit.prevent="createTask">
-              <input v-model="newTaskTitle" type="text" placeholder="Task title" required />
-              <input v-model="newTaskDescription" type="text" placeholder="Description" />
+              <input v-model="newTaskTitle" type="text" placeholder="Tiêu đề nhiệm vụ" required />
+              <input v-model="newTaskDescription" type="text" placeholder="Mô tả" />
               <select v-model="newTaskPriority">
                 <option v-for="priority in priorities" :key="priority" :value="priority">{{ priority }}</option>
               </select>
               <select v-model="newTaskAssigneeId">
-                <option value="">Unassigned</option>
+                <option value="">Chưa giao</option>
                 <option v-for="user in selectedProjectMembers" :key="user.id" :value="user.id">{{ user.fullName }}</option>
               </select>
               <input v-model="newTaskDueDate" type="date" />
               <label class="task-option-toggle">
                 <input v-model="newTaskIsPrivate" type="checkbox" />
-                <span>Private</span>
+                <span>Riêng tư</span>
               </label>
               <label class="task-option-toggle">
                 <input v-model="newTaskContributesToProgress" type="checkbox" />
-                <span>Progress</span>
+                <span>Tính tiến độ</span>
               </label>
               <label v-if="isProjectAdmin" class="task-option-toggle">
                 <input v-model="newTaskIsPinned" type="checkbox" />
-                <span>Pin</span>
+                <span>Ghim</span>
               </label>
-              <button class="primary-button primary-button--compact" type="submit">Create</button>
+              <button class="primary-button primary-button--compact" type="submit">Tạo</button>
             </form>
           </transition>
 
@@ -281,8 +281,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                       @click.stop
                     />
                     <strong v-else @dblclick.stop="!task.isRestricted && startQuickEdit(task)">
-                      <span v-if="task.isPrivate" title="Private task">Lock</span>
-                      <span v-if="task.isPinned" title="Pinned task">Pin</span>
+                      <span v-if="task.isPrivate" title="Nhiệm vụ riêng tư">Khóa</span>
+                      <span v-if="task.isPinned" title="Nhiệm vụ đã ghim">Ghim</span>
                       {{ task.title }}
                     </strong>
                     
@@ -300,14 +300,14 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                       </div>
                     </div>
                   </div>
-                  <p class="assignee-text">{{ task.isRestricted ? 'Restricted' : (task.assigneeName || 'Unassigned') }} • {{ formatDate(task.dueDate) }}</p>
+                  <p class="assignee-text">{{ task.isRestricted ? 'Bị giới hạn quyền xem' : (task.assigneeName || 'Chưa giao') }} • {{ formatDate(task.dueDate) }}</p>
                   <div class="kanban-card__meta">
                     <span class="meta-item"><MessageSquare :size="12" /> {{ task.commentCount }}</span>
                     <span class="meta-item">▲ {{ task.upvoteCount || 0 }}</span>
-                    <span v-if="isTaskOverdue(task)" class="overdue-tag">Overdue</span>
+                    <span v-if="isTaskOverdue(task)" class="overdue-tag">Quá hạn</span>
                   </div>
                 </article>
-                <div v-if="tasksByStatus(status).length === 0" class="empty-column-placeholder">Drop task here</div>
+                <div v-if="tasksByStatus(status).length === 0" class="empty-column-placeholder">Thả nhiệm vụ vào đây</div>
               </VueDraggable>
             </section>
           </div>
@@ -316,8 +316,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
         <section class="task-detail-panel glass-card">
           <div class="panel-heading">
             <div>
-              <span>Task detail</span>
-              <h2>{{ selectedTask?.title ?? 'No task selected' }}</h2>
+              <span>Chi tiết nhiệm vụ</span>
+              <h2>{{ selectedTask?.title ?? 'Chưa chọn nhiệm vụ' }}</h2>
             </div>
             <div v-if="selectedTask" class="task-id-badge">#{{ selectedTask.id.slice(0, 4) }}</div>
           </div>
@@ -326,7 +326,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
             <div class="time-tracking-section">
               <div class="section-header">
                 <Clock :size="16" />
-                <strong>Activity Log</strong>
+                <strong>Nhật ký hoạt động</strong>
               </div>
               
               <div class="timer-display glass-card">
@@ -334,23 +334,23 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                   <div class="timer-pulse"></div>
                   <span>Ghi giờ: <strong>{{ activeTimer.taskTitle }}</strong></span>
                   <button class="stop-pill" @click="stopTimer(activeTimer.id)">
-                    <Square :size="14" fill="currentColor" /> Stop
+                    <Square :size="14" fill="currentColor" /> Dừng
                   </button>
                 </div>
                 <div v-else class="timer-idle">
                   <button class="start-pill" @click="startTimer(selectedTask.id)">
-                    <Play :size="14" fill="currentColor" /> Start
+                    <Play :size="14" fill="currentColor" /> Bắt đầu
                   </button>
-                  <button class="ghost-pill" @click="showManualForm = !showManualForm">Manual</button>
+                  <button class="ghost-pill" @click="showManualForm = !showManualForm">Nhập tay</button>
                 </div>
               </div>
 
               <transition name="fade">
                 <div v-if="showManualForm" class="manual-log-form glass-card">
                   <div class="form-row">
-                    <input v-model.number="manualMinutes" type="number" placeholder="Min" />
+                    <input v-model.number="manualMinutes" type="number" placeholder="Phút" />
                     <input v-model="manualNote" type="text" placeholder="Ghi chú..." />
-                    <button class="primary-button primary-button--compact" @click="submitManualEntry">Log</button>
+                    <button class="primary-button primary-button--compact" @click="submitManualEntry">Ghi nhận</button>
                   </div>
                 </div>
               </transition>
@@ -366,10 +366,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
             <div class="attachment-section glass-card">
               <div class="section-header">
-                <strong>Attachments</strong>
+                <strong>Tệp đính kèm</strong>
                 <label class="upload-pill">
                   <input type="file" @change="uploadAttachment" />
-                  <span>+ Add</span>
+                  <span>+ Thêm</span>
                 </label>
               </div>
               <div class="attachment-grid">
@@ -384,7 +384,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
             </div>
 
             <div class="discussion-section">
-              <div class="section-header"><strong>Discussion</strong></div>
+              <div class="section-header"><strong>Trao đổi</strong></div>
               <div class="comments-scroll">
                 <article
                   v-for="comment in comments"
@@ -398,19 +398,19 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                   </div>
                   <div class="comment-markdown" v-html="renderMarkdown(comment.content)"></div>
                   <div class="comment-votes">▲ {{ comment.upvoteCount || 0 }} · ▼ {{ comment.downvoteCount || 0 }}</div>
-                  <button v-if="isProjectAdmin || comment.authorId === currentUser?.id" class="bubble-delete" @click="deleteComment(comment.id)">Delete</button>
+                  <button v-if="isProjectAdmin || comment.authorId === currentUser?.id" class="bubble-delete" @click="deleteComment(comment.id)">Xóa</button>
                 </article>
               </div>
 
               <form class="comment-input-area" @submit.prevent="submitComment">
-                <input v-model="newComment" type="text" placeholder="Type a message..." />
+                <input v-model="newComment" type="text" placeholder="Nhập bình luận..." />
                 <button class="send-pill" type="submit" :disabled="!newComment.trim()"><Send :size="16" /></button>
               </form>
             </div>
           </div>
           <div v-else class="empty-state-panel">
             <ClipboardList :size="48" />
-            <p>{{ selectedTask?.isRestricted ? 'This private task is restricted.' : 'Select a task to see details' }}</p>
+            <p>{{ selectedTask?.isRestricted ? 'Bạn không có quyền xem chi tiết nhiệm vụ riêng tư này.' : 'Chọn một nhiệm vụ để xem chi tiết' }}</p>
           </div>
         </section>
       </div>

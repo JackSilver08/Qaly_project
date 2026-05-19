@@ -130,11 +130,11 @@ const statusIcons: Record<string, string> = {
 }
 
 const statusLabels: Record<string, string> = {
-  'Todo': 'Todo',
-  'InProgress': 'In Progress',
-  'OnHold': 'On Hold',
-  'InReview': 'In Review',
-  'Done': 'Done',
+  'Todo': 'Cần làm',
+  'InProgress': 'Đang làm',
+  'OnHold': 'Tạm dừng',
+  'InReview': 'Đang duyệt',
+  'Done': 'Hoàn thành',
 }
 </script>
 
@@ -197,7 +197,7 @@ const statusLabels: Record<string, string> = {
         AI sẽ phân loại khoảng {{ previewSummary.estimatedAiCategorization }} task
       </span>
       <span v-if="skipDuplicates" class="option-badge option-badge--active">✓ Bỏ qua task trùng tên</span>
-      <span v-else class="option-badge">Append tất cả (không check trùng)</span>
+        <span v-else class="option-badge">Thêm tất cả, không kiểm tra trùng</span>
 
       <span v-if="assignToMeIfEmpty" class="option-badge">Giao cho tôi (nếu trống)</span>
       <span v-if="defaultPriority" class="option-badge">Ưu tiên mặc định: {{ defaultPriority }}</span>
@@ -220,7 +220,7 @@ const statusLabels: Record<string, string> = {
           <span class="spinner"></span> Đang import...
         </template>
         <template v-else>
-          Import {{ previewSummary.totalRows }} task <Check :size="16" />
+          Nhập {{ previewSummary.totalRows }} task <Check :size="16" />
         </template>
       </button>
     </div>

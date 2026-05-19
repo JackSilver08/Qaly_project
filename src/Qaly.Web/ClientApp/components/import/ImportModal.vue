@@ -41,7 +41,7 @@ const importResult = ref<any>(null)
 
 const isNewProject = computed(() => !props.projectId)
 
-const stepLabels = ['Upload', 'Mapping', 'Xác nhận', 'Kết quả']
+const stepLabels = ['Tải file', 'Ghép cột', 'Xác nhận', 'Kết quả']
 
 // ─── Step 1 → Step 2: Parse file ─────────────────────
 
@@ -172,7 +172,7 @@ function finish() {
         <div class="import-header">
           <div class="import-header__left">
             <FileSpreadsheet :size="22" />
-            <h2>Import CSV / Excel</h2>
+            <h2>Nhập CSV / Excel</h2>
           </div>
           <button class="icon-button" @click="$emit('close')"><X :size="18" /></button>
         </div>
