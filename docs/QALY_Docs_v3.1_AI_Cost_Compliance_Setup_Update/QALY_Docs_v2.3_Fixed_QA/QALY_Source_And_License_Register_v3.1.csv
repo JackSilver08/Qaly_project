@@ -1,0 +1,8 @@
+component,purpose,license_or_terms,source_url,risk,action
+Meetily Community,AI meeting assistant import/transcription/summary reference/worker,MIT license per GitHub repo,https://github.com/Zackriya-Solutions/meetily,New project; Pro features separate,Lock version/commit; keep attribution; rely only on CE features
+Ollama,Local LLM runtime fallback,Ollama + model-specific licenses,https://docs.ollama.com/,Model license differs per model,Record exact model names and licenses before submission
+Qdrant OSS/Cloud,Vector database P1 semantic memory,OSS/Cloud terms; free cloud tier available,https://qdrant.tech/pricing/,extra RAM/integration,Optional P1; use free/self-host only after P0
+OpenAI API,Primary AI extraction/reasoning provider,OpenAI API terms/data policy,https://developers.openai.com/api/docs/pricing,cost/quota/data transfer,budget guard + privacy notice + no raw sensitive by default
+Gemini API,Cost-effective AI fallback/provider,Google AI terms/pricing,https://ai.google.dev/gemini-api/docs/pricing,model/price/rate limit changes,"Provider abstraction, monitor costs"
+ngrok,Tunnel local AI gateway for demo,ngrok pricing/limits,https://ngrok.com/pricing,public exposure/limits,Bearer token/IP allowlist/no direct Ollama
+SQL Server Developer/Express,Main relational database,Developer for dev/test; Express free limits; paid for production,https://www.microsoft.com/en-us/sql-server/sql-server-downloads,license/ram consumption,Clarify demo/dev license; cap RAM

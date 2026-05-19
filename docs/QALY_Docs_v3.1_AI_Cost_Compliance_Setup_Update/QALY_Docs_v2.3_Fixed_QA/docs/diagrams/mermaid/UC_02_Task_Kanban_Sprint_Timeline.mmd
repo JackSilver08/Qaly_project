@@ -1,0 +1,84 @@
+flowchart LR
+  %% UC 02 Task Kanban Sprint Timeline
+  classDef actor fill:#fff,stroke:#111827,stroke-width:1px;
+  classDef must fill:#eef2ff,stroke:#3730a3,stroke-width:1px;
+  classDef should fill:#ecfeff,stroke:#155e75,stroke-width:1px;
+  classDef nice fill:#f7fee7,stroke:#3f6212,stroke-width:1px;
+  subgraph Actors[Actors / Vai trò]
+    A_Assignee(["Assignee"])
+    A_Customer(["Customer"])
+    A_ProjectManager(["Project manager / PM"])
+    A_ProjectMember(["Project member"])
+    A_Reviewer(["Reviewer/Approver"])
+    A_SubManager(["Sub-manager"])
+  end
+  subgraph SYS[QALY Workspace System]
+    subgraph TASK["TASK - Task Workflow"]
+      UC_UC_TASK_01(["UC-TASK-01<br/>Tạo task<br/>Must Have"]):::must
+      UC_UC_TASK_02(["UC-TASK-02<br/>Giao task cho thành viên<br/>Must Have"]):::must
+      UC_UC_TASK_03(["UC-TASK-03<br/>Tạo subtask phụ thuộc task cha<br/>Should Have"]):::should
+      UC_UC_TASK_04(["UC-TASK-04<br/>Tạo task dependency<br/>Must Have"]):::must
+      UC_UC_TASK_05(["UC-TASK-05<br/>Cập nhật trạng thái task<br/>Must Have"]):::must
+      UC_UC_TASK_06(["UC-TASK-06<br/>Gửi yêu cầu chuyển trạng thái<br/>Must Have"]):::must
+      UC_UC_TASK_07(["UC-TASK-07<br/>PM duyệt yêu cầu chuyển trạng thái<br/>Must Have"]):::must
+      UC_UC_TASK_08(["UC-TASK-08<br/>PM từ chối và yêu cầu làm lại<br/>Must Have"]):::must
+      UC_UC_TASK_09(["UC-TASK-09<br/>Upload bằng chứng hoàn thành<br/>Must Have"]):::must
+      UC_UC_TASK_10(["UC-TASK-10<br/>Log thời gian làm việc<br/>Should Have"]):::should
+    end
+    subgraph KANBAN["KANBAN - Kanban Board"]
+      UC_UC_KANBAN_01(["UC-KANBAN-01<br/>Kéo thả task giữa các cột<br/>Must Have"]):::must
+      UC_UC_KANBAN_02(["UC-KANBAN-02<br/>Thêm cột tùy chỉnh<br/>Should Have"]):::should
+      UC_UC_KANBAN_03(["UC-KANBAN-03<br/>Xóa cột với điều kiện<br/>Should Have"]):::should
+      UC_UC_KANBAN_04(["UC-KANBAN-04<br/>Đặt WIP limit cho cột<br/>Should Have"]):::should
+      UC_UC_KANBAN_05(["UC-KANBAN-05<br/>Lọc task trên kanban<br/>Must Have"]):::must
+    end
+    subgraph SPRINT["SPRINT - Sprint"]
+      UC_UC_SPRINT_01(["UC-SPRINT-01<br/>Tạo sprint<br/>Should Have"]):::should
+      UC_UC_SPRINT_02(["UC-SPRINT-02<br/>Lên kế hoạch sprint<br/>Should Have"]):::should
+      UC_UC_SPRINT_03(["UC-SPRINT-03<br/>Bắt đầu sprint<br/>Should Have"]):::should
+      UC_UC_SPRINT_04(["UC-SPRINT-04<br/>Hoàn thành sprint<br/>Should Have"]):::should
+      UC_UC_SPRINT_05(["UC-SPRINT-05<br/>Xem burndown chart<br/>Nice to Have"]):::nice
+    end
+    subgraph TIMELINE["TIMELINE - Timeline/Gantt"]
+      UC_UC_TIMELINE_01(["UC-TIMELINE-01<br/>Xem timeline Gantt<br/>Must Have"]):::must
+      UC_UC_TIMELINE_02(["UC-TIMELINE-02<br/>Kéo thả điều chỉnh timeline<br/>Should Have"]):::should
+      UC_UC_TIMELINE_03(["UC-TIMELINE-03<br/>Xem critical path<br/>Nice to Have"]):::nice
+    end
+  end
+  A_ProjectManager --> UC_UC_TASK_01
+  A_ProjectMember --> UC_UC_TASK_01
+  A_ProjectManager --> UC_UC_TASK_02
+  A_SubManager --> UC_UC_TASK_02
+  A_ProjectManager --> UC_UC_TASK_03
+  A_ProjectMember --> UC_UC_TASK_03
+  A_ProjectManager --> UC_UC_TASK_04
+  A_ProjectMember --> UC_UC_TASK_04
+  A_Assignee --> UC_UC_TASK_05
+  A_ProjectManager --> UC_UC_TASK_05
+  A_Assignee --> UC_UC_TASK_06
+  A_ProjectManager --> UC_UC_TASK_07
+  A_Reviewer --> UC_UC_TASK_07
+  A_ProjectManager --> UC_UC_TASK_08
+  A_Reviewer --> UC_UC_TASK_08
+  A_Assignee --> UC_UC_TASK_09
+  A_Assignee --> UC_UC_TASK_10
+  A_ProjectMember --> UC_UC_KANBAN_01
+  A_ProjectManager --> UC_UC_KANBAN_01
+  A_ProjectManager --> UC_UC_KANBAN_02
+  A_ProjectManager --> UC_UC_KANBAN_03
+  A_ProjectManager --> UC_UC_KANBAN_04
+  A_ProjectMember --> UC_UC_KANBAN_05
+  A_ProjectManager --> UC_UC_KANBAN_05
+  A_Customer --> UC_UC_KANBAN_05
+  A_ProjectManager --> UC_UC_SPRINT_01
+  A_ProjectManager --> UC_UC_SPRINT_02
+  A_SubManager --> UC_UC_SPRINT_02
+  A_ProjectManager --> UC_UC_SPRINT_03
+  A_ProjectManager --> UC_UC_SPRINT_04
+  A_ProjectManager --> UC_UC_SPRINT_05
+  A_ProjectMember --> UC_UC_SPRINT_05
+  A_ProjectMember --> UC_UC_TIMELINE_01
+  A_ProjectManager --> UC_UC_TIMELINE_02
+  A_SubManager --> UC_UC_TIMELINE_02
+  A_ProjectManager --> UC_UC_TIMELINE_03
+  %% Production note: write flows require RBAC, validation, transaction, audit, and tenant isolation.

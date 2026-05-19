@@ -10,6 +10,8 @@ public class QalyDbContext : DbContext
     }
 
     public DbSet<User> Users => Set<User>();
+    public DbSet<Organization> Organizations => Set<Organization>();
+    public DbSet<OrganizationMember> OrganizationMembers => Set<OrganizationMember>();
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
     public DbSet<TaskItem> TaskItems => Set<TaskItem>();
@@ -24,6 +26,8 @@ public class QalyDbContext : DbContext
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<WikiPage> WikiPages => Set<WikiPage>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<AiJob> AiJobs => Set<AiJob>();
+    public DbSet<AiGeneratedDraft> AiGeneratedDrafts => Set<AiGeneratedDraft>();
     public DbSet<VectorSyncOutbox> VectorSyncOutbox => Set<VectorSyncOutbox>();
     public DbSet<TimeEntry> TimeEntries => Set<TimeEntry>();
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();

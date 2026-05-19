@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 
@@ -7,9 +8,47 @@ public class QalyDbContextFactory : IDesignTimeDbContextFactory<QalyDbContext>
 {
     public QalyDbContext CreateDbContext(string[] args)
     {
+        var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
+        var currentDirectory = Directory.GetCurrentDirectory();
+        var startupProjectDirectory = ResolveStartupProjectDirectory(currentDirectory);
+
+        var configuration = new ConfigurationBuilder()
+            .SetBasePath(startupProjectDirectory)
+            .AddJsonFile("appsettings.json", optional: true)
+            .AddJsonFile($"appsettings.{environment}.json", optional: true)
+            .AddEnvironmentVariables()
+            .Build();
+
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            connectionString = "Server=localhost;Database=QalyDb;Trusted_Connection=True;TrustServerCertificate=True";
+        }
+
         var optionsBuilder = new DbContextOptionsBuilder<QalyDbContext>();
-        optionsBuilder.UseSqlServer(
-            "Server=localhost,1434;Database=QalyDb;User Id=sa;Password=Qaly@Dev2026!;Encrypt=False;TrustServerCertificate=True;MultipleActiveResultSets=true");
+        optionsBuilder.UseSqlServer(connectionString);
         return new QalyDbContext(optionsBuilder.Options);
+    }
+
+    private static string ResolveStartupProjectDirectory(string currentDirectory)
+    {
+        var candidates = new[]
+        {
+            Path.Combine(currentDirectory, "src", "Qaly.Web"),
+            Path.Combine(currentDirectory, "..", "Qaly.Web"),
+            currentDirectory
+        };
+
+        foreach (var candidate in candidates)
+        {
+            var fullPath = Path.GetFullPath(candidate);
+            if (File.Exists(Path.Combine(fullPath, "appsettings.json"))
+                || File.Exists(Path.Combine(fullPath, "appsettings.Development.json")))
+            {
+                return fullPath;
+            }
+        }
+
+        return currentDirectory;
     }
 }

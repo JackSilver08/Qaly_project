@@ -13,6 +13,7 @@ public class AttachmentService : IAttachmentService
     private readonly IRepository<TaskAttachment> _attachmentRepo;
     private readonly IRepository<TaskItem> _taskRepo;
     private readonly IRepository<ProjectMember> _memberRepo;
+    private readonly IRepository<OrganizationMember> _organizationMemberRepo;
     private readonly IFileStorageService _fileStorageService;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
@@ -22,6 +23,7 @@ public class AttachmentService : IAttachmentService
         IRepository<TaskAttachment> attachmentRepo,
         IRepository<TaskItem> taskRepo,
         IRepository<ProjectMember> memberRepo,
+        IRepository<OrganizationMember> organizationMemberRepo,
         IFileStorageService fileStorageService,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
@@ -30,6 +32,7 @@ public class AttachmentService : IAttachmentService
         _attachmentRepo = attachmentRepo;
         _taskRepo = taskRepo;
         _memberRepo = memberRepo;
+        _organizationMemberRepo = organizationMemberRepo;
         _fileStorageService = fileStorageService;
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
@@ -52,6 +55,7 @@ public class AttachmentService : IAttachmentService
         var attachments = await _attachmentRepo.GetQueryable()
             .AsNoTracking()
             .Include(attachment => attachment.UploadedBy)
+            .Include(attachment => attachment.EvidenceReviewedBy)
             .Where(attachment => attachment.TaskItemId == taskItemId)
             .OrderByDescending(attachment => attachment.UploadedAt)
             .ToListAsync(ct);
@@ -101,9 +105,95 @@ public class AttachmentService : IAttachmentService
 
         var saved = await _attachmentRepo.GetQueryable()
             .Include(item => item.UploadedBy)
+            .Include(item => item.EvidenceReviewedBy)
             .FirstAsync(item => item.Id == attachment.Id, ct);
 
         return Result.Created(saved.ToDto());
+    }
+
+    public async Task<Result<TaskAttachmentDto>> MarkAsEvidenceAsync(Guid id, bool isEvidence, CancellationToken ct = default)
+    {
+        var attachment = await LoadAttachmentAsync(id, ct);
+        if (attachment == null)
+        {
+            return Result.NotFound<TaskAttachmentDto>();
+        }
+
+        if (attachment.TaskItem == null || !await CanManageTaskAsync(attachment.TaskItem, ct))
+        {
+            return Result.Forbidden<TaskAttachmentDto>();
+        }
+
+        attachment.IsEvidence = isEvidence;
+        if (isEvidence)
+        {
+            attachment.EvidenceApprovalStatus = "Pending";
+        }
+        else
+        {
+            attachment.EvidenceApprovalStatus = "None";
+            attachment.EvidenceReviewedById = null;
+            attachment.EvidenceReviewedAt = null;
+            attachment.EvidenceReviewNote = null;
+        }
+
+        await _attachmentRepo.UpdateAsync(attachment, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync(
+            "UpdateEvidenceFlag",
+            nameof(TaskAttachment),
+            attachment.Id.ToString(),
+            new { attachment.TaskItemId, attachment.IsEvidence, attachment.EvidenceApprovalStatus },
+            ct);
+
+        return Result.Success(attachment.ToDto());
+    }
+
+    public async Task<Result<TaskAttachmentDto>> ReviewEvidenceAsync(Guid id, bool approve, string? reviewNote, CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<TaskAttachmentDto>();
+        }
+
+        var attachment = await LoadAttachmentAsync(id, ct);
+        if (attachment == null)
+        {
+            return Result.NotFound<TaskAttachmentDto>();
+        }
+
+        if (attachment.TaskItem == null || !await CanReviewEvidenceAsync(attachment.TaskItem, currentUserId.Value, ct))
+        {
+            return Result.Forbidden<TaskAttachmentDto>();
+        }
+
+        if (!attachment.IsEvidence)
+        {
+            return Result.Failure<TaskAttachmentDto>("Attachment is not marked as evidence.", 400);
+        }
+
+        attachment.EvidenceApprovalStatus = approve ? "Approved" : "Rejected";
+        attachment.EvidenceReviewedById = currentUserId.Value;
+        attachment.EvidenceReviewedAt = DateTimeOffset.UtcNow;
+        attachment.EvidenceReviewNote = string.IsNullOrWhiteSpace(reviewNote) ? null : reviewNote.Trim();
+
+        await _attachmentRepo.UpdateAsync(attachment, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync(
+            "ReviewEvidence",
+            nameof(TaskAttachment),
+            attachment.Id.ToString(),
+            new
+            {
+                attachment.TaskItemId,
+                attachment.EvidenceApprovalStatus,
+                attachment.EvidenceReviewedById,
+                attachment.EvidenceReviewNote
+            },
+            ct);
+
+        return Result.Success(attachment.ToDto());
     }
 
     public async Task<Result> DeleteAsync(Guid id, CancellationToken ct = default)
@@ -134,7 +224,20 @@ public class AttachmentService : IAttachmentService
     private async Task<TaskItem?> LoadTaskAsync(Guid taskItemId, CancellationToken ct)
         => await _taskRepo.GetQueryable()
             .Include(task => task.Project)
+                .ThenInclude(project => project.Organization)
+            .Include(task => task.Assignees)
             .FirstOrDefaultAsync(task => task.Id == taskItemId, ct);
+
+    private async Task<TaskAttachment?> LoadAttachmentAsync(Guid attachmentId, CancellationToken ct)
+        => await _attachmentRepo.GetQueryable()
+            .Include(item => item.TaskItem)
+                .ThenInclude(task => task!.Project)
+                    .ThenInclude(project => project.Organization)
+            .Include(item => item.TaskItem)
+                .ThenInclude(task => task!.Assignees)
+            .Include(item => item.UploadedBy)
+            .Include(item => item.EvidenceReviewedBy)
+            .FirstOrDefaultAsync(item => item.Id == attachmentId, ct);
 
     private async Task<bool> CanAccessTaskAsync(TaskItem task, CancellationToken ct)
     {
@@ -159,6 +262,75 @@ public class AttachmentService : IAttachmentService
 
         return await _memberRepo.GetQueryable()
             .AnyAsync(member => member.ProjectId == task.ProjectId && member.UserId == currentUserId, ct);
+    }
+
+    private async Task<bool> CanManageTaskAsync(TaskItem task, CancellationToken ct)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return false;
+        }
+
+        if (IsAdmin() ||
+            task.Project.OwnerId == currentUserId ||
+            task.ReporterId == currentUserId ||
+            task.AssigneeId == currentUserId ||
+            task.Assignees.Any(assignment => assignment.UserId == currentUserId))
+        {
+            return true;
+        }
+
+        var canManageProject = await _memberRepo.GetQueryable()
+            .AnyAsync(member =>
+                member.ProjectId == task.ProjectId &&
+                member.UserId == currentUserId &&
+                ProjectRoleRules.CanManageProject(member.Role), ct);
+        if (canManageProject)
+        {
+            return true;
+        }
+
+        if (!task.Project.OrganizationId.HasValue)
+        {
+            return false;
+        }
+
+        var organizationRole = await _organizationMemberRepo.GetQueryable()
+            .Where(member => member.OrganizationId == task.Project.OrganizationId.Value && member.UserId == currentUserId)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+
+        return ProjectRoleRules.CanManageProject(organizationRole);
+    }
+
+    private async Task<bool> CanReviewEvidenceAsync(TaskItem task, Guid currentUserId, CancellationToken ct)
+    {
+        if (IsAdmin() || task.Project.OwnerId == currentUserId)
+        {
+            return true;
+        }
+
+        var projectRole = await _memberRepo.GetQueryable()
+            .Where(member => member.ProjectId == task.ProjectId && member.UserId == currentUserId)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+        if (ProjectRoleRules.CanManageProject(projectRole))
+        {
+            return true;
+        }
+
+        if (!task.Project.OrganizationId.HasValue)
+        {
+            return false;
+        }
+
+        var organizationRole = await _organizationMemberRepo.GetQueryable()
+            .Where(member => member.OrganizationId == task.Project.OrganizationId.Value && member.UserId == currentUserId)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+
+        return ProjectRoleRules.CanManageProject(organizationRole);
     }
 
     private bool IsAdmin()

@@ -22,6 +22,13 @@ public class ProjectConfiguration : IEntityTypeConfiguration<Project>
             .HasForeignKey(p => p.OwnerId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(p => p.Organization)
+            .WithMany(o => o.Projects)
+            .HasForeignKey(p => p.OrganizationId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .IsRequired(false);
+
         builder.HasIndex(p => p.Code).IsUnique();
+        builder.HasIndex(p => p.OrganizationId);
     }
 }

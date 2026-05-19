@@ -16,6 +16,8 @@ public class ProjectServiceTests : IDisposable
 {
     private readonly QalyDbContext _context;
     private readonly GenericRepository<Project> _projectRepo;
+    private readonly GenericRepository<Organization> _organizationRepo;
+    private readonly GenericRepository<OrganizationMember> _organizationMemberRepo;
     private readonly GenericRepository<ProjectMember> _memberRepo;
     private readonly GenericRepository<User> _userRepo;
     private readonly GenericRepository<ProjectLabel> _labelRepo;
@@ -33,6 +35,8 @@ public class ProjectServiceTests : IDisposable
 
         _context = new QalyDbContext(options);
         _projectRepo = new GenericRepository<Project>(_context);
+        _organizationRepo = new GenericRepository<Organization>(_context);
+        _organizationMemberRepo = new GenericRepository<OrganizationMember>(_context);
         _memberRepo = new GenericRepository<ProjectMember>(_context);
         _userRepo = new GenericRepository<User>(_context);
         _labelRepo = new GenericRepository<ProjectLabel>(_context);
@@ -48,6 +52,8 @@ public class ProjectServiceTests : IDisposable
     {
         return new ProjectService(
             _projectRepo,
+            _organizationRepo,
+            _organizationMemberRepo,
             _memberRepo,
             _userRepo,
             _labelRepo,

@@ -8,6 +8,11 @@ public class TaskAttachment : BaseEntity
     public string? ContentType { get; set; }
     public DateTimeOffset UploadedAt { get; set; } = DateTimeOffset.UtcNow;
     public string Scope { get; set; } = "Task";
+    public bool IsEvidence { get; set; }
+    public string EvidenceApprovalStatus { get; set; } = "None";
+    public Guid? EvidenceReviewedById { get; set; }
+    public DateTimeOffset? EvidenceReviewedAt { get; set; }
+    public string? EvidenceReviewNote { get; set; }
 
     // Foreign keys
     public Guid? TaskItemId { get; set; }
@@ -20,4 +25,5 @@ public class TaskAttachment : BaseEntity
     public Project? Project { get; set; }
     public TaskComment? Comment { get; set; }
     public User UploadedBy { get; set; } = null!;
+    public User? EvidenceReviewedBy { get; set; }
 }

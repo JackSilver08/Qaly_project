@@ -114,14 +114,17 @@ public class TaskTimelineAttentionTests : IDisposable
 
     private TaskService CreateService()
     {
+        var projectRepo = new GenericRepository<Project>(_context);
         var memberRepo = new GenericRepository<ProjectMember>(_context);
-        var accessPolicy = new TaskAccessPolicy(_currentUser.Object, memberRepo);
+        var organizationMemberRepo = new GenericRepository<OrganizationMember>(_context);
+        var accessPolicy = new TaskAccessPolicy(_currentUser.Object, projectRepo, memberRepo, organizationMemberRepo);
         return new TaskService(
             new GenericRepository<TaskItem>(_context),
             new GenericRepository<TaskDependency>(_context),
-            new GenericRepository<Project>(_context),
+            projectRepo,
             memberRepo,
             new GenericRepository<User>(_context),
+            new GenericRepository<TaskAttachment>(_context),
             new GenericRepository<TaskAssignment>(_context),
             new GenericRepository<TaskViewEvent>(_context),
             new GenericRepository<TaskLabel>(_context),

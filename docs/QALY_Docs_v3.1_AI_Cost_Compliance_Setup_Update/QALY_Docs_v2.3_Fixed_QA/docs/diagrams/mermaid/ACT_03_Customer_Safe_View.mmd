@@ -1,0 +1,12 @@
+flowchart TD
+  A([Customer opens project view]) --> B[Authenticate + resolve tenant/org/project]
+  B --> C[Check customer project membership]
+  C --> D{Allowed?}
+  D -- no --> E[Return 404/403 masked]
+  D -- yes --> F[Load project dashboard query]
+  F --> G[Apply customer_safe/public visibility filter]
+  G --> H[Mask private/internal task metadata]
+  H --> I[Return CustomerProjectDto]
+  I --> J[Customer sends feedback<br/>UC-CUST-02]
+  J --> K[Persist feedback + audit + notify PM]
+  K --> L([End])

@@ -557,7 +557,7 @@ provide(dashboardContextKey, {
   selectedProjectMembers, selectedProjectStats, selectedTask, selectedTaskId, selectTaskInProject, statusColumns, statusTone,
   submitComment, summaryCards, tabs, tasksByStatus, team, toggleTaskMenu, updateMemberRole, updateMemberPermissions, uploadAttachment, users, wikiPages,
   loadWikiPages, createWikiPage, updateWikiPage, deleteWikiPage, taskSearchQuery, taskBeingQuickEditedId, timeEntries, activeTimer,
-  startTimer, stopTimer, loadTimeEntries,
+  startTimer, stopTimer, loadTimeEntries, loadDashboard,
 })
 </script>
 

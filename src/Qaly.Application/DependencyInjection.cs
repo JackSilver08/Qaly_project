@@ -18,6 +18,7 @@ public static class DependencyInjection
         // Services
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IUserService, UserService>();
+        services.AddScoped<IOrganizationService, OrganizationService>();
         services.AddScoped<IProjectService, ProjectService>();
         services.AddScoped<ITaskService, TaskService>();
         services.AddScoped<ITaskAccessPolicy, TaskAccessPolicy>();
@@ -27,6 +28,7 @@ public static class DependencyInjection
         services.AddScoped<ITimeTrackingService, TimeTrackingService>();
         services.AddScoped<ITaskPrioritySuggestionService, TaskPrioritySuggestionService>();
         services.AddScoped<IAiService, AiService>();
+        services.AddScoped<IAiWorkflowService, AiWorkflowService>();
         services.AddScoped<IWebhookService, WebhookService>();
         services.AddScoped<IAnalyticsService, AnalyticsService>();
         services.AddScoped<IApiKeyService, ApiKeyService>();

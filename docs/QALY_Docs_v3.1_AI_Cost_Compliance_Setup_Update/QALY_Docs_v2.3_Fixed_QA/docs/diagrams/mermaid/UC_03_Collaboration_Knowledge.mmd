@@ -1,0 +1,55 @@
+flowchart LR
+  %% UC 03 Collaboration Knowledge
+  classDef actor fill:#fff,stroke:#111827,stroke-width:1px;
+  classDef must fill:#eef2ff,stroke:#3730a3,stroke-width:1px;
+  classDef should fill:#ecfeff,stroke:#155e75,stroke-width:1px;
+  classDef nice fill:#f7fee7,stroke:#3f6212,stroke-width:1px;
+  subgraph Actors[Actors / Vai trò]
+    A_AIService(["AI service"])
+    A_ProjectManager(["Project manager / PM"])
+    A_ProjectMember(["Project member"])
+    A_RoomAdmin(["Room admin"])
+    A_RoomMember(["Room member"])
+    A_SubManager(["Sub-manager"])
+    A_System(["System worker"])
+  end
+  subgraph SYS[QALY Workspace System]
+    subgraph CHAT["CHAT - Chat/Realtime"]
+      UC_UC_CHAT_01(["UC-CHAT-01<br/>Tạo nhóm chat project<br/>Must Have"]):::must
+      UC_UC_CHAT_02(["UC-CHAT-02<br/>Gửi tin nhắn văn bản<br/>Must Have"]):::must
+      UC_UC_CHAT_03(["UC-CHAT-03<br/>Giao task trực tiếp từ chat<br/>Must Have"]):::must
+      UC_UC_CHAT_04(["UC-CHAT-04<br/>Link task vào tin nhắn<br/>Should Have"]):::should
+      UC_UC_CHAT_05(["UC-CHAT-05<br/>Pin tin nhắn quan trọng<br/>Should Have"]):::should
+      UC_UC_CHAT_06(["UC-CHAT-06<br/>Xem task được giao trong chat<br/>Should Have"]):::should
+    end
+    subgraph MEETING["MEETING - Meeting"]
+      UC_UC_MEETING_01(["UC-MEETING-01<br/>Tạo meeting và ghi note<br/>Should Have"]):::should
+      UC_UC_MEETING_02(["UC-MEETING-02<br/>AI tóm tắt meeting<br/>Should Have"]):::should
+      UC_UC_MEETING_03(["UC-MEETING-03<br/>Tạo action item từ meeting<br/>Should Have"]):::should
+    end
+    subgraph WIKI["WIKI - Wiki/Knowledge"]
+      UC_UC_WIKI_01(["UC-WIKI-01<br/>Tạo wiki page<br/>Must Have"]):::must
+      UC_UC_WIKI_02(["UC-WIKI-02<br/>Chỉnh sửa wiki page versioning<br/>Must Have"]):::must
+      UC_UC_WIKI_03(["UC-WIKI-03<br/>Rollback phiên bản wiki cũ<br/>Should Have"]):::should
+    end
+  end
+  A_ProjectManager --> UC_UC_CHAT_01
+  A_System --> UC_UC_CHAT_01
+  A_RoomMember --> UC_UC_CHAT_02
+  A_ProjectManager --> UC_UC_CHAT_03
+  A_SubManager --> UC_UC_CHAT_03
+  A_RoomMember --> UC_UC_CHAT_04
+  A_ProjectManager --> UC_UC_CHAT_05
+  A_RoomAdmin --> UC_UC_CHAT_05
+  A_RoomMember --> UC_UC_CHAT_06
+  A_ProjectManager --> UC_UC_MEETING_01
+  A_ProjectMember --> UC_UC_MEETING_01
+  A_ProjectManager --> UC_UC_MEETING_02
+  A_AIService --> UC_UC_MEETING_02
+  A_ProjectManager --> UC_UC_MEETING_03
+  A_ProjectManager --> UC_UC_WIKI_01
+  A_ProjectMember --> UC_UC_WIKI_01
+  A_ProjectManager --> UC_UC_WIKI_02
+  A_ProjectMember --> UC_UC_WIKI_02
+  A_ProjectManager --> UC_UC_WIKI_03
+  %% Production note: write flows require RBAC, validation, transaction, audit, and tenant isolation.

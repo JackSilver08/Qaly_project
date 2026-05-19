@@ -12,4 +12,10 @@ public record TaskAttachmentDto(
     Guid? CommentId,
     Guid UploadedById,
     string UploadedByName,
-    DateTimeOffset UploadedAt);
+    DateTimeOffset UploadedAt,
+    bool IsEvidence,
+    string EvidenceApprovalStatus,
+    Guid? EvidenceReviewedById,
+    string? EvidenceReviewedByName,
+    DateTimeOffset? EvidenceReviewedAt,
+    string? EvidenceReviewNote);

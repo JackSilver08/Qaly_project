@@ -1,0 +1,17 @@
+flowchart TD
+  A([Start import]) --> B[Upload PDF/DOCX<br/>UC-IMPORT-01]
+  B --> C[Store original file<br/>files/import_jobs]
+  C --> D[Parse text, headings, tables]
+  D --> E[AI extracts draft tasks<br/>UC-IMPORT-02]
+  E --> F{Confidence high enough?}
+  F -- no --> G[Flag NeedsReview + show reason]
+  F -- yes --> H[Create draft task candidates]
+  G --> I[PM/BA reviews and edits<br/>UC-IMPORT-03]
+  H --> I
+  I --> J{Approved?}
+  J -- reject --> K[Mark rejected / keep audit]
+  J -- approve --> L[Execute import<br/>UC-IMPORT-04]
+  L --> M[Create tasks, dependencies, labels]
+  M --> N[Sync new tasks into AI knowledge]
+  K --> O([End])
+  N --> O([End])

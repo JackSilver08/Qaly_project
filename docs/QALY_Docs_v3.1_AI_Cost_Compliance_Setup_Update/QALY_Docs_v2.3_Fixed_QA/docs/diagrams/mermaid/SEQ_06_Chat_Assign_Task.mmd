@@ -1,0 +1,25 @@
+sequenceDiagram
+  autonumber
+  actor PM as PM/Sub-manager
+  participant ChatUI as Chat UI
+  participant Hub as ChatHub
+  participant ChatSvc as ChatService
+  participant TaskSvc as TaskService
+  participant Policy as ProjectAccessPolicy
+  participant DB as SQL Server
+  participant Notify as NotificationHub
+  participant Audit as AuditLog
+
+  PM->>ChatUI: Chọn tin nhắn -> Giao thành task
+  ChatUI->>Hub: command createTaskFromMessage(roomId, messageId, assignee)
+  Hub->>ChatSvc: Validate room membership + message visibility
+  ChatSvc->>DB: Load chat_message + project context
+  ChatSvc->>Policy: CanCreateTaskFromChat(user, projectId)
+  Policy-->>ChatSvc: allowed
+  ChatSvc->>TaskSvc: CreateTask(title/content from message, source=chat)
+  TaskSvc->>DB: Insert tasks + task_assignments
+  ChatSvc->>DB: Insert chat_message_task_links
+  ChatSvc->>Audit: CHAT_MESSAGE_LINKED_TO_TASK + TASK_CREATED
+  ChatSvc->>Notify: Notify assignee + room members
+  ChatSvc-->>Hub: TaskLinkDto
+  Hub-->>ChatUI: Realtime task chip displayed in message

@@ -1,0 +1,71 @@
+flowchart LR
+  %% UC 01 Auth Org Project
+  classDef actor fill:#fff,stroke:#111827,stroke-width:1px;
+  classDef must fill:#eef2ff,stroke:#3730a3,stroke-width:1px;
+  classDef should fill:#ecfeff,stroke:#155e75,stroke-width:1px;
+  classDef nice fill:#f7fee7,stroke:#3f6212,stroke-width:1px;
+  subgraph Actors[Actors / Vai trò]
+    A_Customer(["Customer"])
+    A_Guest(["Guest / khách chưa đăng nhập"])
+    A_InvitedUser(["Invited user"])
+    A_OrgAdmin(["Org admin"])
+    A_OrgOwner(["Org owner"])
+    A_ProjectManager(["Project manager / PM"])
+    A_ProjectMember(["Project member"])
+    A_SystemCustomerAdmin(["System customer/admin"])
+    A_User(["User / người dùng đã đăng nhập"])
+  end
+  subgraph SYS[QALY Workspace System]
+    subgraph AUTH["AUTH - Auth & Identity"]
+      UC_UC_AUTH_01(["UC-AUTH-01<br/>Đăng ký tài khoản<br/>Must Have"]):::must
+      UC_UC_AUTH_02(["UC-AUTH-02<br/>Xác thực email<br/>Should Have"]):::should
+      UC_UC_AUTH_03(["UC-AUTH-03<br/>Đăng nhập<br/>Must Have"]):::must
+      UC_UC_AUTH_04(["UC-AUTH-04<br/>Đăng xuất<br/>Must Have"]):::must
+      UC_UC_AUTH_05(["UC-AUTH-05<br/>Làm mới phiên/token<br/>Should Have"]):::should
+      UC_UC_AUTH_06(["UC-AUTH-06<br/>Quên mật khẩu<br/>Should Have"]):::should
+      UC_UC_AUTH_07(["UC-AUTH-07<br/>Đặt lại mật khẩu<br/>Should Have"]):::should
+      UC_UC_AUTH_08(["UC-AUTH-08<br/>Đổi mật khẩu<br/>Must Have"]):::must
+    end
+    subgraph ORG["ORG - Organization"]
+      UC_UC_ORG_01(["UC-ORG-01<br/>Tạo organization<br/>Must Have"]):::must
+      UC_UC_ORG_02(["UC-ORG-02<br/>Mời thành viên vào organization<br/>Must Have"]):::must
+      UC_UC_ORG_03(["UC-ORG-03<br/>Chấp nhận lời mời<br/>Should Have"]):::should
+      UC_UC_ORG_04(["UC-ORG-04<br/>Phân quyền thành viên organization<br/>Must Have"]):::must
+      UC_UC_ORG_05(["UC-ORG-05<br/>Xóa thành viên khỏi organization<br/>Must Have"]):::must
+    end
+    subgraph PROJ["PROJ - Project"]
+      UC_UC_PROJ_01(["UC-PROJ-01<br/>Tạo project<br/>Must Have"]):::must
+      UC_UC_PROJ_02(["UC-PROJ-02<br/>Cập nhật thông tin project<br/>Must Have"]):::must
+      UC_UC_PROJ_03(["UC-PROJ-03<br/>Thêm thành viên vào project<br/>Must Have"]):::must
+      UC_UC_PROJ_04(["UC-PROJ-04<br/>Phân quyền thành viên project<br/>Must Have"]):::must
+      UC_UC_PROJ_05(["UC-PROJ-05<br/>Lưu trữ project<br/>Should Have"]):::should
+      UC_UC_PROJ_06(["UC-PROJ-06<br/>Xem dashboard tiến độ project<br/>Must Have"]):::must
+    end
+  end
+  A_Guest --> UC_UC_AUTH_01
+  A_Guest --> UC_UC_AUTH_02
+  A_User --> UC_UC_AUTH_02
+  A_Guest --> UC_UC_AUTH_03
+  A_User --> UC_UC_AUTH_03
+  A_User --> UC_UC_AUTH_04
+  A_User --> UC_UC_AUTH_05
+  A_Guest --> UC_UC_AUTH_06
+  A_Guest --> UC_UC_AUTH_07
+  A_User --> UC_UC_AUTH_08
+  A_SystemCustomerAdmin --> UC_UC_ORG_01
+  A_OrgOwner --> UC_UC_ORG_02
+  A_OrgAdmin --> UC_UC_ORG_02
+  A_InvitedUser --> UC_UC_ORG_03
+  A_OrgOwner --> UC_UC_ORG_04
+  A_OrgAdmin --> UC_UC_ORG_04
+  A_OrgOwner --> UC_UC_ORG_05
+  A_OrgAdmin --> UC_UC_ORG_05
+  A_OrgAdmin --> UC_UC_PROJ_01
+  A_ProjectManager --> UC_UC_PROJ_01
+  A_ProjectManager --> UC_UC_PROJ_02
+  A_ProjectManager --> UC_UC_PROJ_03
+  A_ProjectManager --> UC_UC_PROJ_04
+  A_ProjectManager --> UC_UC_PROJ_05
+  A_ProjectMember --> UC_UC_PROJ_06
+  A_Customer --> UC_UC_PROJ_06
+  %% Production note: write flows require RBAC, validation, transaction, audit, and tenant isolation.

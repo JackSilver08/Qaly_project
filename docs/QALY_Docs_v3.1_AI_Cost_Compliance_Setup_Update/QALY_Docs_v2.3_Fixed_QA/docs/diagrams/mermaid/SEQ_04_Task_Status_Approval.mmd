@@ -1,0 +1,51 @@
+sequenceDiagram
+  autonumber
+  actor A as Assignee
+  actor PM as PM/Reviewer
+  participant UI as Task Detail UI
+  participant API as TasksController
+  participant TaskSvc as TaskService
+  participant Workflow as TaskWorkflowService
+  participant DB as SQL Server
+  participant Storage as Object Storage
+  participant Notify as Notification/SignalR
+  participant Audit as AuditLog
+
+  A->>UI: Upload evidence + request Done
+  UI->>API: POST /api/v1/tasks/{taskId}/evidences
+  API->>TaskSvc: AddEvidence(file metadata)
+  TaskSvc->>Storage: Store file / signed URL
+  TaskSvc->>DB: Insert task_evidences
+  TaskSvc->>Audit: TASK_EVIDENCE_UPLOADED
+
+  UI->>API: POST /api/v1/tasks/{taskId}/status-change-request
+  API->>TaskSvc: RequestStatusChange(taskId, Done)
+  TaskSvc->>Workflow: Validate transition + checklist/subtask/dependency policy
+  alt Invalid transition or missing evidence
+    Workflow-->>TaskSvc: Reject validation
+    TaskSvc-->>API: 409 BusinessRuleViolation
+    API-->>UI: Show reason + correlationId
+  else Requires PM approval
+    TaskSvc->>DB: Insert task_status_change_requests(Pending)
+    TaskSvc->>Notify: Notify PM/Reviewer
+    TaskSvc->>Audit: TASK_STATUS_REQUESTED
+    API-->>UI: 202 Pending approval
+  end
+
+  PM->>UI: Approve/Reject request
+  alt Approve
+    UI->>API: PATCH /api/v1/tasks/{taskId}/status-change-request/{reqId}/approve
+    API->>TaskSvc: ApproveStatusChange(reqId)
+    TaskSvc->>Workflow: Apply transition Review -> Done
+    TaskSvc->>DB: Update task status + approval row
+    TaskSvc->>Audit: TASK_STATUS_APPROVED
+    TaskSvc->>Notify: Notify assignee/watchers
+    API-->>UI: 200 Done
+  else Reject
+    UI->>API: PATCH /api/v1/tasks/{taskId}/status-change-request/{reqId}/reject
+    API->>TaskSvc: RejectStatusChange(reason)
+    TaskSvc->>DB: Update request Rejected + task Rework
+    TaskSvc->>Audit: TASK_STATUS_REJECTED
+    TaskSvc->>Notify: Notify assignee
+    API-->>UI: 200 Rework
+  end

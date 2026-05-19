@@ -17,6 +17,7 @@ public class TaskService : ITaskService
     private readonly IRepository<Project> _projectRepo;
     private readonly IRepository<ProjectMember> _memberRepo;
     private readonly IRepository<User> _userRepo;
+    private readonly IRepository<TaskAttachment> _attachmentRepo;
     private readonly IRepository<TaskAssignment> _assignmentRepo;
     private readonly IRepository<TaskViewEvent> _viewEventRepo;
     private readonly IRepository<TaskLabel> _taskLabelRepo;
@@ -35,6 +36,7 @@ public class TaskService : ITaskService
         IRepository<Project> projectRepo,
         IRepository<ProjectMember> memberRepo,
         IRepository<User> userRepo,
+        IRepository<TaskAttachment> attachmentRepo,
         IRepository<TaskAssignment> assignmentRepo,
         IRepository<TaskViewEvent> viewEventRepo,
         IRepository<TaskLabel> taskLabelRepo,
@@ -52,6 +54,7 @@ public class TaskService : ITaskService
         _projectRepo = projectRepo;
         _memberRepo = memberRepo;
         _userRepo = userRepo;
+        _attachmentRepo = attachmentRepo;
         _assignmentRepo = assignmentRepo;
         _viewEventRepo = viewEventRepo;
         _taskLabelRepo = taskLabelRepo;
@@ -386,10 +389,22 @@ public class TaskService : ITaskService
             return Result.Failure<TaskItemDto>("Invalid task status.");
         }
 
+        var oldStatus = task.Status;
+        var normalizedStatus = TaskStatusRules.NormalizeStatus(dto.Status);
+        if (!TaskStatusRules.CanTransition(oldStatus, normalizedStatus))
+        {
+            return Result.Failure<TaskItemDto>($"Status transition from {oldStatus} to {normalizedStatus} is not allowed.", 400);
+        }
+
+        if (RequiresApprovedEvidence(oldStatus, normalizedStatus) && !await HasApprovedEvidenceAsync(task.Id, ct))
+        {
+            return Result.Failure<TaskItemDto>("Cannot mark task as Done because there is no approved evidence.", 400);
+        }
+
         var previousAssignees = task.Assignees.Select(assignment => assignment.UserId).ToHashSet();
         dto.ApplyTo(task);
         task.Title = dto.Title.Trim();
-        task.Status = TaskStatusRules.NormalizeStatus(dto.Status);
+        task.Status = normalizedStatus;
         task.Priority = TaskStatusRules.NormalizePriority(dto.Priority);
 
         await _taskRepo.UpdateAsync(task, ct);
@@ -436,6 +451,17 @@ public class TaskService : ITaskService
 
         var normalizedStatus = TaskStatusRules.NormalizeStatus(newStatus);
         var oldStatus = task.Status;
+
+        if (!TaskStatusRules.CanTransition(oldStatus, normalizedStatus))
+        {
+            return Result.Failure($"Status transition from {oldStatus} to {normalizedStatus} is not allowed.", 400);
+        }
+
+        if (RequiresApprovedEvidence(oldStatus, normalizedStatus) && !await HasApprovedEvidenceAsync(task.Id, ct))
+        {
+            return Result.Failure("Cannot mark task as Done because there is no approved evidence.", 400);
+        }
+
         task.Status = normalizedStatus;
 
         await _taskRepo.UpdateAsync(task, ct);
@@ -547,6 +573,16 @@ public class TaskService : ITaskService
             if (!await _taskAccessPolicy.CanManageTaskAsync(task, ct)) continue;
 
             var oldStatus = task.Status;
+            if (!TaskStatusRules.CanTransition(oldStatus, normalizedStatus))
+            {
+                continue;
+            }
+
+            if (RequiresApprovedEvidence(oldStatus, normalizedStatus) && !await HasApprovedEvidenceAsync(task.Id, ct))
+            {
+                continue;
+            }
+
             task.Status = normalizedStatus;
 
             await _taskRepo.UpdateAsync(task, ct);
@@ -822,6 +858,17 @@ public class TaskService : ITaskService
 
     private async Task<bool> CanViewTaskDetailsAsync(TaskItem task, CancellationToken ct)
         => await _taskAccessPolicy.CanAccessTaskAsync(task, ct);
+
+    private static bool RequiresApprovedEvidence(string oldStatus, string newStatus)
+        => !string.Equals(oldStatus, "Done", StringComparison.OrdinalIgnoreCase) &&
+           string.Equals(newStatus, "Done", StringComparison.OrdinalIgnoreCase);
+
+    private async Task<bool> HasApprovedEvidenceAsync(Guid taskId, CancellationToken ct)
+        => await _attachmentRepo.GetQueryable()
+            .AnyAsync(attachment =>
+                attachment.TaskItemId == taskId &&
+                attachment.IsEvidence &&
+                attachment.EvidenceApprovalStatus == "Approved", ct);
 
     private async Task<TaskInputValidation> ValidateTaskInputAsync(string title, string priority, Guid projectId, IReadOnlyList<Guid> assigneeIds, IReadOnlyList<Guid>? labelIds, CancellationToken ct)
     {

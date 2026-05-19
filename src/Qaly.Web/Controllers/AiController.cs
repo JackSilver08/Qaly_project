@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Qaly.Application.Common.Interfaces;
+using Qaly.Application.DTOs.Ai;
 using Qaly.Application.Services;
 
 namespace Qaly.Web.Controllers;
@@ -11,12 +12,18 @@ namespace Qaly.Web.Controllers;
 public class AiController : ControllerBase
 {
     private readonly IAiService _aiService;
+    private readonly IAiWorkflowService _aiWorkflowService;
     private readonly IAiIngestionService _ingestionService;
     private readonly IAnalyticsService _analyticsService;
 
-    public AiController(IAiService aiService, IAiIngestionService ingestionService, IAnalyticsService analyticsService)
+    public AiController(
+        IAiService aiService,
+        IAiWorkflowService aiWorkflowService,
+        IAiIngestionService ingestionService,
+        IAnalyticsService analyticsService)
     {
         _aiService = aiService;
+        _aiWorkflowService = aiWorkflowService;
         _ingestionService = ingestionService;
         _analyticsService = analyticsService;
     }
@@ -25,7 +32,21 @@ public class AiController : ControllerBase
     public async Task<IActionResult> Sync()
     {
         await _ingestionService.SyncAllDataAsync();
-        return Ok(new { message = "Đã hoàn thành đồng bộ dữ liệu vào Vector Database." });
+        return Ok(new { message = "Data sync to vector database completed." });
+    }
+
+    [HttpPost("jobs")]
+    public async Task<IActionResult> CreateJob(CreateAiJobDto dto, CancellationToken ct = default)
+    {
+        var result = await _aiWorkflowService.CreateJobAsync(dto, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("drafts/{draftId:guid}/confirm")]
+    public async Task<IActionResult> ConfirmDraft(Guid draftId, ConfirmAiDraftDto dto, CancellationToken ct = default)
+    {
+        var result = await _aiWorkflowService.ConfirmDraftAsync(draftId, dto, ct);
+        return StatusCode(result.StatusCode, result);
     }
 
     [HttpPost("priority")]
@@ -88,13 +109,11 @@ public class AiController : ControllerBase
     [HttpGet("export/{projectId:guid}")]
     public async Task<IActionResult> Export(Guid projectId, [FromQuery] string format = "excel")
     {
-        // This is a simplified export endpoint. In a real app, we'd use the service.
-        // For now, let's just implement the Excel part.
         var project = await _aiService.GetProjectWithTasksAsync(projectId);
         if (project == null) return NotFound();
 
         var exportService = HttpContext.RequestServices.GetRequiredService<IAiExportService>();
-        var bytes = string.Equals(format, "word", StringComparison.OrdinalIgnoreCase) 
+        var bytes = string.Equals(format, "word", StringComparison.OrdinalIgnoreCase)
             ? await exportService.ExportProjectToWordAsync(project)
             : await exportService.ExportProjectToExcelAsync(project);
 

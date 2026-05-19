@@ -14,6 +14,9 @@ public class TaskAttachmentConfiguration : IEntityTypeConfiguration<TaskAttachme
         builder.Property(a => a.FilePath).IsRequired();
         builder.Property(a => a.ContentType).HasMaxLength(100);
         builder.Property(a => a.Scope).HasMaxLength(20).IsRequired().HasDefaultValue("Task");
+        builder.Property(a => a.IsEvidence).HasDefaultValue(false);
+        builder.Property(a => a.EvidenceApprovalStatus).HasMaxLength(20).IsRequired().HasDefaultValue("None");
+        builder.Property(a => a.EvidenceReviewNote).HasMaxLength(1000);
         builder.Property(a => a.UploadedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
 
         builder.HasOne(a => a.TaskItem)
@@ -39,8 +42,15 @@ public class TaskAttachmentConfiguration : IEntityTypeConfiguration<TaskAttachme
             .HasForeignKey(a => a.UploadedById)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(a => a.EvidenceReviewedBy)
+            .WithMany()
+            .HasForeignKey(a => a.EvidenceReviewedById)
+            .OnDelete(DeleteBehavior.Restrict)
+            .IsRequired(false);
+
         builder.HasIndex(a => new { a.Scope, a.ProjectId });
         builder.HasIndex(a => new { a.Scope, a.TaskItemId });
         builder.HasIndex(a => new { a.Scope, a.CommentId });
+        builder.HasIndex(a => new { a.TaskItemId, a.IsEvidence, a.EvidenceApprovalStatus });
     }
 }

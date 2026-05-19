@@ -12,11 +12,15 @@ public class Project : BaseEntity
 
     // Foreign keys
     public Guid OwnerId { get; set; }
+    public Guid? OrganizationId { get; set; }
 
     // Navigation properties
     public User Owner { get; set; } = null!;
+    public Organization? Organization { get; set; }
     public ICollection<ProjectMember> Members { get; set; } = new List<ProjectMember>();
     public ICollection<TaskItem> Tasks { get; set; } = new List<TaskItem>();
     public ICollection<ProjectLabel> Labels { get; set; } = new List<ProjectLabel>();
     public ICollection<TaskAttachment> Attachments { get; set; } = new List<TaskAttachment>();
+    public ICollection<AiJob> AiJobs { get; set; } = new List<AiJob>();
+    public ICollection<AiGeneratedDraft> AiDrafts { get; set; } = new List<AiGeneratedDraft>();
 }

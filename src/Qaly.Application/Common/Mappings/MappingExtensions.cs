@@ -35,7 +35,9 @@ public static class MappingExtensions
             project.Tasks?.Count ?? 0,
             CalculateProgress(project.Tasks),
             project.Labels?.Select(label => label.ToDto()).ToList() ?? [],
-            project.CreatedAt);
+            project.CreatedAt,
+            project.OrganizationId,
+            project.Organization?.Name);
 
     public static Project ToEntity(this CreateProjectDto dto)
         => new()
@@ -45,7 +47,8 @@ public static class MappingExtensions
             Description = dto.Description,
             LogoUrl = dto.LogoUrl,
             StartDate = dto.StartDate,
-            EndDate = dto.EndDate
+            EndDate = dto.EndDate,
+            OrganizationId = dto.OrganizationId
         };
 
     public static void ApplyTo(this UpdateProjectDto dto, Project project)
@@ -58,6 +61,19 @@ public static class MappingExtensions
         project.StartDate = dto.StartDate;
         project.EndDate = dto.EndDate;
     }
+
+    public static OrganizationDto ToDto(this Organization organization)
+        => new(
+            organization.Id,
+            organization.Name,
+            organization.Code,
+            organization.Description,
+            organization.IsActive,
+            organization.OwnerId,
+            organization.Owner?.FullName ?? string.Empty,
+            organization.Members?.Count ?? 0,
+            organization.Projects?.Count ?? 0,
+            organization.CreatedAt);
 
     public static ProjectLabelDto ToDto(this ProjectLabel label)
         => new(label.Id, label.Name, label.Color, label.CreatedAt);
@@ -235,5 +251,11 @@ public static class MappingExtensions
             attachment.CommentId,
             attachment.UploadedById,
             attachment.UploadedBy?.FullName ?? string.Empty,
-            attachment.UploadedAt);
+            attachment.UploadedAt,
+            attachment.IsEvidence,
+            attachment.EvidenceApprovalStatus,
+            attachment.EvidenceReviewedById,
+            attachment.EvidenceReviewedBy?.FullName,
+            attachment.EvidenceReviewedAt,
+            attachment.EvidenceReviewNote);
 }
