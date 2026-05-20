@@ -25,7 +25,11 @@ public class TaskTimelineAttentionTests : IDisposable
         _context = new QalyDbContext(options);
     }
 
-    public void Dispose() => _context.Dispose();
+    public void Dispose()
+    {
+        _context.Dispose();
+        GC.SuppressFinalize(this);
+    }
 
     [Fact]
     public async Task GetAttentionByProjectAsync_AssigneeCanSeeOwnOverdueTask()

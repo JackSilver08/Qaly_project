@@ -8,7 +8,7 @@ using Qaly.Infrastructure.Data;
 
 namespace Qaly.Infrastructure.Services;
 
-public class TaskAttentionSignalWorker : BackgroundService
+public partial class TaskAttentionSignalWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<TaskAttentionSignalWorker> _logger;
@@ -35,12 +35,15 @@ public class TaskAttentionSignalWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Khong the quet canh bao timeline task.");
+                LogScanFailed(_logger, ex);
             }
 
             await Task.Delay(TimeSpan.FromMinutes(15), stoppingToken);
         }
     }
+
+    [LoggerMessage(EventId = 1, Level = LogLevel.Warning, Message = "Khong the quet canh bao timeline task.")]
+    private static partial void LogScanFailed(ILogger logger, Exception exception);
 
     private async Task ScanAsync(CancellationToken ct)
     {

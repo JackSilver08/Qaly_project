@@ -5,37 +5,41 @@ using Qaly.Application.DTOs.Webhook;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 using System.Text.Json;
+using Qaly.Application.Services.Tasks;
 
 namespace Qaly.Application.Services;
 
 public class WebhookService : IWebhookService
 {
     private readonly IRepository<WebhookSubscription> _webhookRepo;
-    private readonly IRepository<ProjectMember> _memberRepo;
     private readonly IRepository<Project> _projectRepo;
     private readonly ICurrentUserService _currentUserService;
+    private readonly ITaskAccessPolicy _taskAccessPolicy;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IWebhookPublisher _webhookPublisher;
 
     public WebhookService(
-        IRepository<WebhookSubscription> webhookRepo,
-        IRepository<ProjectMember> memberRepo,
+        IRepository<WebhookSubscription> _webhookRepo,
         IRepository<Project> projectRepo,
         ICurrentUserService currentUserService,
+        ITaskAccessPolicy taskAccessPolicy,
         IUnitOfWork unitOfWork,
         IWebhookPublisher webhookPublisher)
     {
-        _webhookRepo = webhookRepo;
-        _memberRepo = memberRepo;
+        this._webhookRepo = _webhookRepo;
         _projectRepo = projectRepo;
         _currentUserService = currentUserService;
+        _taskAccessPolicy = taskAccessPolicy;
         _unitOfWork = unitOfWork;
         _webhookPublisher = webhookPublisher;
     }
 
     public async Task<Result<IEnumerable<WebhookDto>>> GetByProjectAsync(Guid projectId, CancellationToken ct = default)
     {
-        if (!await CanManageProjectAsync(projectId, ct))
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null) return Result.NotFound<IEnumerable<WebhookDto>>();
+
+        if (!await _taskAccessPolicy.CanManageWebhooksAsync(projectId, project.OwnerId, ct))
         {
             return Result.Forbidden<IEnumerable<WebhookDto>>();
         }
@@ -64,7 +68,10 @@ public class WebhookService : IWebhookService
             return Result.Failure<WebhookDto>(validation.Error!, validation.StatusCode);
         }
 
-        if (!await CanManageProjectAsync(dto.ProjectId, ct))
+        var project = await _projectRepo.GetByIdAsync(dto.ProjectId, ct);
+        if (project == null) return Result.NotFound<WebhookDto>();
+
+        if (!await _taskAccessPolicy.CanManageWebhooksAsync(dto.ProjectId, project.OwnerId, ct))
         {
             return Result.Forbidden<WebhookDto>();
         }
@@ -113,6 +120,9 @@ public class WebhookService : IWebhookService
             return Result.Failure<WebhookDto>(validation.Error!, validation.StatusCode);
         }
 
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null) return Result.NotFound<WebhookDto>();
+
         var webhook = await _webhookRepo.GetByIdAsync(id, ct);
         if (webhook == null) return Result.NotFound<WebhookDto>();
 
@@ -121,7 +131,7 @@ public class WebhookService : IWebhookService
             return Result.NotFound<WebhookDto>();
         }
 
-        if (!await CanManageProjectAsync(projectId, ct))
+        if (!await _taskAccessPolicy.CanManageWebhooksAsync(projectId, project.OwnerId, ct))
         {
             return Result.Forbidden<WebhookDto>();
         }
@@ -146,6 +156,9 @@ public class WebhookService : IWebhookService
 
     public async Task<Result> DeleteAsync(Guid projectId, Guid id, CancellationToken ct = default)
     {
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null) return Result.NotFound();
+
         var webhook = await _webhookRepo.GetByIdAsync(id, ct);
         if (webhook == null) return Result.NotFound();
 
@@ -154,7 +167,7 @@ public class WebhookService : IWebhookService
             return Result.NotFound();
         }
 
-        if (!await CanManageProjectAsync(projectId, ct))
+        if (!await _taskAccessPolicy.CanManageWebhooksAsync(projectId, project.OwnerId, ct))
         {
             return Result.Forbidden();
         }
@@ -167,6 +180,9 @@ public class WebhookService : IWebhookService
 
     public async Task<Result> TriggerTestAsync(Guid projectId, Guid id, CancellationToken ct = default)
     {
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null) return Result.NotFound();
+
         var webhook = await _webhookRepo.GetByIdAsync(id, ct);
         if (webhook == null) return Result.NotFound();
 
@@ -175,38 +191,13 @@ public class WebhookService : IWebhookService
             return Result.NotFound();
         }
 
-        if (!await CanManageProjectAsync(projectId, ct))
+        if (!await _taskAccessPolicy.CanManageWebhooksAsync(projectId, project.OwnerId, ct))
         {
             return Result.Forbidden();
         }
 
         await _webhookPublisher.DispatchToWebhookAsync(webhook.Id, "ping", new { message = "Test webhook from Qaly" }, ct);
         return Result.Success();
-    }
-
-    private async Task<bool> CanManageProjectAsync(Guid projectId, CancellationToken ct)
-    {
-        var currentUserId = _currentUserService.UserId;
-        if (currentUserId == null) return false;
-
-        if (string.Equals(_currentUserService.Role, "Admin", StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        var project = await _projectRepo.GetByIdAsync(projectId, ct);
-        if (project == null) return false;
-
-        if (project.OwnerId == currentUserId) return true;
-
-        return await _memberRepo.GetQueryable()
-            .AnyAsync(m =>
-                m.ProjectId == projectId &&
-                m.UserId == currentUserId &&
-                (
-                    m.Role == ProjectRoleRules.Owner ||
-                    m.Role == ProjectRoleRules.Manager ||
-                    m.Role == ProjectRoleRules.Member ||
-                    m.Role == "Admin"
-                ), ct);
     }
 
     private static Result ValidateWebhook(string payloadUrl, string[]? events)

@@ -33,6 +33,7 @@ public static class DependencyInjection
         services.AddScoped<IAnalyticsService, AnalyticsService>();
         services.AddScoped<IApiKeyService, ApiKeyService>();
         services.AddScoped<IImportService, ImportService>();
+        services.AddScoped<IWikiService, WikiService>();
 
         return services;
     }
