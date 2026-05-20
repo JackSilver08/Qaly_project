@@ -1,42 +1,464 @@
 @page
 @model Qaly.Web.Pages.Account.RegisterModel
 @{
-    ViewData["Title"] = "Create account";
+    ViewData["Title"] = "Đăng ký tài khoản";
 }
 
-<main class="auth-page">
-    <section class="auth-card">
-        <div class="auth-card__brand">
-            <span>Qaly</span>
-            <h1>Create account</h1>
-            <p>Join the workspace and start planning work.</p>
-        </div>
+<main class="login-page">
+    <div class="auth-container">
+        <section class="auth-side-form">
+            <div class="auth-side-bg-shapes">
+                <div class="bg-tech-grid"></div>
+                <div class="bg-blob blob-blue"></div>
+                <div class="bg-blob blob-cyan"></div>
+                <div class="bg-blob blob-purple"></div>
+            </div>
 
-        @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
-        {
-            <div class="auth-error" data-toast-message="@Model.ErrorMessage" data-toast-type="error">@Model.ErrorMessage</div>
+            <div class="floating-3d-node node-1"></div>
+            <div class="floating-3d-node node-2"></div>
+            <div class="floating-3d-node node-3"></div>
+
+            <div class="login-form-shell glass-card">
+                <div class="auth-card__brand">
+                    <span>Qaly Workspace</span>
+                    <h1>Đăng ký tài khoản</h1>
+                    <p>Tham gia không gian làm việc và bắt đầu lập kế hoạch ngay.</p>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+                {
+                    <div class="auth-error" data-toast-message="@Model.ErrorMessage" data-toast-type="error">@Model.ErrorMessage</div>
+                }
+
+                <form id="registerForm" method="post" class="auth-form" asp-antiforgery="false">
+                    <label>
+                        <span>Họ và tên</span>
+                        <input asp-for="FullName" type="text" autocomplete="name" required />
+                    </label>
+                    <label>
+                        <span>Địa chỉ Email</span>
+                        <input asp-for="Email" type="email" autocomplete="email" required />
+                    </label>
+                    <label>
+                        <span>Mật khẩu</span>
+                        <input asp-for="Password" type="password" autocomplete="new-password" required minlength="8" />
+                    </label>
+                    <label>
+                        <span>Xác nhận mật khẩu</span>
+                        <input asp-for="ConfirmPassword" type="password" autocomplete="new-password" required minlength="8" />
+                    </label>
+                    
+                    <button type="submit">Đăng ký tài khoản</button>
+                </form>
+
+                <div class="auth-link">
+                    Đã có tài khoản? <a asp-page="/Account/Login">Đăng nhập ngay</a>
+                </div>
+            </div>
+        </section>
+
+        <section class="auth-side-visual">
+            <canvas id="tech-snow-canvas"></canvas>
+
+            <div class="floating-pill pill-deadline">
+                <div class="icon-dot">MỚI</div>
+                <span>
+                    <b>Tham gia ngay</b>
+                    <small>Cộng đồng Qaly</small>
+                </span>
+            </div>
+
+            <div class="floating-pill pill-efficiency">
+                <span>
+                    <b>Bảo mật cao</b>
+                    <small>Chuẩn mã hóa</small>
+                </span>
+                <div class="icon-dot">100%</div>
+            </div>
+
+            <div class="auth-visual-inner">
+                <img src="~/images/login-illustration-new.png" alt="Trực quan hóa không gian làm việc Qaly" />
+
+                <div class="auth-visual-content">
+                    <h2>Bắt đầu với Qaly</h2>
+                    <p>Khởi tạo Workspace của riêng bạn, mời thành viên và quản trị công việc ngay trong hôm nay.</p>
+                </div>
+            </div>
+        </section>
+    </div>
+</main>
+
+@section Scripts {
+    <style>
+        /* Curtain Transition */
+        .login-wipe-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 99999;
+            pointer-events: none;
+            overflow: hidden;
+        }
+        .login-wipe-overlay .wipe-panel {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            width: 50.5%;
+            background: linear-gradient(135deg, #050b18 0%, #0a1931 100%);
+            transition: transform 0.65s cubic-bezier(0.85, 0, 0.15, 1);
+            transform: scaleX(0);
+            z-index: 99999;
+            pointer-events: auto;
+        }
+        .login-wipe-overlay .wipe-panel.left {
+            left: 0;
+            transform-origin: left;
+            border-right: 2px solid #22d3ee;
+            box-shadow: 10px 0 30px rgba(34, 211, 238, 0.25);
+        }
+        .login-wipe-overlay .wipe-panel.right {
+            right: 0;
+            transform-origin: right;
+            border-left: 2px solid #22d3ee;
+            box-shadow: -10px 0 30px rgba(34, 211, 238, 0.25);
+        }
+        .login-wipe-overlay.is-closing .wipe-panel {
+            transform: scaleX(1);
         }
 
-        <form method="post" class="auth-form" asp-antiforgery="false">
-            <label>
-                <span>Full name</span>
-                <input asp-for="FullName" type="text" autocomplete="name" required />
-            </label>
-            <label>
-                <span>Email</span>
-                <input asp-for="Email" type="email" autocomplete="email" required />
-            </label>
-            <label>
-                <span>Password</span>
-                <input asp-for="Password" type="password" autocomplete="new-password" required minlength="8" />
-            </label>
-            <label>
-                <span>Confirm password</span>
-                <input asp-for="ConfirmPassword" type="password" autocomplete="new-password" required minlength="8" />
-            </label>
-            <button type="submit">Create account</button>
-        </form>
+        /* 3D & Dynamic Background Styles for Left Side */
+        .auth-side-form {
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(135deg, #f8fafc 0%, #edf2f9 100%) !important;
+        }
 
-        <p class="auth-link">Already have an account? <a asp-page="/Account/Login">Sign in</a></p>
-    </section>
-</main>
+        .auth-side-bg-shapes {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        /* Technical grid pattern */
+        .bg-tech-grid {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: radial-gradient(rgba(37, 99, 235, 0.06) 1.5px, transparent 1.5px);
+            background-size: 32px 32px;
+            opacity: 0.85;
+        }
+
+        /* Pulsating blurred color blobs */
+        .bg-blob {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.65;
+            mix-blend-mode: multiply;
+            animation: blob-pulse 12s infinite alternate ease-in-out;
+        }
+
+        .blob-blue {
+            width: 320px;
+            height: 320px;
+            top: -50px;
+            left: -50px;
+            background: radial-gradient(circle, rgba(37, 99, 235, 0.18) 0%, rgba(37, 99, 235, 0.02) 70%);
+        }
+
+        .blob-cyan {
+            width: 280px;
+            height: 280px;
+            bottom: -40px;
+            right: -40px;
+            background: radial-gradient(circle, rgba(34, 211, 238, 0.16) 0%, rgba(34, 211, 238, 0.02) 70%);
+            animation-delay: -4s;
+        }
+
+        .blob-purple {
+            width: 250px;
+            height: 250px;
+            top: 45%;
+            left: 30%;
+            background: radial-gradient(circle, rgba(168, 85, 247, 0.12) 0%, rgba(168, 85, 247, 0.02) 70%);
+            animation-delay: -8s;
+        }
+
+        @@keyframes blob-pulse {
+            0% {
+                transform: translate(0, 0) scale(1);
+            }
+            50% {
+                transform: translate(30px, -40px) scale(1.15);
+            }
+            100% {
+                transform: translate(-20px, 20px) scale(0.9);
+            }
+        }
+
+        /* Floating 3D glassy nodes */
+        .floating-3d-node {
+            position: absolute;
+            border-radius: 50%;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0.1) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(5px);
+            box-shadow: 
+                inset 5px 5px 15px rgba(255, 255, 255, 0.5),
+                inset -5px -5px 15px rgba(0, 0, 0, 0.05),
+                0 15px 35px rgba(37, 99, 235, 0.12);
+            animation: floating-node 8s infinite alternate ease-in-out;
+        }
+
+        .node-1 {
+            width: 48px;
+            height: 48px;
+            top: 15%;
+            right: 12%;
+        }
+
+        .node-2 {
+            width: 32px;
+            height: 32px;
+            bottom: 18%;
+            left: 10%;
+            animation-delay: -3s;
+            animation-duration: 6s;
+        }
+
+        .node-3 {
+            width: 20px;
+            height: 20px;
+            bottom: 45%;
+            right: 15%;
+            animation-delay: -5s;
+            animation-duration: 10s;
+        }
+
+        @@keyframes floating-node {
+            0% {
+                transform: translateY(0) rotate(0deg);
+            }
+            100% {
+                transform: translateY(-25px) rotate(180deg);
+            }
+        }
+
+        /* White Glassmorphic Input Fields */
+        .login-page .auth-form input {
+            background: #ffffff !important;
+            color: #111827 !important;
+            border: 1px solid #dfe7f4 !important;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02) !important;
+            transition: all 0.25s ease !important;
+        }
+
+        .login-page .auth-form input:focus {
+            border-color: #3b82f6 !important;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15), inset 0 2px 4px rgba(0, 0, 0, 0.02) !important;
+        }
+        
+        #tech-snow-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
+        }
+        .login-page .auth-side-visual {
+            position: relative;
+        }
+
+        /* Make the left side a solid full-width white pane instead of a floating card */
+        .login-page .auth-side-form {
+            padding: 0 !important;
+            background: #ffffff !important;
+        }
+
+        .login-form-shell {
+            max-width: none !important;
+            width: 100% !important;
+            height: 100% !important;
+            padding: clamp(40px, 8vw, 100px) clamp(30px, 5vw, 80px) !important;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            background: #ffffff !important;
+            border: none !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            backdrop-filter: none !important;
+            transform: none !important;
+        }
+
+        .login-form-shell:hover {
+            box-shadow: none !important;
+            transform: none !important;
+        }
+    </style>
+    <script>
+        // Transition Submit Handler
+        document.getElementById('registerForm').addEventListener('submit', function(e) {
+            if (this.dataset.transition === 'running') {
+                return;
+            }
+            e.preventDefault();
+            const form = this;
+            
+            // Create wipe overlay dynamically
+            const overlay = document.createElement('div');
+            overlay.className = 'login-wipe-overlay';
+            overlay.innerHTML = `
+                <div class="wipe-panel left"></div>
+                <div class="wipe-panel right"></div>
+            `;
+            document.body.appendChild(overlay);
+            
+            // Force a reflow
+            overlay.offsetHeight;
+            
+            // Trigger closing animation
+            overlay.classList.add('is-closing');
+            
+            // Submit form after animation completes (650ms)
+            setTimeout(function() {
+                form.dataset.transition = 'running';
+                form.submit();
+            }, 650);
+        });
+
+        // 3D Tech Particle Snow System
+        (function() {
+            const canvas = document.getElementById('tech-snow-canvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const visualSection = document.querySelector('.auth-side-visual');
+            
+            let particles = [];
+            const particleCount = 75;
+            let width = 0;
+            let height = 0;
+            
+            // Mouse object to track interaction
+            const mouse = {
+                x: null,
+                y: null,
+                radius: 120
+            };
+            
+            if (visualSection) {
+                visualSection.addEventListener('mousemove', function(e) {
+                    const rect = visualSection.getBoundingClientRect();
+                    mouse.x = e.clientX - rect.left;
+                    mouse.y = e.clientY - rect.top;
+                });
+                
+                visualSection.addEventListener('mouseleave', function() {
+                    mouse.x = null;
+                    mouse.y = null;
+                });
+            }
+            
+            function resize() {
+                if (!visualSection) return;
+                width = canvas.width = visualSection.clientWidth;
+                height = canvas.height = visualSection.clientHeight;
+            }
+            
+            window.addEventListener('resize', resize);
+            resize();
+            
+            // Particle Class
+            class Particle {
+                constructor() {
+                    this.reset(true);
+                }
+                
+                reset(init = false) {
+                    this.x = init ? Math.random() * width : Math.random() * width;
+                    this.y = init ? Math.random() * height : -10;
+                    this.size = Math.random() * 2 + 0.5;
+                    this.speedY = Math.random() * 0.5 + 0.1;
+                    this.speedX = Math.random() * 0.5 - 0.25;
+                    // Blue to cyan tones
+                    const hue = Math.floor(Math.random() * 40 + 190);
+                    this.color = `hsla(${hue}, 100%, 70%, ${Math.random() * 0.5 + 0.2})`;
+                    this.z = Math.random() * 2; // depth factor for parallax
+                }
+                
+                update() {
+                    this.y += this.speedY * (1 + this.z);
+                    this.x += this.speedX;
+                    
+                    // Interaction with mouse
+                    if (mouse.x != null && mouse.y != null) {
+                        const dx = this.x - mouse.x;
+                        const dy = this.y - mouse.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        
+                        if (distance < mouse.radius) {
+                            const forceDirectionX = dx / distance;
+                            const forceDirectionY = dy / distance;
+                            const force = (mouse.radius - distance) / mouse.radius;
+                            
+                            this.x += forceDirectionX * force * 2;
+                            this.y += forceDirectionY * force * 2;
+                        }
+                    }
+                    
+                    // Reset if off screen
+                    if (this.y > height + 10 || this.x < -10 || this.x > width + 10) {
+                        this.reset();
+                    }
+                }
+                
+                draw() {
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                    ctx.fillStyle = this.color;
+                    ctx.fill();
+                    
+                    // Subtle glow
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = this.color;
+                }
+            }
+            
+            // Initialize particles
+            for (let i = 0; i < particleCount; i++) {
+                particles.push(new Particle());
+            }
+            
+            // Animation loop
+            function animate() {
+                ctx.clearRect(0, 0, width, height);
+                
+                // Add a very subtle trailing effect
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+                ctx.fillRect(0, 0, width, height);
+                ctx.globalCompositeOperation = 'source-over';
+                
+                for (let i = 0; i < particles.length; i++) {
+                    particles[i].update();
+                    particles[i].draw();
+                }
+                
+                requestAnimationFrame(animate);
+            }
+            
+            animate();
+        })();
+    </script>
+}

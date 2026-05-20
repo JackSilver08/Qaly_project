@@ -1,17 +1,28 @@
 @page
 @model Qaly.Web.Pages.Account.LoginModel
 @{
-    ViewData["Title"] = "Sign in";
+    ViewData["Title"] = "Đăng nhập";
 }
 
 <main class="auth-page login-page">
     <div class="auth-container">
         <section class="auth-side-form">
+            <!-- Dynamic 3D and animated background elements -->
+            <div class="auth-side-bg-shapes">
+                <div class="bg-tech-grid"></div>
+                <div class="bg-blob blob-blue"></div>
+                <div class="bg-blob blob-cyan"></div>
+                <div class="bg-blob blob-purple"></div>
+                <div class="floating-3d-node node-1"></div>
+                <div class="floating-3d-node node-2"></div>
+                <div class="floating-3d-node node-3"></div>
+            </div>
+
             <div class="login-form-shell">
                 <div class="auth-card__brand">
                     <span class="brand-logo">Qaly Workspace</span>
-                    <h1>Welcome back</h1>
-                    <p>Elevate your projects with high-precision management.</p>
+                    <h1>Chào mừng quay lại</h1>
+                    <p>Nâng tầm dự án của bạn với giải pháp quản lý chính xác cao.</p>
                 </div>
 
                 @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
@@ -22,66 +33,62 @@
                 <form method="post" class="auth-form" id="loginForm" asp-antiforgery="false">
                     <input type="hidden" asp-for="ReturnUrl" />
                     <label>
-                        <span>Email address</span>
-                        <input asp-for="Email" type="email" placeholder="name@company.com" autocomplete="email" required />
+                        <span>Địa chỉ Email</span>
+                        <input asp-for="Email" type="email" placeholder="ten@congty.com" autocomplete="email" required />
                     </label>
                     <label>
-                        <span>Password</span>
-                        <input asp-for="Password" type="password" placeholder="Password" autocomplete="current-password" required />
+                        <span>Mật khẩu</span>
+                        <input asp-for="Password" type="password" placeholder="Nhập mật khẩu" autocomplete="current-password" required />
                     </label>
 
                     <div class="auth-options">
                         <label class="remember-option">
                             <input type="checkbox" />
-                            <span>Remember me</span>
+                            <span>Duy trì đăng nhập</span>
                         </label>
-                        <a href="#">Forgot password?</a>
+                        <a href="#">Quên mật khẩu?</a>
                     </div>
 
-                    <button type="submit">Log In</button>
+                    <button type="submit">Đăng nhập</button>
                 </form>
 
                 <div class="auth-link">
-                    Don't have an account? <a asp-page="/Account/Register">Sign Up</a>
+                    Chưa có tài khoản? <a asp-page="/Account/Register">Đăng ký ngay</a>
                 </div>
 
                 <div class="auth-hint">
-                    <strong>Seed admin</strong>
+                    <strong>Tài khoản mẫu:</strong>
                     <span>admin@qaly.dev / Admin@123</span>
                 </div>
             </div>
         </section>
 
         <section class="auth-side-visual">
-            <div class="auth-particles">
-                <div class="auth-particle particle-one"></div>
-                <div class="auth-particle particle-two"></div>
-                <div class="auth-particle particle-three"></div>
-                <div class="auth-particle particle-four"></div>
-            </div>
+            <!-- Interactive 3D Tech Snow Canvas -->
+            <canvas id="tech-snow-canvas"></canvas>
 
             <div class="floating-pill pill-deadline">
                 <div class="icon-dot">OK</div>
                 <span>
-                    <b>Deadline Met</b>
-                    <small>Project A complete</small>
+                    <b>Đúng tiến độ</b>
+                    <small>Dự án A hoàn thành</small>
                 </span>
             </div>
 
             <div class="floating-pill pill-efficiency">
                 <span>
-                    <b>Efficiency</b>
+                    <b>Hiệu suất tối ưu</b>
                     <small>+24%</small>
                 </span>
                 <div class="icon-dot">24</div>
             </div>
 
             <div class="auth-visual-inner">
-                <img src="~/images/login-illustration-new.png" alt="Qaly workspace visualization" />
+                <img src="~/images/login-illustration-new.png" alt="Trực quan hóa không gian làm việc Qaly" />
 
                 <div class="auth-visual-content">
-                    <h2>Calculated Precision</h2>
-                    <p>Experience a workflow designed for high-stakes enterprise management with high-fidelity visualization.</p>
+                    <h2>Quản trị Khoa học</h2>
+                    <p>Trải nghiệm quy trình làm việc chuẩn doanh nghiệp lớn với khả năng trực quan hóa độ chính xác cao.</p>
                 </div>
             </div>
         </section>
@@ -89,9 +96,447 @@
 </main>
 
 @section Scripts {
+    <style>
+        /* Curtain Transition */
+        .login-wipe-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 99999;
+            pointer-events: none;
+            overflow: hidden;
+        }
+        .login-wipe-overlay .wipe-panel {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            width: 50.5%;
+            background: linear-gradient(135deg, #050b18 0%, #0a1931 100%);
+            transition: transform 0.65s cubic-bezier(0.85, 0, 0.15, 1);
+            transform: scaleX(0);
+            z-index: 99999;
+            pointer-events: auto;
+        }
+        .login-wipe-overlay .wipe-panel.left {
+            left: 0;
+            transform-origin: left;
+            border-right: 2px solid #22d3ee;
+            box-shadow: 10px 0 30px rgba(34, 211, 238, 0.25);
+        }
+        .login-wipe-overlay .wipe-panel.right {
+            right: 0;
+            transform-origin: right;
+            border-left: 2px solid #22d3ee;
+            box-shadow: -10px 0 30px rgba(34, 211, 238, 0.25);
+        }
+        .login-wipe-overlay.is-closing .wipe-panel {
+            transform: scaleX(1);
+        }
+
+        /* 3D & Dynamic Background Styles for Left Side of Login Page */
+        .auth-side-form {
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(135deg, #f8fafc 0%, #edf2f9 100%) !important;
+        }
+
+        .auth-side-bg-shapes {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        /* Technical grid pattern */
+        .bg-tech-grid {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: radial-gradient(rgba(37, 99, 235, 0.06) 1.5px, transparent 1.5px);
+            background-size: 32px 32px;
+            opacity: 0.85;
+        }
+
+        /* Pulsating blurred color blobs */
+        .bg-blob {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.65;
+            mix-blend-mode: multiply;
+            animation: blob-pulse 12s infinite alternate ease-in-out;
+        }
+
+        .blob-blue {
+            width: 320px;
+            height: 320px;
+            top: -50px;
+            left: -50px;
+            background: radial-gradient(circle, rgba(37, 99, 235, 0.18) 0%, rgba(37, 99, 235, 0.02) 70%);
+        }
+
+        .blob-cyan {
+            width: 280px;
+            height: 280px;
+            bottom: -40px;
+            right: -40px;
+            background: radial-gradient(circle, rgba(34, 211, 238, 0.16) 0%, rgba(34, 211, 238, 0.02) 70%);
+            animation-delay: -4s;
+        }
+
+        .blob-purple {
+            width: 250px;
+            height: 250px;
+            top: 45%;
+            left: 30%;
+            background: radial-gradient(circle, rgba(168, 85, 247, 0.12) 0%, rgba(168, 85, 247, 0.02) 70%);
+            animation-delay: -8s;
+        }
+
+        @@keyframes blob-pulse {
+            0% {
+                transform: translate(0, 0) scale(1);
+            }
+            50% {
+                transform: translate(30px, -40px) scale(1.15);
+            }
+            100% {
+                transform: translate(-20px, 20px) scale(0.9);
+            }
+        }
+
+        /* Floating 3D glassy nodes */
+        .floating-3d-node {
+            position: absolute;
+            border-radius: 50%;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0.1) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(5px);
+            box-shadow: 
+                inset 5px 5px 15px rgba(255, 255, 255, 0.5),
+                inset -5px -5px 15px rgba(0, 0, 0, 0.05),
+                0 15px 35px rgba(37, 99, 235, 0.12);
+            animation: floating-node 8s infinite alternate ease-in-out;
+        }
+
+        .node-1 {
+            width: 48px;
+            height: 48px;
+            top: 15%;
+            right: 12%;
+        }
+
+        .node-2 {
+            width: 32px;
+            height: 32px;
+            bottom: 18%;
+            left: 10%;
+            animation-delay: -3s;
+            animation-duration: 6s;
+        }
+
+        .node-3 {
+            width: 20px;
+            height: 20px;
+            bottom: 45%;
+            right: 15%;
+            animation-delay: -5s;
+            animation-duration: 10s;
+        }
+
+        @@keyframes floating-node {
+            0% {
+                transform: translateY(0) rotate(0deg);
+            }
+            100% {
+                transform: translateY(-25px) rotate(180deg);
+            }
+        }
+
+        /* 3D Glassmorphic Form Card Styling */
+        .login-form-shell {
+            position: relative;
+            z-index: 2;
+            padding: 40px;
+            background: rgba(255, 255, 255, 0.72) !important;
+            border: 1px solid rgba(255, 255, 255, 0.7) !important;
+            border-radius: 24px !important;
+            backdrop-filter: blur(16px) !important;
+            box-shadow: 
+                0 4px 30px rgba(0, 0, 0, 0.03),
+                0 30px 60px rgba(15, 82, 186, 0.07),
+                inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+            transform-style: preserve-3d;
+            transform: perspective(1000px);
+            transition: transform 0.25s ease-out, box-shadow 0.25s ease;
+        }
+
+        .login-form-shell:hover {
+            box-shadow: 
+                0 10px 40px rgba(0, 0, 0, 0.05),
+                0 40px 80px rgba(15, 82, 186, 0.12),
+                inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
+        }
+
+        /* Elevate internal form elements for 3D depth layers */
+        .auth-card__brand, .auth-form, .auth-link, .auth-hint {
+            transform: translateZ(25px);
+        }
+
+        /* White Glassmorphic Input Fields */
+        .login-page .auth-form input {
+            background: #ffffff !important;
+            color: #111827 !important;
+            border: 1px solid #dfe7f4 !important;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02) !important;
+            transition: all 0.25s ease !important;
+        }
+
+        .login-page .auth-form input:hover {
+            border-color: #cbd5e1 !important;
+            background: #ffffff !important;
+        }
+
+        .login-page .auth-form input:focus {
+            border-color: #2563eb !important;
+            background: #ffffff !important;
+            box-shadow: 
+                0 0 0 4px rgba(37, 99, 235, 0.12), 
+                0 12px 28px rgba(30, 64, 175, 0.06) !important;
+        }
+
+        /* Force Chrome/Edge Autofill background to pure white and text to dark grey */
+        .login-page .auth-form input:-webkit-autofill,
+        .login-page .auth-form input:-webkit-autofill:hover, 
+        .login-page .auth-form input:-webkit-autofill:focus, 
+        .login-page .auth-form input:-webkit-autofill:active {
+            -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+            -webkit-text-fill-color: #111827 !important;
+            transition: background-color 5000s ease-in-out 0s !important;
+        }
+        .login-page .auth-form input:autofill {
+            background-color: #ffffff !important;
+            color: #111827 !important;
+        }
+
+        /* Tech Stardust Snow Canvas styling */
+        #tech-snow-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
+        }
+        .login-page .auth-side-visual {
+            position: relative;
+        }
+
+        /* Make the left side a solid full-width white pane instead of a floating card */
+        .login-page .auth-side-form {
+            padding: 0 !important;
+            background: #ffffff !important;
+        }
+
+        .login-form-shell {
+            max-width: none !important;
+            width: 100% !important;
+            height: 100% !important;
+            padding: clamp(40px, 8vw, 100px) clamp(30px, 5vw, 80px) !important;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            background: #ffffff !important;
+            border: none !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            backdrop-filter: none !important;
+            transform: none !important;
+        }
+
+        .login-form-shell:hover {
+            box-shadow: none !important;
+            transform: none !important;
+        }
+    </style>
     <script>
-        document.getElementById('loginForm').addEventListener('submit', function() {
+        // Transition Submit Handler
+        document.getElementById('loginForm').addEventListener('submit', function(e) {
+            if (this.dataset.transition === 'running') {
+                return;
+            }
+            e.preventDefault();
+            const form = this;
+            
             localStorage.setItem('qaly_new_login', 'true');
+            
+            // Create wipe overlay dynamically
+            const overlay = document.createElement('div');
+            overlay.className = 'login-wipe-overlay';
+            overlay.innerHTML = `
+                <div class="wipe-panel left"></div>
+                <div class="wipe-panel right"></div>
+            `;
+            document.body.appendChild(overlay);
+            
+            // Force a reflow
+            overlay.offsetHeight;
+            
+            // Trigger closing animation
+            overlay.classList.add('is-closing');
+            
+            // Submit form after animation completes (650ms)
+            setTimeout(function() {
+                form.dataset.transition = 'running';
+                form.submit();
+            }, 650);
         });
+
+        // 3D Card Tilt Effect
+        const card = document.querySelector('.login-form-shell');
+        if (card) {
+            card.addEventListener('mousemove', function(e) {
+                const rect = card.getBoundingClientRect();
+                const x = e.clientX - rect.left - rect.width / 2;
+                const y = e.clientY - rect.top - rect.height / 2;
+                
+                // Max tilt rotation is 8 degrees
+                const rotateX = -(y / (rect.height / 2)) * 8;
+                const rotateY = (x / (rect.width / 2)) * 8;
+                
+                card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateZ(15px)`;
+            });
+            
+            card.addEventListener('mouseleave', function() {
+                card.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg) translateZ(0px)';
+            });
+        }
+
+        // 3D Tech Particle Snow System
+        (function() {
+            const canvas = document.getElementById('tech-snow-canvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const visualSection = document.querySelector('.auth-side-visual');
+            
+            let particles = [];
+            const particleCount = 75;
+            let width = 0;
+            let height = 0;
+            
+            // Mouse object to track interaction
+            const mouse = {
+                x: null,
+                y: null,
+                radius: 120
+            };
+            
+            if (visualSection) {
+                visualSection.addEventListener('mousemove', function(e) {
+                    const rect = visualSection.getBoundingClientRect();
+                    mouse.x = e.clientX - rect.left;
+                    mouse.y = e.clientY - rect.top;
+                });
+                
+                visualSection.addEventListener('mouseleave', function() {
+                    mouse.x = null;
+                    mouse.y = null;
+                });
+            }
+            
+            function resize() {
+                if (!visualSection) return;
+                width = canvas.width = visualSection.clientWidth;
+                height = canvas.height = visualSection.clientHeight;
+            }
+            
+            window.addEventListener('resize', resize);
+            resize();
+            
+            // Particle Class
+            class Particle {
+                constructor() {
+                    this.reset(true);
+                }
+                
+                reset(init = false) {
+                    this.x = Math.random() * width;
+                    this.y = init ? Math.random() * height : -10;
+                    this.size = Math.random() * 2 + 0.8; // 0.8px to 2.8px
+                    this.speedY = Math.random() * 0.8 + 0.4; // Drift speed down
+                    this.speedX = Math.random() * 0.4 - 0.1; // Slight wind drift right/left
+                    this.opacity = Math.random() * 0.5 + 0.3; // Glow level
+                    this.hue = Math.random() < 0.25 ? 180 : 0; // Cyan hue or pure white
+                }
+                
+                update() {
+                    this.y += this.speedY;
+                    this.x += this.speedX;
+                    
+                    // Mouse repulsion force
+                    if (mouse.x !== null && mouse.y !== null) {
+                        const dx = this.x - mouse.x;
+                        const dy = this.y - mouse.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        
+                        if (distance < mouse.radius) {
+                            const force = (mouse.radius - distance) / mouse.radius;
+                            const angle = Math.atan2(dy, dx);
+                            
+                            // Push away
+                            this.x += Math.cos(angle) * force * 3;
+                            this.y += Math.sin(angle) * force * 3;
+                        }
+                    }
+                    
+                    // Reset if off-screen
+                    if (this.y > height || this.x < -10 || this.x > width + 10) {
+                        this.reset();
+                    }
+                }
+                
+                draw() {
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                    
+                    if (this.hue === 180) {
+                        // Cyan/Aqua glow particle
+                        ctx.fillStyle = `rgba(34, 211, 238, ${this.opacity})`;
+                    } else {
+                        // Pure white particle
+                        ctx.fillStyle = `rgba(255, 255, 255, ${this.opacity})`;
+                    }
+                    
+                    ctx.fill();
+                }
+            }
+            
+            // Populate stardust
+            for (let i = 0; i < particleCount; i++) {
+                particles.push(new Particle());
+            }
+            
+            // Loop
+            function animate() {
+                ctx.clearRect(0, 0, width, height);
+                
+                for (let i = 0; i < particles.length; i++) {
+                    particles[i].update();
+                    particles[i].draw();
+                }
+                
+                requestAnimationFrame(animate);
+            }
+            
+            animate();
+        })();
     </script>
 }

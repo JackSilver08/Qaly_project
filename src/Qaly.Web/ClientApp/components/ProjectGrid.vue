@@ -28,62 +28,45 @@ defineEmits<{
       @keydown.enter="$emit('view', project.id)"
       @keydown.space.prevent="$emit('view', project.id)"
     >
-      <span :class="`project-grid-card__status-tab project-grid-card__status-tab--${project.statusTone}`">
-        {{ project.statusLabel }}
-      </span>
-
       <div class="project-grid-card__body">
-        <div class="project-grid-card__title-row">
-          <strong>{{ project.name }}</strong>
-          <span>{{ project.progressPercentage }}%</span>
-        </div>
-
-        <p>{{ project.description }}</p>
-
-        <div class="project-grid-card__meta">
-          <span>
-            <UserRound :size="13" />
-            {{ project.ownerName }}
-          </span>
-          <span>
-            <CheckCircle2 :size="13" />
-            {{ project.completedTaskCount }}/{{ project.taskCount }} task
-          </span>
-          <span>
-            <CalendarDays :size="13" />
-            {{ project.dueDateLabel }}
+        <div class="project-grid-card__header">
+          <div class="project-grid-card__header-left">
+            <div :class="`project-grid-card__icon project-grid-card__icon--${project.statusTone}`">
+              <component :is="project.statusTone === 'active' ? CalendarDays : (project.statusTone === 'planned' ? Eye : Box)" :size="16" />
+            </div>
+            <div class="project-grid-card__title-col">
+              <strong>{{ project.name }}</strong>
+              <span>Hết hạn: {{ project.dueDateLabel }}</span>
+            </div>
+          </div>
+          <span :class="`project-grid-card__badge project-grid-card__badge--${project.statusTone}`">
+            {{ project.statusLabel.toUpperCase() }}
           </span>
         </div>
 
-        <div class="project-grid-card__progress" aria-hidden="true">
-          <span :style="{ width: `${project.progressPercentage}%` }"></span>
+        <div class="project-grid-card__progress-wrap">
+          <div class="project-grid-card__progress-header">
+            <span>Tiến độ</span>
+            <span>{{ project.progressPercentage }}%</span>
+          </div>
+          <div class="project-grid-card__progress-track" aria-hidden="true">
+            <span :class="`project-grid-card__progress-bar--${project.statusTone}`" :style="{ width: `${project.progressPercentage}%` }"></span>
+          </div>
         </div>
 
         <div class="project-grid-card__footer">
-          <div class="project-grid-card__team" aria-label="Thành viên dự án">
-            <span v-for="(member, index) in project.memberInitials" :key="`${member}-${index}`">{{ member }}</span>
+          <div class="project-grid-card__team-overlap" aria-label="Thành viên dự án">
+            <div v-for="(member, index) in project.memberInitials.slice(0, 3)" :key="`${member}-${index}`" class="team-avatar">
+              {{ member }}
+            </div>
+            <div v-if="project.memberInitials.length > 3" class="team-avatar team-avatar--more">
+              +{{ project.memberInitials.length - 3 }}
+            </div>
           </div>
 
-          <div class="project-grid-card__actions">
-            <button type="button" aria-label="Xem dự án" @click.stop="$emit('view', project.id)">
-              <Eye :size="16" />
-            </button>
-            <button
-              v-if="!readOnly"
-              type="button"
-              aria-label="Sửa dự án"
-              @click.stop="$emit('edit', project.id)"
-            >
-              <Pencil :size="16" />
-            </button>
-            <button
-              v-if="!readOnly"
-              type="button"
-              aria-label="Xóa dự án"
-              @click.stop="$emit('delete', project.id)"
-            >
-              <Trash2 :size="16" />
-            </button>
+          <div class="project-grid-card__tasks-count">
+            <CheckCircle2 :size="14" />
+            <span>{{ project.completedTaskCount }}/{{ project.taskCount }} Nhiệm vụ</span>
           </div>
         </div>
       </div>
