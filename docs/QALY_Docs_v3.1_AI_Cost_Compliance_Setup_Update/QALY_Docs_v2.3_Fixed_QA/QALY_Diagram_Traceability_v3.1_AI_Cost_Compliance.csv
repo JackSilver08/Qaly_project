@@ -1,0 +1,8 @@
+diagram_id,file,requirement_ids,description,status
+ARCH_AI_01,docs/diagrams/mermaid/ARCH_AI_01_Meetily_API_Primary_v3_1.mmd,AI-ARCH-001;AI-COST-001,Meetily-first AI API primary architecture,added
+DEPLOY_AI_01,docs/diagrams/mermaid/DEPLOY_AI_01_VPS8GB_LaptopWorker_v3_1.mmd,DEPLOY-001;AI-OPS-001,VPS 8GB plus laptop AI worker deployment,added
+SEQ_AI_01,docs/diagrams/mermaid/SEQ_AI_01_Meetily_Import_Action_Items_v3_1.mmd,AI-FUNC-001;AI-FUNC-002,Meetily import and action item extraction,added
+SEQ_AI_02,docs/diagrams/mermaid/SEQ_AI_02_Task_Recommendation_HITL_v3_1.mmd,AI-FUNC-005;HITL-001,Human-in-the-loop task recommendation,added
+SEQ_AI_03,docs/diagrams/mermaid/SEQ_AI_03_Provider_Fallback_Cache_Budget_v3_1.mmd,AI-COST-001;AI-RESILIENCE-001,Provider fallback cache budget control,added
+DATA_AI_01,docs/diagrams/mermaid/DATA_AI_01_AI_Audit_Cost_ERD_v3_1.mmd,DATA-AI-001;AUDIT-001,AI audit cost ERD supplement,added
+DFD_AI_01,docs/diagrams/mermaid/DFD_AI_01_Compliance_Data_Flow_v3_1.mmd,COMPLIANCE-001;SECURITY-001,Compliance data flow for AI processing,added

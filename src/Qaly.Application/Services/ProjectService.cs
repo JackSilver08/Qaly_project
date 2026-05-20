@@ -12,6 +12,8 @@ namespace Qaly.Application.Services;
 public class ProjectService : IProjectService
 {
     private readonly IRepository<Project> _projectRepo;
+    private readonly IRepository<Organization> _organizationRepo;
+    private readonly IRepository<OrganizationMember> _organizationMemberRepo;
     private readonly IRepository<ProjectMember> _memberRepo;
     private readonly IRepository<User> _userRepo;
     private readonly IRepository<ProjectLabel> _labelRepo;
@@ -23,6 +25,8 @@ public class ProjectService : IProjectService
 
     public ProjectService(
         IRepository<Project> projectRepo,
+        IRepository<Organization> organizationRepo,
+        IRepository<OrganizationMember> organizationMemberRepo,
         IRepository<ProjectMember> memberRepo,
         IRepository<User> userRepo,
         IRepository<ProjectLabel> labelRepo,
@@ -33,6 +37,8 @@ public class ProjectService : IProjectService
         IAuditLogService auditLogService)
     {
         _projectRepo = projectRepo;
+        _organizationRepo = organizationRepo;
+        _organizationMemberRepo = organizationMemberRepo;
         _memberRepo = memberRepo;
         _userRepo = userRepo;
         _labelRepo = labelRepo;
@@ -78,7 +84,10 @@ public class ProjectService : IProjectService
         {
             query = query.Where(project =>
                 project.OwnerId == currentUserId ||
-                project.Members.Any(member => member.UserId == currentUserId));
+                project.Members.Any(member => member.UserId == currentUserId) ||
+                (project.OrganizationId != null &&
+                 (project.Organization!.OwnerId == currentUserId ||
+                  project.Organization.Members.Any(member => member.UserId == currentUserId))));
         }
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -151,6 +160,27 @@ public class ProjectService : IProjectService
         project.LogoUrl = NormalizeOptional(dto.LogoUrl);
         project.OwnerId = currentUserId.Value;
 
+        if (dto.OrganizationId.HasValue)
+        {
+            var organization = await _organizationRepo.GetByIdAsync(dto.OrganizationId.Value, ct);
+            if (organization == null)
+            {
+                return Result.Failure<ProjectDto>("Organization was not found.", 404);
+            }
+
+            if (!organization.IsActive)
+            {
+                return Result.Failure<ProjectDto>("Organization is inactive.", 400);
+            }
+
+            if (!await CanAccessOrganizationAsync(dto.OrganizationId.Value, organization.OwnerId, ct))
+            {
+                return Result.Forbidden<ProjectDto>();
+            }
+
+            project.OrganizationId = dto.OrganizationId.Value;
+        }
+
         await _projectRepo.AddAsync(project, ct);
         await AddToOutboxAsync("ProjectCreated", new { Id = project.Id }, ct);
         await _unitOfWork.SaveChangesAsync(ct);
@@ -194,6 +224,27 @@ public class ProjectService : IProjectService
         project.Name = dto.Name.Trim();
         project.Code = await GenerateUniqueCodeAsync(dto.Code, dto.Name, ct, id);
         project.LogoUrl = NormalizeOptional(dto.LogoUrl);
+
+        if (dto.OrganizationId.HasValue)
+        {
+            var organization = await _organizationRepo.GetByIdAsync(dto.OrganizationId.Value, ct);
+            if (organization == null)
+            {
+                return Result.Failure<ProjectDto>("Organization was not found.", 404);
+            }
+
+            if (!organization.IsActive)
+            {
+                return Result.Failure<ProjectDto>("Organization is inactive.", 400);
+            }
+
+            if (!await CanManageOrganizationAsync(dto.OrganizationId.Value, organization.OwnerId, ct))
+            {
+                return Result.Forbidden<ProjectDto>();
+            }
+
+            project.OrganizationId = dto.OrganizationId.Value;
+        }
 
         await _projectRepo.UpdateAsync(project, ct);
         await AddToOutboxAsync("ProjectUpdated", new { Id = project.Id }, ct);
@@ -492,6 +543,8 @@ public class ProjectService : IProjectService
     private IQueryable<Project> ProjectDetailsQuery()
         => _projectRepo.GetQueryable()
             .Include(p => p.Owner)
+            .Include(p => p.Organization)
+                .ThenInclude(o => o!.Members)
             .Include(p => p.Members)
             .Include(p => p.Labels)
             .Include(p => p.Tasks);
@@ -509,8 +562,31 @@ public class ProjectService : IProjectService
             return true;
         }
 
-        return await _memberRepo.GetQueryable()
+        var isProjectMember = await _memberRepo.GetQueryable()
             .AnyAsync(member => member.ProjectId == projectId && member.UserId == currentUserId, ct);
+        if (isProjectMember)
+        {
+            return true;
+        }
+
+        var organizationProjection = await _projectRepo.GetQueryable()
+            .Where(project => project.Id == projectId)
+            .Select(project => new
+            {
+                project.OrganizationId,
+                OrganizationOwnerId = project.Organization != null ? (Guid?)project.Organization.OwnerId : null
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (organizationProjection?.OrganizationId == null || organizationProjection.OrganizationOwnerId == null)
+        {
+            return false;
+        }
+
+        return await CanAccessOrganizationAsync(
+            organizationProjection.OrganizationId.Value,
+            organizationProjection.OrganizationOwnerId.Value,
+            ct);
     }
 
     private async Task<bool> CanManageProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
@@ -527,7 +603,29 @@ public class ProjectService : IProjectService
         }
 
         var role = await GetProjectRoleAsync(projectId, currentUserId.Value, ct);
-        return ProjectRoleRules.CanManageProject(role);
+        if (ProjectRoleRules.CanManageProject(role))
+        {
+            return true;
+        }
+
+        var organizationProjection = await _projectRepo.GetQueryable()
+            .Where(project => project.Id == projectId)
+            .Select(project => new
+            {
+                project.OrganizationId,
+                OrganizationOwnerId = project.Organization != null ? (Guid?)project.Organization.OwnerId : null
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (organizationProjection?.OrganizationId == null || organizationProjection.OrganizationOwnerId == null)
+        {
+            return false;
+        }
+
+        return await CanManageOrganizationAsync(
+            organizationProjection.OrganizationId.Value,
+            organizationProjection.OrganizationOwnerId.Value,
+            ct);
     }
 
     private async Task<string?> GetProjectRoleAsync(Guid projectId, Guid userId, CancellationToken ct)
@@ -538,6 +636,44 @@ public class ProjectService : IProjectService
 
     private bool IsAdmin()
         => ProjectRoleRules.IsSystemAdmin(_currentUserService.Role);
+
+    private async Task<bool> CanAccessOrganizationAsync(Guid organizationId, Guid ownerId, CancellationToken ct)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return false;
+        }
+
+        if (IsAdmin() || ownerId == currentUserId)
+        {
+            return true;
+        }
+
+        return await _organizationMemberRepo.GetQueryable()
+            .AnyAsync(member => member.OrganizationId == organizationId && member.UserId == currentUserId, ct);
+    }
+
+    private async Task<bool> CanManageOrganizationAsync(Guid organizationId, Guid ownerId, CancellationToken ct)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return false;
+        }
+
+        if (IsAdmin() || ownerId == currentUserId)
+        {
+            return true;
+        }
+
+        var role = await _organizationMemberRepo.GetQueryable()
+            .Where(member => member.OrganizationId == organizationId && member.UserId == currentUserId)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+
+        return ProjectRoleRules.CanManageProject(role);
+    }
 
     private async Task<string> GenerateUniqueCodeAsync(string? requestedCode, string name, CancellationToken ct, Guid? currentProjectId = null)
     {

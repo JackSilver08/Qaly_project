@@ -1,0 +1,29 @@
+sequenceDiagram
+    actor PM
+    participant UI
+    participant Backend
+    participant DB as SQL Server
+    participant Q as Qdrant P1 Optional
+    participant AIGW as AI Gateway
+    participant API as AI API
+
+    PM->>UI: Create task / ask recommend assignee
+    UI->>Backend: POST /api/ai/jobs task_recommendation
+    Backend->>DB: Load skills, workload, history
+    Backend->>Backend: Deterministic rule score
+    alt P1 semantic enabled
+        Backend->>Q: Search similar tasks/meeting evidence
+        Q-->>Backend: Similar evidence
+    end
+    alt Confidence high
+        Backend-->>UI: Candidate ranking without AI call
+    else Need explanation
+        Backend->>AIGW: Request AI explanation with compact context
+        AIGW->>API: Generate reasons/risks
+        API-->>AIGW: Explanation JSON
+        AIGW->>DB: Usage ledger/cache
+        Backend-->>UI: Ranked candidates + reason
+    end
+    PM->>UI: Confirm assignee
+    UI->>Backend: PATCH task assignee
+    Backend->>DB: Save official assignment + audit

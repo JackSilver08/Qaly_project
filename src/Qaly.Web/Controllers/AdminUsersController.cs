@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Qaly.Application.Services;
 using Qaly.Domain.Entities;
 using Qaly.Infrastructure.Data;
 
@@ -13,10 +14,12 @@ namespace Qaly.Web.Controllers;
 public class AdminUsersController : ControllerBase
 {
     private readonly QalyDbContext _context;
+    private readonly IAuditLogService _auditLogService;
 
-    public AdminUsersController(QalyDbContext context)
+    public AdminUsersController(QalyDbContext context, IAuditLogService auditLogService)
     {
         _context = context;
+        _auditLogService = auditLogService;
     }
 
     [HttpGet]
@@ -69,6 +72,7 @@ public class AdminUsersController : ControllerBase
 
         _context.Users.Add(user);
         await _context.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync("AdminCreateUser", nameof(User), user.Id.ToString(), new { user.Email, user.Role, user.IsActive }, ct);
 
         return CreatedAtAction(nameof(GetUsers), new { id = user.Id }, new AdminUserDto(
             user.Id,
@@ -110,6 +114,7 @@ public class AdminUsersController : ControllerBase
         }
 
         await _context.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync("AdminUpdateUser", nameof(User), user.Id.ToString(), new { user.FullName, user.Role, user.IsActive, user.AvatarUrl }, ct);
         return Ok(new AdminUserDto(user.Id, user.FullName, user.Email, user.Role, user.IsActive, user.AvatarUrl, user.CreatedAt));
     }
 
@@ -139,6 +144,7 @@ public class AdminUsersController : ControllerBase
         }
 
         await _context.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync("AdminImportUsers", nameof(User), "bulk", new { created }, ct);
         return Ok(new { created });
     }
 

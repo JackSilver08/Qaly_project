@@ -129,7 +129,7 @@ const activeProjectTab = ref('stats')
 const tabs = [
   { id: 'stats', label: 'Thống kê' },
   { id: 'tasks', label: 'Nhiệm vụ' },
-  { id: 'gantt', label: 'Timeline' },
+  { id: 'gantt', label: 'Dòng thời gian' },
   { id: 'members', label: 'Thành viên' },
   { id: 'wiki', label: 'Wiki' },
   { id: 'webhooks', label: 'Webhooks' },
@@ -166,13 +166,13 @@ function toProjectCard(project: DashboardProject): ProjectCardModel {
   return {
     id: project.id,
     name: project.name,
-    description: project.description || 'No description yet.',
+    description: project.description || 'Chưa có mô tả.',
     status: project.status,
     statusLabel: displayStatus(project.status),
     statusTone: statusTone(project.status),
     ownerId: project.ownerId,
     ownerName: project.ownerName,
-    dueDateLabel: project.endDate ? `Due ${formatDate(project.endDate)}` : 'No due date',
+    dueDateLabel: project.endDate ? `Hạn ${formatDate(project.endDate)}` : 'Chưa đặt hạn',
     completedTaskCount: project.completedTaskCount,
     taskCount: project.taskCount,
     overdueTaskCount: project.overdueTaskCount,
@@ -557,7 +557,7 @@ provide(dashboardContextKey, {
   selectedProjectMembers, selectedProjectStats, selectedTask, selectedTaskId, selectTaskInProject, statusColumns, statusTone,
   submitComment, summaryCards, tabs, tasksByStatus, team, toggleTaskMenu, updateMemberRole, updateMemberPermissions, uploadAttachment, users, wikiPages,
   loadWikiPages, createWikiPage, updateWikiPage, deleteWikiPage, taskSearchQuery, taskBeingQuickEditedId, timeEntries, activeTimer,
-  startTimer, stopTimer, loadTimeEntries,
+  startTimer, stopTimer, loadTimeEntries, loadDashboard,
 })
 </script>
 
@@ -576,11 +576,11 @@ provide(dashboardContextKey, {
       <div v-if="notificationsOpen" class="notification-popover glass-card home-notification-popover">
         <div class="panel-heading">
           <div>
-            <span>Notifications</span>
-            <h2>Current signals</h2>
+            <span>Thông báo</span>
+            <h2>Tín hiệu hiện tại</h2>
           </div>
           <div class="popover-actions">
-            <button class="text-button" type="button" @click="clearActionableNotifications">Read all</button>
+            <button class="text-button" type="button" @click="clearActionableNotifications">Đánh dấu đã đọc</button>
             <button class="icon-button icon-button--small" type="button" @click="notificationsOpen = false">
               <X :size="16" />
             </button>
@@ -593,7 +593,7 @@ provide(dashboardContextKey, {
         >
           <div class="notice__top">
             <strong>{{ notification.title }}</strong>
-            <button type="button" aria-label="Dismiss notification" @click="dismissNotification(notification.id)">
+            <button type="button" aria-label="Đóng thông báo" @click="dismissNotification(notification.id)">
               <X :size="14" />
             </button>
           </div>

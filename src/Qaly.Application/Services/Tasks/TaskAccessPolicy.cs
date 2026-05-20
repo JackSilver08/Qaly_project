@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Interfaces;
+using Qaly.Application.Services;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 
@@ -8,14 +9,20 @@ namespace Qaly.Application.Services.Tasks;
 public sealed class TaskAccessPolicy : ITaskAccessPolicy
 {
     private readonly ICurrentUserService _currentUserService;
+    private readonly IRepository<Project> _projectRepo;
     private readonly IRepository<ProjectMember> _memberRepo;
+    private readonly IRepository<OrganizationMember> _organizationMemberRepo;
 
     public TaskAccessPolicy(
         ICurrentUserService currentUserService,
-        IRepository<ProjectMember> memberRepo)
+        IRepository<Project> projectRepo,
+        IRepository<ProjectMember> memberRepo,
+        IRepository<OrganizationMember> organizationMemberRepo)
     {
         _currentUserService = currentUserService;
+        _projectRepo = projectRepo;
         _memberRepo = memberRepo;
+        _organizationMemberRepo = organizationMemberRepo;
     }
 
     public Guid? CurrentUserId => _currentUserService.UserId;
@@ -37,11 +44,21 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
         }
 
         return query.Where(task =>
-            !task.IsPrivate ||
-            task.ReporterId == currentUserId ||
-            task.AssigneeId == currentUserId ||
-            task.Assignees.Any(assignment => assignment.UserId == currentUserId) ||
-            task.Project.OwnerId == currentUserId);
+            (
+                task.Project.OwnerId == currentUserId ||
+                task.Project.Members.Any(member => member.UserId == currentUserId) ||
+                (task.Project.OrganizationId != null &&
+                 (task.Project.Organization!.OwnerId == currentUserId ||
+                  task.Project.Organization.Members.Any(member => member.UserId == currentUserId)))
+            )
+            &&
+            (
+                !task.IsPrivate ||
+                task.ReporterId == currentUserId ||
+                task.AssigneeId == currentUserId ||
+                task.Assignees.Any(assignment => assignment.UserId == currentUserId) ||
+                task.Project.OwnerId == currentUserId
+            ));
     }
 
     public async Task<bool> CanAccessTaskAsync(TaskItem task, CancellationToken ct)
@@ -85,12 +102,18 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
             return true;
         }
 
-        return await _memberRepo.GetQueryable()
+        var canManageProjectByRole = await _memberRepo.GetQueryable()
             .AnyAsync(member =>
                 member.ProjectId == task.ProjectId &&
                 member.UserId == currentUserId &&
-                (member.Role == "Admin" || member.Role == "Owner" || member.Role == "Manager"),
+                ProjectRoleRules.CanManageProject(member.Role),
                 ct);
+        if (canManageProjectByRole)
+        {
+            return true;
+        }
+
+        return await CanManageOrganizationForProjectAsync(task.ProjectId, currentUserId.Value, ct);
     }
 
     public async Task<bool> CanAccessProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
@@ -106,8 +129,37 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
             return true;
         }
 
-        return await _memberRepo.GetQueryable()
+        var isProjectMember = await _memberRepo.GetQueryable()
             .AnyAsync(member => member.ProjectId == projectId && member.UserId == currentUserId, ct);
+        if (isProjectMember)
+        {
+            return true;
+        }
+
+        var projectOrganizationInfo = await _projectRepo.GetQueryable()
+            .Where(project => project.Id == projectId)
+            .Select(project => new
+            {
+                project.OrganizationId,
+                OrganizationOwnerId = project.Organization != null ? (Guid?)project.Organization.OwnerId : null
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (projectOrganizationInfo?.OrganizationId == null || projectOrganizationInfo.OrganizationOwnerId == null)
+        {
+            return false;
+        }
+
+        if (projectOrganizationInfo.OrganizationOwnerId == currentUserId)
+        {
+            return true;
+        }
+
+        return await _organizationMemberRepo.GetQueryable()
+            .AnyAsync(member =>
+                member.OrganizationId == projectOrganizationInfo.OrganizationId.Value &&
+                member.UserId == currentUserId,
+                ct);
     }
 
     public async Task<bool> CanViewProjectTimelineAsync(Guid projectId, Guid ownerId, CancellationToken ct)
@@ -159,7 +211,43 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
             .AsNoTracking()
             .FirstOrDefaultAsync(item => item.ProjectId == projectId && item.UserId == currentUserId, ct);
 
-        return member != null && predicate(member);
+        if (member != null && predicate(member))
+        {
+            return true;
+        }
+
+        return await CanManageOrganizationForProjectAsync(projectId, currentUserId.Value, ct);
+    }
+
+    private async Task<bool> CanManageOrganizationForProjectAsync(Guid projectId, Guid currentUserId, CancellationToken ct)
+    {
+        var projectOrganizationInfo = await _projectRepo.GetQueryable()
+            .Where(project => project.Id == projectId)
+            .Select(project => new
+            {
+                project.OrganizationId,
+                OrganizationOwnerId = project.Organization != null ? (Guid?)project.Organization.OwnerId : null
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (projectOrganizationInfo?.OrganizationId == null || projectOrganizationInfo.OrganizationOwnerId == null)
+        {
+            return false;
+        }
+
+        if (projectOrganizationInfo.OrganizationOwnerId == currentUserId)
+        {
+            return true;
+        }
+
+        var organizationRole = await _organizationMemberRepo.GetQueryable()
+            .Where(member =>
+                member.OrganizationId == projectOrganizationInfo.OrganizationId.Value &&
+                member.UserId == currentUserId)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+
+        return ProjectRoleRules.CanManageProject(organizationRole);
     }
 
     private static bool IsElevatedProjectRole(string? role)

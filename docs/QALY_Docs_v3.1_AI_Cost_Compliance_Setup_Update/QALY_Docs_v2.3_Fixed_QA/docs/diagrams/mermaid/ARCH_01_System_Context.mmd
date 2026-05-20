@@ -1,0 +1,41 @@
+flowchart LR
+  %% QALY System Context - production boundary
+  classDef actor fill:#fff,stroke:#111827,stroke-width:1px;
+  classDef system fill:#eef2ff,stroke:#3730a3,stroke-width:1.5px;
+  classDef external fill:#fff7ed,stroke:#9a3412,stroke-width:1px;
+  classDef data fill:#ecfeff,stroke:#155e75,stroke-width:1px;
+
+  Guest([Guest]):::actor
+  User([User / Member]):::actor
+  PM([Project Manager]):::actor
+  OrgAdmin([Org Admin / Owner]):::actor
+  Customer([Customer]):::actor
+  SysAdmin([System Admin]):::actor
+
+  QALY[[QALY Workspace<br/>Jira + Notion + Mini Zalo + AI Assistant]]:::system
+
+  Email[(Email/SMS Provider<br/>verification, invitation, digest)]:::external
+  ObjectStorage[(Object Storage<br/>PDF/DOCX/evidence attachments)]:::data
+  SQL[(SQL Server 2022<br/>tenant + business data)]:::data
+  Redis[(Redis<br/>cache, rate-limit, SignalR backplane)]:::data
+  Qdrant[(Qdrant Vector DB<br/>AI knowledge chunks)]:::data
+  LLM[[OpenAI-compatible/Ollama LLM<br/>generation & extraction]]:::external
+  Git[(GitHub/GitLab optional<br/>commit/webhook integration)]:::external
+
+  Guest -->|register/login/reset password| QALY
+  User -->|tasks, chat, wiki, meeting, AI query| QALY
+  PM -->|project governance, approval, reports| QALY
+  OrgAdmin -->|organization/member/RBAC| QALY
+  Customer -->|customer-safe project view, feedback| QALY
+  SysAdmin -->|tenant, feature flag, audit, health| QALY
+
+  QALY -->|transactional writes/read models| SQL
+  QALY -->|cache/session/realtime fan-out| Redis
+  QALY -->|upload/download signed URL| ObjectStorage
+  QALY -->|email verification/invite/digest| Email
+  QALY -->|embed/search project knowledge| Qdrant
+  QALY -->|prompt with permission-filtered context| LLM
+  QALY -->|webhook import/status link| Git
+
+  QALY -. hard rule .-> SQL
+  QALY -. "tenant_id filter + RBAC 3 tầng + audit log" .-> SQL

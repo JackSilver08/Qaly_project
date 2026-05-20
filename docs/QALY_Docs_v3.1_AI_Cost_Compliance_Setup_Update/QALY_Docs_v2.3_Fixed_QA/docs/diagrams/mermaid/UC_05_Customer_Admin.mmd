@@ -1,0 +1,31 @@
+flowchart LR
+  %% UC 05 Customer Admin
+  classDef actor fill:#fff,stroke:#111827,stroke-width:1px;
+  classDef must fill:#eef2ff,stroke:#3730a3,stroke-width:1px;
+  classDef should fill:#ecfeff,stroke:#155e75,stroke-width:1px;
+  classDef nice fill:#f7fee7,stroke:#3f6212,stroke-width:1px;
+  subgraph Actors[Actors / Vai trò]
+    A_Customer(["Customer"])
+    A_OrgAdmin(["Org admin"])
+    A_SystemAdmin(["System admin"])
+  end
+  subgraph SYS[QALY Workspace System]
+    subgraph CUST["CUST - Customer Portal"]
+      UC_UC_CUST_01(["UC-CUST-01<br/>Xem tiến độ project customer view<br/>Must Have"]):::must
+      UC_UC_CUST_02(["UC-CUST-02<br/>Gửi phản hồi về task<br/>Should Have"]):::should
+      UC_UC_CUST_03(["UC-CUST-03<br/>Xem thông tin public<br/>Must Have"]):::must
+    end
+    subgraph ADMIN["ADMIN - Admin/Audit"]
+      UC_UC_ADMIN_01(["UC-ADMIN-01<br/>Bật/tắt feature flag<br/>Should Have"]):::should
+      UC_UC_ADMIN_02(["UC-ADMIN-02<br/>Xem audit log hệ thống<br/>Must Have"]):::must
+      UC_UC_ADMIN_03(["UC-ADMIN-03<br/>Quản lý tenant<br/>Should Have"]):::should
+    end
+  end
+  A_Customer --> UC_UC_CUST_01
+  A_Customer --> UC_UC_CUST_02
+  A_Customer --> UC_UC_CUST_03
+  A_SystemAdmin --> UC_UC_ADMIN_01
+  A_SystemAdmin --> UC_UC_ADMIN_02
+  A_OrgAdmin --> UC_UC_ADMIN_02
+  A_SystemAdmin --> UC_UC_ADMIN_03
+  %% Production note: write flows require RBAC, validation, transaction, audit, and tenant isolation.

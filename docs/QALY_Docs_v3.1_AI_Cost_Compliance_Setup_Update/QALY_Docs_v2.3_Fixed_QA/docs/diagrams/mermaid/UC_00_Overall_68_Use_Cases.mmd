@@ -1,0 +1,225 @@
+flowchart LR
+  %% QALY Overall Use Case Diagram - 68 Use Cases
+  classDef actor fill:#fff,stroke:#111827,stroke-width:1px;
+  classDef must fill:#eef2ff,stroke:#3730a3,stroke-width:1px;
+  classDef should fill:#ecfeff,stroke:#155e75,stroke-width:1px;
+  classDef nice fill:#f7fee7,stroke:#3f6212,stroke-width:1px;
+  subgraph Actors[Actors / Vai trò]
+    A_AIService(["AI service"])
+    A_Assignee(["Assignee"])
+    A_BA(["BA/Documenter"])
+    A_Customer(["Customer"])
+    A_Guest(["Guest / khách chưa đăng nhập"])
+    A_InvitedUser(["Invited user"])
+    A_OrgAdmin(["Org admin"])
+    A_OrgOwner(["Org owner"])
+    A_ProjectManager(["Project manager / PM"])
+    A_ProjectMember(["Project member"])
+    A_Reviewer(["Reviewer/Approver"])
+    A_RoomAdmin(["Room admin"])
+    A_RoomMember(["Room member"])
+    A_SubManager(["Sub-manager"])
+    A_System(["System worker"])
+    A_SystemAdmin(["System admin"])
+    A_SystemCustomerAdmin(["System customer/admin"])
+    A_User(["User / người dùng đã đăng nhập"])
+  end
+  subgraph SYS[QALY Workspace System]
+    subgraph AUTH["AUTH - Auth & Identity"]
+      UC_UC_AUTH_01(["UC-AUTH-01<br/>Đăng ký tài khoản<br/>Must Have"]):::must
+      UC_UC_AUTH_02(["UC-AUTH-02<br/>Xác thực email<br/>Should Have"]):::should
+      UC_UC_AUTH_03(["UC-AUTH-03<br/>Đăng nhập<br/>Must Have"]):::must
+      UC_UC_AUTH_04(["UC-AUTH-04<br/>Đăng xuất<br/>Must Have"]):::must
+      UC_UC_AUTH_05(["UC-AUTH-05<br/>Làm mới phiên/token<br/>Should Have"]):::should
+      UC_UC_AUTH_06(["UC-AUTH-06<br/>Quên mật khẩu<br/>Should Have"]):::should
+      UC_UC_AUTH_07(["UC-AUTH-07<br/>Đặt lại mật khẩu<br/>Should Have"]):::should
+      UC_UC_AUTH_08(["UC-AUTH-08<br/>Đổi mật khẩu<br/>Must Have"]):::must
+    end
+    subgraph ORG["ORG - Organization"]
+      UC_UC_ORG_01(["UC-ORG-01<br/>Tạo organization<br/>Must Have"]):::must
+      UC_UC_ORG_02(["UC-ORG-02<br/>Mời thành viên vào organization<br/>Must Have"]):::must
+      UC_UC_ORG_03(["UC-ORG-03<br/>Chấp nhận lời mời<br/>Should Have"]):::should
+      UC_UC_ORG_04(["UC-ORG-04<br/>Phân quyền thành viên organization<br/>Must Have"]):::must
+      UC_UC_ORG_05(["UC-ORG-05<br/>Xóa thành viên khỏi organization<br/>Must Have"]):::must
+    end
+    subgraph PROJ["PROJ - Project"]
+      UC_UC_PROJ_01(["UC-PROJ-01<br/>Tạo project<br/>Must Have"]):::must
+      UC_UC_PROJ_02(["UC-PROJ-02<br/>Cập nhật thông tin project<br/>Must Have"]):::must
+      UC_UC_PROJ_03(["UC-PROJ-03<br/>Thêm thành viên vào project<br/>Must Have"]):::must
+      UC_UC_PROJ_04(["UC-PROJ-04<br/>Phân quyền thành viên project<br/>Must Have"]):::must
+      UC_UC_PROJ_05(["UC-PROJ-05<br/>Lưu trữ project<br/>Should Have"]):::should
+      UC_UC_PROJ_06(["UC-PROJ-06<br/>Xem dashboard tiến độ project<br/>Must Have"]):::must
+    end
+    subgraph TASK["TASK - Task Workflow"]
+      UC_UC_TASK_01(["UC-TASK-01<br/>Tạo task<br/>Must Have"]):::must
+      UC_UC_TASK_02(["UC-TASK-02<br/>Giao task cho thành viên<br/>Must Have"]):::must
+      UC_UC_TASK_03(["UC-TASK-03<br/>Tạo subtask phụ thuộc task cha<br/>Should Have"]):::should
+      UC_UC_TASK_04(["UC-TASK-04<br/>Tạo task dependency<br/>Must Have"]):::must
+      UC_UC_TASK_05(["UC-TASK-05<br/>Cập nhật trạng thái task<br/>Must Have"]):::must
+      UC_UC_TASK_06(["UC-TASK-06<br/>Gửi yêu cầu chuyển trạng thái<br/>Must Have"]):::must
+      UC_UC_TASK_07(["UC-TASK-07<br/>PM duyệt yêu cầu chuyển trạng thái<br/>Must Have"]):::must
+      UC_UC_TASK_08(["UC-TASK-08<br/>PM từ chối và yêu cầu làm lại<br/>Must Have"]):::must
+      UC_UC_TASK_09(["UC-TASK-09<br/>Upload bằng chứng hoàn thành<br/>Must Have"]):::must
+      UC_UC_TASK_10(["UC-TASK-10<br/>Log thời gian làm việc<br/>Should Have"]):::should
+    end
+    subgraph KANBAN["KANBAN - Kanban Board"]
+      UC_UC_KANBAN_01(["UC-KANBAN-01<br/>Kéo thả task giữa các cột<br/>Must Have"]):::must
+      UC_UC_KANBAN_02(["UC-KANBAN-02<br/>Thêm cột tùy chỉnh<br/>Should Have"]):::should
+      UC_UC_KANBAN_03(["UC-KANBAN-03<br/>Xóa cột với điều kiện<br/>Should Have"]):::should
+      UC_UC_KANBAN_04(["UC-KANBAN-04<br/>Đặt WIP limit cho cột<br/>Should Have"]):::should
+      UC_UC_KANBAN_05(["UC-KANBAN-05<br/>Lọc task trên kanban<br/>Must Have"]):::must
+    end
+    subgraph SPRINT["SPRINT - Sprint"]
+      UC_UC_SPRINT_01(["UC-SPRINT-01<br/>Tạo sprint<br/>Should Have"]):::should
+      UC_UC_SPRINT_02(["UC-SPRINT-02<br/>Lên kế hoạch sprint<br/>Should Have"]):::should
+      UC_UC_SPRINT_03(["UC-SPRINT-03<br/>Bắt đầu sprint<br/>Should Have"]):::should
+      UC_UC_SPRINT_04(["UC-SPRINT-04<br/>Hoàn thành sprint<br/>Should Have"]):::should
+      UC_UC_SPRINT_05(["UC-SPRINT-05<br/>Xem burndown chart<br/>Nice to Have"]):::nice
+    end
+    subgraph TIMELINE["TIMELINE - Timeline/Gantt"]
+      UC_UC_TIMELINE_01(["UC-TIMELINE-01<br/>Xem timeline Gantt<br/>Must Have"]):::must
+      UC_UC_TIMELINE_02(["UC-TIMELINE-02<br/>Kéo thả điều chỉnh timeline<br/>Should Have"]):::should
+      UC_UC_TIMELINE_03(["UC-TIMELINE-03<br/>Xem critical path<br/>Nice to Have"]):::nice
+    end
+    subgraph CHAT["CHAT - Chat/Realtime"]
+      UC_UC_CHAT_01(["UC-CHAT-01<br/>Tạo nhóm chat project<br/>Must Have"]):::must
+      UC_UC_CHAT_02(["UC-CHAT-02<br/>Gửi tin nhắn văn bản<br/>Must Have"]):::must
+      UC_UC_CHAT_03(["UC-CHAT-03<br/>Giao task trực tiếp từ chat<br/>Must Have"]):::must
+      UC_UC_CHAT_04(["UC-CHAT-04<br/>Link task vào tin nhắn<br/>Should Have"]):::should
+      UC_UC_CHAT_05(["UC-CHAT-05<br/>Pin tin nhắn quan trọng<br/>Should Have"]):::should
+      UC_UC_CHAT_06(["UC-CHAT-06<br/>Xem task được giao trong chat<br/>Should Have"]):::should
+    end
+    subgraph MEETING["MEETING - Meeting"]
+      UC_UC_MEETING_01(["UC-MEETING-01<br/>Tạo meeting và ghi note<br/>Should Have"]):::should
+      UC_UC_MEETING_02(["UC-MEETING-02<br/>AI tóm tắt meeting<br/>Should Have"]):::should
+      UC_UC_MEETING_03(["UC-MEETING-03<br/>Tạo action item từ meeting<br/>Should Have"]):::should
+    end
+    subgraph WIKI["WIKI - Wiki/Knowledge"]
+      UC_UC_WIKI_01(["UC-WIKI-01<br/>Tạo wiki page<br/>Must Have"]):::must
+      UC_UC_WIKI_02(["UC-WIKI-02<br/>Chỉnh sửa wiki page versioning<br/>Must Have"]):::must
+      UC_UC_WIKI_03(["UC-WIKI-03<br/>Rollback phiên bản wiki cũ<br/>Should Have"]):::should
+    end
+    subgraph AI["AI - AI Assistant"]
+      UC_UC_AI_01(["UC-AI-01<br/>Hỏi AI về tiến độ project<br/>Should Have"]):::should
+      UC_UC_AI_02(["UC-AI-02<br/>AI sinh báo cáo tiến độ tuần<br/>Should Have"]):::should
+      UC_UC_AI_03(["UC-AI-03<br/>AI gợi ý assign task<br/>Nice to Have"]):::nice
+      UC_UC_AI_04(["UC-AI-04<br/>Sync dữ liệu project vào AI knowledge base<br/>Should Have"]):::should
+    end
+    subgraph IMPORT["IMPORT - Document Import"]
+      UC_UC_IMPORT_01(["UC-IMPORT-01<br/>Upload tài liệu PDF/DOCX<br/>Should Have"]):::should
+      UC_UC_IMPORT_02(["UC-IMPORT-02<br/>AI phân tích và trích xuất task<br/>Should Have"]):::should
+      UC_UC_IMPORT_03(["UC-IMPORT-03<br/>Review và approve draft task<br/>Should Have"]):::should
+      UC_UC_IMPORT_04(["UC-IMPORT-04<br/>Import task vào project<br/>Should Have"]):::should
+    end
+    subgraph CUST["CUST - Customer Portal"]
+      UC_UC_CUST_01(["UC-CUST-01<br/>Xem tiến độ project customer view<br/>Must Have"]):::must
+      UC_UC_CUST_02(["UC-CUST-02<br/>Gửi phản hồi về task<br/>Should Have"]):::should
+      UC_UC_CUST_03(["UC-CUST-03<br/>Xem thông tin public<br/>Must Have"]):::must
+    end
+    subgraph ADMIN["ADMIN - Admin/Audit"]
+      UC_UC_ADMIN_01(["UC-ADMIN-01<br/>Bật/tắt feature flag<br/>Should Have"]):::should
+      UC_UC_ADMIN_02(["UC-ADMIN-02<br/>Xem audit log hệ thống<br/>Must Have"]):::must
+      UC_UC_ADMIN_03(["UC-ADMIN-03<br/>Quản lý tenant<br/>Should Have"]):::should
+    end
+  end
+  A_Guest --> UC_UC_AUTH_01
+  A_Guest --> UC_UC_AUTH_02
+  A_User --> UC_UC_AUTH_02
+  A_Guest --> UC_UC_AUTH_03
+  A_User --> UC_UC_AUTH_03
+  A_User --> UC_UC_AUTH_04
+  A_User --> UC_UC_AUTH_05
+  A_Guest --> UC_UC_AUTH_06
+  A_Guest --> UC_UC_AUTH_07
+  A_User --> UC_UC_AUTH_08
+  A_SystemCustomerAdmin --> UC_UC_ORG_01
+  A_OrgOwner --> UC_UC_ORG_02
+  A_OrgAdmin --> UC_UC_ORG_02
+  A_InvitedUser --> UC_UC_ORG_03
+  A_OrgOwner --> UC_UC_ORG_04
+  A_OrgAdmin --> UC_UC_ORG_04
+  A_OrgOwner --> UC_UC_ORG_05
+  A_OrgAdmin --> UC_UC_ORG_05
+  A_OrgAdmin --> UC_UC_PROJ_01
+  A_ProjectManager --> UC_UC_PROJ_01
+  A_ProjectManager --> UC_UC_PROJ_02
+  A_ProjectManager --> UC_UC_PROJ_03
+  A_ProjectManager --> UC_UC_PROJ_04
+  A_ProjectManager --> UC_UC_PROJ_05
+  A_ProjectMember --> UC_UC_PROJ_06
+  A_Customer --> UC_UC_PROJ_06
+  A_ProjectManager --> UC_UC_TASK_01
+  A_ProjectMember --> UC_UC_TASK_01
+  A_ProjectManager --> UC_UC_TASK_02
+  A_SubManager --> UC_UC_TASK_02
+  A_ProjectManager --> UC_UC_TASK_03
+  A_ProjectMember --> UC_UC_TASK_03
+  A_ProjectManager --> UC_UC_TASK_04
+  A_ProjectMember --> UC_UC_TASK_04
+  A_Assignee --> UC_UC_TASK_05
+  A_ProjectManager --> UC_UC_TASK_05
+  A_Assignee --> UC_UC_TASK_06
+  A_ProjectManager --> UC_UC_TASK_07
+  A_Reviewer --> UC_UC_TASK_07
+  A_ProjectManager --> UC_UC_TASK_08
+  A_Reviewer --> UC_UC_TASK_08
+  A_Assignee --> UC_UC_TASK_09
+  A_Assignee --> UC_UC_TASK_10
+  A_ProjectMember --> UC_UC_KANBAN_01
+  A_ProjectManager --> UC_UC_KANBAN_01
+  A_ProjectManager --> UC_UC_KANBAN_02
+  A_ProjectManager --> UC_UC_KANBAN_03
+  A_ProjectManager --> UC_UC_KANBAN_04
+  A_ProjectMember --> UC_UC_KANBAN_05
+  A_ProjectManager --> UC_UC_KANBAN_05
+  A_Customer --> UC_UC_KANBAN_05
+  A_ProjectManager --> UC_UC_SPRINT_01
+  A_ProjectManager --> UC_UC_SPRINT_02
+  A_SubManager --> UC_UC_SPRINT_02
+  A_ProjectManager --> UC_UC_SPRINT_03
+  A_ProjectManager --> UC_UC_SPRINT_04
+  A_ProjectManager --> UC_UC_SPRINT_05
+  A_ProjectMember --> UC_UC_SPRINT_05
+  A_ProjectMember --> UC_UC_TIMELINE_01
+  A_ProjectManager --> UC_UC_TIMELINE_02
+  A_SubManager --> UC_UC_TIMELINE_02
+  A_ProjectManager --> UC_UC_TIMELINE_03
+  A_ProjectManager --> UC_UC_CHAT_01
+  A_System --> UC_UC_CHAT_01
+  A_RoomMember --> UC_UC_CHAT_02
+  A_ProjectManager --> UC_UC_CHAT_03
+  A_SubManager --> UC_UC_CHAT_03
+  A_RoomMember --> UC_UC_CHAT_04
+  A_ProjectManager --> UC_UC_CHAT_05
+  A_RoomAdmin --> UC_UC_CHAT_05
+  A_RoomMember --> UC_UC_CHAT_06
+  A_ProjectManager --> UC_UC_MEETING_01
+  A_ProjectMember --> UC_UC_MEETING_01
+  A_ProjectManager --> UC_UC_MEETING_02
+  A_AIService --> UC_UC_MEETING_02
+  A_ProjectManager --> UC_UC_MEETING_03
+  A_ProjectManager --> UC_UC_WIKI_01
+  A_ProjectMember --> UC_UC_WIKI_01
+  A_ProjectManager --> UC_UC_WIKI_02
+  A_ProjectMember --> UC_UC_WIKI_02
+  A_ProjectManager --> UC_UC_WIKI_03
+  A_ProjectMember --> UC_UC_AI_01
+  A_ProjectManager --> UC_UC_AI_02
+  A_ProjectManager --> UC_UC_AI_03
+  A_System --> UC_UC_AI_04
+  A_ProjectManager --> UC_UC_AI_04
+  A_ProjectManager --> UC_UC_IMPORT_01
+  A_BA --> UC_UC_IMPORT_01
+  A_ProjectManager --> UC_UC_IMPORT_02
+  A_AIService --> UC_UC_IMPORT_02
+  A_ProjectManager --> UC_UC_IMPORT_03
+  A_BA --> UC_UC_IMPORT_03
+  A_ProjectManager --> UC_UC_IMPORT_04
+  A_Customer --> UC_UC_CUST_01
+  A_Customer --> UC_UC_CUST_02
+  A_Customer --> UC_UC_CUST_03
+  A_SystemAdmin --> UC_UC_ADMIN_01
+  A_SystemAdmin --> UC_UC_ADMIN_02
+  A_OrgAdmin --> UC_UC_ADMIN_02
+  A_SystemAdmin --> UC_UC_ADMIN_03
+  %% Production note: write flows require RBAC, validation, transaction, audit, and tenant isolation.

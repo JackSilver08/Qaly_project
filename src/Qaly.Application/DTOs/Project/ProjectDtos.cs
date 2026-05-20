@@ -15,7 +15,9 @@ public record ProjectDto(
     int TaskCount,
     int ProgressPercentage,
     IReadOnlyList<ProjectLabelDto> Labels,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    Guid? OrganizationId,
+    string? OrganizationName);
 
 public record CreateProjectDto(
     string Name,
@@ -23,7 +25,8 @@ public record CreateProjectDto(
     string? Description,
     string? LogoUrl,
     DateTimeOffset? StartDate,
-    DateTimeOffset? EndDate);
+    DateTimeOffset? EndDate,
+    Guid? OrganizationId = null);
 
 public record UpdateProjectDto(
     string Name,
@@ -32,7 +35,8 @@ public record UpdateProjectDto(
     string? LogoUrl,
     string Status,
     DateTimeOffset? StartDate,
-    DateTimeOffset? EndDate);
+    DateTimeOffset? EndDate,
+    Guid? OrganizationId = null);
 
 public record ProjectLabelDto(
     Guid Id,
@@ -53,3 +57,33 @@ public record UpdateProjectMemberPermissionsDto(
     bool CanViewTaskRisk,
     bool CanNudgeAssignee,
     bool CanViewUnseenTaskSignal);
+
+public record OrganizationDto(
+    Guid Id,
+    string Name,
+    string Code,
+    string? Description,
+    bool IsActive,
+    Guid OwnerId,
+    string OwnerName,
+    int MemberCount,
+    int ProjectCount,
+    DateTimeOffset CreatedAt);
+
+public record CreateOrganizationDto(
+    string Name,
+    string? Code,
+    string? Description);
+
+public record UpdateOrganizationDto(
+    string Name,
+    string? Code,
+    string? Description,
+    bool IsActive = true);
+
+public record OrganizationMemberDto(
+    Guid UserId,
+    string FullName,
+    string Email,
+    string Role,
+    DateTimeOffset JoinedAt);

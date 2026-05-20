@@ -12,6 +12,10 @@ public class User : BaseEntity
     // Navigation properties
     public ICollection<Project> OwnedProjects { get; set; } = new List<Project>();
     public ICollection<ProjectMember> ProjectMemberships { get; set; } = new List<ProjectMember>();
+    public ICollection<Organization> OwnedOrganizations { get; set; } = new List<Organization>();
+    public ICollection<OrganizationMember> OrganizationMemberships { get; set; } = new List<OrganizationMember>();
+    public ICollection<AiJob> RequestedAiJobs { get; set; } = new List<AiJob>();
+    public ICollection<AiGeneratedDraft> ConfirmedAiDrafts { get; set; } = new List<AiGeneratedDraft>();
     public ICollection<TaskItem> AssignedTasks { get; set; } = new List<TaskItem>();
     public ICollection<TaskItem> ReportedTasks { get; set; } = new List<TaskItem>();
     public ICollection<TaskComment> Comments { get; set; } = new List<TaskComment>();

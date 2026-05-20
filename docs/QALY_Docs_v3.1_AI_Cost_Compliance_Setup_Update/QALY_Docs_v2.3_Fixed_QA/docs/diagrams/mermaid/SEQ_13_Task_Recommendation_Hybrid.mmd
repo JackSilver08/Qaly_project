@@ -1,0 +1,27 @@
+sequenceDiagram
+  autonumber
+  actor PM as Project Manager
+  participant UI as Task UI
+  participant API as TaskController
+  participant Score as Deterministic Scoring Service
+  participant DB as SQL Server
+  participant Vector as Qdrant optional
+  participant AI as AiGateway
+  participant Audit as AuditLog
+
+  PM->>UI: Open recommend assignee for task
+  UI->>API: POST /tasks/{id}/recommend-assignees
+  API->>DB: Load task, members, skills, workload, history
+  API->>Score: Calculate skill/workload/role/deadline score
+  opt semantic experience enabled
+    API->>Vector: Search similar tasks/meetings with ACL filter
+    Vector-->>API: Similar evidence snippets
+  end
+  API->>AI: Generate explanation for top candidates
+  AI-->>API: reasons, risks, confidence
+  API-->>UI: Candidate cards + score breakdown
+  PM->>UI: Confirm assignee
+  UI->>API: PATCH /tasks/{id}/assignee
+  API->>DB: Apply assignment transaction
+  API->>Audit: TASK_ASSIGNEE_CONFIRMED_FROM_AI_SUGGESTION
+  Note over Score,AI: LLM explains; deterministic score drives ranking.

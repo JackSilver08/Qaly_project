@@ -29,6 +29,7 @@ const nudgeFeedback = ref('')
 const commentTaskId = ref<string | null>(null)
 const commentText = ref('')
 const commentFeedback = ref('')
+const DAY_MS = 24 * 60 * 60 * 1000
 
 const riskOptions = [
   { value: 'all', label: 'Tất cả cảnh báo' },
@@ -61,6 +62,9 @@ async function fetchGanttData() {
     ])
     tasks.value = gantt
     attentionItems.value = attention.items
+  } catch {
+    tasks.value = []
+    attentionItems.value = []
   } finally {
     isLoading.value = false
   }
@@ -102,32 +106,64 @@ const summary = computed(() => ({
   unseen: attentionItems.value.filter((item) => item.isUnseenByAssignee).length,
 }))
 
+function toValidTimestamp(value: string | null | undefined) {
+  if (!value) return null
+  const time = new Date(value).getTime()
+  return Number.isFinite(time) ? time : null
+}
+
+const timelineBounds = computed(() => {
+  const now = Date.now()
+  const points = tasks.value
+    .flatMap((task) => [toValidTimestamp(task.startDate), toValidTimestamp(task.endDate)])
+    .filter((time): time is number => time !== null)
+
+  if (points.length === 0) {
+    return {
+      min: new Date(now),
+      max: new Date(now + 7 * DAY_MS),
+    }
+  }
+
+  const min = Math.min(...points)
+  const max = Math.max(...points)
+  const safeMax = max >= min ? max : min + 7 * DAY_MS
+
+  return {
+    min: new Date(min),
+    max: new Date(safeMax),
+  }
+})
+
 const minDate = computed(() => {
-  const dates = tasks.value.filter(t => t.startDate).map(t => new Date(t.startDate).getTime())
-  return dates.length ? new Date(Math.min(...dates)) : new Date()
+  return timelineBounds.value.min
 })
 
 const maxDate = computed(() => {
-  const dates = tasks.value.filter(t => t.endDate).map(t => new Date(t.endDate).getTime())
-  return dates.length ? new Date(Math.max(...dates)) : new Date(new Date().getTime() + 7 * 24 * 60 * 60 * 1000)
+  return timelineBounds.value.max
 })
 
 const totalDays = computed(() => {
-  return Math.ceil((maxDate.value.getTime() - minDate.value.getTime()) / (24 * 60 * 60 * 1000)) + 5
+  const spanDays = Math.ceil((maxDate.value.getTime() - minDate.value.getTime()) / DAY_MS) + 5
+  return Math.max(1, Math.min(366, spanDays))
 })
 
 function getTaskStyle(task: any) {
-  if (!task.startDate || !task.endDate) return { display: 'none' }
+  const startTime = toValidTimestamp(task.startDate) ?? toValidTimestamp(task.endDate)
+  const endTime = toValidTimestamp(task.endDate) ?? startTime
+  if (startTime === null || endTime === null) return { display: 'none' }
 
-  const start = new Date(task.startDate)
-  const end = new Date(task.endDate)
-  const left = Math.ceil((start.getTime() - minDate.value.getTime()) / (24 * 60 * 60 * 1000))
-  const width = Math.ceil((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000))
+  const normalizedEnd = Math.max(startTime, endTime)
+  const left = Math.floor((startTime - minDate.value.getTime()) / DAY_MS) + 1
+  const width = Math.ceil((normalizedEnd - startTime) / DAY_MS) + 1
+  const startColumn = Math.max(1, left)
+  const maxSpan = Math.max(1, totalDays.value - startColumn + 1)
+  const span = Math.max(1, Math.min(width, maxSpan))
   const risk = attentionItems.value.find((item) => item.id === task.id)
 
   return {
-    gridColumnStart: left + 1,
-    gridColumnEnd: `span ${Math.max(1, width)}`,
+    gridColumnStart: startColumn,
+    gridColumnEnd: `span ${span}`,
     backgroundColor: risk?.isOverdue ? '#dc2626' : risk?.isStaleTodo ? '#ea580c' : risk?.isDueSoon ? '#f59e0b' : task.isCriticalPath ? 'var(--peach-500)' : 'var(--primary-soft)',
     color: risk ? 'white' : task.isCriticalPath ? 'white' : 'var(--primary)'
   }
@@ -322,7 +358,7 @@ onMounted(fetchGanttData)
       <div class="panel-header">
         <div class="title-group">
           <Calendar :size="20" class="icon-primary" />
-          <h3>Timeline & Gantt</h3>
+          <h3>Dòng thời gian & Gantt</h3>
         </div>
       </div>
 
@@ -344,7 +380,7 @@ onMounted(fetchGanttData)
               <span :class="{ 'critical': task.isCriticalPath }">{{ task.title }}</span>
             </div>
             <div class="task-bar-row">
-              <button v-if="task.startDate" type="button" class="task-bar" :style="getTaskStyle(task)" @click="emit('openTask', task.id)">
+              <button v-if="task.startDate || task.endDate" type="button" class="task-bar" :style="getTaskStyle(task)" @click="emit('openTask', task.id)">
                 <div class="progress-inner" :style="{ width: task.progress + '%' }"></div>
                 <span class="bar-text">{{ task.progress }}%</span>
               </button>

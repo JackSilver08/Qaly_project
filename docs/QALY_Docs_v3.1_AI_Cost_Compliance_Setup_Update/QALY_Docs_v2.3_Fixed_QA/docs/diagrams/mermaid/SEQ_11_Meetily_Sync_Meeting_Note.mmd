@@ -1,0 +1,26 @@
+sequenceDiagram
+  autonumber
+  actor U as PM/Meeting host
+  participant M as Meetily Desktop
+  participant LG as Local AI Gateway
+  participant NG as ngrok/Auth Tunnel
+  participant API as QALY AiGateway/API
+  participant DB as SQL Server
+  participant LLM as AI API/Local Provider
+  participant UI as QALY Meeting UI
+
+  U->>M: Record meeting / generate transcript + summary
+  M-->>U: Transcript + summary ready
+  U->>LG: Click Sync to QALY or export file
+  LG->>NG: POST /ai/meeting/sync with token
+  NG->>API: Forward authenticated request
+  API->>DB: Validate project, user, meeting permission
+  API->>DB: Save meeting_transcripts + meeting_ai_summaries draft
+  API->>LLM: Extract keywords/action_items/decisions JSON
+  LLM-->>API: Structured draft output
+  API->>DB: Save draft action items with confidence/source_quote
+  API-->>UI: Show review screen
+  U->>UI: Confirm selected action items
+  UI->>API: Create tasks from confirmed action items
+  API->>DB: Transaction create tasks + audit log
+  Note over API,DB: AI output is never committed as official task without user confirmation.

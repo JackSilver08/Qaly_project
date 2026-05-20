@@ -1,0 +1,15 @@
+namespace Qaly.Domain.Entities;
+
+public class Organization : BaseEntity
+{
+    public string Name { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public bool IsActive { get; set; } = true;
+
+    public Guid OwnerId { get; set; }
+
+    public User Owner { get; set; } = null!;
+    public ICollection<OrganizationMember> Members { get; set; } = new List<OrganizationMember>();
+    public ICollection<Project> Projects { get; set; } = new List<Project>();
+}

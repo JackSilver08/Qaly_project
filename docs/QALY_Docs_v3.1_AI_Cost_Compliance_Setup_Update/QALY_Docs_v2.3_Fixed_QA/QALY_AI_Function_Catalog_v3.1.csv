@@ -1,0 +1,13 @@
+id,function_name,priority,input_sources,ai_method,primary_provider,fallback,output,human_confirm_required,p0_scope,cost_control
+AI-01,Meetily meeting import/sync,P0,Meetily export/transcript/summary,Connector + validation,Meetily,Manual import,meeting_note record,Yes,Yes,No API call required
+AI-02,Extract meeting keywords/action items/deadlines/decisions,P0,Meetily transcript + summary,LLM JSON extraction,AI API mini/flash,Ollama/mock,structured meeting intelligence,Yes,Yes,use summary first; chunk raw transcript
+AI-03,Chat thread summarization,P0,messages by room/time range,LLM summarization,nano/flash-lite,Ollama/mock,summary bullets,No for view only,Yes,cache by message_range_hash
+AI-04,Create task draft from chat/meeting,P0,message/meeting action item,LLM extraction + schema validation,mini/flash,rule parse + manual form,task draft,Yes,Yes,draft only when user clicks
+AI-05,Recommend assignee,P0,"task, skills, workload, history",rule-score + AI explanation,SQL + AI API,SQL rule only,ranked candidates + reason,Yes,Yes,skip AI if deterministic score confidence high
+AI-06,Break down task into subtasks,P0,task title/description,LLM planning,nano/mini,template checklist,subtasks,Yes,Yes,cache normalized task text
+AI-07,Generate acceptance criteria/checklist,P0,task details,LLM checklist generation,nano/mini,template checklist,checklist,Yes,Yes,bundle with AI-06 when possible
+AI-08,Sprint/project progress summary,P0,"SQL task metrics, overdue, comments",metric aggregation + LLM narrative,mini/flash,template report,progress report,No for view only,Yes,"send aggregated metrics, not all task comments"
+AI-09,Semantic search across project,P1,"chat, task, meeting, files",embedding + Qdrant + LLM answer,Qdrant + AI API,SQL keyword search,answer with sources,No,No,top-k limit and no answer without source
+AI-10,Duplicate/similar task detection,P1,task title/description,embedding similarity,Qdrant,SQL fuzzy search,similar task warning,Yes,No,embedding only on task creation
+AI-11,Risk of delay detection,P1,"deadline, workload, status, activity",rules + optional AI explanation,SQL rules,AI explanation,risk warning,No,No,rules first
+AI-12,Project Q&A with sources,P1,Qdrant chunks + SQL records,RAG,Qdrant + AI API,keyword search,answer + citations/source ids,No,No,only on explicit user question

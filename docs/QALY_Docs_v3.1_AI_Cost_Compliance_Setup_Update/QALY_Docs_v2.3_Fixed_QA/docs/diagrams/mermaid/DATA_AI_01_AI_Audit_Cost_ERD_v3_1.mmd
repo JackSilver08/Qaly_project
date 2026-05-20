@@ -1,0 +1,64 @@
+erDiagram
+    AI_PROVIDER_CONFIG ||--o{ AI_USAGE_LEDGER : uses
+    AI_PROMPT_CACHE ||--o{ AI_USAGE_LEDGER : avoids_call
+    AI_JOB_QUEUE ||--o{ AI_USAGE_LEDGER : generates
+    MEETILY_IMPORT_SESSIONS ||--o{ AI_GENERATED_DRAFTS : creates
+    AI_GENERATED_DRAFTS ||--o{ AI_AUDIT_EVENTS : reviewed_by
+    VECTOR_SYNC_STATE }o--|| MEETILY_IMPORT_SESSIONS : optional_sync
+
+    AI_PROVIDER_CONFIG {
+      bigint id PK
+      string provider_name
+      string model_name
+      string purpose
+      boolean is_enabled
+      int priority_order
+    }
+    AI_USAGE_LEDGER {
+      bigint id PK
+      bigint project_id
+      bigint user_id
+      string job_type
+      string provider_name
+      int input_tokens
+      int output_tokens
+      decimal estimated_cost_usd
+      string status
+    }
+    AI_PROMPT_CACHE {
+      bigint id PK
+      string cache_key UK
+      string job_type
+      string response_json
+      int hit_count
+    }
+    MEETILY_IMPORT_SESSIONS {
+      bigint id PK
+      bigint project_id
+      string source_hash
+      string transcript_text
+      string summary_text
+      string import_status
+    }
+    AI_GENERATED_DRAFTS {
+      bigint id PK
+      string source_type
+      bigint source_id
+      string draft_type
+      string draft_json
+      string status
+    }
+    AI_AUDIT_EVENTS {
+      bigint id PK
+      bigint actor_user_id
+      string event_type
+      string entity_type
+      bigint entity_id
+    }
+    VECTOR_SYNC_STATE {
+      bigint id PK
+      string source_type
+      bigint source_id
+      string vector_collection
+      string sync_status
+    }

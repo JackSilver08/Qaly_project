@@ -38,4 +38,21 @@ public class AttachmentsController : ControllerBase
         var result = await _attachmentService.DeleteAsync(id, ct);
         return StatusCode(result.StatusCode, result);
     }
+
+    [HttpPatch("{id:guid}/evidence")]
+    public async Task<IActionResult> MarkAsEvidence(Guid id, [FromBody] UpdateEvidenceFlagRequest request, CancellationToken ct)
+    {
+        var result = await _attachmentService.MarkAsEvidenceAsync(id, request.IsEvidence, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("{id:guid}/evidence/review")]
+    public async Task<IActionResult> ReviewEvidence(Guid id, [FromBody] ReviewEvidenceRequest request, CancellationToken ct)
+    {
+        var result = await _attachmentService.ReviewEvidenceAsync(id, request.Approve, request.ReviewNote, ct);
+        return StatusCode(result.StatusCode, result);
+    }
 }
+
+public sealed record UpdateEvidenceFlagRequest(bool IsEvidence);
+public sealed record ReviewEvidenceRequest(bool Approve, string? ReviewNote);
