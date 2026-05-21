@@ -70,7 +70,16 @@ public static class DependencyInjection
         services.AddChatClient(new OllamaChatClient(new Uri(ollamaUrl), chatModel));
         services.AddEmbeddingGenerator(new OllamaEmbeddingGenerator(new Uri(ollamaUrl), embeddingModel));
         
-        services.AddSingleton<IVectorStorageService, QdrantVectorStorageService>();
+        var semanticEnabled = configuration.GetValue<bool>("Ai:SemanticEnabled");
+        if (semanticEnabled)
+        {
+            services.AddSingleton<IVectorStorageService, QdrantVectorStorageService>();
+            services.AddHostedService<VectorSyncWorker>();
+        }
+        else
+        {
+            services.AddSingleton<IVectorStorageService, NullVectorStorageService>();
+        }
         services.AddScoped<IAiIngestionService, AiIngestionService>();
         services.AddScoped<AiTools>();
         
@@ -79,7 +88,6 @@ public static class DependencyInjection
         services.AddSingleton<Microsoft.AspNetCore.Authentication.Cookies.ITicketStore, Auth.RedisTicketStore>();
 
         // Background Workers
-        services.AddHostedService<VectorSyncWorker>();
         services.AddHostedService<EmailDigestWorker>();
         services.AddHostedService<TaskAttentionSignalWorker>();
 

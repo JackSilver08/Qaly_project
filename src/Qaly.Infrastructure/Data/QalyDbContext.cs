@@ -28,6 +28,7 @@ public class QalyDbContext : DbContext
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<AiJob> AiJobs => Set<AiJob>();
     public DbSet<AiGeneratedDraft> AiGeneratedDrafts => Set<AiGeneratedDraft>();
+    public DbSet<MeetingImport> MeetingImports => Set<MeetingImport>();
     public DbSet<VectorSyncOutbox> VectorSyncOutbox => Set<VectorSyncOutbox>();
     public DbSet<TimeEntry> TimeEntries => Set<TimeEntry>();
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
