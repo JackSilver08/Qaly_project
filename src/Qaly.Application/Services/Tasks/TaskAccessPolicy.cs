@@ -190,6 +190,23 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
             member => member.CanNudgeAssignee || IsElevatedProjectRole(member.Role),
             ct);
 
+    public async Task<bool> CanManageWebhooksAsync(Guid projectId, Guid ownerId, CancellationToken ct)
+        => await HasProjectPermissionAsync(
+            projectId,
+            ownerId,
+            member => IsElevatedProjectRole(member.Role),
+            ct);
+
+    public async Task<bool> CanReadWikiAsync(Guid projectId, Guid ownerId, CancellationToken ct)
+        => await CanAccessProjectAsync(projectId, ownerId, ct);
+
+    public async Task<bool> CanWriteWikiAsync(Guid projectId, Guid ownerId, CancellationToken ct)
+        => await HasProjectPermissionAsync(
+            projectId,
+            ownerId,
+            member => !string.Equals(member.Role, "Viewer", StringComparison.OrdinalIgnoreCase),
+            ct);
+
     private async Task<bool> HasProjectPermissionAsync(
         Guid projectId,
         Guid ownerId,

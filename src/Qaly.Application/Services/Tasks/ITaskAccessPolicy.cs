@@ -14,4 +14,7 @@ public interface ITaskAccessPolicy
     Task<bool> CanViewTaskRiskAsync(Guid projectId, Guid ownerId, CancellationToken ct);
     Task<bool> CanViewUnseenTaskSignalAsync(Guid projectId, Guid ownerId, CancellationToken ct);
     Task<bool> CanNudgeAssigneeAsync(Guid projectId, Guid ownerId, CancellationToken ct);
+    Task<bool> CanManageWebhooksAsync(Guid projectId, Guid ownerId, CancellationToken ct);
+    Task<bool> CanReadWikiAsync(Guid projectId, Guid ownerId, CancellationToken ct);
+    Task<bool> CanWriteWikiAsync(Guid projectId, Guid ownerId, CancellationToken ct);
 }

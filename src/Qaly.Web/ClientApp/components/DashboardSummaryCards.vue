@@ -16,12 +16,16 @@ const cardIcons = {
 <template>
   <section class="summary-card-grid" aria-label="Tổng quan dự án">
     <article v-for="card in cards" :key="card.key" class="summary-card glass-card" :class="`summary-card--${card.tone}`">
-      <div class="summary-card__icon">
-        <component :is="cardIcons[card.key]" :size="18" />
+      <div class="summary-card__header">
+        <span class="summary-card__label">{{ card.label.toUpperCase() }}</span>
+        <div class="summary-card__icon-box">
+          <component :is="cardIcons[card.key]" :size="18" />
+        </div>
       </div>
-      <span>{{ card.label }}</span>
-      <strong>{{ card.value }}</strong>
-      <p>{{ card.detail }}</p>
+      <div class="summary-card__value-row">
+        <strong>{{ card.value }}</strong>
+        <p class="summary-card__detail">/ {{ card.detail }}</p>
+      </div>
     </article>
   </section>
 </template>

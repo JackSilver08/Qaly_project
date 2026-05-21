@@ -358,7 +358,7 @@ onMounted(fetchGanttData)
       <div class="panel-header">
         <div class="title-group">
           <Calendar :size="20" class="icon-primary" />
-          <h3>Timeline & Gantt</h3>
+          <h3>Dòng thời gian & Gantt</h3>
         </div>
       </div>
 

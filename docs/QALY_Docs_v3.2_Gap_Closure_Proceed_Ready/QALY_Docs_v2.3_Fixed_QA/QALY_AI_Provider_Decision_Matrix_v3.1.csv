@@ -1,7 +1,0 @@
-provider,role,quality,cost,latency,privacy,hardware_need,risk,when_to_use
-Meetily Community,Meeting capture/transcription/summary local,Good for meeting note MVP,0 license,Local; depends laptop,Strong local-first,Laptop CPU/GPU,New project; desktop-first; Pro features separate,P0 meeting import/sync
-OpenAI API,Primary high quality JSON extraction and reasoning,High,Low if controlled,Network dependent,API data policy; avoid sensitive raw data,None local,Quota/key/cost/data governance,Demo-critical AI tasks
-Gemini API,Cost-effective fallback/primary for summaries,Good,Very low for Flash-Lite/Flash,Network dependent,Provider policy required,None local,Quota/rate limits/model changes,Cheap summary/extract
-Ollama 7B/8B Q4,Local fallback/dev/offline,Medium,0 API,OK on RTX4060; slow on CPU,Local,RTX4060 + RAM headroom,JSON consistency lower than API,"Dev, offline demo, privacy story"
-Ollama 14B Q4,Optional local experiment,Better local reasoning but heavier,0 API,May be tight on 16GB RAM,Local,VRAM/RAM pressure,May lag/stutter; not core,Only if stable after benchmark
-Qdrant OSS/Cloud Free,Semantic memory/search,Strong retrieval,0 for OSS/free tier,Fast if indexed,Self-host local/VPS if OSS,RAM/disk for vectors,Extra integration time,"P1 search, duplicate task, project Q&A"

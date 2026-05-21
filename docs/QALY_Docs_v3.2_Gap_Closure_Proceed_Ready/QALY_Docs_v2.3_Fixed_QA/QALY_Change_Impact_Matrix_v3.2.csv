@@ -1,8 +1,0 @@
-change_id,change,affected_docs,affected_tables,affected_endpoints,affected_diagrams,decision
-CH-001,AI architecture changed to Meetily-first + API-primary,"SRS v3.2, AI Strategy, Deployment Runbook, Test Plan","ai_provider_config, ai_usage_ledger, meetily_import_sessions","/api/ai/jobs, /api/meetings/import/meetily","ARCH_AI_01, SEQ_AI_01, DEPLOY_AI_01",Adopt v3.2
-CH-002,Qdrant moved from P0 core to P1 optional semantic memory,"MVP Scope Lock, AI Module Spec, Deployment Matrix",vector_sync_state,/api/search/semantic optional,"DATA_03_Meetily_Qdrant_Memory_DFD, DATA_AI_02",Do not block MVP
-CH-003,Ollama 14B no longer required,"Setup Guide, Risk Register, Cost Estimation",ai_provider_config,local AI gateway only,DEPLOY_AI_01,Use 7B/8B Q4 fallback
-CH-004,Add API cost controls,"Cost Policy, Test Plan, Runbook","ai_usage_ledger, ai_prompt_cache, ai_budget_policy","/api/ai/usage, /api/ai/budget","SEQ_AI_03, SEQ_AI_04",Mandatory P0
-CH-005,Add compliance/legal UI and API flows,"SRS, Compliance UI/API Flows","ai_audit_events, privacy_consents, data_subject_requests, retention fields","/api/privacy/*, /api/audit","DFD_AI_01, SEC_AI_01",Mandatory for production-oriented spec
-CH-006,Add AI generated draft workflow,"Use Cases, API Contract, Test Plan",ai_generated_drafts,/api/ai/drafts/{id}/confirm,SEQ_AI_02,Human-in-the-loop mandatory
-CH-007,Add ops backup/restore/healthcheck,Deployment Runbook v3.2,all P0 tables,"/health, /ready, /api/ai/health",OPS_AI_02,Mandatory before staging

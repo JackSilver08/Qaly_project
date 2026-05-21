@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Plus } from 'lucide-vue-next'
 import DashboardSummaryCards from '../components/DashboardSummaryCards.vue'
 import ProjectGrid from '../components/ProjectGrid.vue'
 import ProjectToolbar from '../components/ProjectToolbar.vue'
@@ -32,15 +33,26 @@ const {
 <template>
   <div class="dashboard-scroll dashboard-scroll--embedded no-scrollbar">
     <div class="dashboard-main project-home-main no-scrollbar">
+      
+      <!-- Welcome Banner -->
+      <header class="dashboard-welcome-banner">
+        <div>
+          <h1>Chào buổi sáng, Minh!</h1>
+          <p>Dưới đây là tóm tắt hoạt động của Workspace ngày hôm nay.</p>
+        </div>
+        <button class="primary-button" type="button" @click="openCreateProject">
+          <Plus :size="18" />
+          <span>Tạo Dự Án Mới</span>
+        </button>
+      </header>
+
       <DashboardSummaryCards id="overview" :cards="summaryCards" />
 
-      <section id="projects" class="project-workspace glass-card">
+      <section id="projects" class="project-workspace">
         <div class="project-workspace__header">
           <div>
-            <span>Projects</span>
-            <h2>Project portfolio</h2>
+            <h2>Danh mục Dự án</h2>
           </div>
-          <p>{{ filteredProjects.length }} of {{ projects.length }} projects</p>
         </div>
 
         <ProjectToolbar
@@ -77,6 +89,35 @@ const {
           @edit="beginEditProject"
           @delete="deleteProject"
         />
+      </section>
+
+      <!-- Performance Banner -->
+      <section class="performance-banner">
+        <div class="performance-banner__content">
+          <span class="performance-banner__label">HIỆU SUẤT HỆ THỐNG</span>
+          <h2>Phân tích Tổng quan Quý 2</h2>
+          <p>Workspace của bạn đang hoạt động với hiệu suất vượt trội hơn 24% so với quý trước. Hầu hết các dự án trọng điểm đang đi đúng lộ trình đề ra.</p>
+          <div class="performance-banner__stats">
+            <div>
+              <strong>94%</strong>
+              <span>Hoàn thành đúng hạn</span>
+            </div>
+            <div>
+              <strong>08</strong>
+              <span>Nhiệm vụ mới tuần này</span>
+            </div>
+          </div>
+        </div>
+        <div class="performance-banner__visual">
+          <!-- Abstract representation of the dark UI graphic in the mockup -->
+          <div class="abstract-ui">
+            <div class="abstract-ui-header"></div>
+            <div class="abstract-ui-body">
+              <div class="abstract-ui-card"></div>
+              <div class="abstract-ui-card"></div>
+            </div>
+          </div>
+        </div>
       </section>
     </div>
   </div>

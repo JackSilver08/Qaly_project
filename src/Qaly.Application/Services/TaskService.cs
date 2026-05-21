@@ -316,7 +316,7 @@ public class TaskService : ITaskService
         var validation = await ValidateTaskInputAsync(dto.Title, dto.Priority, dto.ProjectId, assigneeIds, dto.LabelIds, ct);
         if (!validation.IsSuccess)
         {
-            return Result.Failure<TaskItemDto>(validation.Error ?? "Invalid task.", validation.StatusCode);
+            return Result.Failure<TaskItemDto>(validation.Error ?? "Nhiệm vụ không hợp lệ.", validation.StatusCode);
         }
 
         var project = validation.Project!;
@@ -338,14 +338,14 @@ public class TaskService : ITaskService
         await _auditLogService.LogAsync("Create", nameof(TaskItem), task.Id.ToString(), new { task.Title, task.ProjectId }, ct);
 
         // Realtime broadcast
-        await _notificationService.BroadcastToProjectAsync(task.ProjectId, $"Task \"{task.Title}\" was created.", "TaskCreated", new { task.Id }, ct);
+        await _notificationService.BroadcastToProjectAsync(task.ProjectId, $"Nhiệm vụ \"{task.Title}\" đã được tạo.", "TaskCreated", new { task.Id }, ct);
         await _webhookPublisher.PublishAsync(task.ProjectId, "task.created", new { task.Id, task.Title, task.Status }, ct);
 
         foreach (var assigneeId in assigneeIds.Where(id => id != currentUserId).Distinct())
         {
             await _notificationService.CreateAsync(
                 assigneeId,
-                $"You were assigned to task \"{task.Title}\".",
+                $"Bạn đã được giao nhiệm vụ \"{task.Title}\".",
                 "TaskAssigned",
                 task.Id,
                 nameof(TaskItem),
@@ -381,24 +381,24 @@ public class TaskService : ITaskService
         var validation = await ValidateTaskInputAsync(dto.Title, dto.Priority, task.ProjectId, assigneeIds, dto.LabelIds, ct);
         if (!validation.IsSuccess)
         {
-            return Result.Failure<TaskItemDto>(validation.Error ?? "Invalid task.", validation.StatusCode);
+            return Result.Failure<TaskItemDto>(validation.Error ?? "Nhiệm vụ không hợp lệ.", validation.StatusCode);
         }
 
         if (!TaskStatusRules.IsValidStatus(dto.Status))
         {
-            return Result.Failure<TaskItemDto>("Invalid task status.");
+            return Result.Failure<TaskItemDto>("Trạng thái nhiệm vụ không hợp lệ.");
         }
 
         var oldStatus = task.Status;
         var normalizedStatus = TaskStatusRules.NormalizeStatus(dto.Status);
         if (!TaskStatusRules.CanTransition(oldStatus, normalizedStatus))
         {
-            return Result.Failure<TaskItemDto>($"Status transition from {oldStatus} to {normalizedStatus} is not allowed.", 400);
+            return Result.Failure<TaskItemDto>($"Không cho phép chuyển trạng thái từ {oldStatus} sang {normalizedStatus}.", 400);
         }
 
         if (RequiresApprovedEvidence(oldStatus, normalizedStatus) && !await HasApprovedEvidenceAsync(task.Id, ct))
         {
-            return Result.Failure<TaskItemDto>("Cannot mark task as Done because there is no approved evidence.", 400);
+            return Result.Failure<TaskItemDto>("Không thể đánh dấu hoàn thành vì chưa có minh chứng được duyệt.", 400);
         }
 
         var previousAssignees = task.Assignees.Select(assignment => assignment.UserId).ToHashSet();
@@ -419,7 +419,7 @@ public class TaskService : ITaskService
         {
             await _notificationService.CreateAsync(
                 assigneeId,
-                $"You were assigned to task \"{task.Title}\".",
+                $"Bạn đã được giao nhiệm vụ \"{task.Title}\".",
                 "TaskAssigned",
                 task.Id,
                 nameof(TaskItem),
@@ -436,17 +436,17 @@ public class TaskService : ITaskService
 
         if (task == null)
         {
-            return Result.Failure("Task was not found.", 404);
+            return Result.Failure("Không tìm thấy nhiệm vụ.", 404);
         }
 
         if (!await _taskAccessPolicy.CanManageTaskAsync(task, ct))
         {
-            return Result.Failure("Access denied.", 403);
+            return Result.Failure("Truy cập bị từ chối.", 403);
         }
 
         if (!TaskStatusRules.IsValidStatus(newStatus))
         {
-            return Result.Failure("Invalid task status.");
+            return Result.Failure("Trạng thái nhiệm vụ không hợp lệ.");
         }
 
         var normalizedStatus = TaskStatusRules.NormalizeStatus(newStatus);
@@ -454,12 +454,12 @@ public class TaskService : ITaskService
 
         if (!TaskStatusRules.CanTransition(oldStatus, normalizedStatus))
         {
-            return Result.Failure($"Status transition from {oldStatus} to {normalizedStatus} is not allowed.", 400);
+            return Result.Failure($"Không cho phép chuyển trạng thái từ {oldStatus} sang {normalizedStatus}.", 400);
         }
 
         if (RequiresApprovedEvidence(oldStatus, normalizedStatus) && !await HasApprovedEvidenceAsync(task.Id, ct))
         {
-            return Result.Failure("Cannot mark task as Done because there is no approved evidence.", 400);
+            return Result.Failure("Không thể đánh dấu hoàn thành vì chưa có minh chứng được duyệt.", 400);
         }
 
         task.Status = normalizedStatus;
@@ -481,12 +481,12 @@ public class TaskService : ITaskService
             .FirstOrDefaultAsync(item => item.Id == id, ct);
         if (task == null)
         {
-            return Result.Failure("Task was not found.", 404);
+            return Result.Failure("Không tìm thấy nhiệm vụ.", 404);
         }
 
         if (!await _taskAccessPolicy.CanManageTaskAsync(task, ct))
         {
-            return Result.Failure("Access denied.", 403);
+            return Result.Failure("Truy cập bị từ chối.", 403);
         }
 
         task.SortOrder = sortOrder;
@@ -503,12 +503,12 @@ public class TaskService : ITaskService
 
         if (task == null)
         {
-            return Result.Failure("Task was not found.", 404);
+            return Result.Failure("Không tìm thấy nhiệm vụ.", 404);
         }
 
         if (!await _taskAccessPolicy.CanManageTaskAsync(task, ct))
         {
-            return Result.Failure("Access denied.", 403);
+            return Result.Failure("Truy cập bị từ chối.", 403);
         }
 
         var projectId = task.ProjectId;
@@ -521,7 +521,7 @@ public class TaskService : ITaskService
         await _auditLogService.LogAsync("Delete", nameof(TaskItem), id.ToString(), new { task.Title }, ct);
 
         // Realtime broadcast
-        await _notificationService.BroadcastToProjectAsync(projectId, $"Task \"{title}\" was deleted.", "TaskDeleted", new { id }, ct);
+        await _notificationService.BroadcastToProjectAsync(projectId, $"Nhiệm vụ \"{title}\" đã bị xóa.", "TaskDeleted", new { id }, ct);
 
         return Result.Success();
     }
@@ -546,7 +546,7 @@ public class TaskService : ITaskService
             await AddToOutboxAsync("TaskDeleted", new { Id = task.Id }, ct);
             await _webhookPublisher.PublishAsync(projectId, "task.deleted", new { task.Id, title }, ct);
             await _auditLogService.LogAsync("Delete", nameof(TaskItem), task.Id.ToString(), new { task.Title }, ct);
-            await _notificationService.BroadcastToProjectAsync(projectId, $"Task \"{title}\" was deleted.", "TaskDeleted", new { task.Id }, ct);
+            await _notificationService.BroadcastToProjectAsync(projectId, $"Nhiệm vụ \"{title}\" đã bị xóa.", "TaskDeleted", new { task.Id }, ct);
         }
 
         await _unitOfWork.SaveChangesAsync(ct);
@@ -557,7 +557,7 @@ public class TaskService : ITaskService
     {
         if (!TaskStatusRules.IsValidStatus(newStatus))
         {
-            return Result.Failure("Invalid task status.");
+            return Result.Failure("Trạng thái nhiệm vụ không hợp lệ.");
         }
 
         var normalizedStatus = TaskStatusRules.NormalizeStatus(newStatus);
@@ -1122,7 +1122,7 @@ public class TaskService : ITaskService
         return reasons;
     }
 
-    private static List<string> BuildAllowedActions(
+    private static IReadOnlyList<string> BuildAllowedActions(
         TaskItem task,
         Guid currentUserId,
         Guid? attentionAssigneeId,
