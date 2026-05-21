@@ -1,0 +1,7 @@
+category,requests_10_weeks,input_tokens_each,output_tokens_each,total_input_tokens,total_output_tokens,api_strategy,cost_control
+meeting_extract,20,6000,1000,120000,20000,AI API mini/flash; Meetily handles transcription,use Meetily summary first; chunk only relevant transcript
+chat_summary,200,3000,500,600000,100000,nano/flash-lite default,summarize only unread window; cache by message range
+task_recommendation,300,1500,500,450000,150000,rule-score first; AI explain second,do not call AI if top candidate score gap > threshold
+task_breakdown_checklist,500,1000,400,500000,200000,nano/mini depending complexity,cache by normalized title+description
+sprint_report,20,6000,1000,120000,20000,mini/flash,aggregate SQL metrics before AI
+project_qa_p1,500,2000,700,1000000,350000,Qdrant retrieve then mini/flash,top-k <= 6 chunks; max context 6000 tokens

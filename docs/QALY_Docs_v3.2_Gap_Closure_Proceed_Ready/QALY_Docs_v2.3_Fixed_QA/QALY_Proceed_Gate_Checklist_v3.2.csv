@@ -1,0 +1,13 @@
+gate,criterion,status_v3_2,deadline,evidence
+G0,Architecture v3.2 approved by advisor,Ready,Before coding,meeting note/sign-off
+G1,MVP P0 scope lock exists,Closed,Before coding,QALY_MVP_P0_Scope_Lock_v3.2.md
+G2,Acceptance checklist v3.2 exists,Closed,Before coding,QALY_Acceptance_Checklist_v3.2_Proceed.csv
+G3,WBS/RACI v3.2 10-week plan exists,Closed,Before coding,QALY_WBS_RACI_v3.2_10Weeks.md
+G4,AI Gateway mock/cache/quota defined,Closed,Week 2,endpoint contract + schema
+G5,Meetily manual import path defined,Closed,Week 3,Meetily import contract
+G6,AI JSON schemas finalized,Closed,Week 2,docs/schemas/ai
+G7,VPS 8GB deployment runbook defined,Closed,Before staging,runbook v3.2
+G8,Golden dataset template >=50 cases,Closed,Before AI eval,QALY_Golden_Dataset_Template_v3.2.csv
+G9,Demo evidence template exists,Closed,Before week 8,demo script v3.2
+G10,Compliance UI/API flows mapped,Closed,Before UAT,Compliance flows v3.2
+G11,Offline/cached demo fallback specified,Closed,Before defense,AC-AI-15 test

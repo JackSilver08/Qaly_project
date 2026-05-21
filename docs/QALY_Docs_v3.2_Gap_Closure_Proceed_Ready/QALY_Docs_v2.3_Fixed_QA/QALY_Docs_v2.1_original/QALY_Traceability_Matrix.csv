@@ -1,0 +1,69 @@
+req_id,requirement,use_case,api_endpoint,db_table,ui_screen,test_case,priority,owner,status
+REQ-001,Đăng ký tài khoản,UC-AUTH-01,/api/v1/auth/register,feature_flags,AUTH Screen,TC-AUTH-001,Must Have,Owner theo WBS,Todo
+REQ-002,Xác thực email,UC-AUTH-02,/api/v1/auth/login,users,AUTH Screen,TC-AUTH-002,Should Have,Owner theo WBS,Todo
+REQ-003,Đăng nhập,UC-AUTH-03,/api/v1/auth/logout,user_profiles,AUTH Screen,TC-AUTH-003,Must Have,Owner theo WBS,Todo
+REQ-004,Đăng xuất,UC-AUTH-04,/api/v1/auth/refresh-token,organizations,AUTH Screen,TC-AUTH-004,Must Have,Owner theo WBS,Todo
+REQ-005,Làm mới phiên/token,UC-AUTH-05,/api/v1/auth/me,organization_members,AUTH Screen,TC-AUTH-005,Should Have,Owner theo WBS,Todo
+REQ-006,Quên mật khẩu,UC-AUTH-06,/api/v1/auth/me,organization_custom_fields,AUTH Screen,TC-AUTH-006,Should Have,Owner theo WBS,Todo
+REQ-007,Đặt lại mật khẩu,UC-AUTH-07,/api/v1/auth/verify-email,projects,AUTH Screen,TC-AUTH-007,Should Have,Owner theo WBS,Todo
+REQ-008,Đổi mật khẩu,UC-AUTH-08,/api/v1/auth/resend-verification,project_settings,AUTH Screen,TC-AUTH-008,Must Have,Owner theo WBS,Todo
+REQ-009,Tạo organization,UC-ORG-01,/api/v1/auth/forgot-password,project_members,ORG Screen,TC-AUTH-009,Must Have,Owner theo WBS,Todo
+REQ-010,Mời thành viên vào organization,UC-ORG-02,/api/v1/auth/reset-password,project_labels,ORG Screen,TC-AUTH-010,Must Have,Owner theo WBS,Todo
+REQ-011,Chấp nhận lời mời,UC-ORG-03,/api/v1/auth/change-password,project_custom_fields,ORG Screen,TC-AUTH-011,Should Have,Owner theo WBS,Todo
+REQ-012,Phân quyền thành viên organization,UC-ORG-04,/api/v1/auth/sessions,project_template_tasks,ORG Screen,TC-AUTH-012,Must Have,Owner theo WBS,Todo
+REQ-013,Xóa thành viên khỏi organization,UC-ORG-05,/api/v1/auth/sessions/{sessionId},project_status_reports,ORG Screen,TC-AUTH-013,Must Have,Owner theo WBS,Todo
+REQ-014,Tạo project,UC-PROJ-01,/api/v1/organizations,tasks,PROJ Screen,TC-AUTH-014,Must Have,Owner theo WBS,Todo
+REQ-015,Cập nhật thông tin project,UC-PROJ-02,/api/v1/organizations,task_assignments,PROJ Screen,TC-AUTH-015,Must Have,Owner theo WBS,Todo
+REQ-016,Thêm thành viên vào project,UC-PROJ-03,/api/v1/organizations/{orgId},task_labels,PROJ Screen,TC-AUTH-016,Must Have,Owner theo WBS,Todo
+REQ-017,Phân quyền thành viên project,UC-PROJ-04,/api/v1/organizations/{orgId},task_checklists,PROJ Screen,TC-AUTH-017,Must Have,Owner theo WBS,Todo
+REQ-018,Lưu trữ project,UC-PROJ-05,/api/v1/organizations/{orgId},task_checklist_items,PROJ Screen,TC-AUTH-018,Should Have,Owner theo WBS,Todo
+REQ-019,Xem dashboard tiến độ project,UC-PROJ-06,/api/v1/organizations/{orgId}/members,task_time_logs,PROJ Screen,TC-AUTH-019,Must Have,Owner theo WBS,Todo
+REQ-020,Tạo task,UC-TASK-01,/api/v1/organizations/{orgId}/members/invite,task_comments_count_cache,TASK Screen,TC-AUTH-020,Must Have,Owner theo WBS,Todo
+REQ-021,Giao task cho thành viên,UC-TASK-02,/api/v1/organizations/{orgId}/members/{userId}/role,task_subtasks,TASK Screen,TC-AUTH-021,Must Have,Owner theo WBS,Todo
+REQ-022,Tạo subtask phụ thuộc task cha,UC-TASK-03,/api/v1/organizations/{orgId}/members/{userId},workflow_definitions,TASK Screen,TC-AUTH-022,Should Have,Owner theo WBS,Todo
+REQ-023,Tạo task dependency,UC-TASK-04,/api/v1/organizations/{orgId}/stats,workflow_states,TASK Screen,TC-AUTH-023,Must Have,Owner theo WBS,Todo
+REQ-024,Cập nhật trạng thái task,UC-TASK-05,/api/v1/orgs/{orgId}/projects,workflow_transitions,TASK Screen,TC-AUTH-024,Must Have,Owner theo WBS,Todo
+REQ-025,Gửi yêu cầu chuyển trạng thái,UC-TASK-06,/api/v1/orgs/{orgId}/projects,workflow_transition_conditions,TASK Screen,TC-AUTH-025,Must Have,Owner theo WBS,Todo
+REQ-026,PM duyệt yêu cầu chuyển trạng thái,UC-TASK-07,/api/v1/projects/{projectId},workflow_transition_actions,TASK Screen,TC-RBAC-001,Must Have,Owner theo WBS,Todo
+REQ-027,PM từ chối và yêu cầu làm lại,UC-TASK-08,/api/v1/projects/{projectId},task_workflow_states,TASK Screen,TC-RBAC-002,Must Have,Owner theo WBS,Todo
+REQ-028,Upload bằng chứng hoàn thành,UC-TASK-09,/api/v1/projects/{projectId},task_status_change_requests,TASK Screen,TC-RBAC-003,Must Have,Owner theo WBS,Todo
+REQ-029,Log thời gian làm việc,UC-TASK-10,/api/v1/projects/{projectId}/archive,task_status_change_approvals,TASK Screen,TC-RBAC-004,Should Have,Owner theo WBS,Todo
+REQ-030,Kéo thả task giữa các cột,UC-KANBAN-01,/api/v1/projects/{projectId}/restore,task_review_cycles,KANBAN Screen,TC-RBAC-005,Must Have,Owner theo WBS,Todo
+REQ-031,Thêm cột tùy chỉnh,UC-KANBAN-02,/api/v1/projects/{projectId}/members,task_review_feedbacks,KANBAN Screen,TC-RBAC-006,Should Have,Owner theo WBS,Todo
+REQ-032,Xóa cột với điều kiện,UC-KANBAN-03,/api/v1/projects/{projectId}/members,task_evidences,KANBAN Screen,TC-RBAC-007,Should Have,Owner theo WBS,Todo
+REQ-033,Đặt WIP limit cho cột,UC-KANBAN-04,/api/v1/projects/{projectId}/members/{userId},task_evidence_reviews,KANBAN Screen,TC-RBAC-008,Should Have,Owner theo WBS,Todo
+REQ-034,Lọc task trên kanban,UC-KANBAN-05,/api/v1/projects/{projectId}/members/{userId},task_evidence_review_comments,KANBAN Screen,TC-RBAC-009,Must Have,Owner theo WBS,Todo
+REQ-035,Tạo sprint,UC-SPRINT-01,/api/v1/projects/{projectId}/stats,evidence_approval_audit_logs,SPRINT Screen,TC-RBAC-010,Should Have,Owner theo WBS,Todo
+REQ-036,Lên kế hoạch sprint,UC-SPRINT-02,/api/v1/projects/{projectId}/health,task_dependencies,SPRINT Screen,TC-RBAC-011,Should Have,Owner theo WBS,Todo
+REQ-037,Bắt đầu sprint,UC-SPRINT-03,/api/v1/projects/{projectId}/duplicate,kanban_columns,SPRINT Screen,TC-RBAC-012,Should Have,Owner theo WBS,Todo
+REQ-038,Hoàn thành sprint,UC-SPRINT-04,/api/v1/projects/{projectId}/tasks,sprints,SPRINT Screen,TC-RBAC-013,Should Have,Owner theo WBS,Todo
+REQ-039,Xem burndown chart,UC-SPRINT-05,/api/v1/projects/{projectId}/tasks,sprint_tasks,SPRINT Screen,TC-RBAC-014,Nice to Have,Owner theo WBS,Todo
+REQ-040,Xem timeline Gantt,UC-TIMELINE-01,/api/v1/tasks/{taskId},sprint_review_notes,TIMELINE Screen,TC-RBAC-015,Must Have,Owner theo WBS,Todo
+REQ-041,Kéo thả điều chỉnh timeline,UC-TIMELINE-02,/api/v1/tasks/{taskId},comments,TIMELINE Screen,TC-RBAC-016,Should Have,Owner theo WBS,Todo
+REQ-042,Xem critical path,UC-TIMELINE-03,/api/v1/tasks/{taskId},chat_rooms,TIMELINE Screen,TC-RBAC-017,Nice to Have,Owner theo WBS,Todo
+REQ-043,Tạo nhóm chat project,UC-CHAT-01,/api/v1/tasks/{taskId}/assign,chat_messages,CHAT Screen,TC-RBAC-018,Must Have,Owner theo WBS,Todo
+REQ-044,Gửi tin nhắn văn bản,UC-CHAT-02,/api/v1/tasks/{taskId}/assign/{userId},meetings,CHAT Screen,TC-RBAC-019,Must Have,Owner theo WBS,Todo
+REQ-045,Giao task trực tiếp từ chat,UC-CHAT-03,/api/v1/tasks/{taskId}/subtasks,meeting_participants,CHAT Screen,TC-RBAC-020,Must Have,Owner theo WBS,Todo
+REQ-046,Link task vào tin nhắn,UC-CHAT-04,/api/v1/tasks/{taskId}/subtasks,meeting_agendas,CHAT Screen,TC-RBAC-021,Should Have,Owner theo WBS,Todo
+REQ-047,Pin tin nhắn quan trọng,UC-CHAT-05,/api/v1/tasks/{taskId}/dependencies,meeting_agenda_items,CHAT Screen,TC-RBAC-022,Should Have,Owner theo WBS,Todo
+REQ-048,Xem task được giao trong chat,UC-CHAT-06,/api/v1/tasks/{taskId}/dependencies/{depId},meeting_notes,CHAT Screen,TC-RBAC-023,Should Have,Owner theo WBS,Todo
+REQ-049,Tạo meeting và ghi note,UC-MEETING-01,/api/v1/tasks/{taskId}/watch,meeting_note_sections,MEETING Screen,TC-RBAC-024,Should Have,Owner theo WBS,Todo
+REQ-050,AI tóm tắt meeting,UC-MEETING-02,/api/v1/tasks/{taskId}/watch,meeting_action_items,MEETING Screen,TC-RBAC-025,Should Have,Owner theo WBS,Todo
+REQ-051,Tạo action item từ meeting,UC-MEETING-03,/api/v1/tasks/{taskId}/status-change-request,meeting_recordings,MEETING Screen,TC-RBAC-026,Should Have,Owner theo WBS,Todo
+REQ-052,Tạo wiki page,UC-WIKI-01,/api/v1/tasks/{taskId}/status-change-request/{reqId}/approve,meeting_ai_summaries,WIKI Screen,TC-RBAC-027,Must Have,Owner theo WBS,Todo
+REQ-053,Chỉnh sửa wiki page versioning,UC-WIKI-02,/api/v1/tasks/{taskId}/status-change-request/{reqId}/reject,meeting_transcripts,WIKI Screen,TC-RBAC-028,Must Have,Owner theo WBS,Todo
+REQ-054,Rollback phiên bản wiki cũ,UC-WIKI-03,/api/v1/tasks/{taskId}/evidences,wiki_pages,WIKI Screen,TC-RBAC-029,Should Have,Owner theo WBS,Todo
+REQ-055,Hỏi AI về tiến độ project,UC-AI-01,/api/v1/tasks/{taskId}/evidences,wiki_page_comments,AI Screen,TC-RBAC-030,Should Have,Owner theo WBS,Todo
+REQ-056,AI sinh báo cáo tiến độ tuần,UC-AI-02,/api/v1/tasks/{taskId}/activity,files,AI Screen,TC-RBAC-031,Should Have,Owner theo WBS,Todo
+REQ-057,AI gợi ý assign task,UC-AI-03,/api/v1/tasks/{taskId}/time-logs,notifications,AI Screen,TC-RBAC-032,Nice to Have,Owner theo WBS,Todo
+REQ-058,Sync dữ liệu project vào AI knowledge base,UC-AI-04,/api/v1/tasks/batch-status,webhooks,AI Screen,TC-RBAC-033,Should Have,Owner theo WBS,Todo
+REQ-059,Upload tài liệu PDF/DOCX,UC-IMPORT-01,/api/v1/tasks/batch-archive,webhook_events,IMPORT Screen,TC-RBAC-034,Should Have,Owner theo WBS,Todo
+REQ-060,AI phân tích và trích xuất task,UC-IMPORT-02,/api/v1/projects/{projectId}/kanban,webhook_deliveries,IMPORT Screen,TC-RBAC-035,Should Have,Owner theo WBS,Todo
+REQ-061,Review và approve draft task,UC-IMPORT-03,/api/v1/projects/{projectId}/kanban/columns,webhook_delivery_retries,IMPORT Screen,TC-ORG-001,Should Have,Owner theo WBS,Todo
+REQ-062,Import task vào project,UC-IMPORT-04,/api/v1/kanban/columns/{columnId},webhook_secrets,IMPORT Screen,TC-ORG-002,Should Have,Owner theo WBS,Todo
+REQ-063,Xem tiến độ project customer view,UC-CUST-01,/api/v1/kanban/columns/{columnId},webhook_ip_whitelist,CUST Screen,TC-ORG-003,Must Have,Owner theo WBS,Todo
+REQ-064,Gửi phản hồi về task,UC-CUST-02,/api/v1/kanban/columns/reorder,integrations,CUST Screen,TC-ORG-004,Should Have,Owner theo WBS,Todo
+REQ-065,Xem thông tin public,UC-CUST-03,/api/v1/kanban/columns/{columnId}/tasks/move,integration_configs,CUST Screen,TC-ORG-005,Must Have,Owner theo WBS,Todo
+REQ-066,Bật/tắt feature flag,UC-ADMIN-01,/api/v1/projects/{projectId}/kanban/filters,integration_sync_logs,ADMIN Screen,TC-ORG-006,Should Have,Owner theo WBS,Todo
+REQ-067,Xem audit log hệ thống,UC-ADMIN-02,/api/v1/projects/{projectId}/kanban/filters,integration_field_mappings,ADMIN Screen,TC-ORG-007,Must Have,Owner theo WBS,Todo
+REQ-068,Quản lý tenant,UC-ADMIN-03,/api/v1/projects/{projectId}/sprints,ai_knowledge_documents,ADMIN Screen,TC-ORG-008,Should Have,Owner theo WBS,Todo

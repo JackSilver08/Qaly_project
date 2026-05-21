@@ -1,0 +1,35 @@
+sequenceDiagram
+  autonumber
+  actor M as Member/PM
+  participant UI as Kanban UI
+  participant API as KanbanController
+  participant BoardSvc as BoardService
+  participant Workflow as TaskWorkflowService
+  participant DB as SQL Server
+  participant Hub as ProjectHub/SignalR
+  participant Audit as AuditLog
+
+  M->>UI: Kéo task sang cột mới
+  UI->>API: POST /api/v1/kanban/columns/{columnId}/tasks/move
+  API->>BoardSvc: MoveTask(command: taskId, fromColumn, toColumn, newOrder)
+  BoardSvc->>DB: Load board, column, mapped status, task, WIP count
+  BoardSvc->>BoardSvc: Validate WIP limit + project membership
+  alt Column maps to status change
+    BoardSvc->>Workflow: Validate transition(currentStatus, mappedStatus)
+    alt Approval required
+      BoardSvc->>DB: Create status_change_request Pending
+      BoardSvc->>Audit: KANBAN_MOVE_PENDING_APPROVAL
+      BoardSvc-->>API: 202 Pending approval
+    else Direct transition allowed
+      BoardSvc->>DB: Update kanban_cards order + task.status
+      BoardSvc->>Audit: KANBAN_TASK_MOVED
+      BoardSvc->>Hub: Broadcast board updated
+      BoardSvc-->>API: 200 BoardDeltaDto
+    end
+  else Pure reorder
+    BoardSvc->>DB: Update kanban_cards order only
+    BoardSvc->>Audit: KANBAN_TASK_REORDERED
+    BoardSvc->>Hub: Broadcast board updated
+    BoardSvc-->>API: 200 BoardDeltaDto
+  end
+  API-->>UI: Update board optimistically or rollback on error

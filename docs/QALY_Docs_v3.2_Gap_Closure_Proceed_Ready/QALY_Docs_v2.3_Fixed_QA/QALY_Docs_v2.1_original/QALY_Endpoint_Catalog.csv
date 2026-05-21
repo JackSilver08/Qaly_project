@@ -1,0 +1,168 @@
+api_id,group,method,path,auth,role,rate_limit,cache
+API-AUTH-001,AUTH,POST,/api/v1/auth/register,Public,guest/user,20 req/min,No Cache
+API-AUTH-002,AUTH,POST,/api/v1/auth/login,Public,guest/user,20 req/min,No Cache
+API-AUTH-003,AUTH,POST,/api/v1/auth/logout,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-AUTH-004,AUTH,POST,/api/v1/auth/refresh-token,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-AUTH-005,AUTH,GET,/api/v1/auth/me,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-AUTH-006,AUTH,PATCH,/api/v1/auth/me,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-AUTH-007,AUTH,POST,/api/v1/auth/verify-email,Public,guest/user,20 req/min,No Cache
+API-AUTH-008,AUTH,POST,/api/v1/auth/resend-verification,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-AUTH-009,AUTH,POST,/api/v1/auth/forgot-password,Public,guest/user,20 req/min,No Cache
+API-AUTH-010,AUTH,POST,/api/v1/auth/reset-password,Public,guest/user,20 req/min,No Cache
+API-AUTH-011,AUTH,POST,/api/v1/auth/change-password,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-AUTH-012,AUTH,GET,/api/v1/auth/sessions,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-AUTH-013,AUTH,DELETE,/api/v1/auth/sessions/{sessionId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-ORGANIZATION-001,ORGANIZATION,POST,/api/v1/organizations,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-ORGANIZATION-002,ORGANIZATION,GET,/api/v1/organizations,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-ORGANIZATION-003,ORGANIZATION,GET,/api/v1/organizations/{orgId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-ORGANIZATION-004,ORGANIZATION,PATCH,/api/v1/organizations/{orgId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-ORGANIZATION-005,ORGANIZATION,DELETE,/api/v1/organizations/{orgId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-ORGANIZATION-006,ORGANIZATION,GET,/api/v1/organizations/{orgId}/members,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-ORGANIZATION-007,ORGANIZATION,POST,/api/v1/organizations/{orgId}/members/invite,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-ORGANIZATION-008,ORGANIZATION,PATCH,/api/v1/organizations/{orgId}/members/{userId}/role,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-ORGANIZATION-009,ORGANIZATION,DELETE,/api/v1/organizations/{orgId}/members/{userId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-ORGANIZATION-010,ORGANIZATION,GET,/api/v1/organizations/{orgId}/stats,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-PROJECT-001,PROJECT,POST,/api/v1/orgs/{orgId}/projects,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-PROJECT-002,PROJECT,GET,/api/v1/orgs/{orgId}/projects,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-PROJECT-003,PROJECT,GET,/api/v1/projects/{projectId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-PROJECT-004,PROJECT,PATCH,/api/v1/projects/{projectId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-PROJECT-005,PROJECT,DELETE,/api/v1/projects/{projectId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-PROJECT-006,PROJECT,POST,/api/v1/projects/{projectId}/archive,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-PROJECT-007,PROJECT,POST,/api/v1/projects/{projectId}/restore,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-PROJECT-008,PROJECT,GET,/api/v1/projects/{projectId}/members,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-PROJECT-009,PROJECT,POST,/api/v1/projects/{projectId}/members,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-PROJECT-010,PROJECT,PATCH,/api/v1/projects/{projectId}/members/{userId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-PROJECT-011,PROJECT,DELETE,/api/v1/projects/{projectId}/members/{userId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-PROJECT-012,PROJECT,GET,/api/v1/projects/{projectId}/stats,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-PROJECT-013,PROJECT,GET,/api/v1/projects/{projectId}/health,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-PROJECT-014,PROJECT,POST,/api/v1/projects/{projectId}/duplicate,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-TASK-001,TASK,POST,/api/v1/projects/{projectId}/tasks,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-TASK-002,TASK,GET,/api/v1/projects/{projectId}/tasks,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-TASK-003,TASK,GET,/api/v1/tasks/{taskId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-TASK-004,TASK,PATCH,/api/v1/tasks/{taskId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-TASK-005,TASK,DELETE,/api/v1/tasks/{taskId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-TASK-006,TASK,POST,/api/v1/tasks/{taskId}/assign,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-TASK-007,TASK,DELETE,/api/v1/tasks/{taskId}/assign/{userId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-TASK-008,TASK,POST,/api/v1/tasks/{taskId}/subtasks,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-TASK-009,TASK,GET,/api/v1/tasks/{taskId}/subtasks,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-TASK-010,TASK,POST,/api/v1/tasks/{taskId}/dependencies,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-TASK-011,TASK,DELETE,/api/v1/tasks/{taskId}/dependencies/{depId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-TASK-012,TASK,POST,/api/v1/tasks/{taskId}/watch,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-TASK-013,TASK,DELETE,/api/v1/tasks/{taskId}/watch,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-TASK-014,TASK,POST,/api/v1/tasks/{taskId}/status-change-request,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-TASK-015,TASK,PATCH,/api/v1/tasks/{taskId}/status-change-request/{reqId}/approve,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-TASK-016,TASK,PATCH,/api/v1/tasks/{taskId}/status-change-request/{reqId}/reject,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-TASK-017,TASK,POST,/api/v1/tasks/{taskId}/evidences,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-TASK-018,TASK,GET,/api/v1/tasks/{taskId}/evidences,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-TASK-019,TASK,GET,/api/v1/tasks/{taskId}/activity,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-TASK-020,TASK,POST,/api/v1/tasks/{taskId}/time-logs,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-TASK-021,TASK,POST,/api/v1/tasks/batch-status,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-TASK-022,TASK,POST,/api/v1/tasks/batch-archive,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-KANBAN-001,KANBAN,GET,/api/v1/projects/{projectId}/kanban,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-KANBAN-002,KANBAN,POST,/api/v1/projects/{projectId}/kanban/columns,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-KANBAN-003,KANBAN,PATCH,/api/v1/kanban/columns/{columnId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-KANBAN-004,KANBAN,DELETE,/api/v1/kanban/columns/{columnId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-KANBAN-005,KANBAN,PATCH,/api/v1/kanban/columns/reorder,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-KANBAN-006,KANBAN,POST,/api/v1/kanban/columns/{columnId}/tasks/move,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-KANBAN-007,KANBAN,GET,/api/v1/projects/{projectId}/kanban/filters,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-KANBAN-008,KANBAN,POST,/api/v1/projects/{projectId}/kanban/filters,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-SPRINT-001,SPRINT,POST,/api/v1/projects/{projectId}/sprints,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-SPRINT-002,SPRINT,GET,/api/v1/projects/{projectId}/sprints,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-SPRINT-003,SPRINT,GET,/api/v1/sprints/{sprintId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-SPRINT-004,SPRINT,PATCH,/api/v1/sprints/{sprintId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-SPRINT-005,SPRINT,POST,/api/v1/sprints/{sprintId}/start,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-SPRINT-006,SPRINT,POST,/api/v1/sprints/{sprintId}/complete,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-SPRINT-007,SPRINT,POST,/api/v1/sprints/{sprintId}/tasks,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-SPRINT-008,SPRINT,DELETE,/api/v1/sprints/{sprintId}/tasks/{taskId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-TIMELINE-001,TIMELINE,GET,/api/v1/projects/{projectId}/timeline,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-TIMELINE-002,TIMELINE,PATCH,/api/v1/projects/{projectId}/timeline/tasks/{taskId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-TIMELINE-003,TIMELINE,GET,/api/v1/projects/{projectId}/timeline/critical-path,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-TIMELINE-004,TIMELINE,POST,/api/v1/projects/{projectId}/timeline/baseline,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-COMMENT-001,COMMENT,POST,/api/v1/tasks/{taskId}/comments,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-COMMENT-002,COMMENT,GET,/api/v1/tasks/{taskId}/comments,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-COMMENT-003,COMMENT,PATCH,/api/v1/comments/{commentId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-COMMENT-004,COMMENT,DELETE,/api/v1/comments/{commentId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-COMMENT-005,COMMENT,POST,/api/v1/comments/{commentId}/reactions,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-COMMENT-006,COMMENT,DELETE,/api/v1/comments/{commentId}/reactions/{reactionId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-CHAT-001,CHAT,POST,/api/v1/chat/rooms,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-CHAT-002,CHAT,GET,/api/v1/chat/rooms,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,No Cache
+API-CHAT-003,CHAT,GET,/api/v1/chat/rooms/{roomId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,No Cache
+API-CHAT-004,CHAT,PATCH,/api/v1/chat/rooms/{roomId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-CHAT-005,CHAT,POST,/api/v1/chat/rooms/{roomId}/members,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-CHAT-006,CHAT,DELETE,/api/v1/chat/rooms/{roomId}/members/{userId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-CHAT-007,CHAT,POST,/api/v1/chat/rooms/{roomId}/messages,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-CHAT-008,CHAT,GET,/api/v1/chat/rooms/{roomId}/messages,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,No Cache
+API-CHAT-009,CHAT,PATCH,/api/v1/chat/messages/{messageId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-CHAT-010,CHAT,DELETE,/api/v1/chat/messages/{messageId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-CHAT-011,CHAT,POST,/api/v1/chat/messages/{messageId}/reactions,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-CHAT-012,CHAT,POST,/api/v1/chat/messages/{messageId}/pin,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-CHAT-013,CHAT,POST,/api/v1/chat/messages/{messageId}/link-task,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-CHAT-014,CHAT,GET,/api/v1/chat/rooms/{roomId}/pinned-messages,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,No Cache
+API-MEETING-001,MEETING,POST,/api/v1/projects/{projectId}/meetings,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-MEETING-002,MEETING,GET,/api/v1/projects/{projectId}/meetings,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-MEETING-003,MEETING,GET,/api/v1/meetings/{meetingId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-MEETING-004,MEETING,PATCH,/api/v1/meetings/{meetingId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-MEETING-005,MEETING,POST,/api/v1/meetings/{meetingId}/notes,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-MEETING-006,MEETING,PATCH,/api/v1/meetings/{meetingId}/notes,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-MEETING-007,MEETING,POST,/api/v1/meetings/{meetingId}/action-items,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-MEETING-008,MEETING,POST,/api/v1/meetings/{meetingId}/ai-summarize,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-WIKI-001,WIKI,POST,/api/v1/projects/{projectId}/wiki/pages,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-WIKI-002,WIKI,GET,/api/v1/projects/{projectId}/wiki/pages,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-WIKI-003,WIKI,GET,/api/v1/wiki/pages/{pageId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-WIKI-004,WIKI,PATCH,/api/v1/wiki/pages/{pageId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-WIKI-005,WIKI,DELETE,/api/v1/wiki/pages/{pageId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-WIKI-006,WIKI,GET,/api/v1/wiki/pages/{pageId}/versions,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-WIKI-007,WIKI,GET,/api/v1/wiki/pages/{pageId}/versions/{versionId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-WIKI-008,WIKI,POST,/api/v1/wiki/pages/{pageId}/restore/{versionId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-WIKI-009,WIKI,POST,/api/v1/wiki/pages/{pageId}/watch,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-WIKI-010,WIKI,GET,/api/v1/projects/{projectId}/wiki/search,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-FILE-001,FILE,POST,/api/v1/files/upload,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-FILE-002,FILE,GET,/api/v1/files/{fileId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-FILE-003,FILE,DELETE,/api/v1/files/{fileId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-FILE-004,FILE,GET,/api/v1/files/{fileId}/download,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-FILE-005,FILE,POST,/api/v1/files/{fileId}/share,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-FILE-006,FILE,GET,/api/v1/files/shared/{shareToken},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-NOTIFICATION-001,NOTIFICATION,GET,/api/v1/notifications,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-NOTIFICATION-002,NOTIFICATION,PATCH,/api/v1/notifications/{notificationId}/read,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-NOTIFICATION-003,NOTIFICATION,POST,/api/v1/notifications/read-all,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-NOTIFICATION-004,NOTIFICATION,GET,/api/v1/notifications/preferences,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-NOTIFICATION-005,NOTIFICATION,PATCH,/api/v1/notifications/preferences,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-NOTIFICATION-006,NOTIFICATION,DELETE,/api/v1/notifications/{notificationId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-WEBHOOK-001,WEBHOOK,POST,/api/v1/projects/{projectId}/webhooks,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-WEBHOOK-002,WEBHOOK,GET,/api/v1/projects/{projectId}/webhooks,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-WEBHOOK-003,WEBHOOK,GET,/api/v1/webhooks/{webhookId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-WEBHOOK-004,WEBHOOK,PATCH,/api/v1/webhooks/{webhookId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-WEBHOOK-005,WEBHOOK,DELETE,/api/v1/webhooks/{webhookId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-WEBHOOK-006,WEBHOOK,POST,/api/v1/webhooks/{webhookId}/test,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-AI-001,AI,POST,/api/v1/ai/conversations,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-AI-002,AI,GET,/api/v1/ai/conversations,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-AI-003,AI,GET,/api/v1/ai/conversations/{conversationId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-AI-004,AI,POST,/api/v1/ai/conversations/{conversationId}/messages,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-AI-005,AI,POST,/api/v1/ai/projects/{projectId}/sync-knowledge,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-AI-006,AI,POST,/api/v1/ai/projects/{projectId}/generate-report,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-AI-007,AI,POST,/api/v1/ai/tasks/{taskId}/suggest-priority,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-AI-008,AI,POST,/api/v1/ai/meetings/{meetingId}/summarize,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-IMPORT-001,IMPORT,POST,/api/v1/import/documents,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-IMPORT-002,IMPORT,GET,/api/v1/import/jobs,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-IMPORT-003,IMPORT,GET,/api/v1/import/jobs/{jobId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-IMPORT-004,IMPORT,GET,/api/v1/import/jobs/{jobId}/draft-tasks,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-IMPORT-005,IMPORT,PATCH,/api/v1/import/jobs/{jobId}/draft-tasks/{draftId}/approve,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-IMPORT-006,IMPORT,POST,/api/v1/import/jobs/{jobId}/execute,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-IMPORT-007,IMPORT,POST,/api/v1/import/csv/preview,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-IMPORT-008,IMPORT,POST,/api/v1/import/markdown/preview,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-ADMIN-001,ADMIN,GET,/api/v1/admin/dashboard,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-ADMIN-002,ADMIN,GET,/api/v1/admin/users,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-ADMIN-003,ADMIN,PATCH,/api/v1/admin/users/{userId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-ADMIN-004,ADMIN,POST,/api/v1/admin/users/{userId}/suspend,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-ADMIN-005,ADMIN,GET,/api/v1/admin/tenants,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-ADMIN-006,ADMIN,PATCH,/api/v1/admin/tenants/{tenantId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-ADMIN-007,ADMIN,GET,/api/v1/admin/feature-flags,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-ADMIN-008,ADMIN,PATCH,/api/v1/admin/feature-flags/{flagId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-ADMIN-009,ADMIN,GET,/api/v1/admin/audit-logs,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-ADMIN-010,ADMIN,GET,/api/v1/admin/system-health,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-REPORT-001,REPORT,GET,/api/v1/projects/{projectId}/reports/weekly,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-REPORT-002,REPORT,POST,/api/v1/projects/{projectId}/reports/weekly,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-REPORT-003,REPORT,GET,/api/v1/reports/{reportId},Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-REPORT-004,REPORT,POST,/api/v1/reports/{reportId}/export,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,20 req/min,No Cache
+API-REPORT-005,REPORT,GET,/api/v1/projects/{projectId}/analytics,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant
+API-REPORT-006,REPORT,GET,/api/v1/projects/{projectId}/customer-dashboard,Required,Theo RBAC 3 tầng: system/org/project policy tương ứng,60 req/min,Redis 30-120s tùy scope; private/user-specific phải key theo user/tenant

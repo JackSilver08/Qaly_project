@@ -1,0 +1,19 @@
+flowchart TD
+    A[User opens Meetily Import] --> B[Privacy Notice]
+    B --> C{Consent confirmed?}
+    C -- No --> X[Block import]
+    C -- Yes --> D[Create privacy_consents]
+    D --> E[Import transcript]
+    E --> F{Sensitive toggle?}
+    F -- Yes --> G[Cloud AI blocked unless admin override]
+    F -- No --> H[AI Gateway normal routing]
+    G --> I[Local/mock provider only]
+    H --> J[AI draft created]
+    I --> J
+    J --> K[User review/confirm]
+    K --> L[Audit event]
+    E --> M[Export/Delete request]
+    M --> N[Create data_subject_requests]
+    N --> O[Approve/process]
+    O --> P[Export JSON or delete/anonymize transcript/cache]
+    P --> Q[Audit evidence]

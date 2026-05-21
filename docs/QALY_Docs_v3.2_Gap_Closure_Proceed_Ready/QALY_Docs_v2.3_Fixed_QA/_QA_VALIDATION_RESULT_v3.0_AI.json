@@ -1,0 +1,17 @@
+{
+  "validated_at": "2026-05-19",
+  "root": "QALY_Docs_v2.3_Fixed_QA",
+  "errors": [],
+  "warnings": [
+    "Runtime/code evidence still required; Meetily connector implementation not included in docs package."
+  ],
+  "counts": {
+    ".csv": 16,
+    ".md": 26,
+    ".json": 5,
+    ".sql": 2,
+    ".mmd": 39,
+    ".puml": 8
+  },
+  "total_files": 96
+}

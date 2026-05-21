@@ -1,0 +1,24 @@
+flowchart LR
+  classDef src fill:#fff,stroke:#111827;
+  classDef process fill:#eef2ff,stroke:#3730a3,stroke-width:1.5px;
+  classDef store fill:#ecfeff,stroke:#155e75;
+  classDef guard fill:#fefce8,stroke:#854d0e;
+
+  Meetily[(Meetily transcript + summary)]:::src
+  Import[QALY Import Validator]:::process
+  SQL[(SQL Server<br/>meeting_notes/transcripts/action_items)]:::store
+  Extract[AI Extract JSON]:::process
+  Review[Human Review / Confirm]:::guard
+  Task[(Tasks / Wiki / Decision Log)]:::store
+  Outbox[Outbox Event]:::process
+  Chunk[Redact + Chunk + Metadata ACL]:::guard
+  Embed[Embedding Provider]:::process
+  Qdrant[(Qdrant semantic memory)]:::store
+
+  Meetily --> Import --> SQL
+  SQL --> Extract --> Review
+  Review --> Task
+  Task --> Outbox
+  SQL --> Outbox
+  Outbox --> Chunk --> Embed --> Qdrant
+  Qdrant -. retrieval only, rebuildable .-> Extract

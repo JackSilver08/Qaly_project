@@ -1,0 +1,69 @@
+rule_id,module,name,category,priority
+BR-RBAC-01,RBAC,Cross-tenant access luôn bị chặn,Authorization,Critical
+BR-RBAC-02,RBAC,System admin có quyền xem audit toàn hệ thống,Authorization,Critical
+BR-RBAC-03,RBAC,Org owner quản lý org admin/member,Authorization,Critical
+BR-RBAC-04,RBAC,Project manager quản lý project member,Authorization,Critical
+BR-RBAC-05,RBAC,Sub-manager chỉ trong phase/module được ủy quyền,Authorization,Critical
+BR-RBAC-06,RBAC,Customer chỉ thấy customer_safe/public data,Authorization,Critical
+BR-TASK-01,TASK,Assignee phải là project member,State Machine,Critical
+BR-TASK-02,TASK,Task Done cần subtask/checklist Done nếu policy bật,State Machine,Critical
+BR-TASK-03,TASK,Status transition phải theo workflow,State Machine,Critical
+BR-TASK-04,TASK,Overdue task tự động flag,State Machine,Critical
+BR-TASK-05,TASK,Private task trả masked metadata,State Machine,Critical
+BR-TASK-06,TASK,Deadline quá khứ cần override reason,State Machine,Critical
+BR-DEP-01,DEP,Không self dependency,Validation/Constraint,High
+BR-DEP-02,DEP,Không circular dependency,Validation/Constraint,High
+BR-DEP-03,DEP,Task blocked không được InProgress nếu block mode strict,Validation/Constraint,High
+BR-DEP-04,DEP,Unblock task sẽ notify dependent assignee,Validation/Constraint,High
+BR-KANBAN-01,KANBAN,Cột custom phải map status chuẩn,State Machine,High
+BR-KANBAN-02,KANBAN,Done column không xóa,State Machine,High
+BR-KANBAN-03,KANBAN,WIP limit có mode warn/block,State Machine,High
+BR-KANBAN-04,KANBAN,Kéo thả phải ghi audit nếu đổi status,State Machine,High
+BR-SPRINT-01,SPRINT,Một project chỉ có một active sprint nếu setting strict,State Machine,High
+BR-SPRINT-02,SPRINT,Sprint start cần ít nhất một task,State Machine,High
+BR-SPRINT-03,SPRINT,Incomplete task khi close sprint phải move backlog/next sprint,State Machine,High
+BR-SPRINT-04,SPRINT,Velocity snapshot khóa khi complete,State Machine,High
+BR-EVIDENCE-01,EVIDENCE,Evidence required trước review,Validation/Constraint,High
+BR-EVIDENCE-02,EVIDENCE,File evidence theo allowlist,Validation/Constraint,High
+BR-EVIDENCE-03,EVIDENCE,Reviewer phải ghi reason khi reject,Validation/Constraint,High
+BR-EVIDENCE-04,EVIDENCE,Approval result immutable sau khi report locked,Validation/Constraint,High
+BR-CHAT-01,CHAT,Customer DM mặc định tắt,Validation/Constraint,High
+BR-CHAT-02,CHAT,Task from chat cần confirm,Validation/Constraint,High
+BR-CHAT-03,CHAT,Message delete là soft delete,Validation/Constraint,High
+BR-CHAT-04,CHAT,Internal message không public cho customer,Validation/Constraint,High
+BR-CUSTOMER-01,CUSTOMER,Customer portal filter dữ liệu theo policy,Authorization,High
+BR-CUSTOMER-02,CUSTOMER,Customer không xem estimate nội bộ nếu bị tắt,Authorization,High
+BR-CUSTOMER-03,CUSTOMER,Customer comment cần PM review nếu project bật moderation,Authorization,High
+BR-CUSTOMER-04,CUSTOMER,Customer report đã gửi phải snapshot,Authorization,High
+BR-AI-01,AI,AI phải filter quyền trước retrieval,Authorization,Critical
+BR-AI-02,AI,AI phải cite source nếu trả lời từ knowledge base,Authorization,Critical
+BR-AI-03,AI,AI suggestion cần human approval,Authorization,Critical
+BR-AI-04,AI,Fallback local/API/mock theo config và quota,Authorization,Critical
+BR-IMPORT-01,IMPORT,Import phải preview trước commit,Validation/Constraint,High
+BR-IMPORT-02,IMPORT,Draft task cần approve,Validation/Constraint,High
+BR-IMPORT-03,IMPORT,Import lỗi vượt ngưỡng phải rollback,Validation/Constraint,High
+BR-IMPORT-04,IMPORT,Source document id phải lưu để truy vết,Validation/Constraint,High
+BR-WIKI-01,WIKI,Wiki version tạo mới khi cập nhật,Validation/Constraint,High
+BR-WIKI-02,WIKI,Internal page không hiển thị customer,Validation/Constraint,High
+BR-WIKI-03,WIKI,Rollback phải ghi audit,Validation/Constraint,High
+BR-WIKI-04,WIKI,Markdown render phải sanitize,Validation/Constraint,High
+BR-MEETING-01,MEETING,AI summary chỉ là draft,Validation/Constraint,High
+BR-MEETING-02,MEETING,Action item tạo task cần host confirm,Validation/Constraint,High
+BR-MEETING-03,MEETING,Meeting visibility quyết định customer access,Validation/Constraint,High
+BR-MEETING-04,MEETING,Decision log không xóa cứng,Validation/Constraint,High
+BR-WEBHOOK-01,WEBHOOK,Webhook phải ký secret,State Machine,High
+BR-WEBHOOK-02,WEBHOOK,Retry tối đa theo config,State Machine,High
+BR-WEBHOOK-03,WEBHOOK,Delivery log immutable,State Machine,High
+BR-WEBHOOK-04,WEBHOOK,Endpoint disabled sau nhiều lần fail nếu policy bật,State Machine,High
+BR-AUDIT-01,AUDIT,Thay đổi role/status/deadline/visibility phải audit,Validation/Constraint,Critical
+BR-AUDIT-02,AUDIT,Admin action audit bắt buộc,Validation/Constraint,Critical
+BR-AUDIT-03,AUDIT,Audit không soft delete,Validation/Constraint,Critical
+BR-AUDIT-04,AUDIT,Export audit cần ghi lại người export,Validation/Constraint,Critical
+BR-SECURITY-01,SECURITY,File upload block extension nguy hiểm,Authorization,Critical
+BR-SECURITY-02,SECURITY,CSRF cho form/cookie write action,Authorization,Critical
+BR-SECURITY-03,SECURITY,Rate limit auth/AI/upload,Authorization,Critical
+BR-SECURITY-04,SECURITY,IDOR test cho mọi resource ID,Authorization,Critical
+BR-REPORT-01,REPORT,Report lock sau khi gửi customer,Validation/Constraint,High
+BR-REPORT-02,REPORT,Progress dùng task valid,Validation/Constraint,High
+BR-REPORT-03,REPORT,Weighted progress dùng estimate/weight nếu bật,Validation/Constraint,High
+BR-REPORT-04,REPORT,Report export phải ghi snapshot filter,Validation/Constraint,High

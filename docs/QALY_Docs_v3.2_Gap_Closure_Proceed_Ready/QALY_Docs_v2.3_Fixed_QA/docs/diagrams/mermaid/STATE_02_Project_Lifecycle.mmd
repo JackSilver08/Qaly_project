@@ -1,0 +1,17 @@
+stateDiagram-v2
+  %% Project lifecycle for outsource workflow governance
+  [*] --> Draft: create project
+  Draft --> Active: PM confirms scope/team
+  Active --> OnHold: pause by PM/org admin
+  OnHold --> Active: resume
+  Active --> Completed: all required milestones/tasks accepted
+  Active --> Cancelled: cancelled with reason
+  Completed --> Archived: archive after acceptance/retention
+  Cancelled --> Archived: archive after closure
+  Archived --> Active: restore if policy allows
+  Archived --> [*]
+
+  note right of Active
+    Dashboard, Kanban, Timeline, Chat, Wiki,
+    Meeting, AI and Customer view are scoped here.
+  end note

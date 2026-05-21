@@ -10,6 +10,11 @@ namespace Qaly.Infrastructure.Services;
 
 public class TaskAttentionSignalWorker : BackgroundService
 {
+    private static readonly Action<ILogger, Exception?> LogScanFailed = LoggerMessage.Define(
+        LogLevel.Warning,
+        new EventId(1, nameof(LogScanFailed)),
+        "Khong the quet canh bao timeline task.");
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<TaskAttentionSignalWorker> _logger;
 
@@ -35,7 +40,7 @@ public class TaskAttentionSignalWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Khong the quet canh bao timeline task.");
+                LogScanFailed(_logger, ex);
             }
 
             await Task.Delay(TimeSpan.FromMinutes(15), stoppingToken);

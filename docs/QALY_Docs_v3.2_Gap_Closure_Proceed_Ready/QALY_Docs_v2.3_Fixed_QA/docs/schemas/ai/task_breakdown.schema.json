@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "task_breakdown.v3.2",
+  "type": "object",
+  "required": [
+    "parent_task",
+    "subtasks"
+  ],
+  "properties": {
+    "parent_task": {
+      "type": "string"
+    },
+    "subtasks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "title",
+          "description",
+          "estimated_effort",
+          "order"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "estimated_effort": {
+            "type": [
+              "string",
+              "number"
+            ]
+          },
+          "order": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

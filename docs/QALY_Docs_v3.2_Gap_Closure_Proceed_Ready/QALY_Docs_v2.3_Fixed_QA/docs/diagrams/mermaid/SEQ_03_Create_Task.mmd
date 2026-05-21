@@ -1,0 +1,29 @@
+sequenceDiagram
+  autonumber
+  actor M as PM/Member
+  participant UI as Task UI
+  participant API as TasksController
+  participant TaskSvc as TaskService
+  participant Policy as ProjectAccessPolicy
+  participant Workflow as TaskWorkflowService
+  participant DB as SQL Server
+  participant Event as Outbox/Notification
+  participant Audit as AuditLog
+
+  M->>UI: Nhập title, assignee, priority, due date, visibility
+  UI->>API: POST /api/v1/projects/{projectId}/tasks
+  API->>TaskSvc: CreateTask(command)
+  TaskSvc->>Policy: CanCreateTask(user, projectId, visibility)
+  Policy->>DB: Check tenant + project_members + delegated scope
+  DB-->>Policy: permission result
+  Policy-->>TaskSvc: allowed
+  TaskSvc->>TaskSvc: Validate deadline, parent task, assignee is project member
+  TaskSvc->>Workflow: Initial status = Todo/Draft by policy
+  Workflow-->>TaskSvc: validated task aggregate
+  TaskSvc->>DB: Insert tasks + assignments + labels + watchers
+  TaskSvc->>Audit: TASK_CREATED
+  TaskSvc->>Event: TaskCreated notification
+  DB-->>TaskSvc: Commit
+  TaskSvc-->>API: TaskDetailDto
+  API-->>UI: 201 Created + task detail
+  Note over TaskSvc,Policy: BR-TASK-01 assignee phải là project member; customer/private visibility được mask.

@@ -1,0 +1,36 @@
+stateDiagram-v2
+  %% Task lifecycle controlled by BR-TASK-01..06 and BR-DEP-01..04
+  [*] --> Draft: create draft / import draft
+  Draft --> Todo: submit valid task
+  Todo --> InProgress: assignee starts work
+  InProgress --> Review: assignee requests review
+  Review --> Done: PM/Reviewer approves
+  Review --> Rework: PM/Reviewer rejects
+  Rework --> InProgress: assignee updates fix
+  Todo --> Blocked: dependency/blocker found
+  InProgress --> Blocked: dependency/blocker found
+  Blocked --> Todo: blocker resolved before work starts
+  Blocked --> InProgress: blocker resolved while active
+  Todo --> Cancelled: PM archives/cancels
+  InProgress --> Cancelled: PM archives/cancels
+  Review --> Cancelled: PM archives/cancels
+  Done --> Archived: project/task archived
+  Cancelled --> Archived: retention/archive
+  Archived --> [*]
+
+  state Review {
+    [*] --> PendingApproval
+    PendingApproval --> Approved: validate evidence/checklist/subtasks
+    PendingApproval --> Rejected: reject with reason
+    Approved --> [*]
+    Rejected --> [*]
+  }
+
+  note right of Blocked
+    Strict mode: task cannot enter InProgress
+    if dependency is blocking.
+  end note
+  note right of Done
+    Done requires subtasks/checklists Done
+    if project policy enables it.
+  end note

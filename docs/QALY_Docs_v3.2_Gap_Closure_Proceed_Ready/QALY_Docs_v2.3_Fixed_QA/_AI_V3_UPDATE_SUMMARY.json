@@ -1,0 +1,36 @@
+{
+  "version": "3.0-ai-meetily-production-update",
+  "date": "2026-05-19",
+  "based_on": "QALY_Docs_v2.3_Fixed_QA",
+  "strategic_shift": [
+    "Meetily-first for meeting note",
+    "AI API primary for stable demo-quality reasoning/extraction",
+    "Ollama 7B/8B local fallback, not mandatory 14B",
+    "Qdrant optional semantic memory/index, SQL Server remains source of truth",
+    "Mock/cache/quota to control token cost"
+  ],
+  "new_files": [
+    "QALY_AI_Production_Strategy_v3.0_Meetily_First.md",
+    "QALY_AI_Function_Catalog_v3.0.csv",
+    "QALY_AI_Endpoint_Contract_v3.0.md",
+    "QALY_AI_Deployment_Runbook_v3.0.md",
+    "QALY_10_Week_Implementation_Plan_v3.0.md",
+    "QALY_AI_Risk_Register_v3.0.csv",
+    "QALY_AI_Module_Specification_v3.0.md",
+    "QALY_Acceptance_Checklist_v3.0_AI_Meetily_Current_Status.csv",
+    "QALY_Gap_Register_v3.0_AI_Meetily_Current_Status.csv",
+    "QALY_UML_Diagram_Specification_v3.0_AI_Meetily_Supplement.md",
+    "QALY_SRS_Master_v3.0_AI_Production.md",
+    "QALY_AI_Use_Case_Catalog_v3.0.csv",
+    "QALY_AI_Test_Plan_v3.0.md"
+  ],
+  "new_diagrams": [
+    "ARCH_06_AI_Meetily_First_Deployment.mmd",
+    "SEQ_11_Meetily_Sync_Meeting_Note.mmd",
+    "SEQ_12_AI_API_Fallback_Routing.mmd",
+    "SEQ_13_Task_Recommendation_Hybrid.mmd",
+    "DATA_03_Meetily_Qdrant_Memory_DFD.mmd",
+    "OPS_03_AI_Resource_Control.mmd"
+  ],
+  "known_limitations": "Docs updated; code/runtime evidence still required from repository, build logs, screenshots, and UAT."
+}

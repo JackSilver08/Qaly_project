@@ -66,7 +66,7 @@ public partial class DataSeeder
         }
     }
 
-    private Task EnsureImportSchemaCompatibilityAsync()
+    private Task<int> EnsureImportSchemaCompatibilityAsync()
     {
         const string sql = """
             IF OBJECT_ID(N'[ImportSessions]', N'U') IS NULL
@@ -288,7 +288,7 @@ public partial class DataSeeder
         return _context.Database.ExecuteSqlRawAsync(sql);
     }
 
-    private Task EnsureTimelineSchemaCompatibilityAsync()
+    private Task<int> EnsureTimelineSchemaCompatibilityAsync()
     {
         const string sql = """
             IF COL_LENGTH(N'[ProjectMembers]', N'CanViewProjectTimeline') IS NULL
