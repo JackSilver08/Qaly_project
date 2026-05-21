@@ -34,6 +34,7 @@ public static class DependencyInjection
         services.AddScoped<IApiKeyService, ApiKeyService>();
         services.AddScoped<IImportService, ImportService>();
         services.AddScoped<IWikiService, WikiService>();
+        services.AddScoped<IMeetingImportService, MeetingImportService>();
 
         return services;
     }

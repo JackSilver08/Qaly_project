@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Ai;
+using Qaly.Application.DTOs.Meeting;
 using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
@@ -165,7 +166,7 @@ public class AiWorkflowService : IAiWorkflowService
         AiTaskDraftPayload payload;
         try
         {
-            payload = JsonSerializer.Deserialize<AiTaskDraftPayload>(payloadJson, JsonOptions) ?? new AiTaskDraftPayload([]);
+            payload = DeserializeTaskDraftPayload(payloadJson, draft.DraftType);
         }
         catch (JsonException)
         {
@@ -301,6 +302,28 @@ public class AiWorkflowService : IAiWorkflowService
             .Select(line => new AiTaskDraftItem(line, "Generated from AI source text. Please review before confirm."))
             .ToList();
         return new AiTaskDraftPayload(tasks);
+    }
+
+    private static AiTaskDraftPayload DeserializeTaskDraftPayload(string payloadJson, string draftType)
+    {
+        if (string.Equals(draftType, "MeetingActionItems", StringComparison.OrdinalIgnoreCase))
+        {
+            var meetingPayload = JsonSerializer.Deserialize<MeetingExtractionPayload>(payloadJson, JsonOptions)
+                ?? new MeetingExtractionPayload("meetily-import.v1", string.Empty, new MeetingSummaryDto(string.Empty, null, null, []), [], [], []);
+
+            return new AiTaskDraftPayload(meetingPayload.ActionItems
+                .Where(item => !string.IsNullOrWhiteSpace(item.Title))
+                .Select(item => new AiTaskDraftItem(
+                    item.Title,
+                    item.Description ?? item.SourceEvidence,
+                    item.Priority,
+                    "Todo",
+                    item.DueDate,
+                    null))
+                .ToList());
+        }
+
+        return JsonSerializer.Deserialize<AiTaskDraftPayload>(payloadJson, JsonOptions) ?? new AiTaskDraftPayload([]);
     }
 
     private async Task<bool> CanAccessProjectAsync(Project project, Guid currentUserId, CancellationToken ct)

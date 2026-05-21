@@ -1,0 +1,26 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Qaly.Application.DTOs.Meeting;
+using Qaly.Application.Services;
+
+namespace Qaly.Web.Controllers;
+
+[ApiController]
+[Authorize]
+[Route("api/meetings")]
+public class MeetingsController : ControllerBase
+{
+    private readonly IMeetingImportService _meetingImportService;
+
+    public MeetingsController(IMeetingImportService meetingImportService)
+    {
+        _meetingImportService = meetingImportService;
+    }
+
+    [HttpPost("import/meetily")]
+    public async Task<IActionResult> ImportMeetily(MeetilyImportRequest request, CancellationToken ct)
+    {
+        var result = await _meetingImportService.ImportMeetilyAsync(request, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+}
