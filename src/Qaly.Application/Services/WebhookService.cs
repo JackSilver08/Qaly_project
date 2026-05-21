@@ -19,14 +19,14 @@ public class WebhookService : IWebhookService
     private readonly IWebhookPublisher _webhookPublisher;
 
     public WebhookService(
-        IRepository<WebhookSubscription> _webhookRepo,
+        IRepository<WebhookSubscription> webhookRepo,
         IRepository<Project> projectRepo,
         ICurrentUserService currentUserService,
         ITaskAccessPolicy taskAccessPolicy,
         IUnitOfWork unitOfWork,
         IWebhookPublisher webhookPublisher)
     {
-        this._webhookRepo = _webhookRepo;
+        _webhookRepo = webhookRepo;
         _projectRepo = projectRepo;
         _currentUserService = currentUserService;
         _taskAccessPolicy = taskAccessPolicy;

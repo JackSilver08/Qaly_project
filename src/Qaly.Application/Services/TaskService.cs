@@ -1122,7 +1122,7 @@ public class TaskService : ITaskService
         return reasons;
     }
 
-    private static IReadOnlyList<string> BuildAllowedActions(
+    private static List<string> BuildAllowedActions(
         TaskItem task,
         Guid currentUserId,
         Guid? attentionAssigneeId,
