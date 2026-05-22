@@ -19,6 +19,7 @@ public class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
         builder.Property(t => t.ContributesToProgress).HasDefaultValue(true);
         builder.Property(t => t.UpvoteCount).HasDefaultValue(0);
         builder.Property(t => t.DownvoteCount).HasDefaultValue(0);
+        builder.Property(t => t.RowVersion).IsRowVersion();
         builder.Property(t => t.CreatedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
 
         builder.HasOne(t => t.Project)
@@ -54,5 +55,6 @@ public class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
         // Optimization: Kanban board query (CH 2.2)
         builder.HasIndex(t => new { t.ProjectId, t.Status })
             .IncludeProperties(t => new { t.Title, t.Priority, t.AssigneeId, t.DueDate, t.IsPinned, t.ContributesToProgress });
+        builder.HasIndex(t => new { t.ProjectId, t.Status, t.SortOrder });
     }
 }

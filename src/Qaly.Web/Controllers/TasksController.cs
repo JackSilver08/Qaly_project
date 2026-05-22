@@ -34,6 +34,20 @@ public class TasksController : ControllerBase
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpGet("project/{projectId}/kanban")]
+    public async Task<IActionResult> GetKanban(Guid projectId, CancellationToken ct = default)
+    {
+        var result = await _taskService.GetKanbanAsync(projectId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPatch("project/{projectId}/kanban/move")]
+    public async Task<IActionResult> MoveOnKanban(Guid projectId, [FromBody] KanbanMoveRequest request, CancellationToken ct = default)
+    {
+        var result = await _taskService.MoveOnKanbanAsync(projectId, request, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpGet("assignee/{assigneeId:guid}")]
     public async Task<IActionResult> GetByAssignee(Guid assigneeId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
     {
@@ -65,14 +79,14 @@ public class TasksController : ControllerBase
     [HttpPatch("{id}/status")]
     public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateTaskStatusRequest request, CancellationToken ct)
     {
-        var result = await _taskService.UpdateStatusAsync(id, request.Status, ct);
+        var result = await _taskService.UpdateStatusAsync(id, request.Status, request.RowVersion, ct);
         return StatusCode(result.StatusCode, result);
     }
 
     [HttpPatch("{id}/sort-order")]
     public async Task<IActionResult> UpdateSortOrder(Guid id, [FromBody] UpdateTaskSortOrderRequest request, CancellationToken ct)
     {
-        var result = await _taskService.UpdateSortOrderAsync(id, request.SortOrder, ct);
+        var result = await _taskService.UpdateSortOrderAsync(id, request.SortOrder, request.RowVersion, ct);
         return StatusCode(result.StatusCode, result);
     }
 
@@ -177,8 +191,8 @@ public class TasksController : ControllerBase
         return StatusCode(result.StatusCode, result);
     }
 }
-public sealed record UpdateTaskStatusRequest(string Status);
-public sealed record UpdateTaskSortOrderRequest(int SortOrder);
+public sealed record UpdateTaskStatusRequest(string Status, string? RowVersion = null);
+public sealed record UpdateTaskSortOrderRequest(int SortOrder, string? RowVersion = null);
 public sealed record UpdateTaskDatesRequest(DateTimeOffset? StartDate, DateTimeOffset? EndDate);
 public sealed record AddTaskDependencyRequest(Guid PredecessorId, string? Type);
 public sealed record BatchTaskRequest(IEnumerable<Guid> Ids);

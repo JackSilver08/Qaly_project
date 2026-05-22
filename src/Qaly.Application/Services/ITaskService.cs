@@ -11,8 +11,10 @@ public interface ITaskService
     Task<Result<PagedResult<TaskAttentionDto>>> GetAttentionByProjectAsync(Guid projectId, Guid? assigneeId = null, Guid? reporterId = null, string? status = null, string? priority = null, string? riskType = null, DateTimeOffset? from = null, DateTimeOffset? toDate = null, int page = 1, int pageSize = 25, string sort = "risk", CancellationToken ct = default);
     Task<Result<TaskItemDto>> CreateAsync(CreateTaskDto dto, CancellationToken ct = default);
     Task<Result<TaskItemDto>> UpdateAsync(Guid id, UpdateTaskDto dto, CancellationToken ct = default);
-    Task<Result> UpdateStatusAsync(Guid id, string newStatus, CancellationToken ct = default);
-    Task<Result> UpdateSortOrderAsync(Guid id, int sortOrder, CancellationToken ct = default);
+    Task<Result<TaskItemDto>> UpdateStatusAsync(Guid id, string newStatus, string? rowVersion = null, CancellationToken ct = default);
+    Task<Result<TaskItemDto>> UpdateSortOrderAsync(Guid id, int sortOrder, string? rowVersion = null, CancellationToken ct = default);
+    Task<Result<KanbanBoardDto>> GetKanbanAsync(Guid projectId, CancellationToken ct = default);
+    Task<Result<KanbanMoveResultDto>> MoveOnKanbanAsync(Guid projectId, KanbanMoveRequest request, CancellationToken ct = default);
     Task<Result> DeleteAsync(Guid id, CancellationToken ct = default);
     Task<Result> BatchDeleteAsync(IEnumerable<Guid> ids, CancellationToken ct = default);
     Task<Result> BatchUpdateStatusAsync(IEnumerable<Guid> ids, string newStatus, CancellationToken ct = default);

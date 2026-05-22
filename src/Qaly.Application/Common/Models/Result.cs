@@ -18,6 +18,9 @@ public class Result<T>
     public T? Data { get; }
     public string? Error { get; }
     public int StatusCode { get; }
+
+    public static implicit operator Result<T>(Result result)
+        => new(result.IsSuccess, default, result.Error, result.StatusCode);
 }
 
 public class Result
@@ -41,6 +44,9 @@ public class Result
 
     public static Result<T> Failure<T>(string error, int statusCode = 400)
         => new(false, default, error, statusCode);
+
+    public static Result<T> Conflict<T>(T data, string message = "Resource was modified by another request.")
+        => new(false, data, message, 409);
 
     public static Result<T> NotFound<T>(string message = "Không tìm thấy tài nguyên")
         => new(false, default, message, 404);

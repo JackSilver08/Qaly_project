@@ -1055,6 +1055,11 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Property<Guid>("ReporterId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.Property<int>("SortOrder")
                         .HasColumnType("int");
 
@@ -1096,6 +1101,8 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.HasIndex("Status");
 
                     b.HasIndex("ProjectId", "Status");
+
+                    b.HasIndex("ProjectId", "Status", "SortOrder");
 
                     SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("ProjectId", "Status"), new[] { "Title", "Priority", "AssigneeId", "DueDate", "IsPinned", "ContributesToProgress" });
 

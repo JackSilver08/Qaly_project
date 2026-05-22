@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using Qaly.Application.Common.Interfaces;
+using Qaly.Application.DTOs.Task;
 using Qaly.Application.Services;
 using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
@@ -108,6 +109,98 @@ public class TaskTimelineAttentionTests : IDisposable
 
         var afterViewed = await service.GetAttentionByProjectAsync(projectId);
         afterViewed.Data!.Items[0].Reasons.Should().NotContain("ChuaXem");
+    }
+
+    [Fact]
+    public async Task MoveOnKanbanAsync_ValidMove_UpdatesStatusAndRebalancesTargetColumn()
+    {
+        var ownerId = Guid.NewGuid();
+        var assigneeId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var movingTaskId = Guid.NewGuid();
+        var targetTaskId = Guid.NewGuid();
+
+        SeedUsers(ownerId, assigneeId);
+        _context.Projects.Add(new Project { Id = projectId, Name = "Kanban", Code = "kanban", OwnerId = ownerId });
+        _context.TaskItems.AddRange(
+            new TaskItem
+            {
+                Id = movingTaskId,
+                ProjectId = projectId,
+                ReporterId = ownerId,
+                Title = "Move me",
+                Status = "Todo",
+                Priority = "Medium",
+                SortOrder = 1000
+            },
+            new TaskItem
+            {
+                Id = targetTaskId,
+                ProjectId = projectId,
+                ReporterId = ownerId,
+                Title = "Target",
+                Status = "InProgress",
+                Priority = "Medium",
+                SortOrder = 1000
+            });
+        await _context.SaveChangesAsync();
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+        _currentUser.SetupGet(user => user.Role).Returns("User");
+
+        var service = CreateService();
+
+        var result = await service.MoveOnKanbanAsync(projectId, new KanbanMoveRequest(
+            movingTaskId,
+            "Todo",
+            "InProgress",
+            BeforeTaskId: targetTaskId,
+            AfterTaskId: null,
+            RowVersion: null));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Task.Status.Should().Be("InProgress");
+        result.Data.Task.SortOrder.Should().Be(1000);
+
+        var target = await _context.TaskItems.FindAsync(targetTaskId);
+        target!.SortOrder.Should().Be(2000);
+    }
+
+    [Fact]
+    public async Task MoveOnKanbanAsync_InvalidTransition_ReturnsFailure()
+    {
+        var ownerId = Guid.NewGuid();
+        var assigneeId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var taskId = Guid.NewGuid();
+
+        SeedUsers(ownerId, assigneeId);
+        _context.Projects.Add(new Project { Id = projectId, Name = "Kanban", Code = "kanban", OwnerId = ownerId });
+        _context.TaskItems.Add(new TaskItem
+        {
+            Id = taskId,
+            ProjectId = projectId,
+            ReporterId = ownerId,
+            Title = "Cannot jump",
+            Status = "Todo",
+            Priority = "Medium",
+            SortOrder = 1000
+        });
+        await _context.SaveChangesAsync();
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+        _currentUser.SetupGet(user => user.Role).Returns("User");
+
+        var service = CreateService();
+
+        var result = await service.MoveOnKanbanAsync(projectId, new KanbanMoveRequest(
+            taskId,
+            "Todo",
+            "Done",
+            BeforeTaskId: null,
+            AfterTaskId: null,
+            RowVersion: null));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
     }
 
     private void SeedUsers(Guid ownerId, Guid assigneeId)

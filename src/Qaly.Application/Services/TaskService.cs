@@ -12,6 +12,8 @@ namespace Qaly.Application.Services;
 
 public class TaskService : ITaskService
 {
+    private static readonly string[] KanbanStatuses = ["Todo", "InProgress", "OnHold", "InReview", "Done", "Cancelled"];
+
     private readonly IRepository<TaskItem> _taskRepo;
     private readonly IRepository<TaskDependency> _dependencyRepo;
     private readonly IRepository<Project> _projectRepo;
@@ -29,6 +31,13 @@ public class TaskService : ITaskService
     private readonly IAuditLogService _auditLogService;
     private readonly ITaskPrioritySuggestionService _taskPrioritySuggestionService;
     private readonly IWebhookPublisher _webhookPublisher;
+
+    private enum RowVersionValidation
+    {
+        Valid,
+        Invalid,
+        Conflict
+    }
 
     public TaskService(
         IRepository<TaskItem> taskRepo,
@@ -155,6 +164,135 @@ public class TaskService : ITaskService
             PageNumber = page,
             PageSize = pageSize
         });
+    }
+
+    public async Task<Result<KanbanBoardDto>> GetKanbanAsync(Guid projectId, CancellationToken ct = default)
+    {
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null)
+        {
+            return Result.NotFound<KanbanBoardDto>();
+        }
+
+        if (!await _taskAccessPolicy.CanAccessProjectAsync(projectId, project.OwnerId, ct))
+        {
+            return Result.Forbidden<KanbanBoardDto>();
+        }
+
+        return Result.Success(await BuildKanbanBoardAsync(projectId, ct));
+    }
+
+    public async Task<Result<KanbanMoveResultDto>> MoveOnKanbanAsync(Guid projectId, KanbanMoveRequest request, CancellationToken ct = default)
+    {
+        if (!TaskStatusRules.IsValidStatus(request.FromStatus) || !TaskStatusRules.IsValidStatus(request.ToStatus))
+        {
+            return Result.Failure<KanbanMoveResultDto>("Invalid task status.", 400);
+        }
+
+        if (request.BeforeTaskId.HasValue && request.AfterTaskId.HasValue)
+        {
+            return Result.Failure<KanbanMoveResultDto>("Use either beforeTaskId or afterTaskId, not both.", 400);
+        }
+
+        var normalizedFromStatus = TaskStatusRules.NormalizeStatus(request.FromStatus);
+        var normalizedToStatus = TaskStatusRules.NormalizeStatus(request.ToStatus);
+        var task = await TaskDetailsQuery()
+            .FirstOrDefaultAsync(item => item.Id == request.TaskId && item.ProjectId == projectId, ct);
+
+        if (task == null)
+        {
+            return Result.NotFound<KanbanMoveResultDto>();
+        }
+
+        if (!await _taskAccessPolicy.CanManageTaskAsync(task, ct))
+        {
+            return Result.Forbidden<KanbanMoveResultDto>();
+        }
+
+        var rowVersionValidation = ValidateRowVersion(task, request.RowVersion);
+        if (rowVersionValidation == RowVersionValidation.Invalid)
+        {
+            return Result.Failure<KanbanMoveResultDto>("Invalid rowVersion.", 400);
+        }
+
+        if (rowVersionValidation == RowVersionValidation.Conflict ||
+            !string.Equals(task.Status, normalizedFromStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            var board = await BuildKanbanBoardAsync(projectId, ct);
+            return Result.Conflict(new KanbanMoveResultDto(task.ToDto(false), board), "Task was modified by another request. Refresh before moving.");
+        }
+
+        if (!TaskStatusRules.CanTransition(task.Status, normalizedToStatus))
+        {
+            return Result.Failure<KanbanMoveResultDto>($"Cannot transition task from {task.Status} to {normalizedToStatus}.", 400);
+        }
+
+        if (RequiresApprovedEvidence(task.Status, normalizedToStatus) && !await HasApprovedEvidenceAsync(task.Id, ct))
+        {
+            return Result.Failure<KanbanMoveResultDto>("Cannot mark task as done before an evidence attachment is approved.", 400);
+        }
+
+        var targetColumnTasks = await _taskRepo.GetQueryable()
+            .Where(item => item.ProjectId == projectId && item.Status == normalizedToStatus && item.Id != task.Id)
+            .OrderBy(item => item.SortOrder)
+            .ThenBy(item => item.CreatedAt)
+            .ToListAsync(ct);
+
+        var insertIndex = targetColumnTasks.Count;
+        if (request.BeforeTaskId.HasValue)
+        {
+            insertIndex = targetColumnTasks.FindIndex(item => item.Id == request.BeforeTaskId.Value);
+            if (insertIndex < 0)
+            {
+                return Result.Failure<KanbanMoveResultDto>("beforeTaskId is not in the target column.", 400);
+            }
+        }
+        else if (request.AfterTaskId.HasValue)
+        {
+            var afterIndex = targetColumnTasks.FindIndex(item => item.Id == request.AfterTaskId.Value);
+            if (afterIndex < 0)
+            {
+                return Result.Failure<KanbanMoveResultDto>("afterTaskId is not in the target column.", 400);
+            }
+
+            insertIndex = afterIndex + 1;
+        }
+
+        var oldStatus = task.Status;
+        task.Status = normalizedToStatus;
+        targetColumnTasks.Insert(insertIndex, task);
+        RebalanceSortOrder(targetColumnTasks);
+
+        if (!string.Equals(oldStatus, normalizedToStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            var sourceColumnTasks = await _taskRepo.GetQueryable()
+                .Where(item => item.ProjectId == projectId && item.Status == oldStatus && item.Id != task.Id)
+                .OrderBy(item => item.SortOrder)
+                .ThenBy(item => item.CreatedAt)
+                .ToListAsync(ct);
+            RebalanceSortOrder(sourceColumnTasks);
+        }
+
+        await AddToOutboxAsync("TaskUpdated", new { Id = task.Id }, ct);
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Result.Failure<KanbanMoveResultDto>("Task was modified by another request. Refresh before moving.", 409);
+        }
+
+        await _auditLogService.LogAsync("KanbanMove", nameof(TaskItem), task.Id.ToString(), new { oldStatus, newStatus = normalizedToStatus, task.SortOrder }, ct);
+        await NotifyStatusChangeAsync(task, oldStatus, normalizedToStatus, ct);
+
+        var movedTask = await GetByIdAsync(task.Id, ct);
+        if (!movedTask.IsSuccess || movedTask.Data == null)
+        {
+            return Result.Failure<KanbanMoveResultDto>(movedTask.Error ?? "Task was moved but could not be reloaded.", movedTask.StatusCode);
+        }
+
+        return Result.Success(new KanbanMoveResultDto(movedTask.Data, await BuildKanbanBoardAsync(projectId, ct)));
     }
 
     public async Task<Result<PagedResult<TaskItemDto>>> GetByAssigneeAsync(Guid assigneeId, int page = 1, int pageSize = 20, CancellationToken ct = default)
@@ -377,6 +515,17 @@ public class TaskService : ITaskService
             return Result.Forbidden<TaskItemDto>();
         }
 
+        var rowVersionValidation = ValidateRowVersion(task, dto.RowVersion);
+        if (rowVersionValidation == RowVersionValidation.Invalid)
+        {
+            return Result.Failure<TaskItemDto>("Invalid rowVersion.", 400);
+        }
+
+        if (rowVersionValidation == RowVersionValidation.Conflict)
+        {
+            return Result.Conflict(task.ToDto(false), "Task was modified by another request. Refresh before updating.");
+        }
+
         var assigneeIds = NormalizeAssigneeIds(dto.AssigneeId, dto.AssigneeIds);
         var validation = await ValidateTaskInputAsync(dto.Title, dto.Priority, task.ProjectId, assigneeIds, dto.LabelIds, ct);
         if (!validation.IsSuccess)
@@ -412,7 +561,14 @@ public class TaskService : ITaskService
         await SyncLabelsAsync(task.Id, task.ProjectId, dto.LabelIds, ct);
         await AddToOutboxAsync("TaskUpdated", new { Id = task.Id }, ct);
         await _webhookPublisher.PublishAsync(task.ProjectId, "task.updated", new { task.Id, task.Title, task.Status }, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return await BuildTaskConflictAsync(id, ct);
+        }
         await _auditLogService.LogAsync("Update", nameof(TaskItem), task.Id.ToString(), dto, ct);
 
         foreach (var assigneeId in assigneeIds.Where(id => !previousAssignees.Contains(id)))
@@ -429,7 +585,7 @@ public class TaskService : ITaskService
         return await GetByIdAsync(id, ct);
     }
 
-    public async Task<Result> UpdateStatusAsync(Guid id, string newStatus, CancellationToken ct = default)
+    public async Task<Result<TaskItemDto>> UpdateStatusAsync(Guid id, string newStatus, string? rowVersion = null, CancellationToken ct = default)
     {
         var task = await TaskDetailsQuery()
             .FirstOrDefaultAsync(item => item.Id == id, ct);
@@ -442,6 +598,17 @@ public class TaskService : ITaskService
         if (!await _taskAccessPolicy.CanManageTaskAsync(task, ct))
         {
             return Result.Failure("Truy cập bị từ chối.", 403);
+        }
+
+        var rowVersionValidation = ValidateRowVersion(task, rowVersion);
+        if (rowVersionValidation == RowVersionValidation.Invalid)
+        {
+            return Result.Failure<TaskItemDto>("Invalid rowVersion.", 400);
+        }
+
+        if (rowVersionValidation == RowVersionValidation.Conflict)
+        {
+            return Result.Conflict(task.ToDto(false), "Task was modified by another request. Refresh before updating.");
         }
 
         if (!TaskStatusRules.IsValidStatus(newStatus))
@@ -466,15 +633,22 @@ public class TaskService : ITaskService
 
         await _taskRepo.UpdateAsync(task, ct);
         await AddToOutboxAsync("TaskUpdated", new { Id = task.Id }, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return await BuildTaskConflictAsync(id, ct);
+        }
         await _auditLogService.LogAsync("StatusChange", nameof(TaskItem), task.Id.ToString(), new { oldStatus, newStatus = normalizedStatus }, ct);
 
         await NotifyStatusChangeAsync(task, oldStatus, normalizedStatus, ct);
 
-        return Result.Success();
+        return await GetByIdAsync(id, ct);
     }
 
-    public async Task<Result> UpdateSortOrderAsync(Guid id, int sortOrder, CancellationToken ct = default)
+    public async Task<Result<TaskItemDto>> UpdateSortOrderAsync(Guid id, int sortOrder, string? rowVersion = null, CancellationToken ct = default)
     {
         var task = await _taskRepo.GetQueryable()
             .WithProject()
@@ -489,11 +663,29 @@ public class TaskService : ITaskService
             return Result.Failure("Truy cập bị từ chối.", 403);
         }
 
+        var rowVersionValidation = ValidateRowVersion(task, rowVersion);
+        if (rowVersionValidation == RowVersionValidation.Invalid)
+        {
+            return Result.Failure<TaskItemDto>("Invalid rowVersion.", 400);
+        }
+
+        if (rowVersionValidation == RowVersionValidation.Conflict)
+        {
+            return Result.Conflict(task.ToDto(false), "Task was modified by another request. Refresh before updating.");
+        }
+
         task.SortOrder = sortOrder;
         await _taskRepo.UpdateAsync(task, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return await BuildTaskConflictAsync(id, ct);
+        }
 
-        return Result.Success();
+        return await GetByIdAsync(id, ct);
     }
 
     public async Task<Result> DeleteAsync(Guid id, CancellationToken ct = default)
@@ -818,6 +1010,68 @@ public class TaskService : ITaskService
         await _unitOfWork.SaveChangesAsync(ct);
 
         return Result.Success();
+    }
+
+    private async Task<KanbanBoardDto> BuildKanbanBoardAsync(Guid projectId, CancellationToken ct)
+    {
+        var tasks = await _taskAccessPolicy.ApplyVisibilityFilter(TaskDetailsQuery())
+            .Where(item => item.ProjectId == projectId)
+            .OrderBy(item => item.Status)
+            .ThenBy(item => item.SortOrder)
+            .ThenBy(item => item.CreatedAt)
+            .ToListAsync(ct);
+
+        var columns = new List<KanbanColumnDto>();
+        foreach (var status in KanbanStatuses)
+        {
+            var mapped = new List<TaskItemDto>();
+            foreach (var task in tasks.Where(item => string.Equals(item.Status, status, StringComparison.OrdinalIgnoreCase)))
+            {
+                mapped.Add(task.ToDto(!await CanViewTaskDetailsAsync(task, ct)));
+            }
+
+            columns.Add(new KanbanColumnDto(status, mapped));
+        }
+
+        return new KanbanBoardDto(projectId, columns);
+    }
+
+    private static void RebalanceSortOrder(List<TaskItem> tasks)
+    {
+        for (var i = 0; i < tasks.Count; i++)
+        {
+            tasks[i].SortOrder = (i + 1) * 1000;
+        }
+    }
+
+    private static RowVersionValidation ValidateRowVersion(TaskItem task, string? rowVersion)
+    {
+        if (string.IsNullOrWhiteSpace(rowVersion))
+        {
+            return RowVersionValidation.Valid;
+        }
+
+        try
+        {
+            var expected = Convert.FromBase64String(rowVersion);
+            return expected.SequenceEqual(task.RowVersion)
+                ? RowVersionValidation.Valid
+                : RowVersionValidation.Conflict;
+        }
+        catch (FormatException)
+        {
+            return RowVersionValidation.Invalid;
+        }
+    }
+
+    private async Task<Result<TaskItemDto>> BuildTaskConflictAsync(Guid taskId, CancellationToken ct)
+    {
+        var latest = await TaskDetailsQuery()
+            .FirstOrDefaultAsync(item => item.Id == taskId, ct);
+
+        return latest == null
+            ? Result.Failure<TaskItemDto>("Task was modified or deleted by another request.", 409)
+            : Result.Conflict(latest.ToDto(false), "Task was modified by another request. Refresh before updating.");
     }
 
     private async Task AddToOutboxAsync(string eventType, object payload, CancellationToken ct)

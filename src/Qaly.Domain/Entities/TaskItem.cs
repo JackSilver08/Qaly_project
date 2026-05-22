@@ -19,6 +19,7 @@ public class TaskItem : BaseEntity
     public int UpvoteCount { get; set; }
     public int DownvoteCount { get; set; }
     public int SortOrder { get; set; }
+    public byte[] RowVersion { get; set; } = [];
 
     // Foreign keys
     public Guid ProjectId { get; set; }

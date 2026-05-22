@@ -162,6 +162,32 @@ export interface TaskItemDto {
   attachmentCount: number
   aiPrioritySuggestion: string | null
   createdAt: string
+  sortOrder: number
+  rowVersion: string
+}
+
+export interface KanbanBoardDto {
+  projectId: string
+  columns: KanbanColumnDto[]
+}
+
+export interface KanbanColumnDto {
+  status: string
+  tasks: TaskItemDto[]
+}
+
+export interface KanbanMoveRequest {
+  taskId: string
+  fromStatus: string
+  toStatus: string
+  beforeTaskId?: string | null
+  afterTaskId?: string | null
+  rowVersion?: string | null
+}
+
+export interface KanbanMoveResultDto {
+  task: TaskItemDto
+  board: KanbanBoardDto
 }
 
 export interface CommentDto {

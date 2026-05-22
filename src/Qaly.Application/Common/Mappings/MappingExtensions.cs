@@ -124,7 +124,9 @@ public static class MappingExtensions
             commentCount,
             attachmentCount,
             null,
-            task.CreatedAt);
+            task.CreatedAt,
+            task.SortOrder,
+            EncodeRowVersion(task.RowVersion));
     }
 
     public static TaskItemDto ToDto(this TaskItem task)
@@ -191,7 +193,9 @@ public static class MappingExtensions
             task.Comments?.Count ?? 0,
             task.Attachments?.Count ?? 0,
             null,
-            task.CreatedAt);
+            task.CreatedAt,
+            task.SortOrder,
+            EncodeRowVersion(task.RowVersion));
 
     public static TaskItem ToEntity(this CreateTaskDto dto)
         => new()
@@ -222,6 +226,9 @@ public static class MappingExtensions
         task.IsPinned = dto.IsPinned;
         task.ContributesToProgress = dto.ContributesToProgress;
     }
+
+    public static string EncodeRowVersion(byte[]? rowVersion)
+        => Convert.ToBase64String(rowVersion is { Length: > 0 } ? rowVersion : []);
 
     public static CommentDto ToDto(this TaskComment comment)
         => new(
