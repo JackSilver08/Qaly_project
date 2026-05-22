@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using Qaly.Application.DTOs.Meeting;
 using Qaly.Application.DTOs.Task;
 using Qaly.Application.Services;
 
@@ -11,10 +12,12 @@ namespace Qaly.Web.Controllers;
 public class TasksController : ControllerBase
 {
     private readonly ITaskService _taskService;
+    private readonly IMeetingImportService _meetingImportService;
 
-    public TasksController(ITaskService taskService)
+    public TasksController(ITaskService taskService, IMeetingImportService meetingImportService)
     {
         _taskService = taskService;
+        _meetingImportService = meetingImportService;
     }
 
     [HttpGet("project/{projectId}")]
@@ -59,6 +62,13 @@ public class TasksController : ControllerBase
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
         var result = await _taskService.GetByIdAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("{id}/meeting-source")]
+    public async Task<IActionResult> GetMeetingSource(Guid id, CancellationToken ct)
+    {
+        var result = await _meetingImportService.GetTaskMeetingSourceAsync(id, ct);
         return StatusCode(result.StatusCode, result);
     }
 

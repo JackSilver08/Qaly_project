@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Meeting;
+using Qaly.Application.DTOs.Task;
 using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
@@ -21,6 +22,8 @@ public partial class MeetingImportService : IMeetingImportService
     private readonly IRepository<MeetingImport> _meetingImportRepo;
     private readonly IRepository<AiJob> _aiJobRepo;
     private readonly IRepository<AiGeneratedDraft> _aiDraftRepo;
+    private readonly IRepository<MeetingActionItemMapping> _mappingRepo;
+    private readonly ITaskService _taskService;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditLogService _auditLogService;
@@ -32,6 +35,8 @@ public partial class MeetingImportService : IMeetingImportService
         IRepository<MeetingImport> meetingImportRepo,
         IRepository<AiJob> aiJobRepo,
         IRepository<AiGeneratedDraft> aiDraftRepo,
+        IRepository<MeetingActionItemMapping> mappingRepo,
+        ITaskService taskService,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
         IAuditLogService auditLogService)
@@ -42,6 +47,8 @@ public partial class MeetingImportService : IMeetingImportService
         _meetingImportRepo = meetingImportRepo;
         _aiJobRepo = aiJobRepo;
         _aiDraftRepo = aiDraftRepo;
+        _mappingRepo = mappingRepo;
+        _taskService = taskService;
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
         _auditLogService = auditLogService;
@@ -258,6 +265,173 @@ public partial class MeetingImportService : IMeetingImportService
                 line,
                 null))
             .ToList();
+    }
+
+    public async Task<Result<TaskItemDto>> CreateTaskFromMeetingActionItemAsync(
+        Guid meetingImportId,
+        int actionItemIndex,
+        MeetingActionItemCreateRequest request,
+        CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<TaskItemDto>();
+        }
+
+        if (actionItemIndex < 0)
+        {
+            return Result.Failure<TaskItemDto>("Action item index must be zero or greater.", 400);
+        }
+
+        var meetingImport = await _meetingImportRepo.GetQueryable()
+            .Include(item => item.Project)
+            .Include(item => item.AiDraft)
+            .FirstOrDefaultAsync(item => item.Id == meetingImportId, ct);
+
+        if (meetingImport == null)
+        {
+            return Result.NotFound<TaskItemDto>("Meeting import not found.");
+        }
+
+        if (!await CanAccessProjectAsync(meetingImport.Project, currentUserId.Value, ct))
+        {
+            return Result.Forbidden<TaskItemDto>();
+        }
+
+        var existingMapping = await _mappingRepo.GetQueryable()
+            .FirstOrDefaultAsync(mapping => mapping.MeetingImportId == meetingImportId && mapping.ActionItemIndex == actionItemIndex, ct);
+
+        if (existingMapping != null && existingMapping.TaskId.HasValue)
+        {
+            return Result.Failure<TaskItemDto>("This action item is already linked to a task.", 409);
+        }
+
+        if (meetingImport.AiDraft == null || string.IsNullOrWhiteSpace(meetingImport.AiDraft.PayloadJson))
+        {
+            return Result.Failure<TaskItemDto>("Meeting action items are not available for this import.", 400);
+        }
+
+        var extraction = JsonSerializer.Deserialize<MeetingExtractionPayload>(meetingImport.AiDraft.PayloadJson, JsonOptions);
+        if (extraction == null)
+        {
+            return Result.Failure<TaskItemDto>("Could not parse meeting action item extraction.", 500);
+        }
+
+        if (actionItemIndex >= extraction.ActionItems.Count)
+        {
+            return Result.Failure<TaskItemDto>("Action item index is out of range.", 404);
+        }
+
+        var actionItem = extraction.ActionItems[actionItemIndex];
+        var title = string.IsNullOrWhiteSpace(request.Title) ? actionItem.Title : request.Title.Trim();
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return Result.Failure<TaskItemDto>("Task title is required.", 400);
+        }
+
+        var description = string.IsNullOrWhiteSpace(request.Description)
+            ? (string.IsNullOrWhiteSpace(actionItem.Description) ? actionItem.SourceEvidence : actionItem.Description)
+            : request.Description.Trim();
+
+        var priority = !string.IsNullOrWhiteSpace(request.Priority)
+            ? request.Priority
+            : actionItem.Priority;
+
+        var dueDate = request.DueDate ?? actionItem.DueDate;
+
+        var createDto = new CreateTaskDto(
+            title,
+            description,
+            string.IsNullOrWhiteSpace(priority) ? "Medium" : priority,
+            dueDate,
+            null,
+            meetingImport.ProjectId,
+            request.AssigneeId,
+            false,
+            false,
+            true,
+            null,
+            request.LabelIds);
+
+        var taskResult = await _taskService.CreateAsync(createDto, ct);
+        if (!taskResult.IsSuccess || taskResult.Data == null)
+        {
+            return taskResult;
+        }
+
+        var mapping = new MeetingActionItemMapping
+        {
+            MeetingImportId = meetingImportId,
+            ActionItemIndex = actionItemIndex,
+            TaskId = taskResult.Data.Id,
+            Status = "Linked",
+            SourceTitle = actionItem.Title,
+            SourcePriority = actionItem.Priority,
+            SourceDueDate = actionItem.DueDate,
+            SourceQuote = actionItem.SourceEvidence ?? actionItem.Description,
+            CreatedById = currentUserId.Value
+        };
+
+        if (existingMapping != null)
+        {
+            existingMapping.TaskId = mapping.TaskId;
+            existingMapping.Status = mapping.Status;
+            existingMapping.SourceTitle = mapping.SourceTitle;
+            existingMapping.SourcePriority = mapping.SourcePriority;
+            existingMapping.SourceDueDate = mapping.SourceDueDate;
+            existingMapping.SourceQuote = mapping.SourceQuote;
+            existingMapping.CreatedById = mapping.CreatedById;
+            await _mappingRepo.UpdateAsync(existingMapping, ct);
+        }
+        else
+        {
+            await _mappingRepo.AddAsync(mapping, ct);
+        }
+
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync(
+            "LinkMeetingActionItemToTask",
+            nameof(MeetingActionItemMapping),
+            mapping.Id.ToString(),
+            new { mapping.MeetingImportId, mapping.TaskId, mapping.ActionItemIndex },
+            ct);
+
+        return taskResult;
+    }
+
+    public async Task<Result<TaskMeetingSourceDto>> GetTaskMeetingSourceAsync(Guid taskId, CancellationToken ct = default)
+    {
+        var mapping = await _mappingRepo.GetQueryable()
+            .Include(item => item.MeetingImport)
+            .FirstOrDefaultAsync(item => item.TaskId == taskId, ct);
+
+        if (mapping == null)
+        {
+            return Result.NotFound<TaskMeetingSourceDto>("No meeting source mapping found for this task.");
+        }
+
+        var meetingImport = mapping.MeetingImport;
+        if (meetingImport == null)
+        {
+            return Result.NotFound<TaskMeetingSourceDto>("Meeting import source is not available.");
+        }
+
+        var result = new TaskMeetingSourceDto(
+            taskId,
+            meetingImport.Id,
+            meetingImport.Title,
+            meetingImport.MeetingStartedAt,
+            mapping.ActionItemIndex,
+            mapping.SourceTitle,
+            null,
+            mapping.SourcePriority,
+            mapping.SourceDueDate,
+            mapping.SourceQuote,
+            mapping.Status,
+            mapping.TaskId);
+
+        return Result.Success(result);
     }
 
     private static string GenerateSourceHash(MeetilyImportRequest request)

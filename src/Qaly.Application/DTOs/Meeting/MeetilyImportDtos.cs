@@ -49,3 +49,25 @@ public record MeetingActionDraftDto(
     DateTimeOffset? DueDate,
     string? SourceEvidence,
     string? SuggestedOwnerName);
+
+public record MeetingActionItemCreateRequest(
+    Guid? AssigneeId,
+    string? Title,
+    string? Description,
+    string? Priority,
+    DateTimeOffset? DueDate,
+    IReadOnlyList<Guid>? LabelIds);
+
+public record TaskMeetingSourceDto(
+    Guid TaskId,
+    Guid MeetingImportId,
+    string MeetingTitle,
+    DateTimeOffset? MeetingStartedAt,
+    int ActionItemIndex,
+    string? ActionItemTitle,
+    string? ActionItemDescription,
+    string? SourcePriority,
+    DateTimeOffset? SourceDueDate,
+    string? SourceQuote,
+    string MappingStatus,
+    Guid? LinkedTaskId);

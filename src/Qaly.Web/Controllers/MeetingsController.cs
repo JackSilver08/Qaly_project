@@ -23,4 +23,11 @@ public class MeetingsController : ControllerBase
         var result = await _meetingImportService.ImportMeetilyAsync(request, ct);
         return StatusCode(result.StatusCode, result);
     }
+
+    [HttpPost("{meetingId:guid}/action-items/{itemIndex:int}/create-task")]
+    public async Task<IActionResult> CreateTaskFromActionItem(Guid meetingId, int itemIndex, MeetingActionItemCreateRequest request, CancellationToken ct)
+    {
+        var result = await _meetingImportService.CreateTaskFromMeetingActionItemAsync(meetingId, itemIndex, request, ct);
+        return StatusCode(result.StatusCode, result);
+    }
 }

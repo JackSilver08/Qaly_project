@@ -17,6 +17,7 @@ namespace Qaly.UnitTests;
 public class MeetilyImportTests : IDisposable
 {
     private readonly QalyDbContext _context;
+    private readonly Mock<ITaskService> _taskService = new();
     private readonly Mock<ICurrentUserService> _currentUser = new();
     private readonly Mock<IAuditLogService> _auditLog = new();
     private readonly Guid _userId = Guid.NewGuid();
@@ -123,6 +124,8 @@ public class MeetilyImportTests : IDisposable
             new GenericRepository<MeetingImport>(_context),
             new GenericRepository<AiJob>(_context),
             new GenericRepository<AiGeneratedDraft>(_context),
+            new GenericRepository<MeetingActionItemMapping>(_context),
+            _taskService.Object,
             new UnitOfWork(_context),
             _currentUser.Object,
             _auditLog.Object);
