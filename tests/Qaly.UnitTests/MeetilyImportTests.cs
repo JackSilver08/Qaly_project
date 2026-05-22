@@ -81,6 +81,10 @@ public class MeetilyImportTests : IDisposable
         var task = await _context.TaskItems.SingleAsync();
         task.Title.Should().Be("Prepare demo script");
         task.ProjectId.Should().Be(_projectId);
+        var mapping = await _context.MeetingActionItemMappings.SingleAsync();
+        mapping.TaskId.Should().Be(task.Id);
+        mapping.ActionItemIndex.Should().Be(0);
+        mapping.Status.Should().Be("Linked");
     }
 
     [Fact]
@@ -125,6 +129,7 @@ public class MeetilyImportTests : IDisposable
             new GenericRepository<AiJob>(_context),
             new GenericRepository<AiGeneratedDraft>(_context),
             new GenericRepository<MeetingActionItemMapping>(_context),
+            new GenericRepository<TaskItem>(_context),
             _taskService.Object,
             new UnitOfWork(_context),
             _currentUser.Object,
@@ -137,6 +142,8 @@ public class MeetilyImportTests : IDisposable
             new GenericRepository<OrganizationMember>(_context),
             new GenericRepository<AiJob>(_context),
             new GenericRepository<AiGeneratedDraft>(_context),
+            new GenericRepository<MeetingImport>(_context),
+            new GenericRepository<MeetingActionItemMapping>(_context),
             new GenericRepository<TaskItem>(_context),
             new GenericRepository<TaskAssignment>(_context),
             new GenericRepository<User>(_context),

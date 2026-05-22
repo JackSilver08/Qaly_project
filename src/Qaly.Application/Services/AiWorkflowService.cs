@@ -23,6 +23,8 @@ public class AiWorkflowService : IAiWorkflowService
     private readonly IRepository<OrganizationMember> _organizationMemberRepo;
     private readonly IRepository<AiJob> _aiJobRepo;
     private readonly IRepository<AiGeneratedDraft> _aiDraftRepo;
+    private readonly IRepository<MeetingImport> _meetingImportRepo;
+    private readonly IRepository<MeetingActionItemMapping> _meetingActionItemMappingRepo;
     private readonly IRepository<TaskItem> _taskRepo;
     private readonly IRepository<TaskAssignment> _taskAssignmentRepo;
     private readonly IRepository<User> _userRepo;
@@ -36,6 +38,8 @@ public class AiWorkflowService : IAiWorkflowService
         IRepository<OrganizationMember> organizationMemberRepo,
         IRepository<AiJob> aiJobRepo,
         IRepository<AiGeneratedDraft> aiDraftRepo,
+        IRepository<MeetingImport> meetingImportRepo,
+        IRepository<MeetingActionItemMapping> meetingActionItemMappingRepo,
         IRepository<TaskItem> taskRepo,
         IRepository<TaskAssignment> taskAssignmentRepo,
         IRepository<User> userRepo,
@@ -48,6 +52,8 @@ public class AiWorkflowService : IAiWorkflowService
         _organizationMemberRepo = organizationMemberRepo;
         _aiJobRepo = aiJobRepo;
         _aiDraftRepo = aiDraftRepo;
+        _meetingImportRepo = meetingImportRepo;
+        _meetingActionItemMappingRepo = meetingActionItemMappingRepo;
         _taskRepo = taskRepo;
         _taskAssignmentRepo = taskAssignmentRepo;
         _userRepo = userRepo;
@@ -182,9 +188,34 @@ public class AiWorkflowService : IAiWorkflowService
                 return Result.Failure<AiDraftConfirmResultDto>("Access denied for create_tasks confirm action.", 403);
             }
 
-            foreach (var item in payload.Tasks)
+            MeetingImport? meetingImport = null;
+            Dictionary<int, MeetingActionItemMapping>? existingMappingsByIndex = null;
+            MeetingExtractionPayload? meetingExtraction = null;
+
+            if (string.Equals(draft.DraftType, "MeetingActionItems", StringComparison.OrdinalIgnoreCase))
             {
+                meetingImport = await _meetingImportRepo.GetQueryable()
+                    .FirstOrDefaultAsync(item => item.AiDraftId == draft.Id, ct);
+                if (meetingImport != null)
+                {
+                    existingMappingsByIndex = await _meetingActionItemMappingRepo.GetQueryable()
+                        .Where(mapping => mapping.MeetingImportId == meetingImport.Id)
+                        .ToDictionaryAsync(mapping => mapping.ActionItemIndex, ct);
+                    meetingExtraction = TryDeserializeMeetingExtractionPayload(payloadJson);
+                }
+            }
+
+            for (var itemIndex = 0; itemIndex < payload.Tasks.Count; itemIndex++)
+            {
+                var item = payload.Tasks[itemIndex];
                 if (string.IsNullOrWhiteSpace(item.Title))
+                {
+                    continue;
+                }
+
+                if (existingMappingsByIndex != null &&
+                    existingMappingsByIndex.TryGetValue(itemIndex, out var existingMapping) &&
+                    existingMapping.TaskId.HasValue)
                 {
                     continue;
                 }
@@ -222,6 +253,43 @@ public class AiWorkflowService : IAiWorkflowService
 
                 await _taskRepo.AddAsync(task, ct);
                 createdTaskIds.Add(task.Id);
+
+                if (existingMappingsByIndex != null && meetingImport != null)
+                {
+                    var sourceActionItem = (meetingExtraction != null && itemIndex >= 0 && itemIndex < meetingExtraction.ActionItems.Count)
+                        ? meetingExtraction.ActionItems[itemIndex]
+                        : null;
+
+                    if (existingMappingsByIndex.TryGetValue(itemIndex, out var existingMappingWithoutTask))
+                    {
+                        existingMappingWithoutTask.TaskId = task.Id;
+                        existingMappingWithoutTask.Status = "Linked";
+                        existingMappingWithoutTask.SourceTitle = sourceActionItem?.Title ?? item.Title.Trim();
+                        existingMappingWithoutTask.SourcePriority = sourceActionItem?.Priority ?? normalizedPriority;
+                        existingMappingWithoutTask.SourceDueDate = sourceActionItem?.DueDate ?? item.DueDate;
+                        existingMappingWithoutTask.SourceQuote = sourceActionItem?.SourceEvidence ?? sourceActionItem?.Description ?? item.Description;
+                        existingMappingWithoutTask.CreatedById = currentUserId.Value;
+                        await _meetingActionItemMappingRepo.UpdateAsync(existingMappingWithoutTask, ct);
+                    }
+                    else
+                    {
+                        var mapping = new MeetingActionItemMapping
+                        {
+                            MeetingImportId = meetingImport.Id,
+                            ActionItemIndex = itemIndex,
+                            TaskId = task.Id,
+                            Status = "Linked",
+                            SourceTitle = sourceActionItem?.Title ?? item.Title.Trim(),
+                            SourcePriority = sourceActionItem?.Priority ?? normalizedPriority,
+                            SourceDueDate = sourceActionItem?.DueDate ?? item.DueDate,
+                            SourceQuote = sourceActionItem?.SourceEvidence ?? sourceActionItem?.Description ?? item.Description,
+                            CreatedById = currentUserId.Value
+                        };
+
+                        await _meetingActionItemMappingRepo.AddAsync(mapping, ct);
+                        existingMappingsByIndex[itemIndex] = mapping;
+                    }
+                }
 
                 if (validAssigneeId.HasValue)
                 {
@@ -324,6 +392,18 @@ public class AiWorkflowService : IAiWorkflowService
         }
 
         return JsonSerializer.Deserialize<AiTaskDraftPayload>(payloadJson, JsonOptions) ?? new AiTaskDraftPayload([]);
+    }
+
+    private static MeetingExtractionPayload? TryDeserializeMeetingExtractionPayload(string payloadJson)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<MeetingExtractionPayload>(payloadJson, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private async Task<bool> CanAccessProjectAsync(Project project, Guid currentUserId, CancellationToken ct)
