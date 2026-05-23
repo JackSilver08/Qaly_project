@@ -23,12 +23,14 @@ public class TaskItem : BaseEntity
 
     // Foreign keys
     public Guid ProjectId { get; set; }
+    public Guid? SprintId { get; set; }
     public Guid? AssigneeId { get; set; }
     public Guid ReporterId { get; set; }
     public Guid? ImportSessionId { get; set; }
 
     // Navigation properties
     public Project Project { get; set; } = null!;
+    public Sprint? Sprint { get; set; }
     public User? Assignee { get; set; }
     public User Reporter { get; set; } = null!;
     public ImportSession? ImportSession { get; set; }

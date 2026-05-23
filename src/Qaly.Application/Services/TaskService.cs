@@ -24,6 +24,7 @@ public class TaskService : ITaskService
     private readonly IRepository<TaskViewEvent> _viewEventRepo;
     private readonly IRepository<TaskLabel> _taskLabelRepo;
     private readonly IRepository<ProjectLabel> _projectLabelRepo;
+    private readonly IRepository<Sprint> _sprintRepo;
     private readonly IRepository<VectorSyncOutbox> _outboxRepo;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ITaskAccessPolicy _taskAccessPolicy;
@@ -50,6 +51,7 @@ public class TaskService : ITaskService
         IRepository<TaskViewEvent> viewEventRepo,
         IRepository<TaskLabel> taskLabelRepo,
         IRepository<ProjectLabel> projectLabelRepo,
+        IRepository<Sprint> sprintRepo,
         IRepository<VectorSyncOutbox> outboxRepo,
         IUnitOfWork unitOfWork,
         ITaskAccessPolicy taskAccessPolicy,
@@ -68,6 +70,7 @@ public class TaskService : ITaskService
         _viewEventRepo = viewEventRepo;
         _taskLabelRepo = taskLabelRepo;
         _projectLabelRepo = projectLabelRepo;
+        _sprintRepo = sprintRepo;
         _outboxRepo = outboxRepo;
         _unitOfWork = unitOfWork;
         _taskAccessPolicy = taskAccessPolicy;
@@ -347,10 +350,18 @@ public class TaskService : ITaskService
         var tasks = await query.ToListAsync(ct);
         var now = DateTimeOffset.UtcNow;
 
+        var sprints = await _sprintRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(s => s.ProjectId == projectId)
+            .OrderBy(s => s.StartDate)
+            .ToListAsync(ct);
+
         var dates = tasks
             .SelectMany(task => new[] { task.StartDate, task.DueDate })
             .Where(date => date.HasValue)
             .Select(date => date!.Value)
+            .Union(sprints.Select(s => s.StartDate))
+            .Union(sprints.Select(s => s.EndDate))
             .OrderBy(date => date)
             .ToList();
 
@@ -363,10 +374,34 @@ public class TaskService : ITaskService
             windowEnd = windowStart.AddDays(28);
         }
 
-        var sprintStart = AlignToSprintStart(now);
-        var sprintEnd = sprintStart.AddDays(13);
+        List<SprintBucketDto> buckets;
+        DateTimeOffset sprintStart;
+        DateTimeOffset sprintEnd;
 
-        var buckets = BuildSprintBuckets(tasks, windowStart, windowEnd, now);
+        if (sprints.Count > 0)
+        {
+            buckets = sprints.Select(s => new SprintBucketDto(
+                s.Name,
+                s.StartDate,
+                s.EndDate,
+                tasks.Count(t => t.SprintId == s.Id),
+                tasks.Count(t => t.SprintId == s.Id && IsDone(t.Status)),
+                tasks.Count(t => t.SprintId == s.Id && t.DueDate.HasValue && t.DueDate.Value < now && !IsDone(t.Status)),
+                tasks.Count(t => t.SprintId == s.Id && !IsClosed(t.Status)),
+                tasks.Where(t => t.SprintId == s.Id).Sum(t => Math.Max(1, t.EstimatedHours ?? 1))
+            )).ToList();
+
+            var currentSprint = sprints.FirstOrDefault(s => s.StartDate <= now && s.EndDate >= now) ?? sprints.OrderBy(s => Math.Abs((s.StartDate - now).TotalDays)).First();
+            sprintStart = currentSprint.StartDate;
+            sprintEnd = currentSprint.EndDate;
+        }
+        else
+        {
+            sprintStart = AlignToSprintStart(now);
+            sprintEnd = sprintStart.AddDays(13);
+            buckets = BuildSprintBuckets(tasks, windowStart, windowEnd, now);
+        }
+
         var blockedItems = BuildBlockedTimelineItems(tasks);
 
         return Result.Success(new ProjectTimelineDto(
@@ -1681,4 +1716,129 @@ public class TaskService : ITaskService
         => string.Equals(task.Status, status, StringComparison.OrdinalIgnoreCase);
 
     private sealed record AttentionAssignee(Guid? UserId, string? FullName, DateTimeOffset AssignedAt);
+
+    // Sprint Management Implementation
+    public async Task<Result<IEnumerable<SprintDto>>> GetSprintsAsync(Guid projectId, CancellationToken ct = default)
+    {
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null) return Result.NotFound<IEnumerable<SprintDto>>();
+
+        if (!await _taskAccessPolicy.CanAccessProjectAsync(projectId, project.OwnerId, ct))
+            return Result.Forbidden<IEnumerable<SprintDto>>();
+
+        var sprints = await _sprintRepo.GetQueryable()
+            .Where(s => s.ProjectId == projectId)
+            .OrderByDescending(s => s.StartDate)
+            .Include(s => s.Tasks)
+            .ToListAsync(ct);
+
+        return Result.Success(sprints.Select(s => s.ToDto()));
+    }
+
+    public async Task<Result<SprintDto>> CreateSprintAsync(Guid projectId, CreateSprintRequest request, CancellationToken ct = default)
+    {
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null) return Result.NotFound<SprintDto>();
+
+        if (!await _taskAccessPolicy.CanManageProjectAsync(projectId, project.OwnerId, ct))
+            return Result.Forbidden<SprintDto>();
+
+        var sprint = request.ToEntity(projectId);
+        await _sprintRepo.AddAsync(sprint, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        await _auditLogService.LogAsync("CreateSprint", nameof(Sprint), sprint.Id.ToString(), new { sprint.Name, sprint.ProjectId }, ct);
+
+        return Result.Created(sprint.ToDto());
+    }
+
+    public async Task<Result<SprintDto>> UpdateSprintAsync(Guid sprintId, UpdateSprintRequest request, CancellationToken ct = default)
+    {
+        var sprint = await _sprintRepo.GetQueryable()
+            .Include(s => s.Project)
+            .FirstOrDefaultAsync(s => s.Id == sprintId, ct);
+
+        if (sprint == null) return Result.NotFound<SprintDto>();
+
+        if (!await _taskAccessPolicy.CanManageProjectAsync(sprint.ProjectId, sprint.Project.OwnerId, ct))
+            return Result.Forbidden<SprintDto>();
+
+        request.ApplyTo(sprint);
+        await _sprintRepo.UpdateAsync(sprint, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        await _auditLogService.LogAsync("UpdateSprint", nameof(Sprint), sprint.Id.ToString(), request, ct);
+
+        return Result.Success(sprint.ToDto());
+    }
+
+    public async Task<Result> DeleteSprintAsync(Guid sprintId, CancellationToken ct = default)
+    {
+        var sprint = await _sprintRepo.GetQueryable()
+            .Include(s => s.Project)
+            .FirstOrDefaultAsync(s => s.Id == sprintId, ct);
+
+        if (sprint == null) return Result.NotFound();
+
+        if (!await _taskAccessPolicy.CanManageProjectAsync(sprint.ProjectId, sprint.Project.OwnerId, ct))
+            return Result.Forbidden();
+
+        await _sprintRepo.DeleteAsync(sprint, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        await _auditLogService.LogAsync("DeleteSprint", nameof(Sprint), sprintId.ToString(), new { sprint.Name }, ct);
+
+        return Result.Success();
+    }
+
+    public async Task<Result<ProjectTimelineDto>> GetSprintTimelineAsync(Guid projectId, Guid sprintId, CancellationToken ct = default)
+    {
+        var sprint = await _sprintRepo.GetByIdAsync(sprintId, ct);
+        if (sprint == null || sprint.ProjectId != projectId) return Result.NotFound<ProjectTimelineDto>();
+
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (!await _taskAccessPolicy.CanAccessProjectAsync(projectId, project!.OwnerId, ct))
+            return Result.Forbidden<ProjectTimelineDto>();
+
+        var query = _taskAccessPolicy.ApplyVisibilityFilter(_taskRepo.GetQueryable())
+            .AsNoTracking()
+            .Where(task => task.ProjectId == projectId && task.SprintId == sprintId)
+            .Include(task => task.PredecessorDependencies)
+                .ThenInclude(dependency => dependency.Predecessor);
+
+        var tasks = await query.ToListAsync(ct);
+        var now = DateTimeOffset.UtcNow;
+
+        var windowStart = sprint.StartDate.AddDays(-2);
+        var windowEnd = sprint.EndDate.AddDays(7);
+
+        var buckets = new List<SprintBucketDto>
+        {
+            new SprintBucketDto(
+                sprint.Name,
+                sprint.StartDate,
+                sprint.EndDate,
+                tasks.Count,
+                tasks.Count(task => IsDone(task.Status)),
+                tasks.Count(task => task.DueDate.HasValue && task.DueDate.Value < now && !IsDone(task.Status)),
+                tasks.Count(task => !IsClosed(task.Status)),
+                tasks.Sum(task => Math.Max(1, task.EstimatedHours ?? 1)))
+        };
+
+        var blockedItems = BuildBlockedTimelineItems(tasks);
+
+        return Result.Success(new ProjectTimelineDto(
+            projectId,
+            windowStart,
+            windowEnd,
+            sprint.StartDate,
+            sprint.EndDate,
+            tasks.Count,
+            tasks.Count(task => !IsClosed(task.Status)),
+            tasks.Count(task => IsDone(task.Status)),
+            tasks.Count(task => task.DueDate.HasValue && task.DueDate.Value < now && !IsDone(task.Status)),
+            blockedItems.Count(item => item.IsBlocked),
+            buckets,
+            blockedItems));
+    }
 }

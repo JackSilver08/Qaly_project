@@ -27,4 +27,11 @@ public interface ITaskService
     Task<Result> NudgeAssigneeAsync(Guid projectId, Guid taskId, Guid? assigneeId = null, CancellationToken ct = default);
     Task<Result> AddDependencyAsync(Guid predecessorId, Guid successorId, string type = "FinishToStart", CancellationToken ct = default);
     Task<Result> RemoveDependencyAsync(Guid dependencyId, CancellationToken ct = default);
+
+    // Sprint Management
+    Task<Result<IEnumerable<SprintDto>>> GetSprintsAsync(Guid projectId, CancellationToken ct = default);
+    Task<Result<SprintDto>> CreateSprintAsync(Guid projectId, CreateSprintRequest request, CancellationToken ct = default);
+    Task<Result<SprintDto>> UpdateSprintAsync(Guid sprintId, UpdateSprintRequest request, CancellationToken ct = default);
+    Task<Result> DeleteSprintAsync(Guid sprintId, CancellationToken ct = default);
+    Task<Result<ProjectTimelineDto>> GetSprintTimelineAsync(Guid projectId, Guid sprintId, CancellationToken ct = default);
 }

@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace Qaly.Application.Common.Models;
 
 /// <summary>
@@ -12,12 +14,14 @@ public class Result<T>
         Data = data;
         Error = error;
         StatusCode = statusCode;
+        TraceId = Activity.Current?.Id;
     }
 
     public bool IsSuccess { get; }
     public T? Data { get; }
     public string? Error { get; }
     public int StatusCode { get; }
+    public string? TraceId { get; }
 
     public static implicit operator Result<T>(Result result)
         => new(result.IsSuccess, default, result.Error, result.StatusCode);
@@ -30,11 +34,13 @@ public class Result
         IsSuccess = isSuccess;
         Error = error;
         StatusCode = statusCode;
+        TraceId = Activity.Current?.Id;
     }
 
     public bool IsSuccess { get; }
     public string? Error { get; }
     public int StatusCode { get; }
+    public string? TraceId { get; }
 
     public static Result<T> Success<T>(T data)
         => new(true, data, null, 200);

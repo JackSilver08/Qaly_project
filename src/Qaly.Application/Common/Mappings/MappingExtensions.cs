@@ -78,6 +78,38 @@ public static class MappingExtensions
     public static ProjectLabelDto ToDto(this ProjectLabel label)
         => new(label.Id, label.Name, label.Color, label.CreatedAt);
 
+    public static SprintDto ToDto(this Sprint sprint)
+        => new(
+            sprint.Id,
+            sprint.ProjectId,
+            sprint.Name,
+            sprint.StartDate,
+            sprint.EndDate,
+            sprint.Status,
+            sprint.Goal,
+            sprint.Tasks?.Count ?? 0,
+            sprint.Tasks?.Count(t => string.Equals(t.Status, "Done", StringComparison.OrdinalIgnoreCase)) ?? 0);
+
+    public static Sprint ToEntity(this CreateSprintRequest dto, Guid projectId)
+        => new()
+        {
+            ProjectId = projectId,
+            Name = dto.Name,
+            StartDate = dto.StartDate,
+            EndDate = dto.EndDate,
+            Goal = dto.Goal,
+            Status = "Planning"
+        };
+
+    public static void ApplyTo(this UpdateSprintRequest dto, Sprint sprint)
+    {
+        sprint.Name = dto.Name;
+        sprint.StartDate = dto.StartDate;
+        sprint.EndDate = dto.EndDate;
+        sprint.Status = dto.Status;
+        sprint.Goal = dto.Goal;
+    }
+
     public static TaskItemDto ToDto(this TaskItem task, bool isRestricted = false)
     {
         var restrictedTitle = $"Restricted Task #{task.Id.ToString()[..8]}";

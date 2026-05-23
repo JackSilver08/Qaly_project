@@ -27,6 +27,11 @@ public class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
             .HasForeignKey(t => t.ProjectId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        builder.HasOne(t => t.Sprint)
+            .WithMany(s => s.Tasks)
+            .HasForeignKey(t => t.SprintId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         builder.HasOne(t => t.Assignee)
             .WithMany(u => u.AssignedTasks)
             .HasForeignKey(t => t.AssigneeId)
@@ -40,12 +45,14 @@ public class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
 
         // Indexes
         builder.HasIndex(t => t.ProjectId);
+        builder.HasIndex(t => t.SprintId);
         builder.HasIndex(t => t.AssigneeId);
         builder.HasIndex(t => t.Status);
         builder.HasIndex(t => t.DueDate);
         builder.HasIndex(t => t.StartDate);
         builder.HasIndex(t => t.IsPinned);
         builder.HasIndex(t => new { t.ProjectId, t.AssigneeId, t.Status });
+        builder.HasIndex(t => new { t.ProjectId, t.SprintId, t.Status });
         builder.HasIndex(t => new { t.ProjectId, t.DueDate });
 
         builder.HasOne(t => t.ImportSession)
