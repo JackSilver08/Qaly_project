@@ -325,7 +325,15 @@ public class ProjectService : IProjectService
 
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("AddMember", nameof(Project), projectId.ToString(), new { userId, role = memberRole }, ct);
-        await _notificationService.CreateAsync(userId, $"You were added to project \"{project.Name}\".", "ProjectInvite", "success", project.Id, nameof(Project), ct);
+        await _notificationService.CreateAsync(
+            userId,
+            $"You were added to project \"{project.Name}\".",
+            "ProjectInvite",
+            "success",
+            project.Id,
+            nameof(Project),
+            $"project:{project.Id}:invite:{userId}",
+            ct);
 
         return Result.Success();
     }

@@ -226,12 +226,87 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
     public async Task<bool> CanReadWikiAsync(Guid projectId, Guid ownerId, CancellationToken ct)
         => await CanAccessProjectAsync(projectId, ownerId, ct);
 
+    public async Task<bool> CanReadInternalWikiAsync(Guid projectId, Guid ownerId, CancellationToken ct)
+    {
+        var currentUserId = CurrentUserId;
+        if (currentUserId == null)
+        {
+            return false;
+        }
+
+        if (IsAdmin || ownerId == currentUserId)
+        {
+            return true;
+        }
+
+        var projectRole = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(member => member.ProjectId == projectId && member.UserId == currentUserId)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+
+        if (projectRole != null)
+        {
+            return !ProjectRoleRules.IsCustomer(projectRole);
+        }
+
+        var projectOrganizationInfo = await _projectRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(project => project.Id == projectId)
+            .Select(project => new
+            {
+                project.OrganizationId,
+                OrganizationOwnerId = project.Organization != null ? (Guid?)project.Organization.OwnerId : null
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (projectOrganizationInfo?.OrganizationId == null || projectOrganizationInfo.OrganizationOwnerId == null)
+        {
+            return false;
+        }
+
+        if (projectOrganizationInfo.OrganizationOwnerId == currentUserId)
+        {
+            return true;
+        }
+
+        var organizationRole = await _organizationMemberRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(member =>
+                member.OrganizationId == projectOrganizationInfo.OrganizationId.Value &&
+                member.UserId == currentUserId)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+
+        return !ProjectRoleRules.IsCustomer(organizationRole);
+    }
+
     public async Task<bool> CanWriteWikiAsync(Guid projectId, Guid ownerId, CancellationToken ct)
-        => await HasProjectPermissionAsync(
-            projectId,
-            ownerId,
-            member => !string.Equals(member.Role, "Viewer", StringComparison.OrdinalIgnoreCase),
-            ct);
+    {
+        var currentUserId = CurrentUserId;
+        if (currentUserId == null)
+        {
+            return false;
+        }
+
+        if (IsAdmin || ownerId == currentUserId)
+        {
+            return true;
+        }
+
+        var memberRole = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(member => member.ProjectId == projectId && member.UserId == currentUserId)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+
+        if (memberRole != null)
+        {
+            return !ProjectRoleRules.IsViewer(memberRole) && !ProjectRoleRules.IsCustomer(memberRole);
+        }
+
+        return await CanManageOrganizationForProjectAsync(projectId, currentUserId.Value, ct);
+    }
 
     private async Task<bool> HasProjectPermissionAsync(
         Guid projectId,

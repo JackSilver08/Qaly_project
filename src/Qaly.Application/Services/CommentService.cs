@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Mappings;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Comment;
+using Qaly.Application.Services.Notifications;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 using System.Text.Json;
@@ -110,7 +111,7 @@ public class CommentService : ICommentService
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("Create", nameof(TaskComment), comment.Id.ToString(), new { dto.TaskItemId }, ct);
 
-        await NotifyParticipantsAsync(task, currentUserId.Value, dto.MentionedUserIds, ct);
+        await NotifyParticipantsAsync(task, comment.Id, currentUserId.Value, dto.MentionedUserIds, ct);
 
         var saved = await _commentRepo.GetQueryable()
             .Include(item => item.Author)
@@ -163,6 +164,7 @@ public class CommentService : ICommentService
     private async Task<TaskItem?> LoadTaskAsync(Guid taskItemId, CancellationToken ct)
         => await _taskRepo.GetQueryable()
             .Include(task => task.Project)
+            .Include(task => task.Assignees)
             .FirstOrDefaultAsync(task => task.Id == taskItemId, ct);
 
     private async Task<bool> CanAccessTaskAsync(TaskItem task, CancellationToken ct)
@@ -190,42 +192,56 @@ public class CommentService : ICommentService
             .AnyAsync(member => member.ProjectId == task.ProjectId && member.UserId == currentUserId, ct);
     }
 
-    private async Task NotifyParticipantsAsync(TaskItem task, Guid currentUserId, IReadOnlyList<Guid>? mentionedUserIds, CancellationToken ct)
+    private async Task NotifyParticipantsAsync(
+        TaskItem task,
+        Guid commentId,
+        Guid currentUserId,
+        IReadOnlyList<Guid>? mentionedUserIds,
+        CancellationToken ct)
     {
-        var recipients = new[] { task.ReporterId, task.AssigneeId }
-            .Where(userId => userId.HasValue && userId.Value != currentUserId)
-            .Select(userId => userId!.Value)
+        var mentionedIds = (mentionedUserIds ?? [])
+            .Where(id => id != Guid.Empty && id != currentUserId)
+            .Distinct()
+            .ToHashSet();
+
+        var recipients = new[] { task.ReporterId }
+            .Concat(task.AssigneeId.HasValue ? [task.AssigneeId.Value] : [])
+            .Concat(task.Assignees.Select(assignment => assignment.UserId))
+            .Where(userId => userId != currentUserId && !mentionedIds.Contains(userId))
             .Distinct()
             .ToList();
 
-        foreach (var mentionedUserId in mentionedUserIds?.Where(id => id != currentUserId).Distinct() ?? [])
+        foreach (var mentionedUserId in mentionedIds)
         {
             var isProjectMember = task.Project.OwnerId == mentionedUserId ||
                 await _memberRepo.GetQueryable()
                     .AnyAsync(member => member.ProjectId == task.ProjectId && member.UserId == mentionedUserId, ct);
-            if (isProjectMember && !recipients.Contains(mentionedUserId))
+            if (isProjectMember)
             {
-                recipients.Add(mentionedUserId);
+                var template = NotificationTemplates.Mentioned(task.Id, commentId, task.Title, mentionedUserId);
                 await _notificationService.CreateAsync(
                     mentionedUserId,
-                    $"You were mentioned on task \"{task.Title}\".",
-                    "Mentioned",
-                    "info",
+                    template.Message,
+                    template.Type,
+                    template.Tone,
                     task.Id,
                     nameof(TaskItem),
+                    template.IdempotencyKey,
                     ct);
             }
         }
 
         foreach (var recipientId in recipients)
         {
+            var template = NotificationTemplates.CommentAdded(task.Id, commentId, task.Title, recipientId);
             await _notificationService.CreateAsync(
                 recipientId,
-                $"New comment on task \"{task.Title}\".",
-                "CommentAdded",
-                "info",
+                template.Message,
+                template.Type,
+                template.Tone,
                 task.Id,
                 nameof(TaskItem),
+                template.IdempotencyKey,
                 ct);
         }
     }

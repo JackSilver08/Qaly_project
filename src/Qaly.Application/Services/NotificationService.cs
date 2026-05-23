@@ -1,8 +1,11 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Models;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Qaly.Application.Services;
 
@@ -12,17 +15,23 @@ public class NotificationService : INotificationService
     private readonly IRepository<PushSubscription> _pushRepo;
     private readonly IUnitOfWork _unitOfWork;
     private readonly INotificationPublisher _notificationPublisher;
+    private readonly Qaly.Application.Common.Interfaces.IPushSender _pushSender;
+    private readonly ILogger<NotificationService> _logger;
 
     public NotificationService(
         IRepository<Notification> notificationRepo,
         IRepository<PushSubscription> pushRepo,
         IUnitOfWork unitOfWork,
-        INotificationPublisher notificationPublisher)
+        INotificationPublisher notificationPublisher,
+        Qaly.Application.Common.Interfaces.IPushSender pushSender,
+        ILogger<NotificationService> logger)
     {
         _notificationRepo = notificationRepo;
         _pushRepo = pushRepo;
         _unitOfWork = unitOfWork;
         _notificationPublisher = notificationPublisher;
+        _pushSender = pushSender;
+        _logger = logger;
     }
 
     public async Task<Result<IReadOnlyList<NotificationDto>>> GetByUserAsync(Guid userId, bool unreadOnly = false, CancellationToken ct = default)
@@ -91,6 +100,7 @@ public class NotificationService : INotificationService
         string tone = "info",
         Guid? relatedEntityId = null,
         string? relatedEntityType = null,
+        string? idempotencyKey = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(message))
@@ -98,21 +108,77 @@ public class NotificationService : INotificationService
             return;
         }
 
+        var normalizedMessage = message.Trim();
+        var normalizedType = string.IsNullOrWhiteSpace(type) ? "Info" : type.Trim();
+        var normalizedTone = string.IsNullOrWhiteSpace(tone) ? "info" : tone.Trim().ToLowerInvariant();
+        var normalizedEntityType = string.IsNullOrWhiteSpace(relatedEntityType) ? null : relatedEntityType.Trim();
+        var normalizedKey = NormalizeIdempotencyKey(idempotencyKey) ??
+            BuildIdempotencyKey(normalizedType, relatedEntityId, normalizedEntityType, normalizedMessage);
+
+        if (!string.IsNullOrWhiteSpace(normalizedKey))
+        {
+            var existing = await _notificationRepo.GetQueryable()
+                .AsNoTracking()
+                .AnyAsync(notification =>
+                    notification.UserId == userId &&
+                    notification.IdempotencyKey == normalizedKey, ct);
+
+            if (existing)
+            {
+                _logger.LogInformation(
+                    "Skipped duplicate notification {NotificationType} for user {UserId} with key {IdempotencyKey}.",
+                    normalizedType,
+                    userId,
+                    normalizedKey);
+                return;
+            }
+        }
+
         var notification = new Notification
         {
             UserId = userId,
-            Message = message.Trim(),
-            Type = string.IsNullOrWhiteSpace(type) ? "Info" : type.Trim(),
-            Tone = string.IsNullOrWhiteSpace(tone) ? "info" : tone.Trim().ToLowerInvariant(),
+            Message = normalizedMessage,
+            Type = normalizedType,
+            Tone = normalizedTone,
             RelatedEntityId = relatedEntityId,
-            RelatedEntityType = relatedEntityType
+            RelatedEntityType = normalizedEntityType,
+            IdempotencyKey = normalizedKey
         };
 
-        await _notificationRepo.AddAsync(notification, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
+        try
+        {
+            await _notificationRepo.AddAsync(notification, ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException) when (!string.IsNullOrWhiteSpace(normalizedKey))
+        {
+            var duplicateExists = await _notificationRepo.GetQueryable()
+                .AsNoTracking()
+                .AnyAsync(item => item.UserId == userId && item.IdempotencyKey == normalizedKey, ct);
+            if (!duplicateExists)
+            {
+                throw;
+            }
+
+            _logger.LogInformation(
+                "Skipped duplicate notification {NotificationType} for user {UserId} after unique key conflict.",
+                normalizedType,
+                userId);
+            return;
+        }
+
         await _notificationPublisher.PublishAsync(userId, ToDto(notification), ct);
-        await SendPushNotificationAsync(userId, "New Notification", message.Trim());
+        await SendPushNotificationAsync(userId, "New Notification", normalizedMessage);
     }
+
+    public Task CreateAsync(
+        Guid userId,
+        string message,
+        string type,
+        Guid? relatedEntityId,
+        string? relatedEntityType,
+        CancellationToken ct = default)
+        => CreateAsync(userId, message, type, "info", relatedEntityId, relatedEntityType, null, ct);
 
     public Task BroadcastToProjectAsync(Guid projectId, string message, string eventType, object? payload = null, CancellationToken ct = default)
         => _notificationPublisher.BroadcastToProjectAsync(projectId, message, eventType, payload, ct);
@@ -146,11 +212,17 @@ public class NotificationService : INotificationService
         return Result.Success();
     }
 
-    public static Task SendPushNotificationAsync(Guid userId, string title, string message)
+    public Task SendPushNotificationAsync(Guid userId, string title, string message)
     {
-        // Placeholder: Log the notification
-        Console.WriteLine($"Sending Web Push to User {userId}: {title} - {message}");
-        return Task.CompletedTask;
+        try
+        {
+            return _pushSender.SendAsync(userId, title, message, null, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send push notification to user {UserId}", userId);
+            return Task.CompletedTask;
+        }
     }
 
     private static NotificationDto ToDto(Notification notification)
@@ -163,4 +235,22 @@ public class NotificationService : INotificationService
             notification.RelatedEntityId,
             notification.RelatedEntityType,
             notification.CreatedAt);
+
+    private static string? NormalizeIdempotencyKey(string? idempotencyKey)
+    {
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            return null;
+        }
+
+        var trimmed = idempotencyKey.Trim();
+        return trimmed.Length <= 200 ? trimmed : trimmed[..200];
+    }
+
+    private static string BuildIdempotencyKey(string type, Guid? relatedEntityId, string? relatedEntityType, string message)
+    {
+        var seed = $"{type}|{relatedEntityType}|{relatedEntityId}|{message}";
+        var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(seed)));
+        return $"notification:{hash}";
+    }
 }

@@ -870,6 +870,10 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.Property<string>("Message")
                         .IsRequired()
                         .HasMaxLength(500)
@@ -899,6 +903,10 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .HasFilter("[IsRead] = 0");
 
                     SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("UserId", "IsRead"), new[] { "CreatedAt", "Message" });
+
+                    b.HasIndex("UserId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasFilter("[IdempotencyKey] IS NOT NULL");
 
                     b.ToTable("Notifications");
                 });
@@ -1891,6 +1899,11 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<int>("AttemptCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(1);
+
                     b.Property<long>("DurationMs")
                         .HasColumnType("bigint");
 
@@ -1901,6 +1914,10 @@ namespace Qaly.Infrastructure.Data.Migrations
 
                     b.Property<bool>("IsSuccess")
                         .HasColumnType("bit");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RequestPayload")
                         .IsRequired()
@@ -1923,6 +1940,8 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.HasIndex("CreatedAt");
 
                     b.HasIndex("WebhookId");
+
+                    b.HasIndex("WebhookId", "IdempotencyKey", "IsSuccess");
 
                     b.ToTable("WebhookDeliveryLogs");
                 });
@@ -1987,6 +2006,11 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<bool>("IsPublic")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uniqueidentifier");
 
@@ -2003,6 +2027,8 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.HasIndex("AuthorId");
 
                     b.HasIndex("ProjectId");
+
+                    b.HasIndex("ProjectId", "IsPublic");
 
                     b.ToTable("WikiPages");
                 });

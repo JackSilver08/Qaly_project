@@ -2,7 +2,9 @@ using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Mappings;
 using Qaly.Application.Common.Models;
+using Qaly.Application.DTOs.Project;
 using Qaly.Application.DTOs.Task;
+using Qaly.Application.Services.Notifications;
 using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
@@ -287,7 +289,10 @@ public class TaskService : ITaskService
         }
 
         await _auditLogService.LogAsync("KanbanMove", nameof(TaskItem), task.Id.ToString(), new { oldStatus, newStatus = normalizedToStatus, task.SortOrder }, ct);
-        await NotifyStatusChangeAsync(task, oldStatus, normalizedToStatus, ct);
+        if (!string.Equals(oldStatus, normalizedToStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            await NotifyStatusChangeAsync(task, oldStatus, normalizedToStatus, null, ct);
+        }
 
         var movedTask = await GetByIdAsync(task.Id, ct);
         if (!movedTask.IsSuccess || movedTask.Data == null)
@@ -576,13 +581,15 @@ public class TaskService : ITaskService
 
         foreach (var assigneeId in assigneeIds.Where(id => id != currentUserId).Distinct())
         {
+            var template = NotificationTemplates.TaskAssigned(task.Id, task.Title, assigneeId);
             await _notificationService.CreateAsync(
                 assigneeId,
-                $"Bạn đã được giao nhiệm vụ \"{task.Title}\".",
-                "TaskAssigned",
-                "info",
+                template.Message,
+                template.Type,
+                template.Tone,
                 task.Id,
                 nameof(TaskItem),
+                template.IdempotencyKey,
                 ct);
         }
 
@@ -669,14 +676,21 @@ public class TaskService : ITaskService
 
         foreach (var assigneeId in assigneeIds.Where(id => !previousAssignees.Contains(id)))
         {
+            var template = NotificationTemplates.TaskAssigned(task.Id, task.Title, assigneeId);
             await _notificationService.CreateAsync(
                 assigneeId,
-                $"Bạn đã được giao nhiệm vụ \"{task.Title}\".",
-                "TaskAssigned",
-                "info",
+                template.Message,
+                template.Type,
+                template.Tone,
                 task.Id,
                 nameof(TaskItem),
+                template.IdempotencyKey,
                 ct);
+        }
+
+        if (!string.Equals(oldStatus, normalizedStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            await NotifyStatusChangeAsync(task, oldStatus, normalizedStatus, assigneeIds, ct);
         }
 
         return await GetByIdAsync(id, ct);
@@ -740,7 +754,10 @@ public class TaskService : ITaskService
         }
         await _auditLogService.LogAsync("StatusChange", nameof(TaskItem), task.Id.ToString(), new { oldStatus, newStatus = normalizedStatus }, ct);
 
-        await NotifyStatusChangeAsync(task, oldStatus, normalizedStatus, ct);
+        if (!string.Equals(oldStatus, normalizedStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            await NotifyStatusChangeAsync(task, oldStatus, normalizedStatus, null, ct);
+        }
 
         return await GetByIdAsync(id, ct);
     }
@@ -851,7 +868,7 @@ public class TaskService : ITaskService
 
         var normalizedStatus = TaskStatusRules.NormalizeStatus(newStatus);
         var tasks = await _taskRepo.GetQueryable()
-            .WithProject()
+            .WithDetails()
             .Where(t => ids.Contains(t.Id))
             .ToListAsync(ct);
 
@@ -877,7 +894,10 @@ public class TaskService : ITaskService
             await _taskRepo.UpdateAsync(task, ct);
             await AddToOutboxAsync("TaskUpdated", new { Id = task.Id }, ct);
             await _auditLogService.LogAsync("StatusChange", nameof(TaskItem), task.Id.ToString(), new { oldStatus, newStatus = normalizedStatus }, ct);
-            await NotifyStatusChangeAsync(task, oldStatus, normalizedStatus, ct);
+            if (!string.Equals(oldStatus, normalizedStatus, StringComparison.OrdinalIgnoreCase))
+            {
+                await NotifyStatusChangeAsync(task, oldStatus, normalizedStatus, null, ct);
+            }
         }
 
         await _unitOfWork.SaveChangesAsync(ct);
@@ -1057,6 +1077,7 @@ public class TaskService : ITaskService
                 "warning",
                 task.Id,
                 nameof(TaskItem),
+                $"task:{task.Id}:attention-nudge:{userId}",
                 ct);
         }
 
@@ -1501,27 +1522,39 @@ public class TaskService : ITaskService
         }
     }
 
-    private async Task NotifyStatusChangeAsync(TaskItem task, string oldStatus, string newStatus, CancellationToken ct)
+    private async Task NotifyStatusChangeAsync(
+        TaskItem task,
+        string oldStatus,
+        string newStatus,
+        IEnumerable<Guid>? currentAssigneeIds,
+        CancellationToken ct)
     {
         var currentUserId = _taskAccessPolicy.CurrentUserId;
         
         // Personal notifications
-        var recipients = new[] { task.ReporterId, task.AssigneeId }
-            .Where(userId => userId.HasValue && userId.Value != currentUserId)
-            .Select(userId => userId!.Value)
+        var recipients = new[] { task.ReporterId }
+            .Concat(task.AssigneeId.HasValue ? [task.AssigneeId.Value] : [])
+            .Concat(task.Assignees.Select(assignment => assignment.UserId))
+            .Concat(currentAssigneeIds ?? [])
+            .Where(userId => userId != currentUserId)
             .Distinct()
             .ToList();
 
-        foreach (var recipient in recipients)
+        if (NotificationTemplates.IsImportantStatusChange(oldStatus, newStatus))
         {
-            await _notificationService.CreateAsync(
-                recipient,
-                $"Task \"{task.Title}\" moved from {oldStatus} to {newStatus}.",
-                "TaskStatusChanged",
-                string.Equals(newStatus, "Done", StringComparison.OrdinalIgnoreCase) ? "success" : "info",
-                task.Id,
-                nameof(TaskItem),
-                ct);
+            var template = NotificationTemplates.ImportantStatusChanged(task.Id, task.Title, oldStatus, newStatus);
+            foreach (var recipient in recipients)
+            {
+                await _notificationService.CreateAsync(
+                    recipient,
+                    template.Message,
+                    template.Type,
+                    template.Tone,
+                    task.Id,
+                    nameof(TaskItem),
+                    $"{template.IdempotencyKey}:{recipient}",
+                    ct);
+            }
         }
 
         // Realtime broadcast to project

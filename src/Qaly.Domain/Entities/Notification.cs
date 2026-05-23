@@ -8,6 +8,7 @@ public class Notification : BaseEntity
     public bool IsRead { get; set; }
     public Guid? RelatedEntityId { get; set; }
     public string? RelatedEntityType { get; set; }
+    public string? IdempotencyKey { get; set; }
 
     // Foreign keys
     public Guid UserId { get; set; }

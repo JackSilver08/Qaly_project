@@ -11,6 +11,8 @@ public class WikiPage : BaseEntity
 
     [Required]
     public string Content { get; set; } = string.Empty;
+    public bool IsPublic { get; set; }
+    public string Visibility { get; set; } = "internal"; // values: public|customer_safe|internal|private
 
     // Foreign keys
     public Guid ProjectId { get; set; }

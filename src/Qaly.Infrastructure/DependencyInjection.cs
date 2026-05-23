@@ -60,6 +60,7 @@ public static class DependencyInjection
         services.AddScoped<IAiExportService, AiExportService>();
         services.AddScoped<ISessionService, RedisSessionService>();
         services.AddScoped<IWebhookPublisher, WebhookPublisher>();
+        services.AddScoped<Qaly.Application.Common.Interfaces.IPushSender, WebPushSender>();
 
         // AI Core Services
         services.AddScoped<IAiCostService, Qaly.Infrastructure.Services.AI.AiCostService>();
