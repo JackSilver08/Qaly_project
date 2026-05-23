@@ -9,7 +9,7 @@ public class AiRequest
     public string Prompt { get; set; } = string.Empty;
     public string SystemPrompt { get; set; } = string.Empty;
     public string ExpectedSchemaId { get; set; } = string.Empty;
-    public bool IsSensitive { get; set; } = false;
+    public bool IsSensitive { get; set; }
     public Guid? ProjectId { get; set; }
     public Guid? TenantId { get; set; }
     public Guid? UserId { get; set; }

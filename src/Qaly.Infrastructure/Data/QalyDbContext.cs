@@ -44,7 +44,7 @@ public class QalyDbContext : DbContext
     public DbSet<AiBudgetPolicy> AiBudgetPolicies => Set<AiBudgetPolicy>();
     public DbSet<AiUsageLedger> AiUsageLedger => Set<AiUsageLedger>();
     public DbSet<AiPromptCache> AiPromptCache => Set<AiPromptCache>();
-    public DbSet<AiJobQueue> AiJobQueue => Set<AiJobQueue>();
+    public DbSet<AiJobItem> AiJobQueue => Set<AiJobItem>();
     public DbSet<AiAuditEvent> AiAuditEvents => Set<AiAuditEvent>();
     public DbSet<PrivacyConsent> PrivacyConsents => Set<PrivacyConsent>();
     public DbSet<DataSubjectRequest> DataSubjectRequests => Set<DataSubjectRequest>();

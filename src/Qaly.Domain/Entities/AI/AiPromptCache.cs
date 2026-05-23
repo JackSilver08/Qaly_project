@@ -13,6 +13,6 @@ public class AiPromptCache : BaseEntity
     public string? ModelName { get; set; }
     public string RequestHash { get; set; } = null!;
     public string ResponseJson { get; set; } = null!;
-    public int HitCount { get; set; } = 0;
+    public int HitCount { get; set; }
     public DateTimeOffset? ExpiresAt { get; set; }
 }

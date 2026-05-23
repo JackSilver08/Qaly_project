@@ -11,12 +11,12 @@ public class AiUsageLedger : BaseEntity
     public string JobType { get; set; } = null!;
     public string ProviderName { get; set; } = null!;
     public string ModelName { get; set; } = null!;
-    public int InputTokens { get; set; } = 0;
-    public int OutputTokens { get; set; } = 0;
-    public decimal EstimatedCostUsd { get; set; } = 0;
+    public int InputTokens { get; set; }
+    public int OutputTokens { get; set; }
+    public decimal EstimatedCostUsd { get; set; }
     public int? LatencyMs { get; set; }
     public string Status { get; set; } = null!;
-    public bool CacheHit { get; set; } = false;
+    public bool CacheHit { get; set; }
     public string? PromptHash { get; set; }
     public string? ResponseHash { get; set; }
     public string? ErrorCode { get; set; }
