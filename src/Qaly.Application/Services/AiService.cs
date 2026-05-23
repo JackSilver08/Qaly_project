@@ -31,6 +31,7 @@ public partial class AiService : IAiService
     {
         PropertyNameCaseInsensitive = true
     };
+    private static readonly char[] KeywordSplitSeparators = new[] { ' ', ',', '.', ';', ':', '/', '\\', '-', '_', '(', ')', '[', ']', '{', '}', '\n', '\r', '\t' };
 
     public AiService(
         IChatClient chatClient,
@@ -619,7 +620,7 @@ Yêu cầu:
 
     private static List<string> ExtractKeywords(string? title, string? description)
         => string.Join(' ', new[] { title, description }.Where(value => !string.IsNullOrWhiteSpace(value)))
-            .Split(new[] { ' ', ',', '.', ';', ':', '/', '\\', '-', '_', '(', ')', '[', ']', '{', '}', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Split(KeywordSplitSeparators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(token => token.Length >= 4)
             .Select(token => token.ToLowerInvariant())
             .Distinct()

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Qaly.Domain.Entities;
+using Microsoft.Extensions.Logging;
 using Qaly.Infrastructure.Data;
 using Qaly.Web.Auth;
 
@@ -10,7 +11,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/dashboard")]
-public class DashboardController : ControllerBase
+public partial class DashboardController : ControllerBase
 {
     private readonly QalyDbContext _context;
     private readonly ILogger<DashboardController> _logger;
@@ -259,7 +260,7 @@ public class DashboardController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to build dashboard overview. Returning safe fallback response.");
+            LogFailedToBuildDashboardOverview(_logger, ex);
             return Ok(CreateSafeFallbackOverview(DateTimeOffset.UtcNow));
         }
     }
@@ -413,6 +414,9 @@ public class DashboardController : ControllerBase
             "Design Language" => "Ngôn ngữ thiết kế",
             _ => value
         };
+
+    [LoggerMessage(EventId = 2001, Level = LogLevel.Error, Message = "Failed to build dashboard overview. Returning safe fallback response.")]
+    private static partial void LogFailedToBuildDashboardOverview(ILogger logger, Exception exception);
 }
 
 public sealed record DashboardOverviewResponse(
