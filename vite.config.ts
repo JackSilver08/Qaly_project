@@ -16,6 +16,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src/Qaly.Web/ClientApp'),
+      'entities': path.resolve(__dirname, './node_modules/entities/lib/index.js'),
+      'entities/decode': path.resolve(__dirname, './node_modules/entities/lib/decode.js'),
+      'entities/escape': path.resolve(__dirname, './node_modules/entities/lib/escape.js'),
     },
   },
   build: {

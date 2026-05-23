@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Box } from 'lucide-vue-next'
+import { Box, Settings } from 'lucide-vue-next'
 import { useRoute, type NavigationFailure } from 'vue-router'
 import type { ShellNavItem } from './shell-models'
 
@@ -31,6 +31,16 @@ function isItemActive(item: ShellNavItem, isActive: boolean, isExactActive: bool
 
 <template>
   <aside class="shell-sidebar no-scrollbar">
+    <!-- Brand Header -->
+    <div class="sidebar-brand">
+      <div class="sidebar-brand-mark">Q</div>
+      <div class="sidebar-brand-text">
+        <strong>QALY</strong>
+        <span>Vận hành Toàn cầu</span>
+      </div>
+    </div>
+
+    <!-- Nav Items -->
     <nav class="shell-nav" aria-label="Main navigation">
       <RouterLink
         v-for="item in items"
@@ -51,16 +61,31 @@ function isItemActive(item: ShellNavItem, isActive: boolean, isExactActive: bool
       </RouterLink>
     </nav>
 
-    <RouterLink v-slot="{ href, navigate, isExactActive }" to="/projects/archived" custom>
-      <a
-        :href="href"
-        class="shell-archive-button"
-        :class="{ 'is-active': isExactActive }"
-        @click="handleNavigate($event, navigate)"
-      >
-        <Box :size="19" />
-        <span>Dự án đã lưu trữ</span>
-      </a>
-    </RouterLink>
+    <!-- Archive & Settings at the bottom -->
+    <div class="sidebar-footer">
+      <RouterLink v-slot="{ href, navigate, isExactActive }" to="/projects/archived" custom>
+        <a
+          :href="href"
+          class="shell-archive-button"
+          :class="{ 'is-active': isExactActive }"
+          @click="handleNavigate($event, navigate)"
+        >
+          <Box :size="19" />
+          <span>Dự án đã lưu trữ</span>
+        </a>
+      </RouterLink>
+
+      <RouterLink v-slot="{ href, navigate, isExactActive }" to="/settings" custom>
+        <a
+          :href="href"
+          class="shell-settings-button"
+          :class="{ 'is-active': isExactActive }"
+          @click="handleNavigate($event, navigate)"
+        >
+          <Settings :size="19" />
+          <span>Cài đặt</span>
+        </a>
+      </RouterLink>
+    </div>
   </aside>
 </template>

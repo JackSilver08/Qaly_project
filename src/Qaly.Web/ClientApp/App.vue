@@ -8,6 +8,8 @@ import {
   LayoutDashboard,
   Users,
   X,
+  BarChart3,
+  Settings,
 } from 'lucide-vue-next'
 import AppShell from './components/AppShell.vue'
 import FloatingChatbot from './components/chat/FloatingChatbot.vue'
@@ -101,6 +103,7 @@ const navigation: ShellNavItem[] = [
   { label: 'Dự án', to: '/projects', icon: FolderKanban },
   { label: 'Nhiệm vụ', to: '/tasks', icon: ClipboardList },
   { label: 'Nhóm', to: '/teams', icon: Users },
+  { label: 'Phân tích', to: '/analytics', icon: BarChart3 },
 ]
 
 const statusColumns = ['Todo', 'InProgress', 'OnHold', 'InReview', 'Done']

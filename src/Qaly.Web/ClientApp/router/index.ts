@@ -20,6 +20,8 @@ export const router = createRouter({
     { path: '/projects/:projectId/tasks/:taskId', name: 'project-task', component: ProjectDetailPage },
     { path: '/tasks', name: 'tasks', component: TasksPage },
     { path: '/teams', name: 'teams', component: TeamsPage },
+    { path: '/analytics', name: 'analytics', component: ProfilePage },
+    { path: '/settings', name: 'settings', component: ProfilePage },
     { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
   ],
   scrollBehavior() {
