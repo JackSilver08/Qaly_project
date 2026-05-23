@@ -60,6 +60,11 @@ public static class DependencyInjection
         services.AddScoped<IAiExportService, AiExportService>();
         services.AddScoped<ISessionService, RedisSessionService>();
         services.AddScoped<IWebhookPublisher, WebhookPublisher>();
+
+        // AI Core Services
+        services.AddScoped<IAiCostService, Qaly.Infrastructure.Services.AI.AiCostService>();
+        services.AddScoped<IAiComplianceService, Qaly.Infrastructure.Services.AI.AiComplianceService>();
+        services.AddScoped<IAiGateway, Qaly.Infrastructure.Services.AI.AiGateway>();
         
         services.AddHttpClient("WebhookClient");
 

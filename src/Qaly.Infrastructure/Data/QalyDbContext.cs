@@ -38,6 +38,16 @@ public class QalyDbContext : DbContext
     public DbSet<WebhookDeliveryLog> WebhookDeliveryLogs => Set<WebhookDeliveryLog>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     public DbSet<ImportSession> ImportSessions => Set<ImportSession>();
+    
+    // AI & Compliance entities (V3.2)
+    public DbSet<AiProviderConfig> AiProviderConfigs => Set<AiProviderConfig>();
+    public DbSet<AiBudgetPolicy> AiBudgetPolicies => Set<AiBudgetPolicy>();
+    public DbSet<AiUsageLedger> AiUsageLedger => Set<AiUsageLedger>();
+    public DbSet<AiPromptCache> AiPromptCache => Set<AiPromptCache>();
+    public DbSet<AiJobQueue> AiJobQueue => Set<AiJobQueue>();
+    public DbSet<AiAuditEvent> AiAuditEvents => Set<AiAuditEvent>();
+    public DbSet<PrivacyConsent> PrivacyConsents => Set<PrivacyConsent>();
+    public DbSet<DataSubjectRequest> DataSubjectRequests => Set<DataSubjectRequest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
