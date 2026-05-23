@@ -4,6 +4,7 @@ public class Notification : BaseEntity
 {
     public string Message { get; set; } = string.Empty;
     public string Type { get; set; } = "Info";
+    public string Tone { get; set; } = "info";
     public bool IsRead { get; set; }
     public Guid? RelatedEntityId { get; set; }
     public string? RelatedEntityType { get; set; }

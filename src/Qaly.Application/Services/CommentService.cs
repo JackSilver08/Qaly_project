@@ -210,6 +210,7 @@ public class CommentService : ICommentService
                     mentionedUserId,
                     $"You were mentioned on task \"{task.Title}\".",
                     "Mentioned",
+                    "info",
                     task.Id,
                     nameof(TaskItem),
                     ct);
@@ -222,6 +223,7 @@ public class CommentService : ICommentService
                 recipientId,
                 $"New comment on task \"{task.Title}\".",
                 "CommentAdded",
+                "info",
                 task.Id,
                 nameof(TaskItem),
                 ct);

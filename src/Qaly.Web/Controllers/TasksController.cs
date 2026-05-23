@@ -152,7 +152,7 @@ public class TasksController : ControllerBase
     public async Task<IActionResult> GetTimeEntries(Guid id, [FromServices] ITimeTrackingService timeTrackingService)
     {
         var result = await timeTrackingService.GetByTaskAsync(id);
-        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result.Error);
+        return StatusCode(result.StatusCode, result);
     }
 
     [HttpGet("/api/projects/{projectId:guid}/task-attention")]

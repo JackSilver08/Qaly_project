@@ -580,6 +580,7 @@ public class TaskService : ITaskService
                 assigneeId,
                 $"Bạn đã được giao nhiệm vụ \"{task.Title}\".",
                 "TaskAssigned",
+                "info",
                 task.Id,
                 nameof(TaskItem),
                 ct);
@@ -672,6 +673,7 @@ public class TaskService : ITaskService
                 assigneeId,
                 $"Bạn đã được giao nhiệm vụ \"{task.Title}\".",
                 "TaskAssigned",
+                "info",
                 task.Id,
                 nameof(TaskItem),
                 ct);
@@ -1052,6 +1054,7 @@ public class TaskService : ITaskService
                 userId,
                 message,
                 "TaskAttentionNudge",
+                "warning",
                 task.Id,
                 nameof(TaskItem),
                 ct);
@@ -1090,6 +1093,12 @@ public class TaskService : ITaskService
 
         if (exists) return Result.Failure("Dependency already exists.");
 
+        // Circular dependency check (Phase 2)
+        if (await HasCircularDependency(predecessorId, successorId, ct))
+        {
+            return Result.Failure("Adding this dependency would create a circular reference.", 400);
+        }
+
         var dependency = new TaskDependency
         {
             PredecessorId = predecessorId,
@@ -1118,6 +1127,60 @@ public class TaskService : ITaskService
         await _unitOfWork.SaveChangesAsync(ct);
 
         return Result.Success();
+    }
+
+    public async Task<Result<IEnumerable<TaskDependencyDto>>> GetDependenciesAsync(Guid taskId, CancellationToken ct = default)
+    {
+        var task = await _taskRepo.GetByIdAsync(taskId, ct);
+        if (task == null) return Result.NotFound<IEnumerable<TaskDependencyDto>>();
+
+        if (!await _taskAccessPolicy.CanAccessTaskAsync(task, ct))
+            return Result.Forbidden<IEnumerable<TaskDependencyDto>>();
+
+        var dependencies = await _dependencyRepo.GetQueryable()
+            .Where(d => d.PredecessorId == taskId || d.SuccessorId == taskId)
+            .Include(d => d.Predecessor)
+            .Include(d => d.Successor)
+            .ToListAsync(ct);
+
+        var dtos = dependencies.Select(d => new TaskDependencyDto(
+            d.Id,
+            d.PredecessorId,
+            d.Predecessor.Title,
+            d.SuccessorId,
+            d.Successor.Title,
+            d.DependencyType));
+
+        return Result.Success(dtos);
+    }
+
+    private async Task<bool> HasCircularDependency(Guid predecessorId, Guid successorId, CancellationToken ct)
+    {
+        // Breadth-First Search to find if successorId can eventually lead to predecessorId
+        var visited = new HashSet<Guid>();
+        var queue = new Queue<Guid>();
+        queue.Enqueue(successorId);
+
+        while (queue.Count > 0)
+        {
+            var currentId = queue.Dequeue();
+            if (currentId == predecessorId) return true;
+
+            if (visited.Contains(currentId)) continue;
+            visited.Add(currentId);
+
+            var nextSuccessors = await _dependencyRepo.GetQueryable()
+                .Where(d => d.PredecessorId == currentId)
+                .Select(d => d.SuccessorId)
+                .ToListAsync(ct);
+
+            foreach (var nextId in nextSuccessors)
+            {
+                queue.Enqueue(nextId);
+            }
+        }
+
+        return false;
     }
 
     private async Task<KanbanBoardDto> BuildKanbanBoardAsync(Guid projectId, CancellationToken ct)
@@ -1455,6 +1518,7 @@ public class TaskService : ITaskService
                 recipient,
                 $"Task \"{task.Title}\" moved from {oldStatus} to {newStatus}.",
                 "TaskStatusChanged",
+                string.Equals(newStatus, "Done", StringComparison.OrdinalIgnoreCase) ? "success" : "info",
                 task.Id,
                 nameof(TaskItem),
                 ct);
@@ -1840,5 +1904,43 @@ public class TaskService : ITaskService
             blockedItems.Count(item => item.IsBlocked),
             buckets,
             blockedItems));
+    }
+
+    public async Task<Result<ProjectWorkloadDto>> GetWorkloadAsync(Guid projectId, CancellationToken ct = default)
+    {
+        var project = await _projectRepo.GetQueryable()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == projectId, ct);
+
+        if (project == null) return Result.NotFound<ProjectWorkloadDto>();
+
+        if (!await _taskAccessPolicy.CanAccessProjectAsync(projectId, project.OwnerId, ct))
+            return Result.Forbidden<ProjectWorkloadDto>();
+
+        var members = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .Include(m => m.User)
+            .Where(m => m.ProjectId == projectId)
+            .ToListAsync(ct);
+
+        var tasks = await _taskRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(t => t.ProjectId == projectId)
+            .ToListAsync(ct);
+
+        var workloads = members.Select(member =>
+        {
+            var memberTasks = tasks.Where(t => t.AssigneeId == member.UserId).ToList();
+            return new MemberWorkloadDto(
+                member.UserId,
+                member.User?.FullName ?? "Unknown",
+                member.User?.AvatarUrl,
+                memberTasks.Count,
+                memberTasks.Sum(t => t.EstimatedHours ?? 0),
+                memberTasks.Sum(t => t.ActualHours ?? 0),
+                memberTasks.Count(t => IsDone(t.Status)));
+        }).OrderByDescending(w => w.TaskCount).ToList();
+
+        return Result.Success(new ProjectWorkloadDto(projectId, workloads));
     }
 }

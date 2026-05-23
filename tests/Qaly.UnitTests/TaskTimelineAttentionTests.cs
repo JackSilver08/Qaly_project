@@ -66,7 +66,7 @@ public class TaskTimelineAttentionTests : IDisposable
         result.IsSuccess.Should().BeTrue(result.Error);
         result.Data!.Items.Should().ContainSingle();
         result.Data.Items[0].IsOverdue.Should().BeTrue();
-        result.Data.Items[0].Reasons.Should().Contain("QuaHan");
+        result.Data.Items[0].AttentionReasons.Should().Contain("QuaHan");
     }
 
     [Fact]
@@ -102,13 +102,13 @@ public class TaskTimelineAttentionTests : IDisposable
         _currentUser.SetupGet(user => user.Role).Returns("User");
 
         var service = CreateService();
-        (await service.GetAttentionByProjectAsync(projectId)).Data!.Items[0].Reasons.Should().Contain("ChuaXem");
+        (await service.GetAttentionByProjectAsync(projectId)).Data!.Items[0].AttentionReasons.Should().Contain("ChuaXem");
 
         var markViewed = await service.MarkViewedAsync(projectId, taskId);
         markViewed.IsSuccess.Should().BeTrue(markViewed.Error);
 
         var afterViewed = await service.GetAttentionByProjectAsync(projectId);
-        afterViewed.Data!.Items[0].Reasons.Should().NotContain("ChuaXem");
+        afterViewed.Data!.Items[0].AttentionReasons.Should().NotContain("ChuaXem");
     }
 
     [Fact]
@@ -281,6 +281,7 @@ public class TaskTimelineAttentionTests : IDisposable
             new GenericRepository<TaskViewEvent>(_context),
             new GenericRepository<TaskLabel>(_context),
             new GenericRepository<ProjectLabel>(_context),
+            new GenericRepository<Sprint>(_context),
             new GenericRepository<VectorSyncOutbox>(_context),
             new UnitOfWork(_context),
             accessPolicy,

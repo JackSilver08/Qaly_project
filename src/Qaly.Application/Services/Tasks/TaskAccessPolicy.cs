@@ -162,6 +162,32 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
                 ct);
     }
 
+    public async Task<bool> CanManageProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
+    {
+        var currentUserId = CurrentUserId;
+        if (currentUserId == null)
+        {
+            return false;
+        }
+
+        if (IsAdmin || ownerId == currentUserId)
+        {
+            return true;
+        }
+
+        var memberRole = await _memberRepo.GetQueryable()
+            .Where(member => member.ProjectId == projectId && member.UserId == currentUserId)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+
+        if (memberRole != null && ProjectRoleRules.CanManageProject(memberRole))
+        {
+            return true;
+        }
+
+        return await CanManageOrganizationForProjectAsync(projectId, currentUserId.Value, ct);
+    }
+
     public async Task<bool> CanViewProjectTimelineAsync(Guid projectId, Guid ownerId, CancellationToken ct)
         => await HasProjectPermissionAsync(
             projectId,

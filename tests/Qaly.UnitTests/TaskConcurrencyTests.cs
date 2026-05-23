@@ -6,6 +6,7 @@ using Qaly.Application.DTOs.Task;
 using Qaly.Application.Services;
 using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
+using Qaly.Domain.Interfaces;
 using Qaly.Infrastructure.Data;
 using Qaly.Infrastructure.Data.Repositories;
 
@@ -141,6 +142,7 @@ public class TaskConcurrencyTests : IDisposable
             new GenericRepository<TaskViewEvent>(_context),
             new GenericRepository<TaskLabel>(_context),
             new GenericRepository<ProjectLabel>(_context),
+            new GenericRepository<Sprint>(_context),
             new GenericRepository<VectorSyncOutbox>(_context),
             new UnitOfWork(_context),
             accessPolicy,

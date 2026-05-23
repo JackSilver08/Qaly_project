@@ -88,6 +88,7 @@ public class NotificationService : INotificationService
         Guid userId,
         string message,
         string type,
+        string tone = "info",
         Guid? relatedEntityId = null,
         string? relatedEntityType = null,
         CancellationToken ct = default)
@@ -102,6 +103,7 @@ public class NotificationService : INotificationService
             UserId = userId,
             Message = message.Trim(),
             Type = string.IsNullOrWhiteSpace(type) ? "Info" : type.Trim(),
+            Tone = string.IsNullOrWhiteSpace(tone) ? "info" : tone.Trim().ToLowerInvariant(),
             RelatedEntityId = relatedEntityId,
             RelatedEntityType = relatedEntityType
         };
@@ -156,6 +158,7 @@ public class NotificationService : INotificationService
             notification.Id,
             notification.Message,
             notification.Type,
+            notification.Tone,
             notification.IsRead,
             notification.RelatedEntityId,
             notification.RelatedEntityType,

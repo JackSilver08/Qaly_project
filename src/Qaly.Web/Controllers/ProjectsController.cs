@@ -127,6 +127,13 @@ public class ProjectsController : ControllerBase
         var result = await _projectService.DeleteLabelAsync(id, labelId, ct);
         return StatusCode(result.StatusCode, result);
     }
+
+    [HttpGet("{id}/workload")]
+    public async Task<IActionResult> GetWorkload(Guid id, CancellationToken ct)
+    {
+        var result = await _taskService.GetWorkloadAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
+    }
 }
 
 public sealed record AddProjectMemberRequest(Guid UserId, string Role);

@@ -83,15 +83,24 @@ public record TaskAttentionDto(
     string ReporterName,
     Guid? AssigneeId,
     string? AssigneeName,
-    DateTimeOffset? AssignedAt,
+    DateTimeOffset AssignedAt,
     DateTimeOffset? LastViewedAt,
     bool IsDueSoon,
     bool IsOverdue,
     bool IsStaleTodo,
     bool IsStaleInProgress,
     bool IsUnseenByAssignee,
-    IReadOnlyList<string> Reasons,
-    IReadOnlyList<string> AllowedActions);
+    IEnumerable<string> AttentionReasons,
+    IEnumerable<string> AllowedActions);
+
+public record TaskDependencyDto(
+    Guid Id,
+    Guid PredecessorId,
+    string PredecessorTitle,
+    Guid SuccessorId,
+    string SuccessorTitle,
+    string Type);
+
 
 public record KanbanBoardDto(
     Guid ProjectId,

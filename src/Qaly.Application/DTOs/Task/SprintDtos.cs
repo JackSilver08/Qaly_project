@@ -9,7 +9,8 @@ public record SprintDto(
     string Status,
     string? Goal,
     int TaskCount,
-    int CompletedTaskCount);
+    int CompletedTaskCount,
+    int Progress);
 
 public record CreateSprintRequest(
     string Name,

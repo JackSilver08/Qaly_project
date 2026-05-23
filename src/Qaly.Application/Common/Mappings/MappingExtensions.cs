@@ -79,7 +79,12 @@ public static class MappingExtensions
         => new(label.Id, label.Name, label.Color, label.CreatedAt);
 
     public static SprintDto ToDto(this Sprint sprint)
-        => new(
+    {
+        var taskCount = sprint.Tasks?.Count ?? 0;
+        var completedCount = sprint.Tasks?.Count(t => string.Equals(t.Status, "Done", StringComparison.OrdinalIgnoreCase)) ?? 0;
+        var progress = taskCount > 0 ? (int)Math.Round((double)completedCount / taskCount * 100) : 0;
+
+        return new SprintDto(
             sprint.Id,
             sprint.ProjectId,
             sprint.Name,
@@ -87,8 +92,10 @@ public static class MappingExtensions
             sprint.EndDate,
             sprint.Status,
             sprint.Goal,
-            sprint.Tasks?.Count ?? 0,
-            sprint.Tasks?.Count(t => string.Equals(t.Status, "Done", StringComparison.OrdinalIgnoreCase)) ?? 0);
+            taskCount,
+            completedCount,
+            progress);
+    }
 
     public static Sprint ToEntity(this CreateSprintRequest dto, Guid projectId)
         => new()
