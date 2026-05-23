@@ -19,6 +19,7 @@ public class Project : BaseEntity
     public Organization? Organization { get; set; }
     public ICollection<ProjectMember> Members { get; set; } = new List<ProjectMember>();
     public ICollection<TaskItem> Tasks { get; set; } = new List<TaskItem>();
+    public ICollection<Sprint> Sprints { get; set; } = new List<Sprint>();
     public ICollection<ProjectLabel> Labels { get; set; } = new List<ProjectLabel>();
     public ICollection<TaskAttachment> Attachments { get; set; } = new List<TaskAttachment>();
     public ICollection<AiJob> AiJobs { get; set; } = new List<AiJob>();

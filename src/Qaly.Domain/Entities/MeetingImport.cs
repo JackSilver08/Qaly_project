@@ -20,4 +20,5 @@ public class MeetingImport : BaseEntity
     public User ImportedBy { get; set; } = null!;
     public AiJob? AiJob { get; set; }
     public AiGeneratedDraft? AiDraft { get; set; }
+    public ICollection<MeetingActionItemMapping> ActionItemMappings { get; set; } = new List<MeetingActionItemMapping>();
 }

@@ -178,6 +178,9 @@ builder.Services.AddHealthChecks()
     .AddSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")!)
     .AddRedis(redisConn);
 
+// Outbox health check (vector sync)
+builder.Services.AddHealthChecks().AddCheck<Qaly.Infrastructure.Services.OutboxHealthCheck>("vector_outbox");
+
 var app = builder.Build();
 
 // =============================================

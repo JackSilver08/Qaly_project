@@ -21,14 +21,14 @@ public class TimeEntriesController : ControllerBase
     public async Task<IActionResult> StartTimer(Guid taskId)
     {
         var result = await _timeTrackingService.StartTimerAsync(taskId);
-        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result.Error);
+        return StatusCode(result.StatusCode, result);
     }
 
     [HttpPatch("time-entries/{id:guid}/stop")]
     public async Task<IActionResult> StopTimer(Guid id)
     {
         var result = await _timeTrackingService.StopTimerAsync(id);
-        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result.Error);
+        return StatusCode(result.StatusCode, result);
     }
 
     [HttpPost("tasks/{taskId:guid}/time-entries/manual")]
@@ -36,13 +36,13 @@ public class TimeEntriesController : ControllerBase
     {
         if (taskId != dto.TaskId) return BadRequest("Task ID mismatch.");
         var result = await _timeTrackingService.AddManualEntryAsync(dto);
-        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result.Error);
+        return StatusCode(result.StatusCode, result);
     }
 
     [HttpGet("projects/{projectId:guid}/time-entries")]
     public async Task<IActionResult> GetByProject(Guid projectId, [FromQuery] DateTimeOffset? from, [FromQuery] DateTimeOffset? to)
     {
         var result = await _timeTrackingService.GetByProjectAsync(projectId, from, to);
-        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result.Error);
+        return StatusCode(result.StatusCode, result);
     }
 }

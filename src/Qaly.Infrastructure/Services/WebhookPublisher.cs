@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -71,76 +72,108 @@ public partial class WebhookPublisher : IWebhookPublisher
         using var client = _httpClientFactory.CreateClient("WebhookClient");
         client.Timeout = TimeSpan.FromSeconds(10);
 
+        var dataJson = JsonSerializer.Serialize(payload);
+        var idempotencyKey = BuildIdempotencyKey(webhook.Id, eventType, dataJson);
+        var alreadyDelivered = await logRepo.GetQueryable()
+            .AsNoTracking()
+            .AnyAsync(log =>
+                log.WebhookId == webhook.Id &&
+                log.IdempotencyKey == idempotencyKey &&
+                log.IsSuccess, ct);
+
+        if (alreadyDelivered)
+        {
+            _logger.LogInformation(
+                "Skipped duplicate webhook delivery {EventType} to {WebhookId} with key {IdempotencyKey}.",
+                eventType,
+                webhook.Id,
+                idempotencyKey);
+            return;
+        }
+
         var payloadJson = JsonSerializer.Serialize(new
         {
+            idempotencyKey,
             @event = eventType,
             projectId = webhook.ProjectId,
             timestamp = DateTimeOffset.UtcNow,
             data = payload
         });
 
-        var request = new HttpRequestMessage(HttpMethod.Post, webhook.PayloadUrl);
-        request.Content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
-        
-        // Compute signature if secret is provided
-        if (!string.IsNullOrEmpty(webhook.Secret))
-        {
-            using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(webhook.Secret));
-            var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(payloadJson));
-            var signature = "sha256=" + Convert.ToHexStringLower(hash);
-            request.Headers.Add("X-Qaly-Signature", signature);
-        }
-        request.Headers.Add("X-Qaly-Event", eventType);
-
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        HttpResponseMessage? response = null;
+        int? responseStatusCode = null;
         string? responseBody = null;
+        var isSuccess = false;
+        var attempt = 0;
 
-        try
+        for (attempt = 1; attempt <= 3; attempt++)
         {
-            response = await client.SendAsync(request, ct);
-            responseBody = await response.Content.ReadAsStringAsync(ct);
-        }
-        catch (Exception ex)
-        {
-            responseBody = ex.Message;
-        }
-        finally
-        {
-            stopwatch.Stop();
-
-            var log = new WebhookDeliveryLog
+            try
             {
-                WebhookId = webhook.Id,
-                EventType = eventType,
-                RequestPayload = payloadJson,
-                ResponseStatusCode = response != null ? (int)response.StatusCode : null,
-                ResponseBody = responseBody,
-                DurationMs = stopwatch.ElapsedMilliseconds,
-                IsSuccess = response?.IsSuccessStatusCode ?? false
-            };
+                using var request = BuildRequest(webhook, eventType, idempotencyKey, payloadJson);
+                using var response = await client.SendAsync(request, ct);
+                responseStatusCode = (int)response.StatusCode;
+                responseBody = await response.Content.ReadAsStringAsync(ct);
+                isSuccess = response.IsSuccessStatusCode;
 
-            if (!log.IsSuccess)
-            {
-                webhook.FailureCount++;
-                if (webhook.FailureCount >= 10) // Disable after 10 consecutive failures
+                if (isSuccess || !ShouldRetry(response.StatusCode))
                 {
-                    webhook.IsActive = false;
+                    break;
                 }
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                responseStatusCode = null;
+                responseBody = ex.Message;
+            }
+
+            if (attempt < 3)
+            {
+                _logger.LogWarning(
+                    "Webhook delivery {EventType} to {WebhookId} failed on attempt {Attempt}; retrying. IdempotencyKey={IdempotencyKey}",
+                    eventType,
+                    webhook.Id,
+                    attempt,
+                    idempotencyKey);
+                await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt), ct);
+            }
+        }
+
+        stopwatch.Stop();
+
+        var log = new WebhookDeliveryLog
+        {
+            WebhookId = webhook.Id,
+            EventType = eventType,
+            IdempotencyKey = idempotencyKey,
+            RequestPayload = payloadJson,
+            ResponseStatusCode = responseStatusCode,
+            ResponseBody = responseBody,
+            DurationMs = stopwatch.ElapsedMilliseconds,
+            AttemptCount = Math.Min(attempt, 3),
+            IsSuccess = isSuccess
+        };
+
+        if (!log.IsSuccess)
+        {
+            webhook.FailureCount++;
+            if (webhook.FailureCount >= 10) // Disable after 10 consecutive failures
+            {
+                webhook.IsActive = false;
+            }
+            await webhookRepo.UpdateAsync(webhook, ct);
+        }
+        else
+        {
+            if (webhook.FailureCount > 0)
+            {
+                webhook.FailureCount = 0;
                 await webhookRepo.UpdateAsync(webhook, ct);
             }
-            else
-            {
-                if (webhook.FailureCount > 0)
-                {
-                    webhook.FailureCount = 0;
-                    await webhookRepo.UpdateAsync(webhook, ct);
-                }
-            }
-
-            await logRepo.AddAsync(log, ct);
-            await unitOfWork.SaveChangesAsync(ct);
         }
+
+        await logRepo.AddAsync(log, ct);
+        await unitOfWork.SaveChangesAsync(ct);
     }
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Error, Message = "Failed to dispatch webhook {WebhookId}")]
@@ -161,5 +194,39 @@ public partial class WebhookPublisher : IWebhookPublisher
         {
             return Array.Empty<string>();
         }
+    }
+
+    private static HttpRequestMessage BuildRequest(
+        WebhookSubscription webhook,
+        string eventType,
+        string idempotencyKey,
+        string payloadJson)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, webhook.PayloadUrl);
+        request.Content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
+
+        if (!string.IsNullOrEmpty(webhook.Secret))
+        {
+            using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(webhook.Secret));
+            var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(payloadJson));
+            var signature = "sha256=" + Convert.ToHexStringLower(hash);
+            request.Headers.Add("X-Qaly-Signature", signature);
+        }
+
+        request.Headers.Add("X-Qaly-Event", eventType);
+        request.Headers.Add("X-Qaly-Idempotency-Key", idempotencyKey);
+        return request;
+    }
+
+    private static bool ShouldRetry(HttpStatusCode statusCode)
+        => statusCode == HttpStatusCode.RequestTimeout ||
+           statusCode == HttpStatusCode.TooManyRequests ||
+           (int)statusCode >= 500;
+
+    private static string BuildIdempotencyKey(Guid webhookId, string eventType, string dataJson)
+    {
+        var seed = $"{webhookId}|{eventType}|{dataJson}";
+        var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(seed)));
+        return $"webhook:{hash}";
     }
 }

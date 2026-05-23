@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using Qaly.Application.Common.Interfaces;
+using Qaly.Application.DTOs.Task;
 using Qaly.Application.Services;
 using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
@@ -65,7 +66,7 @@ public class TaskTimelineAttentionTests : IDisposable
         result.IsSuccess.Should().BeTrue(result.Error);
         result.Data!.Items.Should().ContainSingle();
         result.Data.Items[0].IsOverdue.Should().BeTrue();
-        result.Data.Items[0].Reasons.Should().Contain("QuaHan");
+        result.Data.Items[0].AttentionReasons.Should().Contain("QuaHan");
     }
 
     [Fact]
@@ -101,13 +102,160 @@ public class TaskTimelineAttentionTests : IDisposable
         _currentUser.SetupGet(user => user.Role).Returns("User");
 
         var service = CreateService();
-        (await service.GetAttentionByProjectAsync(projectId)).Data!.Items[0].Reasons.Should().Contain("ChuaXem");
+        (await service.GetAttentionByProjectAsync(projectId)).Data!.Items[0].AttentionReasons.Should().Contain("ChuaXem");
 
         var markViewed = await service.MarkViewedAsync(projectId, taskId);
         markViewed.IsSuccess.Should().BeTrue(markViewed.Error);
 
         var afterViewed = await service.GetAttentionByProjectAsync(projectId);
-        afterViewed.Data!.Items[0].Reasons.Should().NotContain("ChuaXem");
+        afterViewed.Data!.Items[0].AttentionReasons.Should().NotContain("ChuaXem");
+    }
+
+    [Fact]
+    public async Task MoveOnKanbanAsync_ValidMove_UpdatesStatusAndRebalancesTargetColumn()
+    {
+        var ownerId = Guid.NewGuid();
+        var assigneeId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var movingTaskId = Guid.NewGuid();
+        var targetTaskId = Guid.NewGuid();
+
+        SeedUsers(ownerId, assigneeId);
+        _context.Projects.Add(new Project { Id = projectId, Name = "Kanban", Code = "kanban", OwnerId = ownerId });
+        _context.TaskItems.AddRange(
+            new TaskItem
+            {
+                Id = movingTaskId,
+                ProjectId = projectId,
+                ReporterId = ownerId,
+                Title = "Move me",
+                Status = "Todo",
+                Priority = "Medium",
+                SortOrder = 1000
+            },
+            new TaskItem
+            {
+                Id = targetTaskId,
+                ProjectId = projectId,
+                ReporterId = ownerId,
+                Title = "Target",
+                Status = "InProgress",
+                Priority = "Medium",
+                SortOrder = 1000
+            });
+        await _context.SaveChangesAsync();
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+        _currentUser.SetupGet(user => user.Role).Returns("User");
+
+        var service = CreateService();
+
+        var result = await service.MoveOnKanbanAsync(projectId, new KanbanMoveRequest(
+            movingTaskId,
+            "Todo",
+            "InProgress",
+            BeforeTaskId: targetTaskId,
+            AfterTaskId: null,
+            RowVersion: null));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Task.Status.Should().Be("InProgress");
+        result.Data.Task.SortOrder.Should().Be(1000);
+
+        var target = await _context.TaskItems.FindAsync(targetTaskId);
+        target!.SortOrder.Should().Be(2000);
+    }
+
+    [Fact]
+    public async Task MoveOnKanbanAsync_InvalidTransition_ReturnsFailure()
+    {
+        var ownerId = Guid.NewGuid();
+        var assigneeId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var taskId = Guid.NewGuid();
+
+        SeedUsers(ownerId, assigneeId);
+        _context.Projects.Add(new Project { Id = projectId, Name = "Kanban", Code = "kanban", OwnerId = ownerId });
+        _context.TaskItems.Add(new TaskItem
+        {
+            Id = taskId,
+            ProjectId = projectId,
+            ReporterId = ownerId,
+            Title = "Cannot jump",
+            Status = "Todo",
+            Priority = "Medium",
+            SortOrder = 1000
+        });
+        await _context.SaveChangesAsync();
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+        _currentUser.SetupGet(user => user.Role).Returns("User");
+
+        var service = CreateService();
+
+        var result = await service.MoveOnKanbanAsync(projectId, new KanbanMoveRequest(
+            taskId,
+            "Todo",
+            "Done",
+            BeforeTaskId: null,
+            AfterTaskId: null,
+            RowVersion: null));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+    }
+
+    [Fact]
+    public async Task GetTimelineAsync_ReturnsSprintBucketsAndBlockedItems()
+    {
+        var ownerId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var task1Id = Guid.NewGuid();
+        var task2Id = Guid.NewGuid();
+
+        SeedUsers(ownerId, Guid.NewGuid());
+        _context.Projects.Add(new Project { Id = projectId, Name = "Timeline", Code = "timeline", OwnerId = ownerId });
+        _context.TaskItems.AddRange(
+            new TaskItem
+            {
+                Id = task1Id,
+                ProjectId = projectId,
+                ReporterId = ownerId,
+                Title = "Task 1",
+                Status = "InProgress",
+                Priority = "Medium",
+                StartDate = DateTimeOffset.UtcNow.AddDays(-2),
+                DueDate = DateTimeOffset.UtcNow.AddDays(5),
+                EstimatedHours = 8
+            },
+            new TaskItem
+            {
+                Id = task2Id,
+                ProjectId = projectId,
+                ReporterId = ownerId,
+                Title = "Task 2",
+                Status = "Todo",
+                Priority = "High",
+                StartDate = DateTimeOffset.UtcNow.AddDays(1),
+                DueDate = DateTimeOffset.UtcNow.AddDays(7),
+                EstimatedHours = 13
+            });
+        _context.TaskDependencies.Add(new TaskDependency
+        {
+            PredecessorId = task1Id,
+            SuccessorId = task2Id,
+            DependencyType = "FinishToStart"
+        });
+        await _context.SaveChangesAsync();
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+        _currentUser.SetupGet(user => user.Role).Returns("User");
+
+        var service = CreateService();
+
+        var result = await service.GetTimelineAsync(projectId);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.TotalTasks.Should().Be(2);
+        result.Data.Buckets.Should().NotBeEmpty();
+        result.Data.BlockedItems.Should().Contain(item => item.TaskId == task2Id && item.IsBlocked);
     }
 
     private void SeedUsers(Guid ownerId, Guid assigneeId)
@@ -133,6 +281,7 @@ public class TaskTimelineAttentionTests : IDisposable
             new GenericRepository<TaskViewEvent>(_context),
             new GenericRepository<TaskLabel>(_context),
             new GenericRepository<ProjectLabel>(_context),
+            new GenericRepository<Sprint>(_context),
             new GenericRepository<VectorSyncOutbox>(_context),
             new UnitOfWork(_context),
             accessPolicy,

@@ -78,6 +78,45 @@ public static class MappingExtensions
     public static ProjectLabelDto ToDto(this ProjectLabel label)
         => new(label.Id, label.Name, label.Color, label.CreatedAt);
 
+    public static SprintDto ToDto(this Sprint sprint)
+    {
+        var taskCount = sprint.Tasks?.Count ?? 0;
+        var completedCount = sprint.Tasks?.Count(t => string.Equals(t.Status, "Done", StringComparison.OrdinalIgnoreCase)) ?? 0;
+        var progress = taskCount > 0 ? (int)Math.Round((double)completedCount / taskCount * 100) : 0;
+
+        return new SprintDto(
+            sprint.Id,
+            sprint.ProjectId,
+            sprint.Name,
+            sprint.StartDate,
+            sprint.EndDate,
+            sprint.Status,
+            sprint.Goal,
+            taskCount,
+            completedCount,
+            progress);
+    }
+
+    public static Sprint ToEntity(this CreateSprintRequest dto, Guid projectId)
+        => new()
+        {
+            ProjectId = projectId,
+            Name = dto.Name,
+            StartDate = dto.StartDate,
+            EndDate = dto.EndDate,
+            Goal = dto.Goal,
+            Status = "Planning"
+        };
+
+    public static void ApplyTo(this UpdateSprintRequest dto, Sprint sprint)
+    {
+        sprint.Name = dto.Name;
+        sprint.StartDate = dto.StartDate;
+        sprint.EndDate = dto.EndDate;
+        sprint.Status = dto.Status;
+        sprint.Goal = dto.Goal;
+    }
+
     public static TaskItemDto ToDto(this TaskItem task, bool isRestricted = false)
     {
         var restrictedTitle = $"Restricted Task #{task.Id.ToString()[..8]}";
@@ -124,7 +163,9 @@ public static class MappingExtensions
             commentCount,
             attachmentCount,
             null,
-            task.CreatedAt);
+            task.CreatedAt,
+            task.SortOrder,
+            EncodeRowVersion(task.RowVersion));
     }
 
     public static TaskItemDto ToDto(this TaskItem task)
@@ -191,7 +232,9 @@ public static class MappingExtensions
             task.Comments?.Count ?? 0,
             task.Attachments?.Count ?? 0,
             null,
-            task.CreatedAt);
+            task.CreatedAt,
+            task.SortOrder,
+            EncodeRowVersion(task.RowVersion));
 
     public static TaskItem ToEntity(this CreateTaskDto dto)
         => new()
@@ -222,6 +265,9 @@ public static class MappingExtensions
         task.IsPinned = dto.IsPinned;
         task.ContributesToProgress = dto.ContributesToProgress;
     }
+
+    public static string EncodeRowVersion(byte[]? rowVersion)
+        => Convert.ToBase64String(rowVersion is { Length: > 0 } ? rowVersion : []);
 
     public static CommentDto ToDto(this TaskComment comment)
         => new(

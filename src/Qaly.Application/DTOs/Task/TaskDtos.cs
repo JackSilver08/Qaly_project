@@ -26,7 +26,9 @@ public record TaskItemDto(
     int CommentCount,
     int AttachmentCount,
     string? AiPrioritySuggestion,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    int SortOrder,
+    string RowVersion);
 
 public record CreateTaskDto(
     string Title,
@@ -55,7 +57,8 @@ public record UpdateTaskDto(
     bool IsPinned = false,
     bool ContributesToProgress = true,
     IReadOnlyList<Guid>? AssigneeIds = null,
-    IReadOnlyList<Guid>? LabelIds = null);
+    IReadOnlyList<Guid>? LabelIds = null,
+    string? RowVersion = null);
 
 public record TaskAssigneeDto(
     Guid UserId,
@@ -80,12 +83,41 @@ public record TaskAttentionDto(
     string ReporterName,
     Guid? AssigneeId,
     string? AssigneeName,
-    DateTimeOffset? AssignedAt,
+    DateTimeOffset AssignedAt,
     DateTimeOffset? LastViewedAt,
     bool IsDueSoon,
     bool IsOverdue,
     bool IsStaleTodo,
     bool IsStaleInProgress,
     bool IsUnseenByAssignee,
-    IReadOnlyList<string> Reasons,
-    IReadOnlyList<string> AllowedActions);
+    IEnumerable<string> AttentionReasons,
+    IEnumerable<string> AllowedActions);
+
+public record TaskDependencyDto(
+    Guid Id,
+    Guid PredecessorId,
+    string PredecessorTitle,
+    Guid SuccessorId,
+    string SuccessorTitle,
+    string Type);
+
+
+public record KanbanBoardDto(
+    Guid ProjectId,
+    IReadOnlyList<KanbanColumnDto> Columns);
+
+public record KanbanColumnDto(
+    string Status,
+    IReadOnlyList<TaskItemDto> Tasks);
+
+public record KanbanMoveRequest(
+    Guid TaskId,
+    string FromStatus,
+    string ToStatus,
+    Guid? BeforeTaskId,
+    Guid? AfterTaskId,
+    string? RowVersion);
+
+public record KanbanMoveResultDto(
+    TaskItemDto Task,
+    KanbanBoardDto Board);

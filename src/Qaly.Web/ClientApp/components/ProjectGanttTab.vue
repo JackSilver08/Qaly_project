@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { AlertCircle, Bell, Calendar, EyeOff, Filter, MessageSquareWarning } from 'lucide-vue-next'
 import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
-import type { PagedResult, TaskAttentionDto } from '../types'
+import type { PagedResult, ProjectTimelineDto, TaskAttentionDto } from '../types'
 
 const props = defineProps<{
   projectId: string
@@ -15,6 +15,7 @@ const emit = defineEmits<{
 
 const tasks = ref<any[]>([])
 const attentionItems = ref<TaskAttentionDto[]>([])
+const timelineSummary = ref<ProjectTimelineDto | null>(null)
 const isLoading = ref(true)
 const riskType = ref('all')
 const assigneeId = ref('')
@@ -56,15 +57,18 @@ async function fetchGanttData() {
     if (fromDate.value) params.set('from', new Date(fromDate.value).toISOString())
     if (toDate.value) params.set('to', new Date(toDate.value).toISOString())
 
-    const [gantt, attention] = await Promise.all([
+    const [gantt, attention, timeline] = await Promise.all([
       apiResult<any[]>(`/api/tasks/project/${props.projectId}/gantt`),
       apiResult<PagedResult<TaskAttentionDto>>(`/api/projects/${props.projectId}/task-attention?${params.toString()}`),
+      apiResult<ProjectTimelineDto>(`/api/projects/${props.projectId}/timeline`),
     ])
     tasks.value = gantt
     attentionItems.value = attention.items
+    timelineSummary.value = timeline
   } catch {
     tasks.value = []
     attentionItems.value = []
+    timelineSummary.value = null
   } finally {
     isLoading.value = false
   }
@@ -105,6 +109,13 @@ const summary = computed(() => ({
   staleTodo: attentionItems.value.filter((item) => item.isStaleTodo).length,
   unseen: attentionItems.value.filter((item) => item.isUnseenByAssignee).length,
 }))
+
+const sprintCards = computed(() => [
+  { label: 'Tổng task', value: timelineSummary.value?.totalTasks ?? 0 },
+  { label: 'Đang mở', value: timelineSummary.value?.openTasks ?? 0 },
+  { label: 'Quá hạn', value: timelineSummary.value?.overdueTasks ?? 0 },
+  { label: 'Bị chặn', value: timelineSummary.value?.blockedTasks ?? 0 },
+])
 
 function toValidTimestamp(value: string | null | undefined) {
   if (!value) return null
@@ -304,6 +315,49 @@ onMounted(fetchGanttData)
         </div>
       </div>
 
+      <div v-if="timelineSummary" class="sprint-summary">
+        <div class="sprint-summary__header">
+          <div>
+            <h3>Sprint hiện tại</h3>
+            <p>{{ formatDate(timelineSummary.sprintStart) }} → {{ formatDate(timelineSummary.sprintEnd) }}</p>
+          </div>
+          <div class="sprint-summary__dates">
+            <span>Khung timeline: {{ formatDate(timelineSummary.windowStart) }} → {{ formatDate(timelineSummary.windowEnd) }}</span>
+          </div>
+        </div>
+
+        <div class="sprint-summary__cards">
+          <article v-for="card in sprintCards" :key="card.label" class="sprint-card">
+            <strong>{{ card.value }}</strong>
+            <span>{{ card.label }}</span>
+          </article>
+        </div>
+
+        <div class="sprint-buckets">
+          <article v-for="bucket in timelineSummary.buckets" :key="bucket.label" class="sprint-bucket">
+            <div class="sprint-bucket__top">
+              <strong>{{ bucket.label }}</strong>
+              <span>{{ bucket.taskCount }} task</span>
+            </div>
+            <div class="sprint-bucket__meta">
+              <span>Hoàn thành: {{ bucket.doneCount }}</span>
+              <span>Quá hạn: {{ bucket.overdueCount }}</span>
+              <span>Đang mở: {{ bucket.activeCount }}</span>
+              <span>Điểm: {{ bucket.plannedPoints }}</span>
+            </div>
+          </article>
+        </div>
+
+        <div v-if="timelineSummary.blockedItems.length" class="blocked-list">
+          <strong>Task đang bị chặn</strong>
+          <div class="blocked-list__items">
+            <span v-for="item in timelineSummary.blockedItems.slice(0, 4)" :key="item.taskId">
+              {{ item.title }}
+            </span>
+          </div>
+        </div>
+      </div>
+
       <div v-if="filteredAttentionItems.length" class="attention-table">
         <article v-for="item in filteredAttentionItems" :key="`${item.id}-${item.assigneeId ?? 'none'}`" class="attention-row">
           <div class="attention-main">
@@ -462,9 +516,28 @@ onMounted(fetchGanttData)
 .box.due { background: #f59e0b; }
 .box.stale { background: #ea580c; }
 .box.overdue { background: #dc2626; }
+.sprint-summary { display: grid; gap: 16px; padding: 18px; border: 1px solid rgba(182, 194, 217, 0.2); border-radius: 14px; background: rgba(255, 255, 255, 0.04); }
+.sprint-summary__header { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: baseline; }
+.sprint-summary__header h3 { margin: 0; font-size: 18px; color: var(--surface-milk); }
+.sprint-summary__header p, .sprint-summary__dates { margin: 0; color: var(--muted); font-size: 13px; }
+.sprint-summary__cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.sprint-card { padding: 12px; border: 1px solid rgba(182, 194, 217, 0.18); border-radius: 12px; background: rgba(8, 21, 39, 0.6); display: flex; flex-direction: column; gap: 4px; }
+.sprint-card strong { font-size: 22px; color: var(--surface-milk); }
+.sprint-card span { color: var(--muted); font-size: 12px; font-weight: 700; }
+.sprint-buckets { display: grid; gap: 8px; }
+.sprint-bucket { padding: 12px 14px; border: 1px solid rgba(182, 194, 217, 0.18); border-radius: 12px; background: rgba(8, 21, 39, 0.5); }
+.sprint-bucket__top { display: flex; justify-content: space-between; gap: 12px; }
+.sprint-bucket__top strong { color: var(--surface-milk); }
+.sprint-bucket__top span, .sprint-bucket__meta { color: var(--muted); font-size: 12px; }
+.sprint-bucket__meta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+.blocked-list { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 12px; background: rgba(127, 29, 29, 0.12); }
+.blocked-list strong { color: #fecaca; font-size: 13px; }
+.blocked-list__items { display: flex; flex-wrap: wrap; gap: 8px; }
+.blocked-list__items span { padding: 4px 8px; border-radius: 999px; background: rgba(239, 68, 68, 0.18); color: #fee2e2; font-size: 12px; }
 .loading-state, .empty-state { min-height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: var(--muted); text-align: center; }
 @media (max-width: 900px) {
   .attention-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sprint-summary__cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .attention-row { grid-template-columns: 1fr; }
   .attention-actions { justify-content: flex-start; }
 }

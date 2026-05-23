@@ -14,6 +14,7 @@ public class NotificationConfiguration : IEntityTypeConfiguration<Notification>
         builder.Property(n => n.Type).HasMaxLength(50).IsRequired();
         builder.Property(n => n.IsRead).HasDefaultValue(false);
         builder.Property(n => n.RelatedEntityType).HasMaxLength(50);
+        builder.Property(n => n.IdempotencyKey).HasMaxLength(200);
         builder.Property(n => n.CreatedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
 
         builder.HasOne(n => n.User)
@@ -25,5 +26,9 @@ public class NotificationConfiguration : IEntityTypeConfiguration<Notification>
         builder.HasIndex(n => new { n.UserId, n.IsRead })
             .HasFilter("[IsRead] = 0")
             .IncludeProperties(n => new { n.CreatedAt, n.Message });
+
+        builder.HasIndex(n => new { n.UserId, n.IdempotencyKey })
+            .IsUnique()
+            .HasFilter("[IdempotencyKey] IS NOT NULL");
     }
 }

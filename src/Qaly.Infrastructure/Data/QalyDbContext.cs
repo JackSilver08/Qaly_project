@@ -29,6 +29,7 @@ public class QalyDbContext : DbContext
     public DbSet<AiJob> AiJobs => Set<AiJob>();
     public DbSet<AiGeneratedDraft> AiGeneratedDrafts => Set<AiGeneratedDraft>();
     public DbSet<MeetingImport> MeetingImports => Set<MeetingImport>();
+    public DbSet<MeetingActionItemMapping> MeetingActionItemMappings => Set<MeetingActionItemMapping>();
     public DbSet<VectorSyncOutbox> VectorSyncOutbox => Set<VectorSyncOutbox>();
     public DbSet<TimeEntry> TimeEntries => Set<TimeEntry>();
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
@@ -37,6 +38,16 @@ public class QalyDbContext : DbContext
     public DbSet<WebhookDeliveryLog> WebhookDeliveryLogs => Set<WebhookDeliveryLog>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     public DbSet<ImportSession> ImportSessions => Set<ImportSession>();
+    
+    // AI & Compliance entities (V3.2)
+    public DbSet<AiProviderConfig> AiProviderConfigs => Set<AiProviderConfig>();
+    public DbSet<AiBudgetPolicy> AiBudgetPolicies => Set<AiBudgetPolicy>();
+    public DbSet<AiUsageLedger> AiUsageLedger => Set<AiUsageLedger>();
+    public DbSet<AiPromptCache> AiPromptCache => Set<AiPromptCache>();
+    public DbSet<AiJobItem> AiJobQueue => Set<AiJobItem>();
+    public DbSet<AiAuditEvent> AiAuditEvents => Set<AiAuditEvent>();
+    public DbSet<PrivacyConsent> PrivacyConsents => Set<PrivacyConsent>();
+    public DbSet<DataSubjectRequest> DataSubjectRequests => Set<DataSubjectRequest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

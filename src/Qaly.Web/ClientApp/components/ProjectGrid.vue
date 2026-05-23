@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CalendarDays, CheckCircle2, Eye, Pencil, Trash2, UserRound } from 'lucide-vue-next'
+import { Box, CalendarDays, CheckCircle2, Eye, Pencil, Trash2, UserRound } from 'lucide-vue-next'
 import type { ProjectCardModel } from './dashboard-models'
 
 defineProps<{

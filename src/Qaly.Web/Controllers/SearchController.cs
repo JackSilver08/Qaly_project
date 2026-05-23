@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Qaly.Application.Services;
 using Qaly.Infrastructure.Data;
 using Qaly.Web.Auth;
 
@@ -55,6 +56,15 @@ public class SearchController : ControllerBase
             .Select(project => new { project.Id, project.Name, project.OwnerId })
             .ToListAsync(ct);
         var accessibleProjectIds = accessibleProjects.Select(project => project.Id).ToHashSet();
+        var customerScopedProjectIds = await _context.ProjectMembers
+            .AsNoTracking()
+            .Where(member =>
+                accessibleProjectIds.Contains(member.ProjectId) &&
+                member.UserId == userId.Value &&
+                member.Role == ProjectRoleRules.Customer)
+            .Select(member => member.ProjectId)
+            .ToListAsync(ct);
+        var customerScopedProjects = customerScopedProjectIds.ToHashSet();
 
         var projectResults = accessibleProjects
             .Where(project => project.Name.Contains(normalized, StringComparison.OrdinalIgnoreCase))
@@ -93,6 +103,7 @@ public class SearchController : ControllerBase
             .AsNoTracking()
             .Include(page => page.Project)
             .Where(page => accessibleProjectIds.Contains(page.ProjectId) &&
+                ((page.Visibility == "public") || (page.Visibility == "customer_safe") || !customerScopedProjects.Contains(page.ProjectId)) &&
                 (page.Title.Contains(normalized) || page.Content.Contains(normalized)))
             .OrderByDescending(page => page.UpdatedAt)
             .Take(8)

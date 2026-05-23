@@ -11,9 +11,18 @@ namespace Qaly.Infrastructure.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropForeignKey(
-                name: "FK_TaskItems_ImportSessions_ImportSessionId",
-                table: "TaskItems");
+            migrationBuilder.Sql(
+                """
+                IF EXISTS (
+                    SELECT 1
+                    FROM sys.foreign_keys
+                    WHERE name = N'FK_TaskItems_ImportSessions_ImportSessionId'
+                      AND parent_object_id = OBJECT_ID(N'[TaskItems]')
+                )
+                BEGIN
+                    ALTER TABLE [TaskItems] DROP CONSTRAINT [FK_TaskItems_ImportSessions_ImportSessionId];
+                END
+                """);
 
             migrationBuilder.AddColumn<DateTimeOffset>(
                 name: "AssignedAt",
@@ -118,12 +127,20 @@ namespace Qaly.Infrastructure.Data.Migrations
                 principalTable: "Users",
                 principalColumn: "Id");
 
-            migrationBuilder.AddForeignKey(
-                name: "FK_TaskItems_ImportSessions_ImportSessionId",
-                table: "TaskItems",
-                column: "ImportSessionId",
-                principalTable: "ImportSessions",
-                principalColumn: "Id");
+            migrationBuilder.Sql(
+                """
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.foreign_keys
+                    WHERE name = N'FK_TaskItems_ImportSessions_ImportSessionId'
+                      AND parent_object_id = OBJECT_ID(N'[TaskItems]')
+                )
+                BEGIN
+                    ALTER TABLE [TaskItems]
+                        ADD CONSTRAINT [FK_TaskItems_ImportSessions_ImportSessionId]
+                        FOREIGN KEY ([ImportSessionId]) REFERENCES [ImportSessions]([Id]);
+                END
+                """);
         }
 
         /// <inheritdoc />
@@ -133,9 +150,18 @@ namespace Qaly.Infrastructure.Data.Migrations
                 name: "FK_TaskAssignments_Users_AssignedByUserId",
                 table: "TaskAssignments");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_TaskItems_ImportSessions_ImportSessionId",
-                table: "TaskItems");
+            migrationBuilder.Sql(
+                """
+                IF EXISTS (
+                    SELECT 1
+                    FROM sys.foreign_keys
+                    WHERE name = N'FK_TaskItems_ImportSessions_ImportSessionId'
+                      AND parent_object_id = OBJECT_ID(N'[TaskItems]')
+                )
+                BEGIN
+                    ALTER TABLE [TaskItems] DROP CONSTRAINT [FK_TaskItems_ImportSessions_ImportSessionId];
+                END
+                """);
 
             migrationBuilder.DropTable(
                 name: "TaskViewEvents");

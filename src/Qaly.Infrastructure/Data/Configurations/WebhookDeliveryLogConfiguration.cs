@@ -12,8 +12,10 @@ public class WebhookDeliveryLogConfiguration : IEntityTypeConfiguration<WebhookD
         builder.Property(w => w.Id).HasDefaultValueSql("NEWID()");
 
         builder.Property(w => w.EventType).IsRequired().HasMaxLength(100);
+        builder.Property(w => w.IdempotencyKey).HasMaxLength(200);
         builder.Property(w => w.RequestPayload).HasColumnType("nvarchar(max)");
         builder.Property(w => w.ResponseBody).HasColumnType("nvarchar(max)");
+        builder.Property(w => w.AttemptCount).HasDefaultValue(1);
 
         builder.HasOne(w => w.Webhook)
             .WithMany()
@@ -21,6 +23,7 @@ public class WebhookDeliveryLogConfiguration : IEntityTypeConfiguration<WebhookD
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.HasIndex(w => w.WebhookId);
+        builder.HasIndex(w => new { w.WebhookId, w.IdempotencyKey, w.IsSuccess });
         builder.HasIndex(w => w.CreatedAt); // For auto cleanup
     }
 }

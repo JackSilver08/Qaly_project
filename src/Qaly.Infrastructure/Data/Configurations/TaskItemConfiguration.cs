@@ -19,12 +19,18 @@ public class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
         builder.Property(t => t.ContributesToProgress).HasDefaultValue(true);
         builder.Property(t => t.UpvoteCount).HasDefaultValue(0);
         builder.Property(t => t.DownvoteCount).HasDefaultValue(0);
+        builder.Property(t => t.RowVersion).IsRowVersion();
         builder.Property(t => t.CreatedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
 
         builder.HasOne(t => t.Project)
             .WithMany(p => p.Tasks)
             .HasForeignKey(t => t.ProjectId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(t => t.Sprint)
+            .WithMany(s => s.Tasks)
+            .HasForeignKey(t => t.SprintId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasOne(t => t.Assignee)
             .WithMany(u => u.AssignedTasks)
@@ -39,9 +45,15 @@ public class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
 
         // Indexes
         builder.HasIndex(t => t.ProjectId);
+        builder.HasIndex(t => t.SprintId);
         builder.HasIndex(t => t.AssigneeId);
         builder.HasIndex(t => t.Status);
+        builder.HasIndex(t => t.DueDate);
+        builder.HasIndex(t => t.StartDate);
         builder.HasIndex(t => t.IsPinned);
+        builder.HasIndex(t => new { t.ProjectId, t.AssigneeId, t.Status });
+        builder.HasIndex(t => new { t.ProjectId, t.SprintId, t.Status });
+        builder.HasIndex(t => new { t.ProjectId, t.DueDate });
 
         builder.HasOne(t => t.ImportSession)
             .WithMany(s => s.ImportedTasks)
@@ -54,5 +66,6 @@ public class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
         // Optimization: Kanban board query (CH 2.2)
         builder.HasIndex(t => new { t.ProjectId, t.Status })
             .IncludeProperties(t => new { t.Title, t.Priority, t.AssigneeId, t.DueDate, t.IsPinned, t.ContributesToProgress });
+        builder.HasIndex(t => new { t.ProjectId, t.Status, t.SortOrder });
     }
 }

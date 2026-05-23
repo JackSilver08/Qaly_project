@@ -1,0 +1,16 @@
+{
+  "wiki": {
+    "create": "Tạo",
+    "update": "Cập nhật",
+    "delete_confirm": "Bạn có chắc chắn muốn xóa trang Wiki này?",
+    "visibility": {
+      "public": "Công khai",
+      "customer_safe": "Cho khách hàng",
+      "internal": "Nội bộ"
+    }
+  },
+  "notifications": {
+    "clear_all": "Xóa tất cả",
+    "no_notifications": "Không có thông báo nào"
+  }
+}

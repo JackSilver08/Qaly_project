@@ -178,7 +178,15 @@ public class ProjectServiceTests : IDisposable
         result.IsSuccess.Should().BeTrue();
         // After adding, we have the new member. The owner was NOT added in this test setup manually.
         (await _memberRepo.CountAsync()).Should().Be(1);
-        _notification.Verify(n => n.CreateAsync(newMemberId, It.IsAny<string>(), "ProjectInvite", project.Id, nameof(Project), It.IsAny<CancellationToken>()), Times.Once);
+        _notification.Verify(n => n.CreateAsync(
+            newMemberId,
+            It.IsAny<string>(),
+            "ProjectInvite",
+            "success",
+            project.Id,
+            nameof(Project),
+            $"project:{project.Id}:invite:{newMemberId}",
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 }
 #pragma warning restore CA1707

@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace Qaly.Application.Common.Models;
 
 /// <summary>
@@ -12,12 +14,17 @@ public class Result<T>
         Data = data;
         Error = error;
         StatusCode = statusCode;
+        TraceId = Activity.Current?.Id;
     }
 
     public bool IsSuccess { get; }
     public T? Data { get; }
     public string? Error { get; }
     public int StatusCode { get; }
+    public string? TraceId { get; }
+
+    public static implicit operator Result<T>(Result result)
+        => new(result.IsSuccess, default, result.Error, result.StatusCode);
 }
 
 public class Result
@@ -27,11 +34,13 @@ public class Result
         IsSuccess = isSuccess;
         Error = error;
         StatusCode = statusCode;
+        TraceId = Activity.Current?.Id;
     }
 
     public bool IsSuccess { get; }
     public string? Error { get; }
     public int StatusCode { get; }
+    public string? TraceId { get; }
 
     public static Result<T> Success<T>(T data)
         => new(true, data, null, 200);
@@ -41,6 +50,9 @@ public class Result
 
     public static Result<T> Failure<T>(string error, int statusCode = 400)
         => new(false, default, error, statusCode);
+
+    public static Result<T> Conflict<T>(T data, string message = "Resource was modified by another request.")
+        => new(false, data, message, 409);
 
     public static Result<T> NotFound<T>(string message = "Không tìm thấy tài nguyên")
         => new(false, default, message, 404);

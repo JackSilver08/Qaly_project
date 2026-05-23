@@ -19,15 +19,18 @@ public class TaskItem : BaseEntity
     public int UpvoteCount { get; set; }
     public int DownvoteCount { get; set; }
     public int SortOrder { get; set; }
+    public byte[] RowVersion { get; set; } = [];
 
     // Foreign keys
     public Guid ProjectId { get; set; }
+    public Guid? SprintId { get; set; }
     public Guid? AssigneeId { get; set; }
     public Guid ReporterId { get; set; }
     public Guid? ImportSessionId { get; set; }
 
     // Navigation properties
     public Project Project { get; set; } = null!;
+    public Sprint? Sprint { get; set; }
     public User? Assignee { get; set; }
     public User Reporter { get; set; } = null!;
     public ImportSession? ImportSession { get; set; }

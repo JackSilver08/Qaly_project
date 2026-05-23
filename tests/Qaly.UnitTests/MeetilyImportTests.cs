@@ -17,6 +17,7 @@ namespace Qaly.UnitTests;
 public class MeetilyImportTests : IDisposable
 {
     private readonly QalyDbContext _context;
+    private readonly Mock<ITaskService> _taskService = new();
     private readonly Mock<ICurrentUserService> _currentUser = new();
     private readonly Mock<IAuditLogService> _auditLog = new();
     private readonly Guid _userId = Guid.NewGuid();
@@ -80,6 +81,10 @@ public class MeetilyImportTests : IDisposable
         var task = await _context.TaskItems.SingleAsync();
         task.Title.Should().Be("Prepare demo script");
         task.ProjectId.Should().Be(_projectId);
+        var mapping = await _context.MeetingActionItemMappings.SingleAsync();
+        mapping.TaskId.Should().Be(task.Id);
+        mapping.ActionItemIndex.Should().Be(0);
+        mapping.Status.Should().Be("Linked");
     }
 
     [Fact]
@@ -123,6 +128,9 @@ public class MeetilyImportTests : IDisposable
             new GenericRepository<MeetingImport>(_context),
             new GenericRepository<AiJob>(_context),
             new GenericRepository<AiGeneratedDraft>(_context),
+            new GenericRepository<MeetingActionItemMapping>(_context),
+            new GenericRepository<TaskItem>(_context),
+            _taskService.Object,
             new UnitOfWork(_context),
             _currentUser.Object,
             _auditLog.Object);
@@ -134,6 +142,8 @@ public class MeetilyImportTests : IDisposable
             new GenericRepository<OrganizationMember>(_context),
             new GenericRepository<AiJob>(_context),
             new GenericRepository<AiGeneratedDraft>(_context),
+            new GenericRepository<MeetingImport>(_context),
+            new GenericRepository<MeetingActionItemMapping>(_context),
             new GenericRepository<TaskItem>(_context),
             new GenericRepository<TaskAssignment>(_context),
             new GenericRepository<User>(_context),

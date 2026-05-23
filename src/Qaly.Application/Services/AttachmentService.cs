@@ -3,6 +3,7 @@ using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Mappings;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Attachment;
+using Qaly.Application.Services.Notifications;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 
@@ -18,6 +19,7 @@ public class AttachmentService : IAttachmentService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditLogService _auditLogService;
+    private readonly INotificationService _notificationService;
 
     public AttachmentService(
         IRepository<TaskAttachment> attachmentRepo,
@@ -27,7 +29,8 @@ public class AttachmentService : IAttachmentService
         IFileStorageService fileStorageService,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
-        IAuditLogService auditLogService)
+        IAuditLogService auditLogService,
+        INotificationService notificationService)
     {
         _attachmentRepo = attachmentRepo;
         _taskRepo = taskRepo;
@@ -37,6 +40,7 @@ public class AttachmentService : IAttachmentService
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
         _auditLogService = auditLogService;
+        _notificationService = notificationService;
     }
 
     public async Task<Result<IReadOnlyList<TaskAttachmentDto>>> GetByTaskAsync(Guid taskItemId, CancellationToken ct = default)
@@ -193,6 +197,8 @@ public class AttachmentService : IAttachmentService
             },
             ct);
 
+        await NotifyEvidenceReviewedAsync(attachment, approve, currentUserId.Value, ct);
+
         return Result.Success(attachment.ToDto());
     }
 
@@ -235,9 +241,43 @@ public class AttachmentService : IAttachmentService
                     .ThenInclude(project => project.Organization)
             .Include(item => item.TaskItem)
                 .ThenInclude(task => task!.Assignees)
+            .Include(item => item.TaskItem)
+                .ThenInclude(task => task!.Reporter)
+            .Include(item => item.TaskItem)
+                .ThenInclude(task => task!.Assignee)
             .Include(item => item.UploadedBy)
             .Include(item => item.EvidenceReviewedBy)
             .FirstOrDefaultAsync(item => item.Id == attachmentId, ct);
+
+    private async Task NotifyEvidenceReviewedAsync(TaskAttachment attachment, bool approved, Guid reviewerId, CancellationToken ct)
+    {
+        var task = attachment.TaskItem;
+        if (task == null)
+        {
+            return;
+        }
+
+        var recipientIds = new[] { attachment.UploadedById, task.ReporterId }
+            .Concat(task.AssigneeId.HasValue ? [task.AssigneeId.Value] : [])
+            .Concat(task.Assignees.Select(assignment => assignment.UserId))
+            .Where(userId => userId != reviewerId)
+            .Distinct()
+            .ToList();
+
+        foreach (var recipientId in recipientIds)
+        {
+            var template = NotificationTemplates.EvidenceReviewed(task.Id, attachment.Id, task.Title, approved, recipientId);
+            await _notificationService.CreateAsync(
+                recipientId,
+                template.Message,
+                template.Type,
+                template.Tone,
+                task.Id,
+                nameof(TaskItem),
+                template.IdempotencyKey,
+                ct);
+        }
+    }
 
     private async Task<bool> CanAccessTaskAsync(TaskItem task, CancellationToken ct)
     {

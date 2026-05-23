@@ -10,11 +10,13 @@ public interface ITaskAccessPolicy
     Task<bool> CanAccessTaskAsync(TaskItem task, CancellationToken ct);
     Task<bool> CanManageTaskAsync(TaskItem task, CancellationToken ct);
     Task<bool> CanAccessProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct);
+    Task<bool> CanManageProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct);
     Task<bool> CanViewProjectTimelineAsync(Guid projectId, Guid ownerId, CancellationToken ct);
     Task<bool> CanViewTaskRiskAsync(Guid projectId, Guid ownerId, CancellationToken ct);
     Task<bool> CanViewUnseenTaskSignalAsync(Guid projectId, Guid ownerId, CancellationToken ct);
     Task<bool> CanNudgeAssigneeAsync(Guid projectId, Guid ownerId, CancellationToken ct);
     Task<bool> CanManageWebhooksAsync(Guid projectId, Guid ownerId, CancellationToken ct);
     Task<bool> CanReadWikiAsync(Guid projectId, Guid ownerId, CancellationToken ct);
+    Task<bool> CanReadInternalWikiAsync(Guid projectId, Guid ownerId, CancellationToken ct);
     Task<bool> CanWriteWikiAsync(Guid projectId, Guid ownerId, CancellationToken ct);
 }

@@ -43,14 +43,23 @@ public class WikiService : IWikiService
             return Result.Forbidden<IEnumerable<WikiPageDto>>("Bạn không có quyền xem wiki của dự án này.");
         }
 
-        var pages = await _wikiRepo.GetQueryable()
-            .Where(p => p.ProjectId == projectId)
+        var query = _wikiRepo.GetQueryable()
+            .Where(p => p.ProjectId == projectId);
+
+        if (!await _taskAccessPolicy.CanReadInternalWikiAsync(projectId, project.OwnerId, ct))
+        {
+            // Users who cannot read internal wiki should only see public and customer_safe pages
+            query = query.Where(p => p.Visibility == "public" || p.Visibility == "customer_safe");
+        }
+
+        var pages = await query
             .Include(p => p.Author)
             .OrderByDescending(p => p.UpdatedAt)
             .Select(p => new WikiPageDto(
                 p.Id,
                 p.Title,
                 p.Content,
+                p.Visibility,
                 p.Author.FullName,
                 p.UpdatedAt
             ))
@@ -61,6 +70,11 @@ public class WikiService : IWikiService
 
     public async Task<Result<WikiPageDto>> CreateAsync(Guid projectId, CreateWikiPageDto dto, CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(dto.Title))
+        {
+            return Result.Failure<WikiPageDto>("Wiki title is required.", 400);
+        }
+
         var project = await _projectRepo.GetByIdAsync(projectId, ct);
         if (project == null) return Result.NotFound<WikiPageDto>();
 
@@ -75,8 +89,10 @@ public class WikiService : IWikiService
         var page = new WikiPage
         {
             ProjectId = projectId,
-            Title = dto.Title,
+            Title = dto.Title.Trim(),
             Content = dto.Content ?? string.Empty,
+            IsPublic = string.Equals(dto.Visibility, "public", StringComparison.OrdinalIgnoreCase),
+            Visibility = string.IsNullOrWhiteSpace(dto.Visibility) ? "internal" : dto.Visibility.Trim(),
             AuthorId = currentUserId.Value,
             UpdatedAt = DateTimeOffset.UtcNow
         };
@@ -91,6 +107,7 @@ public class WikiService : IWikiService
             page.Id,
             page.Title,
             page.Content,
+            page.Visibility,
             author?.FullName ?? "Unknown",
             page.UpdatedAt
         ));
@@ -98,6 +115,11 @@ public class WikiService : IWikiService
 
     public async Task<Result<WikiPageDto>> UpdateAsync(Guid projectId, Guid id, UpdateWikiPageDto dto, CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(dto.Title))
+        {
+            return Result.Failure<WikiPageDto>("Wiki title is required.", 400);
+        }
+
         var project = await _projectRepo.GetByIdAsync(projectId, ct);
         if (project == null) return Result.NotFound<WikiPageDto>();
 
@@ -109,8 +131,10 @@ public class WikiService : IWikiService
         var page = await _wikiRepo.GetByIdAsync(id, ct);
         if (page == null || page.ProjectId != projectId) return Result.NotFound<WikiPageDto>();
 
-        page.Title = dto.Title;
+        page.Title = dto.Title.Trim();
         page.Content = dto.Content ?? string.Empty;
+        page.Visibility = string.IsNullOrWhiteSpace(dto.Visibility) ? "internal" : dto.Visibility.Trim();
+        page.IsPublic = string.Equals(page.Visibility, "public", StringComparison.OrdinalIgnoreCase);
         page.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _wikiRepo.UpdateAsync(page, ct);
@@ -123,6 +147,7 @@ public class WikiService : IWikiService
             page.Id,
             page.Title,
             page.Content,
+            page.Visibility,
             author?.FullName ?? "Unknown",
             page.UpdatedAt
         ));
@@ -133,7 +158,7 @@ public class WikiService : IWikiService
         var project = await _projectRepo.GetByIdAsync(projectId, ct);
         if (project == null) return Result.NotFound();
 
-        if (!await _taskAccessPolicy.CanManageWebhooksAsync(projectId, project.OwnerId, ct)) // Use elevated roles for delete
+        if (!await _taskAccessPolicy.CanManageProjectAsync(projectId, project.OwnerId, ct))
         {
             return Result.Forbidden("Bạn không có quyền xóa trang wiki của dự án này.");
         }

@@ -2,7 +2,9 @@ using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Mappings;
 using Qaly.Application.Common.Models;
+using Qaly.Application.DTOs.Project;
 using Qaly.Application.DTOs.Task;
+using Qaly.Application.Services.Notifications;
 using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
@@ -12,6 +14,8 @@ namespace Qaly.Application.Services;
 
 public class TaskService : ITaskService
 {
+    private static readonly string[] KanbanStatuses = ["Todo", "InProgress", "OnHold", "InReview", "Done", "Cancelled"];
+
     private readonly IRepository<TaskItem> _taskRepo;
     private readonly IRepository<TaskDependency> _dependencyRepo;
     private readonly IRepository<Project> _projectRepo;
@@ -22,6 +26,7 @@ public class TaskService : ITaskService
     private readonly IRepository<TaskViewEvent> _viewEventRepo;
     private readonly IRepository<TaskLabel> _taskLabelRepo;
     private readonly IRepository<ProjectLabel> _projectLabelRepo;
+    private readonly IRepository<Sprint> _sprintRepo;
     private readonly IRepository<VectorSyncOutbox> _outboxRepo;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ITaskAccessPolicy _taskAccessPolicy;
@@ -29,6 +34,13 @@ public class TaskService : ITaskService
     private readonly IAuditLogService _auditLogService;
     private readonly ITaskPrioritySuggestionService _taskPrioritySuggestionService;
     private readonly IWebhookPublisher _webhookPublisher;
+
+    private enum RowVersionValidation
+    {
+        Valid,
+        Invalid,
+        Conflict
+    }
 
     public TaskService(
         IRepository<TaskItem> taskRepo,
@@ -41,6 +53,7 @@ public class TaskService : ITaskService
         IRepository<TaskViewEvent> viewEventRepo,
         IRepository<TaskLabel> taskLabelRepo,
         IRepository<ProjectLabel> projectLabelRepo,
+        IRepository<Sprint> sprintRepo,
         IRepository<VectorSyncOutbox> outboxRepo,
         IUnitOfWork unitOfWork,
         ITaskAccessPolicy taskAccessPolicy,
@@ -59,6 +72,7 @@ public class TaskService : ITaskService
         _viewEventRepo = viewEventRepo;
         _taskLabelRepo = taskLabelRepo;
         _projectLabelRepo = projectLabelRepo;
+        _sprintRepo = sprintRepo;
         _outboxRepo = outboxRepo;
         _unitOfWork = unitOfWork;
         _taskAccessPolicy = taskAccessPolicy;
@@ -104,6 +118,7 @@ public class TaskService : ITaskService
         pageSize = Math.Clamp(pageSize, 1, 100);
 
         var query = TaskDetailsQuery()
+            .AsNoTracking()
             .Where(t => t.ProjectId == projectId);
 
         query = _taskAccessPolicy.ApplyVisibilityFilter(query);
@@ -137,7 +152,6 @@ public class TaskService : ITaskService
         query = ApplyTaskSort(query, sort);
 
         var items = await query
-            .OrderByPlanningPriority()
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(ct);
@@ -157,6 +171,138 @@ public class TaskService : ITaskService
         });
     }
 
+    public async Task<Result<KanbanBoardDto>> GetKanbanAsync(Guid projectId, CancellationToken ct = default)
+    {
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null)
+        {
+            return Result.NotFound<KanbanBoardDto>();
+        }
+
+        if (!await _taskAccessPolicy.CanAccessProjectAsync(projectId, project.OwnerId, ct))
+        {
+            return Result.Forbidden<KanbanBoardDto>();
+        }
+
+        return Result.Success(await BuildKanbanBoardAsync(projectId, ct));
+    }
+
+    public async Task<Result<KanbanMoveResultDto>> MoveOnKanbanAsync(Guid projectId, KanbanMoveRequest request, CancellationToken ct = default)
+    {
+        if (!TaskStatusRules.IsValidStatus(request.FromStatus) || !TaskStatusRules.IsValidStatus(request.ToStatus))
+        {
+            return Result.Failure<KanbanMoveResultDto>("Invalid task status.", 400);
+        }
+
+        if (request.BeforeTaskId.HasValue && request.AfterTaskId.HasValue)
+        {
+            return Result.Failure<KanbanMoveResultDto>("Use either beforeTaskId or afterTaskId, not both.", 400);
+        }
+
+        var normalizedFromStatus = TaskStatusRules.NormalizeStatus(request.FromStatus);
+        var normalizedToStatus = TaskStatusRules.NormalizeStatus(request.ToStatus);
+        var task = await TaskDetailsQuery()
+            .FirstOrDefaultAsync(item => item.Id == request.TaskId && item.ProjectId == projectId, ct);
+
+        if (task == null)
+        {
+            return Result.NotFound<KanbanMoveResultDto>();
+        }
+
+        if (!await _taskAccessPolicy.CanManageTaskAsync(task, ct))
+        {
+            return Result.Forbidden<KanbanMoveResultDto>();
+        }
+
+        var rowVersionValidation = ValidateRowVersion(task, request.RowVersion);
+        if (rowVersionValidation == RowVersionValidation.Invalid)
+        {
+            return Result.Failure<KanbanMoveResultDto>("Invalid rowVersion.", 400);
+        }
+
+        if (rowVersionValidation == RowVersionValidation.Conflict ||
+            !string.Equals(task.Status, normalizedFromStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            var board = await BuildKanbanBoardAsync(projectId, ct);
+            return Result.Conflict(new KanbanMoveResultDto(task.ToDto(false), board), "Task was modified by another request. Refresh before moving.");
+        }
+
+        if (!TaskStatusRules.CanTransition(task.Status, normalizedToStatus))
+        {
+            return Result.Failure<KanbanMoveResultDto>($"Cannot transition task from {task.Status} to {normalizedToStatus}.", 400);
+        }
+
+        if (RequiresApprovedEvidence(task.Status, normalizedToStatus) && !await HasApprovedEvidenceAsync(task.Id, ct))
+        {
+            return Result.Failure<KanbanMoveResultDto>("Cannot mark task as done before an evidence attachment is approved.", 400);
+        }
+
+        var targetColumnTasks = await _taskRepo.GetQueryable()
+            .Where(item => item.ProjectId == projectId && item.Status == normalizedToStatus && item.Id != task.Id)
+            .OrderBy(item => item.SortOrder)
+            .ThenBy(item => item.CreatedAt)
+            .ToListAsync(ct);
+
+        var insertIndex = targetColumnTasks.Count;
+        if (request.BeforeTaskId.HasValue)
+        {
+            insertIndex = targetColumnTasks.FindIndex(item => item.Id == request.BeforeTaskId.Value);
+            if (insertIndex < 0)
+            {
+                return Result.Failure<KanbanMoveResultDto>("beforeTaskId is not in the target column.", 400);
+            }
+        }
+        else if (request.AfterTaskId.HasValue)
+        {
+            var afterIndex = targetColumnTasks.FindIndex(item => item.Id == request.AfterTaskId.Value);
+            if (afterIndex < 0)
+            {
+                return Result.Failure<KanbanMoveResultDto>("afterTaskId is not in the target column.", 400);
+            }
+
+            insertIndex = afterIndex + 1;
+        }
+
+        var oldStatus = task.Status;
+        task.Status = normalizedToStatus;
+        targetColumnTasks.Insert(insertIndex, task);
+        RebalanceSortOrder(targetColumnTasks);
+
+        if (!string.Equals(oldStatus, normalizedToStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            var sourceColumnTasks = await _taskRepo.GetQueryable()
+                .Where(item => item.ProjectId == projectId && item.Status == oldStatus && item.Id != task.Id)
+                .OrderBy(item => item.SortOrder)
+                .ThenBy(item => item.CreatedAt)
+                .ToListAsync(ct);
+            RebalanceSortOrder(sourceColumnTasks);
+        }
+
+        await AddToOutboxAsync("TaskUpdated", new { Id = task.Id }, ct);
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Result.Failure<KanbanMoveResultDto>("Task was modified by another request. Refresh before moving.", 409);
+        }
+
+        await _auditLogService.LogAsync("KanbanMove", nameof(TaskItem), task.Id.ToString(), new { oldStatus, newStatus = normalizedToStatus, task.SortOrder }, ct);
+        if (!string.Equals(oldStatus, normalizedToStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            await NotifyStatusChangeAsync(task, oldStatus, normalizedToStatus, null, ct);
+        }
+
+        var movedTask = await GetByIdAsync(task.Id, ct);
+        if (!movedTask.IsSuccess || movedTask.Data == null)
+        {
+            return Result.Failure<KanbanMoveResultDto>(movedTask.Error ?? "Task was moved but could not be reloaded.", movedTask.StatusCode);
+        }
+
+        return Result.Success(new KanbanMoveResultDto(movedTask.Data, await BuildKanbanBoardAsync(projectId, ct)));
+    }
+
     public async Task<Result<PagedResult<TaskItemDto>>> GetByAssigneeAsync(Guid assigneeId, int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
         if (!_taskAccessPolicy.IsAdmin && _taskAccessPolicy.CurrentUserId != assigneeId)
@@ -168,6 +314,7 @@ public class TaskService : ITaskService
         pageSize = Math.Clamp(pageSize, 1, 100);
 
         var query = _taskAccessPolicy.ApplyVisibilityFilter(TaskDetailsQuery())
+            .AsNoTracking()
             .Where(t => t.AssigneeId == assigneeId);
 
         var totalCount = await query.CountAsync(ct);
@@ -184,6 +331,97 @@ public class TaskService : ITaskService
             PageNumber = page,
             PageSize = pageSize
         });
+    }
+
+    public async Task<Result<ProjectTimelineDto>> GetTimelineAsync(Guid projectId, CancellationToken ct = default)
+    {
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null)
+        {
+            return Result.NotFound<ProjectTimelineDto>();
+        }
+
+        if (!await _taskAccessPolicy.CanAccessProjectAsync(projectId, project.OwnerId, ct))
+        {
+            return Result.Forbidden<ProjectTimelineDto>();
+        }
+
+        var query = _taskAccessPolicy.ApplyVisibilityFilter(_taskRepo.GetQueryable())
+            .AsNoTracking()
+            .Where(task => task.ProjectId == projectId)
+            .Include(task => task.PredecessorDependencies)
+                .ThenInclude(dependency => dependency.Predecessor);
+
+        var tasks = await query.ToListAsync(ct);
+        var now = DateTimeOffset.UtcNow;
+
+        var sprints = await _sprintRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(s => s.ProjectId == projectId)
+            .OrderBy(s => s.StartDate)
+            .ToListAsync(ct);
+
+        var dates = tasks
+            .SelectMany(task => new[] { task.StartDate, task.DueDate })
+            .Where(date => date.HasValue)
+            .Select(date => date!.Value)
+            .Union(sprints.Select(s => s.StartDate))
+            .Union(sprints.Select(s => s.EndDate))
+            .OrderBy(date => date)
+            .ToList();
+
+        var baseStart = dates.FirstOrDefault();
+        var baseEnd = dates.LastOrDefault();
+        var windowStart = dates.Count > 0 ? baseStart.AddDays(-7) : now.AddDays(-7);
+        var windowEnd = dates.Count > 0 ? baseEnd.AddDays(14) : now.AddDays(21);
+        if (windowEnd < windowStart)
+        {
+            windowEnd = windowStart.AddDays(28);
+        }
+
+        List<SprintBucketDto> buckets;
+        DateTimeOffset sprintStart;
+        DateTimeOffset sprintEnd;
+
+        if (sprints.Count > 0)
+        {
+            buckets = sprints.Select(s => new SprintBucketDto(
+                s.Name,
+                s.StartDate,
+                s.EndDate,
+                tasks.Count(t => t.SprintId == s.Id),
+                tasks.Count(t => t.SprintId == s.Id && IsDone(t.Status)),
+                tasks.Count(t => t.SprintId == s.Id && t.DueDate.HasValue && t.DueDate.Value < now && !IsDone(t.Status)),
+                tasks.Count(t => t.SprintId == s.Id && !IsClosed(t.Status)),
+                tasks.Where(t => t.SprintId == s.Id).Sum(t => Math.Max(1, t.EstimatedHours ?? 1))
+            )).ToList();
+
+            var currentSprint = sprints.FirstOrDefault(s => s.StartDate <= now && s.EndDate >= now) ?? sprints.OrderBy(s => Math.Abs((s.StartDate - now).TotalDays)).First();
+            sprintStart = currentSprint.StartDate;
+            sprintEnd = currentSprint.EndDate;
+        }
+        else
+        {
+            sprintStart = AlignToSprintStart(now);
+            sprintEnd = sprintStart.AddDays(13);
+            buckets = BuildSprintBuckets(tasks, windowStart, windowEnd, now);
+        }
+
+        var blockedItems = BuildBlockedTimelineItems(tasks);
+
+        return Result.Success(new ProjectTimelineDto(
+            projectId,
+            windowStart,
+            windowEnd,
+            sprintStart,
+            sprintEnd,
+            tasks.Count,
+            tasks.Count(task => !IsClosed(task.Status)),
+            tasks.Count(task => IsDone(task.Status)),
+            tasks.Count(task => task.DueDate.HasValue && task.DueDate.Value < now && !IsDone(task.Status)),
+            blockedItems.Count(item => item.IsBlocked),
+            buckets,
+            blockedItems));
     }
 
     public async Task<Result<PagedResult<TaskAttentionDto>>> GetAttentionByProjectAsync(
@@ -343,12 +581,15 @@ public class TaskService : ITaskService
 
         foreach (var assigneeId in assigneeIds.Where(id => id != currentUserId).Distinct())
         {
+            var template = NotificationTemplates.TaskAssigned(task.Id, task.Title, assigneeId);
             await _notificationService.CreateAsync(
                 assigneeId,
-                $"Bạn đã được giao nhiệm vụ \"{task.Title}\".",
-                "TaskAssigned",
+                template.Message,
+                template.Type,
+                template.Tone,
                 task.Id,
                 nameof(TaskItem),
+                template.IdempotencyKey,
                 ct);
         }
 
@@ -375,6 +616,17 @@ public class TaskService : ITaskService
         if (!await _taskAccessPolicy.CanManageTaskAsync(task, ct))
         {
             return Result.Forbidden<TaskItemDto>();
+        }
+
+        var rowVersionValidation = ValidateRowVersion(task, dto.RowVersion);
+        if (rowVersionValidation == RowVersionValidation.Invalid)
+        {
+            return Result.Failure<TaskItemDto>("Invalid rowVersion.", 400);
+        }
+
+        if (rowVersionValidation == RowVersionValidation.Conflict)
+        {
+            return Result.Conflict(task.ToDto(false), "Task was modified by another request. Refresh before updating.");
         }
 
         var assigneeIds = NormalizeAssigneeIds(dto.AssigneeId, dto.AssigneeIds);
@@ -412,24 +664,39 @@ public class TaskService : ITaskService
         await SyncLabelsAsync(task.Id, task.ProjectId, dto.LabelIds, ct);
         await AddToOutboxAsync("TaskUpdated", new { Id = task.Id }, ct);
         await _webhookPublisher.PublishAsync(task.ProjectId, "task.updated", new { task.Id, task.Title, task.Status }, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return await BuildTaskConflictAsync(id, ct);
+        }
         await _auditLogService.LogAsync("Update", nameof(TaskItem), task.Id.ToString(), dto, ct);
 
         foreach (var assigneeId in assigneeIds.Where(id => !previousAssignees.Contains(id)))
         {
+            var template = NotificationTemplates.TaskAssigned(task.Id, task.Title, assigneeId);
             await _notificationService.CreateAsync(
                 assigneeId,
-                $"Bạn đã được giao nhiệm vụ \"{task.Title}\".",
-                "TaskAssigned",
+                template.Message,
+                template.Type,
+                template.Tone,
                 task.Id,
                 nameof(TaskItem),
+                template.IdempotencyKey,
                 ct);
+        }
+
+        if (!string.Equals(oldStatus, normalizedStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            await NotifyStatusChangeAsync(task, oldStatus, normalizedStatus, assigneeIds, ct);
         }
 
         return await GetByIdAsync(id, ct);
     }
 
-    public async Task<Result> UpdateStatusAsync(Guid id, string newStatus, CancellationToken ct = default)
+    public async Task<Result<TaskItemDto>> UpdateStatusAsync(Guid id, string newStatus, string? rowVersion = null, CancellationToken ct = default)
     {
         var task = await TaskDetailsQuery()
             .FirstOrDefaultAsync(item => item.Id == id, ct);
@@ -442,6 +709,17 @@ public class TaskService : ITaskService
         if (!await _taskAccessPolicy.CanManageTaskAsync(task, ct))
         {
             return Result.Failure("Truy cập bị từ chối.", 403);
+        }
+
+        var rowVersionValidation = ValidateRowVersion(task, rowVersion);
+        if (rowVersionValidation == RowVersionValidation.Invalid)
+        {
+            return Result.Failure<TaskItemDto>("Invalid rowVersion.", 400);
+        }
+
+        if (rowVersionValidation == RowVersionValidation.Conflict)
+        {
+            return Result.Conflict(task.ToDto(false), "Task was modified by another request. Refresh before updating.");
         }
 
         if (!TaskStatusRules.IsValidStatus(newStatus))
@@ -466,15 +744,25 @@ public class TaskService : ITaskService
 
         await _taskRepo.UpdateAsync(task, ct);
         await AddToOutboxAsync("TaskUpdated", new { Id = task.Id }, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return await BuildTaskConflictAsync(id, ct);
+        }
         await _auditLogService.LogAsync("StatusChange", nameof(TaskItem), task.Id.ToString(), new { oldStatus, newStatus = normalizedStatus }, ct);
 
-        await NotifyStatusChangeAsync(task, oldStatus, normalizedStatus, ct);
+        if (!string.Equals(oldStatus, normalizedStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            await NotifyStatusChangeAsync(task, oldStatus, normalizedStatus, null, ct);
+        }
 
-        return Result.Success();
+        return await GetByIdAsync(id, ct);
     }
 
-    public async Task<Result> UpdateSortOrderAsync(Guid id, int sortOrder, CancellationToken ct = default)
+    public async Task<Result<TaskItemDto>> UpdateSortOrderAsync(Guid id, int sortOrder, string? rowVersion = null, CancellationToken ct = default)
     {
         var task = await _taskRepo.GetQueryable()
             .WithProject()
@@ -489,11 +777,29 @@ public class TaskService : ITaskService
             return Result.Failure("Truy cập bị từ chối.", 403);
         }
 
+        var rowVersionValidation = ValidateRowVersion(task, rowVersion);
+        if (rowVersionValidation == RowVersionValidation.Invalid)
+        {
+            return Result.Failure<TaskItemDto>("Invalid rowVersion.", 400);
+        }
+
+        if (rowVersionValidation == RowVersionValidation.Conflict)
+        {
+            return Result.Conflict(task.ToDto(false), "Task was modified by another request. Refresh before updating.");
+        }
+
         task.SortOrder = sortOrder;
         await _taskRepo.UpdateAsync(task, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return await BuildTaskConflictAsync(id, ct);
+        }
 
-        return Result.Success();
+        return await GetByIdAsync(id, ct);
     }
 
     public async Task<Result> DeleteAsync(Guid id, CancellationToken ct = default)
@@ -562,7 +868,7 @@ public class TaskService : ITaskService
 
         var normalizedStatus = TaskStatusRules.NormalizeStatus(newStatus);
         var tasks = await _taskRepo.GetQueryable()
-            .WithProject()
+            .WithDetails()
             .Where(t => ids.Contains(t.Id))
             .ToListAsync(ct);
 
@@ -588,7 +894,10 @@ public class TaskService : ITaskService
             await _taskRepo.UpdateAsync(task, ct);
             await AddToOutboxAsync("TaskUpdated", new { Id = task.Id }, ct);
             await _auditLogService.LogAsync("StatusChange", nameof(TaskItem), task.Id.ToString(), new { oldStatus, newStatus = normalizedStatus }, ct);
-            await NotifyStatusChangeAsync(task, oldStatus, normalizedStatus, ct);
+            if (!string.Equals(oldStatus, normalizedStatus, StringComparison.OrdinalIgnoreCase))
+            {
+                await NotifyStatusChangeAsync(task, oldStatus, normalizedStatus, null, ct);
+            }
         }
 
         await _unitOfWork.SaveChangesAsync(ct);
@@ -604,6 +913,7 @@ public class TaskService : ITaskService
             return Result.Forbidden<IEnumerable<GanttTaskDto>>();
 
         var tasks = await _taskAccessPolicy.ApplyVisibilityFilter(_taskRepo.GetQueryable())
+            .AsNoTracking()
             .Where(t => t.ProjectId == projectId)
             .Include(t => t.PredecessorDependencies)
             .ToListAsync(ct);
@@ -649,49 +959,61 @@ public class TaskService : ITaskService
 
     public async Task<Result> MarkViewedAsync(Guid projectId, Guid taskId, CancellationToken ct = default)
     {
-        var currentUserId = _taskAccessPolicy.CurrentUserId;
-        if (currentUserId == null)
+        try
         {
-            return Result.Forbidden();
-        }
-
-        var task = await _taskRepo.GetQueryable()
-            .WithDetails()
-            .FirstOrDefaultAsync(item => item.Id == taskId && item.ProjectId == projectId, ct);
-
-        if (task == null)
-        {
-            return Result.NotFound();
-        }
-
-        if (!await _taskAccessPolicy.CanAccessTaskAsync(task, ct))
-        {
-            return Result.Forbidden();
-        }
-
-        var viewedAt = DateTimeOffset.UtcNow;
-        var existing = await _viewEventRepo.GetQueryable()
-            .FirstOrDefaultAsync(view => view.TaskItemId == taskId && view.UserId == currentUserId.Value, ct);
-
-        if (existing == null)
-        {
-            await _viewEventRepo.AddAsync(new TaskViewEvent
+            var currentUserId = _taskAccessPolicy.CurrentUserId;
+            if (currentUserId == null)
             {
-                TaskItemId = taskId,
-                UserId = currentUserId.Value,
-                ViewedAt = viewedAt,
-                ViewCount = 1
-            }, ct);
-        }
-        else
-        {
-            existing.ViewedAt = viewedAt;
-            existing.ViewCount += 1;
-            await _viewEventRepo.UpdateAsync(existing, ct);
-        }
+                return Result.Forbidden();
+            }
 
-        await _unitOfWork.SaveChangesAsync(ct);
-        return Result.Success();
+            var task = await _taskRepo.GetQueryable()
+                .AsNoTracking()
+                .Include(item => item.Project)
+                .Include(item => item.Assignee)
+                .Include(item => item.Assignees)
+                    .ThenInclude(assignment => assignment.User)
+                .Include(item => item.Reporter)
+                .FirstOrDefaultAsync(item => item.Id == taskId && item.ProjectId == projectId, ct);
+
+            if (task == null)
+            {
+                return Result.NotFound();
+            }
+
+            if (!await _taskAccessPolicy.CanAccessTaskAsync(task, ct))
+            {
+                return Result.Forbidden();
+            }
+
+            var viewedAt = DateTimeOffset.UtcNow;
+            var existing = await _viewEventRepo.GetQueryable()
+                .FirstOrDefaultAsync(view => view.TaskItemId == taskId && view.UserId == currentUserId.Value, ct);
+
+            if (existing == null)
+            {
+                await _viewEventRepo.AddAsync(new TaskViewEvent
+                {
+                    TaskItemId = taskId,
+                    UserId = currentUserId.Value,
+                    ViewedAt = viewedAt,
+                    ViewCount = 1
+                }, ct);
+            }
+            else
+            {
+                existing.ViewedAt = viewedAt;
+                existing.ViewCount += 1;
+                await _viewEventRepo.UpdateAsync(existing, ct);
+            }
+
+            await _unitOfWork.SaveChangesAsync(ct);
+            return Result.Success();
+        }
+        catch
+        {
+            return Result.Success();
+        }
     }
 
     public async Task<Result> NudgeAssigneeAsync(Guid projectId, Guid taskId, Guid? assigneeId = null, CancellationToken ct = default)
@@ -752,8 +1074,10 @@ public class TaskService : ITaskService
                 userId,
                 message,
                 "TaskAttentionNudge",
+                "warning",
                 task.Id,
                 nameof(TaskItem),
+                $"task:{task.Id}:attention-nudge:{userId}",
                 ct);
         }
 
@@ -790,6 +1114,12 @@ public class TaskService : ITaskService
 
         if (exists) return Result.Failure("Dependency already exists.");
 
+        // Circular dependency check (Phase 2)
+        if (await HasCircularDependency(predecessorId, successorId, ct))
+        {
+            return Result.Failure("Adding this dependency would create a circular reference.", 400);
+        }
+
         var dependency = new TaskDependency
         {
             PredecessorId = predecessorId,
@@ -818,6 +1148,123 @@ public class TaskService : ITaskService
         await _unitOfWork.SaveChangesAsync(ct);
 
         return Result.Success();
+    }
+
+    public async Task<Result<IEnumerable<TaskDependencyDto>>> GetDependenciesAsync(Guid taskId, CancellationToken ct = default)
+    {
+        var task = await _taskRepo.GetByIdAsync(taskId, ct);
+        if (task == null) return Result.NotFound<IEnumerable<TaskDependencyDto>>();
+
+        if (!await _taskAccessPolicy.CanAccessTaskAsync(task, ct))
+            return Result.Forbidden<IEnumerable<TaskDependencyDto>>();
+
+        var dependencies = await _dependencyRepo.GetQueryable()
+            .Where(d => d.PredecessorId == taskId || d.SuccessorId == taskId)
+            .Include(d => d.Predecessor)
+            .Include(d => d.Successor)
+            .ToListAsync(ct);
+
+        var dtos = dependencies.Select(d => new TaskDependencyDto(
+            d.Id,
+            d.PredecessorId,
+            d.Predecessor.Title,
+            d.SuccessorId,
+            d.Successor.Title,
+            d.DependencyType));
+
+        return Result.Success(dtos);
+    }
+
+    private async Task<bool> HasCircularDependency(Guid predecessorId, Guid successorId, CancellationToken ct)
+    {
+        // Breadth-First Search to find if successorId can eventually lead to predecessorId
+        var visited = new HashSet<Guid>();
+        var queue = new Queue<Guid>();
+        queue.Enqueue(successorId);
+
+        while (queue.Count > 0)
+        {
+            var currentId = queue.Dequeue();
+            if (currentId == predecessorId) return true;
+
+            if (visited.Contains(currentId)) continue;
+            visited.Add(currentId);
+
+            var nextSuccessors = await _dependencyRepo.GetQueryable()
+                .Where(d => d.PredecessorId == currentId)
+                .Select(d => d.SuccessorId)
+                .ToListAsync(ct);
+
+            foreach (var nextId in nextSuccessors)
+            {
+                queue.Enqueue(nextId);
+            }
+        }
+
+        return false;
+    }
+
+    private async Task<KanbanBoardDto> BuildKanbanBoardAsync(Guid projectId, CancellationToken ct)
+    {
+        var tasks = await _taskAccessPolicy.ApplyVisibilityFilter(TaskDetailsQuery())
+            .AsNoTracking()
+            .Where(item => item.ProjectId == projectId)
+            .OrderBy(item => item.Status)
+            .ThenBy(item => item.SortOrder)
+            .ThenBy(item => item.CreatedAt)
+            .ToListAsync(ct);
+
+        var columns = new List<KanbanColumnDto>();
+        foreach (var status in KanbanStatuses)
+        {
+            var mapped = new List<TaskItemDto>();
+            foreach (var task in tasks.Where(item => string.Equals(item.Status, status, StringComparison.OrdinalIgnoreCase)))
+            {
+                mapped.Add(task.ToDto(!await CanViewTaskDetailsAsync(task, ct)));
+            }
+
+            columns.Add(new KanbanColumnDto(status, mapped));
+        }
+
+        return new KanbanBoardDto(projectId, columns);
+    }
+
+    private static void RebalanceSortOrder(List<TaskItem> tasks)
+    {
+        for (var i = 0; i < tasks.Count; i++)
+        {
+            tasks[i].SortOrder = (i + 1) * 1000;
+        }
+    }
+
+    private static RowVersionValidation ValidateRowVersion(TaskItem task, string? rowVersion)
+    {
+        if (string.IsNullOrWhiteSpace(rowVersion))
+        {
+            return RowVersionValidation.Valid;
+        }
+
+        try
+        {
+            var expected = Convert.FromBase64String(rowVersion);
+            return expected.SequenceEqual(task.RowVersion)
+                ? RowVersionValidation.Valid
+                : RowVersionValidation.Conflict;
+        }
+        catch (FormatException)
+        {
+            return RowVersionValidation.Invalid;
+        }
+    }
+
+    private async Task<Result<TaskItemDto>> BuildTaskConflictAsync(Guid taskId, CancellationToken ct)
+    {
+        var latest = await TaskDetailsQuery()
+            .FirstOrDefaultAsync(item => item.Id == taskId, ct);
+
+        return latest == null
+            ? Result.Failure<TaskItemDto>("Task was modified or deleted by another request.", 409)
+            : Result.Conflict(latest.ToDto(false), "Task was modified by another request. Refresh before updating.");
     }
 
     private async Task AddToOutboxAsync(string eventType, object payload, CancellationToken ct)
@@ -853,11 +1300,99 @@ public class TaskService : ITaskService
                 .ThenBy(t => t.DueDate ?? DateTimeOffset.MaxValue),
             _ => query
                 .OrderByDescending(t => t.IsPinned)
-                .OrderByPlanningPriority()
+                .ThenBy(t => t.Status == "InProgress" ? 0 :
+                    t.Status == "InReview" ? 1 :
+                    t.Status == "Todo" ? 2 :
+                    t.Status == "Done" ? 3 :
+                    t.Status == "Cancelled" ? 4 : 5)
+                .ThenBy(t => t.DueDate ?? DateTimeOffset.MaxValue)
+                .ThenByDescending(t => t.CreatedAt)
         };
 
     private async Task<bool> CanViewTaskDetailsAsync(TaskItem task, CancellationToken ct)
         => await _taskAccessPolicy.CanAccessTaskAsync(task, ct);
+
+    private static DateTimeOffset AlignToSprintStart(DateTimeOffset date)
+    {
+        var dayOffset = ((int)date.DayOfWeek + 6) % 7;
+        var monday = date.Date.AddDays(-dayOffset);
+        return new DateTimeOffset(monday, date.Offset);
+    }
+
+    private static List<SprintBucketDto> BuildSprintBuckets(List<TaskItem> tasks, DateTimeOffset windowStart, DateTimeOffset windowEnd, DateTimeOffset now)
+    {
+        const int sprintLengthDays = 14;
+        var buckets = new List<SprintBucketDto>();
+        var cursor = AlignToSprintStart(windowStart);
+
+        while (cursor <= windowEnd)
+        {
+            var bucketEnd = cursor.AddDays(sprintLengthDays - 1).AddHours(23).AddMinutes(59).AddSeconds(59);
+            var bucketTasks = tasks
+                .Where(task => TaskOverlapsWindow(task, cursor, bucketEnd))
+                .ToList();
+
+            buckets.Add(new SprintBucketDto(
+                $"Sprint {buckets.Count + 1}",
+                cursor,
+                bucketEnd,
+                bucketTasks.Count,
+                bucketTasks.Count(task => IsDone(task.Status)),
+                bucketTasks.Count(task => task.DueDate.HasValue && task.DueDate.Value < now && !IsDone(task.Status)),
+                bucketTasks.Count(task => !IsClosed(task.Status)),
+                bucketTasks.Sum(task => Math.Max(1, task.EstimatedHours ?? 1))));
+
+            cursor = cursor.AddDays(sprintLengthDays);
+        }
+
+        return buckets;
+    }
+
+    private static List<TimelineDependencyDto> BuildBlockedTimelineItems(List<TaskItem> tasks)
+    {
+        var taskMap = tasks.ToDictionary(task => task.Id);
+        var items = new List<TimelineDependencyDto>();
+
+        foreach (var task in tasks)
+        {
+            var blockingIds = task.PredecessorDependencies
+                .Select(dependency => dependency.PredecessorId)
+                .Distinct()
+                .Where(id => taskMap.TryGetValue(id, out var predecessor) && !IsDone(predecessor.Status))
+                .ToList();
+
+            items.Add(new TimelineDependencyDto(
+                task.Id,
+                task.Title,
+                task.Status,
+                task.DueDate,
+                blockingIds,
+                blockingIds.Count > 0 && !IsDone(task.Status)));
+        }
+
+        return items;
+    }
+
+    private static bool TaskOverlapsWindow(TaskItem task, DateTimeOffset windowStart, DateTimeOffset windowEnd)
+    {
+        var start = task.StartDate ?? task.DueDate;
+        var end = task.DueDate ?? task.StartDate;
+
+        if (!start.HasValue && !end.HasValue)
+        {
+            return false;
+        }
+
+        var normalizedStart = start ?? end!.Value;
+        var normalizedEnd = end ?? start!.Value;
+        return normalizedStart <= windowEnd && normalizedEnd >= windowStart;
+    }
+
+    private static bool IsDone(string status)
+        => string.Equals(status, "Done", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsClosed(string status)
+        => IsDone(status) || string.Equals(status, "Cancelled", StringComparison.OrdinalIgnoreCase);
 
     private static bool RequiresApprovedEvidence(string oldStatus, string newStatus)
         => !string.Equals(oldStatus, "Done", StringComparison.OrdinalIgnoreCase) &&
@@ -987,26 +1522,39 @@ public class TaskService : ITaskService
         }
     }
 
-    private async Task NotifyStatusChangeAsync(TaskItem task, string oldStatus, string newStatus, CancellationToken ct)
+    private async Task NotifyStatusChangeAsync(
+        TaskItem task,
+        string oldStatus,
+        string newStatus,
+        IEnumerable<Guid>? currentAssigneeIds,
+        CancellationToken ct)
     {
         var currentUserId = _taskAccessPolicy.CurrentUserId;
         
         // Personal notifications
-        var recipients = new[] { task.ReporterId, task.AssigneeId }
-            .Where(userId => userId.HasValue && userId.Value != currentUserId)
-            .Select(userId => userId!.Value)
+        var recipients = new[] { task.ReporterId }
+            .Concat(task.AssigneeId.HasValue ? [task.AssigneeId.Value] : [])
+            .Concat(task.Assignees.Select(assignment => assignment.UserId))
+            .Concat(currentAssigneeIds ?? [])
+            .Where(userId => userId != currentUserId)
             .Distinct()
             .ToList();
 
-        foreach (var recipient in recipients)
+        if (NotificationTemplates.IsImportantStatusChange(oldStatus, newStatus))
         {
-            await _notificationService.CreateAsync(
-                recipient,
-                $"Task \"{task.Title}\" moved from {oldStatus} to {newStatus}.",
-                "TaskStatusChanged",
-                task.Id,
-                nameof(TaskItem),
-                ct);
+            var template = NotificationTemplates.ImportantStatusChanged(task.Id, task.Title, oldStatus, newStatus);
+            foreach (var recipient in recipients)
+            {
+                await _notificationService.CreateAsync(
+                    recipient,
+                    template.Message,
+                    template.Type,
+                    template.Tone,
+                    task.Id,
+                    nameof(TaskItem),
+                    $"{template.IdempotencyKey}:{recipient}",
+                    ct);
+            }
         }
 
         // Realtime broadcast to project
@@ -1265,4 +1813,167 @@ public class TaskService : ITaskService
         => string.Equals(task.Status, status, StringComparison.OrdinalIgnoreCase);
 
     private sealed record AttentionAssignee(Guid? UserId, string? FullName, DateTimeOffset AssignedAt);
+
+    // Sprint Management Implementation
+    public async Task<Result<IEnumerable<SprintDto>>> GetSprintsAsync(Guid projectId, CancellationToken ct = default)
+    {
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null) return Result.NotFound<IEnumerable<SprintDto>>();
+
+        if (!await _taskAccessPolicy.CanAccessProjectAsync(projectId, project.OwnerId, ct))
+            return Result.Forbidden<IEnumerable<SprintDto>>();
+
+        var sprints = await _sprintRepo.GetQueryable()
+            .Where(s => s.ProjectId == projectId)
+            .OrderByDescending(s => s.StartDate)
+            .Include(s => s.Tasks)
+            .ToListAsync(ct);
+
+        return Result.Success(sprints.Select(s => s.ToDto()));
+    }
+
+    public async Task<Result<SprintDto>> CreateSprintAsync(Guid projectId, CreateSprintRequest request, CancellationToken ct = default)
+    {
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null) return Result.NotFound<SprintDto>();
+
+        if (!await _taskAccessPolicy.CanManageProjectAsync(projectId, project.OwnerId, ct))
+            return Result.Forbidden<SprintDto>();
+
+        var sprint = request.ToEntity(projectId);
+        await _sprintRepo.AddAsync(sprint, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        await _auditLogService.LogAsync("CreateSprint", nameof(Sprint), sprint.Id.ToString(), new { sprint.Name, sprint.ProjectId }, ct);
+
+        return Result.Created(sprint.ToDto());
+    }
+
+    public async Task<Result<SprintDto>> UpdateSprintAsync(Guid sprintId, UpdateSprintRequest request, CancellationToken ct = default)
+    {
+        var sprint = await _sprintRepo.GetQueryable()
+            .Include(s => s.Project)
+            .FirstOrDefaultAsync(s => s.Id == sprintId, ct);
+
+        if (sprint == null) return Result.NotFound<SprintDto>();
+
+        if (!await _taskAccessPolicy.CanManageProjectAsync(sprint.ProjectId, sprint.Project.OwnerId, ct))
+            return Result.Forbidden<SprintDto>();
+
+        request.ApplyTo(sprint);
+        await _sprintRepo.UpdateAsync(sprint, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        await _auditLogService.LogAsync("UpdateSprint", nameof(Sprint), sprint.Id.ToString(), request, ct);
+
+        return Result.Success(sprint.ToDto());
+    }
+
+    public async Task<Result> DeleteSprintAsync(Guid sprintId, CancellationToken ct = default)
+    {
+        var sprint = await _sprintRepo.GetQueryable()
+            .Include(s => s.Project)
+            .FirstOrDefaultAsync(s => s.Id == sprintId, ct);
+
+        if (sprint == null) return Result.NotFound();
+
+        if (!await _taskAccessPolicy.CanManageProjectAsync(sprint.ProjectId, sprint.Project.OwnerId, ct))
+            return Result.Forbidden();
+
+        await _sprintRepo.DeleteAsync(sprint, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        await _auditLogService.LogAsync("DeleteSprint", nameof(Sprint), sprintId.ToString(), new { sprint.Name }, ct);
+
+        return Result.Success();
+    }
+
+    public async Task<Result<ProjectTimelineDto>> GetSprintTimelineAsync(Guid projectId, Guid sprintId, CancellationToken ct = default)
+    {
+        var sprint = await _sprintRepo.GetByIdAsync(sprintId, ct);
+        if (sprint == null || sprint.ProjectId != projectId) return Result.NotFound<ProjectTimelineDto>();
+
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (!await _taskAccessPolicy.CanAccessProjectAsync(projectId, project!.OwnerId, ct))
+            return Result.Forbidden<ProjectTimelineDto>();
+
+        var query = _taskAccessPolicy.ApplyVisibilityFilter(_taskRepo.GetQueryable())
+            .AsNoTracking()
+            .Where(task => task.ProjectId == projectId && task.SprintId == sprintId)
+            .Include(task => task.PredecessorDependencies)
+                .ThenInclude(dependency => dependency.Predecessor);
+
+        var tasks = await query.ToListAsync(ct);
+        var now = DateTimeOffset.UtcNow;
+
+        var windowStart = sprint.StartDate.AddDays(-2);
+        var windowEnd = sprint.EndDate.AddDays(7);
+
+        var buckets = new List<SprintBucketDto>
+        {
+            new SprintBucketDto(
+                sprint.Name,
+                sprint.StartDate,
+                sprint.EndDate,
+                tasks.Count,
+                tasks.Count(task => IsDone(task.Status)),
+                tasks.Count(task => task.DueDate.HasValue && task.DueDate.Value < now && !IsDone(task.Status)),
+                tasks.Count(task => !IsClosed(task.Status)),
+                tasks.Sum(task => Math.Max(1, task.EstimatedHours ?? 1)))
+        };
+
+        var blockedItems = BuildBlockedTimelineItems(tasks);
+
+        return Result.Success(new ProjectTimelineDto(
+            projectId,
+            windowStart,
+            windowEnd,
+            sprint.StartDate,
+            sprint.EndDate,
+            tasks.Count,
+            tasks.Count(task => !IsClosed(task.Status)),
+            tasks.Count(task => IsDone(task.Status)),
+            tasks.Count(task => task.DueDate.HasValue && task.DueDate.Value < now && !IsDone(task.Status)),
+            blockedItems.Count(item => item.IsBlocked),
+            buckets,
+            blockedItems));
+    }
+
+    public async Task<Result<ProjectWorkloadDto>> GetWorkloadAsync(Guid projectId, CancellationToken ct = default)
+    {
+        var project = await _projectRepo.GetQueryable()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == projectId, ct);
+
+        if (project == null) return Result.NotFound<ProjectWorkloadDto>();
+
+        if (!await _taskAccessPolicy.CanAccessProjectAsync(projectId, project.OwnerId, ct))
+            return Result.Forbidden<ProjectWorkloadDto>();
+
+        var members = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .Include(m => m.User)
+            .Where(m => m.ProjectId == projectId)
+            .ToListAsync(ct);
+
+        var tasks = await _taskRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(t => t.ProjectId == projectId)
+            .ToListAsync(ct);
+
+        var workloads = members.Select(member =>
+        {
+            var memberTasks = tasks.Where(t => t.AssigneeId == member.UserId).ToList();
+            return new MemberWorkloadDto(
+                member.UserId,
+                member.User?.FullName ?? "Unknown",
+                member.User?.AvatarUrl,
+                memberTasks.Count,
+                memberTasks.Sum(t => t.EstimatedHours ?? 0),
+                memberTasks.Sum(t => t.ActualHours ?? 0),
+                memberTasks.Count(t => IsDone(t.Status)));
+        }).OrderByDescending(w => w.TaskCount).ToList();
+
+        return Result.Success(new ProjectWorkloadDto(projectId, workloads));
+    }
 }

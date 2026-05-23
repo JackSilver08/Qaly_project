@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Meeting;
+using Qaly.Application.DTOs.Task;
 using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
@@ -21,6 +22,9 @@ public partial class MeetingImportService : IMeetingImportService
     private readonly IRepository<MeetingImport> _meetingImportRepo;
     private readonly IRepository<AiJob> _aiJobRepo;
     private readonly IRepository<AiGeneratedDraft> _aiDraftRepo;
+    private readonly IRepository<MeetingActionItemMapping> _mappingRepo;
+    private readonly IRepository<TaskItem> _taskRepo;
+    private readonly ITaskService _taskService;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditLogService _auditLogService;
@@ -32,6 +36,9 @@ public partial class MeetingImportService : IMeetingImportService
         IRepository<MeetingImport> meetingImportRepo,
         IRepository<AiJob> aiJobRepo,
         IRepository<AiGeneratedDraft> aiDraftRepo,
+        IRepository<MeetingActionItemMapping> mappingRepo,
+        IRepository<TaskItem> taskRepo,
+        ITaskService taskService,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
         IAuditLogService auditLogService)
@@ -42,6 +49,9 @@ public partial class MeetingImportService : IMeetingImportService
         _meetingImportRepo = meetingImportRepo;
         _aiJobRepo = aiJobRepo;
         _aiDraftRepo = aiDraftRepo;
+        _mappingRepo = mappingRepo;
+        _taskRepo = taskRepo;
+        _taskService = taskService;
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
         _auditLogService = auditLogService;
@@ -258,6 +268,452 @@ public partial class MeetingImportService : IMeetingImportService
                 line,
                 null))
             .ToList();
+    }
+
+    public async Task<Result<MeetingActionItemsResponseDto>> GetMeetingActionItemsAsync(Guid meetingImportId, CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<MeetingActionItemsResponseDto>();
+        }
+
+        var meetingImportResult = await GetMeetingImportForActionItemsAsync(meetingImportId, currentUserId.Value, ct);
+        if (!meetingImportResult.IsSuccess || meetingImportResult.Data == null)
+        {
+            return Result.Failure<MeetingActionItemsResponseDto>(meetingImportResult.Error!, meetingImportResult.StatusCode);
+        }
+
+        var extractionResult = ParseExtractionPayload(meetingImportResult.Data.AiDraft?.PayloadJson);
+        if (!extractionResult.IsSuccess || extractionResult.Data == null)
+        {
+            return Result.Failure<MeetingActionItemsResponseDto>(extractionResult.Error!, extractionResult.StatusCode);
+        }
+
+        var mappings = await _mappingRepo.GetQueryable()
+            .Where(mapping => mapping.MeetingImportId == meetingImportId)
+            .ToDictionaryAsync(mapping => mapping.ActionItemIndex, ct);
+
+        var items = extractionResult.Data.ActionItems
+            .Select((item, index) =>
+            {
+                mappings.TryGetValue(index, out var mapping);
+                var title = string.IsNullOrWhiteSpace(item.Title)
+                    ? (item.Description ?? item.SourceEvidence ?? $"Action item #{index}")
+                    : item.Title;
+                var description = string.IsNullOrWhiteSpace(item.Description) ? item.SourceEvidence : item.Description;
+                var mappingStatus = ResolveMappingStatus(mapping);
+
+                return new MeetingActionItemDto(
+                    index,
+                    title,
+                    description,
+                    item.SuggestedOwnerName,
+                    string.IsNullOrWhiteSpace(item.Priority) ? "Medium" : item.Priority,
+                    item.DueDate,
+                    mappingStatus,
+                    mapping?.TaskId);
+            })
+            .ToList();
+
+        return Result.Success(new MeetingActionItemsResponseDto(meetingImportId, items));
+    }
+
+    public async Task<Result<MeetingActionItemTaskLinkDto>> LinkMeetingActionItemToTaskAsync(
+        Guid meetingImportId,
+        int actionItemIndex,
+        LinkMeetingActionItemTaskRequest request,
+        CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<MeetingActionItemTaskLinkDto>();
+        }
+
+        if (actionItemIndex < 0)
+        {
+            return Result.Failure<MeetingActionItemTaskLinkDto>("Action item index must be zero or greater.", 400);
+        }
+
+        if (request == null)
+        {
+            return Result.Failure<MeetingActionItemTaskLinkDto>("Request body is required.", 400);
+        }
+
+        if (request.TaskId == Guid.Empty)
+        {
+            return Result.Failure<MeetingActionItemTaskLinkDto>("taskId is required.", 400);
+        }
+
+        var meetingImportResult = await GetMeetingImportForActionItemsAsync(meetingImportId, currentUserId.Value, ct);
+        if (!meetingImportResult.IsSuccess || meetingImportResult.Data == null)
+        {
+            return Result.Failure<MeetingActionItemTaskLinkDto>(meetingImportResult.Error!, meetingImportResult.StatusCode);
+        }
+
+        var extractionResult = ParseExtractionPayload(meetingImportResult.Data.AiDraft?.PayloadJson);
+        if (!extractionResult.IsSuccess || extractionResult.Data == null)
+        {
+            return Result.Failure<MeetingActionItemTaskLinkDto>(extractionResult.Error!, extractionResult.StatusCode);
+        }
+
+        if (actionItemIndex >= extractionResult.Data.ActionItems.Count)
+        {
+            return Result.Failure<MeetingActionItemTaskLinkDto>("Action item index is out of range.", 404);
+        }
+
+        var task = await _taskRepo.GetQueryable()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == request.TaskId, ct);
+        if (task == null)
+        {
+            return Result.NotFound<MeetingActionItemTaskLinkDto>("Task not found.");
+        }
+
+        if (task.ProjectId != meetingImportResult.Data.ProjectId)
+        {
+            return Result.Failure<MeetingActionItemTaskLinkDto>("Task does not belong to the same project as this meeting import.", 400);
+        }
+
+        var existingMapping = await _mappingRepo.GetQueryable()
+            .FirstOrDefaultAsync(mapping =>
+                mapping.MeetingImportId == meetingImportId &&
+                mapping.ActionItemIndex == actionItemIndex,
+                ct);
+        if (existingMapping != null)
+        {
+            return Result.Failure<MeetingActionItemTaskLinkDto>("This action item already has a task mapping.", 409);
+        }
+
+        var actionItem = extractionResult.Data.ActionItems[actionItemIndex];
+        var mapping = new MeetingActionItemMapping
+        {
+            MeetingImportId = meetingImportId,
+            ActionItemIndex = actionItemIndex,
+            TaskId = request.TaskId,
+            Status = "Linked",
+            SourceTitle = actionItem.Title,
+            SourcePriority = actionItem.Priority,
+            SourceDueDate = actionItem.DueDate,
+            SourceQuote = actionItem.SourceEvidence ?? actionItem.Description,
+            CreatedById = currentUserId.Value
+        };
+
+        await _mappingRepo.AddAsync(mapping, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync(
+            "LinkMeetingActionItemToExistingTask",
+            nameof(MeetingActionItemMapping),
+            mapping.Id.ToString(),
+            new { mapping.MeetingImportId, mapping.ActionItemIndex, mapping.TaskId },
+            ct);
+
+        return Result.Success(new MeetingActionItemTaskLinkDto(
+            meetingImportId,
+            actionItemIndex,
+            true,
+            request.TaskId,
+            mapping.Status));
+    }
+
+    public async Task<Result<MeetingActionItemTaskLinkDto>> GetMeetingActionItemTaskLinkAsync(
+        Guid meetingImportId,
+        int actionItemIndex,
+        CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<MeetingActionItemTaskLinkDto>();
+        }
+
+        if (actionItemIndex < 0)
+        {
+            return Result.Failure<MeetingActionItemTaskLinkDto>("Action item index must be zero or greater.", 400);
+        }
+
+        var meetingImportResult = await GetMeetingImportForActionItemsAsync(meetingImportId, currentUserId.Value, ct);
+        if (!meetingImportResult.IsSuccess || meetingImportResult.Data == null)
+        {
+            return Result.Failure<MeetingActionItemTaskLinkDto>(meetingImportResult.Error!, meetingImportResult.StatusCode);
+        }
+
+        var extractionResult = ParseExtractionPayload(meetingImportResult.Data.AiDraft?.PayloadJson);
+        if (!extractionResult.IsSuccess || extractionResult.Data == null)
+        {
+            return Result.Failure<MeetingActionItemTaskLinkDto>(extractionResult.Error!, extractionResult.StatusCode);
+        }
+
+        if (actionItemIndex >= extractionResult.Data.ActionItems.Count)
+        {
+            return Result.Failure<MeetingActionItemTaskLinkDto>("Action item index is out of range.", 404);
+        }
+
+        var mapping = await _mappingRepo.GetQueryable()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item =>
+                item.MeetingImportId == meetingImportId &&
+                item.ActionItemIndex == actionItemIndex,
+                ct);
+
+        return Result.Success(new MeetingActionItemTaskLinkDto(
+            meetingImportId,
+            actionItemIndex,
+            mapping?.TaskId != null,
+            mapping?.TaskId,
+            ResolveMappingStatus(mapping)));
+    }
+
+    public async Task<Result<TaskItemDto>> CreateTaskFromMeetingActionItemAsync(
+        Guid meetingImportId,
+        int actionItemIndex,
+        MeetingActionItemCreateRequest request,
+        CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<TaskItemDto>();
+        }
+
+        if (actionItemIndex < 0)
+        {
+            return Result.Failure<TaskItemDto>("Action item index must be zero or greater.", 400);
+        }
+
+        var meetingImport = await _meetingImportRepo.GetQueryable()
+            .Include(item => item.Project)
+            .Include(item => item.AiDraft)
+            .FirstOrDefaultAsync(item => item.Id == meetingImportId, ct);
+
+        if (meetingImport == null)
+        {
+            return Result.NotFound<TaskItemDto>("Meeting import not found.");
+        }
+
+        if (!await CanAccessProjectAsync(meetingImport.Project, currentUserId.Value, ct))
+        {
+            return Result.Forbidden<TaskItemDto>();
+        }
+
+        var existingMapping = await _mappingRepo.GetQueryable()
+            .FirstOrDefaultAsync(mapping => mapping.MeetingImportId == meetingImportId && mapping.ActionItemIndex == actionItemIndex, ct);
+
+        if (existingMapping != null && existingMapping.TaskId.HasValue)
+        {
+            return Result.Failure<TaskItemDto>("This action item is already linked to a task.", 409);
+        }
+
+        if (meetingImport.AiDraft == null || string.IsNullOrWhiteSpace(meetingImport.AiDraft.PayloadJson))
+        {
+            return Result.Failure<TaskItemDto>("Meeting action items are not available for this import.", 400);
+        }
+
+        var extraction = JsonSerializer.Deserialize<MeetingExtractionPayload>(meetingImport.AiDraft.PayloadJson, JsonOptions);
+        if (extraction == null)
+        {
+            return Result.Failure<TaskItemDto>("Could not parse meeting action item extraction.", 500);
+        }
+
+        if (actionItemIndex >= extraction.ActionItems.Count)
+        {
+            return Result.Failure<TaskItemDto>("Action item index is out of range.", 404);
+        }
+
+        var actionItem = extraction.ActionItems[actionItemIndex];
+        var title = string.IsNullOrWhiteSpace(request.Title) ? actionItem.Title : request.Title.Trim();
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return Result.Failure<TaskItemDto>("Task title is required.", 400);
+        }
+
+        var description = string.IsNullOrWhiteSpace(request.Description)
+            ? (string.IsNullOrWhiteSpace(actionItem.Description) ? actionItem.SourceEvidence : actionItem.Description)
+            : request.Description.Trim();
+
+        var priority = !string.IsNullOrWhiteSpace(request.Priority)
+            ? request.Priority
+            : actionItem.Priority;
+
+        var dueDate = request.DueDate ?? actionItem.DueDate;
+
+        var createDto = new CreateTaskDto(
+            title,
+            description,
+            string.IsNullOrWhiteSpace(priority) ? "Medium" : priority,
+            dueDate,
+            null,
+            meetingImport.ProjectId,
+            request.AssigneeId,
+            false,
+            false,
+            true,
+            null,
+            request.LabelIds);
+
+        var taskResult = await _taskService.CreateAsync(createDto, ct);
+        if (!taskResult.IsSuccess || taskResult.Data == null)
+        {
+            return taskResult;
+        }
+
+        var mapping = new MeetingActionItemMapping
+        {
+            MeetingImportId = meetingImportId,
+            ActionItemIndex = actionItemIndex,
+            TaskId = taskResult.Data.Id,
+            Status = "Linked",
+            SourceTitle = actionItem.Title,
+            SourcePriority = actionItem.Priority,
+            SourceDueDate = actionItem.DueDate,
+            SourceQuote = actionItem.SourceEvidence ?? actionItem.Description,
+            CreatedById = currentUserId.Value
+        };
+
+        if (existingMapping != null)
+        {
+            existingMapping.TaskId = mapping.TaskId;
+            existingMapping.Status = mapping.Status;
+            existingMapping.SourceTitle = mapping.SourceTitle;
+            existingMapping.SourcePriority = mapping.SourcePriority;
+            existingMapping.SourceDueDate = mapping.SourceDueDate;
+            existingMapping.SourceQuote = mapping.SourceQuote;
+            existingMapping.CreatedById = mapping.CreatedById;
+            await _mappingRepo.UpdateAsync(existingMapping, ct);
+        }
+        else
+        {
+            await _mappingRepo.AddAsync(mapping, ct);
+        }
+
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync(
+            "LinkMeetingActionItemToTask",
+            nameof(MeetingActionItemMapping),
+            mapping.Id.ToString(),
+            new { mapping.MeetingImportId, mapping.TaskId, mapping.ActionItemIndex },
+            ct);
+
+        return taskResult;
+    }
+
+    public async Task<Result<TaskMeetingSourceDto>> GetTaskMeetingSourceAsync(Guid taskId, CancellationToken ct = default)
+    {
+        var mapping = await _mappingRepo.GetQueryable()
+            .Include(item => item.MeetingImport)
+                .ThenInclude(import => import.AiDraft)
+            .FirstOrDefaultAsync(item => item.TaskId == taskId, ct);
+
+        if (mapping == null)
+        {
+            return Result.NotFound<TaskMeetingSourceDto>("No meeting source mapping found for this task.");
+        }
+
+        var meetingImport = mapping.MeetingImport;
+        if (meetingImport == null)
+        {
+            return Result.NotFound<TaskMeetingSourceDto>("Meeting import source is not available.");
+        }
+
+        MeetingActionDraftDto? actionItem = null;
+        var extractionResult = ParseExtractionPayload(meetingImport.AiDraft?.PayloadJson);
+        if (extractionResult.IsSuccess && extractionResult.Data != null &&
+            mapping.ActionItemIndex >= 0 &&
+            mapping.ActionItemIndex < extractionResult.Data.ActionItems.Count)
+        {
+            actionItem = extractionResult.Data.ActionItems[mapping.ActionItemIndex];
+        }
+
+        var sourceTitle = !string.IsNullOrWhiteSpace(mapping.SourceTitle)
+            ? mapping.SourceTitle
+            : actionItem?.Title;
+        var sourceDescription = actionItem == null
+            ? null
+            : string.IsNullOrWhiteSpace(actionItem.Description)
+                ? actionItem.SourceEvidence
+                : actionItem.Description;
+        var sourcePriority = !string.IsNullOrWhiteSpace(mapping.SourcePriority)
+            ? mapping.SourcePriority
+            : actionItem?.Priority;
+        var sourceDueDate = mapping.SourceDueDate ?? actionItem?.DueDate;
+        var sourceQuote = !string.IsNullOrWhiteSpace(mapping.SourceQuote)
+            ? mapping.SourceQuote
+            : actionItem?.SourceEvidence ?? actionItem?.Description;
+
+        var result = new TaskMeetingSourceDto(
+            taskId,
+            meetingImport.Id,
+            meetingImport.Title,
+            meetingImport.MeetingStartedAt,
+            mapping.ActionItemIndex,
+            sourceTitle,
+            sourceDescription,
+            sourcePriority,
+            sourceDueDate,
+            sourceQuote,
+            mapping.Status,
+            mapping.TaskId);
+
+        return Result.Success(result);
+    }
+
+    private async Task<Result<MeetingImport>> GetMeetingImportForActionItemsAsync(Guid meetingImportId, Guid currentUserId, CancellationToken ct)
+    {
+        var meetingImport = await _meetingImportRepo.GetQueryable()
+            .Include(item => item.Project)
+            .Include(item => item.AiDraft)
+            .FirstOrDefaultAsync(item => item.Id == meetingImportId, ct);
+
+        if (meetingImport == null)
+        {
+            return Result.NotFound<MeetingImport>("Meeting import not found.");
+        }
+
+        if (!await CanAccessProjectAsync(meetingImport.Project, currentUserId, ct))
+        {
+            return Result.Forbidden<MeetingImport>();
+        }
+
+        return Result.Success(meetingImport);
+    }
+
+    private static Result<MeetingExtractionPayload> ParseExtractionPayload(string? payloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return Result.Failure<MeetingExtractionPayload>("Meeting action items are not available for this import.", 400);
+        }
+
+        try
+        {
+            var extraction = JsonSerializer.Deserialize<MeetingExtractionPayload>(payloadJson, JsonOptions);
+            if (extraction == null)
+            {
+                return Result.Failure<MeetingExtractionPayload>("Could not parse meeting action items draft payload.", 400);
+            }
+
+            return Result.Success(extraction);
+        }
+        catch (JsonException)
+        {
+            return Result.Failure<MeetingExtractionPayload>("Could not parse meeting action items draft payload.", 400);
+        }
+    }
+
+    private static string ResolveMappingStatus(MeetingActionItemMapping? mapping)
+    {
+        if (mapping == null)
+        {
+            return "NotLinked";
+        }
+
+        if (!string.IsNullOrWhiteSpace(mapping.Status))
+        {
+            return mapping.Status;
+        }
+
+        return mapping.TaskId.HasValue ? "Linked" : "NotLinked";
     }
 
     private static string GenerateSourceHash(MeetilyImportRequest request)

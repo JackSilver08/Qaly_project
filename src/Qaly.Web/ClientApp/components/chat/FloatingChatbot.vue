@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import { Send, X, MessageSquare, Sparkles } from 'lucide-vue-next'
@@ -19,6 +19,7 @@ const isOpen = ref(false)
 const isThinking = ref(false)
 
 const draft = ref('')
+const inputRef = ref<HTMLInputElement | null>(null)
 const messages = ref<ChatMessage[]>([
   {
     id: 'welcome',
@@ -131,6 +132,27 @@ function toggle() {
   if (isOpen.value) void scrollBottom()
 }
 
+function openAssistant(prompt?: string) {
+  if (prompt && prompt.trim()) {
+    draft.value = prompt.trim()
+  }
+
+  isOpen.value = true
+  void nextTick(() => {
+    inputRef.value?.focus()
+  })
+  void scrollBottom()
+}
+
+function handleAssistantOpen(event: Event) {
+  const detail = (event as CustomEvent<{ prompt?: string }>).detail
+  openAssistant(detail?.prompt)
+}
+
+function handleAssistantToggle() {
+  openAssistant()
+}
+
 function initials(name: string) {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 }
@@ -140,6 +162,15 @@ const quickPrompts = [
   'Có task nào quá hạn không?',
   'Ai đang rảnh để nhận việc?'
 ]
+onMounted(() => {
+  window.addEventListener('qaly:assistant-open', handleAssistantOpen as EventListener)
+  window.addEventListener('qaly:assistant-toggle', handleAssistantToggle as EventListener)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('qaly:assistant-open', handleAssistantOpen as EventListener)
+  window.removeEventListener('qaly:assistant-toggle', handleAssistantToggle as EventListener)
+})
 </script>
 
 <template>

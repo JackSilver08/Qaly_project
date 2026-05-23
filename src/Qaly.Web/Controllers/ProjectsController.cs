@@ -27,6 +27,13 @@ public class ProjectsController : ControllerBase
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpGet("{id}/timeline")]
+    public async Task<IActionResult> GetTimeline(Guid id, CancellationToken ct)
+    {
+        var result = await _taskService.GetTimelineAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null, CancellationToken ct = default)
     {
@@ -118,6 +125,13 @@ public class ProjectsController : ControllerBase
     public async Task<IActionResult> DeleteLabel(Guid id, Guid labelId, CancellationToken ct)
     {
         var result = await _projectService.DeleteLabelAsync(id, labelId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("{id}/workload")]
+    public async Task<IActionResult> GetWorkload(Guid id, CancellationToken ct)
+    {
+        var result = await _taskService.GetWorkloadAsync(id, ct);
         return StatusCode(result.StatusCode, result);
     }
 }

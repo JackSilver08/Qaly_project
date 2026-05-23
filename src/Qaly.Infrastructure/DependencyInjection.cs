@@ -48,6 +48,7 @@ public static class DependencyInjection
 
         // Repositories
         services.AddScoped(typeof(IRepository<>), typeof(GenericRepository<>));
+        services.AddScoped<IProjectDashboardSummaryRepository, ProjectDashboardSummaryRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         // Services
@@ -59,6 +60,12 @@ public static class DependencyInjection
         services.AddScoped<IAiExportService, AiExportService>();
         services.AddScoped<ISessionService, RedisSessionService>();
         services.AddScoped<IWebhookPublisher, WebhookPublisher>();
+        services.AddScoped<Qaly.Application.Common.Interfaces.IPushSender, WebPushSender>();
+
+        // AI Core Services
+        services.AddScoped<IAiCostService, Qaly.Infrastructure.Services.AI.AiCostService>();
+        services.AddScoped<IAiComplianceService, Qaly.Infrastructure.Services.AI.AiComplianceService>();
+        services.AddScoped<IAiGateway, Qaly.Infrastructure.Services.AI.AiGateway>();
         
         services.AddHttpClient("WebhookClient");
 

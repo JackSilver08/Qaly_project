@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using Qaly.Application.DTOs.Meeting;
 using Qaly.Application.DTOs.Task;
 using Qaly.Application.Services;
 
@@ -11,10 +12,12 @@ namespace Qaly.Web.Controllers;
 public class TasksController : ControllerBase
 {
     private readonly ITaskService _taskService;
+    private readonly IMeetingImportService _meetingImportService;
 
-    public TasksController(ITaskService taskService)
+    public TasksController(ITaskService taskService, IMeetingImportService meetingImportService)
     {
         _taskService = taskService;
+        _meetingImportService = meetingImportService;
     }
 
     [HttpGet("project/{projectId}")]
@@ -34,6 +37,20 @@ public class TasksController : ControllerBase
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpGet("project/{projectId}/kanban")]
+    public async Task<IActionResult> GetKanban(Guid projectId, CancellationToken ct = default)
+    {
+        var result = await _taskService.GetKanbanAsync(projectId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPatch("project/{projectId}/kanban/move")]
+    public async Task<IActionResult> MoveOnKanban(Guid projectId, [FromBody] KanbanMoveRequest request, CancellationToken ct = default)
+    {
+        var result = await _taskService.MoveOnKanbanAsync(projectId, request, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpGet("assignee/{assigneeId:guid}")]
     public async Task<IActionResult> GetByAssignee(Guid assigneeId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
     {
@@ -45,6 +62,13 @@ public class TasksController : ControllerBase
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
         var result = await _taskService.GetByIdAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("{id}/meeting-source")]
+    public async Task<IActionResult> GetMeetingSource(Guid id, CancellationToken ct)
+    {
+        var result = await _meetingImportService.GetTaskMeetingSourceAsync(id, ct);
         return StatusCode(result.StatusCode, result);
     }
 
@@ -65,14 +89,14 @@ public class TasksController : ControllerBase
     [HttpPatch("{id}/status")]
     public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateTaskStatusRequest request, CancellationToken ct)
     {
-        var result = await _taskService.UpdateStatusAsync(id, request.Status, ct);
+        var result = await _taskService.UpdateStatusAsync(id, request.Status, request.RowVersion, ct);
         return StatusCode(result.StatusCode, result);
     }
 
     [HttpPatch("{id}/sort-order")]
     public async Task<IActionResult> UpdateSortOrder(Guid id, [FromBody] UpdateTaskSortOrderRequest request, CancellationToken ct)
     {
-        var result = await _taskService.UpdateSortOrderAsync(id, request.SortOrder, ct);
+        var result = await _taskService.UpdateSortOrderAsync(id, request.SortOrder, request.RowVersion, ct);
         return StatusCode(result.StatusCode, result);
     }
 
@@ -128,7 +152,7 @@ public class TasksController : ControllerBase
     public async Task<IActionResult> GetTimeEntries(Guid id, [FromServices] ITimeTrackingService timeTrackingService)
     {
         var result = await timeTrackingService.GetByTaskAsync(id);
-        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result.Error);
+        return StatusCode(result.StatusCode, result);
     }
 
     [HttpGet("/api/projects/{projectId:guid}/task-attention")]
@@ -177,8 +201,8 @@ public class TasksController : ControllerBase
         return StatusCode(result.StatusCode, result);
     }
 }
-public sealed record UpdateTaskStatusRequest(string Status);
-public sealed record UpdateTaskSortOrderRequest(int SortOrder);
+public sealed record UpdateTaskStatusRequest(string Status, string? RowVersion = null);
+public sealed record UpdateTaskSortOrderRequest(int SortOrder, string? RowVersion = null);
 public sealed record UpdateTaskDatesRequest(DateTimeOffset? StartDate, DateTimeOffset? EndDate);
 public sealed record AddTaskDependencyRequest(Guid PredecessorId, string? Type);
 public sealed record BatchTaskRequest(IEnumerable<Guid> Ids);

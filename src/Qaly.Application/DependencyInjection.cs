@@ -35,6 +35,7 @@ public static class DependencyInjection
         services.AddScoped<IImportService, ImportService>();
         services.AddScoped<IWikiService, WikiService>();
         services.AddScoped<IMeetingImportService, MeetingImportService>();
+        services.AddScoped<IDashboardSummaryService, DashboardSummaryService>();
 
         return services;
     }

@@ -25,6 +25,9 @@ public static class ProjectRoleRules
     public static bool IsViewer(string? projectRole)
         => string.Equals(projectRole, Viewer, StringComparison.OrdinalIgnoreCase);
 
+    public static bool IsCustomer(string? projectRole)
+        => string.Equals(projectRole, Customer, StringComparison.OrdinalIgnoreCase);
+
     public static bool IsProjectManager(string? projectRole)
         => string.Equals(projectRole, Owner, StringComparison.OrdinalIgnoreCase)
            || string.Equals(projectRole, Manager, StringComparison.OrdinalIgnoreCase)
