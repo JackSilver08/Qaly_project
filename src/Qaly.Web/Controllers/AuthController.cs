@@ -1,7 +1,9 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.User;
 using Qaly.Application.Services;
 using Qaly.Web.Auth;
@@ -30,6 +32,16 @@ public class AuthController : ControllerBase
         }
 
         var result = await _authService.GetCurrentUserAsync(userId.Value, ct);
+        if (result.IsSuccess && result.Data != null)
+        {
+            return Ok(result);
+        }
+
+        if (result.StatusCode == StatusCodes.Status404NotFound)
+        {
+            return Ok(Result.Success(BuildFallbackCurrentUser(userId.Value)));
+        }
+
         return StatusCode(result.StatusCode, result);
     }
 
@@ -146,5 +158,25 @@ public class AuthController : ControllerBase
         }
 
         return StatusCode(result.StatusCode, result);
+    }
+
+    private UserDto BuildFallbackCurrentUser(Guid userId)
+    {
+        var fullName =
+            User.FindFirstValue(ClaimTypes.Name) ??
+            User.FindFirstValue(ClaimTypes.Email) ??
+            "Qaly user";
+
+        var email = User.FindFirstValue(ClaimTypes.Email) ?? string.Empty;
+        var role = User.FindFirstValue(ClaimTypes.Role) ?? "Member";
+
+        return new UserDto(
+            userId,
+            fullName,
+            email,
+            role,
+            true,
+            null,
+            DateTimeOffset.UtcNow);
     }
 }

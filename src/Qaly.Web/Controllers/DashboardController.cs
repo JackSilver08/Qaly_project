@@ -13,18 +13,22 @@ namespace Qaly.Web.Controllers;
 public class DashboardController : ControllerBase
 {
     private readonly QalyDbContext _context;
+    private readonly ILogger<DashboardController> _logger;
 
-    public DashboardController(QalyDbContext context)
+    public DashboardController(QalyDbContext context, ILogger<DashboardController> logger)
     {
         _context = context;
+        _logger = logger;
     }
 
     [HttpGet("overview")]
     public async Task<ActionResult<DashboardOverviewResponse>> GetOverview(CancellationToken cancellationToken)
     {
-        var now = DateTimeOffset.UtcNow;
-        var currentUserId = User.GetUserId();
-        var isAdmin = User.IsInRole("Admin");
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            var currentUserId = User.GetUserId();
+            var isAdmin = User.IsInRole("Admin");
 
         var projectQuery = _context.Projects
             .AsNoTracking()
@@ -98,18 +102,18 @@ public class DashboardController : ControllerBase
                 var projectMembers = project.Members
                     .Select(m => new DashboardProjectMemberResponse(
                         m.UserId,
-                        m.User.FullName,
+                        m.User?.FullName ?? "Unknown member",
                         m.Role,
-                        m.User.Email,
+                        m.User?.Email ?? string.Empty,
                         m.CanViewProjectTimeline,
                         m.CanViewTaskRisk,
                         m.CanNudgeAssignee,
                         m.CanViewUnseenTaskSignal))
                     .Append(new DashboardProjectMemberResponse(
                         project.OwnerId,
-                        project.Owner.FullName,
+                        project.Owner?.FullName ?? "Unknown owner",
                         "Owner",
-                        project.Owner.Email,
+                        project.Owner?.Email ?? string.Empty,
                         true,
                         true,
                         true,
@@ -129,17 +133,17 @@ public class DashboardController : ControllerBase
                     : (int)Math.Round(completedCount * 100d / progressTasks.Count, MidpointRounding.AwayFromZero);
 
                 return new DashboardProjectResponse(
-                    project.Id,
-                    project.Name,
-                    project.Code,
-                    project.Description,
-                    project.LogoUrl,
-                    project.Status,
-                    project.OwnerId,
-                    project.Owner.FullName,
-                    projectMembers.Count,
-                    projectTasks.Count,
-                    completedCount,
+                        project.Id,
+                        project.Name,
+                        project.Code,
+                        project.Description,
+                        project.LogoUrl,
+                        project.Status,
+                        project.OwnerId,
+                        project.Owner?.FullName ?? "Unknown owner",
+                        projectMembers.Count,
+                        projectTasks.Count,
+                        completedCount,
                     overdueCount,
                     progressPercentage,
                     projectMembers,
@@ -153,7 +157,7 @@ public class DashboardController : ControllerBase
                             task.Priority,
                             task.DueDate,
                             isRestricted ? null : task.Assignee?.FullName,
-                            isRestricted ? string.Empty : task.Reporter.FullName,
+                            isRestricted ? string.Empty : (task.Reporter?.FullName ?? string.Empty),
                             project.Name,
                             task.IsPrivate,
                             isRestricted,
@@ -251,8 +255,31 @@ public class DashboardController : ControllerBase
             teamResponses,
             notifications);
 
-        return Ok(response);
+            return Ok(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to build dashboard overview. Returning safe fallback response.");
+            return Ok(CreateSafeFallbackOverview(DateTimeOffset.UtcNow));
+        }
     }
+
+    private static DashboardOverviewResponse CreateSafeFallbackOverview(DateTimeOffset now)
+        => new(
+            now,
+            new DashboardStatsResponse(0, 0, 0, 0, 0, 0, 0),
+            "Không thể tải số liệu trực tiếp, nên hệ thống đang hiển thị dữ liệu an toàn.",
+            "Đã gặp lỗi khi tổng hợp dashboard; vui lòng kiểm tra dữ liệu dự án hoặc nhật ký máy chủ.",
+            Array.Empty<DashboardProjectResponse>(),
+            Array.Empty<DashboardMemberResponse>(),
+            [
+                new DashboardNotificationResponse(
+                    "dashboard-fallback",
+                    "Đang dùng dữ liệu an toàn",
+                    "Dashboard đã chuyển sang dữ liệu an toàn để tránh màn hình lỗi.",
+                    "warning",
+                    now)
+            ]);
 
     private static List<DashboardNotificationResponse> BuildNotifications(
         IReadOnlyList<DashboardProjectResponse> projects,

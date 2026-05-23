@@ -11,8 +11,9 @@ import WebhooksTab from '../components/WebhooksTab.vue'
 import ImportModal from '../components/import/ImportModal.vue'
 import ImportUndoBanner from '../components/import/ImportUndoBanner.vue'
 import { useDashboardContext } from '../composables/dashboard-context'
-import { ref, onMounted, onUnmounted } from 'vue'
-import type { DashboardTask } from '../types'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { apiResult } from '../utils/api-client'
+import type { DashboardTask, TaskAssignmentInsightDto } from '../types'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 
@@ -78,6 +79,16 @@ const {
 
 const showImportModal = ref(false)
 const undoBannerData = ref<{ importSessionId: string; importedCount: number; createdAt: string } | null>(null)
+const assignmentInsight = ref<TaskAssignmentInsightDto | null>(null)
+const assignmentInsightLoading = ref(false)
+const assignmentInsightError = ref('')
+watch(
+  () => selectedTask.value?.id,
+  () => {
+    assignmentInsight.value = null
+    assignmentInsightError.value = ''
+  },
+)
 
 function onImported(result: any) {
   showImportModal.value = false
@@ -129,6 +140,19 @@ async function submitManualEntry() {
   const saved = await addManualTimeEntry(selectedTask.value.id, manualMinutes.value, manualNote.value)
   if (saved) {
     manualMinutes.value = 0; manualNote.value = ''; showManualForm.value = false
+  }
+}
+
+async function loadAssignmentInsight() {
+  if (!selectedProject.value || !selectedTask.value) return
+  assignmentInsightLoading.value = true
+  assignmentInsightError.value = ''
+  try {
+    assignmentInsight.value = await apiResult<TaskAssignmentInsightDto>(`/api/ai/tasks/${selectedTask.value.id}/assignment-insight?projectId=${selectedProject.value.id}`)
+  } catch (error) {
+    assignmentInsightError.value = 'Không thể tải gợi ý assignee.'
+  } finally {
+    assignmentInsightLoading.value = false
   }
 }
 
@@ -323,6 +347,36 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
           </div>
 
           <div v-if="selectedTask && !selectedTask.isRestricted" class="comment-list">
+            <div class="assignment-insight glass-card">
+              <div class="section-header section-header--space">
+                <strong>Gợi ý assignee AI</strong>
+                <button class="ghost-pill" type="button" @click="loadAssignmentInsight">Tải gợi ý</button>
+              </div>
+              <p v-if="assignmentInsightLoading" class="assignment-note">Đang phân tích workload, skill và lịch sử gán việc...</p>
+              <p v-else-if="assignmentInsightError" class="assignment-note assignment-note--error">{{ assignmentInsightError }}</p>
+              <template v-else-if="assignmentInsight">
+                <p class="assignment-note">{{ assignmentInsight.recommendationSummary }}</p>
+                <div class="assignment-recommendation">
+                  <strong>{{ assignmentInsight.recommendedUserName || 'Chưa có đề xuất' }}</strong>
+                  <span>{{ assignmentInsight.recommendedUserId ? 'Người phù hợp nhất hiện tại' : 'Không đủ dữ liệu' }}</span>
+                </div>
+                <div class="assignment-candidates">
+                  <article v-for="candidate in assignmentInsight.candidates.slice(0, 3)" :key="candidate.userId" class="assignment-candidate">
+                    <div class="assignment-candidate__top">
+                      <strong>{{ candidate.fullName }}</strong>
+                      <span>{{ candidate.role }}</span>
+                    </div>
+                    <div class="assignment-candidate__stats">
+                      <span>Điểm: {{ candidate.totalScore }}</span>
+                      <span>Đang mở: {{ candidate.activeTaskCount }}</span>
+                      <span>Quá hạn: {{ candidate.overdueTaskCount }}</span>
+                    </div>
+                  </article>
+                </div>
+              </template>
+              <p v-else class="assignment-note">Nhấn "Tải gợi ý" để xem đề xuất dựa trên workload và lịch sử.</p>
+            </div>
+
             <div class="time-tracking-section">
               <div class="section-header">
                 <Clock :size="16" />
@@ -857,6 +911,62 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
 .task-option-toggle input {
   accent-color: #1f80ff;
+}
+
+.assignment-insight {
+  padding: 14px;
+  border: 1px solid rgba(182, 194, 217, 0.24);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.section-header--space {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.assignment-note {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.assignment-note--error {
+  color: #fca5a5;
+}
+
+.assignment-recommendation {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  color: var(--surface-milk);
+}
+
+.assignment-candidates {
+  display: grid;
+  gap: 8px;
+}
+
+.assignment-candidate {
+  padding: 10px 12px;
+  border: 1px solid rgba(182, 194, 217, 0.18);
+  border-radius: 12px;
+  background: rgba(8, 21, 39, 0.55);
+}
+
+.assignment-candidate__top,
+.assignment-candidate__stats {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.assignment-candidate__top span,
+.assignment-candidate__stats {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .quick-edit-input {

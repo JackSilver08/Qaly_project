@@ -113,6 +113,7 @@ public class TaskService : ITaskService
         pageSize = Math.Clamp(pageSize, 1, 100);
 
         var query = TaskDetailsQuery()
+            .AsNoTracking()
             .Where(t => t.ProjectId == projectId);
 
         query = _taskAccessPolicy.ApplyVisibilityFilter(query);
@@ -146,7 +147,6 @@ public class TaskService : ITaskService
         query = ApplyTaskSort(query, sort);
 
         var items = await query
-            .OrderByPlanningPriority()
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(ct);
@@ -306,6 +306,7 @@ public class TaskService : ITaskService
         pageSize = Math.Clamp(pageSize, 1, 100);
 
         var query = _taskAccessPolicy.ApplyVisibilityFilter(TaskDetailsQuery())
+            .AsNoTracking()
             .Where(t => t.AssigneeId == assigneeId);
 
         var totalCount = await query.CountAsync(ct);
@@ -322,6 +323,65 @@ public class TaskService : ITaskService
             PageNumber = page,
             PageSize = pageSize
         });
+    }
+
+    public async Task<Result<ProjectTimelineDto>> GetTimelineAsync(Guid projectId, CancellationToken ct = default)
+    {
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null)
+        {
+            return Result.NotFound<ProjectTimelineDto>();
+        }
+
+        if (!await _taskAccessPolicy.CanAccessProjectAsync(projectId, project.OwnerId, ct))
+        {
+            return Result.Forbidden<ProjectTimelineDto>();
+        }
+
+        var query = _taskAccessPolicy.ApplyVisibilityFilter(_taskRepo.GetQueryable())
+            .AsNoTracking()
+            .Where(task => task.ProjectId == projectId)
+            .Include(task => task.PredecessorDependencies)
+                .ThenInclude(dependency => dependency.Predecessor);
+
+        var tasks = await query.ToListAsync(ct);
+        var now = DateTimeOffset.UtcNow;
+
+        var dates = tasks
+            .SelectMany(task => new[] { task.StartDate, task.DueDate })
+            .Where(date => date.HasValue)
+            .Select(date => date!.Value)
+            .OrderBy(date => date)
+            .ToList();
+
+        var baseStart = dates.FirstOrDefault();
+        var baseEnd = dates.LastOrDefault();
+        var windowStart = dates.Count > 0 ? baseStart.AddDays(-7) : now.AddDays(-7);
+        var windowEnd = dates.Count > 0 ? baseEnd.AddDays(14) : now.AddDays(21);
+        if (windowEnd < windowStart)
+        {
+            windowEnd = windowStart.AddDays(28);
+        }
+
+        var sprintStart = AlignToSprintStart(now);
+        var sprintEnd = sprintStart.AddDays(13);
+
+        var buckets = BuildSprintBuckets(tasks, windowStart, windowEnd, now);
+        var blockedItems = BuildBlockedTimelineItems(tasks);
+
+        return Result.Success(new ProjectTimelineDto(
+            projectId,
+            windowStart,
+            windowEnd,
+            sprintStart,
+            sprintEnd,
+            tasks.Count,
+            tasks.Count(task => !IsClosed(task.Status)),
+            tasks.Count(task => IsDone(task.Status)),
+            tasks.Count(task => task.DueDate.HasValue && task.DueDate.Value < now && !IsDone(task.Status)),
+            blockedItems.Count(item => item.IsBlocked),
+            buckets,
+            blockedItems));
     }
 
     public async Task<Result<PagedResult<TaskAttentionDto>>> GetAttentionByProjectAsync(
@@ -796,6 +856,7 @@ public class TaskService : ITaskService
             return Result.Forbidden<IEnumerable<GanttTaskDto>>();
 
         var tasks = await _taskAccessPolicy.ApplyVisibilityFilter(_taskRepo.GetQueryable())
+            .AsNoTracking()
             .Where(t => t.ProjectId == projectId)
             .Include(t => t.PredecessorDependencies)
             .ToListAsync(ct);
@@ -841,49 +902,61 @@ public class TaskService : ITaskService
 
     public async Task<Result> MarkViewedAsync(Guid projectId, Guid taskId, CancellationToken ct = default)
     {
-        var currentUserId = _taskAccessPolicy.CurrentUserId;
-        if (currentUserId == null)
+        try
         {
-            return Result.Forbidden();
-        }
-
-        var task = await _taskRepo.GetQueryable()
-            .WithDetails()
-            .FirstOrDefaultAsync(item => item.Id == taskId && item.ProjectId == projectId, ct);
-
-        if (task == null)
-        {
-            return Result.NotFound();
-        }
-
-        if (!await _taskAccessPolicy.CanAccessTaskAsync(task, ct))
-        {
-            return Result.Forbidden();
-        }
-
-        var viewedAt = DateTimeOffset.UtcNow;
-        var existing = await _viewEventRepo.GetQueryable()
-            .FirstOrDefaultAsync(view => view.TaskItemId == taskId && view.UserId == currentUserId.Value, ct);
-
-        if (existing == null)
-        {
-            await _viewEventRepo.AddAsync(new TaskViewEvent
+            var currentUserId = _taskAccessPolicy.CurrentUserId;
+            if (currentUserId == null)
             {
-                TaskItemId = taskId,
-                UserId = currentUserId.Value,
-                ViewedAt = viewedAt,
-                ViewCount = 1
-            }, ct);
-        }
-        else
-        {
-            existing.ViewedAt = viewedAt;
-            existing.ViewCount += 1;
-            await _viewEventRepo.UpdateAsync(existing, ct);
-        }
+                return Result.Forbidden();
+            }
 
-        await _unitOfWork.SaveChangesAsync(ct);
-        return Result.Success();
+            var task = await _taskRepo.GetQueryable()
+                .AsNoTracking()
+                .Include(item => item.Project)
+                .Include(item => item.Assignee)
+                .Include(item => item.Assignees)
+                    .ThenInclude(assignment => assignment.User)
+                .Include(item => item.Reporter)
+                .FirstOrDefaultAsync(item => item.Id == taskId && item.ProjectId == projectId, ct);
+
+            if (task == null)
+            {
+                return Result.NotFound();
+            }
+
+            if (!await _taskAccessPolicy.CanAccessTaskAsync(task, ct))
+            {
+                return Result.Forbidden();
+            }
+
+            var viewedAt = DateTimeOffset.UtcNow;
+            var existing = await _viewEventRepo.GetQueryable()
+                .FirstOrDefaultAsync(view => view.TaskItemId == taskId && view.UserId == currentUserId.Value, ct);
+
+            if (existing == null)
+            {
+                await _viewEventRepo.AddAsync(new TaskViewEvent
+                {
+                    TaskItemId = taskId,
+                    UserId = currentUserId.Value,
+                    ViewedAt = viewedAt,
+                    ViewCount = 1
+                }, ct);
+            }
+            else
+            {
+                existing.ViewedAt = viewedAt;
+                existing.ViewCount += 1;
+                await _viewEventRepo.UpdateAsync(existing, ct);
+            }
+
+            await _unitOfWork.SaveChangesAsync(ct);
+            return Result.Success();
+        }
+        catch
+        {
+            return Result.Success();
+        }
     }
 
     public async Task<Result> NudgeAssigneeAsync(Guid projectId, Guid taskId, Guid? assigneeId = null, CancellationToken ct = default)
@@ -1015,6 +1088,7 @@ public class TaskService : ITaskService
     private async Task<KanbanBoardDto> BuildKanbanBoardAsync(Guid projectId, CancellationToken ct)
     {
         var tasks = await _taskAccessPolicy.ApplyVisibilityFilter(TaskDetailsQuery())
+            .AsNoTracking()
             .Where(item => item.ProjectId == projectId)
             .OrderBy(item => item.Status)
             .ThenBy(item => item.SortOrder)
@@ -1107,11 +1181,99 @@ public class TaskService : ITaskService
                 .ThenBy(t => t.DueDate ?? DateTimeOffset.MaxValue),
             _ => query
                 .OrderByDescending(t => t.IsPinned)
-                .OrderByPlanningPriority()
+                .ThenBy(t => t.Status == "InProgress" ? 0 :
+                    t.Status == "InReview" ? 1 :
+                    t.Status == "Todo" ? 2 :
+                    t.Status == "Done" ? 3 :
+                    t.Status == "Cancelled" ? 4 : 5)
+                .ThenBy(t => t.DueDate ?? DateTimeOffset.MaxValue)
+                .ThenByDescending(t => t.CreatedAt)
         };
 
     private async Task<bool> CanViewTaskDetailsAsync(TaskItem task, CancellationToken ct)
         => await _taskAccessPolicy.CanAccessTaskAsync(task, ct);
+
+    private static DateTimeOffset AlignToSprintStart(DateTimeOffset date)
+    {
+        var dayOffset = ((int)date.DayOfWeek + 6) % 7;
+        var monday = date.Date.AddDays(-dayOffset);
+        return new DateTimeOffset(monday, date.Offset);
+    }
+
+    private static List<SprintBucketDto> BuildSprintBuckets(List<TaskItem> tasks, DateTimeOffset windowStart, DateTimeOffset windowEnd, DateTimeOffset now)
+    {
+        const int sprintLengthDays = 14;
+        var buckets = new List<SprintBucketDto>();
+        var cursor = AlignToSprintStart(windowStart);
+
+        while (cursor <= windowEnd)
+        {
+            var bucketEnd = cursor.AddDays(sprintLengthDays - 1).AddHours(23).AddMinutes(59).AddSeconds(59);
+            var bucketTasks = tasks
+                .Where(task => TaskOverlapsWindow(task, cursor, bucketEnd))
+                .ToList();
+
+            buckets.Add(new SprintBucketDto(
+                $"Sprint {buckets.Count + 1}",
+                cursor,
+                bucketEnd,
+                bucketTasks.Count,
+                bucketTasks.Count(task => IsDone(task.Status)),
+                bucketTasks.Count(task => task.DueDate.HasValue && task.DueDate.Value < now && !IsDone(task.Status)),
+                bucketTasks.Count(task => !IsClosed(task.Status)),
+                bucketTasks.Sum(task => Math.Max(1, task.EstimatedHours ?? 1))));
+
+            cursor = cursor.AddDays(sprintLengthDays);
+        }
+
+        return buckets;
+    }
+
+    private static List<TimelineDependencyDto> BuildBlockedTimelineItems(List<TaskItem> tasks)
+    {
+        var taskMap = tasks.ToDictionary(task => task.Id);
+        var items = new List<TimelineDependencyDto>();
+
+        foreach (var task in tasks)
+        {
+            var blockingIds = task.PredecessorDependencies
+                .Select(dependency => dependency.PredecessorId)
+                .Distinct()
+                .Where(id => taskMap.TryGetValue(id, out var predecessor) && !IsDone(predecessor.Status))
+                .ToList();
+
+            items.Add(new TimelineDependencyDto(
+                task.Id,
+                task.Title,
+                task.Status,
+                task.DueDate,
+                blockingIds,
+                blockingIds.Count > 0 && !IsDone(task.Status)));
+        }
+
+        return items;
+    }
+
+    private static bool TaskOverlapsWindow(TaskItem task, DateTimeOffset windowStart, DateTimeOffset windowEnd)
+    {
+        var start = task.StartDate ?? task.DueDate;
+        var end = task.DueDate ?? task.StartDate;
+
+        if (!start.HasValue && !end.HasValue)
+        {
+            return false;
+        }
+
+        var normalizedStart = start ?? end!.Value;
+        var normalizedEnd = end ?? start!.Value;
+        return normalizedStart <= windowEnd && normalizedEnd >= windowStart;
+    }
+
+    private static bool IsDone(string status)
+        => string.Equals(status, "Done", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsClosed(string status)
+        => IsDone(status) || string.Equals(status, "Cancelled", StringComparison.OrdinalIgnoreCase);
 
     private static bool RequiresApprovedEvidence(string oldStatus, string newStatus)
         => !string.Equals(oldStatus, "Done", StringComparison.OrdinalIgnoreCase) &&

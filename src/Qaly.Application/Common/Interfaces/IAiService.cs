@@ -1,4 +1,6 @@
 using Qaly.Domain.Entities;
+using Qaly.Application.Common.Models;
+using Qaly.Application.DTOs.Ai;
 
 namespace Qaly.Application.Common.Interfaces;
 
@@ -19,6 +21,9 @@ public interface IAiService
 
     /// <summary>Đề xuất phân công task dựa trên skill và workload của members</summary>
     Task<string> SuggestTaskAssignmentAsync(Guid taskId, Guid projectId);
+
+    /// <summary>Trả về dữ liệu chuẩn hóa để AI/UX gợi ý assignee.</summary>
+    Task<Result<TaskAssignmentInsightDto>> GetTaskAssignmentInsightAsync(Guid taskId, Guid projectId, CancellationToken ct = default);
 
     /// <summary>Smart search - tìm kiếm ngữ nghĩa trong tasks/comments</summary>
     Task<IReadOnlyList<string>> SmartSearchAsync(string query, Guid? projectId = null);

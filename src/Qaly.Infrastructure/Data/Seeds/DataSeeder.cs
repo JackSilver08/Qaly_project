@@ -19,6 +19,7 @@ public partial class DataSeeder
     public async Task SeedAsync()
     {
         await _context.Database.MigrateAsync();
+        await EnsureProjectSchemaCompatibilityAsync();
         await EnsureImportSchemaCompatibilityAsync();
         await EnsureTimelineSchemaCompatibilityAsync();
         LogDatabaseMigrated(_logger);
@@ -282,6 +283,75 @@ public partial class DataSeeder
             )
             BEGIN
                 CREATE UNIQUE INDEX [IX_Projects_Code] ON [Projects]([Code]);
+            END;
+            """;
+
+        return _context.Database.ExecuteSqlRawAsync(sql);
+    }
+
+    private Task<int> EnsureProjectSchemaCompatibilityAsync()
+    {
+        const string sql = """
+            IF COL_LENGTH(N'[Projects]', N'Code') IS NULL
+            BEGIN
+                ALTER TABLE [Projects] ADD [Code] nvarchar(80) NULL;
+            END;
+
+            IF COL_LENGTH(N'[Projects]', N'LogoUrl') IS NULL
+            BEGIN
+                ALTER TABLE [Projects] ADD [LogoUrl] nvarchar(1000) NULL;
+            END;
+
+            IF COL_LENGTH(N'[Projects]', N'OrganizationId') IS NULL
+            BEGIN
+                ALTER TABLE [Projects] ADD [OrganizationId] uniqueidentifier NULL;
+            END;
+
+            UPDATE [Projects]
+            SET [Code] = CONCAT(N'project-', REPLACE(CONVERT(nvarchar(36), [Id]), N'-', N''))
+            WHERE [Code] IS NULL OR LTRIM(RTRIM([Code])) = N'';
+
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'[Projects]')
+                  AND name = N'Code'
+                  AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE [Projects] ALTER COLUMN [Code] nvarchar(80) NOT NULL;
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.indexes
+                WHERE name = N'IX_Projects_Code'
+                  AND object_id = OBJECT_ID(N'[Projects]')
+            )
+            BEGIN
+                CREATE UNIQUE INDEX [IX_Projects_Code] ON [Projects]([Code]);
+            END;
+
+            IF OBJECT_ID(N'[Organizations]', N'U') IS NOT NULL
+               AND NOT EXISTS (
+                    SELECT 1
+                    FROM sys.foreign_keys
+                    WHERE name = N'FK_Projects_Organizations_OrganizationId'
+               )
+            BEGIN
+                ALTER TABLE [Projects]
+                    ADD CONSTRAINT [FK_Projects_Organizations_OrganizationId]
+                    FOREIGN KEY ([OrganizationId]) REFERENCES [Organizations]([Id]) ON DELETE NO ACTION;
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.indexes
+                WHERE name = N'IX_Projects_OrganizationId'
+                  AND object_id = OBJECT_ID(N'[Projects]')
+            )
+            BEGIN
+                CREATE INDEX [IX_Projects_OrganizationId] ON [Projects]([OrganizationId]);
             END;
             """;
 

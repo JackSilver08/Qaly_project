@@ -332,6 +332,29 @@ p {
   box-shadow: var(--shadow-soft);
 }
 
+.shell-action-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 14px 0 8px;
+  border-radius: 16px;
+  border: 1px solid rgba(221, 229, 239, 0.9);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: var(--shadow-soft);
+  font-weight: 750;
+}
+
+.shell-action-pill span {
+  font-size: 13px;
+  letter-spacing: 0.01em;
+}
+
+.shell-action-pill--assistant {
+  min-width: 124px;
+}
+
 .shell-action-badge {
   position: absolute;
   top: -5px;
@@ -564,6 +587,8 @@ p {
 
 .shell-icon-button:hover,
 .shell-user-menu:hover,
+.shell-action-pill:hover,
+.shell-action-pill:focus-visible,
 .secondary-button:hover {
   transform: translateY(-1px);
   border-color: rgba(31, 128, 255, 0.22);
@@ -4060,6 +4085,8 @@ textarea::placeholder {
 
 .shell-icon-button:hover,
 .shell-user-menu:hover,
+.shell-action-pill:hover,
+.shell-action-pill:focus-visible,
 .secondary-button:hover {
   border-color: #cbd5e1 !important;
   background: #f1f5f9 !important;

@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Qaly.Application.Common.Interfaces;
+using Qaly.Application.Common.Models;
+using Qaly.Application.DTOs.Ai;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 using System.Text;
@@ -141,6 +143,146 @@ Yêu cầu:
 3. Trả lời ngắn gọn, chuyên nghiệp bằng Tiếng Việt.";
         var response = await _chatClient.CompleteAsync(prompt);
         return response.Message.Text ?? "Không thể đưa ra đề xuất.";
+    }
+
+    public async Task<Result<TaskAssignmentInsightDto>> GetTaskAssignmentInsightAsync(Guid taskId, Guid projectId, CancellationToken ct = default)
+    {
+        if (!await CanAccessProjectAsync(projectId))
+        {
+            return Result.Forbidden<TaskAssignmentInsightDto>("Báº¡n khÃ´ng cÃ³ quyá»n truy cáº­p dá»± Ã¡n nÃ y.");
+        }
+
+        var task = await _taskRepo.GetQueryable()
+            .AsNoTracking()
+            .Include(item => item.Project)
+            .Include(item => item.Assignees)
+                .ThenInclude(assignment => assignment.User)
+            .Include(item => item.Labels)
+                .ThenInclude(label => label.ProjectLabel)
+            .FirstOrDefaultAsync(item => item.Id == taskId && item.ProjectId == projectId, ct);
+
+        if (task == null)
+        {
+            return Result.NotFound<TaskAssignmentInsightDto>("KhÃ´ng tÃ¬m tháº¥y cÃ´ng viá»‡c.");
+        }
+
+        var members = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(member => member.ProjectId == projectId)
+            .Include(member => member.User)
+            .ToListAsync(ct);
+
+        var projectTasks = await _taskRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(taskItem => taskItem.ProjectId == projectId)
+            .Include(taskItem => taskItem.Assignees)
+                .ThenInclude(assignment => assignment.User)
+            .Include(taskItem => taskItem.Labels)
+                .ThenInclude(label => label.ProjectLabel)
+            .ToListAsync(ct);
+
+        var now = DateTimeOffset.UtcNow;
+        var taskKeywords = ExtractKeywords(task.Title, task.Description);
+        var taskLabels = task.Labels
+            .Select(label => label.ProjectLabel?.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var candidates = members.Select(member =>
+        {
+            var activeAssignments = projectTasks
+                .Where(taskItem => IsAssignedTo(taskItem, member.UserId) && taskItem.Status is not ("Done" or "Cancelled"))
+                .ToList();
+
+            var overdueTaskCount = activeAssignments.Count(item => item.DueDate.HasValue && item.DueDate.Value < now);
+            var recentCompletionCount = projectTasks.Count(taskItem =>
+                IsAssignedTo(taskItem, member.UserId) &&
+                taskItem.Status == "Done" &&
+                taskItem.UpdatedAt.HasValue &&
+                taskItem.UpdatedAt.Value >= now.AddDays(-90));
+
+            var completedTasks = projectTasks
+                .Where(taskItem => IsAssignedTo(taskItem, member.UserId) && taskItem.Status == "Done")
+                .ToList();
+
+            var skillSignals = completedTasks
+                .SelectMany(item => item.Labels.Select(label => label.ProjectLabel?.Name))
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Select(name => name!.Trim())
+                .GroupBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(group => group.Count())
+                .ThenBy(group => group.Key)
+                .Take(5)
+                .Select(group => group.Key)
+                .ToList();
+
+            var matchingLabelCount = skillSignals.Intersect(taskLabels, StringComparer.OrdinalIgnoreCase).Count();
+            var matchingKeywordCount = taskKeywords.Count(keyword =>
+                completedTasks.Any(item =>
+                    item.Title.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                    (item.Description != null && item.Description.Contains(keyword, StringComparison.OrdinalIgnoreCase))));
+
+            var activeTaskCount = activeAssignments.Count;
+            var workloadScore = Math.Max(0, 60 - activeTaskCount * 12 - overdueTaskCount * 8);
+            var skillMatchScore = matchingLabelCount * 20 + Math.Min(20, matchingKeywordCount * 4);
+            var historyScore = Math.Min(20, recentCompletionCount * 3 + projectTasks.Count(taskItem =>
+                IsAssignedTo(taskItem, member.UserId) &&
+                taskItem.ReporterId == task.ReporterId));
+            var totalScore = workloadScore + skillMatchScore + historyScore;
+
+            var recentSignals = new List<string>();
+            if (activeTaskCount == 0)
+            {
+                recentSignals.Add("DangTrong");
+            }
+            if (overdueTaskCount > 0)
+            {
+                recentSignals.Add($"{overdueTaskCount} task qua han");
+            }
+            if (recentCompletionCount > 0)
+            {
+                recentSignals.Add($"{recentCompletionCount} task hoan thanh gan day");
+            }
+
+            return new TaskAssignmentCandidateDto(
+                member.UserId,
+                member.User.FullName,
+                member.Role,
+                activeTaskCount,
+                overdueTaskCount,
+                recentCompletionCount,
+                skillMatchScore,
+                historyScore,
+                workloadScore,
+                totalScore,
+                skillSignals,
+                recentSignals);
+        })
+        .OrderByDescending(candidate => candidate.TotalScore)
+        .ThenBy(candidate => candidate.ActiveTaskCount)
+        .ThenByDescending(candidate => candidate.SkillMatchScore)
+        .ToList();
+
+        var recommended = candidates.FirstOrDefault();
+        var summary = recommended == null
+            ? "Khong co du lieu de de xuat."
+            : $"Uu tien {recommended.FullName} vi workload thap, co {recommended.ActiveTaskCount} task dang mo va phu hop voi {string.Join(", ", recommended.SkillSignals.Take(3))}.";
+
+        return Result.Success(new TaskAssignmentInsightDto(
+            task.Id,
+            projectId,
+            task.Title,
+            task.Description,
+            task.Priority,
+            task.Status,
+            task.DueDate,
+            recommended?.UserId,
+            recommended?.FullName ?? string.Empty,
+            summary,
+            now,
+            candidates));
     }
 
     public async Task<IReadOnlyList<string>> SmartSearchAsync(string query, Guid? projectId = null)
@@ -474,6 +616,18 @@ Yêu cầu:
 
     private static bool IsStatus(TaskItem task, string status)
         => string.Equals(task.Status, status, StringComparison.OrdinalIgnoreCase);
+
+    private static List<string> ExtractKeywords(string? title, string? description)
+        => string.Join(' ', new[] { title, description }.Where(value => !string.IsNullOrWhiteSpace(value)))
+            .Split(new[] { ' ', ',', '.', ';', ':', '/', '\\', '-', '_', '(', ')', '[', ']', '{', '}', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(token => token.Length >= 4)
+            .Select(token => token.ToLowerInvariant())
+            .Distinct()
+            .Take(12)
+            .ToList();
+
+    private static bool IsAssignedTo(TaskItem task, Guid userId)
+        => task.AssigneeId == userId || task.Assignees.Any(assignment => assignment.UserId == userId);
 
     private static bool IsTaskOverdue(TaskItem task)
         => task.DueDate.HasValue && task.DueDate.Value < DateTimeOffset.UtcNow && !IsDone(task);

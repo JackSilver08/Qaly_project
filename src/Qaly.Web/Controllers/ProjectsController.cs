@@ -27,6 +27,13 @@ public class ProjectsController : ControllerBase
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpGet("{id}/timeline")]
+    public async Task<IActionResult> GetTimeline(Guid id, CancellationToken ct)
+    {
+        var result = await _taskService.GetTimelineAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null, CancellationToken ct = default)
     {

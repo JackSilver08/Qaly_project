@@ -83,6 +83,13 @@ public class AiController : ControllerBase
     public async Task<IActionResult> SuggestAssignment(Guid taskId, [FromQuery] Guid projectId)
         => Ok(new { suggestion = await _aiService.SuggestTaskAssignmentAsync(taskId, projectId) });
 
+    [HttpGet("tasks/{taskId:guid}/assignment-insight")]
+    public async Task<IActionResult> AssignmentInsight(Guid taskId, [FromQuery] Guid projectId, CancellationToken ct = default)
+    {
+        var result = await _aiService.GetTaskAssignmentInsightAsync(taskId, projectId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpGet("search")]
     public async Task<IActionResult> Search([FromQuery] string query, [FromQuery] Guid? projectId = null)
         => Ok(new { items = await _aiService.SmartSearchAsync(query, projectId) });

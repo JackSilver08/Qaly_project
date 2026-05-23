@@ -50,7 +50,7 @@ export function useDashboard() {
   async function loadDashboard() {
     isLoading.value = true
     try {
-      dashboard.value = await apiJson<DashboardResponse>('/api/dashboard/overview')
+      dashboard.value = normalizeDashboard(await apiJson<DashboardResponse>('/api/dashboard/overview'))
       usingFallback.value = false
     } catch (error) {
       console.warn('Using fallback dashboard data.', error)
@@ -93,5 +93,20 @@ export function useDashboard() {
     loadDashboard,
     loadMe,
     loadUsers,
+  }
+}
+
+function normalizeDashboard(dashboard: DashboardResponse): DashboardResponse {
+  return {
+    ...dashboard,
+    projects: Array.isArray(dashboard.projects)
+      ? dashboard.projects.map((project) => ({
+          ...project,
+          members: Array.isArray(project.members) ? project.members : [],
+          tasks: Array.isArray(project.tasks) ? project.tasks : [],
+        }))
+      : [],
+    team: Array.isArray(dashboard.team) ? dashboard.team : [],
+    notifications: Array.isArray(dashboard.notifications) ? dashboard.notifications : [],
   }
 }

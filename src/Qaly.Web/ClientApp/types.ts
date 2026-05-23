@@ -267,6 +267,41 @@ export interface ProjectLabelDto {
   createdAt: string
 }
 
+export interface ProjectTimelineDto {
+  projectId: string
+  windowStart: string
+  windowEnd: string
+  sprintStart: string
+  sprintEnd: string
+  totalTasks: number
+  openTasks: number
+  doneTasks: number
+  overdueTasks: number
+  blockedTasks: number
+  buckets: SprintBucketDto[]
+  blockedItems: TimelineDependencyDto[]
+}
+
+export interface SprintBucketDto {
+  label: string
+  startDate: string
+  endDate: string
+  taskCount: number
+  doneCount: number
+  overdueCount: number
+  activeCount: number
+  plannedPoints: number
+}
+
+export interface TimelineDependencyDto {
+  taskId: string
+  title: string
+  status: string
+  dueDate: string | null
+  blockingTaskIds: string[]
+  isBlocked: boolean
+}
+
 export interface TaskAssigneeDto {
   userId: string
   fullName: string
@@ -301,6 +336,36 @@ export interface TaskAttentionDto {
   isUnseenByAssignee: boolean
   reasons: string[]
   allowedActions: string[]
+}
+
+export interface TaskAssignmentInsightDto {
+  taskId: string
+  projectId: string
+  taskTitle: string
+  taskDescription: string | null
+  taskPriority: string
+  taskStatus: string
+  dueDate: string | null
+  recommendedUserId: string | null
+  recommendedUserName: string
+  recommendationSummary: string
+  generatedAt: string
+  candidates: TaskAssignmentCandidateDto[]
+}
+
+export interface TaskAssignmentCandidateDto {
+  userId: string
+  fullName: string
+  role: string
+  activeTaskCount: number
+  overdueTaskCount: number
+  recentCompletionCount: number
+  skillMatchScore: number
+  historyScore: number
+  workloadScore: number
+  totalScore: number
+  skillSignals: string[]
+  recentSignals: string[]
 }
 
 export interface SearchResultDto {

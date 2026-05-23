@@ -15,11 +15,7 @@ public static class TaskQueryExtensions
             .Include(task => task.Labels)
                 .ThenInclude(label => label.ProjectLabel)
             .Include(task => task.Comments)
-            .Include(task => task.Attachments)
-            .Include(task => task.Assignees)
-                .ThenInclude(a => a.User)
-            .Include(task => task.Labels)
-                .ThenInclude(l => l.ProjectLabel);
+            .Include(task => task.Attachments);
 
     public static IQueryable<TaskItem> WithProject(this IQueryable<TaskItem> query)
         => query.Include(task => task.Project);

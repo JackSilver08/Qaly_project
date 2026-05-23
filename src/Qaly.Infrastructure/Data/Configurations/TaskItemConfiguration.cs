@@ -42,7 +42,11 @@ public class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
         builder.HasIndex(t => t.ProjectId);
         builder.HasIndex(t => t.AssigneeId);
         builder.HasIndex(t => t.Status);
+        builder.HasIndex(t => t.DueDate);
+        builder.HasIndex(t => t.StartDate);
         builder.HasIndex(t => t.IsPinned);
+        builder.HasIndex(t => new { t.ProjectId, t.AssigneeId, t.Status });
+        builder.HasIndex(t => new { t.ProjectId, t.DueDate });
 
         builder.HasOne(t => t.ImportSession)
             .WithMany(s => s.ImportedTasks)

@@ -203,6 +203,61 @@ public class TaskTimelineAttentionTests : IDisposable
         result.StatusCode.Should().Be(400);
     }
 
+    [Fact]
+    public async Task GetTimelineAsync_ReturnsSprintBucketsAndBlockedItems()
+    {
+        var ownerId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var task1Id = Guid.NewGuid();
+        var task2Id = Guid.NewGuid();
+
+        SeedUsers(ownerId, Guid.NewGuid());
+        _context.Projects.Add(new Project { Id = projectId, Name = "Timeline", Code = "timeline", OwnerId = ownerId });
+        _context.TaskItems.AddRange(
+            new TaskItem
+            {
+                Id = task1Id,
+                ProjectId = projectId,
+                ReporterId = ownerId,
+                Title = "Task 1",
+                Status = "InProgress",
+                Priority = "Medium",
+                StartDate = DateTimeOffset.UtcNow.AddDays(-2),
+                DueDate = DateTimeOffset.UtcNow.AddDays(5),
+                EstimatedHours = 8
+            },
+            new TaskItem
+            {
+                Id = task2Id,
+                ProjectId = projectId,
+                ReporterId = ownerId,
+                Title = "Task 2",
+                Status = "Todo",
+                Priority = "High",
+                StartDate = DateTimeOffset.UtcNow.AddDays(1),
+                DueDate = DateTimeOffset.UtcNow.AddDays(7),
+                EstimatedHours = 13
+            });
+        _context.TaskDependencies.Add(new TaskDependency
+        {
+            PredecessorId = task1Id,
+            SuccessorId = task2Id,
+            DependencyType = "FinishToStart"
+        });
+        await _context.SaveChangesAsync();
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+        _currentUser.SetupGet(user => user.Role).Returns("User");
+
+        var service = CreateService();
+
+        var result = await service.GetTimelineAsync(projectId);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.TotalTasks.Should().Be(2);
+        result.Data.Buckets.Should().NotBeEmpty();
+        result.Data.BlockedItems.Should().Contain(item => item.TaskId == task2Id && item.IsBlocked);
+    }
+
     private void SeedUsers(Guid ownerId, Guid assigneeId)
     {
         _context.Users.Add(new User { Id = ownerId, FullName = "PM", Email = "pm@qaly.dev", Role = "User", IsActive = true });

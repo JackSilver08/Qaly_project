@@ -129,7 +129,7 @@ const activeProjectTab = ref('stats')
 const tabs = [
   { id: 'stats', label: 'Thống kê' },
   { id: 'tasks', label: 'Nhiệm vụ' },
-  { id: 'gantt', label: 'Dòng thời gian' },
+  { id: 'gantt', label: 'Sprint & Timeline' },
   { id: 'members', label: 'Thành viên' },
   { id: 'wiki', label: 'Wiki' },
   { id: 'webhooks', label: 'Webhooks' },
@@ -149,7 +149,8 @@ const filteredProjects = computed(() => {
       if (projectFilter.value === 'planned' && project.status !== 'Planned') return false
       if (projectFilter.value === 'at-risk' && project.overdueTaskCount === 0) return false
       if (!query) return true
-      return [project.name, project.description, project.ownerName, ...project.members.map((member) => member.fullName)]
+      const members = Array.isArray(project.members) ? project.members : []
+      return [project.name, project.description, project.ownerName, ...members.map((member) => member.fullName)]
         .join(' ')
         .toLowerCase()
         .includes(query)
@@ -187,7 +188,7 @@ const archivedProjectCards = computed<ProjectCardModel[]>(() => filteredProjects
 
 const assignedTaskCards = computed<TaskListItemModel[]>(() =>
   projects.value.flatMap((project) =>
-    project.tasks
+    (Array.isArray(project.tasks) ? project.tasks : [])
       .filter((task) => !currentUser.value || task.assigneeName === currentUser.value.fullName)
       .map((task) => ({
         id: task.id,
@@ -234,7 +235,8 @@ const isProjectAdmin = computed(() => {
 const selectedProjectMembers = computed(() => {
   const project = selectedProject.value
   if (!project) return []
-  return project.members.map((member) => ({
+  const members = Array.isArray(project.members) ? project.members : []
+  return members.map((member) => ({
     id: member.userId,
     fullName: member.fullName,
     role: member.role,
@@ -527,12 +529,22 @@ async function clearActionableNotifications() {
   try { await apiCommand('/api/notifications/read-all', { method: 'PATCH' }); showSuccess('Thành công') } catch (e) { console.warn(e) }
 }
 
+function openChatWithPrompt(prompt?: string) {
+  const defaultPrompt = selectedProject.value
+    ? `Tóm tắt nhanh dự án ${selectedProject.value.name} và gợi ý bước tiếp theo.`
+    : 'Tóm tắt nhanh workspace hiện tại và gợi ý việc cần làm hôm nay.'
+
+  window.dispatchEvent(new CustomEvent('qaly:assistant-open', {
+    detail: { prompt: prompt?.trim() || defaultPrompt },
+  }))
+}
+
 async function logout() { try { await apiCommand('/api/auth/logout', { method: 'POST' }) } finally { window.location.href = '/Account/Login' } }
 
 function tasksByStatus(status: string) {
   const query = taskSearchQuery.value.trim().toLowerCase()
-  if (!Array.isArray(selectedProjectTasks.value)) return []
-  return selectedProjectTasks.value.filter((t) => (t.status === status) && (!query || t.title.toLowerCase().includes(query)))
+  const tasks = Array.isArray(selectedProjectTasks.value) ? selectedProjectTasks.value : []
+  return tasks.filter((t) => (t.status === status) && (!query || t.title.toLowerCase().includes(query)))
 }
 
 function nextStatuses(status: string) {
@@ -552,7 +564,7 @@ provide(dashboardContextKey, {
   editProjectDescription, editProjectName, filteredProjects, formatDate, formatFileSize, formatTime, isLoading, isProjectAdmin, isTaskOverdue,
   logout, moveTask, newComment, newTaskAssigneeId, newTaskDescription, newTaskDueDate, newTaskIsPrivate, newTaskIsPinned,
   newTaskContributesToProgress, newTaskPriority, newTaskTitle, nextStatuses,
-  openCreateProject, openTask, priorities, projectBeingEditedId, projectCards, projectDescription, projectEndDate, projectFilter,
+  openChatWithPrompt, openCreateProject, openTask, priorities, projectBeingEditedId, projectCards, projectDescription, projectEndDate, projectFilter,
   projectName, projectSort, projects, quickEditTaskTitle, removeMember, saveProjectEdit, searchQuery, selectProject, selectedProject,
   selectedProjectMembers, selectedProjectStats, selectedTask, selectedTaskId, selectTaskInProject, statusColumns, statusTone,
   submitComment, summaryCards, tabs, tasksByStatus, team, toggleTaskMenu, updateMemberRole, updateMemberPermissions, uploadAttachment, users, wikiPages,
@@ -568,7 +580,7 @@ provide(dashboardContextKey, {
     :user-name="currentUser?.fullName || currentUser?.email || 'Qaly user'"
     :user-initials="initials(currentUser?.fullName || currentUser?.email || 'QU')"
     @notifications="notificationsOpen = !notificationsOpen"
-    @assistant="() => {}"
+    @assistant="openChatWithPrompt()"
     @logout="logout"
   >
     <RouterView />
