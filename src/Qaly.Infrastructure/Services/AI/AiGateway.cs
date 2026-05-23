@@ -19,6 +19,21 @@ public class AiGateway : IAiGateway
     private readonly IAiCostService _costService;
     private readonly IAiComplianceService _complianceService;
     private readonly QalyDbContext _context;
+    private static readonly Action<ILogger, Exception?> _aiRequestBlockedComplianceLogger = LoggerMessage.Define(
+        LogLevel.Warning,
+        new EventId(1001, "AiRequestBlockedCompliance"),
+        "AI Request blocked due to compliance (sensitive data without cloud processing consent).");
+
+    private static readonly Action<ILogger, Exception?> _aiRequestBlockedBudgetLogger = LoggerMessage.Define(
+        LogLevel.Warning,
+        new EventId(1002, "AiRequestBlockedBudget"),
+        "AI Request blocked due to budget limits.");
+
+    private static readonly Action<ILogger, Exception?> _errorCallingAiProviderLogger = LoggerMessage.Define(
+        LogLevel.Error,
+        new EventId(1003, "ErrorCallingAiProvider"),
+        "Error calling AI Provider.");
+
     private readonly ILogger<AiGateway> _logger;
 
     public AiGateway(
@@ -45,7 +60,7 @@ public class AiGateway : IAiGateway
 
         if (!canProcessInCloud)
         {
-            _logger.LogWarning("AI Request blocked due to compliance (sensitive data without cloud processing consent).");
+            _aiRequestBlockedComplianceLogger(_logger, null);
             await _complianceService.LogAuditEventAsync(request.TenantId, request.ProjectId, request.UserId, 
                 "AI_BLOCKED", "AiRequest", null, null, "Blocked due to sensitive data", cancellationToken);
             
@@ -56,7 +71,7 @@ public class AiGateway : IAiGateway
         bool hasBudget = await _costService.EnsureBudgetAvailableAsync(request.TenantId, request.ProjectId, cancellationToken);
         if (!hasBudget)
         {
-            _logger.LogWarning("AI Request blocked due to budget limits.");
+            _aiRequestBlockedBudgetLogger(_logger, null);
             return CreateMockResponse("Budget exceeded. Please upgrade your plan.", "BudgetMock");
         }
 
@@ -159,7 +174,7 @@ public class AiGateway : IAiGateway
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error calling AI Provider.");
+            _errorCallingAiProviderLogger(_logger, ex);
             
             // Log failed usage
             await _costService.RecordUsageAsync(
