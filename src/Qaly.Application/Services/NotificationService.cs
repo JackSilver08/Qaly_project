@@ -9,7 +9,7 @@ using System.Text;
 
 namespace Qaly.Application.Services;
 
-public class NotificationService : INotificationService
+public partial class NotificationService : INotificationService
 {
     private readonly IRepository<Notification> _notificationRepo;
     private readonly IRepository<PushSubscription> _pushRepo;
@@ -33,6 +33,15 @@ public class NotificationService : INotificationService
         _pushSender = pushSender;
         _logger = logger;
     }
+
+    [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Skipped duplicate notification {NotificationType} for user {UserId} with key {IdempotencyKey}.")]
+    private static partial void LogSkippedDuplicate(ILogger logger, string notificationType, Guid userId, string idempotencyKey);
+
+    [LoggerMessage(EventId = 2, Level = LogLevel.Information, Message = "Skipped duplicate notification {NotificationType} for user {UserId} after unique key conflict.")]
+    private static partial void LogSkippedDuplicateAfterConflict(ILogger logger, string notificationType, Guid userId);
+
+    [LoggerMessage(EventId = 3, Level = LogLevel.Warning, Message = "Failed to send push notification to user {UserId}")]
+    private static partial void LogFailedSendPush(ILogger logger, Exception ex, Guid userId);
 
     public async Task<Result<IReadOnlyList<NotificationDto>>> GetByUserAsync(Guid userId, bool unreadOnly = false, CancellationToken ct = default)
     {
@@ -125,11 +134,7 @@ public class NotificationService : INotificationService
 
             if (existing)
             {
-                _logger.LogInformation(
-                    "Skipped duplicate notification {NotificationType} for user {UserId} with key {IdempotencyKey}.",
-                    normalizedType,
-                    userId,
-                    normalizedKey);
+                LogSkippedDuplicate(_logger, normalizedType, userId, normalizedKey);
                 return;
             }
         }
@@ -160,10 +165,7 @@ public class NotificationService : INotificationService
                 throw;
             }
 
-            _logger.LogInformation(
-                "Skipped duplicate notification {NotificationType} for user {UserId} after unique key conflict.",
-                normalizedType,
-                userId);
+            LogSkippedDuplicateAfterConflict(_logger, normalizedType, userId);
             return;
         }
 
@@ -220,7 +222,7 @@ public class NotificationService : INotificationService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to send push notification to user {UserId}", userId);
+            LogFailedSendPush(_logger, ex, userId);
             return Task.CompletedTask;
         }
     }

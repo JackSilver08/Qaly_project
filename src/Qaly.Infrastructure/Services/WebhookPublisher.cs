@@ -83,11 +83,7 @@ public partial class WebhookPublisher : IWebhookPublisher
 
         if (alreadyDelivered)
         {
-            _logger.LogInformation(
-                "Skipped duplicate webhook delivery {EventType} to {WebhookId} with key {IdempotencyKey}.",
-                eventType,
-                webhook.Id,
-                idempotencyKey);
+            LogSkippedDuplicateWebhook(_logger, eventType, webhook.Id, idempotencyKey);
             return;
         }
 
@@ -129,12 +125,7 @@ public partial class WebhookPublisher : IWebhookPublisher
 
             if (attempt < 3)
             {
-                _logger.LogWarning(
-                    "Webhook delivery {EventType} to {WebhookId} failed on attempt {Attempt}; retrying. IdempotencyKey={IdempotencyKey}",
-                    eventType,
-                    webhook.Id,
-                    attempt,
-                    idempotencyKey);
+                LogWebhookDeliveryFailedRetry(_logger, eventType, webhook.Id, attempt, idempotencyKey);
                 await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt), ct);
             }
         }
@@ -178,6 +169,12 @@ public partial class WebhookPublisher : IWebhookPublisher
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Error, Message = "Failed to dispatch webhook {WebhookId}")]
     private static partial void LogWebhookDispatchFailed(ILogger logger, Guid webhookId, Exception ex);
+
+    [LoggerMessage(EventId = 2, Level = LogLevel.Information, Message = "Skipped duplicate webhook delivery {EventType} to {WebhookId} with key {IdempotencyKey}.")]
+    private static partial void LogSkippedDuplicateWebhook(ILogger logger, string eventType, Guid webhookId, string idempotencyKey);
+
+    [LoggerMessage(EventId = 3, Level = LogLevel.Warning, Message = "Webhook delivery {EventType} to {WebhookId} failed on attempt {Attempt}; retrying. IdempotencyKey={IdempotencyKey}")]
+    private static partial void LogWebhookDeliveryFailedRetry(ILogger logger, string eventType, Guid webhookId, int attempt, string idempotencyKey);
 
     private static string[] DeserializeEvents(string? eventsJson)
     {

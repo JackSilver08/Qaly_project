@@ -7,7 +7,7 @@ using Microsoft.Extensions.Caching.Distributed;
 
 namespace Qaly.Web.Hubs;
 
-public class SignalRNotificationPublisher : INotificationPublisher
+public partial class SignalRNotificationPublisher : INotificationPublisher
 {
     private readonly TimeSpan DeduplicationWindow = TimeSpan.FromSeconds(30);
 
@@ -25,6 +25,21 @@ public class SignalRNotificationPublisher : INotificationPublisher
         _redis = redis;
     }
 
+    [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Skipped duplicate realtime project event {EventType} for project {ProjectId}.")]
+    private static partial void LogSkippedDuplicateProjectEvent(ILogger logger, string eventType, Guid projectId);
+
+    [LoggerMessage(EventId = 2, Level = LogLevel.Information, Message = "Skipped duplicate realtime system event {EventType}.")]
+    private static partial void LogSkippedDuplicateSystemEvent(ILogger logger, string eventType);
+
+    [LoggerMessage(EventId = 3, Level = LogLevel.Error, Message = "Realtime event {EventName} failed after {Attempt} attempts. EventKey={EventKey}")]
+    private static partial void LogRealtimeEventFailed(ILogger logger, Exception ex, string eventName, int attempt, string eventKey);
+
+    [LoggerMessage(EventId = 4, Level = LogLevel.Warning, Message = "Realtime event {EventName} failed on attempt {Attempt}; retrying. EventKey={EventKey}")]
+    private static partial void LogRealtimeEventAttemptFailed(ILogger logger, Exception ex, string eventName, int attempt, string eventKey);
+
+    [LoggerMessage(EventId = 5, Level = LogLevel.Warning, Message = "Failed to check distributed dedupe; falling back to allow send.")]
+    private static partial void LogDedupeCheckFailed(ILogger logger, Exception ex);
+
     public async Task PublishAsync(Guid userId, NotificationDto notification, CancellationToken ct = default)
     {
         await SendWithRetryAsync(
@@ -41,7 +56,7 @@ public class SignalRNotificationPublisher : INotificationPublisher
         var eventKey = BuildRealtimeKey("projectUpdated", projectId, eventType, message, payload);
         if (await IsDuplicateAsync(eventKey))
         {
-            _logger.LogInformation("Skipped duplicate realtime project event {EventType} for project {ProjectId}.", eventType, projectId);
+            LogSkippedDuplicateProjectEvent(_logger, eventType, projectId);
             return;
         }
 
@@ -68,7 +83,7 @@ public class SignalRNotificationPublisher : INotificationPublisher
         var eventKey = BuildRealtimeKey("systemUpdate", null, eventType, message, payload);
         if (await IsDuplicateAsync(eventKey))
         {
-            _logger.LogInformation("Skipped duplicate realtime system event {EventType}.", eventType);
+            LogSkippedDuplicateSystemEvent(_logger, eventType);
             return;
         }
 
@@ -103,21 +118,11 @@ public class SignalRNotificationPublisher : INotificationPublisher
             {
                 if (attempt == maxAttempts)
                 {
-                    _logger.LogError(
-                        ex,
-                        "Realtime event {EventName} failed after {Attempt} attempts. EventKey={EventKey}",
-                        eventName,
-                        attempt,
-                        eventKey);
+                    LogRealtimeEventFailed(_logger, ex, eventName, attempt, eventKey);
                     return false;
                 }
 
-                _logger.LogWarning(
-                    ex,
-                    "Realtime event {EventName} failed on attempt {Attempt}; retrying. EventKey={EventKey}",
-                    eventName,
-                    attempt,
-                    eventKey);
+                LogRealtimeEventAttemptFailed(_logger, ex, eventName, attempt, eventKey);
                 await Task.Delay(TimeSpan.FromMilliseconds(100 * attempt), ct);
             }
         }
@@ -141,7 +146,7 @@ public class SignalRNotificationPublisher : INotificationPublisher
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to check distributed dedupe; falling back to allow send.");
+            LogDedupeCheckFailed(_logger, ex);
             return false;
         }
     }

@@ -10,7 +10,7 @@ using WebPush;
 
 namespace Qaly.Infrastructure.Services;
 
-    public class WebPushSender : IPushSender
+    public partial class WebPushSender : IPushSender
 {
     private readonly IRepository<DomainPushSubscription> _pushRepo;
     private readonly ILogger<WebPushSender> _logger;
@@ -33,15 +33,33 @@ namespace Qaly.Infrastructure.Services;
         }
         else
         {
-            _logger.LogWarning("VAPID keys not configured: Push notifications will be disabled.");
+            LogVapidNotConfigured(_logger);
         }
     }
+
+    [LoggerMessage(EventId = 1, Level = LogLevel.Warning, Message = "VAPID keys not configured: Push notifications will be disabled.")]
+    private static partial void LogVapidNotConfigured(ILogger logger);
+
+    [LoggerMessage(EventId = 2, Level = LogLevel.Debug, Message = "Skipping push send because VAPID keys are not configured.")]
+    private static partial void LogSkippingPushSendNoVapid(ILogger logger);
+
+    [LoggerMessage(EventId = 3, Level = LogLevel.Debug, Message = "No push subscriptions for user {UserId}")]
+    private static partial void LogNoPushSubscriptions(ILogger logger, Guid userId);
+
+    [LoggerMessage(EventId = 4, Level = LogLevel.Warning, Message = "Web push failed for subscription {Endpoint}; removing if gone.")]
+    private static partial void LogWebPushFailed(ILogger logger, Exception ex, string endpoint);
+
+    [LoggerMessage(EventId = 5, Level = LogLevel.Warning, Message = "Failed to send web push to {Endpoint}")]
+    private static partial void LogFailedSendWebPush(ILogger logger, Exception ex, string endpoint);
+
+    [LoggerMessage(EventId = 6, Level = LogLevel.Warning, Message = "Failed to persist push subscription updates")]
+    private static partial void LogFailedPersistPushUpdates(ILogger logger, Exception ex);
 
     public async Task SendAsync(System.Guid userId, string title, string message, object? data = null, CancellationToken ct = default)
     {
         if (_vapid == null)
         {
-            _logger.LogDebug("Skipping push send because VAPID keys are not configured.");
+            LogSkippingPushSendNoVapid(_logger);
             return;
         }
 
@@ -51,7 +69,7 @@ namespace Qaly.Infrastructure.Services;
 
         if (subs.Count == 0)
         {
-            _logger.LogDebug("No push subscriptions for user {UserId}", userId);
+            LogNoPushSubscriptions(_logger, userId);
             return;
         }
 
@@ -66,13 +84,13 @@ namespace Qaly.Infrastructure.Services;
             try
             {
                 var pushSub = new WebPush.PushSubscription(sub.Endpoint, sub.P256dh, sub.Auth);
-                await client.SendNotificationAsync(pushSub, payloadJson);
+                await client.SendNotificationAsync(pushSub, payloadJson, cancellationToken: ct);
                 sub.LastUsedAt = DateTimeOffset.UtcNow;
                 await _pushRepo.UpdateAsync(sub, ct);
             }
             catch (WebPushException wex)
             {
-                _logger.LogWarning(wex, "Web push failed for subscription {Endpoint}; removing if gone.", sub.Endpoint);
+                LogWebPushFailed(_logger, wex, sub.Endpoint);
                 if (wex.StatusCode == System.Net.HttpStatusCode.Gone || wex.StatusCode == System.Net.HttpStatusCode.NotFound)
                 {
                     try
@@ -84,7 +102,7 @@ namespace Qaly.Infrastructure.Services;
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to send web push to {Endpoint}", sub.Endpoint);
+                LogFailedSendWebPush(_logger, ex, sub.Endpoint);
             }
         }
         try
@@ -93,7 +111,7 @@ namespace Qaly.Infrastructure.Services;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to persist push subscription updates");
+            LogFailedPersistPushUpdates(_logger, ex);
         }
     }
 }
