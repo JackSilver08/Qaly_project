@@ -1,282 +1,55 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import MarkdownIt from 'markdown-it'
-import DOMPurify from 'dompurify'
-import { Send, X, MessageSquare, Sparkles } from 'lucide-vue-next'
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import ChatbotAvatar from '../ChatbotAvatar.vue'
-import { useDashboardContext } from '../../composables/dashboard-context'
-import { showError } from '../../composables/use-toast'
 
-const { projects, selectedProject, currentUser } = useDashboardContext()
+const router = useRouter()
+const route = useRoute()
 
-interface ChatMessage {
-  id: string
-  role: 'assistant' | 'user'
-  text: string
+const isAnalyticsPage = computed(() => route.path === '/analytics')
+
+function navigateToAnalytics() {
+  void router.push('/analytics')
 }
-
-const isOpen = ref(false)
-const isThinking = ref(false)
-
-const draft = ref('')
-const inputRef = ref<HTMLInputElement | null>(null)
-const messages = ref<ChatMessage[]>([
-  {
-    id: 'welcome',
-    role: 'assistant',
-    text: 'Chào bạn! Mình là Erumi, trợ lý AI của Qaly. Bạn cần mình giúp gì hôm nay?'
-  }
-])
-
-const bodyRef = ref<HTMLElement | null>(null)
-const showSuggestions = ref(false)
-
-const markdown = new (MarkdownIt as any)({
-  html: false,
-  linkify: true,
-  typographer: true
-})
-
-function renderMarkdown(content: string) {
-  return DOMPurify.sanitize(markdown.render(content))
-}
-
-const suggestions = computed(() => {
-  const parts = draft.value.split(' ')
-  const lastPart = parts[parts.length - 1]
-  if (lastPart.startsWith('@')) {
-    const query = lastPart.slice(1).toLowerCase()
-    return projects.value.filter((p: any) => p.name.toLowerCase().includes(query))
-  }
-  return []
-})
-
-watch(draft, (val) => {
-  const parts = val.split(' ')
-  const lastPart = parts[parts.length - 1]
-  showSuggestions.value = lastPart.startsWith('@')
-})
-
-function tagProject(project: any) {
-  const parts = draft.value.split(' ')
-  parts[parts.length - 1] = `@${project.name} `
-  draft.value = parts.join(' ')
-  showSuggestions.value = false
-}
-
-async function submitChat(explicit?: string) {
-  const prompt = (explicit ?? draft.value).trim()
-  if (!prompt || isThinking.value) return
-
-  messages.value.push({ id: `u-${Date.now()}`, role: 'user', text: prompt })
-  draft.value = ''
-  isThinking.value = true
-  
-  await scrollBottom()
-
-  let taggedProjectId = null
-  const tagMatch = prompt.match(/@([\w\s]+)/)
-  if (tagMatch) {
-    const name = tagMatch[1].trim().toLowerCase()
-    const p = projects.value.find((x: any) => x.name.toLowerCase() === name)
-    if (p) taggedProjectId = p.id
-  }
-
-  try {
-    const assistantId = `a-${Date.now()}`
-    messages.value.push({ id: assistantId, role: 'assistant', text: '' })
-
-    const response = await fetch('/api/ai/chat/stream', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: prompt,
-        projectId: taggedProjectId ?? selectedProject.value?.id ?? null
-      })
-    })
-
-    if (!response.ok) throw new Error('Streaming failed')
-
-    const reader = response.body?.getReader()
-    const decoder = new TextDecoder()
-    let fullText = ''
-
-    if (reader) {
-      isThinking.value = false
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        fullText += decoder.decode(value, { stream: true })
-        const idx = messages.value.findIndex(m => m.id === assistantId)
-        if (idx !== -1) messages.value[idx].text = fullText
-        void scrollBottom()
-      }
-    }
-  } catch (e) {
-    messages.value.push({ id: `err-${Date.now()}`, role: 'assistant', text: 'Xin lỗi, Erumi đang gặp chút trục trặc. Thử lại sau nhé!' })
-    showError('Không thể gửi yêu cầu tới trợ lý AI')
-  } finally {
-    isThinking.value = false
-  }
-}
-
-async function scrollBottom() {
-  await nextTick()
-  if (bodyRef.value) {
-    bodyRef.value.scrollTo({ top: bodyRef.value.scrollHeight, behavior: 'smooth' })
-  }
-}
-
-function toggle() {
-  isOpen.value = !isOpen.value
-  if (isOpen.value) void scrollBottom()
-}
-
-function openAssistant(prompt?: string) {
-  if (prompt && prompt.trim()) {
-    draft.value = prompt.trim()
-  }
-
-  isOpen.value = true
-  void nextTick(() => {
-    inputRef.value?.focus()
-  })
-  void scrollBottom()
-}
-
-function handleAssistantOpen(event: Event) {
-  const detail = (event as CustomEvent<{ prompt?: string }>).detail
-  openAssistant(detail?.prompt)
-}
-
-function handleAssistantToggle() {
-  openAssistant()
-}
-
-function initials(name: string) {
-  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
-}
-
-const quickPrompts = [
-  'Tóm tắt dự án hiện tại',
-  'Có task nào quá hạn không?',
-  'Ai đang rảnh để nhận việc?'
-]
-onMounted(() => {
-  window.addEventListener('qaly:assistant-open', handleAssistantOpen as EventListener)
-  window.addEventListener('qaly:assistant-toggle', handleAssistantToggle as EventListener)
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('qaly:assistant-open', handleAssistantOpen as EventListener)
-  window.removeEventListener('qaly:assistant-toggle', handleAssistantToggle as EventListener)
-})
 </script>
 
 <template>
-  <div class="floating-erumi">
-    <!-- Floating Launcher -->
+  <div v-if="!isAnalyticsPage" class="floating-erumi">
+    <!-- Floating Launcher to go to AI Analytics Page -->
     <button 
-      class="erumi-launcher shadow-lg" 
-      :class="{ 'is-active': isOpen }"
-      @click="toggle"
-      aria-label="Toggle AI Assistant"
+      class="erumi-launcher" 
+      @click="navigateToAnalytics"
+      aria-label="Đi đến Trợ lý Phân tích AI Erumi"
     >
-      <ChatbotAvatar v-if="!isOpen" size="medium" />
-      <X v-else :size="24" />
-      <span v-if="!isOpen" class="launcher-badge"></span>
+      <ChatbotAvatar size="medium" />
+      <!-- Online indicator -->
+      <span class="launcher-badge"></span>
+      <!-- Pulse ring -->
+      <span class="pulse-ring"></span>
     </button>
-
-    <!-- Chat Window -->
-    <transition name="fade-up">
-      <div v-if="isOpen" class="erumi-window glass-card shadow-2xl">
-        <header class="erumi-header">
-          <div class="erumi-identity">
-            <ChatbotAvatar size="small" />
-            <div>
-              <div class="flex items-center gap-2">
-                <h3>Erumi Agent</h3>
-              </div>
-              <div class="status-indicator">
-                <span class="pulse"></span>
-                Trực tuyến
-              </div>
-            </div>
-          </div>
-          <div class="header-actions">
-            <button class="icon-btn" @click="toggle"><X :size="18" /></button>
-          </div>
-        </header>
-
-        <div ref="bodyRef" class="erumi-body no-scrollbar">
-          <div v-for="m in messages" :key="m.id" :class="['msg-row', `msg-${m.role}`]">
-            <div v-if="m.role === 'assistant'" class="msg-avatar">
-              <ChatbotAvatar size="small" />
-            </div>
-            <div class="msg-bubble" v-html="renderMarkdown(m.text)"></div>
-            <div v-if="m.role === 'user'" class="msg-avatar user-icon">
-              {{ currentUser ? initials(currentUser.fullName) : 'U' }}
-            </div>
-          </div>
-
-          <div v-if="isThinking" class="msg-row msg-assistant">
-            <div class="msg-avatar"><ChatbotAvatar size="small" /></div>
-            <div class="msg-bubble thinking-dots">
-              <span></span><span></span><span></span>
-            </div>
-          </div>
-        </div>
-
-        <div class="erumi-footer">
-          <div class="quick-prompts no-scrollbar">
-            <button 
-              v-for="p in quickPrompts" 
-              :key="p" 
-              class="prompt-btn"
-              @click="submitChat(p)"
-            >
-              <Sparkles :size="12" />
-              {{ p }}
-            </button>
-          </div>
-
-          <div v-if="showSuggestions && suggestions.length" class="mention-suggestions">
-            <button v-for="s in suggestions" :key="s.id" @click="tagProject(s)">
-              @{{ s.name }}
-            </button>
-          </div>
-
-          <form class="composer" @submit.prevent="submitChat()">
-            <input 
-              v-model="draft" 
-              placeholder="Hỏi Erumi... (Dùng @ để tag dự án)"
-              :disabled="isThinking"
-              ref="inputRef"
-            />
-            <button type="submit" :disabled="!draft.trim() || isThinking" class="send-btn">
-              <Send :size="18" />
-            </button>
-          </form>
-        </div>
-      </div>
-    </transition>
+    <!-- Tooltip -->
+    <div class="erumi-tooltip">Hỏi Erumi AI</div>
   </div>
 </template>
 
 <style scoped>
 .floating-erumi {
   position: fixed;
-  bottom: 24px;
-  right: 24px;
+  bottom: 28px;
+  right: 28px;
   z-index: 1000;
   font-family: 'Inter', sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
 }
 
 .erumi-launcher {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #0f4cff, #1f80ff);
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #0f52ba 0%, #1e70e9 50%, #0a3d91 100%);
   border: none;
   display: flex;
   align-items: center;
@@ -284,288 +57,74 @@ onBeforeUnmount(() => {
   color: white;
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   position: relative;
+  cursor: pointer;
+  box-shadow: 
+    0 8px 24px rgba(15, 82, 186, 0.35),
+    0 2px 8px rgba(15, 82, 186, 0.2),
+    inset 0 1px 0 rgba(255,255,255,0.15);
 }
 
 .erumi-launcher:hover {
-  transform: scale(1.1) rotate(5deg);
-  box-shadow: 0 16px 32px rgba(15, 76, 255, 0.46);
+  transform: scale(1.08) translateY(-2px);
+  box-shadow: 
+    0 14px 32px rgba(15, 82, 186, 0.45),
+    0 4px 12px rgba(15, 82, 186, 0.25),
+    inset 0 1px 0 rgba(255,255,255,0.2);
+  border-radius: 20px;
 }
 
-.erumi-launcher.is-active {
-  background: rgba(8, 21, 39, 0.9);
-  color: var(--surface-milk);
-  transform: rotate(90deg);
+.erumi-launcher:hover ~ .erumi-tooltip {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
 }
 
 .launcher-badge {
   position: absolute;
-  top: 0;
-  right: 0;
-  width: 14px;
-  height: 14px;
-  background: #10b981;
-  border: 2px solid rgba(8, 21, 39, 0.9);
+  top: -2px;
+  right: -2px;
+  width: 13px;
+  height: 13px;
+  background: #22c55e;
+  border: 2.5px solid #ffffff;
   border-radius: 50%;
 }
 
-.erumi-window {
+.pulse-ring {
   position: absolute;
-  bottom: 80px;
-  right: 0;
-  width: 380px;
-  height: 560px;
-  max-height: calc(100vh - 120px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid rgba(182, 194, 217, 0.24);
-  border-radius: 20px;
-  background:
-    linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(15, 76, 255, 0.08)),
-    rgba(8, 21, 39, 0.9);
-  box-shadow: 0 24px 52px rgba(2, 8, 23, 0.58);
-}
-
-.erumi-header {
-  padding: 16px;
-  background: rgba(255, 255, 255, 0.04);
-  border-bottom: 1px solid rgba(182, 194, 217, 0.2);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.erumi-identity {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.erumi-identity h3 {
-  margin: 0;
-  color: var(--surface-milk);
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.status-indicator {
-  font-size: 11px;
-  color: #22d3ee;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-weight: 600;
-}
-
-
-
-.pulse {
-  width: 6px;
-  height: 6px;
-  background: #22d3ee;
+  top: -4px;
+  right: -4px;
+  width: 21px;
+  height: 21px;
   border-radius: 50%;
-  display: inline-block;
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.64); }
-  70% { box-shadow: 0 0 0 6px rgba(34, 211, 238, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); }
-}
-
-.erumi-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.msg-row {
-  display: flex;
-  gap: 10px;
-  max-width: 85%;
-}
-
-.msg-assistant {
-  align-self: flex-start;
-}
-
-.msg-user {
-  align-self: flex-end;
-  flex-direction: row-reverse;
-  max-width: 80%;
-}
-
-.msg-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  flex-shrink: 0;
-}
-
-.user-icon {
-  background: linear-gradient(135deg, #0f4cff, #1f80ff);
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 800;
-  border-radius: 50%;
-}
-
-.msg-bubble {
-  padding: 10px 14px;
-  border-radius: 14px;
-  font-size: 13px;
-  line-height: 1.5;
-  box-shadow: 0 10px 20px rgba(2, 8, 23, 0.36);
-}
-
-.msg-assistant .msg-bubble {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--surface-milk);
-  border-top-left-radius: 2px;
-}
-
-.msg-user .msg-bubble {
-  background: linear-gradient(135deg, #0f4cff, #22d3ee);
-  color: white;
-  border-top-right-radius: 2px;
-}
-
-.msg-bubble :deep(p) { margin: 0 0 8px 0; }
-.msg-bubble :deep(p:last-child) { margin-bottom: 0; }
-.msg-bubble :deep(ul), .msg-bubble :deep(ol) { margin: 8px 0; padding-left: 20px; }
-
-.erumi-footer {
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border-top: 1px solid rgba(182, 194, 217, 0.2);
-}
-
-.quick-prompts {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 12px;
-  white-space: nowrap;
-}
-
-.prompt-btn {
-  padding: 6px 12px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(182, 194, 217, 0.24);
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #d7e6ff;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  transition: all 0.2s;
-}
-
-.prompt-btn:hover {
-  background: rgba(31, 128, 255, 0.22);
-  border-color: rgba(117, 182, 255, 0.62);
-  color: #f8fafc;
-}
-
-.composer {
-  display: flex;
-  gap: 8px;
-  background: rgba(8, 21, 39, 0.74);
-  padding: 4px 4px 4px 12px;
-  border-radius: 24px;
-  border: 1px solid rgba(182, 194, 217, 0.24);
-  box-shadow: 0 8px 16px rgba(2, 8, 23, 0.36);
-}
-
-.composer input {
-  flex: 1;
-  border: none;
-  outline: none;
-  font-size: 13px;
-  color: var(--surface-milk);
-  background: transparent;
-}
-
-.send-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #0f4cff, #1f80ff);
-  color: white;
-  border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: opacity 0.2s;
-}
-
-.send-btn:disabled {
-  opacity: 0.5;
-}
-
-.mention-suggestions {
-  position: absolute;
-  bottom: 60px;
-  left: 12px;
-  right: 12px;
-  background: rgba(8, 21, 39, 0.94);
-  border-radius: 12px;
-  border: 1px solid rgba(182, 194, 217, 0.24);
-  box-shadow: 0 -10px 26px rgba(2, 8, 23, 0.5);
-  display: flex;
-  flex-direction: column;
-  z-index: 10;
-}
-
-.mention-suggestions button {
-  padding: 8px 12px;
-  text-align: left;
-  border: none;
-  background: none;
-  font-size: 12px;
-  color: var(--surface-milk);
-  border-bottom: 1px solid rgba(182, 194, 217, 0.16);
-}
-
-.mention-suggestions button:hover {
-  background: rgba(31, 128, 255, 0.2);
-}
-
-.fade-up-enter-active, .fade-up-leave-active {
-  transition: all 0.3s ease;
-}
-.fade-up-enter-from, .fade-up-leave-to {
+  border: 2px solid #22c55e;
+  animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
   opacity: 0;
-  transform: translateY(20px);
 }
 
-.thinking-dots {
-  display: flex;
-  gap: 4px;
-  padding: 12px 16px;
+@keyframes ping {
+  0% { transform: scale(0.8); opacity: 0.7; }
+  70% { transform: scale(1.8); opacity: 0; }
+  100% { transform: scale(1.8); opacity: 0; }
 }
 
-.thinking-dots span {
-  width: 6px;
-  height: 6px;
-  background: #b8c7de;
-  border-radius: 50%;
-  animation: dots 1.4s infinite;
+.erumi-tooltip {
+  background: #0f172a;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: all 0.2s ease;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 
-.thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
-.thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
-
-@keyframes dots {
-  0%, 80%, 100% { transform: translateY(0); }
-  40% { transform: translateY(-5px); }
+.floating-erumi:hover .erumi-tooltip {
+  opacity: 1;
+  transform: translateY(0);
 }
 </style>

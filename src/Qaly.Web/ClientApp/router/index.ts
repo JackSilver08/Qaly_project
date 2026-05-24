@@ -7,6 +7,7 @@ const ProjectDetailPage = () => import('../pages/ProjectDetailPage.vue')
 const ProjectsPage = () => import('../pages/ProjectsPage.vue')
 const TasksPage = () => import('../pages/TasksPage.vue')
 const TeamsPage = () => import('../pages/TeamsPage.vue')
+const AnalyticsPage = () => import('../pages/AnalyticsPage.vue')
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -20,7 +21,7 @@ export const router = createRouter({
     { path: '/projects/:projectId/tasks/:taskId', name: 'project-task', component: ProjectDetailPage },
     { path: '/tasks', name: 'tasks', component: TasksPage },
     { path: '/teams', name: 'teams', component: TeamsPage },
-    { path: '/analytics', name: 'analytics', component: ProfilePage },
+    { path: '/analytics', name: 'analytics', component: AnalyticsPage },
     { path: '/settings', name: 'settings', component: ProfilePage },
     { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
   ],

@@ -1,17 +1,19 @@
 <script setup lang="ts">
-import { Plus, Search, SlidersHorizontal, X } from 'lucide-vue-next'
+import { Plus, Search, SlidersHorizontal, X, LayoutGrid, List } from 'lucide-vue-next'
 
 defineProps<{
   search: string
   sort: string
   filter: string
   projectCount: number
+  isGridView: boolean
 }>()
 
 defineEmits<{
   'update:search': [value: string]
   'update:sort': [value: string]
   'update:filter': [value: string]
+  'update:isGridView': [value: boolean]
   create: []
 }>()
 </script>
@@ -48,6 +50,16 @@ defineEmits<{
         <option value="progress">Tiến độ cao</option>
         <option value="name">Tên A-Z</option>
       </select>
+
+      <button 
+        class="layout-toggle-btn" 
+        type="button" 
+        :title="isGridView ? 'Chuyển sang dạng danh sách' : 'Chuyển sang dạng ô lưới'"
+        @click="$emit('update:isGridView', !isGridView)"
+      >
+        <List v-if="isGridView" :size="16" />
+        <LayoutGrid v-else :size="16" />
+      </button>
 
       <button class="primary-button primary-button--compact" type="button" @click="$emit('create')">
         <Plus :size="16" />

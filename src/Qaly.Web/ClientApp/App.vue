@@ -809,15 +809,7 @@ async function clearActionableNotifications() {
 }
 
 function openChatWithPrompt(prompt?: string) {
-  const defaultPrompt = selectedProject.value
-    ? `Tóm tắt nhanh dự án ${selectedProject.value.name} và gợi ý bước tiếp theo.`
-    : "Tóm tắt nhanh workspace hiện tại và gợi ý việc cần làm hôm nay.";
-
-  window.dispatchEvent(
-    new CustomEvent("qaly:assistant-open", {
-      detail: { prompt: prompt?.trim() || defaultPrompt },
-    }),
-  );
+  void router.push('/analytics')
 }
 
 async function logout() {

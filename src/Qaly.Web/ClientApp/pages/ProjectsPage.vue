@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { FileSpreadsheet } from 'lucide-vue-next'
+import { ref, computed } from 'vue'
+import { FileSpreadsheet, FolderKanban, CheckCircle2, AlertTriangle } from 'lucide-vue-next'
 import ProjectList from '../components/ProjectList.vue'
+import ProjectGrid from '../components/ProjectGrid.vue'
 import ProjectToolbar from '../components/ProjectToolbar.vue'
 import ImportModal from '../components/import/ImportModal.vue'
 import ImportUndoBanner from '../components/import/ImportUndoBanner.vue'
@@ -27,10 +28,16 @@ const {
   selectProject,
   selectedProject,
   loadDashboard,
+  projects,
 } = useDashboardContext()
 
+const isGridView = ref(true)
 const showImportModal = ref(false)
 const undoBannerData = ref<{ importSessionId: string; importedCount: number; createdAt: string } | null>(null)
+
+const totalProjectsCount = computed(() => projects.value.filter((p: any) => p.status !== 'Archived').length)
+const onTrackCount = computed(() => projects.value.filter((p: any) => p.status !== 'Archived' && p.overdueTaskCount === 0).length)
+const atRiskCount = computed(() => projects.value.filter((p: any) => p.status !== 'Archived' && p.overdueTaskCount > 0).length)
 
 function onImported(result: any) {
   showImportModal.value = false
@@ -60,6 +67,50 @@ async function handleUndoFromBanner() {
 <template>
   <div class="dashboard-scroll dashboard-scroll--embedded no-scrollbar">
     <div class="dashboard-main project-home-main no-scrollbar">
+      
+      <!-- Stats Header -->
+      <section class="summary-card-grid" aria-label="Tổng quan nhanh dự án" style="margin-bottom: 16px;">
+        <article class="summary-card glass-card">
+          <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <span style="font-size: 11px; font-weight: 800; color: var(--muted); letter-spacing: 0.5px;">TỔNG DỰ ÁN</span>
+            <div style="width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--blue-100); color: var(--primary);">
+              <FolderKanban :size="16" />
+            </div>
+          </div>
+          <div style="margin-top: 8px;">
+            <strong style="font-size: 28px; font-weight: 800; color: var(--text);">{{ totalProjectsCount }}</strong>
+            <p style="font-size: 11px; color: var(--muted); margin-top: 2px; margin-bottom: 0;">Dự án hoạt động trong Workspace</p>
+          </div>
+        </article>
+
+        <article class="summary-card glass-card">
+          <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <span style="font-size: 11px; font-weight: 800; color: var(--muted); letter-spacing: 0.5px;">ĐÚNG TIẾN ĐỘ</span>
+            <div style="width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--mint-100); color: #047857; position: relative;">
+              <CheckCircle2 :size="16" />
+              <span style="position: absolute; width: 6px; height: 6px; border-radius: 50%; background: #10b981; top: 6px; right: 6px; display: inline-block; animation: pulse 2s infinite;"></span>
+            </div>
+          </div>
+          <div style="margin-top: 8px;">
+            <strong style="font-size: 28px; font-weight: 800; color: var(--text);">{{ onTrackCount }}</strong>
+            <p style="font-size: 11px; color: var(--muted); margin-top: 2px; margin-bottom: 0;">Dự án không có việc trễ hạn</p>
+          </div>
+        </article>
+
+        <article class="summary-card glass-card">
+          <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <span style="font-size: 11px; font-weight: 800; color: var(--muted); letter-spacing: 0.5px;">CÓ RỦI RO / CHẬM</span>
+            <div style="width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: #fee2e2; color: #ef4444;">
+              <AlertTriangle :size="16" />
+            </div>
+          </div>
+          <div style="margin-top: 8px;">
+            <strong style="font-size: 28px; font-weight: 800; color: #ef4444;">{{ atRiskCount }}</strong>
+            <p style="font-size: 11px; color: var(--muted); margin-top: 2px; margin-bottom: 0;">Dự án có đầu việc bị trễ hạn</p>
+          </div>
+        </article>
+      </section>
+
       <section class="project-workspace glass-card">
         <div class="project-workspace__header">
           <div>
@@ -73,6 +124,7 @@ async function handleUndoFromBanner() {
           v-model:search="searchQuery"
           v-model:sort="projectSort"
           v-model:filter="projectFilter"
+          v-model:is-grid-view="isGridView"
           :project-count="activeProjectCards.length"
           @create="openCreateProject"
         >
@@ -102,12 +154,23 @@ async function handleUndoFromBanner() {
           <button class="text-button" type="button" @click="projectBeingEditedId = null">Hủy</button>
         </form>
 
-        <ProjectList
+        <ProjectGrid
+          v-if="isGridView"
           :projects="activeProjectCards"
           :active-project-id="selectedProject?.id ?? null"
           @view="selectProject"
           @edit="beginEditProject"
           @delete="deleteProject"
+          @create="openCreateProject"
+        />
+        <ProjectList
+          v-else
+          :projects="activeProjectCards"
+          :active-project-id="selectedProject?.id ?? null"
+          @view="selectProject"
+          @edit="beginEditProject"
+          @delete="deleteProject"
+          @create="openCreateProject"
         />
       </section>
     </div>
