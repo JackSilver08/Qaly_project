@@ -536,32 +536,32 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 }
 
 .ghost-card {
-  opacity: 0.42;
-  border: 2px dashed rgba(117, 182, 255, 0.66) !important;
+  opacity: 0.5;
+  border: 2px dashed var(--blue-300) !important;
   transform: scale(0.98);
 }
 
 .dragging-card {
   transform: rotate(2deg);
-  box-shadow: 0 20px 40px rgba(2, 8, 23, 0.5) !important;
+  box-shadow: 0 20px 40px rgba(15, 76, 255, 0.12) !important;
 }
 
 .count-badge {
   padding: 3px 9px;
-  border: 1px solid rgba(117, 182, 255, 0.44);
+  border: 1px solid var(--blue-200);
   border-radius: 999px;
-  background: rgba(31, 128, 255, 0.18);
-  color: #d9ecff;
+  background: var(--blue-50);
+  color: var(--primary-dark);
   font-size: 11px;
   font-weight: 800;
 }
 
 .overdue-tag {
   padding: 2px 7px;
-  border: 1px solid rgba(239, 68, 68, 0.42);
+  border: 1px solid var(--red-200);
   border-radius: 6px;
-  background: rgba(239, 68, 68, 0.16);
-  color: #fecaca;
+  background: var(--red-50);
+  color: var(--red-600);
   font-size: 10px;
   font-weight: 700;
 }
@@ -576,9 +576,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px dashed rgba(182, 194, 217, 0.36);
+  border: 1px dashed var(--line);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-soft);
   color: var(--muted);
   font-size: 13px;
 }
@@ -594,10 +594,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
 .task-id-badge {
   padding: 6px 10px;
-  border: 1px solid rgba(117, 182, 255, 0.42);
+  border: 1px solid var(--blue-200);
   border-radius: 999px;
-  color: #d9edff;
-  background: rgba(31, 128, 255, 0.16);
+  color: var(--primary-dark);
+  background: var(--blue-50);
   font-size: 12px;
   font-weight: 800;
 }
@@ -613,9 +613,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
 .timer-display {
   padding: 16px;
-  border: 1px solid rgba(117, 182, 255, 0.3);
+  border: 1px solid var(--line);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--panel);
 }
 
 .timer-active,
@@ -680,18 +680,18 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
 .manual-log-form {
   padding: 12px;
-  border: 1px solid rgba(182, 194, 217, 0.24);
+  border: 1px solid var(--line);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--panel);
 }
 
 .manual-log-form input {
   min-height: 38px;
-  border: 1px solid rgba(182, 194, 217, 0.24);
+  border: 1px solid var(--line);
   border-radius: 12px;
   padding: 0 12px;
-  color: var(--surface-milk);
-  background: rgba(8, 21, 39, 0.76);
+  color: var(--text-strong);
+  background: var(--panel);
 }
 
 .entry-history {
@@ -702,9 +702,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .entry-row {
   justify-content: space-between;
   padding: 8px 10px;
-  border: 1px solid rgba(182, 194, 217, 0.2);
+  border: 1px solid var(--line);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-soft);
   color: var(--muted);
 }
 
@@ -723,9 +723,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
 .attachment-section {
   padding: 14px;
-  border: 1px solid rgba(182, 194, 217, 0.24);
+  border: 1px solid var(--line);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--panel);
 }
 
 .upload-pill {
@@ -738,10 +738,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 }
 
 .upload-pill span {
-  border: 1px solid rgba(117, 182, 255, 0.4);
+  border: 1px solid var(--blue-200);
   padding: 5px 10px;
-  color: #dbefff;
-  background: rgba(31, 128, 255, 0.16);
+  color: var(--primary-dark);
+  background: var(--blue-50);
   font-size: 12px;
   font-weight: 700;
 }
@@ -757,9 +757,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid rgba(182, 194, 217, 0.24);
+  border: 1px solid var(--line);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-soft);
 }
 
 .file-info {
@@ -776,9 +776,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .close-pill {
   width: 24px;
   height: 24px;
-  border: 1px solid rgba(182, 194, 217, 0.24);
+  border: 1px solid var(--line);
   color: var(--muted);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-soft);
 }
 
 .truncate {
@@ -802,9 +802,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .comment-bubble {
   margin-bottom: 10px;
   padding: 12px 14px;
-  border: 1px solid rgba(182, 194, 217, 0.2);
+  border: 1px solid var(--line);
   border-radius: 14px 14px 14px 6px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-soft);
 }
 
 .comment-bubble--reply {
@@ -825,7 +825,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 }
 
 .comment-markdown {
-  color: var(--surface-milk);
+  color: var(--text-strong);
 }
 
 .comment-markdown :deep(*) {
@@ -858,11 +858,11 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .comment-input-area input {
   flex: 1;
   min-height: 42px;
-  border: 1px solid rgba(182, 194, 217, 0.24);
+  border: 1px solid var(--line);
   border-radius: 999px;
   padding: 0 16px;
-  color: var(--surface-milk);
-  background: rgba(8, 21, 39, 0.76);
+  color: var(--text-strong);
+  background: var(--panel);
   outline: none;
 }
 
@@ -893,10 +893,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px dashed rgba(182, 194, 217, 0.34);
+  border: 1px dashed var(--line);
   border-radius: 16px;
   color: var(--muted);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-soft);
 }
 
 .task-option-toggle {
@@ -915,9 +915,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
 .assignment-insight {
   padding: 14px;
-  border: 1px solid rgba(182, 194, 217, 0.24);
+  border: 1px solid var(--line);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--panel);
 }
 
 .section-header--space {
@@ -940,7 +940,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
-  color: var(--surface-milk);
+  color: var(--text-strong);
 }
 
 .assignment-candidates {
@@ -950,9 +950,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
 .assignment-candidate {
   padding: 10px 12px;
-  border: 1px solid rgba(182, 194, 217, 0.18);
+  border: 1px solid var(--line);
   border-radius: 12px;
-  background: rgba(8, 21, 39, 0.55);
+  background: var(--panel);
 }
 
 .assignment-candidate__top,
@@ -971,11 +971,11 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
 .quick-edit-input {
   min-height: 30px;
-  border: 1px solid rgba(117, 182, 255, 0.4);
+  border: 1px solid var(--line);
   border-radius: 8px;
   padding: 4px 8px;
-  color: var(--surface-milk);
-  background: rgba(8, 21, 39, 0.8);
+  color: var(--text-strong);
+  background: var(--bg-soft);
 }
 
 .assignee-text {
@@ -987,10 +987,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   align-items: center;
   gap: 5px;
   padding: 6px 12px;
-  border: 1px solid rgba(184, 219, 255, 0.34);
+  border: 1px solid var(--line);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #d9e9ff;
+  background: var(--panel);
+  color: var(--text-strong);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -999,9 +999,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
 .import-btn-sm:hover {
   transform: translateY(-1px);
-  border-color: rgba(117, 182, 255, 0.62);
-  background: rgba(31, 128, 255, 0.2);
-  box-shadow: 0 14px 28px rgba(15, 76, 255, 0.24);
+  border-color: var(--line);
+  background: var(--bg-soft);
+  box-shadow: 0 10px 20px rgba(15, 76, 255, 0.08);
 }
 
 /* Animations */

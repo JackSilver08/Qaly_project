@@ -239,8 +239,9 @@ async function handleDelete(id: string) {
 <style scoped>
 .wiki-tab-content {
   padding: 24px;
-  background: rgba(8, 21, 39, 0.62);
-  border: 1px solid var(--glass-border);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-shell);
 }
 
 .wiki-tab-content :deep(.primary-button),
@@ -249,37 +250,30 @@ async function handleDelete(id: string) {
 }
 
 .wiki-add-form {
-  padding: 20px;
+  padding: 24px;
   margin-bottom: 24px;
-  background: rgba(31, 128, 255, 0.12);
-  border: 1px solid rgba(117, 182, 255, 0.3);
-  border-radius: 8px;
+  background: var(--blue-50);
+  border: 1px solid var(--line);
+  border-radius: 12px;
 }
 
 .wiki-add-form h3 {
-  font-size: 15px;
-  margin-bottom: 12px;
-  color: var(--surface-milk);
+  font-size: 16px;
+  margin-bottom: 16px;
+  color: var(--text-strong);
   font-weight: 700;
 }
 
-.wiki-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.wiki-editor input,
-.wiki-editor textarea {
+.wiki-add-form input,
+.wiki-add-form textarea {
   width: 100%;
-  padding: 8px 12px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
   border-radius: 8px;
-  border: 1px solid rgba(182, 194, 217, 0.24);
-  color: var(--surface-milk);
-  background: rgba(8, 21, 39, 0.74);
-}
-
-.wiki-editor textarea {
+  border: 1px solid var(--line);
+  color: var(--text-strong);
+  background: var(--panel);
+  font-family: inherit;
   resize: vertical;
   min-height: 104px;
   line-height: 1.5;
@@ -319,18 +313,18 @@ async function handleDelete(id: string) {
   min-height: 28px;
   padding: 5px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(182, 194, 217, 0.24);
+  border: 1px solid var(--line);
   color: var(--muted);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-soft);
   font-size: 12px;
   font-weight: 700;
 }
 
 .wiki-visibility-toggle input:checked + span,
 .wiki-visibility-badge.is-public {
-  color: #bbf7d0;
-  border-color: rgba(34, 197, 94, 0.36);
-  background: rgba(34, 197, 94, 0.14);
+  color: var(--green-700);
+  border-color: var(--green-200);
+  background: var(--green-50);
 }
 
 .wiki-list {
@@ -342,22 +336,20 @@ async function handleDelete(id: string) {
 .wiki-search-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(182, 194, 217, 0.24);
+  gap: 12px;
+  margin-bottom: 24px;
+  padding: 12px 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
   border-radius: 12px;
-  margin-bottom: 8px;
-  color: var(--muted);
 }
 
 .wiki-search-bar input {
-  border: 0;
-  background: transparent;
   flex: 1;
-  font-size: 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-strong);
   outline: none;
-  color: var(--surface-milk);
 }
 
 .wiki-item {
@@ -365,15 +357,16 @@ async function handleDelete(id: string) {
   align-items: center;
   gap: 16px;
   padding: 14px 18px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(182, 194, 217, 0.24);
-  border-radius: 14px;
-  transition: all 0.2s;
+  border-radius: 12px;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
 }
 
 .wiki-item:hover {
-  border-color: rgba(117, 182, 255, 0.62);
-  box-shadow: 0 16px 32px rgba(15, 76, 255, 0.18);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(15, 76, 255, 0.08);
+  border-color: rgba(117, 182, 255, 0.4);
 }
 
 .wiki-item__icon {
@@ -397,12 +390,12 @@ async function handleDelete(id: string) {
 
 .wiki-item__main strong {
   font-size: 15px;
-  color: var(--surface-milk);
+  color: var(--text-strong);
 }
 
 .wiki-item__main p {
   margin: 0;
-  color: var(--surface-milk);
+  color: var(--text);
   opacity: 0.84;
   font-size: 13px;
   line-height: 1.45;
@@ -415,11 +408,6 @@ async function handleDelete(id: string) {
 .wiki-item__main > span {
   font-size: 12px;
   color: var(--muted);
-}
-
-.wiki-item__actions {
-  display: flex;
-  gap: 8px;
 }
 
 .wiki-empty {
@@ -445,7 +433,7 @@ async function handleDelete(id: string) {
 .wiki-empty h3 {
   font-size: 18px;
   margin: 0;
-  color: var(--surface-milk);
+  color: var(--text-strong);
   font-weight: 700;
 }
 
@@ -454,6 +442,12 @@ async function handleDelete(id: string) {
   max-width: 400px;
   margin: 0;
   font-size: 14px;
+}
+
+.wiki-item__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .panel-heading {
@@ -466,7 +460,7 @@ async function handleDelete(id: string) {
 .panel-heading h2 {
   font-size: 18px;
   font-weight: 800;
-  color: var(--surface-milk);
+  color: var(--text-strong);
 }
 
 .panel-heading__eyebrow {
@@ -477,8 +471,7 @@ async function handleDelete(id: string) {
 }
 
 .icon-button.risk:hover {
-  color: #fecaca;
-  background: rgba(239, 68, 68, 0.2);
+  color: var(--red-600);
+  background: var(--red-50);
 }
 </style>
-

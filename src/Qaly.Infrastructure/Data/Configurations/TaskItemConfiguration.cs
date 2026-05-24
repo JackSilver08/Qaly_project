@@ -30,7 +30,7 @@ public class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
         builder.HasOne(t => t.Sprint)
             .WithMany(s => s.Tasks)
             .HasForeignKey(t => t.SprintId)
-            .OnDelete(DeleteBehavior.SetNull);
+            .OnDelete(DeleteBehavior.ClientSetNull);
 
         builder.HasOne(t => t.Assignee)
             .WithMany(u => u.AssignedTasks)

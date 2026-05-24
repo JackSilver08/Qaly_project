@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { Bell, ChevronDown, LogOut, Menu, User } from 'lucide-vue-next'
-import ChatbotAvatar from './ChatbotAvatar.vue'
 
 defineProps<{
   brandName: string
@@ -78,11 +77,6 @@ onBeforeUnmount(() => {
       <button class="shell-icon-button" type="button" aria-label="Thong bao" @click="$emit('notifications')">
         <Bell :size="18" />
         <span v-if="notificationCount > 0" class="shell-action-badge">{{ notificationCount }}</span>
-      </button>
-
-      <button class="shell-action-pill shell-action-pill--assistant" type="button" aria-label="Mo tro ly AI" @click="$emit('assistant')">
-        <ChatbotAvatar size="launcher" />
-        <span>Erumi AI</span>
       </button>
 
       <div ref="userMenuRef" class="shell-user-dropdown">

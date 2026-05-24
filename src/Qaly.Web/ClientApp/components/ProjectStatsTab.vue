@@ -98,20 +98,17 @@ const props = defineProps<{
   display: flex;
   flex-direction: column;
   gap: 12px;
-  background:
-    linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(15, 76, 255, 0.08)),
-    rgba(8, 21, 39, 0.74);
-  border: 1px solid rgba(182, 194, 217, 0.26);
+  background: var(--panel);
+  border: 1px solid var(--line);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
-  backdrop-filter: blur(10px);
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s, border-color 0.3s;
 }
 
 .stat-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 16px 32px rgba(15, 76, 255, 0.26);
-  border-color: rgba(117, 182, 255, 0.62);
+  box-shadow: 0 16px 32px rgba(15, 76, 255, 0.08);
+  border-color: rgba(117, 182, 255, 0.4);
 }
 
 .stat-card__label {
@@ -125,13 +122,13 @@ const props = defineProps<{
 .stat-card__value {
   font-size: 32px;
   font-weight: 800;
-  color: var(--surface-milk);
+  color: var(--text-strong);
   line-height: 1;
 }
 
 .stat-card.is-risk {
-  background: linear-gradient(145deg, rgba(239, 68, 68, 0.2), rgba(8, 21, 39, 0.72));
-  border-color: rgba(251, 113, 133, 0.45);
+  background: var(--danger-soft);
+  border-color: rgba(251, 113, 133, 0.3);
 }
 
 .stat-card.is-risk .stat-card__value {
@@ -146,11 +143,9 @@ const props = defineProps<{
 
 .chart-card {
   padding: 28px;
-  background:
-    linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(15, 76, 255, 0.08)),
-    rgba(8, 21, 39, 0.72);
+  background: var(--panel);
   border-radius: var(--radius-shell);
-  border: 1px solid rgba(182, 194, 217, 0.26);
+  border: 1px solid var(--line);
   box-shadow: var(--shadow-card);
   min-height: 280px;
   display: flex;
@@ -160,7 +155,7 @@ const props = defineProps<{
 .chart-card h3 {
   margin-bottom: 24px;
   font-size: 18px;
-  color: var(--surface-milk);
+  color: var(--text-strong);
   font-weight: 800;
   position: relative;
   padding-bottom: 12px;
@@ -196,7 +191,7 @@ const props = defineProps<{
   align-items: center;
   gap: 12px;
   font-size: 14px;
-  color: var(--surface-milk);
+  color: var(--text-strong);
   font-weight: 600;
 }
 
@@ -283,21 +278,21 @@ const props = defineProps<{
   width: 120px;
   height: 120px;
   border-radius: 50%;
-  background: rgba(8, 21, 39, 0.9);
-  box-shadow: inset 0 4px 12px rgba(2, 8, 23, 0.45);
+  background: var(--panel);
+  box-shadow: inset 0 2px 6px rgba(15, 23, 42, 0.08);
 }
 
 .donut-chart strong {
   position: relative;
   z-index: 1;
-  color: var(--surface-milk);
+  color: var(--text-strong);
   font-size: 28px;
   font-weight: 800;
 }
 
 .empty-state {
   padding: 40px;
-  border: 1px dashed rgba(182, 194, 217, 0.34);
+  border: 1px dashed var(--line);
   border-radius: 16px;
   color: var(--muted);
   text-align: center;
@@ -307,7 +302,7 @@ const props = defineProps<{
   justify-content: center;
   font-size: 15px;
   font-weight: 600;
-  background: rgba(255,255,255,0.04);
+  background: var(--bg-soft);
 }
 </style>
 

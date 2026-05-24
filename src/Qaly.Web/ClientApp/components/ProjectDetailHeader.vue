@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ArrowLeft, LayoutDashboard } from 'lucide-vue-next'
-import ChatbotAvatar from './ChatbotAvatar.vue'
 
 defineProps<{
   projectName: string
@@ -28,10 +27,6 @@ defineEmits<{
       </button>
       
       <div class="project-detail-header__actions">
-        <button class="assistant-button" type="button" @click="$emit('assistant')">
-          <ChatbotAvatar size="launcher" />
-          <span>Qaly AI Assistant</span>
-        </button>
       </div>
     </div>
 
@@ -71,13 +66,10 @@ defineEmits<{
   display: flex;
   flex-direction: column;
   gap: 28px;
-  background:
-    linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(15, 76, 255, 0.1)),
-    rgba(8, 21, 39, 0.74);
-  border: 1px solid var(--glass-border);
+  background: var(--panel);
+  border: 1px solid var(--line);
   border-radius: var(--radius-shell);
   box-shadow: var(--shadow-card);
-  backdrop-filter: blur(24px);
   position: relative;
   overflow: hidden;
 }
@@ -116,8 +108,8 @@ defineEmits<{
   height: 36px;
   display: grid;
   place-items: center;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(182, 194, 217, 0.26);
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
   border-radius: 10px;
   transition: all 0.3s;
 }
@@ -197,14 +189,14 @@ defineEmits<{
 .project-info h1 {
   font-size: 32px;
   margin: 0;
-  color: var(--surface-milk);
+  color: var(--text-strong);
   font-weight: 800;
   line-height: 1.1;
   letter-spacing: -0.02em;
 }
 
 .project-info__desc {
-  color: #b8c7de;
+  color: var(--muted);
   font-size: 15px;
   line-height: 1.6;
   margin: 0;
@@ -231,7 +223,7 @@ defineEmits<{
 }
 
 .progress-info strong {
-  color: var(--surface-milk);
+  color: var(--text-strong);
 }
 
 .progress-bar-rail {

@@ -140,15 +140,15 @@ function toggleTimelinePermission(member: Member, enabled: boolean) {
 .add-member-form {
   padding: 20px;
   margin-bottom: 24px;
-  background: rgba(31, 128, 255, 0.14);
-  border: 1px solid rgba(117, 182, 255, 0.32);
+  background: var(--blue-50);
+  border: 1px solid var(--line);
   border-radius: 12px;
 }
 
 .add-member-form h3 {
   font-size: 15px;
   margin-bottom: 12px;
-  color: #d9ebff;
+  color: var(--text-strong);
   font-weight: 700;
 }
 
@@ -162,25 +162,25 @@ function toggleTimelinePermission(member: Member, enabled: boolean) {
   flex: 1;
   padding: 8px 12px;
   border-radius: 8px;
-  border: 1px solid rgba(182, 194, 217, 0.24);
-  color: var(--surface-milk);
-  background: rgba(8, 21, 39, 0.74);
+  border: 1px solid var(--line);
+  color: var(--text-strong);
+  background: var(--panel);
 }
 
 .role-selector select {
   padding: 4px 8px;
   border-radius: 6px;
-  border: 1px solid rgba(182, 194, 217, 0.24);
+  border: 1px solid var(--line);
   font-size: 12px;
   font-weight: 600;
-  color: var(--surface-milk);
-  background: rgba(8, 21, 39, 0.74);
+  color: var(--text-strong);
+  background: var(--panel);
 }
 
 .form-row select option,
 .role-selector select option {
-  color: var(--surface-milk);
-  background: #081527;
+  color: var(--text-strong);
+  background: var(--panel);
 }
 
 .member-role-actions {
@@ -203,8 +203,9 @@ function toggleTimelinePermission(member: Member, enabled: boolean) {
 }
 .members-tab-content {
   padding: 24px;
-  background: rgba(8, 21, 39, 0.62);
-  border: 1px solid var(--glass-border);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-shell);
 }
 
 .members-list {
@@ -220,8 +221,8 @@ function toggleTimelinePermission(member: Member, enabled: boolean) {
   gap: 16px;
   padding: 16px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(182, 194, 217, 0.24);
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
 }
 
 .member-avatar {
@@ -244,7 +245,7 @@ function toggleTimelinePermission(member: Member, enabled: boolean) {
   display: block;
   font-size: 16px;
   margin-bottom: 4px;
-  color: var(--surface-milk);
+  color: var(--text-strong);
 }
 
 .member-meta {
@@ -290,7 +291,7 @@ function toggleTimelinePermission(member: Member, enabled: boolean) {
 .panel-heading h2 {
   font-size: 18px;
   font-weight: 800;
-  color: var(--surface-milk);
+  color: var(--text-strong);
 }
 
 .panel-heading span {
@@ -301,9 +302,9 @@ function toggleTimelinePermission(member: Member, enabled: boolean) {
 }
 
 .empty-state {
-  border: 1px dashed rgba(182, 194, 217, 0.34);
+  border: 1px dashed var(--line);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-soft);
   padding: 16px;
   color: var(--muted);
 }
