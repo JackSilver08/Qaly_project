@@ -405,3 +405,52 @@ export interface VoteSummaryDto {
     score: number;
     myVote: number;
 }
+
+export interface AttentionSummaryDto {
+    overdueTasks: number;
+    dueSoonTasks: number;
+    riskProjects: number;
+    blockedTasks: number;
+    safeProjects: number;
+    totalAttentionItems: number;
+}
+
+export interface ActivityByDayDto {
+    date: string;
+    count: number;
+}
+
+export interface RecentActivityDto {
+    type: string;
+    title: string;
+    actorName: string;
+    projectName: string | null;
+    createdAt: string;
+}
+
+export interface RecentActivitiesResponseDto {
+    todayCount: number;
+    weekCount: number;
+    activityByDay: ActivityByDayDto[];
+    latestActivities: RecentActivityDto[];
+}
+
+export interface StrategicOverviewDto {
+    workspaceHealthScore: number;
+    averageProjectProgress: number;
+    taskCompletionRate: number;
+    riskProjectCount: number;
+    overdueTaskCount: number;
+    dueSoonTaskCount: number;
+    activeProjectCount: number;
+    teamWorkloadLevel: string;
+    riskLevel: string;
+    topPriorityTasks: DashboardTask[];
+}
+
+export interface AiStrategyResponseDto {
+    summary: string;
+    riskAnalysis: string[];
+    recommendations: string[];
+    priorityPlan: string[];
+}

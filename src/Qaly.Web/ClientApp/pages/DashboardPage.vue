@@ -4,7 +4,9 @@ import { Plus, AlertTriangle, TrendingUp, CheckCircle2, Activity, ChevronRight, 
 import { useDashboardContext } from '../composables/dashboard-context'
 import { apiJson } from '../utils/api-client'
 import { formatTimeAgo } from '../utils/formatters'
-import type { TaskAttentionDto, AuditLogDto } from '../types'
+import AttentionRiskCard from '../components/dashboard/AttentionRiskCard.vue'
+import RecentActivityWidget from '../components/dashboard/RecentActivityWidget.vue'
+import StrategicOverviewAI from '../components/dashboard/StrategicOverviewAI.vue'
 
 const {
   projects,
@@ -16,73 +18,8 @@ const {
 const activeTab = ref('Q4')
 const chartMode = ref<'2D' | '3D'>('2D')
 
-// Dynamic data states
-const attentionProjects = ref<any[]>([])
-const recentActivities = ref<any[]>([])
-
 onMounted(async () => {
-  try {
-    const res = await apiJson<any>('/api/tasks/attention?pageSize=5')
-    if (res && res.items) {
-      attentionProjects.value = res.items.map((t: TaskAttentionDto) => {
-        let badge = 'Cần chú ý'
-        let type = 'upcoming'
-        let desc = t.projectName
-        
-        if (t.isOverdue) {
-          badge = 'Quá hạn'
-          type = 'overdue'
-          desc += ' • Đã quá hạn'
-        } else if (t.isDueSoon) {
-          badge = 'Sắp tới'
-          desc += ' • Sắp đến hạn'
-        }
-        
-        return {
-          id: t.id,
-          name: t.title,
-          desc,
-          badge,
-          type
-        }
-      })
-    }
-  } catch(e) { console.error(e) }
-
-  try {
-    const res = await apiJson<any>('/api/audit-logs/recent?limit=5')
-    if (res && res.items) {
-      recentActivities.value = res.items.map((log: AuditLogDto) => {
-        let actionText = 'đã cập nhật'
-        let target = log.entityType
-        if (log.action === 'Create') actionText = 'đã tạo mới'
-        else if (log.action === 'Update') actionText = 'đã chỉnh sửa'
-        else if (log.action === 'Delete') actionText = 'đã xóa'
-        else if (log.action === 'StatusChange') actionText = 'đã cập nhật trạng thái của'
-        else if (log.action === 'KanbanMove') actionText = 'đã kéo thả'
-        
-        try {
-          if (log.changesJson) {
-            const changes = JSON.parse(log.changesJson)
-            if (changes.title) target = changes.title
-            else if (changes.Title) target = changes.Title
-          }
-        } catch {}
-
-        const user = log.userName || 'Người dùng'
-        const initials = user.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
-
-        return {
-          id: log.id,
-          user: user,
-          action: actionText,
-          target: target,
-          time: formatTimeAgo(log.timestamp),
-          initials
-        }
-      })
-    }
-  } catch(e) { console.error(e) }
+  // components load their own data
 })
 
 // Classify projects based on overdue task count
@@ -604,42 +541,7 @@ const tooltipStyle = computed(() => {
         </section>
 
         <!-- Strategic Performance Banner -->
-        <section class="performance-banner">
-          <div class="performance-banner__content">
-            <span class="performance-banner__label">TỔNG QUAN CHIẾN LƯỢC</span>
-            <h2>Nâng cấp Cơ sở Hạ tầng</h2>
-            <p>Sáng kiến toàn cầu của chúng tôi nhằm hiện đại hóa hạ tầng cốt lõi hiện đã đạt 78% tiến độ hoàn thành. Hệ thống đang hoạt động với hiệu suất vượt trội hơn 24% so với quý trước.</p>
-            <div class="performance-banner__stats">
-              <div>
-                <strong>78%</strong>
-                <span>Tiến trình chung</span>
-              </div>
-              <div>
-                <strong>08</strong>
-                <span>Tính năng mới tuần này</span>
-              </div>
-            </div>
-          </div>
-          <div class="performance-banner__visual">
-            <div class="abstract-ui">
-              <div class="abstract-ui-header" style="background: rgba(255, 255, 255, 0.08); display: flex; align-items: center; padding: 0 12px; gap: 8px;">
-                <div style="width: 8px; height: 8px; border-radius: 50%; background: #ef4444;"></div>
-                <div style="width: 8px; height: 8px; border-radius: 50%; background: #f59e0b;"></div>
-                <div style="width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></div>
-              </div>
-              <div class="abstract-ui-body">
-                <div class="abstract-ui-card" style="display: flex; flex-direction: column; justify-content: space-between; padding: 12px; background: rgba(255,255,255,0.04);">
-                  <div style="width: 40%; height: 8px; background: rgba(255,255,255,0.2); border-radius: 4px;"></div>
-                  <div style="width: 80%; height: 32px; background: rgba(15, 82, 186, 0.2); border-radius: 6px; border: 1px solid rgba(15, 82, 186, 0.4); display: flex; align-items: center; justify-content: center; font-size: 10px; color: #ffffff; font-weight: 700;">Hạ tầng cốt lõi</div>
-                </div>
-                <div class="abstract-ui-card" style="display: flex; flex-direction: column; justify-content: space-between; padding: 12px; background: rgba(255,255,255,0.04);">
-                  <div style="width: 40%; height: 8px; background: rgba(255,255,255,0.2); border-radius: 4px;"></div>
-                  <div style="width: 80%; height: 32px; background: rgba(16, 185, 129, 0.2); border-radius: 6px; border: 1px solid rgba(16, 185, 129, 0.4); display: flex; align-items: center; justify-content: center; font-size: 10px; color: #ffffff; font-weight: 700;">Bảo mật: Đạt</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+        <StrategicOverviewAI />
 
       </div>
 
@@ -647,68 +549,10 @@ const tooltipStyle = computed(() => {
       <aside class="dashboard-side-col">
         
         <!-- Attention Required Card -->
-        <section class="attention-card">
-          <div class="attention-card-header">
-            <AlertTriangle :size="18" />
-            <h3>Cần chú ý</h3>
-          </div>
-          
-          <div class="attention-list">
-            <div v-if="attentionProjects.length === 0" class="attention-item" style="justify-content: center; color: var(--text-tertiary)">
-              Không có nhiệm vụ nào cần chú ý
-            </div>
-            <article 
-              v-else
-              v-for="item in attentionProjects" 
-              :key="item.id" 
-              class="attention-item"
-            >
-              <div class="attention-item-info">
-                <span class="attention-item-title">{{ item.name }}</span>
-                <span class="attention-item-desc">{{ item.desc }}</span>
-              </div>
-              <span 
-                class="attention-badge"
-                :class="item.type === 'overdue' ? 'attention-badge--overdue' : 'attention-badge--upcoming'"
-              >
-                {{ item.badge }}
-              </span>
-            </article>
-          </div>
-
-          <RouterLink to="/tasks" class="attention-view-all">
-            Xem Tất cả đầu việc
-          </RouterLink>
-        </section>
+        <AttentionRiskCard />
 
         <!-- Recent Activity Card -->
-        <section class="activity-card">
-          <div class="activity-card-header">
-            <h3>Hoạt động gần đây</h3>
-          </div>
-
-          <div class="activity-list">
-            <div v-if="recentActivities.length === 0" class="activity-item" style="color: var(--text-tertiary)">
-              Chưa có hoạt động nào gần đây
-            </div>
-            <article 
-              v-else
-              v-for="activity in recentActivities" 
-              :key="activity.id" 
-              class="activity-item"
-            >
-              <div class="activity-avatar">{{ activity.initials }}</div>
-              <div class="activity-content">
-                <div class="activity-text">
-                  <span class="activity-user">{{ activity.user }}</span>
-                  {{ activity.action }}
-                  <span class="activity-target">{{ activity.target }}</span>
-                </div>
-                <span class="activity-time">{{ activity.time }}</span>
-              </div>
-            </article>
-          </div>
-        </section>
+        <RecentActivityWidget />
 
       </aside>
 

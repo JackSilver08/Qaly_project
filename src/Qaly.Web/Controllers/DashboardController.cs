@@ -417,6 +417,262 @@ public partial class DashboardController : ControllerBase
 
     [LoggerMessage(EventId = 2001, Level = LogLevel.Error, Message = "Failed to build dashboard overview. Returning safe fallback response.")]
     private static partial void LogFailedToBuildDashboardOverview(ILogger logger, Exception exception);
+
+    [HttpGet("attention-summary")]
+    public async Task<ActionResult<AttentionSummaryDto>> GetAttentionSummary(CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var currentUserId = User.GetUserId();
+        var isAdmin = User.IsInRole("Admin");
+
+        var projectQuery = _context.Projects.AsNoTracking().Include(p => p.Tasks).AsQueryable();
+
+        if (!isAdmin && currentUserId.HasValue)
+        {
+            projectQuery = projectQuery.Where(p =>
+                p.OwnerId == currentUserId ||
+                p.Members.Any(m => m.UserId == currentUserId));
+        }
+
+        var projects = await projectQuery.ToListAsync(cancellationToken);
+        var allTasks = projects.SelectMany(p => p.Tasks).ToList();
+
+        var overdueTasksCount = allTasks.Count(t => IsOverdue(t, now));
+        var dueSoonTasksCount = allTasks.Count(t => !IsDone(t) && t.DueDate.HasValue && t.DueDate.Value > now && (t.DueDate.Value - now).TotalHours <= 48);
+        var blockedTasksCount = allTasks.Count(t => EqualsIgnoreCase(t.Status, "Blocked") || EqualsIgnoreCase(t.Status, "OnHold"));
+        
+        var riskProjectsCount = projects.Count(p => 
+        {
+            var pTasks = p.Tasks.Where(t => t.ContributesToProgress && !EqualsIgnoreCase(t.Status, "Cancelled")).ToList();
+            if (pTasks.Count == 0) return false;
+            var completedCount = pTasks.Count(IsDone);
+            var overdueCount = pTasks.Count(t => IsOverdue(t, now));
+            var progress = (int)Math.Round(completedCount * 100d / pTasks.Count, MidpointRounding.AwayFromZero);
+            return progress < 40 || overdueCount > 2;
+        });
+
+        var safeProjectsCount = projects.Count(p => 
+        {
+            var pTasks = p.Tasks.Where(t => t.ContributesToProgress && !EqualsIgnoreCase(t.Status, "Cancelled")).ToList();
+            if (pTasks.Count == 0) return true;
+            var completedCount = pTasks.Count(IsDone);
+            var overdueCount = pTasks.Count(t => IsOverdue(t, now));
+            var progress = (int)Math.Round(completedCount * 100d / pTasks.Count, MidpointRounding.AwayFromZero);
+            return overdueCount == 0 && progress >= 70;
+        });
+
+        var totalItems = overdueTasksCount + dueSoonTasksCount + riskProjectsCount;
+
+        return Ok(new AttentionSummaryDto(
+            overdueTasksCount,
+            dueSoonTasksCount,
+            riskProjectsCount,
+            blockedTasksCount,
+            safeProjectsCount,
+            totalItems
+        ));
+    }
+
+    [HttpGet("recent-activities")]
+    public async Task<ActionResult<RecentActivitiesResponseDto>> GetRecentActivities(CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var startOfToday = now.Date;
+        var startOfWeek = now.Date.AddDays(-7);
+
+        var query = _context.AuditLogs.AsNoTracking().Where(a => a.Timestamp >= startOfWeek);
+
+        var logs = await query.OrderByDescending(a => a.Timestamp).ToListAsync(cancellationToken);
+
+        var todayCount = logs.Count(l => l.Timestamp >= startOfToday);
+        var weekCount = logs.Count;
+
+        var activityByDay = Enumerable.Range(0, 7)
+            .Select(i => 
+            {
+                var d = startOfWeek.AddDays(i);
+                return new ActivityByDayDto(
+                    d.ToString("yyyy-MM-dd"),
+                    logs.Count(l => l.Timestamp.Date == d.Date)
+                );
+            })
+            .ToList();
+
+        var latestActivities = logs.Take(3).Select(l => 
+        {
+            string projectName = null;
+            string title = l.Action + " " + l.EntityType;
+            try {
+                if (!string.IsNullOrEmpty(l.ChangesJson)) {
+                    var changes = System.Text.Json.JsonDocument.Parse(l.ChangesJson);
+                    if (changes.RootElement.TryGetProperty("title", out var tProp) || changes.RootElement.TryGetProperty("Title", out tProp)) {
+                        title = l.Action switch {
+                            "Create" => "Tạo mới " + tProp.GetString(),
+                            "Update" => "Cập nhật " + tProp.GetString(),
+                            "StatusChange" => "Đổi trạng thái " + tProp.GetString(),
+                            _ => l.Action + " " + tProp.GetString()
+                        };
+                    }
+                }
+            } catch {}
+
+            return new RecentActivityDto(
+                l.Action,
+                title,
+                l.User?.FullName ?? "Hệ thống",
+                projectName,
+                l.Timestamp.ToString("yyyy-MM-ddTHH:mm:ss")
+            );
+        }).ToList();
+
+        return Ok(new RecentActivitiesResponseDto(
+            todayCount,
+            weekCount,
+            activityByDay,
+            latestActivities
+        ));
+    }
+
+    [HttpGet("strategic-overview")]
+    public async Task<ActionResult<StrategicOverviewDto>> GetStrategicOverview(CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var currentUserId = User.GetUserId();
+        var isAdmin = User.IsInRole("Admin");
+
+        var projectQuery = _context.Projects.AsNoTracking().Include(p => p.Tasks).AsQueryable();
+
+        if (!isAdmin && currentUserId.HasValue)
+        {
+            projectQuery = projectQuery.Where(p =>
+                p.OwnerId == currentUserId ||
+                p.Members.Any(m => m.UserId == currentUserId));
+        }
+
+        var projects = await projectQuery.ToListAsync(cancellationToken);
+        var allTasks = projects.SelectMany(p => p.Tasks).ToList();
+
+        var activeProjects = projects.Count(p => !EqualsIgnoreCase(p.Status, "Archived"));
+        var completedTasks = allTasks.Count(IsDone);
+        var overdueTasks = allTasks.Count(t => IsOverdue(t, now));
+        var dueSoonTasks = allTasks.Count(t => !IsDone(t) && t.DueDate.HasValue && t.DueDate.Value > now && (t.DueDate.Value - now).TotalHours <= 48);
+        
+        var completionRate = allTasks.Count == 0 ? 0 : (int)Math.Round(completedTasks * 100d / allTasks.Count, MidpointRounding.AwayFromZero);
+        var averageProjectProgress = projects.Count == 0 ? 0 : (int)projects.Average(p => 
+        {
+            var pTasks = p.Tasks.Where(t => t.ContributesToProgress && !EqualsIgnoreCase(t.Status, "Cancelled")).ToList();
+            if (pTasks.Count == 0) return 0;
+            return Math.Round(pTasks.Count(IsDone) * 100d / pTasks.Count, MidpointRounding.AwayFromZero);
+        });
+
+        var riskProjectCount = projects.Count(p => 
+        {
+            var pTasks = p.Tasks.Where(t => t.ContributesToProgress && !EqualsIgnoreCase(t.Status, "Cancelled")).ToList();
+            if (pTasks.Count == 0) return false;
+            var comp = pTasks.Count(IsDone);
+            var prog = Math.Round(comp * 100d / pTasks.Count, MidpointRounding.AwayFromZero);
+            return prog < 40 || pTasks.Count(t => IsOverdue(t, now)) > 2;
+        });
+
+        var teamWorkloadLevel = (allTasks.Count(t => !IsDone(t)) / (double)Math.Max(1, _context.Users.Count())) > 5 ? "High" : "Medium";
+        var riskLevel = overdueTasks > 5 || riskProjectCount > 1 ? "High" : (overdueTasks > 0 ? "Moderate" : "Low");
+
+        var topPriorityTasks = allTasks
+            .Where(t => !IsDone(t) && (IsHighPriority(t.Priority) || IsOverdue(t, now) || (t.DueDate.HasValue && (t.DueDate.Value - now).TotalHours <= 48)))
+            .OrderBy(t => t.DueDate ?? DateTimeOffset.MaxValue)
+            .Take(3)
+            .Select(t => new DashboardTaskResponse(
+                t.Id,
+                t.Title,
+                t.Status,
+                t.Priority,
+                t.DueDate,
+                t.Assignee?.FullName,
+                t.Reporter?.FullName ?? string.Empty,
+                projects.FirstOrDefault(p => p.Id == t.ProjectId)?.Name ?? "",
+                t.IsPrivate,
+                false,
+                t.IsPinned,
+                t.ContributesToProgress,
+                t.UpvoteCount,
+                t.DownvoteCount,
+                0,
+                0
+            ))
+            .ToList();
+
+        return Ok(new StrategicOverviewDto(
+            averageProjectProgress,
+            averageProjectProgress,
+            completionRate,
+            riskProjectCount,
+            overdueTasks,
+            dueSoonTasks,
+            activeProjects,
+            teamWorkloadLevel,
+            riskLevel,
+            topPriorityTasks
+        ));
+    }
+
+    [HttpPost("ai-strategy")]
+    public ActionResult<AiStrategyResponseDto> GenerateAiStrategy([FromBody] StrategicOverviewDto data)
+    {
+        // Rule-based fallback implementation
+        var riskAnalysis = new List<string>();
+        var recommendations = new List<string>();
+        var priorityPlan = new List<string>();
+        string summary = "Workspace đang vận hành ổn định nhưng cần duy trì nhịp độ triển khai.";
+
+        if (data.OverdueTaskCount > 0)
+        {
+            riskAnalysis.Add($"Có {data.OverdueTaskCount} task đã trễ hạn.");
+            recommendations.Add("Ưu tiên xử lý ngay các task đang trễ hạn.");
+        }
+        
+        if (data.DueSoonTaskCount > 0)
+        {
+            riskAnalysis.Add($"Có {data.DueSoonTaskCount} task sắp đến hạn trong 48h tới.");
+            recommendations.Add("Hoàn thành các task sắp đến hạn để tránh tồn đọng.");
+        }
+
+        if (data.RiskProjectCount > 0)
+        {
+            riskAnalysis.Add($"{data.RiskProjectCount} dự án có tiến độ thấp hơn mức kỳ vọng hoặc có nhiều task quá hạn.");
+            summary = "Workspace đang có dấu hiệu rủi ro do một số dự án và nhiệm vụ chậm tiến độ.";
+            recommendations.Add("Cần họp review lại timeline cho các dự án rủi ro và điều chỉnh scope.");
+        }
+
+        if (data.TeamWorkloadLevel == "High")
+        {
+            riskAnalysis.Add("Một số thành viên có workload khá cao.");
+            recommendations.Add("Điều phối lại workload cho các thành viên đang quá tải, tạm dừng các task priority thấp.");
+        }
+
+        if (riskAnalysis.Count == 0)
+        {
+            riskAnalysis.Add("Tất cả dự án đang đúng tiến độ.");
+            recommendations.Add("Tiếp tục duy trì hiệu suất làm việc hiện tại.");
+        }
+
+        foreach (var task in data.TopPriorityTasks.Take(3))
+        {
+            priorityPlan.Add($"Tập trung: {task.Title} ({task.ProjectName})");
+        }
+        
+        if (priorityPlan.Count == 0)
+        {
+            priorityPlan.Add("Rà soát backlog");
+            priorityPlan.Add("Lập kế hoạch cho Sprint tiếp theo");
+        }
+
+        return Ok(new AiStrategyResponseDto(
+            summary,
+            riskAnalysis,
+            recommendations,
+            priorityPlan
+        ));
+    }
 }
 
 public sealed record DashboardOverviewResponse(
@@ -503,3 +759,47 @@ public sealed record DashboardNotificationResponse(
     string Message,
     string Tone,
     DateTimeOffset CreatedAt);
+
+public sealed record AttentionSummaryDto(
+    int OverdueTasks,
+    int DueSoonTasks,
+    int RiskProjects,
+    int BlockedTasks,
+    int SafeProjects,
+    int TotalAttentionItems);
+
+public sealed record ActivityByDayDto(
+    string Date,
+    int Count);
+
+public sealed record RecentActivityDto(
+    string Type,
+    string Title,
+    string ActorName,
+    string? ProjectName,
+    string CreatedAt);
+
+public sealed record RecentActivitiesResponseDto(
+    int TodayCount,
+    int WeekCount,
+    IReadOnlyList<ActivityByDayDto> ActivityByDay,
+    IReadOnlyList<RecentActivityDto> LatestActivities);
+
+public sealed record StrategicOverviewDto(
+    int WorkspaceHealthScore,
+    int AverageProjectProgress,
+    int TaskCompletionRate,
+    int RiskProjectCount,
+    int OverdueTaskCount,
+    int DueSoonTaskCount,
+    int ActiveProjectCount,
+    string TeamWorkloadLevel,
+    string RiskLevel,
+    IReadOnlyList<DashboardTaskResponse> TopPriorityTasks);
+
+public sealed record AiStrategyResponseDto(
+    string Summary,
+    IReadOnlyList<string> RiskAnalysis,
+    IReadOnlyList<string> Recommendations,
+    IReadOnlyList<string> PriorityPlan);
+
