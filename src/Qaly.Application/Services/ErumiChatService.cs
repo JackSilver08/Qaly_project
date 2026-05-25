@@ -1,9 +1,12 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
+using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Ai;
 using Qaly.Application.DTOs.Analytics;
+using Qaly.Domain.Entities;
+using Qaly.Domain.Interfaces;
 
 namespace Qaly.Application.Services;
 
@@ -17,13 +20,19 @@ public sealed class ErumiChatService : IErumiChatService
 
     private readonly IAnalyticsService _analyticsService;
     private readonly IProjectService _projectService;
+    private readonly IRepository<ProjectMember> _memberRepo;
+    private readonly ICurrentUserService _currentUserService;
 
     public ErumiChatService(
         IAnalyticsService analyticsService,
-        IProjectService projectService)
+        IProjectService projectService,
+        IRepository<ProjectMember> memberRepo,
+        ICurrentUserService currentUserService)
     {
         _analyticsService = analyticsService;
         _projectService = projectService;
+        _memberRepo = memberRepo;
+        _currentUserService = currentUserService;
     }
 
     public async Task<Result<ErumiChatResponseDto>> ChatFastAsync(ErumiChatRequestDto request, CancellationToken ct = default)
@@ -97,12 +106,14 @@ public sealed class ErumiChatService : IErumiChatService
             reply += "\n\nĐể phân tích rủi ro chi tiết hoặc biểu đồ theo trạng thái, bạn hãy chọn một dự án cụ thể ở dropdown phía trên.";
         }
 
+        var wantsVisuals = ContainsAny(normalized, "bieu do", "chart", "thong ke", "phan tich workspace", "phan tich tong quan");
+
         return Result.Success(CreateResponse(
             reply,
             "workspace_analytics",
             sw,
-            metrics,
-            charts,
+            wantsVisuals ? metrics : null,
+            wantsVisuals ? charts : null,
             sources: WorkspaceSources));
     }
 
@@ -126,23 +137,92 @@ public sealed class ErumiChatService : IErumiChatService
 
         var project = projectResult.Data;
         var data = analyticsResult.Data;
-        var metrics = BuildProjectMetrics(data);
-        var charts = BuildProjectCharts(data);
         var intent = ClassifyProjectIntent(normalized);
+        if (intent == "project_team")
+        {
+            return await BuildProjectTeamResponseAsync(project.Id, project.Name, project.OwnerId, project.OwnerName, normalized, sw, ct);
+        }
+
         var reply = intent switch
         {
             "risk" => BuildRiskReply(project.Name, data),
             "productivity" => BuildProductivityReply(project.Name, data),
-            "chart" => $"Mình đã lấy dữ liệu thật của dự án **{project.Name}** và chuẩn bị các biểu đồ trạng thái, workload thành viên và xu hướng hoàn thành theo ngày.",
-            _ => BuildSummaryReply(project.Name, data)
+            "project_analysis" => BuildProjectAnalysisReply(project.Name, data),
+            _ => BuildSummaryReply(project.Name, project.Description, data)
         };
+        var shouldShowVisuals = intent == "project_analysis";
 
         return Result.Success(CreateResponse(
             reply,
             intent,
             sw,
-            metrics,
-            charts,
+            shouldShowVisuals ? BuildProjectMetrics(data) : null,
+            shouldShowVisuals ? BuildProjectCharts(data) : null,
+            sources: ProjectSources));
+    }
+
+    private async Task<Result<ErumiChatResponseDto>> BuildProjectTeamResponseAsync(
+        Guid projectId,
+        string projectName,
+        Guid ownerId,
+        string ownerName,
+        string normalized,
+        Stopwatch sw,
+        CancellationToken ct)
+    {
+        var members = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(member => member.ProjectId == projectId)
+            .Include(member => member.User)
+            .ToListAsync(ct);
+
+        var currentUserId = _currentUserService.UserId;
+        var requesterIsOwner = currentUserId.HasValue && currentUserId.Value == ownerId;
+        var requesterRole = currentUserId.HasValue
+            ? members.FirstOrDefault(member => member.UserId == currentUserId.Value)?.Role
+            : null;
+        var safeOwnerName = string.IsNullOrWhiteSpace(ownerName) ? "người tạo dự án" : ownerName;
+
+        string reply;
+        if (IsBossQuestion(normalized))
+        {
+            reply = requesterIsOwner
+                ? $"Bạn là người tạo dự án **{projectName}**, nên trong dự án này bạn chính là **sếp/Owner mặc định**."
+                : $"Sếp/Owner mặc định của dự án **{projectName}** là **{safeOwnerName}** - người tạo dự án này.";
+
+            if (!string.IsNullOrWhiteSpace(requesterRole))
+            {
+                reply += $" Vai trò hiện tại của bạn trong dự án là **{requesterRole}**.";
+            }
+        }
+        else
+        {
+            var memberRows = members
+                .OrderBy(member => member.UserId == ownerId ? 0 : 1)
+                .ThenBy(member => member.Role)
+                .ThenBy(member => member.User.FullName)
+                .Select(member =>
+                {
+                    var name = string.IsNullOrWhiteSpace(member.User.FullName) ? member.User.Email : member.User.FullName;
+                    var role = string.IsNullOrWhiteSpace(member.Role) ? "Member" : member.Role;
+                    var ownerSuffix = member.UserId == ownerId ? " - sếp/Owner mặc định" : string.Empty;
+                    return $"- **{name}**: {role}{ownerSuffix}";
+                })
+                .ToList();
+
+            var ownerLine = requesterIsOwner
+                ? "Bạn là người tạo dự án nên bạn là **sếp/Owner mặc định**."
+                : $"Sếp/Owner mặc định là **{safeOwnerName}**.";
+
+            reply = memberRows.Count == 0
+                ? $"Mình chưa thấy danh sách thành viên của **{projectName}**. {ownerLine}"
+                : $"Dự án **{projectName}** hiện có **{memberRows.Count} thành viên**. {ownerLine}\n\n{string.Join("\n", memberRows)}";
+        }
+
+        return Result.Success(CreateResponse(
+            reply,
+            "project_team",
+            sw,
             sources: ProjectSources));
     }
 
@@ -195,14 +275,17 @@ public sealed class ErumiChatService : IErumiChatService
         };
     }
 
-    private static string BuildSummaryReply(string projectName, ProjectAnalyticsDto data)
+    private static string BuildSummaryReply(string projectName, string? description, ProjectAnalyticsDto data)
     {
         var progress = Percent(data.DoneTasks, data.TotalTasks);
+        var about = string.IsNullOrWhiteSpace(description)
+            ? $"Dự án **{projectName}** hiện chưa có mô tả chi tiết trong hệ thống."
+            : $"Dự án **{projectName}** là về: {description.Trim()}";
         var overdueText = data.OverdueTasks == 0
             ? "không có task quá hạn"
             : $"có **{data.OverdueTasks} task quá hạn** cần xử lý";
 
-        return $"Dự án **{projectName}** hiện có **{data.TotalTasks} task**, đã hoàn thành **{data.DoneTasks} task** (**{progress:0.#}%**), đang làm **{data.InProgressTasks} task** và {overdueText}. Tổng thời gian đã log là **{data.TotalActualHours:0.##}h** trên kế hoạch **{data.TotalEstimatedHours:0.##}h**.";
+        return $"{about}\n\nTình hình hiện tại: có **{data.TotalTasks} task**, đã hoàn thành **{data.DoneTasks} task** (**{progress:0.#}%**), đang làm **{data.InProgressTasks} task** và {overdueText}. Tổng thời gian đã log là **{data.TotalActualHours:0.##}h** trên kế hoạch **{data.TotalEstimatedHours:0.##}h**.";
     }
 
     private static string BuildRiskReply(string projectName, ProjectAnalyticsDto data)
@@ -233,7 +316,13 @@ public sealed class ErumiChatService : IErumiChatService
         var mostDone = data.MemberProductivity.OrderByDescending(item => item.DoneTasks).First();
         var mostLogged = data.MemberProductivity.OrderByDescending(item => item.LoggedHours).First();
 
-        return $"Năng suất của **{projectName}**: **{mostDone.FullName}** đang hoàn thành nhiều task nhất ({mostDone.DoneTasks}), **{busiest.FullName}** có workload cao nhất ({busiest.AssignedTasks} task), và **{mostLogged.FullName}** log nhiều thời gian nhất ({mostLogged.LoggedHours:0.##}h). Biểu đồ bên dưới lấy trực tiếp từ dữ liệu task và time log.";
+        return $"Năng suất của **{projectName}**: **{mostDone.FullName}** đang hoàn thành nhiều task nhất ({mostDone.DoneTasks}), **{busiest.FullName}** có workload cao nhất ({busiest.AssignedTasks} task), và **{mostLogged.FullName}** log nhiều thời gian nhất ({mostLogged.LoggedHours:0.##}h). Nên theo dõi người có workload cao trước để tránh nghẽn tiến độ.";
+    }
+
+    private static string BuildProjectAnalysisReply(string projectName, ProjectAnalyticsDto data)
+    {
+        var progress = Percent(data.DoneTasks, data.TotalTasks);
+        return $"Mình đã phân tích tổng quan dự án **{projectName}** từ dữ liệu task, workload và time log. Hiện dự án hoàn thành **{data.DoneTasks}/{data.TotalTasks} task** (**{progress:0.#}%**), có **{data.InProgressTasks} task đang làm** và **{data.OverdueTasks} task quá hạn**. Các biểu đồ bên dưới thể hiện phân bổ trạng thái, workload thành viên và nhịp hoàn thành 14 ngày gần nhất.";
     }
 
     private static ErumiChatResponseDto BuildWriteConfirmationResponse(string message, Guid? projectId, Stopwatch sw)
@@ -280,18 +369,57 @@ public sealed class ErumiChatService : IErumiChatService
             return "risk";
         }
 
-        if (ContainsAny(normalized, "nang suat", "hieu suat", "workload", "khoi luong", "thanh vien", "qua tai", "ai dang ranh"))
+        if (ContainsAny(normalized, "nang suat", "hieu suat", "workload", "khoi luong", "qua tai", "ai dang ranh"))
         {
             return "productivity";
         }
 
-        if (ContainsAny(normalized, "bieu do", "chart", "cot", "tron", "duong", "thong ke", "visual"))
+        if (IsTeamQuestion(normalized))
         {
-            return "chart";
+            return "project_team";
+        }
+
+        if (ContainsAny(normalized, "phan tich du an", "phan tich project", "bao cao phan tich", "dashboard du an", "bieu do", "chart", "visual"))
+        {
+            return "project_analysis";
         }
 
         return "project_summary";
     }
+
+    private static bool IsTeamQuestion(string normalized)
+        => IsBossQuestion(normalized)
+           || ContainsAny(
+               normalized,
+               "dong doi",
+               "team member",
+               "thanh vien",
+               "nhom co ai",
+               "ai trong du an",
+               "ai tham gia",
+               "danh sach team",
+               "danh sach nhom",
+               "vai tro",
+               "role",
+               "owner",
+               "nguoi tao du an",
+               "chu du an",
+               "project owner");
+
+    private static bool IsBossQuestion(string normalized)
+        => ContainsAny(
+            normalized,
+            "sep",
+            "cap tren",
+            "quan ly cua toi",
+            "leader cua toi",
+            "lead cua toi",
+            "ai la sep",
+            "sep toi",
+            "pm cua toi",
+            "chu du an la ai",
+            "owner la ai",
+            "nguoi tao du an la ai");
 
     private static bool IsGreeting(string normalized)
         => normalized is "hi" or "hello" or "xin chao" or "chao" or "chao ban"

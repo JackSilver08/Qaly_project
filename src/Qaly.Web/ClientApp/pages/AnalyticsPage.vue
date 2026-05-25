@@ -30,7 +30,7 @@ import {
 
 ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Legend)
 
-const { projects, selectedProject } = useDashboardContext()
+const { projects, selectedProject, currentUser } = useDashboardContext()
 
 const markdown = new (MarkdownIt as any)({
   html: false,
@@ -119,7 +119,8 @@ const currentSuggestions = computed(() => {
     return [
       { label: '📋 Tóm tắt dự án', action: 'summary', prompt: `Tóm tắt nhanh tình hình hiện tại của dự án ${name}.` },
       { label: '⚠️ Phân tích rủi ro', action: 'risks', prompt: `Phân tích các rủi ro quá hạn và trễ việc của dự án ${name}.` },
-      { label: '💡 Insight & năng suất', action: 'insights', prompt: `Đưa ra nhận xét số liệu năng suất và các insight quan trọng của dự án ${name}.` }
+      { label: '💡 Insight & năng suất', action: 'insights', prompt: `Đưa ra nhận xét số liệu năng suất và các insight quan trọng của dự án ${name}.` },
+      { label: '📊 Phân tích dự án', action: 'analysis', prompt: `Phân tích dự án ${name}.` }
     ]
   }
 })
@@ -274,8 +275,11 @@ function getFallbackProjectStats() {
 function getFallbackAiSummary() {
   const proj = projects.value.find((p: any) => p.id === selectedTarget.value)
   const name = proj?.name || 'Dự án'
+  const about = proj?.description
+    ? `Dự án **${name}** là về: ${proj.description}`
+    : `Dự án **${name}** hiện chưa có mô tả chi tiết trong hệ thống.`
   const stats = getFallbackProjectStats()
-  return `### 📋 Tóm tắt dự án **${name}** từ Erumi AI\n\n- **Trạng thái chung**: Dự án đang vận hành ổn định.\n- **Tiến trình**: Đã hoàn thành **${stats.doneTasks}/${stats.totalTasks} nhiệm vụ** (Đạt **${Math.round((stats.doneTasks / stats.totalTasks) * 100)}%**).\n- **Chất lượng**: Có **${stats.overdueTasks} nhiệm vụ quá hạn** cần xử lý gấp.\n- **Thời gian**: Thực tế đã log **${stats.totalActualHours}h** trên tổng kế hoạch **${stats.totalEstimatedHours}h**.\n- **Khuyến nghị**: Tập trung giải quyết dứt điểm các task quá hạn trong tuần này.`
+  return `### 📋 Tóm tắt dự án **${name}** từ Erumi AI\n\n${about}\n\n- **Tiến trình**: Đã hoàn thành **${stats.doneTasks}/${stats.totalTasks} nhiệm vụ** (Đạt **${Math.round((stats.doneTasks / stats.totalTasks) * 100)}%**).\n- **Chất lượng**: Có **${stats.overdueTasks} nhiệm vụ quá hạn** cần xử lý.\n- **Thời gian**: Thực tế đã log **${stats.totalActualHours}h** trên tổng kế hoạch **${stats.totalEstimatedHours}h**.`
 }
 
 function getFallbackAiRisks() {
@@ -293,8 +297,54 @@ function getFallbackAiInsights() {
   return `### 💡 Phân tích Năng suất & Insight từ Erumi AI\n\n- **Tối ưu hóa thời gian**: Thời gian thực tế log mới đạt **${Math.round((stats.totalActualHours / stats.totalEstimatedHours) * 100)}%** kế hoạch ước tính. Nhóm đang tối ưu tài nguyên rất tốt.\n- **Điểm nghẽn**: Việc hoàn thành nhiệm vụ bị dồn vào cuối tuần. Cần phân bổ đều tải công việc hơn.\n- **Đề xuất**: Tăng cường trao đổi nhóm vào đầu tuần để triển khai công việc đều đặn.`
 }
 
+function isBossPrompt(value: string) {
+  return ['sếp', 'sep', 'cấp trên', 'cap tren', 'leader', 'owner', 'người tạo dự án', 'nguoi tao du an', 'chủ dự án', 'chu du an']
+    .some(term => value.includes(term))
+}
+
+function isTeamPrompt(value: string) {
+  return isBossPrompt(value)
+    || ['đồng đội', 'dong doi', 'thành viên', 'thanh vien', 'team', 'vai trò', 'vai tro', 'role']
+      .some(term => value.includes(term))
+}
+
+function getFallbackTeamAnswer(prompt: string) {
+  const proj = projects.value.find((p: any) => p.id === selectedTarget.value)
+  if (!proj || selectedTarget.value === 'workspace') {
+    return 'Bạn hãy chọn một dự án cụ thể ở dropdown phía trên, rồi hỏi lại về sếp hoặc thành viên trong dự án nhé.'
+  }
+
+  const userId = String(currentUser.value?.id || '').toLowerCase()
+  const ownerId = String(proj.ownerId || '').toLowerCase()
+  const requesterIsOwner = userId && userId === ownerId
+  const ownerName = proj.ownerName || 'người tạo dự án'
+
+  if (isBossPrompt(prompt)) {
+    return requesterIsOwner
+      ? `Bạn là người tạo dự án **${proj.name}**, nên trong dự án này bạn chính là **sếp/Owner mặc định**.`
+      : `Sếp/Owner mặc định của dự án **${proj.name}** là **${ownerName}** - người tạo dự án này.`
+  }
+
+  const members = Array.isArray(proj.members) ? proj.members : []
+  const rows = members
+    .slice()
+    .sort((a: any, b: any) => String(b.userId || '').toLowerCase() === ownerId ? 1 : String(a.userId || '').toLowerCase() === ownerId ? -1 : 0)
+    .map((m: any) => `- **${m.fullName}**: ${m.role || 'Member'}${String(m.userId || '').toLowerCase() === ownerId ? ' - sếp/Owner mặc định' : ''}`)
+
+  const ownerLine = requesterIsOwner
+    ? 'Bạn là người tạo dự án nên bạn là **sếp/Owner mặc định**.'
+    : `Sếp/Owner mặc định là **${ownerName}**.`
+
+  return rows.length
+    ? `Dự án **${proj.name}** hiện có **${rows.length} thành viên**. ${ownerLine}\n\n${rows.join('\n')}`
+    : `Mình chưa thấy danh sách thành viên của **${proj.name}**. ${ownerLine}`
+}
+
 function getFallbackChatAnswer(prompt: string) {
   const p = prompt.toLowerCase()
+  if (isTeamPrompt(p)) {
+    return getFallbackTeamAnswer(p)
+  }
   if (p.includes('hiệu suất') || p.includes('năng suất') || p.includes('productivity') || p.includes('báo cáo')) {
     return `### 📊 Đánh giá hiệu suất làm việc tuần qua\n\n- **Tiến độ**: Các dự án trong Workspace hoạt động đúng tiến độ đạt **75%**. Tổng số nhiệm vụ đã hoàn tất trong tuần là **8 nhiệm vụ**.\n- **Thời gian**: Toàn nhóm đã ghi nhận **32 giờ chấm công thực tế**.\n- **Nhận xét**: Năng suất duy trì ở mức ổn định. Điểm sáng là sự tập trung cao độ ở các task thuộc luồng quan trọng.`
   }
