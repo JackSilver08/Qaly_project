@@ -5,6 +5,7 @@ using Qaly.Domain.Entities;
 using Microsoft.Extensions.Logging;
 using Qaly.Infrastructure.Data;
 using Qaly.Web.Auth;
+using System.Globalization;
 
 namespace Qaly.Web.Controllers;
 
@@ -492,7 +493,7 @@ public partial class DashboardController : ControllerBase
             {
                 var d = startOfWeek.AddDays(i);
                 return new ActivityByDayDto(
-                    d.ToString("yyyy-MM-dd"),
+                    d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                     logs.Count(l => l.Timestamp.Date == d.Date)
                 );
             })
@@ -500,7 +501,7 @@ public partial class DashboardController : ControllerBase
 
         var latestActivities = logs.Take(3).Select(l => 
         {
-            string projectName = null;
+            string? projectName = null;
             string title = l.Action + " " + l.EntityType;
             try {
                 if (!string.IsNullOrEmpty(l.ChangesJson)) {
@@ -521,7 +522,7 @@ public partial class DashboardController : ControllerBase
                 title,
                 l.User?.FullName ?? "Hệ thống",
                 projectName,
-                l.Timestamp.ToString("yyyy-MM-ddTHH:mm:ss")
+                l.Timestamp.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture)
             );
         }).ToList();
 

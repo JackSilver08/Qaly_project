@@ -13,6 +13,10 @@ export async function apiJson<T>(url: string, options: RequestInit = {}): Promis
 
   headers.set('Accept', 'application/json')
 
+  if (!options.method || options.method.toUpperCase() === 'GET') {
+    options.cache = 'no-store'
+  }
+
   const response = await fetch(url, {
     credentials: 'same-origin',
     ...options,
