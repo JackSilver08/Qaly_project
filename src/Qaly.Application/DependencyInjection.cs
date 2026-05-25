@@ -28,6 +28,7 @@ public static class DependencyInjection
         services.AddScoped<ITimeTrackingService, TimeTrackingService>();
         services.AddScoped<ITaskPrioritySuggestionService, TaskPrioritySuggestionService>();
         services.AddScoped<IAiService, AiService>();
+        services.AddScoped<IErumiChatService, ErumiChatService>();
         services.AddScoped<IAiWorkflowService, AiWorkflowService>();
         services.AddScoped<IWebhookService, WebhookService>();
         services.AddScoped<IAnalyticsService, AnalyticsService>();

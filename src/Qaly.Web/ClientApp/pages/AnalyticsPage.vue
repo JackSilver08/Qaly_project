@@ -11,9 +11,24 @@ import {
 } from 'lucide-vue-next'
 import { useDashboardContext } from '../composables/dashboard-context'
 import { showSuccess, showError } from '../composables/use-toast'
+import { apiJson } from '../utils/api-client'
 import ChatbotAvatar from '../components/ChatbotAvatar.vue'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
+import { Bar, Doughnut, Line } from 'vue-chartjs'
+import {
+  ArcElement,
+  BarElement,
+  CategoryScale,
+  Chart as ChartJS,
+  Legend,
+  LinearScale,
+  LineElement,
+  PointElement,
+  Tooltip
+} from 'chart.js'
+
+ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Legend)
 
 const { projects, selectedProject } = useDashboardContext()
 
@@ -28,6 +43,49 @@ function renderMarkdown(content: string) {
   return DOMPurify.sanitize(markdown.render(content))
 }
 
+type ErumiMetric = {
+  label: string
+  value: string
+  tone?: string | null
+  hint?: string | null
+}
+
+type ErumiChart = {
+  type: 'pie' | 'bar' | 'line' | string
+  title: string
+  labels: string[]
+  values: number[]
+  unit?: string | null
+}
+
+type ErumiAction = {
+  type: string
+  label: string
+  payload?: unknown
+  requiresConfirmation?: boolean
+}
+
+type ErumiChatResponse = {
+  reply: string
+  metrics: ErumiMetric[]
+  charts: ErumiChart[]
+  actions: ErumiAction[]
+  sources: string[]
+  usedAi: boolean
+  intent: string
+  latencyMs: number
+}
+
+type ChatEntry = {
+  role: 'user' | 'assistant'
+  text: string
+  metrics?: ErumiMetric[]
+  charts?: ErumiChart[]
+  actions?: ErumiAction[]
+  sources?: string[]
+  latencyMs?: number
+}
+
 const activeProjects = computed(() => projects.value.filter((p: any) => p.status !== 'Archived'))
 const selectedTarget = ref('workspace') // 'workspace' or projectId
 
@@ -38,7 +96,7 @@ const chatContainerRef = ref<HTMLElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
 // Initial chat history with welcome message
-const chatHistory = ref<Array<{ role: 'user' | 'assistant'; text: string }>>([
+const chatHistory = ref<ChatEntry[]>([
   {
     role: 'assistant',
     text: 'Xin chào! Mình là Erumi, trợ lý phân tích AI của Qaly. Hãy hỏi mình bất kỳ câu hỏi nào về các chỉ số hoặc dự án trong Workspace của bạn nhé.'
@@ -65,6 +123,77 @@ const currentSuggestions = computed(() => {
     ]
   }
 })
+
+function chartComponent(type: string) {
+  if (type === 'line') return Line
+  if (type === 'bar') return Bar
+  return Doughnut
+}
+
+function chartData(chart: ErumiChart) {
+  const colorSet = [
+    '#2563eb',
+    '#10b981',
+    '#f59e0b',
+    '#ef4444',
+    '#8b5cf6',
+    '#06b6d4',
+    '#64748b',
+    '#f97316'
+  ]
+
+  return {
+    labels: chart.labels,
+    datasets: [
+      {
+        label: chart.unit ?? chart.title,
+        data: chart.values,
+        backgroundColor: chart.type === 'line' ? 'rgba(37, 99, 235, 0.14)' : colorSet,
+        borderColor: chart.type === 'line' ? '#2563eb' : colorSet,
+        borderWidth: 2,
+        tension: 0.35,
+        fill: chart.type === 'line'
+      }
+    ]
+  }
+}
+
+function chartOptions(chart: ErumiChart) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: chart.type === 'pie',
+        position: 'bottom' as const,
+        labels: {
+          boxWidth: 10,
+          usePointStyle: true
+        }
+      },
+      tooltip: {
+        callbacks: {
+          label: (ctx: any) => `${ctx.label || ctx.dataset.label}: ${ctx.raw}${chart.unit ? ` ${chart.unit}` : ''}`
+        }
+      }
+    },
+    scales: chart.type === 'pie'
+      ? {}
+      : {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              precision: 0
+            }
+          },
+          x: {
+            grid: {
+              display: false
+            }
+          }
+        }
+  }
+}
 
 // Auto-resize textarea
 function autoResize() {
@@ -176,7 +305,7 @@ function getFallbackChatAnswer(prompt: string) {
 }
 
 // Submit Chat Function
-async function submitChat(explicitText?: string, action?: string) {
+async function submitChat(explicitText?: string, _action?: string) {
   const prompt = (explicitText ?? chatInput.value).trim()
   if (!prompt || isChatting.value) return
 
@@ -194,88 +323,34 @@ async function submitChat(explicitText?: string, action?: string) {
   try {
     chatHistory.value.push({ role: 'assistant', text: '' })
     const lastIdx = chatHistory.value.length - 1
+    const historyToSend = chatHistory.value
+      .slice(1, -2)
+      .slice(-6)
+      .map(h => ({ role: h.role, content: h.text }))
 
-    if (action && selectedTarget.value !== 'workspace') {
-      // Call structured report endpoint and simulate streaming
-      let url = ''
-      if (action === 'summary') url = `/api/ai/projects/${selectedTarget.value}/summary`
-      else if (action === 'risks') url = `/api/ai/projects/${selectedTarget.value}/risks`
-      else if (action === 'insights') url = `/api/ai/projects/${selectedTarget.value}/insights`
-
-      let content = ''
-      try {
-        const res = await fetch(url)
-        if (res.ok) {
-          const data = await res.json()
-          content = data.summary || data.risks || data.insights || ''
-        }
-      } catch (err) {
-        console.warn('API error, using fallback report content', err)
-      }
-
-      if (!content) {
-        if (action === 'summary') content = getFallbackAiSummary()
-        else if (action === 'risks') content = getFallbackAiRisks()
-        else if (action === 'insights') content = getFallbackAiInsights()
-      }
-
-      // Stream text output
-      isChatting.value = false
-      let currentLength = 0
-      const interval = setInterval(() => {
-        currentLength += 6
-        if (currentLength >= content.length) {
-          chatHistory.value[lastIdx].text = content
-          clearInterval(interval)
-          scrollToBottom()
-        } else {
-          chatHistory.value[lastIdx].text = content.slice(0, currentLength) + ' ▌'
-          scrollToBottom()
-        }
-      }, 15)
-    } else {
-      // Regular streaming chat message from Ollama
-      const response = await fetch('/api/ai/chat/stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: prompt })
+    const fastReply = await apiJson<ErumiChatResponse>('/api/ai/chat/fast', {
+      method: 'POST',
+      body: JSON.stringify({
+        message: prompt,
+        projectId: selectedTarget.value === 'workspace' ? null : selectedTarget.value,
+        history: historyToSend
       })
+    })
 
-      if (!response.ok) throw new Error()
-
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-      let fullReply = ''
-
-      if (reader) {
-        isChatting.value = false
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          fullReply += decoder.decode(value, { stream: true })
-          chatHistory.value[lastIdx].text = fullReply + ' ▌'
-          scrollToBottom()
-        }
-        chatHistory.value[lastIdx].text = fullReply
-      }
+    chatHistory.value[lastIdx] = {
+      role: 'assistant',
+      text: fastReply.reply,
+      metrics: fastReply.metrics,
+      charts: fastReply.charts,
+      actions: fastReply.actions,
+      sources: fastReply.sources,
+      latencyMs: fastReply.latencyMs
     }
   } catch (e) {
-    // Fallback if regular streaming fails
     const lastIdx = chatHistory.value.length - 1
     const fallbackText = getFallbackChatAnswer(prompt)
     isChatting.value = false
-    let currentLength = 0
-    const interval = setInterval(() => {
-      currentLength += 6
-      if (currentLength >= fallbackText.length) {
-        chatHistory.value[lastIdx].text = fallbackText
-        clearInterval(interval)
-        scrollToBottom()
-      } else {
-        chatHistory.value[lastIdx].text = fallbackText.slice(0, currentLength) + ' ▌'
-        scrollToBottom()
-      }
-    }, 15)
+    chatHistory.value[lastIdx].text = fallbackText
   } finally {
     isChatting.value = false
     await scrollToBottom()
@@ -399,6 +474,37 @@ onMounted(() => {
             <div class="msg-bubble-content">
               <div v-if="msg.role === 'assistant'" class="msg-bubble-assistant" v-html="renderMarkdown(msg.text)"></div>
               <div v-else class="msg-bubble-user">{{ msg.text }}</div>
+
+              <div v-if="msg.role === 'assistant' && msg.metrics?.length" class="erumi-metrics-grid">
+                <article v-for="metric in msg.metrics" :key="metric.label" class="erumi-metric" :class="`tone-${metric.tone || 'neutral'}`">
+                  <span>{{ metric.label }}</span>
+                  <strong>{{ metric.value }}</strong>
+                  <small v-if="metric.hint">{{ metric.hint }}</small>
+                </article>
+              </div>
+
+              <div v-if="msg.role === 'assistant' && msg.charts?.length" class="erumi-chart-grid">
+                <article v-for="chart in msg.charts" :key="chart.title" class="erumi-chart-card">
+                  <header>
+                    <strong>{{ chart.title }}</strong>
+                    <span v-if="chart.unit">{{ chart.unit }}</span>
+                  </header>
+                  <div class="erumi-chart-canvas">
+                    <component :is="chartComponent(chart.type)" :data="chartData(chart)" :options="chartOptions(chart)" />
+                  </div>
+                </article>
+              </div>
+
+              <div v-if="msg.role === 'assistant' && msg.actions?.length" class="erumi-action-list">
+                <button v-for="action in msg.actions" :key="action.type" type="button" class="erumi-action-button">
+                  {{ action.label }}
+                </button>
+              </div>
+
+              <div v-if="msg.role === 'assistant' && (msg.sources?.length || msg.latencyMs !== undefined)" class="erumi-response-meta">
+                <span v-if="msg.latencyMs !== undefined">Phản hồi {{ msg.latencyMs }}ms</span>
+                <span v-if="msg.sources?.length">Nguồn: {{ msg.sources.join(', ') }}</span>
+              </div>
             </div>
           </div>
 
@@ -944,6 +1050,109 @@ onMounted(() => {
 .msg-bubble-assistant :deep(strong) {
   color: #0f52ba;
   font-weight: 700;
+}
+
+.erumi-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.erumi-metric {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(15, 82, 186, 0.1);
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(15, 82, 186, 0.04);
+}
+
+.erumi-metric span,
+.erumi-metric small {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.erumi-metric strong {
+  display: block;
+  margin-top: 3px;
+  color: #0f172a;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.erumi-metric.tone-good strong { color: #059669; }
+.erumi-metric.tone-danger strong { color: #dc2626; }
+.erumi-metric.tone-warning strong { color: #d97706; }
+
+.erumi-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.erumi-chart-card {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(15, 82, 186, 0.1);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 2px 10px rgba(15, 82, 186, 0.05);
+}
+
+.erumi-chart-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.erumi-chart-card header strong {
+  color: #0f172a;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.erumi-chart-card header span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.erumi-chart-canvas {
+  height: 180px;
+  min-width: 0;
+}
+
+.erumi-action-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.erumi-action-button {
+  border: 1px solid rgba(15, 82, 186, 0.18);
+  border-radius: 999px;
+  background: rgba(15, 82, 186, 0.06);
+  color: #0f52ba;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 12px;
+}
+
+.erumi-response-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  color: #94a3b8;
+  font-size: 11px;
 }
 
 .msg-bubble-user {

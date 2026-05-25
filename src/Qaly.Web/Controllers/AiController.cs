@@ -12,17 +12,20 @@ namespace Qaly.Web.Controllers;
 public class AiController : ControllerBase
 {
     private readonly IAiService _aiService;
+    private readonly IErumiChatService _erumiChatService;
     private readonly IAiWorkflowService _aiWorkflowService;
     private readonly IAiIngestionService _ingestionService;
     private readonly IAnalyticsService _analyticsService;
 
     public AiController(
         IAiService aiService,
+        IErumiChatService erumiChatService,
         IAiWorkflowService aiWorkflowService,
         IAiIngestionService ingestionService,
         IAnalyticsService analyticsService)
     {
         _aiService = aiService;
+        _erumiChatService = erumiChatService;
         _aiWorkflowService = aiWorkflowService;
         _ingestionService = ingestionService;
         _analyticsService = analyticsService;
@@ -100,13 +103,20 @@ public class AiController : ControllerBase
 
     [HttpPost("chat")]
     public async Task<IActionResult> Chat(AiChatRequest request)
-        => Ok(new { reply = await _aiService.ChatAsync(request.Message, request.ProjectId, request.Mode) });
+        => Ok(new { reply = await _aiService.ChatAsync(request.Message, request.ProjectId, request.Mode, request.History) });
+
+    [HttpPost("chat/fast")]
+    public async Task<IActionResult> ChatFast(ErumiChatRequestDto request, CancellationToken ct)
+    {
+        var result = await _erumiChatService.ChatFastAsync(request, ct);
+        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result);
+    }
 
     [HttpPost("chat/stream")]
     public async Task ChatStreaming(AiChatRequest request)
     {
         Response.ContentType = "text/plain";
-        await foreach (var token in _aiService.ChatStreamingAsync(request.Message, request.ProjectId, request.Mode))
+        await foreach (var token in _aiService.ChatStreamingAsync(request.Message, request.ProjectId, request.Mode, request.History))
         {
             await Response.WriteAsync(token);
             await Response.Body.FlushAsync();
@@ -137,4 +147,4 @@ public sealed record AiPriorityRequest(string Title, string? Description, string
 
 public sealed record AiSubtasksRequest(string Title, string? Description);
 
-public sealed record AiChatRequest(string Message, Guid? ProjectId, string Mode = "erumi");
+public sealed record AiChatRequest(string Message, Guid? ProjectId, string Mode = "erumi", IList<AiChatMessageDto>? History = null);

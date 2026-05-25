@@ -328,7 +328,7 @@ Trả lời dưới dạng danh sách gạch đầu dòng.";
                    .ToList();
     }
 
-    public async Task<string> ChatAsync(string userMessage, Guid? projectId = null, string mode = "erumi")
+    public async Task<string> ChatAsync(string userMessage, Guid? projectId = null, string mode = "erumi", IList<AiChatMessageDto>? history = null)
     {
         if (!projectId.HasValue)
         {
@@ -395,9 +395,20 @@ Thời gian hiện tại: {DateTime.Now.ToString("dd/MM/yyyy HH:mm", System.Glob
 
         var chatHistory = new List<ChatMessage>
         {
-            new ChatMessage(ChatRole.System, systemPrompt),
-            new ChatMessage(ChatRole.User, userMessage)
+            new ChatMessage(ChatRole.System, systemPrompt)
         };
+
+        if (history != null)
+        {
+            foreach (var msg in history)
+            {
+                var role = string.Equals(msg.Role, "assistant", StringComparison.OrdinalIgnoreCase) 
+                    ? ChatRole.Assistant : ChatRole.User;
+                chatHistory.Add(new ChatMessage(role, msg.Content));
+            }
+        }
+
+        chatHistory.Add(new ChatMessage(ChatRole.User, userMessage));
 
         var options = new ChatOptions
         {
@@ -408,7 +419,7 @@ Thời gian hiện tại: {DateTime.Now.ToString("dd/MM/yyyy HH:mm", System.Glob
         return response.Message.Text ?? "Xin lỗi, tôi gặp chút trục trặc khi kết nối với bộ não AI. Vui lòng thử lại sau giây lát.";
     }
 
-    public async IAsyncEnumerable<string> ChatStreamingAsync(string userMessage, Guid? projectId = null, string mode = "erumi")
+    public async IAsyncEnumerable<string> ChatStreamingAsync(string userMessage, Guid? projectId = null, string mode = "erumi", IList<AiChatMessageDto>? history = null)
     {
         if (!projectId.HasValue)
         {
@@ -467,9 +478,20 @@ Thời gian: {DateTime.Now.ToString("dd/MM/yyyy HH:mm", System.Globalization.Cul
 
         var chatHistory = new List<ChatMessage>
         {
-            new ChatMessage(ChatRole.System, systemPrompt),
-            new ChatMessage(ChatRole.User, userMessage)
+            new ChatMessage(ChatRole.System, systemPrompt)
         };
+
+        if (history != null)
+        {
+            foreach (var msg in history)
+            {
+                var role = string.Equals(msg.Role, "assistant", StringComparison.OrdinalIgnoreCase) 
+                    ? ChatRole.Assistant : ChatRole.User;
+                chatHistory.Add(new ChatMessage(role, msg.Content));
+            }
+        }
+
+        chatHistory.Add(new ChatMessage(ChatRole.User, userMessage));
 
         var options = new ChatOptions
         {
