@@ -542,6 +542,97 @@ public class TaskService : ITaskService
         });
     }
 
+    public async Task<Result<PagedResult<TaskAttentionDto>>> GetGlobalAttentionAsync(
+        Guid? assigneeId = null,
+        Guid? reporterId = null,
+        string? status = null,
+        string? priority = null,
+        string? riskType = null,
+        DateTimeOffset? from = null,
+        DateTimeOffset? toDate = null,
+        int page = 1,
+        int pageSize = 25,
+        string sort = "risk",
+        CancellationToken ct = default)
+    {
+        var currentUserId = _taskAccessPolicy.CurrentUserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<PagedResult<TaskAttentionDto>>();
+        }
+
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var now = DateTimeOffset.UtcNow;
+
+        var query = _taskAccessPolicy.ApplyVisibilityFilter(_taskRepo.GetQueryable())
+            .AsNoTracking()
+            .Include(task => task.Project)
+            .Include(task => task.Reporter)
+            .Include(task => task.Assignee)
+            .Include(task => task.Assignees)
+                .ThenInclude(assignment => assignment.User)
+            .Include(task => task.ViewEvents)
+            .AsQueryable();
+
+        if (assigneeId.HasValue)
+        {
+            query = query.Where(task => task.AssigneeId == assigneeId || task.Assignees.Any(assignment => assignment.UserId == assigneeId.Value));
+        }
+
+        if (reporterId.HasValue)
+        {
+            query = query.Where(task => task.ReporterId == reporterId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var normalizedStatus = TaskStatusRules.NormalizeStatus(status);
+            query = query.Where(task => task.Status == normalizedStatus);
+        }
+
+        if (!string.IsNullOrWhiteSpace(priority))
+        {
+            var normalizedPriority = TaskStatusRules.NormalizePriority(priority);
+            query = query.Where(task => task.Priority == normalizedPriority);
+        }
+
+        if (from.HasValue)
+        {
+            query = query.Where(task => task.DueDate >= from.Value || task.StartDate >= from.Value);
+        }
+
+        if (toDate.HasValue)
+        {
+            query = query.Where(task => task.DueDate <= toDate.Value || task.StartDate <= toDate.Value);
+        }
+
+        var tasks = await query.ToListAsync(ct);
+        
+        // For global attention, we assume they can view project risk if they are in the project (visibility filter handles this)
+        // and they can view unseen signals. For simplicity in the MVP, set them to true.
+        var items = tasks
+            .SelectMany(task => BuildAttentionItems(task, now, currentUserId.Value, true, true, false))
+            .Where(item => MatchesRiskType(item, riskType))
+            .ToList();
+
+        items = SortAttentionItems(items, sort);
+
+        var totalCount = items.Count;
+        var pageItems = items
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        return Result.Success(new PagedResult<TaskAttentionDto>
+        {
+            Items = pageItems,
+            TotalCount = totalCount,
+            PageNumber = page,
+            PageSize = pageSize
+        });
+    }
+
     public async Task<Result<TaskItemDto>> CreateAsync(CreateTaskDto dto, CancellationToken ct = default)
     {
         var currentUserId = _taskAccessPolicy.CurrentUserId;

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { useRouter, useRoute } from "vue-router";
 import {
   FileText,
   Plus,
@@ -8,14 +9,21 @@ import {
   Search,
   Globe2,
   Lock,
+  Eye,
+  Edit3
 } from "lucide-vue-next";
 import { useDashboardContext } from "../composables/dashboard-context";
 import type { WikiPageDto } from "../types";
+import { MdEditor } from 'md-editor-v3';
+import 'md-editor-v3/lib/style.css';
 
 const props = defineProps<{
   projectName: string;
   isAdmin: boolean;
 }>();
+
+const router = useRouter();
+const route = useRoute();
 
 const {
   wikiPages,
@@ -66,6 +74,7 @@ async function handleCreate() {
     newPageVisibility.value = "internal";
     editingPageId.value = null;
     showAddForm.value = false;
+    activeEditorTab.value = 'write';
   }
 }
 
@@ -75,6 +84,7 @@ function startEdit(page: WikiPageDto) {
   newPageContent.value = page.content;
   newPageVisibility.value = (page as any).visibility ?? "internal";
   showAddForm.value = true;
+  activeEditorTab.value = 'write';
 }
 
 function cancelEditor() {
@@ -83,6 +93,7 @@ function cancelEditor() {
   newPageTitle.value = "";
   newPageContent.value = "";
   newPageVisibility.value = "internal";
+  activeEditorTab.value = 'write';
 }
 
 function toggleAddForm() {
@@ -90,13 +101,20 @@ function toggleAddForm() {
     cancelEditor();
     return;
   }
-
   showAddForm.value = true;
+  activeEditorTab.value = 'write';
 }
 
 async function handleDelete(id: string) {
   if (!confirm("Bạn có chắc chắn muốn xóa trang Wiki này?")) return;
   await deleteWikiPage(id);
+}
+
+function navigateToWiki(page: WikiPageDto) {
+  router.push({
+    name: 'project-wiki-detail',
+    params: { projectId: route.params.projectId, wikiId: page.id }
+  });
 }
 </script>
 
@@ -126,7 +144,13 @@ async function handleDelete(id: string) {
           placeholder="Tiêu đề trang..."
           @keyup.enter="handleCreate"
         />
-        <textarea v-model="newPageContent" rows="4" placeholder="Nội dung..." />
+        
+        <MdEditor 
+          v-model="newPageContent" 
+          language="en-US"
+          class="advanced-markdown-editor"
+        />
+        
         <div class="wiki-editor__footer">
           <label class="wiki-visibility-toggle">
             <select v-model="newPageVisibility">
@@ -165,7 +189,8 @@ async function handleDelete(id: string) {
       <article
         v-for="page in filteredWikiPages"
         :key="page.id"
-        class="wiki-item"
+        class="wiki-item wiki-item--clickable"
+        @click="navigateToWiki(page)"
       >
         <div class="wiki-item__icon">
           <FileText :size="20" />
@@ -188,17 +213,16 @@ async function handleDelete(id: string) {
               }}
             </span>
           </div>
-          <p v-if="page.content">{{ page.content }}</p>
-          <span
+          <span class="wiki-item__meta"
             >Cập nhật bởi {{ page.authorName }} vào
             {{ formatDate(page.updatedAt) }}</span
           >
         </div>
-        <div v-if="isAdmin" class="wiki-item__actions">
+        <div v-if="isAdmin" class="wiki-item__actions" @click.stop>
           <button
             class="icon-button icon-button--small"
             type="button"
-            title="Sửa"
+            title="Sửa nhanh"
             @click="startEdit(page)"
           >
             <Pencil :size="14" />
@@ -228,7 +252,7 @@ async function handleDelete(id: string) {
         class="secondary-button"
         type="button"
         style="margin-top: 16px"
-        @click="showAddForm = true"
+        @click="toggleAddForm"
       >
         Bắt đầu viết Wiki
       </button>
@@ -264,8 +288,7 @@ async function handleDelete(id: string) {
   font-weight: 700;
 }
 
-.wiki-add-form input,
-.wiki-add-form textarea {
+.wiki-add-form input {
   width: 100%;
   padding: 10px 14px;
   margin-bottom: 12px;
@@ -274,9 +297,66 @@ async function handleDelete(id: string) {
   color: var(--text-strong);
   background: var(--panel);
   font-family: inherit;
+}
+
+.markdown-editor {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.markdown-tabs {
+  display: flex;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--line);
+  padding: 0 8px;
+}
+
+.markdown-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.markdown-tab:hover {
+  color: var(--text-strong);
+}
+
+.markdown-tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+.markdown-textarea {
+  width: 100%;
+  padding: 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-strong);
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 14px;
   resize: vertical;
-  min-height: 104px;
-  line-height: 1.5;
+  min-height: 200px;
+  line-height: 1.6;
+  outline: none;
+}
+
+.markdown-preview-pane {
+  padding: 16px;
+  min-height: 200px;
+  background: var(--panel);
+  color: var(--text-strong);
 }
 
 .wiki-editor__footer {
@@ -363,6 +443,10 @@ async function handleDelete(id: string) {
   transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
 }
 
+.wiki-item--clickable {
+  cursor: pointer;
+}
+
 .wiki-item:hover {
   transform: translateY(-2px);
   box-shadow: 0 10px 20px rgba(15, 76, 255, 0.08);
@@ -393,19 +477,7 @@ async function handleDelete(id: string) {
   color: var(--text-strong);
 }
 
-.wiki-item__main p {
-  margin: 0;
-  color: var(--text);
-  opacity: 0.84;
-  font-size: 13px;
-  line-height: 1.45;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.wiki-item__main > span {
+.wiki-item__meta {
   font-size: 12px;
   color: var(--muted);
 }

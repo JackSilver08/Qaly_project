@@ -59,6 +59,13 @@ public class AuditLogService : IAuditLogService
         return await PageAsync(query, page, pageSize, ct);
     }
 
+    public async Task<Result<PagedResult<AuditLogDto>>> GetRecentWorkspaceActivityAsync(int limit = 10, CancellationToken ct = default)
+    {
+        limit = Math.Clamp(limit, 1, 100);
+        var query = AuditLogQuery();
+        return await PageAsync(query, 1, limit, ct);
+    }
+
     private IQueryable<AuditLog> AuditLogQuery()
         => _context.AuditLogs
             .AsNoTracking()

@@ -187,6 +187,36 @@ public class TasksController : ControllerBase
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpGet("attention")]
+    public async Task<IActionResult> GetGlobalTaskAttention(
+        [FromQuery] Guid? assigneeId = null,
+        [FromQuery] Guid? reporterId = null,
+        [FromQuery] string? status = null,
+        [FromQuery] string? priority = null,
+        [FromQuery] string? riskType = null,
+        [FromQuery] DateTimeOffset? from = null,
+        [FromQuery] DateTimeOffset? to = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 25,
+        [FromQuery] string sort = "risk",
+        CancellationToken ct = default)
+    {
+        var result = await _taskService.GetGlobalAttentionAsync(
+            assigneeId,
+            reporterId,
+            status,
+            priority,
+            riskType,
+            from,
+            to,
+            page,
+            pageSize,
+            sort,
+            ct);
+
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpPost("/api/projects/{projectId:guid}/tasks/{taskId:guid}/viewed")]
     public async Task<IActionResult> MarkViewed(Guid projectId, Guid taskId, CancellationToken ct)
     {

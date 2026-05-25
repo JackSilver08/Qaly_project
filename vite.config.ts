@@ -22,6 +22,7 @@ export default defineConfig({
     outDir: './src/Qaly.Web/wwwroot/dist',
     emptyOutDir: true,
     manifest: true,
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       input: {
         main: './src/Qaly.Web/ClientApp/main.ts',
@@ -33,7 +34,7 @@ export default defineConfig({
         manualChunks: {
           'vendor-vue': ['vue', 'vue-router'],
           'vendor-ui': ['vue-draggable-plus', 'lucide-vue-next'],
-          'vendor-markdown': ['markdown-it', 'dompurify'],
+          'vendor-markdown': ['md-editor-v3'],
           'vendor-realtime': ['@microsoft/signalr'],
         },
       },

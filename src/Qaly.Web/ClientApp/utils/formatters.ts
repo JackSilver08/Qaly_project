@@ -15,6 +15,23 @@ export function formatTime(value: string | null | undefined) {
   }).format(new Date(value))
 }
 
+export function formatTimeAgo(value: string | null | undefined) {
+  if (!value) return ''
+  const date = new Date(value)
+  const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000)
+  let interval = seconds / 31536000
+  if (interval > 1) return Math.floor(interval) + ' năm trước'
+  interval = seconds / 2592000
+  if (interval > 1) return Math.floor(interval) + ' tháng trước'
+  interval = seconds / 86400
+  if (interval > 1) return Math.floor(interval) + ' ngày trước'
+  interval = seconds / 3600
+  if (interval > 1) return Math.floor(interval) + ' giờ trước'
+  interval = seconds / 60
+  if (interval > 1) return Math.floor(interval) + ' phút trước'
+  return 'vừa xong'
+}
+
 export function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`

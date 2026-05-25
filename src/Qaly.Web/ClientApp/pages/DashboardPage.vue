@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { Plus, AlertTriangle, TrendingUp, CheckCircle2, Activity, ChevronRight, LayoutDashboard, FolderKanban, ClipboardList, Users } from 'lucide-vue-next'
 import { useDashboardContext } from '../composables/dashboard-context'
+import { apiJson } from '../utils/api-client'
+import { formatTimeAgo } from '../utils/formatters'
+import type { TaskAttentionDto, AuditLogDto } from '../types'
 
 const {
   projects,
@@ -12,6 +15,75 @@ const {
 // Time period for chart
 const activeTab = ref('Q4')
 const chartMode = ref<'2D' | '3D'>('2D')
+
+// Dynamic data states
+const attentionProjects = ref<any[]>([])
+const recentActivities = ref<any[]>([])
+
+onMounted(async () => {
+  try {
+    const res = await apiJson<any>('/api/tasks/attention?pageSize=5')
+    if (res && res.items) {
+      attentionProjects.value = res.items.map((t: TaskAttentionDto) => {
+        let badge = 'Cần chú ý'
+        let type = 'upcoming'
+        let desc = t.projectName
+        
+        if (t.isOverdue) {
+          badge = 'Quá hạn'
+          type = 'overdue'
+          desc += ' • Đã quá hạn'
+        } else if (t.isDueSoon) {
+          badge = 'Sắp tới'
+          desc += ' • Sắp đến hạn'
+        }
+        
+        return {
+          id: t.id,
+          name: t.title,
+          desc,
+          badge,
+          type
+        }
+      })
+    }
+  } catch(e) { console.error(e) }
+
+  try {
+    const res = await apiJson<any>('/api/audit-logs/recent?limit=5')
+    if (res && res.items) {
+      recentActivities.value = res.items.map((log: AuditLogDto) => {
+        let actionText = 'đã cập nhật'
+        let target = log.entityType
+        if (log.action === 'Create') actionText = 'đã tạo mới'
+        else if (log.action === 'Update') actionText = 'đã chỉnh sửa'
+        else if (log.action === 'Delete') actionText = 'đã xóa'
+        else if (log.action === 'StatusChange') actionText = 'đã cập nhật trạng thái của'
+        else if (log.action === 'KanbanMove') actionText = 'đã kéo thả'
+        
+        try {
+          if (log.changesJson) {
+            const changes = JSON.parse(log.changesJson)
+            if (changes.title) target = changes.title
+            else if (changes.Title) target = changes.Title
+          }
+        } catch {}
+
+        const user = log.userName || 'Người dùng'
+        const initials = user.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+
+        return {
+          id: log.id,
+          user: user,
+          action: actionText,
+          target: target,
+          time: formatTimeAgo(log.timestamp),
+          initials
+        }
+      })
+    }
+  } catch(e) { console.error(e) }
+})
 
 // Classify projects based on overdue task count
 const onTrackCount = computed(() => {
@@ -34,37 +106,6 @@ const totalTasksCount = computed(() => {
   return projects.value.reduce((sum, p) => sum + (p.taskCount || 0), 0)
 })
 
-// Projects requiring attention (overdue tasks)
-const attentionProjects = computed(() => {
-  const list = projects.value
-    .filter(p => p.status !== 'Archived' && p.overdueTaskCount > 0)
-    .map(p => ({
-      id: p.id,
-      name: p.name,
-      overdueCount: p.overdueTaskCount,
-      desc: p.overdueTaskCount > 1 ? `${p.overdueTaskCount} nhiệm vụ quá hạn • Cần phê duyệt` : `${p.overdueTaskCount} nhiệm vụ quá hạn • Cần kiểm tra`,
-      badge: 'Quá hạn',
-      type: 'overdue'
-    }))
-
-  // If empty, return some default placeholders so the UI matches the mockup style
-  if (list.length === 0) {
-    return [
-      { id: '1', name: 'Đồng bộ cơ sở dữ liệu', overdueCount: 1, desc: 'Trễ 2 ngày • Cần phê duyệt khẩn cấp', badge: 'Quá hạn', type: 'overdue' },
-      { id: '2', name: 'Dự thảo Ngân sách Q4', overdueCount: 0, desc: 'Đến hạn trong 4 giờ • Ưu tiên cao', badge: 'Sắp tới', type: 'upcoming' }
-    ]
-  }
-  return list
-})
-
-// Recent activities (translated to Vietnamese with mockup style)
-const recentActivities = [
-  { id: 1, user: 'Nguyễn Văn A', action: 'đã chuyển Thiết kế khung làm việc sang', target: 'Đang đánh giá', time: '15 phút trước', initials: 'VA' },
-  { id: 2, user: 'Quản trị viên', action: 'đã thêm 4 nhiệm vụ mới vào', target: 'Qaly MVP', time: '1 giờ trước', initials: 'QT' },
-  { id: 3, user: 'Trần Thị B', action: 'đã hoàn thành rà soát hệ màu trong', target: 'Ngôn ngữ thiết kế', time: '3 giờ trước', initials: 'TB' }
-]
-
-// Interactive state for chart
 const hoveredIndex = ref<number | null>(null)
 const tooltipX = ref(0)
 const tooltipY = ref(0)
@@ -613,7 +654,11 @@ const tooltipStyle = computed(() => {
           </div>
           
           <div class="attention-list">
+            <div v-if="attentionProjects.length === 0" class="attention-item" style="justify-content: center; color: var(--text-tertiary)">
+              Không có nhiệm vụ nào cần chú ý
+            </div>
             <article 
+              v-else
               v-for="item in attentionProjects" 
               :key="item.id" 
               class="attention-item"
@@ -643,21 +688,25 @@ const tooltipStyle = computed(() => {
           </div>
 
           <div class="activity-list">
-            <div 
+            <div v-if="recentActivities.length === 0" class="activity-item" style="color: var(--text-tertiary)">
+              Chưa có hoạt động nào gần đây
+            </div>
+            <article 
+              v-else
               v-for="activity in recentActivities" 
               :key="activity.id" 
               class="activity-item"
             >
-              <div class="activity-avatar">
-                {{ activity.initials }}
-              </div>
+              <div class="activity-avatar">{{ activity.initials }}</div>
               <div class="activity-content">
-                <span class="activity-text">
-                  <strong>{{ activity.user }}</strong> {{ activity.action }} <strong>{{ activity.target }}</strong>
-                </span>
+                <div class="activity-text">
+                  <span class="activity-user">{{ activity.user }}</span>
+                  {{ activity.action }}
+                  <span class="activity-target">{{ activity.target }}</span>
+                </div>
                 <span class="activity-time">{{ activity.time }}</span>
               </div>
-            </div>
+            </article>
           </div>
         </section>
 

@@ -780,6 +780,32 @@ async function deleteAttachment(a: any) {
   }
 }
 
+async function markAsEvidence(attachmentId: string, isEvidence: boolean) {
+  try {
+    await apiResult(`/api/attachments/${attachmentId}/evidence`, {
+      method: "PATCH",
+      body: JSON.stringify({ isEvidence }),
+    });
+    if (selectedTask.value) await loadAttachments(selectedTask.value.id);
+    showSuccess("Thành công");
+  } catch (err) {
+    showError(errorMessage(err, "Lỗi"));
+  }
+}
+
+async function reviewEvidence(attachmentId: string, approve: boolean, reviewNote: string) {
+  try {
+    await apiResult(`/api/attachments/${attachmentId}/evidence/review`, {
+      method: "POST",
+      body: JSON.stringify({ approve, reviewNote }),
+    });
+    if (selectedTask.value) await loadAttachments(selectedTask.value.id);
+    showSuccess("Thành công");
+  } catch (err) {
+    showError(errorMessage(err, "Lỗi"));
+  }
+}
+
 async function dismissNotification(id: string) {
   notifications.value = notifications.value.filter((n) => n.id !== id);
   dashboard.value.notifications = dashboard.value.notifications.filter(
@@ -909,6 +935,8 @@ provide(dashboardContextKey, {
   openCreateProject,
   openTask,
   priorities,
+  markAsEvidence,
+  reviewEvidence,
   projectBeingEditedId,
   projectCards,
   projectDescription,

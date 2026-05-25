@@ -104,6 +104,7 @@ builder.Services.AddRazorPages(options =>
     options.Conventions.AddPageRoute("/Index", "projects/archived");
     options.Conventions.AddPageRoute("/Index", "projects/{projectId}");
     options.Conventions.AddPageRoute("/Index", "projects/{projectId}/tasks/{taskId}");
+    options.Conventions.AddPageRoute("/Index", "projects/{projectId}/wiki/{wikiId}");
     options.Conventions.AddPageRoute("/Index", "tasks");
     options.Conventions.AddPageRoute("/Index", "teams");
     options.Conventions.AllowAnonymousToPage("/Account/Login");

@@ -19,6 +19,7 @@ export const router = createRouter({
     { path: '/projects/archived', name: 'projects-archived', component: ArchivedProjectsPage },
     { path: '/projects/:projectId', name: 'project-detail', component: ProjectDetailPage },
     { path: '/projects/:projectId/tasks/:taskId', name: 'project-task', component: ProjectDetailPage },
+    { path: '/projects/:projectId/wiki/:wikiId', name: 'project-wiki-detail', component: () => import('../pages/WikiDetailPage.vue') },
     { path: '/tasks', name: 'tasks', component: TasksPage },
     { path: '/teams', name: 'teams', component: TeamsPage },
     { path: '/analytics', name: 'analytics', component: AnalyticsPage },

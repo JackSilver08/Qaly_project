@@ -41,4 +41,11 @@ public class AuditLogsController : ControllerBase
         var result = await _auditLogService.GetByUserAsync(userId.Value, page, pageSize, ct);
         return StatusCode(result.StatusCode, result);
     }
+
+    [HttpGet("recent")]
+    public async Task<IActionResult> GetRecent([FromQuery] int limit = 10, CancellationToken ct = default)
+    {
+        var result = await _auditLogService.GetRecentWorkspaceActivityAsync(limit, ct);
+        return StatusCode(result.StatusCode, result);
+    }
 }

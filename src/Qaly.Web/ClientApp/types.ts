@@ -107,6 +107,18 @@ export interface PagedResult<T> {
     hasNextPage: boolean;
 }
 
+export interface AuditLogDto {
+    id: number;
+    action: string;
+    entityType: string;
+    entityId: string;
+    changesJson: string | null;
+    userId: string | null;
+    userName: string | null;
+    ipAddress: string | null;
+    timestamp: string;
+}
+
 export interface UserDto {
     id: string;
     fullName: string;
@@ -229,6 +241,12 @@ export interface AttachmentDto {
     uploadedById: string;
     uploadedByName: string;
     uploadedAt: string;
+    isEvidence: boolean;
+    evidenceApprovalStatus: string;
+    evidenceReviewedById: string | null;
+    evidenceReviewedByName: string | null;
+    evidenceReviewedAt: string | null;
+    evidenceReviewNote: string | null;
 }
 
 export interface WikiPageDto {

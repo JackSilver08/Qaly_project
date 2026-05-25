@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { FileSpreadsheet, FolderKanban, CheckCircle2, AlertTriangle } from 'lucide-vue-next'
+import { FileSpreadsheet, FolderKanban, CheckCircle2, AlertTriangle, X, Edit3 } from 'lucide-vue-next'
 import ProjectList from '../components/ProjectList.vue'
 import ProjectGrid from '../components/ProjectGrid.vue'
 import ProjectToolbar from '../components/ProjectToolbar.vue'
@@ -135,24 +135,7 @@ async function handleUndoFromBanner() {
           </template>
         </ProjectToolbar>
 
-        <form v-if="createProjectOpen" class="project-inline-form project-inline-form--stacked" @submit.prevent="createProject">
-          <input v-model="projectName" type="text" placeholder="Tên dự án" />
-          <input v-model="projectDescription" type="text" placeholder="Mô tả ngắn" />
-          <input v-model="projectEndDate" type="date" />
-          <button class="primary-button primary-button--compact" type="submit" :disabled="!projectName.trim()">
-            Tạo
-          </button>
-          <button class="text-button" type="button" @click="createProjectOpen = false">Hủy</button>
-        </form>
 
-        <form v-if="projectBeingEditedId" class="project-inline-form project-inline-form--stacked" @submit.prevent="saveProjectEdit">
-          <input v-model="editProjectName" type="text" aria-label="Tên dự án" />
-          <input v-model="editProjectDescription" type="text" aria-label="Mô tả dự án" />
-          <button class="primary-button primary-button--compact" type="submit" :disabled="!editProjectName.trim()">
-            Lưu
-          </button>
-          <button class="text-button" type="button" @click="projectBeingEditedId = null">Hủy</button>
-        </form>
 
         <ProjectGrid
           v-if="isGridView"
@@ -189,6 +172,70 @@ async function handleUndoFromBanner() {
       @undo="handleUndoFromBanner"
       @dismiss="undoBannerData = null"
     />
+
+    <!-- Create Project Modal -->
+    <Teleport to="body">
+      <div v-if="createProjectOpen" class="project-modal-backdrop" @click.self="createProjectOpen = false">
+        <div class="project-modal glass-card">
+          <div class="project-modal-header">
+            <div class="project-modal-title">
+              <FolderKanban :size="20" />
+              <h2>Tạo dự án mới</h2>
+            </div>
+            <button class="icon-button" @click="createProjectOpen = false"><X :size="18" /></button>
+          </div>
+          <form class="project-modal-body" @submit.prevent="createProject">
+            <div class="form-group">
+              <label>Tên dự án</label>
+              <input v-model="projectName" type="text" placeholder="Nhập tên dự án..." required class="modal-input" />
+            </div>
+            <div class="form-group">
+              <label>Mô tả ngắn</label>
+              <textarea v-model="projectDescription" placeholder="Nhập mô tả dự án (không bắt buộc)..." rows="3" class="modal-input"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Ngày kết thúc dự kiến</label>
+              <input v-model="projectEndDate" type="date" class="modal-input" />
+            </div>
+            
+            <div class="project-modal-actions">
+              <button class="btn btn--ghost" type="button" @click="createProjectOpen = false">Hủy</button>
+              <button class="btn btn--primary" type="submit" :disabled="!projectName.trim()">Tạo dự án</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Edit Project Modal -->
+    <Teleport to="body">
+      <div v-if="projectBeingEditedId" class="project-modal-backdrop" @click.self="projectBeingEditedId = null">
+        <div class="project-modal glass-card">
+          <div class="project-modal-header">
+            <div class="project-modal-title">
+              <Edit3 :size="20" />
+              <h2>Chỉnh sửa dự án</h2>
+            </div>
+            <button class="icon-button" @click="projectBeingEditedId = null"><X :size="18" /></button>
+          </div>
+          <form class="project-modal-body" @submit.prevent="saveProjectEdit">
+            <div class="form-group">
+              <label>Tên dự án</label>
+              <input v-model="editProjectName" type="text" placeholder="Nhập tên dự án..." required class="modal-input" />
+            </div>
+            <div class="form-group">
+              <label>Mô tả ngắn</label>
+              <textarea v-model="editProjectDescription" placeholder="Nhập mô tả dự án (không bắt buộc)..." rows="3" class="modal-input"></textarea>
+            </div>
+            
+            <div class="project-modal-actions">
+              <button class="btn btn--ghost" type="button" @click="projectBeingEditedId = null">Hủy</button>
+              <button class="btn btn--primary" type="submit" :disabled="!editProjectName.trim()">Lưu thay đổi</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -212,5 +259,158 @@ async function handleUndoFromBanner() {
   border-color: rgba(117, 182, 255, 0.62);
   background: rgba(31, 128, 255, 0.2);
   box-shadow: 0 14px 28px rgba(15, 76, 255, 0.24);
+}
+
+/* Modal Styles */
+.project-modal-backdrop {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex; align-items: center; justify-content: center;
+  animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.project-modal {
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --border-color: #e2e8f0;
+  
+  width: min(480px, 94vw);
+  max-height: 88vh;
+  overflow-y: auto;
+  border-radius: 20px;
+  padding: 0;
+  background: #ffffff;
+  box-shadow: 
+    0 10px 40px -10px rgba(0,0,0,0.1), 
+    0 0 0 1px rgba(0,0,0,0.05);
+  transform-origin: center;
+  animation: modalScaleIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.project-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 24px 28px 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.project-modal-title { 
+  display: flex; align-items: center; gap: 12px;
+  color: var(--text-main);
+}
+.project-modal-title h2 { 
+  font-size: 1.25rem; font-weight: 700; margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.icon-button { 
+  background: transparent; 
+  border: none; 
+  color: var(--text-muted); 
+  cursor: pointer; 
+  transition: all 0.2s ease; 
+  display: flex; align-items: center; justify-content: center; 
+  padding: 8px; 
+  border-radius: 50%; 
+}
+.icon-button:hover { 
+  background: #f1f5f9; 
+  color: var(--text-main); 
+}
+
+.project-modal-body {
+  padding: 24px 28px 28px;
+}
+
+.form-group {
+  margin-bottom: 24px;
+}
+.form-group label {
+  display: block; 
+  font-size: 0.875rem; 
+  font-weight: 600; 
+  color: var(--text-main); 
+  margin-bottom: 8px;
+}
+
+.modal-input {
+  width: 100%; 
+  padding: 12px 16px; 
+  border-radius: 12px; 
+  font-size: 0.95rem;
+  background: #f8fafc; 
+  border: 1px solid var(--border-color);
+  color: var(--text-main); 
+  outline: none; 
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+.modal-input:hover {
+  background: #ffffff;
+  border-color: #cbd5e1;
+}
+.modal-input:focus { 
+  background: #ffffff;
+  border-color: var(--accent); 
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1); 
+}
+.modal-input::placeholder { color: #94a3b8; }
+
+textarea.modal-input { 
+  resize: vertical; 
+  min-height: 90px;
+  line-height: 1.5;
+}
+
+.project-modal-actions {
+  display: flex; justify-content: flex-end; gap: 12px;
+  padding-top: 12px;
+}
+
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 24px; border-radius: 10px; font-size: 0.95rem;
+  font-weight: 600; border: none; cursor: pointer; transition: all 0.2s;
+}
+.btn--primary { 
+  background: var(--accent); 
+  color: #ffffff; 
+  box-shadow: 0 2px 8px -2px rgba(37, 99, 235, 0.4);
+}
+.btn--primary:hover:not(:disabled) { 
+  background: var(--accent-hover); 
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px -2px rgba(37, 99, 235, 0.5);
+}
+.btn--primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+.btn--primary:disabled { 
+  opacity: 0.6; cursor: not-allowed; 
+  background: #94a3b8;
+  box-shadow: none;
+}
+
+.btn--ghost {
+  background: transparent; 
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+}
+.btn--ghost:hover { 
+  background: #f8fafc; 
+  color: var(--text-main); 
+  border-color: #cbd5e1;
+}
+
+@keyframes fadeIn { 
+  from { opacity: 0; backdrop-filter: blur(0px); } 
+  to { opacity: 1; backdrop-filter: blur(8px); } 
+}
+@keyframes modalScaleIn {
+  from { opacity: 0; transform: scale(0.96) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 </style>
