@@ -79,7 +79,7 @@ public partial class SignalRNotificationPublisher : INotificationPublisher
                 }
                 catch { }
             }
-        });
+        }, CancellationToken.None);
 
         return Task.CompletedTask;
     }
@@ -111,7 +111,7 @@ public partial class SignalRNotificationPublisher : INotificationPublisher
                 }
                 catch { }
             }
-        });
+        }, CancellationToken.None);
 
         return Task.CompletedTask;
     }
