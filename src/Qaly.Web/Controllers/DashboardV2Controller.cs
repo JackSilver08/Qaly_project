@@ -7,7 +7,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/dashboard/v2/projects")]
-public class DashboardV2Controller : ControllerBase
+public class DashboardV2Controller : BaseApiController
 {
     private readonly IDashboardSummaryService _dashboardSummaryService;
 

@@ -11,7 +11,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/votes")]
-public class VotesController : ControllerBase
+public class VotesController : BaseApiController
 {
     private readonly QalyDbContext _context;
 

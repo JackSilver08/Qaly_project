@@ -9,7 +9,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/ai")]
-public class AiController : ControllerBase
+public class AiController : BaseApiController
 {
     private readonly IAiService _aiService;
     private readonly IErumiChatService _erumiChatService;

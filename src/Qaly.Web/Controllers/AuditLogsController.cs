@@ -8,7 +8,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/audit-logs")]
-public class AuditLogsController : ControllerBase
+public class AuditLogsController : BaseApiController
 {
     private readonly IAuditLogService _auditLogService;
 

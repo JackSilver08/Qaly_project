@@ -44,6 +44,15 @@ const hasTitleMapping = computed(() =>
   props.mappings.some(m => m.targetField === 'Title')
 )
 
+const duplicateMappedFields = computed(() => {
+  const counts = new Map<string, number>()
+  for (const mapping of props.mappings) {
+    if (mapping.targetField === 'Skip') continue
+    counts.set(mapping.targetField, (counts.get(mapping.targetField) || 0) + 1)
+  }
+  return [...counts.entries()].filter(([, count]) => count > 1).map(([field]) => field)
+})
+
 function updateMappingField(index: number, targetField: string) {
   const updated = [...props.mappings]
   updated[index] = { ...updated[index], targetField }
@@ -182,9 +191,14 @@ function updateMappingField(index: number, targetField: string) {
       <span>Cần ít nhất 1 cột map vào "Tiêu đề (Title)"</span>
     </div>
 
+    <div v-if="duplicateMappedFields.length" class="import-warning">
+      <AlertTriangle :size="16" />
+      <span>Mỗi field chỉ được map một lần: {{ duplicateMappedFields.join(', ') }}</span>
+    </div>
+
     <div class="import-actions">
       <button class="btn btn--ghost" type="button" @click="emit('back')"><ArrowLeft :size="16" /> Quay lại</button>
-      <button class="btn btn--primary" :disabled="!hasTitleMapping" @click="emit('next')">
+      <button class="btn btn--primary" :disabled="!hasTitleMapping || duplicateMappedFields.length > 0" @click="emit('next')">
         Tiếp tục <ArrowRight :size="16" />
       </button>
     </div>

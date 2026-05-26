@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Upload, FileSpreadsheet } from 'lucide-vue-next'
+import { showError } from '../../composables/use-toast'
 
 const props = defineProps<{
   projectId?: string
@@ -21,7 +22,8 @@ const isDragging = ref(false)
 import { ref } from 'vue'
 
 const isNewProject = !props.projectId
-const acceptedTypes = '.csv,.xlsx,.tsv'
+const acceptedTypes = '.csv,.xlsx,.tsv,.txt,.psv,.json'
+const supportedExtensions = ['csv', 'xlsx', 'tsv', 'txt', 'psv', 'json']
 
 function onDragOver(e: DragEvent) {
   e.preventDefault()
@@ -46,8 +48,14 @@ function onFileInput(e: Event) {
 
 function selectFile(f: File) {
   const ext = f.name.split('.').pop()?.toLowerCase()
-  if (!['csv', 'xlsx', 'tsv'].includes(ext || '')) return
-  if (f.size > 5 * 1024 * 1024) return
+  if (!supportedExtensions.includes(ext || '')) {
+    showError('Chỉ hỗ trợ file .csv, .xlsx, .tsv, .txt, .psv hoặc .json')
+    return
+  }
+  if (f.size > 5 * 1024 * 1024) {
+    showError('File vượt quá giới hạn 5MB')
+    return
+  }
   emit('update:file', f)
 }
 
@@ -89,7 +97,7 @@ function formatFileSize(bytes: number) {
           Chọn file
           <input type="file" :accept="acceptedTypes" hidden @change="onFileInput" />
         </label>
-        <p class="dropzone-formats">.csv, .xlsx, .tsv · Tối đa 5MB · 2000 dòng</p>
+        <p class="dropzone-formats">.csv, .xlsx, .tsv, .txt, .psv, .json · Tối đa 5MB · 2000 dòng</p>
       </template>
       <template v-else>
         <FileSpreadsheet :size="32" class="dropzone-icon--selected" />

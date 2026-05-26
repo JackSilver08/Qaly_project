@@ -8,7 +8,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/[controller]")]
-public class OrganizationsController : ControllerBase
+public class OrganizationsController : BaseApiController
 {
     private readonly IOrganizationService _organizationService;
 

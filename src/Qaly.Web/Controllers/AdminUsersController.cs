@@ -11,7 +11,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize(Roles = "Admin")]
 [Route("api/admin/users")]
-public class AdminUsersController : ControllerBase
+public class AdminUsersController : BaseApiController
 {
     private readonly QalyDbContext _context;
     private readonly IAuditLogService _auditLogService;
@@ -55,7 +55,12 @@ public class AdminUsersController : ControllerBase
             return Conflict("Email is already registered.");
         }
 
-        var password = string.IsNullOrWhiteSpace(request.Password) ? "User@123" : request.Password;
+        if (string.IsNullOrWhiteSpace(request.Password))
+        {
+            return BadRequest("Password is required.");
+        }
+
+        var password = request.Password;
         if (password.Length < 8)
         {
             return BadRequest("Password must be at least 8 characters.");
@@ -132,11 +137,16 @@ public class AdminUsersController : ControllerBase
                 continue;
             }
 
+            if (string.IsNullOrWhiteSpace(item.Password) || item.Password.Length < 8)
+            {
+                continue;
+            }
+
             _context.Users.Add(new User
             {
                 FullName = item.FullName.Trim(),
                 Email = email,
-                PasswordHash = HashPassword(string.IsNullOrWhiteSpace(item.Password) ? "User@123" : item.Password),
+                PasswordHash = HashPassword(item.Password),
                 Role = NormalizeSystemRole(item.Role),
                 IsActive = true
             });

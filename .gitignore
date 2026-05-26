@@ -51,7 +51,12 @@ bld/
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
+*.log
+*.out.log
+*.err.log
 qaly-*.log
+temp_*.txt
+robot_base64*.txt
 
 ## Local toolchains
 .dotnet-sdk*/

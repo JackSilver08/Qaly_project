@@ -7,7 +7,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/[controller]")]
-public class AnalyticsController : ControllerBase
+public class AnalyticsController : BaseApiController
 {
     private readonly IAnalyticsService _analyticsService;
 

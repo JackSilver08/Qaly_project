@@ -7,7 +7,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/attachments")]
-public class AttachmentsController : ControllerBase
+public class AttachmentsController : BaseApiController
 {
     private readonly IAttachmentService _attachmentService;
 

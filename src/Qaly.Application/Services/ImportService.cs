@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using ClosedXML.Excel;
 using CsvHelper;
 using CsvHelper.Configuration;
@@ -8,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Import;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 
@@ -25,12 +27,13 @@ public partial class ImportService : IImportService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<ImportService> _logger;
     private readonly IAiService _aiService;
+    private readonly ITaskAccessPolicy _taskAccessPolicy;
 
     private const int MaxRows = 2000;
     private const int PreviewRowCount = 5;
 
-    private static readonly string[] ValidExtensions = [".csv", ".xlsx", ".tsv"];
-    private static readonly string[] ValidStatuses = ["Todo", "InProgress", "OnHold", "InReview", "Done"];
+    private static readonly string[] ValidExtensions = [".csv", ".xlsx", ".tsv", ".txt", ".psv", ".json"];
+    private static readonly string[] ValidStatuses = ["Todo", "InProgress", "OnHold", "InReview", "Done", "Cancelled"];
     private static readonly string[] ValidPriorities = ["Low", "Medium", "High", "Critical"];
 
     // Auto-suggest mapping keywords (Vietnamese + English)
@@ -57,6 +60,7 @@ public partial class ImportService : IImportService
         ["done"] = "Done", ["completed"] = "Done", ["hoàn thành"] = "Done", ["hoan thanh"] = "Done",
         ["xong"] = "Done", ["finished"] = "Done", ["closed"] = "Done",
         ["hold"] = "OnHold", ["on hold"] = "OnHold", ["onhold"] = "OnHold",
+        ["cancelled"] = "Cancelled", ["canceled"] = "Cancelled", ["cancel"] = "Cancelled", ["huy"] = "Cancelled",
         ["blocked"] = "OnHold", ["tạm dừng"] = "OnHold", ["tam dung"] = "OnHold", ["paused"] = "OnHold",
     };
 
@@ -85,7 +89,8 @@ public partial class ImportService : IImportService
         ICurrentUserService currentUserService,
         IUnitOfWork unitOfWork,
         ILogger<ImportService> logger,
-        IAiService aiService)
+        IAiService aiService,
+        ITaskAccessPolicy taskAccessPolicy)
     {
         _projectRepo = projectRepo;
         _taskRepo = taskRepo;
@@ -97,9 +102,10 @@ public partial class ImportService : IImportService
         _unitOfWork = unitOfWork;
         _logger = logger;
         _aiService = aiService;
+        _taskAccessPolicy = taskAccessPolicy;
     }
 
-    public async Task<Result<ParsedFileResult>> ParseFileAsync(Stream fileStream, string fileName, CancellationToken ct = default)
+    public async Task<Result<ParsedFileResult>> ParseFileAsync(Stream fileStream, string fileName, string? sheetName = null, bool firstRowIsHeader = true, CancellationToken ct = default)
     {
         var ext = Path.GetExtension(fileName).ToLowerInvariant();
         if (!ValidExtensions.Contains(ext))
@@ -113,12 +119,16 @@ public partial class ImportService : IImportService
 
             if (ext == ".xlsx")
             {
-                (headers, allRows, sheetNames) = ParseXlsx(fileStream);
+                (headers, allRows, sheetNames) = ParseXlsx(fileStream, sheetName, firstRowIsHeader);
+            }
+            else if (ext == ".json")
+            {
+                (headers, allRows) = ParseJson(fileStream, firstRowIsHeader);
             }
             else
             {
-                var delimiter = ext == ".tsv" ? "\t" : ",";
-                (headers, allRows) = ParseCsv(fileStream, delimiter);
+                var delimiter = GetDelimitedTextSeparator(fileStream, ext);
+                (headers, allRows) = ParseCsv(fileStream, delimiter, firstRowIsHeader);
             }
 
             if (headers.Count == 0)
@@ -164,6 +174,8 @@ public partial class ImportService : IImportService
             var project = await _projectRepo.GetByIdAsync(request.ProjectId.Value, ct);
             if (project == null)
                 return Result.Failure<ImportResult>("Không tìm thấy dự án.");
+            if (!await _taskAccessPolicy.CanManageProjectAsync(project.Id, project.OwnerId, ct))
+                return Result.Forbidden<ImportResult>("Bạn không có quyền import vào dự án này.");
             projectId = project.Id;
         }
         else
@@ -201,12 +213,16 @@ public partial class ImportService : IImportService
         {
             if (ext == ".xlsx")
             {
-                (headers, allRows, _) = ParseXlsx(fileStream, request.SheetName);
+                (headers, allRows, _) = ParseXlsx(fileStream, request.SheetName, request.FirstRowIsHeader);
+            }
+            else if (ext == ".json")
+            {
+                (headers, allRows) = ParseJson(fileStream, request.FirstRowIsHeader);
             }
             else
             {
-                var delimiter = ext == ".tsv" ? "\t" : ",";
-                (headers, allRows) = ParseCsv(fileStream, delimiter);
+                var delimiter = GetDelimitedTextSeparator(fileStream, ext);
+                (headers, allRows) = ParseCsv(fileStream, delimiter, request.FirstRowIsHeader);
             }
         }
         catch (Exception ex)
@@ -215,10 +231,27 @@ public partial class ImportService : IImportService
             return Result.Failure<ImportResult>($"Lỗi khi đọc file: {ex.Message}");
         }
 
-        // Build field index map from mappings
-        var fieldMap = request.Mappings
+        if (allRows.Count > MaxRows)
+            return Result.Failure<ImportResult>($"File vượt quá giới hạn {MaxRows} dòng. Hiện có {allRows.Count} dòng.");
+
+        var activeMappings = request.Mappings
             .Where(m => m.TargetField != "Skip")
-            .ToDictionary(m => m.TargetField, m => m.ColumnIndex);
+            .ToList();
+
+        var invalidMapping = activeMappings.FirstOrDefault(m => m.ColumnIndex < 0 || m.ColumnIndex >= headers.Count);
+        if (invalidMapping != null)
+            return Result.Failure<ImportResult>("Mapping cột không hợp lệ. Vui lòng parse lại file và kiểm tra mapping.");
+
+        var duplicateFields = activeMappings
+            .GroupBy(m => m.TargetField, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToList();
+        if (duplicateFields.Count > 0)
+            return Result.Failure<ImportResult>($"Mỗi field chỉ được map một lần. Bị trùng: {string.Join(", ", duplicateFields)}.");
+
+        // Build field index map from mappings
+        var fieldMap = activeMappings.ToDictionary(m => m.TargetField, m => m.ColumnIndex, StringComparer.OrdinalIgnoreCase);
 
         if (!fieldMap.ContainsKey("Title"))
             return Result.Failure<ImportResult>("Phải có ít nhất một cột được map vào 'Tiêu đề (Title)'.");
@@ -589,6 +622,13 @@ public partial class ImportService : IImportService
 
     public async Task<Result<List<ImportSessionDto>>> GetSessionsAsync(Guid projectId, CancellationToken ct = default)
     {
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null)
+            return Result.Failure<List<ImportSessionDto>>("Không tìm thấy dự án.", 404);
+
+        if (!await _taskAccessPolicy.CanAccessProjectAsync(project.Id, project.OwnerId, ct))
+            return Result.Forbidden<List<ImportSessionDto>>();
+
         var sessions = await _sessionRepo.GetQueryable()
             .Where(s => s.ProjectId == projectId)
             .OrderByDescending(s => s.CreatedAt)
@@ -655,39 +695,202 @@ public partial class ImportService : IImportService
         return (status, priority, labels);
     }
 
-    private static (List<string> Headers, List<List<string>> Rows) ParseCsv(Stream stream, string delimiter)
+    private static (List<string> Headers, List<List<string>> Rows) ParseCsv(Stream stream, string delimiter, bool firstRowIsHeader)
     {
         stream.Position = 0;
         using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
         var config = new CsvConfiguration(CultureInfo.InvariantCulture)
         {
             Delimiter = delimiter,
-            HasHeaderRecord = true,
+            HasHeaderRecord = firstRowIsHeader,
             MissingFieldFound = null,
             BadDataFound = null,
         };
 
         using var csv = new CsvReader(reader, config);
-        csv.Read();
-        csv.ReadHeader();
-        var headers = csv.HeaderRecord?.ToList() ?? [];
-
+        var headers = new List<string>();
         var rows = new List<List<string>>();
-        while (csv.Read())
+        if (firstRowIsHeader)
         {
-            var row = new List<string>();
-            for (int i = 0; i < headers.Count; i++)
+            csv.Read();
+            csv.ReadHeader();
+            headers = csv.HeaderRecord?.ToList() ?? [];
+
+            while (csv.Read())
             {
-                row.Add(csv.GetField(i) ?? string.Empty);
+                rows.Add(ReadCsvRecord(csv, headers.Count));
             }
-            rows.Add(row);
+        }
+        else
+        {
+            while (csv.Read())
+            {
+                var record = csv.Parser.Record?.ToList() ?? [];
+                if (headers.Count == 0)
+                    headers = Enumerable.Range(1, record.Count).Select(i => $"Column {i}").ToList();
+                rows.Add(PadRow(record, headers.Count));
+            }
         }
 
         return (headers, rows);
     }
 
+    private static string GetDelimitedTextSeparator(Stream stream, string extension)
+    {
+        if (extension == ".tsv")
+            return "\t";
+        if (extension == ".psv")
+            return "|";
+        if (extension != ".txt")
+            return ",";
+
+        var originalPosition = stream.CanSeek ? stream.Position : 0;
+        stream.Position = 0;
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
+        string? sample = null;
+        while (!reader.EndOfStream && string.IsNullOrWhiteSpace(sample))
+        {
+            sample = reader.ReadLine();
+        }
+
+        if (stream.CanSeek)
+            stream.Position = originalPosition;
+
+        if (string.IsNullOrEmpty(sample))
+            return ",";
+
+        var candidates = new Dictionary<string, int>
+        {
+            ["\t"] = sample.Count(c => c == '\t'),
+            [","] = sample.Count(c => c == ','),
+            [";"] = sample.Count(c => c == ';'),
+            ["|"] = sample.Count(c => c == '|')
+        };
+
+        var best = candidates.OrderByDescending(item => item.Value).First();
+        return best.Value > 0 ? best.Key : ",";
+    }
+
+    private static (List<string> Headers, List<List<string>> Rows) ParseJson(Stream stream, bool firstRowIsHeader)
+    {
+        stream.Position = 0;
+        using var document = JsonDocument.Parse(stream);
+        var root = NormalizeJsonRoot(document.RootElement);
+
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            var elements = root.EnumerateArray().ToList();
+            if (elements.Count == 0)
+                return ([], []);
+
+            if (elements.All(element => element.ValueKind == JsonValueKind.Object))
+                return ParseJsonObjects(elements);
+
+            if (elements.All(element => element.ValueKind == JsonValueKind.Array))
+                return ParseJsonArrays(elements, firstRowIsHeader);
+        }
+
+        if (root.ValueKind == JsonValueKind.Object)
+            return ParseJsonObjects([root]);
+
+        return ([], []);
+    }
+
+    private static JsonElement NormalizeJsonRoot(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+            return root;
+
+        foreach (var propertyName in new[] { "tasks", "items", "rows", "data" })
+        {
+            if (root.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.Array)
+                return value;
+        }
+
+        return root;
+    }
+
+    private static (List<string> Headers, List<List<string>> Rows) ParseJsonObjects(List<JsonElement> objects)
+    {
+        var headers = new List<string>();
+        var usedHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var element in objects)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (usedHeaders.Add(property.Name))
+                    headers.Add(property.Name);
+            }
+        }
+
+        var rows = objects
+            .Select(element => headers.Select(header =>
+                element.TryGetProperty(header, out var value) ? JsonValueToCell(value) : string.Empty).ToList())
+            .ToList();
+
+        return (headers, rows);
+    }
+
+    private static (List<string> Headers, List<List<string>> Rows) ParseJsonArrays(List<JsonElement> arrays, bool firstRowIsHeader)
+    {
+        var rawRows = arrays
+            .Select(element => element.EnumerateArray().Select(JsonValueToCell).ToList())
+            .ToList();
+        if (rawRows.Count == 0)
+            return ([], []);
+
+        var columnCount = rawRows.Max(row => row.Count);
+        List<string> headers;
+        IEnumerable<List<string>> dataRows;
+        if (firstRowIsHeader)
+        {
+            headers = PadRow(rawRows[0], columnCount);
+            dataRows = rawRows.Skip(1);
+        }
+        else
+        {
+            headers = Enumerable.Range(1, columnCount).Select(i => $"Column {i}").ToList();
+            dataRows = rawRows;
+        }
+
+        return (headers, dataRows.Select(row => PadRow(row, columnCount)).ToList());
+    }
+
+    private static string JsonValueToCell(JsonElement value)
+        => value.ValueKind switch
+        {
+            JsonValueKind.Null or JsonValueKind.Undefined => string.Empty,
+            JsonValueKind.String => value.GetString() ?? string.Empty,
+            JsonValueKind.Number => value.GetRawText(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            _ => value.GetRawText()
+        };
+
+    private static List<string> ReadCsvRecord(CsvReader csv, int columnCount)
+    {
+        var row = new List<string>();
+        for (int i = 0; i < columnCount; i++)
+        {
+            row.Add(csv.GetField(i) ?? string.Empty);
+        }
+        return row;
+    }
+
+    private static List<string> PadRow(List<string> row, int columnCount)
+    {
+        if (row.Count >= columnCount)
+            return row.Take(columnCount).ToList();
+
+        var padded = new List<string>(row);
+        while (padded.Count < columnCount)
+            padded.Add(string.Empty);
+        return padded;
+    }
+
     private static (List<string> Headers, List<List<string>> Rows, List<string> SheetNames) ParseXlsx(
-        Stream stream, string? sheetName = null)
+        Stream stream, string? sheetName = null, bool firstRowIsHeader = true)
     {
         stream.Position = 0;
         using var workbook = new XLWorkbook(stream);
@@ -702,10 +905,13 @@ public partial class ImportService : IImportService
             return ([], [], sheetNames);
 
         var firstRow = usedRange.FirstRow();
-        var headers = firstRow.Cells().Select(c => c.GetString().Trim()).ToList();
+        var columnCount = usedRange.ColumnCount();
+        var headers = firstRowIsHeader
+            ? firstRow.Cells(1, columnCount).Select(c => c.GetString().Trim()).ToList()
+            : Enumerable.Range(1, columnCount).Select(i => $"Column {i}").ToList();
 
         var rows = new List<List<string>>();
-        foreach (var row in usedRange.RowsUsed().Skip(1)) // Skip header
+        foreach (var row in usedRange.RowsUsed().Skip(firstRowIsHeader ? 1 : 0))
         {
             var rowData = new List<string>();
             for (int i = 1; i <= headers.Count; i++)
@@ -728,16 +934,27 @@ public partial class ImportService : IImportService
             var header = headers[i].Trim();
             string? suggested = null;
 
-            foreach (var (field, keywords) in FieldKeywords)
+            if (IsGeneratedColumnHeader(header))
             {
-                if (usedFields.Contains(field)) continue;
-
-                if (keywords.Any(k => header.Equals(k, StringComparison.OrdinalIgnoreCase) ||
-                                       header.Contains(k, StringComparison.OrdinalIgnoreCase)))
+                if (i == 0 && !usedFields.Contains("Title"))
                 {
-                    suggested = field;
-                    usedFields.Add(field);
-                    break;
+                    suggested = "Title";
+                    usedFields.Add("Title");
+                }
+            }
+            else
+            {
+                foreach (var (field, keywords) in FieldKeywords)
+                {
+                    if (usedFields.Contains(field)) continue;
+
+                    if (keywords.Any(k => header.Equals(k, StringComparison.OrdinalIgnoreCase) ||
+                                           header.Contains(k, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        suggested = field;
+                        usedFields.Add(field);
+                        break;
+                    }
                 }
             }
 
@@ -754,6 +971,10 @@ public partial class ImportService : IImportService
         return suggestions;
     }
 
+    private static bool IsGeneratedColumnHeader(string header)
+        => header.StartsWith("Column ", StringComparison.OrdinalIgnoreCase) &&
+           int.TryParse(header["Column ".Length..], out _);
+
     private static string NormalizeStatus(string? rawStatus, HashSet<string> unmappedStatuses)
     {
         if (string.IsNullOrWhiteSpace(rawStatus))
@@ -761,9 +982,8 @@ public partial class ImportService : IImportService
 
         var trimmed = rawStatus.Trim();
 
-        // Direct match
-        if (ValidStatuses.Contains(trimmed, StringComparer.OrdinalIgnoreCase))
-            return ValidStatuses.First(s => s.Equals(trimmed, StringComparison.OrdinalIgnoreCase));
+        if (TaskStatusRules.IsValidStatus(trimmed))
+            return TaskStatusRules.NormalizeStatus(trimmed);
 
         // Alias match
         if (StatusAliases.TryGetValue(trimmed, out var mapped))
@@ -781,8 +1001,8 @@ public partial class ImportService : IImportService
 
         var trimmed = rawPriority.Trim();
 
-        if (ValidPriorities.Contains(trimmed, StringComparer.OrdinalIgnoreCase))
-            return ValidPriorities.First(p => p.Equals(trimmed, StringComparison.OrdinalIgnoreCase));
+        if (TaskStatusRules.IsValidPriority(trimmed))
+            return TaskStatusRules.NormalizePriority(trimmed);
 
         if (PriorityAliases.TryGetValue(trimmed, out var mapped))
             return mapped;

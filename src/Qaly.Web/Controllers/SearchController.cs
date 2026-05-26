@@ -10,7 +10,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/search")]
-public class SearchController : ControllerBase
+public class SearchController : BaseApiController
 {
     private readonly QalyDbContext _context;
 

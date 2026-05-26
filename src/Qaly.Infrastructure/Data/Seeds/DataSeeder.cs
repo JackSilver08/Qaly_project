@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Qaly.Domain.Entities;
 
@@ -8,11 +9,13 @@ namespace Qaly.Infrastructure.Data.Seeds;
 public partial class DataSeeder
 {
     private readonly QalyDbContext _context;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<DataSeeder> _logger;
 
-    public DataSeeder(QalyDbContext context, ILogger<DataSeeder> logger)
+    public DataSeeder(QalyDbContext context, IConfiguration configuration, ILogger<DataSeeder> logger)
     {
         _context = context;
+        _configuration = configuration;
         _logger = logger;
     }
 
@@ -524,23 +527,40 @@ public partial class DataSeeder
 
     private async Task SeedUsersAsync()
     {
+        var adminPassword = GetRequiredSeedSecret("Seed:AdminPassword", "QALY_SEED_ADMIN_PASSWORD");
+        var userPassword = GetRequiredSeedSecret("Seed:DefaultUserPassword", "QALY_SEED_DEFAULT_USER_PASSWORD");
+
         var users = new List<User>
         {
-            new() { FullName = "Quản trị viên hệ thống", Email = "admin@qaly.dev", PasswordHash = HashPassword("Admin@123"), Role = "Admin", IsActive = true },
-            new() { FullName = "Nguyễn Văn An", Email = "nguyenvana@qaly.dev", PasswordHash = HashPassword("User@123"), Role = "Member", IsActive = true },
-            new() { FullName = "Trần Thị Bình", Email = "tranthib@qaly.dev", PasswordHash = HashPassword("User@123"), Role = "Member", IsActive = true },
-            new() { FullName = "Lê Văn Cường", Email = "levancuong@qaly.dev", PasswordHash = HashPassword("User@123"), Role = "Member", IsActive = true },
-            new() { FullName = "Phạm Minh Đức", Email = "phamminhduc@qaly.dev", PasswordHash = HashPassword("User@123"), Role = "Member", IsActive = true },
-            new() { FullName = "Hoàng Thu Hà", Email = "hoangthuha@qaly.dev", PasswordHash = HashPassword("User@123"), Role = "Member", IsActive = true },
-            new() { FullName = "Đặng Hồng Liên", Email = "danghonglien@qaly.dev", PasswordHash = HashPassword("User@123"), Role = "Member", IsActive = true },
-            new() { FullName = "Vũ Quang Huy", Email = "vuquanghuy@qaly.dev", PasswordHash = HashPassword("User@123"), Role = "Member", IsActive = true },
-            new() { FullName = "Bùi Tuyết Mai", Email = "buituyetmai@qaly.dev", PasswordHash = HashPassword("User@123"), Role = "Member", IsActive = true },
-            new() { FullName = "Ngô Gia Bảo", Email = "ngogiabao@qaly.dev", PasswordHash = HashPassword("User@123"), Role = "Member", IsActive = true }
+            new() { FullName = "Quản trị viên hệ thống", Email = "admin@qaly.dev", PasswordHash = HashPassword(adminPassword), Role = "Admin", IsActive = true },
+            new() { FullName = "Nguyễn Văn An", Email = "nguyenvana@qaly.dev", PasswordHash = HashPassword(userPassword), Role = "Member", IsActive = true },
+            new() { FullName = "Trần Thị Bình", Email = "tranthib@qaly.dev", PasswordHash = HashPassword(userPassword), Role = "Member", IsActive = true },
+            new() { FullName = "Lê Văn Cường", Email = "levancuong@qaly.dev", PasswordHash = HashPassword(userPassword), Role = "Member", IsActive = true },
+            new() { FullName = "Phạm Minh Đức", Email = "phamminhduc@qaly.dev", PasswordHash = HashPassword(userPassword), Role = "Member", IsActive = true },
+            new() { FullName = "Hoàng Thu Hà", Email = "hoangthuha@qaly.dev", PasswordHash = HashPassword(userPassword), Role = "Member", IsActive = true },
+            new() { FullName = "Đặng Hồng Liên", Email = "danghonglien@qaly.dev", PasswordHash = HashPassword(userPassword), Role = "Member", IsActive = true },
+            new() { FullName = "Vũ Quang Huy", Email = "vuquanghuy@qaly.dev", PasswordHash = HashPassword(userPassword), Role = "Member", IsActive = true },
+            new() { FullName = "Bùi Tuyết Mai", Email = "buituyetmai@qaly.dev", PasswordHash = HashPassword(userPassword), Role = "Member", IsActive = true },
+            new() { FullName = "Ngô Gia Bảo", Email = "ngogiabao@qaly.dev", PasswordHash = HashPassword(userPassword), Role = "Member", IsActive = true }
         };
 
         await _context.Users.AddRangeAsync(users);
         await _context.SaveChangesAsync();
         LogSeededUsers(_logger, users.Count);
+    }
+
+    private string GetRequiredSeedSecret(string configKey, string environmentVariable)
+    {
+        var value = _configuration[configKey];
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            value = Environment.GetEnvironmentVariable(environmentVariable);
+        }
+
+        return !string.IsNullOrWhiteSpace(value)
+            ? value
+            : throw new InvalidOperationException(
+                $"Missing seed secret '{configKey}'. Set it in user-secrets, a local .env file, or the {environmentVariable} environment variable.");
     }
 
     private async Task SeedProjectsAsync()

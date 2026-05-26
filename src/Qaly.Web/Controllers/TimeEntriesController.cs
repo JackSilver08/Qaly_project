@@ -8,7 +8,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize]
 [Route("api")]
-public class TimeEntriesController : ControllerBase
+public class TimeEntriesController : BaseApiController
 {
     private readonly ITimeTrackingService _timeTrackingService;
 

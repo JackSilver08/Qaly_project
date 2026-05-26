@@ -8,7 +8,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/push")]
-public class PushNotificationsController : ControllerBase
+public class PushNotificationsController : BaseApiController
 {
     private readonly INotificationService _notificationService;
 

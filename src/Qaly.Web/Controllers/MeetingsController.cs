@@ -8,7 +8,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/meetings")]
-public class MeetingsController : ControllerBase
+public class MeetingsController : BaseApiController
 {
     private readonly IMeetingImportService _meetingImportService;
 

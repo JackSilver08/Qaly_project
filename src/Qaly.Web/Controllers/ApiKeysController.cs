@@ -8,7 +8,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/auth/api-keys")]
-public class ApiKeysController : ControllerBase
+public class ApiKeysController : BaseApiController
 {
     private readonly IApiKeyService _apiKeyService;
 

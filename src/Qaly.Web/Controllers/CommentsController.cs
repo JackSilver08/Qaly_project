@@ -8,7 +8,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/comments")]
-public class CommentsController : ControllerBase
+public class CommentsController : BaseApiController
 {
     private readonly ICommentService _commentService;
 

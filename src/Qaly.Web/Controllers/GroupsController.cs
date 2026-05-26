@@ -8,7 +8,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/groups")]
-public class GroupsController : ControllerBase
+public class GroupsController : BaseApiController
 {
     private readonly IGroupsService _groupsService;
 

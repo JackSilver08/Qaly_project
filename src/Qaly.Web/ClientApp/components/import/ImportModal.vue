@@ -45,13 +45,15 @@ const stepLabels = ['Tải file', 'Ghép cột', 'Xác nhận', 'Kết quả']
 
 // ─── Step 1 → Step 2: Parse file ─────────────────────
 
-async function parseFile() {
+async function parseFile(sheetName?: string | null) {
   if (!file.value) return
   isLoading.value = true
 
   try {
     const formData = new FormData()
     formData.append('file', file.value)
+    if (sheetName) formData.append('sheetName', sheetName)
+    formData.append('firstRowIsHeader', String(firstRowIsHeader.value))
 
     const res = await fetch('/api/import/parse', {
       method: 'POST',
@@ -71,16 +73,30 @@ async function parseFile() {
       targetField: s.suggestedField || 'Skip',
     }))
     if (data.data.sheetNames?.length > 0) {
-      selectedSheet.value = data.data.sheetNames[0]
+      selectedSheet.value = sheetName || data.data.sheetNames[0]
     }
     if (isNewProject.value) {
-      newProjectName.value = file.value!.name.replace(/\.(csv|xlsx|tsv)$/i, '')
+      newProjectName.value = file.value!.name.replace(/\.(csv|xlsx|tsv|txt|psv|json)$/i, '')
     }
     step.value = 2
   } catch (e: any) {
     showError('Lỗi kết nối server')
   } finally {
     isLoading.value = false
+  }
+}
+
+async function onSheetSelected(sheetName: string | null) {
+  selectedSheet.value = sheetName
+  if (file.value?.name.toLowerCase().endsWith('.xlsx')) {
+    await parseFile(sheetName)
+  }
+}
+
+async function onFirstRowIsHeaderChanged(value: boolean) {
+  firstRowIsHeader.value = value
+  if (file.value && parseResult.value) {
+    await parseFile(selectedSheet.value)
   }
 }
 
@@ -223,9 +239,9 @@ function finish() {
           :default-priority="defaultPriority"
           :enable-ai-categorization="enableAiCategorization"
           @update:mappings="mappings = $event"
-          @update:first-row-is-header="firstRowIsHeader = $event"
+          @update:first-row-is-header="onFirstRowIsHeaderChanged"
           @update:skip-duplicates="skipDuplicates = $event"
-          @update:selected-sheet="selectedSheet = $event"
+          @update:selected-sheet="onSheetSelected"
           @update:default-assignee-id="defaultAssigneeId = $event"
           @update:assign-to-me-if-empty="assignToMeIfEmpty = $event"
           @update:default-priority="defaultPriority = $event"

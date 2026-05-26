@@ -12,7 +12,7 @@ public interface IImportService
     /// <summary>
     /// Bước 1: Parse file và trả về preview + gợi ý mapping.
     /// </summary>
-    Task<Result<ParsedFileResult>> ParseFileAsync(Stream fileStream, string fileName, CancellationToken ct = default);
+    Task<Result<ParsedFileResult>> ParseFileAsync(Stream fileStream, string fileName, string? sheetName = null, bool firstRowIsHeader = true, CancellationToken ct = default);
 
     /// <summary>
     /// Bước 2: Thực hiện import với mapping đã confirm.

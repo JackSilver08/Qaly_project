@@ -8,7 +8,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize]
 [Route("api")]
-public class SprintsController : ControllerBase
+public class SprintsController : BaseApiController
 {
     private readonly ITaskService _taskService;
 

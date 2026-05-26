@@ -12,7 +12,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/dashboard")]
-public partial class DashboardController : ControllerBase
+public partial class DashboardController : BaseApiController
 {
     private readonly QalyDbContext _context;
     private readonly ILogger<DashboardController> _logger;

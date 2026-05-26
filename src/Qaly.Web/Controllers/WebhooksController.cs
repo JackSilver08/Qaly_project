@@ -8,7 +8,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/projects/{projectId:guid}/webhooks")]
-public class WebhooksController : ControllerBase
+public class WebhooksController : BaseApiController
 {
     private readonly IWebhookService _webhookService;
 

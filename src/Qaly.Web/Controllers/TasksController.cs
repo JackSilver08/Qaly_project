@@ -9,7 +9,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/[controller]")]
-public class TasksController : ControllerBase
+public class TasksController : BaseApiController
 {
     private readonly ITaskService _taskService;
     private readonly IMeetingImportService _meetingImportService;

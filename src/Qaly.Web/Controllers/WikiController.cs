@@ -8,7 +8,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/projects/{projectId:guid}/wiki")]
-public class WikiController : ControllerBase
+public class WikiController : BaseApiController
 {
     private readonly IWikiService _wikiService;
 

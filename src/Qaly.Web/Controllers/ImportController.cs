@@ -9,7 +9,7 @@ namespace Qaly.Web.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/[controller]")]
-public class ImportController : ControllerBase
+public class ImportController : BaseApiController
 {
     private readonly IImportService _importService;
     private const long MaxFileSize = 5 * 1024 * 1024; // 5 MB
@@ -28,7 +28,7 @@ public class ImportController : ControllerBase
     /// </summary>
     [HttpPost("parse")]
     [RequestSizeLimit(MaxFileSize)]
-    public async Task<IActionResult> Parse(IFormFile file, CancellationToken ct)
+    public async Task<IActionResult> Parse([FromForm] IFormFile file, [FromForm] string? sheetName, [FromForm] bool firstRowIsHeader = true, CancellationToken ct = default)
     {
         if (file == null || file.Length == 0)
             return BadRequest(new { error = "Vui lòng chọn file." });
@@ -37,7 +37,7 @@ public class ImportController : ControllerBase
             return BadRequest(new { error = "File vượt quá giới hạn 5MB." });
 
         using var stream = file.OpenReadStream();
-        var result = await _importService.ParseFileAsync(stream, file.FileName, ct);
+        var result = await _importService.ParseFileAsync(stream, file.FileName, sheetName, firstRowIsHeader, ct);
         return StatusCode(result.StatusCode, result);
     }
 
