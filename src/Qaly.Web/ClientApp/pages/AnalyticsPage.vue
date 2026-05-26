@@ -1,16 +1,13 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { 
-  Sparkles, 
+  ChevronDown,
+  Folder,
   Send, 
-  RefreshCw,
   Square,
-  Mic,
-  Paperclip,
-  Globe
+  Paperclip
 } from 'lucide-vue-next'
 import { useDashboardContext } from '../composables/dashboard-context'
-import { showSuccess, showError } from '../composables/use-toast'
 import { apiJson } from '../utils/api-client'
 import ChatbotAvatar from '../components/ChatbotAvatar.vue'
 import MarkdownIt from 'markdown-it'
@@ -30,7 +27,7 @@ import {
 
 ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Legend)
 
-const { projects, selectedProject, currentUser } = useDashboardContext()
+const { projects, selectedProject, currentUser, loadDashboard } = useDashboardContext()
 
 const markdown = new (MarkdownIt as any)({
   html: false,
@@ -58,6 +55,20 @@ type ErumiChart = {
   unit?: string | null
 }
 
+type ErumiTableColumn = {
+  key: string
+  label: string
+  type?: string
+  align?: 'left' | 'right' | 'center' | string
+}
+
+type ErumiTable = {
+  title: string
+  columns: ErumiTableColumn[]
+  rows: Record<string, unknown>[]
+  description?: string | null
+}
+
 type ErumiAction = {
   type: string
   label: string
@@ -65,12 +76,22 @@ type ErumiAction = {
   requiresConfirmation?: boolean
 }
 
+type ErumiFile = {
+  label: string
+  format: string
+  url: string
+  description?: string | null
+}
+
 type ErumiChatResponse = {
   reply: string
   metrics: ErumiMetric[]
+  tables: ErumiTable[]
   charts: ErumiChart[]
   actions: ErumiAction[]
+  files: ErumiFile[]
   sources: string[]
+  confidence: number
   usedAi: boolean
   intent: string
   latencyMs: number
@@ -79,21 +100,55 @@ type ErumiChatResponse = {
 type ChatEntry = {
   role: 'user' | 'assistant'
   text: string
+  attachments?: { name: string; size: number }[]
   metrics?: ErumiMetric[]
+  tables?: ErumiTable[]
   charts?: ErumiChart[]
   actions?: ErumiAction[]
+  files?: ErumiFile[]
   sources?: string[]
+  confidence?: number
   latencyMs?: number
+}
+
+type ErumiUploadedFile = {
+  fileName: string
+  contentType?: string | null
+  size: number
+  headers?: string[] | null
+  previewRows?: string[][] | null
+  totalRowCount?: number | null
+  error?: string | null
 }
 
 const activeProjects = computed(() => projects.value.filter((p: any) => p.status !== 'Archived'))
 const selectedTarget = ref('workspace') // 'workspace' or projectId
+const selectedTargetLabel = computed(() => {
+  if (selectedTarget.value === 'workspace') return 'Tất cả dự án'
+  const project = projects.value.find((p: any) => p.id === selectedTarget.value)
+  return project?.name || 'Dự án'
+})
 
-const syncingDb = ref(false)
 const chatInput = ref('')
 const isChatting = ref(false)
+const selectedFiles = ref<File[]>([])
+const backgroundRefreshing = ref(false)
+const lastRefreshedAt = ref<Date | null>(null)
 const chatContainerRef = ref<HTMLElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const fileInputRef = ref<HTMLInputElement | null>(null)
+let refreshTimer: number | undefined
+
+const isDropdownOpen1 = ref(false)
+const isDropdownOpen2 = ref(false)
+const dropdownRef1 = ref<HTMLElement | null>(null)
+const dropdownRef2 = ref<HTMLElement | null>(null)
+
+function selectTarget(id: string, instance: number) {
+  selectedTarget.value = id
+  if (instance === 1) isDropdownOpen1.value = false
+  if (instance === 2) isDropdownOpen2.value = false
+}
 
 // Initial chat history with welcome message
 const chatHistory = ref<ChatEntry[]>([
@@ -104,25 +159,31 @@ const chatHistory = ref<ChatEntry[]>([
 ])
 
 const isChatActive = computed(() => chatHistory.value.length > 1 || isChatting.value)
+const canSubmit = computed(() => (!!chatInput.value.trim() || selectedFiles.value.length > 0) && !isChatting.value)
+const autoSyncLabel = computed(() => {
+  if (backgroundRefreshing.value) return 'Đang cập nhật nền...'
+  if (!lastRefreshedAt.value) return 'Tự cập nhật dữ liệu'
+  return `Đã cập nhật ${lastRefreshedAt.value.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
+})
 
 // Dynamic suggestions based on selected workspace / project
 const currentSuggestions = computed(() => {
   if (selectedTarget.value === 'workspace') {
     return [
-      { label: '📊 Đánh giá hiệu suất tuần qua', prompt: 'Hãy đánh giá hiệu suất làm việc của toàn bộ các dự án trong tuần qua.' },
-      { label: '⚠️ Dự án nào đang gặp rủi ro?', prompt: 'Hiện tại có dự án nào đang gặp rủi ro hoặc chậm tiến độ không?' },
-      { label: '👥 Phân tích năng suất nhóm', prompt: 'Phân tích năng suất làm việc của các thành viên trong Workspace.' }
-    ]
-  } else {
-    const proj = projects.value.find((p: any) => p.id === selectedTarget.value)
-    const name = proj?.name || 'dự án'
-    return [
-      { label: '📋 Tóm tắt dự án', action: 'summary', prompt: `Tóm tắt nhanh tình hình hiện tại của dự án ${name}.` },
-      { label: '⚠️ Phân tích rủi ro', action: 'risks', prompt: `Phân tích các rủi ro quá hạn và trễ việc của dự án ${name}.` },
-      { label: '💡 Insight & năng suất', action: 'insights', prompt: `Đưa ra nhận xét số liệu năng suất và các insight quan trọng của dự án ${name}.` },
-      { label: '📊 Phân tích dự án', action: 'analysis', prompt: `Phân tích dự án ${name}.` }
+      { label: 'Đánh giá hiệu suất tuần qua', prompt: 'Hãy đánh giá hiệu suất làm việc của toàn bộ các dự án trong tuần qua.' },
+      { label: 'Dự án nào đang rủi ro?', prompt: 'Hiện tại có dự án nào đang gặp rủi ro hoặc chậm tiến độ không?' },
+      { label: 'So sánh các dự án', prompt: 'So sánh các dự án đang hoạt động dưới dạng bảng.' }
     ]
   }
+
+  const proj = projects.value.find((p: any) => p.id === selectedTarget.value)
+  const name = proj?.name || 'dự án'
+  return [
+    { label: 'Tóm tắt dự án', action: 'summary', prompt: `Tóm tắt nhanh tình hình hiện tại của dự án ${name}.` },
+    { label: 'Phân tích rủi ro', action: 'risks', prompt: `Phân tích các rủi ro quá hạn và trễ việc của dự án ${name}.` },
+    { label: 'Bảng workload', action: 'workload', prompt: `Liệt kê workload thành viên của dự án ${name} dưới dạng bảng.` },
+    { label: 'Task quá hạn', action: 'overdue', prompt: `Liệt kê các task quá hạn của dự án ${name} dưới dạng bảng.` }
+  ]
 })
 
 function chartComponent(type: string) {
@@ -196,6 +257,97 @@ function chartOptions(chart: ErumiChart) {
   }
 }
 
+function tableCell(row: Record<string, unknown>, key: string) {
+  const value = row[key]
+  if (value === null || value === undefined || value === '') return '-'
+  return String(value)
+}
+
+function confidenceLabel(value?: number) {
+  if (value === undefined || value === null) return ''
+  return `${Math.round(value * 100)}% tin cậy`
+}
+
+function formatUploadSize(size: number) {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${Math.round(size / 102.4) / 10} KB`
+  return `${Math.round(size / 1024 / 102.4) / 10} MB`
+}
+
+function openFilePicker() {
+  fileInputRef.value?.click()
+}
+
+function handleFileSelection(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  if (files.length) {
+    selectedFiles.value = [...selectedFiles.value, ...files].slice(0, 4)
+  }
+  input.value = ''
+}
+
+function removeSelectedFile(index: number) {
+  selectedFiles.value = selectedFiles.value.filter((_, i) => i !== index)
+}
+
+async function parseAttachedFiles(files: File[]): Promise<ErumiUploadedFile[]> {
+  const parsed: ErumiUploadedFile[] = []
+
+  for (const file of files) {
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('firstRowIsHeader', 'true')
+
+      const res = await fetch('/api/import/parse', {
+        method: 'POST',
+        body: formData
+      })
+      const data = await res.json()
+
+      if (!res.ok || !data.isSuccess) {
+        parsed.push({
+          fileName: file.name,
+          contentType: file.type,
+          size: file.size,
+          error: data?.error || 'Không thể đọc file bằng bộ parse hiện tại.'
+        })
+        continue
+      }
+
+      parsed.push({
+        fileName: file.name,
+        contentType: file.type,
+        size: file.size,
+        headers: data.data.headers ?? [],
+        previewRows: data.data.previewRows ?? [],
+        totalRowCount: data.data.totalRowCount ?? null
+      })
+    } catch {
+      parsed.push({
+        fileName: file.name,
+        contentType: file.type,
+        size: file.size,
+        error: 'Không thể tải file lên để phân tích.'
+      })
+    }
+  }
+
+  return parsed
+}
+
+async function refreshAnalyticsContext() {
+  if (backgroundRefreshing.value) return
+  backgroundRefreshing.value = true
+  try {
+    await loadDashboard?.()
+    lastRefreshedAt.value = new Date()
+  } finally {
+    backgroundRefreshing.value = false
+  }
+}
+
 // Auto-resize textarea
 function autoResize() {
   if (!textareaRef.value) return
@@ -237,24 +389,6 @@ watch(selectedTarget, (val) => {
   }
   scrollToBottom()
 })
-
-// Database Sync
-async function syncVectorDb() {
-  if (syncingDb.value) return
-  syncingDb.value = true
-  try {
-    const res = await fetch('/api/ai/sync', { method: 'POST' })
-    if (res.ok) {
-      showSuccess('Đồng bộ Vector DB thành công! AI đã được cập nhật dữ liệu mới nhất.')
-    } else {
-      throw new Error()
-    }
-  } catch {
-    showError('Không thể đồng bộ Vector DB')
-  } finally {
-    syncingDb.value = false
-  }
-}
 
 // Fallback Generators
 function getFallbackProjectStats() {
@@ -357,10 +491,17 @@ function getFallbackChatAnswer(prompt: string) {
 // Submit Chat Function
 async function submitChat(explicitText?: string, _action?: string) {
   const prompt = (explicitText ?? chatInput.value).trim()
-  if (!prompt || isChatting.value) return
+  const filesToSend = selectedFiles.value.slice()
+  if ((!prompt && filesToSend.length === 0) || isChatting.value) return
 
-  chatHistory.value.push({ role: 'user', text: prompt })
+  const userText = prompt || 'Phân tích file đã đính kèm'
+  chatHistory.value.push({
+    role: 'user',
+    text: userText,
+    attachments: filesToSend.map(file => ({ name: file.name, size: file.size }))
+  })
   chatInput.value = ''
+  selectedFiles.value = []
   isChatting.value = true
   
   // Reset textarea height
@@ -373,6 +514,7 @@ async function submitChat(explicitText?: string, _action?: string) {
   try {
     chatHistory.value.push({ role: 'assistant', text: '' })
     const lastIdx = chatHistory.value.length - 1
+    const attachedFileContexts = filesToSend.length ? await parseAttachedFiles(filesToSend) : []
     const historyToSend = chatHistory.value
       .slice(1, -2)
       .slice(-6)
@@ -381,9 +523,10 @@ async function submitChat(explicitText?: string, _action?: string) {
     const fastReply = await apiJson<ErumiChatResponse>('/api/ai/chat/fast', {
       method: 'POST',
       body: JSON.stringify({
-        message: prompt,
+        message: userText,
         projectId: selectedTarget.value === 'workspace' ? null : selectedTarget.value,
-        history: historyToSend
+        history: historyToSend,
+        files: attachedFileContexts
       })
     })
 
@@ -391,14 +534,17 @@ async function submitChat(explicitText?: string, _action?: string) {
       role: 'assistant',
       text: fastReply.reply,
       metrics: fastReply.metrics,
+      tables: fastReply.tables,
       charts: fastReply.charts,
       actions: fastReply.actions,
+      files: fastReply.files,
       sources: fastReply.sources,
+      confidence: fastReply.confidence,
       latencyMs: fastReply.latencyMs
     }
   } catch (e) {
     const lastIdx = chatHistory.value.length - 1
-    const fallbackText = getFallbackChatAnswer(prompt)
+    const fallbackText = getFallbackChatAnswer(userText)
     isChatting.value = false
     chatHistory.value[lastIdx].text = fallbackText
   } finally {
@@ -407,43 +553,43 @@ async function submitChat(explicitText?: string, _action?: string) {
   }
 }
 
+function handleDocumentClick(e: MouseEvent) {
+  if (dropdownRef1.value && !dropdownRef1.value.contains(e.target as Node)) {
+    isDropdownOpen1.value = false
+  }
+  if (dropdownRef2.value && !dropdownRef2.value.contains(e.target as Node)) {
+    isDropdownOpen2.value = false
+  }
+}
+
 onMounted(() => {
   if (selectedProject.value) {
     selectedTarget.value = selectedProject.value.id
   }
+  refreshAnalyticsContext()
+  refreshTimer = window.setInterval(refreshAnalyticsContext, 30000)
+  window.addEventListener('focus', refreshAnalyticsContext)
+  window.addEventListener('click', handleDocumentClick)
   scrollToBottom()
+})
+
+onBeforeUnmount(() => {
+  if (refreshTimer) window.clearInterval(refreshTimer)
+  window.removeEventListener('focus', refreshAnalyticsContext)
+  window.removeEventListener('click', handleDocumentClick)
 })
 </script>
 
 <template>
   <div class="analytics-chat-portal">
-    
-    <!-- Top Control Bar (Sticky) -->
-    <header class="chat-top-bar">
-      <div class="top-bar-left">
-        <div class="erumi-brand-icon">
-          <Sparkles :size="16" />
-        </div>
-        <div>
-          <h2>Trợ lý Erumi AI</h2>
-          <span class="small-label">Trò chuyện phân tích hệ thống</span>
-        </div>
-      </div>
-
-      <div class="top-bar-actions">
-        <select v-model="selectedTarget" class="project-selector" aria-label="Chọn dự án phân tích">
-          <option value="workspace">🌐 Tất cả dự án (Workspace)</option>
-          <option v-for="p in activeProjects" :key="p.id" :value="p.id">
-            📁 {{ p.name }}
-          </option>
-        </select>
-
-        <button class="btn-sync" :disabled="syncingDb" @click="syncVectorDb">
-          <RefreshCw :size="13" :class="{ 'spin-anim': syncingDb }" />
-          <span>{{ syncingDb ? 'Đang đồng bộ...' : 'Đồng bộ AI' }}</span>
-        </button>
-      </div>
-    </header>
+    <input
+      ref="fileInputRef"
+      class="hidden-file-input"
+      type="file"
+      multiple
+      accept=".csv,.xlsx,.xls,.txt,.tsv,.json,.md,.docx,.pdf"
+      @change="handleFileSelection"
+    />
 
     <!-- Main Chat Workspace -->
     <div class="chat-main-area">
@@ -472,39 +618,67 @@ onMounted(() => {
 
         <!-- Centered Composer -->
         <div class="composer-wrap-center">
-          <div class="chat-composer-shell" :class="{ 'is-focused': false }">
-            <textarea 
-              ref="textareaRef"
-              v-model="chatInput" 
-              placeholder="Hỏi Erumi bất cứ điều gì về dự án và năng suất..."
-              :disabled="isChatting"
-              aria-label="Nhập câu hỏi"
-              rows="1"
-              @input="autoResize"
-              @keydown="handleKeydown"
-            />
-            <div class="composer-actions-row">
-              <div class="composer-left-actions">
-                <button class="composer-icon-btn" title="Đính kèm tệp" type="button">
-                  <Paperclip :size="16" />
-                </button>
-                <button class="composer-icon-btn" title="Tìm kiếm web" type="button">
-                  <Globe :size="16" />
-                </button>
+          <div class="erumi-composer">
+            <div class="erumi-project-row">
+              <div class="erumi-custom-dropdown" ref="dropdownRef1" @click="isDropdownOpen1 = !isDropdownOpen1">
+                <div class="erumi-project-trigger" :class="{ 'is-open': isDropdownOpen1 }">
+                  <Folder :size="20" class="folder-icon" />
+                  <span class="erumi-project-name">{{ selectedTargetLabel }}</span>
+                  <ChevronDown :size="16" class="erumi-project-chevron" :class="{ 'rotate-180': isDropdownOpen1 }" />
+                </div>
+                <Transition name="dropdown-fade">
+                  <div class="erumi-dropdown-menu" v-if="isDropdownOpen1">
+                    <div class="erumi-dropdown-item" @click.stop="selectTarget('workspace', 1)" :class="{ active: selectedTarget === 'workspace' }">Tất cả dự án</div>
+                    <div v-for="p in activeProjects" :key="p.id" class="erumi-dropdown-item" @click.stop="selectTarget(p.id, 1)" :class="{ active: selectedTarget === p.id }">
+                      {{ p.name }}
+                    </div>
+                  </div>
+                </Transition>
               </div>
-              <button 
-                class="btn-send-chat" 
+              <span class="erumi-last-updated">{{ autoSyncLabel }}</span>
+            </div>
+
+            <div v-if="selectedFiles.length" class="attached-file-list">
+              <button
+                v-for="(file, index) in selectedFiles"
+                :key="`${file.name}-${index}`"
                 type="button"
-                :disabled="!chatInput.trim() || isChatting"
-                :class="{ 'is-ready': chatInput.trim() && !isChatting }"
+                class="attached-file-chip"
+                @click="removeSelectedFile(index)"
+              >
+                <span>{{ file.name }}</span>
+                <small>{{ formatUploadSize(file.size) }} · bỏ chọn</small>
+              </button>
+            </div>
+
+            <div class="erumi-input-shell">
+              <button class="erumi-attach-btn" title="Đính kèm tệp" type="button" @click="openFilePicker">
+                <Paperclip :size="25" />
+              </button>
+              <textarea
+                ref="textareaRef"
+                v-model="chatInput"
+                class="erumi-message-input"
+                placeholder="Nhập câu hỏi..."
+                :disabled="isChatting"
+                aria-label="Nhập câu hỏi"
+                rows="1"
+                @input="autoResize"
+                @keydown="handleKeydown"
+              />
+              <button 
+                class="erumi-send-btn"
+                type="button"
+                :disabled="!canSubmit"
+                :class="{ 'is-ready': canSubmit }"
                 @click="submitChat()"
               >
-                <Send :size="15" v-if="!isChatting" />
-                <Square :size="13" v-else style="fill: white;" />
+                <Send :size="24" v-if="!isChatting" />
+                <Square :size="14" v-else />
               </button>
             </div>
           </div>
-          <p class="composer-hint">Nhấn <kbd>Enter</kbd> để gửi · <kbd>Shift+Enter</kbd> để xuống dòng</p>
+          <p class="composer-hint">Enter để gửi · Shift+Enter để xuống dòng</p>
         </div>
       </div>
 
@@ -525,11 +699,55 @@ onMounted(() => {
               <div v-if="msg.role === 'assistant'" class="msg-bubble-assistant" v-html="renderMarkdown(msg.text)"></div>
               <div v-else class="msg-bubble-user">{{ msg.text }}</div>
 
+              <div v-if="msg.role === 'user' && msg.attachments?.length" class="msg-attachment-list">
+                <span v-for="file in msg.attachments" :key="file.name" class="msg-attachment-chip">
+                  {{ file.name }} · {{ formatUploadSize(file.size) }}
+                </span>
+              </div>
+
               <div v-if="msg.role === 'assistant' && msg.metrics?.length" class="erumi-metrics-grid">
                 <article v-for="metric in msg.metrics" :key="metric.label" class="erumi-metric" :class="`tone-${metric.tone || 'neutral'}`">
                   <span>{{ metric.label }}</span>
                   <strong>{{ metric.value }}</strong>
                   <small v-if="metric.hint">{{ metric.hint }}</small>
+                </article>
+              </div>
+
+              <div v-if="msg.role === 'assistant' && msg.tables?.length" class="erumi-table-stack">
+                <article v-for="table in msg.tables" :key="table.title" class="erumi-table-card">
+                  <header>
+                    <strong>{{ table.title }}</strong>
+                    <span v-if="table.description">{{ table.description }}</span>
+                  </header>
+                  <div class="erumi-table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th
+                            v-for="column in table.columns"
+                            :key="column.key"
+                            :class="`align-${column.align || 'left'}`"
+                          >
+                            {{ column.label }}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-if="!table.rows.length">
+                          <td :colspan="table.columns.length" class="empty-cell">Không có dữ liệu phù hợp</td>
+                        </tr>
+                        <tr v-for="(row, rowIndex) in table.rows" :key="rowIndex">
+                          <td
+                            v-for="column in table.columns"
+                            :key="column.key"
+                            :class="`align-${column.align || 'left'}`"
+                          >
+                            {{ tableCell(row, column.key) }}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </article>
               </div>
 
@@ -546,13 +764,27 @@ onMounted(() => {
               </div>
 
               <div v-if="msg.role === 'assistant' && msg.actions?.length" class="erumi-action-list">
-                <button v-for="action in msg.actions" :key="action.type" type="button" class="erumi-action-button">
+                <button
+                  v-for="action in msg.actions"
+                  :key="action.type"
+                  type="button"
+                  class="erumi-action-button"
+                  @click="submitChat(action.label)"
+                >
                   {{ action.label }}
                 </button>
               </div>
 
+              <div v-if="msg.role === 'assistant' && msg.files?.length" class="erumi-file-list">
+                <a v-for="file in msg.files" :key="file.url" class="erumi-file-chip" :href="file.url">
+                  <span>{{ file.label }}</span>
+                  <small>{{ file.format.toUpperCase() }}</small>
+                </a>
+              </div>
+
               <div v-if="msg.role === 'assistant' && (msg.sources?.length || msg.latencyMs !== undefined)" class="erumi-response-meta">
                 <span v-if="msg.latencyMs !== undefined">Phản hồi {{ msg.latencyMs }}ms</span>
+                <span v-if="msg.confidence !== undefined">{{ confidenceLabel(msg.confidence) }}</span>
                 <span v-if="msg.sources?.length">Nguồn: {{ msg.sources.join(', ') }}</span>
               </div>
             </div>
@@ -591,35 +823,63 @@ onMounted(() => {
         </div>
 
         <!-- Premium Composer -->
-        <div class="chat-composer-shell">
-          <textarea 
-            ref="textareaRef"
-            v-model="chatInput" 
-            placeholder="Hỏi Erumi thêm điều gì đó..."
-            :disabled="isChatting"
-            aria-label="Nhập câu hỏi tiếp theo"
-            rows="1"
-            @input="autoResize"
-            @keydown="handleKeydown"
-          />
-          <div class="composer-actions-row">
-            <div class="composer-left-actions">
-              <button class="composer-icon-btn" title="Đính kèm tệp" type="button">
-                <Paperclip :size="15" />
-              </button>
-              <button class="composer-icon-btn" title="Tìm kiếm web" type="button">
-                <Globe :size="15" />
-              </button>
+        <div class="erumi-composer">
+          <div class="erumi-project-row">
+            <div class="erumi-custom-dropdown" ref="dropdownRef2" @click="isDropdownOpen2 = !isDropdownOpen2">
+              <div class="erumi-project-trigger" :class="{ 'is-open': isDropdownOpen2 }">
+                <Folder :size="20" class="folder-icon" />
+                <span class="erumi-project-name">{{ selectedTargetLabel }}</span>
+                <ChevronDown :size="16" class="erumi-project-chevron" :class="{ 'rotate-180': isDropdownOpen2 }" />
+              </div>
+              <Transition name="dropdown-fade">
+                <div class="erumi-dropdown-menu" v-if="isDropdownOpen2">
+                  <div class="erumi-dropdown-item" @click.stop="selectTarget('workspace', 2)" :class="{ active: selectedTarget === 'workspace' }">Tất cả dự án</div>
+                  <div v-for="p in activeProjects" :key="p.id" class="erumi-dropdown-item" @click.stop="selectTarget(p.id, 2)" :class="{ active: selectedTarget === p.id }">
+                    {{ p.name }}
+                  </div>
+                </div>
+              </Transition>
             </div>
-            <button 
-              class="btn-send-chat" 
+            <span class="erumi-last-updated">{{ autoSyncLabel }}</span>
+          </div>
+
+          <div v-if="selectedFiles.length" class="attached-file-list">
+            <button
+              v-for="(file, index) in selectedFiles"
+              :key="`${file.name}-${index}`"
               type="button"
-              :disabled="!chatInput.trim() || isChatting"
-              :class="{ 'is-ready': chatInput.trim() && !isChatting }"
+              class="attached-file-chip"
+              @click="removeSelectedFile(index)"
+            >
+              <span>{{ file.name }}</span>
+              <small>{{ formatUploadSize(file.size) }} · bỏ chọn</small>
+            </button>
+          </div>
+
+          <div class="erumi-input-shell">
+            <button class="erumi-attach-btn" title="Đính kèm tệp" type="button" @click="openFilePicker">
+              <Paperclip :size="25" />
+            </button>
+            <textarea
+              ref="textareaRef"
+              v-model="chatInput"
+              class="erumi-message-input"
+              placeholder="Nhập liệu..."
+              :disabled="isChatting"
+              aria-label="Nhập câu hỏi tiếp theo"
+              rows="1"
+              @input="autoResize"
+              @keydown="handleKeydown"
+            />
+            <button 
+              class="erumi-send-btn"
+              type="button"
+              :disabled="!canSubmit"
+              :class="{ 'is-ready': canSubmit }"
               @click="submitChat()"
             >
-              <Send :size="14" v-if="!isChatting" />
-              <Square :size="12" v-else style="fill: white;" />
+              <Send :size="24" v-if="!isChatting" />
+              <Square :size="14" v-else />
             </button>
           </div>
         </div>
@@ -640,121 +900,14 @@ onMounted(() => {
   flex-direction: column;
   height: calc(100vh - 60px);
   width: 100%;
-  background: #f7f8fc;
+  background: #f7f9fc;
   position: relative;
   overflow: hidden;
   font-family: 'Inter', sans-serif;
 }
 
-/* ================================================
-   TOP BAR
-   ================================================ */
-.chat-top-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 28px;
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(15, 82, 186, 0.08);
-  z-index: 10;
-  flex-shrink: 0;
-  box-shadow: 0 1px 0 rgba(15, 82, 186, 0.06);
-}
-
-.top-bar-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.erumi-brand-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #0f52ba 0%, #1e70e9 100%);
-  display: grid;
-  place-items: center;
-  color: white;
-  flex-shrink: 0;
-  box-shadow: 0 3px 10px rgba(15, 82, 186, 0.2);
-}
-
-.top-bar-left h2 {
-  font-size: 15px;
-  font-weight: 800;
-  color: #0f172a;
-  margin: 0;
-  letter-spacing: -0.3px;
-}
-
-.small-label {
-  font-size: 11px;
-  color: #94a3b8;
-  font-weight: 500;
-  display: block;
-  margin-top: 1px;
-}
-
-.top-bar-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.project-selector {
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid rgba(15, 82, 186, 0.15);
-  border-radius: 10px;
-  outline: none;
-  font-weight: 600;
-  color: #1e293b;
-  background: #ffffff;
-  cursor: pointer;
-  font-size: 13px;
-  transition: all 0.2s ease;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
-}
-
-.project-selector:focus {
-  border-color: #0f52ba;
-  box-shadow: 0 0 0 3px rgba(15, 82, 186, 0.1);
-}
-
-.btn-sync {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 14px;
-  border: 1px solid rgba(15, 82, 186, 0.2);
-  border-radius: 10px;
-  font-weight: 700;
-  color: #0f52ba;
-  background: rgba(15, 82, 186, 0.06);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-size: 12.5px;
-}
-
-.btn-sync:hover:not(:disabled) {
-  background: rgba(15, 82, 186, 0.12);
-  border-color: #0f52ba;
-}
-
-.btn-sync:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.spin-anim {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+.hidden-file-input {
+  display: none;
 }
 
 /* ================================================
@@ -774,13 +927,13 @@ onMounted(() => {
 .chat-empty-state {
   margin: auto;
   width: 100%;
-  max-width: 740px;
-  padding: 36px 24px 24px;
+  max-width: 680px;
+  padding: 28px 22px 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 20px;
+  gap: 18px;
 }
 
 .avatar-holder {
@@ -793,19 +946,16 @@ onMounted(() => {
 .avatar-holder :deep(.chatbot-avatar) {
   width: 72px !important;
   height: 72px !important;
-  border-radius: 20px;
-  background: radial-gradient(circle at 30% 30%, #ffffff 0%, rgba(235, 244, 255, 0.95) 45%, rgba(15, 82, 186, 0.35) 85%);
-  box-shadow: 
-    inset 2px 2px 4px rgba(255, 255, 255, 0.9), 
-    0 12px 28px rgba(15, 82, 186, 0.15);
+  border-radius: 50%;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
   display: inline-grid;
   place-items: center;
 }
 
 .avatar-holder :deep(.chatbot-avatar img) {
-  width: 82% !important;
-  height: 82% !important;
-  filter: drop-shadow(2px 3px 3px rgba(7, 89, 199, 0.2));
+  width: 70% !important;
+  height: 70% !important;
 }
 
 .welcome-text-block {
@@ -815,10 +965,10 @@ onMounted(() => {
 }
 
 .welcome-heading {
-  font-size: 28px;
+  font-size: 30px;
   font-weight: 800;
   color: #0f172a;
-  letter-spacing: -0.8px;
+  letter-spacing: -0.5px;
   line-height: 1.2;
   margin: 0;
 }
@@ -833,7 +983,7 @@ onMounted(() => {
 
 .composer-wrap-center {
   width: 100%;
-  max-width: 680px;
+  max-width: 640px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -869,131 +1019,311 @@ onMounted(() => {
 
 .suggestion-pill {
   padding: 10px 18px;
-  border: 1px solid rgba(15, 82, 186, 0.12);
+  border: none;
   border-radius: 24px;
   font-size: 13px;
-  font-weight: 600;
-  color: #1e40af;
-  background: #ffffff;
+  font-weight: 500;
+  color: #334155;
+  background: #f1f5f9;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(15, 82, 186, 0.04);
 }
 
 .suggestion-pill:hover {
-  background: rgba(15, 82, 186, 0.06);
-  border-color: #0f52ba;
-  color: #0f52ba;
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(15, 82, 186, 0.1);
+  background: #e2e8f0;
+  color: #0f172a;
 }
 
 /* ================================================
-   PREMIUM COMPOSER SHELL
+   ERUMI FLOATING COMPOSER
    ================================================ */
-.chat-composer-shell {
+.erumi-composer {
+  width: 100%;
+  max-width: 640px;
   display: flex;
   flex-direction: column;
-  background: #ffffff;
+  gap: 10px;
+  background: transparent;
+  color: #0f172a;
+}
+
+.erumi-project-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 4px;
+  margin-bottom: 4px;
+}
+
+.erumi-custom-dropdown {
+  position: relative;
+}
+
+.erumi-project-trigger {
+  position: relative;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #0f172a;
+  cursor: pointer;
+  padding: 8px 16px;
   border-radius: 20px;
-  border: 1.5px solid rgba(15, 82, 186, 0.15);
-  box-shadow: 
-    0 4px 16px rgba(15, 82, 186, 0.06),
-    0 1px 4px rgba(0, 0, 0, 0.04);
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  background: transparent;
+  transition: all 0.25s ease;
+  border: 1px solid transparent;
+}
+
+.erumi-project-trigger:hover,
+.erumi-project-trigger.is-open {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+}
+
+.folder-icon {
+  color: #1f80ff;
+  fill: rgba(31, 128, 255, 0.15);
+  stroke-width: 2;
+}
+
+.erumi-project-name {
+  max-width: 300px;
   overflow: hidden;
-  width: 100%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 700;
 }
 
-.chat-composer-shell:focus-within {
-  border-color: #0f52ba;
-  box-shadow: 
-    0 0 0 3px rgba(15, 82, 186, 0.12),
-    0 8px 24px rgba(15, 82, 186, 0.1);
+.erumi-project-chevron {
+  color: #64748b;
+  transition: transform 0.3s ease;
 }
 
-.chat-composer-shell textarea {
-  width: 100%;
+.rotate-180 {
+  transform: rotate(180deg);
+}
+
+.erumi-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: max-content;
+  min-width: 220px;
+  max-width: 340px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 14px;
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+  padding: 6px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.erumi-dropdown-item {
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: #334155;
+  transition: all 0.2s;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.erumi-dropdown-item:hover {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.erumi-dropdown-item.active {
+  background: rgba(31, 128, 255, 0.08);
+  color: #1f80ff;
+  font-weight: 600;
+}
+
+.dropdown-fade-enter-active,
+.dropdown-fade-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.dropdown-fade-enter-from,
+.dropdown-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.erumi-last-updated {
+  flex-shrink: 0;
+  color: #8a8f98;
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.attached-file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0;
+}
+
+.attached-file-chip,
+.msg-attachment-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  max-width: 100%;
+  border: 1px solid rgba(15, 82, 186, 0.14);
+  border-radius: 10px;
+  background: rgba(15, 82, 186, 0.04);
+  color: #0f172a;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.attached-file-chip {
+  cursor: pointer;
+}
+
+.attached-file-chip small,
+.msg-attachment-chip small {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+ .erumi-input-shell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 8px 14px;
+
   border: none;
   outline: none;
+  border-radius: 32px;
+
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 16px 40px rgba(15, 23, 42, 0.08),
+    0 4px 12px rgba(15, 23, 42, 0.04);
+
+  transition:
+    box-shadow 0.25s ease,
+    transform 0.25s ease,
+    background 0.25s ease;
+}
+
+.erumi-input-shell:focus-within {
+  border: none;
+  outline: none;
+
+  background: #ffffff;
+  box-shadow:
+    0 18px 46px rgba(15, 23, 42, 0.1),
+    0 0 0 3px rgba(31, 128, 255, 0.08);
+
+  transform: translateY(-1px);
+}
+
+.erumi-message-input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  max-height: 120px;
+  padding: 10px 0;
+
+  border: none;
+  outline: none;
+  box-shadow: none;
   resize: none;
-  font-size: 14.5px;
-  font-weight: 500;
-  color: #0f172a;
+
   background: transparent;
-  padding: 16px 20px 8px 20px;
-  line-height: 1.6;
-  min-height: 52px;
-  max-height: 160px;
+  color: #0f172a;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.5;
+
   overflow-y: auto;
-  font-family: 'Inter', sans-serif;
   scrollbar-width: thin;
 }
 
-.chat-composer-shell textarea::placeholder {
+.erumi-message-input:focus,
+.erumi-message-input:focus-visible,
+.erumi-message-input:active {
+  border: none;
+  outline: none;
+  box-shadow: none;
+}
+
+.erumi-message-input::placeholder {
   color: #94a3b8;
   font-weight: 400;
 }
 
-.composer-actions-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px 12px 16px;
-}
-
-.composer-left-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.composer-icon-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  border: none;
-  background: transparent;
-  color: #94a3b8;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.composer-icon-btn:hover {
-  background: rgba(15, 82, 186, 0.06);
-  color: #0f52ba;
-}
-
-.btn-send-chat {
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  background: #e2e8f0;
-  color: #94a3b8;
-  border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.erumi-message-input:disabled {
   cursor: not-allowed;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 0.7;
+}
+
+.erumi-attach-btn,
+.erumi-send-btn {
+  width: 44px;
+  height: 44px;
   flex-shrink: 0;
-}
-
-.btn-send-chat.is-ready {
-  background: linear-gradient(135deg, #0f52ba, #1e70e9);
-  color: white;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #64748b;
   cursor: pointer;
-  box-shadow: 0 3px 10px rgba(15, 82, 186, 0.25);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.btn-send-chat.is-ready:hover {
-  transform: scale(1.06);
-  box-shadow: 0 5px 14px rgba(15, 82, 186, 0.35);
+.erumi-attach-btn:hover {
+  background: #f1f5f9;
+  color: #3b82f6;
+  transform: scale(1.05);
+}
+.erumi-attach-btn:active {
+  transform: scale(0.95);
 }
 
-.btn-send-chat:disabled {
+.erumi-send-btn {
+  cursor: not-allowed;
+  color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.erumi-send-btn.is-ready {
+  cursor: pointer;
+  color: #ffffff;
+  background: #2563eb;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+}
+
+.erumi-send-btn.is-ready:hover {
+  background: #1d4ed8;
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+}
+
+.erumi-send-btn.is-ready:active {
+  transform: translateY(0) scale(0.95);
+}
+
+.erumi-send-btn:disabled {
   cursor: not-allowed;
 }
 
@@ -1003,7 +1333,7 @@ onMounted(() => {
 .chat-thread-container {
   flex: 1;
   overflow-y: auto;
-  padding: 24px 16px 180px 16px;
+  padding: 24px 16px 170px 16px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1048,16 +1378,16 @@ onMounted(() => {
 .msg-avatar-col :deep(.chatbot-avatar) {
   width: 30px !important;
   height: 30px !important;
-  border-radius: 8px;
-  background: radial-gradient(circle at 30% 30%, #ffffff 0%, rgba(235, 244, 255, 0.9) 45%, rgba(15, 82, 186, 0.35) 85%);
+  border-radius: 50%;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
   display: inline-grid;
   place-items: center;
-  box-shadow: 0 2px 6px rgba(15, 82, 186, 0.1);
 }
 
 .msg-avatar-col :deep(.chatbot-avatar img) {
-  width: 82% !important;
-  height: 82% !important;
+  width: 70% !important;
+  height: 70% !important;
 }
 
 .msg-bubble-content {
@@ -1066,15 +1396,14 @@ onMounted(() => {
 }
 
 .msg-bubble-assistant {
-  background: #ffffff;
-  color: #1e293b;
-  border: 1px solid rgba(15, 82, 186, 0.1);
+  background: transparent;
+  color: #334155;
+  border: none;
   border-radius: 16px;
-  border-top-left-radius: 4px;
-  padding: 12px 16px;
-  font-size: 14px;
-  line-height: 1.65;
-  box-shadow: 0 2px 10px rgba(15, 82, 186, 0.04);
+  padding: 8px 0;
+  font-size: 14.5px;
+  line-height: 1.6;
+  box-shadow: none;
 }
 
 /* Markdown formatting inside assistant bubble */
@@ -1138,6 +1467,87 @@ onMounted(() => {
 .erumi-metric.tone-danger strong { color: #dc2626; }
 .erumi-metric.tone-warning strong { color: #d97706; }
 
+.erumi-table-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.erumi-table-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(15, 82, 186, 0.1);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 2px 10px rgba(15, 82, 186, 0.05);
+}
+
+.erumi-table-card header {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px 8px;
+  border-bottom: 1px solid rgba(15, 82, 186, 0.08);
+}
+
+.erumi-table-card header strong {
+  color: #0f172a;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.erumi-table-card header span {
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.erumi-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.erumi-table-wrap table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.erumi-table-wrap th,
+.erumi-table-wrap td {
+  padding: 9px 12px;
+  border-bottom: 1px solid rgba(15, 82, 186, 0.07);
+  color: #334155;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.erumi-table-wrap th {
+  background: rgba(15, 82, 186, 0.04);
+  color: #475569;
+  font-weight: 800;
+}
+
+.erumi-table-wrap tr:last-child td {
+  border-bottom: none;
+}
+
+.erumi-table-wrap .align-right {
+  text-align: right;
+}
+
+.erumi-table-wrap .align-center {
+  text-align: center;
+}
+
+.erumi-table-wrap .empty-cell {
+  color: #94a3b8;
+  text-align: center;
+}
+
 .erumi-chart-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1196,6 +1606,41 @@ onMounted(() => {
   padding: 8px 12px;
 }
 
+.erumi-file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.erumi-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  border: 1px solid rgba(15, 82, 186, 0.16);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0f52ba;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+  padding: 8px 12px;
+  text-decoration: none;
+  box-shadow: 0 2px 8px rgba(15, 82, 186, 0.04);
+}
+
+.erumi-file-chip:hover {
+  background: rgba(15, 82, 186, 0.06);
+  border-color: rgba(15, 82, 186, 0.28);
+}
+
+.erumi-file-chip small {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 800;
+}
+
 .erumi-response-meta {
   display: flex;
   flex-wrap: wrap;
@@ -1206,14 +1651,29 @@ onMounted(() => {
 }
 
 .msg-bubble-user {
-  background: linear-gradient(135deg, #0f52ba 0%, #1e70e9 100%);
+  background: #1e293b;
   color: #ffffff;
-  border-radius: 18px;
+  border-radius: 20px;
   border-top-right-radius: 4px;
   padding: 12px 18px;
-  font-size: 14px;
+  font-size: 14.5px;
   line-height: 1.5;
-  box-shadow: 0 4px 14px rgba(15, 82, 186, 0.18);
+  box-shadow: none;
+}
+
+.msg-attachment-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.msg-attachment-chip {
+  flex-direction: row;
+  background: #ffffff;
+  color: #0f52ba;
+  border-color: rgba(15, 82, 186, 0.18);
 }
 
 /* Typing indicator */
@@ -1247,7 +1707,7 @@ onMounted(() => {
   left: 0;
   right: 0;
   padding: 0 16px 18px 16px;
-  background: linear-gradient(to top, #f7f8fc 55%, rgba(247, 248, 252, 0) 100%);
+  background: linear-gradient(to top, #f8fafc 58%, rgba(248, 250, 252, 0) 100%);
   display: flex;
   justify-content: center;
   z-index: 5;
@@ -1256,7 +1716,7 @@ onMounted(() => {
 
 .bottom-bar-width {
   width: 100%;
-  max-width: 720px;
+  max-width: 640px;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -1279,22 +1739,20 @@ onMounted(() => {
 
 .suggestion-chip-small {
   padding: 7px 14px;
-  border: 1px solid rgba(15, 82, 186, 0.12);
+  border: none;
   border-radius: 20px;
   font-size: 12px;
-  font-weight: 600;
-  color: #1e40af;
-  background: #ffffff;
+  font-weight: 500;
+  color: #475569;
+  background: #f1f5f9;
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
-  box-shadow: 0 1px 4px rgba(15, 82, 186, 0.04);
 }
 
 .suggestion-chip-small:hover {
-  background: rgba(15, 82, 186, 0.06);
-  border-color: #0f52ba;
-  color: #0f52ba;
+  background: #e2e8f0;
+  color: #0f172a;
 }
 
 .chat-disclaimer {
@@ -1304,11 +1762,109 @@ onMounted(() => {
   text-align: center;
 }
 
+@media (max-width: 760px) {
+  .chat-empty-state {
+    padding: 24px 14px 18px;
+    gap: 16px;
+  }
+
+  .welcome-heading {
+    font-size: 23px;
+  }
+
+  .composer-wrap-center,
+  .bottom-bar-width {
+    max-width: none;
+  }
+
+  .erumi-project-row {
+    align-items: center;
+    flex-direction: row;
+    gap: 8px;
+    padding: 0;
+  }
+
+  .erumi-project-name {
+    max-width: calc(100vw - 230px);
+    font-size: 15px;
+  }
+
+  .erumi-last-updated {
+    max-width: 145px;
+    overflow: hidden;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+  }
+
+  .erumi-input-shell {
+    min-height: 58px;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .erumi-attach-btn,
+  .erumi-send-btn {
+    width: 38px;
+    height: 38px;
+  }
+
+  .erumi-message-input {
+    font-size: 15px;
+  }
+
+  .msg-bubble-content {
+    max-width: 92%;
+  }
+
+  .chat-thread-container {
+    padding-bottom: 210px;
+  }
+
+  .chat-bottom-bar {
+    padding-inline: 10px;
+  }
+}
+
 /* Scrollbar styling */
 .no-scrollbar {
   scrollbar-width: none;
 }
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+/* ================================================
+   HARD RESET: remove textarea rectangle border
+   Put this at the very end of <style scoped>
+   ================================================ */
+
+.erumi-input-shell,
+.erumi-input-shell:hover,
+.erumi-input-shell:focus,
+.erumi-input-shell:focus-within {
+  border: 0 !important;
+  outline: 0 !important;
+}
+
+textarea.erumi-message-input,
+textarea.erumi-message-input:hover,
+textarea.erumi-message-input:focus,
+textarea.erumi-message-input:focus-visible,
+textarea.erumi-message-input:active,
+textarea.erumi-message-input:disabled {
+  display: block;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+
+  border: 0 !important;
+  border-color: transparent !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+
+  background: transparent !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
 }
 </style>

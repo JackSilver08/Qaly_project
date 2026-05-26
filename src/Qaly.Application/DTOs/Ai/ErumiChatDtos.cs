@@ -4,14 +4,18 @@ public sealed record ErumiChatRequestDto(
     string Message,
     Guid? ProjectId,
     string Mode = "erumi",
-    IList<AiChatMessageDto>? History = null);
+    IList<AiChatMessageDto>? History = null,
+    IReadOnlyList<ErumiUploadedFileDto>? Files = null);
 
 public sealed record ErumiChatResponseDto(
     string Reply,
     IReadOnlyList<ErumiMetricDto> Metrics,
+    IReadOnlyList<ErumiTableDto> Tables,
     IReadOnlyList<ErumiChartDto> Charts,
     IReadOnlyList<ErumiActionDto> Actions,
+    IReadOnlyList<ErumiFileDto> Files,
     IReadOnlyList<string> Sources,
+    double Confidence,
     bool UsedAi,
     string Intent,
     int LatencyMs);
@@ -29,8 +33,35 @@ public sealed record ErumiChartDto(
     IReadOnlyList<double> Values,
     string? Unit = null);
 
+public sealed record ErumiTableDto(
+    string Title,
+    IReadOnlyList<ErumiTableColumnDto> Columns,
+    IReadOnlyList<IReadOnlyDictionary<string, object?>> Rows,
+    string? Description = null);
+
+public sealed record ErumiTableColumnDto(
+    string Key,
+    string Label,
+    string Type = "text",
+    string Align = "left");
+
 public sealed record ErumiActionDto(
     string Type,
     string Label,
     object? Payload = null,
     bool RequiresConfirmation = false);
+
+public sealed record ErumiFileDto(
+    string Label,
+    string Format,
+    string Url,
+    string? Description = null);
+
+public sealed record ErumiUploadedFileDto(
+    string FileName,
+    string? ContentType,
+    long Size,
+    IReadOnlyList<string>? Headers = null,
+    IReadOnlyList<IReadOnlyList<string>>? PreviewRows = null,
+    int? TotalRowCount = null,
+    string? Error = null);
