@@ -14,6 +14,14 @@ public class QalyDbContext : DbContext
     public DbSet<OrganizationMember> OrganizationMembers => Set<OrganizationMember>();
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
+    public DbSet<WorkGroup> WorkGroups => Set<WorkGroup>();
+    public DbSet<WorkGroupMember> WorkGroupMembers => Set<WorkGroupMember>();
+    public DbSet<GroupInvitation> GroupInvitations => Set<GroupInvitation>();
+    public DbSet<GroupMessage> GroupMessages => Set<GroupMessage>();
+    public DbSet<GroupPoll> GroupPolls => Set<GroupPoll>();
+    public DbSet<GroupPollOption> GroupPollOptions => Set<GroupPollOption>();
+    public DbSet<GroupPollVote> GroupPollVotes => Set<GroupPollVote>();
+    public DbSet<GroupMeetingSession> GroupMeetingSessions => Set<GroupMeetingSession>();
     public DbSet<TaskItem> TaskItems => Set<TaskItem>();
     public DbSet<TaskComment> TaskComments => Set<TaskComment>();
     public DbSet<TaskAttachment> TaskAttachments => Set<TaskAttachment>();

@@ -37,7 +37,8 @@ public static class MappingExtensions
             project.Labels?.Select(label => label.ToDto()).ToList() ?? [],
             project.CreatedAt,
             project.OrganizationId,
-            project.Organization?.Name);
+            project.Organization?.Name,
+            project.SourceGroupId);
 
     public static Project ToEntity(this CreateProjectDto dto)
         => new()
@@ -48,7 +49,8 @@ public static class MappingExtensions
             LogoUrl = dto.LogoUrl,
             StartDate = dto.StartDate,
             EndDate = dto.EndDate,
-            OrganizationId = dto.OrganizationId
+            OrganizationId = dto.OrganizationId,
+            SourceGroupId = dto.SourceGroupId
         };
 
     public static void ApplyTo(this UpdateProjectDto dto, Project project)

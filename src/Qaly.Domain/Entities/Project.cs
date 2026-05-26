@@ -13,10 +13,12 @@ public class Project : BaseEntity
     // Foreign keys
     public Guid OwnerId { get; set; }
     public Guid? OrganizationId { get; set; }
+    public Guid? SourceGroupId { get; set; }
 
     // Navigation properties
     public User Owner { get; set; } = null!;
     public Organization? Organization { get; set; }
+    public WorkGroup? SourceGroup { get; set; }
     public ICollection<ProjectMember> Members { get; set; } = new List<ProjectMember>();
     public ICollection<TaskItem> Tasks { get; set; } = new List<TaskItem>();
     public ICollection<Sprint> Sprints { get; set; } = new List<Sprint>();

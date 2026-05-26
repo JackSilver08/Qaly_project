@@ -28,7 +28,14 @@ public class ProjectConfiguration : IEntityTypeConfiguration<Project>
             .OnDelete(DeleteBehavior.Restrict)
             .IsRequired(false);
 
+        builder.HasOne(p => p.SourceGroup)
+            .WithMany(group => group.CreatedProjects)
+            .HasForeignKey(p => p.SourceGroupId)
+            .OnDelete(DeleteBehavior.SetNull)
+            .IsRequired(false);
+
         builder.HasIndex(p => p.Code).IsUnique();
         builder.HasIndex(p => p.OrganizationId);
+        builder.HasIndex(p => p.SourceGroupId);
     }
 }

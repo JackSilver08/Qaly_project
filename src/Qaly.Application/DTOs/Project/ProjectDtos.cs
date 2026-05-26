@@ -17,7 +17,8 @@ public record ProjectDto(
     IReadOnlyList<ProjectLabelDto> Labels,
     DateTimeOffset CreatedAt,
     Guid? OrganizationId,
-    string? OrganizationName);
+    string? OrganizationName,
+    Guid? SourceGroupId = null);
 
 public record CreateProjectDto(
     string Name,
@@ -26,7 +27,8 @@ public record CreateProjectDto(
     string? LogoUrl,
     DateTimeOffset? StartDate,
     DateTimeOffset? EndDate,
-    Guid? OrganizationId = null);
+    Guid? OrganizationId = null,
+    Guid? SourceGroupId = null);
 
 public record UpdateProjectDto(
     string Name,
