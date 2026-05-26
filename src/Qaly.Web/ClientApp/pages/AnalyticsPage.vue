@@ -601,7 +601,6 @@ onBeforeUnmount(() => {
         </div>
         <div class="welcome-text-block">
           <h1 class="welcome-heading">Hôm nay Erumi<br>có thể giúp gì cho bạn?</h1>
-          <p class="welcome-sub">Phân tích dự án, đánh giá rủi ro và theo dõi năng suất nhóm ngay trong cuộc trò chuyện.</p>
         </div>
         
         <!-- Suggestions above composer in empty state -->
@@ -627,7 +626,7 @@ onBeforeUnmount(() => {
                   <ChevronDown :size="16" class="erumi-project-chevron" :class="{ 'rotate-180': isDropdownOpen1 }" />
                 </div>
                 <Transition name="dropdown-fade">
-                  <div class="erumi-dropdown-menu" v-if="isDropdownOpen1">
+                  <div class="erumi-dropdown-menu" v-if="isDropdownOpen1" @wheel.stop>
                     <div class="erumi-dropdown-item" @click.stop="selectTarget('workspace', 1)" :class="{ active: selectedTarget === 'workspace' }">Tất cả dự án</div>
                     <div v-for="p in activeProjects" :key="p.id" class="erumi-dropdown-item" @click.stop="selectTarget(p.id, 1)" :class="{ active: selectedTarget === p.id }">
                       {{ p.name }}
@@ -659,7 +658,7 @@ onBeforeUnmount(() => {
                 ref="textareaRef"
                 v-model="chatInput"
                 class="erumi-message-input"
-                placeholder="Nhập câu hỏi..."
+                placeholder="Hỏi bất kì thứ gì..."
                 :disabled="isChatting"
                 aria-label="Nhập câu hỏi"
                 rows="1"
@@ -973,13 +972,7 @@ onBeforeUnmount(() => {
   margin: 0;
 }
 
-.welcome-sub {
-  font-size: 14px;
-  color: #64748b;
-  font-weight: 400;
-  margin: 0;
-  line-height: 1.5;
-}
+
 
 .composer-wrap-center {
   width: 100%;
@@ -1110,42 +1103,82 @@ onBeforeUnmount(() => {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
+
   width: max-content;
-  min-width: 220px;
-  max-width: 340px;
-  background: #ffffff;
+  min-width: 260px;
+  max-width: 360px;
+
+  /* Quan trọng: ép dropdown có vùng cuộn thật */
+  height: auto;
+  max-height: 190px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+
+  background: rgba(255, 255, 255, 0.98);
   border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 14px;
-  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
-  padding: 6px;
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  border-radius: 18px;
+
+  box-shadow:
+    0 18px 45px rgba(15, 23, 42, 0.12),
+    0 8px 18px rgba(15, 23, 42, 0.06);
+
+  padding: 8px;
+  z-index: 999;
+
+  display: block;
+
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  scroll-behavior: smooth;
 }
 
+.erumi-dropdown-menu::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+@keyframes dropdown-soft-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
 .erumi-dropdown-item {
-  padding: 10px 14px;
-  border-radius: 10px;
+  padding: 11px 14px;
+  border-radius: 12px;
   cursor: pointer;
+
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   color: #334155;
-  transition: all 0.2s;
+
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
+
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .erumi-dropdown-item:hover {
-  background: #f8fafc;
-  color: #0f172a;
+  background: rgba(31, 128, 255, 0.08);
+  color: #1f80ff;
+  transform: translateX(2px);
 }
 
 .erumi-dropdown-item.active {
-  background: rgba(31, 128, 255, 0.08);
+  background: rgba(31, 128, 255, 0.12);
   color: #1f80ff;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .dropdown-fade-enter-active,
