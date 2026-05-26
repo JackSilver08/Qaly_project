@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Qaly.Domain.Entities;
 
-public class WikiPage : BaseEntity
+public class WikiPage : BaseEntity, ISoftDeleteEntity
 {
     [Required]
     [StringLength(200)]
@@ -13,6 +13,8 @@ public class WikiPage : BaseEntity
     public string Content { get; set; } = string.Empty;
     public bool IsPublic { get; set; }
     public string Visibility { get; set; } = "internal"; // values: public|customer_safe|internal|private
+    public bool IsDeleted { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
 
     // Foreign keys
     public Guid ProjectId { get; set; }

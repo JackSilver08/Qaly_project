@@ -19,7 +19,7 @@ public class GenericRepository<T> : IRepository<T> where T : BaseEntity
     public IQueryable<T> GetQueryable() => _dbSet.AsQueryable();
 
     public async Task<T?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
-        => await _dbSet.FindAsync(new object[] { id }, cancellationToken);
+        => await _dbSet.FirstOrDefaultAsync(entity => entity.Id == id, cancellationToken);
 
     public async Task<IReadOnlyList<T>> GetAllAsync(CancellationToken cancellationToken = default)
         => await _dbSet.ToListAsync(cancellationToken);
@@ -46,6 +46,16 @@ public class GenericRepository<T> : IRepository<T> where T : BaseEntity
 
     public Task DeleteAsync(T entity, CancellationToken cancellationToken = default)
     {
+        if (entity is ISoftDeleteEntity softDeleteEntity)
+        {
+            var now = DateTimeOffset.UtcNow;
+            softDeleteEntity.IsDeleted = true;
+            softDeleteEntity.DeletedAt ??= now;
+            entity.UpdatedAt = now;
+            _dbSet.Update(entity);
+            return Task.CompletedTask;
+        }
+
         _dbSet.Remove(entity);
         return Task.CompletedTask;
     }

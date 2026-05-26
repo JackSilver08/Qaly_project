@@ -1,69 +1,75 @@
-# ========================================
-# Qaly Project - CI Pipeline (Continuous Integration)
-# Tự động build + test khi push hoặc tạo PR
-# ========================================
-
-name: 🔄 CI - Build & Test
+name: CI - Build, Test, and Smoke
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
 
 env:
-  DOTNET_VERSION: '10.0.x'
+  DOTNET_VERSION: "10.0.x"
+  NODE_VERSION: "22"
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_NOLOGO: true
 
 jobs:
-  # ==========================================
-  # Job 1: Build & Unit Tests
-  # ==========================================
   build-and-test:
-    name: 🏗️ Build & Test
+    name: Build, Unit Tests, Coverage
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 🔧 Setup .NET SDK
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: 📦 Restore NuGet packages
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Restore NuGet
         run: dotnet restore
 
-      - name: 🏗️ Build solution
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build solution
         run: dotnet build --no-restore --configuration Release
 
-      - name: 🧪 Run Unit Tests
-        run: dotnet test tests/Qaly.UnitTests/ --no-build --configuration Release --logger "trx;LogFileName=unit-test-results.trx" --collect:"XPlat Code Coverage"
+      - name: Run unit tests with coverage
+        run: >
+          dotnet test tests/Qaly.UnitTests/Qaly.UnitTests.csproj
+          --no-build
+          --configuration Release
+          --logger "trx;LogFileName=unit-test-results.trx"
+          --collect:"XPlat Code Coverage"
+          --results-directory .test-results/unit
 
-      - name: 🔍 Security Scan (Vulnerable Packages)
+      - name: Enforce unit coverage baseline
+        shell: pwsh
+        run: ./scripts/check-coverage.ps1 -CoverageRoot .test-results/unit -MinimumLineRate 8
+
+      - name: Security scan
         run: dotnet list package --vulnerable
 
-      - name: 📏 Check Code Coverage (Placeholder)
-        run: |
-          # TODO: Implement coverage check. Fail if coverage < 70%.
-          # Example: reportgenerator -reports:**/coverage.cobertura.xml -targetdir:coveragereport -reporttypes:Html
-          echo "Coverage check placeholder"
-
-      - name: 📊 Upload test results
+      - name: Upload unit test artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: unit-test-results
-          path: '**/TestResults/**'
+          path: .test-results/unit
           retention-days: 30
 
-  # ==========================================
-  # Job 2: Integration Tests (with SQL Server)
-  # ==========================================
   integration-tests:
-    name: 🗄️ Integration Tests
+    name: Integration Tests
     runs-on: ubuntu-latest
     needs: build-and-test
 
@@ -94,55 +100,163 @@ jobs:
           --health-retries 3
 
     steps:
-      - name: 📥 Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 🔧 Setup .NET SDK
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: 📦 Restore packages
+      - name: Restore NuGet
         run: dotnet restore
 
-      - name: 🏗️ Build
+      - name: Build solution
         run: dotnet build --no-restore --configuration Release
 
-      - name: 🧪 Run Integration Tests
+      - name: Run integration tests with coverage
         env:
           ConnectionStrings__DefaultConnection: "Server=localhost,1433;Database=QalyDb_Test;User Id=sa;Password=TestPassword123!;TrustServerCertificate=True;MultipleActiveResultSets=true"
           Redis__ConnectionString: "localhost:6379"
-        run: dotnet test tests/Qaly.IntegrationTests/ --no-build --configuration Release --logger "trx;LogFileName=integration-test-results.trx"
+          Ai__SemanticEnabled: "false"
+        run: >
+          dotnet test tests/Qaly.IntegrationTests/Qaly.IntegrationTests.csproj
+          --no-build
+          --configuration Release
+          --logger "trx;LogFileName=integration-test-results.trx"
+          --collect:"XPlat Code Coverage"
+          --results-directory .test-results/integration
 
-      - name: 📊 Upload test results
+      - name: Enforce integration coverage baseline
+        shell: pwsh
+        run: ./scripts/check-coverage.ps1 -CoverageRoot .test-results/integration -MinimumLineRate 5
+
+      - name: Upload integration test artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: integration-test-results
-          path: '**/TestResults/**'
+          path: .test-results/integration
           retention-days: 30
 
-  # ==========================================
-  # Job 3: Code Quality
-  # ==========================================
-  code-quality:
-    name: 🔍 Code Quality
+  e2e-smoke:
+    name: Playwright E2E Smoke
     runs-on: ubuntu-latest
+    needs: build-and-test
+
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_SA_PASSWORD: TestPassword123!
+          MSSQL_PID: Developer
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P TestPassword123! -C -Q 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --health-start-period 30s
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 3
 
     steps:
-      - name: 📥 Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 🔧 Setup .NET SDK
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: 📦 Restore packages
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Restore NuGet
         run: dotnet restore
 
-      - name: 🔍 Run code analysis
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build web app
+        run: dotnet build src/Qaly.Web/Qaly.Web.csproj --no-restore --configuration Release
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Start app
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+          ASPNETCORE_URLS: http://127.0.0.1:5000
+          ConnectionStrings__DefaultConnection: "Server=localhost,1433;Database=QalyDb_E2E;User Id=sa;Password=TestPassword123!;TrustServerCertificate=True;MultipleActiveResultSets=true"
+          Redis__ConnectionString: "localhost:6379"
+          QALY_SEED_ADMIN_PASSWORD: "Qaly@E2E2026!"
+          QALY_SEED_DEFAULT_USER_PASSWORD: "Qaly@E2E2026!"
+          Ai__SemanticEnabled: "false"
+        run: |
+          dotnet run --project src/Qaly.Web/Qaly.Web.csproj --configuration Release --no-build --urls http://127.0.0.1:5000 > qaly-e2e.log 2>&1 &
+          echo $! > qaly-e2e.pid
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:5000/health > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat qaly-e2e.log
+          exit 1
+
+      - name: Run Playwright smoke tests
+        env:
+          E2E_BASE_URL: http://127.0.0.1:5000
+          E2E_ADMIN_EMAIL: admin@qaly.dev
+          E2E_ADMIN_PASSWORD: "Qaly@E2E2026!"
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+            qaly-e2e.log
+          retention-days: 30
+
+  code-quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore NuGet
+        run: dotnet restore
+
+      - name: Build with analyzers
         run: dotnet build --no-restore --configuration Release /p:TreatWarningsAsErrors=false /p:EnforceCodeStyleInBuild=true
 
-      - name: 📏 Check formatting
+      - name: Check formatting
         run: dotnet format --verify-no-changes --verbosity diagnostic || echo "::warning::Code formatting issues detected"

@@ -1,0 +1,9 @@
+{
+  "id": "meeting-action-items-demo-v1",
+  "schemaId": "MeetingActionItem.v1",
+  "providerName": "GoldenDataset",
+  "modelName": "fixtures/ai-golden-dataset.json",
+  "systemPrompt": "Extract action items from the meeting transcript.",
+  "prompt": "Transcript: Linh will prepare the demo script before Friday.",
+  "responseJson": "[{\"title\":\"Prepare demo script\",\"owner\":\"Linh\",\"due\":\"Friday\",\"priority\":\"High\"}]"
+}

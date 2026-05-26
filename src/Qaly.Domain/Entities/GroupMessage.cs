@@ -1,6 +1,6 @@
 namespace Qaly.Domain.Entities;
 
-public class GroupMessage : BaseEntity
+public class GroupMessage : BaseEntity, ISoftDeleteEntity
 {
     public Guid WorkGroupId { get; set; }
     public Guid UserId { get; set; }

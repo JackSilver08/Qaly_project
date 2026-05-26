@@ -3,7 +3,7 @@ namespace Qaly.Domain.Entities;
 /// <summary>
 /// Task entity - đặt tên TaskItem để tránh conflict với System.Threading.Tasks.Task
 /// </summary>
-public class TaskItem : BaseEntity
+public class TaskItem : BaseEntity, ISoftDeleteEntity
 {
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
@@ -20,6 +20,8 @@ public class TaskItem : BaseEntity
     public int DownvoteCount { get; set; }
     public int SortOrder { get; set; }
     public byte[] RowVersion { get; set; } = [];
+    public bool IsDeleted { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
 
     // Foreign keys
     public Guid ProjectId { get; set; }

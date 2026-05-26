@@ -1,10 +1,12 @@
 namespace Qaly.Domain.Entities;
 
-public class TaskComment : BaseEntity
+public class TaskComment : BaseEntity, ISoftDeleteEntity
 {
     public string Content { get; set; } = string.Empty;
     public int UpvoteCount { get; set; }
     public int DownvoteCount { get; set; }
+    public bool IsDeleted { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
 
     // Foreign keys
     public Guid TaskItemId { get; set; }

@@ -1,6 +1,6 @@
 namespace Qaly.Domain.Entities;
 
-public class Project : BaseEntity
+public class Project : BaseEntity, ISoftDeleteEntity
 {
     public string Name { get; set; } = string.Empty;
     public string Code { get; set; } = string.Empty;
@@ -9,6 +9,8 @@ public class Project : BaseEntity
     public string Status { get; set; } = "Active";
     public DateTimeOffset? StartDate { get; set; }
     public DateTimeOffset? EndDate { get; set; }
+    public bool IsDeleted { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
 
     // Foreign keys
     public Guid OwnerId { get; set; }

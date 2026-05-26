@@ -20,7 +20,7 @@ defineEmits<{
         <span>Groups</span>
         <h2>Nhóm chat</h2>
       </div>
-      <button class="icon-button icon-button--small" type="button" aria-label="Tạo nhóm mới" @click="$emit('create')">
+      <button class="icon-button icon-button--small" type="button" aria-label="Create group" @click="$emit('create')">
         <Plus :size="16" />
       </button>
     </div>

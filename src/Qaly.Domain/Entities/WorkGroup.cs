@@ -1,12 +1,14 @@
 namespace Qaly.Domain.Entities;
 
-public class WorkGroup : BaseEntity
+public class WorkGroup : BaseEntity, ISoftDeleteEntity
 {
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string? AvatarUrl { get; set; }
     public string? Color { get; set; }
     public string Status { get; set; } = "Active";
+    public bool IsDeleted { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
 
     public Guid OwnerId { get; set; }
     public Guid? OrganizationId { get; set; }

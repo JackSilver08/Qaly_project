@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Qaly.Domain.Entities;
 
@@ -46,8 +47,6 @@ public class QalyDbContext : DbContext
     public DbSet<WebhookDeliveryLog> WebhookDeliveryLogs => Set<WebhookDeliveryLog>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     public DbSet<ImportSession> ImportSessions => Set<ImportSession>();
-    
-    // AI & Compliance entities (V3.2)
     public DbSet<AiProviderConfig> AiProviderConfigs => Set<AiProviderConfig>();
     public DbSet<AiBudgetPolicy> AiBudgetPolicies => Set<AiBudgetPolicy>();
     public DbSet<AiUsageLedger> AiUsageLedger => Set<AiUsageLedger>();
@@ -60,24 +59,46 @@ public class QalyDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-
-        // Apply táº¥t cáº£ IEntityTypeConfiguration tá»« assembly nÃ y
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(QalyDbContext).Assembly);
+        ApplySoftDeleteFilters(modelBuilder);
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        // Tá»± Ä‘á»™ng cáº­p nháº­t UpdatedAt cho cÃ¡c entity bá»‹ modify
+        var now = DateTimeOffset.UtcNow;
+
         foreach (var entry in ChangeTracker.Entries<BaseEntity>())
         {
             if (entry.State == EntityState.Modified)
             {
-                entry.Entity.UpdatedAt = DateTimeOffset.UtcNow;
+                entry.Entity.UpdatedAt = now;
             }
         }
 
         return base.SaveChangesAsync(cancellationToken);
     }
+
+    private static void ApplySoftDeleteFilters(ModelBuilder modelBuilder)
+    {
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            var clrType = entityType.ClrType;
+            if (!typeof(ISoftDeleteEntity).IsAssignableFrom(clrType))
+            {
+                continue;
+            }
+
+            modelBuilder.Entity(clrType)
+                .Property<bool>(nameof(ISoftDeleteEntity.IsDeleted))
+                .HasDefaultValue(false);
+
+            var parameter = Expression.Parameter(clrType, "entity");
+            var isDeletedProperty = Expression.Property(parameter, nameof(ISoftDeleteEntity.IsDeleted));
+            var filter = Expression.Lambda(
+                Expression.Equal(isDeletedProperty, Expression.Constant(false)),
+                parameter);
+
+            modelBuilder.Entity(clrType).HasQueryFilter(filter);
+        }
+    }
 }
-
-
