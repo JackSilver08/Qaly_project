@@ -38,7 +38,7 @@ const {
   formatTime,
   isProjectAdmin,
   isTaskOverdue,
-  moveTask,
+  moveTaskOnKanban,
   newComment,
   newTaskAssigneeId,
   newTaskDescription,
@@ -158,15 +158,28 @@ async function loadAssignmentInsight() {
   }
 }
 
-const onDragEnd = async (evt: { item: HTMLElement; to: HTMLElement; from: HTMLElement }) => {
+const onDragEnd = async (evt: { item: HTMLElement; to: HTMLElement; from: HTMLElement; oldIndex?: number; newIndex?: number }) => {
   const taskId = evt.item.getAttribute('data-id')
   const newStatus = evt.to.getAttribute('data-status')
-  if (!taskId || !newStatus || evt.to === evt.from || !statusColumns.includes(newStatus)) return
+  const project = selectedProject.value
+  if (!taskId || !newStatus || !project || !statusColumns.includes(newStatus)) return
 
-  const task = selectedProject.value?.tasks.find((t: DashboardTask) => t.id === taskId)
-  if (!task || task.status === newStatus) return
+  const task = project.tasks.find((t: DashboardTask) => t.id === taskId)
+  if (!task) return
 
-  await moveTask(task, newStatus)
+  const sameColumn = evt.to === evt.from && task.status === newStatus
+  if (sameColumn && evt.oldIndex === evt.newIndex) return
+
+  const orderedTaskIds = Array.from(evt.to.querySelectorAll<HTMLElement>('.kanban-card'))
+    .map((element) => element.dataset.id)
+    .filter((id): id is string => Boolean(id))
+  const targetIndex = orderedTaskIds.indexOf(taskId)
+  if (targetIndex < 0) return
+
+  const beforeTaskId = orderedTaskIds[targetIndex + 1] ?? null
+  const afterTaskId = beforeTaskId ? null : orderedTaskIds[targetIndex - 1] ?? null
+
+  await moveTaskOnKanban(project.id, task, newStatus, beforeTaskId, afterTaskId)
 }
 
 // Keyboard Shortcuts

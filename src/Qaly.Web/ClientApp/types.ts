@@ -58,6 +58,8 @@ export interface DashboardTask {
     assigneeName: string | null;
     reporterName: string;
     projectName: string;
+    sortOrder: number;
+    rowVersion: string;
     isPrivate: boolean;
     isRestricted: boolean;
     isPinned: boolean;

@@ -3,6 +3,7 @@ import { HubConnectionBuilder, HubConnectionState, type HubConnection } from '@m
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ChatSidebar from '../components/chat/ChatSidebar.vue'
 import ChatWindow from '../components/chat/ChatWindow.vue'
+import GroupAiPanel from '../components/chat/GroupAiPanel.vue'
 import type { ChatGroupModel, TeamChatAttachment, TeamChatMessage, TeamChatPoll } from '../components/chat/chat-types'
 import { useDashboardContext } from '../composables/dashboard-context'
 import { showError, showSuccess } from '../composables/use-toast'
@@ -287,6 +288,7 @@ function formatMessageTime(value: string) {
           @send="sendMessage"
           @pin="togglePin"
         />
+        <GroupAiPanel :group-id="activeGroupId" />
 
         <div class="team-chat-status">
           <span :class="`team-chat-status__dot team-chat-status__dot--${realtimeState}`"></span>
@@ -301,6 +303,7 @@ function formatMessageTime(value: string) {
 <style scoped>
 .team-chat-page {
   position: relative;
+  grid-template-columns: 280px minmax(0, 1fr) 320px;
 }
 
 .team-chat-banner {
@@ -355,5 +358,21 @@ function formatMessageTime(value: string) {
 
 .team-chat-status__dot--offline {
   background: #ef4444;
+}
+
+@media (max-width: 1180px) {
+  .team-chat-page {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+
+  .group-ai-panel {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 980px) {
+  .team-chat-page {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

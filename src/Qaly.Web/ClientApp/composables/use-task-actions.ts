@@ -1,5 +1,5 @@
 import { ref, type Ref } from 'vue'
-import type { DashboardTask, TaskItemDto } from '../types'
+import type { DashboardTask, KanbanMoveResultDto, TaskItemDto } from '../types'
 import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
 import { displayStatus } from '../utils/formatters'
 import { showError, showSuccess } from './use-toast'
@@ -124,6 +124,34 @@ export function useTaskActions(
     }
   }
 
+  async function moveTaskOnKanban(
+    projectId: string,
+    task: DashboardTask,
+    status: string,
+    beforeTaskId: string | null,
+    afterTaskId: string | null,
+  ) {
+    try {
+      await apiResult<KanbanMoveResultDto>(`/api/tasks/project/${projectId}/kanban/move`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          taskId: task.id,
+          fromStatus: task.status,
+          toStatus: status,
+          beforeTaskId,
+          afterTaskId: beforeTaskId ? null : afterTaskId,
+          rowVersion: task.rowVersion || null,
+        }),
+      })
+
+      await loadDashboard()
+      selectedTaskId.value = task.id
+      showSuccess(`ÄÃ£ cáº­p nháº­t vá»‹ trÃ­ nhiá»‡m vá»¥ trong ${displayStatus(status)}`)
+    } catch (error) {
+      showError(errorMessage(error, 'KhÃ´ng thá»ƒ cáº­p nháº­t vá»‹ trÃ­ nhiá»‡m vá»¥'))
+    }
+  }
+
   function beginEditTask(task: DashboardTask) {
     taskBeingEdited.value = task
     newTaskTitle.value = task.title
@@ -198,6 +226,7 @@ export function useTaskActions(
     batchUpdateTaskStatus,
     createTask,
     moveTask,
+    moveTaskOnKanban,
     beginEditTask,
     saveTaskEdit,
     deleteTask,

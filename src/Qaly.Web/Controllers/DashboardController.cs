@@ -97,6 +97,7 @@ public partial class DashboardController : BaseApiController
             {
                 var projectTasks = project.Tasks
                     .OrderBy(task => SortStatus(task.Status))
+                    .ThenBy(task => task.SortOrder)
                     .ThenBy(task => task.DueDate ?? DateTimeOffset.MaxValue)
                     .ThenBy(task => task.Title)
                     .ToList();
@@ -161,6 +162,8 @@ public partial class DashboardController : BaseApiController
                             isRestricted ? null : task.Assignee?.FullName,
                             isRestricted ? string.Empty : (task.Reporter?.FullName ?? string.Empty),
                             project.Name,
+                            task.SortOrder,
+                            ToRowVersion(task.RowVersion),
                             task.IsPrivate,
                             isRestricted,
                             task.IsPinned,
@@ -395,6 +398,9 @@ public partial class DashboardController : BaseApiController
             _ => 6
         };
 
+    private static string ToRowVersion(byte[]? rowVersion)
+        => rowVersion is { Length: > 0 } ? Convert.ToBase64String(rowVersion) : string.Empty;
+
     private static bool EqualsIgnoreCase(string? left, string right)
         => string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
 
@@ -591,6 +597,8 @@ public partial class DashboardController : BaseApiController
                 t.Assignee?.FullName,
                 t.Reporter?.FullName ?? string.Empty,
                 projects.FirstOrDefault(p => p.Id == t.ProjectId)?.Name ?? "",
+                t.SortOrder,
+                ToRowVersion(t.RowVersion),
                 t.IsPrivate,
                 false,
                 t.IsPinned,
@@ -732,6 +740,8 @@ public sealed record DashboardTaskResponse(
     string? AssigneeName,
     string ReporterName,
     string ProjectName,
+    int SortOrder,
+    string RowVersion,
     bool IsPrivate,
     bool IsRestricted,
     bool IsPinned,

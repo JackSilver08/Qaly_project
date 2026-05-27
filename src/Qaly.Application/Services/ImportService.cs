@@ -31,6 +31,7 @@ public partial class ImportService : IImportService
 
     private const int MaxRows = 2000;
     private const int PreviewRowCount = 5;
+    private const int SortOrderStep = 1000;
 
     private static readonly string[] ValidExtensions = [".csv", ".xlsx", ".tsv", ".txt", ".psv", ".json"];
     private static readonly string[] ValidStatuses = ["Todo", "InProgress", "OnHold", "InReview", "Done", "Cancelled"];
@@ -188,7 +189,7 @@ public partial class ImportService : IImportService
             var newProject = new Project
             {
                 Name = projectName,
-                Code = GenerateProjectCode(projectName),
+                Code = await GenerateUniqueProjectCodeAsync(projectName, ct),
                 OwnerId = userId,
                 Status = "Active",
             };
@@ -436,7 +437,7 @@ public partial class ImportService : IImportService
 
             // Normalize priority
             var priority = string.IsNullOrWhiteSpace(rawPriority) && !string.IsNullOrWhiteSpace(request.DefaultPriority)
-                ? request.DefaultPriority
+                ? NormalizePriority(request.DefaultPriority)
                 : NormalizePriority(rawPriority);
 
             // Apply AI classification if applicable
@@ -483,7 +484,7 @@ public partial class ImportService : IImportService
             {
                 currentSortOrder = 0;
             }
-            currentSortOrder++;
+            currentSortOrder += SortOrderStep;
             maxSortOrders[status] = currentSortOrder;
 
             // Create task
@@ -1047,6 +1048,27 @@ public partial class ImportService : IImportService
         if (words.Length >= 2)
             return string.Join("", words.Take(3).Select(w => w[..1])).ToUpperInvariant();
         return name.Length >= 3 ? name[..3].ToUpperInvariant() : name.ToUpperInvariant();
+    }
+
+    private async Task<string> GenerateUniqueProjectCodeAsync(string name, CancellationToken ct)
+    {
+        var baseCode = GenerateProjectCode(name);
+        var prefix = $"{baseCode}-";
+        var existingCodes = (await _projectRepo.GetQueryable()
+            .Where(project => project.Code == baseCode || project.Code.StartsWith(prefix))
+            .Select(project => project.Code)
+            .ToListAsync(ct))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (!existingCodes.Contains(baseCode))
+            return baseCode;
+
+        for (var suffix = 2; ; suffix++)
+        {
+            var candidate = $"{baseCode}-{suffix}";
+            if (!existingCodes.Contains(candidate))
+                return candidate;
+        }
     }
 
     private static string NormalizeTitle(string title)

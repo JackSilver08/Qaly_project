@@ -102,6 +102,7 @@ const {
   batchUpdateTaskStatus,
   createTask: baseCreateTask,
   moveTask,
+  moveTaskOnKanban,
   beginEditTask,
   saveTaskEdit,
   deleteTask,
@@ -850,10 +851,16 @@ function tasksByStatus(status: string) {
   const tasks = Array.isArray(selectedProjectTasks.value)
     ? selectedProjectTasks.value
     : [];
-  return tasks.filter(
-    (t) =>
-      t.status === status && (!query || t.title.toLowerCase().includes(query)),
-  );
+  return tasks
+    .filter(
+      (t) =>
+        t.status === status && (!query || t.title.toLowerCase().includes(query)),
+    )
+    .sort(
+      (left, right) =>
+        (left.sortOrder ?? 0) - (right.sortOrder ?? 0) ||
+        left.title.localeCompare(right.title),
+    );
 }
 
 function nextStatuses(status: string) {
@@ -921,6 +928,7 @@ provide(dashboardContextKey, {
   isTaskOverdue,
   logout,
   moveTask,
+  moveTaskOnKanban,
   newComment,
   newTaskAssigneeId,
   newTaskDescription,

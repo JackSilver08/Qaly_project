@@ -276,6 +276,110 @@ public class ImportEnhancementTests : IDisposable
         (await _context.TaskItems.CountAsync()).Should().Be(0);
     }
 
+    [Fact]
+    public async Task ExecuteImportAsync_AppendsTasksUsingKanbanSortOrderSpacing()
+    {
+        var importerId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        _currentUser.SetupGet(user => user.UserId).Returns(importerId);
+
+        _context.Users.Add(new User { Id = importerId, FullName = "PM", Email = "pm@qaly.dev", IsActive = true });
+        _context.Projects.Add(new Project { Id = projectId, Name = "Project", Code = "PRJ", OwnerId = importerId });
+        _context.TaskItems.AddRange(
+            new TaskItem { Id = Guid.NewGuid(), ProjectId = projectId, ReporterId = importerId, Title = "Existing 1", Status = "Todo", SortOrder = 1000 },
+            new TaskItem { Id = Guid.NewGuid(), ProjectId = projectId, ReporterId = importerId, Title = "Existing 2", Status = "Todo", SortOrder = 2000 });
+        await _context.SaveChangesAsync();
+
+        var service = CreateService();
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("Title,Status\nImported 1,Todo\nImported 2,Todo\n"));
+        var request = new ImportRequest(
+            ProjectId: projectId,
+            NewProjectName: null,
+            Mappings:
+            [
+                new ColumnMapping(0, "Title"),
+                new ColumnMapping(1, "Status")
+            ],
+            FirstRowIsHeader: true,
+            SkipDuplicates: false,
+            SheetName: null,
+            EnableAiCategorization: false);
+
+        var result = await service.ExecuteImportAsync(stream, "tasks.csv", request);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        var importedSortOrders = await _context.TaskItems
+            .Where(task => task.Title.StartsWith("Imported"))
+            .OrderBy(task => task.Title)
+            .Select(task => task.SortOrder)
+            .ToListAsync();
+        importedSortOrders.Should().Equal(3000, 4000);
+    }
+
+    [Fact]
+    public async Task ExecuteImportAsync_WhenCreatingProject_UsesUniqueGeneratedProjectCode()
+    {
+        var importerId = Guid.NewGuid();
+        _currentUser.SetupGet(user => user.UserId).Returns(importerId);
+
+        _context.Users.Add(new User { Id = importerId, FullName = "PM", Email = "pm@qaly.dev", IsActive = true });
+        _context.Projects.AddRange(
+            new Project { Id = Guid.NewGuid(), Name = "Quality Platform", Code = "QP", OwnerId = importerId },
+            new Project { Id = Guid.NewGuid(), Name = "Quality Platform 2", Code = "QP-2", OwnerId = importerId });
+        await _context.SaveChangesAsync();
+
+        var service = CreateService();
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("Title\nImported task\n"));
+        var request = new ImportRequest(
+            ProjectId: null,
+            NewProjectName: "Quality Platform",
+            Mappings: [new ColumnMapping(0, "Title")],
+            FirstRowIsHeader: true,
+            SkipDuplicates: false,
+            SheetName: null,
+            EnableAiCategorization: false);
+
+        var result = await service.ExecuteImportAsync(stream, "tasks.csv", request);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        var project = await _context.Projects.SingleAsync(project => project.Id == result.Data!.ProjectId);
+        project.Code.Should().Be("QP-3");
+    }
+
+    [Fact]
+    public async Task ExecuteImportAsync_WithAliasDefaultPriority_NormalizesPriority()
+    {
+        var importerId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        _currentUser.SetupGet(user => user.UserId).Returns(importerId);
+
+        _context.Users.Add(new User { Id = importerId, FullName = "PM", Email = "pm@qaly.dev", IsActive = true });
+        _context.Projects.Add(new Project { Id = projectId, Name = "Project", Code = "PRJ", OwnerId = importerId });
+        await _context.SaveChangesAsync();
+
+        var service = CreateService();
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("Title,Priority\nTask A,\n"));
+        var request = new ImportRequest(
+            ProjectId: projectId,
+            NewProjectName: null,
+            Mappings:
+            [
+                new ColumnMapping(0, "Title"),
+                new ColumnMapping(1, "Priority")
+            ],
+            FirstRowIsHeader: true,
+            SkipDuplicates: false,
+            SheetName: null,
+            DefaultPriority: "urgent",
+            EnableAiCategorization: false);
+
+        var result = await service.ExecuteImportAsync(stream, "tasks.csv", request);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        var task = await _context.TaskItems.SingleAsync();
+        task.Priority.Should().Be("Critical");
+    }
+
     private ImportService CreateService()
         => new(
             new GenericRepository<Project>(_context),
