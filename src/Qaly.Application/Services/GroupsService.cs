@@ -1,9 +1,12 @@
+using System.Net.Mail;
+using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Groups;
 using Qaly.Application.DTOs.Project;
 using Qaly.Application.Services.Groups;
 using Qaly.Domain.Entities;
+using Qaly.Domain.Enums;
 using Qaly.Domain.Interfaces;
 
 namespace Qaly.Application.Services;
@@ -12,6 +15,7 @@ public class GroupsService : IGroupsService
 {
     private readonly IRepository<WorkGroup> _groupRepo;
     private readonly IRepository<WorkGroupMember> _memberRepo;
+    private readonly IRepository<GroupInvitation> _invitationRepo;
     private readonly IRepository<GroupMessage> _messageRepo;
     private readonly IRepository<Organization> _organizationRepo;
     private readonly IRepository<OrganizationMember> _organizationMemberRepo;
@@ -25,6 +29,7 @@ public class GroupsService : IGroupsService
     public GroupsService(
         IRepository<WorkGroup> groupRepo,
         IRepository<WorkGroupMember> memberRepo,
+        IRepository<GroupInvitation> invitationRepo,
         IRepository<GroupMessage> messageRepo,
         IRepository<Organization> organizationRepo,
         IRepository<OrganizationMember> organizationMemberRepo,
@@ -37,6 +42,7 @@ public class GroupsService : IGroupsService
     {
         _groupRepo = groupRepo;
         _memberRepo = memberRepo;
+        _invitationRepo = invitationRepo;
         _messageRepo = messageRepo;
         _organizationRepo = organizationRepo;
         _organizationMemberRepo = organizationMemberRepo;
@@ -239,6 +245,94 @@ public class GroupsService : IGroupsService
             .ToListAsync(ct);
 
         return Result.Success<IReadOnlyList<GroupMemberDto>>(members.Select(ToMemberDto).ToList());
+    }
+
+    public async Task<Result<GroupInvitationDto>> CreateInvitationAsync(Guid groupId, CreateGroupInvitationRequest request, CancellationToken ct = default)
+    {
+        if (request == null)
+        {
+            return Result.Failure<GroupInvitationDto>("Invitation request is required.");
+        }
+
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<GroupInvitationDto>();
+        }
+
+        var groupExists = await _groupRepo.GetQueryable()
+            .AsNoTracking()
+            .AnyAsync(group => group.Id == groupId, ct);
+        if (!groupExists)
+        {
+            return Result.NotFound<GroupInvitationDto>("Group was not found.");
+        }
+
+        var membershipRole = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(member => member.WorkGroupId == groupId && member.UserId == currentUserId)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+
+        if (membershipRole == null || !GroupRoleRules.CanManage(membershipRole))
+        {
+            return Result.Forbidden<GroupInvitationDto>("Bạn không có quyền mời thành viên vào nhóm này.");
+        }
+
+        var normalizedEmail = NormalizeEmail(request.Email);
+        if (string.IsNullOrWhiteSpace(normalizedEmail))
+        {
+            return Result.Failure<GroupInvitationDto>("Email is required.");
+        }
+
+        if (!IsValidEmail(normalizedEmail))
+        {
+            return Result.Failure<GroupInvitationDto>("Email is invalid.");
+        }
+
+        var isMember = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .AnyAsync(member =>
+                member.WorkGroupId == groupId &&
+                member.User.Email == normalizedEmail, ct);
+        if (isMember)
+        {
+            return Result.Failure<GroupInvitationDto>("Email is already a group member.", 409);
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var hasPendingInvitation = await _invitationRepo.GetQueryable()
+            .AsNoTracking()
+            .AnyAsync(invitation =>
+                invitation.GroupId == groupId &&
+                invitation.Email == normalizedEmail &&
+                invitation.Status == GroupInvitationStatus.Pending &&
+                invitation.ExpiredAt > now, ct);
+
+        if (hasPendingInvitation)
+        {
+            return Result.Failure<GroupInvitationDto>("A pending invitation already exists for this email.", 409);
+        }
+
+        var invitation = new GroupInvitation
+        {
+            GroupId = groupId,
+            Email = normalizedEmail,
+            Token = await GenerateUniqueInvitationTokenAsync(ct),
+            Status = GroupInvitationStatus.Pending,
+            ExpiredAt = now.AddDays(7)
+        };
+
+        await _invitationRepo.AddAsync(invitation, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync("CreateInvitation", nameof(WorkGroup), groupId.ToString(), new
+        {
+            invitation.Id,
+            invitation.Email,
+            invitation.ExpiredAt
+        }, ct);
+
+        return Result.Created(ToInvitationDto(invitation));
     }
 
     public async Task<Result> AddExistingMemberAsync(Guid groupId, AddGroupMemberRequest request, CancellationToken ct = default)
@@ -608,6 +702,15 @@ public class GroupsService : IGroupsService
             member.Role,
             member.JoinedAt);
 
+    private static GroupInvitationDto ToInvitationDto(GroupInvitation invitation)
+        => new(
+            invitation.Id,
+            invitation.GroupId,
+            invitation.Email,
+            invitation.Status.ToString(),
+            invitation.ExpiredAt,
+            invitation.CreatedAt);
+
     private static GroupMessageDto ToMessageDto(GroupMessage message)
         => new(
             message.Id,
@@ -690,6 +793,48 @@ public class GroupsService : IGroupsService
 
         return "Text";
     }
+
+    private async Task<string> GenerateUniqueInvitationTokenAsync(CancellationToken ct)
+    {
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var token = GenerateSecureToken();
+            var exists = await _invitationRepo.GetQueryable()
+                .AsNoTracking()
+                .AnyAsync(invitation => invitation.Token == token, ct);
+            if (!exists)
+            {
+                return token;
+            }
+        }
+
+        return GenerateSecureToken();
+    }
+
+    private static string GenerateSecureToken()
+    {
+        var bytes = RandomNumberGenerator.GetBytes(32);
+        return Convert.ToBase64String(bytes)
+            .Replace('+', '-')
+            .Replace('/', '_')
+            .TrimEnd('=');
+    }
+
+    private static bool IsValidEmail(string email)
+    {
+        try
+        {
+            var parsed = new MailAddress(email);
+            return string.Equals(parsed.Address, email, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    private static string NormalizeEmail(string email)
+        => string.IsNullOrWhiteSpace(email) ? string.Empty : email.Trim().ToLowerInvariant();
 
     private static string? NormalizeOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

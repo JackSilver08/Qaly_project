@@ -12,26 +12,19 @@ public class GroupInvitationConfiguration : IEntityTypeConfiguration<GroupInvita
         builder.Property(invitation => invitation.Id).HasDefaultValueSql("NEWID()");
         builder.Property(invitation => invitation.Email).HasMaxLength(256).IsRequired();
         builder.Property(invitation => invitation.Token).HasMaxLength(128).IsRequired();
-        builder.Property(invitation => invitation.Status).HasMaxLength(20).IsRequired();
+        builder.Property(invitation => invitation.Status)
+            .HasConversion<string>()
+            .HasMaxLength(20)
+            .IsRequired();
+        builder.Property(invitation => invitation.ExpiredAt).IsRequired();
         builder.Property(invitation => invitation.CreatedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
 
-        builder.HasOne(invitation => invitation.WorkGroup)
+        builder.HasOne(invitation => invitation.Group)
             .WithMany(group => group.Invitations)
-            .HasForeignKey(invitation => invitation.WorkGroupId)
+            .HasForeignKey(invitation => invitation.GroupId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasOne(invitation => invitation.InvitedByUser)
-            .WithMany()
-            .HasForeignKey(invitation => invitation.InvitedByUserId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        builder.HasOne(invitation => invitation.InvitedUser)
-            .WithMany()
-            .HasForeignKey(invitation => invitation.InvitedUserId)
-            .OnDelete(DeleteBehavior.Restrict)
-            .IsRequired(false);
-
         builder.HasIndex(invitation => invitation.Token).IsUnique();
-        builder.HasIndex(invitation => new { invitation.WorkGroupId, invitation.Email, invitation.Status });
+        builder.HasIndex(invitation => invitation.GroupId);
     }
 }

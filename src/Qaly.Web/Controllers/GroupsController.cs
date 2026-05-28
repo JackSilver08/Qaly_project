@@ -59,6 +59,18 @@ public class GroupsController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpPost("{id:guid}/invitations")]
+    public async Task<IActionResult> CreateInvitation(Guid id, [FromBody] CreateGroupInvitationRequest request, CancellationToken ct)
+    {
+        if (request == null)
+        {
+            return BadRequest(new { error = "Invitation request payload is required." });
+        }
+
+        var result = await _groupsService.CreateInvitationAsync(id, request, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpPost("{id:guid}/members")]
     public async Task<IActionResult> AddExistingMember(Guid id, AddGroupMemberRequest request, CancellationToken ct)
     {
