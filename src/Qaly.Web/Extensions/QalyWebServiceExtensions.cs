@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Qaly.Application;
+using Qaly.Application.Common.Models;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Infrastructure;
 using Qaly.Infrastructure.Data.Seeds;
@@ -26,6 +27,7 @@ public static class QalyWebServiceExtensions
         services.AddQalyDataProtection(builder.Environment);
         services.AddQalyRedis(redisConnection);
         services.AddQalySession(cookieSecurePolicy);
+        services.Configure<InvitationLinkOptions>(configuration.GetSection(InvitationLinkOptions.SectionName));
 
         services.AddApplication();
         services.AddInfrastructure(configuration);

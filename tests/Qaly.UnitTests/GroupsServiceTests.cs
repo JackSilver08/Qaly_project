@@ -46,6 +46,18 @@ public class GroupsServiceTests : IDisposable
         _organizationMemberRepo = new GenericRepository<OrganizationMember>(_context);
         _userRepo = new GenericRepository<User>(_context);
         _uow = new UnitOfWork(_context);
+
+        _notificationService
+            .Setup(service => service.CreateAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
     }
 
     [Fact]
@@ -86,7 +98,7 @@ public class GroupsServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CreateInvitationAsync_WhenOwnerInvitesValidEmail_ReturnsCreated()
+    public async Task CreateInvitationAsync_WhenEmailHasNoAccount_CreatesInvitationWithoutNotification()
     {
         var ownerId = Guid.NewGuid();
         await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
@@ -105,6 +117,42 @@ public class GroupsServiceTests : IDisposable
         saved.Email.Should().Be("newuser@qaly.dev");
         saved.Status.Should().Be(GroupInvitationStatus.Pending);
         saved.Token.Should().NotBeNullOrWhiteSpace();
+
+        _notificationService.Verify(service => service.CreateAsync(
+            It.IsAny<Guid>(),
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<Guid?>(),
+            It.IsAny<string?>(),
+            It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateInvitationAsync_WhenEmailBelongsToExistingUser_CreatesNotification()
+    {
+        var ownerId = Guid.NewGuid();
+        var invitedUserId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(invitedUserId, "Invited User", "invited@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Design Guild");
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+
+        var result = await CreateService().CreateInvitationAsync(group.Id, new CreateGroupInvitationRequest("invited@qaly.dev"));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.StatusCode.Should().Be(201);
+
+        _notificationService.Verify(service => service.CreateAsync(
+            invitedUserId,
+            It.Is<string>(message => message.Contains("Design Guild", StringComparison.Ordinal)),
+            "GroupInvitationReceived",
+            "info",
+            It.IsAny<Guid?>(),
+            nameof(GroupInvitation),
+            It.Is<string>(key => key.Contains("group:", StringComparison.Ordinal)),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -156,6 +204,16 @@ public class GroupsServiceTests : IDisposable
 
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().Be(409);
+
+        _notificationService.Verify(service => service.CreateAsync(
+            It.IsAny<Guid>(),
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<Guid?>(),
+            It.IsAny<string?>(),
+            It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
