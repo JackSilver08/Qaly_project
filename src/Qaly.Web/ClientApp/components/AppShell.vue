@@ -15,6 +15,7 @@ const emit = defineEmits<{
   navigate: []
   notifications: []
   assistant: []
+  search: []
   logout: []
 }>()
 
@@ -37,6 +38,7 @@ function handleNavigate() {
       @toggle-sidebar="sidebarOpen = true"
       @notifications="$emit('notifications')"
       @assistant="$emit('assistant')"
+      @search="$emit('search')"
       @logout="$emit('logout')"
     />
 

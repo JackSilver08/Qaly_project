@@ -301,6 +301,14 @@ function toggleTimelinePermission(member: Member, enabled: boolean) {
   text-transform: uppercase;
 }
 
+.panel-heading .primary-button {
+  color: #ffffff;
+}
+
+.panel-heading .primary-button span {
+  color: #ffffff;
+}
+
 .empty-state {
   border: 1px dashed var(--line);
   border-radius: 12px;

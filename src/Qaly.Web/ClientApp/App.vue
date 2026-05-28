@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, provide, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { HubConnectionBuilder } from "@microsoft/signalr";
 import {
   ClipboardList,
   FolderKanban,
   LayoutDashboard,
+  Plus,
+  Search,
   Users,
   X,
   BarChart3,
@@ -127,6 +129,9 @@ const timeEntries = ref<TimeEntryDto[]>([]);
 const activeTimer = ref<TimeEntryDto | null>(null);
 
 const notificationsOpen = ref(false);
+const globalSearchOpen = ref(false);
+const globalSearchQuery = ref("");
+const globalSearchInput = ref<HTMLInputElement | null>(null);
 const taskSearchQuery = ref("");
 const taskBeingQuickEditedId = ref<string | null>(null);
 const activeTaskMenu = ref<string | null>(null);
@@ -306,6 +311,98 @@ const selectedProjectMembers = computed(() => {
   }));
 });
 
+const normalizedGlobalSearchQuery = computed(() =>
+  globalSearchQuery.value.trim().toLowerCase(),
+);
+
+const globalProjectResults = computed(() => {
+  const query = normalizedGlobalSearchQuery.value;
+  return projects.value
+    .filter((project) => {
+      if (!query) return true;
+      const members = Array.isArray(project.members) ? project.members : [];
+      return [
+        project.name,
+        project.code,
+        project.description,
+        project.ownerName,
+        project.status,
+        ...members.map((member) => member.fullName),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(query);
+    })
+    .slice(0, 5);
+});
+
+const globalTaskResults = computed(() => {
+  const query = normalizedGlobalSearchQuery.value;
+  return projects.value
+    .flatMap((project) =>
+      (Array.isArray(project.tasks) ? project.tasks : []).map((task) => ({
+        ...task,
+        projectId: project.id,
+        projectName: project.name,
+      })),
+    )
+    .filter((task) => {
+      if (!query) return true;
+      return [
+        task.title,
+        task.status,
+        task.priority,
+        task.assigneeName,
+        task.reporterName,
+        task.projectName,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(query);
+    })
+    .sort((left, right) => Number(isTaskOverdue(right)) - Number(isTaskOverdue(left)))
+    .slice(0, 6);
+});
+
+const globalMemberResults = computed(() => {
+  const query = normalizedGlobalSearchQuery.value;
+  const members = new Map<string, { id: string; fullName: string; email: string; role: string; projectNames: string[] }>();
+  for (const project of projects.value) {
+    for (const member of project.members ?? []) {
+      const existing =
+        members.get(member.userId) ??
+        {
+          id: member.userId,
+          fullName: member.fullName,
+          email: member.email,
+          role: member.role,
+          projectNames: [],
+        };
+      existing.projectNames.push(project.name);
+      members.set(member.userId, existing);
+    }
+  }
+
+  return [...members.values()]
+    .filter((member) => {
+      if (!query) return true;
+      return [member.fullName, member.email, member.role, ...member.projectNames]
+        .join(" ")
+        .toLowerCase()
+        .includes(query);
+    })
+    .slice(0, 5);
+});
+
+const globalSearchHasResults = computed(
+  () =>
+    globalProjectResults.value.length > 0 ||
+    globalTaskResults.value.length > 0 ||
+    globalMemberResults.value.length > 0,
+);
+
 const selectedProjectStats = computed(() => {
   const project = selectedProject.value;
   if (!project)
@@ -413,6 +510,7 @@ watch(
 );
 
 onMounted(async () => {
+  document.addEventListener("keydown", handleDocumentSearchShortcut);
   await Promise.all([
     loadMe(),
     loadDashboard(),
@@ -420,6 +518,10 @@ onMounted(async () => {
     loadNotifications(),
   ]);
   await connectNotifications();
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("keydown", handleDocumentSearchShortcut);
 });
 
 async function loadNotifications() {
@@ -553,6 +655,80 @@ function selectProject(id: string) {
   selectedTaskId.value =
     projects.value.find((p) => p.id === id)?.tasks[0]?.id ?? null;
   activeProjectTab.value = "stats";
+}
+
+function openGlobalSearch() {
+  globalSearchOpen.value = true;
+  notificationsOpen.value = false;
+  void nextTick(() => globalSearchInput.value?.focus());
+}
+
+function closeGlobalSearch() {
+  globalSearchOpen.value = false;
+}
+
+function goToProjectFromSearch(projectId: string, tab = "stats") {
+  activeProjectId.value = projectId;
+  activeProjectTab.value = tab;
+  selectedTaskId.value =
+    projects.value.find((project) => project.id === projectId)?.tasks[0]?.id ?? null;
+  closeGlobalSearch();
+  void router.push(`/projects/${projectId}`);
+}
+
+function goToTaskFromSearch(projectId: string, taskId: string) {
+  closeGlobalSearch();
+  openTask(projectId, taskId);
+}
+
+function goToMemberFromSearch(memberId: string) {
+  const project = projects.value.find((item) =>
+    item.members?.some((member) => member.userId === memberId),
+  );
+  if (project) {
+    goToProjectFromSearch(project.id, "members");
+  }
+}
+
+function createProjectFromSearch() {
+  closeGlobalSearch();
+  openCreateProject();
+  void router.push("/projects");
+}
+
+function createTaskFromSearch() {
+  closeGlobalSearch();
+  if (!selectedProject.value && projects.value[0]) {
+    activeProjectId.value = projects.value[0].id;
+  }
+  activeProjectTab.value = "tasks";
+  createTaskOpen.value = true;
+  if (selectedProject.value?.id) {
+    void router.push(`/projects/${selectedProject.value.id}`);
+  }
+}
+
+function handleGlobalSearchKeydown(event: KeyboardEvent) {
+  if (event.key === "Escape") {
+    closeGlobalSearch();
+  }
+}
+
+function handleDocumentSearchShortcut(event: KeyboardEvent) {
+  const target = event.target as HTMLElement | null;
+  const isTyping =
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target?.isContentEditable;
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    openGlobalSearch();
+    return;
+  }
+  if (!isTyping && event.key === "/") {
+    event.preventDefault();
+    openGlobalSearch();
+  }
 }
 
 function closeProjectDetails() {
@@ -1002,9 +1178,108 @@ provide(dashboardContextKey, {
     "
     @notifications="notificationsOpen = !notificationsOpen"
     @assistant="openChatWithPrompt()"
+    @search="openGlobalSearch"
     @logout="logout"
   >
     <RouterView />
+
+    <Teleport to="body">
+      <div
+        v-if="globalSearchOpen"
+        class="global-search-backdrop"
+        @click.self="closeGlobalSearch"
+        @keydown="handleGlobalSearchKeydown"
+      >
+        <section class="global-search-panel" role="dialog" aria-modal="true" aria-label="Tìm kiếm">
+          <div class="global-search-input">
+            <Search :size="22" />
+            <input
+              ref="globalSearchInput"
+              v-model="globalSearchQuery"
+              type="search"
+              placeholder="Tìm dự án, nhiệm vụ, thành viên..."
+            />
+            <button type="button" aria-label="Đóng tìm kiếm" @click="closeGlobalSearch">
+              <X :size="18" />
+            </button>
+          </div>
+
+          <div class="global-search-shortcuts">
+            <button type="button" @click="createProjectFromSearch">
+              <Plus :size="15" />
+              Tạo dự án
+            </button>
+            <button type="button" @click="createTaskFromSearch">
+              <Plus :size="15" />
+              Tạo nhiệm vụ
+            </button>
+            <span>Ctrl K hoặc / để mở nhanh</span>
+          </div>
+
+          <div class="global-search-results">
+            <div v-if="!globalSearchHasResults" class="global-search-empty">
+              Không tìm thấy kết quả phù hợp.
+            </div>
+
+            <section v-if="globalProjectResults.length" class="global-search-group">
+              <h3><FolderKanban :size="16" /> Dự án</h3>
+              <button
+                v-for="project in globalProjectResults"
+                :key="`project-${project.id}`"
+                type="button"
+                class="global-search-item"
+                @click="goToProjectFromSearch(project.id)"
+              >
+                <span class="global-search-item__icon">{{ initials(project.name) }}</span>
+                <span class="global-search-item__body">
+                  <strong>{{ project.name }}</strong>
+                  <small>{{ project.ownerName }} · {{ project.taskCount }} nhiệm vụ · {{ project.progressPercentage }}%</small>
+                </span>
+                <span class="global-search-chip">{{ displayStatus(project.status) }}</span>
+              </button>
+            </section>
+
+            <section v-if="globalTaskResults.length" class="global-search-group">
+              <h3><ClipboardList :size="16" /> Nhiệm vụ</h3>
+              <button
+                v-for="task in globalTaskResults"
+                :key="`task-${task.id}`"
+                type="button"
+                class="global-search-item"
+                @click="goToTaskFromSearch(task.projectId, task.id)"
+              >
+                <span class="global-search-item__icon global-search-item__icon--task">{{ task.priority.charAt(0) }}</span>
+                <span class="global-search-item__body">
+                  <strong>{{ task.title }}</strong>
+                  <small>{{ task.projectName }} · {{ displayStatus(task.status) }} · {{ task.assigneeName || 'Chưa giao' }}</small>
+                </span>
+                <span class="global-search-chip" :class="{ 'is-danger': isTaskOverdue(task) }">
+                  {{ isTaskOverdue(task) ? 'Quá hạn' : formatDate(task.dueDate) }}
+                </span>
+              </button>
+            </section>
+
+            <section v-if="globalMemberResults.length" class="global-search-group">
+              <h3><Users :size="16" /> Thành viên</h3>
+              <button
+                v-for="member in globalMemberResults"
+                :key="`member-${member.id}`"
+                type="button"
+                class="global-search-item"
+                @click="goToMemberFromSearch(member.id)"
+              >
+                <span class="global-search-item__icon global-search-item__icon--member">{{ initials(member.fullName) }}</span>
+                <span class="global-search-item__body">
+                  <strong>{{ member.fullName }}</strong>
+                  <small>{{ member.email }} · {{ member.projectNames.slice(0, 2).join(', ') }}</small>
+                </span>
+                <span class="global-search-chip">{{ member.role }}</span>
+              </button>
+            </section>
+          </div>
+        </section>
+      </div>
+    </Teleport>
 
     <div
       v-if="notificationsOpen"
@@ -1055,3 +1330,226 @@ provide(dashboardContextKey, {
     <WelcomeOverlay />
   </AppShell>
 </template>
+
+<style scoped>
+.global-search-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 88px 20px 24px;
+  background: rgba(15, 23, 42, 0.28);
+  backdrop-filter: blur(8px);
+}
+
+.global-search-panel {
+  width: min(760px, 100%);
+  max-height: min(760px, calc(100vh - 120px));
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  border: 1px solid rgba(203, 213, 225, 0.92);
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.22);
+}
+
+.global-search-input {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #64748b;
+}
+
+.global-search-input input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  color: #0f172a;
+  background: transparent;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.global-search-input button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  color: #475569;
+  background: #f8fafc;
+  cursor: pointer;
+}
+
+.global-search-shortcuts {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.global-search-shortcuts button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  padding: 8px 12px;
+  color: #0f52ba;
+  background: #eff6ff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.global-search-shortcuts span {
+  margin-left: auto;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.global-search-results {
+  overflow-y: auto;
+  padding: 14px;
+  display: grid;
+  gap: 14px;
+}
+
+.global-search-group {
+  display: grid;
+  gap: 8px;
+}
+
+.global-search-group h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 4px 2px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.global-search-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 12px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.global-search-item:hover,
+.global-search-item:focus-visible {
+  border-color: #bfdbfe;
+  background: #f8fafc;
+  outline: none;
+}
+
+.global-search-item__icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: #ffffff;
+  background: #0f52ba;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.global-search-item__icon--task {
+  background: #0891b2;
+}
+
+.global-search-item__icon--member {
+  background: #4f46e5;
+}
+
+.global-search-item__body {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.global-search-item__body strong {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-search-item__body small {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-search-chip {
+  border-radius: 999px;
+  padding: 6px 9px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.global-search-chip.is-danger {
+  color: #dc2626;
+  background: #fee2e2;
+}
+
+.global-search-empty {
+  padding: 34px 18px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 14px;
+  color: #64748b;
+  background: #f8fafc;
+  text-align: center;
+  font-weight: 700;
+}
+
+@media (max-width: 720px) {
+  .global-search-backdrop {
+    padding: 72px 12px 16px;
+  }
+
+  .global-search-shortcuts {
+    flex-wrap: wrap;
+  }
+
+  .global-search-shortcuts span {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .global-search-item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .global-search-chip {
+    grid-column: 2;
+    justify-self: flex-start;
+  }
+}
+</style>

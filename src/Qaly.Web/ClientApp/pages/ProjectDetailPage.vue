@@ -117,6 +117,13 @@ async function handleUndoFromBanner() {
   } catch { /* ignore */ }
 }
 
+function rejectEvidence(attachmentId: string) {
+  const note = window.prompt('Lý do từ chối?')
+  if (note !== null) {
+    reviewEvidence(attachmentId, false, note)
+  }
+}
+
 const quickEditTitle = ref('')
 const manualMinutes = ref<number>(0)
 const manualNote = ref('')
@@ -261,16 +268,18 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
       <div v-if="activeProjectTab === 'tasks'">
         <section id="tasks" class="task-board-shell glass-card">
-          <div class="panel-heading">
-            <div>
+          <div class="panel-heading task-board-heading">
+            <div class="task-board-heading__title">
               <span>Nhiệm vụ</span>
               <h2>Bảng công việc</h2>
             </div>
-            <div class="board-actions">
-              <div class="search-box">
+            <div class="task-board-search">
+              <div class="search-box task-search-box">
                 <Search :size="16" />
                 <input v-model="taskSearchQuery" type="text" placeholder="Tìm nhiệm vụ (N: mới)..." />
               </div>
+            </div>
+            <div class="board-actions">
               <button class="primary-button primary-button--compact" type="button" @click="createTaskOpen = !createTaskOpen">
                 <Plus :size="16" />
                 <span>Nhiệm vụ</span>
@@ -553,7 +562,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                         <button class="approve-btn" title="Duyệt minh chứng" @click="reviewEvidence(attachment.id, true, '')">
                           <Check :size="14" /> Duyệt
                         </button>
-                        <button class="reject-btn" title="Từ chối" @click="() => { const note = prompt('Lý do từ chối?'); if(note !== null) reviewEvidence(attachment.id, false, note); }">
+                        <button class="reject-btn" title="Từ chối" @click="rejectEvidence(attachment.id)">
                           <Ban :size="14" /> Từ chối
                         </button>
                       </div>
@@ -681,6 +690,56 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .project-tabs {
   width: 100%;
   justify-content: center;
+}
+
+.task-board-heading {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(260px, 420px) minmax(260px, 1fr);
+  gap: 16px;
+  align-items: center;
+}
+
+.task-board-heading__title {
+  min-width: 0;
+}
+
+.task-board-search {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.task-search-box {
+  width: min(100%, 420px);
+}
+
+.board-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.task-board-heading .primary-button,
+.task-board-heading .primary-button span {
+  color: #ffffff;
+}
+
+.task-board-heading .primary-button svg {
+  color: #ffffff;
+  stroke: #ffffff;
+}
+
+@media (max-width: 980px) {
+  .task-board-heading {
+    grid-template-columns: 1fr;
+  }
+
+  .task-board-search,
+  .board-actions {
+    justify-content: flex-start;
+  }
 }
 
 .kanban-column__list {
