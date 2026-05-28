@@ -56,6 +56,32 @@ public record GroupInvitationDto(
     DateTimeOffset ExpiredAt,
     DateTimeOffset CreatedAt);
 
+public record CreateGroupPollOptionRequest(
+    string Content);
+
+public record CreateGroupPollRequest(
+    string Question,
+    IReadOnlyList<CreateGroupPollOptionRequest> Options,
+    bool AllowMultiple,
+    DateTimeOffset? ExpiredAt = null);
+
+public record GroupPollOptionDto(
+    Guid Id,
+    string Content,
+    int SortOrder);
+
+public record GroupPollDto(
+    Guid Id,
+    Guid GroupId,
+    string Question,
+    bool AllowMultiple,
+    string Status,
+    DateTimeOffset? ExpiredAt,
+    Guid CreatedByUserId,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? UpdatedAt,
+    IReadOnlyList<GroupPollOptionDto> Options);
+
 public record UpdateGroupMemberRoleRequest(
     string Role);
 

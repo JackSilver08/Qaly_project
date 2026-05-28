@@ -23,6 +23,8 @@ public class GroupsServiceTests : IDisposable
     private readonly GenericRepository<WorkGroup> _groupRepo;
     private readonly GenericRepository<WorkGroupMember> _memberRepo;
     private readonly GenericRepository<GroupInvitation> _invitationRepo;
+    private readonly GenericRepository<GroupPoll> _pollRepo;
+    private readonly GenericRepository<GroupPollOption> _pollOptionRepo;
     private readonly GenericRepository<GroupMessage> _messageRepo;
     private readonly GenericRepository<Organization> _organizationRepo;
     private readonly GenericRepository<OrganizationMember> _organizationMemberRepo;
@@ -46,6 +48,8 @@ public class GroupsServiceTests : IDisposable
         _groupRepo = new GenericRepository<WorkGroup>(_context);
         _memberRepo = new GenericRepository<WorkGroupMember>(_context);
         _invitationRepo = new GenericRepository<GroupInvitation>(_context);
+        _pollRepo = new GenericRepository<GroupPoll>(_context);
+        _pollOptionRepo = new GenericRepository<GroupPollOption>(_context);
         _messageRepo = new GenericRepository<GroupMessage>(_context);
         _organizationRepo = new GenericRepository<Organization>(_context);
         _organizationMemberRepo = new GenericRepository<OrganizationMember>(_context);
@@ -321,6 +325,215 @@ public class GroupsServiceTests : IDisposable
 
         var saved = await _context.GroupInvitations.SingleAsync(invitation => invitation.Email == "resilient@qaly.dev");
         saved.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task CreatePollAsync_WhenOwnerCreatesPoll_ReturnsCreatedAndPersistsPoll()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Poll Group");
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+        var request = CreateValidPollRequest(allowMultiple: true, expiredAt: DateTimeOffset.UtcNow.AddHours(2));
+
+        var result = await CreateService().CreatePollAsync(group.Id, request);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.StatusCode.Should().Be(201);
+        result.Data.Should().NotBeNull();
+        result.Data!.GroupId.Should().Be(group.Id);
+        result.Data.Question.Should().Be("Favorite framework?");
+        result.Data.Status.Should().Be(GroupPollStatus.Open.ToString());
+        result.Data.CreatedByUserId.Should().Be(ownerId);
+        result.Data.AllowMultiple.Should().BeTrue();
+        result.Data.Options.Should().HaveCount(3);
+        result.Data.Options.Select(option => option.SortOrder).Should().ContainInOrder(1, 2, 3);
+        result.Data.Options.Select(option => option.Content).Should().ContainInOrder("ASP.NET Core", "Spring Boot", "NestJS");
+
+        var poll = await _context.GroupPolls.Include(item => item.Options).SingleAsync();
+        poll.Status.Should().Be(GroupPollStatus.Open);
+        poll.CreatedByUserId.Should().Be(ownerId);
+        poll.AllowMultiple.Should().BeTrue();
+        poll.Options.Should().HaveCount(3);
+        poll.Options.OrderBy(option => option.SortOrder).Select(option => option.Content).Should().ContainInOrder("ASP.NET Core", "Spring Boot", "NestJS");
+    }
+
+    [Fact]
+    public async Task CreatePollAsync_WhenAdminCreatesPoll_ReturnsCreated()
+    {
+        var ownerId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(adminId, "Admin", "admin@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Poll Group");
+        await AddMemberAsync(group.Id, adminId, GroupRoleRules.Admin);
+        _currentUser.SetupGet(user => user.UserId).Returns(adminId);
+
+        var result = await CreateService().CreatePollAsync(group.Id, CreateValidPollRequest());
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.StatusCode.Should().Be(201);
+    }
+
+    [Fact]
+    public async Task CreatePollAsync_WhenMemberCreatesPoll_ReturnsForbidden()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Poll Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+
+        var result = await CreateService().CreatePollAsync(group.Id, CreateValidPollRequest());
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task CreatePollAsync_WhenUserNotInGroup_ReturnsForbidden()
+    {
+        var ownerId = Guid.NewGuid();
+        var outsiderId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(outsiderId, "Outsider", "outsider@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Poll Group");
+        _currentUser.SetupGet(user => user.UserId).Returns(outsiderId);
+
+        var result = await CreateService().CreatePollAsync(group.Id, CreateValidPollRequest());
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task CreatePollAsync_WhenGroupNotFound_ReturnsNotFound()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+
+        var result = await CreateService().CreatePollAsync(Guid.NewGuid(), CreateValidPollRequest());
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(404);
+    }
+
+    [Fact]
+    public async Task CreatePollAsync_WhenQuestionEmpty_ReturnsBadRequest()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Poll Group");
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+
+        var result = await CreateService().CreatePollAsync(group.Id, CreateValidPollRequest(question: "  "));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+    }
+
+    [Fact]
+    public async Task CreatePollAsync_WhenOptionCountLessThanTwo_ReturnsBadRequest()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Poll Group");
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+
+        var request = new CreateGroupPollRequest(
+            "Question",
+            new List<CreateGroupPollOptionRequest> { new("Only one option") },
+            false,
+            null);
+
+        var result = await CreateService().CreatePollAsync(group.Id, request);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+    }
+
+    [Fact]
+    public async Task CreatePollAsync_WhenOptionIsEmpty_ReturnsBadRequest()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Poll Group");
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+
+        var request = new CreateGroupPollRequest(
+            "Question",
+            new List<CreateGroupPollOptionRequest>
+            {
+                new("Valid"),
+                new("   ")
+            },
+            false,
+            null);
+
+        var result = await CreateService().CreatePollAsync(group.Id, request);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+    }
+
+    [Fact]
+    public async Task CreatePollAsync_WhenOptionsDuplicatedAfterNormalize_ReturnsBadRequest()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Poll Group");
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+
+        var request = new CreateGroupPollRequest(
+            "Question",
+            new List<CreateGroupPollOptionRequest>
+            {
+                new("Option A"),
+                new(" option a ")
+            },
+            false,
+            null);
+
+        var result = await CreateService().CreatePollAsync(group.Id, request);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+    }
+
+    [Fact]
+    public async Task CreatePollAsync_WhenExpiredAtInPast_ReturnsBadRequest()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Poll Group");
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+
+        var result = await CreateService().CreatePollAsync(
+            group.Id,
+            CreateValidPollRequest(expiredAt: DateTimeOffset.UtcNow.AddMinutes(-1)));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+    }
+
+    [Fact]
+    public async Task CreatePollAsync_WhenAllowMultipleFalse_PersistsFalseValue()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Poll Group");
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+
+        var result = await CreateService().CreatePollAsync(group.Id, CreateValidPollRequest(allowMultiple: false));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.AllowMultiple.Should().BeFalse();
+
+        var poll = await _context.GroupPolls.SingleAsync();
+        poll.AllowMultiple.Should().BeFalse();
     }
 
     [Fact]
@@ -958,6 +1171,8 @@ public class GroupsServiceTests : IDisposable
             _groupRepo,
             _memberRepo,
             _invitationRepo,
+            _pollRepo,
+            _pollOptionRepo,
             _messageRepo,
             _organizationRepo,
             _organizationMemberRepo,
@@ -1029,6 +1244,21 @@ public class GroupsServiceTests : IDisposable
         await _context.SaveChangesAsync();
         return invitation;
     }
+
+    private static CreateGroupPollRequest CreateValidPollRequest(
+        string question = "Favorite framework?",
+        bool allowMultiple = false,
+        DateTimeOffset? expiredAt = null)
+        => new(
+            question,
+            new List<CreateGroupPollOptionRequest>
+            {
+                new("ASP.NET Core"),
+                new("Spring Boot"),
+                new("NestJS")
+            },
+            allowMultiple,
+            expiredAt);
 
     private static ProjectDto CreateProjectDto(Guid projectId, string name, Guid sourceGroupId)
         => new(

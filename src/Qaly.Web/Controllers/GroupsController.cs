@@ -71,6 +71,13 @@ public class GroupsController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpPost("{id:guid}/polls")]
+    public async Task<IActionResult> CreatePoll(Guid id, [FromBody] CreateGroupPollRequest request, CancellationToken ct)
+    {
+        var result = await _groupsService.CreatePollAsync(id, request, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpPost("invitations/{token}/accept")]
     public async Task<IActionResult> AcceptInvitation(string token, CancellationToken ct)
     {

@@ -18,6 +18,8 @@ public class GroupsService : IGroupsService
     private readonly IRepository<WorkGroup> _groupRepo;
     private readonly IRepository<WorkGroupMember> _memberRepo;
     private readonly IRepository<GroupInvitation> _invitationRepo;
+    private readonly IRepository<GroupPoll> _pollRepo;
+    private readonly IRepository<GroupPollOption> _pollOptionRepo;
     private readonly IRepository<GroupMessage> _messageRepo;
     private readonly IRepository<Organization> _organizationRepo;
     private readonly IRepository<OrganizationMember> _organizationMemberRepo;
@@ -35,6 +37,8 @@ public class GroupsService : IGroupsService
         IRepository<WorkGroup> groupRepo,
         IRepository<WorkGroupMember> memberRepo,
         IRepository<GroupInvitation> invitationRepo,
+        IRepository<GroupPoll> pollRepo,
+        IRepository<GroupPollOption> pollOptionRepo,
         IRepository<GroupMessage> messageRepo,
         IRepository<Organization> organizationRepo,
         IRepository<OrganizationMember> organizationMemberRepo,
@@ -51,6 +55,8 @@ public class GroupsService : IGroupsService
         _groupRepo = groupRepo;
         _memberRepo = memberRepo;
         _invitationRepo = invitationRepo;
+        _pollRepo = pollRepo;
+        _pollOptionRepo = pollOptionRepo;
         _messageRepo = messageRepo;
         _organizationRepo = organizationRepo;
         _organizationMemberRepo = organizationMemberRepo;
@@ -353,6 +359,128 @@ public class GroupsService : IGroupsService
         await SendInvitationEmailBestEffortAsync(groupSummary.Name, invitation, currentUserId.Value, ct);
 
         return Result.Created(ToInvitationDto(invitation));
+    }
+
+    public async Task<Result<GroupPollDto>> CreatePollAsync(Guid groupId, CreateGroupPollRequest request, CancellationToken ct = default)
+    {
+        if (groupId == Guid.Empty)
+        {
+            return Result.Failure<GroupPollDto>("Group id is required.");
+        }
+
+        if (request == null)
+        {
+            return Result.Failure<GroupPollDto>("Poll request is required.");
+        }
+
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Failure<GroupPollDto>("Authentication is required.", 401);
+        }
+
+        var group = await _groupRepo.GetByIdAsync(groupId, ct);
+        if (group == null)
+        {
+            return Result.NotFound<GroupPollDto>("Group was not found.");
+        }
+
+        var membershipRole = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(member => member.WorkGroupId == groupId && member.UserId == currentUserId.Value)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+
+        if (membershipRole == null)
+        {
+            return Result.Forbidden<GroupPollDto>("Current user is not a group member.");
+        }
+
+        if (!GroupRoleRules.CanCreatePoll(membershipRole))
+        {
+            return Result.Forbidden<GroupPollDto>("Bạn không có quyền tạo bình chọn trong nhóm này.");
+        }
+
+        var normalizedQuestion = NormalizeOptional(request.Question);
+        if (string.IsNullOrWhiteSpace(normalizedQuestion))
+        {
+            return Result.Failure<GroupPollDto>("Question is required.");
+        }
+
+        if (normalizedQuestion.Length > 500)
+        {
+            return Result.Failure<GroupPollDto>("Question must be 500 characters or fewer.");
+        }
+
+        if (request.Options == null || request.Options.Count < 2)
+        {
+            return Result.Failure<GroupPollDto>("Poll must contain at least 2 options.");
+        }
+
+        var normalizedOptions = new List<string>(request.Options.Count);
+        var dedupe = new HashSet<string>(StringComparer.Ordinal);
+
+        for (var index = 0; index < request.Options.Count; index++)
+        {
+            var normalizedContent = NormalizeOptional(request.Options[index]?.Content);
+            if (string.IsNullOrWhiteSpace(normalizedContent))
+            {
+                return Result.Failure<GroupPollDto>("Option content is required.");
+            }
+
+            if (normalizedContent.Length > 300)
+            {
+                return Result.Failure<GroupPollDto>("Option content must be 300 characters or fewer.");
+            }
+
+            var dedupeKey = normalizedContent.ToLowerInvariant();
+            if (!dedupe.Add(dedupeKey))
+            {
+                return Result.Failure<GroupPollDto>("Poll options must be unique.");
+            }
+
+            normalizedOptions.Add(normalizedContent);
+        }
+
+        if (request.ExpiredAt.HasValue && request.ExpiredAt.Value <= DateTimeOffset.UtcNow)
+        {
+            return Result.Failure<GroupPollDto>("ExpiredAt must be in the future.");
+        }
+
+        var poll = new GroupPoll
+        {
+            GroupId = groupId,
+            Question = normalizedQuestion,
+            CreatedByUserId = currentUserId.Value,
+            AllowMultiple = request.AllowMultiple,
+            Status = GroupPollStatus.Open,
+            ExpiredAt = request.ExpiredAt
+        };
+
+        await _pollRepo.AddAsync(poll, ct);
+
+        var options = normalizedOptions
+            .Select((content, index) => new GroupPollOption
+            {
+                PollId = poll.Id,
+                Content = content,
+                SortOrder = index + 1
+            })
+            .ToList();
+
+        await _pollOptionRepo.AddRangeAsync(options, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        await _auditLogService.LogAsync("CreatePoll", nameof(WorkGroup), groupId.ToString(), new
+        {
+            PollId = poll.Id,
+            poll.Question,
+            poll.AllowMultiple,
+            poll.ExpiredAt,
+            OptionCount = options.Count
+        }, ct);
+
+        return Result.Created(ToPollDto(poll, options));
     }
 
     public async Task<Result<GroupInvitationDto>> AcceptInvitationAsync(string token, CancellationToken ct = default)
@@ -934,6 +1062,22 @@ public class GroupsService : IGroupsService
             invitation.Status.ToString(),
             invitation.ExpiredAt,
             invitation.CreatedAt);
+
+    private static GroupPollDto ToPollDto(GroupPoll poll, IReadOnlyList<GroupPollOption> options)
+        => new(
+            poll.Id,
+            poll.GroupId,
+            poll.Question,
+            poll.AllowMultiple,
+            poll.Status.ToString(),
+            poll.ExpiredAt,
+            poll.CreatedByUserId,
+            poll.CreatedAt,
+            poll.UpdatedAt,
+            options
+                .OrderBy(option => option.SortOrder)
+                .Select(option => new GroupPollOptionDto(option.Id, option.Content, option.SortOrder))
+                .ToList());
 
     private static GroupMessageDto ToMessageDto(GroupMessage message)
         => new(

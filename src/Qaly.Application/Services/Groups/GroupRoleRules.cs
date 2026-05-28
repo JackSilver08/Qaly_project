@@ -34,6 +34,9 @@ public static class GroupRoleRules
         => string.Equals(role, Owner, StringComparison.OrdinalIgnoreCase)
            || string.Equals(role, Admin, StringComparison.OrdinalIgnoreCase);
 
+    public static bool CanCreatePoll(string? role)
+        => CanManage(role);
+
     public static bool CanChangeMemberRole(string? actorRole, string? targetRole)
     {
         var normalizedActorRole = Normalize(actorRole);
