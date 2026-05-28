@@ -355,6 +355,128 @@ public class GroupsService : IGroupsService
         return Result.Created(ToInvitationDto(invitation));
     }
 
+    public async Task<Result<GroupInvitationDto>> AcceptInvitationAsync(string token, CancellationToken ct = default)
+    {
+        var normalizedToken = NormalizeToken(token);
+        if (string.IsNullOrWhiteSpace(normalizedToken))
+        {
+            return Result.Failure<GroupInvitationDto>("Invitation token is required.");
+        }
+
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Failure<GroupInvitationDto>("Authentication is required.", 401);
+        }
+
+        var invitation = await _invitationRepo.GetQueryable()
+            .FirstOrDefaultAsync(item => item.Token == normalizedToken, ct);
+        if (invitation == null)
+        {
+            return Result.NotFound<GroupInvitationDto>("Invitation was not found.");
+        }
+
+        var stateValidationResult = await ValidateInvitationCanBeActionedAsync(invitation, ct);
+        if (stateValidationResult != null)
+        {
+            return stateValidationResult;
+        }
+
+        var currentUserEmail = await GetCurrentUserNormalizedEmailAsync(currentUserId.Value, ct);
+        if (string.IsNullOrWhiteSpace(currentUserEmail))
+        {
+            return Result.Forbidden<GroupInvitationDto>("Current user email is not available.");
+        }
+
+        if (!string.Equals(currentUserEmail, invitation.Email, StringComparison.Ordinal))
+        {
+            return Result.Forbidden<GroupInvitationDto>("Invitation does not belong to the current user.");
+        }
+
+        var group = await _groupRepo.GetByIdAsync(invitation.GroupId, ct);
+        if (group == null)
+        {
+            return Result.NotFound<GroupInvitationDto>("Group was not found.");
+        }
+
+        var isMember = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .AnyAsync(member => member.WorkGroupId == invitation.GroupId && member.UserId == currentUserId.Value, ct);
+
+        invitation.Status = GroupInvitationStatus.Accepted;
+
+        if (!isMember)
+        {
+            await _memberRepo.AddAsync(new WorkGroupMember
+            {
+                WorkGroupId = invitation.GroupId,
+                UserId = currentUserId.Value,
+                Role = GroupRoleRules.Member
+            }, ct);
+        }
+
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync("AcceptInvitation", nameof(WorkGroup), invitation.GroupId.ToString(), new
+        {
+            invitation.Id,
+            invitation.Email,
+            UserId = currentUserId.Value,
+            AlreadyMember = isMember
+        }, ct);
+
+        return Result.Success(ToInvitationDto(invitation));
+    }
+
+    public async Task<Result<GroupInvitationDto>> RejectInvitationAsync(string token, CancellationToken ct = default)
+    {
+        var normalizedToken = NormalizeToken(token);
+        if (string.IsNullOrWhiteSpace(normalizedToken))
+        {
+            return Result.Failure<GroupInvitationDto>("Invitation token is required.");
+        }
+
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Failure<GroupInvitationDto>("Authentication is required.", 401);
+        }
+
+        var invitation = await _invitationRepo.GetQueryable()
+            .FirstOrDefaultAsync(item => item.Token == normalizedToken, ct);
+        if (invitation == null)
+        {
+            return Result.NotFound<GroupInvitationDto>("Invitation was not found.");
+        }
+
+        var stateValidationResult = await ValidateInvitationCanBeActionedAsync(invitation, ct);
+        if (stateValidationResult != null)
+        {
+            return stateValidationResult;
+        }
+
+        var currentUserEmail = await GetCurrentUserNormalizedEmailAsync(currentUserId.Value, ct);
+        if (string.IsNullOrWhiteSpace(currentUserEmail))
+        {
+            return Result.Forbidden<GroupInvitationDto>("Current user email is not available.");
+        }
+
+        if (!string.Equals(currentUserEmail, invitation.Email, StringComparison.Ordinal))
+        {
+            return Result.Forbidden<GroupInvitationDto>("Invitation does not belong to the current user.");
+        }
+
+        invitation.Status = GroupInvitationStatus.Rejected;
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync("RejectInvitation", nameof(WorkGroup), invitation.GroupId.ToString(), new
+        {
+            invitation.Id,
+            invitation.Email,
+            UserId = currentUserId.Value
+        }, ct);
+
+        return Result.Success(ToInvitationDto(invitation));
+    }
+
     public async Task<Result> AddExistingMemberAsync(Guid groupId, AddGroupMemberRequest request, CancellationToken ct = default)
     {
         if (!await CanManageGroupAsync(groupId, ct))
@@ -920,6 +1042,39 @@ public class GroupsService : IGroupsService
 
     private static string NormalizeEmail(string email)
         => string.IsNullOrWhiteSpace(email) ? string.Empty : email.Trim().ToLowerInvariant();
+
+    private async Task<Result<GroupInvitationDto>?> ValidateInvitationCanBeActionedAsync(GroupInvitation invitation, CancellationToken ct)
+    {
+        if (invitation.Status != GroupInvitationStatus.Pending)
+        {
+            return invitation.Status == GroupInvitationStatus.Expired
+                ? Result.Failure<GroupInvitationDto>("Invitation has expired.", 409)
+                : Result.Failure<GroupInvitationDto>("Invitation has already been processed.", 409);
+        }
+
+        if (invitation.ExpiredAt > DateTimeOffset.UtcNow)
+        {
+            return null;
+        }
+
+        invitation.Status = GroupInvitationStatus.Expired;
+        await _unitOfWork.SaveChangesAsync(ct);
+        return Result.Failure<GroupInvitationDto>("Invitation has expired.", 409);
+    }
+
+    private async Task<string> GetCurrentUserNormalizedEmailAsync(Guid userId, CancellationToken ct)
+    {
+        var currentUserEmail = await _userRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(user => user.Id == userId && user.IsActive)
+            .Select(user => user.Email)
+            .FirstOrDefaultAsync(ct);
+
+        return NormalizeEmail(currentUserEmail ?? string.Empty);
+    }
+
+    private static string NormalizeToken(string token)
+        => string.IsNullOrWhiteSpace(token) ? string.Empty : token.Trim();
 
     private static string? NormalizeOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

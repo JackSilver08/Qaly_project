@@ -71,6 +71,20 @@ public class GroupsController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpPost("invitations/{token}/accept")]
+    public async Task<IActionResult> AcceptInvitation(string token, CancellationToken ct)
+    {
+        var result = await _groupsService.AcceptInvitationAsync(token, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("invitations/{token}/reject")]
+    public async Task<IActionResult> RejectInvitation(string token, CancellationToken ct)
+    {
+        var result = await _groupsService.RejectInvitationAsync(token, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpPost("{id:guid}/members")]
     public async Task<IActionResult> AddExistingMember(Guid id, AddGroupMemberRequest request, CancellationToken ct)
     {

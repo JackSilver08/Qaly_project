@@ -324,6 +324,266 @@ public class GroupsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task AcceptInvitationAsync_WithValidPendingInvitation_AddsMemberAndMarksAccepted()
+    {
+        var ownerId = Guid.NewGuid();
+        var invitedUserId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(invitedUserId, "Invited", "invited@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Accept Group");
+        const string token = "accept-token-valid";
+        await AddInvitationAsync(group.Id, "invited@qaly.dev", GroupInvitationStatus.Pending, DateTimeOffset.UtcNow.AddDays(2), token);
+        _currentUser.SetupGet(user => user.UserId).Returns(invitedUserId);
+
+        var result = await CreateService().AcceptInvitationAsync(token);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.StatusCode.Should().Be(200);
+        result.Data!.Status.Should().Be(GroupInvitationStatus.Accepted.ToString());
+
+        var member = await _context.WorkGroupMembers.SingleOrDefaultAsync(item => item.WorkGroupId == group.Id && item.UserId == invitedUserId);
+        member.Should().NotBeNull();
+        member!.Role.Should().Be(GroupRoleRules.Member);
+
+        var invitation = await _context.GroupInvitations.SingleAsync(item => item.Token == token);
+        invitation.Status.Should().Be(GroupInvitationStatus.Accepted);
+    }
+
+    [Fact]
+    public async Task AcceptInvitationAsync_WhenTokenNotFound_ReturnsNotFound()
+    {
+        var userId = Guid.NewGuid();
+        await AddUserAsync(userId, "User", "user@qaly.dev");
+        _currentUser.SetupGet(user => user.UserId).Returns(userId);
+
+        var result = await CreateService().AcceptInvitationAsync("missing-token");
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(404);
+    }
+
+    [Fact]
+    public async Task AcceptInvitationAsync_WhenTokenIsEmpty_ReturnsBadRequest()
+    {
+        var userId = Guid.NewGuid();
+        await AddUserAsync(userId, "User", "user@qaly.dev");
+        _currentUser.SetupGet(user => user.UserId).Returns(userId);
+
+        var result = await CreateService().AcceptInvitationAsync("   ");
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+    }
+
+    [Fact]
+    public async Task AcceptInvitationAsync_WhenUserNotAuthenticated_ReturnsUnauthorized()
+    {
+        var result = await CreateService().AcceptInvitationAsync("token");
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(401);
+    }
+
+    [Fact]
+    public async Task AcceptInvitationAsync_WhenInvitationExpired_DoesNotAddMemberAndMarksExpired()
+    {
+        var ownerId = Guid.NewGuid();
+        var invitedUserId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(invitedUserId, "Invited", "invited@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Accept Group");
+        const string token = "accept-token-expired";
+        await AddInvitationAsync(group.Id, "invited@qaly.dev", GroupInvitationStatus.Pending, DateTimeOffset.UtcNow.AddMinutes(-1), token);
+        _currentUser.SetupGet(user => user.UserId).Returns(invitedUserId);
+
+        var result = await CreateService().AcceptInvitationAsync(token);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(409);
+
+        var memberCount = await _context.WorkGroupMembers.CountAsync(item => item.WorkGroupId == group.Id && item.UserId == invitedUserId);
+        memberCount.Should().Be(0);
+
+        var invitation = await _context.GroupInvitations.SingleAsync(item => item.Token == token);
+        invitation.Status.Should().Be(GroupInvitationStatus.Expired);
+    }
+
+    [Theory]
+    [InlineData(GroupInvitationStatus.Accepted)]
+    [InlineData(GroupInvitationStatus.Rejected)]
+    [InlineData(GroupInvitationStatus.Revoked)]
+    public async Task AcceptInvitationAsync_WhenInvitationAlreadyProcessed_ReturnsConflict(GroupInvitationStatus status)
+    {
+        var ownerId = Guid.NewGuid();
+        var invitedUserId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(invitedUserId, "Invited", "invited@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Accept Group");
+        const string token = "accept-token-processed";
+        await AddInvitationAsync(group.Id, "invited@qaly.dev", status, DateTimeOffset.UtcNow.AddDays(3), token);
+        _currentUser.SetupGet(user => user.UserId).Returns(invitedUserId);
+
+        var result = await CreateService().AcceptInvitationAsync(token);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(409);
+    }
+
+    [Fact]
+    public async Task AcceptInvitationAsync_WhenCurrentUserEmailMismatch_ReturnsForbidden()
+    {
+        var ownerId = Guid.NewGuid();
+        var invitedUserId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(invitedUserId, "Invited", "another@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Accept Group");
+        const string token = "accept-token-email-mismatch";
+        await AddInvitationAsync(group.Id, "invited@qaly.dev", GroupInvitationStatus.Pending, DateTimeOffset.UtcNow.AddDays(3), token);
+        _currentUser.SetupGet(user => user.UserId).Returns(invitedUserId);
+
+        var result = await CreateService().AcceptInvitationAsync(token);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task AcceptInvitationAsync_WhenUserAlreadyMember_DoesNotCreateDuplicateMember()
+    {
+        var ownerId = Guid.NewGuid();
+        var invitedUserId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(invitedUserId, "Invited", "invited@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Accept Group");
+        await AddMemberAsync(group.Id, invitedUserId, GroupRoleRules.Member);
+        const string token = "accept-token-existing-member";
+        await AddInvitationAsync(group.Id, "invited@qaly.dev", GroupInvitationStatus.Pending, DateTimeOffset.UtcNow.AddDays(2), token);
+        _currentUser.SetupGet(user => user.UserId).Returns(invitedUserId);
+
+        var result = await CreateService().AcceptInvitationAsync(token);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.StatusCode.Should().Be(200);
+
+        var memberCount = await _context.WorkGroupMembers.CountAsync(item => item.WorkGroupId == group.Id && item.UserId == invitedUserId);
+        memberCount.Should().Be(1);
+
+        var invitation = await _context.GroupInvitations.SingleAsync(item => item.Token == token);
+        invitation.Status.Should().Be(GroupInvitationStatus.Accepted);
+    }
+
+    [Fact]
+    public async Task RejectInvitationAsync_WithValidPendingInvitation_MarksRejectedAndDoesNotAddMember()
+    {
+        var ownerId = Guid.NewGuid();
+        var invitedUserId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(invitedUserId, "Invited", "invited@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Reject Group");
+        const string token = "reject-token-valid";
+        await AddInvitationAsync(group.Id, "invited@qaly.dev", GroupInvitationStatus.Pending, DateTimeOffset.UtcNow.AddDays(1), token);
+        _currentUser.SetupGet(user => user.UserId).Returns(invitedUserId);
+
+        var result = await CreateService().RejectInvitationAsync(token);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.StatusCode.Should().Be(200);
+        result.Data!.Status.Should().Be(GroupInvitationStatus.Rejected.ToString());
+
+        var memberCount = await _context.WorkGroupMembers.CountAsync(item => item.WorkGroupId == group.Id && item.UserId == invitedUserId);
+        memberCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task RejectInvitationAsync_WhenTokenNotFound_ReturnsNotFound()
+    {
+        var userId = Guid.NewGuid();
+        await AddUserAsync(userId, "User", "user@qaly.dev");
+        _currentUser.SetupGet(user => user.UserId).Returns(userId);
+
+        var result = await CreateService().RejectInvitationAsync("missing-token");
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(404);
+    }
+
+    [Fact]
+    public async Task RejectInvitationAsync_WhenTokenIsEmpty_ReturnsBadRequest()
+    {
+        var userId = Guid.NewGuid();
+        await AddUserAsync(userId, "User", "user@qaly.dev");
+        _currentUser.SetupGet(user => user.UserId).Returns(userId);
+
+        var result = await CreateService().RejectInvitationAsync(" ");
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+    }
+
+    [Fact]
+    public async Task RejectInvitationAsync_WhenUserNotAuthenticated_ReturnsUnauthorized()
+    {
+        var result = await CreateService().RejectInvitationAsync("token");
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(401);
+    }
+
+    [Theory]
+    [InlineData(GroupInvitationStatus.Pending, true)]
+    [InlineData(GroupInvitationStatus.Accepted, false)]
+    [InlineData(GroupInvitationStatus.Rejected, false)]
+    [InlineData(GroupInvitationStatus.Revoked, false)]
+    [InlineData(GroupInvitationStatus.Expired, false)]
+    public async Task RejectInvitationAsync_WhenInvitationCannotBeActioned_ReturnsConflict(GroupInvitationStatus status, bool shouldMarkExpired)
+    {
+        var ownerId = Guid.NewGuid();
+        var invitedUserId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(invitedUserId, "Invited", "invited@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Reject Group");
+        const string token = "reject-token-conflict";
+        var expiredAt = status == GroupInvitationStatus.Pending
+            ? DateTimeOffset.UtcNow.AddMinutes(-5)
+            : DateTimeOffset.UtcNow.AddDays(2);
+        await AddInvitationAsync(group.Id, "invited@qaly.dev", status, expiredAt, token);
+        _currentUser.SetupGet(user => user.UserId).Returns(invitedUserId);
+
+        var result = await CreateService().RejectInvitationAsync(token);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(409);
+
+        var invitation = await _context.GroupInvitations.SingleAsync(item => item.Token == token);
+        if (shouldMarkExpired)
+        {
+            invitation.Status.Should().Be(GroupInvitationStatus.Expired);
+        }
+        else
+        {
+            invitation.Status.Should().Be(status);
+        }
+    }
+
+    [Fact]
+    public async Task RejectInvitationAsync_WhenCurrentUserEmailMismatch_ReturnsForbidden()
+    {
+        var ownerId = Guid.NewGuid();
+        var invitedUserId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(invitedUserId, "Invited", "another@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Reject Group");
+        const string token = "reject-token-email-mismatch";
+        await AddInvitationAsync(group.Id, "invited@qaly.dev", GroupInvitationStatus.Pending, DateTimeOffset.UtcNow.AddDays(2), token);
+        _currentUser.SetupGet(user => user.UserId).Returns(invitedUserId);
+
+        var result = await CreateService().RejectInvitationAsync(token);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
     public async Task CreateMessageAsync_WhenUserIsMember_PersistsMessage()
     {
         var ownerId = Guid.NewGuid();
@@ -442,17 +702,20 @@ public class GroupsServiceTests : IDisposable
         await _context.SaveChangesAsync();
     }
 
-    private async Task AddInvitationAsync(Guid groupId, string email, GroupInvitationStatus status, DateTimeOffset expiredAt)
+    private async Task<GroupInvitation> AddInvitationAsync(Guid groupId, string email, GroupInvitationStatus status, DateTimeOffset expiredAt, string? token = null)
     {
-        await _invitationRepo.AddAsync(new GroupInvitation
+        var invitation = new GroupInvitation
         {
             GroupId = groupId,
             Email = email,
             Status = status,
             ExpiredAt = expiredAt,
-            Token = Guid.NewGuid().ToString("N")
-        });
+            Token = token ?? Guid.NewGuid().ToString("N")
+        };
+
+        await _invitationRepo.AddAsync(invitation);
         await _context.SaveChangesAsync();
+        return invitation;
     }
 
     private static ProjectDto CreateProjectDto(Guid projectId, string name, Guid sourceGroupId)
