@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MessageSquare, MoreHorizontal, Plus, Send, Search, Clock, Play, Square, Calendar, X, ClipboardList, FileUp, File, Check, Ban, CheckCircle2 } from 'lucide-vue-next'
+import { MessageSquare, MoreHorizontal, Plus, Send, Search, Clock, Play, Square, Calendar, X, ClipboardList, FileUp, File, Check, Ban, CheckCircle2, CheckSquare } from 'lucide-vue-next'
 // @ts-ignore
 import { VueDraggable } from '../utils/vendor/vue-draggable-plus.js'
 import ProjectDetailHeader from '../components/ProjectDetailHeader.vue'
@@ -14,6 +14,7 @@ import { useDashboardContext } from '../composables/dashboard-context'
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { apiResult } from '../utils/api-client'
 import type { DashboardTask, TaskAssignmentInsightDto } from '../types'
+import { showError } from '../composables/use-toast'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 
@@ -120,6 +121,7 @@ const quickEditTitle = ref('')
 const manualMinutes = ref<number>(0)
 const manualNote = ref('')
 const showManualForm = ref(false)
+const isKanbanDragging = ref(false)
 const markdown = new MarkdownIt({ linkify: true, breaks: true })
 
 function renderMarkdown(value: string) {
@@ -158,26 +160,50 @@ async function loadAssignmentInsight() {
   }
 }
 
-const onDragEnd = async (evt: { item: HTMLElement; to: HTMLElement; from: HTMLElement; oldIndex?: number; newIndex?: number }) => {
-  const taskId = evt.item.getAttribute('data-id')
-  const newStatus = evt.to.getAttribute('data-status')
+function kanbanStatusFromElement(element: HTMLElement | null | undefined) {
+  return element?.dataset.kanbanStatus
+    ?? element?.closest<HTMLElement>('[data-kanban-status]')?.dataset.kanbanStatus
+    ?? null
+}
+
+function moveTargetIndex(evt: { newDraggableIndex?: number; newIndex?: number }, targetCount: number) {
+  const rawIndex = Number.isInteger(evt.newDraggableIndex) ? evt.newDraggableIndex : evt.newIndex
+  return Math.max(0, Math.min(rawIndex ?? targetCount, targetCount))
+}
+
+const onDragEnd = async (evt: {
+  item: HTMLElement
+  to: HTMLElement
+  from: HTMLElement
+  oldIndex?: number
+  newIndex?: number
+  oldDraggableIndex?: number
+  newDraggableIndex?: number
+}) => {
+  isKanbanDragging.value = false
+  const taskId = evt.item.dataset.id
+  const newStatus = kanbanStatusFromElement(evt.to)
   const project = selectedProject.value
-  if (!taskId || !newStatus || !project || !statusColumns.includes(newStatus)) return
+  if (!taskId || !newStatus || !project || !statusColumns.includes(newStatus)) {
+    await loadDashboard()
+    showError('Không thể xác định cột đích khi kéo thả nhiệm vụ.')
+    return
+  }
 
   const task = project.tasks.find((t: DashboardTask) => t.id === taskId)
-  if (!task) return
+  if (!task) {
+    await loadDashboard()
+    showError('Không tìm thấy nhiệm vụ vừa kéo thả.')
+    return
+  }
 
   const sameColumn = evt.to === evt.from && task.status === newStatus
   if (sameColumn && evt.oldIndex === evt.newIndex) return
 
-  const orderedTaskIds = Array.from(evt.to.querySelectorAll<HTMLElement>('.kanban-card'))
-    .map((element) => element.dataset.id)
-    .filter((id): id is string => Boolean(id))
-  const targetIndex = orderedTaskIds.indexOf(taskId)
-  if (targetIndex < 0) return
-
-  const beforeTaskId = orderedTaskIds[targetIndex + 1] ?? null
-  const afterTaskId = beforeTaskId ? null : orderedTaskIds[targetIndex - 1] ?? null
+  const targetTasks = tasksByStatus(newStatus).filter((item: DashboardTask) => item.id !== taskId)
+  const targetIndex = moveTargetIndex(evt, targetTasks.length)
+  const beforeTaskId = targetTasks[targetIndex]?.id ?? null
+  const afterTaskId = beforeTaskId ? null : targetTasks[targetIndex - 1]?.id ?? null
 
   await moveTaskOnKanban(project.id, task, newStatus, beforeTaskId, afterTaskId)
 }
@@ -325,7 +351,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
           </Teleport>
 
           <div class="kanban-board">
-            <section v-for="status in statusColumns" :key="status" class="kanban-column">
+            <section v-for="status in statusColumns" :key="status" class="kanban-column" :data-kanban-status="status">
               <div class="kanban-column__header">
                 <strong>{{ displayStatus(status) }}</strong>
                 <span class="count-badge">{{ tasksByStatus(status).length }}</span>
@@ -339,7 +365,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                 ghost-class="ghost-card"
                 drag-class="dragging-card"
                 class="kanban-column__list"
-                :data-status="status"
+                :class="{ 'is-drop-ready': isKanbanDragging }"
+                :data-kanban-status="status"
+                :empty-insert-threshold="120"
+                @start="isKanbanDragging = true"
                 @end="onDragEnd"
               >
                 <article
@@ -657,6 +686,14 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .kanban-column__list {
   min-height: 300px;
   padding: 4px;
+  border: 1px dashed transparent;
+  border-radius: 18px;
+  transition: border-color 0.16s ease, background 0.16s ease;
+}
+
+.kanban-column__list.is-drop-ready {
+  border-color: var(--blue-300);
+  background: rgba(37, 99, 235, 0.04);
 }
 
 .ghost-card {
@@ -705,6 +742,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   background: var(--bg-soft);
   color: var(--muted);
   font-size: 13px;
+  pointer-events: none;
 }
 
 /* Task details */

@@ -146,9 +146,9 @@ export function useTaskActions(
 
       await loadDashboard()
       selectedTaskId.value = task.id
-      showSuccess(`ÄÃ£ cáº­p nháº­t vá»‹ trÃ­ nhiá»‡m vá»¥ trong ${displayStatus(status)}`)
+      showSuccess(`Đã cập nhật vị trí nhiệm vụ trong ${displayStatus(status)}`)
     } catch (error) {
-      showError(errorMessage(error, 'KhÃ´ng thá»ƒ cáº­p nháº­t vá»‹ trÃ­ nhiá»‡m vá»¥'))
+      showError(errorMessage(error, 'Không thể cập nhật vị trí nhiệm vụ'))
     }
   }
 
