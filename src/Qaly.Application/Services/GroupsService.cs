@@ -1,6 +1,8 @@
 using System.Net.Mail;
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Groups;
 using Qaly.Application.DTOs.Project;
@@ -23,6 +25,9 @@ public class GroupsService : IGroupsService
     private readonly IProjectService _projectService;
     private readonly INotificationService _notificationService;
     private readonly IAuditLogService _auditLogService;
+    private readonly IEmailService _emailService;
+    private readonly IGroupInvitationEmailBuilder _groupInvitationEmailBuilder;
+    private readonly ILogger<GroupsService> _logger;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
 
@@ -37,6 +42,9 @@ public class GroupsService : IGroupsService
         IProjectService projectService,
         INotificationService notificationService,
         IAuditLogService auditLogService,
+        IEmailService emailService,
+        IGroupInvitationEmailBuilder groupInvitationEmailBuilder,
+        ILogger<GroupsService> logger,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService)
     {
@@ -50,6 +58,9 @@ public class GroupsService : IGroupsService
         _projectService = projectService;
         _notificationService = notificationService;
         _auditLogService = auditLogService;
+        _emailService = emailService;
+        _groupInvitationEmailBuilder = groupInvitationEmailBuilder;
+        _logger = logger;
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
     }
@@ -339,6 +350,7 @@ public class GroupsService : IGroupsService
         }, ct);
 
         await NotifyInvitedExistingUserAsync(groupSummary.Name, invitation, ct);
+        await SendInvitationEmailBestEffortAsync(groupSummary.Name, invitation, currentUserId.Value, ct);
 
         return Result.Created(ToInvitationDto(invitation));
     }
@@ -840,6 +852,48 @@ public class GroupsService : IGroupsService
             nameof(GroupInvitation),
             $"group:{invitation.GroupId}:invitation:{invitation.Id}:recipient:{invitedUser.Id}",
             ct);
+    }
+
+    private async Task SendInvitationEmailBestEffortAsync(string groupName, GroupInvitation invitation, Guid inviterUserId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(invitation.Token))
+        {
+            _logger.LogWarning(
+                "Skipped sending group invitation email because token is missing. InvitationId: {InvitationId}, GroupId: {GroupId}.",
+                invitation.Id,
+                invitation.GroupId);
+            return;
+        }
+
+        try
+        {
+            var inviterName = await _userRepo.GetQueryable()
+                .AsNoTracking()
+                .Where(user => user.Id == inviterUserId)
+                .Select(user => user.FullName)
+                .FirstOrDefaultAsync(ct);
+
+            var emailContent = _groupInvitationEmailBuilder.Build(
+                groupName,
+                inviterName,
+                invitation.Token,
+                invitation.ExpiredAt);
+
+            await _emailService.SendAsync(invitation.Email, emailContent.Subject, emailContent.Body, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Could not send group invitation email. InvitationId: {InvitationId}, GroupId: {GroupId}, RecipientEmail: {RecipientEmail}.",
+                invitation.Id,
+                invitation.GroupId,
+                invitation.Email);
+        }
     }
 
     private static string GenerateSecureToken()

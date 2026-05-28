@@ -1,0 +1,124 @@
+[33mfee2bb6[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m G2-04: gửi email invite khi mời thành viên vào group (fix)
+[33mb207e10[m Task nhỏ G2-04: gửi email invite khi mời thành viên vào group.
+[33m3319a96[m G2-03: gửi thông báo trong app khi user đã tồn tại trong hệ thống.
+[33mfffcacf[m G2-02: tạo API mời thành viên vào nhóm bằng email
+[33m8b3ec78[m G2-01: thêm model lưu trữ GroupInvitation.
+[33m6860f3c[m Commit xàm
+[33m52966f4[m done task, continue upgrade import
+[33m7c9bc0f[m Tối ưu scroll drop down
+[33m2801b0d[m Nâng cấp toàn diện trợ lý Erumi
+[33m5ec127c[m Fix những thứ còn thiếu cho dự án
+[33mfdccd90[m refactor, upgrade import
+[33m6c96333[m Add work group workflow foundation
+[33mb1cd2a3[m Sếp tôi tên gì ?
+[33m4894cb7[m Upgrade Chatbot Erumi
+[33mddd3335[m Fix warning in log
+[33mba5aaed[m Fix load trang khi tạo task mới
+[33m2f30b95[m Thêm Chart cho DashBoard
+[33me3fd0d3[m Merge branch 'main' of https://github.com/JackSilver08/Qaly_project
+[33mb46afb5[m ABG Yeah i'm share for my dawg
+[33m70671c3[m refac plan
+[33m50147e1[m Tổng hợp và Fix code
+[33med63745[m Giao dien moi
+[33m6673555[m Fix warning in log and failed when run npm build
+[33mf980e29[m giao dien push lan 2
+[33m26286e0[m Resolve merge conflicts and fix Vite entities build
+[33m8d4e921[m Long sua giao dien DashBoard
+[33m1687b5a[m doàn trung(11-13)
+[33mc461ac4[m Merge branch 'main' of https://github.com/JackSilver08/Qaly_project
+[33m0e23a4d[m maintaince some tasks' feats
+[33m4a2785f[m Refactor commit and fix css
+[33mc9fe230[m Merge branch 'main' of https://github.com/JackSilver08/Qaly_project
+[33m464fb05[m task 23-05
+[33mb86f210[m Fix warning in log
+[33m1a17641[m feat(ai): implement AiGateway, Cost Control, and Compliance services (Tasks 21-24)
+[33m58c342b[m Fix warning in log
+[33mc664c87[m donedealine23/5
+[33m786398e[m Implement Task 14 meeting action item task linking
+[33m70dc170[m Implement Task 13 dashboard backend MVP
+[33me75c422[m Merge branch 'main' of https://github.com/JackSilver08/Qaly_project
+[33m88c9904[m Stabilize Kanban and API tasks.
+[33m82f2ae6[m Merge branch 'main' of https://github.com/JackSilver08/Qaly_project
+[33m068c79a[m commit xàm
+[33m59faaff[m task Tuan Chan
+[33m453b913[m Commit xàm
+[33m37268c4[m Tài liệu giao diện
+[33m4f51abe[m Commit xàm
+[33me24cd92[m Merge branch 'main' of https://github.com/JackSilver08/Qaly_project
+[33m5924c5e[m commit xàm 2
+[33m282c60d[m Commit xàm
+[33m8ec08a3[m Tàu liệu và công việc mới cho dự án
+[33mee7e10a[m olama review task
+[33m917e40e[m Resolve merge conflicts in compiled assets
+[33m2e4a58b[m Long làm CSS
+[33m5474f1c[m update timeline for task
+[33md494217[m Upload file khối lượng công việc + Quang Tuấn đã hoàn thành xong phần của mình
+[33mff57784[m Css glassmorphism
+[33m9d6a2ce[m Chốt hoàn thiện trang chi tiết dự án
+[33mb6e4c8e[m Merge branch 'origin/main' and resolve conflicts
+[33mecc5336[m TỔNG HỢP CODE LẦN 1
+[33mb93e540[m rate limit olama
+[33m2c818ad[m Enhance progress monitoring capabilities for task in each project.
+[33m893721a[m Merge branch 'main' of https://github.com/JackSilver08/Qaly_project
+[33m967f5cb[m sua_keo_tha
+[33me8b676a[m Merge branch 'main' of https://github.com/JackSilver08/Qaly_project
+[33m97d4c86[m commit xàm
+[33m2471e98[m fixwikiandwebhooks
+[33mad96817[m Merge branch 'main' of https://github.com/JackSilver08/Qaly_project
+[33me70059a[m Folder tài liệu đặc tả
+[33mc1f0878[m demo add AI into import feature
+[33m79ba315[m plan upgrade import feat
+[33mc1c5a93[m fix đầu vào
+[33m407333a[m feat: implement file import workflow with preview and validation steps
+[33m2e7e81c[m fix gaps, bugs
+[33m7f232ce[m Fix syntax errors and restore missing methods in TaskService.cs
+[33m94cf4fb[m Fix botched merge resolution and clean up TaskService.cs
+[33m2d6c372[m Resolve merge conflicts in TaskService.cs
+[33m8a2c8c7[m feat: implement core project management features including voting, task labeling, commenting, and AI integration services
+[33ma32e760[m refactor
+[33m68dea9b[m fix login css
+[33m8750266[m Fix vài lỗi nhỏ
+[33mc38af99[m Merge branch 'main' of https://github.com/JackSilver08/Qaly_project
+[33me509b7b[m Update CSS
+[33m100ce87[m maintain
+[33mc8e881e[m Merge remote-tracking branch 'origin/main' into main
+[33m1a93e3b[m comprehensive upgrade project
+[33m3140969[m COMMIT LONG
+[33mc588935[m small upgrade
+[33me0bb2ae[m do task
+[33m76d3e3b[m gaps and bugs imple
+[33mff6b03b[m Pop Up thông báo cho các chức năng crud
+[33m07365e6[m Commit xam
+[33m3e28aaa[m Merge branch 'main' of https://github.com/JackSilver08/Qaly_project
+[33mc172446[m GiaLong toi
+[33ma657d35[m Gia Long toi choi
+[33m30813ab[m Commit xàm
+[33m9c0f07c[m upgrade qaly
+[33m847fd9b[m fix conflict
+[33m206c31a[m upgrade qaly
+[33m360757a[m Fix User login
+[33m55d5fd9[m UI header mới
+[33mcb5341d[m UI grid card project
+[33maa8a42f[m feat: implement project wiki system, task management entities, and AI assistant integration
+[33mfdf6a9b[m chỉnh sửa UI
+[33m09951e4[m Fix UI
+[33ma5ec84c[m Merge branch 'main' of https://github.com/JackSilver08/Qaly_project
+[33mab35fcb[m Phân trang Dự Án, Nhiệm Vụ, Đội Nhóm và Dự Án Lưu Trữ
+[33m783e7b6[m Viet Quang Minh toi choi
+[33m50ee3e2[m Merge branch 'develop'
+[33m5f3a100[m[33m ([m[1;31morigin/develop[m[33m)[m Tài liệu học máy
+[33m0747fff[m `Added Qdrant vector database and Ollama AI services, updated AiService and DependencyInjection`
+[33mc30fbbd[m Add File công việc từng ng
+[33m4489a9f[m feat: add ProjectDetailHeader, ProjectMembersTab, ProjectStatsTab, and ProjectWikiTab components
+[33m55e2c55[m Xong những thứ cơ bản
+[33mb04cceb[m UI mới
+[33meb79489[m Refactor code structure for improved readability and maintainability
+[33m1fd64cf[m Xây dựng nền tảng hệ thống sơ khai
+[33m9771a1b[m Merge pull request #1 from JackSilver08/develop
+[33m9fcc8f9[m Hoàn thiện môi trường phát triển dự án lần 1
+[33mf517622[m feat: complete environment setup - Application DI, EF Migration, DataSeeder registration
+[33m9636d49[m docs: add AI integration plan (08_AI_Integration.md) - 7 AI integration points: Priority, Summary, Risk, Assignment, Search, Subtasks, Chat - Architecture diagram with multi-provider support (OpenAI/Gemini/Ollama) - 4-phase roadmap, cost analysis, security guidelines
+[33m9f136aa[m feat: initialize Clean Architecture with AI integration points
+[33mecd3794[m third commit
+[33m6e092ec[m second commit
+[33mfda02c1[m first commit

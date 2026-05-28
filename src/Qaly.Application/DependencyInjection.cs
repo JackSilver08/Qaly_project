@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Services;
+using Qaly.Application.Services.Groups;
 using Qaly.Application.Services.Tasks;
 
 namespace Qaly.Application;
@@ -21,6 +22,7 @@ public static class DependencyInjection
         services.AddScoped<IOrganizationService, OrganizationService>();
         services.AddScoped<IProjectService, ProjectService>();
         services.AddScoped<IGroupsService, GroupsService>();
+        services.AddScoped<IGroupInvitationEmailBuilder, GroupInvitationEmailBuilder>();
         services.AddScoped<ITaskService, TaskService>();
         services.AddScoped<ITaskAccessPolicy, TaskAccessPolicy>();
         services.AddScoped<ICommentService, CommentService>();

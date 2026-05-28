@@ -1,6 +1,8 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Moq;
+using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Groups;
 using Qaly.Application.DTOs.Project;
@@ -29,6 +31,9 @@ public class GroupsServiceTests : IDisposable
     private readonly Mock<IProjectService> _projectService = new();
     private readonly Mock<INotificationService> _notificationService = new();
     private readonly Mock<IAuditLogService> _auditLogService = new();
+    private readonly Mock<IEmailService> _emailService = new();
+    private readonly Mock<IGroupInvitationEmailBuilder> _groupInvitationEmailBuilder = new();
+    private readonly Mock<ILogger<GroupsService>> _logger = new();
     private readonly Mock<ICurrentUserService> _currentUser = new();
 
     public GroupsServiceTests()
@@ -56,6 +61,28 @@ public class GroupsServiceTests : IDisposable
                 It.IsAny<Guid?>(),
                 It.IsAny<string?>(),
                 It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _groupInvitationEmailBuilder
+            .Setup(builder => builder.Build(
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<string>(),
+                It.IsAny<DateTimeOffset>()))
+            .Returns((string groupName, string? inviterName, string invitationToken, DateTimeOffset expiredAt) =>
+            {
+                var inviterLine = string.IsNullOrWhiteSpace(inviterName) ? string.Empty : $"Inviter: {inviterName}{Environment.NewLine}";
+                var encodedToken = Uri.EscapeDataString(invitationToken);
+                return new GroupInvitationEmailContent(
+                    $"Bạn được mời tham gia nhóm {groupName}",
+                    $"Group: {groupName}{Environment.NewLine}{inviterLine}Link: https://frontend.example.com/invitations/accept?token={encodedToken}{Environment.NewLine}Expires: {expiredAt:yyyy-MM-dd HH:mm} UTC");
+            });
+        _emailService
+            .Setup(service => service.SendAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
     }
@@ -118,6 +145,15 @@ public class GroupsServiceTests : IDisposable
         saved.Status.Should().Be(GroupInvitationStatus.Pending);
         saved.Token.Should().NotBeNullOrWhiteSpace();
 
+        _emailService.Verify(service => service.SendAsync(
+            "newuser@qaly.dev",
+            It.Is<string>(subject => subject.Contains("Invite Group", StringComparison.Ordinal)),
+            It.Is<string>(body =>
+                body.Contains("Invite Group", StringComparison.Ordinal) &&
+                body.Contains("https://frontend.example.com/invitations/accept?token=", StringComparison.Ordinal) &&
+                body.Contains(Uri.EscapeDataString(saved.Token), StringComparison.Ordinal)),
+            It.IsAny<CancellationToken>()), Times.Once);
+
         _notificationService.Verify(service => service.CreateAsync(
             It.IsAny<Guid>(),
             It.IsAny<string>(),
@@ -171,6 +207,11 @@ public class GroupsServiceTests : IDisposable
 
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().Be(403);
+        _emailService.Verify(service => service.SendAsync(
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -189,6 +230,11 @@ public class GroupsServiceTests : IDisposable
 
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().Be(409);
+        _emailService.Verify(service => service.SendAsync(
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -213,6 +259,11 @@ public class GroupsServiceTests : IDisposable
             It.IsAny<Guid?>(),
             It.IsAny<string?>(),
             It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+        _emailService.Verify(service => service.SendAsync(
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string>(),
             It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -240,6 +291,36 @@ public class GroupsServiceTests : IDisposable
 
         expiredCount.Should().Be(2);
         acceptedCount.Should().Be(2);
+
+        _emailService.Verify(service => service.SendAsync(
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task CreateInvitationAsync_WhenEmailServiceFails_StillReturnsCreated()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Invite Group");
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+        _emailService
+            .Setup(service => service.SendAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("SMTP down"));
+
+        var result = await CreateService().CreateInvitationAsync(group.Id, new CreateGroupInvitationRequest("resilient@qaly.dev"));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.StatusCode.Should().Be(201);
+
+        var saved = await _context.GroupInvitations.SingleAsync(invitation => invitation.Email == "resilient@qaly.dev");
+        saved.Should().NotBeNull();
     }
 
     [Fact]
@@ -312,6 +393,9 @@ public class GroupsServiceTests : IDisposable
             _projectService.Object,
             _notificationService.Object,
             _auditLogService.Object,
+            _emailService.Object,
+            _groupInvitationEmailBuilder.Object,
+            _logger.Object,
             _uow,
             _currentUser.Object);
 
