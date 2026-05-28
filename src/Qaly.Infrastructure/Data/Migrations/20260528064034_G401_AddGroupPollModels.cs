@@ -5,7 +5,7 @@
 namespace Qaly.Infrastructure.Data.Migrations
 {
     /// <inheritdoc />
-    public partial class G401_AddGroupPollModels : Migration
+    public partial class G401AddGroupPollModels : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)

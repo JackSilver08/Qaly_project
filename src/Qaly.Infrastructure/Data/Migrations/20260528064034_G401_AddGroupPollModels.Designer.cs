@@ -13,7 +13,7 @@ namespace Qaly.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(QalyDbContext))]
     [Migration("20260528064034_G401_AddGroupPollModels")]
-    partial class G401_AddGroupPollModels
+    partial class G401AddGroupPollModels
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using Microsoft.Extensions.Options;
 using Qaly.Application.Common.Models;
@@ -13,6 +14,7 @@ public class GroupInvitationEmailBuilder : IGroupInvitationEmailBuilder
         _invitationLinkOptions = invitationLinkOptions?.Value ?? throw new ArgumentNullException(nameof(invitationLinkOptions));
     }
 
+    [SuppressMessage("Globalization", "CA1305:Specify IFormatProvider", Justification = "Email timestamp uses an explicit UTC format.")]
     public GroupInvitationEmailContent Build(string groupName, string? inviterName, string invitationToken, DateTimeOffset expiredAt)
     {
         if (string.IsNullOrWhiteSpace(groupName))

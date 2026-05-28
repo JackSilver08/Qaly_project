@@ -13,7 +13,7 @@ using Qaly.Domain.Interfaces;
 
 namespace Qaly.Application.Services;
 
-public class GroupsService : IGroupsService
+public partial class GroupsService : IGroupsService
 {
     private readonly IRepository<WorkGroup> _groupRepo;
     private readonly IRepository<WorkGroupMember> _memberRepo;
@@ -70,6 +70,12 @@ public class GroupsService : IGroupsService
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
     }
+
+    [LoggerMessage(EventId = 1, Level = LogLevel.Warning, Message = "Skipped sending group invitation email because token is missing. InvitationId: {InvitationId}, GroupId: {GroupId}.")]
+    private static partial void LogSkippedMissingInvitationToken(ILogger logger, Guid invitationId, Guid groupId);
+
+    [LoggerMessage(EventId = 2, Level = LogLevel.Warning, Message = "Could not send group invitation email. InvitationId: {InvitationId}, GroupId: {GroupId}, RecipientEmail: {RecipientEmail}.")]
+    private static partial void LogCouldNotSendGroupInvitationEmail(ILogger logger, Exception ex, Guid invitationId, Guid groupId, string recipientEmail);
 
     public async Task<Result<PagedResult<GroupDto>>> GetMineAsync(int page = 1, int pageSize = 20, string? search = null, CancellationToken ct = default)
     {
@@ -1206,10 +1212,7 @@ public class GroupsService : IGroupsService
     {
         if (string.IsNullOrWhiteSpace(invitation.Token))
         {
-            _logger.LogWarning(
-                "Skipped sending group invitation email because token is missing. InvitationId: {InvitationId}, GroupId: {GroupId}.",
-                invitation.Id,
-                invitation.GroupId);
+            LogSkippedMissingInvitationToken(_logger, invitation.Id, invitation.GroupId);
             return;
         }
 
@@ -1235,12 +1238,7 @@ public class GroupsService : IGroupsService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(
-                ex,
-                "Could not send group invitation email. InvitationId: {InvitationId}, GroupId: {GroupId}, RecipientEmail: {RecipientEmail}.",
-                invitation.Id,
-                invitation.GroupId,
-                invitation.Email);
+            LogCouldNotSendGroupInvitationEmail(_logger, ex, invitation.Id, invitation.GroupId, invitation.Email);
         }
     }
 
