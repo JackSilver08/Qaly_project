@@ -13,6 +13,9 @@ public interface IGroupsService
     Task<Result<IReadOnlyList<GroupMemberDto>>> GetMembersAsync(Guid groupId, CancellationToken ct = default);
     Task<Result<GroupInvitationDto>> CreateInvitationAsync(Guid groupId, CreateGroupInvitationRequest request, CancellationToken ct = default);
     Task<Result<GroupPollDto>> CreatePollAsync(Guid groupId, CreateGroupPollRequest request, CancellationToken ct = default);
+    Task<Result<GroupPollResultsDto>> VotePollAsync(Guid groupId, Guid pollId, VoteGroupPollRequest request, CancellationToken ct = default);
+    Task<Result<GroupPollDto>> ClosePollAsync(Guid groupId, Guid pollId, CancellationToken ct = default);
+    Task<Result<GroupPollResultsDto>> GetPollResultsAsync(Guid groupId, Guid pollId, CancellationToken ct = default);
     Task<Result<GroupInvitationDto>> AcceptInvitationAsync(string token, CancellationToken ct = default);
     Task<Result<GroupInvitationDto>> RejectInvitationAsync(string token, CancellationToken ct = default);
     Task<Result> AddExistingMemberAsync(Guid groupId, AddGroupMemberRequest request, CancellationToken ct = default);

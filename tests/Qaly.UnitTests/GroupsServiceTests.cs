@@ -25,6 +25,7 @@ public class GroupsServiceTests : IDisposable
     private readonly GenericRepository<GroupInvitation> _invitationRepo;
     private readonly GenericRepository<GroupPoll> _pollRepo;
     private readonly GenericRepository<GroupPollOption> _pollOptionRepo;
+    private readonly GenericRepository<GroupPollVote> _pollVoteRepo;
     private readonly GenericRepository<GroupMessage> _messageRepo;
     private readonly GenericRepository<Organization> _organizationRepo;
     private readonly GenericRepository<OrganizationMember> _organizationMemberRepo;
@@ -50,6 +51,7 @@ public class GroupsServiceTests : IDisposable
         _invitationRepo = new GenericRepository<GroupInvitation>(_context);
         _pollRepo = new GenericRepository<GroupPoll>(_context);
         _pollOptionRepo = new GenericRepository<GroupPollOption>(_context);
+        _pollVoteRepo = new GenericRepository<GroupPollVote>(_context);
         _messageRepo = new GenericRepository<GroupMessage>(_context);
         _organizationRepo = new GenericRepository<Organization>(_context);
         _organizationMemberRepo = new GenericRepository<OrganizationMember>(_context);
@@ -534,6 +536,438 @@ public class GroupsServiceTests : IDisposable
 
         var poll = await _context.GroupPolls.SingleAsync();
         poll.AllowMultiple.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task VotePollAsync_WhenMemberVotesSingleChoice_Succeeds()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Vote Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        var (poll, options) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: false);
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+
+        var result = await CreateService().VotePollAsync(group.Id, poll.Id, new VoteGroupPollRequest(new List<Guid> { options[0].Id }));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.StatusCode.Should().Be(200);
+        result.Data!.TotalVotes.Should().Be(1);
+        result.Data.TotalVoters.Should().Be(1);
+        result.Data.CurrentUserOptionIds.Should().ContainSingle().Which.Should().Be(options[0].Id);
+
+        var savedVotes = await _context.GroupPollVotes.Where(vote => vote.UserId == memberId).ToListAsync();
+        savedVotes.Should().HaveCount(1);
+        savedVotes[0].OptionId.Should().Be(options[0].Id);
+    }
+
+    [Fact]
+    public async Task VotePollAsync_WhenSingleChoiceRevote_ReplacesOldVote()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Vote Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        var (poll, options) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: false);
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+
+        await CreateService().VotePollAsync(group.Id, poll.Id, new VoteGroupPollRequest(new List<Guid> { options[0].Id }));
+        var result = await CreateService().VotePollAsync(group.Id, poll.Id, new VoteGroupPollRequest(new List<Guid> { options[1].Id }));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.CurrentUserOptionIds.Should().ContainSingle().Which.Should().Be(options[1].Id);
+
+        var savedVotes = await _context.GroupPollVotes.Where(vote => vote.PollId == poll.Id && vote.UserId == memberId).ToListAsync();
+        savedVotes.Should().HaveCount(1);
+        savedVotes[0].OptionId.Should().Be(options[1].Id);
+    }
+
+    [Fact]
+    public async Task VotePollAsync_WhenSingleChoiceSelectsMultiple_ReturnsBadRequest()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Vote Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        var (poll, options) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: false);
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+
+        var result = await CreateService().VotePollAsync(group.Id, poll.Id, new VoteGroupPollRequest(new List<Guid> { options[0].Id, options[1].Id }));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+    }
+
+    [Fact]
+    public async Task VotePollAsync_WhenMultipleChoiceSelectsMany_Succeeds()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Vote Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        var (poll, options) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: true);
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+
+        var result = await CreateService().VotePollAsync(group.Id, poll.Id, new VoteGroupPollRequest(new List<Guid> { options[0].Id, options[1].Id }));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.CurrentUserOptionIds.Should().BeEquivalentTo(new[] { options[0].Id, options[1].Id });
+
+        var savedVotes = await _context.GroupPollVotes.Where(vote => vote.PollId == poll.Id && vote.UserId == memberId).ToListAsync();
+        savedVotes.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task VotePollAsync_WhenMultipleChoiceRevote_ReplacesAllSelections()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Vote Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        var (poll, options) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: true);
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+
+        await CreateService().VotePollAsync(group.Id, poll.Id, new VoteGroupPollRequest(new List<Guid> { options[0].Id, options[1].Id }));
+        var result = await CreateService().VotePollAsync(group.Id, poll.Id, new VoteGroupPollRequest(new List<Guid> { options[1].Id, options[2].Id }));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.CurrentUserOptionIds.Should().BeEquivalentTo(new[] { options[1].Id, options[2].Id });
+
+        var savedVotes = await _context.GroupPollVotes
+            .Where(vote => vote.PollId == poll.Id && vote.UserId == memberId)
+            .Select(vote => vote.OptionId)
+            .ToListAsync();
+        savedVotes.Should().BeEquivalentTo(new[] { options[1].Id, options[2].Id });
+    }
+
+    [Fact]
+    public async Task VotePollAsync_WhenOptionDoesNotBelongToPoll_ReturnsNotFound()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Vote Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        var (poll, _) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: true);
+        var (_, otherPollOptions) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: true);
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+
+        var result = await CreateService().VotePollAsync(group.Id, poll.Id, new VoteGroupPollRequest(new List<Guid> { otherPollOptions[0].Id }));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(404);
+    }
+
+    [Fact]
+    public async Task VotePollAsync_WhenOptionIdsEmpty_ReturnsBadRequest()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Vote Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        var (poll, _) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: false);
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+
+        var result = await CreateService().VotePollAsync(group.Id, poll.Id, new VoteGroupPollRequest(new List<Guid>()));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+    }
+
+    [Fact]
+    public async Task VotePollAsync_WhenOptionIdsDuplicated_ReturnsBadRequest()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Vote Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        var (poll, options) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: true);
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+
+        var result = await CreateService().VotePollAsync(group.Id, poll.Id, new VoteGroupPollRequest(new List<Guid> { options[0].Id, options[0].Id }));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+    }
+
+    [Fact]
+    public async Task VotePollAsync_WhenUserIsNotGroupMember_ReturnsForbidden()
+    {
+        var ownerId = Guid.NewGuid();
+        var outsiderId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(outsiderId, "Outsider", "outsider@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Vote Group");
+        var (poll, options) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: false);
+        _currentUser.SetupGet(user => user.UserId).Returns(outsiderId);
+
+        var result = await CreateService().VotePollAsync(group.Id, poll.Id, new VoteGroupPollRequest(new List<Guid> { options[0].Id }));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task VotePollAsync_WhenPollClosed_ReturnsConflict()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Vote Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        var (poll, options) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: false, status: GroupPollStatus.Closed);
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+
+        var result = await CreateService().VotePollAsync(group.Id, poll.Id, new VoteGroupPollRequest(new List<Guid> { options[0].Id }));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(409);
+    }
+
+    [Fact]
+    public async Task VotePollAsync_WhenPollExpired_ReturnsConflict()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Vote Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        var (poll, options) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: false, expiredAt: DateTimeOffset.UtcNow.AddMinutes(-1));
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+
+        var result = await CreateService().VotePollAsync(group.Id, poll.Id, new VoteGroupPollRequest(new List<Guid> { options[0].Id }));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(409);
+    }
+
+    [Fact]
+    public async Task ClosePollAsync_WhenOwnerClosesPoll_ReturnsSuccess()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Close Poll Group");
+        var (poll, _) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: false);
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+
+        var result = await CreateService().ClosePollAsync(group.Id, poll.Id);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.StatusCode.Should().Be(200);
+        result.Data!.Status.Should().Be(GroupPollStatus.Closed.ToString());
+
+        var savedPoll = await _context.GroupPolls.SingleAsync(item => item.Id == poll.Id);
+        savedPoll.Status.Should().Be(GroupPollStatus.Closed);
+    }
+
+    [Fact]
+    public async Task ClosePollAsync_WhenAdminClosesPoll_ReturnsSuccess()
+    {
+        var ownerId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(adminId, "Admin", "admin@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Close Poll Group");
+        await AddMemberAsync(group.Id, adminId, GroupRoleRules.Admin);
+        var (poll, _) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: false);
+        _currentUser.SetupGet(user => user.UserId).Returns(adminId);
+
+        var result = await CreateService().ClosePollAsync(group.Id, poll.Id);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.StatusCode.Should().Be(200);
+        result.Data!.Status.Should().Be(GroupPollStatus.Closed.ToString());
+    }
+
+    [Fact]
+    public async Task ClosePollAsync_WhenCreatorIsMember_CanClosePoll()
+    {
+        var ownerId = Guid.NewGuid();
+        var creatorId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(creatorId, "Creator", "creator@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Close Poll Group");
+        await AddMemberAsync(group.Id, creatorId, GroupRoleRules.Member);
+        var (poll, _) = await AddPollWithOptionsAsync(group.Id, creatorId, allowMultiple: true);
+        _currentUser.SetupGet(user => user.UserId).Returns(creatorId);
+
+        var result = await CreateService().ClosePollAsync(group.Id, poll.Id);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.StatusCode.Should().Be(200);
+        result.Data!.Status.Should().Be(GroupPollStatus.Closed.ToString());
+    }
+
+    [Fact]
+    public async Task ClosePollAsync_WhenMemberIsNotCreator_ReturnsForbidden()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Close Poll Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        var (poll, _) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: false);
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+
+        var result = await CreateService().ClosePollAsync(group.Id, poll.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task ClosePollAsync_WhenPollAlreadyClosed_ReturnsSuccessIdempotent()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Close Poll Group");
+        var (poll, _) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: false, status: GroupPollStatus.Closed);
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+
+        var result = await CreateService().ClosePollAsync(group.Id, poll.Id);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.StatusCode.Should().Be(200);
+        result.Data!.Status.Should().Be(GroupPollStatus.Closed.ToString());
+    }
+
+    [Fact]
+    public async Task GetPollResultsAsync_ReturnsVoteCountPerOption()
+    {
+        var ownerId = Guid.NewGuid();
+        var voter1Id = Guid.NewGuid();
+        var voter2Id = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(voter1Id, "Voter1", "voter1@qaly.dev");
+        await AddUserAsync(voter2Id, "Voter2", "voter2@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Results Group");
+        await AddMemberAsync(group.Id, voter1Id, GroupRoleRules.Member);
+        await AddMemberAsync(group.Id, voter2Id, GroupRoleRules.Member);
+        var (poll, options) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: true);
+        await AddPollVoteAsync(poll.Id, options[0].Id, voter1Id);
+        await AddPollVoteAsync(poll.Id, options[1].Id, voter1Id);
+        await AddPollVoteAsync(poll.Id, options[1].Id, voter2Id);
+        _currentUser.SetupGet(user => user.UserId).Returns(voter1Id);
+
+        var result = await CreateService().GetPollResultsAsync(group.Id, poll.Id);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Options.Single(option => option.OptionId == options[0].Id).VoteCount.Should().Be(1);
+        result.Data.Options.Single(option => option.OptionId == options[1].Id).VoteCount.Should().Be(2);
+        result.Data.Options.Single(option => option.OptionId == options[2].Id).VoteCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetPollResultsAsync_ReturnsTotalVotes()
+    {
+        var ownerId = Guid.NewGuid();
+        var voter1Id = Guid.NewGuid();
+        var voter2Id = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(voter1Id, "Voter1", "voter1@qaly.dev");
+        await AddUserAsync(voter2Id, "Voter2", "voter2@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Results Group");
+        await AddMemberAsync(group.Id, voter1Id, GroupRoleRules.Member);
+        await AddMemberAsync(group.Id, voter2Id, GroupRoleRules.Member);
+        var (poll, options) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: true);
+        await AddPollVoteAsync(poll.Id, options[0].Id, voter1Id);
+        await AddPollVoteAsync(poll.Id, options[1].Id, voter1Id);
+        await AddPollVoteAsync(poll.Id, options[1].Id, voter2Id);
+        _currentUser.SetupGet(user => user.UserId).Returns(voter1Id);
+
+        var result = await CreateService().GetPollResultsAsync(group.Id, poll.Id);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.TotalVotes.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task GetPollResultsAsync_ReturnsTotalVoters()
+    {
+        var ownerId = Guid.NewGuid();
+        var voter1Id = Guid.NewGuid();
+        var voter2Id = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(voter1Id, "Voter1", "voter1@qaly.dev");
+        await AddUserAsync(voter2Id, "Voter2", "voter2@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Results Group");
+        await AddMemberAsync(group.Id, voter1Id, GroupRoleRules.Member);
+        await AddMemberAsync(group.Id, voter2Id, GroupRoleRules.Member);
+        var (poll, options) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: true);
+        await AddPollVoteAsync(poll.Id, options[0].Id, voter1Id);
+        await AddPollVoteAsync(poll.Id, options[1].Id, voter1Id);
+        await AddPollVoteAsync(poll.Id, options[1].Id, voter2Id);
+        _currentUser.SetupGet(user => user.UserId).Returns(voter1Id);
+
+        var result = await CreateService().GetPollResultsAsync(group.Id, poll.Id);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.TotalVoters.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task GetPollResultsAsync_ReturnsCurrentUserOptionIds()
+    {
+        var ownerId = Guid.NewGuid();
+        var voter1Id = Guid.NewGuid();
+        var voter2Id = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(voter1Id, "Voter1", "voter1@qaly.dev");
+        await AddUserAsync(voter2Id, "Voter2", "voter2@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Results Group");
+        await AddMemberAsync(group.Id, voter1Id, GroupRoleRules.Member);
+        await AddMemberAsync(group.Id, voter2Id, GroupRoleRules.Member);
+        var (poll, options) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: true);
+        await AddPollVoteAsync(poll.Id, options[0].Id, voter1Id);
+        await AddPollVoteAsync(poll.Id, options[1].Id, voter1Id);
+        await AddPollVoteAsync(poll.Id, options[2].Id, voter2Id);
+        _currentUser.SetupGet(user => user.UserId).Returns(voter1Id);
+
+        var result = await CreateService().GetPollResultsAsync(group.Id, poll.Id);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.CurrentUserOptionIds.Should().BeEquivalentTo(new[] { options[0].Id, options[1].Id });
+    }
+
+    [Fact]
+    public async Task GetPollResultsAsync_SortsOptionsBySortOrder()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Results Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        var (poll, options) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: true);
+
+        options[0].SortOrder = 3;
+        options[1].SortOrder = 1;
+        options[2].SortOrder = 2;
+        await _context.SaveChangesAsync();
+
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+        var result = await CreateService().GetPollResultsAsync(group.Id, poll.Id);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Options.Select(option => option.SortOrder).Should().ContainInOrder(1, 2, 3);
     }
 
     [Fact]
@@ -1173,6 +1607,7 @@ public class GroupsServiceTests : IDisposable
             _invitationRepo,
             _pollRepo,
             _pollOptionRepo,
+            _pollVoteRepo,
             _messageRepo,
             _organizationRepo,
             _organizationMemberRepo,
@@ -1243,6 +1678,58 @@ public class GroupsServiceTests : IDisposable
         await _invitationRepo.AddAsync(invitation);
         await _context.SaveChangesAsync();
         return invitation;
+    }
+
+    private async Task<(GroupPoll Poll, List<GroupPollOption> Options)> AddPollWithOptionsAsync(
+        Guid groupId,
+        Guid createdByUserId,
+        bool allowMultiple,
+        GroupPollStatus status = GroupPollStatus.Open,
+        DateTimeOffset? expiredAt = null,
+        params string[] optionContents)
+    {
+        var poll = new GroupPoll
+        {
+            GroupId = groupId,
+            CreatedByUserId = createdByUserId,
+            Question = "Favorite stack?",
+            AllowMultiple = allowMultiple,
+            Status = status,
+            ExpiredAt = expiredAt
+        };
+
+        await _pollRepo.AddAsync(poll);
+
+        if (optionContents == null || optionContents.Length == 0)
+        {
+            optionContents = new[] { "Option A", "Option B", "Option C" };
+        }
+
+        var options = optionContents
+            .Select((content, index) => new GroupPollOption
+            {
+                PollId = poll.Id,
+                Content = content,
+                SortOrder = index + 1
+            })
+            .ToList();
+
+        await _pollOptionRepo.AddRangeAsync(options);
+        await _context.SaveChangesAsync();
+
+        return (poll, options);
+    }
+
+    private async Task AddPollVoteAsync(Guid pollId, Guid optionId, Guid userId)
+    {
+        await _pollVoteRepo.AddAsync(new GroupPollVote
+        {
+            PollId = pollId,
+            OptionId = optionId,
+            UserId = userId
+        });
+
+        await _context.SaveChangesAsync();
     }
 
     private static CreateGroupPollRequest CreateValidPollRequest(

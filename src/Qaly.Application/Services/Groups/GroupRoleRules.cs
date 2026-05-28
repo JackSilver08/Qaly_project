@@ -37,6 +37,9 @@ public static class GroupRoleRules
     public static bool CanCreatePoll(string? role)
         => CanManage(role);
 
+    public static bool CanClosePoll(string? role, bool isPollCreator)
+        => isPollCreator || CanManage(role);
+
     public static bool CanChangeMemberRole(string? actorRole, string? targetRole)
     {
         var normalizedActorRole = Normalize(actorRole);

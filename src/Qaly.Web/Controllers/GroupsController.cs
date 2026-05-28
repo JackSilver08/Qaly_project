@@ -78,6 +78,27 @@ public class GroupsController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpPost("{groupId:guid}/polls/{pollId:guid}/vote")]
+    public async Task<IActionResult> VotePoll(Guid groupId, Guid pollId, [FromBody] VoteGroupPollRequest request, CancellationToken ct)
+    {
+        var result = await _groupsService.VotePollAsync(groupId, pollId, request, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPut("{groupId:guid}/polls/{pollId:guid}/close")]
+    public async Task<IActionResult> ClosePoll(Guid groupId, Guid pollId, CancellationToken ct)
+    {
+        var result = await _groupsService.ClosePollAsync(groupId, pollId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("{groupId:guid}/polls/{pollId:guid}/results")]
+    public async Task<IActionResult> GetPollResults(Guid groupId, Guid pollId, CancellationToken ct)
+    {
+        var result = await _groupsService.GetPollResultsAsync(groupId, pollId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpPost("invitations/{token}/accept")]
     public async Task<IActionResult> AcceptInvitation(string token, CancellationToken ct)
     {

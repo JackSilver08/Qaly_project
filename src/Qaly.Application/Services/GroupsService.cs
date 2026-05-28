@@ -20,6 +20,7 @@ public partial class GroupsService : IGroupsService
     private readonly IRepository<GroupInvitation> _invitationRepo;
     private readonly IRepository<GroupPoll> _pollRepo;
     private readonly IRepository<GroupPollOption> _pollOptionRepo;
+    private readonly IRepository<GroupPollVote> _pollVoteRepo;
     private readonly IRepository<GroupMessage> _messageRepo;
     private readonly IRepository<Organization> _organizationRepo;
     private readonly IRepository<OrganizationMember> _organizationMemberRepo;
@@ -39,6 +40,7 @@ public partial class GroupsService : IGroupsService
         IRepository<GroupInvitation> invitationRepo,
         IRepository<GroupPoll> pollRepo,
         IRepository<GroupPollOption> pollOptionRepo,
+        IRepository<GroupPollVote> pollVoteRepo,
         IRepository<GroupMessage> messageRepo,
         IRepository<Organization> organizationRepo,
         IRepository<OrganizationMember> organizationMemberRepo,
@@ -57,6 +59,7 @@ public partial class GroupsService : IGroupsService
         _invitationRepo = invitationRepo;
         _pollRepo = pollRepo;
         _pollOptionRepo = pollOptionRepo;
+        _pollVoteRepo = pollVoteRepo;
         _messageRepo = messageRepo;
         _organizationRepo = organizationRepo;
         _organizationMemberRepo = organizationMemberRepo;
@@ -487,6 +490,261 @@ public partial class GroupsService : IGroupsService
         }, ct);
 
         return Result.Created(ToPollDto(poll, options));
+    }
+
+    public async Task<Result<GroupPollResultsDto>> VotePollAsync(Guid groupId, Guid pollId, VoteGroupPollRequest request, CancellationToken ct = default)
+    {
+        if (groupId == Guid.Empty)
+        {
+            return Result.Failure<GroupPollResultsDto>("Group id is required.");
+        }
+
+        if (pollId == Guid.Empty)
+        {
+            return Result.Failure<GroupPollResultsDto>("Poll id is required.");
+        }
+
+        if (request?.OptionIds == null || request.OptionIds.Count == 0)
+        {
+            return Result.Failure<GroupPollResultsDto>("At least one option must be selected.");
+        }
+
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Failure<GroupPollResultsDto>("Authentication is required.", 401);
+        }
+
+        var group = await _groupRepo.GetByIdAsync(groupId, ct);
+        if (group == null)
+        {
+            return Result.NotFound<GroupPollResultsDto>("Group was not found.");
+        }
+
+        var membershipRole = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(member => member.WorkGroupId == groupId && member.UserId == currentUserId.Value)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+
+        if (membershipRole == null)
+        {
+            return Result.Forbidden<GroupPollResultsDto>("Current user is not a group member.");
+        }
+
+        var poll = await _pollRepo.GetQueryable()
+            .FirstOrDefaultAsync(item => item.Id == pollId && item.GroupId == groupId, ct);
+        if (poll == null)
+        {
+            return Result.NotFound<GroupPollResultsDto>("Poll was not found.");
+        }
+
+        if (poll.Status != GroupPollStatus.Open)
+        {
+            return Result.Failure<GroupPollResultsDto>("Poll is already closed.", 409);
+        }
+
+        if (poll.ExpiredAt.HasValue && poll.ExpiredAt.Value <= DateTimeOffset.UtcNow)
+        {
+            return Result.Failure<GroupPollResultsDto>("Poll has expired.", 409);
+        }
+
+        if (request.OptionIds.Any(optionId => optionId == Guid.Empty))
+        {
+            return Result.Failure<GroupPollResultsDto>("Option id is required.");
+        }
+
+        var requestedOptionIds = request.OptionIds.ToList();
+        var deduplicatedOptionIds = requestedOptionIds.Distinct().ToList();
+        if (requestedOptionIds.Count != deduplicatedOptionIds.Count)
+        {
+            return Result.Failure<GroupPollResultsDto>("Option ids must be unique.");
+        }
+
+        if (!poll.AllowMultiple && deduplicatedOptionIds.Count != 1)
+        {
+            return Result.Failure<GroupPollResultsDto>("This poll allows selecting exactly one option.");
+        }
+
+        var pollOptions = await _pollOptionRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(option => option.PollId == poll.Id)
+            .OrderBy(option => option.SortOrder)
+            .ToListAsync(ct);
+
+        var pollOptionIdSet = pollOptions
+            .Select(option => option.Id)
+            .ToHashSet();
+
+        if (deduplicatedOptionIds.Any(optionId => !pollOptionIdSet.Contains(optionId)))
+        {
+            return Result.NotFound<GroupPollResultsDto>("One or more poll options were not found.");
+        }
+
+        var requestedOptionIdSet = deduplicatedOptionIds.ToHashSet();
+        var existingVotes = await _pollVoteRepo.GetQueryable()
+            .Where(vote => vote.PollId == poll.Id && vote.UserId == currentUserId.Value)
+            .ToListAsync(ct);
+
+        var existingOptionIdSet = existingVotes
+            .Select(vote => vote.OptionId)
+            .ToHashSet();
+
+        foreach (var vote in existingVotes.Where(vote => !requestedOptionIdSet.Contains(vote.OptionId)))
+        {
+            await _pollVoteRepo.DeleteAsync(vote, ct);
+        }
+
+        foreach (var optionId in deduplicatedOptionIds.Where(optionId => !existingOptionIdSet.Contains(optionId)))
+        {
+            await _pollVoteRepo.AddAsync(new GroupPollVote
+            {
+                PollId = poll.Id,
+                OptionId = optionId,
+                UserId = currentUserId.Value
+            }, ct);
+        }
+
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync("VotePoll", nameof(WorkGroup), groupId.ToString(), new
+        {
+            PollId = poll.Id,
+            UserId = currentUserId.Value,
+            OptionIds = deduplicatedOptionIds
+        }, ct);
+
+        var pollResults = await BuildPollResultsDtoAsync(poll, pollOptions, currentUserId.Value, ct);
+        return Result.Success(pollResults);
+    }
+
+    public async Task<Result<GroupPollDto>> ClosePollAsync(Guid groupId, Guid pollId, CancellationToken ct = default)
+    {
+        if (groupId == Guid.Empty)
+        {
+            return Result.Failure<GroupPollDto>("Group id is required.");
+        }
+
+        if (pollId == Guid.Empty)
+        {
+            return Result.Failure<GroupPollDto>("Poll id is required.");
+        }
+
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Failure<GroupPollDto>("Authentication is required.", 401);
+        }
+
+        var group = await _groupRepo.GetByIdAsync(groupId, ct);
+        if (group == null)
+        {
+            return Result.NotFound<GroupPollDto>("Group was not found.");
+        }
+
+        var membershipRole = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(member => member.WorkGroupId == groupId && member.UserId == currentUserId.Value)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+
+        if (membershipRole == null)
+        {
+            return Result.Forbidden<GroupPollDto>("Current user is not a group member.");
+        }
+
+        var poll = await _pollRepo.GetQueryable()
+            .FirstOrDefaultAsync(item => item.Id == pollId && item.GroupId == groupId, ct);
+        if (poll == null)
+        {
+            return Result.NotFound<GroupPollDto>("Poll was not found.");
+        }
+
+        var canClosePoll = GroupRoleRules.CanClosePoll(membershipRole, poll.CreatedByUserId == currentUserId.Value);
+        if (!canClosePoll)
+        {
+            return Result.Forbidden<GroupPollDto>("Bạn không có quyền đóng bình chọn này.");
+        }
+
+        if (poll.Status == GroupPollStatus.Closed)
+        {
+            var closedPollOptions = await _pollOptionRepo.GetQueryable()
+                .AsNoTracking()
+                .Where(option => option.PollId == poll.Id)
+                .OrderBy(option => option.SortOrder)
+                .ToListAsync(ct);
+            return Result.Success(ToPollDto(poll, closedPollOptions));
+        }
+
+        poll.Status = GroupPollStatus.Closed;
+        poll.ClosedAt ??= DateTimeOffset.UtcNow;
+
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        var options = await _pollOptionRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(option => option.PollId == poll.Id)
+            .OrderBy(option => option.SortOrder)
+            .ToListAsync(ct);
+
+        await _auditLogService.LogAsync("ClosePoll", nameof(WorkGroup), groupId.ToString(), new
+        {
+            PollId = poll.Id,
+            ClosedByUserId = currentUserId.Value,
+            poll.ClosedAt
+        }, ct);
+
+        return Result.Success(ToPollDto(poll, options));
+    }
+
+    public async Task<Result<GroupPollResultsDto>> GetPollResultsAsync(Guid groupId, Guid pollId, CancellationToken ct = default)
+    {
+        if (groupId == Guid.Empty)
+        {
+            return Result.Failure<GroupPollResultsDto>("Group id is required.");
+        }
+
+        if (pollId == Guid.Empty)
+        {
+            return Result.Failure<GroupPollResultsDto>("Poll id is required.");
+        }
+
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Failure<GroupPollResultsDto>("Authentication is required.", 401);
+        }
+
+        var group = await _groupRepo.GetByIdAsync(groupId, ct);
+        if (group == null)
+        {
+            return Result.NotFound<GroupPollResultsDto>("Group was not found.");
+        }
+
+        var isMember = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .AnyAsync(member => member.WorkGroupId == groupId && member.UserId == currentUserId.Value, ct);
+
+        if (!isMember)
+        {
+            return Result.Forbidden<GroupPollResultsDto>("Current user is not a group member.");
+        }
+
+        var poll = await _pollRepo.GetQueryable()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == pollId && item.GroupId == groupId, ct);
+        if (poll == null)
+        {
+            return Result.NotFound<GroupPollResultsDto>("Poll was not found.");
+        }
+
+        var options = await _pollOptionRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(option => option.PollId == poll.Id)
+            .OrderBy(option => option.SortOrder)
+            .ToListAsync(ct);
+
+        var pollResults = await BuildPollResultsDtoAsync(poll, options, currentUserId.Value, ct);
+        return Result.Success(pollResults);
     }
 
     public async Task<Result<GroupInvitationDto>> AcceptInvitationAsync(string token, CancellationToken ct = default)
@@ -1084,6 +1342,45 @@ public partial class GroupsService : IGroupsService
                 .OrderBy(option => option.SortOrder)
                 .Select(option => new GroupPollOptionDto(option.Id, option.Content, option.SortOrder))
                 .ToList());
+
+    private async Task<GroupPollResultsDto> BuildPollResultsDtoAsync(GroupPoll poll, IReadOnlyList<GroupPollOption> options, Guid currentUserId, CancellationToken ct)
+    {
+        var votes = await _pollVoteRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(vote => vote.PollId == poll.Id)
+            .ToListAsync(ct);
+
+        var voteCountByOption = votes
+            .GroupBy(vote => vote.OptionId)
+            .ToDictionary(grouping => grouping.Key, grouping => grouping.Count());
+
+        var currentUserOptionIds = votes
+            .Where(vote => vote.UserId == currentUserId)
+            .Select(vote => vote.OptionId)
+            .Distinct()
+            .ToList();
+
+        var optionResults = options
+            .OrderBy(option => option.SortOrder)
+            .Select(option => new GroupPollOptionResultDto(
+                option.Id,
+                option.Content,
+                option.SortOrder,
+                voteCountByOption.GetValueOrDefault(option.Id)))
+            .ToList();
+
+        return new GroupPollResultsDto(
+            poll.Id,
+            poll.GroupId,
+            poll.Question,
+            poll.AllowMultiple,
+            poll.Status.ToString(),
+            poll.ExpiredAt,
+            votes.Count,
+            votes.Select(vote => vote.UserId).Distinct().Count(),
+            optionResults,
+            currentUserOptionIds);
+    }
 
     private static GroupMessageDto ToMessageDto(GroupMessage message)
         => new(

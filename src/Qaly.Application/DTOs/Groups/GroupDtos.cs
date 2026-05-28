@@ -82,6 +82,27 @@ public record GroupPollDto(
     DateTimeOffset? UpdatedAt,
     IReadOnlyList<GroupPollOptionDto> Options);
 
+public record VoteGroupPollRequest(
+    IReadOnlyList<Guid> OptionIds);
+
+public record GroupPollOptionResultDto(
+    Guid OptionId,
+    string Content,
+    int SortOrder,
+    int VoteCount);
+
+public record GroupPollResultsDto(
+    Guid PollId,
+    Guid GroupId,
+    string Question,
+    bool AllowMultiple,
+    string Status,
+    DateTimeOffset? ExpiredAt,
+    int TotalVotes,
+    int TotalVoters,
+    IReadOnlyList<GroupPollOptionResultDto> Options,
+    IReadOnlyList<Guid> CurrentUserOptionIds);
+
 public record UpdateGroupMemberRoleRequest(
     string Role);
 
