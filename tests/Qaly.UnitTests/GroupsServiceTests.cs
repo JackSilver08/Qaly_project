@@ -36,6 +36,7 @@ public class GroupsServiceTests : IDisposable
     private readonly Mock<IAuditLogService> _auditLogService = new();
     private readonly Mock<IEmailService> _emailService = new();
     private readonly Mock<IGroupInvitationEmailBuilder> _groupInvitationEmailBuilder = new();
+    private readonly Mock<IGroupPollRealtimePublisher> _groupPollRealtimePublisher = new();
     private readonly Mock<ILogger<GroupsService>> _logger = new();
     private readonly Mock<ICurrentUserService> _currentUser = new();
 
@@ -89,6 +90,15 @@ public class GroupsServiceTests : IDisposable
                 It.IsAny<string>(),
                 It.IsAny<string>(),
                 It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _groupPollRealtimePublisher
+            .Setup(publisher => publisher.PublishPollUpdatedAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid>(),
+                It.IsAny<GroupPollResultsDto>(),
+                It.IsAny<DateTimeOffset>(),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
     }
@@ -561,6 +571,43 @@ public class GroupsServiceTests : IDisposable
         var savedVotes = await _context.GroupPollVotes.Where(vote => vote.UserId == memberId).ToListAsync();
         savedVotes.Should().HaveCount(1);
         savedVotes[0].OptionId.Should().Be(options[0].Id);
+
+        _groupPollRealtimePublisher.Verify(publisher => publisher.PublishPollUpdatedAsync(
+            group.Id,
+            poll.Id,
+            It.Is<GroupPollResultsDto>(dto =>
+                dto.PollId == poll.Id &&
+                dto.GroupId == group.Id &&
+                dto.TotalVotes == 1 &&
+                dto.CurrentUserOptionIds.Contains(options[0].Id)),
+            It.IsAny<DateTimeOffset>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task VotePollAsync_WhenRealtimePublishFails_StillReturnsSuccess()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Vote Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        var (poll, options) = await AddPollWithOptionsAsync(group.Id, ownerId, allowMultiple: false);
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+        _groupPollRealtimePublisher
+            .Setup(publisher => publisher.PublishPollUpdatedAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid>(),
+                It.IsAny<GroupPollResultsDto>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("signalr down"));
+
+        var result = await CreateService().VotePollAsync(group.Id, poll.Id, new VoteGroupPollRequest(new List<Guid> { options[0].Id }));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.StatusCode.Should().Be(200);
     }
 
     [Fact]
@@ -667,6 +714,13 @@ public class GroupsServiceTests : IDisposable
 
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().Be(404);
+
+        _groupPollRealtimePublisher.Verify(publisher => publisher.PublishPollUpdatedAsync(
+            It.IsAny<Guid>(),
+            It.IsAny<Guid>(),
+            It.IsAny<GroupPollResultsDto>(),
+            It.IsAny<DateTimeOffset>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -685,6 +739,13 @@ public class GroupsServiceTests : IDisposable
 
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().Be(400);
+
+        _groupPollRealtimePublisher.Verify(publisher => publisher.PublishPollUpdatedAsync(
+            It.IsAny<Guid>(),
+            It.IsAny<Guid>(),
+            It.IsAny<GroupPollResultsDto>(),
+            It.IsAny<DateTimeOffset>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -720,6 +781,13 @@ public class GroupsServiceTests : IDisposable
 
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().Be(403);
+
+        _groupPollRealtimePublisher.Verify(publisher => publisher.PublishPollUpdatedAsync(
+            It.IsAny<Guid>(),
+            It.IsAny<Guid>(),
+            It.IsAny<GroupPollResultsDto>(),
+            It.IsAny<DateTimeOffset>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -738,6 +806,13 @@ public class GroupsServiceTests : IDisposable
 
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().Be(409);
+
+        _groupPollRealtimePublisher.Verify(publisher => publisher.PublishPollUpdatedAsync(
+            It.IsAny<Guid>(),
+            It.IsAny<Guid>(),
+            It.IsAny<GroupPollResultsDto>(),
+            It.IsAny<DateTimeOffset>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -756,6 +831,13 @@ public class GroupsServiceTests : IDisposable
 
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().Be(409);
+
+        _groupPollRealtimePublisher.Verify(publisher => publisher.PublishPollUpdatedAsync(
+            It.IsAny<Guid>(),
+            It.IsAny<Guid>(),
+            It.IsAny<GroupPollResultsDto>(),
+            It.IsAny<DateTimeOffset>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -775,6 +857,13 @@ public class GroupsServiceTests : IDisposable
 
         var savedPoll = await _context.GroupPolls.SingleAsync(item => item.Id == poll.Id);
         savedPoll.Status.Should().Be(GroupPollStatus.Closed);
+
+        _groupPollRealtimePublisher.Verify(publisher => publisher.PublishPollUpdatedAsync(
+            It.IsAny<Guid>(),
+            It.IsAny<Guid>(),
+            It.IsAny<GroupPollResultsDto>(),
+            It.IsAny<DateTimeOffset>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -1617,6 +1706,7 @@ public class GroupsServiceTests : IDisposable
             _auditLogService.Object,
             _emailService.Object,
             _groupInvitationEmailBuilder.Object,
+            _groupPollRealtimePublisher.Object,
             _logger.Object,
             _uow,
             _currentUser.Object);

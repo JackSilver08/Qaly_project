@@ -30,6 +30,7 @@ public partial class GroupsService : IGroupsService
     private readonly IAuditLogService _auditLogService;
     private readonly IEmailService _emailService;
     private readonly IGroupInvitationEmailBuilder _groupInvitationEmailBuilder;
+    private readonly IGroupPollRealtimePublisher _groupPollRealtimePublisher;
     private readonly ILogger<GroupsService> _logger;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
@@ -50,6 +51,7 @@ public partial class GroupsService : IGroupsService
         IAuditLogService auditLogService,
         IEmailService emailService,
         IGroupInvitationEmailBuilder groupInvitationEmailBuilder,
+        IGroupPollRealtimePublisher groupPollRealtimePublisher,
         ILogger<GroupsService> logger,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService)
@@ -69,6 +71,7 @@ public partial class GroupsService : IGroupsService
         _auditLogService = auditLogService;
         _emailService = emailService;
         _groupInvitationEmailBuilder = groupInvitationEmailBuilder;
+        _groupPollRealtimePublisher = groupPollRealtimePublisher;
         _logger = logger;
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
@@ -79,6 +82,9 @@ public partial class GroupsService : IGroupsService
 
     [LoggerMessage(EventId = 2, Level = LogLevel.Warning, Message = "Could not send group invitation email. InvitationId: {InvitationId}, GroupId: {GroupId}, RecipientEmail: {RecipientEmail}.")]
     private static partial void LogCouldNotSendGroupInvitationEmail(ILogger logger, Exception ex, Guid invitationId, Guid groupId, string recipientEmail);
+
+    [LoggerMessage(EventId = 3, Level = LogLevel.Warning, Message = "Could not broadcast poll updated realtime event. GroupId: {GroupId}, PollId: {PollId}.")]
+    private static partial void LogCouldNotBroadcastPollUpdated(ILogger logger, Exception ex, Guid groupId, Guid pollId);
 
     public async Task<Result<PagedResult<GroupDto>>> GetMineAsync(int page = 1, int pageSize = 20, string? search = null, CancellationToken ct = default)
     {
@@ -614,6 +620,21 @@ public partial class GroupsService : IGroupsService
         }, ct);
 
         var pollResults = await BuildPollResultsDtoAsync(poll, pollOptions, currentUserId.Value, ct);
+        var updatedAt = DateTimeOffset.UtcNow;
+
+        try
+        {
+            await _groupPollRealtimePublisher.PublishPollUpdatedAsync(groupId, poll.Id, pollResults, updatedAt, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            LogCouldNotBroadcastPollUpdated(_logger, ex, groupId, poll.Id);
+        }
+
         return Result.Success(pollResults);
     }
 
