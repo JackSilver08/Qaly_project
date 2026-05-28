@@ -260,10 +260,16 @@ public class GroupsService : IGroupsService
             return Result.Forbidden<GroupInvitationDto>();
         }
 
-        var groupExists = await _groupRepo.GetQueryable()
+        var groupSummary = await _groupRepo.GetQueryable()
             .AsNoTracking()
-            .AnyAsync(group => group.Id == groupId, ct);
-        if (!groupExists)
+            .Where(group => group.Id == groupId)
+            .Select(group => new
+            {
+                group.Id,
+                group.Name
+            })
+            .FirstOrDefaultAsync(ct);
+        if (groupSummary == null)
         {
             return Result.NotFound<GroupInvitationDto>("Group was not found.");
         }
@@ -331,6 +337,8 @@ public class GroupsService : IGroupsService
             invitation.Email,
             invitation.ExpiredAt
         }, ct);
+
+        await NotifyInvitedExistingUserAsync(groupSummary.Name, invitation, ct);
 
         return Result.Created(ToInvitationDto(invitation));
     }
@@ -809,6 +817,29 @@ public class GroupsService : IGroupsService
         }
 
         return GenerateSecureToken();
+    }
+
+    private async Task NotifyInvitedExistingUserAsync(string groupName, GroupInvitation invitation, CancellationToken ct)
+    {
+        var invitedUser = await _userRepo.GetQueryable()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(user => user.IsActive && user.Email == invitation.Email, ct);
+
+        if (invitedUser == null)
+        {
+            return;
+        }
+
+        var message = $"Bạn nhận được lời mời tham gia nhóm \"{groupName}\" (hết hạn {invitation.ExpiredAt:yyyy-MM-dd HH:mm} UTC).";
+        await _notificationService.CreateAsync(
+            invitedUser.Id,
+            message,
+            "GroupInvitationReceived",
+            "info",
+            invitation.Id,
+            nameof(GroupInvitation),
+            $"group:{invitation.GroupId}:invitation:{invitation.Id}:recipient:{invitedUser.Id}",
+            ct);
     }
 
     private static string GenerateSecureToken()
