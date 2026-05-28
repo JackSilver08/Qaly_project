@@ -45,6 +45,17 @@ public record AddGroupMemberRequest(
     Guid UserId,
     string Role = "Member");
 
+public record CreateGroupInvitationRequest(
+    string Email);
+
+public record GroupInvitationDto(
+    Guid Id,
+    Guid GroupId,
+    string Email,
+    string Status,
+    DateTimeOffset ExpiredAt,
+    DateTimeOffset CreatedAt);
+
 public record UpdateGroupMemberRoleRequest(
     string Role);
 
