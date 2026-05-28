@@ -10,14 +10,16 @@ public class GroupPollOptionConfiguration : IEntityTypeConfiguration<GroupPollOp
     {
         builder.HasKey(option => option.Id);
         builder.Property(option => option.Id).HasDefaultValueSql("NEWID()");
-        builder.Property(option => option.Text).HasMaxLength(300).IsRequired();
+        builder.Property(option => option.Content).HasMaxLength(300).IsRequired();
+        builder.Property(option => option.SortOrder).IsRequired();
         builder.Property(option => option.CreatedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
 
-        builder.HasOne(option => option.GroupPoll)
+        builder.HasOne(option => option.Poll)
             .WithMany(poll => poll.Options)
-            .HasForeignKey(option => option.GroupPollId)
+            .HasForeignKey(option => option.PollId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasIndex(option => new { option.GroupPollId, option.SortOrder });
+        builder.HasIndex(option => option.PollId);
+        builder.HasIndex(option => new { option.PollId, option.SortOrder });
     }
 }

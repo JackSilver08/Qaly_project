@@ -913,7 +913,7 @@ public class GroupsService : IGroupsService
             currentRole ?? GroupRoleRules.Member,
             group.Members?.Count ?? 0,
             group.Messages?.Count(message => !message.IsDeleted) ?? 0,
-            group.Polls?.Count(poll => string.Equals(poll.Status, "Open", StringComparison.OrdinalIgnoreCase)) ?? 0,
+            group.Polls?.Count(poll => poll.Status == GroupPollStatus.Open) ?? 0,
             group.CreatedAt,
             group.UpdatedAt);
     }
