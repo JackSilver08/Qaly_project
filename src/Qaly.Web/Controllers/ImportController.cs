@@ -12,15 +12,17 @@ namespace Qaly.Web.Controllers;
 public class ImportController : BaseApiController
 {
     private readonly IImportService _importService;
+    private readonly IFileImportService _fileImportService;
     private const long MaxFileSize = 5 * 1024 * 1024; // 5 MB
     private static readonly JsonSerializerOptions ImportRequestJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
     };
 
-    public ImportController(IImportService importService)
+    public ImportController(IImportService importService, IFileImportService fileImportService)
     {
         _importService = importService;
+        _fileImportService = fileImportService;
     }
 
     /// <summary>
@@ -70,6 +72,40 @@ public class ImportController : BaseApiController
 
         using var stream = file.OpenReadStream();
         var result = await _importService.ExecuteImportAsync(stream, file.FileName, importRequest, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("documents/preview")]
+    [RequestSizeLimit(MaxFileSize)]
+    public async Task<IActionResult> PreviewDocument([FromForm] IFormFile file, CancellationToken ct = default)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { error = "Vui long chon file." });
+
+        if (file.Length > MaxFileSize)
+            return BadRequest(new { error = "File vuot qua gioi han 5MB." });
+
+        using var stream = file.OpenReadStream();
+        var result = await _fileImportService.PreviewDocumentAsync(stream, file.FileName, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("documents/execute")]
+    [RequestSizeLimit(MaxFileSize)]
+    public async Task<IActionResult> ExecuteDocument(
+        [FromForm] IFormFile file,
+        [FromForm] Guid projectId,
+        [FromForm] string? title,
+        CancellationToken ct = default)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { error = "Vui long chon file." });
+
+        if (file.Length > MaxFileSize)
+            return BadRequest(new { error = "File vuot qua gioi han 5MB." });
+
+        using var stream = file.OpenReadStream();
+        var result = await _fileImportService.ImportDocumentAsync(projectId, stream, file.FileName, title, ct);
         return StatusCode(result.StatusCode, result);
     }
 

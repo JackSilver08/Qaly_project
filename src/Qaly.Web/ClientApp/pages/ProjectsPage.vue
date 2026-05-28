@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { FileSpreadsheet, FolderKanban, CheckCircle2, AlertTriangle, X, Edit3 } from 'lucide-vue-next'
+import { FileUp, FolderKanban, CheckCircle2, AlertTriangle, X, Edit3 } from 'lucide-vue-next'
 import ProjectList from '../components/ProjectList.vue'
 import ProjectGrid from '../components/ProjectGrid.vue'
 import ProjectToolbar from '../components/ProjectToolbar.vue'
@@ -41,7 +41,7 @@ const atRiskCount = computed(() => projects.value.filter((p: any) => p.status !=
 
 function onImported(result: any) {
   showImportModal.value = false
-  if (result) {
+  if (result?.importSessionId) {
     undoBannerData.value = {
       importSessionId: result.importSessionId,
       importedCount: result.importedCount,
@@ -130,7 +130,7 @@ async function handleUndoFromBanner() {
         >
           <template #actions>
             <button class="btn-import" @click="showImportModal = true">
-              <FileSpreadsheet :size="15" /> Import CSV
+              <FileUp :size="15" /> Import
             </button>
           </template>
         </ProjectToolbar>

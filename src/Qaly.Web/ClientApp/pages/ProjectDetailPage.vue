@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MessageSquare, MoreHorizontal, Plus, Send, Search, Clock, Play, Square, Calendar, X, ClipboardList, FileSpreadsheet, File, Check, Ban, CheckCircle2 } from 'lucide-vue-next'
+import { MessageSquare, MoreHorizontal, Plus, Send, Search, Clock, Play, Square, Calendar, X, ClipboardList, FileUp, File, Check, Ban, CheckCircle2 } from 'lucide-vue-next'
 // @ts-ignore
 import { VueDraggable } from '../utils/vendor/vue-draggable-plus.js'
 import ProjectDetailHeader from '../components/ProjectDetailHeader.vue'
@@ -94,7 +94,7 @@ watch(
 
 function onImported(result: any) {
   showImportModal.value = false
-  if (result) {
+  if (result?.importSessionId) {
     undoBannerData.value = {
       importSessionId: result.importSessionId,
       importedCount: result.importedCount,
@@ -250,7 +250,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                 <span>Nhiệm vụ</span>
               </button>
               <button class="import-btn-sm" type="button" @click="showImportModal = true">
-                <FileSpreadsheet :size="14" /> Nhập file
+                <FileUp :size="14" /> Nhập file
               </button>
             </div>
           </div>

@@ -243,7 +243,7 @@ const statusLabels: Record<string, string> = {
 }
 .confirm-subtitle {
   font-size: .82rem;
-  color: rgba(255,255,255,.5);
+  color: #6b7280;
   margin: 0;
 }
 
@@ -258,7 +258,7 @@ const statusLabels: Record<string, string> = {
   border-radius: 12px;
   text-align: center;
   background: rgba(255,255,255,.04);
-  border: 1px solid rgba(255,255,255,.06);
+  border: 1px solid #e5e7eb;
   transition: transform .2s ease, box-shadow .2s ease;
 }
 .confirm-stat:hover {
@@ -276,7 +276,7 @@ const statusLabels: Record<string, string> = {
 .confirm-stat__label {
   display: block;
   font-size: .72rem;
-  color: rgba(255,255,255,.45);
+  color: #6b7280;
   margin-bottom: 6px;
 }
 .confirm-stat__value {
@@ -291,24 +291,24 @@ const statusLabels: Record<string, string> = {
 .confirm-section-title {
   font-size: .82rem;
   font-weight: 600;
-  color: rgba(255,255,255,.6);
+  color: #374151;
   margin: 0 0 10px;
 }
 .confirm-section-title .hint {
   font-weight: 400;
   font-size: .72rem;
-  color: rgba(255,255,255,.3);
+  color: #9ca3af;
 }
 
 .dist-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
-.dist-status { font-size: .8rem; width: 110px; color: rgba(255,255,255,.6); }
-.dist-bar-wrap { flex: 1; height: 8px; border-radius: 4px; background: rgba(255,255,255,.05); overflow: hidden; }
+.dist-status { font-size: .8rem; width: 110px; color: #4b5563; }
+.dist-bar-wrap { flex: 1; height: 8px; border-radius: 4px; background: #eef2f7; overflow: hidden; }
 .dist-bar {
   height: 100%; border-radius: 4px;
   background: linear-gradient(90deg, #0f4cff, #22d3ee);
   transition: width .6s cubic-bezier(.22,1,.36,1);
 }
-.dist-count { font-size: .78rem; width: 28px; text-align: right; color: rgba(255,255,255,.5); }
+.dist-count { font-size: .78rem; width: 28px; text-align: right; color: #6b7280; }
 
 .confirm-options {
   display: flex;
@@ -322,8 +322,8 @@ const statusLabels: Record<string, string> = {
   font-size: .72rem;
   font-weight: 500;
   background: rgba(255,255,255,.05);
-  border: 1px solid rgba(255,255,255,.08);
-  color: rgba(255,255,255,.5);
+  border: 1px solid #e5e7eb;
+  color: #4b5563;
 }
 .option-badge--active {
   background: rgba(34,197,94,.08);
@@ -356,6 +356,7 @@ const statusLabels: Record<string, string> = {
   border: 1px solid rgba(117,182,255,.24);
   font-size: .8rem;
   color: rgba(255,255,255,.6);
+  color: #4b5563;
   margin: 8px 0;
 }
 .confirm-notice p { margin: 0; }

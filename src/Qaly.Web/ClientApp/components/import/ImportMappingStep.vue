@@ -207,8 +207,8 @@ function updateMappingField(index: number, targetField: string) {
 
 <style scoped>
 .import-settings-box {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
   border-radius: 12px;
   padding: 16px;
   margin-bottom: 20px;
@@ -216,7 +216,7 @@ function updateMappingField(index: number, targetField: string) {
 .import-settings-title {
   font-size: 0.85rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.7);
+  color: #374151;
   margin: 0 0 12px 0;
 }
 .ai-toggle {

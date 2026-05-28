@@ -84,3 +84,21 @@ public record AiCategorizationResult(
     string Priority,
     string[] Labels
 );
+
+public record DocumentImportPreviewResult(
+    string FileName,
+    string FileType,
+    string Title,
+    string Description,
+    int BlockCount,
+    List<string> PreviewBlocks,
+    List<string> Warnings
+);
+
+public record DocumentImportResult(
+    Guid PageId,
+    Guid ProjectId,
+    string Title,
+    int BlockCount,
+    List<string> Warnings
+);

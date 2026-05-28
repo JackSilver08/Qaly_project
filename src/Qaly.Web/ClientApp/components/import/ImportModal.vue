@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { X, FileSpreadsheet } from 'lucide-vue-next'
+import { ArrowLeft, Check, FileText, FileUp, X } from 'lucide-vue-next'
 import ImportUploadStep from './ImportUploadStep.vue'
 import ImportMappingStep from './ImportMappingStep.vue'
 import ImportConfirmStep from './ImportConfirmStep.vue'
@@ -24,6 +24,8 @@ const isLoading = ref(false)
 
 // Parse result
 const parseResult = ref<any>(null)
+const importMode = ref<'table' | 'document'>('table')
+const documentTitle = ref('')
 
 // Mapping state
 const firstRowIsHeader = ref(true)
@@ -41,17 +43,53 @@ const importResult = ref<any>(null)
 
 const isNewProject = computed(() => !props.projectId)
 
-const stepLabels = ['Tải file', 'Ghép cột', 'Xác nhận', 'Kết quả']
+const stepLabels = computed(() => importMode.value === 'document'
+  ? ['Discover', 'Preview', 'Confirm', 'Done']
+  : ['Discover', 'Map columns', 'Confirm', 'Done'])
+
+const tableExtensions = ['csv', 'xlsx', 'tsv', 'dsv', 'psv', 'json']
+const documentExtensions = ['md', 'markdown', 'txt', 'html', 'htm']
+
+function extensionOf(name: string) {
+  return name.split('.').pop()?.toLowerCase() || ''
+}
+
+function detectImportMode(selectedFile: File) {
+  const ext = extensionOf(selectedFile.name)
+  if (tableExtensions.includes(ext)) return 'table'
+  if (documentExtensions.includes(ext)) return 'document'
+  return 'table'
+}
 
 // ─── Step 1 → Step 2: Parse file ─────────────────────
 
 async function parseFile(sheetName?: string | null) {
   if (!file.value) return
   isLoading.value = true
+  importMode.value = detectImportMode(file.value)
 
   try {
     const formData = new FormData()
     formData.append('file', file.value)
+
+    if (importMode.value === 'document') {
+      const res = await fetch('/api/import/documents/preview', {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await res.json()
+
+      if (!data.isSuccess) {
+        showError(data.error || 'Khong the doc file')
+        return
+      }
+
+      parseResult.value = data.data
+      documentTitle.value = data.data.title
+      step.value = 2
+      return
+    }
+
     if (sheetName) formData.append('sheetName', sheetName)
     formData.append('firstRowIsHeader', String(firstRowIsHeader.value))
 
@@ -76,7 +114,7 @@ async function parseFile(sheetName?: string | null) {
       selectedSheet.value = sheetName || data.data.sheetNames[0]
     }
     if (isNewProject.value) {
-      newProjectName.value = file.value!.name.replace(/\.(csv|xlsx|tsv|txt|psv|json)$/i, '')
+      newProjectName.value = file.value!.name.replace(/\.(csv|xlsx|tsv|dsv|psv|json)$/i, '')
     }
     step.value = 2
   } catch (e: any) {
@@ -115,6 +153,33 @@ async function executeImport() {
   try {
     const formData = new FormData()
     formData.append('file', file.value)
+
+    if (importMode.value === 'document') {
+      if (!props.projectId) {
+        showError('Hay vao mot du an cu the de import document thanh Wiki page.')
+        return
+      }
+
+      formData.append('projectId', props.projectId)
+      formData.append('title', documentTitle.value)
+
+      const res = await fetch('/api/import/documents/execute', {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await res.json()
+
+      if (!data.isSuccess) {
+        showError(data.error || 'Import document that bai')
+        return
+      }
+
+      importResult.value = { ...data.data, kind: 'document' }
+      step.value = 4
+      showSuccess(`Da tao Wiki page "${data.data.title}"`)
+      return
+    }
+
     formData.append('request', JSON.stringify({
       projectId: props.projectId || null,
       newProjectName: isNewProject.value ? newProjectName.value : null,
@@ -187,8 +252,8 @@ function finish() {
         <!-- Header -->
         <div class="import-header">
           <div class="import-header__left">
-            <FileSpreadsheet :size="22" />
-            <h2>Nhập CSV / Excel</h2>
+            <FileUp :size="22" />
+            <h2>Import</h2>
           </div>
           <button class="icon-button" @click="$emit('close')"><X :size="18" /></button>
         </div>
@@ -225,9 +290,57 @@ function finish() {
           @next="parseFile"
         />
 
+        <div v-if="step === 2 && parseResult && importMode === 'document'" class="import-step document-preview">
+          <div class="document-preview__hero">
+            <FileText :size="26" />
+            <div>
+              <span>{{ parseResult.fileType }}</span>
+              <h3>Preview Wiki page import</h3>
+            </div>
+          </div>
+
+          <div class="import-field">
+            <label>Page title</label>
+            <input v-model="documentTitle" class="import-input" type="text" />
+          </div>
+
+          <div class="document-preview__stats">
+            <div>
+              <span>Blocks detected</span>
+              <strong>{{ parseResult.blockCount }}</strong>
+            </div>
+            <div>
+              <span>Target</span>
+              <strong>{{ projectName || 'Current project' }}</strong>
+            </div>
+          </div>
+
+          <div v-if="parseResult.description" class="document-description">
+            {{ parseResult.description }}
+          </div>
+
+          <div v-if="parseResult.warnings?.length" class="import-warning">
+            <span>{{ parseResult.warnings.join(' ') }}</span>
+          </div>
+
+          <div class="document-preview__blocks">
+            <p>First blocks</p>
+            <ul>
+              <li v-for="(block, index) in parseResult.previewBlocks" :key="index">{{ block }}</li>
+            </ul>
+          </div>
+
+          <div class="import-actions">
+            <button class="btn btn--ghost" type="button" @click="step = 1"><ArrowLeft :size="16" /> Back</button>
+            <button class="btn btn--primary" :disabled="!documentTitle.trim()" type="button" @click="step = 3">
+              Continue
+            </button>
+          </div>
+        </div>
+
         <!-- Step 2: Mapping -->
         <ImportMappingStep
-          v-if="step === 2 && parseResult"
+          v-if="step === 2 && parseResult && importMode === 'table'"
           :parse-result="parseResult"
           :mappings="mappings"
           :first-row-is-header="firstRowIsHeader"
@@ -250,9 +363,43 @@ function finish() {
           @next="goToConfirm"
         />
 
+        <div v-if="step === 3 && parseResult && importMode === 'document'" class="import-step document-confirm">
+          <div class="confirm-hero">
+            <div class="confirm-icon"><FileText :size="34" /></div>
+            <h3>Confirm document import</h3>
+            <p class="confirm-subtitle">
+              QALY will create a Wiki page in <strong>{{ projectName }}</strong>.
+            </p>
+          </div>
+
+          <div class="confirm-stats">
+            <div class="confirm-stat">
+              <span class="confirm-stat__label">File type</span>
+              <span class="confirm-stat__value confirm-stat__value--text">{{ parseResult.fileType }}</span>
+            </div>
+            <div class="confirm-stat confirm-stat--success">
+              <span class="confirm-stat__label">Blocks</span>
+              <span class="confirm-stat__value">{{ parseResult.blockCount }}</span>
+            </div>
+          </div>
+
+          <div class="confirm-notice">
+            <span>Preview</span>
+            <p>{{ documentTitle }}</p>
+          </div>
+
+          <div class="import-actions">
+            <button class="btn btn--ghost" type="button" @click="step = 2"><ArrowLeft :size="16" /> Back</button>
+            <button class="btn btn--primary btn--import-confirm" :disabled="isLoading" @click="executeImport">
+              <template v-if="isLoading">Importing...</template>
+              <template v-else>Create Wiki page <Check :size="16" /></template>
+            </button>
+          </div>
+        </div>
+
         <!-- Step 3: Confirm (NEW — preview BEFORE import) -->
         <ImportConfirmStep
-          v-if="step === 3 && parseResult"
+          v-if="step === 3 && parseResult && importMode === 'table'"
           :parse-result="parseResult"
           :mappings="mappings"
           :skip-duplicates="skipDuplicates"
@@ -280,7 +427,15 @@ function finish() {
             <h3>Import hoàn tất!</h3>
           </div>
 
-          <div class="import-result-stats">
+          <div v-if="importMode === 'document'" class="document-success">
+            <FileText :size="24" />
+            <div>
+              <strong>{{ importResult.title }}</strong>
+              <p>Created a Wiki page with {{ importResult.blockCount }} blocks.</p>
+            </div>
+          </div>
+
+          <div v-if="importMode === 'table'" class="import-result-stats">
             <div class="stat-item"><span class="stat-label">Tổng dòng</span><span class="stat-value">{{ importResult.totalRows }}</span></div>
             <div class="stat-item stat--success"><span class="stat-label">Đã import</span><span class="stat-value">{{ importResult.importedCount }}</span></div>
             <div v-if="importResult.skippedCount > 0" class="stat-item stat--warn"><span class="stat-label">Bỏ qua</span><span class="stat-value">{{ importResult.skippedCount }}</span></div>
@@ -288,7 +443,7 @@ function finish() {
           </div>
 
           <!-- Status distribution -->
-          <div v-if="Object.keys(importResult.statusDistribution).length" class="import-distribution">
+          <div v-if="importMode === 'table' && Object.keys(importResult.statusDistribution).length" class="import-distribution">
             <p class="dist-title">Phân bố theo cột Kanban</p>
             <div v-for="(count, status) in importResult.statusDistribution" :key="status" class="dist-row">
               <span class="dist-status">{{ status }}</span>
@@ -318,7 +473,7 @@ function finish() {
           </div>
 
           <div class="import-actions">
-            <button class="btn btn--ghost btn--danger" @click="undoImport" :disabled="isLoading">
+            <button v-if="importMode === 'table'" class="btn btn--ghost btn--danger" @click="undoImport" :disabled="isLoading">
               Hoàn tác import
             </button>
             <button class="btn btn--primary" @click="finish">
@@ -334,21 +489,22 @@ function finish() {
 <style scoped>
 .import-backdrop {
   position: fixed; inset: 0; z-index: 9999;
-  background: rgba(0,0,0,.55); backdrop-filter: blur(6px);
+  background: rgba(15, 23, 42, 0.38); backdrop-filter: blur(6px);
   display: flex; align-items: center; justify-content: center;
   animation: fadeIn .2s ease;
 }
 .import-modal {
   --accent: #1f80ff;
-  width: min(700px, 94vw); max-height: 88vh; overflow-y: auto;
-  border-radius: 18px; padding: 0;
-  background: var(--glass-bg, rgba(30,30,45,.94));
-  border: 1px solid rgba(255,255,255,.08);
-  box-shadow: 0 24px 80px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.04) inset;
+  width: min(1000px, 94vw); max-height: 90vh; overflow-y: auto;
+  border-radius: 14px; padding: 0;
+  background: #ffffff;
+  color: #111827;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.22);
 }
 .import-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 20px 24px; border-bottom: 1px solid rgba(255,255,255,.06);
+  padding: 18px 24px; border-bottom: 1px solid #eef2f7;
 }
 .import-header__left { display: flex; align-items: center; gap: 10px; }
 .import-header__left h2 { font-size: 1.1rem; font-weight: 600; margin: 0; }
@@ -363,7 +519,7 @@ function finish() {
 }
 .stepper-line {
   position: absolute; top: 50%; left: 16px; right: 16px;
-  height: 3px; background: rgba(255,255,255,.06);
+  height: 3px; background: #eef2f7;
   border-radius: 2px; transform: translateY(-50%);
   z-index: 0;
 }
@@ -376,7 +532,7 @@ function finish() {
   width: 34px; height: 34px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   font-size: .8rem; font-weight: 700;
-  background: rgba(255,255,255,.06); color: rgba(255,255,255,.25);
+  background: #f3f4f6; color: #9ca3af;
   transition: all .35s cubic-bezier(.22,1,.36,1);
   position: relative; z-index: 1;
 }
@@ -393,11 +549,11 @@ function finish() {
   padding: 0 4px;
 }
 .stepper-labels span {
-  font-size: .7rem; color: rgba(255,255,255,.25);
+  font-size: .7rem; color: #9ca3af;
   text-align: center; width: 34px;
   transition: color .3s;
 }
-.stepper-labels span.active { color: rgba(255,255,255,.65); }
+.stepper-labels span.active { color: #374151; }
 
 /* ── Steps ── */
 .import-step { padding: 20px 24px; }
@@ -422,7 +578,7 @@ function finish() {
 :deep(.import-info-banner) {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 14px; border-radius: 8px;
-  background: rgba(99,102,241,.08); border: 1px solid rgba(99,102,241,.15);
+  background: #eff6ff; border: 1px solid #bfdbfe;
   margin-bottom: 8px;
 }
 :deep(.import-info-banner p) { margin: 0; font-size: .85rem; }
@@ -431,51 +587,51 @@ function finish() {
 :deep(.import-options-row) { display: flex; gap: 20px; margin-bottom: 16px; }
 :deep(.import-toggle) {
   display: flex; align-items: center; gap: 8px; font-size: .82rem;
-  color: rgba(255,255,255,.6); cursor: pointer;
+  color: #4b5563; cursor: pointer;
 }
 :deep(.import-toggle input) { accent-color: var(--accent, #6366f1); }
 
 :deep(.import-preview-wrap) { margin-bottom: 20px; }
-:deep(.import-preview-title) { font-size: .82rem; color: rgba(255,255,255,.5); margin: 0 0 8px; }
+:deep(.import-preview-title) { font-size: .82rem; color: #6b7280; margin: 0 0 8px; }
 :deep(.import-preview-table-wrap) {
   overflow-x: auto; border-radius: 8px;
-  border: 1px solid rgba(255,255,255,.06);
+  border: 1px solid #e5e7eb;
 }
 :deep(.import-preview-table) { width: 100%; border-collapse: collapse; font-size: .78rem; }
 :deep(.import-preview-table th) {
-  background: rgba(255,255,255,.04); padding: 8px 12px; text-align: left;
-  font-weight: 600; white-space: nowrap; color: rgba(255,255,255,.7);
-  border-bottom: 1px solid rgba(255,255,255,.06);
+  background: #f9fafb; padding: 8px 12px; text-align: left;
+  font-weight: 600; white-space: nowrap; color: #374151;
+  border-bottom: 1px solid #e5e7eb;
 }
 :deep(.import-preview-table td) {
-  padding: 6px 12px; white-space: nowrap; color: rgba(255,255,255,.5);
-  border-bottom: 1px solid rgba(255,255,255,.03); max-width: 200px;
+  padding: 6px 12px; white-space: nowrap; color: #6b7280;
+  border-bottom: 1px solid #f3f4f6; max-width: 200px;
   overflow: hidden; text-overflow: ellipsis;
 }
 
 :deep(.import-mapping) { margin-bottom: 16px; }
-:deep(.import-mapping-title) { font-size: .85rem; font-weight: 600; margin: 0 0 10px; color: rgba(255,255,255,.7); }
+:deep(.import-mapping-title) { font-size: .85rem; font-weight: 600; margin: 0 0 10px; color: #374151; }
 :deep(.import-mapping-row) {
   display: flex; align-items: center; gap: 10px;
-  padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,.03);
+  padding: 6px 0; border-bottom: 1px solid #f3f4f6;
 }
 :deep(.mapping-source) {
   flex: 1; font-size: .82rem; font-weight: 500;
   padding: 6px 10px; border-radius: 6px;
-  background: rgba(255,255,255,.04); color: rgba(255,255,255,.7);
+  background: #f9fafb; color: #374151;
 }
-:deep(.mapping-arrow) { color: rgba(255,255,255,.2); flex-shrink: 0; }
+:deep(.mapping-arrow) { color: #9ca3af; flex-shrink: 0; }
 :deep(.mapping-target) { flex: 1.3; }
 
 :deep(.import-field) { margin-bottom: 14px; }
-:deep(.import-field label) { display: block; font-size: .8rem; color: rgba(255,255,255,.5); margin-bottom: 6px; }
+:deep(.import-field label) { display: block; font-size: .8rem; color: #4b5563; margin-bottom: 6px; }
 :deep(.import-input), :deep(.import-select) {
   width: 100%; padding: 8px 12px; border-radius: 8px; font-size: .85rem;
-  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1);
+  background: #ffffff; border: 1px solid #d1d5db;
   color: inherit; outline: none; transition: border-color .2s;
 }
 :deep(.import-input:focus), :deep(.import-select:focus) { border-color: var(--accent, #6366f1); }
-:deep(.import-select option) { background: #1e1e2d; }
+:deep(.import-select option) { background: #ffffff; }
 
 /* ── Warning ── */
 :deep(.import-warning), .import-warning {
@@ -537,7 +693,7 @@ function finish() {
 /* ── Actions ── */
 :deep(.import-actions), .import-actions {
   display: flex; justify-content: space-between; align-items: center;
-  padding-top: 16px; border-top: 1px solid rgba(255,255,255,.06);
+  padding-top: 16px; border-top: 1px solid #eef2f7;
   margin-top: 12px;
 }
 
@@ -551,10 +707,10 @@ function finish() {
 :deep(.btn--primary:hover), .btn--primary:hover { filter: brightness(1.15); }
 :deep(.btn--primary:disabled), .btn--primary:disabled { opacity: .5; cursor: not-allowed; }
 :deep(.btn--ghost), .btn--ghost {
-  background: transparent; color: rgba(255,255,255,.6);
-  border: 1px solid rgba(255,255,255,.1);
+  background: transparent; color: #4b5563;
+  border: 1px solid #d1d5db;
 }
-:deep(.btn--ghost:hover), .btn--ghost:hover { background: rgba(255,255,255,.05); }
+:deep(.btn--ghost:hover), .btn--ghost:hover { background: #f9fafb; }
 :deep(.btn--sm), .btn--sm { padding: 6px 14px; font-size: .8rem; }
 .btn--danger { color: #ef4444; border-color: rgba(239,68,68,.2); }
 .btn--danger:hover { background: rgba(239,68,68,.08); }
@@ -581,6 +737,115 @@ function finish() {
 }
 .skipped-list li {
   margin-bottom: 4px;
+}
+
+.document-preview__hero,
+.document-success {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #1f2937;
+  margin-bottom: 16px;
+}
+
+.document-preview__hero svg,
+.document-success svg {
+  color: #2563eb;
+  flex-shrink: 0;
+}
+
+.document-preview__hero span {
+  display: block;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.document-preview__hero h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.document-preview__stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.document-preview__stats div {
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.document-preview__stats span {
+  display: block;
+  color: #6b7280;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.document-preview__stats strong {
+  color: #111827;
+}
+
+.document-description {
+  padding: 12px 14px;
+  border-left: 3px solid #93c5fd;
+  background: #f8fafc;
+  color: #4b5563;
+  font-size: 14px;
+  margin: 12px 0;
+}
+
+.document-preview__blocks {
+  margin: 16px 0;
+}
+
+.document-preview__blocks p {
+  margin: 0 0 8px;
+  color: #374151;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.document-preview__blocks ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.document-preview__blocks li {
+  padding: 9px 12px;
+  border-bottom: 1px solid #f3f4f6;
+  color: #4b5563;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.document-preview__blocks li:last-child {
+  border-bottom: 0;
+}
+
+.document-success p {
+  margin: 4px 0 0;
+  color: #6b7280;
+}
+
+.confirm-stat__value--text {
+  font-size: 1rem;
 }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
