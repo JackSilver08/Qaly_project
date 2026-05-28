@@ -584,6 +584,318 @@ public class GroupsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task UpdateMemberRoleAsync_WhenOwnerUpdatesMemberToAdmin_ReturnsSuccess()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Manage Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+
+        var result = await CreateService().UpdateMemberRoleAsync(group.Id, memberId, new UpdateGroupMemberRoleRequest("Admin"));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.StatusCode.Should().Be(200);
+
+        var updated = await _context.WorkGroupMembers.SingleAsync(item => item.WorkGroupId == group.Id && item.UserId == memberId);
+        updated.Role.Should().Be(GroupRoleRules.Admin);
+    }
+
+    [Fact]
+    public async Task UpdateMemberRoleAsync_WhenUserNotAuthenticated_ReturnsUnauthorized()
+    {
+        var result = await CreateService().UpdateMemberRoleAsync(Guid.NewGuid(), Guid.NewGuid(), new UpdateGroupMemberRoleRequest("Admin"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(401);
+    }
+
+    [Fact]
+    public async Task UpdateMemberRoleAsync_WhenAdminUpdatesMemberToAdmin_ReturnsSuccess()
+    {
+        var ownerId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(adminId, "Admin", "admin@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Manage Group");
+        await AddMemberAsync(group.Id, adminId, GroupRoleRules.Admin);
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        _currentUser.SetupGet(user => user.UserId).Returns(adminId);
+
+        var result = await CreateService().UpdateMemberRoleAsync(group.Id, memberId, new UpdateGroupMemberRoleRequest("Admin"));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.StatusCode.Should().Be(200);
+    }
+
+    [Fact]
+    public async Task UpdateMemberRoleAsync_WhenRegularMemberUpdatesOthers_ReturnsForbidden()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        var targetId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        await AddUserAsync(targetId, "Target", "target@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Manage Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        await AddMemberAsync(group.Id, targetId, GroupRoleRules.Member);
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+
+        var result = await CreateService().UpdateMemberRoleAsync(group.Id, targetId, new UpdateGroupMemberRoleRequest("Admin"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task UpdateMemberRoleAsync_WhenCurrentUserNotInGroup_ReturnsForbidden()
+    {
+        var ownerId = Guid.NewGuid();
+        var outsiderId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(outsiderId, "Outsider", "outsider@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Manage Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        _currentUser.SetupGet(user => user.UserId).Returns(outsiderId);
+
+        var result = await CreateService().UpdateMemberRoleAsync(group.Id, memberId, new UpdateGroupMemberRoleRequest("Admin"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task UpdateMemberRoleAsync_WhenTargetNotInGroup_ReturnsNotFound()
+    {
+        var ownerId = Guid.NewGuid();
+        var targetId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(targetId, "Target", "target@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Manage Group");
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+
+        var result = await CreateService().UpdateMemberRoleAsync(group.Id, targetId, new UpdateGroupMemberRoleRequest("Admin"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(404);
+    }
+
+    [Fact]
+    public async Task UpdateMemberRoleAsync_WhenDowngradeLastOwner_ReturnsConflict()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Manage Group");
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+
+        var result = await CreateService().UpdateMemberRoleAsync(group.Id, ownerId, new UpdateGroupMemberRoleRequest("Admin"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(409);
+    }
+
+    [Fact]
+    public async Task UpdateMemberRoleAsync_WhenRoleInvalid_ReturnsBadRequest()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Manage Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+
+        var result = await CreateService().UpdateMemberRoleAsync(group.Id, memberId, new UpdateGroupMemberRoleRequest("InvalidRole"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+    }
+
+    [Fact]
+    public async Task UpdateMemberRoleAsync_WhenAdminTriesToUpdateOwner_ReturnsForbidden()
+    {
+        var ownerId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(adminId, "Admin", "admin@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Manage Group");
+        await AddMemberAsync(group.Id, adminId, GroupRoleRules.Admin);
+        _currentUser.SetupGet(user => user.UserId).Returns(adminId);
+
+        var result = await CreateService().UpdateMemberRoleAsync(group.Id, ownerId, new UpdateGroupMemberRoleRequest("Member"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task RemoveMemberAsync_WhenOwnerRemovesMember_ReturnsSuccess()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Manage Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+
+        var result = await CreateService().RemoveMemberAsync(group.Id, memberId);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.StatusCode.Should().Be(200);
+
+        var memberExists = await _context.WorkGroupMembers.AnyAsync(item => item.WorkGroupId == group.Id && item.UserId == memberId);
+        memberExists.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RemoveMemberAsync_WhenUserNotAuthenticated_ReturnsUnauthorized()
+    {
+        var result = await CreateService().RemoveMemberAsync(Guid.NewGuid(), Guid.NewGuid());
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(401);
+    }
+
+    [Fact]
+    public async Task RemoveMemberAsync_WhenAdminRemovesMember_ReturnsSuccess()
+    {
+        var ownerId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(adminId, "Admin", "admin@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Manage Group");
+        await AddMemberAsync(group.Id, adminId, GroupRoleRules.Admin);
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        _currentUser.SetupGet(user => user.UserId).Returns(adminId);
+
+        var result = await CreateService().RemoveMemberAsync(group.Id, memberId);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.StatusCode.Should().Be(200);
+    }
+
+    [Fact]
+    public async Task RemoveMemberAsync_WhenRegularMemberRemovesOthers_ReturnsForbidden()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        var targetId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        await AddUserAsync(targetId, "Target", "target@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Manage Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        await AddMemberAsync(group.Id, targetId, GroupRoleRules.Member);
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+
+        var result = await CreateService().RemoveMemberAsync(group.Id, targetId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task RemoveMemberAsync_WhenCurrentUserNotInGroup_ReturnsForbidden()
+    {
+        var ownerId = Guid.NewGuid();
+        var outsiderId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(outsiderId, "Outsider", "outsider@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Manage Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        _currentUser.SetupGet(user => user.UserId).Returns(outsiderId);
+
+        var result = await CreateService().RemoveMemberAsync(group.Id, memberId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task RemoveMemberAsync_WhenTargetNotInGroup_ReturnsNotFound()
+    {
+        var ownerId = Guid.NewGuid();
+        var targetId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(targetId, "Target", "target@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Manage Group");
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+
+        var result = await CreateService().RemoveMemberAsync(group.Id, targetId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(404);
+    }
+
+    [Fact]
+    public async Task RemoveMemberAsync_WhenRemovingLastOwner_ReturnsConflict()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Manage Group");
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+
+        var result = await CreateService().RemoveMemberAsync(group.Id, ownerId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(409);
+    }
+
+    [Fact]
+    public async Task RemoveMemberAsync_WhenAdminTriesToRemoveOwner_ReturnsForbidden()
+    {
+        var ownerId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(adminId, "Admin", "admin@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Manage Group");
+        await AddMemberAsync(group.Id, adminId, GroupRoleRules.Admin);
+        _currentUser.SetupGet(user => user.UserId).Returns(adminId);
+
+        var result = await CreateService().RemoveMemberAsync(group.Id, ownerId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task RemoveMemberAsync_WhenRemovingSelfMember_DoesNotAffectOtherMembers()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        var anotherMemberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        await AddUserAsync(anotherMemberId, "Another", "another@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Manage Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        await AddMemberAsync(group.Id, anotherMemberId, GroupRoleRules.Member);
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+
+        var result = await CreateService().RemoveMemberAsync(group.Id, memberId);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.StatusCode.Should().Be(200);
+
+        var removedExists = await _context.WorkGroupMembers.AnyAsync(item => item.WorkGroupId == group.Id && item.UserId == memberId);
+        var anotherExists = await _context.WorkGroupMembers.AnyAsync(item => item.WorkGroupId == group.Id && item.UserId == anotherMemberId);
+        removedExists.Should().BeFalse();
+        anotherExists.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task CreateMessageAsync_WhenUserIsMember_PersistsMessage()
     {
         var ownerId = Guid.NewGuid();

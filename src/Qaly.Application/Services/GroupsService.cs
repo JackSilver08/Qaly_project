@@ -539,9 +539,25 @@ public class GroupsService : IGroupsService
 
     public async Task<Result> UpdateMemberRoleAsync(Guid groupId, Guid userId, UpdateGroupMemberRoleRequest request, CancellationToken ct = default)
     {
-        if (!await CanManageGroupAsync(groupId, ct))
+        if (groupId == Guid.Empty || userId == Guid.Empty)
         {
-            return Result.Forbidden();
+            return Result.Failure("Group id and user id are required.");
+        }
+
+        if (request == null || string.IsNullOrWhiteSpace(request.Role))
+        {
+            return Result.Failure("Role is required.");
+        }
+
+        if (!GroupRoleRules.IsValid(request.Role))
+        {
+            return Result.Failure("Role is invalid.");
+        }
+
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Failure("Authentication is required.", 401);
         }
 
         var group = await _groupRepo.GetByIdAsync(groupId, ct);
@@ -550,9 +566,11 @@ public class GroupsService : IGroupsService
             return Result.NotFound();
         }
 
-        if (group.OwnerId == userId)
+        var currentMember = await _memberRepo.GetQueryable()
+            .FirstOrDefaultAsync(item => item.WorkGroupId == groupId && item.UserId == currentUserId.Value, ct);
+        if (currentMember == null)
         {
-            return Result.Failure("Group owner role cannot be changed.", 400);
+            return Result.Forbidden("Current user is not a group member.");
         }
 
         var member = await _memberRepo.GetQueryable()
@@ -562,26 +580,63 @@ public class GroupsService : IGroupsService
             return Result.Failure("Group member was not found.", 404);
         }
 
-        member.Role = GroupRoleRules.Normalize(request.Role);
+        if (!GroupRoleRules.CanChangeMemberRole(currentMember.Role, member.Role))
+        {
+            return Result.Forbidden("Bạn không có quyền thay đổi vai trò thành viên này.");
+        }
+
+        var normalizedCurrentRole = GroupRoleRules.Normalize(member.Role);
+        var normalizedRequestedRole = GroupRoleRules.Normalize(request.Role);
+
+        if (normalizedCurrentRole == normalizedRequestedRole)
+        {
+            return Result.Success();
+        }
+
+        if (normalizedRequestedRole == GroupRoleRules.Owner
+            && !string.Equals(GroupRoleRules.Normalize(currentMember.Role), GroupRoleRules.Owner, StringComparison.Ordinal))
+        {
+            return Result.Forbidden("Only group owner can assign Owner role.");
+        }
+
+        if (normalizedCurrentRole == GroupRoleRules.Owner && normalizedRequestedRole != GroupRoleRules.Owner)
+        {
+            var ownerCount = await CountGroupOwnersAsync(groupId, ct);
+            if (ownerCount <= 1)
+            {
+                return Result.Failure("Cannot downgrade the last owner of the group.", 409);
+            }
+
+            if (group.OwnerId == member.UserId)
+            {
+                return Result.Failure("Primary group owner role cannot be changed.", 409);
+            }
+        }
+
+        member.Role = normalizedRequestedRole;
         await _memberRepo.UpdateAsync(member, ct);
         await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("UpdateMemberRole", nameof(WorkGroup), groupId.ToString(), new { userId, member.Role }, ct);
+        await _auditLogService.LogAsync("UpdateMemberRole", nameof(WorkGroup), groupId.ToString(), new
+        {
+            userId,
+            OldRole = normalizedCurrentRole,
+            NewRole = member.Role
+        }, ct);
 
         return Result.Success();
     }
 
     public async Task<Result> RemoveMemberAsync(Guid groupId, Guid userId, CancellationToken ct = default)
     {
+        if (groupId == Guid.Empty || userId == Guid.Empty)
+        {
+            return Result.Failure("Group id and user id are required.");
+        }
+
         var currentUserId = _currentUserService.UserId;
         if (currentUserId == null)
         {
-            return Result.Forbidden();
-        }
-
-        var isSelfLeave = currentUserId.Value == userId;
-        if (!isSelfLeave && !await CanManageGroupAsync(groupId, ct))
-        {
-            return Result.Forbidden();
+            return Result.Failure("Authentication is required.", 401);
         }
 
         var group = await _groupRepo.GetByIdAsync(groupId, ct);
@@ -590,9 +645,11 @@ public class GroupsService : IGroupsService
             return Result.NotFound();
         }
 
-        if (group.OwnerId == userId)
+        var currentMember = await _memberRepo.GetQueryable()
+            .FirstOrDefaultAsync(item => item.WorkGroupId == groupId && item.UserId == currentUserId.Value, ct);
+        if (currentMember == null)
         {
-            return Result.Failure("Group owner cannot be removed from the group.", 400);
+            return Result.Forbidden("Current user is not a group member.");
         }
 
         var member = await _memberRepo.GetQueryable()
@@ -602,9 +659,34 @@ public class GroupsService : IGroupsService
             return Result.Failure("Group member was not found.", 404);
         }
 
+        var isSelfAction = currentUserId.Value == userId;
+        if (!GroupRoleRules.CanRemoveMember(currentMember.Role, member.Role, isSelfAction))
+        {
+            return Result.Forbidden("Bạn không có quyền xóa thành viên này.");
+        }
+
+        if (GroupRoleRules.Normalize(member.Role) == GroupRoleRules.Owner)
+        {
+            var ownerCount = await CountGroupOwnersAsync(groupId, ct);
+            if (ownerCount <= 1)
+            {
+                return Result.Failure("Cannot remove the last owner of the group.", 409);
+            }
+
+            if (group.OwnerId == member.UserId)
+            {
+                return Result.Failure("Primary group owner cannot be removed from the group.", 409);
+            }
+        }
+
         await _memberRepo.DeleteAsync(member, ct);
         await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("RemoveMember", nameof(WorkGroup), groupId.ToString(), new { userId }, ct);
+        await _auditLogService.LogAsync("RemoveMember", nameof(WorkGroup), groupId.ToString(), new
+        {
+            userId,
+            RemovedBy = currentUserId.Value,
+            IsSelfAction = isSelfAction
+        }, ct);
 
         return Result.Success();
     }
@@ -1075,6 +1157,11 @@ public class GroupsService : IGroupsService
 
     private static string NormalizeToken(string token)
         => string.IsNullOrWhiteSpace(token) ? string.Empty : token.Trim();
+
+    private async Task<int> CountGroupOwnersAsync(Guid groupId, CancellationToken ct)
+        => await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .CountAsync(member => member.WorkGroupId == groupId && member.Role == GroupRoleRules.Owner, ct);
 
     private static string? NormalizeOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

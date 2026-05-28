@@ -92,6 +92,7 @@ public class GroupsController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpPut("{id:guid}/members/{userId:guid}")]
     [HttpPatch("{id:guid}/members/{userId:guid}/role")]
     public async Task<IActionResult> UpdateMemberRole(Guid id, Guid userId, UpdateGroupMemberRoleRequest request, CancellationToken ct)
     {
