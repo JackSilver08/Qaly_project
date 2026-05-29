@@ -130,7 +130,7 @@ async function handleUndoFromBanner() {
         >
           <template #actions>
             <button class="btn-import" @click="showImportModal = true">
-              <FileUp :size="15" /> Import
+              <FileUp :size="15" /> Nhập
             </button>
           </template>
         </ProjectToolbar>
@@ -247,7 +247,7 @@ async function handleUndoFromBanner() {
   padding: 7px 14px;
   border: 1px solid rgba(184, 219, 255, 0.34);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgb(15, 0, 130);
   color: #d9e9ff;
   font-size: 0.8rem;
   font-weight: 700;
