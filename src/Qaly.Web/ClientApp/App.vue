@@ -270,11 +270,12 @@ const selectedProject = computed(() => {
 
 const selectedProjectTasks = computed(() => selectedProject.value?.tasks ?? []);
 const selectedTask = computed(() => {
+  if (!selectedTaskId.value) return null;
   if (!selectedProjectTasks.value.length) return null;
   return (
     selectedProjectTasks.value.find(
       (task) => task.id === selectedTaskId.value,
-    ) ?? selectedProjectTasks.value[0]
+    ) ?? null
   );
 });
 
@@ -476,6 +477,11 @@ watch(
     if (typeof id === "string") {
       selectedTaskId.value = id;
       activeProjectTab.value = "tasks";
+      return;
+    }
+
+    if (["project-detail", "projects", "dashboard"].includes(String(route.name ?? ""))) {
+      selectedTaskId.value = null;
     }
   },
   { immediate: true },
@@ -652,8 +658,7 @@ async function connectNotifications() {
 
 function selectProject(id: string) {
   baseSelectProject(id);
-  selectedTaskId.value =
-    projects.value.find((p) => p.id === id)?.tasks[0]?.id ?? null;
+  selectedTaskId.value = null;
   activeProjectTab.value = "stats";
 }
 
@@ -670,8 +675,7 @@ function closeGlobalSearch() {
 function goToProjectFromSearch(projectId: string, tab = "stats") {
   activeProjectId.value = projectId;
   activeProjectTab.value = tab;
-  selectedTaskId.value =
-    projects.value.find((project) => project.id === projectId)?.tasks[0]?.id ?? null;
+  selectedTaskId.value = null;
   closeGlobalSearch();
   void router.push(`/projects/${projectId}`);
 }

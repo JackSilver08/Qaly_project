@@ -3311,7 +3311,7 @@ p {
 
 .kanban-board {
   display: grid;
-  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  grid-template-columns: repeat(5, minmax(168px, 1fr));
   gap: var(--space-2);
   overflow-x: auto;
   padding-bottom: var(--space-1);
@@ -3319,10 +3319,11 @@ p {
 
 .kanban-column {
   min-height: 280px;
+  min-width: 0;
   display: grid;
   align-content: start;
   gap: var(--space-2);
-  padding: var(--space-2);
+  padding: 10px;
   border: 1px solid rgba(28, 37, 46, 0.09);
   border-radius: 8px;
   background: rgba(248, 250, 252, 0.72);
@@ -3341,6 +3342,13 @@ p {
 .kanban-column__header {
   justify-content: space-between;
   color: var(--text-strong);
+  gap: 8px;
+}
+
+.kanban-column__header strong {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.25;
 }
 
 .kanban-column__header span {
@@ -3356,8 +3364,8 @@ p {
 
 .kanban-card {
   display: grid;
-  gap: var(--space-2);
-  padding: var(--space-2);
+  gap: 8px;
+  padding: 10px;
   border: 1px solid rgba(28, 37, 46, 0.1);
   border-radius: 8px;
   background: #ffffff;
@@ -3374,10 +3382,15 @@ p {
 .kanban-card__top {
   justify-content: space-between;
   align-items: flex-start;
+  gap: 8px;
 }
 
 .kanban-card__top strong {
+  min-width: 0;
   color: var(--text-strong);
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .kanban-card p,
@@ -3509,7 +3522,7 @@ p {
   }
 
   .kanban-board {
-    grid-template-columns: repeat(4, minmax(240px, 1fr));
+    grid-template-columns: repeat(5, minmax(220px, 1fr));
   }
 }
 
@@ -3633,6 +3646,11 @@ p {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.task-card-actions {
+  flex: 0 0 auto;
+  gap: 6px;
 }
 
 .comment-row__top {

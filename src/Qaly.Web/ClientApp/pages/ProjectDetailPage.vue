@@ -12,6 +12,7 @@ import ImportModal from '../components/import/ImportModal.vue'
 import ImportUndoBanner from '../components/import/ImportUndoBanner.vue'
 import { useDashboardContext } from '../composables/dashboard-context'
 import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { apiResult } from '../utils/api-client'
 import type { DashboardTask, TaskAssignmentInsightDto } from '../types'
 import { showError } from '../composables/use-toast'
@@ -59,6 +60,7 @@ const {
   selectedProjectMembers,
   selectedProjectStats,
   selectedTask,
+  selectedTaskId,
   statusTone,
   statusColumns,
   submitComment,
@@ -80,6 +82,7 @@ const {
   loadDashboard,
 } = useDashboardContext()
 
+const router = useRouter()
 const showImportModal = ref(false)
 const undoBannerData = ref<{ importSessionId: string; importedCount: number; createdAt: string } | null>(null)
 const assignmentInsight = ref<TaskAssignmentInsightDto | null>(null)
@@ -129,6 +132,7 @@ const manualMinutes = ref<number>(0)
 const manualNote = ref('')
 const showManualForm = ref(false)
 const isKanbanDragging = ref(false)
+const isSuppressingTaskClick = ref(false)
 const markdown = new MarkdownIt({ linkify: true, breaks: true })
 
 function renderMarkdown(value: string) {
@@ -138,6 +142,20 @@ function renderMarkdown(value: string) {
 function startQuickEdit(task: DashboardTask) {
   taskBeingQuickEditedId.value = task.id
   quickEditTitle.value = task.title
+}
+
+function closeTaskDetails() {
+  selectedTaskId.value = null
+  showManualForm.value = false
+  activeTaskMenu.value = null
+  if (selectedProject.value?.id) {
+    void router.replace(`/projects/${selectedProject.value.id}`)
+  }
+}
+
+function handleTaskCardClick(taskId: string) {
+  if (isSuppressingTaskClick.value) return
+  selectTaskInProject(taskId)
 }
 
 async function saveQuickEdit() {
@@ -178,6 +196,12 @@ function moveTargetIndex(evt: { newDraggableIndex?: number; newIndex?: number },
   return Math.max(0, Math.min(rawIndex ?? targetCount, targetCount))
 }
 
+function onDragStart() {
+  isKanbanDragging.value = true
+  isSuppressingTaskClick.value = true
+  closeTaskDetails()
+}
+
 const onDragEnd = async (evt: {
   item: HTMLElement
   to: HTMLElement
@@ -188,6 +212,9 @@ const onDragEnd = async (evt: {
   newDraggableIndex?: number
 }) => {
   isKanbanDragging.value = false
+  window.setTimeout(() => {
+    isSuppressingTaskClick.value = false
+  }, 160)
   const taskId = evt.item.dataset.id
   const newStatus = kanbanStatusFromElement(evt.to)
   const project = selectedProject.value
@@ -227,6 +254,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
     createTaskOpen.value = false
     showManualForm.value = false
     activeTaskMenu.value = null
+    closeTaskDetails()
   }
 }
 
@@ -377,7 +405,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                 :class="{ 'is-drop-ready': isKanbanDragging }"
                 :data-kanban-status="status"
                 :empty-insert-threshold="120"
-                @start="isKanbanDragging = true"
+                @start="onDragStart"
                 @end="onDragEnd"
               >
                 <article
@@ -386,7 +414,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                   class="kanban-card draggable-item"
                   :class="{ 'is-selected': selectedTask?.id === task.id }"
                   :data-id="task.id"
-                  @click="selectTaskInProject(task.id)"
+                  @click="handleTaskCardClick(task.id)"
                 >
                   <div class="kanban-card__top">
                     <input
@@ -431,13 +459,21 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
           </div>
         </section>
 
-        <section class="task-detail-panel glass-card">
+        <Teleport to="body">
+          <Transition name="task-detail-drawer">
+            <div v-if="selectedTask" class="task-detail-backdrop" @click.self="closeTaskDetails">
+              <aside class="task-detail-panel task-detail-drawer glass-card" role="dialog" aria-modal="true" aria-label="Chi tiet nhiem vu">
           <div class="panel-heading">
             <div>
               <span>Chi tiết nhiệm vụ</span>
               <h2>{{ selectedTask?.title ?? 'Chưa chọn nhiệm vụ' }}</h2>
             </div>
-            <div v-if="selectedTask" class="task-id-badge">#{{ selectedTask.id.slice(0, 4) }}</div>
+            <div class="task-detail-drawer__actions">
+              <div v-if="selectedTask" class="task-id-badge">#{{ selectedTask.id.slice(0, 4) }}</div>
+              <button type="button" class="task-detail-drawer__close" aria-label="Dong chi tiet nhiem vu" @click="closeTaskDetails">
+                <X :size="18" />
+              </button>
+            </div>
           </div>
 
           <div v-if="selectedTask && !selectedTask.isRestricted" class="comment-list">
@@ -628,7 +664,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
             <ClipboardList :size="48" />
             <p>{{ selectedTask?.isRestricted ? 'Bạn không có quyền xem chi tiết nhiệm vụ riêng tư này.' : 'Chọn một nhiệm vụ để xem chi tiết' }}</p>
           </div>
-        </section>
+              </aside>
+            </div>
+          </Transition>
+        </Teleport>
       </div>
 
       <div v-if="activeProjectTab === 'members'" class="tab-pane reveal">
@@ -813,6 +852,70 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   gap: 24px;
 }
 
+.task-detail-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(15, 23, 42, 0.22);
+}
+
+.task-detail-drawer {
+  width: min(520px, calc(100vw - 28px));
+  height: 100vh;
+  min-height: 100vh;
+  max-height: 100vh;
+  overflow-y: auto;
+  border-radius: 18px 0 0 18px;
+  box-shadow: -24px 0 60px rgba(15, 23, 42, 0.2);
+}
+
+.task-detail-drawer__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.task-detail-drawer__close {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: var(--bg-soft);
+  cursor: pointer;
+  transition: background 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.task-detail-drawer__close:hover {
+  color: var(--text-strong);
+  background: var(--panel);
+  transform: translateY(-1px);
+}
+
+.task-detail-drawer-enter-active,
+.task-detail-drawer-leave-active {
+  transition: opacity 180ms ease;
+}
+
+.task-detail-drawer-enter-active .task-detail-drawer,
+.task-detail-drawer-leave-active .task-detail-drawer {
+  transition: transform 220ms ease;
+}
+
+.task-detail-drawer-enter-from,
+.task-detail-drawer-leave-to {
+  opacity: 0;
+}
+
+.task-detail-drawer-enter-from .task-detail-drawer,
+.task-detail-drawer-leave-to .task-detail-drawer {
+  transform: translateX(100%);
+}
+
 .task-id-badge {
   padding: 6px 10px;
   border: 1px solid var(--blue-200);
@@ -821,6 +924,13 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   background: var(--blue-50);
   font-size: 12px;
   font-weight: 800;
+}
+
+@media (max-width: 640px) {
+  .task-detail-drawer {
+    width: 100vw;
+    border-radius: 0;
+  }
 }
 
 .section-header {
