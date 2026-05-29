@@ -55,6 +55,7 @@ export interface DashboardTask {
     status: string;
     priority: string;
     dueDate: string | null;
+    assigneeId: string | null;
     assigneeName: string | null;
     reporterName: string;
     projectName: string;

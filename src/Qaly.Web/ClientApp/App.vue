@@ -1044,7 +1044,17 @@ function tasksByStatus(status: string) {
 }
 
 function nextStatuses(status: string) {
-  return statusColumns.filter((item) => item !== status);
+  const allowedTransitions: Record<string, string[]> = {
+    Todo: ["InProgress", "OnHold"],
+    InProgress: ["InReview", "OnHold", "Done"],
+    InReview: ["InProgress", "Done", "OnHold"],
+    OnHold: ["Todo", "InProgress"],
+    Done: ["InReview"],
+  };
+
+  return (allowedTransitions[status] ?? []).filter((item) =>
+    statusColumns.includes(item),
+  );
 }
 
 function toDashboardNotification(n: NotificationDto): DashboardNotification {

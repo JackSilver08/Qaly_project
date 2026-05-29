@@ -132,7 +132,7 @@ export function useTaskActions(
     afterTaskId: string | null,
   ) {
     try {
-      await apiResult<KanbanMoveResultDto>(`/api/tasks/project/${projectId}/kanban/move`, {
+      const result = await apiResult<KanbanMoveResultDto>(`/api/tasks/project/${projectId}/kanban/move`, {
         method: 'PATCH',
         body: JSON.stringify({
           taskId: task.id,
@@ -147,8 +147,10 @@ export function useTaskActions(
       await loadDashboard()
       selectedTaskId.value = task.id
       showSuccess(`Đã cập nhật vị trí nhiệm vụ trong ${displayStatus(status)}`)
+      return result
     } catch (error) {
       showError(errorMessage(error, 'Không thể cập nhật vị trí nhiệm vụ'))
+      return null
     }
   }
 
@@ -157,7 +159,7 @@ export function useTaskActions(
     newTaskTitle.value = task.title
     newTaskDescription.value = ''
     newTaskPriority.value = task.priority
-    newTaskAssigneeId.value = ''
+    newTaskAssigneeId.value = task.assigneeId ?? ''
     newTaskDueDate.value = task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : ''
     newTaskIsPrivate.value = task.isPrivate
     newTaskIsPinned.value = task.isPinned

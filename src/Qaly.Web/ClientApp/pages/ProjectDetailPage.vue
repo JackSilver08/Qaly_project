@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MessageSquare, MoreHorizontal, Plus, Send, Search, Clock, Play, Square, Calendar, X, ClipboardList, FileUp, File, Check, Ban, CheckCircle2, CheckSquare } from 'lucide-vue-next'
+import { MessageSquare, MoreHorizontal, Plus, Send, Search, Clock, Play, Square, Calendar, X, ClipboardList, FileUp, File, Check, Ban, CheckCircle2, CheckSquare, LayoutGrid, List } from 'lucide-vue-next'
 // @ts-ignore
 import { VueDraggable } from '../utils/vendor/vue-draggable-plus.js'
 import ProjectDetailHeader from '../components/ProjectDetailHeader.vue'
@@ -11,10 +11,10 @@ import WebhooksTab from '../components/WebhooksTab.vue'
 import ImportModal from '../components/import/ImportModal.vue'
 import ImportUndoBanner from '../components/import/ImportUndoBanner.vue'
 import { useDashboardContext } from '../composables/dashboard-context'
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { apiResult } from '../utils/api-client'
-import type { DashboardTask, TaskAssignmentInsightDto } from '../types'
+import type { DashboardTask, KanbanMoveResultDto, TaskAssignmentInsightDto } from '../types'
 import { showError } from '../composables/use-toast'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
@@ -133,7 +133,10 @@ const manualNote = ref('')
 const showManualForm = ref(false)
 const isKanbanDragging = ref(false)
 const isSuppressingTaskClick = ref(false)
+const taskBoardView = ref<'kanban' | 'list'>('kanban')
 const markdown = new MarkdownIt({ linkify: true, breaks: true })
+
+const filteredTaskList = computed(() => statusColumns.flatMap((status: string) => tasksByStatus(status)))
 
 function renderMarkdown(value: string) {
   return DOMPurify.sanitize(markdown.render(value || ''))
@@ -202,6 +205,53 @@ function onDragStart() {
   closeTaskDetails()
 }
 
+function canSelectListStatus(task: DashboardTask, status: string) {
+  return task.status === status || nextStatuses(task.status).includes(status)
+}
+
+function applyMovedTaskToCurrentProject(task: DashboardTask, status: string, result: KanbanMoveResultDto) {
+  const project = selectedProject.value
+  if (!project) return
+
+  const currentTask = project.tasks.find((item: DashboardTask) => item.id === task.id)
+  if (!currentTask) return
+
+  const movedTask = result.task
+  currentTask.status = movedTask.status || status
+  currentTask.priority = movedTask.priority
+  currentTask.dueDate = movedTask.dueDate
+  currentTask.assigneeId = movedTask.assigneeId
+  currentTask.assigneeName = movedTask.assigneeName
+  currentTask.sortOrder = movedTask.sortOrder
+  currentTask.rowVersion = movedTask.rowVersion
+  currentTask.isPrivate = movedTask.isPrivate
+  currentTask.isRestricted = movedTask.isRestricted
+  currentTask.isPinned = movedTask.isPinned
+  currentTask.contributesToProgress = movedTask.contributesToProgress
+  currentTask.upvoteCount = movedTask.upvoteCount
+  currentTask.downvoteCount = movedTask.downvoteCount
+  currentTask.commentCount = movedTask.commentCount
+  currentTask.attachmentCount = movedTask.attachmentCount
+}
+
+async function handleListStatusChange(task: DashboardTask, event: Event) {
+  const select = event.target as HTMLSelectElement
+  const status = select.value
+  if (!selectedProject.value || task.status === status || !canSelectListStatus(task, status)) {
+    select.value = task.status
+    return
+  }
+  const targetTasks = tasksByStatus(status).filter((item: DashboardTask) => item.id !== task.id)
+  const afterTaskId = targetTasks[targetTasks.length - 1]?.id ?? null
+  const result = await moveTaskOnKanban(selectedProject.value.id, task, status, null, afterTaskId)
+  if (!result) {
+    select.value = task.status
+    return
+  }
+  applyMovedTaskToCurrentProject(task, status, result)
+  closeTaskDetails()
+}
+
 const onDragEnd = async (evt: {
   item: HTMLElement
   to: HTMLElement
@@ -239,7 +289,11 @@ const onDragEnd = async (evt: {
   const beforeTaskId = targetTasks[targetIndex]?.id ?? null
   const afterTaskId = beforeTaskId ? null : targetTasks[targetIndex - 1]?.id ?? null
 
-  await moveTaskOnKanban(project.id, task, newStatus, beforeTaskId, afterTaskId)
+  const result = await moveTaskOnKanban(project.id, task, newStatus, beforeTaskId, afterTaskId)
+  if (result) {
+    applyMovedTaskToCurrentProject(task, newStatus, result)
+    closeTaskDetails()
+  }
 }
 
 // Keyboard Shortcuts
@@ -308,6 +362,26 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
               </div>
             </div>
             <div class="board-actions">
+              <div class="task-view-toggle" aria-label="Che do hien thi nhiem vu">
+                <button
+                  type="button"
+                  class="task-view-toggle__button"
+                  :class="{ 'is-active': taskBoardView === 'kanban' }"
+                  @click="taskBoardView = 'kanban'"
+                >
+                  <LayoutGrid :size="15" />
+                  <span>Kanban</span>
+                </button>
+                <button
+                  type="button"
+                  class="task-view-toggle__button"
+                  :class="{ 'is-active': taskBoardView === 'list' }"
+                  @click="taskBoardView = 'list'"
+                >
+                  <List :size="15" />
+                  <span>List</span>
+                </button>
+              </div>
               <button class="primary-button primary-button--compact" type="button" @click="createTaskOpen = !createTaskOpen">
                 <Plus :size="16" />
                 <span>Nhiệm vụ</span>
@@ -387,7 +461,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
             </div>
           </Teleport>
 
-          <div class="kanban-board">
+          <div v-if="taskBoardView === 'kanban'" class="kanban-board">
             <section v-for="status in statusColumns" :key="status" class="kanban-column" :data-kanban-status="status">
               <div class="kanban-column__header">
                 <strong>{{ displayStatus(status) }}</strong>
@@ -456,6 +530,71 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                 <div v-if="tasksByStatus(status).length === 0" class="empty-column-placeholder">Thả nhiệm vụ vào đây</div>
               </VueDraggable>
             </section>
+          </div>
+
+          <div v-else class="task-list-board">
+            <div class="task-list-board__head">
+              <span>Nhiệm vụ</span>
+              <span>Người phụ trách</span>
+              <span>Hạn</span>
+              <span>Ưu tiên</span>
+              <span>Trạng thái</span>
+              <span>Hoạt động</span>
+            </div>
+
+            <article
+              v-for="task in filteredTaskList"
+              :key="task.id"
+              class="task-list-row"
+              :class="{ 'is-selected': selectedTask?.id === task.id }"
+              @click="handleTaskCardClick(task.id)"
+            >
+              <div class="task-list-row__main">
+                <strong>
+                  <span v-if="task.isPrivate" title="Nhiệm vụ riêng tư">Khóa</span>
+                  <span v-if="task.isPinned" title="Nhiệm vụ đã ghim">Ghim</span>
+                  {{ task.title }}
+                </strong>
+                <small>#{{ task.id.slice(0, 4) }}</small>
+              </div>
+              <span class="task-list-row__muted">{{ task.isRestricted ? 'Bị giới hạn quyền xem' : (task.assigneeName || 'Chưa giao') }}</span>
+              <span class="task-list-row__muted">{{ formatDate(task.dueDate) }}</span>
+              <span :class="`priority priority--${task.priority.toLowerCase()}`">{{ task.priority }}</span>
+              <label class="task-status-select-wrap" @click.stop>
+                <select
+                  class="task-status-select"
+                  :value="task.status"
+                  @change.stop="handleListStatusChange(task, $event)"
+                >
+                  <option
+                    v-for="status in statusColumns"
+                    :key="status"
+                    :value="status"
+                    :disabled="!canSelectListStatus(task, status)"
+                  >
+                    {{ displayStatus(status) }}
+                  </option>
+                </select>
+              </label>
+              <div class="task-list-row__activity">
+                <span class="meta-item"><MessageSquare :size="12" /> {{ task.commentCount }}</span>
+                <span class="meta-item">▲ {{ task.upvoteCount || 0 }}</span>
+                <span v-if="isTaskOverdue(task)" class="overdue-tag">Quá hạn</span>
+                <div v-if="isProjectAdmin && !task.isRestricted" class="task-menu-dropdown task-list-menu">
+                  <button class="icon-button icon-button--small" type="button" @click.stop="toggleTaskMenu(task.id)">
+                    <MoreHorizontal :size="14" />
+                  </button>
+                  <div v-if="activeTaskMenu === task.id" class="dropdown-content glass-card">
+                    <button type="button" @click.stop="beginEditTask(task)">Sửa</button>
+                    <button type="button" style="color: var(--peach-500)" @click.stop="deleteTask(task.id)">Xóa</button>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            <div v-if="filteredTaskList.length === 0" class="empty-column-placeholder task-list-empty">
+              Không có nhiệm vụ phù hợp
+            </div>
           </div>
         </section>
 
@@ -733,8 +872,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
 .task-board-heading {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(260px, 420px) minmax(260px, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(220px, 1fr) minmax(340px, 520px) max-content;
+  gap: 12px;
   align-items: center;
 }
 
@@ -744,12 +883,12 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
 .task-board-search {
   display: flex;
-  justify-content: center;
+  justify-content: flex-end;
   min-width: 0;
 }
 
 .task-search-box {
-  width: min(100%, 420px);
+  width: min(100%, 520px);
 }
 
 .board-actions {
@@ -758,11 +897,56 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   align-items: center;
   gap: 10px;
   min-width: 0;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.task-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-soft);
+}
+
+.task-view-toggle__button {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 9px;
+  padding: 0 10px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 180ms ease, color 180ms ease, box-shadow 180ms ease;
+}
+
+.task-view-toggle__button.is-active {
+  color: #ffffff;
+  background: var(--primary);
+  box-shadow: 0 8px 16px rgba(31, 128, 255, 0.22);
+}
+
+.task-view-toggle__button svg {
+  flex: 0 0 auto;
 }
 
 .task-board-heading .primary-button,
 .task-board-heading .primary-button span {
   color: #ffffff;
+  white-space: nowrap;
+}
+
+.task-board-heading .primary-button {
+  flex: 0 0 auto;
+  min-width: 118px;
+  justify-content: center;
 }
 
 .task-board-heading .primary-button svg {
@@ -778,6 +962,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   .task-board-search,
   .board-actions {
     justify-content: flex-start;
+  }
+
+  .board-actions {
+    flex-wrap: wrap;
   }
 }
 
@@ -841,6 +1029,156 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   color: var(--muted);
   font-size: 13px;
   pointer-events: none;
+}
+
+.task-list-board {
+  display: grid;
+  gap: 10px;
+}
+
+.task-list-board__head,
+.task-list-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.6fr) minmax(130px, 0.85fr) minmax(96px, 0.65fr) minmax(88px, 0.55fr) minmax(110px, 0.7fr) minmax(150px, 0.9fr);
+  gap: 14px;
+  align-items: center;
+}
+
+.task-list-board__head {
+  padding: 0 16px 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.task-list-row {
+  min-height: 72px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  cursor: pointer;
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.task-list-row:hover,
+.task-list-row.is-selected {
+  border-color: var(--blue-300);
+  box-shadow: 0 14px 30px rgba(15, 82, 186, 0.08);
+  transform: translateY(-1px);
+}
+
+.task-list-row__main {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.task-list-row__main strong {
+  min-width: 0;
+  color: var(--text-strong);
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.task-list-row__main small,
+.task-list-row__muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.task-status-select-wrap {
+  min-width: 0;
+  width: fit-content;
+  max-width: 100%;
+  position: relative;
+}
+
+.task-status-select {
+  width: fit-content;
+  max-width: 100%;
+  min-height: 32px;
+  border: 1px solid var(--blue-200);
+  border-radius: 999px;
+  padding: 5px 30px 5px 10px;
+  color: var(--primary-dark);
+  background: var(--blue-50);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  outline: none;
+}
+
+.task-status-select:hover,
+.task-status-select:focus {
+  border: 1px solid var(--blue-200);
+  background: var(--blue-50);
+  box-shadow: 0 0 0 3px rgba(31, 128, 255, 0.12);
+}
+
+.task-status-select option {
+  color: var(--text-strong);
+  background: var(--panel);
+}
+
+.task-status-select option:disabled {
+  color: #94a3b8;
+}
+
+.task-list-row__activity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.task-list-menu {
+  margin-left: auto;
+  position: relative;
+}
+
+.task-list-menu .dropdown-content {
+  right: 0;
+  left: auto;
+  top: calc(100% + 6px);
+}
+
+.task-list-empty {
+  pointer-events: auto;
+}
+
+@media (max-width: 1180px) {
+  .task-list-board {
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .task-list-board__head,
+  .task-list-row {
+    min-width: 900px;
+  }
+}
+
+@media (max-width: 720px) {
+  .task-list-board {
+    overflow-x: visible;
+  }
+
+  .task-list-board__head {
+    display: none;
+  }
+
+  .task-list-row {
+    min-width: 0;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .task-list-row__activity {
+    justify-content: flex-start;
+  }
 }
 
 /* Task details */
@@ -1316,7 +1654,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .import-btn-sm {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
+  min-width: 92px;
   padding: 6px 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -1324,6 +1664,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   color: var(--text-strong);
   font-size: 12px;
   font-weight: 700;
+  white-space: nowrap;
   cursor: pointer;
   transition: transform 220ms ease, border-color 220ms ease, background 220ms ease, box-shadow 220ms ease, color 220ms ease;
 }
