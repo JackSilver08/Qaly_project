@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MessageSquare, MoreHorizontal, Plus, Send, Search, Clock, Play, Square, Calendar, X, ClipboardList, FileUp, File, Check, Ban, CheckCircle2, CheckSquare, LayoutGrid, List } from 'lucide-vue-next'
+import { MessageSquare, MoreHorizontal, Plus, Send, Search, Clock, Play, Square, Calendar, X, ClipboardList, FileUp, File, Check, Ban, CheckCircle2, CheckSquare, LayoutGrid, List, Lock } from 'lucide-vue-next'
 // @ts-ignore
 import { VueDraggable } from '../utils/vendor/vue-draggable-plus.js'
 import ProjectDetailHeader from '../components/ProjectDetailHeader.vue'
@@ -135,6 +135,7 @@ const manualNote = ref('')
 const showManualForm = ref(false)
 const isKanbanDragging = ref(false)
 const isSuppressingTaskClick = ref(false)
+const draggingTask = ref<DashboardTask | null>(null)
 const taskBoardView = ref<'kanban' | 'list'>('kanban')
 const markdown = new MarkdownIt({ linkify: true, breaks: true })
 
@@ -201,9 +202,35 @@ function moveTargetIndex(evt: { newDraggableIndex?: number; newIndex?: number },
   return Math.max(0, Math.min(rawIndex ?? targetCount, targetCount))
 }
 
-function onDragStart() {
+function dragDropState(status: string) {
+  const task = draggingTask.value
+  if (!isKanbanDragging.value || !task) return 'idle'
+  if (task.status === status) return 'source'
+  return nextStatuses(task.status).includes(status) ? 'allowed' : 'blocked'
+}
+
+function kanbanColumnClass(status: string) {
+  const state = dragDropState(status)
+  return {
+    'is-drop-source': state === 'source',
+    'is-drop-allowed': state === 'allowed',
+    'is-drop-blocked': state === 'blocked',
+  }
+}
+
+function isKanbanDropBlocked(status: string) {
+  return dragDropState(status) === 'blocked'
+}
+
+function canDropKanbanTask(task: DashboardTask, status: string) {
+  return task.status === status || nextStatuses(task.status).includes(status)
+}
+
+function onDragStart(evt?: { item?: HTMLElement; data?: DashboardTask }) {
   isKanbanDragging.value = true
   isSuppressingTaskClick.value = true
+  const taskId = evt?.item?.dataset.id ?? evt?.data?.id
+  draggingTask.value = selectedProject.value?.tasks.find((task: DashboardTask) => task.id === taskId) ?? evt?.data ?? null
   closeTaskDetails()
 }
 
@@ -215,25 +242,35 @@ function applyMovedTaskToCurrentProject(task: DashboardTask, status: string, res
   const project = selectedProject.value
   if (!project) return
 
+  const boardTasks = result.board?.columns?.flatMap((column) => column.tasks) ?? []
+  if (boardTasks.length) {
+    const boardTaskIds = new Set(boardTasks.map((item) => item.id))
+    project.tasks = [
+      ...boardTasks,
+      ...project.tasks.filter((item: DashboardTask) => !boardTaskIds.has(item.id)),
+    ]
+    return
+  }
+
   const currentTask = project.tasks.find((item: DashboardTask) => item.id === task.id)
   if (!currentTask) return
 
   const movedTask = result.task
   currentTask.status = movedTask.status || status
-  currentTask.priority = movedTask.priority
-  currentTask.dueDate = movedTask.dueDate
-  currentTask.assigneeId = movedTask.assigneeId
-  currentTask.assigneeName = movedTask.assigneeName
-  currentTask.sortOrder = movedTask.sortOrder
-  currentTask.rowVersion = movedTask.rowVersion
-  currentTask.isPrivate = movedTask.isPrivate
-  currentTask.isRestricted = movedTask.isRestricted
-  currentTask.isPinned = movedTask.isPinned
-  currentTask.contributesToProgress = movedTask.contributesToProgress
-  currentTask.upvoteCount = movedTask.upvoteCount
-  currentTask.downvoteCount = movedTask.downvoteCount
-  currentTask.commentCount = movedTask.commentCount
-  currentTask.attachmentCount = movedTask.attachmentCount
+  currentTask.priority = movedTask.priority ?? currentTask.priority
+  currentTask.dueDate = movedTask.dueDate ?? currentTask.dueDate
+  currentTask.assigneeId = movedTask.assigneeId ?? currentTask.assigneeId
+  currentTask.assigneeName = movedTask.assigneeName ?? currentTask.assigneeName
+  currentTask.sortOrder = movedTask.sortOrder ?? currentTask.sortOrder
+  currentTask.rowVersion = movedTask.rowVersion ?? currentTask.rowVersion
+  currentTask.isPrivate = movedTask.isPrivate ?? currentTask.isPrivate
+  currentTask.isRestricted = movedTask.isRestricted ?? currentTask.isRestricted
+  currentTask.isPinned = movedTask.isPinned ?? currentTask.isPinned
+  currentTask.contributesToProgress = movedTask.contributesToProgress ?? currentTask.contributesToProgress
+  currentTask.upvoteCount = movedTask.upvoteCount ?? currentTask.upvoteCount
+  currentTask.downvoteCount = movedTask.downvoteCount ?? currentTask.downvoteCount
+  currentTask.commentCount = movedTask.commentCount ?? currentTask.commentCount
+  currentTask.attachmentCount = movedTask.attachmentCount ?? currentTask.attachmentCount
 }
 
 async function handleListStatusChange(task: DashboardTask, event: Event) {
@@ -264,6 +301,7 @@ const onDragEnd = async (evt: {
   newDraggableIndex?: number
 }) => {
   isKanbanDragging.value = false
+  draggingTask.value = null
   window.setTimeout(() => {
     isSuppressingTaskClick.value = false
   }, 160)
@@ -285,6 +323,11 @@ const onDragEnd = async (evt: {
 
   const sameColumn = evt.to === evt.from && task.status === newStatus
   if (sameColumn && evt.oldIndex === evt.newIndex) return
+  if (!canDropKanbanTask(task, newStatus)) {
+    await loadDashboard()
+    showError(`Không thể chuyển nhiệm vụ từ ${displayStatus(task.status)} sang ${displayStatus(newStatus)}.`)
+    return
+  }
 
   const targetTasks = tasksByStatus(newStatus).filter((item: DashboardTask) => item.id !== taskId)
   const targetIndex = moveTargetIndex(evt, targetTasks.length)
@@ -463,11 +506,22 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
             </div>
           </Teleport>
 
-          <div v-if="taskBoardView === 'kanban'" class="kanban-board">
-            <section v-for="status in statusColumns" :key="status" class="kanban-column" :data-kanban-status="status">
+          <div v-if="taskBoardView === 'kanban'" class="kanban-board" :class="{ 'is-dragging-task': isKanbanDragging }">
+            <section
+              v-for="status in statusColumns"
+              :key="status"
+              class="kanban-column"
+              :class="kanbanColumnClass(status)"
+              :data-kanban-status="status"
+            >
               <div class="kanban-column__header">
                 <strong>{{ displayStatus(status) }}</strong>
-                <span class="count-badge">{{ tasksByStatus(status).length }}</span>
+                <div class="kanban-column__badges">
+                  <span v-if="isKanbanDropBlocked(status)" class="drop-lock-badge" :title="`Không thể chuyển sang ${displayStatus(status)}`">
+                    <Lock :size="13" />
+                  </span>
+                  <span class="count-badge">{{ tasksByStatus(status).length }}</span>
+                </div>
               </div>
 
               <VueDraggable
@@ -478,7 +532,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                 ghost-class="ghost-card"
                 drag-class="dragging-card"
                 class="kanban-column__list"
-                :class="{ 'is-drop-ready': isKanbanDragging }"
+                :class="{ 'is-drop-ready': isKanbanDragging, ...kanbanColumnClass(status) }"
                 :data-kanban-status="status"
                 :empty-insert-threshold="120"
                 @start="onDragStart"
@@ -981,9 +1035,87 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   transition: border-color 0.16s ease, background 0.16s ease;
 }
 
+.kanban-column {
+  position: relative;
+  transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease, opacity 180ms ease, transform 180ms ease;
+}
+
+.kanban-board.is-dragging-task .kanban-column {
+  opacity: 0.72;
+}
+
+.kanban-board.is-dragging-task .kanban-column.is-drop-source {
+  opacity: 1;
+  border-color: rgba(100, 116, 139, 0.28);
+  background: rgba(248, 250, 252, 0.86);
+}
+
+.kanban-board.is-dragging-task .kanban-column.is-drop-allowed {
+  opacity: 1;
+  transform: translateY(-2px);
+  border-color: rgba(16, 185, 129, 0.48);
+  background: linear-gradient(180deg, rgba(236, 253, 245, 0.96), rgba(255, 255, 255, 0.88));
+  box-shadow: 0 18px 42px rgba(16, 185, 129, 0.14);
+}
+
+.kanban-board.is-dragging-task .kanban-column.is-drop-blocked {
+  opacity: 0.48;
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(248, 250, 252, 0.52);
+}
+
 .kanban-column__list.is-drop-ready {
   border-color: var(--blue-300);
   background: rgba(37, 99, 235, 0.04);
+}
+
+.kanban-column__list.is-drop-allowed {
+  border-color: rgba(16, 185, 129, 0.62);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.kanban-column__list.is-drop-source {
+  border-color: rgba(100, 116, 139, 0.28);
+  background: rgba(100, 116, 139, 0.05);
+}
+
+.kanban-column__list.is-drop-blocked {
+  border-color: rgba(148, 163, 184, 0.18);
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(148, 163, 184, 0.055),
+    rgba(148, 163, 184, 0.055) 8px,
+    rgba(248, 250, 252, 0.35) 8px,
+    rgba(248, 250, 252, 0.35) 16px
+  );
+}
+
+.kanban-column__badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.kanban-column__header .drop-lock-badge {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 999px;
+  color: #64748b;
+  background: rgba(241, 245, 249, 0.92);
+}
+
+.kanban-column__header .drop-lock-badge svg {
+  stroke-width: 2.4;
+}
+
+.kanban-board.is-dragging-task .kanban-column.is-drop-allowed .count-badge {
+  color: #047857;
+  background: rgba(209, 250, 229, 0.9);
 }
 
 .ghost-card {
