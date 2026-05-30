@@ -59,6 +59,23 @@ public class GroupHub : Hub
         await BroadcastPresenceSignalAsync(groupId, "typingStopped");
     }
 
+    public async Task SendSignal(Guid groupId, object payload)
+    {
+        if (!await _groupsService.CanAccessGroupAsync(groupId, Context.ConnectionAborted))
+        {
+            throw new HubException("Access denied.");
+        }
+
+        await Clients
+            .OthersInGroup(WorkGroup(groupId))
+            .SendAsync("peerSignal", new
+            {
+                groupId,
+                from = Context.ConnectionId,
+                payload
+            }, Context.ConnectionAborted);
+    }
+
     private async Task BroadcastPresenceSignalAsync(Guid groupId, string eventName)
     {
         if (!await _groupsService.CanAccessGroupAsync(groupId, Context.ConnectionAborted))

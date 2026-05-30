@@ -1,16 +1,16 @@
 <script setup lang="ts">
-import { Plus } from 'lucide-vue-next'
-import type { ChatGroupModel } from './chat-types'
+import { Plus } from "lucide-vue-next";
+import type { ChatGroupModel } from "./chat-types";
 
 defineProps<{
-  groups: ChatGroupModel[]
-  activeGroupId: string
-}>()
+  groups: ChatGroupModel[];
+  activeGroupId: string;
+}>();
 
 defineEmits<{
-  select: [groupId: string]
-  create: []
-}>()
+  select: [groupId: string];
+  create: [];
+}>();
 </script>
 
 <template>
@@ -20,7 +20,12 @@ defineEmits<{
         <span>Groups</span>
         <h2>Nhóm chat</h2>
       </div>
-      <button class="icon-button icon-button--small" type="button" aria-label="Create group" @click="$emit('create')">
+      <button
+        class="icon-button icon-button--small"
+        type="button"
+        aria-label="Create group"
+        @click="$emit('create')"
+      >
         <Plus :size="16" />
       </button>
     </div>
@@ -30,6 +35,7 @@ defineEmits<{
       :key="group.id"
       type="button"
       class="team-chat-group"
+      :data-group-id="group.id"
       :class="{ 'is-active': group.id === activeGroupId }"
       @click="$emit('select', group.id)"
     >

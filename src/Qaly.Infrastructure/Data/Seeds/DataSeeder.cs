@@ -60,6 +60,13 @@ public partial class DataSeeder
             seededAnyData = true;
         }
 
+        if (!await _context.WorkGroups.AnyAsync())
+        {
+            await SeedGroupsDemoAsync();
+            await _context.SaveChangesAsync();
+            seededAnyData = true;
+        }
+
         if (seededAnyData)
         {
             LogSeedDataCreated(_logger);
@@ -68,6 +75,56 @@ public partial class DataSeeder
         {
             LogSeedSkipped(_logger);
         }
+    }
+
+    private async Task SeedGroupsDemoAsync()
+    {
+        var admin = await _context.Users.FirstAsync(u => u.Role == "Admin");
+        var users = await _context.Users.ToListAsync();
+
+        var org = new Organization
+        {
+            Name = "Demo Organization",
+            Code = "demo-org",
+            OwnerId = admin.Id,
+            IsActive = true
+        };
+        await _context.Organizations.AddAsync(org);
+
+        var group = new WorkGroup
+        {
+            Name = "Demo Group",
+            Description = "Group demo chứa 7 thành viên.",
+            OwnerId = admin.Id,
+            Organization = org
+        };
+        await _context.WorkGroups.AddAsync(group);
+        await _context.SaveChangesAsync();
+
+        var members = users.Skip(1).Take(7).ToList();
+        foreach (var u in members)
+        {
+            await _context.WorkGroupMembers.AddAsync(new WorkGroupMember { WorkGroupId = group.Id, UserId = u.Id, Role = "Member" });
+        }
+
+        // sample message
+        await _context.GroupMessages.AddAsync(new GroupMessage { WorkGroupId = group.Id, UserId = admin.Id, SenderName = admin.FullName, Content = "Welcome to the demo group!", MessageType = "Text" });
+
+        // sample poll
+        var poll = new GroupPoll { GroupId = group.Id, Question = "Khi nào họp thử?", CreatedByUserId = admin.Id, AllowMultiple = false, Status = Qaly.Domain.Enums.GroupPollStatus.Open };
+        await _context.GroupPolls.AddAsync(poll);
+        await _context.SaveChangesAsync();
+
+        var opts = new[] { "Thứ 2", "Thứ 4", "Thứ 6" };
+        foreach (var (opt, idx) in opts.Select((v, i) => (v, i)))
+        {
+            await _context.GroupPollOptions.AddAsync(new GroupPollOption { PollId = poll.Id, Content = opt, SortOrder = idx + 1 });
+        }
+
+        // sample meeting session placeholder
+        await _context.GroupMeetingSessions.AddAsync(new GroupMeetingSession { WorkGroupId = group.Id, StartedByUserId = admin.Id, Provider = "External", RoomId = Guid.NewGuid().ToString(), JoinUrl = "https://demo.example/meet/" + Guid.NewGuid(), Status = "Active", StartedAt = DateTimeOffset.UtcNow });
+
+        await _context.SaveChangesAsync();
     }
 
     private Task<int> EnsureImportSchemaCompatibilityAsync()
