@@ -9,6 +9,8 @@ const props = defineProps<{
   file: File | null
   newProjectName: string
   isLoading: boolean
+  importSessions?: any[]
+  isLoadingSessions?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -22,8 +24,8 @@ const isDragging = ref(false)
 const activeTab = ref<'discover' | 'completed'>('discover')
 
 const isNewProject = !props.projectId
-const acceptedTypes = '.csv,.xlsx,.xls,.tsv,.dsv,.txt,.psv,.json,.md,.markdown,.html,.htm,.pdf,.docx,.epub,.zip'
-const supportedExtensions = ['csv', 'xlsx', 'xls', 'tsv', 'dsv', 'txt', 'psv', 'json', 'md', 'markdown', 'html', 'htm', 'pdf', 'docx', 'epub', 'zip']
+const acceptedTypes = '.csv,.xlsx,.tsv,.dsv,.txt,.psv,.json,.md,.markdown,.html,.htm,.pdf,.docx,.epub,.zip'
+const supportedExtensions = ['csv', 'xlsx', 'tsv', 'dsv', 'txt', 'psv', 'json', 'md', 'markdown', 'html', 'htm', 'pdf', 'docx', 'epub', 'zip']
 const tableExtensions = ['csv', 'xlsx', 'tsv', 'dsv', 'psv', 'json']
 const phaseOneDocumentExtensions = ['md', 'markdown', 'txt', 'html', 'htm']
 
@@ -170,10 +172,31 @@ function fileKindLabel(name: string) {
       </div>
     </template>
 
+    <div v-else-if="isLoadingSessions" class="completed-empty">
+      <CheckCircle2 :size="28" />
+      <strong>Đang tải lịch sử import...</strong>
+      <p>QALY đang kiểm tra các phiên import gần đây của dự án này.</p>
+    </div>
+
+    <div v-else-if="projectId && importSessions?.length" class="completed-imports">
+      <article v-for="session in importSessions" :key="session.id" class="completed-import">
+        <div>
+          <strong>{{ session.fileName }}</strong>
+          <span>{{ new Date(session.createdAt).toLocaleString() }}</span>
+        </div>
+        <div class="completed-import__stats">
+          <span class="ok">{{ session.importedCount }} nhập</span>
+          <span v-if="session.skippedCount > 0" class="warn">{{ session.skippedCount }} không nhập</span>
+          <span v-if="session.isUndone" class="muted">Đã hoàn tác</span>
+          <span v-else-if="session.canUndo" class="muted">Còn hoàn tác</span>
+        </div>
+      </article>
+    </div>
+
     <div v-else class="completed-empty">
       <CheckCircle2 :size="28" />
       <strong>No completed imports in this panel yet</strong>
-      <p>Import history is still tracked per project for task-table imports. Full 30-day history will land with the file import session upgrade.</p>
+      <p>{{ projectId ? 'Dự án này chưa có phiên import task-table nào.' : 'Lịch sử import chỉ hiển thị khi bạn import trong một dự án cụ thể.' }}</p>
     </div>
 
     <div class="import-actions">
@@ -354,6 +377,62 @@ function fileKindLabel(name: string) {
   max-width: 480px;
   margin: 0;
   font-size: 14px;
+}
+
+.completed-imports {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 22px;
+}
+
+.completed-import {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.completed-import strong {
+  display: block;
+  color: #111827;
+  font-size: 14px;
+}
+
+.completed-import span {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.completed-import__stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-content: center;
+  gap: 6px;
+}
+
+.completed-import__stats span {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f3f4f6;
+  font-weight: 700;
+}
+
+.completed-import__stats .ok {
+  color: #047857;
+  background: #ecfdf5;
+}
+
+.completed-import__stats .warn {
+  color: #b45309;
+  background: #fffbeb;
+}
+
+.completed-import__stats .muted {
+  color: #6b7280;
 }
 
 @media (max-width: 720px) {

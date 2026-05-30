@@ -33,7 +33,7 @@ const {
 
 const isGridView = ref(true)
 const showImportModal = ref(false)
-const undoBannerData = ref<{ importSessionId: string; importedCount: number; createdAt: string } | null>(null)
+const undoBannerData = ref<{ importSessionId: string; importedCount: number; failedCount: number; duplicateSkippedCount: number; createdAt: string } | null>(null)
 
 const totalProjectsCount = computed(() => projects.value.filter((p: any) => p.status !== 'Archived').length)
 const onTrackCount = computed(() => projects.value.filter((p: any) => p.status !== 'Archived' && p.overdueTaskCount === 0).length)
@@ -45,6 +45,8 @@ function onImported(result: any) {
     undoBannerData.value = {
       importSessionId: result.importSessionId,
       importedCount: result.importedCount,
+      failedCount: result.failedCount ?? 0,
+      duplicateSkippedCount: result.duplicateSkippedCount ?? 0,
       createdAt: new Date().toISOString(),
     }
   }
@@ -168,6 +170,8 @@ async function handleUndoFromBanner() {
       v-if="undoBannerData"
       :import-session-id="undoBannerData.importSessionId"
       :imported-count="undoBannerData.importedCount"
+      :failed-count="undoBannerData.failedCount"
+      :duplicate-skipped-count="undoBannerData.duplicateSkippedCount"
       :created-at="undoBannerData.createdAt"
       @undo="handleUndoFromBanner"
       @dismiss="undoBannerData = null"

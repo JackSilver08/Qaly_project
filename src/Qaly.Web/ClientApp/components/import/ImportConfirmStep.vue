@@ -171,7 +171,7 @@ const statusLabels: Record<string, string> = {
 
     <!-- Status distribution -->
     <div v-if="Object.keys(previewSummary.statusDistribution).length" class="confirm-distribution">
-      <p class="confirm-section-title">Phân bố theo cột Kanban <span class="hint">(dựa trên {{ previewSummary.previewRowCount }} dòng preview)</span></p>
+      <p class="confirm-section-title">Phân bố theo cột Kanban <span class="hint">(ước lượng từ {{ previewSummary.previewRowCount }} dòng preview)</span></p>
       <div v-for="(count, status) in previewSummary.statusDistribution" :key="status" class="dist-row">
         <span class="dist-status">{{ statusIcons[status as string] || '📌' }} {{ statusLabels[status as string] || status }}</span>
         <div class="dist-bar-wrap">
@@ -211,6 +211,11 @@ const statusLabels: Record<string, string> = {
     <div class="confirm-notice">
       <span>⚠️</span>
       <p>Card cũ không bị thay đổi. Bạn có thể hoàn tác (undo) trong vòng 30 phút sau khi import.</p>
+    </div>
+
+    <div class="confirm-notice confirm-notice--subtle">
+      <span>i</span>
+      <p>Những con số ở bước này là ước lượng từ preview. Số thành công, thất bại và trùng bỏ qua chính xác sẽ hiện ở màn hình kết quả sau import.</p>
     </div>
 
     <div class="import-actions">
@@ -360,6 +365,11 @@ const statusLabels: Record<string, string> = {
   margin: 8px 0;
 }
 .confirm-notice p { margin: 0; }
+
+.confirm-notice--subtle {
+  background: #f8fafc;
+  border-color: #e5e7eb;
+}
 
 .unmapped-list {
   color: #f59e0b;

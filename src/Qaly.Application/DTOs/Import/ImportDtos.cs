@@ -44,7 +44,8 @@ public record ColumnMapping(
 /// </summary>
 public record SkippedRowDto(
     int RowIndex,
-    string Reason
+    string Reason,
+    string Category = "Failed"
 );
 
 /// <summary>
@@ -56,6 +57,8 @@ public record ImportResult(
     int TotalRows,
     int ImportedCount,
     int SkippedCount,
+    int FailedCount,
+    int DuplicateSkippedCount,
     int NewLabelsCreated,
     List<string> UnmappedStatuses,
     Dictionary<string, int> StatusDistribution,

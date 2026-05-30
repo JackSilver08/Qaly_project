@@ -5,6 +5,8 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 const props = defineProps<{
   importSessionId: string
   importedCount: number
+  failedCount?: number
+  duplicateSkippedCount?: number
   createdAt: string
 }>()
 
@@ -49,7 +51,11 @@ onUnmounted(() => {
         <div class="undo-banner__left">
           <span class="undo-badge">✅</span>
           <div>
-            <p class="undo-text">Đã import <strong>{{ importedCount }}</strong> task thành công</p>
+            <p class="undo-text">
+              Đã import <strong>{{ importedCount }}</strong> task thành công
+              <span v-if="(failedCount ?? 0) > 0">, <strong>{{ failedCount }}</strong> lỗi</span>
+              <span v-if="(duplicateSkippedCount ?? 0) > 0">, <strong>{{ duplicateSkippedCount }}</strong> trùng bỏ qua</span>
+            </p>
             <p class="undo-timer">Còn <strong>{{ remainingText }}</strong> để hoàn tác</p>
           </div>
         </div>

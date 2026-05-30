@@ -33,7 +33,7 @@ public partial class ImportService : IImportService
     private const int PreviewRowCount = 5;
     private const int SortOrderStep = 1000;
 
-    private static readonly string[] ValidExtensions = [".csv", ".xlsx", ".tsv", ".txt", ".psv", ".json"];
+    private static readonly string[] ValidExtensions = [".csv", ".xlsx", ".tsv", ".txt", ".dsv", ".psv", ".json"];
     private static readonly string[] ValidStatuses = ["Todo", "InProgress", "OnHold", "InReview", "Done", "Cancelled"];
     private static readonly string[] ValidPriorities = ["Low", "Medium", "High", "Critical"];
 
@@ -319,6 +319,8 @@ public partial class ImportService : IImportService
 
         int importedCount = 0;
         int skippedCount = 0;
+        int failedCount = 0;
+        int duplicateSkippedCount = 0;
         int newLabelsCreated = 0;
         var unmappedStatuses = new HashSet<string>();
         var statusDistribution = new Dictionary<string, int>();
@@ -411,7 +413,8 @@ public partial class ImportService : IImportService
             if (string.IsNullOrWhiteSpace(title))
             {
                 skippedCount++;
-                skippedRowsList.Add(new SkippedRowDto(rowIndex, "Thiếu tiêu đề (Title)"));
+                failedCount++;
+                skippedRowsList.Add(new SkippedRowDto(rowIndex, "Thiếu tiêu đề (Title)", "Failed"));
                 continue;
             }
 
@@ -419,7 +422,8 @@ public partial class ImportService : IImportService
             if (request.SkipDuplicates && existingTitles!.Contains(NormalizeTitle(title)))
             {
                 skippedCount++;
-                skippedRowsList.Add(new SkippedRowDto(rowIndex, "Trùng lặp tiêu đề"));
+                duplicateSkippedCount++;
+                skippedRowsList.Add(new SkippedRowDto(rowIndex, "Trùng lặp tiêu đề", "Duplicate"));
                 continue;
             }
 
@@ -575,6 +579,8 @@ public partial class ImportService : IImportService
             TotalRows: allRows.Count,
             ImportedCount: importedCount,
             SkippedCount: skippedCount,
+            FailedCount: failedCount,
+            DuplicateSkippedCount: duplicateSkippedCount,
             NewLabelsCreated: newLabelsCreated,
             UnmappedStatuses: unmappedStatuses.ToList(),
             StatusDistribution: statusDistribution,
@@ -742,7 +748,7 @@ public partial class ImportService : IImportService
             return "\t";
         if (extension == ".psv")
             return "|";
-        if (extension != ".txt")
+        if (extension != ".txt" && extension != ".dsv")
             return ",";
 
         var originalPosition = stream.CanSeek ? stream.Position : 0;

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ArrowLeft, Check, FileText, FileUp, X } from 'lucide-vue-next'
 import ImportUploadStep from './ImportUploadStep.vue'
 import ImportMappingStep from './ImportMappingStep.vue'
@@ -40,6 +40,8 @@ const newProjectName = ref('')
 
 // Import result
 const importResult = ref<any>(null)
+const importSessions = ref<any[]>([])
+const isLoadingImportSessions = ref(false)
 
 const isNewProject = computed(() => !props.projectId)
 
@@ -49,6 +51,20 @@ const stepLabels = computed(() => importMode.value === 'document'
 
 const tableExtensions = ['csv', 'xlsx', 'tsv', 'dsv', 'psv', 'json']
 const documentExtensions = ['md', 'markdown', 'txt', 'html', 'htm']
+
+async function loadImportSessions() {
+  if (!props.projectId) return
+  isLoadingImportSessions.value = true
+  try {
+    const res = await fetch(`/api/import/sessions/${props.projectId}`)
+    const data = await res.json()
+    importSessions.value = data.isSuccess ? (data.data ?? []) : []
+  } catch {
+    importSessions.value = []
+  } finally {
+    isLoadingImportSessions.value = false
+  }
+}
 
 function extensionOf(name: string) {
   return name.split('.').pop()?.toLowerCase() || ''
@@ -206,7 +222,13 @@ async function executeImport() {
 
     importResult.value = data.data
     step.value = 4
-    showSuccess(`Đã import thành công ${data.data.importedCount} task!`)
+    const failedCount = data.data.failedCount ?? Math.max((data.data.skippedCount ?? 0) - (data.data.duplicateSkippedCount ?? 0), 0)
+    const duplicateSkippedCount = data.data.duplicateSkippedCount ?? 0
+    const suffix = [
+      failedCount > 0 ? `${failedCount} dòng lỗi` : '',
+      duplicateSkippedCount > 0 ? `${duplicateSkippedCount} dòng trùng đã bỏ qua` : '',
+    ].filter(Boolean).join(', ')
+    showSuccess(`Import xong: ${data.data.importedCount} task thành công${suffix ? `, ${suffix}` : ''}.`)
   } catch (e: any) {
     showError('Lỗi kết nối server')
   } finally {
@@ -243,6 +265,8 @@ function finish() {
   emit('imported', importResult.value)
   emit('close')
 }
+
+onMounted(loadImportSessions)
 </script>
 
 <template>
@@ -284,6 +308,8 @@ function finish() {
           :file="file"
           :new-project-name="newProjectName"
           :is-loading="isLoading"
+          :import-sessions="importSessions"
+          :is-loading-sessions="isLoadingImportSessions"
           @update:file="file = $event"
           @update:new-project-name="newProjectName = $event"
           @cancel="$emit('close')"
@@ -438,7 +464,9 @@ function finish() {
           <div v-if="importMode === 'table'" class="import-result-stats">
             <div class="stat-item"><span class="stat-label">Tổng dòng</span><span class="stat-value">{{ importResult.totalRows }}</span></div>
             <div class="stat-item stat--success"><span class="stat-label">Đã import</span><span class="stat-value">{{ importResult.importedCount }}</span></div>
-            <div v-if="importResult.skippedCount > 0" class="stat-item stat--warn"><span class="stat-label">Bỏ qua</span><span class="stat-value">{{ importResult.skippedCount }}</span></div>
+            <div v-if="(importResult.failedCount ?? 0) > 0" class="stat-item stat--error"><span class="stat-label">Thất bại</span><span class="stat-value">{{ importResult.failedCount }}</span></div>
+            <div v-if="(importResult.duplicateSkippedCount ?? 0) > 0" class="stat-item stat--warn"><span class="stat-label">Trùng bỏ qua</span><span class="stat-value">{{ importResult.duplicateSkippedCount }}</span></div>
+            <div v-if="importResult.skippedCount > 0" class="stat-item"><span class="stat-label">Không nhập</span><span class="stat-value">{{ importResult.skippedCount }}</span></div>
             <div v-if="importResult.newLabelsCreated > 0" class="stat-item"><span class="stat-label">Label mới</span><span class="stat-value">{{ importResult.newLabelsCreated }}</span></div>
           </div>
 
@@ -448,7 +476,7 @@ function finish() {
             <div v-for="(count, status) in importResult.statusDistribution" :key="status" class="dist-row">
               <span class="dist-status">{{ status }}</span>
               <div class="dist-bar-wrap">
-                <div class="dist-bar" :style="{ width: (count / importResult.importedCount * 100) + '%' }"></div>
+                <div class="dist-bar" :style="{ width: (count / Math.max(importResult.importedCount, 1) * 100) + '%' }"></div>
               </div>
               <span class="dist-count">{{ count }}</span>
             </div>
@@ -466,7 +494,9 @@ function finish() {
               <summary>Hiển thị chi tiết {{ importResult.skippedRows.length }} dòng bị lỗi/bỏ qua</summary>
               <ul class="skipped-list">
                 <li v-for="(row, idx) in importResult.skippedRows" :key="idx">
-                  <strong>Dòng {{ row.rowIndex }}:</strong> {{ row.reason }}
+                  <strong>Dòng {{ row.rowIndex }}:</strong>
+                  <span class="skipped-category">{{ row.category === 'Duplicate' ? 'Trùng' : 'Lỗi' }}</span>
+                  {{ row.reason }}
                 </li>
               </ul>
             </details>
@@ -675,6 +705,7 @@ function finish() {
 .stat-item:hover { transform: translateY(-2px); }
 .stat-item.stat--success { border-color: rgba(34,197,94,.2); background: rgba(34,197,94,.06); }
 .stat-item.stat--warn { border-color: rgba(245,158,11,.2); background: rgba(245,158,11,.06); }
+.stat-item.stat--error { border-color: rgba(239,68,68,.24); background: rgba(239,68,68,.07); }
 .stat-label { display: block; font-size: .72rem; color: rgba(255,255,255,.4); margin-bottom: 4px; }
 .stat-value { display: block; font-size: 1.4rem; font-weight: 700; }
 
@@ -737,6 +768,17 @@ function finish() {
 }
 .skipped-list li {
   margin-bottom: 4px;
+}
+
+.skipped-category {
+  display: inline-block;
+  margin: 0 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, .12);
+  color: #ef4444;
+  font-size: .7rem;
+  font-weight: 700;
 }
 
 .document-preview__hero,

@@ -79,7 +79,10 @@ public class ImportEnhancementTests : IDisposable
 
         result.IsSuccess.Should().BeTrue(result.Error);
         result.Data!.ImportedCount.Should().Be(1);
+        result.Data.FailedCount.Should().Be(1);
+        result.Data.DuplicateSkippedCount.Should().Be(0);
         result.Data.SkippedRows.Should().ContainSingle(row => row.RowIndex == 3);
+        result.Data.SkippedRows.Single().Category.Should().Be("Failed");
         var task = await _context.TaskItems.SingleAsync();
         task.AssigneeId.Should().Be(assigneeId);
         task.Priority.Should().Be("Critical");
@@ -206,6 +209,74 @@ public class ImportEnhancementTests : IDisposable
         var task = await _context.TaskItems.SingleAsync();
         task.Title.Should().Be("TXT task");
         task.Priority.Should().Be("Critical");
+    }
+
+    [Fact]
+    public async Task ExecuteImportAsync_WithDsv_AutoDetectsDelimiter()
+    {
+        var importerId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        _currentUser.SetupGet(user => user.UserId).Returns(importerId);
+
+        _context.Users.Add(new User { Id = importerId, FullName = "PM", Email = "pm@qaly.dev", IsActive = true });
+        _context.Projects.Add(new Project { Id = projectId, Name = "Project", Code = "PRJ", OwnerId = importerId });
+        await _context.SaveChangesAsync();
+
+        var service = CreateService();
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("Title;Priority\nDSV task;High\n"));
+
+        var request = new ImportRequest(
+            ProjectId: projectId,
+            NewProjectName: null,
+            Mappings:
+            [
+                new ColumnMapping(0, "Title"),
+                new ColumnMapping(1, "Priority")
+            ],
+            FirstRowIsHeader: true,
+            SkipDuplicates: false,
+            SheetName: null,
+            EnableAiCategorization: false);
+
+        var result = await service.ExecuteImportAsync(stream, "tasks.dsv", request);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        var task = await _context.TaskItems.SingleAsync();
+        task.Title.Should().Be("DSV task");
+        task.Priority.Should().Be("High");
+    }
+
+    [Fact]
+    public async Task ExecuteImportAsync_WithSkipDuplicates_SplitsDuplicateSkippedCount()
+    {
+        var importerId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        _currentUser.SetupGet(user => user.UserId).Returns(importerId);
+
+        _context.Users.Add(new User { Id = importerId, FullName = "PM", Email = "pm@qaly.dev", IsActive = true });
+        _context.Projects.Add(new Project { Id = projectId, Name = "Project", Code = "PRJ", OwnerId = importerId });
+        _context.TaskItems.Add(new TaskItem { Id = Guid.NewGuid(), ProjectId = projectId, ReporterId = importerId, Title = "Existing task", Status = "Todo" });
+        await _context.SaveChangesAsync();
+
+        var service = CreateService();
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("Title\nExisting task\nNew task\n"));
+
+        var request = new ImportRequest(
+            ProjectId: projectId,
+            NewProjectName: null,
+            Mappings: [new ColumnMapping(0, "Title")],
+            FirstRowIsHeader: true,
+            SkipDuplicates: true,
+            SheetName: null,
+            EnableAiCategorization: false);
+
+        var result = await service.ExecuteImportAsync(stream, "tasks.csv", request);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.ImportedCount.Should().Be(1);
+        result.Data.FailedCount.Should().Be(0);
+        result.Data.DuplicateSkippedCount.Should().Be(1);
+        result.Data.SkippedRows.Should().ContainSingle(row => row.Category == "Duplicate");
     }
 
     [Fact]

@@ -84,7 +84,7 @@ const {
 
 const router = useRouter()
 const showImportModal = ref(false)
-const undoBannerData = ref<{ importSessionId: string; importedCount: number; createdAt: string } | null>(null)
+const undoBannerData = ref<{ importSessionId: string; importedCount: number; failedCount: number; duplicateSkippedCount: number; createdAt: string } | null>(null)
 const assignmentInsight = ref<TaskAssignmentInsightDto | null>(null)
 const assignmentInsightLoading = ref(false)
 const assignmentInsightError = ref('')
@@ -102,6 +102,8 @@ function onImported(result: any) {
     undoBannerData.value = {
       importSessionId: result.importSessionId,
       importedCount: result.importedCount,
+      failedCount: result.failedCount ?? 0,
+      duplicateSkippedCount: result.duplicateSkippedCount ?? 0,
       createdAt: new Date().toISOString(),
     }
   }
@@ -850,6 +852,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
         v-if="undoBannerData"
         :import-session-id="undoBannerData.importSessionId"
         :imported-count="undoBannerData.importedCount"
+        :failed-count="undoBannerData.failedCount"
+        :duplicate-skipped-count="undoBannerData.duplicateSkippedCount"
         :created-at="undoBannerData.createdAt"
         @undo="handleUndoFromBanner"
         @dismiss="undoBannerData = null"
