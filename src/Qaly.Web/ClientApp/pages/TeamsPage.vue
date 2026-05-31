@@ -837,9 +837,9 @@ function formatMessageTime(value: string) {
   width: 100%;
   min-width: 0;
   grid-template-columns:
-    minmax(280px, 27%)
-    minmax(420px, 1fr)
-    minmax(340px, 29%);
+    minmax(240px, 22%)
+    minmax(380px, 1fr)
+    minmax(420px, 35%);
   gap: 0;
   padding: 0;
   overflow: hidden;
@@ -1049,14 +1049,9 @@ function formatMessageTime(value: string) {
 
 .group-detail-tabs {
   display: grid;
-<<<<<<< HEAD
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 6px;
   min-width: 0;
-=======
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 8px;
->>>>>>> ede3618e859ddbae478a27534f565ae946b4cbb6
 }
 
 .group-detail-tabs button {

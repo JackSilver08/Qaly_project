@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Models;
+using Qaly.Application.DTOs.Ai;
 using Qaly.Application.DTOs.Groups;
 using Qaly.Application.DTOs.Project;
 using Qaly.Application.Services;
@@ -38,6 +39,7 @@ public class GroupsServiceTests : IDisposable
     private readonly Mock<IEmailService> _emailService = new();
     private readonly Mock<IGroupInvitationEmailBuilder> _groupInvitationEmailBuilder = new();
     private readonly Mock<IGroupPollRealtimePublisher> _groupPollRealtimePublisher = new();
+    private readonly Mock<IGroupMeetingRealtimePublisher> _groupMeetingRealtimePublisher = new();
     private readonly Mock<ILogger<GroupsService>> _logger = new();
     private readonly Mock<ICurrentUserService> _currentUser = new();
 
@@ -101,6 +103,20 @@ public class GroupsServiceTests : IDisposable
                 It.IsAny<Guid>(),
                 It.IsAny<GroupPollResultsDto>(),
                 It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _groupMeetingRealtimePublisher
+            .Setup(publisher => publisher.PublishMeetingStartedAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<GroupMeetingSessionDto>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _groupMeetingRealtimePublisher
+            .Setup(publisher => publisher.PublishMeetingEndedAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
     }
@@ -1782,6 +1798,7 @@ public class GroupsServiceTests : IDisposable
             _emailService.Object,
             _groupInvitationEmailBuilder.Object,
             _groupPollRealtimePublisher.Object,
+            _groupMeetingRealtimePublisher.Object,
             _logger.Object,
             _uow,
             _currentUser.Object);
