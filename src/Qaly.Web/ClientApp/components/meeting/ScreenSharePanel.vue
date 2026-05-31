@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onBeforeUnmount } from "vue";
+import { MonitorUp, Square } from "lucide-vue-next";
 
 const stream = ref<MediaStream | null>(null);
 const previewEl = ref<HTMLVideoElement | null>(null);
@@ -25,47 +26,113 @@ function stopShare() {
 }
 
 onBeforeUnmount(() => stopShare());
+
+defineExpose({ startShare, stopShare });
 </script>
 
 <template>
-  <div class="glass-card p-4">
-    <h3 class="font-medium mb-2">Screen Share</h3>
+  <div class="screen-share-card">
+    <div class="screen-share-card__header">
+      <div>
+        <span>Screen share</span>
+        <strong>{{ stream ? "Đang chia sẻ màn hình" : "Sẵn sàng chia sẻ" }}</strong>
+      </div>
+      <div :class="['screen-share-card__status', { active: stream }]"></div>
+    </div>
     <video
       ref="previewEl"
       autoplay
       playsinline
       muted
-      class="w-full h-48 bg-black rounded-md"
+      class="screen-share-preview"
     ></video>
-    <div class="mt-3 flex gap-2">
-      <button class="primary-button" @click="startShare">Start Share</button>
-      <button class="text-button" @click="stopShare" :disabled="!stream">
-        Stop
+    <div class="screen-share-actions">
+      <button class="share-button share-button--primary" type="button" @click="startShare">
+        <MonitorUp :size="16" /> Chia sẻ
+      </button>
+      <button class="share-button" type="button" @click="stopShare" :disabled="!stream">
+        <Square :size="15" /> Dừng
       </button>
     </div>
-    <p class="text-sm text-slate-500 mt-3">
-      Uses browser screen capture API for provider integration demo.
-    </p>
   </div>
 </template>
 
 <style scoped>
-.glass-card {
-  background: white;
-  border-radius: 8px;
-  padding: 12px;
-  box-shadow: 0 6px 20px rgba(2, 6, 23, 0.06);
+.screen-share-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #f8fafc;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
 }
-.primary-button {
+
+.screen-share-card__header,
+.screen-share-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.screen-share-card__header span {
+  display: block;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.screen-share-card__header strong {
+  font-size: 0.92rem;
+}
+
+.screen-share-card__status {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #64748b;
+}
+
+.screen-share-card__status.active {
+  background: #22c55e;
+  box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.14);
+}
+
+.screen-share-preview {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(59, 130, 246, 0.2), transparent 28%),
+    #020617;
+  object-fit: cover;
+}
+
+.share-button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 12px;
+  padding: 8px 11px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.share-button--primary {
+  border-color: transparent;
   background: #2563eb;
-  color: white;
-  padding: 8px 12px;
-  border-radius: 6px;
 }
-.text-button {
-  background: transparent;
-  border: 1px solid #cbd5e1;
-  padding: 8px 12px;
-  border-radius: 6px;
+
+.share-button:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 </style>

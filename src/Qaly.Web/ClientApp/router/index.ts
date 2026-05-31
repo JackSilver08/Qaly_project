@@ -45,6 +45,11 @@ export const router = createRouter({
             component: () => import("../pages/TeamsPage.vue"),
         },
         {
+            path: "/groups/:groupId",
+            name: "group-detail",
+            component: () => import("../pages/TeamsPage.vue"),
+        },
+        {
             path: "/groups/:groupId/meeting",
             name: "group-meeting",
             component: () => import("../pages/GroupMeetingPage.vue"),

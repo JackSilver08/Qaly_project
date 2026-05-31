@@ -283,6 +283,30 @@ public partial class GroupsService : IGroupsService
         return Result.Success<IReadOnlyList<GroupMemberDto>>(members.Select(ToMemberDto).ToList());
     }
 
+    public async Task<Result<IReadOnlyList<GroupInvitationDto>>> GetInvitationsAsync(Guid groupId, string? status = null, CancellationToken ct = default)
+    {
+        if (!await CanManageGroupAsync(groupId, ct))
+        {
+            return Result.Forbidden<IReadOnlyList<GroupInvitationDto>>();
+        }
+
+        var query = _invitationRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(invitation => invitation.GroupId == groupId);
+
+        if (!string.IsNullOrWhiteSpace(status) &&
+            Enum.TryParse<GroupInvitationStatus>(status.Trim(), true, out var parsedStatus))
+        {
+            query = query.Where(invitation => invitation.Status == parsedStatus);
+        }
+
+        var invitations = await query
+            .OrderByDescending(invitation => invitation.CreatedAt)
+            .ToListAsync(ct);
+
+        return Result.Success<IReadOnlyList<GroupInvitationDto>>(invitations.Select(ToInvitationDto).ToList());
+    }
+
     public async Task<Result<GroupInvitationDto>> CreateInvitationAsync(Guid groupId, CreateGroupInvitationRequest request, CancellationToken ct = default)
     {
         if (request == null)
@@ -332,11 +356,21 @@ public partial class GroupsService : IGroupsService
             return Result.Failure<GroupInvitationDto>("Email is invalid.");
         }
 
+        var invitedUser = await _userRepo.GetQueryable()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(user => user.IsActive && user.Email == normalizedEmail, ct);
+        if (invitedUser == null)
+        {
+            return Result.Failure<GroupInvitationDto>(
+                "Email này chưa có tài khoản Qaly. Vui lòng yêu cầu người này đăng ký tài khoản trước khi mời vào nhóm.",
+                404);
+        }
+
         var isMember = await _memberRepo.GetQueryable()
             .AsNoTracking()
             .AnyAsync(member =>
                 member.WorkGroupId == groupId &&
-                member.User.Email == normalizedEmail, ct);
+                member.UserId == invitedUser.Id, ct);
         if (isMember)
         {
             return Result.Failure<GroupInvitationDto>("Email is already a group member.", 409);
@@ -1372,6 +1406,7 @@ public partial class GroupsService : IGroupsService
     {
         var votes = await _pollVoteRepo.GetQueryable()
             .AsNoTracking()
+            .Include(vote => vote.User)
             .Where(vote => vote.PollId == poll.Id)
             .ToListAsync(ct);
 
@@ -1391,7 +1426,15 @@ public partial class GroupsService : IGroupsService
                 option.Id,
                 option.Content,
                 option.SortOrder,
-                voteCountByOption.GetValueOrDefault(option.Id)))
+                voteCountByOption.GetValueOrDefault(option.Id),
+                votes
+                    .Where(vote => vote.OptionId == option.Id)
+                    .OrderBy(vote => vote.User.FullName)
+                    .Select(vote => new GroupPollVoterDto(
+                        vote.UserId,
+                        vote.User.FullName,
+                        vote.User.Email))
+                    .ToList()))
             .ToList();
 
         return new GroupPollResultsDto(

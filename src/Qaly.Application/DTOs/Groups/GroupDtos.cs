@@ -89,7 +89,13 @@ public record GroupPollOptionResultDto(
     Guid OptionId,
     string Content,
     int SortOrder,
-    int VoteCount);
+    int VoteCount,
+    IReadOnlyList<GroupPollVoterDto> Voters);
+
+public record GroupPollVoterDto(
+    Guid UserId,
+    string FullName,
+    string Email);
 
 public record GroupPollResultsDto(
     Guid PollId,

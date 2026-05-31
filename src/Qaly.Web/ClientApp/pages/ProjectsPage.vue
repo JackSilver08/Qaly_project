@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { FileUp, FolderKanban, CheckCircle2, AlertTriangle, X, Edit3 } from 'lucide-vue-next'
 import ProjectList from '../components/ProjectList.vue'
 import ProjectGrid from '../components/ProjectGrid.vue'
@@ -7,11 +7,13 @@ import ProjectToolbar from '../components/ProjectToolbar.vue'
 import ImportModal from '../components/import/ImportModal.vue'
 import ImportUndoBanner from '../components/import/ImportUndoBanner.vue'
 import { useDashboardContext } from '../composables/dashboard-context'
+import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
+import { showError, showSuccess } from '../composables/use-toast'
+import type { PagedResult, ProjectDto, UserDto } from '../types'
 
 const {
   activeProjectCards,
   beginEditProject,
-  createProject,
   createProjectOpen,
   deleteProject,
   editProjectDescription,
@@ -29,15 +31,93 @@ const {
   selectedProject,
   loadDashboard,
   projects,
+  users,
 } = useDashboardContext()
 
 const isGridView = ref(true)
 const showImportModal = ref(false)
 const undoBannerData = ref<{ importSessionId: string; importedCount: number; failedCount: number; duplicateSkippedCount: number; createdAt: string } | null>(null)
+const createSourceMode = ref<'members' | 'group'>('members')
+const selectedMemberIds = ref<string[]>([])
+const selectedGroupId = ref('')
+const availableGroups = ref<{ id: string; name: string; description: string | null; memberCount: number }[]>([])
 
 const totalProjectsCount = computed(() => projects.value.filter((p: any) => p.status !== 'Archived').length)
 const onTrackCount = computed(() => projects.value.filter((p: any) => p.status !== 'Archived' && p.overdueTaskCount === 0).length)
 const atRiskCount = computed(() => projects.value.filter((p: any) => p.status !== 'Archived' && p.overdueTaskCount > 0).length)
+const activeUsers = computed<UserDto[]>(() => (users.value ?? []).filter((user: UserDto) => user.isActive))
+
+onMounted(() => {
+  void loadGroups()
+})
+
+async function loadGroups() {
+  try {
+    const result = await apiResult<PagedResult<{ id: string; name: string; description: string | null; memberCount: number }>>('/api/groups?pageSize=100')
+    availableGroups.value = result.items
+  } catch {
+    availableGroups.value = []
+  }
+}
+
+async function createProjectWithSelection() {
+  const name = projectName.value.trim()
+  if (!name) return
+
+  try {
+    if (createSourceMode.value === 'group' && selectedGroupId.value) {
+      const result = await apiResult<any>(`/api/groups/${selectedGroupId.value}/create-project`, {
+        method: 'POST',
+        body: JSON.stringify({
+          name,
+          code: null,
+          description: projectDescription.value.trim() || null,
+          startDate: null,
+          endDate: projectEndDate.value ? new Date(projectEndDate.value).toISOString() : null,
+        }),
+      })
+      createProjectOpen.value = false
+      selectedGroupId.value = ''
+      selectedMemberIds.value = []
+      projectName.value = ''
+      projectDescription.value = ''
+      projectEndDate.value = ''
+      await loadDashboard()
+      const projectId = result.project?.id ?? result.project?.Id
+      if (projectId) selectProject(projectId)
+      showSuccess(`Tạo project từ nhóm thành công (${result.membersAdded ?? 0} thành viên)`)
+      return
+    }
+
+    const project = await apiResult<ProjectDto>('/api/projects', {
+      method: 'POST',
+      body: JSON.stringify({
+        name,
+        description: projectDescription.value.trim() || null,
+        startDate: null,
+        endDate: projectEndDate.value ? new Date(projectEndDate.value).toISOString() : null,
+      }),
+    })
+
+    for (const userId of selectedMemberIds.value) {
+      await apiCommand(`/api/projects/${project.id}/members`, {
+        method: 'POST',
+        body: JSON.stringify({ userId, role: 'Member' }),
+      })
+    }
+
+    createProjectOpen.value = false
+    selectedMemberIds.value = []
+    projectName.value = ''
+    projectDescription.value = ''
+    projectEndDate.value = ''
+    await loadDashboard()
+    selectProject(project.id)
+    showSuccess(`Tạo dự án "${project.name}" thành công`)
+  } catch (error) {
+    showError(errorMessage(error, 'Không thể tạo dự án'))
+  }
+}
 
 function onImported(result: any) {
   showImportModal.value = false
@@ -188,7 +268,7 @@ async function handleUndoFromBanner() {
             </div>
             <button class="icon-button" @click="createProjectOpen = false"><X :size="18" /></button>
           </div>
-          <form class="project-modal-body" @submit.prevent="createProject">
+          <form class="project-modal-body" @submit.prevent="createProjectWithSelection">
             <div class="form-group">
               <label>Tên dự án</label>
               <input v-model="projectName" type="text" placeholder="Nhập tên dự án..." required class="modal-input" />
@@ -200,6 +280,31 @@ async function handleUndoFromBanner() {
             <div class="form-group">
               <label>Ngày kết thúc dự kiến</label>
               <input v-model="projectEndDate" type="date" class="modal-input" />
+            </div>
+            <div class="form-group">
+              <label>Thêm thành viên</label>
+              <div class="project-source-toggle">
+                <button type="button" :class="{ active: createSourceMode === 'members' }" @click="createSourceMode = 'members'">Chọn từng người</button>
+                <button type="button" :class="{ active: createSourceMode === 'group' }" @click="createSourceMode = 'group'">Chọn nhóm</button>
+              </div>
+            </div>
+            <div v-if="createSourceMode === 'members'" class="form-group">
+              <label>Tài khoản trong workspace</label>
+              <div class="project-member-picker">
+                <label v-for="user in activeUsers" :key="user.id">
+                  <input v-model="selectedMemberIds" type="checkbox" :value="user.id" />
+                  <span>{{ user.fullName }} · {{ user.email }}</span>
+                </label>
+              </div>
+            </div>
+            <div v-else class="form-group">
+              <label>Nhóm nguồn</label>
+              <select v-model="selectedGroupId" class="modal-input">
+                <option value="">Chọn nhóm</option>
+                <option v-for="group in availableGroups" :key="group.id" :value="group.id">
+                  {{ group.name }} · {{ group.memberCount }} thành viên
+                </option>
+              </select>
             </div>
             
             <div class="project-modal-actions">
@@ -367,6 +472,56 @@ textarea.modal-input {
   resize: vertical; 
   min-height: 90px;
   line-height: 1.5;
+}
+
+.project-source-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.project-source-toggle button {
+  min-height: 38px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: #f8fafc;
+  color: var(--text-muted);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.project-source-toggle button.active {
+  border-color: var(--accent);
+  background: #eff6ff;
+  color: var(--accent);
+}
+
+.project-member-picker {
+  max-height: 180px;
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.project-member-picker label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px;
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text-main);
+}
+
+.project-member-picker span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .project-modal-actions {

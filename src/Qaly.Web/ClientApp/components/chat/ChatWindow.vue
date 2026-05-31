@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
-import { FileUp, Pin, Send, SmilePlus, Vote } from "lucide-vue-next";
+import { FileUp, Palette, Pin, Send, SmilePlus, Vote } from "lucide-vue-next";
 import MessageItem from "./MessageItem.vue";
 import { apiResult } from "../../utils/api-client";
 import type {
@@ -14,6 +14,7 @@ const props = defineProps<{
   group: ChatGroupModel | null;
   messages: TeamChatMessage[];
   currentUserId: string;
+  backgroundTheme?: string;
 }>();
 
 const emit = defineEmits<{
@@ -25,6 +26,7 @@ const emit = defineEmits<{
     },
   ];
   pin: [messageId: string];
+  changeBackground: [];
 }>();
 
 const draft = ref("");
@@ -121,15 +123,28 @@ async function sendMessage() {
 </script>
 
 <template>
-  <section class="team-chat-window glass-card">
+  <section
+    class="team-chat-window glass-card"
+    :class="`team-chat-window--${backgroundTheme ?? 'clean'}`"
+  >
     <header class="team-chat-window__header">
       <div>
         <span>Chat</span>
         <h2>{{ group?.name ?? "Chọn nhóm chat" }}</h2>
       </div>
-      <div v-if="pinnedMessages.length" class="team-pinned">
-        <Pin :size="14" />
-        <span>{{ pinnedMessages.length }} pinned</span>
+      <div class="team-chat-window__actions">
+        <button
+          class="icon-button icon-button--small"
+          type="button"
+          aria-label="Đổi nền chat"
+          @click="$emit('changeBackground')"
+        >
+          <Palette :size="15" />
+        </button>
+        <div v-if="pinnedMessages.length" class="team-pinned">
+          <Pin :size="14" />
+          <span>{{ pinnedMessages.length }} pinned</span>
+        </div>
       </div>
     </header>
 
@@ -212,3 +227,40 @@ async function sendMessage() {
     </div>
   </section>
 </template>
+
+<style scoped>
+.team-chat-window__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.team-chat-window--soft {
+  background:
+    radial-gradient(circle at 20% 10%, rgba(219, 234, 254, 0.9), transparent 30%),
+    linear-gradient(135deg, #ffffff 0%, #f8fafc 48%, #eef6ff 100%);
+}
+
+.team-chat-window--mint {
+  background:
+    linear-gradient(135deg, rgba(236, 253, 245, 0.92), rgba(255, 255, 255, 0.98)),
+    repeating-linear-gradient(45deg, rgba(20, 184, 166, 0.08) 0 1px, transparent 1px 18px);
+}
+
+.team-chat-window--paper {
+  background:
+    linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    #fffdf8;
+  background-size: 24px 24px;
+}
+
+.team-chat-window--dark {
+  background: linear-gradient(135deg, #101827, #172033);
+}
+
+.team-chat-window--dark .team-chat-window__header span,
+.team-chat-window--dark .team-chat-window__header h2 {
+  color: #f8fafc;
+}
+</style>

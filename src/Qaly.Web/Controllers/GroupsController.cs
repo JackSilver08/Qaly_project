@@ -60,6 +60,13 @@ public class GroupsController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpGet("{id:guid}/invitations")]
+    public async Task<IActionResult> GetInvitations(Guid id, [FromQuery] string? status = null, CancellationToken ct = default)
+    {
+        var result = await _groupsService.GetInvitationsAsync(id, status, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpPost("{id:guid}/invitations")]
     public async Task<IActionResult> CreateInvitation(Guid id, [FromBody] CreateGroupInvitationRequest request, CancellationToken ct)
     {

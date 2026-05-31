@@ -26,6 +26,7 @@
     "@types/markdown-it": "^14.1.2",
     "chart.js": "^4.5.1",
     "dompurify": "^3.4.2",
+    "esbuild": "^0.25.12",
     "lucide-vue-next": "^1.0.0",
     "markdown-it": "^14.1.1",
     "md-editor-v3": "^6.5.1",
@@ -34,5 +35,8 @@
     "vue-chartjs": "^5.3.3",
     "vue-draggable-plus": "^0.6.1",
     "vue-router": "^4.6.4"
+  },
+  "optionalDependencies": {
+    "@esbuild/win32-x64": "^0.25.12"
   }
 }

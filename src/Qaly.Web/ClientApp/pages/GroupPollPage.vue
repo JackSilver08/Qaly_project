@@ -22,7 +22,10 @@ async function createPoll() {
   try {
     const payload = {
       question: question.value,
-      options: options.value.filter(Boolean),
+      options: options.value
+        .map((option) => option.trim())
+        .filter(Boolean)
+        .map((content) => ({ content })),
       allowMultiple: false,
     };
     await apiResult(`/api/groups/${groupId}/polls`, {
