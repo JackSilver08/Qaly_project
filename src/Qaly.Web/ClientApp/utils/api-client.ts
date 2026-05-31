@@ -4,6 +4,18 @@ export interface ApiResult<T> {
   isSuccess: boolean
 }
 
+export class ApiError extends Error {
+  status: number
+  payload: unknown
+
+  constructor(message: string, status: number, payload: unknown) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.payload = payload
+  }
+}
+
 export async function apiJson<T>(url: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers)
 
@@ -32,7 +44,7 @@ export async function apiJson<T>(url: string, options: RequestInit = {}): Promis
   const payload = parseApiPayload(text)
 
   if (!response.ok) {
-    throw new Error(apiPayloadError(payload, response.status))
+    throw new ApiError(apiPayloadError(payload, response.status), response.status, payload)
   }
 
   return payload as T

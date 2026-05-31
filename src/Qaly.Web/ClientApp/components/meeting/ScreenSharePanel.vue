@@ -15,7 +15,7 @@ async function startShare() {
     stream.value = s as MediaStream;
     if (previewEl.value) previewEl.value.srcObject = stream.value;
   } catch (e) {
-    console.warn("Screen share cancelled", e);
+    console.warn("Người dùng đã hủy chia sẻ màn hình", e);
   }
 }
 
@@ -34,7 +34,7 @@ defineExpose({ startShare, stopShare });
   <div class="screen-share-card">
     <div class="screen-share-card__header">
       <div>
-        <span>Screen share</span>
+        <span>Chia sẻ màn hình</span>
         <strong>{{ stream ? "Đang chia sẻ màn hình" : "Sẵn sàng chia sẻ" }}</strong>
       </div>
       <div :class="['screen-share-card__status', { active: stream }]"></div>

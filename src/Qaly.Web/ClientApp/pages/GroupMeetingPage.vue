@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import {
   CalendarDays,
   Copy,
   Info,
+  MessageCircle,
   Moon,
   MonitorUp,
   ShieldCheck,
@@ -29,6 +30,7 @@ const groupId = route.params.groupId as string;
 
 const active = ref(false);
 const isStarting = ref(false);
+const meetingId = ref<string | null>((route.query.meetingId as string | undefined) ?? null);
 const joinUrl = ref<string | null>(null);
 const roomName = ref<string | null>(null);
 const micMuted = ref(false);
@@ -49,6 +51,12 @@ const meetingShortCode = computed(() =>
 const participantCount = computed(() => participants.value.length + (active.value ? 1 : 0));
 const isLightTheme = computed(() => theme.value === "light");
 
+onMounted(async () => {
+  if (meetingId.value) {
+    await joinExistingMeeting(meetingId.value);
+  }
+});
+
 async function startMeeting() {
   isStarting.value = true;
 
@@ -56,11 +64,12 @@ async function startMeeting() {
     const dto = await apiResult<any>(`/api/groups/${groupId}/meetings/start`, {
       method: "POST",
     });
+    meetingId.value = dto?.id ?? dto?.Id ?? null;
     joinUrl.value = dto?.joinUrl ?? dto?.JoinUrl ?? null;
     roomName.value = dto?.roomId ?? dto?.RoomId ?? `qaly-${groupId}`;
   } catch (e) {
     console.warn("Could not start meeting session via API", e);
-    showError("Không thể tạo phiên meeting.");
+    showError("Không thể tạo phiên họp.");
     isStarting.value = false;
     return;
   } finally {
@@ -71,6 +80,28 @@ async function startMeeting() {
   await nextTick();
   await connectRealtime();
   await startLocalMedia();
+}
+
+async function joinExistingMeeting(id: string) {
+  isStarting.value = true;
+
+  try {
+    const dto = await apiResult<any>(`/api/groups/${groupId}/meetings/${id}/join`, {
+      method: "POST",
+    });
+    meetingId.value = dto?.id ?? dto?.Id ?? id;
+    joinUrl.value = dto?.joinUrl ?? dto?.JoinUrl ?? null;
+    roomName.value = dto?.roomId ?? dto?.RoomId ?? `qaly-${groupId}`;
+    active.value = true;
+    await nextTick();
+    await connectRealtime();
+    await startLocalMedia();
+  } catch (e) {
+    console.warn("Could not join meeting session via API", e);
+    showError("Không thể tham gia cuộc họp.");
+  } finally {
+    isStarting.value = false;
+  }
 }
 
 async function connectRealtime() {
@@ -107,6 +138,13 @@ async function connectRealtime() {
 }
 
 async function endMeeting() {
+  const endingMeetingId = meetingId.value;
+  if (endingMeetingId) {
+    await apiResult(`/api/groups/${groupId}/meetings/${endingMeetingId}/end`, {
+      method: "POST",
+    }).catch(() => undefined);
+  }
+
   if (hubConnection && hubConnection.state === HubConnectionState.Connected) {
     try {
       await hubConnection.invoke("LeaveGroup", groupId).catch(() => undefined);
@@ -117,6 +155,7 @@ async function endMeeting() {
 
   active.value = false;
   participants.value = [];
+  meetingId.value = null;
   joinUrl.value = null;
   roomName.value = null;
   micMuted.value = false;
@@ -128,7 +167,7 @@ async function copyMeetingLink() {
   const text = window.location.href;
   try {
     await navigator.clipboard.writeText(text);
-    showSuccess("Đã sao chép link meeting");
+    showSuccess("Đã sao chép link cuộc họp");
   } catch {
     showError("Không thể sao chép link.");
   }
@@ -214,7 +253,8 @@ function stopLocalMedia() {
     <section class="meeting-room">
       <header class="meeting-room__header">
         <button class="meeting-back" type="button" @click="router.push({ name: 'group-detail', params: { groupId } })">
-          Nhóm
+          <MessageCircle :size="16" />
+          Trở lại trò chuyện
         </button>
         <div>
           <span>Qaly Meet</span>
@@ -237,11 +277,11 @@ function stopLocalMedia() {
               <button class="stage-action" type="button" @click="toggleTheme">
                 <Moon v-if="isLightTheme" :size="15" />
                 <Sun v-else :size="15" />
-                {{ isLightTheme ? "Dark" : "Light" }}
+                {{ isLightTheme ? "Giao diện tối" : "Giao diện sáng" }}
               </button>
               <button class="stage-action" type="button" @click="copyMeetingLink">
                 <Copy :size="15" />
-                Copy link
+                Sao chép link
               </button>
             </div>
           </div>
@@ -263,7 +303,7 @@ function stopLocalMedia() {
               <div class="meeting-brand-chip">QALY Meet</div>
               <div class="meeting-live-chip">
                 <span></span>
-                {{ micMuted ? "Mic off" : "Mic on" }} · {{ cameraMuted ? "Camera off" : "Camera on" }}
+                {{ micMuted ? "Mic tắt" : "Mic bật" }} · {{ cameraMuted ? "Camera tắt" : "Camera bật" }}
               </div>
             </div>
           </div>
@@ -273,12 +313,12 @@ function stopLocalMedia() {
               <div class="meeting-avatar">QT</div>
             </div>
             <span class="meeting-eyebrow">
-              <Sparkles :size="15" /> Google Meet inspired
+              <Sparkles :size="15" /> Không gian họp Qaly
             </span>
-            <h2>{{ isStarting ? "Đang chuẩn bị phòng họp..." : "Sẵn sàng bắt đầu meeting" }}</h2>
+            <h2>{{ isStarting ? "Đang chuẩn bị phòng họp..." : "Sẵn sàng bắt đầu cuộc họp" }}</h2>
             <p>Kiểm tra camera, chia sẻ màn hình hoặc vào phòng họp cho nhóm này.</p>
             <button class="meeting-start-button" type="button" @click="startMeeting" :disabled="isStarting">
-              Bắt đầu meeting
+              Bắt đầu cuộc họp
             </button>
           </div>
 
@@ -303,7 +343,7 @@ function stopLocalMedia() {
               <ShieldCheck :size="20" />
             </div>
             <div>
-              <span>Meeting secure</span>
+              <span>Bảo mật cuộc họp</span>
               <strong>{{ participantCount }} người trong phòng</strong>
               <p>Room id: {{ groupId }}</p>
             </div>
@@ -314,7 +354,7 @@ function stopLocalMedia() {
           <article class="participants-card">
             <header>
               <div>
-                <span>Participants</span>
+                <span>Thành viên</span>
                 <strong>Thành viên</strong>
               </div>
               <div class="participant-count">
@@ -327,7 +367,7 @@ function stopLocalMedia() {
                 <div class="participant-avatar">QT</div>
                 <div>
                   <strong>Bạn</strong>
-                  <span>Host · online</span>
+                  <span>Chủ phòng · trực tuyến</span>
                 </div>
               </div>
               <div v-for="p in participants" :key="p.connectionId" class="participant-row">
@@ -336,7 +376,7 @@ function stopLocalMedia() {
                 </div>
                 <div>
                   <strong>{{ p.connectionId.slice(0, 10) }}</strong>
-                  <span>Seen {{ formatTime(p.lastSeen) }}</span>
+                  <span>Hoạt động {{ formatTime(p.lastSeen) }}</span>
                 </div>
               </div>
               <div v-if="participants.length === 0" class="participants-empty">

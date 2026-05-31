@@ -27,6 +27,7 @@ const emit = defineEmits<{
   ];
   pin: [messageId: string];
   changeBackground: [];
+  joinMeeting: [meetingId: string];
 }>();
 
 const draft = ref("");
@@ -40,7 +41,7 @@ const bodyRef = ref<HTMLElement | null>(null);
 const pinnedMessages = computed(() =>
   props.messages.filter((message) => message.pinned),
 );
-const emojiOptions = ["👍", "✅", "🔥", "🎯", "🙏", "💡"];
+const emojiOptions = ["\u{1F44D}", "\u2705", "\u{1F525}", "\u{1F3AF}", "\u{1F64F}", "\u{1F4A1}"];
 
 watch(
   () => props.messages.length,
@@ -104,7 +105,7 @@ async function sendMessage() {
       }
     } catch (e) {
       // if poll creation fails, still send plain message
-      console.warn("Could not create poll before sending message", e);
+      console.warn("Không thể tạo bình chọn trước khi gửi tin nhắn", e);
     }
   }
 
@@ -129,7 +130,7 @@ async function sendMessage() {
   >
     <header class="team-chat-window__header">
       <div>
-        <span>Chat</span>
+        <span>Trò chuyện</span>
         <h2>{{ group?.name ?? "Chọn nhóm chat" }}</h2>
       </div>
       <div class="team-chat-window__actions">
@@ -143,7 +144,7 @@ async function sendMessage() {
         </button>
         <div v-if="pinnedMessages.length" class="team-pinned">
           <Pin :size="14" />
-          <span>{{ pinnedMessages.length }} pinned</span>
+          <span>{{ pinnedMessages.length }} tin đã ghim</span>
         </div>
       </div>
     </header>
@@ -161,6 +162,7 @@ async function sendMessage() {
         :message="message"
         :current-user-id="currentUserId"
         @pin="$emit('pin', $event)"
+        @join-meeting="$emit('joinMeeting', $event)"
       />
     </div>
 
@@ -189,14 +191,14 @@ async function sendMessage() {
     </div>
 
     <form class="team-chat-composer" @submit.prevent="sendMessage">
-      <label class="icon-button icon-button--small" aria-label="Gửi file">
+      <label class="icon-button icon-button--small" aria-label="Gửi tệp">
         <FileUp :size="16" />
         <input type="file" multiple @change="attachFiles" />
       </label>
       <button
         class="icon-button icon-button--small"
         type="button"
-        aria-label="Emoji"
+        aria-label="Biểu cảm"
         @click="showEmoji = !showEmoji"
       >
         <SmilePlus :size="16" />
@@ -204,7 +206,7 @@ async function sendMessage() {
       <button
         class="icon-button icon-button--small"
         type="button"
-        aria-label="Tạo poll"
+        aria-label="Tạo bình chọn"
         @click="showPoll = !showPoll"
       >
         <Vote :size="16" />

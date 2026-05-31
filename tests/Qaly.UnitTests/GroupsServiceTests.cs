@@ -38,6 +38,7 @@ public class GroupsServiceTests : IDisposable
     private readonly Mock<IEmailService> _emailService = new();
     private readonly Mock<IGroupInvitationEmailBuilder> _groupInvitationEmailBuilder = new();
     private readonly Mock<IGroupPollRealtimePublisher> _groupPollRealtimePublisher = new();
+    private readonly Mock<IGroupMeetingRealtimePublisher> _groupMeetingRealtimePublisher = new();
     private readonly Mock<ILogger<GroupsService>> _logger = new();
     private readonly Mock<ICurrentUserService> _currentUser = new();
 
@@ -143,7 +144,7 @@ public class GroupsServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CreateInvitationAsync_WhenEmailHasNoAccount_CreatesInvitationWithoutNotification()
+    public async Task CreateInvitationAsync_WhenEmailHasNoAccount_ReturnsNotFound()
     {
         var ownerId = Guid.NewGuid();
         await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
@@ -152,25 +153,15 @@ public class GroupsServiceTests : IDisposable
 
         var result = await CreateService().CreateInvitationAsync(group.Id, new CreateGroupInvitationRequest("  NewUser@Qaly.Dev  "));
 
-        result.IsSuccess.Should().BeTrue(result.Error);
-        result.StatusCode.Should().Be(201);
-        result.Data!.Email.Should().Be("newuser@qaly.dev");
-        result.Data.Status.Should().Be(GroupInvitationStatus.Pending.ToString());
-        result.Data.GroupId.Should().Be(group.Id);
-
-        var saved = await _context.GroupInvitations.SingleAsync();
-        saved.Email.Should().Be("newuser@qaly.dev");
-        saved.Status.Should().Be(GroupInvitationStatus.Pending);
-        saved.Token.Should().NotBeNullOrWhiteSpace();
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(404);
+        result.Error.Should().Contain("Qaly");
 
         _emailService.Verify(service => service.SendAsync(
-            "newuser@qaly.dev",
-            It.Is<string>(subject => subject.Contains("Invite Group", StringComparison.Ordinal)),
-            It.Is<string>(body =>
-                body.Contains("Invite Group", StringComparison.Ordinal) &&
-                body.Contains("https://frontend.example.com/invitations/accept?token=", StringComparison.Ordinal) &&
-                body.Contains(Uri.EscapeDataString(saved.Token), StringComparison.Ordinal)),
-            It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Never);
 
         _notificationService.Verify(service => service.CreateAsync(
             It.IsAny<Guid>(),
@@ -259,7 +250,9 @@ public class GroupsServiceTests : IDisposable
     public async Task CreateInvitationAsync_WhenPendingInvitationExistsAndNotExpired_ReturnsConflict()
     {
         var ownerId = Guid.NewGuid();
+        var pendingUserId = Guid.NewGuid();
         await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(pendingUserId, "Pending User", "pending@qaly.dev");
         var group = await AddGroupAsync(ownerId, "Invite Group");
         _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
         await AddInvitationAsync(group.Id, "pending@qaly.dev", GroupInvitationStatus.Pending, DateTimeOffset.UtcNow.AddDays(2));
@@ -289,7 +282,11 @@ public class GroupsServiceTests : IDisposable
     public async Task CreateInvitationAsync_WhenPreviousInvitationExpiredOrNotPending_CreatesNewInvitation()
     {
         var ownerId = Guid.NewGuid();
+        var expiredUserId = Guid.NewGuid();
+        var acceptedUserId = Guid.NewGuid();
         await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(expiredUserId, "Expired User", "expired@qaly.dev");
+        await AddUserAsync(acceptedUserId, "Accepted User", "accepted@qaly.dev");
         var group = await AddGroupAsync(ownerId, "Invite Group");
         _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
 
@@ -321,7 +318,9 @@ public class GroupsServiceTests : IDisposable
     public async Task CreateInvitationAsync_WhenEmailServiceFails_StillReturnsCreated()
     {
         var ownerId = Guid.NewGuid();
+        var resilientUserId = Guid.NewGuid();
         await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(resilientUserId, "Resilient User", "resilient@qaly.dev");
         var group = await AddGroupAsync(ownerId, "Invite Group");
         _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
         _emailService
@@ -1709,6 +1708,7 @@ public class GroupsServiceTests : IDisposable
         var groupId = Guid.NewGuid();
         var userId = Guid.NewGuid();
         _currentUser.Setup(u => u.UserId).Returns(userId);
+        await AddUserAsync(userId, "Starter User", "starter@qaly.dev");
 
         var group = new WorkGroup { Id = groupId, Name = "Test Group" };
         await _groupRepo.AddAsync(group);
@@ -1782,6 +1782,7 @@ public class GroupsServiceTests : IDisposable
             _emailService.Object,
             _groupInvitationEmailBuilder.Object,
             _groupPollRealtimePublisher.Object,
+            _groupMeetingRealtimePublisher.Object,
             _logger.Object,
             _uow,
             _currentUser.Object);

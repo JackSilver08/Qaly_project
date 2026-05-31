@@ -28,7 +28,7 @@ function start() {
 }
 
 function end() {
-  if (!confirm("Kết thúc cuộc họp?")) return;
+  if (!confirm("K\u1ebft th\u00fac cu\u1ed9c h\u1ecdp?")) return;
   emit("end");
 }
 </script>
@@ -39,8 +39,8 @@ function end() {
       class="meet-control"
       :class="{ 'meet-control--off': micMuted }"
       type="button"
-      :aria-label="micMuted ? 'Bật micro' : 'Tắt micro'"
-      :title="micMuted ? 'Bật micro' : 'Tắt micro'"
+      :aria-label="micMuted ? 'B\u1eadt micro' : 'T\u1eaft micro'"
+      :title="micMuted ? 'B\u1eadt micro' : 'T\u1eaft micro'"
       @click="$emit('toggleMic')"
     >
       <MicOff v-if="micMuted" :size="20" />
@@ -50,21 +50,26 @@ function end() {
       class="meet-control"
       :class="{ 'meet-control--off': cameraMuted }"
       type="button"
-      :aria-label="cameraMuted ? 'Bật camera' : 'Tắt camera'"
-      :title="cameraMuted ? 'Bật camera' : 'Tắt camera'"
+      :aria-label="cameraMuted ? 'B\u1eadt camera' : 'T\u1eaft camera'"
+      :title="cameraMuted ? 'B\u1eadt camera' : 'T\u1eaft camera'"
       @click="$emit('toggleCamera')"
     >
       <VideoOff v-if="cameraMuted" :size="20" />
       <Video v-else :size="20" />
     </button>
-    <button class="meet-control meet-control--share" type="button" aria-label="Share screen" @click="$emit('share')">
+    <button
+      class="meet-control meet-control--share"
+      type="button"
+      :aria-label="'Chia s\u1ebb m\u00e0n h\u00ecnh'"
+      @click="$emit('share')"
+    >
       <MonitorUp :size="20" />
     </button>
     <button
       v-if="!active"
       class="meet-control meet-control--join"
       type="button"
-      aria-label="Start meeting"
+      :aria-label="'B\u1eaft \u0111\u1ea7u cu\u1ed9c h\u1ecdp'"
       @click="start"
     >
       <Phone :size="21" />
@@ -73,7 +78,7 @@ function end() {
       v-else
       class="meet-control meet-control--leave"
       type="button"
-      aria-label="End meeting"
+      :aria-label="'K\u1ebft th\u00fac cu\u1ed9c h\u1ecdp'"
       @click="end"
     >
       <PhoneOff :size="21" />

@@ -23,4 +23,14 @@ public class SignalRGroupPollRealtimePublisher : IGroupPollRealtimePublisher
                 results,
                 updatedAt
             }, ct);
+
+    public Task PublishPollDeletedAsync(Guid groupId, Guid pollId, DateTimeOffset deletedAt, CancellationToken ct = default)
+        => _hubContext.Clients
+            .Group(GroupHub.WorkGroup(groupId))
+            .SendAsync("PollDeleted", new
+            {
+                groupId,
+                pollId,
+                deletedAt
+            }, ct);
 }

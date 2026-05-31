@@ -118,6 +118,12 @@ const availableUsers = computed(() => {
   return users.value.filter((user) => user.isActive && !memberIds.has(user.id));
 });
 
+function roleLabel(role?: string) {
+  if (!role) return "-";
+  const map: Record<string, string> = { Owner: "Chủ nhóm", Admin: "Quản trị viên", Member: "Thành viên" };
+  return map[role] ?? role;
+}
+
 onMounted(async () => {
   await Promise.all([loadGroups(), loadUsers()]);
   await connectRealtime();
@@ -619,28 +625,28 @@ function formatMessageTime(value: string) {
         <aside class="group-detail-panel glass-card">
           <header class="group-detail-header">
             <div>
-              <span>GROUP DETAIL</span>
+              <span>CHI TIẾT</span>
               <h2>{{ activeGroup?.name ?? "Chọn nhóm" }}</h2>
               <p>{{ activeDetail?.memberCount ?? members.length }} thành viên</p>
             </div>
-            <div class="group-role-badge">{{ activeDetail?.currentUserRole ?? "-" }}</div>
+            <div class="group-role-badge">{{ roleLabel(activeDetail?.currentUserRole) }}</div>
           </header>
 
           <nav class="group-detail-tabs" aria-label="Group tools">
             <button :class="{ active: activeTab === 'members' }" @click="activeTab = 'members'">
-              <Users :size="15" /> Members
+              <Users :size="15" /> Thành viên
             </button>
             <button :class="{ active: activeTab === 'invites' }" @click="activeTab = 'invites'">
-              <Mail :size="15" /> Invites
+              <Mail :size="15" /> Lời mời
             </button>
             <button :class="{ active: activeTab === 'polls' }" @click="activeTab = 'polls'">
-              <Vote :size="15" /> Vote
+              <Vote :size="15" /> Bình chọn
             </button>
             <button :class="{ active: activeTab === 'meeting' }" @click="activeTab = 'meeting'">
-              <CalendarDays :size="15" /> Meeting
+              <CalendarDays :size="15" /> Cuộc họp
             </button>
             <button :class="{ active: activeTab === 'project' }" @click="activeTab = 'project'">
-              <Settings :size="15" /> Project
+              <Settings :size="15" /> Dự án
             </button>
             <button :class="{ active: activeTab === 'ai' }" @click="activeTab = 'ai'">
               <Sparkles :size="15" /> AI
@@ -656,11 +662,11 @@ function formatMessageTime(value: string) {
                 </option>
               </select>
               <select v-model="addRole">
-                <option value="Member">Member</option>
-                <option value="Admin">Admin</option>
+                <option value="Member">Thành viên</option>
+                <option value="Admin">Quản trị viên</option>
               </select>
               <button class="primary-button primary-button--compact" type="submit">
-                <UserPlus :size="15" /> Add
+                  <UserPlus :size="15" /> Thêm
               </button>
             </form>
 
@@ -676,10 +682,10 @@ function formatMessageTime(value: string) {
                   :value="member.role"
                   @change="updateMemberRole(member, ($event.target as HTMLSelectElement).value)"
                 >
-                  <option value="Member">Member</option>
-                  <option value="Admin">Admin</option>
+                  <option value="Member">Thành viên</option>
+                  <option value="Admin">Quản trị viên</option>
                 </select>
-                <small v-else>{{ member.role }}</small>
+                <small v-else>{{ roleLabel(member.role) }}</small>
                 <button
                   v-if="canManageGroup && member.role !== 'Owner'"
                   class="text-button"
@@ -756,6 +762,8 @@ function formatMessageTime(value: string) {
                   v-if="message.poll"
                   :group-id="activeGroupId"
                   :poll="message.poll"
+                  :current-user-id="currentUserId"
+                  :creator-id="message.senderId"
                 />
               </article>
               <div v-if="!activePollMessages.length" class="group-empty-state">
@@ -770,7 +778,7 @@ function formatMessageTime(value: string) {
             <CalendarDays :size="28" />
             <strong>Meeting nhóm</strong>
             <p>Bắt đầu phiên meeting cho thành viên trong nhóm.</p>
-            <button class="primary-button" type="button" @click="startMeeting">Start meeting</button>
+            <button class="primary-button" type="button" @click="startMeeting">Bắt đầu cuộc họp</button>
           </div>
 
           <div v-else-if="activeTab === 'ai'" class="group-tool-body" style="padding: 0; min-height: 0;">
@@ -824,32 +832,55 @@ function formatMessageTime(value: string) {
 <style scoped>
 .groups-workspace {
   position: relative;
-  grid-template-columns: 300px minmax(560px, 1fr) 400px;
-  gap: 22px;
-  padding: 6px;
+  height: 100%;
+  min-height: calc(100dvh - 72px);
+  width: 100%;
+  min-width: 0;
+  grid-template-columns:
+    minmax(280px, 27%)
+    minmax(420px, 1fr)
+    minmax(340px, 29%);
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border-top: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+.dashboard-scroll--embedded {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.project-home-main {
+  height: 100%;
+  min-height: 0;
+  padding: 0 !important;
+  display: block;
+  background: #ffffff !important;
 }
 
 .groups-workspace :deep(.glass-card) {
-  border: 1px solid rgba(203, 213, 225, 0.72);
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.86);
-  box-shadow:
-    0 24px 70px rgba(15, 23, 42, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(18px);
+  border: 0;
+  border-radius: 0;
+  background: #ffffff;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .groups-workspace :deep(.team-chat-sidebar),
 .groups-workspace :deep(.team-chat-window),
 .group-detail-panel {
-  min-height: calc(100dvh - 150px);
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
 }
 
 .groups-workspace :deep(.team-chat-sidebar) {
-  padding: 18px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.9)),
-    radial-gradient(circle at 20% 0%, rgba(37, 99, 235, 0.12), transparent 34%);
+  padding: 24px 18px;
+  border-right: 1px solid #e2e8f0;
+  background: #ffffff;
 }
 
 .groups-workspace :deep(.team-chat-sidebar__header h2),
@@ -880,8 +911,9 @@ function formatMessageTime(value: string) {
 }
 
 .groups-workspace :deep(.team-chat-window) {
-  padding: 20px;
+  padding: 24px;
   overflow: hidden;
+  border-right: 1px solid #e2e8f0;
 }
 
 .groups-workspace :deep(.team-chat-body) {
@@ -955,20 +987,32 @@ function formatMessageTime(value: string) {
 }
 
 .group-detail-panel {
-  padding: 22px;
+  padding: 24px 18px;
   display: flex;
   flex-direction: column;
   gap: 18px;
-  overflow: hidden;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.88)),
-    radial-gradient(circle at 80% 4%, rgba(59, 130, 246, 0.14), transparent 28%);
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  background: #ffffff;
 }
 
 .group-detail-header {
   display: flex;
   justify-content: space-between;
   gap: 12px;
+  min-width: 0;
+}
+
+.group-detail-header > div:first-child {
+  min-width: 0;
+}
+
+.group-detail-header h2,
+.group-detail-header p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .group-detail-header span {
@@ -992,6 +1036,7 @@ function formatMessageTime(value: string) {
 }
 
 .group-role-badge {
+  flex: 0 0 auto;
   height: 34px;
   border-radius: 999px;
   padding: 8px 13px;
@@ -1004,11 +1049,18 @@ function formatMessageTime(value: string) {
 
 .group-detail-tabs {
   display: grid;
+<<<<<<< HEAD
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+=======
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
+>>>>>>> ede3618e859ddbae478a27534f565ae946b4cbb6
 }
 
 .group-detail-tabs button {
+  min-width: 0;
   min-height: 50px;
   border: 1px solid rgba(148, 163, 184, 0.24);
   border-radius: 14px;
@@ -1019,8 +1071,12 @@ function formatMessageTime(value: string) {
   align-items: center;
   justify-content: center;
   gap: 3px;
-  font-size: 0.68rem;
+  padding: 8px 4px;
+  overflow: hidden;
+  text-align: center;
+  font-size: 0.64rem;
   font-weight: 800;
+  line-height: 1.15;
 }
 
 .group-detail-tabs button.active {
@@ -1031,9 +1087,11 @@ function formatMessageTime(value: string) {
 }
 
 .group-tool-body {
+  min-width: 0;
   min-height: 0;
   flex: 1;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .group-inline-form,
@@ -1130,6 +1188,7 @@ function formatMessageTime(value: string) {
   display: grid;
   gap: 14px;
   align-content: start;
+  min-width: 0;
 }
 
 .group-section-title {
@@ -1137,9 +1196,11 @@ function formatMessageTime(value: string) {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  min-width: 0;
 }
 
 .group-section-title span {
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -1158,7 +1219,8 @@ function formatMessageTime(value: string) {
 .group-poll-composer {
   display: grid;
   gap: 12px;
-  padding: 14px;
+  min-width: 0;
+  padding: 14px 12px;
   border: 1px solid rgba(37, 99, 235, 0.18);
   border-radius: 18px;
   background:
@@ -1215,22 +1277,28 @@ function formatMessageTime(value: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
 .group-poll-actions button {
+  flex: 1 1 150px;
+  min-width: 0;
   min-height: 40px;
   border-radius: 13px;
+  padding-inline: 10px;
 }
 
 .group-poll-list {
   display: grid;
   gap: 12px;
+  min-width: 0;
 }
 
 .group-poll-item {
   display: grid;
   gap: 10px;
+  min-width: 0;
   padding: 12px;
   border: 1px solid rgba(203, 213, 225, 0.72);
   border-radius: 18px;
@@ -1354,11 +1422,13 @@ function formatMessageTime(value: string) {
 @media (max-width: 1280px) {
   .groups-workspace {
     grid-template-columns: 250px minmax(0, 1fr);
+    overflow: auto;
   }
 
   .group-detail-panel {
     grid-column: 1 / -1;
     min-height: auto;
+    border-top: 1px solid #e2e8f0;
   }
 }
 

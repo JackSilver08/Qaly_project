@@ -44,6 +44,7 @@ public static class QalyWebServiceExtensions
         services.AddSignalR();
         services.AddSingleton<INotificationPublisher, SignalRNotificationPublisher>();
         services.AddSingleton<IGroupPollRealtimePublisher, SignalRGroupPollRealtimePublisher>();
+        services.AddSingleton<IGroupMeetingRealtimePublisher, SignalRGroupMeetingRealtimePublisher>();
 
         services.AddOpenApi();
         services.AddHealthChecks()

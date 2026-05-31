@@ -20,6 +20,16 @@ public class GroupAiService : IGroupAiService
             LogLevel.Warning,
             new EventId(1, nameof(AiExtractionFailed)),
             "AI action item extraction failed for group {GroupId}");
+    private static readonly Action<ILogger, Guid, Exception?> DiscussionSummaryFailed =
+        LoggerMessage.Define<Guid>(
+            LogLevel.Error,
+            new EventId(2, nameof(DiscussionSummaryFailed)),
+            "Failed to summarize group discussion for group {GroupId}");
+    private static readonly Action<ILogger, Guid, Exception?> DraftProjectPayloadGenerationFailed =
+        LoggerMessage.Define<Guid>(
+            LogLevel.Error,
+            new EventId(3, nameof(DraftProjectPayloadGenerationFailed)),
+            "Failed to generate draft project payload for group {GroupId}");
     private readonly IChatClient _chatClient;
     private readonly IGroupsService _groupsService;
     private readonly IRepository<GroupMessage> _messageRepo;
@@ -448,7 +458,7 @@ Source:
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to summarize group discussion for group {GroupId}", groupId);
+            DiscussionSummaryFailed(_logger, groupId, ex);
             return Result.Success(new GroupAiSummaryResponseDto(
                 groupId,
                 "Failed to summarize the discussion due to an internal AI error.",
@@ -536,7 +546,7 @@ Source:
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to generate draft project payload for group {GroupId}", groupId);
+            DraftProjectPayloadGenerationFailed(_logger, groupId, ex);
             return Result.Success(new GroupAiDraftProjectResponseDto(
                 groupId,
                 "Draft Project",

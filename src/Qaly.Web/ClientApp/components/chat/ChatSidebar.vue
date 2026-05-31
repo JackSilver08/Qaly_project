@@ -17,13 +17,13 @@ defineEmits<{
   <aside class="team-chat-sidebar glass-card">
     <div class="team-chat-sidebar__header">
       <div>
-        <span>Groups</span>
+        <span>Nhóm</span>
         <h2>Nhóm chat</h2>
       </div>
       <button
         class="icon-button icon-button--small"
         type="button"
-        aria-label="Create group"
+        aria-label="Tạo nhóm"
         @click="$emit('create')"
       >
         <Plus :size="16" />

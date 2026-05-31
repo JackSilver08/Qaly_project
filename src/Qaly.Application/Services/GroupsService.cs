@@ -33,6 +33,7 @@ public partial class GroupsService : IGroupsService
     private readonly IEmailService _emailService;
     private readonly IGroupInvitationEmailBuilder _groupInvitationEmailBuilder;
     private readonly IGroupPollRealtimePublisher _groupPollRealtimePublisher;
+    private readonly IGroupMeetingRealtimePublisher _groupMeetingRealtimePublisher;
     private readonly ILogger<GroupsService> _logger;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
@@ -55,6 +56,7 @@ public partial class GroupsService : IGroupsService
         IEmailService emailService,
         IGroupInvitationEmailBuilder groupInvitationEmailBuilder,
         IGroupPollRealtimePublisher groupPollRealtimePublisher,
+        IGroupMeetingRealtimePublisher groupMeetingRealtimePublisher,
         ILogger<GroupsService> logger,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService)
@@ -76,6 +78,7 @@ public partial class GroupsService : IGroupsService
         _emailService = emailService;
         _groupInvitationEmailBuilder = groupInvitationEmailBuilder;
         _groupPollRealtimePublisher = groupPollRealtimePublisher;
+        _groupMeetingRealtimePublisher = groupMeetingRealtimePublisher;
         _logger = logger;
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
@@ -89,6 +92,9 @@ public partial class GroupsService : IGroupsService
 
     [LoggerMessage(EventId = 3, Level = LogLevel.Warning, Message = "Could not broadcast poll updated realtime event. GroupId: {GroupId}, PollId: {PollId}.")]
     private static partial void LogCouldNotBroadcastPollUpdated(ILogger logger, Exception ex, Guid groupId, Guid pollId);
+
+    [LoggerMessage(EventId = 4, Level = LogLevel.Warning, Message = "Could not broadcast poll deleted realtime event. GroupId: {GroupId}, PollId: {PollId}.")]
+    private static partial void LogCouldNotBroadcastPollDeleted(ILogger logger, Exception ex, Guid groupId, Guid pollId);
 
     public async Task<Result<PagedResult<GroupDto>>> GetMineAsync(int page = 1, int pageSize = 20, string? search = null, CancellationToken ct = default)
     {
@@ -342,7 +348,7 @@ public partial class GroupsService : IGroupsService
 
         if (membershipRole == null || !GroupRoleRules.CanManage(membershipRole))
         {
-            return Result.Forbidden<GroupInvitationDto>("Bạn không có quyền mời thành viên vào nhóm này.");
+            return Result.Forbidden<GroupInvitationDto>("Báº¡n khÃ´ng cÃ³ quyá»n má»i thÃ nh viÃªn vÃ o nhÃ³m nÃ y.");
         }
 
         var normalizedEmail = NormalizeEmail(request.Email);
@@ -362,7 +368,7 @@ public partial class GroupsService : IGroupsService
         if (invitedUser == null)
         {
             return Result.Failure<GroupInvitationDto>(
-                "Email này chưa có tài khoản Qaly. Vui lòng yêu cầu người này đăng ký tài khoản trước khi mời vào nhóm.",
+                "Email nÃ y chÆ°a cÃ³ tÃ i khoáº£n Qaly. Vui lÃ²ng yÃªu cáº§u ngÆ°á»i nÃ y Ä‘Äƒng kÃ½ tÃ i khoáº£n trÆ°á»›c khi má»i vÃ o nhÃ³m.",
                 404);
         }
 
@@ -451,7 +457,7 @@ public partial class GroupsService : IGroupsService
 
         if (!GroupRoleRules.CanCreatePoll(membershipRole))
         {
-            return Result.Forbidden<GroupPollDto>("Bạn không có quyền tạo bình chọn trong nhóm này.");
+            return Result.Forbidden<GroupPollDto>("Báº¡n khÃ´ng cÃ³ quyá»n táº¡o bÃ¬nh chá»n trong nhÃ³m nÃ y.");
         }
 
         var normalizedQuestion = NormalizeOptional(request.Question);
@@ -535,6 +541,158 @@ public partial class GroupsService : IGroupsService
 
         return Result.Created(ToPollDto(poll, options));
     }
+
+    public async Task<Result<GroupPollDto>> UpdatePollAsync(Guid groupId, Guid pollId, UpdateGroupPollRequest request, CancellationToken ct = default)
+    {
+        if (groupId == Guid.Empty) return Result.Failure<GroupPollDto>("Group id is required.");
+        if (pollId == Guid.Empty) return Result.Failure<GroupPollDto>("Poll id is required.");
+        if (request == null) return Result.Failure<GroupPollDto>("Poll request is required.");
+
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null) return Result.Failure<GroupPollDto>("Authentication is required.", 401);
+
+        var poll = await _pollRepo.GetQueryable()
+            .Include(p => p.Options)
+            .FirstOrDefaultAsync(item => item.Id == pollId && item.GroupId == groupId, ct);
+            
+        if (poll == null) return Result.NotFound<GroupPollDto>("Poll was not found.");
+        
+        var membershipRole = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(member => member.WorkGroupId == groupId && member.UserId == currentUserId.Value)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+
+        if (membershipRole == null) return Result.Forbidden<GroupPollDto>("Current user is not a group member.");
+        
+        if (poll.CreatedByUserId != currentUserId.Value && !GroupRoleRules.CanCreatePoll(membershipRole))
+        {
+            return Result.Forbidden<GroupPollDto>("Bạn không có quyền sửa bình chọn này.");
+        }
+
+        var normalizedQuestion = NormalizeOptional(request.Question);
+        if (string.IsNullOrWhiteSpace(normalizedQuestion)) return Result.Failure<GroupPollDto>("Question is required.");
+        if (normalizedQuestion.Length > 500) return Result.Failure<GroupPollDto>("Question must be 500 characters or fewer.");
+
+        if (request.Options == null || request.Options.Count < 2)
+            return Result.Failure<GroupPollDto>("A poll must have at least 2 options.");
+
+        var normalizedOptions = new List<string>(request.Options.Count);
+        var dedupe = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        for (var index = 0; index < request.Options.Count; index++)
+        {
+            var normalizedContent = NormalizeOptional(request.Options[index]?.Content);
+            if (string.IsNullOrWhiteSpace(normalizedContent)) return Result.Failure<GroupPollDto>("Option content is required.");
+            if (normalizedContent.Length > 300) return Result.Failure<GroupPollDto>("Option content must be 300 characters or fewer.");
+            if (!dedupe.Add(normalizedContent)) return Result.Failure<GroupPollDto>("Poll options must be unique.");
+            normalizedOptions.Add(normalizedContent);
+        }
+
+        poll.Question = normalizedQuestion;
+        poll.AllowMultiple = request.AllowMultiple;
+        poll.ExpiredAt = request.ExpiredAt;
+
+        var existingOptions = poll.Options.ToList();
+        foreach (var opt in existingOptions)
+        {
+            await _pollOptionRepo.DeleteAsync(opt, ct);
+        }
+        
+        var options = normalizedOptions
+            .Select((content, index) => new GroupPollOption
+            {
+                PollId = poll.Id,
+                Content = content,
+                SortOrder = index + 1
+            })
+            .ToList();
+            
+        await _pollOptionRepo.AddRangeAsync(options, ct);
+        await _pollRepo.UpdateAsync(poll, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        
+        var pollResults = await BuildPollResultsDtoAsync(poll, options, currentUserId.Value, ct);
+        var updatedAt = DateTimeOffset.UtcNow;
+        try
+        {
+            await _groupPollRealtimePublisher.PublishPollUpdatedAsync(groupId, poll.Id, pollResults, updatedAt, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            LogCouldNotBroadcastPollUpdated(_logger, ex, groupId, poll.Id);
+        }
+
+        var dto = ToPollDto(poll, options);
+        return Result.Success(dto);
+    }
+
+    public async Task<Result> DeletePollAsync(Guid groupId, Guid pollId, CancellationToken ct = default)
+    {
+        if (groupId == Guid.Empty) return Result.Failure("Group id is required.");
+        if (pollId == Guid.Empty) return Result.Failure("Poll id is required.");
+
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null) return Result.Failure("Authentication is required.", 401);
+
+        var poll = await _pollRepo.GetQueryable()
+            .Include(p => p.Options)
+            .Include(p => p.Votes)
+            .FirstOrDefaultAsync(item => item.Id == pollId && item.GroupId == groupId, ct);
+            
+        if (poll == null) return Result.NotFound("Poll was not found.");
+
+        var membershipRole = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(member => member.WorkGroupId == groupId && member.UserId == currentUserId.Value)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+
+        if (membershipRole == null) return Result.Forbidden("Current user is not a group member.");
+        
+        if (poll.CreatedByUserId != currentUserId.Value && !GroupRoleRules.CanRemoveMember(membershipRole, "Member", false))
+        {
+            return Result.Forbidden("Bạn không có quyền xóa bình chọn này.");
+        }
+
+        foreach (var vote in poll.Votes.ToList())
+        {
+            await _pollVoteRepo.DeleteAsync(vote, ct);
+        }
+
+        foreach (var opt in poll.Options.ToList())
+        {
+            await _pollOptionRepo.DeleteAsync(opt, ct);
+        }
+
+        var deletedPollId = poll.Id;
+        await _pollRepo.DeleteAsync(poll, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        var deletedAt = DateTimeOffset.UtcNow;
+        try
+        {
+            await _groupPollRealtimePublisher.PublishPollDeletedAsync(groupId, deletedPollId, deletedAt, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            LogCouldNotBroadcastPollDeleted(_logger, ex, groupId, deletedPollId);
+        }
+
+        return Result.Success();
+    }
+
+
+    
+
 
     public async Task<Result<GroupPollResultsDto>> VotePollAsync(Guid groupId, Guid pollId, VoteGroupPollRequest request, CancellationToken ct = default)
     {
@@ -721,7 +879,7 @@ public partial class GroupsService : IGroupsService
         var canClosePoll = GroupRoleRules.CanClosePoll(membershipRole, poll.CreatedByUserId == currentUserId.Value);
         if (!canClosePoll)
         {
-            return Result.Forbidden<GroupPollDto>("Bạn không có quyền đóng bình chọn này.");
+            return Result.Forbidden<GroupPollDto>("Báº¡n khÃ´ng cÃ³ quyá»n Ä‘Ã³ng bÃ¬nh chá»n nÃ y.");
         }
 
         if (poll.Status == GroupPollStatus.Closed)
@@ -1033,7 +1191,7 @@ public partial class GroupsService : IGroupsService
 
         if (!GroupRoleRules.CanChangeMemberRole(currentMember.Role, member.Role))
         {
-            return Result.Forbidden("Bạn không có quyền thay đổi vai trò thành viên này.");
+            return Result.Forbidden("Báº¡n khÃ´ng cÃ³ quyá»n thay Ä‘á»•i vai trÃ² thÃ nh viÃªn nÃ y.");
         }
 
         var normalizedCurrentRole = GroupRoleRules.Normalize(member.Role);
@@ -1113,7 +1271,7 @@ public partial class GroupsService : IGroupsService
         var isSelfAction = currentUserId.Value == userId;
         if (!GroupRoleRules.CanRemoveMember(currentMember.Role, member.Role, isSelfAction))
         {
-            return Result.Forbidden("Bạn không có quyền xóa thành viên này.");
+            return Result.Forbidden("Báº¡n khÃ´ng cÃ³ quyá»n xÃ³a thÃ nh viÃªn nÃ y.");
         }
 
         if (GroupRoleRules.Normalize(member.Role) == GroupRoleRules.Owner)
@@ -1561,7 +1719,7 @@ public partial class GroupsService : IGroupsService
             return;
         }
 
-        var message = $"Bạn nhận được lời mời tham gia nhóm \"{groupName}\" (hết hạn {invitation.ExpiredAt:yyyy-MM-dd HH:mm} UTC).";
+        var message = $"Báº¡n nháº­n Ä‘Æ°á»£c lá»i má»i tham gia nhÃ³m \"{groupName}\" (háº¿t háº¡n {invitation.ExpiredAt:yyyy-MM-dd HH:mm} UTC).";
         await _notificationService.CreateAsync(
             invitedUser.Id,
             message,
@@ -1688,6 +1846,19 @@ public partial class GroupsService : IGroupsService
 
         var roomId = Guid.NewGuid().ToString("N");
         var joinUrl = $"https://meet.jit.si/{roomId}";
+        var groupName = await _groupRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(group => group.Id == groupId)
+            .Select(group => group.Name)
+            .FirstOrDefaultAsync(ct) ?? "nhÃ³m";
+
+        var starter = await _userRepo.GetQueryable()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(user => user.Id == currentUserId.Value, ct);
+        if (starter == null)
+        {
+            return Result.Forbidden<GroupMeetingSessionDto>();
+        }
 
         var meeting = new GroupMeetingSession
         {
@@ -1703,6 +1874,17 @@ public partial class GroupsService : IGroupsService
         await _meetingSessionRepo.AddAsync(meeting, ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
+        var meetingMessage = new GroupMessage
+        {
+            WorkGroupId = groupId,
+            UserId = currentUserId.Value,
+            Content = BuildMeetingStartedMessage(meeting.Id, joinUrl, starter.FullName),
+            MessageType = "Meeting"
+        };
+
+        await _messageRepo.AddAsync(meetingMessage, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
         var dto = new GroupMeetingSessionDto(
             meeting.Id,
             meeting.WorkGroupId,
@@ -1715,6 +1897,9 @@ public partial class GroupsService : IGroupsService
             meeting.EndedAt,
             meeting.TranscriptSourceId,
             meeting.Summary);
+
+        await NotifyMeetingStartedAsync(groupId, groupName, dto, currentUserId.Value, starter.FullName, ct);
+        await _groupMeetingRealtimePublisher.PublishMeetingStartedAsync(groupId, dto, ct);
 
         return Result.Success(dto);
     }
@@ -1769,6 +1954,25 @@ public partial class GroupsService : IGroupsService
         meeting.EndedAt = DateTimeOffset.UtcNow;
 
         await _meetingSessionRepo.UpdateAsync(meeting, ct);
+
+        var meetingIdLine = $"[meetingid] {meeting.Id}";
+        var meetingMessages = await _messageRepo.GetQueryable()
+            .Where(message =>
+                message.WorkGroupId == groupId &&
+                message.MessageType == "Meeting" &&
+                message.Content.Contains(meetingIdLine))
+            .ToListAsync(ct);
+
+        foreach (var message in meetingMessages)
+        {
+            if (!message.Content.Contains("[meeting-ended]", StringComparison.OrdinalIgnoreCase))
+            {
+                message.Content = $"{message.Content}{Environment.NewLine}[meeting-ended]";
+                message.UpdatedAt = DateTimeOffset.UtcNow;
+                await _messageRepo.UpdateAsync(message, ct);
+            }
+        }
+
         await _unitOfWork.SaveChangesAsync(ct);
 
         var dto = new GroupMeetingSessionDto(
@@ -1784,6 +1988,57 @@ public partial class GroupsService : IGroupsService
             meeting.TranscriptSourceId,
             meeting.Summary);
 
+        await _groupMeetingRealtimePublisher.PublishMeetingEndedAsync(groupId, meeting.Id, ct);
+
         return Result.Success(dto);
     }
+
+    private static string BuildMeetingStartedMessage(Guid meetingId, string joinUrl, string? starterName)
+    {
+        var displayName = string.IsNullOrWhiteSpace(starterName) ? "Má»™t thÃ nh viÃªn" : starterName.Trim();
+        return string.Join(Environment.NewLine, new[]
+        {
+            "[meeting-started]",
+            $"[meetingid] {meetingId}",
+            $"[joinurl] {joinUrl}",
+            $"{displayName} Ä‘Ã£ báº¯t Ä‘áº§u cuá»™c há»p nhÃ³m. Báº¥m tham gia Ä‘á»ƒ vÃ o phÃ²ng."
+        });
+    }
+
+    private async Task NotifyMeetingStartedAsync(
+        Guid groupId,
+        string groupName,
+        GroupMeetingSessionDto meeting,
+        Guid starterUserId,
+        string? starterName,
+        CancellationToken ct)
+    {
+        var recipientIds = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(member => member.WorkGroupId == groupId && member.UserId != starterUserId)
+            .Select(member => member.UserId)
+            .Distinct()
+            .ToListAsync(ct);
+
+        var displayName = string.IsNullOrWhiteSpace(starterName) ? "Má»™t thÃ nh viÃªn" : starterName.Trim();
+        var message = $"{displayName} Ä‘Ã£ báº¯t Ä‘áº§u cuá»™c há»p trong nhÃ³m \"{groupName}\".";
+
+        foreach (var recipientId in recipientIds)
+        {
+            await _notificationService.CreateAsync(
+                recipientId,
+                message,
+                "GroupMeetingStarted",
+                "info",
+                meeting.Id,
+                nameof(GroupMeetingSession),
+                $"group:{groupId}:meeting:{meeting.Id}:started:{recipientId}",
+                ct);
+        }
+    }
 }
+
+
+
+
+
