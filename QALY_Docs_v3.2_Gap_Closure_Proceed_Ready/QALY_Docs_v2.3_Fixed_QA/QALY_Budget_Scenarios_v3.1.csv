@@ -1,0 +1,5 @@
+scenario,server_cost_10_weeks_usd,ai_api_budget_usd,tunnel_budget_usd,risk_reserve_usd,total_estimate_usd,decision
+Minimum,0,5,0,5,10,"Use school VPS, Meetily local, Gemini/OpenAI only for final demo cases"
+Base recommended,0,20,0-8,15,35-43,Recommended plan for 10 weeks
+Safe demo,0-50,30,8,30,68-118,Use if school VPS delayed
+Worst manageable,50-100,60,8-20,50,168-230,Emergency budget if need paid VPS + heavy cloud transcription

@@ -1,0 +1,20 @@
+{
+  "version": "3.1",
+  "status": "pass_with_notes",
+  "checked_items": {
+    "cost_model_added": true,
+    "risk_register_added": true,
+    "setup_steps_added": true,
+    "law_compliance_checklist_added": true,
+    "affected_diagrams_added": true,
+    "database_ai_migration_added": true,
+    "human_in_the_loop_required": true,
+    "vps_8gb_no_llm_policy": true,
+    "rtx4060_resource_policy": true
+  },
+  "notes": [
+    "Pricing must be rechecked before actual purchase/API usage.",
+    "Compliance checklist is not legal advice.",
+    "Meetily CE feature set should be verified against locked commit during implementation."
+  ]
+}

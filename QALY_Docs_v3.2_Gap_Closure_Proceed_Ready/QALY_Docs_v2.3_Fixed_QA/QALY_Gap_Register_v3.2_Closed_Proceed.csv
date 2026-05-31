@@ -1,0 +1,13 @@
+id,severity,area,status_v3_2,closure_artifact,implementation_note,residual_risk
+B01,Critical,Acceptance,Closed,QALY_Acceptance_Checklist_v3.2_Proceed.csv,QA dùng checklist v3.2 thay v3.0,Không còn blocker tài liệu; cần validate khi code/UAT
+B02,Critical,Gap Control,Closed,QALY_Gap_Register_v3.2_Closed_Proceed.csv,P0 blockers đã đóng ở mức đặc tả; P1/P2 chuyển roadmap,Không còn blocker tài liệu; cần validate khi code/UAT
+B03,Critical,Scope,Closed,QALY_MVP_P0_Scope_Lock_v3.2.md,P0 chỉ 20 UC/8 AI functions,Không còn blocker tài liệu; cần validate khi code/UAT
+B04,High,API,Closed,QALY_AI_Endpoint_Contract_v3.2.md,Đã thêm jobs status/result/cancel/retry/budget/function-specific contracts,Không còn blocker tài liệu; cần validate khi code/UAT
+B05,High,AI Schema,Closed,QALY_AI_JSON_Schemas_v3.2.md + docs/schemas/ai,Có JSON schema cho outputs chính,Không còn blocker tài liệu; cần validate khi code/UAT
+B06,High,Database,Closed,QALY_AI_Data_Schema_Migration_v3.2.sql,"Thêm tenant/project/user indexes, retention/consent/sensitive, DSR",Không còn blocker tài liệu; cần validate khi code/UAT
+B07,High,RACI,Closed,QALY_WBS_RACI_v3.2_10Weeks.md,RACI đổi sang Meetily/API-first,Không còn blocker tài liệu; cần validate khi code/UAT
+B08,High,Demo Evidence,Closed,QALY_Demo_Script_And_Evidence_Template_v3.2.md,Có script demo + evidence checklist,Không còn blocker tài liệu; cần validate khi code/UAT
+B09,Medium,Diagrams,Closed,QALY_Change_Impact_Matrix_v3.2.csv + diagram spec v3.2,Fix diagram IDs và thêm diagrams v3.2,Không còn blocker tài liệu; cần validate khi code/UAT
+B10,Medium,Cost,Closed,QALY_Provider_Model_Pin_Cost_Policy_v3.2.md,Pin provider/model/date/source + budget caps,Không còn blocker tài liệu; cần validate khi code/UAT
+B11,Medium,Compliance,Closed,QALY_Compliance_UI_API_Flows_v3.2.md,Map privacy notice/consent/delete/export to UI/API,Không còn blocker tài liệu; cần validate khi code/UAT
+B12,Medium,Ops,Closed,QALY_Deployment_Runbook_VPS8GB_Laptop_v3.2.md,Thêm compose/health/backup/restore/ngrok,Không còn blocker tài liệu; cần validate khi code/UAT

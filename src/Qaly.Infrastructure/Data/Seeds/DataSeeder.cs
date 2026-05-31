@@ -108,7 +108,7 @@ public partial class DataSeeder
         }
 
         // sample message
-        await _context.GroupMessages.AddAsync(new GroupMessage { WorkGroupId = group.Id, UserId = admin.Id, SenderName = admin.FullName, Content = "Welcome to the demo group!", MessageType = "Text" });
+        await _context.GroupMessages.AddAsync(new GroupMessage { WorkGroupId = group.Id, UserId = admin.Id, Content = "Welcome to the demo group!", MessageType = "Text" });
 
         // sample poll
         var poll = new GroupPoll { GroupId = group.Id, Question = "Khi nào họp thử?", CreatedByUserId = admin.Id, AllowMultiple = false, Status = Qaly.Domain.Enums.GroupPollStatus.Open };

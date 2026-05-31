@@ -1,0 +1,13 @@
+{
+  "validated_at": "2026-05-19",
+  "root": "QALY_Docs_v2.3_Fixed_QA",
+  "errors": [],
+  "warnings": [],
+  "counts": {
+    "files": 73,
+    "csv": 11,
+    "md": 17,
+    "mmd": 33,
+    "puml": 8
+  }
+}

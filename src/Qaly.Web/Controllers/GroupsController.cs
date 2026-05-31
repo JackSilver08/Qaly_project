@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Qaly.Application.DTOs.Groups;
+using Qaly.Application.DTOs.Ai;
 using Qaly.Application.Services;
 
 namespace Qaly.Web.Controllers;
@@ -153,6 +154,27 @@ public class GroupsController : BaseApiController
     public async Task<IActionResult> CreateProjectFromGroup(Guid id, CreateProjectFromGroupRequest request, CancellationToken ct)
     {
         var result = await _groupsService.CreateProjectFromGroupAsync(id, request, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("{id:guid}/meetings/start")]
+    public async Task<IActionResult> StartMeeting(Guid id, CancellationToken ct)
+    {
+        var result = await _groupsService.StartMeetingSessionAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("{groupId:guid}/meetings/{meetingId:guid}/join")]
+    public async Task<IActionResult> JoinMeeting(Guid groupId, Guid meetingId, CancellationToken ct)
+    {
+        var result = await _groupsService.JoinMeetingSessionAsync(groupId, meetingId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("{groupId:guid}/meetings/{meetingId:guid}/end")]
+    public async Task<IActionResult> EndMeeting(Guid groupId, Guid meetingId, CancellationToken ct)
+    {
+        var result = await _groupsService.EndMeetingSessionAsync(groupId, meetingId, ct);
         return StatusCode(result.StatusCode, result);
     }
 }

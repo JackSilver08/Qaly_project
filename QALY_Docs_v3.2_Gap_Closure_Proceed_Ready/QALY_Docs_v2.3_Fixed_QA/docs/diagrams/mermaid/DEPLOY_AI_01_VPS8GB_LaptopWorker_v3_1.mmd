@@ -1,0 +1,23 @@
+flowchart TB
+    subgraph VPS[VPS 8GB - School/Staging]
+        NGINX[Nginx TLS Reverse Proxy]
+        BACKEND[Backend API mem 1GB]
+        SQL[(SQL Server mem 2.5-3GB)]
+        REDIS[(Redis 256MB)]
+        QDRANT[(Qdrant optional 512MB-1GB)]
+        NGINX --> BACKEND
+        BACKEND --> SQL
+        BACKEND --> REDIS
+        BACKEND -. optional .-> QDRANT
+    end
+    subgraph LAPTOP[Laptop RTX4060/16GB - Local AI Worker]
+        MEETILY[Meetily]
+        LAG[Local AI Gateway]
+        OLLAMA[Ollama 7B/8B]
+        MEETILY --> LAG
+        OLLAMA --> LAG
+    end
+    BACKEND --> API[AI API Provider]
+    BACKEND --> TUNNEL[ngrok HTTPS Tunnel]
+    TUNNEL --> LAG
+    note1[No Ollama/14B on VPS 8GB]

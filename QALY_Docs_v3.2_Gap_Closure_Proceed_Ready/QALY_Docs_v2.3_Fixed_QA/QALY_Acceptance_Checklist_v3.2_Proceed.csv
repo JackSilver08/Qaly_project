@@ -1,0 +1,41 @@
+id,area,criterion,priority,status,required_evidence,owner
+AC-ARCH-01,Architecture,Meetily-first + AI API primary + Ollama fallback + Qdrant P1 được ghi rõ,Critical,Ready for implementation/UAT,Architecture approved meeting note/sign-off,PM/Tech Lead/QA
+AC-SCOPE-01,Scope,P0 scope lock gồm 20 UC và 8 AI functions,Critical,Ready for implementation/UAT,QALY_MVP_P0_Scope_Lock_v3.2.md,PM/Tech Lead/QA
+AC-CORE-01,Auth,Login/logout/refresh token hoạt động,P0,Ready for implementation/UAT,API tests + screenshot,Feature owner
+AC-CORE-02,Project,Tạo project và thêm member,P0,Ready for implementation/UAT,UI screenshot + DB record,Feature owner
+AC-CORE-03,RBAC,User không truy cập project không thuộc quyền,P0,Ready for implementation/UAT,negative API test,Feature owner
+AC-CORE-04,Task,Task CRUD + deadline/priority/assignee,P0,Ready for implementation/UAT,API/UI test,Feature owner
+AC-CORE-05,Kanban,Đổi trạng thái task có audit,P0,Ready for implementation/UAT,audit row,Feature owner
+AC-CORE-06,Comment,Comment/evidence task lưu được,P0,Ready for implementation/UAT,API/UI test,Feature owner
+AC-CORE-07,Chat,Gửi/nhận message realtime trong project room,P0,Ready for implementation/UAT,2-browser demo evidence,Feature owner
+AC-CORE-08,Notification,Mention/assign/status notification hiển thị,P0,Ready for implementation/UAT,notification evidence,Feature owner
+AC-AI-01,AI Gateway,Không endpoint nào gọi provider trực tiếp ngoài AI Gateway,Critical,Ready for implementation/UAT,code review + env check,PM/Tech Lead/QA
+AC-AI-02,Provider Router,Router hỗ trợ api/mock/local fallback,P0,Ready for implementation/UAT,unit test route matrix,Feature owner
+AC-AI-03,Cost Guard,Daily/monthly budget chặn request vượt quota,Critical,Ready for implementation/UAT,test budget exceeded,PM/Tech Lead/QA
+AC-AI-04,Prompt Cache,Prompt cache hit không gọi provider,P0,Ready for implementation/UAT,usage ledger shows cache_hit,Feature owner
+AC-AI-05,Usage Ledger,Mọi AI request ghi usage ledger,P0,Ready for implementation/UAT,ledger rows,Feature owner
+AC-AI-06,AI Job Queue,Job queued/running/succeeded/failed/canceled/retried,P0,Ready for implementation/UAT,job API test,Feature owner
+AC-AI-07,Meetily Import,Import transcript/summary thủ công thành meeting note,P0,Ready for implementation/UAT,sample JSON/MD import,Feature owner
+AC-AI-08,Meeting Extract,Extract keyword/action/deadline/decision pass JSON schema,P0,Ready for implementation/UAT,schema validation report,Feature owner
+AC-AI-09,Draft Confirm,AI generated task chỉ tạo task sau confirm,Critical,Ready for implementation/UAT,audit confirm event,PM/Tech Lead/QA
+AC-AI-10,Chat Summary,Tóm tắt message range có cache,P0,Ready for implementation/UAT,same range cache hit,Feature owner
+AC-AI-11,Task Draft From Chat,Message -> task draft -> confirm task,P0,Ready for implementation/UAT,end-to-end demo,Feature owner
+AC-AI-12,Assignee Recommendation,Rank candidates bằng rule-score + AI explanation,P0,Ready for implementation/UAT,recommendation response + confirmation,Feature owner
+AC-AI-13,Task Breakdown,Task lớn -> subtasks/checklist draft,P0,Ready for implementation/UAT,schema output,Feature owner
+AC-AI-14,Sprint Summary,Tạo project/sprint progress summary từ aggregated metrics,P0,Ready for implementation/UAT,report screenshot,Feature owner
+AC-AI-15,Mock Offline,Tắt API vẫn demo được với mock/cache,Critical,Ready for implementation/UAT,network-off evidence,PM/Tech Lead/QA
+AC-DB-01,Database,AI migration v3.2 áp dụng được trên SQL Server dev,Critical,Ready for implementation/UAT,migration log,PM/Tech Lead/QA
+AC-DB-02,Database,Indexes project/tenant/status/time tồn tại,P0,Ready for implementation/UAT,schema inspect,Feature owner
+AC-SEC-01,Privacy,Import transcript có privacy notice/consent checkbox,Critical,Ready for implementation/UAT,UI screenshot,PM/Tech Lead/QA
+AC-SEC-02,Sensitive,Sensitive=true không gọi cloud API nếu chưa override,Critical,Ready for implementation/UAT,provider blocked test,PM/Tech Lead/QA
+AC-SEC-03,Audit,AI draft/confirm/delete/export có audit event,P0,Ready for implementation/UAT,audit records,Feature owner
+AC-SEC-04,Data Subject,Export/delete transcript request có workflow,P0,Ready for implementation/UAT,DSR test,Feature owner
+AC-OPS-01,Deployment,VPS 8GB chạy backend/frontend/DB/Redis không chạy LLM,Critical,Ready for implementation/UAT,docker ps + resource screenshot,PM/Tech Lead/QA
+AC-OPS-02,Laptop AI,Laptop chạy Meetily + Local AI Gateway/Ollama fallback riêng,P0,Ready for implementation/UAT,local healthcheck,Feature owner
+AC-OPS-03,ngrok,ngrok chỉ expose AI Gateway có token/rate limit,P0,Ready for implementation/UAT,401 without token test,Feature owner
+AC-OPS-04,Healthcheck,"/health, /ready, /api/ai/health hoạt động",P0,Ready for implementation/UAT,curl logs,Feature owner
+AC-OPS-05,Backup Restore,Backup/restore seed demo chạy được,Critical,Ready for implementation/UAT,restore drill log,PM/Tech Lead/QA
+AC-QA-01,Golden Dataset,Có >=50 golden AI cases,P0,Ready for implementation/UAT,CSV file,Feature owner
+AC-QA-02,Schema Valid Rate,AI JSON valid >=95% trên golden P0,P0,Ready for implementation/UAT,test report,Feature owner
+AC-QA-03,Demo Evidence,"Có script demo, screenshots/log checklist",Critical,Ready for implementation/UAT,evidence folder,PM/Tech Lead/QA
+AC-QA-04,Freeze,Week 8 freeze demo data/cache,P0,Ready for implementation/UAT,freeze tag/release note,Feature owner

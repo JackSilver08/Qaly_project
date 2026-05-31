@@ -1,0 +1,16 @@
+flowchart LR
+  %% Traceability chain used in defense/demo
+  Req[Requirement / SRS] --> UC[Use Case Catalog + Specification]
+  UC --> BR[Business Rules]
+  UC --> API[API Specification]
+  UC --> UI[UI Screen / Route]
+  BR --> Domain[Domain Service / Workflow]
+  API --> Controller[Controller / Hub]
+  Domain --> DB[SQL Server Tables + Constraints]
+  Domain --> Event[Domain Events + Audit Logs]
+  DB --> Test[Test Cases]
+  API --> Test
+  UI --> E2E[E2E Tests]
+  Test --> Acceptance[Acceptance Checklist]
+  Event --> Acceptance
+  Acceptance --> Demo[Demo Script / Graduation Defense]

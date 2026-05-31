@@ -1,0 +1,6 @@
+environment,host,services,ai_mode,resources,risk,decision
+Local Dev,Laptop RTX4060 16GB,"frontend, backend optional, mock AI, Ollama optional","mock-first, ollama optional",avoid SQL Server + Ollama together,RAM pressure,Use for coding only
+Demo AI Worker,Laptop RTX4060 16GB,"Meetily, Local AI Gateway, Ollama 7B/8B, ngrok",Meetily + API fallback/Ollama fallback,"1 model loaded, no Docker heavy",laptop sleep/network,Main meeting AI demo
+VPS Staging,School VPS 8GB,"Nginx, backend, SQL Server, Redis, optional Qdrant","AI API primary, Qdrant off by default",No LLM on VPS,RAM limit,Main app deployment
+Safe Demo,VPS + cached API,"all P0 services, cache warmed",AI API primary + mock fallback,stable,API outage mitigated,Use for final defense
+Production Future,Dedicated/managed infra,"separate DB, backend, Qdrant, GPU/AI server",provider router + private AI worker,scalable,cost/compliance,Roadmap only

@@ -1,0 +1,44 @@
+erDiagram
+    PROJECTS ||--o{ AI_JOB_QUEUE : has
+    USERS ||--o{ AI_JOB_QUEUE : requests
+    PRIVACY_CONSENTS ||--o{ AI_JOB_QUEUE : authorizes
+    PRIVACY_CONSENTS ||--o{ MEETILY_IMPORT_SESSIONS : authorizes
+    MEETILY_IMPORT_SESSIONS ||--o{ AI_GENERATED_DRAFTS : sources
+    AI_JOB_QUEUE ||--o{ AI_USAGE_LEDGER : logs
+    AI_JOB_QUEUE ||--o{ AI_GENERATED_DRAFTS : creates
+    AI_JOB_QUEUE ||--o{ AI_AUDIT_EVENTS : audits
+    PROJECTS ||--o{ DATA_SUBJECT_REQUESTS : scopes
+    USERS ||--o{ DATA_SUBJECT_REQUESTS : requests
+
+    AI_JOB_QUEUE {
+      bigint id PK
+      bigint tenant_id
+      bigint project_id
+      bigint requested_by
+      bigint consent_id
+      string job_type
+      string schema_id
+      string status
+      bool sensitive
+    }
+    MEETILY_IMPORT_SESSIONS {
+      bigint id PK
+      bigint project_id
+      bigint consent_id
+      bool sensitive
+      datetime delete_after
+      string source_hash
+    }
+    PRIVACY_CONSENTS {
+      bigint id PK
+      bigint user_id
+      string consent_type
+      string purpose
+      string status
+    }
+    DATA_SUBJECT_REQUESTS {
+      bigint id PK
+      bigint requester_user_id
+      string request_type
+      string status
+    }

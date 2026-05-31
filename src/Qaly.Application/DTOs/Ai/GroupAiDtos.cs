@@ -19,3 +19,44 @@ public record GroupAiActionItemDto(
     DateTimeOffset? DueDateSuggestion,
     decimal Confidence,
     string? SourceEvidence);
+
+public record GroupMeetingSessionDto(
+    Guid Id,
+    Guid WorkGroupId,
+    Guid StartedByUserId,
+    string Provider,
+    string RoomId,
+    string? JoinUrl,
+    string Status,
+    DateTimeOffset StartedAt,
+    DateTimeOffset? EndedAt,
+    string? TranscriptSourceId,
+    string? Summary);
+
+public record GroupAiSummaryRequest(
+    int? MessageLimit = null);
+
+public record GroupAiSummaryResponseDto(
+    Guid GroupId,
+    string Summary,
+    IReadOnlyList<string> KeyDecisions,
+    IReadOnlyList<string> UnresolvedQuestions,
+    IReadOnlyList<string> Warnings);
+
+public record GroupAiDraftProjectRequest(
+    int? MessageLimit = null,
+    string? ExtraInstructions = null);
+
+public record GroupAiDraftTaskDto(
+    string Title,
+    string? Description,
+    string? Priority,
+    int? EstimateDays,
+    string? SuggestedOwnerName);
+
+public record GroupAiDraftProjectResponseDto(
+    Guid GroupId,
+    string DraftProjectName,
+    string DraftProjectDescription,
+    IReadOnlyList<GroupAiDraftTaskDto> DraftTasks,
+    IReadOnlyList<string> Warnings);

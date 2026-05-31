@@ -30,6 +30,7 @@ public class GroupsServiceTests : IDisposable
     private readonly GenericRepository<Organization> _organizationRepo;
     private readonly GenericRepository<OrganizationMember> _organizationMemberRepo;
     private readonly GenericRepository<User> _userRepo;
+    private readonly GenericRepository<GroupMeetingSession> _meetingSessionRepo;
     private readonly UnitOfWork _uow;
     private readonly Mock<IProjectService> _projectService = new();
     private readonly Mock<INotificationService> _notificationService = new();
@@ -57,6 +58,7 @@ public class GroupsServiceTests : IDisposable
         _organizationRepo = new GenericRepository<Organization>(_context);
         _organizationMemberRepo = new GenericRepository<OrganizationMember>(_context);
         _userRepo = new GenericRepository<User>(_context);
+        _meetingSessionRepo = new GenericRepository<GroupMeetingSession>(_context);
         _uow = new UnitOfWork(_context);
 
         _notificationService
@@ -1689,6 +1691,78 @@ public class GroupsServiceTests : IDisposable
         captured.Should().Contain((memberId, ProjectRoleRules.Member));
     }
 
+    [Fact]
+    public async Task StartMeetingSessionAsync_WhenUserCannotAccessGroup_ReturnsForbidden()
+    {
+        var groupId = Guid.NewGuid();
+        _currentUser.Setup(u => u.UserId).Returns(Guid.NewGuid());
+
+        var result = await CreateService().StartMeetingSessionAsync(groupId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task StartMeetingSessionAsync_WhenSuccessful_CreatesActiveMeetingSession()
+    {
+        var groupId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        _currentUser.Setup(u => u.UserId).Returns(userId);
+
+        var group = new WorkGroup { Id = groupId, Name = "Test Group" };
+        await _groupRepo.AddAsync(group);
+        await _memberRepo.AddAsync(new WorkGroupMember { WorkGroupId = groupId, UserId = userId, Role = GroupRoleRules.Owner });
+        await _uow.SaveChangesAsync();
+
+        var result = await CreateService().StartMeetingSessionAsync(groupId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Data!.WorkGroupId.Should().Be(groupId);
+        result.Data.Status.Should().Be("Active");
+        result.Data.Provider.Should().Be("Jitsi");
+        result.Data.JoinUrl.Should().Contain("https://meet.jit.si/");
+
+        var saved = await _meetingSessionRepo.GetQueryable().FirstOrDefaultAsync(m => m.WorkGroupId == groupId);
+        saved.Should().NotBeNull();
+        saved!.RoomId.Should().Be(result.Data.RoomId);
+    }
+
+    [Fact]
+    public async Task EndMeetingSessionAsync_WhenSuccessful_EndsMeetingSession()
+    {
+        var groupId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var meetingId = Guid.NewGuid();
+        _currentUser.Setup(u => u.UserId).Returns(userId);
+
+        var group = new WorkGroup { Id = groupId, Name = "Test Group" };
+        await _groupRepo.AddAsync(group);
+        await _memberRepo.AddAsync(new WorkGroupMember { WorkGroupId = groupId, UserId = userId, Role = GroupRoleRules.Owner });
+        
+        var meeting = new GroupMeetingSession
+        {
+            Id = meetingId,
+            WorkGroupId = groupId,
+            StartedByUserId = userId,
+            Provider = "Jitsi",
+            RoomId = "room-abc",
+            Status = "Active"
+        };
+        await _meetingSessionRepo.AddAsync(meeting);
+        await _uow.SaveChangesAsync();
+
+        var result = await CreateService().EndMeetingSessionAsync(groupId, meetingId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Data!.Status.Should().Be("Ended");
+        result.Data.EndedAt.Should().NotBeNull();
+
+        var saved = await _meetingSessionRepo.GetQueryable().FirstOrDefaultAsync(m => m.Id == meetingId);
+        saved!.Status.Should().Be("Ended");
+        saved.EndedAt.Should().NotBeNull();
+    }
+
     private GroupsService CreateService()
         => new(
             _groupRepo,
@@ -1701,6 +1775,7 @@ public class GroupsServiceTests : IDisposable
             _organizationRepo,
             _organizationMemberRepo,
             _userRepo,
+            _meetingSessionRepo,
             _projectService.Object,
             _notificationService.Object,
             _auditLogService.Object,

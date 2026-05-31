@@ -1,0 +1,41 @@
+sequenceDiagram
+  autonumber
+  actor BA as PM/BA
+  participant UI as Import Wizard
+  participant API as ImportController
+  participant ImportSvc as ImportService
+  participant Storage as Object Storage
+  participant Parser as Document Parser
+  participant AI as AI Extraction Provider
+  participant DB as SQL Server
+  participant TaskSvc as TaskService
+  participant Audit as AuditLog
+
+  BA->>UI: Upload PDF/DOCX đặc tả/biên bản
+  UI->>API: POST /api/v1/import/documents
+  API->>ImportSvc: CreateImportJob(projectId, file)
+  ImportSvc->>Storage: Store original file
+  ImportSvc->>DB: Insert import_jobs(status=Queued)
+  ImportSvc->>Audit: IMPORT_JOB_CREATED
+  API-->>UI: 202 jobId
+
+  ImportSvc->>Parser: Extract text/tables
+  Parser-->>ImportSvc: normalized document text
+  ImportSvc->>AI: Extract draft tasks, milestones, risks
+  AI-->>ImportSvc: draft_task candidates + confidence
+  ImportSvc->>DB: Insert import_draft_tasks(status=NeedsReview)
+  ImportSvc->>Audit: IMPORT_DRAFT_TASKS_EXTRACTED
+
+  BA->>UI: Review/approve draft tasks
+  UI->>API: PATCH /api/v1/import/jobs/{jobId}/draft-tasks/{draftId}/approve
+  API->>ImportSvc: ApproveDraftTask(draftId)
+  ImportSvc->>DB: Mark approved
+
+  BA->>UI: Execute import
+  UI->>API: POST /api/v1/import/jobs/{jobId}/execute
+  API->>ImportSvc: Execute(jobId)
+  ImportSvc->>TaskSvc: CreateTask for each approved draft
+  TaskSvc->>DB: Insert tasks/assignments/dependencies
+  ImportSvc->>DB: Mark job Completed
+  ImportSvc->>Audit: IMPORT_JOB_EXECUTED
+  API-->>UI: ImportResultDto with created task links

@@ -1,0 +1,21 @@
+{
+  "version": "3.1",
+  "created_at": "2026-05-19T14:45:00+07:00",
+  "strategy": "Meetily-first + AI API primary + Ollama fallback + Qdrant optional P1",
+  "new_files_added": 25,
+  "key_changes": [
+    "Added cost estimation and budget scenarios",
+    "Added compliance/law checklist",
+    "Added setup guide for RTX4060/16GB and VPS 8GB",
+    "Added AI data schema migration",
+    "Added affected diagrams and mermaid files",
+    "Added risk register and change impact matrix",
+    "Moved Qdrant to optional P1 and removed Ollama 14B as hard requirement"
+  ],
+  "p0_scope_locked": true,
+  "qdrant_required_for_mvp": false,
+  "ollama_14b_required_for_mvp": false,
+  "vps_8gb_runs_llm": false,
+  "ai_api_primary": true,
+  "meetily_primary_for_meeting": true
+}

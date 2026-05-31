@@ -24,6 +24,8 @@ public class GroupAiService : IGroupAiService
     private readonly IGroupsService _groupsService;
     private readonly IRepository<GroupMessage> _messageRepo;
     private readonly IRepository<GroupMeetingSession> _meetingSessionRepo;
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly IAuditLogService _auditLogService;
     private readonly ILogger<GroupAiService> _logger;
 
     public GroupAiService(
@@ -31,12 +33,16 @@ public class GroupAiService : IGroupAiService
         IGroupsService groupsService,
         IRepository<GroupMessage> messageRepo,
         IRepository<GroupMeetingSession> meetingSessionRepo,
+        IUnitOfWork unitOfWork,
+        IAuditLogService auditLogService,
         ILogger<GroupAiService> logger)
     {
         _chatClient = chatClient;
         _groupsService = groupsService;
         _messageRepo = messageRepo;
         _meetingSessionRepo = meetingSessionRepo;
+        _unitOfWork = unitOfWork;
+        _auditLogService = auditLogService;
         _logger = logger;
     }
 
@@ -74,6 +80,8 @@ public class GroupAiService : IGroupAiService
             {
                 warnings.Add("AI did not return any valid action items.");
             }
+
+            await _auditLogService.LogAsync("AI_ACTION_ITEMS_EXTRACTED", "WorkGroup", groupId.ToString(), new { MessageLimit = request.MessageLimit }, ct);
 
             return Result.Success(new GroupAiActionItemsResponseDto(groupId, source, items, warnings));
         }
@@ -297,6 +305,326 @@ Source:
 
     private static decimal ClampConfidence(decimal value)
         => Math.Clamp(value, 0m, 1m);
+
+    public async Task<Result<GroupMeetingSessionDto>> LinkMeetingSummaryAndTranscriptAsync(
+        Guid groupId,
+        Guid meetingId,
+        string? summary,
+        string? transcriptSourceId,
+        CancellationToken ct = default)
+    {
+        if (!await _groupsService.CanAccessGroupAsync(groupId, ct))
+        {
+            return Result.Forbidden<GroupMeetingSessionDto>();
+        }
+
+        var meeting = await _meetingSessionRepo.GetQueryable()
+            .FirstOrDefaultAsync(item => item.Id == meetingId && item.WorkGroupId == groupId, ct);
+
+        if (meeting == null)
+        {
+            return Result.NotFound<GroupMeetingSessionDto>("Group meeting session was not found.");
+        }
+
+        meeting.Summary = summary;
+        meeting.TranscriptSourceId = transcriptSourceId;
+
+        await _meetingSessionRepo.UpdateAsync(meeting, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        var dto = new GroupMeetingSessionDto(
+            meeting.Id,
+            meeting.WorkGroupId,
+            meeting.StartedByUserId,
+            meeting.Provider,
+            meeting.RoomId,
+            meeting.JoinUrl,
+            meeting.Status,
+            meeting.StartedAt,
+            meeting.EndedAt,
+            meeting.TranscriptSourceId,
+            meeting.Summary);
+
+        await _auditLogService.LogAsync("MEETING_SUMMARY_LINKED", "GroupMeetingSession", meetingId.ToString(), new { SummaryLength = summary?.Length, TranscriptSourceId = transcriptSourceId }, ct);
+
+        return Result.Success(dto);
+    }
+
+    public async Task<Result<string>> BuildGroupChatContextAsync(
+        Guid groupId,
+        int? limit = null,
+        CancellationToken ct = default)
+    {
+        if (!await _groupsService.CanAccessGroupAsync(groupId, ct))
+        {
+            return Result.Forbidden<string>();
+        }
+
+        var msgLimit = Math.Clamp(limit ?? DefaultMessageLimit, 1, MaxMessageLimit);
+        var messages = await _messageRepo.GetQueryable()
+            .AsNoTracking()
+            .Include(m => m.User)
+            .Where(m => m.WorkGroupId == groupId)
+            .OrderByDescending(m => m.CreatedAt)
+            .Take(msgLimit)
+            .OrderBy(m => m.CreatedAt)
+            .ToListAsync(ct);
+
+        if (messages.Count == 0)
+        {
+            return Result.Success(string.Empty);
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine("Chat messages:");
+        foreach (var message in messages)
+        {
+            sb.Append('[')
+              .Append(message.CreatedAt.UtcDateTime.ToString("u", CultureInfo.InvariantCulture))
+              .Append("] ")
+              .Append(message.User.FullName)
+              .Append(": ")
+              .AppendLine(message.Content);
+        }
+
+        return Result.Success(sb.ToString().Trim());
+    }
+
+    public async Task<Result<GroupAiSummaryResponseDto>> SummarizeGroupDiscussionAsync(
+        Guid groupId,
+        GroupAiSummaryRequest request,
+        CancellationToken ct = default)
+    {
+        var contextResult = await BuildGroupChatContextAsync(groupId, request.MessageLimit, ct);
+        if (!contextResult.IsSuccess)
+        {
+            return Result.Failure<GroupAiSummaryResponseDto>(contextResult.Error!, contextResult.StatusCode);
+        }
+
+        var contextText = contextResult.Data ?? string.Empty;
+        var warnings = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(contextText))
+        {
+            return Result.Success(new GroupAiSummaryResponseDto(
+                groupId,
+                "No group chat discussion is available to summarize.",
+                Array.Empty<string>(),
+                Array.Empty<string>(),
+                ["No chat messages were found for this group."]));
+        }
+
+        try
+        {
+            var response = await _chatClient.CompleteAsync(
+                BuildSummaryPrompt(contextText),
+                cancellationToken: ct);
+            var text = response.Message.Text ?? string.Empty;
+            var json = ExtractJson(text);
+
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return Result.Success(new GroupAiSummaryResponseDto(
+                    groupId,
+                    "AI summary generation did not return a valid response.",
+                    Array.Empty<string>(),
+                    Array.Empty<string>(),
+                    ["AI failed to output valid JSON summary."]));
+            }
+
+            using var document = JsonDocument.Parse(json);
+            var summary = ReadString(document.RootElement, "summary") ?? "No summary generated.";
+            var decisions = ReadStringArray(document.RootElement, "keyDecisions");
+            var questions = ReadStringArray(document.RootElement, "unresolvedQuestions");
+
+            await _auditLogService.LogAsync("AI_DISCUSSION_SUMMARIZED", "WorkGroup", groupId.ToString(), new { MessageLimit = request.MessageLimit }, ct);
+
+            return Result.Success(new GroupAiSummaryResponseDto(
+                groupId,
+                summary,
+                decisions,
+                questions,
+                warnings));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to summarize group discussion for group {GroupId}", groupId);
+            return Result.Success(new GroupAiSummaryResponseDto(
+                groupId,
+                "Failed to summarize the discussion due to an internal AI error.",
+                Array.Empty<string>(),
+                Array.Empty<string>(),
+                ["AI summary call failed. please try again."]));
+        }
+    }
+
+    public async Task<Result<GroupAiDraftProjectResponseDto>> GenerateDraftProjectPayloadAsync(
+        Guid groupId,
+        GroupAiDraftProjectRequest request,
+        CancellationToken ct = default)
+    {
+        var contextResult = await BuildGroupChatContextAsync(groupId, request.MessageLimit, ct);
+        if (!contextResult.IsSuccess)
+        {
+            return Result.Failure<GroupAiDraftProjectResponseDto>(contextResult.Error!, contextResult.StatusCode);
+        }
+
+        var contextText = contextResult.Data ?? string.Empty;
+        var warnings = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(contextText))
+        {
+            return Result.Success(new GroupAiDraftProjectResponseDto(
+                groupId,
+                "Draft Project",
+                "No discussion available to draft a project from.",
+                Array.Empty<GroupAiDraftTaskDto>(),
+                ["No chat messages were found for this group."]));
+        }
+
+        try
+        {
+            var response = await _chatClient.CompleteAsync(
+                BuildDraftProjectPrompt(contextText, request.ExtraInstructions),
+                cancellationToken: ct);
+            var text = response.Message.Text ?? string.Empty;
+            var json = ExtractJson(text);
+
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return Result.Success(new GroupAiDraftProjectResponseDto(
+                    groupId,
+                    "Draft Project",
+                    "No discussion available to draft a project from.",
+                    Array.Empty<GroupAiDraftTaskDto>(),
+                    ["AI failed to output valid JSON draft project payload."]));
+            }
+
+            using var document = JsonDocument.Parse(json);
+            var projectName = ReadString(document.RootElement, "draftProjectName") ?? "Draft Project";
+            var projectDesc = ReadString(document.RootElement, "draftProjectDescription") ?? "Draft project generated from discussion.";
+            
+            var tasks = new List<GroupAiDraftTaskDto>();
+            if (document.RootElement.TryGetProperty("draftTasks", out var tasksElement) && tasksElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in tasksElement.EnumerateArray())
+                {
+                    var title = ReadString(item, "title");
+                    if (string.IsNullOrWhiteSpace(title)) continue;
+
+                    var description = ReadString(item, "description");
+                    var priority = ReadString(item, "priority") ?? "P1";
+                    int? estimateDays = null;
+                    if (item.TryGetProperty("estimateDays", out var estProp) && estProp.ValueKind == JsonValueKind.Number)
+                    {
+                        estimateDays = estProp.GetInt32();
+                    }
+                    var owner = ReadString(item, "suggestedOwnerName");
+
+                    tasks.Add(new GroupAiDraftTaskDto(title.Trim(), description, priority, estimateDays, owner));
+                }
+            }
+
+            await _auditLogService.LogAsync("AI_DRAFT_PROJECT_GENERATED", "WorkGroup", groupId.ToString(), new { MessageLimit = request.MessageLimit }, ct);
+
+            return Result.Success(new GroupAiDraftProjectResponseDto(
+                groupId,
+                projectName,
+                projectDesc,
+                tasks,
+                warnings));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to generate draft project payload for group {GroupId}", groupId);
+            return Result.Success(new GroupAiDraftProjectResponseDto(
+                groupId,
+                "Draft Project",
+                "Draft generation failed.",
+                Array.Empty<GroupAiDraftTaskDto>(),
+                ["AI draft generation failed due to an error."]));
+        }
+    }
+
+    private static string BuildSummaryPrompt(string context)
+        => $$"""
+You are an AI assistant analyzing a project team's group chat discussion.
+Create a comprehensive summary, extract key decisions made, and list unresolved questions.
+
+Return only valid JSON with this shape:
+{
+  "summary": "a cohesive high-level summary of the group's discussion",
+  "keyDecisions": [
+    "decision 1",
+    "decision 2"
+  ],
+  "unresolvedQuestions": [
+    "question 1",
+    "question 2"
+  ]
+}
+
+Rules:
+- Keep the summary clear, professional, and factual.
+- If there are no key decisions, return an empty array for keyDecisions.
+- If there are no unresolved questions, return an empty array for unresolvedQuestions.
+
+Source discussion context:
+{{context}}
+""";
+
+    private static string BuildDraftProjectPrompt(string context, string? extraInstructions)
+        => $$"""
+You are an AI assistant analyzing a project team's group chat discussion to build a draft project plan.
+Based on their discussion, extract:
+1. A draft project name.
+2. A draft project description.
+3. A list of draft tasks needed to execute this project, including estimate days and suggested owner if mentioned in the context.
+
+Return only valid JSON with this shape:
+{
+  "draftProjectName": "a descriptive, short project name",
+  "draftProjectDescription": "a professional high-level summary of the project scope",
+  "draftTasks": [
+    {
+      "title": "short actionable task title (max 120 chars)",
+      "description": "optional task details or deliverables",
+      "priority": "P0 or P1 or P2 (default to P0 if high priority/critical, else P1/P2)",
+      "estimateDays": 2, // estimated effort in days (integer)
+      "suggestedOwnerName": "owner name if discussed, else null"
+    }
+  ]
+}
+
+Rules:
+- Do not create or persist anything.
+- Assign priorities (P0, P1, P2) carefully based on the discussion urgency.
+- If extra instructions are provided below, strictly follow them.
+
+{{(string.IsNullOrWhiteSpace(extraInstructions) ? "" : $"Extra instructions:\n{extraInstructions}\n")}}
+
+Source discussion context:
+{{context}}
+""";
+
+    private static IReadOnlyList<string> ReadStringArray(JsonElement element, string propertyName)
+    {
+        if (element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.Array)
+        {
+            var list = new List<string>();
+            foreach (var item in property.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String)
+                {
+                    var s = item.GetString();
+                    if (!string.IsNullOrWhiteSpace(s))
+                        list.Add(s.Trim());
+                }
+            }
+            return list;
+        }
+        return Array.Empty<string>();
+    }
 
     private sealed record GroupAiContext(string Text, IReadOnlyList<string> Warnings);
 }

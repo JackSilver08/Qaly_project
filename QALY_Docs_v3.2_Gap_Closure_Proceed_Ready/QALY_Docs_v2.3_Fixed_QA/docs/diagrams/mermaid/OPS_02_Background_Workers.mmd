@@ -1,0 +1,34 @@
+flowchart LR
+  %% Background workers and scheduled jobs
+  SQL[(SQL Server)]
+  Redis[(Redis Queue/Lock)]
+  Email[Email Provider]
+  Qdrant[(Qdrant)]
+  Storage[(Object Storage)]
+
+  Deadline[Deadline Worker<br/>flag overdue tasks]
+  Digest[Digest Worker<br/>daily/weekly notifications]
+  Import[Import Worker<br/>parse files + AI extraction]
+  Vector[Vector Sync Worker<br/>embed knowledge chunks]
+  Cleanup[Cleanup Worker<br/>soft-delete retention, temp files]
+
+  SQL --> Deadline
+  Deadline --> SQL
+  Deadline --> Redis
+  Deadline --> Email
+
+  SQL --> Digest
+  Digest --> Email
+
+  Storage --> Import
+  Import --> SQL
+  Import --> Redis
+
+  SQL --> Vector
+  Storage --> Vector
+  Vector --> Qdrant
+  Vector --> SQL
+
+  SQL --> Cleanup
+  Storage --> Cleanup
+  Cleanup --> SQL

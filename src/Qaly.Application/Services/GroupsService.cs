@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Groups;
+using Qaly.Application.DTOs.Ai;
 using Qaly.Application.DTOs.Project;
 using Qaly.Application.Services.Groups;
 using Qaly.Domain.Entities;
@@ -25,6 +26,7 @@ public partial class GroupsService : IGroupsService
     private readonly IRepository<Organization> _organizationRepo;
     private readonly IRepository<OrganizationMember> _organizationMemberRepo;
     private readonly IRepository<User> _userRepo;
+    private readonly IRepository<GroupMeetingSession> _meetingSessionRepo;
     private readonly IProjectService _projectService;
     private readonly INotificationService _notificationService;
     private readonly IAuditLogService _auditLogService;
@@ -46,6 +48,7 @@ public partial class GroupsService : IGroupsService
         IRepository<Organization> organizationRepo,
         IRepository<OrganizationMember> organizationMemberRepo,
         IRepository<User> userRepo,
+        IRepository<GroupMeetingSession> meetingSessionRepo,
         IProjectService projectService,
         INotificationService notificationService,
         IAuditLogService auditLogService,
@@ -66,6 +69,7 @@ public partial class GroupsService : IGroupsService
         _organizationRepo = organizationRepo;
         _organizationMemberRepo = organizationMemberRepo;
         _userRepo = userRepo;
+        _meetingSessionRepo = meetingSessionRepo;
         _projectService = projectService;
         _notificationService = notificationService;
         _auditLogService = auditLogService;
@@ -1625,4 +1629,118 @@ public partial class GroupsService : IGroupsService
 
     private static string? NormalizeOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    public async Task<Result<GroupMeetingSessionDto>> StartMeetingSessionAsync(Guid groupId, CancellationToken ct = default)
+    {
+        if (!await CanAccessGroupAsync(groupId, ct))
+        {
+            return Result.Forbidden<GroupMeetingSessionDto>();
+        }
+
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<GroupMeetingSessionDto>();
+        }
+
+        var roomId = Guid.NewGuid().ToString("N");
+        var joinUrl = $"https://meet.jit.si/{roomId}";
+
+        var meeting = new GroupMeetingSession
+        {
+            WorkGroupId = groupId,
+            StartedByUserId = currentUserId.Value,
+            Provider = "Jitsi",
+            RoomId = roomId,
+            JoinUrl = joinUrl,
+            Status = "Active",
+            StartedAt = DateTimeOffset.UtcNow
+        };
+
+        await _meetingSessionRepo.AddAsync(meeting, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        var dto = new GroupMeetingSessionDto(
+            meeting.Id,
+            meeting.WorkGroupId,
+            meeting.StartedByUserId,
+            meeting.Provider,
+            meeting.RoomId,
+            meeting.JoinUrl,
+            meeting.Status,
+            meeting.StartedAt,
+            meeting.EndedAt,
+            meeting.TranscriptSourceId,
+            meeting.Summary);
+
+        return Result.Success(dto);
+    }
+
+    public async Task<Result<GroupMeetingSessionDto>> JoinMeetingSessionAsync(Guid groupId, Guid meetingId, CancellationToken ct = default)
+    {
+        if (!await CanAccessGroupAsync(groupId, ct))
+        {
+            return Result.Forbidden<GroupMeetingSessionDto>();
+        }
+
+        var meeting = await _meetingSessionRepo.GetQueryable()
+            .FirstOrDefaultAsync(item => item.Id == meetingId && item.WorkGroupId == groupId, ct);
+
+        if (meeting == null)
+        {
+            return Result.NotFound<GroupMeetingSessionDto>("Meeting session was not found.");
+        }
+
+        var dto = new GroupMeetingSessionDto(
+            meeting.Id,
+            meeting.WorkGroupId,
+            meeting.StartedByUserId,
+            meeting.Provider,
+            meeting.RoomId,
+            meeting.JoinUrl,
+            meeting.Status,
+            meeting.StartedAt,
+            meeting.EndedAt,
+            meeting.TranscriptSourceId,
+            meeting.Summary);
+
+        return Result.Success(dto);
+    }
+
+    public async Task<Result<GroupMeetingSessionDto>> EndMeetingSessionAsync(Guid groupId, Guid meetingId, CancellationToken ct = default)
+    {
+        if (!await CanAccessGroupAsync(groupId, ct))
+        {
+            return Result.Forbidden<GroupMeetingSessionDto>();
+        }
+
+        var meeting = await _meetingSessionRepo.GetQueryable()
+            .FirstOrDefaultAsync(item => item.Id == meetingId && item.WorkGroupId == groupId, ct);
+
+        if (meeting == null)
+        {
+            return Result.NotFound<GroupMeetingSessionDto>("Meeting session was not found.");
+        }
+
+        meeting.Status = "Ended";
+        meeting.EndedAt = DateTimeOffset.UtcNow;
+
+        await _meetingSessionRepo.UpdateAsync(meeting, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        var dto = new GroupMeetingSessionDto(
+            meeting.Id,
+            meeting.WorkGroupId,
+            meeting.StartedByUserId,
+            meeting.Provider,
+            meeting.RoomId,
+            meeting.JoinUrl,
+            meeting.Status,
+            meeting.StartedAt,
+            meeting.EndedAt,
+            meeting.TranscriptSourceId,
+            meeting.Summary);
+
+        return Result.Success(dto);
+    }
 }

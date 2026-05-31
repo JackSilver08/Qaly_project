@@ -1,5 +1,6 @@
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Groups;
+using Qaly.Application.DTOs.Ai;
 
 namespace Qaly.Application.Services;
 
@@ -24,6 +25,9 @@ public interface IGroupsService
     Task<Result<PagedResult<GroupMessageDto>>> GetMessagesAsync(Guid groupId, int page = 1, int pageSize = 50, CancellationToken ct = default);
     Task<Result<GroupMessageDto>> CreateMessageAsync(Guid groupId, SendGroupMessageRequest request, CancellationToken ct = default);
     Task<Result<CreateProjectFromGroupResult>> CreateProjectFromGroupAsync(Guid groupId, CreateProjectFromGroupRequest request, CancellationToken ct = default);
+    Task<Result<GroupMeetingSessionDto>> StartMeetingSessionAsync(Guid groupId, CancellationToken ct = default);
+    Task<Result<GroupMeetingSessionDto>> JoinMeetingSessionAsync(Guid groupId, Guid meetingId, CancellationToken ct = default);
+    Task<Result<GroupMeetingSessionDto>> EndMeetingSessionAsync(Guid groupId, Guid meetingId, CancellationToken ct = default);
     Task<bool> CanAccessGroupAsync(Guid groupId, CancellationToken ct = default);
     Task<bool> CanManageGroupAsync(Guid groupId, CancellationToken ct = default);
 }

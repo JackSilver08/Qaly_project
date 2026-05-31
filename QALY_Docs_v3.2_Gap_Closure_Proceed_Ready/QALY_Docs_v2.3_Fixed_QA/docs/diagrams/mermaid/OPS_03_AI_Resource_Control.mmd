@@ -1,0 +1,17 @@
+flowchart TD
+  A[AI request received] --> B{Cache hit?}
+  B -- yes --> C[Return cached result]
+  B -- no --> D{Quota ok?}
+  D -- no --> E[Use mock/cached fallback or quota message]
+  D -- yes --> F{Request type?}
+  F -- meeting_extract/report/task_recommend --> G[AI API primary]
+  F -- short_rewrite/summary_dev --> H[Ollama local if enabled]
+  G --> I{Success within timeout?}
+  H --> I
+  I -- yes --> J[Validate JSON schema]
+  I -- no --> K[Fallback mock/local/API alternate]
+  K --> J
+  J --> L{Valid and safe?}
+  L -- no --> M[Return needs review / parse error]
+  L -- yes --> N[Save draft + audit provider_used]
+  N --> O[User review/confirm]
