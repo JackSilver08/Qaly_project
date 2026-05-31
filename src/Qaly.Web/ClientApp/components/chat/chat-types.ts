@@ -14,6 +14,7 @@ export interface TeamChatPoll {
 export interface TeamChatAttachment {
     name: string;
     sizeLabel: string;
+    kind?: "file" | "image";
 }
 
 export interface TeamChatMeeting {

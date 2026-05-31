@@ -1,17 +1,39 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { CalendarDays, Pin } from "lucide-vue-next";
 import type { TeamChatMessage } from "./chat-types";
 import PollCard from "./PollCard.vue";
 
-defineProps<{
+const props = defineProps<{
   message: TeamChatMessage;
   currentUserId: string;
+  isConsecutive?: boolean;
 }>();
 
 defineEmits<{
   pin: [messageId: string];
   joinMeeting: [meetingId: string];
 }>();
+
+const renderedText = computed(() => renderLightMarkdown(props.message.text));
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function renderLightMarkdown(value: string) {
+  return escapeHtml(value)
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/_([^_]+)_/g, "<em>$1</em>")
+    .replace(/\n/g, "<br>");
+}
 </script>
 
 <template>
@@ -41,11 +63,16 @@ defineEmits<{
   <article
     v-else
     class="team-message"
-    :class="{ 'is-mine': message.senderId === currentUserId }"
+    :class="{ 
+      'is-mine': message.senderId === currentUserId,
+      'is-consecutive': isConsecutive
+    }"
   >
-    <div class="team-message__avatar">{{ message.senderInitials }}</div>
+    <div class="team-message__avatar-container">
+      <div v-if="!isConsecutive" class="team-message__avatar">{{ message.senderInitials }}</div>
+    </div>
     <div class="team-message__bubble">
-      <div class="team-message__meta">
+      <div v-if="!isConsecutive" class="team-message__meta">
         <strong>{{ message.senderName }}</strong>
         <span>{{ message.createdAt }}</span>
         <button
@@ -56,12 +83,19 @@ defineEmits<{
           <Pin :size="13" />
         </button>
       </div>
-      <p v-if="message.text">{{ message.text }}</p>
+      <p v-if="message.text" class="team-message__text" v-html="renderedText"></p>
 
       <div v-if="message.attachments.length" class="team-message__attachments">
-        <span v-for="file in message.attachments" :key="file.name"
-          >{{ file.name }} · {{ file.sizeLabel }}</span
-        >
+        <div v-for="file in message.attachments" :key="file.name" class="message-attachment-card">
+          <div class="message-attachment-icon">
+            <svg v-if="file.kind === 'image'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+            <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </div>
+          <div class="message-attachment-info">
+            <strong>{{ file.name }}</strong>
+            <span>{{ file.sizeLabel }}</span>
+          </div>
+        </div>
       </div>
 
       <div v-if="message.poll" class="team-message__poll">
@@ -139,5 +173,205 @@ defineEmits<{
   color: #fff;
   font-weight: 800;
   cursor: pointer;
+}
+
+.team-message__text {
+  white-space: normal;
+}
+
+.team-message__text :deep(a) {
+  color: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.team-message__text :deep(code) {
+  border-radius: 6px;
+  padding: 2px 5px;
+  background: rgba(15, 23, 42, 0.08);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.92em;
+}
+
+.team-message {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  max-width: min(75%, 720px);
+  margin-bottom: 4px;
+  width: max-content;
+}
+
+.team-message.is-mine {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.team-message.is-consecutive {
+  margin-top: -2px;
+}
+
+.team-message__avatar-container {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+}
+
+.team-message.is-mine .team-message__avatar-container {
+  display: none;
+}
+
+.team-message__avatar {
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+  background: #e2e8f0;
+  color: #475569;
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.team-message__bubble {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  border-radius: 18px 18px 18px 4px;
+  background: #f1f5f9;
+  color: #1e293b;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  min-width: 0;
+}
+
+.team-message.is-consecutive .team-message__bubble {
+  border-radius: 4px 18px 18px 4px;
+}
+
+.team-message.is-mine .team-message__bubble {
+  border-radius: 18px 18px 4px 18px;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.team-message.is-mine.is-consecutive .team-message__bubble {
+  border-radius: 18px 4px 4px 18px;
+}
+
+.team-message__meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.team-message.is-mine .team-message__meta {
+  flex-direction: row-reverse;
+}
+
+.team-message__meta strong {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #0f172a;
+}
+
+.team-message.is-mine .team-message__meta strong {
+  display: none;
+}
+
+.team-message__meta span {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.team-message.is-mine .team-message__meta span {
+  color: #94a3b8;
+}
+
+.team-message__meta button {
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: 0;
+  transition: opacity 0.2s;
+  cursor: pointer;
+  padding: 2px;
+}
+
+.team-message:hover .team-message__meta button {
+  opacity: 0.7;
+}
+
+.team-message__meta button:hover {
+  opacity: 1;
+}
+
+.team-message__text {
+  word-break: break-word;
+  margin: 0;
+}
+
+.message-attachment-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 10px;
+  margin-top: 6px;
+  transition: background 0.2s;
+  cursor: pointer;
+}
+
+.team-message.is-mine .message-attachment-card {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.message-attachment-card:hover {
+  background: rgba(255, 255, 255, 1);
+}
+
+.team-message.is-mine .message-attachment-card:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.message-attachment-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #e2e8f0;
+  display: grid;
+  place-items: center;
+  color: #475569;
+}
+
+.team-message.is-mine .message-attachment-icon {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.message-attachment-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.message-attachment-info strong {
+  font-size: 0.85rem;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.message-attachment-info span {
+  font-size: 0.75rem;
+  opacity: 0.8;
 }
 </style>

@@ -1,8 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
-import { FileUp, Palette, Pin, Send, SmilePlus, Vote } from "lucide-vue-next";
+import {
+  Bold,
+  Code2,
+  Image as ImageIcon,
+  Italic,
+  Link2,
+  Palette,
+  Paperclip,
+  Pin,
+  Send,
+  SmilePlus,
+} from "lucide-vue-next";
 import MessageItem from "./MessageItem.vue";
-import { apiResult } from "../../utils/api-client";
 import type {
   ChatGroupModel,
   TeamChatAttachment,
@@ -32,11 +42,9 @@ const emit = defineEmits<{
 
 const draft = ref("");
 const showEmoji = ref(false);
-const showPoll = ref(false);
-const pollQuestion = ref("");
-const pollOptions = ref(["", ""]);
 const pendingAttachments = ref<TeamChatAttachment[]>([]);
 const bodyRef = ref<HTMLElement | null>(null);
+const textareaRef = ref<HTMLTextAreaElement | null>(null);
 
 const pinnedMessages = computed(() =>
   props.messages.filter((message) => message.pinned),
@@ -55,7 +63,7 @@ watch(
   },
 );
 
-function attachFiles(event: Event) {
+function attachFiles(event: Event, kind: "file" | "image") {
   const input = event.target as HTMLInputElement;
   const files = Array.from(input.files ?? []);
 
@@ -65,6 +73,7 @@ function attachFiles(event: Event) {
       file.size < 1024
         ? `${file.size} B`
         : `${Math.round(file.size / 1024)} KB`,
+    kind,
   }));
   input.value = "";
 }
@@ -72,6 +81,23 @@ function attachFiles(event: Event) {
 function addEmoji(emoji: string) {
   draft.value += emoji;
   showEmoji.value = false;
+  void nextTick(() => textareaRef.value?.focus());
+}
+
+function insertMarkdown(prefix: string, suffix = prefix, placeholder = "nội dung") {
+  const textarea = textareaRef.value;
+  const start = textarea?.selectionStart ?? draft.value.length;
+  const end = textarea?.selectionEnd ?? draft.value.length;
+  const selected = draft.value.slice(start, end) || placeholder;
+  const nextValue = `${draft.value.slice(0, start)}${prefix}${selected}${suffix}${draft.value.slice(end)}`;
+
+  draft.value = nextValue;
+
+  void nextTick(() => {
+    const cursor = start + prefix.length + selected.length + suffix.length;
+    textareaRef.value?.focus();
+    textareaRef.value?.setSelectionRange(cursor, cursor);
+  });
 }
 
 function initials(name: string) {
@@ -85,51 +111,15 @@ function initials(name: string) {
 
 async function sendMessage() {
   const text = draft.value.trim();
-  const options = pollOptions.value
-    .map((option) => option.trim())
-    .filter(Boolean);
-  const poll =
-    showPoll.value && pollQuestion.value.trim() && options.length >= 2
-      ? { question: pollQuestion.value.trim(), options }
-      : undefined;
-
-  if (!text && pendingAttachments.value.length === 0 && !poll) return;
-
-  // If composing a poll, create a poll entity first so messages can reference pollId
-  let pollWithId = poll;
-  if (poll && typeof (window as any) !== "undefined") {
-    try {
-      const created = await apiResult<any>(
-        `/api/groups/${props.group?.id ?? ""}/polls`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            question: poll.question,
-            options: poll.options.map((o: string) => ({ content: o })),
-            allowMultiple: false,
-          }),
-        },
-      );
-      if (created && (created.id || created.Id)) {
-        pollWithId = { ...poll, id: created.id ?? created.Id };
-      }
-    } catch (e) {
-      // if poll creation fails, still send plain message
-      console.warn("Không thể tạo bình chọn trước khi gửi tin nhắn", e);
-    }
-  }
+  if (!text && pendingAttachments.value.length === 0) return;
 
   emit("send", {
     text,
     attachments: pendingAttachments.value,
-    poll: pollWithId,
   });
 
   draft.value = "";
   pendingAttachments.value = [];
-  pollQuestion.value = "";
-  pollOptions.value = ["", ""];
-  showPoll.value = false;
 }
 </script>
 
@@ -179,65 +169,52 @@ async function sendMessage() {
       </div>
 
       <MessageItem
-        v-for="message in messages"
+        v-for="(message, index) in messages"
         :key="message.id"
         :message="message"
         :current-user-id="currentUserId"
+        :is-consecutive="index > 0 && messages[index - 1].senderId === message.senderId"
         @pin="$emit('pin', $event)"
         @join-meeting="$emit('joinMeeting', $event)"
       />
     </div>
 
-    <div v-if="showPoll" class="team-poll-composer">
-      <input
-        v-model="pollQuestion"
-        type="text"
-        placeholder="Câu hỏi bình chọn"
-      />
-      <input
-        v-for="(_, index) in pollOptions"
-        :key="index"
-        v-model="pollOptions[index]"
-        type="text"
-        :placeholder="`Lựa chọn ${index + 1}`"
-      />
-      <button class="text-button" type="button" @click="pollOptions.push('')">
-        Thêm lựa chọn
-      </button>
-    </div>
+    <div class="team-chat-composer-wrapper">
+      <div v-if="pendingAttachments.length" class="team-attachment-preview">
+        <div v-for="(file, index) in pendingAttachments" :key="index" class="attachment-chip">
+          <ImageIcon v-if="file.kind === 'image'" :size="14" />
+          <Paperclip v-else :size="14" />
+          <span class="attachment-name">{{ file.name }}</span>
+        </div>
+      </div>
 
-    <div v-if="pendingAttachments.length" class="team-attachment-preview">
-      <span v-for="file in pendingAttachments" :key="file.name">{{
-        file.name
-      }}</span>
+      <form class="team-chat-composer" @submit.prevent="sendMessage">
+        <button
+          class="icon-button composer-tool-btn"
+          type="button"
+          aria-label="Biểu cảm"
+          @click="showEmoji = !showEmoji"
+        >
+          <SmilePlus :size="18" />
+        </button>
+        <label class="icon-button composer-tool-btn" aria-label="Đính kèm">
+          <Paperclip :size="18" />
+          <input type="file" multiple @change="attachFiles($event, 'file')" />
+        </label>
+        
+        <textarea
+          ref="textareaRef"
+          v-model="draft"
+          rows="1"
+          placeholder="Nhập tin nhắn..."
+          @keydown.enter.exact.prevent="sendMessage"
+        ></textarea>
+        
+        <button class="primary-button composer-send-btn" type="submit" aria-label="Gửi tin nhắn">
+          <Send :size="16" />
+        </button>
+      </form>
     </div>
-
-    <form class="team-chat-composer" @submit.prevent="sendMessage">
-      <label class="icon-button icon-button--small" aria-label="Gửi tệp">
-        <FileUp :size="16" />
-        <input type="file" multiple @change="attachFiles" />
-      </label>
-      <button
-        class="icon-button icon-button--small"
-        type="button"
-        aria-label="Biểu cảm"
-        @click="showEmoji = !showEmoji"
-      >
-        <SmilePlus :size="16" />
-      </button>
-      <button
-        class="icon-button icon-button--small"
-        type="button"
-        aria-label="Tạo bình chọn"
-        @click="showPoll = !showPoll"
-      >
-        <Vote :size="16" />
-      </button>
-      <input v-model="draft" type="text" placeholder="Nhập tin nhắn..." />
-      <button class="primary-button primary-button--compact" type="submit">
-        <Send :size="15" />
-      </button>
-    </form>
 
     <div v-if="showEmoji" class="team-emoji-picker glass-card">
       <button
@@ -286,5 +263,104 @@ async function sendMessage() {
 .team-chat-window--dark .team-chat-window__header span,
 .team-chat-window--dark .team-chat-window__header h2 {
   color: #f8fafc;
+}
+
+.team-chat-composer-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.team-attachment-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #f1f5f9;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+}
+
+.team-chat-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 24px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.team-chat-composer:focus-within {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 3px rgba(147, 197, 253, 0.2);
+}
+
+.composer-tool-btn {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #64748b;
+  background: transparent;
+  transition: background 0.2s, color 0.2s;
+  cursor: pointer;
+  margin-bottom: 2px;
+}
+
+.composer-tool-btn:hover {
+  background: #f1f5f9;
+  color: #1d4ed8;
+}
+
+.composer-tool-btn input[type="file"] {
+  display: none;
+}
+
+.team-chat-composer textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  max-height: 120px;
+  border: none;
+  background: transparent;
+  padding: 10px 0;
+  font-size: 0.95rem;
+  resize: none;
+  color: #1e293b;
+  line-height: 1.4;
+}
+
+.team-chat-composer textarea:focus {
+  outline: none;
+}
+
+.composer-send-btn {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #ffffff;
+  display: grid;
+  place-items: center;
+  transition: background 0.2s;
+  margin-bottom: 0;
+}
+
+.composer-send-btn:hover {
+  background: #1d4ed8;
 }
 </style>

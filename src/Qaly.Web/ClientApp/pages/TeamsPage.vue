@@ -538,16 +538,25 @@ function toGroupModel(group: GroupDto): ChatGroupModel {
 
 function toMessageModel(message: GroupMessageDto): TeamChatMessage {
   const meeting = parseMeeting(message);
+  const attachments = parseAttachments(message);
+  
+  let cleanText = message.content;
+  if (message.messageType === "Poll" || meeting) {
+    cleanText = "";
+  } else if (attachments.length > 0) {
+    cleanText = cleanText.replace(/\[attachments\][^\n]*/i, "").trim();
+  }
+
   return {
     id: message.id,
     groupId: message.workGroupId,
     senderId: message.userId,
     senderName: message.senderName,
     senderInitials: initials(message.senderName),
-    text: message.messageType === "Poll" || meeting ? "" : message.content,
+    text: cleanText,
     createdAt: formatMessageTime(message.createdAt),
     pinned: false,
-    attachments: [],
+    attachments,
     poll: parsePoll(message),
     meeting,
   };
@@ -609,6 +618,22 @@ function parseMeeting(message: GroupMessageDto): TeamChatMeeting | undefined {
       ? "Cuộc họp nhóm đã kết thúc."
       : `${message.senderName} đã bắt đầu cuộc họp nhóm.`,
   };
+}
+
+function parseAttachments(message: GroupMessageDto): TeamChatAttachment[] {
+  const match = message.content.match(/\[attachments\]\s*(.+)/i);
+  if (!match) return [];
+  
+  const names = match[1].split(",").map(name => name.trim()).filter(Boolean);
+  return names.map(name => {
+    const ext = name.split(".").pop()?.toLowerCase();
+    const isImage = ext && ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext);
+    return {
+      name,
+      sizeLabel: "Đã tải lên",
+      kind: isImage ? "image" : "file"
+    };
+  });
 }
 
 function initials(name: string) {
@@ -1058,6 +1083,9 @@ function formatMessageTime(value: string) {
 }
 
 .groups-workspace :deep(.team-chat-window) {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   padding: 18px 22px 16px;
   overflow: hidden;
   border-right: 1px solid #e2e8f0;
@@ -1065,8 +1093,13 @@ function formatMessageTime(value: string) {
 }
 
 .groups-workspace :deep(.team-chat-body) {
-  padding: 16px 12px 18px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 12px 12px;
   gap: 10px;
+  display: flex;
+  flex-direction: column;
 }
 
 .groups-workspace :deep(.team-chat-window__identity) {
@@ -1113,82 +1146,6 @@ function formatMessageTime(value: string) {
   background: #eff6ff;
 }
 
-.groups-workspace :deep(.team-message) {
-  max-width: min(70%, 680px);
-}
-
-.groups-workspace :deep(.team-message__avatar) {
-  width: 32px;
-  height: 32px;
-  box-shadow: none;
-}
-
-.groups-workspace :deep(.team-message__bubble) {
-  border-radius: 16px 16px 16px 5px;
-  padding: 11px 14px;
-  border: 1px solid #e5e7eb;
-  background: #ffffff !important;
-  box-shadow: none;
-  color: #334155 !important;
-  transition:
-    border-color 160ms ease,
-    background 160ms ease;
-}
-
-.groups-workspace :deep(.team-message.is-mine .team-message__bubble) {
-  border-color: transparent;
-  border-radius: 16px 16px 5px 16px;
-  background: #1677ff !important;
-  box-shadow: none;
-}
-
-.groups-workspace :deep(.team-message__meta) {
-  gap: 7px;
-}
-
-.groups-workspace :deep(.team-message__meta strong) {
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-
-.groups-workspace :deep(.team-message__meta span) {
-  font-size: 0.76rem;
-}
-
-.groups-workspace :deep(.team-message__bubble p) {
-  line-height: 1.48;
-}
-
-.groups-workspace :deep(.team-chat-composer) {
-  gap: 8px;
-  padding: 8px;
-  border: 1px solid #dbe3ef;
-  border-radius: 16px;
-  background: #ffffff;
-  box-shadow: none;
-  transition:
-    border-color 180ms ease,
-    background 180ms ease;
-}
-
-.groups-workspace :deep(.team-chat-composer:focus-within) {
-  border-color: #93c5fd;
-  background: #ffffff;
-}
-
-.groups-workspace :deep(.team-chat-composer input[type='text']) {
-  border: 0;
-  background: transparent;
-  min-height: 40px;
-  font-weight: 500;
-}
-
-.groups-workspace :deep(.team-chat-composer .primary-button) {
-  min-width: 46px;
-  min-height: 42px;
-  border-radius: 13px;
-  box-shadow: none;
-}
 
 .team-chat-banner {
   position: absolute;
