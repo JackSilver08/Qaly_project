@@ -1,201 +1,246 @@
 <script setup lang="ts">
-import { HubConnectionBuilder, HubConnectionState, type HubConnection } from '@microsoft/signalr'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import ChatSidebar from '../components/chat/ChatSidebar.vue'
-import ChatWindow from '../components/chat/ChatWindow.vue'
-import GroupAiPanel from '../components/chat/GroupAiPanel.vue'
-import type { ChatGroupModel, TeamChatAttachment, TeamChatMessage, TeamChatPoll } from '../components/chat/chat-types'
-import { useDashboardContext } from '../composables/dashboard-context'
-import { showError, showSuccess } from '../composables/use-toast'
-import { apiResult, errorMessage } from '../utils/api-client'
-import type { PagedResult } from '../types'
+import {
+  HubConnectionBuilder,
+  HubConnectionState,
+  type HubConnection,
+} from "@microsoft/signalr";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import ChatSidebar from "../components/chat/ChatSidebar.vue";
+import ChatWindow from "../components/chat/ChatWindow.vue";
+import GroupAiPanel from "../components/chat/GroupAiPanel.vue";
+import type {
+  ChatGroupModel,
+  TeamChatAttachment,
+  TeamChatMessage,
+  TeamChatPoll,
+} from "../components/chat/chat-types";
+import { useDashboardContext } from "../composables/dashboard-context";
+import { showError, showSuccess } from "../composables/use-toast";
+import { apiResult, errorMessage } from "../utils/api-client";
+import type { PagedResult } from "../types";
 
 interface GroupDto {
-  id: string
-  name: string
-  description: string | null
-  messageCount: number
+  id: string;
+  name: string;
+  description: string | null;
+  messageCount: number;
 }
 
 interface GroupMessageDto {
-  id: string
-  workGroupId: string
-  userId: string
-  senderName: string
-  content: string
-  messageType: string
-  createdAt: string
+  id: string;
+  workGroupId: string;
+  userId: string;
+  senderName: string;
+  content: string;
+  messageType: string;
+  createdAt: string;
 }
 
-const { currentUser } = useDashboardContext()
+const { currentUser } = useDashboardContext();
 
-const groups = ref<ChatGroupModel[]>([])
-const messages = ref<TeamChatMessage[]>([])
-const activeGroupId = ref('')
-const isLoadingGroups = ref(false)
-const isLoadingMessages = ref(false)
-const loadError = ref<string | null>(null)
-const realtimeState = ref<'connecting' | 'connected' | 'offline'>('offline')
-let hubConnection: HubConnection | null = null
+const groups = ref<ChatGroupModel[]>([]);
+const messages = ref<TeamChatMessage[]>([]);
+const activeGroupId = ref("");
+const isLoadingGroups = ref(false);
+const isLoadingMessages = ref(false);
+const loadError = ref<string | null>(null);
+const realtimeState = ref<"connecting" | "connected" | "offline">("offline");
+let hubConnection: HubConnection | null = null;
 
-const currentUserId = computed(() => currentUser.value?.id ?? 'me')
-const activeGroup = computed(() => groups.value.find((group) => group.id === activeGroupId.value) ?? null)
-const activeMessages = computed(() => messages.value.filter((message) => message.groupId === activeGroupId.value))
+const currentUserId = computed(() => currentUser.value?.id ?? "me");
+const activeGroup = computed(
+  () => groups.value.find((group) => group.id === activeGroupId.value) ?? null,
+);
+const activeMessages = computed(() =>
+  messages.value.filter((message) => message.groupId === activeGroupId.value),
+);
 
 onMounted(async () => {
-  await loadGroups()
-  await connectRealtime()
-})
+  await loadGroups();
+  await connectRealtime();
+});
 
 onBeforeUnmount(async () => {
   if (hubConnection) {
-    await hubConnection.stop()
-    hubConnection = null
+    await hubConnection.stop();
+    hubConnection = null;
   }
-})
+});
 
 watch(activeGroupId, async (next, previous) => {
   if (previous && hubConnection?.state === HubConnectionState.Connected) {
-    await hubConnection.invoke('LeaveGroup', previous).catch(() => undefined)
+    await hubConnection.invoke("LeaveGroup", previous).catch(() => undefined);
   }
 
-  if (!next) return
-  await loadMessages(next)
+  if (!next) return;
+  await loadMessages(next);
 
   if (hubConnection?.state === HubConnectionState.Connected) {
-    await hubConnection.invoke('JoinGroup', next).catch(() => undefined)
+    await hubConnection.invoke("JoinGroup", next).catch(() => undefined);
   }
-})
+});
 
 async function loadGroups() {
-  isLoadingGroups.value = true
-  loadError.value = null
+  isLoadingGroups.value = true;
+  loadError.value = null;
 
   try {
-    const result = await apiResult<PagedResult<GroupDto>>('/api/groups?pageSize=50')
-    groups.value = result.items.map(toGroupModel)
+    const result = await apiResult<PagedResult<GroupDto>>(
+      "/api/groups?pageSize=50",
+    );
+    groups.value = result.items.map(toGroupModel);
 
     if (!activeGroupId.value && groups.value.length > 0) {
-      activeGroupId.value = groups.value[0].id
+      activeGroupId.value = groups.value[0].id;
     }
   } catch (error) {
-    loadError.value = errorMessage(error, 'Khong the tai danh sach nhom chat.')
-    showError(loadError.value)
+    loadError.value = errorMessage(error, "Khong the tai danh sach nhom chat.");
+    showError(loadError.value);
   } finally {
-    isLoadingGroups.value = false
+    isLoadingGroups.value = false;
   }
 }
 
 async function loadMessages(groupId: string) {
-  isLoadingMessages.value = true
+  isLoadingMessages.value = true;
 
   try {
-    const result = await apiResult<PagedResult<GroupMessageDto>>(`/api/groups/${groupId}/messages?pageSize=100`)
-    const mapped = result.items.map(toMessageModel)
+    const result = await apiResult<PagedResult<GroupMessageDto>>(
+      `/api/groups/${groupId}/messages?pageSize=100`,
+    );
+    const mapped = result.items.map(toMessageModel);
     messages.value = [
       ...messages.value.filter((message) => message.groupId !== groupId),
       ...mapped,
-    ]
+    ];
   } catch (error) {
-    showError(errorMessage(error, 'Khong the tai tin nhan nhom.'))
+    showError(errorMessage(error, "Khong the tai tin nhan nhom."));
   } finally {
-    isLoadingMessages.value = false
+    isLoadingMessages.value = false;
   }
 }
 
 async function connectRealtime() {
-  realtimeState.value = 'connecting'
+  realtimeState.value = "connecting";
   hubConnection = new HubConnectionBuilder()
-    .withUrl('/hubs/groups')
+    .withUrl("/hubs/groups")
     .withAutomaticReconnect()
-    .build()
+    .build();
 
   hubConnection.onreconnecting(() => {
-    realtimeState.value = 'connecting'
-  })
+    realtimeState.value = "connecting";
+  });
   hubConnection.onreconnected(async () => {
-    realtimeState.value = 'connected'
-    if (activeGroupId.value) await hubConnection?.invoke('JoinGroup', activeGroupId.value).catch(() => undefined)
-  })
+    realtimeState.value = "connected";
+    if (activeGroupId.value)
+      await hubConnection
+        ?.invoke("JoinGroup", activeGroupId.value)
+        .catch(() => undefined);
+  });
   hubConnection.onclose(() => {
-    realtimeState.value = 'offline'
-  })
-  hubConnection.on('groupMessageReceived', (message: GroupMessageDto) => {
-    upsertMessage(toMessageModel(message))
-  })
+    realtimeState.value = "offline";
+  });
+  hubConnection.on("groupMessageReceived", (message: GroupMessageDto) => {
+    upsertMessage(toMessageModel(message));
+  });
 
   try {
-    await hubConnection.start()
-    realtimeState.value = 'connected'
-    if (activeGroupId.value) await hubConnection.invoke('JoinGroup', activeGroupId.value).catch(() => undefined)
+    await hubConnection.start();
+    realtimeState.value = "connected";
+    if (activeGroupId.value)
+      await hubConnection
+        .invoke("JoinGroup", activeGroupId.value)
+        .catch(() => undefined);
   } catch {
-    realtimeState.value = 'offline'
+    realtimeState.value = "offline";
   }
 }
 
 async function createGroup() {
-  const name = window.prompt('Ten nhom chat moi')
-  if (!name?.trim()) return
+  const name = window.prompt("Ten nhom chat moi");
+  if (!name?.trim()) return;
 
   try {
-    const group = await apiResult<GroupDto>('/api/groups', {
-      method: 'POST',
+    const group = await apiResult<GroupDto>("/api/groups", {
+      method: "POST",
       body: JSON.stringify({
         name: name.trim(),
-        description: 'Nhom chat moi',
+        description: "Nhom chat moi",
       }),
-    })
+    });
 
-    const mapped = toGroupModel(group)
-    groups.value = [mapped, ...groups.value.filter((item) => item.id !== mapped.id)]
-    activeGroupId.value = mapped.id
-    showSuccess(`Tao nhom "${mapped.name}" thanh cong`)
+    const mapped = toGroupModel(group);
+    groups.value = [
+      mapped,
+      ...groups.value.filter((item) => item.id !== mapped.id),
+    ];
+    activeGroupId.value = mapped.id;
+    showSuccess(`Tao nhom "${mapped.name}" thanh cong`);
   } catch (error) {
-    showError(errorMessage(error, 'Khong the tao nhom chat.'))
+    showError(errorMessage(error, "Khong the tao nhom chat."));
   }
 }
 
-async function sendMessage(payload: { text: string; attachments: TeamChatAttachment[]; poll?: TeamChatPoll }) {
-  if (!activeGroupId.value) return
+async function sendMessage(payload: {
+  text: string;
+  attachments: TeamChatAttachment[];
+  poll?: TeamChatPoll;
+}) {
+  if (!activeGroupId.value) return;
 
-  const content = serializeMessagePayload(payload)
-  const messageType = payload.poll ? 'Poll' : 'Text'
+  const content = serializeMessagePayload(payload);
+  const messageType = payload.poll ? "Poll" : "Text";
 
   try {
     if (hubConnection?.state === HubConnectionState.Connected) {
-      await hubConnection.invoke('SendMessage', activeGroupId.value, content, messageType)
-      return
+      await hubConnection.invoke(
+        "SendMessage",
+        activeGroupId.value,
+        content,
+        messageType,
+      );
+      return;
     }
 
-    const saved = await apiResult<GroupMessageDto>(`/api/groups/${activeGroupId.value}/messages`, {
-      method: 'POST',
-      body: JSON.stringify({ content, messageType }),
-    })
-    upsertMessage(toMessageModel(saved))
+    const saved = await apiResult<GroupMessageDto>(
+      `/api/groups/${activeGroupId.value}/messages`,
+      {
+        method: "POST",
+        body: JSON.stringify({ content, messageType }),
+      },
+    );
+    upsertMessage(toMessageModel(saved));
   } catch (error) {
-    showError(errorMessage(error, 'Khong the gui tin nhan.'))
+    showError(errorMessage(error, "Khong the gui tin nhan."));
   }
 }
 
 function togglePin(messageId: string) {
-  const target = messages.value.find((message) => message.id === messageId)
+  const target = messages.value.find((message) => message.id === messageId);
   messages.value = messages.value.map((message) =>
-    message.id === messageId ? { ...message, pinned: !message.pinned } : message,
-  )
-  if (target) showSuccess(target.pinned ? 'Da bo ghim tin nhan' : 'Da ghim tin nhan')
+    message.id === messageId
+      ? { ...message, pinned: !message.pinned }
+      : message,
+  );
+  if (target)
+    showSuccess(target.pinned ? "Da bo ghim tin nhan" : "Da ghim tin nhan");
 }
 
 function upsertMessage(message: TeamChatMessage) {
   messages.value = [
     ...messages.value.filter((item) => item.id !== message.id),
     message,
-  ]
+  ];
 
   groups.value = groups.value.map((group) =>
     group.id === message.groupId
-      ? { ...group, unreadCount: group.id === activeGroupId.value ? 0 : group.unreadCount + 1 }
+      ? {
+          ...group,
+          unreadCount:
+            group.id === activeGroupId.value ? 0 : group.unreadCount + 1,
+        }
       : group,
-  )
+  );
 }
 
 function toGroupModel(group: GroupDto): ChatGroupModel {
@@ -204,7 +249,7 @@ function toGroupModel(group: GroupDto): ChatGroupModel {
     name: group.name,
     description: group.description ?? `${group.messageCount} tin nhan`,
     unreadCount: 0,
-  }
+  };
 }
 
 function toMessageModel(message: GroupMessageDto): TeamChatMessage {
@@ -219,49 +264,75 @@ function toMessageModel(message: GroupMessageDto): TeamChatMessage {
     pinned: false,
     attachments: [],
     poll: parsePoll(message),
-  }
+  };
 }
 
-function serializeMessagePayload(payload: { text: string; attachments: TeamChatAttachment[]; poll?: TeamChatPoll }) {
-  const lines = [payload.text]
+function serializeMessagePayload(payload: {
+  text: string;
+  attachments: TeamChatAttachment[];
+  poll?: TeamChatPoll;
+}) {
+  const lines = [payload.text];
 
   if (payload.poll) {
-    lines.push(`[poll] ${payload.poll.question}`)
-    payload.poll.options.forEach((option, index) => lines.push(`${index + 1}. ${option}`))
+    // If poll already has an id (created via API), include it for interactive messages
+    if ((payload.poll as any).id) {
+      lines.push(`[pollid] ${(payload.poll as any).id}`);
+    } else {
+      lines.push(`[poll] ${payload.poll.question}`);
+    }
+    payload.poll.options.forEach((option, index) =>
+      lines.push(`${index + 1}. ${option}`),
+    );
   }
 
   if (payload.attachments.length > 0) {
-    lines.push(`[attachments] ${payload.attachments.map((file) => file.name).join(', ')}`)
+    lines.push(
+      `[attachments] ${payload.attachments.map((file) => file.name).join(", ")}`,
+    );
   }
 
-  return lines.filter(Boolean).join('\n')
+  return lines.filter(Boolean).join("\n");
 }
 
 function parsePoll(message: GroupMessageDto): TeamChatPoll | undefined {
-  if (message.messageType !== 'Poll') return undefined
+  if (message.messageType !== "Poll") return undefined;
 
-  const lines = message.content.split('\n').map((line) => line.trim()).filter(Boolean)
-  const question = lines.find((line) => line.startsWith('[poll] '))?.replace('[poll] ', '') ?? lines[0]
+  const lines = message.content
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const pollIdLine = lines.find((line) => line.startsWith("[pollid] "));
+  const question =
+    lines.find((line) => line.startsWith("[poll] "))?.replace("[poll] ", "") ??
+    lines[0];
   const options = lines
     .filter((line) => /^\d+\.\s+/.test(line))
-    .map((line) => line.replace(/^\d+\.\s+/, ''))
-
-  return question && options.length >= 2 ? { question, options } : undefined
+    .map((line) => line.replace(/^\d+\.\s+/, ""));
+  const poll: any =
+    question && options.length >= 2 ? { question, options } : undefined;
+  if (poll && pollIdLine) {
+    poll.id = pollIdLine.replace("[pollid] ", "");
+  }
+  return poll;
 }
 
 function initials(name: string) {
   return name
-    .split(' ')
+    .split(" ")
     .filter(Boolean)
     .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('')
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
 }
 
 function formatMessageTime(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  return new Intl.DateTimeFormat('vi', { hour: '2-digit', minute: '2-digit' }).format(date)
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("vi", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 </script>
 
@@ -269,8 +340,12 @@ function formatMessageTime(value: string) {
   <div class="dashboard-scroll dashboard-scroll--embedded no-scrollbar">
     <div class="dashboard-main project-home-main no-scrollbar">
       <section class="team-chat-page">
-        <div v-if="loadError" class="team-chat-banner team-chat-banner--error">{{ loadError }}</div>
-        <div v-else-if="isLoadingGroups" class="team-chat-banner">Dang tai nhom chat...</div>
+        <div v-if="loadError" class="team-chat-banner team-chat-banner--error">
+          {{ loadError }}
+        </div>
+        <div v-else-if="isLoadingGroups" class="team-chat-banner">
+          Dang tai nhom chat...
+        </div>
         <div v-else-if="groups.length === 0" class="team-chat-banner">
           Chua co nhom chat. Tao nhom moi de bat dau trao doi.
         </div>
@@ -291,8 +366,16 @@ function formatMessageTime(value: string) {
         <GroupAiPanel :group-id="activeGroupId" />
 
         <div class="team-chat-status">
-          <span :class="`team-chat-status__dot team-chat-status__dot--${realtimeState}`"></span>
-          {{ realtimeState === 'connected' ? 'Realtime dang bat' : realtimeState === 'connecting' ? 'Dang noi realtime' : 'Realtime tam thoi offline' }}
+          <span
+            :class="`team-chat-status__dot team-chat-status__dot--${realtimeState}`"
+          ></span>
+          {{
+            realtimeState === "connected"
+              ? "Realtime dang bat"
+              : realtimeState === "connecting"
+                ? "Dang noi realtime"
+                : "Realtime tam thoi offline"
+          }}
           <span v-if="isLoadingMessages"> · Dang tai tin nhan...</span>
         </div>
       </section>

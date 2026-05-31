@@ -7,6 +7,7 @@ import {
 } from "@microsoft/signalr";
 import ScreenSharePanel from "../components/meeting/ScreenSharePanel.vue";
 import MeetingControls from "../components/meeting/MeetingControls.vue";
+import { apiResult } from "../utils/api-client";
 import { useRoute } from "vue-router";
 
 const route = useRoute();
@@ -16,8 +17,21 @@ const active = ref(false);
 let hubConnection: HubConnection | null = null;
 const participants = ref<{ connectionId: string; lastSeen: string }[]>([]);
 
+let joinUrl = ref<string | null>(null);
+
 async function startMeeting() {
+  // call API to create meeting session and get JoinUrl
+  try {
+    const dto = await apiResult<any>(`/api/groups/${groupId}/meetings/start`, {
+      method: "POST",
+    });
+    joinUrl.value = dto?.joinUrl ?? dto?.JoinUrl ?? null;
+  } catch (e) {
+    console.warn("Could not start meeting session via API", e);
+  }
+
   active.value = true;
+
   hubConnection = new HubConnectionBuilder()
     .withUrl("/hubs/groups")
     .withAutomaticReconnect()
@@ -83,6 +97,20 @@ onBeforeUnmount(async () => {
 
     <div v-if="active" class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
       <ScreenSharePanel />
+      <div class="glass-card p-4">
+        <h3 class="font-medium">Meeting Frame</h3>
+        <div v-if="joinUrl">
+          <iframe
+            :src="joinUrl"
+            style="width: 100%; height: 420px; border: 0"
+            allow="camera; microphone; display-capture"
+          ></iframe>
+        </div>
+        <div v-else class="text-sm text-slate-500">
+          Meeting is active but join URL not available.
+        </div>
+      </div>
+
       <div class="glass-card p-4">
         <h3 class="font-medium">Participants</h3>
         <div v-if="participants.length === 0" class="text-sm text-slate-500">

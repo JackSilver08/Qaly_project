@@ -1,29 +1,30 @@
 export interface ChatGroupModel {
-  id: string
-  name: string
-  description: string
-  unreadCount: number
+    id: string;
+    name: string;
+    description: string;
+    unreadCount: number;
 }
 
 export interface TeamChatPoll {
-  question: string
-  options: string[]
+    id?: string;
+    question: string;
+    options: string[];
 }
 
 export interface TeamChatAttachment {
-  name: string
-  sizeLabel: string
+    name: string;
+    sizeLabel: string;
 }
 
 export interface TeamChatMessage {
-  id: string
-  groupId: string
-  senderId: string
-  senderName: string
-  senderInitials: string
-  text: string
-  createdAt: string
-  pinned: boolean
-  attachments: TeamChatAttachment[]
-  poll?: TeamChatPoll
+    id: string;
+    groupId: string;
+    senderId: string;
+    senderName: string;
+    senderInitials: string;
+    text: string;
+    createdAt: string;
+    pinned: boolean;
+    attachments: TeamChatAttachment[];
+    poll?: TeamChatPoll;
 }

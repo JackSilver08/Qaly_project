@@ -20,7 +20,7 @@ services:
       MSSQL_SA_PASSWORD: "Qaly@Dev2026!"
       MSSQL_PID: "Developer"
     ports:
-      - "1434:1433"    # Dùng port 1434 để tránh conflict với SQL Server local (1433)
+      - "1434:1433" # Dùng port 1434 để tránh conflict với SQL Server local (1433)
     volumes:
       - qaly-sqlserver-data:/var/opt/mssql
       - ./docker/sqlserver/init:/docker-entrypoint-initdb.d
@@ -41,7 +41,7 @@ services:
     image: redis:7-alpine
     container_name: qaly-redis
     ports:
-      - "6380:6379"    # Port 6380 để tránh conflict
+      - "6380:6379" # Port 6380 để tránh conflict
     volumes:
       - qaly-redis-data:/data
     networks:
@@ -63,8 +63,8 @@ services:
       ACCEPT_EULA: "Y"
       SEQ_FIRSTRUN_ADMINPASSWORD: "Admin@123"
     ports:
-      - "5341:5341"    # Ingestion API
-      - "8081:80"      # Web UI: http://localhost:8081
+      - "5341:5341" # Ingestion API
+      - "8081:80" # Web UI: http://localhost:8081
     volumes:
       - qaly-seq-data:/data
     networks:
@@ -78,8 +78,8 @@ services:
     image: mailhog/mailhog:latest
     container_name: qaly-mailhog
     ports:
-      - "1025:1025"    # SMTP server
-      - "8025:8025"    # Web UI: http://localhost:8025
+      - "1025:1025" # SMTP server
+      - "8025:8025" # Web UI: http://localhost:8025
     networks:
       - qaly-network
     restart: unless-stopped
@@ -113,8 +113,6 @@ services:
       - qaly-network
     restart: unless-stopped
 
-
-
   # ----------------------------------------
   # Qaly Web App (Build từ source)
   # ----------------------------------------
@@ -127,7 +125,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:5000
-      - ConnectionStrings__DefaultConnection=Server=qaly-sqlserver,1433;Database=QalyDb;User Id=sa;Password=Qaly@Dev2026!;TrustServerCertificate=True;MultipleActiveResultSets=true
+      - ConnectionStrings__DefaultConnection=Data Source=CMI\\SQLEXPRESS;Initial Catalog=QalyDb;Integrated Security=True;TrustServerCertificate=True;MultipleActiveResultSets=true
       - Redis__ConnectionString=qaly-redis:6379
       - Seq__ServerUrl=http://qaly-seq:5341
       - Email__SmtpHost=qaly-mailhog
