@@ -82,10 +82,10 @@ Mã nguồn hiện đã hoàn thiện toàn bộ phần Backend & Dữ liệu c�
 
 ### 9. Epic G8: AI Group Workflow (Owner: Quốc Bảo & Chí Khang)
 
-- **Trạng thái thực tế:** **Đạt 95% (Backend)**.
+- **Trạng thái thực tế:** **Đạt 100% (Completed)**.
 - **Kết quả:**
-    - APIs AI Tóm tắt thảo luận (`POST /api/groups/{groupId}/ai/summary`) và sinh Dự thảo Project/Task nháp từ thảo luận chat (`POST /api/groups/{groupId}/ai/draft-project`) đã được Quốc Bảo hoàn thành xuất sắc và tích hợp chuẩn bảo mật Audit Logs.
-    - **Còn thiếu (Chí Khang làm ở UI):** Nhúng các nút bấm gọi AI Summary và hiển thị danh sách task nháp lên AI Panel bên phải.
+    - APIs AI Tóm tắt thảo luận (`POST /api/groups/{groupId}/ai/summary`), sinh Dự thảo Project/Task nháp từ thảo luận chat (`POST /api/groups/{groupId}/ai/draft-project`), và trích xuất Action Items từ chat (`POST /api/groups/{groupId}/ai/action-items`) đã được hoàn thành xuất sắc và tích hợp chuẩn bảo mật Audit Logs.
+    - **Frontend (Hoàn thành):** Đã nhúng toàn bộ các nút bấm AI Summary, AI Draft Project và Action Items lên AI Panel bên phải của Vue UI, hỗ trợ duyệt, chỉnh sửa và tạo dự án thật kèm theo phân công công việc tự động.
 
 ### 10. Epic G9 & G10: Testing, QA & Demo (Owner: Toàn đội)
 
