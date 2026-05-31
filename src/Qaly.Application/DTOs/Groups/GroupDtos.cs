@@ -65,6 +65,12 @@ public record CreateGroupPollRequest(
     bool AllowMultiple,
     DateTimeOffset? ExpiredAt = null);
 
+public record UpdateGroupPollRequest(
+    string Question,
+    IReadOnlyList<CreateGroupPollOptionRequest> Options,
+    bool AllowMultiple,
+    DateTimeOffset? ExpiredAt = null);
+
 public record GroupPollOptionDto(
     Guid Id,
     string Content,

@@ -1,0 +1,105 @@
+﻿    public async Task<Result<GroupPollDto>> UpdatePollAsync(Guid groupId, Guid pollId, UpdateGroupPollRequest request, CancellationToken ct = default)
+    {
+        if (groupId == Guid.Empty) return Result.Failure<GroupPollDto>("Group id is required.");
+        if (pollId == Guid.Empty) return Result.Failure<GroupPollDto>("Poll id is required.");
+        if (request == null) return Result.Failure<GroupPollDto>("Poll request is required.");
+
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null) return Result.Failure<GroupPollDto>("Authentication is required.", 401);
+
+        var poll = await _pollRepo.GetQueryable()
+            .Include(p => p.Options)
+            .FirstOrDefaultAsync(item => item.Id == pollId && item.GroupId == groupId, ct);
+            
+        if (poll == null) return Result.NotFound<GroupPollDto>("Poll was not found.");
+        
+        var membershipRole = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(member => member.WorkGroupId == groupId && member.UserId == currentUserId.Value)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+
+        if (membershipRole == null) return Result.Forbidden<GroupPollDto>("Current user is not a group member.");
+        
+        if (poll.CreatedByUserId != currentUserId.Value && !GroupRoleRules.CanCreatePoll(membershipRole))
+        {
+            return Result.Forbidden<GroupPollDto>("Bn khA'ng cA3 quy?n sa bAnh ch?n nAy.");
+        }
+
+        var normalizedQuestion = NormalizeOptional(request.Question);
+        if (string.IsNullOrWhiteSpace(normalizedQuestion)) return Result.Failure<GroupPollDto>("Question is required.");
+        if (normalizedQuestion.Length > 500) return Result.Failure<GroupPollDto>("Question must be 500 characters or fewer.");
+
+        if (request.Options == null || request.Options.Count < 2)
+            return Result.Failure<GroupPollDto>("A poll must have at least 2 options.");
+
+        var normalizedOptions = new List<string>(request.Options.Count);
+        var dedupe = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        for (var index = 0; index < request.Options.Count; index++)
+        {
+            var normalizedContent = NormalizeOptional(request.Options[index]?.Content);
+            if (string.IsNullOrWhiteSpace(normalizedContent)) return Result.Failure<GroupPollDto>("Option content is required.");
+            if (normalizedContent.Length > 300) return Result.Failure<GroupPollDto>("Option content must be 300 characters or fewer.");
+            if (!dedupe.Add(normalizedContent)) return Result.Failure<GroupPollDto>("Poll options must be unique.");
+            normalizedOptions.Add(normalizedContent);
+        }
+
+        poll.Question = normalizedQuestion;
+        poll.AllowMultiple = request.AllowMultiple;
+        poll.ExpiredAt = request.ExpiredAt;
+
+        var existingOptions = poll.Options.ToList();
+        foreach (var opt in existingOptions)
+        {
+            await _pollOptionRepo.DeleteAsync(opt, ct);
+        }
+        
+        var options = normalizedOptions
+            .Select((content, index) => new GroupPollOption
+            {
+                PollId = poll.Id,
+                Content = content,
+                SortOrder = index + 1
+            })
+            .ToList();
+            
+        await _pollOptionRepo.AddRangeAsync(options, ct);
+        await _pollRepo.UpdateAsync(poll, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        
+        var dto = ToPollDto(poll, options);
+        return Result.Success(dto);
+    }
+
+    public async Task<Result> DeletePollAsync(Guid groupId, Guid pollId, CancellationToken ct = default)
+    {
+        if (groupId == Guid.Empty) return Result.Failure("Group id is required.");
+        if (pollId == Guid.Empty) return Result.Failure("Poll id is required.");
+
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null) return Result.Failure("Authentication is required.", 401);
+
+        var poll = await _pollRepo.GetQueryable()
+            .FirstOrDefaultAsync(item => item.Id == pollId && item.GroupId == groupId, ct);
+            
+        if (poll == null) return Result.NotFound("Poll was not found.");
+
+        var membershipRole = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(member => member.WorkGroupId == groupId && member.UserId == currentUserId.Value)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+
+        if (membershipRole == null) return Result.Forbidden("Current user is not a group member.");
+        
+        if (poll.CreatedByUserId != currentUserId.Value && !GroupRoleRules.CanRemoveMember(membershipRole, "Member", false))
+        {
+            return Result.Forbidden("Bn khA'ng cA3 quy?n xA3a bAnh ch?n nAy.");
+        }
+
+        await _pollRepo.DeleteAsync(poll, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        return Result.Success();
+    }

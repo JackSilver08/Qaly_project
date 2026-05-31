@@ -16,6 +16,13 @@ export interface TeamChatAttachment {
     sizeLabel: string;
 }
 
+export interface TeamChatMeeting {
+    id: string;
+    joinUrl?: string;
+    text: string;
+    active: boolean;
+}
+
 export interface TeamChatMessage {
     id: string;
     groupId: string;
@@ -27,4 +34,5 @@ export interface TeamChatMessage {
     pinned: boolean;
     attachments: TeamChatAttachment[];
     poll?: TeamChatPoll;
+    meeting?: TeamChatMeeting;
 }

@@ -1070,11 +1070,25 @@ function toDashboardNotification(n: NotificationDto): DashboardNotification {
             : "warning";
   return {
     id: n.id,
-    title: n.type,
+    title: notificationTitle(n.type),
     message: n.message,
     tone,
     createdAt: n.createdAt,
   };
+}
+
+function notificationTitle(type: string) {
+  const titles: Record<string, string> = {
+    GroupMeetingStarted: "Cuộc họp nhóm",
+    GroupInvitationReceived: "Lời mời nhóm",
+    TaskAssigned: "Nhiệm vụ mới",
+    Mentioned: "Bạn được nhắc đến",
+    CommentAdded: "Bình luận mới",
+    TaskStatusChanged: "Cập nhật nhiệm vụ",
+    ReviewCompleted: "Duyệt minh chứng",
+  };
+
+  return titles[type] ?? type;
 }
 
 function isGuid(v: string) {

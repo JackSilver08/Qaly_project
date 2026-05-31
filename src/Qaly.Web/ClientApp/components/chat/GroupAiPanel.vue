@@ -48,7 +48,7 @@ async function extractActionItems() {
     actionItems.value = result.items
     warnings.value = result.warnings ?? []
   } catch (error) {
-    showError(errorMessage(error, 'Khong the trich xuat action items.'))
+    showError(errorMessage(error, 'Không thể trích xuất việc cần làm.'))
   } finally {
     isLoading.value = false
   }
@@ -64,12 +64,12 @@ function confidenceLabel(value: number) {
     <header class="group-ai-panel__header">
       <div>
         <span>AI</span>
-        <h2>Action items</h2>
+        <h2>Việc cần làm</h2>
       </div>
       <button
         class="icon-button icon-button--small"
         type="button"
-        aria-label="Extract action items"
+        aria-label="Trích xuất việc cần làm"
         :disabled="!hasGroup || isLoading"
         @click="extractActionItems"
       >
@@ -100,7 +100,7 @@ function confidenceLabel(value: number) {
 
     <div v-else class="group-ai-panel__empty">
       <ListChecks :size="22" />
-      <span>{{ isLoading ? 'Dang xu ly...' : 'Chua co action items' }}</span>
+      <span>{{ isLoading ? 'Đang xử lý...' : 'Chưa có việc cần làm' }}</span>
     </div>
   </aside>
 </template>
