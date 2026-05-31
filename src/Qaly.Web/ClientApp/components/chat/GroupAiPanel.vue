@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ListChecks,
@@ -86,6 +86,55 @@ const isDraftLoading = ref(false)
 const isActionLoading = ref(false)
 const isCreatingProject = ref(false)
 
+// Cooldown / Anti-spam states (15 seconds)
+const summaryCooldown = ref(0)
+const draftCooldown = ref(0)
+const actionCooldown = ref(0)
+
+let summaryInterval: any = null
+let draftInterval: any = null
+let actionInterval: any = null
+
+function startCooldown(type: 'summary' | 'draft' | 'action', seconds = 15) {
+  if (type === 'summary') {
+    summaryCooldown.value = seconds
+    if (summaryInterval) clearInterval(summaryInterval)
+    summaryInterval = setInterval(() => {
+      if (summaryCooldown.value > 0) {
+        summaryCooldown.value--
+      } else {
+        clearInterval(summaryInterval)
+      }
+    }, 1000)
+  } else if (type === 'draft') {
+    draftCooldown.value = seconds
+    if (draftInterval) clearInterval(draftInterval)
+    draftInterval = setInterval(() => {
+      if (draftCooldown.value > 0) {
+        draftCooldown.value--
+      } else {
+        clearInterval(draftInterval)
+      }
+    }, 1000)
+  } else if (type === 'action') {
+    actionCooldown.value = seconds
+    if (actionInterval) clearInterval(actionInterval)
+    actionInterval = setInterval(() => {
+      if (actionCooldown.value > 0) {
+        actionCooldown.value--
+      } else {
+        clearInterval(actionInterval)
+      }
+    }, 1000)
+  }
+}
+
+onBeforeUnmount(() => {
+  if (summaryInterval) clearInterval(summaryInterval)
+  if (draftInterval) clearInterval(draftInterval)
+  if (actionInterval) clearInterval(actionInterval)
+})
+
 // Summary States
 const summaryText = ref('')
 const keyDecisions = ref<string[]>([])
@@ -169,6 +218,7 @@ async function generateSummary() {
     summaryWarnings.value = result.warnings ?? []
     hasGeneratedSummary.value = true
     showSuccess('Đã tóm tắt cuộc thảo luận thành công!')
+    startCooldown('summary', 15)
   } catch (error) {
     showError(errorMessage(error, 'Không thể tạo tóm tắt thảo luận.'))
   } finally {
@@ -210,6 +260,7 @@ async function generateDraftProject() {
     draftWarnings.value = result.warnings ?? []
     hasGeneratedDraft.value = true
     showSuccess('Đã thiết lập dự thảo dự án thành công!')
+    startCooldown('draft', 15)
   } catch (error) {
     showError(errorMessage(error, 'Không thể tạo dự thảo project.'))
   } finally {
@@ -237,6 +288,7 @@ async function extractActionItems() {
     actionWarnings.value = result.warnings ?? []
     hasGeneratedActions.value = true
     showSuccess('Đã trích xuất các hành động thảo luận!')
+    startCooldown('action', 15)
   } catch (error) {
     showError(errorMessage(error, 'Không thể trích xuất hành động.'))
   } finally {
@@ -388,12 +440,12 @@ function confidenceLabel(value: number) {
           <button
             class="primary-button ai-action-btn"
             type="button"
-            :disabled="!hasGroup || isSummaryLoading"
+            :disabled="!hasGroup || isSummaryLoading || summaryCooldown > 0"
             @click="generateSummary"
           >
             <Loader2 v-if="isSummaryLoading" :size="16" class="spin-icon" />
             <Sparkles v-else :size="16" />
-            <span>Tóm tắt thảo luận</span>
+            <span>{{ summaryCooldown > 0 ? `Tóm tắt thảo luận (Chờ ${summaryCooldown}s)` : 'Tóm tắt thảo luận' }}</span>
           </button>
         </div>
 
@@ -464,12 +516,12 @@ function confidenceLabel(value: number) {
           <button
             class="primary-button ai-action-btn"
             type="button"
-            :disabled="!hasGroup || isDraftLoading"
+            :disabled="!hasGroup || isDraftLoading || draftCooldown > 0"
             @click="generateDraftProject"
           >
             <Loader2 v-if="isDraftLoading" :size="16" class="spin-icon" />
             <Sparkles v-else :size="16" />
-            <span>Tạo project nháp</span>
+            <span>{{ draftCooldown > 0 ? `Tạo project nháp (Chờ ${draftCooldown}s)` : 'Tạo project nháp' }}</span>
           </button>
         </div>
 
@@ -609,12 +661,12 @@ function confidenceLabel(value: number) {
           <button
             class="primary-button ai-action-btn"
             type="button"
-            :disabled="!hasGroup || isActionLoading"
+            :disabled="!hasGroup || isActionLoading || actionCooldown > 0"
             @click="extractActionItems"
           >
             <Loader2 v-if="isActionLoading" :size="16" class="spin-icon" />
             <Sparkles v-else :size="16" />
-            <span>Trích xuất Action Items</span>
+            <span>{{ actionCooldown > 0 ? `Trích xuất Action Items (Chờ ${actionCooldown}s)` : 'Trích xuất Action Items' }}</span>
           </button>
         </div>
 
