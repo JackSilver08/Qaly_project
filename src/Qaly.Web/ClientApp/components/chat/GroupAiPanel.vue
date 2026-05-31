@@ -290,11 +290,7 @@ async function extractActionItems() {
     showSuccess('Đã trích xuất các hành động thảo luận!')
     startCooldown('action', 15)
   } catch (error) {
-<<<<<<< HEAD
-    showError(errorMessage(error, 'Không thể trích xuất việc cần làm.'))
-=======
     showError(errorMessage(error, 'Không thể trích xuất hành động.'))
->>>>>>> ede3618e859ddbae478a27534f565ae946b4cbb6
   } finally {
     isActionLoading.value = false
   }
@@ -400,27 +396,10 @@ function confidenceLabel(value: number) {
 <template>
   <aside class="group-ai-panel glass-card">
     <header class="group-ai-panel__header">
-<<<<<<< HEAD
-      <div>
-        <span>AI</span>
-        <h2>Việc cần làm</h2>
-      </div>
-      <button
-        class="icon-button icon-button--small"
-        type="button"
-        aria-label="Trích xuất việc cần làm"
-        :disabled="!hasGroup || isLoading"
-        @click="extractActionItems"
-      >
-        <Loader2 v-if="isLoading" :size="16" class="group-ai-panel__spin" />
-        <Sparkles v-else :size="16" />
-      </button>
-=======
       <div class="header-title">
         <Sparkles class="ai-spark-icon animate-pulse" :size="18" />
         <h2>AI Assistant</h2>
       </div>
->>>>>>> ede3618e859ddbae478a27534f565ae946b4cbb6
     </header>
 
     <!-- Sub Navigation Tabs -->
@@ -470,11 +449,6 @@ function confidenceLabel(value: number) {
           </button>
         </div>
 
-<<<<<<< HEAD
-    <div v-else class="group-ai-panel__empty">
-      <ListChecks :size="22" />
-      <span>{{ isLoading ? 'Đang xử lý...' : 'Chưa có việc cần làm' }}</span>
-=======
         <div v-if="summaryWarnings.length" class="warnings-box">
           <AlertTriangle :size="14" />
           <div class="warnings-list">
@@ -736,7 +710,6 @@ function confidenceLabel(value: number) {
         </div>
       </div>
 
->>>>>>> ede3618e859ddbae478a27534f565ae946b4cbb6
     </div>
   </aside>
 </template>

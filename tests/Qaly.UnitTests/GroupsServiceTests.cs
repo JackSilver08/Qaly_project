@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Models;
+using Qaly.Application.DTOs.Ai;
 using Qaly.Application.DTOs.Groups;
 using Qaly.Application.DTOs.Project;
 using Qaly.Application.Services;
@@ -102,6 +103,20 @@ public class GroupsServiceTests : IDisposable
                 It.IsAny<Guid>(),
                 It.IsAny<GroupPollResultsDto>(),
                 It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _groupMeetingRealtimePublisher
+            .Setup(publisher => publisher.PublishMeetingStartedAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<GroupMeetingSessionDto>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _groupMeetingRealtimePublisher
+            .Setup(publisher => publisher.PublishMeetingEndedAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
     }
