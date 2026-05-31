@@ -1,8 +1,31 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { ListChecks, Loader2, Sparkles } from 'lucide-vue-next'
-import { showError } from '../../composables/use-toast'
+import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import {
+  ListChecks,
+  Loader2,
+  Sparkles,
+  FileText,
+  CheckCircle2,
+  HelpCircle,
+  FolderKanban,
+  Trash2,
+  Check,
+  Plus,
+  User,
+  Calendar,
+  AlertTriangle
+} from 'lucide-vue-next'
+import { showError, showSuccess } from '../../composables/use-toast'
 import { apiResult, errorMessage } from '../../utils/api-client'
+
+interface GroupMemberDto {
+  userId: string
+  fullName: string
+  email: string
+  role: string
+  joinedAt: string
+}
 
 interface GroupAiActionItem {
   title: string
@@ -20,37 +43,296 @@ interface GroupAiActionItemsResponse {
   warnings: string[]
 }
 
+interface GroupAiSummaryResponse {
+  groupId: string
+  summary: string
+  keyDecisions: string[]
+  unresolvedQuestions: string[]
+  warnings: string[]
+}
+
+interface GroupAiDraftTask {
+  title: string
+  description: string | null
+  priority: string | null
+  estimateDays: number | null
+  suggestedOwnerName: string | null
+  // UI extended fields
+  checked?: boolean
+  assigneeId?: string | null
+}
+
+interface GroupAiDraftProjectResponse {
+  groupId: string
+  draftProjectName: string
+  draftProjectDescription: string
+  draftTasks: GroupAiDraftTask[]
+  warnings: string[]
+}
+
 const props = defineProps<{
   groupId: string
+  members?: GroupMemberDto[]
 }>()
 
-const isLoading = ref(false)
+const router = useRouter()
+
+// Sub-tab Navigation
+const subTab = ref<'summary' | 'draft' | 'action-items'>('summary')
+
+// Common & Tab Loading States
+const isSummaryLoading = ref(false)
+const isDraftLoading = ref(false)
+const isActionLoading = ref(false)
+const isCreatingProject = ref(false)
+
+// Summary States
+const summaryText = ref('')
+const keyDecisions = ref<string[]>([])
+const unresolvedQuestions = ref<string[]>([])
+const summaryWarnings = ref<string[]>([])
+const hasGeneratedSummary = ref(false)
+
+// Draft Project States
+const draftProjectName = ref('')
+const draftProjectDescription = ref('')
+const draftTasks = ref<GroupAiDraftTask[]>([])
+const draftWarnings = ref<string[]>([])
+const extraInstructions = ref('')
+const hasGeneratedDraft = ref(false)
+
+// Action Items States
 const actionItems = ref<GroupAiActionItem[]>([])
-const warnings = ref<string[]>([])
+const actionWarnings = ref<string[]>([])
+const hasGeneratedActions = ref(false)
 
 const hasGroup = computed(() => Boolean(props.groupId))
 
-async function extractActionItems() {
-  if (!hasGroup.value || isLoading.value) return
+// Reset states when group changes
+watch(() => props.groupId, () => {
+  summaryText.value = ''
+  keyDecisions.value = []
+  unresolvedQuestions.value = []
+  summaryWarnings.value = []
+  hasGeneratedSummary.value = false
 
-  isLoading.value = true
-  warnings.value = []
+  draftProjectName.value = ''
+  draftProjectDescription.value = ''
+  draftTasks.value = []
+  draftWarnings.value = []
+  extraInstructions.value = ''
+  hasGeneratedDraft.value = false
+
+  actionItems.value = []
+  actionWarnings.value = []
+  hasGeneratedActions.value = false
+})
+
+// Matching function to map a suggested assignee string to actual user UUID
+function findAssigneeId(suggestedName: string | null): string | null {
+  if (!suggestedName || !props.members || props.members.length === 0) return null
+  const nameClean = suggestedName.toLowerCase().trim()
+  
+  // Try exact or substring match on fullName
+  const match = props.members.find(m => {
+    const fullNameClean = m.fullName.toLowerCase().trim()
+    return fullNameClean.includes(nameClean) || nameClean.includes(fullNameClean)
+  })
+  if (match) return match.userId
+
+  // Try email prefix match
+  const matchEmail = props.members.find(m => {
+    const prefix = m.email.toLowerCase().split('@')[0]
+    return prefix === nameClean
+  })
+  return matchEmail ? matchEmail.userId : null
+}
+
+// 1. Tóm tắt thảo luận API
+async function generateSummary() {
+  if (!hasGroup.value || isSummaryLoading.value) return
+
+  isSummaryLoading.value = true
+  summaryWarnings.value = []
+
+  try {
+    const result = await apiResult<GroupAiSummaryResponse>(`/api/groups/${props.groupId}/ai/summary`, {
+      method: 'POST',
+      body: JSON.stringify({
+        messageLimit: 80
+      })
+    })
+
+    summaryText.value = result.summary
+    keyDecisions.value = result.keyDecisions ?? []
+    unresolvedQuestions.value = result.unresolvedQuestions ?? []
+    summaryWarnings.value = result.warnings ?? []
+    hasGeneratedSummary.value = true
+    showSuccess('Đã tóm tắt cuộc thảo luận thành công!')
+  } catch (error) {
+    showError(errorMessage(error, 'Không thể tạo tóm tắt thảo luận.'))
+  } finally {
+    isSummaryLoading.value = false
+  }
+}
+
+// 2. Dự thảo Project API
+async function generateDraftProject() {
+  if (!hasGroup.value || isDraftLoading.value) return
+
+  isDraftLoading.value = true
+  draftWarnings.value = []
+
+  try {
+    const result = await apiResult<GroupAiDraftProjectResponse>(`/api/groups/${props.groupId}/ai/draft-project`, {
+      method: 'POST',
+      body: JSON.stringify({
+        messageLimit: 80,
+        extraInstructions: extraInstructions.value.trim() || null
+      })
+    })
+
+    draftProjectName.value = result.draftProjectName
+    draftProjectDescription.value = result.draftProjectDescription
+    
+    // Map initial attributes & perform automatic user assignment matching
+    draftTasks.value = (result.draftTasks ?? []).map(task => {
+      const matchedUserId = findAssigneeId(task.suggestedOwnerName)
+      return {
+        ...task,
+        checked: true, // Selected by default
+        priority: task.priority || 'Medium',
+        estimateDays: task.estimateDays || 3,
+        assigneeId: matchedUserId
+      }
+    })
+
+    draftWarnings.value = result.warnings ?? []
+    hasGeneratedDraft.value = true
+    showSuccess('Đã thiết lập dự thảo dự án thành công!')
+  } catch (error) {
+    showError(errorMessage(error, 'Không thể tạo dự thảo project.'))
+  } finally {
+    isDraftLoading.value = false
+  }
+}
+
+// 3. Trích xuất Action items API
+async function extractActionItems() {
+  if (!hasGroup.value || isActionLoading.value) return
+
+  isActionLoading.value = true
+  actionWarnings.value = []
 
   try {
     const result = await apiResult<GroupAiActionItemsResponse>(`/api/groups/${props.groupId}/ai/action-items`, {
       method: 'POST',
       body: JSON.stringify({
         source: 'chat',
-        messageLimit: 80,
-      }),
+        messageLimit: 80
+      })
     })
 
-    actionItems.value = result.items
-    warnings.value = result.warnings ?? []
+    actionItems.value = result.items ?? []
+    actionWarnings.value = result.warnings ?? []
+    hasGeneratedActions.value = true
+    showSuccess('Đã trích xuất các hành động thảo luận!')
   } catch (error) {
-    showError(errorMessage(error, 'Khong the trich xuat action items.'))
+    showError(errorMessage(error, 'Không thể trích xuất hành động.'))
   } finally {
-    isLoading.value = false
+    isActionLoading.value = false
+  }
+}
+
+// Delete a draft task from local listing before creating
+function removeDraftTask(index: number) {
+  draftTasks.value.splice(index, 1)
+}
+
+// Add a blank task row
+function addDraftTaskRow() {
+  draftTasks.value.push({
+    title: 'Task mới',
+    description: '',
+    priority: 'Medium',
+    estimateDays: 3,
+    suggestedOwnerName: null,
+    checked: true,
+    assigneeId: null
+  })
+}
+
+// Create real project & chosen tasks
+async function confirmAndCreateRealProject() {
+  if (!draftProjectName.value.trim() || isCreatingProject.value) return
+
+  const selectedTasks = draftTasks.value.filter(t => t.checked)
+  
+  isCreatingProject.value = true
+
+  try {
+    // 1. Create standard project from group
+    // Code is generated dynamically using first 4 letters or left null
+    const codeSuggestion = draftProjectName.value
+      .substring(0, 4)
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '') || 'PROJ'
+
+    const projectResult = await apiResult<any>(`/api/groups/${props.groupId}/create-project`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: draftProjectName.value.trim(),
+        code: codeSuggestion,
+        description: draftProjectDescription.value.trim() || null
+      })
+    })
+
+    const projectId = projectResult.project?.id
+    if (!projectId) {
+      throw new Error('Không nhận được mã dự án vừa tạo.')
+    }
+
+    // 2. Sequentially create each selected task
+    let tasksCreatedCount = 0
+    for (const task of selectedTasks) {
+      const estDays = task.estimateDays || 1
+      const estHours = estDays * 8
+      const dueDate = new Date()
+      dueDate.setDate(dueDate.getDate() + estDays)
+
+      const taskPayload = {
+        title: task.title.trim(),
+        description: task.description ? task.description.trim() : null,
+        priority: task.priority || 'Medium',
+        dueDate: dueDate.toISOString(),
+        estimatedHours: estHours,
+        projectId: projectId,
+        assigneeId: task.assigneeId || null,
+        isPrivate: false,
+        isPinned: false,
+        contributesToProgress: true,
+        assigneeIds: task.assigneeId ? [task.assigneeId] : []
+      }
+
+      await apiResult('/api/tasks', {
+        method: 'POST',
+        body: JSON.stringify(taskPayload)
+      })
+      tasksCreatedCount++
+    }
+
+    showSuccess(`Đã tạo thành công dự án "${draftProjectName.value}" cùng ${tasksCreatedCount} công việc!`)
+    
+    // Redirect to newly created project
+    router.push({ name: 'project-detail', params: { projectId } })
+    
+    // Clear draft states
+    hasGeneratedDraft.value = false
+    draftTasks.value = []
+  } catch (error) {
+    showError(errorMessage(error, 'Lỗi trong quá trình tạo dự án và công việc.'))
+  } finally {
+    isCreatingProject.value = false
   }
 }
 
@@ -62,153 +344,909 @@ function confidenceLabel(value: number) {
 <template>
   <aside class="group-ai-panel glass-card">
     <header class="group-ai-panel__header">
-      <div>
-        <span>AI</span>
-        <h2>Action items</h2>
+      <div class="header-title">
+        <Sparkles class="ai-spark-icon animate-pulse" :size="18" />
+        <h2>AI Assistant</h2>
       </div>
-      <button
-        class="icon-button icon-button--small"
-        type="button"
-        aria-label="Extract action items"
-        :disabled="!hasGroup || isLoading"
-        @click="extractActionItems"
-      >
-        <Loader2 v-if="isLoading" :size="16" class="group-ai-panel__spin" />
-        <Sparkles v-else :size="16" />
-      </button>
     </header>
 
-    <div v-if="warnings.length" class="group-ai-panel__warnings">
-      <span v-for="warning in warnings" :key="warning">{{ warning }}</span>
-    </div>
+    <!-- Sub Navigation Tabs -->
+    <nav class="group-ai-tabs" aria-label="AI Tools Sub Navigation">
+      <button 
+        :class="{ active: subTab === 'summary' }" 
+        @click="subTab = 'summary'"
+        type="button"
+      >
+        <FileText :size="14" />
+        <span>Tóm tắt</span>
+      </button>
+      <button 
+        :class="{ active: subTab === 'draft' }" 
+        @click="subTab = 'draft'"
+        type="button"
+      >
+        <FolderKanban :size="14" />
+        <span>Dự thảo</span>
+      </button>
+      <button 
+        :class="{ active: subTab === 'action-items' }" 
+        @click="subTab = 'action-items'"
+        type="button"
+      >
+        <ListChecks :size="14" />
+        <span>Hành động</span>
+      </button>
+    </nav>
 
-    <div v-if="actionItems.length" class="group-ai-panel__list">
-      <article v-for="item in actionItems" :key="`${item.title}-${item.confidence}`" class="group-ai-item">
-        <div class="group-ai-item__title">
-          <ListChecks :size="15" />
-          <strong>{{ item.title }}</strong>
+    <!-- Content Sections -->
+    <div class="group-ai-panel__content no-scrollbar">
+      
+      <!-- SUB-TAB 1: TÓM TẮT THẢO LUẬN -->
+      <div v-if="subTab === 'summary'" class="tab-view-container">
+        <div class="action-trigger-box">
+          <p class="helper-text">Tổng hợp nội dung thảo luận gần đây trong cuộc trò chuyện nhóm, rút ra các quyết định then chốt.</p>
+          <button
+            class="primary-button ai-action-btn"
+            type="button"
+            :disabled="!hasGroup || isSummaryLoading"
+            @click="generateSummary"
+          >
+            <Loader2 v-if="isSummaryLoading" :size="16" class="spin-icon" />
+            <Sparkles v-else :size="16" />
+            <span>Tóm tắt thảo luận</span>
+          </button>
         </div>
-        <p v-if="item.description">{{ item.description }}</p>
-        <div class="group-ai-item__meta">
-          <span v-if="item.suggestedOwnerName">{{ item.suggestedOwnerName }}</span>
-          <span v-if="item.dueDateSuggestion">{{ new Date(item.dueDateSuggestion).toLocaleDateString('vi') }}</span>
-          <span>{{ confidenceLabel(item.confidence) }}</span>
-        </div>
-        <small v-if="item.sourceEvidence">{{ item.sourceEvidence }}</small>
-      </article>
-    </div>
 
-    <div v-else class="group-ai-panel__empty">
-      <ListChecks :size="22" />
-      <span>{{ isLoading ? 'Dang xu ly...' : 'Chua co action items' }}</span>
+        <div v-if="summaryWarnings.length" class="warnings-box">
+          <AlertTriangle :size="14" />
+          <div class="warnings-list">
+            <span v-for="warning in summaryWarnings" :key="warning">{{ warning }}</span>
+          </div>
+        </div>
+
+        <div v-if="hasGeneratedSummary" class="ai-result-content">
+          <section class="result-section">
+            <h3 class="section-title">
+              <FileText :size="15" />
+              Tóm tắt chung
+            </h3>
+            <div class="summary-body-text">
+              {{ summaryText || 'Không có tóm tắt chi tiết.' }}
+            </div>
+          </section>
+
+          <section class="result-section">
+            <h3 class="section-title success-color">
+              <CheckCircle2 :size="15" />
+              Quyết định chính
+            </h3>
+            <ul v-if="keyDecisions.length" class="bullet-list">
+              <li v-for="(dec, idx) in keyDecisions" :key="idx">{{ dec }}</li>
+            </ul>
+            <div v-else class="empty-bullet-text">Không phát hiện quyết định cụ thể nào.</div>
+          </section>
+
+          <section class="result-section">
+            <h3 class="section-title warning-color">
+              <HelpCircle :size="15" />
+              Câu hỏi chưa giải quyết
+            </h3>
+            <ul v-if="unresolvedQuestions.length" class="bullet-list">
+              <li v-for="(q, idx) in unresolvedQuestions" :key="idx">{{ q }}</li>
+            </ul>
+            <div v-else class="empty-bullet-text">Mọi câu hỏi thảo luận đã được giải đáp.</div>
+          </section>
+        </div>
+
+        <div v-else-if="!isSummaryLoading" class="panel-empty-placeholder">
+          <FileText :size="24" class="muted-icon" />
+          <span>Bấm nút phía trên để bắt đầu tóm tắt</span>
+        </div>
+      </div>
+
+      <!-- SUB-TAB 2: DỰ THẢO PROJECT & TASKS -->
+      <div v-if="subTab === 'draft'" class="tab-view-container">
+        
+        <div v-if="!hasGeneratedDraft" class="action-trigger-box">
+          <p class="helper-text">Tự động đề xuất cấu trúc Project và lập danh sách các công việc cụ thể dựa trên trao đổi của nhóm.</p>
+          
+          <div class="instructions-input-group">
+            <label for="extra-instructions">Yêu cầu bổ sung cho AI (Tùy chọn):</label>
+            <textarea
+              id="extra-instructions"
+              v-model="extraInstructions"
+              rows="2"
+              placeholder="Ví dụ: Tập trung phân chia các tasks Frontend; Dự án kéo dài trong 2 tuần..."
+              class="ai-instructions-textarea"
+            ></textarea>
+          </div>
+
+          <button
+            class="primary-button ai-action-btn"
+            type="button"
+            :disabled="!hasGroup || isDraftLoading"
+            @click="generateDraftProject"
+          >
+            <Loader2 v-if="isDraftLoading" :size="16" class="spin-icon" />
+            <Sparkles v-else :size="16" />
+            <span>Tạo project nháp</span>
+          </button>
+        </div>
+
+        <div v-if="draftWarnings.length" class="warnings-box">
+          <AlertTriangle :size="14" />
+          <div class="warnings-list">
+            <span v-for="warning in draftWarnings" :key="warning">{{ warning }}</span>
+          </div>
+        </div>
+
+        <!-- DRAFT RENDER & EDIT VIEW -->
+        <div v-if="hasGeneratedDraft" class="draft-edit-container">
+          <div class="draft-project-info glass-card">
+            <div class="form-group">
+              <label>Tên dự án dự kiến</label>
+              <input type="text" v-model="draftProjectName" class="premium-input font-bold" />
+            </div>
+            <div class="form-group">
+              <label>Mô tả dự án</label>
+              <textarea v-model="draftProjectDescription" rows="2" class="premium-textarea"></textarea>
+            </div>
+          </div>
+
+          <div class="draft-tasks-header">
+            <h4>Danh sách công việc dự thảo ({{ draftTasks.length }})</h4>
+            <button class="text-button text-button--small" type="button" @click="addDraftTaskRow">
+              <Plus :size="14" /> Thêm hàng
+            </button>
+          </div>
+
+          <div class="draft-tasks-list">
+            <article 
+              v-for="(task, index) in draftTasks" 
+              :key="index" 
+              class="draft-task-card"
+              :class="{ 'draft-task-card--unchecked': !task.checked }"
+            >
+              <div class="draft-task-card__header">
+                <label class="custom-checkbox">
+                  <input type="checkbox" v-model="task.checked" />
+                  <span class="checkmark"></span>
+                </label>
+                <input 
+                  type="text" 
+                  v-model="task.title" 
+                  class="task-title-input" 
+                  placeholder="Tiêu đề task"
+                />
+                <button 
+                  class="icon-button icon-button--danger text-red-500" 
+                  type="button" 
+                  title="Xóa hàng"
+                  @click="removeDraftTask(index)"
+                >
+                  <Trash2 :size="14" />
+                </button>
+              </div>
+
+              <div class="draft-task-card__body">
+                <textarea 
+                  v-model="task.description" 
+                  rows="2" 
+                  class="task-desc-textarea" 
+                  placeholder="Mô tả công việc chi tiết..."
+                ></textarea>
+                
+                <div class="task-metadata-grid">
+                  <div class="metadata-col">
+                    <label>Độ ưu tiên</label>
+                    <select v-model="task.priority" class="metadata-select">
+                      <option value="Low">Low</option>
+                      <option value="Medium">Medium</option>
+                      <option value="High">High</option>
+                    </select>
+                  </div>
+
+                  <div class="metadata-col">
+                    <label>Số ngày</label>
+                    <input 
+                      type="number" 
+                      v-model="task.estimateDays" 
+                      min="1" 
+                      max="100" 
+                      class="metadata-number-input"
+                    />
+                  </div>
+
+                  <div class="metadata-col">
+                    <label>Người phụ trách</label>
+                    <select v-model="task.assigneeId" class="metadata-select">
+                      <option :value="null">Chưa phân công</option>
+                      <option 
+                        v-for="m in members" 
+                        :key="m.userId" 
+                        :value="m.userId"
+                      >
+                        {{ m.fullName }}
+                      </option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div class="draft-actions-footer">
+            <button
+              class="primary-button footer-confirm-btn"
+              type="button"
+              :disabled="isCreatingProject || draftTasks.filter(t => t.checked).length === 0"
+              @click="confirmAndCreateRealProject"
+            >
+              <Loader2 v-if="isCreatingProject" :size="16" class="spin-icon" />
+              <Check v-else :size="16" />
+              <span>Xác nhận tạo Project thật</span>
+            </button>
+            <button 
+              class="text-button text-button--danger text-center w-full"
+              type="button"
+              @click="hasGeneratedDraft = false"
+            >
+              Hủy dự thảo
+            </button>
+          </div>
+        </div>
+
+        <div v-else-if="!isDraftLoading" class="panel-empty-placeholder">
+          <FolderKanban :size="24" class="muted-icon" />
+          <span>Bấm nút phía trên để lập dự án nháp</span>
+        </div>
+      </div>
+
+      <!-- SUB-TAB 3: ACTION ITEMS / HÀNH ĐỘNG -->
+      <div v-if="subTab === 'action-items'" class="tab-view-container">
+        <div class="action-trigger-box">
+          <p class="helper-text">Tìm kiếm và trích xuất trực tiếp các việc cần làm (Action Items) được đề cập trong hội thoại.</p>
+          <button
+            class="primary-button ai-action-btn"
+            type="button"
+            :disabled="!hasGroup || isActionLoading"
+            @click="extractActionItems"
+          >
+            <Loader2 v-if="isActionLoading" :size="16" class="spin-icon" />
+            <Sparkles v-else :size="16" />
+            <span>Trích xuất Action Items</span>
+          </button>
+        </div>
+
+        <div v-if="actionWarnings.length" class="warnings-box">
+          <AlertTriangle :size="14" />
+          <div class="warnings-list">
+            <span v-for="warning in actionWarnings" :key="warning">{{ warning }}</span>
+          </div>
+        </div>
+
+        <div v-if="hasGeneratedActions && actionItems.length" class="action-items-list">
+          <article v-for="item in actionItems" :key="`${item.title}-${item.confidence}`" class="group-ai-item">
+            <div class="group-ai-item__title">
+              <ListChecks :size="15" />
+              <strong>{{ item.title }}</strong>
+            </div>
+            <p v-if="item.description" class="group-ai-item__desc">{{ item.description }}</p>
+            <div class="group-ai-item__meta">
+              <span v-if="item.suggestedOwnerName" class="meta-tag">
+                <User :size="10" /> {{ item.suggestedOwnerName }}
+              </span>
+              <span v-if="item.dueDateSuggestion" class="meta-tag">
+                <Calendar :size="10" /> {{ new Date(item.dueDateSuggestion).toLocaleDateString('vi') }}
+              </span>
+              <span class="meta-tag confidence-tag">{{ confidenceLabel(item.confidence) }}</span>
+            </div>
+            <small v-if="item.sourceEvidence" class="group-ai-item__source">
+              <em>Dẫn chứng:</em> "{{ item.sourceEvidence }}"
+            </small>
+          </article>
+        </div>
+
+        <div v-else-if="hasGeneratedActions && !actionItems.length" class="panel-empty-placeholder">
+          <ListChecks :size="24" class="muted-icon" />
+          <span>Không phát hiện Action items nào trong đoạn chat gần đây.</span>
+        </div>
+
+        <div v-else-if="!isActionLoading" class="panel-empty-placeholder">
+          <ListChecks :size="24" class="muted-icon" />
+          <span>Bấm nút phía trên để trích xuất hành động</span>
+        </div>
+      </div>
+
     </div>
   </aside>
 </template>
 
 <style scoped>
 .group-ai-panel {
-  min-height: calc(100dvh - 130px);
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   gap: 12px;
-  padding: 16px;
-}
-
-.group-ai-panel__header,
-.group-ai-item__title,
-.group-ai-item__meta,
-.group-ai-panel__empty {
-  display: flex;
-  align-items: center;
+  background: transparent;
+  border: none;
+  backdrop-filter: none;
+  border-radius: 0;
+  padding: 0;
+  margin-top: 10px;
 }
 
 .group-ai-panel__header {
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.group-ai-panel__header span {
-  color: var(--muted);
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.group-ai-panel__warnings {
-  display: grid;
-  gap: 6px;
-}
-
-.group-ai-panel__warnings span {
-  border: 1px solid rgba(245, 158, 11, 0.24);
-  border-radius: 8px;
-  background: rgba(255, 251, 235, 0.92);
-  color: #92400e;
-  padding: 8px 10px;
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.group-ai-panel__list {
-  min-height: 0;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  overflow-y: auto;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 4px;
 }
 
-.group-ai-item {
-  display: grid;
+.header-title {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  border: 1px solid rgba(193, 211, 232, 0.72);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.82);
-  padding: 12px;
 }
 
-.group-ai-item__title {
-  gap: 7px;
+.ai-spark-icon {
+  color: var(--primary);
+}
+
+.group-ai-panel__header h2 {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text-strong);
+  margin: 0;
+}
+
+/* AI Sub Tabs Styles */
+.group-ai-tabs {
+  display: flex;
+  background: rgba(148, 163, 184, 0.08);
+  padding: 4px;
+  border-radius: 12px;
+  gap: 4px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.group-ai-tabs button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 6px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.group-ai-tabs button:hover {
+  background: rgba(255, 255, 255, 0.4);
   color: var(--text-strong);
 }
 
-.group-ai-item p,
-.group-ai-item small {
-  margin: 0;
-  color: var(--muted);
-  line-height: 1.45;
+.group-ai-tabs button.active {
+  background: #ffffff;
+  color: var(--primary);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.05);
 }
 
-.group-ai-item__meta {
-  flex-wrap: wrap;
+/* Content Area */
+.group-ai-panel__content {
+  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tab-view-container {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: 100%;
+}
+
+.action-trigger-box {
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.02);
+}
+
+.helper-text {
+  font-size: 0.76rem;
+  color: var(--muted);
+  line-height: 1.45;
+  margin: 0;
+}
+
+.ai-action-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  border-radius: 10px;
+}
+
+/* Warnings Box */
+.warnings-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1px solid rgba(245, 158, 11, 0.24);
+  border-radius: 10px;
+  background: rgba(255, 251, 235, 0.92);
+  color: #b45309;
+  padding: 10px 12px;
+}
+
+.warnings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+/* AI Summarize Results */
+.ai-result-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.result-section {
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.02);
+}
+
+.section-title {
+  margin: 0 0 8px 0;
+  font-size: 0.82rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-strong);
+}
+
+.section-title.success-color {
+  color: #15803d;
+}
+
+.section-title.warning-color {
+  color: #b45309;
+}
+
+.summary-body-text {
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: #334155;
+  white-space: pre-line;
+}
+
+.bullet-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
 }
 
-.group-ai-item__meta span {
-  border-radius: 999px;
-  background: rgba(234, 244, 255, 0.86);
-  color: var(--primary);
-  padding: 5px 8px;
-  font-size: 0.74rem;
-  font-weight: 800;
+.bullet-list li {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #475569;
 }
 
-.group-ai-panel__empty {
-  min-height: 220px;
-  justify-content: center;
+.empty-bullet-text {
+  font-size: 0.74rem;
+  color: var(--muted);
+  font-style: italic;
+  padding-left: 4px;
+}
+
+/* AI Draft Project & Edit View */
+.draft-edit-container {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.draft-project-info {
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.form-group label,
+.instructions-input-group label {
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.premium-input {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.82rem;
+  color: var(--text-strong);
+  background: #ffffff;
+  transition: border-color 0.2s ease;
+}
+
+.premium-input:focus {
+  border-color: var(--primary);
+  outline: none;
+}
+
+.premium-textarea,
+.ai-instructions-textarea {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text-strong);
+  background: #ffffff;
+  resize: vertical;
+  transition: border-color 0.2s ease;
+}
+
+.premium-textarea:focus,
+.ai-instructions-textarea:focus {
+  border-color: var(--primary);
+  outline: none;
+}
+
+.instructions-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.draft-tasks-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.draft-tasks-header h4 {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--text-strong);
+}
+
+.draft-tasks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.draft-task-card {
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(193, 211, 232, 0.72);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all 0.25s ease;
+}
+
+.draft-task-card--unchecked {
+  opacity: 0.55;
+  border-color: rgba(148, 163, 184, 0.2);
+  background: rgba(248, 250, 252, 0.6);
+}
+
+.draft-task-card__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.custom-checkbox {
+  position: relative;
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.custom-checkbox input {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+  height: 0;
+  width: 0;
+}
+
+.checkmark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 18px;
+  width: 18px;
+  background-color: #ffffff;
+  border: 2px solid rgba(148, 163, 184, 0.4);
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.custom-checkbox input:checked ~ .checkmark {
+  background-color: var(--primary);
+  border-color: var(--primary);
+}
+
+.checkmark:after {
+  content: "";
+  position: absolute;
+  display: none;
+}
+
+.custom-checkbox input:checked ~ .checkmark:after {
+  display: block;
+}
+
+.custom-checkbox .checkmark:after {
+  left: 5px;
+  top: 1px;
+  width: 4px;
+  height: 9px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.task-title-input {
+  flex: 1;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: var(--text-strong);
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.task-title-input:focus {
+  border-color: rgba(148, 163, 184, 0.2);
+  background: #ffffff;
+  outline: none;
+}
+
+.draft-task-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 26px;
+}
+
+.task-desc-textarea {
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 0.74rem;
+  color: var(--muted);
+  line-height: 1.45;
+  resize: vertical;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.task-desc-textarea:focus {
+  border-color: rgba(148, 163, 184, 0.2);
+  background: #ffffff;
+  outline: none;
+}
+
+.task-metadata-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.task-metadata-grid > :last-child {
+  grid-column: 1 / -1;
+}
+
+.metadata-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.metadata-col label {
+  font-size: 0.64rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.metadata-select {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  background: #ffffff;
+  color: var(--text-strong);
+}
+
+.metadata-number-input {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  background: #ffffff;
+  color: var(--text-strong);
+  width: 100%;
+}
+
+.draft-actions-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.2);
+}
+
+.footer-confirm-btn {
+  width: 100%;
+  padding: 12px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 10px;
+}
+
+/* Action Items Listing styling */
+.action-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.group-ai-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid rgba(193, 211, 232, 0.72);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.82);
+  padding: 12px;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.01);
+}
+
+.group-ai-item__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-strong);
+  font-size: 0.78rem;
+}
+
+.group-ai-item__desc {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+  font-size: 0.76rem;
+}
+
+.group-ai-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.meta-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 6px;
+  background: rgba(234, 244, 255, 0.86);
+  color: var(--primary);
+  padding: 4px 6px;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.confidence-tag {
+  background: rgba(241, 245, 249, 0.86);
+  color: #475569;
+}
+
+.group-ai-item__source {
+  font-size: 0.68rem;
+  color: #64748b;
+  border-left: 2px solid rgba(148, 163, 184, 0.2);
+  padding-left: 6px;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+/* Empty States Placeholder */
+.panel-empty-placeholder {
+  flex: 1;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
   color: var(--muted);
   font-weight: 800;
+  font-size: 0.76rem;
   text-align: center;
+  padding: 20px;
+  border: 2px dashed rgba(148, 163, 184, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.15);
 }
 
-.group-ai-panel__spin {
-  animation: group-ai-spin 0.9s linear infinite;
+.muted-icon {
+  color: rgba(148, 163, 184, 0.45);
 }
 
-@keyframes group-ai-spin {
+.spin-icon {
+  animation: spin-kf 0.9s linear infinite;
+}
+
+@keyframes spin-kf {
   to {
     transform: rotate(360deg);
   }
+}
+
+.font-bold {
+  font-weight: 800;
+}
+
+.text-red-500 {
+  color: #ef4444 !important;
+}
+
+.w-full {
+  width: 100%;
+}
+
+.text-center {
+  text-align: center;
 }
 
 @media (max-width: 980px) {

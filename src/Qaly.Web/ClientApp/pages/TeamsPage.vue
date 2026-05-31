@@ -13,12 +13,14 @@ import {
   UserPlus,
   Users,
   Vote,
+  Sparkles,
 } from "lucide-vue-next";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import ChatSidebar from "../components/chat/ChatSidebar.vue";
 import ChatWindow from "../components/chat/ChatWindow.vue";
 import PollCard from "../components/chat/PollCard.vue";
+import GroupAiPanel from "../components/chat/GroupAiPanel.vue";
 import type {
   ChatGroupModel,
   TeamChatAttachment,
@@ -79,7 +81,7 @@ const users = ref<UserDto[]>([]);
 const invitations = ref<GroupInvitationDto[]>([]);
 const messages = ref<TeamChatMessage[]>([]);
 const activeGroupId = ref("");
-const activeTab = ref<"members" | "invites" | "polls" | "meeting" | "project">("members");
+const activeTab = ref<"members" | "invites" | "polls" | "meeting" | "project" | "ai">("members");
 const isLoadingGroups = ref(false);
 const isLoadingMessages = ref(false);
 const loadError = ref<string | null>(null);
@@ -640,6 +642,9 @@ function formatMessageTime(value: string) {
             <button :class="{ active: activeTab === 'project' }" @click="activeTab = 'project'">
               <Settings :size="15" /> Project
             </button>
+            <button :class="{ active: activeTab === 'ai' }" @click="activeTab = 'ai'">
+              <Sparkles :size="15" /> AI
+            </button>
           </nav>
 
           <div v-if="activeTab === 'members'" class="group-tool-body">
@@ -766,6 +771,10 @@ function formatMessageTime(value: string) {
             <strong>Meeting nhóm</strong>
             <p>Bắt đầu phiên meeting cho thành viên trong nhóm.</p>
             <button class="primary-button" type="button" @click="startMeeting">Start meeting</button>
+          </div>
+
+          <div v-else-if="activeTab === 'ai'" class="group-tool-body" style="padding: 0; min-height: 0;">
+            <GroupAiPanel :group-id="activeGroupId" :members="members" />
           </div>
 
           <div v-else class="group-tool-body">
@@ -995,7 +1004,7 @@ function formatMessageTime(value: string) {
 
 .group-detail-tabs {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
 }
 
