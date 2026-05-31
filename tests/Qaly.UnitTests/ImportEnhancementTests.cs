@@ -451,6 +451,40 @@ public class ImportEnhancementTests : IDisposable
         task.Priority.Should().Be("Critical");
     }
 
+    [Fact]
+    public async Task ExecuteImportAsync_WithDefaultStatus_UsesTargetKanbanColumnWhenStatusIsEmpty()
+    {
+        var importerId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        _currentUser.SetupGet(user => user.UserId).Returns(importerId);
+
+        _context.Users.Add(new User { Id = importerId, FullName = "PM", Email = "pm@qaly.dev", IsActive = true });
+        _context.Projects.Add(new Project { Id = projectId, Name = "Project", Code = "PRJ", OwnerId = importerId });
+        await _context.SaveChangesAsync();
+
+        var service = CreateService();
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("Title,Status\nTask A,\n"));
+        var request = new ImportRequest(
+            ProjectId: projectId,
+            NewProjectName: null,
+            Mappings:
+            [
+                new ColumnMapping(0, "Title"),
+                new ColumnMapping(1, "Status")
+            ],
+            FirstRowIsHeader: true,
+            SkipDuplicates: false,
+            SheetName: null,
+            EnableAiCategorization: false,
+            DefaultStatus: "InReview");
+
+        var result = await service.ExecuteImportAsync(stream, "tasks.csv", request);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        var task = await _context.TaskItems.SingleAsync();
+        task.Status.Should().Be("InReview");
+    }
+
     private ImportService CreateService()
         => new(
             new GenericRepository<Project>(_context),

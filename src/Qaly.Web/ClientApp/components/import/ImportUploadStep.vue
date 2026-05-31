@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Archive, CheckCircle2, FileSpreadsheet, FileText, Upload } from 'lucide-vue-next'
+import { Archive, CheckCircle2, Download, FileSpreadsheet, FileText, Upload } from 'lucide-vue-next'
 import { showError } from '../../composables/use-toast'
 
 const props = defineProps<{
@@ -105,6 +105,17 @@ function fileKindLabel(name: string) {
       <div class="import-section-heading">
         <h4>Import your content</h4>
         <p>If you import a ZIP file later, QALY will convert each supported file inside into its own page.</p>
+      </div>
+
+      <div class="template-actions" aria-label="Download import templates">
+        <a class="template-link" href="/api/import/templates/tasks.xlsx" download>
+          <Download :size="15" />
+          Excel template
+        </a>
+        <a class="template-link" href="/api/import/templates/tasks.csv" download>
+          <Download :size="15" />
+          CSV template
+        </a>
       </div>
 
       <div
@@ -279,6 +290,32 @@ function fileKindLabel(name: string) {
 .notion-dropzone.dragging {
   background: #eaf4ff;
   border-color: #0f62fe;
+}
+
+.template-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.template-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.template-link:hover {
+  background: #dbeafe;
 }
 
 .dropzone-icon {

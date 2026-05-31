@@ -31,7 +31,8 @@ public record ImportRequest(
     Guid? DefaultAssigneeId = null,
     bool AssignToMeIfEmpty = false,
     string? DefaultPriority = null,
-    bool EnableAiCategorization = false
+    bool EnableAiCategorization = false,
+    string? DefaultStatus = null
 );
 
 public record ColumnMapping(

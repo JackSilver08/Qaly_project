@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ClosedXML.Excel;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Qaly.Application.Common.Interfaces;
@@ -127,5 +128,47 @@ public class ImportController : BaseApiController
     {
         var result = await _importService.GetSessionsAsync(projectId, ct);
         return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("templates/tasks.csv")]
+    public IActionResult DownloadTaskCsvTemplate()
+    {
+        const string csv = "Title,Description,Status,Priority,DueDate,EstimatedHours,Assignee,Labels\r\n"
+            + "Viet API import,Mo ta ngan gon,Todo,Medium,2026-06-15,4,dev@qaly.local,Backend;Import\r\n";
+        var bytes = System.Text.Encoding.UTF8.GetPreamble()
+            .Concat(System.Text.Encoding.UTF8.GetBytes(csv))
+            .ToArray();
+
+        return File(bytes, "text/csv", "qaly-task-import-template.csv");
+    }
+
+    [HttpGet("templates/tasks.xlsx")]
+    public IActionResult DownloadTaskXlsxTemplate()
+    {
+        using var workbook = new XLWorkbook();
+        var worksheet = workbook.Worksheets.Add("Tasks");
+        var headers = new[] { "Title", "Description", "Status", "Priority", "DueDate", "EstimatedHours", "Assignee", "Labels" };
+        for (var i = 0; i < headers.Length; i++)
+            worksheet.Cell(1, i + 1).Value = headers[i];
+
+        worksheet.Cell(2, 1).Value = "Viet API import";
+        worksheet.Cell(2, 2).Value = "Mo ta ngan gon";
+        worksheet.Cell(2, 3).Value = "Todo";
+        worksheet.Cell(2, 4).Value = "Medium";
+        worksheet.Cell(2, 5).Value = "2026-06-15";
+        worksheet.Cell(2, 6).Value = 4;
+        worksheet.Cell(2, 7).Value = "dev@qaly.local";
+        worksheet.Cell(2, 8).Value = "Backend;Import";
+
+        var headerRange = worksheet.Range(1, 1, 1, headers.Length);
+        headerRange.Style.Font.Bold = true;
+        headerRange.Style.Fill.BackgroundColor = XLColor.FromHtml("#EAF2FF");
+        worksheet.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return File(stream.ToArray(),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "qaly-task-import-template.xlsx");
     }
 }

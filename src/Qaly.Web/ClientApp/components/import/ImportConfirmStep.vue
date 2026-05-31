@@ -13,6 +13,7 @@ const props = defineProps<{
   defaultAssigneeId: string | null
   assignToMeIfEmpty: boolean
   defaultPriority: string | null
+  defaultStatus: string | null
   enableAiCategorization: boolean
 }>()
 
@@ -37,7 +38,7 @@ const statusAliases: Record<string, string> = {
   'blocked': 'OnHold', 'tạm dừng': 'OnHold', 'paused': 'OnHold',
 }
 
-const validStatuses = ['Todo', 'InProgress', 'OnHold', 'InReview', 'Done']
+const validStatuses = ['Todo', 'InProgress', 'OnHold', 'InReview', 'Done', 'Cancelled']
 
 function normalizeStatus(raw: string | null): { status: string; unmapped: boolean } {
   if (!raw || !raw.trim()) return { status: 'Todo', unmapped: false }
@@ -81,7 +82,7 @@ const previewSummary = computed(() => {
       const title = row[titleIdx]?.trim()
       if (!title) emptyTitleCount++
       if (title && props.enableAiCategorization) {
-        const rawStatus = statusIdx !== undefined ? row[statusIdx]?.trim() : ''
+        const rawStatus = statusIdx !== undefined ? row[statusIdx]?.trim() : (props.defaultStatus || '')
         const rawPriority = priorityIdx !== undefined ? row[priorityIdx]?.trim() : ''
         if (!rawStatus || !rawPriority) aiPreviewCount++
       }
@@ -93,6 +94,9 @@ const previewSummary = computed(() => {
       const { status, unmapped } = normalizeStatus(rawStatus)
       statusDist[status] = (statusDist[status] || 0) + 1
       if (unmapped && rawStatus?.trim()) unmappedStatuses.add(rawStatus.trim())
+    } else if (props.defaultStatus) {
+      const { status } = normalizeStatus(props.defaultStatus)
+      statusDist[status] = (statusDist[status] || 0) + 1
     } else {
       statusDist['Todo'] = (statusDist['Todo'] || 0) + 1
     }
@@ -201,6 +205,7 @@ const statusLabels: Record<string, string> = {
 
       <span v-if="assignToMeIfEmpty" class="option-badge">Giao cho tôi (nếu trống)</span>
       <span v-if="defaultPriority" class="option-badge">Ưu tiên mặc định: {{ defaultPriority }}</span>
+      <span v-if="defaultStatus" class="option-badge">Cột mặc định: {{ defaultStatus }}</span>
       <span v-if="enableAiCategorization" class="option-badge option-badge--ai">✨ Dùng AI phân loại</span>
 
       <span v-if="isNewProject" class="option-badge option-badge--new">+ Tạo dự án mới</span>

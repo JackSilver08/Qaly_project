@@ -12,6 +12,7 @@ const props = defineProps<{
   defaultAssigneeId: string | null
   assignToMeIfEmpty: boolean
   defaultPriority: string | null
+  defaultStatus: string | null
   enableAiCategorization: boolean
 }>()
 
@@ -23,6 +24,7 @@ const emit = defineEmits<{
   'update:defaultAssigneeId': [val: string | null]
   'update:assignToMeIfEmpty': [val: boolean]
   'update:defaultPriority': [val: string | null]
+  'update:defaultStatus': [val: string | null]
   'update:enableAiCategorization': [val: boolean]
   back: []
   next: []
@@ -120,6 +122,23 @@ function updateMappingField(index: number, targetField: string) {
           <option v-for="member in projectMembers" :key="member.userId" :value="member.userId">
             {{ member.fullName }}{{ member.email ? ` (${member.email})` : '' }}
           </option>
+        </select>
+      </div>
+
+      <div class="import-field">
+        <label>Cột Kanban mặc định (Status)</label>
+        <select
+          :value="defaultStatus || ''"
+          class="import-select"
+          @change="emit('update:defaultStatus', ($event.target as HTMLSelectElement).value || null)"
+        >
+          <option value="">Todo</option>
+          <option value="Todo">Todo</option>
+          <option value="InProgress">InProgress</option>
+          <option value="OnHold">OnHold</option>
+          <option value="InReview">InReview</option>
+          <option value="Done">Done</option>
+          <option value="Cancelled">Cancelled</option>
         </select>
       </div>
 

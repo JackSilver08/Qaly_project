@@ -34,6 +34,7 @@ const selectedSheet = ref<string | null>(null)
 const defaultAssigneeId = ref<string | null>(null)
 const assignToMeIfEmpty = ref(true)
 const defaultPriority = ref<string | null>(null)
+const defaultStatus = ref<string | null>(null)
 const enableAiCategorization = ref(false)
 const mappings = ref<{ columnIndex: number; targetField: string }[]>([])
 const newProjectName = ref('')
@@ -207,6 +208,7 @@ async function executeImport() {
       assignToMeIfEmpty: assignToMeIfEmpty.value,
       defaultPriority: defaultPriority.value,
       enableAiCategorization: enableAiCategorization.value,
+      defaultStatus: defaultStatus.value,
     }))
 
     const res = await fetch('/api/import/execute', {
@@ -376,6 +378,7 @@ onMounted(loadImportSessions)
           :default-assignee-id="defaultAssigneeId"
           :assign-to-me-if-empty="assignToMeIfEmpty"
           :default-priority="defaultPriority"
+          :default-status="defaultStatus"
           :enable-ai-categorization="enableAiCategorization"
           @update:mappings="mappings = $event"
           @update:first-row-is-header="onFirstRowIsHeaderChanged"
@@ -384,6 +387,7 @@ onMounted(loadImportSessions)
           @update:default-assignee-id="defaultAssigneeId = $event"
           @update:assign-to-me-if-empty="assignToMeIfEmpty = $event"
           @update:default-priority="defaultPriority = $event"
+          @update:default-status="defaultStatus = $event"
           @update:enable-ai-categorization="enableAiCategorization = $event"
           @back="step = 1"
           @next="goToConfirm"
@@ -436,6 +440,7 @@ onMounted(loadImportSessions)
           :default-assignee-id="defaultAssigneeId"
           :assign-to-me-if-empty="assignToMeIfEmpty"
           :default-priority="defaultPriority"
+          :default-status="defaultStatus"
           :enable-ai-categorization="enableAiCategorization"
           @back="step = 2"
           @confirm="executeImport"

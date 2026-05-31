@@ -437,7 +437,9 @@ public partial class ImportService : IImportService
             var rawAssignee = GetCellValue(row, fieldMap, "Assignee")?.Trim();
 
             // Normalize status
-            var status = NormalizeStatus(rawStatus, unmappedStatuses);
+            var status = string.IsNullOrWhiteSpace(rawStatus) && !string.IsNullOrWhiteSpace(request.DefaultStatus)
+                ? NormalizeStatus(request.DefaultStatus, unmappedStatuses)
+                : NormalizeStatus(rawStatus, unmappedStatuses);
 
             // Normalize priority
             var priority = string.IsNullOrWhiteSpace(rawPriority) && !string.IsNullOrWhiteSpace(request.DefaultPriority)
@@ -448,7 +450,7 @@ public partial class ImportService : IImportService
             var aiLabels = new List<string>();
             if (aiCategorizationDict.TryGetValue(rowIndex, out var aiResult))
             {
-                if (string.IsNullOrWhiteSpace(rawStatus) && !string.IsNullOrWhiteSpace(aiResult.Status))
+                if (string.IsNullOrWhiteSpace(rawStatus) && string.IsNullOrWhiteSpace(request.DefaultStatus) && !string.IsNullOrWhiteSpace(aiResult.Status))
                     status = NormalizeStatus(aiResult.Status, unmappedStatuses);
                     
                 if (string.IsNullOrWhiteSpace(rawPriority) && !string.IsNullOrWhiteSpace(aiResult.Priority))
