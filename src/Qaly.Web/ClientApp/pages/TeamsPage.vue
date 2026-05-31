@@ -14,6 +14,8 @@ import {
   Users,
   Vote,
   Sparkles,
+  PanelRightClose,
+  PanelRightOpen,
 } from "lucide-vue-next";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -24,6 +26,7 @@ import GroupAiPanel from "../components/chat/GroupAiPanel.vue";
 import type {
   ChatGroupModel,
   TeamChatAttachment,
+  TeamChatMeeting,
   TeamChatMessage,
   TeamChatPoll,
 } from "../components/chat/chat-types";
@@ -94,6 +97,7 @@ const addRole = ref("Member");
 const projectForm = ref({ name: "", code: "", description: "" });
 const pollForm = ref({ question: "", options: ["", ""] });
 const backgroundTheme = ref(localStorage.getItem("qaly.chatBackground") ?? "clean");
+const isDetailPanelCollapsed = ref(false);
 
 let hubConnection: HubConnection | null = null;
 
@@ -487,6 +491,16 @@ function togglePin(messageId: string) {
   if (target) showSuccess(target.pinned ? "Đã bỏ ghim tin nhắn" : "Đã ghim tin nhắn");
 }
 
+function joinMeeting(meetingId: string) {
+  const meeting = messages.value.find((message) => message.meeting?.id === meetingId)?.meeting;
+  if (meeting?.joinUrl) {
+    window.open(meeting.joinUrl, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  void router.push({ name: "group-meeting", params: { groupId: activeGroupId.value } });
+}
+
 function selectGroup(groupId: string) {
   activeGroupId.value = groupId;
 }
@@ -523,17 +537,19 @@ function toGroupModel(group: GroupDto): ChatGroupModel {
 }
 
 function toMessageModel(message: GroupMessageDto): TeamChatMessage {
+  const meeting = parseMeeting(message);
   return {
     id: message.id,
     groupId: message.workGroupId,
     senderId: message.userId,
     senderName: message.senderName,
     senderInitials: initials(message.senderName),
-    text: message.messageType === "Poll" ? "" : message.content,
+    text: message.messageType === "Poll" || meeting ? "" : message.content,
     createdAt: formatMessageTime(message.createdAt),
     pinned: false,
     attachments: [],
     poll: parsePoll(message),
+    meeting,
   };
 }
 
@@ -575,6 +591,26 @@ function parsePoll(message: GroupMessageDto): TeamChatPoll | undefined {
   return poll;
 }
 
+function parseMeeting(message: GroupMessageDto): TeamChatMeeting | undefined {
+  if (message.messageType === "Poll" || !message.content.includes("[meeting")) return undefined;
+
+  const meetingId = message.content.match(/\[meetingid\]\s*([^\s]+)/i)?.[1] ?? message.id;
+  const joinUrl = message.content.match(/\[joinurl\]\s*(https?:\/\/\S+)/i)?.[1];
+  const ended = /\[meeting-ended\]/i.test(message.content);
+  const started = /\[meeting-started\]/i.test(message.content);
+
+  if (!started && !ended) return undefined;
+
+  return {
+    id: meetingId,
+    joinUrl,
+    active: started && !ended,
+    text: ended
+      ? "Cuộc họp nhóm đã kết thúc."
+      : `${message.senderName} đã bắt đầu cuộc họp nhóm.`,
+  };
+}
+
 function initials(name: string) {
   return name
     .split(" ")
@@ -597,7 +633,10 @@ function formatMessageTime(value: string) {
 <template>
   <div class="dashboard-scroll dashboard-scroll--embedded no-scrollbar">
     <div class="dashboard-main project-home-main no-scrollbar">
-      <section class="team-chat-page groups-workspace">
+      <section
+        class="team-chat-page groups-workspace"
+        :class="{ 'groups-workspace--detail-collapsed': isDetailPanelCollapsed }"
+      >
         <div v-if="loadError" class="team-chat-banner team-chat-banner--error">
           {{ loadError }}
         </div>
@@ -620,16 +659,38 @@ function formatMessageTime(value: string) {
           @send="sendMessage"
           @pin="togglePin"
           @change-background="changeBackground"
+          @join-meeting="joinMeeting"
         />
 
-        <aside class="group-detail-panel glass-card">
+        <aside class="group-detail-panel glass-card" :class="{ 'is-collapsed': isDetailPanelCollapsed }">
+          <button
+            v-if="isDetailPanelCollapsed"
+            class="group-detail-collapse-button"
+            type="button"
+            aria-label="Mở chi tiết nhóm"
+            @click="isDetailPanelCollapsed = false"
+          >
+            <PanelRightOpen :size="18" />
+          </button>
+
+          <div v-else class="group-detail-content">
           <header class="group-detail-header">
             <div>
               <span>CHI TIẾT</span>
               <h2>{{ activeGroup?.name ?? "Chọn nhóm" }}</h2>
               <p>{{ activeDetail?.memberCount ?? members.length }} thành viên</p>
             </div>
-            <div class="group-role-badge">{{ roleLabel(activeDetail?.currentUserRole) }}</div>
+            <div class="group-detail-header__actions">
+              <div class="group-role-badge">{{ roleLabel(activeDetail?.currentUserRole) }}</div>
+              <button
+                class="group-detail-icon-button"
+                type="button"
+                aria-label="Thu gọn chi tiết nhóm"
+                @click="isDetailPanelCollapsed = true"
+              >
+                <PanelRightClose :size="17" />
+              </button>
+            </div>
           </header>
 
           <nav class="group-detail-tabs" aria-label="Group tools">
@@ -795,6 +856,7 @@ function formatMessageTime(value: string) {
               </button>
             </form>
           </div>
+          </div>
         </aside>
 
         <div class="team-chat-status">
@@ -837,14 +899,21 @@ function formatMessageTime(value: string) {
   width: 100%;
   min-width: 0;
   grid-template-columns:
-    minmax(240px, 22%)
-    minmax(380px, 1fr)
-    minmax(420px, 35%);
+    minmax(250px, 280px)
+    minmax(420px, 1fr)
+    minmax(380px, 400px);
   gap: 0;
   padding: 0;
   overflow: hidden;
   border-top: 1px solid #e2e8f0;
   background: #ffffff;
+}
+
+.groups-workspace--detail-collapsed {
+  grid-template-columns:
+    minmax(250px, 280px)
+    minmax(420px, 1fr)
+    58px;
 }
 
 .dashboard-scroll--embedded {
@@ -878,92 +947,247 @@ function formatMessageTime(value: string) {
 }
 
 .groups-workspace :deep(.team-chat-sidebar) {
-  padding: 24px 18px;
+  padding: 20px 12px;
   border-right: 1px solid #e2e8f0;
+  background: #ffffff;
+  gap: 8px;
+}
+
+.groups-workspace :deep(.team-chat-sidebar__header),
+.groups-workspace :deep(.team-chat-window__header) {
+  min-height: 56px;
+  padding: 0 4px 14px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.groups-workspace :deep(.team-chat-sidebar__empty),
+.groups-workspace :deep(.team-chat-empty) {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  min-height: 180px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 14px;
+  color: #64748b;
+  text-align: center;
+  padding: 18px;
+}
+
+.groups-workspace :deep(.team-chat-sidebar__empty strong),
+.groups-workspace :deep(.team-chat-empty strong) {
+  color: #0f172a;
+  font-size: 0.92rem;
+}
+
+.groups-workspace :deep(.team-chat-empty) {
+  width: min(360px, 88%);
+  align-self: center;
+  margin: auto;
   background: #ffffff;
 }
 
 .groups-workspace :deep(.team-chat-sidebar__header h2),
 .groups-workspace :deep(.team-chat-window__header h2) {
-  font-size: 1.28rem;
+  font-size: 1.18rem;
   letter-spacing: 0;
 }
 
+.groups-workspace :deep(.team-chat-sidebar__header span),
+.groups-workspace :deep(.team-chat-window__header span) {
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+}
+
 .groups-workspace :deep(.team-chat-group) {
-  border-radius: 16px;
-  padding: 15px 16px;
+  min-height: 66px;
+  align-items: center;
+  justify-content: flex-start;
+  border-radius: 12px;
+  padding: 11px 12px;
+  border-left: 3px solid transparent;
   transition:
-    transform 180ms ease,
     border-color 180ms ease,
     background 180ms ease,
-    box-shadow 180ms ease;
+    color 180ms ease;
+}
+
+.groups-workspace :deep(.team-chat-group__avatar),
+.groups-workspace :deep(.team-chat-window__avatar) {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+  background: #1677ff;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.groups-workspace :deep(.team-chat-group__avatar) {
+  width: 38px;
+  height: 38px;
+  border-radius: 13px;
+  font-size: 0.78rem;
 }
 
 .groups-workspace :deep(.team-chat-group:hover) {
-  transform: translateY(-1px);
-  box-shadow: 0 14px 26px rgba(37, 99, 235, 0.1);
+  background: #f8fafc !important;
+  box-shadow: none;
 }
 
 .groups-workspace :deep(.team-chat-group.is-active) {
-  border-color: rgba(37, 99, 235, 0.38);
-  background: linear-gradient(135deg, rgba(239, 246, 255, 0.98), rgba(219, 234, 254, 0.82));
-  box-shadow: 0 16px 34px rgba(37, 99, 235, 0.14);
+  border-color: #2563eb;
+  background: #eff6ff !important;
+  box-shadow: none;
+}
+
+.groups-workspace :deep(.team-chat-group strong) {
+  color: #0f172a;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.groups-workspace :deep(.team-chat-group span) {
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.groups-workspace :deep(.team-chat-group small) {
+  margin-left: auto;
 }
 
 .groups-workspace :deep(.team-chat-window) {
-  padding: 24px;
+  padding: 18px 22px 16px;
   overflow: hidden;
   border-right: 1px solid #e2e8f0;
+  background: #fbfdff;
 }
 
 .groups-workspace :deep(.team-chat-body) {
-  padding: 14px 10px 18px;
+  padding: 16px 12px 18px;
+  gap: 10px;
+}
+
+.groups-workspace :deep(.team-chat-window__identity) {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.groups-workspace :deep(.team-chat-window__identity > div) {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.groups-workspace :deep(.team-chat-window__identity h2),
+.groups-workspace :deep(.team-chat-window__identity span:not(.team-chat-window__avatar)) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.groups-workspace :deep(.team-chat-window__avatar) {
+  width: 42px;
+  height: 42px;
+  border-radius: 15px;
+  font-size: 0.82rem;
+}
+
+.groups-workspace :deep(.team-chat-window__actions .icon-button) {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  box-shadow: none;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.groups-workspace :deep(.team-chat-window__actions .icon-button:hover) {
+  color: #1677ff;
+  border-color: #bfdbfe;
+  background: #eff6ff;
 }
 
 .groups-workspace :deep(.team-message) {
-  max-width: min(82%, 760px);
+  max-width: min(70%, 680px);
 }
 
 .groups-workspace :deep(.team-message__avatar) {
-  width: 36px;
-  height: 36px;
-  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.22);
+  width: 32px;
+  height: 32px;
+  box-shadow: none;
 }
 
 .groups-workspace :deep(.team-message__bubble) {
-  border-radius: 18px 18px 18px 6px;
-  padding: 13px 16px;
-  border: 1px solid rgba(226, 232, 240, 0.82);
-  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.08);
+  border-radius: 16px 16px 16px 5px;
+  padding: 11px 14px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff !important;
+  box-shadow: none;
+  color: #334155 !important;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease;
 }
 
 .groups-workspace :deep(.team-message.is-mine .team-message__bubble) {
   border-color: transparent;
-  border-radius: 18px 18px 6px 18px;
-  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 52%, #3b82f6 100%);
-  box-shadow: 0 18px 42px rgba(37, 99, 235, 0.24);
+  border-radius: 16px 16px 5px 16px;
+  background: #1677ff !important;
+  box-shadow: none;
+}
+
+.groups-workspace :deep(.team-message__meta) {
+  gap: 7px;
+}
+
+.groups-workspace :deep(.team-message__meta strong) {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.groups-workspace :deep(.team-message__meta span) {
+  font-size: 0.76rem;
+}
+
+.groups-workspace :deep(.team-message__bubble p) {
+  line-height: 1.48;
 }
 
 .groups-workspace :deep(.team-chat-composer) {
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid rgba(203, 213, 225, 0.72);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.84);
-  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.07);
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #dbe3ef;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: none;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease;
+}
+
+.groups-workspace :deep(.team-chat-composer:focus-within) {
+  border-color: #93c5fd;
+  background: #ffffff;
 }
 
 .groups-workspace :deep(.team-chat-composer input[type='text']) {
   border: 0;
   background: transparent;
-  min-height: 44px;
-  font-weight: 600;
+  min-height: 40px;
+  font-weight: 500;
 }
 
 .groups-workspace :deep(.team-chat-composer .primary-button) {
-  min-width: 52px;
-  border-radius: 14px;
-  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.24);
+  min-width: 46px;
+  min-height: 42px;
+  border-radius: 13px;
+  box-shadow: none;
 }
 
 .team-chat-banner {
@@ -987,14 +1211,28 @@ function formatMessageTime(value: string) {
 }
 
 .group-detail-panel {
-  padding: 24px 18px;
+  padding: 20px 18px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
   min-width: 0;
   overflow-x: hidden;
   overflow-y: hidden;
   background: #ffffff;
+}
+
+.group-detail-panel.is-collapsed {
+  align-items: center;
+  padding: 16px 8px;
+}
+
+.group-detail-content {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .group-detail-header {
@@ -1025,7 +1263,7 @@ function formatMessageTime(value: string) {
 .group-detail-header h2 {
   margin: 4px 0;
   color: #111827;
-  font-size: 1.55rem;
+  font-size: 1.35rem;
   line-height: 1.1;
 }
 
@@ -1035,12 +1273,46 @@ function formatMessageTime(value: string) {
   font-size: 0.88rem;
 }
 
+.group-detail-header__actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.group-detail-icon-button,
+.group-detail-collapse-button {
+  border: 1px solid #dbe3ef;
+  border-radius: 12px;
+  color: #475569;
+  background: #ffffff;
+  display: grid;
+  place-items: center;
+}
+
+.group-detail-icon-button {
+  width: 34px;
+  height: 34px;
+}
+
+.group-detail-collapse-button {
+  width: 40px;
+  height: 40px;
+}
+
+.group-detail-icon-button:hover,
+.group-detail-collapse-button:hover {
+  color: #1677ff;
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
 .group-role-badge {
   flex: 0 0 auto;
   height: 34px;
   border-radius: 999px;
   padding: 8px 13px;
-  background: linear-gradient(135deg, #eef2ff, #e0f2fe);
+  background: #eff6ff;
   color: #1d4ed8;
   font-size: 0.78rem;
   font-weight: 800;
@@ -1049,17 +1321,17 @@ function formatMessageTime(value: string) {
 
 .group-detail-tabs {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   min-width: 0;
 }
 
 .group-detail-tabs button {
   min-width: 0;
-  min-height: 50px;
+  min-height: 44px;
   border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.82);
+  border-radius: 12px;
+  background: #ffffff;
   color: #475569;
   display: inline-flex;
   flex-direction: column;
@@ -1072,13 +1344,23 @@ function formatMessageTime(value: string) {
   font-size: 0.64rem;
   font-weight: 800;
   line-height: 1.15;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.group-detail-tabs button:hover {
+  border-color: #bfdbfe;
+  background: #f8fbff;
+  color: #1677ff;
 }
 
 .group-detail-tabs button.active {
   border-color: rgba(37, 99, 235, 0.45);
-  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  background: #eff6ff;
   color: #1d4ed8;
-  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.13);
+  box-shadow: none;
 }
 
 .group-tool-body {
@@ -1111,12 +1393,12 @@ function formatMessageTime(value: string) {
 .group-modal input,
 .group-modal textarea {
   width: 100%;
-  border: 1px solid rgba(148, 163, 184, 0.32);
-  border-radius: 14px;
-  padding: 12px 13px;
+  border: 1px solid #dbe3ef;
+  border-radius: 12px;
+  padding: 10px 12px;
   color: #111827;
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  background: #ffffff;
+  box-shadow: none;
 }
 
 .group-member-list,
@@ -1131,11 +1413,21 @@ function formatMessageTime(value: string) {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  border: 1px solid rgba(203, 213, 225, 0.7);
-  border-radius: 16px;
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 10px;
+  background: #ffffff;
+  box-shadow: none;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.group-member-row:hover,
+.group-pending-list article:hover,
+.group-poll-item:hover {
+  border-color: #bfdbfe;
+  background: #f8fbff;
 }
 
 .group-member-row select {
@@ -1167,16 +1459,16 @@ function formatMessageTime(value: string) {
 }
 
 .group-avatar {
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
   border-radius: 999px;
   display: grid;
   place-items: center;
-  background: linear-gradient(135deg, #1d4ed8, #3b82f6);
+  background: #1677ff;
   color: #fff;
   font-size: 0.75rem;
   font-weight: 800;
-  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.22);
+  box-shadow: none;
 }
 
 .group-tool-body--polls {
@@ -1215,23 +1507,22 @@ function formatMessageTime(value: string) {
   display: grid;
   gap: 12px;
   min-width: 0;
-  padding: 14px 12px;
-  border: 1px solid rgba(37, 99, 235, 0.18);
-  border-radius: 18px;
-  background:
-    linear-gradient(135deg, rgba(239, 246, 255, 0.94), rgba(255, 255, 255, 0.98));
-  box-shadow: 0 18px 36px rgba(37, 99, 235, 0.09);
+  padding: 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  background: #f8fbff;
+  box-shadow: none;
 }
 
 .group-poll-composer input {
   width: 100%;
   min-height: 42px;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 13px;
+  border: 1px solid #dbe3ef;
+  border-radius: 12px;
   padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.92);
+  background: #ffffff;
   color: #111827;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .group-poll-options {
@@ -1251,7 +1542,7 @@ function formatMessageTime(value: string) {
   display: grid;
   place-items: center;
   border-radius: 999px;
-  background: #2563eb;
+  background: #1677ff;
   color: #fff;
   font-size: 0.78rem;
   font-weight: 900;
@@ -1294,11 +1585,14 @@ function formatMessageTime(value: string) {
   display: grid;
   gap: 10px;
   min-width: 0;
-  padding: 12px;
-  border: 1px solid rgba(203, 213, 225, 0.72);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: none;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease;
 }
 
 .group-poll-item__meta {
@@ -1315,13 +1609,13 @@ function formatMessageTime(value: string) {
 }
 
 .group-empty-state {
-  min-height: 170px;
+  min-height: 150px;
   display: grid;
   place-items: center;
   align-content: center;
   gap: 8px;
   border: 1px dashed rgba(148, 163, 184, 0.5);
-  border-radius: 18px;
+  border-radius: 14px;
   color: #64748b;
   text-align: center;
 }
@@ -1345,17 +1639,18 @@ function formatMessageTime(value: string) {
 
 .team-chat-status {
   position: absolute;
-  right: 28px;
-  bottom: 16px;
+  right: 20px;
+  bottom: 14px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.88);
+  background: #ffffff;
   color: #475569;
   padding: 7px 12px;
   font-size: 0.78rem;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  pointer-events: none;
 }
 
 .team-chat-status__dot {

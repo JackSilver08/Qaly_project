@@ -11,6 +11,15 @@ defineEmits<{
   select: [groupId: string];
   create: [];
 }>();
+
+function initials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+}
 </script>
 
 <template>
@@ -39,11 +48,17 @@ defineEmits<{
       :class="{ 'is-active': group.id === activeGroupId }"
       @click="$emit('select', group.id)"
     >
+      <span class="team-chat-group__avatar">{{ initials(group.name) }}</span>
       <div>
         <strong>{{ group.name }}</strong>
         <span>{{ group.description }}</span>
       </div>
       <small v-if="group.unreadCount > 0">{{ group.unreadCount }}</small>
     </button>
+
+    <div v-if="!groups.length" class="team-chat-sidebar__empty">
+      <strong>Chưa có nhóm chat</strong>
+      <span>Tạo nhóm đầu tiên để bắt đầu trao đổi.</span>
+    </div>
   </aside>
 </template>

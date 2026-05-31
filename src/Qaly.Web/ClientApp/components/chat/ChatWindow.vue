@@ -42,6 +42,7 @@ const pinnedMessages = computed(() =>
   props.messages.filter((message) => message.pinned),
 );
 const emojiOptions = ["\u{1F44D}", "\u2705", "\u{1F525}", "\u{1F3AF}", "\u{1F64F}", "\u{1F4A1}"];
+const groupInitials = computed(() => initials(props.group?.name ?? "Qaly"));
 
 watch(
   () => props.messages.length,
@@ -71,6 +72,15 @@ function attachFiles(event: Event) {
 function addEmoji(emoji: string) {
   draft.value += emoji;
   showEmoji.value = false;
+}
+
+function initials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
 }
 
 async function sendMessage() {
@@ -129,9 +139,12 @@ async function sendMessage() {
     :class="`team-chat-window--${backgroundTheme ?? 'clean'}`"
   >
     <header class="team-chat-window__header">
-      <div>
-        <span>Trò chuyện</span>
-        <h2>{{ group?.name ?? "Chọn nhóm chat" }}</h2>
+      <div class="team-chat-window__identity">
+        <span class="team-chat-window__avatar">{{ groupInitials }}</span>
+        <div>
+          <h2>{{ group?.name ?? "Chọn nhóm chat" }}</h2>
+          <span>{{ group?.description ?? "Chọn một nhóm để bắt đầu trò chuyện" }}</span>
+        </div>
       </div>
       <div class="team-chat-window__actions">
         <button
@@ -156,6 +169,15 @@ async function sendMessage() {
     </div>
 
     <div ref="bodyRef" class="team-chat-body no-scrollbar">
+      <div v-if="!messages.length" class="team-chat-empty">
+        <strong>{{ group ? "Chưa có tin nhắn" : "Chọn nhóm chat" }}</strong>
+        <span>{{
+          group
+            ? "Gửi tin nhắn đầu tiên để bắt đầu cuộc trò chuyện."
+            : "Danh sách tin nhắn sẽ xuất hiện ở đây."
+        }}</span>
+      </div>
+
       <MessageItem
         v-for="message in messages"
         :key="message.id"

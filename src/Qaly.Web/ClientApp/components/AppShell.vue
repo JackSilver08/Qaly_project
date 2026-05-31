@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import SidebarNav from './SidebarNav.vue'
 import TopHeader from './TopHeader.vue'
 import type { ShellNavItem } from './shell-models'
@@ -20,6 +21,8 @@ const emit = defineEmits<{
 }>()
 
 const sidebarOpen = ref(false)
+const route = useRoute()
+const isChatShell = computed(() => route.path.startsWith('/groups'))
 
 function handleNavigate() {
   sidebarOpen.value = false
@@ -29,7 +32,7 @@ function handleNavigate() {
 
 <template>
   <!-- Shared shell adapts the old UI structure: full top header, left nav, single scrolling content panel. -->
-  <div class="app-shell">
+  <div class="app-shell" :class="{ 'is-chat-shell': isChatShell }">
     <TopHeader
       brand-name="QALY"
       :notification-count="notificationCount"
