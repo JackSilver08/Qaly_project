@@ -16,4 +16,15 @@ public interface IFileImportService
         string fileName,
         string? title = null,
         CancellationToken ct = default);
+
+    Task<Result<ZipBundlePreviewResult>> PreviewZipBundleAsync(
+        Stream fileStream,
+        string fileName,
+        CancellationToken ct = default);
+
+    Task<Result<ZipBundleImportResult>> ImportZipBundleAsync(
+        Guid projectId,
+        Stream fileStream,
+        string fileName,
+        CancellationToken ct = default);
 }

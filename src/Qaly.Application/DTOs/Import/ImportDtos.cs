@@ -106,3 +106,41 @@ public record DocumentImportResult(
     int BlockCount,
     List<string> Warnings
 );
+
+public record ZipBundleEntryPreview(
+    string FileName,
+    string FileType,
+    bool IsSupported,
+    string Title,
+    int BlockCount,
+    List<string> PreviewBlocks,
+    List<string> Warnings
+);
+
+public record ZipBundlePreviewResult(
+    string FileName,
+    int TotalEntries,
+    int SupportedEntries,
+    int UnsupportedEntries,
+    List<ZipBundleEntryPreview> Entries,
+    List<string> Warnings
+);
+
+public record ZipBundlePageResult(
+    Guid PageId,
+    string Title,
+    string SourceFileName,
+    int BlockCount,
+    List<string> Warnings
+);
+
+public record ZipBundleImportResult(
+    Guid ProjectId,
+    string FileName,
+    int TotalEntries,
+    int SupportedEntries,
+    int SkippedEntries,
+    int ImportedPages,
+    List<ZipBundlePageResult> Pages,
+    List<string> Warnings
+);

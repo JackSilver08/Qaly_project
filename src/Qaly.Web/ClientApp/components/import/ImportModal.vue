@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { ArrowLeft, Check, FileText, FileUp, X } from 'lucide-vue-next'
+import { Archive, ArrowLeft, Check, FileText, FileUp, X } from 'lucide-vue-next'
 import ImportUploadStep from './ImportUploadStep.vue'
 import ImportMappingStep from './ImportMappingStep.vue'
 import ImportConfirmStep from './ImportConfirmStep.vue'
@@ -24,7 +24,7 @@ const isLoading = ref(false)
 
 // Parse result
 const parseResult = ref<any>(null)
-const importMode = ref<'table' | 'document'>('table')
+const importMode = ref<'table' | 'document' | 'zip'>('table')
 const documentTitle = ref('')
 
 // Mapping state
@@ -46,12 +46,13 @@ const isLoadingImportSessions = ref(false)
 
 const isNewProject = computed(() => !props.projectId)
 
-const stepLabels = computed(() => importMode.value === 'document'
-  ? ['Discover', 'Preview', 'Confirm', 'Done']
-  : ['Discover', 'Map columns', 'Confirm', 'Done'])
+const stepLabels = computed(() => importMode.value === 'table'
+  ? ['Discover', 'Map columns', 'Confirm', 'Done']
+  : ['Discover', 'Preview', 'Confirm', 'Done'])
 
 const tableExtensions = ['csv', 'xlsx', 'tsv', 'dsv', 'psv', 'json']
 const documentExtensions = ['md', 'markdown', 'txt', 'html', 'htm', 'docx']
+const zipExtensions = ['zip']
 
 async function loadImportSessions() {
   if (!props.projectId) return
@@ -74,6 +75,7 @@ function extensionOf(name: string) {
 function detectImportMode(selectedFile: File) {
   const ext = extensionOf(selectedFile.name)
   if (tableExtensions.includes(ext)) return 'table'
+  if (zipExtensions.includes(ext)) return 'zip'
   if (documentExtensions.includes(ext)) return 'document'
   return 'table'
 }
@@ -103,6 +105,23 @@ async function parseFile(sheetName?: string | null) {
 
       parseResult.value = data.data
       documentTitle.value = data.data.title
+      step.value = 2
+      return
+    }
+
+    if (importMode.value === 'zip') {
+      const res = await fetch('/api/import/documents/zip/preview', {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await res.json()
+
+      if (!data.isSuccess) {
+        showError(data.error || 'Khong the doc file')
+        return
+      }
+
+      parseResult.value = data.data
       step.value = 2
       return
     }
@@ -194,6 +213,31 @@ async function executeImport() {
       importResult.value = { ...data.data, kind: 'document' }
       step.value = 4
       showSuccess(`Da tao Wiki page "${data.data.title}"`)
+      return
+    }
+
+    if (importMode.value === 'zip') {
+      if (!props.projectId) {
+        showError('Hay vao mot du an cu the de import ZIP thanh nhieu Wiki page.')
+        return
+      }
+
+      formData.append('projectId', props.projectId)
+
+      const res = await fetch('/api/import/documents/zip/execute', {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await res.json()
+
+      if (!data.isSuccess) {
+        showError(data.error || 'Import ZIP that bai')
+        return
+      }
+
+      importResult.value = { ...data.data, kind: 'zip' }
+      step.value = 4
+      showSuccess(`Da import ZIP: ${data.data.importedPages} Wiki page`)
       return
     }
 
@@ -366,6 +410,52 @@ onMounted(loadImportSessions)
           </div>
         </div>
 
+        <div v-if="step === 2 && parseResult && importMode === 'zip'" class="import-step document-preview">
+          <div class="document-preview__hero">
+            <Archive :size="26" />
+            <div>
+              <span>ZIP Bundle</span>
+              <h3>Preview bundle import</h3>
+            </div>
+          </div>
+
+          <div class="document-preview__stats">
+            <div>
+              <span>Total entries</span>
+              <strong>{{ parseResult.totalEntries }}</strong>
+            </div>
+            <div>
+              <span>Supported entries</span>
+              <strong>{{ parseResult.supportedEntries }}</strong>
+            </div>
+          </div>
+
+          <div v-if="parseResult.warnings?.length" class="import-warning">
+            <span>{{ parseResult.warnings.join(' ') }}</span>
+          </div>
+
+          <div class="document-preview__blocks">
+            <p>Supported child files</p>
+            <ul class="bundle-preview-list">
+              <li v-for="(entry, index) in parseResult.entries" :key="index">
+                <strong>{{ entry.title }}</strong>
+                <span>{{ entry.fileName }} - {{ entry.fileType }} - {{ entry.blockCount }} blocks</span>
+                <div v-if="entry.previewBlocks?.length" class="bundle-preview-list__blocks">
+                  <em v-for="(block, blockIndex) in entry.previewBlocks.slice(0, 3)" :key="blockIndex">{{ block }}</em>
+                </div>
+                <p v-if="entry.warnings?.length" class="bundle-entry-warning">{{ entry.warnings.join(' ') }}</p>
+              </li>
+            </ul>
+          </div>
+
+          <div class="import-actions">
+            <button class="btn btn--ghost" type="button" @click="step = 1"><ArrowLeft :size="16" /> Back</button>
+            <button class="btn btn--primary" type="button" @click="step = 3">
+              Continue
+            </button>
+          </div>
+        </div>
+
         <!-- Step 2: Mapping -->
         <ImportMappingStep
           v-if="step === 2 && parseResult && importMode === 'table'"
@@ -427,6 +517,44 @@ onMounted(loadImportSessions)
           </div>
         </div>
 
+        <div v-if="step === 3 && parseResult && importMode === 'zip'" class="import-step document-confirm">
+          <div class="confirm-hero">
+            <div class="confirm-icon"><Archive :size="34" /></div>
+            <h3>Confirm ZIP bundle import</h3>
+            <p class="confirm-subtitle">
+              QALY will create <strong>{{ parseResult.supportedEntries }}</strong> Wiki pages in <strong>{{ projectName }}</strong>.
+            </p>
+          </div>
+
+          <div class="confirm-stats">
+            <div class="confirm-stat">
+              <span class="confirm-stat__label">Total entries</span>
+              <span class="confirm-stat__value">{{ parseResult.totalEntries }}</span>
+            </div>
+            <div class="confirm-stat confirm-stat--success">
+              <span class="confirm-stat__label">Supported</span>
+              <span class="confirm-stat__value">{{ parseResult.supportedEntries }}</span>
+            </div>
+            <div class="confirm-stat">
+              <span class="confirm-stat__label">Skipped</span>
+              <span class="confirm-stat__value">{{ parseResult.unsupportedEntries }}</span>
+            </div>
+          </div>
+
+          <div class="confirm-notice">
+            <span>Bundle</span>
+            <p>{{ parseResult.fileName }}</p>
+          </div>
+
+          <div class="import-actions">
+            <button class="btn btn--ghost" type="button" @click="step = 2"><ArrowLeft :size="16" /> Back</button>
+            <button class="btn btn--primary btn--import-confirm" :disabled="isLoading" @click="executeImport">
+              <template v-if="isLoading">Importing...</template>
+              <template v-else>Create Wiki pages <Check :size="16" /></template>
+            </button>
+          </div>
+        </div>
+
         <!-- Step 3: Confirm (NEW — preview BEFORE import) -->
         <ImportConfirmStep
           v-if="step === 3 && parseResult && importMode === 'table'"
@@ -464,6 +592,21 @@ onMounted(loadImportSessions)
               <strong>{{ importResult.title }}</strong>
               <p>Created a Wiki page with {{ importResult.blockCount }} blocks.</p>
             </div>
+          </div>
+
+          <div v-if="importMode === 'zip'" class="document-success">
+            <Archive :size="24" />
+            <div>
+              <strong>{{ importResult.importedPages }} Wiki pages created</strong>
+              <p>{{ importResult.fileName }} produced {{ importResult.supportedEntries }} supported entries.</p>
+            </div>
+          </div>
+
+          <div v-if="importMode === 'zip' && importResult.pages?.length" class="zip-result-list">
+            <article v-for="page in importResult.pages" :key="page.pageId" class="zip-result-item">
+              <strong>{{ page.title }}</strong>
+              <span>{{ page.sourceFileName }} - {{ page.blockCount }} blocks</span>
+            </article>
           </div>
 
           <div v-if="importMode === 'table'" class="import-result-stats">
@@ -884,6 +1027,66 @@ onMounted(loadImportSessions)
 
 .document-preview__blocks li:last-child {
   border-bottom: 0;
+}
+
+.bundle-preview-list {
+  display: grid;
+  gap: 10px;
+}
+
+.bundle-preview-list li {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.bundle-preview-list strong {
+  color: #111827;
+}
+
+.bundle-preview-list span,
+.bundle-entry-warning {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.bundle-preview-list__blocks {
+  display: grid;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.bundle-preview-list__blocks em {
+  color: #4b5563;
+  font-style: normal;
+  font-size: 12px;
+}
+
+.zip-result-list {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.zip-result-item {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #eff6ff;
+}
+
+.zip-result-item strong {
+  color: #111827;
+}
+
+.zip-result-item span {
+  color: #6b7280;
+  font-size: 13px;
 }
 
 .document-success p {

@@ -24,10 +24,10 @@ const isDragging = ref(false)
 const activeTab = ref<'discover' | 'completed'>('discover')
 
 const isNewProject = !props.projectId
-const acceptedTypes = '.csv,.xlsx,.tsv,.dsv,.txt,.psv,.json,.md,.markdown,.html,.htm,.docx'
+const acceptedTypes = '.csv,.xlsx,.tsv,.dsv,.txt,.psv,.json,.md,.markdown,.html,.htm,.docx,.zip'
 const tableExtensions = ['csv', 'xlsx', 'tsv', 'dsv', 'psv', 'json']
-const phaseOneDocumentExtensions = ['md', 'markdown', 'txt', 'html', 'htm', 'docx']
-const roadmapExtensions = ['pdf', 'epub', 'zip']
+const phaseOneDocumentExtensions = ['md', 'markdown', 'txt', 'html', 'htm', 'docx', 'zip']
+const roadmapExtensions = ['pdf', 'epub']
 const supportedExtensions = [...tableExtensions, ...phaseOneDocumentExtensions]
 
 function onDragOver(e: DragEvent) {
@@ -65,8 +65,12 @@ function selectFile(f: File) {
     showError('Phase dau dang gioi han 5MB de xu ly an toan.')
     return
   }
+  if (ext === 'zip' && !props.projectId) {
+    showError('Hay vao mot du an cu the de import ZIP bundle thanh nhieu Wiki page.')
+    return
+  }
   if (!props.projectId && !tableExtensions.includes(ext || '')) {
-    showError('Hay vao mot du an cu the de import document thanh Wiki page.')
+    showError('Hay vao mot du an cu the de import document hoac ZIP bundle thanh Wiki page.')
     return
   }
   emit('update:file', f)
@@ -85,6 +89,7 @@ function extensionOf(name: string) {
 function fileKindLabel(name: string) {
   const ext = extensionOf(name)
   if (tableExtensions.includes(ext)) return 'Task table import'
+  if (ext === 'zip') return 'ZIP bundle import'
   if (phaseOneDocumentExtensions.includes(ext)) return 'Wiki page import'
   if (roadmapExtensions.includes(ext)) return 'Roadmap importer'
   return 'Unsupported file'
@@ -106,7 +111,7 @@ function fileKindLabel(name: string) {
     <template v-if="activeTab === 'discover'">
       <div class="import-section-heading">
         <h4>Import your content</h4>
-        <p>Supported now: CSV, Excel, JSON, TXT, Markdown, HTML, and DOCX. PDF, EPUB, and ZIP stay in the roadmap until their parsers are ready.</p>
+        <p>Supported now: CSV, Excel, JSON, TXT, Markdown, HTML, DOCX, and ZIP bundle import. PDF and EPUB stay in the roadmap until their parsers are ready.</p>
       </div>
 
       <div class="template-actions" aria-label="Download import templates">
@@ -136,10 +141,11 @@ function fileKindLabel(name: string) {
               <input type="file" :accept="acceptedTypes" hidden @change="onFileInput" />
             </label>
           </p>
-          <p class="dropzone-formats">Available now: CSV, Excel, JSON, TXT, Markdown, HTML, and DOCX. Roadmap: PDF, EPUB, and ZIP after we add parsers.</p>
+          <p class="dropzone-formats">Available now: CSV, Excel, JSON, TXT, Markdown, HTML, DOCX, and ZIP bundle import. Roadmap: PDF and EPUB after we add parsers.</p>
         </template>
         <template v-else>
           <FileSpreadsheet v-if="tableExtensions.includes(extensionOf(file.name))" :size="34" class="dropzone-icon--selected" />
+          <Archive v-else-if="extensionOf(file.name) === 'zip'" :size="34" class="dropzone-icon--selected" />
           <FileText v-else :size="34" class="dropzone-icon--selected" />
           <p class="dropzone-filename">{{ file.name }}</p>
           <p class="dropzone-filesize">{{ fileKindLabel(file.name) }} - {{ formatFileSize(file.size) }}</p>
@@ -149,7 +155,7 @@ function fileKindLabel(name: string) {
 
       <div class="import-type-section">
         <h4>File-based imports</h4>
-        <p>Import CSV, Excel, JSON, TXT, Markdown, HTML, and DOCX now. PDF, EPUB, and ZIP stay in the roadmap until their parsers are ready.</p>
+        <p>Import CSV, Excel, JSON, TXT, Markdown, HTML, DOCX, and ZIP now. PDF and EPUB stay in the roadmap until their parsers are ready.</p>
         <div class="import-type-grid">
           <article>
             <FileText :size="18" />
@@ -163,8 +169,8 @@ function fileKindLabel(name: string) {
           </article>
           <article>
             <Archive :size="18" />
-            <strong>Roadmap</strong>
-            <span>PDF, EPUB, and ZIP will come later, after parsing support is added.</span>
+            <strong>ZIP bundles now</strong>
+            <span>ZIP archives can preview supported child files and create multiple Wiki pages today.</span>
           </article>
         </div>
       </div>

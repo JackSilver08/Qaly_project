@@ -110,6 +110,39 @@ public class ImportController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpPost("documents/zip/preview")]
+    [RequestSizeLimit(MaxFileSize)]
+    public async Task<IActionResult> PreviewZipBundle([FromForm] IFormFile file, CancellationToken ct = default)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { error = "Vui long chon file." });
+
+        if (file.Length > MaxFileSize)
+            return BadRequest(new { error = "File vuot qua gioi han 5MB." });
+
+        using var stream = file.OpenReadStream();
+        var result = await _fileImportService.PreviewZipBundleAsync(stream, file.FileName, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("documents/zip/execute")]
+    [RequestSizeLimit(MaxFileSize)]
+    public async Task<IActionResult> ExecuteZipBundle(
+        [FromForm] IFormFile file,
+        [FromForm] Guid projectId,
+        CancellationToken ct = default)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { error = "Vui long chon file." });
+
+        if (file.Length > MaxFileSize)
+            return BadRequest(new { error = "File vuot qua gioi han 5MB." });
+
+        using var stream = file.OpenReadStream();
+        var result = await _fileImportService.ImportZipBundleAsync(projectId, stream, file.FileName, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     /// <summary>
     /// Undo một import session (xóa tất cả task đã import).
     /// </summary>

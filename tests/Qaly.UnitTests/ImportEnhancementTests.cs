@@ -1,4 +1,5 @@
 using System.Text;
+using System.IO.Compression;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
@@ -537,6 +538,86 @@ public class ImportEnhancementTests : IDisposable
             Times.Once);
     }
 
+    [Fact]
+    public async Task PreviewZipBundleAsync_WithMixedEntries_ReturnsSupportedChildrenAndWarnings()
+    {
+        var service = CreateFileImportService();
+        await using var stream = CreateZipBundleStream();
+
+        var result = await service.PreviewZipBundleAsync(stream, "bundle.zip");
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.TotalEntries.Should().Be(3);
+        result.Data.SupportedEntries.Should().Be(2);
+        result.Data.UnsupportedEntries.Should().Be(1);
+        result.Data.Entries.Should().HaveCount(2);
+        result.Data.Entries.Should().Contain(entry => entry.Title == "Bundle Notes");
+        result.Data.Entries.Should().Contain(entry => entry.Title == "Project Strategy");
+        result.Data.Warnings.Should().ContainSingle(warning => warning.Contains("image.png", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task PreviewZipBundleAsync_WithNoSupportedEntries_ReturnsValidationError()
+    {
+        var service = CreateFileImportService();
+        await using var stream = CreateUnsupportedZipBundleStream();
+
+        var result = await service.PreviewZipBundleAsync(stream, "bundle.zip");
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+    }
+
+    [Fact]
+    public async Task ImportZipBundleAsync_WithMixedEntries_CreatesMultipleWikiPages()
+    {
+        var projectId = Guid.NewGuid();
+
+        var service = CreateFileImportService();
+        await using var stream = CreateZipBundleStream();
+
+        var result = await service.ImportZipBundleAsync(projectId, stream, "bundle.zip");
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.ImportedPages.Should().Be(2);
+        result.Data.Pages.Should().HaveCount(2);
+        _wikiService.Verify(
+            wiki => wiki.CreateAsync(
+                projectId,
+                It.Is<CreateWikiPageDto>(dto =>
+                    dto.Title == "Bundle Notes" &&
+                    dto.Content != null &&
+                    dto.Content.Contains("# Bundle Notes")),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        _wikiService.Verify(
+            wiki => wiki.CreateAsync(
+                projectId,
+                It.Is<CreateWikiPageDto>(dto =>
+                    dto.Title == "Project Strategy" &&
+                    dto.Content != null &&
+                    dto.Content.Contains("# Project Strategy") &&
+                    dto.Content.Contains("## Scope")),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ImportZipBundleAsync_WithNestedFolderEntries_ImportsSupportedFiles()
+    {
+        var projectId = Guid.NewGuid();
+
+        var service = CreateFileImportService();
+        await using var stream = CreateNestedZipBundleStream();
+
+        var result = await service.ImportZipBundleAsync(projectId, stream, "nested-bundle.zip");
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.ImportedPages.Should().Be(2);
+        result.Data.Pages.Should().Contain(page => page.SourceFileName.Contains("docs/notes.md", StringComparison.OrdinalIgnoreCase));
+        result.Data.Pages.Should().Contain(page => page.SourceFileName.Contains("docs/strategy.docx", StringComparison.OrdinalIgnoreCase));
+    }
+
     private ImportService CreateService()
         => new(
             new GenericRepository<Project>(_context),
@@ -576,6 +657,76 @@ public class ImportEnhancementTests : IDisposable
                     new Run(new Text("Phase 1 covers onboarding and project setup."))));
 
             mainPart.Document.Save();
+        }
+
+        stream.Position = 0;
+        return stream;
+    }
+
+    private static MemoryStream CreateZipBundleStream()
+    {
+        var stream = new MemoryStream();
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var markdownEntry = archive.CreateEntry("notes.md");
+            using (var writer = new StreamWriter(markdownEntry.Open(), Encoding.UTF8, leaveOpen: false))
+            {
+                writer.WriteLine("# Bundle Notes");
+                writer.WriteLine();
+                writer.WriteLine("This archive contains multiple supported files.");
+            }
+
+            var docxEntry = archive.CreateEntry("strategy.docx");
+            using (var entryStream = docxEntry.Open())
+            using (var docxStream = CreateDocxStream())
+            {
+                docxStream.CopyTo(entryStream);
+            }
+
+            var unsupportedEntry = archive.CreateEntry("image.png");
+            using var unsupportedStream = unsupportedEntry.Open();
+            var pngHeader = new byte[] { 0x89, 0x50, 0x4E, 0x47 };
+            unsupportedStream.Write(pngHeader, 0, pngHeader.Length);
+        }
+
+        stream.Position = 0;
+        return stream;
+    }
+
+    private static MemoryStream CreateUnsupportedZipBundleStream()
+    {
+        var stream = new MemoryStream();
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var unsupportedEntry = archive.CreateEntry("image.png");
+            using var unsupportedStream = unsupportedEntry.Open();
+            var pngHeader = new byte[] { 0x89, 0x50, 0x4E, 0x47 };
+            unsupportedStream.Write(pngHeader, 0, pngHeader.Length);
+        }
+
+        stream.Position = 0;
+        return stream;
+    }
+
+    private static MemoryStream CreateNestedZipBundleStream()
+    {
+        var stream = new MemoryStream();
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var markdownEntry = archive.CreateEntry("docs/notes.md");
+            using (var writer = new StreamWriter(markdownEntry.Open(), Encoding.UTF8, leaveOpen: false))
+            {
+                writer.WriteLine("# Nested Notes");
+                writer.WriteLine();
+                writer.WriteLine("This file lives in a folder inside the zip.");
+            }
+
+            var docxEntry = archive.CreateEntry("docs/strategy.docx");
+            using (var entryStream = docxEntry.Open())
+            using (var docxStream = CreateDocxStream())
+            {
+                docxStream.CopyTo(entryStream);
+            }
         }
 
         stream.Position = 0;

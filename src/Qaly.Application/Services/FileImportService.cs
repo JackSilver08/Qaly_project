@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO.Compression;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -14,6 +15,11 @@ namespace Qaly.Application.Services;
 public partial class FileImportService : IFileImportService
 {
     private static readonly HashSet<string> DocumentExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".md", ".markdown", ".txt", ".html", ".htm", ".docx"
+    };
+
+    private static readonly HashSet<string> ZipEntryExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".md", ".markdown", ".txt", ".html", ".htm", ".docx"
     };
@@ -74,6 +80,31 @@ public partial class FileImportService : IFileImportService
             document.Warnings));
     }
 
+    public async Task<Result<ZipBundlePreviewResult>> PreviewZipBundleAsync(
+        Stream fileStream,
+        string fileName,
+        CancellationToken ct = default)
+    {
+        var parsed = await PreviewZipBundleAsyncInternal(fileStream, fileName, ct);
+        if (!parsed.IsSuccess)
+            return Result.Failure<ZipBundlePreviewResult>(parsed.Error ?? "Khong the doc ZIP.", parsed.StatusCode);
+
+        return Result.Success(parsed.Data!);
+    }
+
+    public async Task<Result<ZipBundleImportResult>> ImportZipBundleAsync(
+        Guid projectId,
+        Stream fileStream,
+        string fileName,
+        CancellationToken ct = default)
+    {
+        var parsed = await ImportZipBundleAsyncInternal(projectId, fileStream, fileName, ct);
+        if (!parsed.IsSuccess)
+            return Result.Failure<ZipBundleImportResult>(parsed.Error ?? "Khong the doc ZIP.", parsed.StatusCode);
+
+        return Result.Success(parsed.Data!);
+    }
+
     private static async Task<Result<ParsedDocument>> ParseDocumentAsync(
         Stream fileStream,
         string fileName,
@@ -102,6 +133,158 @@ public partial class FileImportService : IFileImportService
             ".html" or ".htm" => Result.Success(ParseHtml(raw, fileName)),
             _ => Result.Failure<ParsedDocument>("Dinh dang document khong ho tro.", 400)
         };
+    }
+
+    private static async Task<Result<ZipBundlePreviewResult>> PreviewZipBundleAsyncInternal(
+        Stream fileStream,
+        string fileName,
+        CancellationToken ct)
+    {
+        var bundle = await ReadZipBundleAsync(fileStream, fileName, ct);
+        if (!bundle.IsSuccess)
+            return Result.Failure<ZipBundlePreviewResult>(bundle.Error ?? "Khong the doc ZIP.", bundle.StatusCode);
+
+        var data = bundle.Data!;
+        return Result.Success(new ZipBundlePreviewResult(
+            data.FileName,
+            data.TotalEntries,
+            data.SupportedEntries,
+            data.UnsupportedEntries,
+            data.Entries.Select(entry => new ZipBundleEntryPreview(
+                entry.FileName,
+                entry.FileType,
+                entry.IsSupported,
+                entry.Title,
+                entry.BlockCount,
+                entry.PreviewBlocks,
+                entry.Warnings)).ToList(),
+            data.Warnings));
+    }
+
+    private async Task<Result<ZipBundleImportResult>> ImportZipBundleAsyncInternal(
+        Guid projectId,
+        Stream fileStream,
+        string fileName,
+        CancellationToken ct)
+    {
+        var bundle = await ReadZipBundleAsync(fileStream, fileName, ct);
+        if (!bundle.IsSuccess)
+            return Result.Failure<ZipBundleImportResult>(bundle.Error ?? "Khong the doc ZIP.", bundle.StatusCode);
+
+        var data = bundle.Data!;
+        var importedPages = new List<ZipBundlePageResult>();
+        var warnings = new List<string>(data.Warnings);
+
+        foreach (var entry in data.Entries.Where(entry => entry.IsSupported))
+        {
+            var created = await _wikiService.CreateAsync(projectId, new CreateWikiPageDto(
+                entry.Title,
+                entry.Content,
+                "internal"), ct);
+
+            if (!created.IsSuccess)
+            {
+                warnings.Add($"Khong the tao Wiki page cho {entry.FileName}: {created.Error}");
+                continue;
+            }
+
+            importedPages.Add(new ZipBundlePageResult(
+                created.Data!.Id,
+                created.Data.Title,
+                entry.FileName,
+                entry.BlockCount,
+                entry.Warnings));
+        }
+
+        if (importedPages.Count == 0)
+            return Result.Failure<ZipBundleImportResult>("Khong co Wiki page nao duoc tao tu ZIP.", 400);
+
+        return Result.Success(new ZipBundleImportResult(
+            projectId,
+            data.FileName,
+            data.TotalEntries,
+            data.SupportedEntries,
+            data.UnsupportedEntries + Math.Max(data.SupportedEntries - importedPages.Count, 0),
+            importedPages.Count,
+            importedPages,
+            warnings));
+    }
+
+    private static async Task<Result<ZipBundleBundleData>> ReadZipBundleAsync(
+        Stream fileStream,
+        string fileName,
+        CancellationToken ct)
+    {
+        try
+        {
+            if (fileStream.CanSeek)
+                fileStream.Position = 0;
+
+            using var archive = new ZipArchive(fileStream, ZipArchiveMode.Read, leaveOpen: true);
+            var entries = archive.Entries
+                .Where(entry => !string.IsNullOrWhiteSpace(entry.Name))
+                .ToList();
+
+            if (entries.Count == 0)
+                return Result.Failure<ZipBundleBundleData>("ZIP khong co file con hop le de import.", 400);
+
+            var entriesData = new List<ZipBundleEntryData>();
+            var warnings = new List<string>();
+            var supportedEntries = 0;
+
+            foreach (var entry in entries)
+            {
+                var entryExtension = Path.GetExtension(entry.Name);
+                if (!ZipEntryExtensions.Contains(entryExtension))
+                {
+                    warnings.Add($"Bo qua {entry.FullName}: dinh dang nay chua duoc ho tro.");
+                    continue;
+                }
+
+                await using var entryStream = entry.Open();
+                await using var memoryStream = new MemoryStream();
+                await entryStream.CopyToAsync(memoryStream, ct);
+                memoryStream.Position = 0;
+
+                var parsed = await ParseDocumentAsync(memoryStream, entry.Name, ct);
+                if (!parsed.IsSuccess)
+                {
+                    warnings.Add($"Bo qua {entry.FullName}: {parsed.Error}");
+                    continue;
+                }
+
+                supportedEntries++;
+                var document = parsed.Data!;
+                entriesData.Add(new ZipBundleEntryData(
+                    entry.FullName,
+                    document.FileType,
+                    true,
+                    document.Title,
+                    document.Content,
+                    document.BlockCount,
+                    document.PreviewBlocks,
+                    document.Warnings));
+            }
+
+            if (entriesData.Count == 0)
+                return Result.Failure<ZipBundleBundleData>("ZIP khong co file con duoc ho tro de import.", 400);
+
+            return Result.Success(new ZipBundleBundleData(
+                fileName,
+                entries.Count,
+                supportedEntries,
+                Math.Max(entries.Count - supportedEntries, 0),
+                entriesData,
+                warnings));
+        }
+        catch (InvalidDataException)
+        {
+            return Result.Failure<ZipBundleBundleData>("File ZIP khong hop le.", 400);
+        }
+        catch (Exception ex)
+        {
+            return Result.Failure<ZipBundleBundleData>($"Khong the doc ZIP: {ex.Message}", 400);
+        }
     }
 
     private static async Task<string> ReadTextAsync(Stream stream, CancellationToken ct)
@@ -377,6 +560,24 @@ public partial class FileImportService : IFileImportService
         string FileType,
         string Title,
         string Description,
+        string Content,
+        int BlockCount,
+        List<string> PreviewBlocks,
+        List<string> Warnings);
+
+    private sealed record ZipBundleBundleData(
+        string FileName,
+        int TotalEntries,
+        int SupportedEntries,
+        int UnsupportedEntries,
+        List<ZipBundleEntryData> Entries,
+        List<string> Warnings);
+
+    private sealed record ZipBundleEntryData(
+        string FileName,
+        string FileType,
+        bool IsSupported,
+        string Title,
         string Content,
         int BlockCount,
         List<string> PreviewBlocks,
