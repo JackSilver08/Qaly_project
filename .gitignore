@@ -71,6 +71,8 @@ coverage/
 ## Node / JS / Frontend
 node_modules/
 dist/
+!src/Qaly.Web/wwwroot/dist/
+!src/Qaly.Web/wwwroot/dist/**
 build/
 .next/
 .nuxt/

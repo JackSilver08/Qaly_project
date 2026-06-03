@@ -47,6 +47,8 @@ dotnet restore
 dotnet run --project src/Qaly.Web
 ```
 
+The frontend bundle is checked in under `src/Qaly.Web/wwwroot/dist`, so a fresh clone can run without a manual `npm run build`.
+
 ### 3. Open Browser
 - **App:** http://localhost:5000
 - **Seq Logs:** http://localhost:8081
