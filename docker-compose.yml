@@ -1,11 +1,11 @@
 ﻿# ========================================
 # Qaly Project - Docker Compose
+# Default: infrastructure services for local development
 # Profiles:
-# - dev: core stack for local development
-# - full: core stack + AI services
+# - docker-web: run the web app inside Docker instead of dotnet watch on host
 # ========================================
-# Run dev:  docker compose --profile dev up -d
-# Run full: docker compose --profile full up -d
+# Run infra:      docker compose up -d
+# Run Docker web: docker compose --profile docker-web up -d
 # Stop:     docker compose down
 # Reset:    docker compose down -v (remove all data)
 
@@ -28,9 +28,6 @@ services:
       - ./docker/sqlserver/init:/docker-entrypoint-initdb.d
     networks:
       - qaly-network
-    profiles:
-      - dev
-      - full
     healthcheck:
       test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$${MSSQL_SA_PASSWORD}" -C -Q "SELECT 1" || exit 1
       interval: 10s
@@ -51,9 +48,6 @@ services:
       - qaly-redis-data:/data
     networks:
       - qaly-network
-    profiles:
-      - dev
-      - full
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -77,9 +71,6 @@ services:
       - qaly-seq-data:/data
     networks:
       - qaly-network
-    profiles:
-      - dev
-      - full
     restart: unless-stopped
 
   # ----------------------------------------
@@ -93,9 +84,6 @@ services:
       - "${MAILHOG_UI_PORT:-8025}:8025" # Web UI: http://localhost:8025
     networks:
       - qaly-network
-    profiles:
-      - dev
-      - full
     restart: unless-stopped
 
   # ----------------------------------------
@@ -111,8 +99,6 @@ services:
       - qaly-qdrant-data:/qdrant/storage
     networks:
       - qaly-network
-    profiles:
-      - full
     restart: unless-stopped
 
   # ----------------------------------------
@@ -127,8 +113,6 @@ services:
       - "${OLLAMA_PORT:-11434}:11434"
     networks:
       - qaly-network
-    profiles:
-      - full
     restart: unless-stopped
 
   # ----------------------------------------
@@ -164,8 +148,7 @@ services:
     networks:
       - qaly-network
     profiles:
-      - dev
-      - full
+      - docker-web
     depends_on:
       qaly-sqlserver:
         condition: service_healthy

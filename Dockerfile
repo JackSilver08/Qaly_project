@@ -19,9 +19,9 @@ COPY src/Qaly.Domain/*.csproj src/Qaly.Domain/
 COPY src/Qaly.Application/*.csproj src/Qaly.Application/
 COPY src/Qaly.Infrastructure/*.csproj src/Qaly.Infrastructure/
 COPY src/Qaly.Web/*.csproj src/Qaly.Web/
-COPY Qaly_project.sln .
+COPY Qaly_project.slnx .
 
-RUN dotnet restore
+RUN dotnet restore src/Qaly.Web/Qaly.Web.csproj
 
 # Copy toàn bộ source
 COPY . .
@@ -38,9 +38,9 @@ COPY src/Qaly.Domain/*.csproj src/Qaly.Domain/
 COPY src/Qaly.Application/*.csproj src/Qaly.Application/
 COPY src/Qaly.Infrastructure/*.csproj src/Qaly.Infrastructure/
 COPY src/Qaly.Web/*.csproj src/Qaly.Web/
-COPY Qaly_project.sln .
+COPY Qaly_project.slnx .
 
-RUN dotnet restore
+RUN dotnet restore src/Qaly.Web/Qaly.Web.csproj
 
 # Copy source và build
 COPY . .
