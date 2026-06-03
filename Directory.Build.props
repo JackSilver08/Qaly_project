@@ -1,7 +1,7 @@
 <!--
   ========================================
   Qaly Project - Directory.Build.props
-  Shared build properties cho tất cả projects
+  Shared build properties for all projects
   ========================================
 -->
 <Project>
@@ -12,13 +12,14 @@
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <UseSharedCompilation>false</UseSharedCompilation>
   </PropertyGroup>
 
-  <!-- Thông tin chung cho NuGet package (nếu publish) -->
+  <!-- Common package metadata (if published) -->
   <PropertyGroup>
     <Authors>Qaly Team</Authors>
     <Company>Qaly</Company>
     <Product>Qaly Project Management</Product>
-    <Copyright>Copyright © 2026 Qaly Team</Copyright>
+    <Copyright>Copyright (c) 2026 Qaly Team</Copyright>
   </PropertyGroup>
 </Project>
