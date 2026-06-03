@@ -29,7 +29,16 @@ Hệ thống quản lý dự án nội bộ với Project / Task / Comment / Not
 ```powershell
 git clone https://github.com/JackSilver08/Qaly_project.git
 cd Qaly_project
-docker compose up -d
+docker compose --profile dev up -d
+```
+
+### Dev vs Full
+- `dev`: core stack for day-to-day development
+- `full`: core stack plus AI services (`qdrant`, `ollama`)
+
+To run the full stack:
+```powershell
+docker compose --profile full up -d
 ```
 
 ### 2. Run App
