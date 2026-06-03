@@ -1,22 +1,32 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, type Ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useDashboardContext } from '../composables/dashboard-context';
 import { ChevronLeft, Pencil, Check, X } from 'lucide-vue-next';
 import { MdEditor, MdPreview, MdCatalog } from 'md-editor-v3';
 import 'md-editor-v3/lib/style.css';
 import 'md-editor-v3/lib/preview.css';
+import type { WikiPageDto } from '../types';
 
 const route = useRoute();
 const router = useRouter();
 
-const { wikiPages, updateWikiPage, formatDate } = useDashboardContext();
+const { wikiPages, updateWikiPage, formatDate } = useDashboardContext() as {
+  wikiPages: Ref<WikiPageDto[]>;
+  updateWikiPage: (
+    wikiId: string,
+    title: string,
+    content: string,
+    visibility: string,
+  ) => Promise<boolean>;
+  formatDate: (value: string) => string;
+};
 
 const wikiId = computed(() => route.params.wikiId as string);
 const projectId = computed(() => route.params.projectId as string);
 
 const currentPage = computed(() => {
-  return wikiPages.value.find(p => p.id === wikiId.value);
+  return wikiPages.value.find((p: WikiPageDto) => p.id === wikiId.value);
 });
 
 const isEditing = ref(false);

@@ -39,6 +39,7 @@ const newPageContent = ref("");
 const newPageVisibility = ref("internal");
 const wikiSearch = ref("");
 const editingPageId = ref<string | null>(null);
+const activeEditorTab = ref<'write' | 'preview'>('write');
 
 const filteredWikiPages = computed(() => {
   const query = wikiSearch.value.trim().toLowerCase();

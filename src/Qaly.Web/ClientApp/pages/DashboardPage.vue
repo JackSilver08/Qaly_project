@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, type Ref } from 'vue'
 import { Plus, AlertTriangle, TrendingUp, CheckCircle2, Activity, ChevronRight, LayoutDashboard, FolderKanban, ClipboardList, Users } from 'lucide-vue-next'
 import { useDashboardContext } from '../composables/dashboard-context'
 import { apiJson } from '../utils/api-client'
@@ -7,12 +7,17 @@ import { formatTimeAgo } from '../utils/formatters'
 import AttentionRiskCard from '../components/dashboard/AttentionRiskCard.vue'
 import RecentActivityWidget from '../components/dashboard/RecentActivityWidget.vue'
 import StrategicOverviewAI from '../components/dashboard/StrategicOverviewAI.vue'
+import type { DashboardProject } from '../types'
 
 const {
   projects,
   openCreateProject,
   selectProject
-} = useDashboardContext()
+} = useDashboardContext() as {
+  projects: Ref<DashboardProject[]>
+  openCreateProject: () => void
+  selectProject: (projectId: string) => void
+}
 
 // Time period for chart
 const activeTab = ref('Q4')
