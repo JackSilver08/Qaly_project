@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -55,7 +55,7 @@ public class ErumiChatServiceTests : IDisposable
     [Fact]
     public async Task ChatFastAsync_WithGreeting_ReturnsStaticGreetingResponseWithoutAi()
     {
-        var request = new ErumiChatRequestDto(Message: "Xin chào", ProjectId: null);
+        var request = new ErumiChatRequestDto(Message: "Xin chao", ProjectId: null);
 
         var result = await _service.ChatFastAsync(request, CancellationToken.None);
 
@@ -71,11 +71,11 @@ public class ErumiChatServiceTests : IDisposable
     {
         var projectId = Guid.NewGuid();
         var userId = Guid.NewGuid();
-        var message = "còn ai đang làm task đó?";
+        var message = "con ai dang lam task do?";
         var history = new List<AiChatMessageDto>
         {
-            new("user", "Liệt kê các task của dự án."),
-            new("assistant", "Có task UI Fix.")
+            new("user", "Liá»‡t kÃª cÃ¡c task cá»§a dá»± Ã¡n."),
+            new("assistant", "CÃ³ task UI Fix.")
         };
 
         var request = new ErumiChatRequestDto(
@@ -175,7 +175,7 @@ public class ErumiChatServiceTests : IDisposable
         _aiGatewayMock.Setup(g => g.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AiResponse
             {
-                Content = "Nguyễn Văn A đang phụ trách task đó.",
+                Content = "Nguyá»…n VÄƒn A Ä‘ang phá»¥ trÃ¡ch task Ä‘Ã³.",
                 ProviderName = "TestOllama",
                 ModelName = "llama3.2",
                 IsMock = false
@@ -184,7 +184,7 @@ public class ErumiChatServiceTests : IDisposable
         var result = await _service.ChatFastAsync(request, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        result.Data!.Reply.Should().Be("Nguyễn Văn A đang phụ trách task đó.");
+        result.Data!.Reply.Should().Be("Nguyá»…n VÄƒn A Ä‘ang phá»¥ trÃ¡ch task Ä‘Ã³.");
         result.Data.UsedAi.Should().BeTrue();
         result.Data.Confidence.Should().Be(0.9);
 
@@ -193,7 +193,7 @@ public class ErumiChatServiceTests : IDisposable
             r.ProjectId == projectId && 
             r.UserId == userId && 
             r.History == history &&
-            r.SystemPrompt.Contains("DANH SÁCH NHIỆM VỤ") &&
+            r.SystemPrompt.Contains("TASKS") &&
             r.SystemPrompt.Contains("Task UI Fix")), It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -202,7 +202,7 @@ public class ErumiChatServiceTests : IDisposable
     {
         var projectId = Guid.NewGuid();
         var userId = Guid.NewGuid();
-        var message = "Phân tích chi tiết giúp mình";
+        var message = "PhÃ¢n tÃ­ch chi tiáº¿t giÃºp mÃ¬nh";
         var request = new ErumiChatRequestDto(Message: message, ProjectId: projectId);
 
         var projectDto = new ProjectDto(
@@ -266,36 +266,36 @@ public class ErumiChatServiceTests : IDisposable
         var jsonResponse = @"
 ```json
 {
-  ""reply"": ""Chào PM Khang, tôi đã phân tích dự án DATN."",
+  ""reply"": ""ChÃ o PM Khang, tÃ´i Ä‘Ã£ phÃ¢n tÃ­ch dá»± Ã¡n DATN."",
   ""metrics"": [
-    { ""label"": ""Chỉ số 1"", ""value"": ""100%"", ""tone"": ""good"", ""hint"": ""Tốt"" }
+    { ""label"": ""Chá»‰ sá»‘ 1"", ""value"": ""100%"", ""tone"": ""good"", ""hint"": ""Tá»‘t"" }
   ],
   ""tables"": [
     {
-      ""title"": ""Bảng tiến độ"",
-      ""description"": ""Bảng mô tả"",
+      ""title"": ""Báº£ng tiáº¿n Ä‘á»™"",
+      ""description"": ""Báº£ng mÃ´ táº£"",
       ""columns"": [
-        { ""key"": ""col1"", ""label"": ""Cột 1"", ""type"": ""text"", ""align"": ""left"" }
+        { ""key"": ""col1"", ""label"": ""Cá»™t 1"", ""type"": ""text"", ""align"": ""left"" }
       ],
       ""rows"": [
-        { ""col1"": ""Giá trị 1"" }
+        { ""col1"": ""GiÃ¡ trá»‹ 1"" }
       ]
     }
   ],
   ""charts"": [
     {
       ""type"": ""bar"",
-      ""title"": ""Biểu đồ"",
+      ""title"": ""Biá»ƒu Ä‘á»“"",
       ""labels"": [""L1""],
       ""values"": [50.0],
-      ""unit"": ""giờ""
+      ""unit"": ""giá»""
     }
   ],
   ""actions"": [
-    { ""type"": ""suggested_action"", ""label"": ""Câu hỏi tiếp"" }
+    { ""type"": ""suggested_action"", ""label"": ""CÃ¢u há»i tiáº¿p"" }
   ],
   ""files"": [
-    { ""label"": ""Báo cáo"", ""format"": ""xlsx"", ""url"": ""/files/report.xlsx"", ""description"": ""Tải xuống"" }
+    { ""label"": ""BÃ¡o cÃ¡o"", ""format"": ""xlsx"", ""url"": ""/files/report.xlsx"", ""description"": ""Táº£i xuá»‘ng"" }
   ]
 }
 ```";
@@ -313,36 +313,40 @@ public class ErumiChatServiceTests : IDisposable
 
         result.IsSuccess.Should().BeTrue();
         result.Data.Should().NotBeNull();
-        result.Data!.Reply.Should().Be("Chào PM Khang, tôi đã phân tích dự án DATN.");
+        result.Data!.Reply.Should().Be("ChÃ o PM Khang, tÃ´i Ä‘Ã£ phÃ¢n tÃ­ch dá»± Ã¡n DATN.");
         result.Data.UsedAi.Should().BeTrue();
 
         result.Data.Metrics.Should().HaveCount(1);
-        result.Data.Metrics[0].Label.Should().Be("Chỉ số 1");
+        result.Data.Metrics[0].Label.Should().Be("Chá»‰ sá»‘ 1");
         result.Data.Metrics[0].Value.Should().Be("100%");
         result.Data.Metrics[0].Tone.Should().Be("good");
 
         result.Data.Tables.Should().HaveCount(1);
-        result.Data.Tables[0].Title.Should().Be("Bảng tiến độ");
+        result.Data.Tables[0].Title.Should().Be("Báº£ng tiáº¿n Ä‘á»™");
         result.Data.Tables[0].Columns.Should().HaveCount(1);
         result.Data.Tables[0].Columns[0].Key.Should().Be("col1");
         result.Data.Tables[0].Rows.Should().HaveCount(1);
-        result.Data.Tables[0].Rows[0]["col1"].ToString().Should().Be("Giá trị 1");
+        var tableValue = result.Data.Tables[0].Rows[0]["col1"];
+        tableValue.Should().NotBeNull();
+        tableValue!.ToString().Should().Be("GiÃ¡ trá»‹ 1");
 
         result.Data.Charts.Should().HaveCount(1);
-        result.Data.Charts[0].Title.Should().Be("Biểu đồ");
+        result.Data.Charts[0].Title.Should().Be("Biá»ƒu Ä‘á»“");
         result.Data.Charts[0].Labels.Should().ContainSingle().Which.Should().Be("L1");
         result.Data.Charts[0].Values.Should().ContainSingle().Which.Should().Be(50.0);
 
         result.Data.Actions.Should().HaveCount(1);
-        result.Data.Actions[0].Label.Should().Be("Câu hỏi tiếp");
+        result.Data.Actions[0].Label.Should().Be("CÃ¢u há»i tiáº¿p");
 
         result.Data.Files.Should().HaveCount(1);
-        result.Data.Files[0].Label.Should().Be("Báo cáo");
+        result.Data.Files[0].Label.Should().Be("BÃ¡o cÃ¡o");
         result.Data.Files[0].Url.Should().Be("/files/report.xlsx");
     }
 
     public void Dispose()
     {
         _context.Dispose();
+        GC.SuppressFinalize(this);
     }
 }
+
