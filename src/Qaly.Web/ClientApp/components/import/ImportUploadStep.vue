@@ -24,10 +24,11 @@ const isDragging = ref(false)
 const activeTab = ref<'discover' | 'completed'>('discover')
 
 const isNewProject = !props.projectId
-const acceptedTypes = '.csv,.xlsx,.tsv,.dsv,.txt,.psv,.json,.md,.markdown,.html,.htm,.pdf,.docx,.epub,.zip'
-const supportedExtensions = ['csv', 'xlsx', 'tsv', 'dsv', 'txt', 'psv', 'json', 'md', 'markdown', 'html', 'htm', 'pdf', 'docx', 'epub', 'zip']
+const acceptedTypes = '.csv,.xlsx,.tsv,.dsv,.txt,.psv,.json,.md,.markdown,.html,.htm'
 const tableExtensions = ['csv', 'xlsx', 'tsv', 'dsv', 'psv', 'json']
 const phaseOneDocumentExtensions = ['md', 'markdown', 'txt', 'html', 'htm']
+const roadmapExtensions = ['pdf', 'docx', 'epub', 'zip']
+const supportedExtensions = [...tableExtensions, ...phaseOneDocumentExtensions]
 
 function onDragOver(e: DragEvent) {
   e.preventDefault()
@@ -52,8 +53,12 @@ function onFileInput(e: Event) {
 
 function selectFile(f: File) {
   const ext = f.name.split('.').pop()?.toLowerCase()
+  if (roadmapExtensions.includes(ext || '')) {
+    showError('Dinh dang nay nam trong lo trinh, nhung hien tai chua co parser nen chua the import.')
+    return
+  }
   if (!supportedExtensions.includes(ext || '')) {
-    showError('File nay chua nam trong danh sach import du kien.')
+    showError('Dinh dang nay chua duoc ho tro.')
     return
   }
   if (f.size > 5 * 1024 * 1024) {
@@ -62,10 +67,6 @@ function selectFile(f: File) {
   }
   if (!props.projectId && !tableExtensions.includes(ext || '')) {
     showError('Hay vao mot du an cu the de import document thanh Wiki page.')
-    return
-  }
-  if (!tableExtensions.includes(ext || '') && !phaseOneDocumentExtensions.includes(ext || '')) {
-    showError('Dinh dang nay da nam trong lo trinh, nhung phase dau moi import .md, .txt va .html.')
     return
   }
   emit('update:file', f)
@@ -85,7 +86,8 @@ function fileKindLabel(name: string) {
   const ext = extensionOf(name)
   if (tableExtensions.includes(ext)) return 'Task table import'
   if (phaseOneDocumentExtensions.includes(ext)) return 'Wiki page import'
-  return 'Planned importer'
+  if (roadmapExtensions.includes(ext)) return 'Roadmap importer'
+  return 'Unsupported file'
 }
 </script>
 
@@ -104,7 +106,7 @@ function fileKindLabel(name: string) {
     <template v-if="activeTab === 'discover'">
       <div class="import-section-heading">
         <h4>Import your content</h4>
-        <p>If you import a ZIP file later, QALY will convert each supported file inside into its own page.</p>
+        <p>Supported now: CSV, Excel, JSON, TXT, Markdown, and HTML. PDF, DOCX, EPUB, and ZIP stay in the roadmap until their parsers are ready.</p>
       </div>
 
       <div class="template-actions" aria-label="Download import templates">
@@ -128,13 +130,13 @@ function fileKindLabel(name: string) {
           <Upload :size="34" class="dropzone-icon" />
           <p class="dropzone-text">Import your content to QALY</p>
           <p class="dropzone-hint">
-            Drag and drop ZIP, CSV, PDF, text, markdown, or HTML files, or
+            Drag and drop CSV, Excel, JSON, text, markdown, or HTML files, or
             <label class="choose-link">
               choose a file
               <input type="file" :accept="acceptedTypes" hidden @change="onFileInput" />
             </label>
           </p>
-          <p class="dropzone-formats">Phase 1 imports CSV, Excel, JSON, TXT, Markdown, and HTML. Larger ZIP/PDF/DOCX/EPUB import is planned next.</p>
+          <p class="dropzone-formats">Available now: CSV, Excel, JSON, TXT, Markdown, and HTML. Roadmap: PDF, DOCX, EPUB, and ZIP after we add parsers.</p>
         </template>
         <template v-else>
           <FileSpreadsheet v-if="tableExtensions.includes(extensionOf(file.name))" :size="34" class="dropzone-icon--selected" />
@@ -147,22 +149,22 @@ function fileKindLabel(name: string) {
 
       <div class="import-type-section">
         <h4>File-based imports</h4>
-        <p>Import DOCX, CSV, PDF, text, markdown, HTML, or EPUB files to convert them to pages or task tables.</p>
+        <p>Import CSV, Excel, JSON, TXT, Markdown, and HTML now. PDF, DOCX, EPUB, and ZIP stay in the roadmap until their parsers are ready.</p>
         <div class="import-type-grid">
           <article>
             <FileText :size="18" />
-            <strong>Documents</strong>
-            <span>Markdown, text, and HTML to Wiki pages now.</span>
+            <strong>Documents now</strong>
+            <span>Markdown, text, and HTML convert to Wiki pages today.</span>
           </article>
           <article>
             <FileSpreadsheet :size="18" />
-            <strong>Tables</strong>
-            <span>CSV, Excel, TSV, PSV, and JSON to tasks.</span>
+            <strong>Tables now</strong>
+            <span>CSV, Excel, TSV, PSV, and JSON import to tasks today.</span>
           </article>
           <article>
             <Archive :size="18" />
-            <strong>Bundles</strong>
-            <span>ZIP, PDF, DOCX, and EPUB are queued in the roadmap.</span>
+            <strong>Roadmap</strong>
+            <span>PDF, DOCX, EPUB, and ZIP will come later, after parsing support is added.</span>
           </article>
         </div>
       </div>
