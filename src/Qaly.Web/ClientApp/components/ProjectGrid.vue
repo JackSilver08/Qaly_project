@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Box, CalendarDays, CheckCircle2, Eye, Pencil, Trash2, UserRound, Plus, FolderKanban } from 'lucide-vue-next'
+import { CheckCircle2, Eye, FolderKanban, Pencil, Plus, Trash2 } from 'lucide-vue-next'
 import type { ProjectCardModel } from './dashboard-models'
 
 defineProps<{
@@ -29,20 +29,17 @@ defineEmits<{
       @keydown.enter="$emit('view', project.id)"
       @keydown.space.prevent="$emit('view', project.id)"
     >
+      <span :class="`project-grid-card__badge project-grid-card__badge--${project.statusTone}`">
+        <span aria-hidden="true"></span>
+        {{ project.statusLabel.toLowerCase() }}
+      </span>
+
       <div class="project-grid-card__body">
         <div class="project-grid-card__header">
-          <div class="project-grid-card__header-left">
-            <div :class="`project-grid-card__icon project-grid-card__icon--${project.statusTone}`">
-              <component :is="project.statusTone === 'active' ? CalendarDays : (project.statusTone === 'planned' ? Eye : Box)" :size="16" />
-            </div>
-            <div class="project-grid-card__title-col">
-              <strong>{{ project.name }}</strong>
-              <span>Hết hạn: {{ project.dueDateLabel }}</span>
-            </div>
+          <div class="project-grid-card__title-col">
+            <strong>{{ project.name }}</strong>
+            <span>{{ project.dueDateLabel }}</span>
           </div>
-          <span :class="`project-grid-card__badge project-grid-card__badge--${project.statusTone}`">
-            {{ project.statusLabel.toUpperCase() }}
-          </span>
         </div>
 
         <div class="project-grid-card__progress-wrap">
@@ -51,16 +48,16 @@ defineEmits<{
             <span>{{ project.progressPercentage }}%</span>
           </div>
           <div class="project-grid-card__progress-track" aria-hidden="true">
-            <span :class="`project-grid-card__progress-bar--${project.statusTone}`" :style="{ width: `${project.progressPercentage}%` }"></span>
+            <span :style="{ width: `${project.progressPercentage}%` }"></span>
           </div>
         </div>
 
-        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #64748b; margin-top: -4px; margin-bottom: 4px;">
-          <span style="display: flex; align-items: center; gap: 4px;">
-            <CheckCircle2 :size="13" stroke-width="2.5" />
+        <div class="project-grid-card__tasks-row">
+          <span>
+            <CheckCircle2 :size="18" stroke-width="2.7" />
             {{ project.completedTaskCount }}/{{ project.taskCount }} nhiệm vụ
           </span>
-          <span v-if="project.overdueTaskCount > 0" style="color: #ef4444; font-weight: 700; background: rgba(239, 68, 68, 0.1); padding: 2px 6px; border-radius: 6px; font-size: 11px;">
+          <span v-if="project.overdueTaskCount > 0" class="project-grid-card__risk">
             {{ project.overdueTaskCount }} quá hạn
           </span>
         </div>
@@ -77,13 +74,13 @@ defineEmits<{
 
           <div class="project-grid-card__actions">
             <button type="button" aria-label="Xem dự án" @click.stop="$emit('view', project.id)">
-              <Eye :size="15" />
+              <Eye :size="21" />
             </button>
             <button v-if="!readOnly" type="button" aria-label="Sửa dự án" @click.stop="$emit('edit', project.id)">
-              <Pencil :size="15" />
+              <Pencil :size="21" />
             </button>
             <button v-if="!readOnly" type="button" aria-label="Xóa dự án" @click.stop="$emit('delete', project.id)">
-              <Trash2 :size="15" />
+              <Trash2 :size="21" />
             </button>
           </div>
         </div>
