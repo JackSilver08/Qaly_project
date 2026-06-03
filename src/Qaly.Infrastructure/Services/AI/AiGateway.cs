@@ -224,10 +224,27 @@ public class AiGateway : IAiGateway
     private static string GetFallbackResponse(string schemaId)
     {
         // Provide golden dataset fallback based on expected schema for demo reliability
-        if (schemaId.Contains("MeetingActionItem"))
+        if (schemaId.Contains("MeetingActionItem", StringComparison.OrdinalIgnoreCase))
         {
             return "[\"Fix login issue\", \"Update documentation\"]";
         }
+
+        if (schemaId.Contains("TextAnswer", StringComparison.OrdinalIgnoreCase))
+        {
+            return """
+                {
+                  "reply": "AI provider dang tam thoi khong phan hoi. Day la cau tra loi fallback de UI khong bi vo; hay thu lai sau hoac kiem tra cau hinh provider.",
+                  "metrics": [],
+                  "tables": [],
+                  "charts": [],
+                  "actions": [
+                    { "type": "suggested_action", "label": "Thu lai cau hoi sau" }
+                  ],
+                  "files": []
+                }
+                """;
+        }
+
         return "{\"result\": \"Mock response due to AI failure.\"}";
     }
 

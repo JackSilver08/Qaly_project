@@ -98,6 +98,46 @@ public class AiGatewayEvidenceTests : IDisposable
     }
 
     [Fact]
+    public async Task ExecuteAsync_WhenProviderFailsForTextAnswer_ReturnsUiSafeTextAnswerFallback()
+    {
+        var chatClient = new Mock<IChatClient>();
+        chatClient
+            .Setup(client => client.CompleteAsync(
+                It.IsAny<IList<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("provider unavailable"));
+
+        var gateway = new AiGateway(
+            chatClient.Object,
+            new AiCostService(_context),
+            new AiComplianceService(_context),
+            _context,
+            NullLogger<AiGateway>.Instance);
+
+        var response = await gateway.ExecuteAsync(new AiRequest
+        {
+            JobType = "project_analytics_chat",
+            SystemPrompt = "system",
+            Prompt = "phan tich tien do",
+            ExpectedSchemaId = "TextAnswer.v1",
+            IsSensitive = false
+        });
+
+        response.IsMock.Should().BeTrue();
+        response.ProviderName.Should().Be("FallbackMock");
+
+        using var document = JsonDocument.Parse(response.Content);
+        var root = document.RootElement;
+        root.GetProperty("reply").GetString().Should().NotBeNullOrWhiteSpace();
+        root.GetProperty("metrics").ValueKind.Should().Be(JsonValueKind.Array);
+        root.GetProperty("tables").ValueKind.Should().Be(JsonValueKind.Array);
+        root.GetProperty("charts").ValueKind.Should().Be(JsonValueKind.Array);
+        root.GetProperty("actions").ValueKind.Should().Be(JsonValueKind.Array);
+        root.GetProperty("files").ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_GoldenDatasetCacheHit_ReturnsCachedResponseAndRecordsCostLedger()
     {
         var fixture = LoadGoldenDataset();
