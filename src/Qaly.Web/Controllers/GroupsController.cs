@@ -185,6 +185,13 @@ public class GroupsController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpGet("{id:guid}/meetings/active")]
+    public async Task<IActionResult> GetActiveMeeting(Guid id, CancellationToken ct)
+    {
+        var result = await _groupsService.GetActiveMeetingSessionAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpPost("{groupId:guid}/meetings/{meetingId:guid}/join")]
     public async Task<IActionResult> JoinMeeting(Guid groupId, Guid meetingId, CancellationToken ct)
     {

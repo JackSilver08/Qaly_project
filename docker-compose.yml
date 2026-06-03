@@ -17,17 +17,17 @@ services:
     hostname: qaly-sqlserver
     environment:
       ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "Qaly@Dev2026!"
+      MSSQL_SA_PASSWORD: "${SQLSERVER_SA_PASSWORD:-Qaly@Dev2026!}"
       MSSQL_PID: "Developer"
     ports:
-      - "1434:1433" # Dùng port 1434 để tránh conflict với SQL Server local (1433)
+      - "${SQLSERVER_PORT:-1434}:1433" # Dùng port 1434 để tránh conflict với SQL Server local (1433)
     volumes:
       - qaly-sqlserver-data:/var/opt/mssql
       - ./docker/sqlserver/init:/docker-entrypoint-initdb.d
     networks:
       - qaly-network
     healthcheck:
-      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "Qaly@Dev2026!" -C -Q "SELECT 1" || exit 1
+      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$${MSSQL_SA_PASSWORD}" -C -Q "SELECT 1" || exit 1
       interval: 10s
       timeout: 5s
       retries: 5
@@ -41,7 +41,7 @@ services:
     image: redis:7-alpine
     container_name: qaly-redis
     ports:
-      - "6380:6379" # Port 6380 để tránh conflict
+      - "${REDIS_PORT:-6380}:6379" # Port 6380 để tránh conflict
     volumes:
       - qaly-redis-data:/data
     networks:
@@ -61,10 +61,10 @@ services:
     container_name: qaly-seq
     environment:
       ACCEPT_EULA: "Y"
-      SEQ_FIRSTRUN_ADMINPASSWORD: "Admin@123"
+      SEQ_FIRSTRUN_ADMINPASSWORD: "${SEQ_ADMIN_PASSWORD:-QalySeq@Dev2026!}"
     ports:
-      - "5341:5341" # Ingestion API
-      - "8081:80" # Web UI: http://localhost:8081
+      - "${SEQ_PORT:-5341}:5341" # Ingestion API
+      - "${SEQ_UI_PORT:-8081}:80" # Web UI: http://localhost:8081
     volumes:
       - qaly-seq-data:/data
     networks:
@@ -78,8 +78,8 @@ services:
     image: mailhog/mailhog:latest
     container_name: qaly-mailhog
     ports:
-      - "1025:1025" # SMTP server
-      - "8025:8025" # Web UI: http://localhost:8025
+      - "${MAILHOG_SMTP_PORT:-1025}:1025" # SMTP server
+      - "${MAILHOG_UI_PORT:-8025}:8025" # Web UI: http://localhost:8025
     networks:
       - qaly-network
     restart: unless-stopped
@@ -91,8 +91,8 @@ services:
     image: qdrant/qdrant:latest
     container_name: qaly-qdrant
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "${QDRANT_HTTP_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
     volumes:
       - qaly-qdrant-data:/qdrant/storage
     networks:
@@ -108,7 +108,7 @@ services:
     volumes:
       - qaly-ollama-data:/root/.ollama
     ports:
-      - "11434:11434"
+      - "${OLLAMA_PORT:-11434}:11434"
     networks:
       - qaly-network
     restart: unless-stopped
@@ -123,18 +123,22 @@ services:
       target: development
     container_name: qaly-web
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
-      - ASPNETCORE_URLS=http://+:5000
-      - ConnectionStrings__DefaultConnection=Data Source=CMI\\SQLEXPRESS;Initial Catalog=QalyDb;Integrated Security=True;TrustServerCertificate=True;MultipleActiveResultSets=true
-      - Redis__ConnectionString=qaly-redis:6379
-      - Seq__ServerUrl=http://qaly-seq:5341
-      - Email__SmtpHost=qaly-mailhog
-      - Email__SmtpPort=1025
-      - Ai__OllamaUrl=http://qaly-ollama:11434
-      - Ai__QdrantUrl=http://qaly-qdrant:6333
+      ASPNETCORE_ENVIRONMENT: "${ASPNETCORE_ENVIRONMENT:-Development}"
+      ASPNETCORE_URLS: "http://+:5000"
+      ConnectionStrings__DefaultConnection: "Server=qaly-sqlserver,1433;Database=${SQLSERVER_DATABASE:-QalyDb};User Id=sa;Password=${SQLSERVER_SA_PASSWORD:-Qaly@Dev2026!};TrustServerCertificate=True;MultipleActiveResultSets=true"
+      Redis__ConnectionString: "qaly-redis:6379"
+      Seq__ServerUrl: "http://qaly-seq:5341"
+      Email__SmtpHost: "qaly-mailhog"
+      Email__SmtpPort: "1025"
+      InvitationLink__FrontendBaseUrl: "${InvitationLink__FrontendBaseUrl:-http://localhost:5000}"
+      InvitationLink__AcceptInvitationPath: "${InvitationLink__AcceptInvitationPath:-/invitations/accept}"
+      QALY_SEED_ADMIN_PASSWORD: "${QALY_SEED_ADMIN_PASSWORD:-Qaly@Dev2026!}"
+      QALY_SEED_DEFAULT_USER_PASSWORD: "${QALY_SEED_DEFAULT_USER_PASSWORD:-Qaly@User2026!}"
+      Ai__OllamaUrl: "http://qaly-ollama:11434"
+      Ai__QdrantUrl: "http://qaly-qdrant:6333"
 
     ports:
-      - "5000:5000"
+      - "${APP_PORT:-5000}:5000"
     volumes:
       - .:/app
       - /app/bin

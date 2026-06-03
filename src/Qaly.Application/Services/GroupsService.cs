@@ -1831,6 +1831,22 @@ public partial class GroupsService : IGroupsService
     private static string? NormalizeOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+    public async Task<Result<GroupMeetingSessionDto?>> GetActiveMeetingSessionAsync(Guid groupId, CancellationToken ct = default)
+    {
+        if (!await CanAccessGroupAsync(groupId, ct))
+        {
+            return Result.Forbidden<GroupMeetingSessionDto?>();
+        }
+
+        var meeting = await _meetingSessionRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(item => item.WorkGroupId == groupId && item.Status == "Active" && item.EndedAt == null)
+            .OrderByDescending(item => item.StartedAt)
+            .FirstOrDefaultAsync(ct);
+
+        return Result.Success(meeting == null ? null : ToMeetingDto(meeting));
+    }
+
     public async Task<Result<GroupMeetingSessionDto>> StartMeetingSessionAsync(Guid groupId, CancellationToken ct = default)
     {
         if (!await CanAccessGroupAsync(groupId, ct))
@@ -1844,7 +1860,7 @@ public partial class GroupsService : IGroupsService
             return Result.Forbidden<GroupMeetingSessionDto>();
         }
 
-        var roomId = Guid.NewGuid().ToString("N");
+        var roomId = $"qaly-{groupId:N}-{Guid.NewGuid():N}";
         var joinUrl = $"https://meet.jit.si/{roomId}";
         var groupName = await _groupRepo.GetQueryable()
             .AsNoTracking()
@@ -1885,18 +1901,7 @@ public partial class GroupsService : IGroupsService
         await _messageRepo.AddAsync(meetingMessage, ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
-        var dto = new GroupMeetingSessionDto(
-            meeting.Id,
-            meeting.WorkGroupId,
-            meeting.StartedByUserId,
-            meeting.Provider,
-            meeting.RoomId,
-            meeting.JoinUrl,
-            meeting.Status,
-            meeting.StartedAt,
-            meeting.EndedAt,
-            meeting.TranscriptSourceId,
-            meeting.Summary);
+        var dto = ToMeetingDto(meeting);
 
         await NotifyMeetingStartedAsync(groupId, groupName, dto, currentUserId.Value, starter.FullName, ct);
         await _groupMeetingRealtimePublisher.PublishMeetingStartedAsync(groupId, dto, ct);
@@ -1919,18 +1924,12 @@ public partial class GroupsService : IGroupsService
             return Result.NotFound<GroupMeetingSessionDto>("Meeting session was not found.");
         }
 
-        var dto = new GroupMeetingSessionDto(
-            meeting.Id,
-            meeting.WorkGroupId,
-            meeting.StartedByUserId,
-            meeting.Provider,
-            meeting.RoomId,
-            meeting.JoinUrl,
-            meeting.Status,
-            meeting.StartedAt,
-            meeting.EndedAt,
-            meeting.TranscriptSourceId,
-            meeting.Summary);
+        if (!string.Equals(meeting.Status, "Active", StringComparison.OrdinalIgnoreCase) || meeting.EndedAt != null)
+        {
+            return Result.Failure<GroupMeetingSessionDto>("Meeting session has already ended.", 400);
+        }
+
+        var dto = ToMeetingDto(meeting);
 
         return Result.Success(dto);
     }
@@ -1950,8 +1949,24 @@ public partial class GroupsService : IGroupsService
             return Result.NotFound<GroupMeetingSessionDto>("Meeting session was not found.");
         }
 
-        meeting.Status = "Ended";
-        meeting.EndedAt = DateTimeOffset.UtcNow;
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<GroupMeetingSessionDto>();
+        }
+
+        var canEndMeeting = meeting.StartedByUserId == currentUserId.Value || await CanManageGroupAsync(groupId, ct);
+        if (!canEndMeeting)
+        {
+            return Result.Forbidden<GroupMeetingSessionDto>("Only the meeting starter or a group owner/admin can end this meeting.");
+        }
+
+        if (!string.Equals(meeting.Status, "Ended", StringComparison.OrdinalIgnoreCase))
+        {
+            meeting.Status = "Ended";
+        }
+
+        meeting.EndedAt ??= DateTimeOffset.UtcNow;
 
         await _meetingSessionRepo.UpdateAsync(meeting, ct);
 
@@ -1975,18 +1990,7 @@ public partial class GroupsService : IGroupsService
 
         await _unitOfWork.SaveChangesAsync(ct);
 
-        var dto = new GroupMeetingSessionDto(
-            meeting.Id,
-            meeting.WorkGroupId,
-            meeting.StartedByUserId,
-            meeting.Provider,
-            meeting.RoomId,
-            meeting.JoinUrl,
-            meeting.Status,
-            meeting.StartedAt,
-            meeting.EndedAt,
-            meeting.TranscriptSourceId,
-            meeting.Summary);
+        var dto = ToMeetingDto(meeting);
 
         await _groupMeetingRealtimePublisher.PublishMeetingEndedAsync(groupId, meeting.Id, ct);
 
@@ -2004,6 +2008,20 @@ public partial class GroupsService : IGroupsService
             $"{displayName} Ä‘Ã£ báº¯t Ä‘áº§u cuá»™c há»p nhÃ³m. Báº¥m tham gia Ä‘á»ƒ vÃ o phÃ²ng."
         });
     }
+
+    private static GroupMeetingSessionDto ToMeetingDto(GroupMeetingSession meeting)
+        => new(
+            meeting.Id,
+            meeting.WorkGroupId,
+            meeting.StartedByUserId,
+            meeting.Provider,
+            meeting.RoomId,
+            meeting.JoinUrl,
+            meeting.Status,
+            meeting.StartedAt,
+            meeting.EndedAt,
+            meeting.TranscriptSourceId,
+            meeting.Summary);
 
     private async Task NotifyMeetingStartedAsync(
         Guid groupId,

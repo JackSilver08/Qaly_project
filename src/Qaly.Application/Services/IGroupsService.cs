@@ -28,6 +28,7 @@ public interface IGroupsService
     Task<Result<PagedResult<GroupMessageDto>>> GetMessagesAsync(Guid groupId, int page = 1, int pageSize = 50, CancellationToken ct = default);
     Task<Result<GroupMessageDto>> CreateMessageAsync(Guid groupId, SendGroupMessageRequest request, CancellationToken ct = default);
     Task<Result<CreateProjectFromGroupResult>> CreateProjectFromGroupAsync(Guid groupId, CreateProjectFromGroupRequest request, CancellationToken ct = default);
+    Task<Result<GroupMeetingSessionDto?>> GetActiveMeetingSessionAsync(Guid groupId, CancellationToken ct = default);
     Task<Result<GroupMeetingSessionDto>> StartMeetingSessionAsync(Guid groupId, CancellationToken ct = default);
     Task<Result<GroupMeetingSessionDto>> JoinMeetingSessionAsync(Guid groupId, Guid meetingId, CancellationToken ct = default);
     Task<Result<GroupMeetingSessionDto>> EndMeetingSessionAsync(Guid groupId, Guid meetingId, CancellationToken ct = default);

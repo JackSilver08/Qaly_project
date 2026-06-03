@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using System.Security.Claims;
+using Qaly.Application.Common.Interfaces;
 using Qaly.Application.DTOs.Groups;
 using Qaly.Application.Services;
 
@@ -9,10 +11,12 @@ namespace Qaly.Web.Hubs;
 public class GroupHub : Hub
 {
     private readonly IGroupsService _groupsService;
+    private readonly IGroupMeetingRealtimePublisher _meetingRealtimePublisher;
 
-    public GroupHub(IGroupsService groupsService)
+    public GroupHub(IGroupsService groupsService, IGroupMeetingRealtimePublisher meetingRealtimePublisher)
     {
         _groupsService = groupsService;
+        _meetingRealtimePublisher = meetingRealtimePublisher;
     }
 
     public async Task JoinGroup(Guid groupId)
@@ -76,6 +80,54 @@ public class GroupHub : Hub
             }, Context.ConnectionAborted);
     }
 
+    public async Task JoinMeeting(Guid groupId, Guid meetingId)
+    {
+        var result = await _groupsService.JoinMeetingSessionAsync(groupId, meetingId, Context.ConnectionAborted);
+        if (!result.IsSuccess)
+        {
+            throw new HubException(result.Error ?? "Meeting could not be joined.");
+        }
+
+        await Groups.AddToGroupAsync(Context.ConnectionId, MeetingGroup(groupId, meetingId), Context.ConnectionAborted);
+        await _meetingRealtimePublisher.PublishParticipantJoinedAsync(
+            groupId,
+            meetingId,
+            CurrentUserId(),
+            Context.ConnectionId,
+            Context.ConnectionAborted);
+    }
+
+    public async Task LeaveMeeting(Guid groupId, Guid meetingId)
+    {
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, MeetingGroup(groupId, meetingId), Context.ConnectionAborted);
+        await _meetingRealtimePublisher.PublishParticipantLeftAsync(
+            groupId,
+            meetingId,
+            CurrentUserId(),
+            Context.ConnectionId,
+            Context.ConnectionAborted);
+    }
+
+    public async Task SendMeetingSignal(Guid groupId, Guid meetingId, object payload)
+    {
+        var result = await _groupsService.JoinMeetingSessionAsync(groupId, meetingId, Context.ConnectionAborted);
+        if (!result.IsSuccess)
+        {
+            throw new HubException(result.Error ?? "Meeting signal could not be sent.");
+        }
+
+        await Clients
+            .OthersInGroup(MeetingGroup(groupId, meetingId))
+            .SendAsync("meetingPeerSignal", new
+            {
+                groupId,
+                meetingId,
+                from = Context.ConnectionId,
+                userId = CurrentUserId(),
+                payload
+            }, Context.ConnectionAborted);
+    }
+
     private async Task BroadcastPresenceSignalAsync(Guid groupId, string eventName)
     {
         if (!await _groupsService.CanAccessGroupAsync(groupId, Context.ConnectionAborted))
@@ -95,4 +147,16 @@ public class GroupHub : Hub
 
     public static string WorkGroup(Guid groupId)
         => $"workgroup:{groupId}";
+
+    public static string MeetingGroup(Guid groupId, Guid meetingId)
+        => $"workgroup:{groupId}:meeting:{meetingId}";
+
+    private Guid? CurrentUserId()
+    {
+        var raw =
+            Context.User?.FindFirstValue(ClaimTypes.NameIdentifier) ??
+            Context.User?.FindFirstValue("sub");
+
+        return Guid.TryParse(raw, out var userId) ? userId : null;
+    }
 }

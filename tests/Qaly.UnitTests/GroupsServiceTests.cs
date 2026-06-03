@@ -1744,6 +1744,77 @@ public class GroupsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetActiveMeetingSessionAsync_WhenActiveMeetingExists_ReturnsLatestActiveMeeting()
+    {
+        var groupId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        _currentUser.Setup(u => u.UserId).Returns(userId);
+
+        var group = new WorkGroup { Id = groupId, Name = "Test Group" };
+        await _groupRepo.AddAsync(group);
+        await _memberRepo.AddAsync(new WorkGroupMember { WorkGroupId = groupId, UserId = userId, Role = GroupRoleRules.Owner });
+        await _meetingSessionRepo.AddAsync(new GroupMeetingSession
+        {
+            Id = Guid.NewGuid(),
+            WorkGroupId = groupId,
+            StartedByUserId = userId,
+            Provider = "Jitsi",
+            RoomId = "old-room",
+            Status = "Ended",
+            EndedAt = DateTimeOffset.UtcNow.AddHours(-2),
+            StartedAt = DateTimeOffset.UtcNow.AddHours(-3)
+        });
+        var activeMeetingId = Guid.NewGuid();
+        await _meetingSessionRepo.AddAsync(new GroupMeetingSession
+        {
+            Id = activeMeetingId,
+            WorkGroupId = groupId,
+            StartedByUserId = userId,
+            Provider = "Jitsi",
+            RoomId = "active-room",
+            Status = "Active",
+            StartedAt = DateTimeOffset.UtcNow.AddMinutes(-5)
+        });
+        await _uow.SaveChangesAsync();
+
+        var result = await CreateService().GetActiveMeetingSessionAsync(groupId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Data.Should().NotBeNull();
+        result.Data!.Id.Should().Be(activeMeetingId);
+        result.Data.Status.Should().Be("Active");
+    }
+
+    [Fact]
+    public async Task JoinMeetingSessionAsync_WhenMeetingAlreadyEnded_ReturnsFailure()
+    {
+        var groupId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var meetingId = Guid.NewGuid();
+        _currentUser.Setup(u => u.UserId).Returns(userId);
+
+        var group = new WorkGroup { Id = groupId, Name = "Test Group" };
+        await _groupRepo.AddAsync(group);
+        await _memberRepo.AddAsync(new WorkGroupMember { WorkGroupId = groupId, UserId = userId, Role = GroupRoleRules.Member });
+        await _meetingSessionRepo.AddAsync(new GroupMeetingSession
+        {
+            Id = meetingId,
+            WorkGroupId = groupId,
+            StartedByUserId = userId,
+            Provider = "Jitsi",
+            RoomId = "room-abc",
+            Status = "Ended",
+            EndedAt = DateTimeOffset.UtcNow
+        });
+        await _uow.SaveChangesAsync();
+
+        var result = await CreateService().JoinMeetingSessionAsync(groupId, meetingId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+    }
+
+    [Fact]
     public async Task EndMeetingSessionAsync_WhenSuccessful_EndsMeetingSession()
     {
         var groupId = Guid.NewGuid();
@@ -1776,6 +1847,36 @@ public class GroupsServiceTests : IDisposable
         var saved = await _meetingSessionRepo.GetQueryable().FirstOrDefaultAsync(m => m.Id == meetingId);
         saved!.Status.Should().Be("Ended");
         saved.EndedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task EndMeetingSessionAsync_WhenMemberDidNotStartMeeting_ReturnsForbidden()
+    {
+        var groupId = Guid.NewGuid();
+        var starterId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        var meetingId = Guid.NewGuid();
+        _currentUser.Setup(u => u.UserId).Returns(memberId);
+
+        var group = new WorkGroup { Id = groupId, Name = "Test Group" };
+        await _groupRepo.AddAsync(group);
+        await _memberRepo.AddAsync(new WorkGroupMember { WorkGroupId = groupId, UserId = starterId, Role = GroupRoleRules.Member });
+        await _memberRepo.AddAsync(new WorkGroupMember { WorkGroupId = groupId, UserId = memberId, Role = GroupRoleRules.Member });
+        await _meetingSessionRepo.AddAsync(new GroupMeetingSession
+        {
+            Id = meetingId,
+            WorkGroupId = groupId,
+            StartedByUserId = starterId,
+            Provider = "Jitsi",
+            RoomId = "room-abc",
+            Status = "Active"
+        });
+        await _uow.SaveChangesAsync();
+
+        var result = await CreateService().EndMeetingSessionAsync(groupId, meetingId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
     }
 
     private GroupsService CreateService()
