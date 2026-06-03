@@ -1,6 +1,9 @@
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Wordprocessing;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Import;
@@ -12,7 +15,7 @@ public partial class FileImportService : IFileImportService
 {
     private static readonly HashSet<string> DocumentExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".md", ".markdown", ".txt", ".html", ".htm"
+        ".md", ".markdown", ".txt", ".html", ".htm", ".docx"
     };
 
     private readonly IWikiService _wikiService;
@@ -80,17 +83,21 @@ public partial class FileImportService : IFileImportService
         if (!DocumentExtensions.Contains(extension))
         {
             return Result.Failure<ParsedDocument>(
-                "Dinh dang document nay chua duoc ho tro o phase dau. Hien co: .md, .markdown, .txt, .html, .htm.",
+                "Dinh dang document nay chua duoc ho tro. Hien co: .md, .markdown, .txt, .html, .htm, .docx.",
                 400);
         }
 
-        var raw = await ReadTextAsync(fileStream, ct);
-        if (string.IsNullOrWhiteSpace(raw))
+        var raw = extension.Equals(".docx", StringComparison.OrdinalIgnoreCase)
+            ? string.Empty
+            : await ReadTextAsync(fileStream, ct);
+
+        if (!extension.Equals(".docx", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(raw))
             return Result.Failure<ParsedDocument>("File khong co noi dung de import.", 400);
 
         return extension.ToLowerInvariant() switch
         {
             ".md" or ".markdown" => Result.Success(ParseMarkdown(raw, fileName)),
+            ".docx" => ParseDocx(fileStream, fileName),
             ".txt" => Result.Success(ParsePlainText(raw, fileName)),
             ".html" or ".htm" => Result.Success(ParseHtml(raw, fileName)),
             _ => Result.Failure<ParsedDocument>("Dinh dang document khong ho tro.", 400)
@@ -169,6 +176,69 @@ public partial class FileImportService : IFileImportService
             []);
     }
 
+    private static Result<ParsedDocument> ParseDocx(Stream stream, string fileName)
+    {
+        try
+        {
+            if (stream.CanSeek)
+                stream.Position = 0;
+
+            using var document = WordprocessingDocument.Open(stream, false);
+            var body = document.MainDocumentPart?.Document?.Body;
+            if (body == null)
+                return Result.Failure<ParsedDocument>("File DOCX khong co noi dung de import.", 400);
+
+            var title = NormalizeWhitespace(document.PackageProperties.Title);
+            var blocks = new List<string>();
+            var warnings = new List<string>();
+            var hasVisibleText = false;
+
+            foreach (var paragraph in body.Elements<Paragraph>())
+            {
+                var text = NormalizeWhitespace(GetParagraphText(paragraph));
+                if (string.IsNullOrWhiteSpace(text))
+                    continue;
+
+                hasVisibleText = true;
+                var block = ConvertParagraphToMarkdown(paragraph, text);
+                if (!string.IsNullOrWhiteSpace(block))
+                    blocks.Add(block);
+
+                if (string.IsNullOrWhiteSpace(title) && TryGetHeadingLevel(GetParagraphStyleId(paragraph), out _))
+                    title = text;
+            }
+
+            if (!hasVisibleText)
+                return Result.Failure<ParsedDocument>("File DOCX khong co noi dung de import.", 400);
+
+            if (string.IsNullOrWhiteSpace(title))
+                title = Path.GetFileNameWithoutExtension(fileName);
+
+            if (body.Descendants<Table>().Any())
+                warnings.Add("Da bo qua bang trong DOCX; hien tai parser toi thieu chi chuyen heading va paragraph.");
+            if (body.Descendants<Drawing>().Any())
+                warnings.Add("Hinh anh trong DOCX da duoc bo qua trong parser toi thieu.");
+
+            var markdown = string.Join("\n\n", blocks).Trim();
+            if (string.IsNullOrWhiteSpace(markdown))
+                markdown = textFallback(body);
+
+            var parsedBlocks = SplitBlocks(markdown);
+            return Result.Success(new ParsedDocument(
+                "DOCX",
+                title,
+                ExtractDescription(parsedBlocks, title),
+                markdown,
+                CountBlocks(markdown),
+                parsedBlocks.Take(8).ToList(),
+                warnings));
+        }
+        catch (Exception ex)
+        {
+            return Result.Failure<ParsedDocument>($"Khong the doc DOCX: {ex.Message}", 400);
+        }
+    }
+
     private static string ConvertBasicHtmlToMarkdown(string html)
     {
         var text = html;
@@ -207,8 +277,76 @@ public partial class FileImportService : IFileImportService
         return match.Success ? match.Groups[1].Value : null;
     }
 
+    private static string ConvertParagraphToMarkdown(Paragraph paragraph, string text)
+    {
+        var styleId = GetParagraphStyleId(paragraph);
+        if (TryGetHeadingLevel(styleId, out var level))
+            return $"{new string('#', level)} {text}";
+
+        if (IsListParagraph(paragraph))
+            return $"- {text}";
+
+        return text;
+    }
+
+    private static string GetParagraphText(Paragraph paragraph)
+    {
+        var builder = new StringBuilder();
+        foreach (var node in paragraph.Descendants())
+        {
+            switch (node)
+            {
+                case Text text:
+                    builder.Append(text.Text);
+                    break;
+                case TabChar:
+                    builder.Append('\t');
+                    break;
+                case Break:
+                    builder.Append('\n');
+                    break;
+                case CarriageReturn:
+                    builder.Append('\n');
+                    break;
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    private static string? GetParagraphStyleId(Paragraph paragraph)
+        => paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value;
+
+    private static bool TryGetHeadingLevel(string? styleId, out int level)
+    {
+        level = 0;
+        if (string.IsNullOrWhiteSpace(styleId))
+            return false;
+
+        var match = Regex.Match(styleId, @"^Heading\s*([1-6])$", RegexOptions.IgnoreCase);
+        if (!match.Success)
+            return false;
+
+        level = int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
+        return true;
+    }
+
+    private static bool IsListParagraph(Paragraph paragraph)
+        => paragraph.ParagraphProperties?.NumberingProperties != null ||
+           (GetParagraphStyleId(paragraph)?.Contains("List", StringComparison.OrdinalIgnoreCase) ?? false);
+
+    private static string NormalizeWhitespace(string? value)
+        => string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : Regex.Replace(value, @"\s+", " ").Trim();
+
     private static string DropTagWithContent(string html, string tagName)
         => Regex.Replace(html, $@"<\s*{tagName}[^>]*>.*?<\s*/\s*{tagName}\s*>", string.Empty, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+    private static string textFallback(Body body)
+        => string.Join("\n\n", body.Descendants<Paragraph>()
+            .Select(paragraph => NormalizeWhitespace(GetParagraphText(paragraph)))
+            .Where(text => !string.IsNullOrWhiteSpace(text)));
 
     private static string StripTags(string html)
         => WebUtility.HtmlDecode(Regex.Replace(html, @"<[^>]+>", string.Empty, RegexOptions.Singleline));

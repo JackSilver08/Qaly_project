@@ -51,7 +51,7 @@ const stepLabels = computed(() => importMode.value === 'document'
   : ['Discover', 'Map columns', 'Confirm', 'Done'])
 
 const tableExtensions = ['csv', 'xlsx', 'tsv', 'dsv', 'psv', 'json']
-const documentExtensions = ['md', 'markdown', 'txt', 'html', 'htm']
+const documentExtensions = ['md', 'markdown', 'txt', 'html', 'htm', 'docx']
 
 async function loadImportSessions() {
   if (!props.projectId) return

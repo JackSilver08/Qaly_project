@@ -24,10 +24,10 @@ const isDragging = ref(false)
 const activeTab = ref<'discover' | 'completed'>('discover')
 
 const isNewProject = !props.projectId
-const acceptedTypes = '.csv,.xlsx,.tsv,.dsv,.txt,.psv,.json,.md,.markdown,.html,.htm'
+const acceptedTypes = '.csv,.xlsx,.tsv,.dsv,.txt,.psv,.json,.md,.markdown,.html,.htm,.docx'
 const tableExtensions = ['csv', 'xlsx', 'tsv', 'dsv', 'psv', 'json']
-const phaseOneDocumentExtensions = ['md', 'markdown', 'txt', 'html', 'htm']
-const roadmapExtensions = ['pdf', 'docx', 'epub', 'zip']
+const phaseOneDocumentExtensions = ['md', 'markdown', 'txt', 'html', 'htm', 'docx']
+const roadmapExtensions = ['pdf', 'epub', 'zip']
 const supportedExtensions = [...tableExtensions, ...phaseOneDocumentExtensions]
 
 function onDragOver(e: DragEvent) {
@@ -106,7 +106,7 @@ function fileKindLabel(name: string) {
     <template v-if="activeTab === 'discover'">
       <div class="import-section-heading">
         <h4>Import your content</h4>
-        <p>Supported now: CSV, Excel, JSON, TXT, Markdown, and HTML. PDF, DOCX, EPUB, and ZIP stay in the roadmap until their parsers are ready.</p>
+        <p>Supported now: CSV, Excel, JSON, TXT, Markdown, HTML, and DOCX. PDF, EPUB, and ZIP stay in the roadmap until their parsers are ready.</p>
       </div>
 
       <div class="template-actions" aria-label="Download import templates">
@@ -136,7 +136,7 @@ function fileKindLabel(name: string) {
               <input type="file" :accept="acceptedTypes" hidden @change="onFileInput" />
             </label>
           </p>
-          <p class="dropzone-formats">Available now: CSV, Excel, JSON, TXT, Markdown, and HTML. Roadmap: PDF, DOCX, EPUB, and ZIP after we add parsers.</p>
+          <p class="dropzone-formats">Available now: CSV, Excel, JSON, TXT, Markdown, HTML, and DOCX. Roadmap: PDF, EPUB, and ZIP after we add parsers.</p>
         </template>
         <template v-else>
           <FileSpreadsheet v-if="tableExtensions.includes(extensionOf(file.name))" :size="34" class="dropzone-icon--selected" />
@@ -149,12 +149,12 @@ function fileKindLabel(name: string) {
 
       <div class="import-type-section">
         <h4>File-based imports</h4>
-        <p>Import CSV, Excel, JSON, TXT, Markdown, and HTML now. PDF, DOCX, EPUB, and ZIP stay in the roadmap until their parsers are ready.</p>
+        <p>Import CSV, Excel, JSON, TXT, Markdown, HTML, and DOCX now. PDF, EPUB, and ZIP stay in the roadmap until their parsers are ready.</p>
         <div class="import-type-grid">
           <article>
             <FileText :size="18" />
             <strong>Documents now</strong>
-            <span>Markdown, text, and HTML convert to Wiki pages today.</span>
+            <span>Markdown, text, HTML, and DOCX convert to Wiki pages today.</span>
           </article>
           <article>
             <FileSpreadsheet :size="18" />
@@ -164,7 +164,7 @@ function fileKindLabel(name: string) {
           <article>
             <Archive :size="18" />
             <strong>Roadmap</strong>
-            <span>PDF, DOCX, EPUB, and ZIP will come later, after parsing support is added.</span>
+            <span>PDF, EPUB, and ZIP will come later, after parsing support is added.</span>
           </article>
         </div>
       </div>

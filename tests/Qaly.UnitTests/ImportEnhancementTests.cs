@@ -1,10 +1,15 @@
 using System.Text;
+using DocumentFormat.OpenXml;
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Wordprocessing;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Qaly.Application.Common.Interfaces;
+using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Import;
+using Qaly.Application.DTOs.Wiki;
 using Qaly.Application.Services;
 using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
@@ -20,6 +25,7 @@ public class ImportEnhancementTests : IDisposable
     private readonly QalyDbContext _context;
     private readonly Mock<ICurrentUserService> _currentUser = new();
     private readonly Mock<ITaskAccessPolicy> _taskAccessPolicy = new();
+    private readonly Mock<IWikiService> _wikiService = new();
 
     public ImportEnhancementTests()
     {
@@ -33,6 +39,10 @@ public class ImportEnhancementTests : IDisposable
         _taskAccessPolicy
             .Setup(policy => policy.CanAccessProjectAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
+        _wikiService
+            .Setup(service => service.CreateAsync(It.IsAny<Guid>(), It.IsAny<CreateWikiPageDto>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid projectId, CreateWikiPageDto dto, CancellationToken _) =>
+                Result.Success(new WikiPageDto(Guid.NewGuid(), dto.Title, dto.Content ?? string.Empty, "internal", "Tester", DateTimeOffset.UtcNow)));
     }
 
     public void Dispose()
@@ -485,6 +495,48 @@ public class ImportEnhancementTests : IDisposable
         task.Status.Should().Be("InReview");
     }
 
+    [Fact]
+    public async Task PreviewDocumentAsync_WithDocx_ConvertsHeadingsAndParagraphsToMarkdown()
+    {
+        var service = CreateFileImportService();
+        await using var stream = CreateDocxStream();
+
+        var result = await service.PreviewDocumentAsync(stream, "strategy.docx");
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.FileType.Should().Be("DOCX");
+        result.Data.Title.Should().Be("Project Strategy");
+        result.Data.Description.Should().Contain("This document explains the rollout");
+        result.Data.PreviewBlocks.Should().Contain("# Project Strategy");
+        result.Data.PreviewBlocks.Should().Contain("## Scope");
+        result.Data.PreviewBlocks.Should().Contain("This document explains the rollout plan.");
+        result.Data.Warnings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ImportDocumentAsync_WithDocx_SendsMarkdownToWikiService()
+    {
+        var projectId = Guid.NewGuid();
+
+        var service = CreateFileImportService();
+        await using var stream = CreateDocxStream();
+
+        var result = await service.ImportDocumentAsync(projectId, stream, "strategy.docx");
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        _wikiService.Verify(
+            wiki => wiki.CreateAsync(
+                projectId,
+                It.Is<CreateWikiPageDto>(dto =>
+                    dto.Title == "Project Strategy" &&
+                    dto.Content != null &&
+                    dto.Content.Contains("# Project Strategy") &&
+                    dto.Content.Contains("This document explains the rollout plan.") &&
+                    dto.Content.Contains("## Scope")),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
     private ImportService CreateService()
         => new(
             new GenericRepository<Project>(_context),
@@ -498,5 +550,36 @@ public class ImportEnhancementTests : IDisposable
             Mock.Of<ILogger<ImportService>>(),
             Mock.Of<IAiService>(),
             _taskAccessPolicy.Object);
+
+    private FileImportService CreateFileImportService()
+        => new(_wikiService.Object);
+
+    private static MemoryStream CreateDocxStream()
+    {
+        var stream = new MemoryStream();
+        using (var document = WordprocessingDocument.Create(stream, WordprocessingDocumentType.Document, true))
+        {
+            var mainPart = document.AddMainDocumentPart();
+            mainPart.Document = new Document(new Body());
+
+            var body = mainPart.Document.Body!;
+            body.Append(
+                new Paragraph(
+                    new ParagraphProperties(new ParagraphStyleId { Val = "Heading1" }),
+                    new Run(new Text("Project Strategy"))),
+                new Paragraph(
+                    new Run(new Text("This document explains the rollout plan."))),
+                new Paragraph(
+                    new ParagraphProperties(new ParagraphStyleId { Val = "Heading2" }),
+                    new Run(new Text("Scope"))),
+                new Paragraph(
+                    new Run(new Text("Phase 1 covers onboarding and project setup."))));
+
+            mainPart.Document.Save();
+        }
+
+        stream.Position = 0;
+        return stream;
+    }
 }
 #pragma warning restore CA1707
