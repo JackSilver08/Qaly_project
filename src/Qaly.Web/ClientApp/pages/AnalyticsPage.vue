@@ -5,10 +5,14 @@ import {
   Folder,
   Send, 
   Square,
-  Paperclip
+  Paperclip,
+  Copy,
+  Download,
+  AlertTriangle
 } from 'lucide-vue-next'
 import { useDashboardContext } from '../composables/dashboard-context'
 import { apiJson } from '../utils/api-client'
+import { showSuccess } from '../composables/use-toast'
 import ChatbotAvatar from '../components/ChatbotAvatar.vue'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
@@ -109,6 +113,7 @@ type ChatEntry = {
   sources?: string[]
   confidence?: number
   latencyMs?: number
+  usedAi?: boolean
 }
 
 type ErumiUploadedFile = {
@@ -127,6 +132,12 @@ const selectedTargetLabel = computed(() => {
   if (selectedTarget.value === 'workspace') return 'Tất cả dự án'
   const project = projects.value.find((p: any) => p.id === selectedTarget.value)
   return project?.name || 'Dự án'
+})
+
+const isDataInsufficient = computed(() => {
+  if (selectedTarget.value === 'workspace') return false
+  const proj = projects.value.find((p: any) => p.id === selectedTarget.value)
+  return proj ? (proj.taskCount || 0) < 3 : false
 })
 
 const chatInput = ref('')
@@ -540,18 +551,41 @@ async function submitChat(explicitText?: string, _action?: string) {
       files: fastReply.files,
       sources: fastReply.sources,
       confidence: fastReply.confidence,
-      latencyMs: fastReply.latencyMs
+      latencyMs: fastReply.latencyMs,
+      usedAi: fastReply.usedAi
     }
   } catch (e) {
     const lastIdx = chatHistory.value.length - 1
     const fallbackText = getFallbackChatAnswer(userText)
     isChatting.value = false
-    chatHistory.value[lastIdx].text = fallbackText
+    chatHistory.value[lastIdx] = {
+      role: 'assistant',
+      text: fallbackText,
+      usedAi: false
+    }
   } finally {
     isChatting.value = false
     await scrollToBottom()
   }
 }
+
+function copyToClipboard(text: string) {
+  navigator.clipboard.writeText(text)
+  showSuccess('Đã sao chép phản hồi vào clipboard!')
+}
+
+function exportAsMarkdown(projectName: string, text: string) {
+  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.setAttribute('download', `Erumi_Report_${projectName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.md`)
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  showSuccess('Đã xuất báo cáo thành công!')
+}
+
 
 function handleDocumentClick(e: MouseEvent) {
   if (dropdownRef1.value && !dropdownRef1.value.contains(e.target as Node)) {
@@ -685,6 +719,14 @@ onBeforeUnmount(() => {
       <div v-else class="chat-thread-container no-scrollbar" ref="chatContainerRef">
         <div class="chat-thread-width">
           
+          <!-- Insufficient Data Warning -->
+          <div v-if="isDataInsufficient" class="data-warning-banner">
+            <AlertTriangle :size="16" class="warning-icon" />
+            <div class="warning-text">
+              <strong>Cảnh báo dữ liệu:</strong> Dự án này hiện tại có quá ít dữ liệu (dưới 3 nhiệm vụ). Các phân tích từ AI có thể chưa tối ưu hoặc kém chính xác. Hãy bổ sung thêm nhiệm vụ để nhận kết quả tốt nhất.
+            </div>
+          </div>
+
           <div 
             v-for="(msg, i) in chatHistory" 
             :key="i" 
@@ -695,7 +737,14 @@ onBeforeUnmount(() => {
             </div>
             
             <div class="msg-bubble-content">
-              <div v-if="msg.role === 'assistant'" class="msg-bubble-assistant" v-html="renderMarkdown(msg.text)"></div>
+              <div v-if="msg.role === 'assistant'" class="msg-bubble-assistant">
+                <!-- Processing Origin Badge -->
+                <div class="origin-badge" :class="msg.usedAi ? 'origin-ai' : 'origin-rule'">
+                  <span v-if="msg.usedAi">🤖 Trả lời bởi Erumi AI</span>
+                  <span v-else>⚙️ Dữ liệu hệ thống (Rule-based)</span>
+                </div>
+                <div v-html="renderMarkdown(msg.text)"></div>
+              </div>
               <div v-else class="msg-bubble-user">{{ msg.text }}</div>
 
               <div v-if="msg.role === 'user' && msg.attachments?.length" class="msg-attachment-list">
@@ -781,10 +830,22 @@ onBeforeUnmount(() => {
                 </a>
               </div>
 
+              <!-- Action Toolbar (Copy & Export) -->
+              <div v-if="msg.role === 'assistant'" class="bubble-actions-toolbar">
+                <button class="bubble-action-btn" title="Sao chép phản hồi" type="button" @click="copyToClipboard(msg.text)">
+                  <Copy :size="12" />
+                  <span>Sao chép</span>
+                </button>
+                <button class="bubble-action-btn" title="Xuất báo cáo Markdown" type="button" @click="exportAsMarkdown(selectedTargetLabel, msg.text)">
+                  <Download :size="12" />
+                  <span>Xuất Markdown</span>
+                </button>
+              </div>
+
               <div v-if="msg.role === 'assistant' && (msg.sources?.length || msg.latencyMs !== undefined)" class="erumi-response-meta">
-                <span v-if="msg.latencyMs !== undefined">Phản hồi {{ msg.latencyMs }}ms</span>
-                <span v-if="msg.confidence !== undefined">{{ confidenceLabel(msg.confidence) }}</span>
-                <span v-if="msg.sources?.length">Nguồn: {{ msg.sources.join(', ') }}</span>
+                <span v-if="msg.latencyMs !== undefined">⏱️ Phản hồi {{ msg.latencyMs }}ms</span>
+                <span v-if="msg.confidence !== undefined">🎯 {{ confidenceLabel(msg.confidence) }}</span>
+                <span v-if="msg.sources?.length">📄 Nguồn: {{ msg.sources.join(', ') }}</span>
               </div>
             </div>
           </div>
@@ -891,6 +952,72 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* ================================================
+   SAFETY UX & BADGES
+   ================================================ */
+.data-warning-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  color: #b45309;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+.warning-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.origin-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+.origin-ai {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+.origin-rule {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+.bubble-actions-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  margin-bottom: 4px;
+}
+.bubble-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.bubble-action-btn:hover {
+  background: #f8fafc;
+  color: #0f172a;
+  border-color: #94a3b8;
+}
+
 /* ================================================
    BASE LAYOUT
    ================================================ */

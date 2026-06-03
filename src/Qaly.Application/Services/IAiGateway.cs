@@ -14,6 +14,7 @@ public class AiRequest
     public Guid? TenantId { get; set; }
     public Guid? UserId { get; set; }
     public bool UseCache { get; set; } = true;
+    public System.Collections.Generic.IList<Qaly.Application.DTOs.Ai.AiChatMessageDto>? History { get; set; }
 }
 
 public class AiResponse

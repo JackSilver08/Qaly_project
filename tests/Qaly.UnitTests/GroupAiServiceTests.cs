@@ -195,7 +195,7 @@ public class GroupAiServiceTests : IDisposable
         await _context.GroupMessages.AddAsync(message);
         await _context.SaveChangesAsync();
 
-        var jsonResponse = "{\"summary\": \"Alice and team discussed scope\", \"keyDecisions\": [\"Scope locked\"], \"unresolvedQuestions\": [\"Who is PM?\"]}";
+        var jsonResponse = "{\"summary\": \"Alice and team discussed scope\", \"keyDecisions\": [\"Scope locked\"], \"unresolvedQuestions\": [\"Who is PM?\"], \"messageSources\": [\"Alice: Let's lock the scope\"]}";
         _chatClient
             .Setup(client => client.CompleteAsync(
                 It.IsAny<IList<ChatMessage>>(),
@@ -209,6 +209,7 @@ public class GroupAiServiceTests : IDisposable
         result.Data!.Summary.Should().Be("Alice and team discussed scope");
         result.Data.KeyDecisions.Should().ContainSingle().Which.Should().Be("Scope locked");
         result.Data.UnresolvedQuestions.Should().ContainSingle().Which.Should().Be("Who is PM?");
+        result.Data.MessageSources.Should().ContainSingle().Which.Should().Be("Alice: Let's lock the scope");
     }
 
     [Fact]

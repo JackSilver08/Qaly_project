@@ -41,7 +41,8 @@ public record GroupAiSummaryResponseDto(
     string Summary,
     IReadOnlyList<string> KeyDecisions,
     IReadOnlyList<string> UnresolvedQuestions,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    IReadOnlyList<string>? MessageSources = null);
 
 public record GroupAiDraftProjectRequest(
     int? MessageLimit = null,

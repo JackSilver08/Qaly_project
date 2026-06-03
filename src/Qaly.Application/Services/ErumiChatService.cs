@@ -8,6 +8,8 @@ using Qaly.Application.DTOs.Analytics;
 using Qaly.Application.DTOs.Task;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
+using Qaly.Application.DTOs.Project;
+using Microsoft.Extensions.AI;
 
 namespace Qaly.Application.Services;
 
@@ -25,19 +27,22 @@ public sealed class ErumiChatService : IErumiChatService
     private readonly ITaskService _taskService;
     private readonly IRepository<ProjectMember> _memberRepo;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IAiGateway _aiGateway;
 
     public ErumiChatService(
         IAnalyticsService analyticsService,
         IProjectService projectService,
         ITaskService taskService,
         IRepository<ProjectMember> memberRepo,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        IAiGateway aiGateway)
     {
         _analyticsService = analyticsService;
         _projectService = projectService;
         _taskService = taskService;
         _memberRepo = memberRepo;
         _currentUserService = currentUserService;
+        _aiGateway = aiGateway;
     }
 
     public async Task<Result<ErumiChatResponseDto>> ChatFastAsync(ErumiChatRequestDto request, CancellationToken ct = default)
@@ -70,17 +75,18 @@ public sealed class ErumiChatService : IErumiChatService
 
         if (!request.ProjectId.HasValue)
         {
-            return await BuildWorkspaceResponseAsync(normalized, sw, ct);
+            return await BuildWorkspaceResponseAsync(request, sw, ct);
         }
 
-        return await BuildProjectResponseAsync(request.ProjectId.Value, normalized, sw, ct);
+        return await BuildProjectResponseAsync(request.ProjectId.Value, request, sw, ct);
     }
 
     private async Task<Result<ErumiChatResponseDto>> BuildWorkspaceResponseAsync(
-        string normalized,
+        ErumiChatRequestDto request,
         Stopwatch sw,
         CancellationToken ct)
     {
+        var normalized = Normalize(request.Message);
         var result = await _analyticsService.GetWorkspaceAnalyticsAsync(ct);
         if (!result.IsSuccess || result.Data == null)
         {
@@ -103,48 +109,105 @@ public sealed class ErumiChatService : IErumiChatService
             return await BuildWorkspaceProjectComparisonResponseAsync(normalized, data, sw, ct);
         }
 
-        var metrics = new List<ErumiMetricDto>
-        {
-            new("Tổng dự án", data.TotalProjects.ToString(CultureInfo.InvariantCulture), "neutral"),
-            new("Đang hoạt động", data.ActiveProjects.ToString(CultureInfo.InvariantCulture), "good"),
-            new("Tổng task", data.TotalTasks.ToString(CultureInfo.InvariantCulture), "neutral"),
-            new("Hoàn thành tuần này", data.DoneTasksThisWeek.ToString(CultureInfo.InvariantCulture), "good"),
-            new("Giờ log tuần này", $"{data.TotalHoursLoggedThisWeek:0.##}h", "neutral")
-        };
+        return await ExecuteWorkspaceAiChatAsync(request, data, sw, ct);
+    }
 
-        var charts = new List<ErumiChartDto>
-        {
-            new(
-                "bar",
-                "Nhịp làm việc tuần này",
-                WorkspaceChartLabels,
-                new[] { (double)data.DoneTasksThisWeek, data.TotalHoursLoggedThisWeek },
-                null)
-        };
+    private async Task<Result<ErumiChatResponseDto>> ExecuteWorkspaceAiChatAsync(
+        ErumiChatRequestDto request,
+        WorkspaceAnalyticsDto data,
+        Stopwatch sw,
+        CancellationToken ct)
+    {
+        var projectsResult = await _projectService.GetAllAsync(pageSize: 100, ct: ct);
+        var projects = projectsResult.Data?.Items
+            .Where(p => !string.Equals(p.Status, "Archived", StringComparison.OrdinalIgnoreCase))
+            .ToList() ?? new List<ProjectDto>();
 
-        var reply = ContainsAny(normalized, "bieu do", "chart", "thong ke")
-            ? "Mình đã lấy nhanh dữ liệu workspace và dựng biểu đồ tuần này từ số liệu hệ thống."
-            : $"Workspace hiện có **{data.TotalProjects} dự án**, **{data.TotalTasks} task** và **{data.DoneTasksThisWeek} task hoàn thành trong 7 ngày gần nhất**. Tổng thời gian đã log tuần này là **{data.TotalHoursLoggedThisWeek:0.##}h**.";
-
-        if (ContainsAny(normalized, "du an nao", "project nao", "chi tiet du an", "qua han", "rui ro"))
+        var projectsList = new List<string>();
+        foreach (var p in projects)
         {
-            reply += "\n\nĐể phân tích rủi ro chi tiết hoặc biểu đồ theo trạng thái, bạn hãy chọn một dự án cụ thể ở dropdown phía trên.";
+            var analyticsResult = await _analyticsService.GetProjectAnalyticsAsync(p.Id, ct);
+            if (analyticsResult.IsSuccess && analyticsResult.Data != null)
+            {
+                var an = analyticsResult.Data;
+                projectsList.Add($"- Dự án: {p.Name} | Trạng thái: {p.Status} | Tổng task: {an.TotalTasks} | Đang làm: {an.InProgressTasks} | Hoàn thành: {an.DoneTasks} | Quá hạn: {an.OverdueTasks}");
+            }
+            else
+            {
+                projectsList.Add($"- Dự án: {p.Name} | Trạng thái: {p.Status} | Tổng task: {p.TaskCount}");
+            }
         }
+        var projectsContext = string.Join("\n", projectsList);
 
-        var wantsVisuals = ContainsAny(normalized, "bieu do", "chart", "thong ke", "phan tich workspace", "phan tich tong quan");
+        var systemPrompt = $@"Bạn là Erumi, trợ lý phân tích AI đắc lực của hệ thống Qaly.
+Bạn đang hỗ trợ người dùng quản lý toàn bộ Workspace (Tất cả dự án).
 
-        return Result.Success(CreateResponse(
-            reply,
-            "workspace_analytics",
-            sw,
-            wantsVisuals ? metrics : null,
-            charts: wantsVisuals ? charts : null,
-            sources: WorkspaceSources));
+TỔNG QUAN WORKSPACE:
+- Tổng dự án: {data.TotalProjects}
+- Đang hoạt động: {data.ActiveProjects}
+- Tổng nhiệm vụ: {data.TotalTasks}
+- Hoàn thành tuần này: {data.DoneTasksThisWeek}
+- Tổng thời gian đã log tuần này: {data.TotalHoursLoggedThisWeek:0.##} giờ
+
+DANH SÁCH CÁC DỰ ÁN ĐANG HOẠT ĐỘNG:
+{projectsContext}
+
+Thời gian hiện tại: {DateTimeOffset.Now:dd/MM/yyyy HH:mm}.
+
+YÊU CẦU ĐẦU RA (BẮT BUỘC):
+Bạn phải trả về câu trả lời của mình dưới dạng một đối tượng JSON duy nhất theo cấu trúc bên dưới (không viết thêm lời thoại nào ngoài JSON, không đặt JSON trong khối code markdown). Nếu bạn muốn trả về biểu đồ, metric hoặc bảng dữ liệu động từ danh sách trên, hãy tự định nghĩa chúng trong JSON:
+{{
+  ""reply"": ""Câu trả lời phân tích chi tiết của bạn bằng tiếng Việt hỗ trợ Markdown. Hãy trình bày đẹp mắt, súc tích."",
+  ""metrics"": [
+    {{ ""label"": ""Tên chỉ số"", ""value"": ""Giá trị"", ""tone"": ""neutral|good|warning|danger"", ""hint"": ""Ghi chú nhỏ (nếu cần)"" }}
+  ],
+  ""tables"": [
+    {{
+      ""title"": ""Tiêu đề bảng"",
+      ""description"": ""Mô tả bảng"",
+      ""columns"": [
+        {{ ""key"": ""id"", ""label"": ""Cột"", ""type"": ""text|number"", ""align"": ""left|center|right"" }}
+      ],
+      ""rows"": [
+        {{ ""id"": ""Giá trị"" }}
+      ]
+    }}
+  ],
+  ""charts"": [
+    {{
+      ""type"": ""bar|pie|line"",
+      ""title"": ""Tiêu đề biểu đồ"",
+      ""labels"": [""Nhãn 1"", ""Nhãn 2""],
+      ""values"": [10.0, 20.0],
+      ""unit"": ""Đơn vị""
+    }}
+  ],
+  ""actions"": [
+    {{ ""type"": ""suggested_action"", ""label"": ""Gợi ý câu hỏi tiếp theo"" }}
+  ],
+  ""files"": []
+}}";
+
+        var aiRequest = new AiRequest
+        {
+            JobType = "workspace_analytics_chat",
+            SystemPrompt = systemPrompt,
+            Prompt = request.Message,
+            ExpectedSchemaId = "TextAnswer.v1",
+            IsSensitive = false,
+            ProjectId = null,
+            UserId = _currentUserService.UserId,
+            History = request.History,
+            UseCache = true
+        };
+
+        var aiResponse = await _aiGateway.ExecuteAsync(aiRequest, ct);
+        return Result.Success(ParseStructuredAiResponse(aiResponse.Content, "workspace_analytics", sw, WorkspaceSources, aiResponse.IsMock));
     }
 
     private async Task<Result<ErumiChatResponseDto>> BuildProjectResponseAsync(
         Guid projectId,
-        string normalized,
+        ErumiChatRequestDto request,
         Stopwatch sw,
         CancellationToken ct)
     {
@@ -161,6 +224,7 @@ public sealed class ErumiChatService : IErumiChatService
         }
 
         var project = projectResult.Data;
+        var normalized = Normalize(request.Message);
         if (IsExportQuestion(normalized))
         {
             return Result.Success(BuildProjectExportResponse(project.Id, project.Name, normalized, sw));
@@ -168,7 +232,7 @@ public sealed class ErumiChatService : IErumiChatService
 
         var data = analyticsResult.Data;
         var intent = ClassifyProjectIntent(normalized);
-        if (intent == "project_team")
+        if (intent == "project_team" && IsTableQuestion(normalized))
         {
             return await BuildProjectTeamResponseAsync(project.Id, project.Name, project.OwnerId, project.OwnerName, normalized, sw, ct);
         }
@@ -183,22 +247,297 @@ public sealed class ErumiChatService : IErumiChatService
             return await BuildProjectTaskTableResponseAsync(project.Id, project.Name, normalized, sw, ct);
         }
 
-        var reply = intent switch
-        {
-            "risk" => BuildRiskReply(project.Name, data),
-            "productivity" => BuildProductivityReply(project.Name, data),
-            "project_analysis" => BuildProjectAnalysisReply(project.Name, data),
-            _ => BuildSummaryReply(project.Name, project.Description, data)
-        };
-        var shouldShowVisuals = intent == "project_analysis";
+        return await ExecuteProjectAiChatAsync(request, project, data, sw, ct);
+    }
 
-        return Result.Success(CreateResponse(
+    private async Task<Result<ErumiChatResponseDto>> ExecuteProjectAiChatAsync(
+        ErumiChatRequestDto request,
+        ProjectDto project,
+        ProjectAnalyticsDto data,
+        Stopwatch sw,
+        CancellationToken ct)
+    {
+        var tasksResult = await _taskService.GetByProjectAsync(project.Id, pageSize: 100, ct: ct);
+        var tasks = tasksResult.Data?.Items ?? Array.Empty<TaskItemDto>();
+        var tasksContext = string.Join("\n", tasks.Select(t => 
+            $"- Task: {t.Title} | Trạng thái: {t.Status} | Người làm: {t.AssigneeName ?? "Chưa giao"} | Độ ưu tiên: {t.Priority} | Hạn chót: {t.DueDate?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) ?? "Chưa có"}"));
+
+        var members = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(m => m.ProjectId == project.Id)
+            .Include(m => m.User)
+            .ToListAsync(ct);
+        var membersContext = string.Join("\n", members.Select(m => 
+            $"- {m.User.FullName} | Vai trò: {m.Role ?? "Member"}{(m.UserId == project.OwnerId ? " (PM/Owner)" : "")}"));
+
+        var projectContext = $@"Dự án: {project.Name}
+Mô tả: {project.Description ?? "Không có mô tả."}
+Trạng thái: {project.Status}
+Thời gian thực tế đã log: {data.TotalActualHours:0.##}h trên tổng kế hoạch {data.TotalEstimatedHours:0.##}h.
+Nhiệm vụ quá hạn: {data.OverdueTasks} task.";
+
+        var systemPrompt = $@"Bạn là Erumi, trợ lý phân tích AI đắc lực của hệ thống Qaly.
+Bạn đang hỗ trợ người dùng phân tích và quản lý dự án sau:
+{projectContext}
+
+THÀNH VIÊN DỰ ÁN:
+{membersContext}
+
+DANH SÁCH NHIỆM VỤ (TASKS):
+{tasksContext}
+
+Thời gian hiện tại: {DateTimeOffset.Now:dd/MM/yyyy HH:mm}.
+
+YÊU CẦU ĐẦU RA (BẮT BUỘC):
+Bạn phải trả về câu trả lời của mình dưới dạng một đối tượng JSON duy nhất theo cấu trúc bên dưới (không viết thêm lời thoại nào ngoài JSON, không đặt JSON trong khối code markdown). Nếu bạn muốn trả về biểu đồ, metric hoặc bảng dữ liệu động từ danh sách nhiệm vụ trên, hãy tự định nghĩa chúng trong JSON:
+{{
+  ""reply"": ""Câu trả lời phân tích chi tiết của bạn bằng tiếng Việt hỗ trợ Markdown. Hãy trình bày đẹp mắt, súc tích."",
+  ""metrics"": [
+    {{ ""label"": ""Tên chỉ số"", ""value"": ""Giá trị"", ""tone"": ""neutral|good|warning|danger"", ""hint"": ""Ghi chú nhỏ (nếu cần)"" }}
+  ],
+  ""tables"": [
+    {{
+      ""title"": ""Tiêu đề bảng"",
+      ""description"": ""Mô tả bảng"",
+      ""columns"": [
+        {{ ""key"": ""id"", ""label"": ""Cột"", ""type"": ""text|number"", ""align"": ""left|center|right"" }}
+      ],
+      ""rows"": [
+        {{ ""id"": ""Giá trị"" }}
+      ]
+    }}
+  ],
+  ""charts"": [
+    {{
+      ""type"": ""bar|pie|line"",
+      ""title"": ""Tiêu đề biểu đồ"",
+      ""labels"": [""Nhãn 1"", ""Nhãn 2""],
+      ""values"": [10.0, 20.0],
+      ""unit"": ""Đơn vị""
+    }}
+  ],
+  ""actions"": [
+    {{ ""type"": ""suggested_action"", ""label"": ""Gợi ý câu hỏi tiếp theo"" }}
+  ],
+  ""files"": []
+}}";
+
+        var aiRequest = new AiRequest
+        {
+            JobType = "project_analytics_chat",
+            SystemPrompt = systemPrompt,
+            Prompt = request.Message,
+            ExpectedSchemaId = "TextAnswer.v1",
+            IsSensitive = false,
+            ProjectId = project.Id,
+            UserId = _currentUserService.UserId,
+            History = request.History,
+            UseCache = true
+        };
+
+        var aiResponse = await _aiGateway.ExecuteAsync(aiRequest, ct);
+        var intent = ClassifyProjectIntent(Normalize(request.Message));
+
+        return Result.Success(ParseStructuredAiResponse(aiResponse.Content, intent, sw, ProjectSources, aiResponse.IsMock));
+    }
+
+    private static ErumiChatResponseDto ParseStructuredAiResponse(
+        string rawContent,
+        string intent,
+        Stopwatch sw,
+        IReadOnlyList<string> sources,
+        bool isMock)
+    {
+        sw.Stop();
+        
+        string reply = rawContent;
+        var metrics = new List<ErumiMetricDto>();
+        var tables = new List<ErumiTableDto>();
+        var charts = new List<ErumiChartDto>();
+        var actions = new List<ErumiActionDto>();
+        var files = new List<ErumiFileDto>();
+        double confidence = isMock ? 0.5 : 0.9;
+        
+        try
+        {
+            var cleaned = rawContent.Trim();
+            if (cleaned.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
+            {
+                cleaned = cleaned.Substring(7);
+            }
+            if (cleaned.EndsWith("```", StringComparison.Ordinal))
+            {
+                cleaned = cleaned.Substring(0, cleaned.Length - 3);
+            }
+            cleaned = cleaned.Trim();
+
+            int firstBrace = cleaned.IndexOf('{');
+            int lastBrace = cleaned.LastIndexOf('}');
+            if (firstBrace >= 0 && lastBrace > firstBrace)
+            {
+                cleaned = cleaned.Substring(firstBrace, lastBrace - firstBrace + 1);
+            }
+
+            var doc = System.Text.Json.JsonDocument.Parse(cleaned);
+            var root = doc.RootElement;
+            
+            if (root.TryGetProperty("reply", out var replyProp))
+            {
+                reply = replyProp.GetString() ?? rawContent;
+            }
+
+            if (root.TryGetProperty("metrics", out var metricsProp) && metricsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                foreach (var el in metricsProp.EnumerateArray())
+                {
+                    string label = el.TryGetProperty("label", out var l) ? l.GetString() ?? "" : "";
+                    string val = el.TryGetProperty("value", out var v) ? v.GetString() ?? "" : "";
+                    string? tone = el.TryGetProperty("tone", out var t) ? t.GetString() : null;
+                    string? hint = el.TryGetProperty("hint", out var h) ? h.GetString() : null;
+                    if (!string.IsNullOrEmpty(label))
+                    {
+                        metrics.Add(new ErumiMetricDto(label, val, tone, hint));
+                    }
+                }
+            }
+
+            if (root.TryGetProperty("tables", out var tablesProp) && tablesProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                foreach (var el in tablesProp.EnumerateArray())
+                {
+                    string title = el.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
+                    string? description = el.TryGetProperty("description", out var d) ? d.GetString() : null;
+                    
+                    var cols = new List<ErumiTableColumnDto>();
+                    if (el.TryGetProperty("columns", out var colsProp) && colsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+                    {
+                        foreach (var colEl in colsProp.EnumerateArray())
+                        {
+                            string key = colEl.TryGetProperty("key", out var k) ? k.GetString() ?? "" : "";
+                            string label = colEl.TryGetProperty("label", out var l) ? l.GetString() ?? "" : "";
+                            string type = colEl.TryGetProperty("type", out var typ) ? typ.GetString() ?? "text" : "text";
+                            string align = colEl.TryGetProperty("align", out var al) ? al.GetString() ?? "left" : "left";
+                            if (!string.IsNullOrEmpty(key))
+                            {
+                                cols.Add(new ErumiTableColumnDto(key, label, type, align));
+                            }
+                        }
+                    }
+
+                    var rows = new List<IReadOnlyDictionary<string, object?>>();
+                    if (el.TryGetProperty("rows", out var rowsProp) && rowsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+                    {
+                        foreach (var rowEl in rowsProp.EnumerateArray())
+                        {
+                            var rowDict = new Dictionary<string, object?>();
+                            foreach (var prop in rowEl.EnumerateObject())
+                            {
+                                if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.Number)
+                                {
+                                    rowDict[prop.Name] = prop.Value.GetDouble();
+                                }
+                                else if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.True || prop.Value.ValueKind == System.Text.Json.JsonValueKind.False)
+                                {
+                                    rowDict[prop.Name] = prop.Value.GetBoolean();
+                                }
+                                else if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.Null)
+                                {
+                                    rowDict[prop.Name] = null;
+                                }
+                                else
+                                {
+                                    rowDict[prop.Name] = prop.Value.GetString();
+                                }
+                            }
+                            rows.Add(rowDict);
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(title))
+                    {
+                        tables.Add(new ErumiTableDto(title, cols, rows, description));
+                    }
+                }
+            }
+
+            if (root.TryGetProperty("charts", out var chartsProp) && chartsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                foreach (var el in chartsProp.EnumerateArray())
+                {
+                    string type = el.TryGetProperty("type", out var t) ? t.GetString() ?? "bar" : "bar";
+                    string title = el.TryGetProperty("title", out var tit) ? tit.GetString() ?? "" : "";
+                    string? unit = el.TryGetProperty("unit", out var u) ? u.GetString() : null;
+                    
+                    var labels = new List<string>();
+                    if (el.TryGetProperty("labels", out var labelsProp) && labelsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+                    {
+                        foreach (var labelEl in labelsProp.EnumerateArray())
+                        {
+                            labels.Add(labelEl.GetString() ?? "");
+                        }
+                    }
+
+                    var values = new List<double>();
+                    if (el.TryGetProperty("values", out var valuesProp) && valuesProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+                    {
+                        foreach (var valEl in valuesProp.EnumerateArray())
+                        {
+                            values.Add(valEl.GetDouble());
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(title))
+                    {
+                        charts.Add(new ErumiChartDto(type, title, labels, values, unit));
+                    }
+                }
+            }
+
+            if (root.TryGetProperty("actions", out var actionsProp) && actionsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                foreach (var el in actionsProp.EnumerateArray())
+                {
+                    string type = el.TryGetProperty("type", out var t) ? t.GetString() ?? "suggested_action" : "suggested_action";
+                    string label = el.TryGetProperty("label", out var l) ? l.GetString() ?? "" : "";
+                    if (!string.IsNullOrEmpty(label))
+                    {
+                        actions.Add(new ErumiActionDto(type, label, null, false));
+                    }
+                }
+            }
+
+            if (root.TryGetProperty("files", out var filesProp) && filesProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                foreach (var el in filesProp.EnumerateArray())
+                {
+                    string label = el.TryGetProperty("label", out var l) ? l.GetString() ?? "" : "";
+                    string format = el.TryGetProperty("format", out var f) ? f.GetString() ?? "xlsx" : "xlsx";
+                    string url = el.TryGetProperty("url", out var u) ? u.GetString() ?? "" : "";
+                    string? description = el.TryGetProperty("description", out var d) ? d.GetString() : null;
+                    if (!string.IsNullOrEmpty(url))
+                    {
+                        files.Add(new ErumiFileDto(label, format, url, description));
+                    }
+                }
+            }
+        }
+        catch
+        {
+            reply = rawContent;
+        }
+
+        return new ErumiChatResponseDto(
             reply,
+            metrics,
+            tables,
+            charts,
+            actions,
+            files,
+            sources,
+            confidence,
+            UsedAi: !isMock,
             intent,
-            sw,
-            shouldShowVisuals ? BuildProjectMetrics(data) : null,
-            charts: shouldShowVisuals ? BuildProjectCharts(data) : null,
-            sources: ProjectSources));
+            LatencyMs: (int)sw.ElapsedMilliseconds);
     }
 
     private static ErumiChatResponseDto BuildUploadedFileResponse(
@@ -791,7 +1130,8 @@ public sealed class ErumiChatService : IErumiChatService
         IReadOnlyList<ErumiActionDto>? actions = null,
         IReadOnlyList<ErumiFileDto>? files = null,
         IReadOnlyList<string>? sources = null,
-        double confidence = 0.9)
+        double confidence = 0.9,
+        bool usedAi = false)
     {
         sw.Stop();
         return new ErumiChatResponseDto(
@@ -803,7 +1143,7 @@ public sealed class ErumiChatService : IErumiChatService
             files ?? Array.Empty<ErumiFileDto>(),
             sources ?? Array.Empty<string>(),
             confidence,
-            UsedAi: false,
+            UsedAi: usedAi,
             intent,
             LatencyMs: (int)sw.ElapsedMilliseconds);
     }

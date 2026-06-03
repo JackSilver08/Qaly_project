@@ -76,7 +76,16 @@ public class AiGateway : IAiGateway
         }
 
         // 3. Cache Check
-        string requestHash = ComputeSha256Hash(request.SystemPrompt + "|" + request.Prompt + "|" + request.ExpectedSchemaId);
+        var hashInput = new StringBuilder();
+        hashInput.Append(request.SystemPrompt).Append('|').Append(request.Prompt).Append('|').Append(request.ExpectedSchemaId);
+        if (request.History != null)
+        {
+            foreach (var msg in request.History)
+            {
+                hashInput.Append('|').Append(msg.Role).Append(':').Append(msg.Content);
+            }
+        }
+        string requestHash = ComputeSha256Hash(hashInput.ToString());
         
         if (request.UseCache)
         {
@@ -110,11 +119,22 @@ public class AiGateway : IAiGateway
         // 4. Execute AI Request
         try
         {
-            var chatMessages = new[]
+            var chatMessages = new List<ChatMessage>
             {
-                new ChatMessage(ChatRole.System, request.SystemPrompt),
-                new ChatMessage(ChatRole.User, request.Prompt)
+                new ChatMessage(ChatRole.System, request.SystemPrompt)
             };
+
+            if (request.History != null)
+            {
+                foreach (var msg in request.History)
+                {
+                    var role = string.Equals(msg.Role, "assistant", StringComparison.OrdinalIgnoreCase) 
+                        ? ChatRole.Assistant : ChatRole.User;
+                    chatMessages.Add(new ChatMessage(role, msg.Content));
+                }
+            }
+
+            chatMessages.Add(new ChatMessage(ChatRole.User, request.Prompt));
 
             var options = new ChatOptions
             {

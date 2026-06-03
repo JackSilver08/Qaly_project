@@ -49,6 +49,7 @@ interface GroupAiSummaryResponse {
   keyDecisions: string[]
   unresolvedQuestions: string[]
   warnings: string[]
+  messageSources?: string[]
 }
 
 interface GroupAiDraftTask {
@@ -139,6 +140,7 @@ onBeforeUnmount(() => {
 const summaryText = ref('')
 const keyDecisions = ref<string[]>([])
 const unresolvedQuestions = ref<string[]>([])
+const messageSources = ref<string[]>([])
 const summaryWarnings = ref<string[]>([])
 const hasGeneratedSummary = ref(false)
 
@@ -162,6 +164,7 @@ watch(() => props.groupId, () => {
   summaryText.value = ''
   keyDecisions.value = []
   unresolvedQuestions.value = []
+  messageSources.value = []
   summaryWarnings.value = []
   hasGeneratedSummary.value = false
 
@@ -215,6 +218,7 @@ async function generateSummary() {
     summaryText.value = result.summary
     keyDecisions.value = result.keyDecisions ?? []
     unresolvedQuestions.value = result.unresolvedQuestions ?? []
+    messageSources.value = result.messageSources ?? []
     summaryWarnings.value = result.warnings ?? []
     hasGeneratedSummary.value = true
     showSuccess('Đã tóm tắt cuộc thảo luận thành công!')
@@ -487,6 +491,18 @@ function confidenceLabel(value: number) {
               <li v-for="(q, idx) in unresolvedQuestions" :key="idx">{{ q }}</li>
             </ul>
             <div v-else class="empty-bullet-text">Mọi câu hỏi thảo luận đã được giải đáp.</div>
+          </section>
+
+          <section v-if="messageSources.length" class="result-section">
+            <h3 class="section-title text-slate-500">
+              <FileText :size="15" />
+              Nguồn đối chiếu (Message Sources)
+            </h3>
+            <ul class="bullet-list">
+              <li v-for="(src, idx) in messageSources" :key="idx" class="italic text-slate-600">
+                {{ src }}
+              </li>
+            </ul>
           </section>
         </div>
 

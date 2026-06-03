@@ -446,6 +446,7 @@ Source:
             var summary = ReadString(document.RootElement, "summary") ?? "No summary generated.";
             var decisions = ReadStringArray(document.RootElement, "keyDecisions");
             var questions = ReadStringArray(document.RootElement, "unresolvedQuestions");
+            var messageSources = ReadStringArray(document.RootElement, "messageSources");
 
             await _auditLogService.LogAsync("AI_DISCUSSION_SUMMARIZED", "WorkGroup", groupId.ToString(), new { MessageLimit = request.MessageLimit }, ct);
 
@@ -454,7 +455,8 @@ Source:
                 summary,
                 decisions,
                 questions,
-                warnings));
+                warnings,
+                messageSources));
         }
         catch (Exception ex)
         {
@@ -559,7 +561,7 @@ Source:
     private static string BuildSummaryPrompt(string context)
         => $$"""
 You are an AI assistant analyzing a project team's group chat discussion.
-Create a comprehensive summary, extract key decisions made, and list unresolved questions.
+Create a comprehensive summary, extract key decisions made, list unresolved questions, and cite message sources/evidence (specific message statements or key inputs).
 
 Return only valid JSON with this shape:
 {
@@ -571,6 +573,10 @@ Return only valid JSON with this shape:
   "unresolvedQuestions": [
     "question 1",
     "question 2"
+  ],
+  "messageSources": [
+    "short quote or evidence 1",
+    "short quote or evidence 2"
   ]
 }
 
@@ -578,6 +584,7 @@ Rules:
 - Keep the summary clear, professional, and factual.
 - If there are no key decisions, return an empty array for keyDecisions.
 - If there are no unresolved questions, return an empty array for unresolvedQuestions.
+- If there are no message sources, return an empty array for messageSources.
 
 Source discussion context:
 {{context}}
