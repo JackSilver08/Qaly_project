@@ -42,6 +42,8 @@ public class IntegrationTestFactory : WebApplicationFactory<Program>
             redisMock.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>())).Returns(dbMock.Object);
             redisMock.Setup(r => r.GetEndPoints(It.IsAny<bool>())).Returns(Array.Empty<System.Net.EndPoint>());
             services.AddSingleton(redisMock.Object);
+            services.RemoveAll<Microsoft.Extensions.Caching.Distributed.IDistributedCache>();
+            services.AddDistributedMemoryCache();
 
             services.RemoveAll<QalyDbContext>();
             services.RemoveAll<DbContextOptions>();
@@ -74,12 +76,32 @@ public class IntegrationTestFactory : WebApplicationFactory<Program>
 
         protected override Task<AuthenticateResult> HandleAuthenticateAsync()
         {
-            var userId = "B0000000-0000-0000-0000-000000000000";
+            if (Request.Headers.TryGetValue("X-Test-Auth", out var authMode))
+            {
+                var mode = authMode.ToString();
+                if (string.Equals(mode, "None", StringComparison.OrdinalIgnoreCase))
+                {
+                    return Task.FromResult(AuthenticateResult.NoResult());
+                }
+
+                if (string.Equals(mode, "Invalid", StringComparison.OrdinalIgnoreCase))
+                {
+                    return Task.FromResult(AuthenticateResult.Fail("Invalid test authentication."));
+                }
+            }
+
+            var userId = Request.Headers.TryGetValue("X-Test-UserId", out var userIdHeader)
+                ? userIdHeader.ToString()
+                : "B0000000-0000-0000-0000-000000000000";
+            var role = Request.Headers.TryGetValue("X-Test-Role", out var roleHeader)
+                ? roleHeader.ToString()
+                : "User";
+
             var claims = new[] 
             { 
                 new Claim(ClaimTypes.Name, "Test User"),
                 new Claim(ClaimTypes.NameIdentifier, userId),
-                new Claim(ClaimTypes.Role, "User")
+                new Claim(ClaimTypes.Role, role)
             };
             var identity = new ClaimsIdentity(claims, "Test");
             var principal = new ClaimsPrincipal(identity);

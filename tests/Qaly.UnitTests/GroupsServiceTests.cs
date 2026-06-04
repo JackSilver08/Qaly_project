@@ -1815,6 +1815,122 @@ public class GroupsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task JoinMeetingSessionAsync_WhenMemberBelongsToGroup_ReturnsActiveMeeting()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        var meetingId = Guid.NewGuid();
+        _currentUser.Setup(u => u.UserId).Returns(memberId);
+
+        await AddUserAsync(ownerId, "Owner User", "owner-meeting@qaly.dev");
+        await AddUserAsync(memberId, "Member User", "member-meeting@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Meeting Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        await _meetingSessionRepo.AddAsync(new GroupMeetingSession
+        {
+            Id = meetingId,
+            WorkGroupId = group.Id,
+            StartedByUserId = ownerId,
+            Provider = "Jitsi",
+            RoomId = "room-active",
+            JoinUrl = "https://meet.jit.si/room-active",
+            Status = "Active"
+        });
+        await _uow.SaveChangesAsync();
+
+        var result = await CreateService().JoinMeetingSessionAsync(group.Id, meetingId);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Id.Should().Be(meetingId);
+        result.Data.Status.Should().Be("Active");
+        result.Data.JoinUrl.Should().Contain("room-active");
+    }
+
+    [Fact]
+    public async Task JoinMeetingSessionAsync_WhenUserOutsideGroup_ReturnsForbidden()
+    {
+        var ownerId = Guid.NewGuid();
+        var outsideUserId = Guid.NewGuid();
+        var meetingId = Guid.NewGuid();
+        _currentUser.Setup(u => u.UserId).Returns(outsideUserId);
+
+        await AddUserAsync(ownerId, "Owner User", "owner-outside@qaly.dev");
+        await AddUserAsync(outsideUserId, "Outside User", "outside-meeting@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Private Meeting Group");
+        await _meetingSessionRepo.AddAsync(new GroupMeetingSession
+        {
+            Id = meetingId,
+            WorkGroupId = group.Id,
+            StartedByUserId = ownerId,
+            Provider = "Jitsi",
+            RoomId = "room-private",
+            Status = "Active"
+        });
+        await _uow.SaveChangesAsync();
+
+        var result = await CreateService().JoinMeetingSessionAsync(group.Id, meetingId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task JoinMeetingSessionAsync_WhenMeetingBelongsToDifferentGroup_ReturnsNotFound()
+    {
+        var ownerId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var meetingId = Guid.NewGuid();
+        _currentUser.Setup(u => u.UserId).Returns(userId);
+
+        await AddUserAsync(ownerId, "Owner User", "owner-mismatch@qaly.dev");
+        await AddUserAsync(userId, "Member User", "member-mismatch@qaly.dev");
+        var requestedGroup = await AddGroupAsync(ownerId, "Requested Group");
+        await AddMemberAsync(requestedGroup.Id, userId, GroupRoleRules.Member);
+        var otherGroup = await AddGroupAsync(ownerId, "Other Group");
+        await _meetingSessionRepo.AddAsync(new GroupMeetingSession
+        {
+            Id = meetingId,
+            WorkGroupId = otherGroup.Id,
+            StartedByUserId = ownerId,
+            Provider = "Jitsi",
+            RoomId = "room-other",
+            Status = "Active"
+        });
+        await _uow.SaveChangesAsync();
+
+        var result = await CreateService().JoinMeetingSessionAsync(requestedGroup.Id, meetingId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(404);
+    }
+
+    [Fact]
+    public async Task JoinMeetingSessionAsync_WhenUserIsUnauthenticated_ReturnsForbidden()
+    {
+        var ownerId = Guid.NewGuid();
+        var meetingId = Guid.NewGuid();
+        _currentUser.Setup(u => u.UserId).Returns((Guid?)null);
+
+        await AddUserAsync(ownerId, "Owner User", "owner-unauth@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Unauthenticated Meeting Group");
+        await _meetingSessionRepo.AddAsync(new GroupMeetingSession
+        {
+            Id = meetingId,
+            WorkGroupId = group.Id,
+            StartedByUserId = ownerId,
+            Provider = "Jitsi",
+            RoomId = "room-unauth",
+            Status = "Active"
+        });
+        await _uow.SaveChangesAsync();
+
+        var result = await CreateService().JoinMeetingSessionAsync(group.Id, meetingId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
     public async Task EndMeetingSessionAsync_WhenSuccessful_EndsMeetingSession()
     {
         var groupId = Guid.NewGuid();
@@ -1847,6 +1963,39 @@ public class GroupsServiceTests : IDisposable
         var saved = await _meetingSessionRepo.GetQueryable().FirstOrDefaultAsync(m => m.Id == meetingId);
         saved!.Status.Should().Be("Ended");
         saved.EndedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task EndMeetingSessionAsync_WhenGroupAdminDidNotStartMeeting_EndsMeeting()
+    {
+        var ownerId = Guid.NewGuid();
+        var starterId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        var meetingId = Guid.NewGuid();
+        _currentUser.Setup(u => u.UserId).Returns(adminId);
+
+        await AddUserAsync(ownerId, "Owner User", "owner-admin-end@qaly.dev");
+        await AddUserAsync(starterId, "Starter User", "starter-admin-end@qaly.dev");
+        await AddUserAsync(adminId, "Admin User", "admin-end@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Admin Meeting Group");
+        await AddMemberAsync(group.Id, starterId, GroupRoleRules.Member);
+        await AddMemberAsync(group.Id, adminId, GroupRoleRules.Admin);
+        await _meetingSessionRepo.AddAsync(new GroupMeetingSession
+        {
+            Id = meetingId,
+            WorkGroupId = group.Id,
+            StartedByUserId = starterId,
+            Provider = "Jitsi",
+            RoomId = "room-admin-end",
+            Status = "Active"
+        });
+        await _uow.SaveChangesAsync();
+
+        var result = await CreateService().EndMeetingSessionAsync(group.Id, meetingId);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Status.Should().Be("Ended");
+        result.Data.EndedAt.Should().NotBeNull();
     }
 
     [Fact]

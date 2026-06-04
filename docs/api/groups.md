@@ -1,8 +1,10 @@
 # API Workflow Trang Nhóm
 
-Deadline P0: Chủ nhật 2026-05-31.
+Deadline P0 ban đầu: Chủ nhật 2026-05-31.
 
-Mục tiêu của module nhóm là tạo một không gian bàn luận trước khi tạo dự án. Nhóm có thể chat realtime, quản lý thành viên, mở vote, mở meeting và tạo project mới từ toàn bộ thành viên trong nhóm.
+Mục tiêu của module nhóm là tạo một không gian bàn luận trước khi tạo dự án. Theo phạm vi hiện tại, nhóm hỗ trợ chat thời gian thực, quản lý thành viên, bình chọn, API cuộc họp start/join/end và tạo dự án mới từ thành viên trong nhóm.
+
+Không dùng tài liệu này để claim “realtime đầy đủ” cho tất cả luồng meeting. Theo QA tuần 03/06/2026 - 09/06/2026, participant realtime/count của cuộc họp đang có lỗi P0 `DH03-BUG-MTG-001`; screen share unsupported còn thiếu UI feedback rõ (`DH03-BUG-MTG-002`, P2).
 
 ## Backend Nền Đã Có
 
@@ -17,9 +19,9 @@ Mục tiêu của module nhóm là tạo một không gian bàn luận trước 
 
 | Role | Quyền |
 | --- | --- |
-| Owner | Tạo/sửa/xóa nhóm, quản lý member, tạo project từ nhóm, mở vote/meeting |
-| Admin | Quản lý member, tạo project từ nhóm, mở vote/meeting |
-| Member | Xem nhóm, chat, vote, join meeting |
+| Owner | Tạo/sửa/xóa nhóm, quản lý thành viên, tạo dự án từ nhóm, mở bình chọn/cuộc họp |
+| Admin | Quản lý thành viên, tạo dự án từ nhóm, mở bình chọn/cuộc họp |
+| Member | Xem nhóm, chat, bình chọn, tham gia cuộc họp |
 
 Mapping khi tạo project từ nhóm:
 
@@ -120,7 +122,7 @@ Member được rời nhóm bằng chính userId của mình. `Owner/Admin` đư
 
 `GET /api/groups/{groupId}/messages?page=1&pageSize=50`
 
-Trả về message theo thứ tự cũ → mới trong trang hiện tại.
+Trả về tin nhắn theo thứ tự cũ → mới trong trang hiện tại.
 
 ### Gửi message qua REST
 
@@ -193,7 +195,7 @@ Server trả về cho caller:
 
 `groupLeft`
 
-### Gửi message realtime
+### Gửi tin nhắn thời gian thực
 
 Client gọi:
 
@@ -221,9 +223,24 @@ Server gửi cho các client khác trong nhóm:
 - `typingStarted`
 - `typingStopped`
 
+## Cuộc họp nhóm và giới hạn hiện tại
+
+Backend hiện có API start/join/end cuộc họp và test regression cho phân quyền:
+
+- thành viên trong nhóm join được;
+- outside user bị chặn;
+- owner/admin có thể end meeting theo rule;
+- unauthenticated/auth boundary được kiểm thử ở mức backend/integration.
+
+Giới hạn cần ghi rõ khi demo/nghiệm thu:
+
+- Participant realtime/count chưa ổn định theo evidence DH-03; không demo participant list/count như tính năng đã ổn định nếu bug P0 chưa fix.
+- Screen share phụ thuộc browser/provider; nhánh unsupported không crash nhưng UI feedback chưa rõ.
+- Chưa có bằng chứng automation SignalR end-to-end cho participant count meeting.
+
 ## Việc Team Khác Làm Tiếp
 
-- Quang Minh: hoàn thiện invite email, meeting API, poll API, member management nâng cao.
-- Duy Hoàng: notification/invite/poll vote.
-- Gia Long + Đoàn Trung: frontend `/groups`, group detail, chat UI, member picker, meeting/vote UI.
-- Quốc Bảo + Chí Khang: AI summary/action items từ chat/meeting, draft project/task từ thảo luận nhóm.
+- Quang Minh: bổ sung invite email, API cuộc họp, API bình chọn, quản lý thành viên nâng cao.
+- Duy Hoàng: notification/invite/bình chọn và bằng chứng kiểm thử.
+- Gia Long + Đoàn Trung: frontend `/groups`, group detail, chat UI, member picker, UI cuộc họp/bình chọn.
+- Quốc Bảo + Chí Khang: AI summary/action items từ chat/cuộc họp, draft dự án/công việc từ thảo luận nhóm; cần ghi rõ fallback/provider khi demo.

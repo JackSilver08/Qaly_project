@@ -343,6 +343,122 @@ public class ErumiChatServiceTests : IDisposable
         result.Data.Files[0].Url.Should().Be("/files/report.xlsx");
     }
 
+    [Fact]
+    public async Task ChatFastAsync_WithInvalidAiSchema_ReturnsFallbackReplyWithoutCrashing()
+    {
+        var projectId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        SetupProjectAiContext(projectId, userId);
+
+        _aiGatewayMock.Setup(g => g.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiResponse
+            {
+                Content = """
+                    ```json
+                    { "reply": { "unexpected": "object" }, "metrics": "invalid schema" }
+                    ```
+                    """,
+                ProviderName = "TestOllama",
+                ModelName = "llama3.2",
+                IsMock = false
+            });
+
+        var result = await _service.ChatFastAsync(
+            new ErumiChatRequestDto(Message: "phan tich rui ro", ProjectId: projectId),
+            CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data.Should().NotBeNull();
+        result.Data!.UsedAi.Should().BeTrue();
+        result.Data.Reply.Should().Contain("invalid schema");
+        result.Data.Metrics.Should().BeEmpty();
+        result.Data.Tables.Should().BeEmpty();
+        result.Data.Charts.Should().BeEmpty();
+        result.Data.Actions.Should().BeEmpty();
+        result.Data.Files.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ChatFastAsync_WhenProjectAccessForbidden_ReturnsForbiddenAndDoesNotCallAiGateway()
+    {
+        var projectId = Guid.NewGuid();
+
+        _projectServiceMock.Setup(s => s.GetByIdAsync(projectId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Forbidden<ProjectDto>("Current user cannot access project."));
+
+        var result = await _service.ChatFastAsync(
+            new ErumiChatRequestDto(Message: "xem analytics cua du an", ProjectId: projectId),
+            CancellationToken.None);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+        result.Error.Should().Contain("Current user cannot access project");
+        _aiGatewayMock.Verify(
+            gateway => gateway.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    private void SetupProjectAiContext(Guid projectId, Guid userId)
+    {
+        var projectDto = new ProjectDto(
+            Id: projectId,
+            Name: "DATN",
+            Code: "DATN",
+            Description: "DATN project",
+            LogoUrl: null,
+            Status: "Active",
+            StartDate: null,
+            EndDate: null,
+            OwnerId: userId,
+            OwnerName: "PM Khang",
+            MemberCount: 1,
+            TaskCount: 0,
+            ProgressPercentage: 0,
+            Labels: Array.Empty<ProjectLabelDto>(),
+            CreatedAt: DateTimeOffset.UtcNow,
+            OrganizationId: null,
+            OrganizationName: null);
+
+        _projectServiceMock.Setup(s => s.GetByIdAsync(projectId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(projectDto));
+
+        var analyticsDto = new ProjectAnalyticsDto(
+            TotalTasks: 0,
+            DoneTasks: 0,
+            InProgressTasks: 0,
+            OverdueTasks: 0,
+            TotalEstimatedHours: 0,
+            TotalActualHours: 0,
+            MemberProductivity: new List<MemberProductivityDto>(),
+            DailyProductivity: new List<DailyProductivityDto>());
+
+        _analyticsServiceMock.Setup(s => s.GetProjectAnalyticsAsync(projectId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(analyticsDto));
+
+        var pagedTasks = new PagedResult<TaskItemDto>
+        {
+            Items = new List<TaskItemDto>(),
+            TotalCount = 0,
+            PageNumber = 1,
+            PageSize = 100
+        };
+
+        _taskServiceMock.Setup(s => s.GetByProjectAsync(
+                projectId,
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<string>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(pagedTasks));
+
+        _currentUserServiceMock.SetupGet(u => u.UserId).Returns(userId);
+    }
+
     public void Dispose()
     {
         _context.Dispose();

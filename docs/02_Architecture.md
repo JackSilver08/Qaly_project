@@ -40,7 +40,7 @@ Domain ✗→ bất kỳ layer nào
 
 ```
 c:\Qaly_project\
-├── Qaly_project.sln
+├── Qaly_project.slnx
 ├── src/
 │   ├── Qaly.Domain/           ← Entities, Enums, Interfaces
 │   ├── Qaly.Application/      ← Services, DTOs, Exceptions, Mappings
@@ -82,6 +82,36 @@ Xem chi tiết từng file trong tài liệu phân tích `01_Analysis.md`.
 - **DTO**: Suffix `Dto` (`TaskItemDto`, `CreateProjectDto`)
 - **Git branches**: `feature/`, `bugfix/`, `hotfix/`
 - **Commits**: conventional commits (`feat:`, `fix:`, `docs:`)
+
+---
+
+## V. GHI CHÚ NGHIỆM THU HIỆN TẠI
+
+Phần kiến trúc mô tả định hướng và cấu trúc kỹ thuật. Không dùng tài liệu này để khẳng định mọi chức năng đã nghiệm thu đầy đủ nếu chưa có bằng chứng QA đi kèm.
+
+| Khu vực | Trạng thái theo bằng chứng tuần 03/06/2026 - 09/06/2026 |
+|---|---|
+| Nhập tài liệu | Có bằng chứng pass cho DOCX, ZIP chứa file hỗ trợ và PDF unsupported/roadmap rõ ràng; chưa ghi nhận hỗ trợ mọi định dạng. |
+| Cuộc họp nhóm | Backend start/join/end và phân quyền có test; participant realtime/count còn lỗi P0 `DH03-BUG-MTG-001`. |
+| Chia sẻ màn hình | Browser unsupported không crash nhưng UI feedback chưa rõ, lỗi P2 `DH03-BUG-MTG-002`; cần xác minh bằng browser thật/headful cho positive case. |
+| AI analytics / Group AI | Có test smoke/fallback/schema; manual deep check và Group AI E2E chưa có bằng chứng đầy đủ. |
+| Deploy config | Chưa có bằng chứng nghiệm thu đầy đủ cho checklist deploy tuần này. |
+| Phản hồi dự phòng AI | AI có thể phụ thuộc provider/local config; khi thiếu provider phải ghi rõ fallback/mock thay vì claim AI thật đầy đủ. |
+
+### Thuật ngữ dùng trong tài liệu nghiệm thu
+
+| Thuật ngữ code/Anh | Thuật ngữ tiếng Việt ưu tiên |
+|---|---|
+| group | nhóm |
+| project | dự án |
+| task | công việc |
+| poll | bình chọn |
+| meeting | cuộc họp |
+| import | nhập tài liệu |
+| permission | phân quyền |
+| evidence | bằng chứng kiểm thử |
+| realtime | thời gian thực |
+| AI fallback | phản hồi dự phòng AI |
 
 ---
 

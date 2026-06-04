@@ -2,25 +2,40 @@
 
 > **Ngày tạo:** 01/05/2026  
 > **Phiên bản:** 1.0  
-> **Trạng thái:** Planning
+> **Trạng thái:** Planning; không dùng riêng tài liệu này để claim nghiệm thu AI đầy đủ
+
+---
+
+## 0. GHI CHÚ NGHIỆM THU DH-06
+
+Tài liệu này mô tả định hướng tích hợp AI. Trạng thái kiểm thử hiện tại chỉ xác nhận một phần:
+
+- Playwright smoke đã mở được trang analytics.
+- Backend regression đã pass các case AI fallback/schema và phân quyền dự án.
+- Group AI manual/E2E chưa có bằng chứng nghiệm thu đầy đủ theo test plan tuần 03/06/2026 - 09/06/2026.
+- AI analytics manual deep check chưa có bằng chứng đầy đủ.
+- Nếu không cấu hình OpenAI/Gemini/Ollama/Qdrant phù hợp, hệ thống phải được mô tả là chạy fallback/mock hoặc cần xác minh thêm.
+- Không ghi “RAG thật đầy đủ”, “AI thông minh hoàn toàn” hoặc “AI đã nghiệm thu đầy đủ” nếu chưa có evidence chạy provider/vector/tooling tương ứng.
+
+Thuật ngữ dùng trong tài liệu nghiệm thu: `AI fallback` = phản hồi dự phòng AI; `project` = dự án; `task` = công việc; `evidence` = bằng chứng kiểm thử.
 
 ---
 
 ## I. TẦM NHÌN
 
 Qaly không chỉ là tool quản lý dự án thông thường. 
-**Mục tiêu**: Biến Qaly thành **AI-powered Project Management System** – nơi AI là "thành viên thứ 8" của team.
+**Mục tiêu định hướng**: Biến Qaly thành **AI-powered Project Management System** – nơi AI hỗ trợ nhóm như một trợ lý, không thay thế quyết định của con người.
 
 ### Khác biệt so với Jira/Trello/Notion
-| Feature | Jira/Trello | Qaly + AI |
+| Feature | Jira/Trello | Qaly + AI (định hướng/phase) |
 |---|---|---|
-| Task Assignment | Manual | AI đề xuất dựa trên workload & skill |
-| Priority | Người dùng set | AI phân tích context và suggest |
-| Risk Detection | Không có | AI cảnh báo sớm khi project có vấn đề |
-| Search | Text match | Semantic search (tìm theo ý nghĩa) |
-| Summary | Không có | AI tự tạo báo cáo tiến độ |
-| Subtask Creation | Manual | AI tự phân rã task lớn |
-| Chat | Không có | Hỏi AI về project: "task nào cần làm gấp?" |
+| Task Assignment | Manual | AI có thể đề xuất dựa trên workload & skill nếu có dữ liệu và provider phù hợp |
+| Priority | Người dùng set | AI gợi ý priority theo ngữ cảnh, cần người dùng xác nhận |
+| Risk Detection | Không có | AI có thể cảnh báo sớm khi dự án có vấn đề nếu dữ liệu đủ |
+| Search | Text match | Semantic search/RAG là hướng triển khai, cần cấu hình vector/provider và kiểm thử riêng |
+| Summary | Không có | AI có thể tạo báo cáo tiến độ hoặc phản hồi dự phòng khi thiếu provider |
+| Subtask Creation | Manual | AI có thể gợi ý phân rã công việc, không tự tạo dữ liệu thật nếu chưa confirm |
+| Chat | Không có | Hỏi AI về dự án, với giới hạn theo quyền truy cập và cấu hình provider |
 
 ---
 
