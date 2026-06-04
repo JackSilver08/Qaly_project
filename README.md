@@ -139,6 +139,24 @@ main ─────────────────────────
 
 Xem thư mục [`docs/`](./docs/) để biết chi tiết.
 
+## ✅ Trạng Thái Nghiệm Thu Hiện Tại
+
+Theo bằng chứng QA tuần 03/06/2026 - 09/06/2026:
+
+- **Nhập tài liệu:** có thể demo theo scope đã kiểm thử với DOCX, ZIP chứa `.md/.txt/.html`, và luồng PDF báo unsupported/roadmap rõ ràng. Không ghi nhận là hỗ trợ mọi định dạng.
+- **Phân quyền cơ bản:** có bằng chứng E2E/backend regression cho login, admin/member boundary và outside user bị chặn ở một số API quan trọng.
+- **Cuộc họp nhóm:** API start/join/end và phân quyền có bằng chứng, nhưng participant realtime/count đang có lỗi P0 `DH03-BUG-MTG-001`; không demo participant count/list như tính năng ổn định trước khi fix.
+- **Chia sẻ màn hình:** nhánh browser unsupported không crash, nhưng UI feedback chưa rõ (`DH03-BUG-MTG-002`, P2); cần kiểm thử lại bằng browser thật/headful nếu đưa vào demo.
+- **AI analytics / Group AI:** có smoke/fallback/schema tests, nhưng manual deep check và Group AI E2E chưa có bằng chứng nghiệm thu đầy đủ; cần cấu hình provider hoặc chấp nhận phản hồi dự phòng AI.
+- **Deploy config:** chưa có bằng chứng nghiệm thu đầy đủ cho checklist deploy tuần này.
+
+Tài liệu QA liên quan:
+
+- [`docs/task/test-plan-tuan-2026-06-03.md`](./docs/task/test-plan-tuan-2026-06-03.md)
+- [`docs/task/qa-evidence/meeting-import-qa-2026-06-03.md`](./docs/task/qa-evidence/meeting-import-qa-2026-06-03.md)
+- [`docs/task/Bao_cao_kiem_thu_tuan_2026-06-03.md`](./docs/task/Bao_cao_kiem_thu_tuan_2026-06-03.md)
+- [`docs/task/checklist-nghiem-thu-2026-06-09.csv`](./docs/task/checklist-nghiem-thu-2026-06-09.csv)
+
 ## 👥 Team
 
 Qaly Team - 7 members

@@ -1,55 +1,78 @@
-Demo seed data and API snippets
+# Demo seed data và API snippets
 
-This file contains sample payloads and curl commands to create a demo organization, group with 7 members, a sample chat message, a poll, and a meeting placeholder via the API.
+Tài liệu này chứa payload mẫu để tạo tổ chức, nhóm, thành viên, tin nhắn mẫu, bình chọn và dữ liệu hỗ trợ demo. Các snippet chỉ mang tính minh họa; cần thay `{orgId}`, `{groupId}`, `{userId}` theo dữ liệu thật trong cơ sở dữ liệu demo.
 
-1. Create organization
+## 1. Tạo tổ chức
 
-POST /api/organizations
+`POST /api/organizations`
 
+```json
 {
-"name": "Demo Org",
-"code": "demo-org"
+  "name": "Demo Org",
+  "code": "demo-org"
 }
+```
 
-2. Create group (replace {orgId} with organization id)
+## 2. Tạo nhóm
 
-POST /api/groups
+`POST /api/groups`
+
+```json
 {
-"name": "Demo Group",
-"description": "Group for demo",
-"organizationId": "{orgId}"
+  "name": "Demo Group",
+  "description": "Nhóm dùng cho demo nghiệm thu",
+  "organizationId": "{orgId}"
 }
+```
 
-3. Add members (call for each member)
+## 3. Thêm thành viên
 
-POST /api/groups/{groupId}/members
+Gọi một lần cho mỗi thành viên.
+
+`POST /api/groups/{groupId}/members`
+
+```json
 {
-"userId": "{userId}",
-"role": "Member"
+  "userId": "{userId}",
+  "role": "Member"
 }
+```
 
-4. Send a sample chat message
+## 4. Gửi tin nhắn mẫu
 
-POST /api/groups/{groupId}/messages
+`POST /api/groups/{groupId}/messages`
+
+```json
 {
-"content": "Hello demo team!",
-"messageType": "Text"
+  "content": "Chào nhóm demo, mình chốt scope P0 hôm nay nhé.",
+  "messageType": "Text"
 }
+```
 
-5. Create a sample poll
+## 5. Tạo bình chọn mẫu
 
-POST /api/groups/{groupId}/polls
+`POST /api/groups/{groupId}/polls`
+
+```json
 {
-"question": "Which day works best?",
-"options": ["Mon","Thu","Fri"],
-"allowMultiple": false
+  "question": "Ngày nào phù hợp nhất để demo?",
+  "options": ["Thứ hai", "Thứ năm", "Thứ sáu"],
+  "allowMultiple": false
 }
+```
 
-6. Meeting
+## 6. Cuộc họp
 
-Meeting state in this demo is mostly client-side. Use the UI at `/groups/{groupId}/meeting` to start/stop screen share (browser support required).
+Có thể dùng UI tại `/groups/{groupId}/meeting` để kiểm tra luồng start/join/end cuộc họp theo quyền nhóm.
 
-Notes
+Giới hạn cần nói rõ khi demo:
 
-- Use an authenticated admin user for API calls. The project seeder (`DataSeeder`) already seeds admin user `admin@qaly.dev` when database is empty.
-- These snippets are illustrative; adapt to the actual organization and user ids in your database.
+- Participant realtime/count đang có lỗi P0 `DH03-BUG-MTG-001`; không demo participant count/list như tính năng ổn định nếu chưa fix.
+- Screen share phụ thuộc browser/provider. Headless Chromium đã ghi nhận nhánh unsupported không crash nhưng UI feedback chưa rõ (`DH03-BUG-MTG-002`, P2).
+- Nếu cần minh họa screen share positive, chạy bằng browser thật/headful và lưu bằng chứng riêng.
+
+## Ghi chú
+
+- Dùng tài khoản admin đã xác thực để gọi API.
+- Không ghi mật khẩu, token, cookie hoặc secret vào tài liệu/evidence.
+- Các snippet là minh họa; cần điều chỉnh theo organization, nhóm và user thật trong database demo.

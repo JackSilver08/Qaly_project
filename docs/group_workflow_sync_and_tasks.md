@@ -2,7 +2,7 @@
 
 Tài liệu này tổng hợp toàn bộ hiện trạng mã nguồn thực tế của dự án QALY, đối chiếu chi tiết với kế hoạch tuần của nhóm (`10_group_workflow_week_plan.xlsx`), và thiết lập hướng dẫn phân công nhiệm vụ cụ thể cho từng thành viên.
 
-Tài liệu này được biên soạn để đưa trực tiếp lên GitHub làm cơ sở nghiệm thu và giao việc cho đội ngũ phát triển.
+Tài liệu này dùng làm cơ sở tham khảo nội bộ và giao việc. Khi dùng cho nghiệm thu, phải đọc kèm bằng chứng QA mới nhất trong `docs/task/qa-evidence/` và báo cáo kiểm thử cuối tuần.
 
 ---
 
@@ -10,38 +10,37 @@ Tài liệu này được biên soạn để đưa trực tiếp lên GitHub là
 
 ### 1. Scope thời gian và Kiến trúc Cơ sở dữ liệu:
 
-- **Cam kết thời hạn:** Dự án hoàn thành **100% trong 10 tuần** (không kéo dài sang các tháng về sau).
+- **Mục tiêu thời hạn:** Dự án hướng tới hoàn thành trong 10 tuần theo kế hoạch. Mức độ nghiệm thu thực tế phụ thuộc bằng chứng kiểm thử và các bug còn mở.
 - **Khóa phạm vi dữ liệu (Scope Lock v3.2):** Để đảm bảo dự án chạy mượt mà trên VPS 8GB và không bị vỡ tiến độ, tài liệu đặc tả [QALY_MVP_P0_Scope_Lock_v3.2.md](file:///C:/Users/Lenovo/Documents/Qaly/Qaly_project/QALY_Docs_v3.2_Gap_Closure_Proceed_Ready/QALY_Docs_v2.3_Fixed_QA/QALY_MVP_P0_Scope_Lock_v3.2.md) đã chính thức khóa scope P0 yêu cầu tối thiểu **21 bảng cơ sở dữ liệu**.
-- **Trạng thái Code hiện tại:** Đã hoàn thành cấu hình và migrate thành công **45 bảng thực tế** trong [QalyDbContext.cs](file:///C:/Users/Lenovo/Documents/Qaly/Qaly_project/src/Qaly.Infrastructure/Data/QalyDbContext.cs). Cấu trúc 45 bảng này đã bao phủ trọn vẹn và vượt mong đợi yêu cầu của toàn bộ 20 Use Cases cốt lõi và các tính năng nâng cao (như chat realtime SignalR, vote, họp trực tuyến Jitsi, audit log). **Đây chính là 100% database hoàn thiện của dự án.**
+- **Trạng thái code hiện tại:** Đã có cấu trúc dữ liệu và migration cho nhiều module, bao gồm nhóm, chat thời gian thực, bình chọn, cuộc họp và audit log. Không ghi nhận là “100% database hoàn thiện” nếu chưa có đối chiếu nghiệm thu đầy đủ cho từng use case.
 
 ### 2. Trạng thái kiểm thử tự động (Test Verification):
 
-- Toàn bộ hệ thống kiểm thử đã chạy biên dịch và vượt qua **100% thành công (Green)**:
-    - **Unit Tests:** **167/167 tests** thành công.
-    - **Integration Tests:** **18/18 tests** thành công.
-- **Tổng cộng:** **185/185 tests** đạt trạng thái xanh, khẳng định mã nguồn backend hoàn toàn sạch sẽ, không có bất kỳ xung đột dữ liệu (DB conflicts) hay lỗi biên dịch nào.
+- Số liệu test cũ trong tài liệu này không thay thế kết quả QA hiện tại.
+- Theo DH-04, backend build pass 0 warning/0 error; integration filter pass 14/14; unit filter pass 92/92 cho các nhóm Import/Meeting/Auth/AI liên quan.
+- Kết quả test xanh không đồng nghĩa mọi luồng UI/realtime đã nghiệm thu. DH-03 vẫn ghi nhận lỗi P0 participant realtime/count trong cuộc họp.
 
 ---
 
 ## II. ĐỐI CHIẾU CHI TIẾT VỚI FILE EXCEL (`10_group_workflow_week_plan.xlsx`)
 
-Mã nguồn hiện đã hoàn thiện toàn bộ phần Backend & Dữ liệu cốt lõi (Base chuẩn) cho tất cả các Epic từ G0 đến G10. Phần việc còn lại của tuần này tập trung vào **Frontend Integration** (ghép nối giao diện Vue UI với các API backend thật).
+Mã nguồn đã có nền backend và dữ liệu cho nhiều Epic từ G0 đến G10. Phần còn lại cần được đánh giá theo bằng chứng QA, đặc biệt với các luồng UI/thời gian thực và AI phụ thuộc provider/fallback.
 
 ### 1. Epic G0: Scope & Architecture (Owner: Quang Tuấn)
 
-- **Trạng thái thực tế:** **Đạt 100%**.
-- **Kết quả:** Cấu trúc dự án Clean Architecture đã ổn định. Database ERD đã migrate xong 45 bảng. Phân quyền và API contract chốt chuẩn xác.
+- **Trạng thái thực tế:** Có nền Clean Architecture và API contract chính.
+- **Kết quả:** Cấu trúc dự án đang theo Clean Architecture; cần tiếp tục đối chiếu với checklist nghiệm thu trước khi claim hoàn tất toàn bộ.
 
 ### 2. Epic G1: Backend Group Core (Owner: Quang Minh)
 
-- **Trạng thái thực tế:** **Đạt 100%**.
-- **Kết quả:** Entity `WorkGroup` và `WorkGroupMember` đã migrate. APIs Tạo nhóm (`POST /api/groups`), Danh sách nhóm (`GET /api/groups`), và Chi tiết nhóm (`GET /api/groups/{id}`) đã viết xong và chạy ổn định.
+- **Trạng thái thực tế:** Có backend core cho nhóm.
+- **Kết quả:** Entity `WorkGroup` và `WorkGroupMember` đã migrate. APIs Tạo nhóm (`POST /api/groups`), Danh sách nhóm (`GET /api/groups`), và Chi tiết nhóm (`GET /api/groups/{id}`) đã có trong backend; trạng thái nghiệm thu cần đọc kèm checklist hiện tại.
 
 ### 3. Epic G2: Invite & Notification (Owner: Duy Hoàng)
 
 - **Trạng thái thực tế:** **Đạt 90%**.
 - **Kết quả:**
-    - Entity `GroupInvitation` và các APIs mời thành viên (`POST /api/groups/{id}/invitations`), accept/reject invitation đã hoàn thiện.
+    - Entity `GroupInvitation` và các APIs mời thành viên (`POST /api/groups/{id}/invitations`), accept/reject invitation đã có trong backend.
     - API quản lý member (đổi role, xóa member) đã viết xong.
     - **Còn thiếu (Gia Long làm ở UI):** Giao diện popup mời thành viên và nút đổi role/xóa member.
 
@@ -63,11 +62,11 @@ Mã nguồn hiện đã hoàn thiện toàn bộ phần Backend & Dữ liệu c�
 
 ### 6. Epic G5: Meeting & Screen Share (Owner: Quang Minh & Quốc Bảo)
 
-- **Trạng thái thực tế:** **Đạt 100% (Backend)**.
+- **Trạng thái thực tế:** Backend cuộc họp có API và regression tests; UI realtime còn rủi ro.
 - **Kết quả:**
-    - Đã hoàn thiện bộ 3 APIs nghiệp vụ họp trực tuyến nhúng Jitsi Meet: **Bắt đầu cuộc họp** (`POST /api/groups/{id}/meetings/start`), **Tham gia cuộc họp** (`POST /api/groups/{groupId}/meetings/{meetingId}/join`), và **Kết thúc cuộc họp** (`POST /api/groups/{groupId}/meetings/{meetingId}/end`).
+    - Đã có bộ 3 APIs nghiệp vụ họp trực tuyến nhúng Jitsi Meet: **Bắt đầu cuộc họp** (`POST /api/groups/{id}/meetings/start`), **Tham gia cuộc họp** (`POST /api/groups/{groupId}/meetings/{meetingId}/join`), và **Kết thúc cuộc họp** (`POST /api/groups/{groupId}/meetings/{meetingId}/end`).
     - API Link Meeting Summary và Transcript (`G5-05`) của Quốc Bảo đã được tích hợp hook lưu trữ an toàn.
-    - **Hoàn thành (Đoàn Trung):** Tích hợp Jitsi Iframe vào tab phụ trang chi tiết nhóm.
+    - **Giới hạn QA hiện tại:** Participant realtime/count đang có bug P0 `DH03-BUG-MTG-001`; screen share unsupported chưa có UI feedback rõ (`DH03-BUG-MTG-002`, P2). Không demo participant count/list hoặc screen share như tính năng ổn định nếu chưa fix/xác minh lại.
 
 ### 7. Epic G6: Frontend Group Page (Owner: Gia Long & Đoàn Trung)
 
@@ -77,26 +76,26 @@ Mã nguồn hiện đã hoàn thiện toàn bộ phần Backend & Dữ liệu c�
 
 ### 8. Epic G7: Create Project From Group (Owner: Quang Minh & Gia Long)
 
-- **Trạng thái thực tế:** **Đạt 100% (Backend)**.
-- **Kết quả:** API tạo project từ nhóm (`POST /api/groups/{id}/create-project`) và map tự động các role đã hoàn thành.
+- **Trạng thái thực tế:** Có backend API tạo dự án từ nhóm.
+- **Kết quả:** API tạo dự án từ nhóm (`POST /api/groups/{id}/create-project`) và map tự động các role đã có; cần kiểm thử theo checklist nếu đưa vào nghiệm thu.
 
 ### 9. Epic G8: AI Group Workflow (Owner: Quốc Bảo & Chí Khang)
 
-- **Trạng thái thực tế:** **Đạt 100% (Completed)**.
+- **Trạng thái thực tế:** Có backend/service và unit tests liên quan; chưa có bằng chứng manual/E2E đầy đủ cho nghiệm thu Group AI.
 - **Kết quả:**
-    - APIs AI Tóm tắt thảo luận (`POST /api/groups/{groupId}/ai/summary`), sinh Dự thảo Project/Task nháp từ thảo luận chat (`POST /api/groups/{groupId}/ai/draft-project`), và trích xuất Action Items từ chat (`POST /api/groups/{groupId}/ai/action-items`) đã được hoàn thành xuất sắc và tích hợp chuẩn bảo mật Audit Logs.
-    - **Frontend (Hoàn thành):** Đã nhúng toàn bộ các nút bấm AI Summary, AI Draft Project và Action Items lên AI Panel bên phải của Vue UI, hỗ trợ duyệt, chỉnh sửa và tạo dự án thật kèm theo phân công công việc tự động.
+    - APIs AI Tóm tắt thảo luận (`POST /api/groups/{groupId}/ai/summary`), sinh Dự thảo dự án/công việc nháp từ thảo luận chat (`POST /api/groups/{groupId}/ai/draft-project`), và trích xuất action items từ chat (`POST /api/groups/{groupId}/ai/action-items`) đã có trong phạm vi backend/service.
+    - Khi demo cần ghi rõ AI có thể dùng provider thật hoặc phản hồi dự phòng AI tùy cấu hình; chưa claim Group AI manual/E2E đã nghiệm thu đầy đủ.
 
 ### 10. Epic G9 & G10: Testing, QA & Demo (Owner: Toàn đội)
 
-- **Trạng thái thực tế:** **Đạt 85%**.
-- **Kết quả:** Tests tự động đã xanh 100%. Data seeder đã sửa xong. Kịch bản demo và UAT đã sẵn sàng.
+- **Trạng thái thực tế:** Có test tự động và báo cáo QA tuần. Demo/UAT cần bám checklist nghiệm thu hiện tại, không mặc định tất cả Pass.
+- **Kết quả QA liên quan:** Tổng thực thi có bằng chứng: Pass 118, Fail 3, Blocked 0, Not Tested 0. Lỗi P0 còn mở: `DH03-BUG-MTG-001`.
 
 ---
 
 ## III. PHÂN CÔNG NHIỆM VỤ CHI TIẾT (ASSIGNMENT BACKLOG)
 
-Dưới đây là backlog nhiệm vụ cụ thể giao cho từng thành viên để ghép nối Frontend Vue UI với các API backend thật đã hoàn thiện:
+Dưới đây là backlog nhiệm vụ cụ thể giao cho từng thành viên để ghép nối Frontend Vue UI với các API backend hiện có:
 
 ### 1. GIA LONG (Frontend Lead)
 
@@ -164,12 +163,14 @@ dotnet test
 
 ---
 
-## V. HƯỚNG DẪN TRÌNH BÀY WOW TRƯỚC GIẢNG VIÊN (STAGE STRATEGY)
+## V. HƯỚNG DẪN TRÌNH BÀY TRƯỚC GIẢNG VIÊN (STAGE STRATEGY)
 
-Để được giảng viên đánh giá xuất sắc nhất mà không bị bắt lỗi quy trình:
+Để trình bày trung thực và tránh nói quá phạm vi đã kiểm thử:
 
 1.  **Hồ sơ báo cáo tuần:** Báo cáo tiến độ hoàn toàn tuân thủ theo đúng WBS đặc tả v3.2 (Báo cáo hoàn thành Core Skeleton, Auth, RBAC đúng tuần).
-2.  **Buổi Demo trực tiếp:** Nhóm vẫn trình diễn bình thường các tính năng nâng cao (Realtime Chat SignalR, Jitsi nhúng, AI Summarization). Nhóm sẽ giải thích với giảng viên theo hướng **"Kiểm chứng kiến trúc sớm" (Architecture Validation Prototype)**:
-    > _"Để đảm bảo tính bền vững của database schema 45 bảng và lõi AI Gateway ngay từ tuần đầu, nhóm đã chủ động lập trình sớm phiên bản thử nghiệm cho chat, meeting, và AI. Việc này giúp nhóm tối ưu hóa prompt, thẩm định tải tài nguyên trên VPS 8GB và viết thành công 185 unit/integration tests xanh trước thời hạn."_
+2.  **Buổi demo trực tiếp:** Ưu tiên demo các luồng có bằng chứng pass: nhập tài liệu, login/phân quyền cơ bản, E2E smoke và backend regression.
+3.  **Cuộc họp nhóm:** Chỉ demo start/join/end và phân quyền nếu cần. Không demo participant realtime/count như tính năng ổn định khi bug P0 chưa fix.
+4.  **AI:** Nếu demo AI analytics/Group AI, nói rõ đây là luồng phụ thuộc provider/local config và có phản hồi dự phòng AI; không claim RAG/tooling đầy đủ nếu chưa có evidence riêng.
+5.  **Deploy:** Nếu chưa chạy checklist deploy, ghi rõ “chưa có bằng chứng nghiệm thu đầy đủ”.
 
-Lập luận này chứng minh năng lực kỹ thuật vượt trội của nhóm và tư duy quản trị quy trình phần mềm chuẩn Production của Nhật Bản.
+Thông điệp nên dùng: hệ thống có nền tảng backend và QA regression tốt, nhưng một số luồng thời gian thực/AI/deploy vẫn cần fix hoặc xác minh thêm trước khi claim nghiệm thu đầy đủ.
