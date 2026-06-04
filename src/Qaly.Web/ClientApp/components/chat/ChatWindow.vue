@@ -292,36 +292,38 @@ async function sendMessage() {
 .team-chat-composer {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 6px;
+  padding: 7px 8px;
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 24px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.02);
-  transition: border-color 0.2s, box-shadow 0.2s;
+  border: 1px solid #dbe5f1;
+  border-radius: 18px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
 }
 
 .team-chat-composer:focus-within {
-  border-color: #93c5fd;
-  box-shadow: 0 0 0 3px rgba(147, 197, 253, 0.2);
+  border-color: #8dbaf8;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12), 0 16px 32px rgba(15, 23, 42, 0.08);
 }
 
 .composer-tool-btn {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
+  width: 38px;
+  height: 38px;
+  border-radius: 13px;
   display: grid;
   place-items: center;
   color: #64748b;
-  background: transparent;
-  transition: background 0.2s, color 0.2s;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
   cursor: pointer;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
 
 .composer-tool-btn:hover {
-  background: #f1f5f9;
+  background: #eff6ff;
+  border-color: #bfdbfe;
   color: #1d4ed8;
 }
 
@@ -332,15 +334,16 @@ async function sendMessage() {
 .team-chat-composer textarea {
   flex: 1;
   min-width: 0;
-  min-height: 40px;
+  min-height: 42px;
   max-height: 120px;
-  border: none;
-  background: transparent;
-  padding: 10px 0;
+  border: 0 !important;
+  background: transparent !important;
+  padding: 10px 8px;
   font-size: 0.95rem;
   resize: none;
   color: #1e293b;
   line-height: 1.4;
+  box-shadow: none !important;
 }
 
 .team-chat-composer textarea:focus {
@@ -349,18 +352,20 @@ async function sendMessage() {
 
 .composer-send-btn {
   flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: #2563eb;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #0f52ba, #2563eb);
   color: #ffffff;
   display: grid;
   place-items: center;
-  transition: background 0.2s;
+  transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
   margin-bottom: 0;
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.24);
 }
 
 .composer-send-btn:hover {
-  background: #1d4ed8;
+  background: linear-gradient(135deg, #0d47a1, #1d4ed8);
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.3);
 }
 </style>

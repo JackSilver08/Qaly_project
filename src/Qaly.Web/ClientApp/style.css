@@ -4856,6 +4856,171 @@ textarea::placeholder {
   background: #e2e8f0 !important;
 }
 
+/* Polished input/search/composer surfaces */
+.search-box,
+.project-search,
+.chat-drawer__composer,
+.comment-form {
+  min-height: 48px !important;
+  gap: 10px !important;
+  border: 1px solid #dbe5f1 !important;
+  border-radius: 14px !important;
+  background: #ffffff !important;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05) !important;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease !important;
+}
+
+.search-box,
+.project-search {
+  padding: 0 12px !important;
+  color: #64748b !important;
+}
+
+.search-box:focus-within,
+.project-search:focus-within,
+.chat-drawer__composer:focus-within,
+.comment-form:focus-within {
+  border-color: #8dbaf8 !important;
+  background: #ffffff !important;
+  box-shadow:
+    0 0 0 4px rgba(37, 99, 235, 0.12),
+    0 14px 30px rgba(15, 23, 42, 0.08) !important;
+}
+
+.search-box svg,
+.project-search svg {
+  flex: 0 0 auto;
+  color: #64748b !important;
+}
+
+.search-box input,
+.project-search input,
+.chat-drawer__composer input,
+.comment-form input {
+  min-width: 0 !important;
+  border: 0 !important;
+  outline: 0 !important;
+  color: #0f172a !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  font-size: 0.94rem !important;
+}
+
+.search-box input,
+.project-search input {
+  height: 44px !important;
+  padding: 0 !important;
+}
+
+.chat-drawer__composer {
+  padding: 7px 8px !important;
+}
+
+.chat-drawer__composer input {
+  height: 40px !important;
+  padding: 0 8px !important;
+}
+
+.chat-drawer__composer .primary-button,
+.comment-form .primary-button {
+  min-width: 42px !important;
+  height: 42px !important;
+  min-height: 42px !important;
+  border-radius: 13px !important;
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.22) !important;
+}
+
+.search-clear,
+.project-search button {
+  width: 32px !important;
+  height: 32px !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  flex: 0 0 auto !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 10px !important;
+  color: #64748b !important;
+  background: #f8fafc !important;
+  box-shadow: none !important;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease,
+    background 160ms ease !important;
+}
+
+.search-clear:hover,
+.search-clear:focus-visible,
+.project-search button:hover,
+.project-search button:focus-visible {
+  border-color: #bfdbfe !important;
+  color: #0f52ba !important;
+  background: #eff6ff !important;
+}
+
+.task-create-form input,
+.task-create-form select,
+.project-inline-form input,
+.project-inline-form--stacked input {
+  min-height: 42px !important;
+  border: 1px solid #dbe5f1 !important;
+  border-radius: 11px !important;
+  padding: 9px 12px !important;
+  background: #ffffff !important;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.035) !important;
+  transition: border-color 160ms ease, box-shadow 160ms ease !important;
+}
+
+.task-create-form input:focus,
+.task-create-form select:focus,
+.project-inline-form input:focus,
+.project-inline-form--stacked input:focus {
+  border-color: #8dbaf8 !important;
+  outline: 0 !important;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12) !important;
+}
+
+.team-chat-composer {
+  border-color: #dbe5f1 !important;
+  background: #ffffff !important;
+}
+
+.team-chat-composer textarea {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.team-chat-composer textarea::placeholder,
+.chat-drawer__composer input::placeholder,
+.search-box input::placeholder,
+.project-search input::placeholder,
+.comment-form input::placeholder,
+.task-create-form input::placeholder {
+  color: #94a3b8 !important;
+}
+
+.team-message {
+  gap: 10px !important;
+  max-width: min(78%, 740px) !important;
+}
+
+.team-message__bubble {
+  border: 1px solid rgba(203, 213, 225, 0.72) !important;
+  border-radius: 16px 16px 16px 5px !important;
+  background: #f8fafc !important;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06) !important;
+}
+
+.team-message.is-mine .team-message__bubble {
+  border-color: transparent !important;
+  border-radius: 16px 16px 5px 16px !important;
+  background: linear-gradient(135deg, #0f52ba, #2563eb) !important;
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.22) !important;
+}
+
 .project-strip,
 .team-mini-card,
 .task-snapshot-row,
