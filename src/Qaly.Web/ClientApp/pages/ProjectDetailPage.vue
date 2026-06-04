@@ -991,6 +991,11 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   box-shadow: 0 8px 16px rgba(31, 128, 255, 0.22);
 }
 
+.task-view-toggle__button.is-active span,
+.task-view-toggle__button.is-active svg {
+  color: #ffffff;
+}
+
 .task-view-toggle__button svg {
   flex: 0 0 auto;
 }
