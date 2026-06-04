@@ -539,6 +539,65 @@ public class ImportEnhancementTests : IDisposable
     }
 
     [Fact]
+    public async Task PreviewDocumentAsync_WithUnsupportedExtension_ReturnsValidationError()
+    {
+        var service = CreateFileImportService();
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("unsupported payload"));
+
+        var result = await service.PreviewDocumentAsync(stream, "payload.exe");
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+        result.Error.Should().Contain("chua duoc ho tro");
+    }
+
+    [Fact]
+    public async Task PreviewDocumentAsync_WithEmptyTextFile_ReturnsValidationError()
+    {
+        var service = CreateFileImportService();
+        await using var stream = new MemoryStream();
+
+        var result = await service.PreviewDocumentAsync(stream, "empty.txt");
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+        result.Error.Should().Contain("File khong co noi dung");
+    }
+
+    [Fact]
+    public async Task ImportDocumentAsync_WithUnsupportedExtension_DoesNotCreateWikiPage()
+    {
+        var service = CreateFileImportService();
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("unsupported payload"));
+
+        var result = await service.ImportDocumentAsync(Guid.NewGuid(), stream, "payload.bin");
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+        _wikiService.Verify(
+            wiki => wiki.CreateAsync(It.IsAny<Guid>(), It.IsAny<CreateWikiPageDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ImportDocumentAsync_WhenWikiServiceRejectsProjectAccess_ReturnsForbidden()
+    {
+        var projectId = Guid.NewGuid();
+        _wikiService
+            .Setup(service => service.CreateAsync(projectId, It.IsAny<CreateWikiPageDto>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Forbidden<WikiPageDto>("Current user cannot access project."));
+
+        var service = CreateFileImportService();
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("# Private Notes"));
+
+        var result = await service.ImportDocumentAsync(projectId, stream, "private.md");
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+        result.Error.Should().Contain("Current user cannot access project");
+    }
+
+    [Fact]
     public async Task PreviewZipBundleAsync_WithMixedEntries_ReturnsSupportedChildrenAndWarnings()
     {
         var service = CreateFileImportService();
@@ -566,6 +625,21 @@ public class ImportEnhancementTests : IDisposable
 
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().Be(400);
+    }
+
+    [Fact]
+    public async Task ImportZipBundleAsync_WithNoSupportedEntries_DoesNotCreateWikiPages()
+    {
+        var service = CreateFileImportService();
+        await using var stream = CreateUnsupportedZipBundleStream();
+
+        var result = await service.ImportZipBundleAsync(Guid.NewGuid(), stream, "bundle.zip");
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+        _wikiService.Verify(
+            wiki => wiki.CreateAsync(It.IsAny<Guid>(), It.IsAny<CreateWikiPageDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
