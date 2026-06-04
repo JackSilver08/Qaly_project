@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { Bell, ChevronDown, LogOut, Menu, User } from 'lucide-vue-next'
+import { Bell, ChevronDown, LogOut, Menu, Moon, Sun, User } from 'lucide-vue-next'
 
 defineProps<{
   brandName: string
@@ -19,6 +19,21 @@ const emit = defineEmits<{
 
 const userMenuOpen = ref(false)
 const userMenuRef = ref<HTMLElement | null>(null)
+const currentTheme = ref<'light' | 'dark'>('light')
+const themeStorageKey = 'qaly-theme'
+
+const themeButtonLabel = () =>
+  currentTheme.value === 'dark' ? 'Chuyen sang giao dien sang' : 'Chuyen sang giao dien toi'
+
+function applyTheme(theme: 'light' | 'dark') {
+  currentTheme.value = theme
+  document.documentElement.dataset.theme = theme
+  localStorage.setItem(themeStorageKey, theme)
+}
+
+function toggleTheme() {
+  applyTheme(currentTheme.value === 'dark' ? 'light' : 'dark')
+}
 
 function closeUserMenu() {
   userMenuOpen.value = false
@@ -46,6 +61,15 @@ function handleDocumentKeydown(event: KeyboardEvent) {
 }
 
 onMounted(() => {
+  const savedTheme = localStorage.getItem(themeStorageKey)
+  const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches
+  currentTheme.value = savedTheme === 'dark' || savedTheme === 'light'
+    ? savedTheme
+    : prefersDark
+      ? 'dark'
+      : 'light'
+  document.documentElement.dataset.theme = currentTheme.value
+
   document.addEventListener('pointerdown', handleDocumentPointerDown)
   document.addEventListener('keydown', handleDocumentKeydown)
 })
@@ -75,6 +99,17 @@ onBeforeUnmount(() => {
     </button>
 
     <div class="shell-header-actions">
+      <button
+        class="shell-icon-button shell-theme-toggle"
+        type="button"
+        :aria-label="themeButtonLabel()"
+        :title="themeButtonLabel()"
+        @click="toggleTheme"
+      >
+        <Sun v-if="currentTheme === 'dark'" :size="18" />
+        <Moon v-else :size="18" />
+      </button>
+
       <button class="shell-icon-button" type="button" aria-label="Thong bao" @click="$emit('notifications')">
         <Bell :size="18" />
         <span v-if="notificationCount > 0" class="shell-action-badge">{{ notificationCount }}</span>

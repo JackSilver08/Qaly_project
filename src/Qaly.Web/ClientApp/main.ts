@@ -5,6 +5,17 @@ import { router } from './router'
 import { showError, showSuccess, showToast, type ToastInput, type ToastType } from './composables/use-toast'
 import './style.css'
 
+const themeStorageKey = 'qaly-theme'
+const savedTheme = localStorage.getItem(themeStorageKey)
+const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches
+const initialTheme = savedTheme === 'dark' || savedTheme === 'light'
+  ? savedTheme
+  : prefersDark
+    ? 'dark'
+    : 'light'
+
+document.documentElement.dataset.theme = initialTheme
+
 declare global {
   interface Window {
     qalyToast?: {

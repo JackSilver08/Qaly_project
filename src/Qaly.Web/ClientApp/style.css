@@ -79,6 +79,55 @@
   --line-body: 1.55;
 }
 
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --primary: #3b82f6;
+  --primary-strong: #60a5fa;
+  --primary-hover: #60a5fa;
+  --primary-soft: rgba(59, 130, 246, 0.18);
+
+  --surface-milk: #101827;
+  --surface-warm: #0f172a;
+
+  --blue-50: rgba(96, 165, 250, 0.12);
+  --blue-100: rgba(96, 165, 250, 0.18);
+  --blue-500: #60a5fa;
+  --blue-600: #3b82f6;
+  --blue-700: #93c5fd;
+
+  --violet-100: rgba(167, 139, 250, 0.18);
+  --violet-500: #a78bfa;
+  --mint-100: rgba(52, 211, 153, 0.16);
+  --mint-500: #34d399;
+  --peach-100: rgba(251, 113, 133, 0.16);
+  --peach-500: #fb7185;
+
+  --bg: #0b1120;
+  --panel: #111827;
+  --panel-soft: #172033;
+  --bg-soft: #0f172a;
+
+  --text: #dbe6f5;
+  --text-strong: #f8fafc;
+  --muted: #a7b4c8;
+  --text-muted: #94a3b8;
+  --text-soft: #64748b;
+
+  --line: #273449;
+  --line-light: #1f2a3d;
+  --glass: rgba(17, 24, 39, 0.88);
+  --glass-strong: rgba(30, 41, 59, 0.9);
+  --glass-border: rgba(71, 85, 105, 0.64);
+
+  --warning-soft: rgba(245, 158, 11, 0.16);
+  --warning-dark: #fbbf24;
+  --danger-soft: rgba(248, 113, 113, 0.16);
+
+  --shadow-soft: 0 14px 34px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(148, 163, 184, 0.08);
+  --shadow-card: 0 22px 60px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(148, 163, 184, 0.08);
+}
+
 *,
 *::before,
 *::after {
@@ -6215,4 +6264,496 @@ textarea::placeholder {
   color: #4d69c9 !important;
   background: #f6f9ff !important;
   box-shadow: 0 12px 24px rgba(91, 124, 222, 0.12) !important;
+}
+
+/* Theme toggle and dark-mode surface corrections */
+.shell-theme-toggle {
+  overflow: hidden;
+}
+
+:root[data-theme='dark'] body,
+:root[data-theme='dark'] .app-shell,
+:root[data-theme='dark'] .dashboard-scroll,
+:root[data-theme='dark'] .shell-main,
+:root[data-theme='dark'] .dashboard-main,
+:root[data-theme='dark'] .dashboard-aside {
+  background: var(--bg) !important;
+  color: var(--text) !important;
+}
+
+:root[data-theme='dark'] .shell-header,
+:root[data-theme='dark'] .shell-sidebar {
+  border-color: var(--line) !important;
+  background: var(--panel) !important;
+  box-shadow: var(--shadow-soft) !important;
+}
+
+:root[data-theme='dark'] .shell-brand strong,
+:root[data-theme='dark'] .sidebar-brand-text strong {
+  color: var(--primary-strong) !important;
+}
+
+:root[data-theme='dark'] .sidebar-brand {
+  border-color: var(--line) !important;
+}
+
+:root[data-theme='dark'] .sidebar-brand-text span,
+:root[data-theme='dark'] .dashboard-welcome-banner p,
+:root[data-theme='dark'] .user-role-label,
+:root[data-theme='dark'] .header-search span {
+  color: var(--muted) !important;
+}
+
+:root[data-theme='dark'] .dashboard-welcome-banner h1,
+:root[data-theme='dark'] .custom-chart-header h3,
+:root[data-theme='dark'] .activity-card-header,
+:root[data-theme='dark'] .activity-card-header h3,
+:root[data-theme='dark'] .summary-card__value-row strong,
+:root[data-theme='dark'] .summary-card strong,
+:root[data-theme='dark'] .attention-item-title,
+:root[data-theme='dark'] .activity-text strong,
+:root[data-theme='dark'] .chart-summary-item strong,
+:root[data-theme='dark'] .chart-bar-label {
+  color: var(--text-strong) !important;
+}
+
+:root[data-theme='dark'] .shell-icon-button,
+:root[data-theme='dark'] .shell-user-menu,
+:root[data-theme='dark'] .secondary-button,
+:root[data-theme='dark'] .shell-menu-button,
+:root[data-theme='dark'] .header-search,
+:root[data-theme='dark'] .chart-pill,
+:root[data-theme='dark'] .attention-view-all,
+:root[data-theme='dark'] input,
+:root[data-theme='dark'] select,
+:root[data-theme='dark'] textarea {
+  color: var(--text) !important;
+  border-color: var(--line) !important;
+  background: var(--panel-soft) !important;
+  box-shadow: var(--shadow-soft) !important;
+}
+
+:root[data-theme='dark'] .shell-icon-button:hover,
+:root[data-theme='dark'] .shell-user-menu:hover,
+:root[data-theme='dark'] .shell-user-menu.is-open,
+:root[data-theme='dark'] .secondary-button:hover,
+:root[data-theme='dark'] .shell-menu-button:hover,
+:root[data-theme='dark'] .header-search:hover,
+:root[data-theme='dark'] .header-search:focus-visible,
+:root[data-theme='dark'] .attention-view-all:hover {
+  color: var(--text-strong) !important;
+  border-color: rgba(96, 165, 250, 0.46) !important;
+  background: #1e293b !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34) !important;
+}
+
+:root[data-theme='dark'] .shell-theme-toggle {
+  color: #fbbf24 !important;
+}
+
+:root[data-theme='dark'] .shell-user-dropdown-menu,
+:root[data-theme='dark'] .home-notification-popover,
+:root[data-theme='dark'] .notification-popover,
+:root[data-theme='dark'] .custom-chart-card,
+:root[data-theme='dark'] .attention-card,
+:root[data-theme='dark'] .activity-card,
+:root[data-theme='dark'] .summary-card,
+:root[data-theme='dark'] .project-grid-card {
+  border-color: var(--line) !important;
+  background: var(--panel) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+:root[data-theme='dark'] .shell-user-dropdown-item,
+:root[data-theme='dark'] .shell-nav-item,
+:root[data-theme='dark'] .shell-settings-button,
+:root[data-theme='dark'] .shell-archive-button,
+:root[data-theme='dark'] .activity-text,
+:root[data-theme='dark'] .summary-card__detail,
+:root[data-theme='dark'] .attention-item-desc,
+:root[data-theme='dark'] .chart-summary-item span {
+  color: var(--text) !important;
+}
+
+:root[data-theme='dark'] .shell-user-dropdown-item:hover,
+:root[data-theme='dark'] .shell-user-dropdown-item:focus-visible,
+:root[data-theme='dark'] .shell-nav-item:hover,
+:root[data-theme='dark'] .shell-nav-item:focus-visible,
+:root[data-theme='dark'] .shell-settings-button:hover,
+:root[data-theme='dark'] .shell-settings-button:focus-visible,
+:root[data-theme='dark'] .shell-archive-button:hover,
+:root[data-theme='dark'] .shell-archive-button:focus-visible {
+  color: var(--primary-strong) !important;
+  border-color: rgba(96, 165, 250, 0.34) !important;
+  background: rgba(59, 130, 246, 0.14) !important;
+}
+
+:root[data-theme='dark'] .shell-nav-item.is-active,
+:root[data-theme='dark'] .shell-settings-button.is-active,
+:root[data-theme='dark'] .shell-archive-button.is-active {
+  color: var(--primary-strong) !important;
+  border-left-color: var(--primary-strong) !important;
+  background: rgba(59, 130, 246, 0.2) !important;
+}
+
+:root[data-theme='dark'] .shell-action-badge {
+  border-color: var(--panel) !important;
+}
+
+:root[data-theme='dark'] .custom-chart-body {
+  border-color: var(--line-light) !important;
+}
+
+:root[data-theme='dark'] .chart-bar-track,
+:root[data-theme='dark'] .chart-summary-item,
+:root[data-theme='dark'] .signal-item,
+:root[data-theme='dark'] .notice,
+:root[data-theme='dark'] .attention-item {
+  border-color: var(--line-light) !important;
+  background: var(--panel-soft) !important;
+}
+
+:root[data-theme='dark'] .attention-item {
+  border-left-color: #f87171 !important;
+}
+
+:root[data-theme='dark'] .attention-card-header,
+:root[data-theme='dark'] .attention-card-header h3,
+:root[data-theme='dark'] .attention-badge--overdue {
+  color: #f87171 !important;
+}
+
+:root[data-theme='dark'] .attention-badge--upcoming {
+  color: #fbbf24 !important;
+}
+
+:root[data-theme='dark'] .activity-list::before {
+  background: var(--line) !important;
+}
+
+:root[data-theme='dark'] .activity-avatar {
+  border-color: var(--panel) !important;
+}
+
+:root[data-theme='dark'] .project-grid-card__badge,
+:root[data-theme='dark'] .project-grid-card__actions button {
+  border-color: var(--line) !important;
+  background: #172033 !important;
+  color: var(--primary-strong) !important;
+  box-shadow: var(--shadow-soft) !important;
+}
+
+:root[data-theme='dark'] .project-grid-card__title-col strong,
+:root[data-theme='dark'] .project-grid-card__progress-header,
+:root[data-theme='dark'] .project-grid-card__tasks-row span:first-child {
+  color: var(--primary-strong) !important;
+}
+
+:root[data-theme='dark'] .project-grid-card__title-col span,
+:root[data-theme='dark'] .project-grid-card__badge--archived,
+:root[data-theme='dark'] .project-grid-card__badge--neutral,
+:root[data-theme='dark'] .team-avatar--more {
+  color: var(--muted) !important;
+}
+
+:root[data-theme='dark'] .project-grid-card__tasks-row {
+  border-bottom-color: var(--line) !important;
+}
+
+:root[data-theme='dark'] .project-grid-card__progress-track,
+:root[data-theme='dark'] .team-avatar {
+  background: #1e293b !important;
+}
+
+:root[data-theme='dark'] .project-grid-card__risk {
+  color: #f87171 !important;
+  background: rgba(248, 113, 113, 0.16) !important;
+}
+
+/* Dark-mode sweep for page-scoped styles and modals that still hard-code light surfaces. */
+:root[data-theme='dark'] {
+  --bg-main: var(--bg);
+  --green-50: rgba(52, 211, 153, 0.16);
+  --red-50: rgba(248, 113, 113, 0.16);
+  --slate-100: #1e293b;
+}
+
+:root[data-theme='dark'] .global-search-panel,
+:root[data-theme='dark'] .global-search-shortcuts,
+:root[data-theme='dark'] .global-search-empty,
+:root[data-theme='dark'] .global-search-input button,
+:root[data-theme='dark'] .global-search-item:hover,
+:root[data-theme='dark'] .global-search-item:focus-visible,
+:root[data-theme='dark'] .global-search-chip,
+:root[data-theme='dark'] .analytics-chat-portal,
+:root[data-theme='dark'] .chat-bottom-bar,
+:root[data-theme='dark'] .erumi-dropdown-menu,
+:root[data-theme='dark'] .erumi-input-shell,
+:root[data-theme='dark'] .erumi-input-shell:focus-within,
+:root[data-theme='dark'] .erumi-metric,
+:root[data-theme='dark'] .erumi-table-card,
+:root[data-theme='dark'] .erumi-chart-card,
+:root[data-theme='dark'] .erumi-file-chip,
+:root[data-theme='dark'] .msg-attachment-chip,
+:root[data-theme='dark'] .groups-workspace,
+:root[data-theme='dark'] .project-home-main,
+:root[data-theme='dark'] .group-detail-panel,
+:root[data-theme='dark'] .group-detail-icon-button,
+:root[data-theme='dark'] .group-detail-collapse-button,
+:root[data-theme='dark'] .group-detail-tabs button,
+:root[data-theme='dark'] .group-inline-form input,
+:root[data-theme='dark'] .group-inline-form select,
+:root[data-theme='dark'] .group-stack-form input,
+:root[data-theme='dark'] .group-stack-form textarea,
+:root[data-theme='dark'] .group-modal,
+:root[data-theme='dark'] .group-modal input,
+:root[data-theme='dark'] .group-modal textarea,
+:root[data-theme='dark'] .group-member-row,
+:root[data-theme='dark'] .group-pending-list article,
+:root[data-theme='dark'] .group-poll-composer,
+:root[data-theme='dark'] .group-poll-composer input,
+:root[data-theme='dark'] .group-poll-item,
+:root[data-theme='dark'] .group-empty-state,
+:root[data-theme='dark'] .team-chat-status,
+:root[data-theme='dark'] .import-modal,
+:root[data-theme='dark'] .import-select,
+:root[data-theme='dark'] .mapping-table,
+:root[data-theme='dark'] .preview-table,
+:root[data-theme='dark'] .summary-panel,
+:root[data-theme='dark'] .upload-card,
+:root[data-theme='dark'] .file-card,
+:root[data-theme='dark'] .confirm-table,
+:root[data-theme='dark'] .poll-card,
+:root[data-theme='dark'] .poll-option,
+:root[data-theme='dark'] .poll-choice,
+:root[data-theme='dark'] .team-chat-window,
+:root[data-theme='dark'] .team-chat-sidebar,
+:root[data-theme='dark'] .team-chat-empty,
+:root[data-theme='dark'] .team-chat-sidebar__empty,
+:root[data-theme='dark'] .ai-panel,
+:root[data-theme='dark'] .ai-card,
+:root[data-theme='dark'] .ai-panel-card,
+:root[data-theme='dark'] .group-ai-panel,
+:root[data-theme='dark'] .message-card,
+:root[data-theme='dark'] .message-action-menu,
+:root[data-theme='dark'] .project-detail-shell,
+:root[data-theme='dark'] .project-detail-card,
+:root[data-theme='dark'] .project-detail-panel,
+:root[data-theme='dark'] .project-summary-card,
+:root[data-theme='dark'] .project-toolbar,
+:root[data-theme='dark'] .project-filter-panel,
+:root[data-theme='dark'] .project-form-panel,
+:root[data-theme='dark'] .projects-page,
+:root[data-theme='dark'] .projects-panel,
+:root[data-theme='dark'] .projects-toolbar,
+:root[data-theme='dark'] .glass-panel,
+:root[data-theme='dark'] .stat-card,
+:root[data-theme='dark'] .strategy-ai-insight,
+:root[data-theme='dark'] .ai-summary,
+:root[data-theme='dark'] .ai-box,
+:root[data-theme='dark'] .attention-card,
+:root[data-theme='dark'] .activity-card,
+:root[data-theme='dark'] .activity-sparkline,
+:root[data-theme='dark'] .empty-state-container {
+  border-color: var(--line) !important;
+  background: var(--panel) !important;
+  color: var(--text) !important;
+  box-shadow: var(--shadow-soft) !important;
+}
+
+:root[data-theme='dark'] .global-search-shortcuts,
+:root[data-theme='dark'] .global-search-empty,
+:root[data-theme='dark'] .global-search-input button,
+:root[data-theme='dark'] .global-search-item:hover,
+:root[data-theme='dark'] .global-search-item:focus-visible,
+:root[data-theme='dark'] .global-search-chip,
+:root[data-theme='dark'] .suggestion-pill,
+:root[data-theme='dark'] .suggestion-chip-small,
+:root[data-theme='dark'] .erumi-project-trigger:hover,
+:root[data-theme='dark'] .erumi-project-trigger.is-open,
+:root[data-theme='dark'] .erumi-send-btn,
+:root[data-theme='dark'] .erumi-attach-btn:hover,
+:root[data-theme='dark'] .msg-avatar-col .chatbot-avatar,
+:root[data-theme='dark'] .avatar-holder .chatbot-avatar,
+:root[data-theme='dark'] .chart-bar-track,
+:root[data-theme='dark'] .origin-rule,
+:root[data-theme='dark'] .bubble-action-btn:hover,
+:root[data-theme='dark'] .groups-workspace .team-chat-group:hover,
+:root[data-theme='dark'] .groups-workspace .team-chat-group.is-active,
+:root[data-theme='dark'] .groups-workspace .team-chat-empty,
+:root[data-theme='dark'] .group-detail-icon-button:hover,
+:root[data-theme='dark'] .group-detail-collapse-button:hover,
+:root[data-theme='dark'] .group-role-badge,
+:root[data-theme='dark'] .group-detail-tabs button:hover,
+:root[data-theme='dark'] .group-detail-tabs button.active,
+:root[data-theme='dark'] .group-member-row:hover,
+:root[data-theme='dark'] .group-pending-list article:hover,
+:root[data-theme='dark'] .group-poll-item:hover,
+:root[data-theme='dark'] .group-section-title small,
+:root[data-theme='dark'] .group-poll-options button,
+:root[data-theme='dark'] .team-chat-banner,
+:root[data-theme='dark'] .import-step,
+:root[data-theme='dark'] .import-dropzone,
+:root[data-theme='dark'] .import-table th,
+:root[data-theme='dark'] .btn--ghost:hover,
+:root[data-theme='dark'] .poll-empty,
+:root[data-theme='dark'] .poll-footer,
+:root[data-theme='dark'] .team-chat-window--clean,
+:root[data-theme='dark'] .team-chat-window--paper,
+:root[data-theme='dark'] .team-chat-window--grid {
+  border-color: var(--line-light) !important;
+  background: var(--panel-soft) !important;
+  color: var(--text) !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme='dark'] .chat-bottom-bar {
+  background: linear-gradient(to top, var(--bg) 62%, rgba(11, 17, 32, 0) 100%) !important;
+}
+
+:root[data-theme='dark'] .global-search-input,
+:root[data-theme='dark'] .global-search-shortcuts,
+:root[data-theme='dark'] .groups-workspace,
+:root[data-theme='dark'] .groups-workspace .team-chat-sidebar,
+:root[data-theme='dark'] .groups-workspace .team-chat-window,
+:root[data-theme='dark'] .group-detail-panel,
+:root[data-theme='dark'] .strategy-header,
+:root[data-theme='dark'] .erumi-table-card header,
+:root[data-theme='dark'] .erumi-table-wrap th,
+:root[data-theme='dark'] .erumi-table-wrap td {
+  border-color: var(--line) !important;
+}
+
+:root[data-theme='dark'] .global-search-input input,
+:root[data-theme='dark'] .global-search-item__body strong,
+:root[data-theme='dark'] .global-search-group h3,
+:root[data-theme='dark'] .welcome-heading,
+:root[data-theme='dark'] .erumi-composer,
+:root[data-theme='dark'] .erumi-project-trigger,
+:root[data-theme='dark'] .erumi-project-name,
+:root[data-theme='dark'] .erumi-message-input,
+:root[data-theme='dark'] .attached-file-chip,
+:root[data-theme='dark'] .msg-attachment-chip,
+:root[data-theme='dark'] .msg-bubble-assistant,
+:root[data-theme='dark'] .msg-bubble-assistant p,
+:root[data-theme='dark'] .erumi-metric strong,
+:root[data-theme='dark'] .erumi-table-card header strong,
+:root[data-theme='dark'] .erumi-table-wrap th,
+:root[data-theme='dark'] .erumi-table-wrap td,
+:root[data-theme='dark'] .erumi-chart-card header strong,
+:root[data-theme='dark'] .groups-workspace .team-chat-sidebar__empty strong,
+:root[data-theme='dark'] .groups-workspace .team-chat-empty strong,
+:root[data-theme='dark'] .groups-workspace .team-chat-group strong,
+:root[data-theme='dark'] .group-detail-header h2,
+:root[data-theme='dark'] .group-inline-form input,
+:root[data-theme='dark'] .group-inline-form select,
+:root[data-theme='dark'] .group-stack-form input,
+:root[data-theme='dark'] .group-stack-form textarea,
+:root[data-theme='dark'] .group-modal h2,
+:root[data-theme='dark'] .group-modal input,
+:root[data-theme='dark'] .group-modal textarea,
+:root[data-theme='dark'] .group-member-row strong,
+:root[data-theme='dark'] .group-pending-list strong,
+:root[data-theme='dark'] .group-section-title span,
+:root[data-theme='dark'] .group-poll-composer input,
+:root[data-theme='dark'] .group-poll-item__meta strong,
+:root[data-theme='dark'] .group-empty-state strong,
+:root[data-theme='dark'] .group-tool-empty strong,
+:root[data-theme='dark'] .import-modal,
+:root[data-theme='dark'] .import-modal h2,
+:root[data-theme='dark'] .import-modal h3,
+:root[data-theme='dark'] .import-modal strong,
+:root[data-theme='dark'] .import-select,
+:root[data-theme='dark'] .poll-card,
+:root[data-theme='dark'] .poll-title,
+:root[data-theme='dark'] .poll-card strong,
+:root[data-theme='dark'] .message-card,
+:root[data-theme='dark'] .message-card strong,
+:root[data-theme='dark'] .header-titles h2,
+:root[data-theme='dark'] .stat-value,
+:root[data-theme='dark'] .ai-summary,
+:root[data-theme='dark'] .ai-priority h4,
+:root[data-theme='dark'] .attention-card h3,
+:root[data-theme='dark'] .attention-card strong,
+:root[data-theme='dark'] .activity-card h3,
+:root[data-theme='dark'] .activity-list article div,
+:root[data-theme='dark'] .activity-card strong {
+  color: var(--text-strong) !important;
+}
+
+:root[data-theme='dark'] .global-search-item__body small,
+:root[data-theme='dark'] .global-search-shortcuts span,
+:root[data-theme='dark'] .composer-hint,
+:root[data-theme='dark'] .suggestion-pill,
+:root[data-theme='dark'] .suggestion-chip-small,
+:root[data-theme='dark'] .erumi-last-updated,
+:root[data-theme='dark'] .attached-file-chip small,
+:root[data-theme='dark'] .msg-attachment-chip small,
+:root[data-theme='dark'] .erumi-metric span,
+:root[data-theme='dark'] .erumi-metric small,
+:root[data-theme='dark'] .erumi-table-card header span,
+:root[data-theme='dark'] .erumi-chart-card header span,
+:root[data-theme='dark'] .erumi-response-meta,
+:root[data-theme='dark'] .groups-workspace .team-chat-group span,
+:root[data-theme='dark'] .group-detail-header span,
+:root[data-theme='dark'] .group-detail-header p,
+:root[data-theme='dark'] .group-member-row span,
+:root[data-theme='dark'] .group-pending-list span,
+:root[data-theme='dark'] .group-poll-item__meta,
+:root[data-theme='dark'] .group-empty-state,
+:root[data-theme='dark'] .group-tool-empty,
+:root[data-theme='dark'] .team-chat-status,
+:root[data-theme='dark'] .import-modal p,
+:root[data-theme='dark'] .import-modal small,
+:root[data-theme='dark'] .poll-card small,
+:root[data-theme='dark'] .message-card small,
+:root[data-theme='dark'] .header-titles p,
+:root[data-theme='dark'] .stat-label,
+:root[data-theme='dark'] .ai-loading,
+:root[data-theme='dark'] .ai-empty,
+:root[data-theme='dark'] .ai-box ul,
+:root[data-theme='dark'] .attention-card span,
+:root[data-theme='dark'] .activity-sparkline span {
+  color: var(--muted) !important;
+}
+
+:root[data-theme='dark'] .data-warning-banner,
+:root[data-theme='dark'] .team-chat-banner {
+  border-color: rgba(245, 158, 11, 0.28) !important;
+  background: rgba(245, 158, 11, 0.14) !important;
+  color: #fbbf24 !important;
+}
+
+:root[data-theme='dark'] .team-chat-banner--error,
+:root[data-theme='dark'] .global-search-chip.is-danger {
+  border-color: rgba(248, 113, 113, 0.28) !important;
+  background: rgba(248, 113, 113, 0.16) !important;
+  color: #fca5a5 !important;
+}
+
+:root[data-theme='dark'] .origin-ai {
+  border-color: rgba(52, 211, 153, 0.3) !important;
+  background: rgba(52, 211, 153, 0.14) !important;
+  color: #6ee7b7 !important;
+}
+
+:root[data-theme='dark'] .bubble-action-btn,
+:root[data-theme='dark'] .erumi-action-button,
+:root[data-theme='dark'] .secondary-button,
+:root[data-theme='dark'] .btn--ghost {
+  border-color: rgba(96, 165, 250, 0.28) !important;
+  background: rgba(59, 130, 246, 0.12) !important;
+  color: var(--primary-strong) !important;
+}
+
+:root[data-theme='dark'] .erumi-table-wrap th {
+  background: rgba(59, 130, 246, 0.12) !important;
+}
+
+:root[data-theme='dark'] .msg-bubble-user,
+:root[data-theme='dark'] .erumi-send-btn.is-ready,
+:root[data-theme='dark'] .group-avatar,
+:root[data-theme='dark'] .group-poll-options label > span,
+:root[data-theme='dark'] .priority-tag {
+  color: #ffffff !important;
 }
