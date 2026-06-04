@@ -1,0 +1,127 @@
+{
+  "project": {
+    "id": "7b934c94-ffd2-46e5-9a5b-4844067681b9",
+    "name": "DH03 QA Import 1780549763237"
+  },
+  "docxPreview": {
+    "headingVisible": true,
+    "text": "Import\n1\n2\n3\n4\nDiscover\nPreview\nConfirm\nDone\nDOCX\nPreview Wiki page import\nPage title\nBlocks detected\n538\nTarget\nDH03 QA Import 1780549763237\nMỤC LỤC TỔNG THỂ DỰ ÁN PROJECTHUB ENTERPRISE\nDa bo qua bang trong DOCX; hien tai parser toi thieu chi chuyen heading va paragraph. Hinh anh trong DOCX da duoc bo qua trong parser toi thieu.\n\nFirst blocks\n\nMỤC LỤC TỔNG THỂ DỰ ÁN PROJECTHUB ENTERPRISE\nCHƯƠNG 1: TỔNG QUAN DỰ ÁN\n1.1. Bối cảnh & Mục tiêu\n1.2. Phạm vi dự án\n- Các tính năng chính\n1.3. Tổng quan về Công nghệ\n- Backend: .NET 10\n- Database: PostgreSQL 16+ & EF Core\nBack\nContinue"
+  },
+  "docxSuccess": {
+    "text": "Import\n1\n2\n3\n4\nDiscover\nPreview\nConfirm\nDone\nImport hoàn tất!\nCHƯƠNG 1: TỔNG QUAN DỰ ÁN\n\nCreated a Wiki page with 538 blocks.\n\nXong ✓"
+  },
+  "zipPreview": {
+    "text": "Import\n1\n2\n3\n4\nDiscover\nPreview\nConfirm\nDone\nZIP Bundle\nPreview bundle import\nTotal entries\n4\nSupported entries\n3\nBo qua unsupported.pdf: dinh dang nay chua duoc ho tro.\n\nSupported child files\n\nDH03 ZIP Markdown\nintro.md - Markdown - 2 blocks\n# DH03 ZIP Markdown\nNội dung smoke import ZIP markdown.\nnotes\nnotes.txt - Plain Text - 2 blocks\nDH03 ZIP text page\nNội dung text smoke.\npage\npage.html - HTML - 2 blocks\n# DH03 ZIP HTML\nNội dung HTML smoke.\nBack\nContinue"
+  },
+  "zipSuccess": {
+    "text": "Import\n1\n2\n3\n4\nDiscover\nPreview\nConfirm\nDone\nImport hoàn tất!\n3 Wiki pages created\n\nqa-import-zip-basic.zip produced 3 supported entries.\n\nDH03 ZIP Markdown\nintro.md - 2 blocks\nnotes\nnotes.txt - 2 blocks\npage\npage.html - 2 blocks\nXong ✓"
+  },
+  "pdfUi": {
+    "modalText": "Import\n1\n2\n3\n4\nDiscover\nMap columns\nConfirm\nDone\nImport\n\nImport data from other apps and files into QALY\n\nDiscover\nCompleted\nImport your content\n\nSupported now: CSV, Excel, JSON, TXT, Markdown, HTML, DOCX, and ZIP bundle import. PDF and EPUB stay in the roadmap until their parsers are ready.\n\nExcel template\nCSV template\n\nImport your content to QALY\n\nDrag and drop CSV, Excel, JSON, text, markdown, or HTML files, or choose a file\n\nAvailable now: CSV, Excel, JSON, TXT, Markdown, HTML, DOCX, and ZIP bundle import. Roadmap: PDF and EPUB after we add parsers.\n\nFile-based imports\n\nImport CSV, Excel, JSON, TXT, Markdown, HTML, DOCX, and ZIP now. PDF and EPUB stay in the roadmap until their parsers are ready.\n\nDocuments now\nMarkdown, text, HTML, and DOCX convert to Wiki pages today.\nTables now\nCSV, Excel, TSV, PSV, and JSON import to tasks today.\nZIP bundles now\nZIP archives can preview supported child files and create multiple Wiki pages today.\n\nTarget project: DH03 QA Import 1780549763237\n\nCancel\nContinue",
+    "toastText": [
+      "Thất bại\n\nDinh dang nay nam trong lo trinh, nhung hien tai chua co parser nen chua the import."
+    ]
+  },
+  "pdfApiPreview": {
+    "status": 400,
+    "body": {
+      "isSuccess": false,
+      "data": null,
+      "error": "Dinh dang document nay chua duoc ho tro. Hien co: .md, .markdown, .txt, .html, .htm, .docx.",
+      "statusCode": 400,
+      "traceId": "00-9fe9927a635fa55ba0d42451d4e3606c-da3d539e40a61714-00"
+    }
+  },
+  "emptyApiPreview": {
+    "status": 400,
+    "body": {
+      "error": "Vui long chon file."
+    }
+  },
+  "unsupportedApiPreview": {
+    "status": 400,
+    "body": {
+      "isSuccess": false,
+      "data": null,
+      "error": "Dinh dang document nay chua duoc ho tro. Hien co: .md, .markdown, .txt, .html, .htm, .docx.",
+      "statusCode": 400,
+      "traceId": "00-b6c9b44a98a47198db325812ffe11a3e-4e1b4d10a40977f9-00"
+    }
+  },
+  "corruptZipApiPreview": {
+    "status": 400,
+    "body": {
+      "isSuccess": false,
+      "data": null,
+      "error": "File ZIP khong hop le.",
+      "statusCode": 400,
+      "traceId": "00-409e25ff563f8c8d6b8141ba50dd1565-d2e84d4b4d2a05b7-00"
+    }
+  },
+  "console": [
+    {
+      "type": "info",
+      "text": "[2026-06-04T05:09:25.058Z] Information: Normalizing '/hubs/notification' to 'http://127.0.0.1:5000/hubs/notification'."
+    },
+    {
+      "type": "info",
+      "text": "[2026-06-04T05:09:25.121Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/notification?id=Q5hmCNg_lIyaH2osCi8DiA."
+    },
+    {
+      "type": "info",
+      "text": "[2026-06-04T05:09:25.138Z] Information: Normalizing '/hubs/notification' to 'http://127.0.0.1:5000/hubs/notification'."
+    },
+    {
+      "type": "info",
+      "text": "[2026-06-04T05:09:25.165Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/notification?id=p515XEfUPKYWson4qiyUVQ."
+    },
+    {
+      "type": "info",
+      "text": "[2026-06-04T05:09:26.026Z] Information: Normalizing '/hubs/notification' to 'http://127.0.0.1:5000/hubs/notification'."
+    },
+    {
+      "type": "info",
+      "text": "[2026-06-04T05:09:26.028Z] Information: Normalizing '/hubs/notification' to 'http://127.0.0.1:5000/hubs/notification'."
+    },
+    {
+      "type": "info",
+      "text": "[2026-06-04T05:09:26.041Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/notification?id=iAd6JDDjzMG9ZrcWOJYrDQ."
+    },
+    {
+      "type": "info",
+      "text": "[2026-06-04T05:09:26.087Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/notification?id=1Kj5bgyTurySWpKeTDUwEQ."
+    },
+    {
+      "type": "info",
+      "text": "[2026-06-04T05:09:59.632Z] Information: Normalizing '/hubs/notification' to 'http://127.0.0.1:5000/hubs/notification'."
+    },
+    {
+      "type": "info",
+      "text": "[2026-06-04T05:09:59.640Z] Information: Normalizing '/hubs/notification' to 'http://127.0.0.1:5000/hubs/notification'."
+    },
+    {
+      "type": "info",
+      "text": "[2026-06-04T05:09:59.646Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/notification?id=51c-jKONOnLNLTAC0q7JeQ."
+    },
+    {
+      "type": "info",
+      "text": "[2026-06-04T05:09:59.659Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/notification?id=xxZlx3V7I3BTwsPJde4svA."
+    },
+    {
+      "type": "info",
+      "text": "[2026-06-04T05:10:30.985Z] Information: Normalizing '/hubs/notification' to 'http://127.0.0.1:5000/hubs/notification'."
+    },
+    {
+      "type": "info",
+      "text": "[2026-06-04T05:10:31.006Z] Information: Normalizing '/hubs/notification' to 'http://127.0.0.1:5000/hubs/notification'."
+    },
+    {
+      "type": "info",
+      "text": "[2026-06-04T05:10:31.009Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/notification?id=9QEJPddPflGNn-xmhElanw."
+    },
+    {
+      "type": "info",
+      "text": "[2026-06-04T05:10:31.024Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/notification?id=ptzbwnKExDEr9hnrw-RzIg."
+    }
+  ]
+}

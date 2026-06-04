@@ -1,0 +1,211 @@
+{
+  "group": {
+    "id": "bfaa868c-7db7-4212-becb-ab73c3025728",
+    "name": "DH03 QA Meeting 1780549745279"
+  },
+  "addedMember": {
+    "email": "nguyenvana@qaly.dev",
+    "status": 200
+  },
+  "activeMeeting": {
+    "status": 200,
+    "id": "b78339d8-d998-4bb4-ad03-b4a9cdf9a8c9",
+    "apiStatus": "Active"
+  },
+  "participantAfterJoin": {
+    "admin": "1",
+    "member": "1"
+  },
+  "outsideApi": {
+    "joinStatus": 403,
+    "joinBody": {
+      "isSuccess": false,
+      "data": null,
+      "error": "Không có quyền truy cập",
+      "statusCode": 403,
+      "traceId": "00-671e6024e1c105f24782529487860469-5b3c32ab89b75d97-00"
+    },
+    "endStatus": 403,
+    "endBody": {
+      "isSuccess": false,
+      "data": null,
+      "error": "Không có quyền truy cập",
+      "statusCode": 403,
+      "traceId": "00-ca3a758cce618b204bc4471ab9a2e2b0-3b6a3af59d15d27e-00"
+    }
+  },
+  "outsideUi": {
+    "url": "http://127.0.0.1:5000/groups/bfaa868c-7db7-4212-becb-ab73c3025728/meeting?meetingId=b78339d8-d998-4bb4-ad03-b4a9cdf9a8c9",
+    "statusText": "Sẵn sàng",
+    "toastText": [
+      "Thất bại\n\nKhông thể tham gia cuộc họp."
+    ]
+  },
+  "screenShare": {
+    "statusText": "Sẵn sàng chia sẻ",
+    "consoleWarnings": [
+      {
+        "type": "warning",
+        "text": "Could not start local media NotSupportedError: Not supported"
+      },
+      {
+        "type": "warning",
+        "text": "Người dùng đã hủy chia sẻ màn hình NotSupportedError: Not supported"
+      }
+    ]
+  },
+  "endResult": {
+    "status": 200,
+    "body": {
+      "isSuccess": true,
+      "data": null,
+      "error": null,
+      "statusCode": 200,
+      "traceId": "00-e713517f5a346a91945eeed561eb5a17-4172815f4212e274-00"
+    }
+  },
+  "console": {
+    "admin": [
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:07.657Z] Information: Normalizing '/hubs/notification' to 'http://127.0.0.1:5000/hubs/notification'."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:07.687Z] Information: Normalizing '/hubs/notification' to 'http://127.0.0.1:5000/hubs/notification'."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:07.706Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/notification?id=p_sKSQV5mx5vmWZrajLUBA."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:07.728Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/notification?id=2U91l8tzKyOOUSz-XJCZLQ."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:08.565Z] Information: Normalizing '/hubs/notification' to 'http://127.0.0.1:5000/hubs/notification'."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:08.566Z] Information: Normalizing '/hubs/notification' to 'http://127.0.0.1:5000/hubs/notification'."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:08.574Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/notification?id=MdvLJIGR1d5P8O-eME9G6Q."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:08.591Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/notification?id=t8IfNcG97cAJ-1a7zAdEnA."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:08.648Z] Information: Normalizing '/hubs/groups' to 'http://127.0.0.1:5000/hubs/groups'."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:08.656Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/groups?id=lQxhgiTwmt5TpcJ5OJ5UNQ."
+      },
+      {
+        "type": "warning",
+        "text": "Could not start local media NotSupportedError: Not supported"
+      },
+      {
+        "type": "warning",
+        "text": "Người dùng đã hủy chia sẻ màn hình NotSupportedError: Not supported"
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:23.050Z] Information: Connection disconnected."
+      }
+    ],
+    "member": [
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:10.885Z] Information: Normalizing '/hubs/notification' to 'http://127.0.0.1:5000/hubs/notification'."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:10.898Z] Information: Normalizing '/hubs/notification' to 'http://127.0.0.1:5000/hubs/notification'."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:10.907Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/notification?id=BwbNKkSPX83zL7nfTKfjyA."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:10.933Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/notification?id=gIfkHKZVg-FAl5e87Lsuug."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:11.667Z] Information: Normalizing '/hubs/notification' to 'http://127.0.0.1:5000/hubs/notification'."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:11.673Z] Information: Normalizing '/hubs/notification' to 'http://127.0.0.1:5000/hubs/notification'."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:11.676Z] Information: Normalizing '/hubs/groups' to 'http://127.0.0.1:5000/hubs/groups'."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:11.711Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/notification?id=-8ssW2HfCJvp_8b_bg1u-Q."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:11.732Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/notification?id=2YWrTmLOZgI-Rz82hKt96Q."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:11.746Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/groups?id=b7bzmNaCPPFiMwN7qbjIBg."
+      },
+      {
+        "type": "warning",
+        "text": "Could not start local media NotSupportedError: Not supported"
+      }
+    ],
+    "outside": [
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:16.740Z] Information: Normalizing '/hubs/notification' to 'http://127.0.0.1:5000/hubs/notification'."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:16.821Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/notification?id=KRqU994r1fVIH8zgqSdsfg."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:16.842Z] Information: Normalizing '/hubs/notification' to 'http://127.0.0.1:5000/hubs/notification'."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:16.853Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/notification?id=fP7W7XB6JBwfVo9WxwQtpQ."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:17.684Z] Information: Normalizing '/hubs/notification' to 'http://127.0.0.1:5000/hubs/notification'."
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 403 (Forbidden)"
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:17.691Z] Information: Normalizing '/hubs/notification' to 'http://127.0.0.1:5000/hubs/notification'."
+      },
+      {
+        "type": "warning",
+        "text": "Could not join meeting session via API ApiError: Không có quyền truy cập\n    at ne (http://127.0.0.1:5000/dist/assets/main.js:2:14690)\n    at async M (http://127.0.0.1:5000/dist/assets/main.js:2:14766)\n    at async J (http://127.0.0.1:5000/dist/assets/GroupMeetingPage.js:1:5060)\n    at async http://127.0.0.1:5000/dist/assets/GroupMeetingPage.js:1:4520"
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:17.716Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/notification?id=9h4foqe72B2E09jlyhQ0NQ."
+      },
+      {
+        "type": "info",
+        "text": "[2026-06-04T05:09:17.721Z] Information: WebSocket connected to ws://127.0.0.1:5000/hubs/notification?id=PrsMWrcqu_6pLCCTZjkkBA."
+      }
+    ]
+  }
+}

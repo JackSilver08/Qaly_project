@@ -1,0 +1,47 @@
+{
+  "status": 200,
+  "body": {
+    "isSuccess": true,
+    "data": [
+      {
+        "id": "be636ab4-cd0c-46e5-a73b-887b935afa11",
+        "title": "page",
+        "visibility": "internal",
+        "authorName": "Quản trị viên hệ thống",
+        "updatedAt": "2026-06-04T05:10:00.5866934+00:00",
+        "contentLength": 37,
+        "content": "[redacted: imported document content omitted from QA evidence]"
+      },
+      {
+        "id": "64389588-2fd0-41a5-a27e-a7592c7d53e4",
+        "title": "notes",
+        "visibility": "internal",
+        "authorName": "Quản trị viên hệ thống",
+        "updatedAt": "2026-06-04T05:10:00.5555904+00:00",
+        "contentLength": 39,
+        "content": "[redacted: imported document content omitted from QA evidence]"
+      },
+      {
+        "id": "c52aa8c4-2f4c-4e0c-856e-fad82b284205",
+        "title": "DH03 ZIP Markdown",
+        "visibility": "internal",
+        "authorName": "Quản trị viên hệ thống",
+        "updatedAt": "2026-06-04T05:10:00.5054456+00:00",
+        "contentLength": 56,
+        "content": "[redacted: imported document content omitted from QA evidence]"
+      },
+      {
+        "id": "266dcc0a-d9a3-4940-b115-15b326063469",
+        "title": "CHƯƠNG 1: TỔNG QUAN DỰ ÁN",
+        "visibility": "internal",
+        "authorName": "Quản trị viên hệ thống",
+        "updatedAt": "2026-06-04T05:09:29.1868127+00:00",
+        "contentLength": 31581,
+        "content": "[redacted: imported document content omitted from QA evidence]"
+      }
+    ],
+    "error": null,
+    "statusCode": 200,
+    "traceId": "00-60d387e75df33295d56bbd763602b622-508c1d790e7741f2-00"
+  }
+}
