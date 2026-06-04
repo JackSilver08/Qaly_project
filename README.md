@@ -41,18 +41,65 @@ To run the full stack:
 docker compose --profile full up -d
 ```
 
-### 2. Run App
+### 2. Configure Environment Variables (Bắt buộc cho AI Cloud)
+
+Các nhà cung cấp AI trong AI Gateway (như OpenAI, Gemini) sẽ đọc API Key từ biến môi trường của hệ thống. Nếu không cấu hình, hệ thống sẽ tự động đi vào chế độ fallback/mock data an toàn (mặc định cho môi trường phát triển local).
+
+Để chạy thật hoặc demo với AI Cloud, hãy set API Key:
+
+- **Windows (PowerShell):**
+  ```powershell
+  $env:OPENAI_API_KEY="your_real_openai_api_key"
+  $env:GEMINI_API_KEY="your_real_gemini_api_key"
+  ```
+- **Windows (Command Prompt):**
+  ```cmd
+  set OPENAI_API_KEY=your_real_openai_api_key
+  set GEMINI_API_KEY=your_real_gemini_api_key
+  ```
+- **Linux/macOS:**
+  ```bash
+  export OPENAI_API_KEY="your_real_openai_api_key"
+  export GEMINI_API_KEY="your_real_gemini_api_key"
+  ```
+
+### 3. Run Database Migrations & Seed
+Nếu chạy cơ sở dữ liệu Microsoft SQL Server thật bằng Docker, hãy áp dụng các migrations để tạo bảng dữ liệu:
+```powershell
+dotnet ef database update --project src/Qaly.Infrastructure --startup-project src/Qaly.Web
+```
+
+### 4. Build Frontend & Run App
+Frontend của dự án đã được bundle sẵn tại `src/Qaly.Web/wwwroot/dist`. Tuy nhiên, nếu bạn có thay đổi code giao diện Vue.js:
+```powershell
+# Cài đặt dependency & build UI
+npm ci
+npm run build
+
+# Chạy kiểm tra kiểu TypeScript (Typecheck)
+npm run typecheck
+```
+
+Chạy Server Backend:
 ```powershell
 dotnet restore
 dotnet run --project src/Qaly.Web
 ```
 
-The frontend bundle is checked in under `src/Qaly.Web/wwwroot/dist`, so a fresh clone can run without a manual `npm run build`.
+### 5. Running Tests
+Để kiểm thử hệ thống và xác thực hạ tầng AI Gateway:
+```powershell
+# Chạy tất cả tests trong Solution
+dotnet test Qaly_project.slnx
 
-### 3. Open Browser
+# Chạy riêng các tests của AI Gateway và Provider Routing
+dotnet test tests/Qaly.UnitTests/Qaly.UnitTests.csproj --filter "FullyQualifiedName~AiGateway|FullyQualifiedName~AiProvider"
+```
+
+### 6. Open Browser
 - **App:** http://localhost:5000
-- **Seq Logs:** http://localhost:8081
-- **MailHog:** http://localhost:8025
+- **Seq Logs (Logging tập trung):** http://localhost:8081
+- **MailHog (Bắt email test):** http://localhost:8025
 
 ## 📁 Project Structure
 

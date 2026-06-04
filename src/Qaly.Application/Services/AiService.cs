@@ -13,7 +13,7 @@ namespace Qaly.Application.Services;
 
 public partial class AiService : IAiService
 {
-    private readonly IChatClient _chatClient;
+    private readonly IAiGateway _aiGateway;
     private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddingGenerator;
     private readonly IVectorStorageService _vectorStorage;
     private readonly IRepository<Project> _projectRepo;
@@ -34,7 +34,7 @@ public partial class AiService : IAiService
     private static readonly char[] KeywordSplitSeparators = new[] { ' ', ',', '.', ';', ':', '/', '\\', '-', '_', '(', ')', '[', ']', '{', '}', '\n', '\r', '\t' };
 
     public AiService(
-        IChatClient chatClient,
+        IAiGateway aiGateway,
         IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
         IVectorStorageService vectorStorage,
         IRepository<Project> projectRepo,
@@ -44,7 +44,7 @@ public partial class AiService : IAiService
         ILogger<AiService> logger,
         AiTools aiTools)
     {
-        _chatClient = chatClient;
+        _aiGateway = aiGateway;
 
         _embeddingGenerator = embeddingGenerator;
         _vectorStorage = vectorStorage;
@@ -65,8 +65,14 @@ Mô tả: {taskDescription}
 
 Trả lời theo định dạng: [Priority] - [Lý do]";
 
-        var response = await _chatClient.CompleteAsync(prompt);
-        return response.Message.Text ?? "Medium - Không thể xác định";
+        var response = await _aiGateway.ExecuteAsync(new AiRequest
+        {
+            JobType = "SuggestTaskPriority",
+            Prompt = prompt,
+            UserId = _currentUserService.UserId,
+            UseCache = true
+        });
+        return response.Content ?? "Medium - Không thể xác định";
     }
 
     public async Task<string> GenerateProjectSummaryAsync(Guid projectId)
@@ -81,8 +87,15 @@ Trả lời theo định dạng: [Priority] - [Lý do]";
         if (project == null) return "Không tìm thấy dự án.";
 
         var prompt = $"Hãy tóm tắt tình trạng hiện tại của dự án '{project.Name}'. Mô tả: {project.Description}";
-        var response = await _chatClient.CompleteAsync(prompt);
-        return response.Message.Text ?? "Không thể tạo tóm tắt.";
+        var response = await _aiGateway.ExecuteAsync(new AiRequest
+        {
+            JobType = "GenerateProjectSummary",
+            Prompt = prompt,
+            ProjectId = projectId,
+            UserId = _currentUserService.UserId,
+            UseCache = true
+        });
+        return response.Content ?? "Không thể tạo tóm tắt.";
     }
 
     public async Task<string> AnalyzeProjectRisksAsync(Guid projectId)
@@ -98,8 +111,15 @@ Trả lời theo định dạng: [Priority] - [Lý do]";
 
         var overdueCount = project.Tasks.Count(IsTaskOverdue);
         var prompt = $"Phân tích rủi ro cho dự án '{project.Name}'. Hiện có {overdueCount} task quá hạn.";
-        var response = await _chatClient.CompleteAsync(prompt);
-        return response.Message.Text ?? "Không thể phân tích rủi ro.";
+        var response = await _aiGateway.ExecuteAsync(new AiRequest
+        {
+            JobType = "AnalyzeProjectRisks",
+            Prompt = prompt,
+            ProjectId = projectId,
+            UserId = _currentUserService.UserId,
+            UseCache = true
+        });
+        return response.Content ?? "Không thể phân tích rủi ro.";
     }
 
     public async Task<string> SuggestTaskAssignmentAsync(Guid taskId, Guid projectId)
@@ -142,8 +162,15 @@ Yêu cầu:
 1. Đề xuất 1-2 người phù hợp nhất (ưu tiên người đang rảnh hoặc có vai trò phù hợp).
 2. Giải thích lý do chọn họ dựa trên thông tin trên.
 3. Trả lời ngắn gọn, chuyên nghiệp bằng Tiếng Việt.";
-        var response = await _chatClient.CompleteAsync(prompt);
-        return response.Message.Text ?? "Không thể đưa ra đề xuất.";
+        var response = await _aiGateway.ExecuteAsync(new AiRequest
+        {
+            JobType = "SuggestTaskAssignment",
+            Prompt = prompt,
+            ProjectId = projectId,
+            UserId = _currentUserService.UserId,
+            UseCache = true
+        });
+        return response.Content ?? "Không thể đưa ra đề xuất.";
     }
 
     public async Task<Result<TaskAssignmentInsightDto>> GetTaskAssignmentInsightAsync(Guid taskId, Guid projectId, CancellationToken ct = default)
@@ -320,8 +347,14 @@ Mô tả: {taskDescription}
 
 Trả lời dưới dạng danh sách gạch đầu dòng.";
 
-        var response = await _chatClient.CompleteAsync(prompt);
-        var text = response.Message.Text ?? "";
+        var response = await _aiGateway.ExecuteAsync(new AiRequest
+        {
+            JobType = "GenerateSubtasks",
+            Prompt = prompt,
+            UserId = _currentUserService.UserId,
+            UseCache = true
+        });
+        var text = response.Content ?? "";
         return text.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                    .Select(s => s.TrimStart('-', ' ', '1', '2', '3', '.', '*'))
                    .Where(s => !string.IsNullOrWhiteSpace(s))
@@ -410,13 +443,19 @@ Thời gian hiện tại: {DateTime.Now.ToString("dd/MM/yyyy HH:mm", System.Glob
 
         chatHistory.Add(new ChatMessage(ChatRole.User, userMessage));
 
-        var options = new ChatOptions
+        var request = new AiRequest
         {
-            Tools = GetTools()
+            JobType = "Chat",
+            Prompt = userMessage,
+            SystemPrompt = systemPrompt,
+            ProjectId = projectId,
+            UserId = _currentUserService.UserId,
+            History = history,
+            UseCache = false
         };
 
-        var response = await _chatClient.CompleteAsync(chatHistory, options);
-        return response.Message.Text ?? "Xin lỗi, tôi gặp chút trục trặc khi kết nối với bộ não AI. Vui lòng thử lại sau giây lát.";
+        var response = await _aiGateway.ExecuteAsync(request);
+        return response.Content;
     }
 
     public async IAsyncEnumerable<string> ChatStreamingAsync(string userMessage, Guid? projectId = null, string mode = "erumi", IList<AiChatMessageDto>? history = null)
@@ -493,16 +532,22 @@ Thời gian: {DateTime.Now.ToString("dd/MM/yyyy HH:mm", System.Globalization.Cul
 
         chatHistory.Add(new ChatMessage(ChatRole.User, userMessage));
 
-        var options = new ChatOptions
+        var request = new AiRequest
         {
-            Tools = GetTools()
+            JobType = "ChatStream",
+            Prompt = userMessage,
+            SystemPrompt = systemPrompt,
+            ProjectId = projectId,
+            UserId = _currentUserService.UserId,
+            History = history,
+            UseCache = false
         };
 
-        IAsyncEnumerable<StreamingChatCompletionUpdate>? streamingResponse = null;
+        AiResponse? response = null;
         string? connectionError = null;
         try
         {
-            streamingResponse = _chatClient.CompleteStreamingAsync(chatHistory, options);
+            response = await _aiGateway.ExecuteAsync(request);
         }
         catch (Exception ex)
         {
@@ -516,31 +561,14 @@ Thời gian: {DateTime.Now.ToString("dd/MM/yyyy HH:mm", System.Globalization.Cul
             yield break;
         }
 
-        await using var enumerator = streamingResponse!.GetAsyncEnumerator();
-        while (true)
+        if (response != null && !string.IsNullOrEmpty(response.Content))
         {
-            StreamingChatCompletionUpdate? update = null;
-            string? streamError = null;
-            try
+            var content = response.Content;
+            var words = content.Split(' ');
+            for (int i = 0; i < words.Length; i++)
             {
-                if (!await enumerator.MoveNextAsync()) break;
-                update = enumerator.Current;
-            }
-            catch (Exception ex)
-            {
-                LogAiStreamFailed(_logger, ex);
-                streamError = "\n\n*[Kết nối AI bị gián đoạn giữa chừng]*";
-            }
-
-            if (streamError != null)
-            {
-                yield return streamError;
-                break;
-            }
-
-            if (update?.Text != null)
-            {
-                yield return update.Text;
+                yield return words[i] + (i == words.Length - 1 ? "" : " ");
+                await Task.Delay(10);
             }
         }
     }
@@ -552,8 +580,14 @@ Chỉ trả về danh sách các câu truy vấn, mỗi câu một dòng.
 
 Tin nhắn: {userMessage}";
 
-        var response = await _chatClient.CompleteAsync(prompt);
-        var text = response.Message.Text ?? userMessage;
+        var response = await _aiGateway.ExecuteAsync(new AiRequest
+        {
+            JobType = "RefineSearchQueries",
+            Prompt = prompt,
+            UserId = _currentUserService.UserId,
+            UseCache = true
+        });
+        var text = response.Content ?? userMessage;
         return text.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                    .Select(s => s.Trim().TrimStart('-'))
                    .Take(2)
@@ -613,8 +647,15 @@ Yêu cầu:
 2. Đề xuất hành động cụ thể để cải thiện dự án.
 3. Trả lời bằng Tiếng Việt, súc tích và mang tính hành động cao.";
 
-        var response = await _chatClient.CompleteAsync(prompt);
-        return response.Message.Text ?? "Không thể tạo nhận xét phân tích.";
+        var response = await _aiGateway.ExecuteAsync(new AiRequest
+        {
+            JobType = "GenerateAnalyticsInsights",
+            Prompt = prompt,
+            ProjectId = projectId,
+            UserId = _currentUserService.UserId,
+            UseCache = true
+        });
+        return response.Content ?? "Không thể tạo nhận xét phân tích.";
     }
 
     private async Task<bool> CanAccessProjectAsync(Guid projectId)
@@ -690,8 +731,14 @@ Chỉ xuất ra đúng mảng JSON, tuyệt đối không giải thích.";
 
         try
         {
-            var response = await _chatClient.CompleteAsync(prompt);
-            var text = response.Message.Text ?? "[]";
+            var response = await _aiGateway.ExecuteAsync(new AiRequest
+            {
+                JobType = "CategorizeTasksBatch",
+                Prompt = prompt,
+                UserId = _currentUserService.UserId,
+                UseCache = true
+            });
+            var text = response.Content ?? "[]";
             
             // Extract json array if the AI enclosed it in markdown block ```json ... ```
             var startIdx = text.IndexOf('[');

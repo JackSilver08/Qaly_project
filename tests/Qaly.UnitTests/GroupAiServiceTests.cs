@@ -19,7 +19,8 @@ public class GroupAiServiceTests : IDisposable
     private readonly GenericRepository<GroupMessage> _messageRepo;
     private readonly GenericRepository<GroupMeetingSession> _meetingSessionRepo;
     private readonly Mock<IGroupsService> _groupsService = new();
-    private readonly Mock<IChatClient> _chatClient = new();
+    private readonly Mock<IAiGateway> _aiGateway = new();
+    private readonly Mock<ICurrentUserService> _currentUserService = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IAuditLogService> _auditLogService = new();
 
@@ -63,7 +64,7 @@ public class GroupAiServiceTests : IDisposable
         result.IsSuccess.Should().BeTrue(result.Error);
         result.Data!.Items.Should().BeEmpty();
         result.Data.Warnings.Should().ContainSingle().Which.Should().Contain("No group chat");
-        _chatClient.VerifyNoOtherCalls();
+        _aiGateway.VerifyNoOtherCalls();
     }
 
     [Fact]
@@ -196,12 +197,11 @@ public class GroupAiServiceTests : IDisposable
         await _context.SaveChangesAsync();
 
         var jsonResponse = "{\"summary\": \"Alice and team discussed scope\", \"keyDecisions\": [\"Scope locked\"], \"unresolvedQuestions\": [\"Who is PM?\"], \"messageSources\": [\"Alice: Let's lock the scope\"]}";
-        _chatClient
-            .Setup(client => client.CompleteAsync(
-                It.IsAny<IList<ChatMessage>>(),
-                It.IsAny<ChatOptions>(),
+        _aiGateway
+            .Setup(gateway => gateway.ExecuteAsync(
+                It.IsAny<AiRequest>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ChatCompletion(new ChatMessage(ChatRole.Assistant, jsonResponse)));
+            .ReturnsAsync(new AiResponse { Content = jsonResponse });
 
         var result = await CreateService().SummarizeGroupDiscussionAsync(groupId, new GroupAiSummaryRequest());
 
@@ -237,12 +237,11 @@ public class GroupAiServiceTests : IDisposable
         await _context.SaveChangesAsync();
 
         var jsonResponse = "{\"draftProjectName\": \"New Project\", \"draftProjectDescription\": \"A draft description\", \"draftTasks\": [{\"title\": \"Draft Task 1\", \"description\": \"Desc\", \"priority\": \"P0\", \"estimateDays\": 4, \"suggestedOwnerName\": \"Bob\"}]}";
-        _chatClient
-            .Setup(client => client.CompleteAsync(
-                It.IsAny<IList<ChatMessage>>(),
-                It.IsAny<ChatOptions>(),
+        _aiGateway
+            .Setup(gateway => gateway.ExecuteAsync(
+                It.IsAny<AiRequest>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ChatCompletion(new ChatMessage(ChatRole.Assistant, jsonResponse)));
+            .ReturnsAsync(new AiResponse { Content = jsonResponse });
 
         var result = await CreateService().GenerateDraftProjectPayloadAsync(groupId, new GroupAiDraftProjectRequest());
 
@@ -258,13 +257,14 @@ public class GroupAiServiceTests : IDisposable
 
     private GroupAiService CreateService()
         => new(
-            _chatClient.Object,
+            _aiGateway.Object,
             _groupsService.Object,
             _messageRepo,
             _meetingSessionRepo,
             _unitOfWork.Object,
             _auditLogService.Object,
-            NullLogger<GroupAiService>.Instance);
+            NullLogger<GroupAiService>.Instance,
+            _currentUserService.Object);
 
     public void Dispose()
     {

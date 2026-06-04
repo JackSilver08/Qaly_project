@@ -59,7 +59,7 @@ public class AiSecurityGuardTests
 
     private static AiService CreateAiService()
     {
-        var chatClient = new Mock<IChatClient>();
+        var aiGateway = new Mock<IAiGateway>();
         var embeddingGenerator = new Mock<IEmbeddingGenerator<string, Embedding<float>>>();
         var vectorStorage = new Mock<IVectorStorageService>();
         var projectRepo = new Mock<IRepository<Project>>();
@@ -69,7 +69,7 @@ public class AiSecurityGuardTests
         var aiTools = CreateAiTools();
 
         return new AiService(
-            chatClient.Object,
+            aiGateway.Object,
             embeddingGenerator.Object,
             vectorStorage.Object,
             projectRepo.Object,

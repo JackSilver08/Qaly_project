@@ -10,6 +10,8 @@ using Qaly.Infrastructure.Data;
 using Qaly.Infrastructure.Data.Interceptors;
 using Qaly.Infrastructure.Data.Repositories;
 using Qaly.Infrastructure.Services;
+using Qaly.Infrastructure.Services.AI;
+using Qaly.Infrastructure.Services.AI.Providers;
 
 namespace Qaly.Infrastructure;
 
@@ -65,7 +67,25 @@ public static class DependencyInjection
         // AI Core Services
         services.AddScoped<IAiCostService, Qaly.Infrastructure.Services.AI.AiCostService>();
         services.AddScoped<IAiComplianceService, Qaly.Infrastructure.Services.AI.AiComplianceService>();
-        services.AddScoped<IAiGateway, Qaly.Infrastructure.Services.AI.AiGateway>();
+        
+        // AI Providers & Routing Infrastructure
+        services.AddTransient<IAiProvider, Qaly.Infrastructure.Services.AI.Providers.OllamaProvider>();
+        services.AddTransient<IAiProvider, Qaly.Infrastructure.Services.AI.Providers.OpenAIProvider>();
+        services.AddTransient<IAiProvider, Qaly.Infrastructure.Services.AI.Providers.GeminiProvider>();
+        services.AddScoped<AiProviderFactory>();
+        services.AddSingleton<AiOutputValidator>();
+
+        services.AddScoped<IAiGateway>(sp => new Qaly.Infrastructure.Services.AI.AiGateway(
+            sp.GetRequiredService<IAiCostService>(),
+            sp.GetRequiredService<IAiComplianceService>(),
+            sp.GetRequiredService<QalyDbContext>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Qaly.Infrastructure.Services.AI.AiGateway>>(),
+            sp.GetRequiredService<IConfiguration>(),
+            sp.GetRequiredService<AiProviderFactory>(),
+            sp.GetRequiredService<AiOutputValidator>(),
+            sp.GetService<IVectorStorageService>(),
+            sp.GetService<IEmbeddingGenerator<string, Embedding<float>>>()
+        ));
         
         services.AddHttpClient("WebhookClient");
 

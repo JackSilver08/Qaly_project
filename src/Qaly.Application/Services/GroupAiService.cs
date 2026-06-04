@@ -30,30 +30,33 @@ public class GroupAiService : IGroupAiService
             LogLevel.Error,
             new EventId(3, nameof(DraftProjectPayloadGenerationFailed)),
             "Failed to generate draft project payload for group {GroupId}");
-    private readonly IChatClient _chatClient;
+    private readonly IAiGateway _aiGateway;
     private readonly IGroupsService _groupsService;
     private readonly IRepository<GroupMessage> _messageRepo;
     private readonly IRepository<GroupMeetingSession> _meetingSessionRepo;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogService _auditLogService;
     private readonly ILogger<GroupAiService> _logger;
+    private readonly ICurrentUserService _currentUserService;
 
     public GroupAiService(
-        IChatClient chatClient,
+        IAiGateway aiGateway,
         IGroupsService groupsService,
         IRepository<GroupMessage> messageRepo,
         IRepository<GroupMeetingSession> meetingSessionRepo,
         IUnitOfWork unitOfWork,
         IAuditLogService auditLogService,
-        ILogger<GroupAiService> logger)
+        ILogger<GroupAiService> logger,
+        ICurrentUserService currentUserService)
     {
-        _chatClient = chatClient;
+        _aiGateway = aiGateway;
         _groupsService = groupsService;
         _messageRepo = messageRepo;
         _meetingSessionRepo = meetingSessionRepo;
         _unitOfWork = unitOfWork;
         _auditLogService = auditLogService;
         _logger = logger;
+        _currentUserService = currentUserService;
     }
 
     public async Task<Result<GroupAiActionItemsResponseDto>> ExtractActionItemsAsync(
@@ -79,10 +82,14 @@ public class GroupAiService : IGroupAiService
 
         try
         {
-            var response = await _chatClient.CompleteAsync(
-                BuildActionItemsPrompt(context.Text),
-                cancellationToken: ct);
-            var text = response.Message.Text ?? string.Empty;
+            var response = await _aiGateway.ExecuteAsync(new AiRequest
+            {
+                JobType = "ActionItemsExtraction",
+                Prompt = BuildActionItemsPrompt(context.Text),
+                UserId = _currentUserService.UserId,
+                UseCache = true
+            }, ct);
+            var text = response.Content;
             var items = ParseActionItems(text);
             var warnings = context.Warnings.ToList();
 
@@ -426,10 +433,14 @@ Source:
 
         try
         {
-            var response = await _chatClient.CompleteAsync(
-                BuildSummaryPrompt(contextText),
-                cancellationToken: ct);
-            var text = response.Message.Text ?? string.Empty;
+            var response = await _aiGateway.ExecuteAsync(new AiRequest
+            {
+                JobType = "DiscussionSummary",
+                Prompt = BuildSummaryPrompt(contextText),
+                UserId = _currentUserService.UserId,
+                UseCache = true
+            }, ct);
+            var text = response.Content;
             var json = ExtractJson(text);
 
             if (string.IsNullOrWhiteSpace(json))
@@ -496,10 +507,15 @@ Source:
 
         try
         {
-            var response = await _chatClient.CompleteAsync(
-                BuildDraftProjectPrompt(contextText, request.ExtraInstructions),
-                cancellationToken: ct);
-            var text = response.Message.Text ?? string.Empty;
+            var response = await _aiGateway.ExecuteAsync(new AiRequest
+            {
+                JobType = "DraftProjectPayload",
+                Prompt = BuildDraftProjectPrompt(contextText, request.ExtraInstructions),
+                UserId = _currentUserService.UserId,
+                ExpectedSchemaId = "DraftProject",
+                UseCache = true
+            }, ct);
+            var text = response.Content;
             var json = ExtractJson(text);
 
             if (string.IsNullOrWhiteSpace(json))

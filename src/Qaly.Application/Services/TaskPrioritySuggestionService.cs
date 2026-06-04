@@ -1,15 +1,17 @@
-using Microsoft.Extensions.AI;
 using Qaly.Application.Common.Interfaces;
+using Qaly.Domain.Interfaces;
 
 namespace Qaly.Application.Services;
 
 public sealed class TaskPrioritySuggestionService : ITaskPrioritySuggestionService
 {
-    private readonly IChatClient _chatClient;
+    private readonly IAiGateway _aiGateway;
+    private readonly ICurrentUserService _currentUserService;
 
-    public TaskPrioritySuggestionService(IChatClient chatClient)
+    public TaskPrioritySuggestionService(IAiGateway aiGateway, ICurrentUserService currentUserService)
     {
-        _chatClient = chatClient;
+        _aiGateway = aiGateway;
+        _currentUserService = currentUserService;
     }
 
     public async Task<string> SuggestAsync(string taskTitle, string taskDescription, string projectContext)
@@ -23,8 +25,14 @@ Mô tả: {taskDescription}
 
 Trả lời theo định dạng: [Priority] - [Lý do]";
 
-            var response = await _chatClient.CompleteAsync(prompt);
-            return response.Message.Text ?? "Medium - Không thể xác định";
+            var response = await _aiGateway.ExecuteAsync(new AiRequest
+            {
+                JobType = "TaskPrioritySuggestion",
+                Prompt = prompt,
+                UserId = _currentUserService.UserId,
+                UseCache = true
+            });
+            return response.Content ?? "Medium - Không thể xác định";
         }
         catch
         {
