@@ -73,6 +73,14 @@ interface GroupMessageDto {
   createdAt: string;
 }
 
+interface GroupFileUploadDto {
+  name: string;
+  url: string;
+  sizeLabel: string;
+  kind: "file" | "image";
+  contentType?: string;
+}
+
 const route = useRoute();
 const router = useRouter();
 const { currentUser } = useDashboardContext();
@@ -277,6 +285,14 @@ async function connectRealtime() {
   hubConnection.on("groupMessageReceived", (message: GroupMessageDto) => {
     upsertMessage(toMessageModel(message));
   });
+  hubConnection.on("meetingStarted", async (payload: { groupId?: string }) => {
+    const groupId = payload?.groupId;
+    if (groupId && groupId === activeGroupId.value) await loadMessages(groupId);
+  });
+  hubConnection.on("meetingEnded", async (payload: { groupId?: string }) => {
+    const groupId = payload?.groupId;
+    if (groupId && groupId === activeGroupId.value) await loadMessages(groupId);
+  });
 
   try {
     await hubConnection.start();
@@ -379,11 +395,15 @@ async function startMeeting() {
   if (!activeGroupId.value) return;
 
   try {
-    await apiResult(`/api/groups/${activeGroupId.value}/meetings/start`, {
+    const meeting = await apiResult<any>(`/api/groups/${activeGroupId.value}/meetings/start`, {
       method: "POST",
     });
     showSuccess("Đã tạo phiên meeting cho nhóm");
-    await router.push({ name: "group-meeting", params: { groupId: activeGroupId.value } });
+    await router.push({
+      name: "group-meeting",
+      params: { groupId: activeGroupId.value },
+      query: { meetingId: meeting?.id ?? meeting?.Id },
+    });
   } catch (error) {
     showError(errorMessage(error, "Không thể bắt đầu meeting."));
   }
@@ -461,10 +481,11 @@ async function sendMessage(payload: {
 }) {
   if (!activeGroupId.value) return;
 
-  const content = serializeMessagePayload(payload);
-  const messageType = payload.poll ? "Poll" : "Text";
-
   try {
+    const attachments = await uploadPendingAttachments(payload.attachments);
+    const content = serializeMessagePayload({ ...payload, attachments });
+    const messageType = payload.poll ? "Poll" : "Text";
+
     if (hubConnection?.state === HubConnectionState.Connected) {
       await hubConnection.invoke("SendMessage", activeGroupId.value, content, messageType);
       return;
@@ -481,6 +502,38 @@ async function sendMessage(payload: {
   } catch (error) {
     showError(errorMessage(error, "Không thể gửi tin nhắn."));
   }
+}
+
+async function uploadPendingAttachments(attachments: TeamChatAttachment[]) {
+  if (!activeGroupId.value || attachments.length === 0) return attachments;
+
+  const uploaded: TeamChatAttachment[] = [];
+  for (const attachment of attachments) {
+    if (!attachment.rawFile) {
+      uploaded.push(attachment);
+      continue;
+    }
+
+    const form = new FormData();
+    form.append("file", attachment.rawFile, attachment.name);
+    const result = await apiResult<GroupFileUploadDto>(
+      `/api/groups/${activeGroupId.value}/files`,
+      {
+        method: "POST",
+        body: form,
+      },
+    );
+
+    uploaded.push({
+      name: result.name,
+      url: result.url,
+      sizeLabel: result.sizeLabel,
+      kind: result.kind,
+      contentType: result.contentType,
+    });
+  }
+
+  return uploaded;
 }
 
 function togglePin(messageId: string) {
@@ -544,7 +597,11 @@ function toMessageModel(message: GroupMessageDto): TeamChatMessage {
   if (message.messageType === "Poll" || meeting) {
     cleanText = "";
   } else if (attachments.length > 0) {
-    cleanText = cleanText.replace(/\[attachments\][^\n]*/i, "").trim();
+    cleanText = cleanText
+      .split("\n")
+      .filter((line) => !/^\[attachments?\]/i.test(line.trim()))
+      .join("\n")
+      .trim();
   }
 
   return {
@@ -576,7 +633,16 @@ function serializeMessagePayload(payload: {
   }
 
   if (payload.attachments.length > 0) {
-    lines.push(`[attachments] ${payload.attachments.map((file) => file.name).join(", ")}`);
+    payload.attachments.forEach((file) => {
+      const params = new URLSearchParams({
+        name: file.name,
+        url: file.url ?? "",
+        size: file.sizeLabel,
+        kind: file.kind ?? "file",
+      });
+      if (file.contentType) params.set("contentType", file.contentType);
+      lines.push(`[attachment] ${params.toString()}`);
+    });
   }
 
   return lines.filter(Boolean).join("\n");
@@ -604,7 +670,7 @@ function parseMeeting(message: GroupMessageDto): TeamChatMeeting | undefined {
   if (message.messageType === "Poll" || !message.content.includes("[meeting")) return undefined;
 
   const meetingId = message.content.match(/\[meetingid\]\s*([^\s]+)/i)?.[1] ?? message.id;
-  const joinUrl = message.content.match(/\[joinurl\]\s*(https?:\/\/\S+)/i)?.[1];
+  const joinUrl = message.content.match(/\[joinurl\]\s*(\S+)/i)?.[1];
   const ended = /\[meeting-ended\]/i.test(message.content);
   const started = /\[meeting-started\]/i.test(message.content);
 
@@ -621,6 +687,30 @@ function parseMeeting(message: GroupMessageDto): TeamChatMeeting | undefined {
 }
 
 function parseAttachments(message: GroupMessageDto): TeamChatAttachment[] {
+  const attachmentLines = message.content
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.toLowerCase().startsWith("[attachment] "));
+
+  if (attachmentLines.length > 0) {
+    return attachmentLines
+      .map((line) => {
+        const raw = line.replace(/^\[attachment\]\s*/i, "");
+        const params = new URLSearchParams(raw);
+        const name = params.get("name")?.trim();
+        if (!name) return null;
+        const kind = params.get("kind") === "image" ? "image" : "file";
+        return {
+          name,
+          url: params.get("url") || undefined,
+          sizeLabel: params.get("size") || "Đã tải lên",
+          kind,
+          contentType: params.get("contentType") || undefined,
+        } satisfies TeamChatAttachment;
+      })
+      .filter((item): item is TeamChatAttachment => Boolean(item));
+  }
+
   const match = message.content.match(/\[attachments\]\s*(.+)/i);
   if (!match) return [];
   

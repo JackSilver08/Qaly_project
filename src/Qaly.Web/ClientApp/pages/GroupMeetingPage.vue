@@ -18,6 +18,19 @@ import {
   HubConnectionState,
   type HubConnection,
 } from "@microsoft/signalr";
+import {
+  ConnectionState,
+  createLocalTracks,
+  Room,
+  RoomEvent,
+  Track,
+  type LocalAudioTrack,
+  type LocalTrack,
+  type LocalVideoTrack,
+  type RemoteParticipant,
+  type RemoteTrack,
+  type RemoteTrackPublication,
+} from "livekit-client";
 import ScreenSharePanel from "../components/meeting/ScreenSharePanel.vue";
 import MeetingControls from "../components/meeting/MeetingControls.vue";
 import { apiResult } from "../utils/api-client";
@@ -33,23 +46,59 @@ const isStarting = ref(false);
 const meetingId = ref<string | null>((route.query.meetingId as string | undefined) ?? null);
 const joinUrl = ref<string | null>(null);
 const roomName = ref<string | null>(null);
+const liveKitUrl = ref<string | null>(null);
+const liveKitToken = ref<string | null>(null);
+const liveKitTokenExpiresAt = ref<string | null>(null);
 const micMuted = ref(false);
 const cameraMuted = ref(false);
+const meetingError = ref<string | null>(null);
+const meetingConnectionState = ref<ConnectionState>(ConnectionState.Disconnected);
 const theme = ref<"dark" | "light">(
   localStorage.getItem("qaly-meeting-theme") === "light" ? "light" : "dark",
 );
 const localVideoRef = ref<HTMLVideoElement | null>(null);
 const screenShareRef = ref<InstanceType<typeof ScreenSharePanel> | null>(null);
 const participants = ref<{ connectionId: string; lastSeen: string }[]>([]);
+type RemoteTile = {
+  identity: string;
+  name: string;
+  initials: string;
+  cameraOn: boolean;
+  micOn: boolean;
+  lastSeen: string;
+  videoTrack: RemoteTrack | null;
+  audioTrack: RemoteTrack | null;
+};
+const remoteTiles = ref<RemoteTile[]>([]);
 let hubConnection: HubConnection | null = null;
-let localStream: MediaStream | null = null;
+let liveKitRoom: Room | null = null;
+let localAudioTrack: LocalAudioTrack | null = null;
+let localVideoTrack: LocalVideoTrack | null = null;
+const remoteVideoEls = new Map<string, HTMLVideoElement>();
+const remoteAudioEls = new Map<string, HTMLAudioElement>();
 
 const meetingShortCode = computed(() =>
   groupId ? groupId.slice(0, 8).toUpperCase() : "QALY-MEET",
 );
 
-const participantCount = computed(() => participants.value.length + (active.value ? 1 : 0));
+const participantCount = computed(() => remoteTiles.value.length + (active.value ? 1 : 0));
+const stageTileCount = computed(() => remoteTiles.value.length + 1);
 const isLightTheme = computed(() => theme.value === "light");
+const meetingConnectionLabel = computed(() => {
+  if (meetingError.value) return "Cần kiểm tra kết nối";
+
+  switch (meetingConnectionState.value) {
+    case ConnectionState.Connected:
+      return "LiveKit đã kết nối";
+    case ConnectionState.Connecting:
+      return "Đang kết nối LiveKit";
+    case ConnectionState.Reconnecting:
+    case ConnectionState.SignalReconnecting:
+      return "Đang nối lại LiveKit";
+    default:
+      return active.value ? "LiveKit chưa kết nối" : "Sẵn sàng";
+  }
+});
 
 onMounted(async () => {
   if (meetingId.value) {
@@ -64,9 +113,7 @@ async function startMeeting() {
     const dto = await apiResult<any>(`/api/groups/${groupId}/meetings/start`, {
       method: "POST",
     });
-    meetingId.value = dto?.id ?? dto?.Id ?? null;
-    joinUrl.value = dto?.joinUrl ?? dto?.JoinUrl ?? null;
-    roomName.value = dto?.roomId ?? dto?.RoomId ?? `qaly-${groupId}`;
+    applyMeetingDto(dto);
   } catch (e) {
     console.warn("Could not start meeting session via API", e);
     showError("Không thể tạo phiên họp.");
@@ -79,7 +126,7 @@ async function startMeeting() {
   active.value = true;
   await nextTick();
   await connectRealtime();
-  await startLocalMedia();
+  await connectLiveKit();
 }
 
 async function joinExistingMeeting(id: string) {
@@ -89,13 +136,11 @@ async function joinExistingMeeting(id: string) {
     const dto = await apiResult<any>(`/api/groups/${groupId}/meetings/${id}/join`, {
       method: "POST",
     });
-    meetingId.value = dto?.id ?? dto?.Id ?? id;
-    joinUrl.value = dto?.joinUrl ?? dto?.JoinUrl ?? null;
-    roomName.value = dto?.roomId ?? dto?.RoomId ?? `qaly-${groupId}`;
+    applyMeetingDto(dto, id);
     active.value = true;
     await nextTick();
     await connectRealtime();
-    await startLocalMedia();
+    await connectLiveKit();
   } catch (e) {
     console.warn("Could not join meeting session via API", e);
     showError("Không thể tham gia cuộc họp.");
@@ -155,16 +200,24 @@ async function endMeeting() {
 
   active.value = false;
   participants.value = [];
+  remoteTiles.value = [];
   meetingId.value = null;
   joinUrl.value = null;
   roomName.value = null;
+  liveKitUrl.value = null;
+  liveKitToken.value = null;
+  liveKitTokenExpiresAt.value = null;
+  meetingError.value = null;
+  meetingConnectionState.value = ConnectionState.Disconnected;
   micMuted.value = false;
   cameraMuted.value = false;
-  stopLocalMedia();
+  disconnectLiveKit();
 }
 
 async function copyMeetingLink() {
-  const text = window.location.href;
+  const text = meetingId.value
+    ? `${window.location.origin}/groups/${groupId}/meeting?meetingId=${meetingId.value}`
+    : window.location.href;
   try {
     await navigator.clipboard.writeText(text);
     showSuccess("Đã sao chép link cuộc họp");
@@ -173,7 +226,18 @@ async function copyMeetingLink() {
   }
 }
 
-function openScreenShare() {
+async function openScreenShare() {
+  if (liveKitRoom && liveKitRoom.state === ConnectionState.Connected) {
+    try {
+      await liveKitRoom.localParticipant.setScreenShareEnabled(true);
+      showSuccess("Đang chia sẻ màn hình trong phòng họp.");
+      return;
+    } catch (e) {
+      console.warn("Could not start LiveKit screen share", e);
+      showError("Không thể chia sẻ màn hình qua LiveKit.");
+    }
+  }
+
   screenShareRef.value?.startShare();
 }
 
@@ -182,18 +246,36 @@ function toggleTheme() {
   localStorage.setItem("qaly-meeting-theme", theme.value);
 }
 
-function toggleMic() {
+async function toggleMic() {
   micMuted.value = !micMuted.value;
-  localStream?.getAudioTracks().forEach((track) => {
-    track.enabled = !micMuted.value;
-  });
+  if (!localAudioTrack) return;
+
+  try {
+    if (micMuted.value) {
+      await localAudioTrack.mute();
+    } else {
+      await localAudioTrack.unmute();
+    }
+  } catch (e) {
+    console.warn("Could not toggle microphone", e);
+    showError("Không thể đổi trạng thái micro.");
+  }
 }
 
-function toggleCamera() {
+async function toggleCamera() {
   cameraMuted.value = !cameraMuted.value;
-  localStream?.getVideoTracks().forEach((track) => {
-    track.enabled = !cameraMuted.value;
-  });
+  if (!localVideoTrack) return;
+
+  try {
+    if (cameraMuted.value) {
+      await localVideoTrack.mute();
+    } else {
+      await localVideoTrack.unmute();
+    }
+  } catch (e) {
+    console.warn("Could not toggle camera", e);
+    showError("Không thể đổi trạng thái camera.");
+  }
 }
 
 function formatTime(value: string) {
@@ -215,36 +297,310 @@ onBeforeUnmount(async () => {
     } catch {}
     hubConnection = null;
   }
-  stopLocalMedia();
+  disconnectLiveKit();
 });
 
-async function startLocalMedia() {
+function applyMeetingDto(dto: any, fallbackMeetingId: string | null = null) {
+  meetingId.value = dto?.id ?? dto?.Id ?? fallbackMeetingId;
+  joinUrl.value = dto?.joinUrl ?? dto?.JoinUrl ?? null;
+  roomName.value = dto?.roomId ?? dto?.RoomId ?? `qaly-${groupId}`;
+  liveKitUrl.value = dto?.providerUrl ?? dto?.ProviderUrl ?? null;
+  liveKitToken.value = dto?.accessToken ?? dto?.AccessToken ?? null;
+  liveKitTokenExpiresAt.value =
+    dto?.accessTokenExpiresAt ?? dto?.AccessTokenExpiresAt ?? null;
+}
+
+async function connectLiveKit() {
+  meetingError.value = null;
+  disconnectLiveKit();
+
+  if (!liveKitUrl.value || !liveKitToken.value) {
+    meetingError.value = "LiveKit chưa được cấu hình cho phiên họp này.";
+    cameraMuted.value = true;
+    micMuted.value = true;
+    showError("LiveKit chưa được cấu hình. Kiểm tra appsettings và token meeting.");
+    return;
+  }
+
+  const room = new Room({
+    adaptiveStream: true,
+    dynacast: true,
+  });
+  liveKitRoom = room;
+
+  room.on(RoomEvent.ConnectionStateChanged, (state) => {
+    meetingConnectionState.value = state;
+  });
+  room.on(RoomEvent.Reconnecting, () => {
+    meetingConnectionState.value = ConnectionState.Reconnecting;
+  });
+  room.on(RoomEvent.Reconnected, () => {
+    meetingConnectionState.value = ConnectionState.Connected;
+  });
+  room.on(RoomEvent.Disconnected, () => {
+    meetingConnectionState.value = ConnectionState.Disconnected;
+  });
+  room.on(RoomEvent.ParticipantConnected, (participant) => {
+    upsertRemoteParticipant(participant);
+  });
+  room.on(RoomEvent.ParticipantDisconnected, (participant) => {
+    removeRemoteParticipant(participant.identity);
+  });
+  room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+    bindRemoteTrack(participant, publication, track);
+  });
+  room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+    unbindRemoteTrack(participant, publication, track);
+  });
+  room.on(RoomEvent.TrackMuted, (publication, participant) => {
+    syncParticipantMediaState(participant.identity, publication as RemoteTrackPublication);
+  });
+  room.on(RoomEvent.TrackUnmuted, (publication, participant) => {
+    syncParticipantMediaState(participant.identity, publication as RemoteTrackPublication);
+  });
+  room.on(RoomEvent.ParticipantNameChanged, (_name, participant) => {
+    if (participant.isLocal) return;
+    upsertRemoteParticipant(participant as RemoteParticipant);
+  });
+
   try {
-    stopLocalMedia();
-    localStream = await navigator.mediaDevices.getUserMedia({
+    meetingConnectionState.value = ConnectionState.Connecting;
+    await room.connect(liveKitUrl.value, liveKitToken.value);
+    meetingConnectionState.value = room.state;
+    room.remoteParticipants.forEach((participant) => {
+      upsertRemoteParticipant(participant);
+      participant.trackPublications.forEach((publication) => {
+        if (publication.track) {
+          bindRemoteTrack(participant, publication, publication.track as RemoteTrack);
+        }
+      });
+    });
+    await publishLocalTracks(room);
+  } catch (e) {
+    console.warn("Could not connect LiveKit room", e);
+    const reason = liveKitErrorMessage(e);
+    meetingError.value = reason
+      ? `Không kết nối được LiveKit: ${reason}`
+      : "Không kết nối được LiveKit. Hãy kiểm tra LiveKit server hoặc cấu hình token.";
+    showError("Không kết nối được LiveKit. Phòng vẫn mở nhưng media chưa hoạt động.");
+    cameraMuted.value = true;
+    micMuted.value = true;
+    disconnectLiveKit();
+  }
+}
+
+async function publishLocalTracks(room: Room) {
+  try {
+    const tracks = await createLocalTracks({
       audio: true,
       video: {
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
+        width: 1280,
+        height: 720,
       },
     });
-    if (localVideoRef.value) {
-      localVideoRef.value.srcObject = localStream;
+
+    for (const track of tracks) {
+      await room.localParticipant.publishTrack(track);
+      bindLocalTrack(track);
     }
+
+    micMuted.value = false;
+    cameraMuted.value = false;
   } catch (e) {
-    console.warn("Could not start local media", e);
-    showError("Không thể mở camera/micro. Bạn vẫn có thể ở trong phòng.");
+    console.warn("Could not publish local media", e);
+    meetingError.value = "Không thể mở camera/micro. Bạn vẫn có thể ở trong phòng.";
+    showError("Không thể mở camera/micro. Kiểm tra quyền trình duyệt.");
     cameraMuted.value = true;
     micMuted.value = true;
   }
 }
 
-function stopLocalMedia() {
-  localStream?.getTracks().forEach((track) => track.stop());
-  localStream = null;
+function bindLocalTrack(track: LocalTrack) {
+  if (track.kind === Track.Kind.Audio) {
+    localAudioTrack = track as LocalAudioTrack;
+    return;
+  }
+
+  if (track.kind === Track.Kind.Video) {
+    localVideoTrack = track as LocalVideoTrack;
+    if (localVideoRef.value) {
+      track.attach(localVideoRef.value);
+    }
+  }
+}
+
+function upsertRemoteParticipant(participant: RemoteParticipant) {
+  const identity = participant.identity;
+  const name = participant.name || participant.metadata || `Khách ${identity.slice(0, 4)}`;
+  const existing = remoteTiles.value.find((tile) => tile.identity === identity);
+
+  if (existing) {
+    existing.name = name;
+    existing.initials = initialsFromName(name);
+    existing.cameraOn = participant.isCameraEnabled || participant.isScreenShareEnabled;
+    existing.micOn = participant.isMicrophoneEnabled;
+    existing.lastSeen = new Date().toISOString();
+    return existing;
+  }
+
+  const tile: RemoteTile = {
+    identity,
+    name,
+    initials: initialsFromName(name),
+    cameraOn: participant.isCameraEnabled || participant.isScreenShareEnabled,
+    micOn: participant.isMicrophoneEnabled,
+    lastSeen: new Date().toISOString(),
+    videoTrack: null,
+    audioTrack: null,
+  };
+  remoteTiles.value.push(tile);
+  return tile;
+}
+
+function removeRemoteParticipant(identity: string) {
+  const tile = remoteTiles.value.find((item) => item.identity === identity);
+  tile?.videoTrack?.detach();
+  tile?.audioTrack?.detach();
+  remoteVideoEls.delete(identity);
+  remoteAudioEls.delete(identity);
+  remoteTiles.value = remoteTiles.value.filter((item) => item.identity !== identity);
+}
+
+function bindRemoteTrack(
+  participant: RemoteParticipant,
+  publication: RemoteTrackPublication,
+  track: RemoteTrack,
+) {
+  const tile = upsertRemoteParticipant(participant);
+
+  if (track.kind === Track.Kind.Video) {
+    tile.videoTrack?.detach();
+    tile.videoTrack = track;
+    tile.cameraOn = !publication.isMuted;
+    const element = remoteVideoEls.get(tile.identity);
+    if (element) {
+      track.attach(element);
+    }
+  }
+
+  if (track.kind === Track.Kind.Audio) {
+    tile.audioTrack?.detach();
+    tile.audioTrack = track;
+    tile.micOn = !publication.isMuted;
+    const element = remoteAudioEls.get(tile.identity);
+    if (element) {
+      track.attach(element);
+      void element.play().catch(() => undefined);
+    }
+  }
+}
+
+function unbindRemoteTrack(
+  participant: RemoteParticipant,
+  publication: RemoteTrackPublication,
+  track: RemoteTrack,
+) {
+  const tile = remoteTiles.value.find((item) => item.identity === participant.identity);
+  if (!tile) return;
+
+  track.detach();
+  if (track.kind === Track.Kind.Video && tile.videoTrack === track) {
+    tile.videoTrack = null;
+    tile.cameraOn = false;
+  }
+  if (track.kind === Track.Kind.Audio && tile.audioTrack === track) {
+    tile.audioTrack = null;
+    tile.micOn = false;
+  }
+  syncParticipantMediaState(participant.identity, publication);
+}
+
+function syncParticipantMediaState(identity: string, publication: RemoteTrackPublication) {
+  const tile = remoteTiles.value.find((item) => item.identity === identity);
+  if (!tile) return;
+
+  if (
+    publication.kind === Track.Kind.Video ||
+    publication.source === Track.Source.Camera ||
+    publication.source === Track.Source.ScreenShare
+  ) {
+    tile.cameraOn = !publication.isMuted && Boolean(tile.videoTrack);
+  }
+
+  if (
+    publication.kind === Track.Kind.Audio ||
+    publication.source === Track.Source.Microphone ||
+    publication.source === Track.Source.ScreenShareAudio
+  ) {
+    tile.micOn = !publication.isMuted && Boolean(tile.audioTrack);
+  }
+
+  tile.lastSeen = new Date().toISOString();
+}
+
+function setRemoteVideoRef(identity: string, element: HTMLVideoElement | null) {
+  if (!element) {
+    remoteVideoEls.delete(identity);
+    return;
+  }
+
+  remoteVideoEls.set(identity, element);
+  const tile = remoteTiles.value.find((item) => item.identity === identity);
+  tile?.videoTrack?.attach(element);
+}
+
+function setRemoteAudioRef(identity: string, element: HTMLAudioElement | null) {
+  if (!element) {
+    remoteAudioEls.delete(identity);
+    return;
+  }
+
+  remoteAudioEls.set(identity, element);
+  const tile = remoteTiles.value.find((item) => item.identity === identity);
+  if (tile?.audioTrack) {
+    tile.audioTrack.attach(element);
+    void element.play().catch(() => undefined);
+  }
+}
+
+function initialsFromName(value: string) {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "QT";
+}
+
+function liveKitErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object" && "message" in error) {
+    return String((error as { message?: unknown }).message ?? "");
+  }
+  return "";
+}
+
+function disconnectLiveKit() {
+  remoteTiles.value.forEach((tile) => {
+    tile.videoTrack?.detach();
+    tile.audioTrack?.detach();
+  });
+  remoteTiles.value = [];
+  remoteVideoEls.clear();
+  remoteAudioEls.clear();
+  localVideoTrack?.detach();
+  localVideoTrack?.stop();
+  localAudioTrack?.stop();
+  localVideoTrack = null;
+  localAudioTrack = null;
   if (localVideoRef.value) {
     localVideoRef.value.srcObject = null;
   }
+  liveKitRoom?.removeAllListeners();
+  liveKitRoom?.disconnect();
+  liveKitRoom = null;
+  meetingConnectionState.value = ConnectionState.Disconnected;
 }
 </script>
 
@@ -262,7 +618,7 @@ function stopLocalMedia() {
         </div>
         <div class="meeting-status" :class="{ active }">
           <span></span>
-          {{ active ? "Đang họp" : "Sẵn sàng" }}
+          {{ meetingConnectionLabel }}
         </div>
       </header>
 
@@ -287,23 +643,59 @@ function stopLocalMedia() {
           </div>
 
           <div v-if="active && roomName" class="meeting-frame-shell">
-            <div class="qaly-meet-stage">
-              <video
-                v-show="!cameraMuted"
-                ref="localVideoRef"
-                class="local-video"
-                autoplay
-                playsinline
-                muted
-              ></video>
-              <div v-if="cameraMuted" class="camera-off-state">
-                <div class="meeting-avatar meeting-avatar--large">QT</div>
-                <span><VideoOff :size="18" /> Camera đang tắt</span>
-              </div>
+            <div class="qaly-meet-stage" :class="`qaly-meet-stage--count-${Math.min(stageTileCount, 4)}`">
+              <article class="meeting-video-tile local-participant-tile">
+                <video
+                  v-show="!cameraMuted"
+                  ref="localVideoRef"
+                  class="local-video"
+                  autoplay
+                  playsinline
+                  muted
+                ></video>
+                <div v-if="cameraMuted" class="camera-off-state">
+                  <div class="meeting-avatar meeting-avatar--large">QT</div>
+                  <span><VideoOff :size="18" /> Camera đang tắt</span>
+                </div>
+                <footer class="meeting-tile-footer">
+                  <strong>Bạn</strong>
+                  <span>{{ micMuted ? "Mic tắt" : "Mic bật" }}</span>
+                </footer>
+              </article>
+
+              <article
+                v-for="tile in remoteTiles"
+                :key="tile.identity"
+                class="meeting-video-tile remote-participant-tile"
+              >
+                <video
+                  v-show="tile.cameraOn && tile.videoTrack"
+                  :ref="(el) => setRemoteVideoRef(tile.identity, el as HTMLVideoElement | null)"
+                  class="remote-video"
+                  autoplay
+                  playsinline
+                ></video>
+                <audio
+                  :ref="(el) => setRemoteAudioRef(tile.identity, el as HTMLAudioElement | null)"
+                  autoplay
+                ></audio>
+                <div v-if="!tile.cameraOn || !tile.videoTrack" class="camera-off-state">
+                  <div class="meeting-avatar meeting-avatar--large">{{ tile.initials }}</div>
+                  <span><VideoOff :size="18" /> Camera đang tắt</span>
+                </div>
+                <footer class="meeting-tile-footer">
+                  <strong>{{ tile.name }}</strong>
+                  <span>{{ tile.micOn ? "Mic bật" : "Mic tắt" }}</span>
+                </footer>
+              </article>
+
               <div class="meeting-brand-chip">QALY Meet</div>
               <div class="meeting-live-chip">
                 <span></span>
-                {{ micMuted ? "Mic tắt" : "Mic bật" }} · {{ cameraMuted ? "Camera tắt" : "Camera bật" }}
+                {{ participantCount }} người · {{ micMuted ? "Mic tắt" : "Mic bật" }}
+              </div>
+              <div v-if="meetingError" class="meeting-error-chip">
+                {{ meetingError }}
               </div>
             </div>
           </div>
@@ -370,16 +762,16 @@ function stopLocalMedia() {
                   <span>Chủ phòng · trực tuyến</span>
                 </div>
               </div>
-              <div v-for="p in participants" :key="p.connectionId" class="participant-row">
+              <div v-for="tile in remoteTiles" :key="tile.identity" class="participant-row">
                 <div class="participant-avatar participant-avatar--soft">
-                  {{ p.connectionId.slice(0, 2).toUpperCase() }}
+                  {{ tile.initials }}
                 </div>
                 <div>
-                  <strong>{{ p.connectionId.slice(0, 10) }}</strong>
-                  <span>Hoạt động {{ formatTime(p.lastSeen) }}</span>
+                  <strong>{{ tile.name }}</strong>
+                  <span>{{ tile.micOn ? "Mic bật" : "Mic tắt" }} · {{ tile.cameraOn ? "Camera bật" : "Camera tắt" }}</span>
                 </div>
               </div>
-              <div v-if="participants.length === 0" class="participants-empty">
+              <div v-if="remoteTiles.length === 0" class="participants-empty">
                 <Info :size="20" />
                 <span>Chưa có thành viên khác tham gia.</span>
               </div>
@@ -570,22 +962,67 @@ function stopLocalMedia() {
   width: 100%;
   height: 100%;
   min-height: 520px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
+  grid-auto-rows: minmax(220px, 1fr);
+  gap: 14px;
+  padding: 66px 18px 72px;
   border: 0;
   border-radius: 22px;
   background: var(--meet-tile-bg);
   overflow: hidden;
 }
 
+.qaly-meet-stage--count-1 {
+  grid-template-columns: 1fr;
+}
+
+.qaly-meet-stage--count-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.qaly-meet-stage--count-3,
+.qaly-meet-stage--count-4 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.meeting-video-tile {
+  position: relative;
+  min-width: 0;
+  min-height: 220px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(37, 99, 235, 0.15), transparent 28%),
+    rgba(2, 6, 23, 0.46);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.meeting-page--light .meeting-video-tile {
+  border-color: rgba(148, 163, 184, 0.28);
+  background:
+    radial-gradient(circle at 50% 35%, rgba(37, 99, 235, 0.13), transparent 30%),
+    rgba(255, 255, 255, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
 .local-video {
-  width: 100%;
-  height: 100%;
-  min-height: 520px;
-  object-fit: cover;
   transform: scaleX(-1);
 }
 
+.local-video,
+.remote-video {
+  width: 100%;
+  height: 100%;
+  min-height: 220px;
+  object-fit: cover;
+}
+
 .camera-off-state {
-  min-height: 520px;
+  width: 100%;
+  height: 100%;
+  min-height: 220px;
   display: grid;
   place-items: center;
   align-content: center;
@@ -602,9 +1039,50 @@ function stopLocalMedia() {
     0 34px 90px rgba(37, 99, 235, 0.22);
 }
 
+.meeting-tile-footer {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-radius: 999px;
+  padding: 9px 12px;
+  background: rgba(2, 6, 23, 0.62);
+  color: #e2e8f0;
+  backdrop-filter: blur(16px);
+}
+
+.meeting-page--light .meeting-tile-footer {
+  background: rgba(255, 255, 255, 0.78);
+  color: #0f172a;
+}
+
+.meeting-tile-footer strong,
+.meeting-tile-footer span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meeting-tile-footer strong {
+  font-size: 0.9rem;
+}
+
+.meeting-tile-footer span {
+  color: inherit;
+  opacity: 0.74;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
 .camera-off-state span,
 .meeting-brand-chip,
-.meeting-live-chip {
+.meeting-live-chip,
+.meeting-error-chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -627,6 +1105,17 @@ function stopLocalMedia() {
   position: absolute;
   right: 18px;
   top: 18px;
+}
+
+.meeting-error-chip {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  max-width: min(620px, calc(100% - 40px));
+  transform: translateX(-50%);
+  background: rgba(254, 242, 242, 0.92);
+  color: #991b1b;
+  text-align: center;
 }
 
 .meeting-live-chip span {

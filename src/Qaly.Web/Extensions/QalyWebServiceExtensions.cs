@@ -28,6 +28,7 @@ public static class QalyWebServiceExtensions
         services.AddQalyRedis(redisConnection);
         services.AddQalySession(cookieSecurePolicy);
         services.Configure<InvitationLinkOptions>(configuration.GetSection(InvitationLinkOptions.SectionName));
+        services.Configure<LiveKitOptions>(configuration.GetSection(LiveKitOptions.SectionName));
 
         services.AddApplication();
         services.AddInfrastructure(configuration);

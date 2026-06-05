@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.StaticFiles;
 using Qaly.Application.DTOs.Groups;
 using Qaly.Application.DTOs.Ai;
+using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Services;
 
 namespace Qaly.Web.Controllers;
@@ -12,10 +14,17 @@ namespace Qaly.Web.Controllers;
 public class GroupsController : BaseApiController
 {
     private readonly IGroupsService _groupsService;
+    private readonly IFileStorageService _fileStorageService;
+    private readonly IConfiguration _configuration;
 
-    public GroupsController(IGroupsService groupsService)
+    public GroupsController(
+        IGroupsService groupsService,
+        IFileStorageService fileStorageService,
+        IConfiguration configuration)
     {
         _groupsService = groupsService;
+        _fileStorageService = fileStorageService;
+        _configuration = configuration;
     }
 
     [HttpGet]
@@ -171,6 +180,70 @@ public class GroupsController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpPost("{id:guid}/files")]
+    [RequestSizeLimit(25_000_000)]
+    public async Task<IActionResult> UploadGroupFile(Guid id, IFormFile file, CancellationToken ct)
+    {
+        if (!await _groupsService.CanAccessGroupAsync(id, ct))
+        {
+            return Forbid();
+        }
+
+        if (file.Length == 0)
+        {
+            return BadRequest(new { error = "File is empty." });
+        }
+
+        await using var stream = file.OpenReadStream();
+        var storedPath = await _fileStorageService.UploadAsync(stream, file.FileName, file.ContentType, ct);
+        var fileKey = Path.GetFileName(storedPath);
+        var safeName = Path.GetFileName(file.FileName);
+        var url = Url.Action(nameof(DownloadGroupFile), values: new { id, fileKey, name = safeName }) ??
+                  $"/api/groups/{id}/files/{Uri.EscapeDataString(fileKey)}?name={Uri.EscapeDataString(safeName)}";
+
+        return Ok(new
+        {
+            isSuccess = true,
+            data = new
+            {
+                name = safeName,
+                url,
+                sizeLabel = FormatFileSize(file.Length),
+                kind = IsImage(file.ContentType, safeName) ? "image" : "file",
+                contentType = file.ContentType
+            }
+        });
+    }
+
+    [HttpGet("{id:guid}/files/{fileKey}")]
+    public async Task<IActionResult> DownloadGroupFile(Guid id, string fileKey, [FromQuery] string? name, CancellationToken ct)
+    {
+        if (!await _groupsService.CanAccessGroupAsync(id, ct))
+        {
+            return Forbid();
+        }
+
+        if (string.IsNullOrWhiteSpace(fileKey) || fileKey != Path.GetFileName(fileKey))
+        {
+            return BadRequest(new { error = "Invalid file key." });
+        }
+
+        var fullPath = Path.Combine(GetFileStorageRootPath(), fileKey);
+        if (!System.IO.File.Exists(fullPath))
+        {
+            return NotFound(new { error = "File was not found." });
+        }
+
+        var provider = new FileExtensionContentTypeProvider();
+        if (!provider.TryGetContentType(name ?? fileKey, out var contentType))
+        {
+            contentType = "application/octet-stream";
+        }
+
+        var downloadName = string.IsNullOrWhiteSpace(name) ? fileKey : Path.GetFileName(name);
+        return PhysicalFile(fullPath, contentType, downloadName, enableRangeProcessing: true);
+    }
+
     [HttpPost("{id:guid}/create-project")]
     public async Task<IActionResult> CreateProjectFromGroup(Guid id, CreateProjectFromGroupRequest request, CancellationToken ct)
     {
@@ -204,5 +277,28 @@ public class GroupsController : BaseApiController
     {
         var result = await _groupsService.EndMeetingSessionAsync(groupId, meetingId, ct);
         return StatusCode(result.StatusCode, result);
+    }
+
+    private string GetFileStorageRootPath()
+        => _configuration.GetValue<string>("FileStorage:RootPath")
+           ?? Path.Combine(AppContext.BaseDirectory, "uploads");
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{Math.Round(bytes / 1024d)} KB";
+        return $"{Math.Round(bytes / 1024d / 1024d, 1)} MB";
+    }
+
+    private static bool IsImage(string? contentType, string fileName)
+    {
+        if (!string.IsNullOrWhiteSpace(contentType) &&
+            contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var extension = Path.GetExtension(fileName).ToLowerInvariant();
+        return extension is ".png" or ".jpg" or ".jpeg" or ".gif" or ".webp" or ".svg";
     }
 }

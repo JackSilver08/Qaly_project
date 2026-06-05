@@ -73,7 +73,9 @@ function attachFiles(event: Event, kind: "file" | "image") {
       file.size < 1024
         ? `${file.size} B`
         : `${Math.round(file.size / 1024)} KB`,
-    kind,
+    kind: file.type.startsWith("image/") ? "image" : kind,
+    contentType: file.type,
+    rawFile: file,
   }));
   input.value = "";
 }

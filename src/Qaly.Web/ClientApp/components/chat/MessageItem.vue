@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { CalendarDays, Pin } from "lucide-vue-next";
+import { CalendarDays, Download, ExternalLink, Pin } from "lucide-vue-next";
 import type { TeamChatMessage } from "./chat-types";
 import PollCard from "./PollCard.vue";
 
@@ -86,16 +86,28 @@ function renderLightMarkdown(value: string) {
       <p v-if="message.text" class="team-message__text" v-html="renderedText"></p>
 
       <div v-if="message.attachments.length" class="team-message__attachments">
-        <div v-for="file in message.attachments" :key="file.name" class="message-attachment-card">
+        <a
+          v-for="file in message.attachments"
+          :key="`${file.name}-${file.url ?? ''}`"
+          class="message-attachment-card"
+          :class="{ 'is-clickable': Boolean(file.url) }"
+          :href="file.url"
+          target="_blank"
+          rel="noopener noreferrer"
+          :download="file.kind === 'file' ? file.name : undefined"
+          :aria-label="file.url ? `Mở ${file.name}` : file.name"
+        >
           <div class="message-attachment-icon">
             <svg v-if="file.kind === 'image'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
             <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
           </div>
           <div class="message-attachment-info">
             <strong>{{ file.name }}</strong>
-            <span>{{ file.sizeLabel }}</span>
+            <span>{{ file.url ? `Bấm để ${file.kind === 'image' ? 'xem' : 'tải'}` : file.sizeLabel }}</span>
           </div>
-        </div>
+          <ExternalLink v-if="file.kind === 'image' && file.url" class="message-attachment-action" :size="15" />
+          <Download v-else-if="file.url" class="message-attachment-action" :size="15" />
+        </a>
       </div>
 
       <div v-if="message.poll" class="team-message__poll">
@@ -320,12 +332,18 @@ function renderLightMarkdown(value: string) {
   display: flex;
   align-items: center;
   gap: 10px;
+  color: inherit;
+  text-decoration: none;
   padding: 8px 12px;
   background: rgba(255, 255, 255, 0.8);
   border-radius: 10px;
   margin-top: 6px;
   transition: background 0.2s;
   cursor: pointer;
+}
+
+.message-attachment-card:not(.is-clickable) {
+  cursor: default;
 }
 
 .team-message.is-mine .message-attachment-card {
@@ -373,5 +391,11 @@ function renderLightMarkdown(value: string) {
 .message-attachment-info span {
   font-size: 0.75rem;
   opacity: 0.8;
+}
+
+.message-attachment-action {
+  margin-left: 4px;
+  flex-shrink: 0;
+  opacity: 0.72;
 }
 </style>

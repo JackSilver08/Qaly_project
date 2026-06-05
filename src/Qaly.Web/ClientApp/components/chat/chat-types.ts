@@ -15,6 +15,9 @@ export interface TeamChatAttachment {
     name: string;
     sizeLabel: string;
     kind?: "file" | "image";
+    url?: string;
+    contentType?: string;
+    rawFile?: File;
 }
 
 export interface TeamChatMeeting {

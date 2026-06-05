@@ -31,7 +31,10 @@ public record GroupMeetingSessionDto(
     DateTimeOffset StartedAt,
     DateTimeOffset? EndedAt,
     string? TranscriptSourceId,
-    string? Summary);
+    string? Summary,
+    string? ProviderUrl = null,
+    string? AccessToken = null,
+    DateTimeOffset? AccessTokenExpiresAt = null);
 
 public record GroupAiSummaryRequest(
     int? MessageLimit = null);

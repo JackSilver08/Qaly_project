@@ -8,6 +8,7 @@ using Qaly.Application.DTOs.Groups;
 using Qaly.Application.DTOs.Ai;
 using Qaly.Application.DTOs.Project;
 using Qaly.Application.Services.Groups;
+using Qaly.Application.Services.Meetings;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Enums;
 using Qaly.Domain.Interfaces;
@@ -34,6 +35,7 @@ public partial class GroupsService : IGroupsService
     private readonly IGroupInvitationEmailBuilder _groupInvitationEmailBuilder;
     private readonly IGroupPollRealtimePublisher _groupPollRealtimePublisher;
     private readonly IGroupMeetingRealtimePublisher _groupMeetingRealtimePublisher;
+    private readonly ILiveKitTokenService _liveKitTokenService;
     private readonly ILogger<GroupsService> _logger;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
@@ -57,6 +59,7 @@ public partial class GroupsService : IGroupsService
         IGroupInvitationEmailBuilder groupInvitationEmailBuilder,
         IGroupPollRealtimePublisher groupPollRealtimePublisher,
         IGroupMeetingRealtimePublisher groupMeetingRealtimePublisher,
+        ILiveKitTokenService liveKitTokenService,
         ILogger<GroupsService> logger,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService)
@@ -79,6 +82,7 @@ public partial class GroupsService : IGroupsService
         _groupInvitationEmailBuilder = groupInvitationEmailBuilder;
         _groupPollRealtimePublisher = groupPollRealtimePublisher;
         _groupMeetingRealtimePublisher = groupMeetingRealtimePublisher;
+        _liveKitTokenService = liveKitTokenService;
         _logger = logger;
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
@@ -1844,7 +1848,7 @@ public partial class GroupsService : IGroupsService
             .OrderByDescending(item => item.StartedAt)
             .FirstOrDefaultAsync(ct);
 
-        return Result.Success(meeting == null ? null : ToMeetingDto(meeting));
+        return Result.Success(meeting == null ? null : await ToMeetingDtoAsync(meeting, includeAccessToken: true, ct));
     }
 
     public async Task<Result<GroupMeetingSessionDto>> StartMeetingSessionAsync(Guid groupId, CancellationToken ct = default)
@@ -1860,8 +1864,7 @@ public partial class GroupsService : IGroupsService
             return Result.Forbidden<GroupMeetingSessionDto>();
         }
 
-        var roomId = $"qaly-{groupId:N}-{Guid.NewGuid():N}";
-        var joinUrl = $"https://meet.jit.si/{roomId}";
+        var roomId = $"qaly-{groupId:N}";
         var groupName = await _groupRepo.GetQueryable()
             .AsNoTracking()
             .Where(group => group.Id == groupId)
@@ -1880,12 +1883,12 @@ public partial class GroupsService : IGroupsService
         {
             WorkGroupId = groupId,
             StartedByUserId = currentUserId.Value,
-            Provider = "Jitsi",
+            Provider = "LiveKit",
             RoomId = roomId,
-            JoinUrl = joinUrl,
             Status = "Active",
             StartedAt = DateTimeOffset.UtcNow
         };
+        meeting.JoinUrl = BuildInternalMeetingJoinUrl(groupId, meeting.Id);
 
         await _meetingSessionRepo.AddAsync(meeting, ct);
         await _unitOfWork.SaveChangesAsync(ct);
@@ -1894,17 +1897,18 @@ public partial class GroupsService : IGroupsService
         {
             WorkGroupId = groupId,
             UserId = currentUserId.Value,
-            Content = BuildMeetingStartedMessage(meeting.Id, joinUrl, starter.FullName),
+            Content = BuildMeetingStartedMessage(meeting.Id, meeting.JoinUrl, starter.FullName),
             MessageType = "Meeting"
         };
 
         await _messageRepo.AddAsync(meetingMessage, ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
-        var dto = ToMeetingDto(meeting);
+        var dto = await ToMeetingDtoAsync(meeting, includeAccessToken: true, ct, starter);
+        var broadcastDto = ToMeetingDto(meeting);
 
-        await NotifyMeetingStartedAsync(groupId, groupName, dto, currentUserId.Value, starter.FullName, ct);
-        await _groupMeetingRealtimePublisher.PublishMeetingStartedAsync(groupId, dto, ct);
+        await NotifyMeetingStartedAsync(groupId, groupName, broadcastDto, currentUserId.Value, starter.FullName, ct);
+        await _groupMeetingRealtimePublisher.PublishMeetingStartedAsync(groupId, broadcastDto, ct);
 
         return Result.Success(dto);
     }
@@ -1929,7 +1933,7 @@ public partial class GroupsService : IGroupsService
             return Result.Failure<GroupMeetingSessionDto>("Meeting session has already ended.", 400);
         }
 
-        var dto = ToMeetingDto(meeting);
+        var dto = await ToMeetingDtoAsync(meeting, includeAccessToken: true, ct);
 
         return Result.Success(dto);
     }
@@ -1997,7 +2001,7 @@ public partial class GroupsService : IGroupsService
         return Result.Success(dto);
     }
 
-    private static string BuildMeetingStartedMessage(Guid meetingId, string joinUrl, string? starterName)
+    private static string BuildMeetingStartedMessage(Guid meetingId, string? joinUrl, string? starterName)
     {
         var displayName = string.IsNullOrWhiteSpace(starterName) ? "Má»™t thÃ nh viÃªn" : starterName.Trim();
         return string.Join(Environment.NewLine, new[]
@@ -2009,7 +2013,10 @@ public partial class GroupsService : IGroupsService
         });
     }
 
-    private static GroupMeetingSessionDto ToMeetingDto(GroupMeetingSession meeting)
+    private static string BuildInternalMeetingJoinUrl(Guid groupId, Guid meetingId)
+        => $"/groups/{groupId}/meeting?meetingId={meetingId}";
+
+    private GroupMeetingSessionDto ToMeetingDto(GroupMeetingSession meeting)
         => new(
             meeting.Id,
             meeting.WorkGroupId,
@@ -2022,6 +2029,54 @@ public partial class GroupsService : IGroupsService
             meeting.EndedAt,
             meeting.TranscriptSourceId,
             meeting.Summary);
+
+    private async Task<GroupMeetingSessionDto> ToMeetingDtoAsync(
+        GroupMeetingSession meeting,
+        bool includeAccessToken,
+        CancellationToken ct,
+        User? participant = null)
+    {
+        var dto = ToMeetingDto(meeting);
+        if (!includeAccessToken || !string.Equals(meeting.Provider, "LiveKit", StringComparison.OrdinalIgnoreCase))
+        {
+            return dto;
+        }
+
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return dto;
+        }
+
+        participant ??= await _userRepo.GetQueryable()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(user => user.Id == currentUserId.Value && user.IsActive, ct);
+
+        if (participant == null)
+        {
+            return dto;
+        }
+
+        try
+        {
+            var token = _liveKitTokenService.CreateJoinToken(new LiveKitTokenRequest(
+                meeting.RoomId,
+                participant.Id.ToString("N"),
+                string.IsNullOrWhiteSpace(participant.FullName) ? participant.Email : participant.FullName,
+                participant.Email));
+
+            return dto with
+            {
+                ProviderUrl = token.ServerUrl,
+                AccessToken = token.Token,
+                AccessTokenExpiresAt = token.ExpiresAt
+            };
+        }
+        catch (InvalidOperationException)
+        {
+            return dto;
+        }
+    }
 
     private async Task NotifyMeetingStartedAsync(
         Guid groupId,
