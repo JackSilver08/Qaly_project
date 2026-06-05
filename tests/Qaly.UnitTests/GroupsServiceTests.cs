@@ -132,7 +132,7 @@ public class GroupsServiceTests : IDisposable
 
         var service = CreateService();
 
-        var result = await service.CreateAsync(new CreateGroupRequest("Planning Group", "Discuss next project"));
+        var result = await service.CreateAsync(new CreateGroupRequest("Planning Group"));
 
         result.IsSuccess.Should().BeTrue(result.Error);
         result.Data!.Name.Should().Be("Planning Group");

@@ -48,10 +48,13 @@ function initials(name: string) {
       :class="{ 'is-active': group.id === activeGroupId }"
       @click="$emit('select', group.id)"
     >
-      <span class="team-chat-group__avatar">{{ initials(group.name) }}</span>
+      <span class="team-chat-group__avatar">
+        <img v-if="group.avatarUrl" :src="group.avatarUrl" :alt="group.name" />
+        <template v-else>{{ initials(group.name) }}</template>
+      </span>
       <div>
         <strong>{{ group.name }}</strong>
-        <span>{{ group.description }}</span>
+        <span>{{ group.summary }}</span>
       </div>
       <small v-if="group.unreadCount > 0">{{ group.unreadCount }}</small>
     </button>

@@ -1,7 +1,8 @@
 export interface ChatGroupModel {
     id: string;
     name: string;
-    description: string;
+    avatarUrl?: string;
+    summary: string;
     unreadCount: number;
 }
 

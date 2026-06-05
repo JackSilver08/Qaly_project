@@ -5,7 +5,6 @@ namespace Qaly.Application.DTOs.Groups;
 public record GroupDto(
     Guid Id,
     string Name,
-    string? Description,
     string? AvatarUrl,
     string? Color,
     string Status,
@@ -22,14 +21,12 @@ public record GroupDto(
 
 public record CreateGroupRequest(
     string Name,
-    string? Description,
     Guid? OrganizationId = null,
     string? AvatarUrl = null,
     string? Color = null);
 
 public record UpdateGroupRequest(
     string Name,
-    string? Description,
     string? AvatarUrl,
     string? Color,
     string Status = "Active");

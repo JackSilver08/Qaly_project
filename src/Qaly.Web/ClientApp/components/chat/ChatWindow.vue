@@ -243,10 +243,13 @@ function sendMessage() {
   >
     <header class="team-chat-window__header">
       <div class="team-chat-window__identity">
-        <span class="team-chat-window__avatar">{{ groupInitials }}</span>
+        <span class="team-chat-window__avatar">
+          <img v-if="group?.avatarUrl" :src="group.avatarUrl" :alt="group.name" />
+          <template v-else>{{ groupInitials }}</template>
+        </span>
         <div>
           <h2>{{ group?.name ?? "Chọn nhóm chat" }}</h2>
-          <span>{{ group?.description ?? "Chọn một nhóm để bắt đầu trò chuyện" }}</span>
+          <span>{{ group?.summary ?? "Chọn một nhóm để bắt đầu trò chuyện" }}</span>
         </div>
       </div>
       <div class="team-chat-window__actions">

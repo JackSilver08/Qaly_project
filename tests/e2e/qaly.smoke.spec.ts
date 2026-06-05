@@ -132,7 +132,6 @@ async function createGroupViaApi(page: Page, name: string) {
         await page.request.post("/api/groups", {
             data: {
                 name,
-                description: "DH-02 E2E smoke group",
                 color: "#2563eb",
             },
         }),

@@ -119,9 +119,7 @@ public partial class GroupsService : IGroupsService
         if (!string.IsNullOrWhiteSpace(search))
         {
             var normalized = search.Trim();
-            query = query.Where(group =>
-                group.Name.Contains(normalized) ||
-                (group.Description != null && group.Description.Contains(normalized)));
+            query = query.Where(group => group.Name.Contains(normalized));
         }
 
         var totalCount = await query.CountAsync(ct);
@@ -199,7 +197,6 @@ public partial class GroupsService : IGroupsService
         var group = new WorkGroup
         {
             Name = request.Name.Trim(),
-            Description = NormalizeOptional(request.Description),
             AvatarUrl = NormalizeOptional(request.AvatarUrl),
             Color = NormalizeOptional(request.Color),
             OrganizationId = request.OrganizationId,
@@ -242,7 +239,6 @@ public partial class GroupsService : IGroupsService
         }
 
         group.Name = request.Name.Trim();
-        group.Description = NormalizeOptional(request.Description);
         group.AvatarUrl = NormalizeOptional(request.AvatarUrl);
         group.Color = NormalizeOptional(request.Color);
         group.Status = NormalizeGroupStatus(request.Status);
@@ -250,6 +246,35 @@ public partial class GroupsService : IGroupsService
         await _groupRepo.UpdateAsync(group, ct);
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("Update", nameof(WorkGroup), groupId.ToString(), request, ct);
+
+        return await GetByIdAsync(groupId, ct);
+    }
+
+    public async Task<Result<GroupDto>> UpdateAvatarAsync(
+        Guid groupId,
+        string avatarUrl,
+        CancellationToken ct = default)
+    {
+        var group = await _groupRepo.GetByIdAsync(groupId, ct);
+        if (group == null)
+        {
+            return Result.NotFound<GroupDto>();
+        }
+
+        if (!await CanManageGroupAsync(groupId, ct))
+        {
+            return Result.Forbidden<GroupDto>();
+        }
+
+        group.AvatarUrl = NormalizeOptional(avatarUrl);
+        await _groupRepo.UpdateAsync(group, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync(
+            "UpdateAvatar",
+            nameof(WorkGroup),
+            groupId.ToString(),
+            new { group.AvatarUrl },
+            ct);
 
         return await GetByIdAsync(groupId, ct);
     }
@@ -1702,7 +1727,6 @@ public partial class GroupsService : IGroupsService
         return new GroupDto(
             group.Id,
             group.Name,
-            group.Description,
             group.AvatarUrl,
             group.Color,
             group.Status,

@@ -201,6 +201,55 @@ public class GroupsController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpPost("{id:guid}/avatar")]
+    [RequestSizeLimit(5 * 1024 * 1024)]
+    public async Task<IActionResult> UploadAvatar(Guid id, IFormFile file, CancellationToken ct)
+    {
+        if (file == null || file.Length == 0)
+        {
+            return BadRequest(new { error = "Avatar image is required." });
+        }
+
+        if (file.Length > 5 * 1024 * 1024)
+        {
+            return BadRequest(new { error = "Avatar must be 5 MB or smaller." });
+        }
+
+        var allowedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp"
+        };
+        if (!allowedTypes.Contains(file.ContentType))
+        {
+            return BadRequest(new { error = "Avatar must be a JPG, PNG, GIF, or WEBP image." });
+        }
+
+        if (!await _groupsService.CanManageGroupAsync(id, ct))
+        {
+            return Forbid();
+        }
+
+        await using var stream = file.OpenReadStream();
+        var upload = await _groupAttachmentService.UploadAsync(
+            id,
+            stream,
+            file.FileName,
+            file.ContentType,
+            file.Length,
+            ct);
+        if (!upload.IsSuccess || upload.Data == null)
+        {
+            return StatusCode(upload.StatusCode, upload);
+        }
+
+        var avatarUrl = $"/api/groups/{id}/attachments/{upload.Data.Id}";
+        var result = await _groupsService.UpdateAvatarAsync(id, avatarUrl, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpGet("{id:guid}/attachments/{attachmentId:guid}")]
     public async Task<IActionResult> DownloadAttachment(
         Guid id,

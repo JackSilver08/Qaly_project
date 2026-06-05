@@ -6,6 +6,7 @@ import {
 } from "@microsoft/signalr";
 import {
   CalendarDays,
+  Camera,
   Check,
   Crown,
   Download,
@@ -46,7 +47,7 @@ import { apiCommand, apiResult, errorMessage } from "../utils/api-client";
 interface GroupDto {
   id: string;
   name: string;
-  description: string | null;
+  avatarUrl: string | null;
   color: string | null;
   currentUserRole: string;
   memberCount: number;
@@ -111,7 +112,7 @@ const isLoadingMessages = ref(false);
 const loadError = ref<string | null>(null);
 const realtimeState = ref<"connecting" | "connected" | "offline">("offline");
 const showCreateModal = ref(false);
-const createForm = ref({ name: "", description: "", color: "#2563eb" });
+const createForm = ref({ name: "", color: "#2563eb" });
 const inviteEmail = ref("");
 const addUserId = ref("");
 const addRole = ref("Member");
@@ -119,6 +120,7 @@ const projectForm = ref({ name: "", code: "", description: "" });
 const pollForm = ref({ question: "", options: ["", ""] });
 const backgroundTheme = ref(localStorage.getItem("qaly.chatBackground") ?? "clean");
 const isDetailPanelCollapsed = ref(false);
+const isUploadingAvatar = ref(false);
 
 let hubConnection: HubConnection | null = null;
 
@@ -337,7 +339,6 @@ async function createGroup() {
       method: "POST",
       body: JSON.stringify({
         name: createForm.value.name.trim(),
-        description: createForm.value.description.trim() || null,
         color: createForm.value.color,
       }),
     });
@@ -346,7 +347,7 @@ async function createGroup() {
     const mapped = toGroupModel(group);
     groups.value = [mapped, ...groups.value.filter((item) => item.id !== mapped.id)];
     showCreateModal.value = false;
-    createForm.value = { name: "", description: "", color: "#2563eb" };
+    createForm.value = { name: "", color: "#2563eb" };
     activeGroupId.value = mapped.id;
     showSuccess(`Tạo nhóm "${mapped.name}" thành công`);
   } catch (error) {
@@ -560,6 +561,44 @@ async function uploadAttachments(attachments: TeamChatAttachment[]) {
   return uploaded;
 }
 
+async function changeGroupAvatar(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file || !activeGroupId.value || !canManageGroup.value) return;
+
+  if (!["image/jpeg", "image/png", "image/gif", "image/webp"].includes(file.type)) {
+    showError("Avatar phải là ảnh JPG, PNG, GIF hoặc WEBP.");
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    showError("Avatar không được vượt quá 5 MB.");
+    return;
+  }
+
+  isUploadingAvatar.value = true;
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    const updated = await apiResult<GroupDto>(
+      `/api/groups/${activeGroupId.value}/avatar`,
+      {
+        method: "POST",
+        body: formData,
+      },
+    );
+    groupDetails.value[updated.id] = updated;
+    groups.value = groups.value.map((group) =>
+      group.id === updated.id ? toGroupModel(updated) : group,
+    );
+    showSuccess("Đã cập nhật ảnh đại diện nhóm");
+  } catch (error) {
+    showError(errorMessage(error, "Không thể cập nhật ảnh đại diện nhóm."));
+  } finally {
+    isUploadingAvatar.value = false;
+  }
+}
+
 async function editMessage(messageId: string, text: string) {
   if (!activeGroupId.value || !text.trim()) return;
   try {
@@ -681,9 +720,8 @@ function toGroupModel(group: GroupDto): ChatGroupModel {
   return {
     id: group.id,
     name: group.name,
-    description:
-      group.description ??
-      `${group.memberCount ?? 0} thành viên · ${group.messageCount ?? 0} tin nhắn`,
+    avatarUrl: group.avatarUrl ?? undefined,
+    summary: `${group.memberCount ?? 0} thành viên · ${group.messageCount ?? 0} tin nhắn`,
     unreadCount: 0,
   };
 }
@@ -924,7 +962,28 @@ function formatMessageTime(value: string) {
             </div>
 
             <div class="group-detail-profile">
-              <div class="group-detail-avatar">{{ initials(activeGroup?.name ?? "Qaly") }}</div>
+              <div class="group-detail-avatar">
+                <img
+                  v-if="activeDetail?.avatarUrl"
+                  :src="activeDetail.avatarUrl"
+                  :alt="activeGroup?.name ?? 'Ảnh nhóm'"
+                />
+                <span v-else>{{ initials(activeGroup?.name ?? "Qaly") }}</span>
+                <label
+                  v-if="canManageGroup"
+                  class="group-detail-avatar__edit"
+                  :class="{ 'is-loading': isUploadingAvatar }"
+                  :aria-label="isUploadingAvatar ? 'Đang tải ảnh lên' : 'Thay ảnh đại diện nhóm'"
+                >
+                  <Camera :size="17" />
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/gif,image/webp"
+                    :disabled="isUploadingAvatar"
+                    @change="changeGroupAvatar"
+                  />
+                </label>
+              </div>
               <div class="group-detail-profile__copy">
                 <h2>{{ activeGroup?.name ?? "Chọn nhóm" }}</h2>
                 <p>
@@ -932,9 +991,6 @@ function formatMessageTime(value: string) {
                   <span aria-hidden="true">·</span>
                   {{ activeDetail?.messageCount ?? 0 }} tin nhắn
                 </p>
-                <span v-if="activeDetail?.description" class="group-detail-description">
-                  {{ activeDetail.description }}
-                </span>
               </div>
               <div class="group-role-badge">
                 <Crown v-if="activeDetail?.currentUserRole === 'Owner'" :size="14" />
@@ -1236,7 +1292,6 @@ function formatMessageTime(value: string) {
           <button type="button" class="text-button" @click="showCreateModal = false">Đóng</button>
         </header>
         <input v-model="createForm.name" type="text" placeholder="Tên nhóm" required />
-        <textarea v-model="createForm.description" rows="3" placeholder="Mô tả nhóm"></textarea>
         <label class="group-color-field">
           Màu nhóm
           <input v-model="createForm.color" type="color" />
@@ -1377,6 +1432,15 @@ function formatMessageTime(value: string) {
   background: #1677ff;
   font-weight: 800;
   letter-spacing: 0;
+  overflow: hidden;
+}
+
+.groups-workspace :deep(.team-chat-group__avatar img),
+.groups-workspace :deep(.team-chat-window__avatar img) {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 .groups-workspace :deep(.team-chat-group__avatar) {
@@ -1553,6 +1617,7 @@ function formatMessageTime(value: string) {
 }
 
 .group-detail-avatar {
+  position: relative;
   width: 68px;
   height: 68px;
   display: grid;
@@ -1564,6 +1629,53 @@ function formatMessageTime(value: string) {
   font-size: 1.1rem;
   font-weight: 900;
   box-shadow: 0 8px 22px rgba(37, 99, 235, 0.2);
+  overflow: visible;
+}
+
+.group-detail-avatar > img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 19px;
+  object-fit: cover;
+}
+
+.group-detail-avatar > span {
+  display: grid;
+  place-items: center;
+}
+
+.group-detail-avatar__edit {
+  position: absolute;
+  right: -7px;
+  bottom: -7px;
+  width: 31px;
+  height: 31px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  color: #ffffff;
+  background: #1d4ed8;
+  box-shadow: 0 5px 14px rgba(15, 23, 42, 0.2);
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.group-detail-avatar__edit:hover {
+  background: #1e40af;
+  transform: scale(1.05);
+}
+
+.group-detail-avatar__edit.is-loading {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.group-detail-avatar__edit input {
+  display: none;
 }
 
 .group-detail-profile__copy {
@@ -1591,18 +1703,6 @@ function formatMessageTime(value: string) {
 .group-detail-profile p span {
   margin: 0 4px;
   color: #cbd5e1;
-}
-
-.group-detail-description {
-  display: -webkit-box;
-  margin: 8px auto 0;
-  max-width: 300px;
-  overflow: hidden;
-  color: #64748b;
-  font-size: 0.78rem;
-  line-height: 1.45;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 
 .group-detail-icon-button,

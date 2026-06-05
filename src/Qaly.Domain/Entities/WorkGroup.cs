@@ -3,7 +3,6 @@ namespace Qaly.Domain.Entities;
 public class WorkGroup : BaseEntity, ISoftDeleteEntity
 {
     public string Name { get; set; } = string.Empty;
-    public string? Description { get; set; }
     public string? AvatarUrl { get; set; }
     public string? Color { get; set; }
     public string Status { get; set; } = "Active";

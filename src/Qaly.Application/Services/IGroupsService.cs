@@ -10,6 +10,7 @@ public interface IGroupsService
     Task<Result<GroupDto>> GetByIdAsync(Guid groupId, CancellationToken ct = default);
     Task<Result<GroupDto>> CreateAsync(CreateGroupRequest request, CancellationToken ct = default);
     Task<Result<GroupDto>> UpdateAsync(Guid groupId, UpdateGroupRequest request, CancellationToken ct = default);
+    Task<Result<GroupDto>> UpdateAvatarAsync(Guid groupId, string avatarUrl, CancellationToken ct = default);
     Task<Result> DeleteAsync(Guid groupId, CancellationToken ct = default);
     Task<Result<IReadOnlyList<GroupMemberDto>>> GetMembersAsync(Guid groupId, CancellationToken ct = default);
     Task<Result<IReadOnlyList<GroupInvitationDto>>> GetInvitationsAsync(Guid groupId, string? status = null, CancellationToken ct = default);
