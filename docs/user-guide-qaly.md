@@ -1,116 +1,147 @@
-# Hướng dẫn sử dụng QALY theo scope nghiệm thu hiện tại
+# Hướng dẫn sử dụng QALY cho người dùng cuối
 
-## 1. Mục đích
+> Tài liệu hướng dẫn thực tế, bằng tiếng Việt, phù hợp với trạng thái hiện tại của hệ thống.
 
-Tài liệu này hỗ trợ demo/nghiệm thu bằng tiếng Việt, bám theo bằng chứng QA tuần 03/06/2026 - 09/06/2026. Không dùng tài liệu này để khẳng định các chức năng chưa có bằng chứng đầy đủ.
+## 1. Mục tiêu
 
-Nguồn liên quan:
+Hướng dẫn này dành cho người sử dụng cuối muốn làm việc với:
 
-- `docs/task/test-plan-tuan-2026-06-03.md`
-- `docs/task/qa-evidence/meeting-import-qa-2026-06-03.md`
-- `docs/task/Bao_cao_kiem_thu_tuan_2026-06-03.md`
-- `docs/task/checklist-nghiem-thu-2026-06-09.csv`
+- tạo và quản lý nhóm,
+- chat nội bộ,
+- bình chọn (poll),
+- cuộc họp nhóm,
+- nhập tài liệu vào Wiki,
+- hỏi AI,
+- xem dashboard.
 
-## 2. Thuật ngữ thống nhất
+Tài liệu cố gắng thể hiện đúng khả năng hiện tại. Những tính năng chưa hoàn thiện sẽ được ghi rõ giới hạn.
 
-| Thuật ngữ code/Anh | Thuật ngữ tiếng Việt dùng khi demo |
-|---|---|
-| group | nhóm |
-| project | dự án |
-| task | công việc |
-| poll | bình chọn |
-| meeting | cuộc họp |
-| import | nhập tài liệu |
-| permission | phân quyền |
-| evidence | bằng chứng kiểm thử |
-| realtime | thời gian thực |
-| AI fallback | phản hồi dự phòng AI |
+## 2. Truy cập và đăng nhập
 
-## 3. Luồng có thể demo theo bằng chứng hiện tại
+1. Mở ứng dụng QALY bằng URL demo.
+2. Chọn `Đăng nhập`.
+3. Nhập email và mật khẩu của tài khoản demo.
+4. Sau khi đăng nhập, bạn sẽ vào trang `Dashboard` hoặc menu chính.
 
-| Luồng | Trạng thái | Cách mô tả khi demo | Bằng chứng |
-|---|---|---|---|
-| Login và phân quyền cơ bản | Có thể demo | Đăng nhập, phân biệt quyền admin/member/outside user ở các luồng đã kiểm thử | E2E smoke DH-02, backend regression DH-04 |
-| Nhập tài liệu DOCX | Có thể demo | DOCX được preview và tạo Wiki page; parser có thể bỏ qua bảng/ảnh và hiển thị warning | DH-03 manual QA pass |
-| Nhập ZIP phase 1 | Có thể demo | ZIP hỗ trợ `.md`, `.txt`, `.html`, `.docx`; file unsupported trong ZIP được bỏ qua có cảnh báo | DH-03 manual QA pass |
-| PDF import | Demo nhánh unsupported/roadmap | PDF hiện chưa có parser; UI/API báo unsupported rõ ràng, không tạo dữ liệu rác | DH-03 manual QA pass |
-| Bình chọn nhóm | Có smoke E2E | Có thể demo ở mức luồng smoke đã pass; cần tránh claim mọi tình huống realtime nâng cao nếu chưa có evidence riêng | DH-02 E2E pass |
-| Backend regression | Có thể dùng làm bằng chứng kỹ thuật | Build pass, integration/unit filter pass cho Import/Meeting/Auth/AI | DH-04 |
+> Lưu ý: Nếu không đăng nhập, hệ thống sẽ không cho phép truy cập API, nhập tài liệu và chat.
 
-## 4. Giới hạn hiện tại phải nói rõ
+## 3. Tạo nhóm và quản lý nhóm
 
-| Khu vực | Giới hạn | Mức ảnh hưởng |
-|---|---|---|
-| Cuộc họp nhóm | Participant realtime/count không cập nhật khi member join meeting (`DH03-BUG-MTG-001`) | P0 nếu demo participant count/list |
-| Chia sẻ màn hình | Browser unsupported chỉ log console, UI feedback chưa rõ (`DH03-BUG-MTG-002`) | P2; cần browser thật/headful để xác minh positive case |
-| Deploy config | Chưa có bằng chứng nghiệm thu đầy đủ cho checklist deploy tuần này | Không claim deploy hoàn chỉnh |
-| AI analytics | E2E smoke và backend fallback/schema có bằng chứng; manual deep check chưa đầy đủ | Không claim AI analytics đã nghiệm thu toàn diện |
-| Group AI | Có unit/backend liên quan nhưng chưa có manual/E2E đầy đủ | Không claim Group AI đã nghiệm thu đầy đủ |
-| AI provider/RAG | Phụ thuộc cấu hình OpenAI/Gemini/Ollama/Qdrant hoặc fallback/mock | Cần ghi rõ provider/fallback khi demo |
+### 3.1 Tạo nhóm mới
 
-## 5. Hướng dẫn thao tác demo ngắn
+1. Chọn menu `Nhóm`.
+2. Nhấn `Tạo nhóm mới`.
+3. Nhập tên nhóm, mô tả, màu sắc và avatar nếu cần.
+4. Nhấn `Lưu`.
 
-### 5.1 Đăng nhập
+Kết quả: nhóm mới được tạo và bạn mặc định là `Owner`.
 
-1. Mở app tại base URL demo.
-2. Đăng nhập bằng tài khoản seed được nhóm cung cấp.
-3. Kiểm tra vào được dashboard hoặc menu user.
+### 3.2 Thêm hoặc xóa thành viên
 
-Không ghi mật khẩu/token/cookie vào tài liệu hoặc ảnh chụp.
+1. Mở nhóm đã tạo.
+2. Chọn tab `Thành viên`.
+3. Thêm user bằng email hoặc userId.
+4. Chọn role `Member` hoặc `Admin`.
+5. Xóa thành viên hoặc thay đổi role nếu cần.
 
-### 5.2 Nhập tài liệu
+> Lưu ý: Chỉ `Owner`/`Admin` có quyền quản lý thành viên.
 
-1. Mở một dự án demo.
-2. Mở modal nhập tài liệu.
-3. Upload DOCX hoặc ZIP fixture nhỏ.
-4. Kiểm tra preview, warning và kết quả tạo Wiki page.
-5. Với PDF, chỉ demo trạng thái roadmap/unsupported nếu chưa có parser.
+## 4. Chat nhóm
 
-Ảnh minh họa hiện có:
+1. Vào trang nhóm.
+2. Gõ tin nhắn vào ô chat.
+3. Nhấn `Gửi`.
 
-- `docs/task/evidence/2026-06-03_2026-06-09/import-document/20260604_duyhoang_import_DH01-IMP-001_docx-preview.png`
-- `docs/task/evidence/2026-06-03_2026-06-09/import-document/20260604_duyhoang_import_DH01-IMP-002_zip-success.png`
-- `docs/task/evidence/2026-06-03_2026-06-09/import-document/20260604_duyhoang_import_DH01-IMP-003_pdf-unsupported-ui.png`
+Tin nhắn sẽ hiển thị trong lịch sử chat và được cập nhật theo thời gian thực ở mức scope đã demo.
 
-### 5.3 Nhóm, chat và bình chọn
+## 5. Tạo poll (bình chọn)
 
-1. Mở trang nhóm.
-2. Tạo hoặc mở nhóm demo.
-3. Gửi tin nhắn.
-4. Tạo/vote bình chọn nếu dữ liệu demo sẵn sàng.
+1. Vào nhóm.
+2. Chọn `Bình chọn`.
+3. Nhập tiêu đề, mô tả và các lựa chọn.
+4. Đặt thời hạn nếu cần.
+5. Nhấn `Tạo poll`.
+6. Mời thành viên vote.
 
-Nếu không có bằng chứng realtime nâng cao cho một hành vi cụ thể, chỉ mô tả ở mức smoke đã pass.
+> Lưu ý: Poll đã được smoke test; không claim mọi tình huống realtime nâng cao.
 
-### 5.4 Cuộc họp nhóm
+## 6. Cuộc họp nhóm
 
-Có thể trình bày:
+### 6.1 Bắt đầu cuộc họp
 
-- thành viên trong nhóm được join;
-- outside user bị chặn;
-- owner/admin có thể kết thúc cuộc họp theo rule backend.
+1. Vào nhóm.
+2. Chọn `Cuộc họp`.
+3. Nhấn `Bắt đầu cuộc họp`.
 
-Không nên trình bày participant realtime/count/list là tính năng ổn định khi bug P0 chưa fix.
+### 6.2 Tham gia cuộc họp
 
-Ảnh bằng chứng lỗi hiện có:
+1. Thành viên nhóm bấm `Tham gia`.
+2. Outside user không phải thành viên sẽ bị chặn.
 
-- `docs/task/evidence/2026-06-03_2026-06-09/meeting/20260604_duyhoang_meeting_DH01-MTG-004_participant-after-member-join.png`
-- `docs/task/evidence/2026-06-03_2026-06-09/meeting/20260604_duyhoang_meeting_DH01-MTG-005_screen-share-denied-headless.png`
+### 6.3 Kết thúc cuộc họp
 
-### 5.5 AI analytics và Group AI
+1. Owner/Admin chọn `Kết thúc`.
 
-Nếu demo:
+> Giới hạn:
+>
+> - Tính năng participant realtime/count đang có lỗi P0 `DH03-BUG-MTG-001`.
+> - Screen share chưa có positive case headful; nếu gặp lỗi, đây là trạng thái unsupported.
 
-1. Nói rõ provider đang dùng hoặc đang chạy phản hồi dự phòng AI.
-2. Chỉ demo câu hỏi/output đã chuẩn bị dữ liệu.
-3. Không khẳng định RAG/tool calling đầy đủ nếu chưa có bằng chứng riêng.
-4. Nếu output lỗi/schema bất thường, dùng kết quả backend regression để giải thích hệ thống có fallback controlled.
+## 7. Import tài liệu vào Wiki
 
-## 6. Ảnh minh họa cần bổ sung
+### 7.1 Import DOCX
 
-| Ảnh | Trạng thái |
-|---|---|
-| Dashboard/analytics page trong trạng thái demo | Cần bổ sung ảnh nếu đưa vào user guide chính thức |
-| Group AI panel với provider thật hoặc fallback | Cần bổ sung ảnh nếu demo Group AI |
-| Browser headful screen share positive | Cần bổ sung ảnh sau khi xác minh |
-| Deploy config/log Docker nghiệm thu | Cần bổ sung nếu chạy checklist deploy |
+1. Mở dự án.
+2. Chọn `Import tài liệu`.
+3. Upload file DOCX.
+4. Xem preview nội dung.
+5. Nhấn `Import`.
 
+Kết quả: tạo trang Wiki hoặc nội dung Wiki mới.
+
+### 7.2 Import ZIP bundle
+
+1. Chọn `Upload ZIP`.
+2. Chọn file ZIP chứa `.md`, `.txt`, `.html`, `.docx`.
+3. Xem preview file.
+4. Nhấn `Import`.
+
+> Giới hạn:
+>
+> - File tối đa 5MB.
+> - ZIP hỗ trợ `.md`, `.txt`, `.html`, `.docx`.
+> - File unsupported sẽ bị skip và báo warning.
+
+### 7.3 PDF
+
+PDF hiện được xem là unsupported/roadmap nếu chưa có parser.
+
+## 8. Hỏi AI
+
+1. Mở `AI` hoặc `Erumi`.
+2. Nhập câu hỏi.
+3. Nhấn `Gửi`.
+4. Chờ kết quả trả về.
+
+Ví dụ:
+
+- `Tóm tắt tiến độ dự án QALY.`
+- `Nêu 3 rủi ro chính cho sprint này.`
+
+> Lưu ý:
+>
+> - AI có thể chạy qua provider hoặc phản hồi fallback.
+> - Nếu AI chậm, đây có thể là cấu hình provider chưa đầy đủ.
+
+## 9. Xem dashboard
+
+1. Chọn `Dashboard`.
+2. Xem chỉ số dự án, công việc, tiến độ.
+3. Đọc phần analytics nếu có.
+
+## 10. Lưu ý
+
+- Demo những tính năng đã có bằng chứng: nhóm, chat, poll, import DOCX/ZIP, meeting start/join/end, AI chat cơ bản.
+- Không trình bày screen share hoặc PDF import như tính năng hoàn chỉnh.
+- Nếu gặp lỗi `401` hoặc `403`, kiểm tra quyền đăng nhập và membership nhóm.
+- Nếu AI chậm, báo cáo là `provider chưa cấu hình` hoặc `fallback đang hoạt động`.

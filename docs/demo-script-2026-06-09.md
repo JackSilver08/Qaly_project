@@ -1,137 +1,105 @@
-# Kịch bản demo nghiệm thu QALY - 09/06/2026
+# Kịch bản demo QALY - 09/06/2026
 
-## 1. Nguyên tắc demo
+> Thời lượng: 8-10 phút | Mục tiêu: trình bày luồng thực tế và backup plan cho AI/local chậm.
 
-- Chỉ demo các luồng có bằng chứng pass hoặc mô tả rõ là fallback/limited/planned.
-- Không demo participant realtime/count/list của cuộc họp như tính năng ổn định nếu `DH03-BUG-MTG-001` chưa fix.
-- Không demo screen share positive nếu chưa có browser thật/headful và bằng chứng mới.
-- Không nói “deploy hoàn chỉnh”, “AI đầy đủ”, “RAG thật đầy đủ”, “import mọi định dạng” khi chưa có bằng chứng tương ứng.
-- Không hiển thị secret/password/token/cookie.
+## 1. Mở đầu (1 phút)
 
-## 2. Thông điệp mở đầu
+- Chào nhanh, giới thiệu mục tiêu demo: `dashboard -> project -> group -> poll -> meeting -> import wiki -> hỏi Erumi -> action items`.
+- Nhấn mạnh: đây là luồng core đã được kiểm thử, với giới hạn rõ ràng cho meeting/import/AI.
+- Ghi chú: không trình bày screen share hay PDF import như tính năng hoàn chỉnh.
 
-QALY hiện có nền tảng quản lý dự án, nhóm, nhập tài liệu, phân quyền và kiểm thử regression. Tuần 03/06/2026 - 09/06/2026 đã có:
+## 2. Chuẩn bị dữ liệu demo
 
-- Playwright smoke pass 7/7.
-- Manual QA pass 5, fail 3, blocked 0.
-- Backend build pass, integration pass 14/14, unit pass 92/92 theo filter DH-04.
-- Import document đủ điều kiện demo theo scope hiện tại.
-- Meeting còn bug P0 ở participant realtime/count nên không claim realtime participant ổn định.
+- Tài khoản demo: `user-demo@qaly.local` hoặc tài khoản seed nhóm.
+- Project demo: `QALY Demo Project`.
+- Group demo: `Nhóm ERUMI Sprint`.
+- File demo:
+    - `QALY-Demo.docx`.
+    - `QALY-WikiBundle.zip`.
+- Prompt AI: `Tóm tắt tiến độ sprint QALY và nêu 3 action item cần làm tiếp theo.`
+- Backend AI: có provider/fallback; nếu nó chậm, dùng backup plan.
 
-## 3. Chuẩn bị trước demo
+## 3. Luồng demo chính
 
-| Hạng mục | Trạng thái yêu cầu |
-|---|---|
-| App server | Chạy đúng base URL demo |
-| Tài khoản demo | Có admin/member/outside user; không ghi mật khẩu vào script |
-| Dự án demo | Có dự án dùng cho nhập tài liệu |
-| Nhóm demo | Có nhóm với owner/admin/member |
-| File demo | DOCX nhỏ, ZIP nhỏ chứa `.md/.txt/.html`; PDF chỉ dùng để demo unsupported |
-| AI provider | Ghi rõ dùng provider thật hay phản hồi dự phòng AI |
+### 3.1 Đăng nhập và Dashboard (1 phút)
 
-## 4. Luồng demo đề xuất
+- Mở ứng dụng.
+- Đăng nhập bằng tài khoản demo.
+- Vào `Dashboard`.
+- Nói: `Đăng nhập và Dashboard đã được Playwright smoke pass.`
 
-### 4.1 Login và dashboard cơ bản
+### 3.2 Project và nhóm (1 phút)
 
-Thời lượng: 1 phút.
+- Mở `QALY Demo Project`.
+- Mở `Nhóm ERUMI Sprint`.
+- Giới thiệu vai trò Owner/Admin/Member.
+- Nói: `Quyền nhóm được kiểm soát và chỉ member mới dùng được poll/meeting/import.`
 
-1. Mở app.
-2. Đăng nhập bằng tài khoản demo.
-3. Mở dashboard hoặc trang dự án.
+### 3.3 Poll nhóm (1 phút)
 
-Nói rõ: login và smoke UI đã có bằng chứng E2E pass.
+- Tạo poll: `Chọn ưu tiên sprint`.
+- Thêm option `A`, `B`, `C`.
+- Tạo poll và vote.
+- Mở kết quả.
+- Nói: `Poll đã được smoke test; đây là flow an toàn để demo.`
 
-### 4.2 Nhập tài liệu vào Wiki
+### 3.4 Cuộc họp nhóm (1 phút)
 
-Thời lượng: 3 phút.
-
-1. Mở dự án demo.
-2. Mở modal nhập tài liệu.
-3. Upload DOCX.
-4. Xem preview và warning nếu có.
-5. Confirm import.
-6. Mở Wiki page được tạo.
-7. Upload ZIP fixture nhỏ nếu còn thời gian.
-8. Với PDF, chỉ demo thông báo unsupported/roadmap.
-
-Nói rõ:
-
-- DOCX/ZIP pass theo evidence DH-03.
-- ZIP phase 1 hỗ trợ file con `.md`, `.txt`, `.html`, `.docx`; unsupported được skip có warning.
-- PDF chưa claim hỗ trợ đầy đủ.
-
-Evidence:
-
-- `docs/task/qa-evidence/meeting-import-qa-2026-06-03.md`
-- `docs/task/evidence/2026-06-03_2026-06-09/import-document/`
-
-### 4.3 Nhóm, chat và bình chọn
-
-Thời lượng: 2 phút.
-
-1. Mở trang nhóm.
-2. Tạo hoặc mở nhóm demo.
-3. Gửi tin nhắn.
-4. Tạo/vote bình chọn.
-
-Nói rõ: E2E smoke đã pass các flow tạo nhóm, chat realtime và poll vote. Nếu một hiệu ứng thời gian thực nâng cao chưa có evidence riêng, không claim quá phạm vi smoke.
-
-### 4.4 Phân quyền
-
-Thời lượng: 1 phút.
-
-1. Minh họa member/outside user bị chặn ở luồng có quyền.
-2. Nếu demo meeting, chỉ minh họa outside user bị chặn hoặc backend permission.
-
-Nói rõ: backend regression DH-04 đã cover auth boundary, outside user, admin-only/member boundary.
-
-### 4.5 Cuộc họp nhóm
-
-Thời lượng: 1 phút, chỉ demo nếu cần.
-
-Có thể demo:
-
-- Start meeting.
+- Bắt đầu cuộc họp.
 - Member join.
-- Owner/admin end meeting.
-- Outside user bị chặn.
+- Owner/Admin kết thúc cuộc họp.
+- Nói rõ:
+    - `Start/join/end meeting hoạt động.`
+    - `Participant count realtime hiện đang là bug P0, nên tôi không claim realtime full.`
+    - `Screen share chưa có positive case headful.`
 
-Không demo như ổn định:
+### 3.5 Import Wiki (2 phút)
 
-- Participant realtime/count/list.
-- Screen share positive.
+- Chọn `Import tài liệu`.
+- Upload `QALY-Demo.docx`.
+- Xem preview, confirm import.
+- Mở Wiki page mới.
+- Nếu còn thời gian, upload `QALY-WikiBundle.zip`.
+- Nói:
+    - `DOCX/ZIP import đã QA pass.`
+    - `PDF hiện chỉ roadmap/unsupported.`
 
-Lý do: `DH03-BUG-MTG-001` P0 còn mở; `DH03-BUG-MTG-002` P2 còn mở.
+### 3.6 Hỏi Erumi (AI) (1-1.5 phút)
 
-### 4.6 AI analytics / Group AI
+- Mở chức năng AI.
+- Nhập prompt: `Tóm tắt tiến độ sprint QALY...`.
+- Hiển thị kết quả trả về.
+- Nói:
+    - `AI đang chạy qua provider/fallback.`
+    - `Nếu nó chậm, hệ thống có fallback hoặc sẽ return message lỗi rõ.`
 
-Thời lượng: 1-2 phút, tùy cấu hình.
+### 3.7 Group AI action items (1 phút)
 
-Nếu provider thật đã cấu hình:
+- Mở `AI action items` tại nhóm.
+- Trích xuất action items từ thảo luận.
+- Nói: `Đây là luồng Group AI giúp tự động hoá các action item sau cuộc họp.`
 
-1. Mở analytics hoặc Group AI.
-2. Gửi prompt demo ngắn.
-3. Quan sát kết quả.
+## 4. Kịch bản trình bày ngắn gọn
 
-Nếu không có provider:
+- "Bước 1: Đăng nhập và xác nhận dashboard."
+- "Bước 2: Mở project và nhóm để chứng minh phân quyền."
+- "Bước 3: Tạo poll và vote để minh hoạ tính năng nhóm."
+- "Bước 4: Mở cuộc họp, join và kết thúc; không claim realtime participant full."
+- "Bước 5: Import DOCX/ZIP vào Wiki và mở trang kết quả."
+- "Bước 6: Hỏi Erumi và hiển thị kết quả AI."
+- "Bước 7: Trích xuất action items nhóm để minh hoạ Group AI."
 
-1. Nói rõ hệ thống chạy phản hồi dự phòng AI.
-2. Không claim chất lượng RAG/tooling đầy đủ.
+## 5. Backup plan
 
-Nói rõ: backend regression đã cover schema/fallback; manual deep check AI analytics và Group AI E2E chưa có bằng chứng đầy đủ.
+- Nếu AI chậm: chuyển sang slide/bản tóm tắt kỹ thuật và nói rõ backend có fallback AI.
+- Nếu local chậm: dùng evidence `Playwright smoke` và `backend regression` để chứng minh hệ thống chạy.
+- Nếu import quá lớn: dùng file demo nhỏ 5MB và giải thích giới hạn hiện tại.
+- Nếu meeting realtime gặp vấn đề: chỉ demo `start/join/end` và giải thích bug participant count đang fix.
 
-## 5. Luồng không nên demo nếu chưa fix/xác minh
+## 6. Điểm nhấn kỹ thuật
 
-| Luồng | Lý do |
-|---|---|
-| Participant realtime/count/list trong cuộc họp | Bug P0 `DH03-BUG-MTG-001` |
-| Screen share positive | Chưa có bằng chứng headful/browser thật; UI feedback unsupported còn P2 |
-| Deploy production/full Docker acceptance | Chưa có bằng chứng nghiệm thu đầy đủ |
-| Group AI full E2E | Chưa có bằng chứng manual/E2E đầy đủ |
-| AI analytics deep/manual claims | Chưa có bằng chứng manual deep check đầy đủ |
-| PDF import positive | PDF hiện là roadmap/unsupported theo evidence hiện tại |
-
-## 6. Kết luận dùng khi kết thúc demo
-
-QALY có thể demo ổn định ở scope nhập tài liệu, phân quyền cơ bản, smoke nhóm/bình chọn và backend regression. Cuộc họp nhóm cần fix participant realtime/count trước khi nghiệm thu nếu phần realtime participant là yêu cầu demo. AI và deploy cần được mô tả theo trạng thái provider/fallback và bằng chứng hiện có.
-
+- Kiến trúc `Qaly.Web`, `Qaly.Application`, `Qaly.Infrastructure`, `Qaly.Domain`.
+- SignalR cho chat và meeting events.
+- Import engine preview + execute.
+- AI analytics và Group AI có luồng fallback.
+- Local SQL dev link hướng dẫn dùng `CMI\SQLEXPRESS`.
