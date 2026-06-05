@@ -23,6 +23,7 @@ public static class DependencyInjection
         services.AddScoped<IOrganizationService, OrganizationService>();
         services.AddScoped<IProjectService, ProjectService>();
         services.AddScoped<IGroupsService, GroupsService>();
+        services.AddScoped<IGroupAttachmentService, GroupAttachmentService>();
         services.AddScoped<IGroupInvitationEmailBuilder, GroupInvitationEmailBuilder>();
         services.AddScoped<ITaskService, TaskService>();
         services.AddScoped<ITaskAccessPolicy, TaskAccessPolicy>();

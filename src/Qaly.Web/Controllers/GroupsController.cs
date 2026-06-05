@@ -1,8 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.Mvc;
 using Qaly.Application.DTOs.Groups;
 using Qaly.Application.DTOs.Ai;
+using Qaly.Application.Common.Models;
 using Qaly.Application.Services;
+using Qaly.Web.Hubs;
 
 namespace Qaly.Web.Controllers;
 
@@ -12,10 +15,17 @@ namespace Qaly.Web.Controllers;
 public class GroupsController : BaseApiController
 {
     private readonly IGroupsService _groupsService;
+    private readonly IGroupAttachmentService _groupAttachmentService;
+    private readonly IHubContext<GroupHub> _groupHub;
 
-    public GroupsController(IGroupsService groupsService)
+    public GroupsController(
+        IGroupsService groupsService,
+        IGroupAttachmentService groupAttachmentService,
+        IHubContext<GroupHub> groupHub)
     {
         _groupsService = groupsService;
+        _groupAttachmentService = groupAttachmentService;
+        _groupHub = groupHub;
     }
 
     [HttpGet]
@@ -171,6 +181,89 @@ public class GroupsController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpPost("{id:guid}/attachments")]
+    [RequestSizeLimit(25 * 1024 * 1024)]
+    public async Task<IActionResult> UploadAttachment(Guid id, IFormFile file, CancellationToken ct)
+    {
+        if (file == null)
+        {
+            return BadRequest(new { error = "File is required." });
+        }
+
+        await using var stream = file.OpenReadStream();
+        var result = await _groupAttachmentService.UploadAsync(
+            id,
+            stream,
+            file.FileName,
+            file.ContentType,
+            file.Length,
+            ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("{id:guid}/attachments/{attachmentId:guid}")]
+    public async Task<IActionResult> DownloadAttachment(
+        Guid id,
+        Guid attachmentId,
+        [FromQuery] bool download = false,
+        CancellationToken ct = default)
+    {
+        var result = await _groupAttachmentService.DownloadAsync(id, attachmentId, ct);
+        if (!result.IsSuccess || result.Data == null)
+        {
+            return StatusCode(result.StatusCode, result);
+        }
+
+        var canPreview = result.Data.ContentType is
+            "image/jpeg" or
+            "image/png" or
+            "image/gif" or
+            "image/webp";
+
+        return download || !canPreview
+            ? File(result.Data.Stream, result.Data.ContentType, result.Data.FileName, enableRangeProcessing: true)
+            : File(result.Data.Stream, result.Data.ContentType, enableRangeProcessing: true);
+    }
+
+    [HttpPatch("{id:guid}/messages/{messageId:guid}")]
+    public async Task<IActionResult> UpdateMessage(
+        Guid id,
+        Guid messageId,
+        UpdateGroupMessageRequest request,
+        CancellationToken ct)
+    {
+        var result = await _groupsService.UpdateMessageAsync(id, messageId, request, ct);
+        await BroadcastMessageChangedAsync(id, result, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("{id:guid}/messages/{messageId:guid}/recall")]
+    public async Task<IActionResult> RecallMessage(Guid id, Guid messageId, CancellationToken ct)
+    {
+        var result = await _groupsService.RecallMessageAsync(id, messageId, ct);
+        await BroadcastMessageChangedAsync(id, result, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPut("{id:guid}/messages/{messageId:guid}/pin")]
+    public async Task<IActionResult> SetMessagePin(
+        Guid id,
+        Guid messageId,
+        SetGroupMessagePinRequest request,
+        CancellationToken ct)
+    {
+        var result = await _groupsService.SetMessagePinAsync(id, messageId, request, ct);
+        await BroadcastMessageChangedAsync(id, result, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpDelete("{id:guid}/messages/{messageId:guid}/for-me")]
+    public async Task<IActionResult> HideMessageForMe(Guid id, Guid messageId, CancellationToken ct)
+    {
+        var result = await _groupsService.HideMessageForCurrentUserAsync(id, messageId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpPost("{id:guid}/create-project")]
     public async Task<IActionResult> CreateProjectFromGroup(Guid id, CreateProjectFromGroupRequest request, CancellationToken ct)
     {
@@ -183,6 +276,21 @@ public class GroupsController : BaseApiController
     {
         var result = await _groupsService.StartMeetingSessionAsync(id, ct);
         return StatusCode(result.StatusCode, result);
+    }
+
+    private async Task BroadcastMessageChangedAsync(
+        Guid groupId,
+        Result<GroupMessageDto> result,
+        CancellationToken ct)
+    {
+        if (!result.IsSuccess || result.Data == null)
+        {
+            return;
+        }
+
+        await _groupHub.Clients
+            .Group(GroupHub.WorkGroup(groupId))
+            .SendAsync("groupMessageChanged", result.Data, ct);
     }
 
     [HttpGet("{id:guid}/meetings/active")]

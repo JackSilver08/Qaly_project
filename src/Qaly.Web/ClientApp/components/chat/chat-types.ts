@@ -12,9 +12,14 @@ export interface TeamChatPoll {
 }
 
 export interface TeamChatAttachment {
+    id?: string;
     name: string;
     sizeLabel: string;
-    kind?: "file" | "image";
+    contentType?: string;
+    url?: string;
+    downloadUrl?: string;
+    kind?: "file" | "image" | "video";
+    sourceFile?: File;
 }
 
 export interface TeamChatMeeting {
@@ -32,7 +37,13 @@ export interface TeamChatMessage {
     senderInitials: string;
     text: string;
     createdAt: string;
+    createdAtRaw: string;
+    messageType: string;
+    isDeleted: boolean;
+    editedAt?: string;
     pinned: boolean;
+    pinnedAt?: string;
+    pinnedByUserId?: string;
     attachments: TeamChatAttachment[];
     poll?: TeamChatPoll;
     meeting?: TeamChatMeeting;

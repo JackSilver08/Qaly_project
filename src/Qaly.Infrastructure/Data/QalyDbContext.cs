@@ -19,6 +19,8 @@ public class QalyDbContext : DbContext
     public DbSet<WorkGroupMember> WorkGroupMembers => Set<WorkGroupMember>();
     public DbSet<GroupInvitation> GroupInvitations => Set<GroupInvitation>();
     public DbSet<GroupMessage> GroupMessages => Set<GroupMessage>();
+    public DbSet<GroupMessageUserState> GroupMessageUserStates => Set<GroupMessageUserState>();
+    public DbSet<GroupAttachment> GroupAttachments => Set<GroupAttachment>();
     public DbSet<GroupPoll> GroupPolls => Set<GroupPoll>();
     public DbSet<GroupPollOption> GroupPollOptions => Set<GroupPollOption>();
     public DbSet<GroupPollVote> GroupPollVotes => Set<GroupPollVote>();

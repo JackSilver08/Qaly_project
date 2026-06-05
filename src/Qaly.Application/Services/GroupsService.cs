@@ -23,6 +23,7 @@ public partial class GroupsService : IGroupsService
     private readonly IRepository<GroupPollOption> _pollOptionRepo;
     private readonly IRepository<GroupPollVote> _pollVoteRepo;
     private readonly IRepository<GroupMessage> _messageRepo;
+    private readonly IRepository<GroupMessageUserState> _messageUserStateRepo;
     private readonly IRepository<Organization> _organizationRepo;
     private readonly IRepository<OrganizationMember> _organizationMemberRepo;
     private readonly IRepository<User> _userRepo;
@@ -46,6 +47,7 @@ public partial class GroupsService : IGroupsService
         IRepository<GroupPollOption> pollOptionRepo,
         IRepository<GroupPollVote> pollVoteRepo,
         IRepository<GroupMessage> messageRepo,
+        IRepository<GroupMessageUserState> messageUserStateRepo,
         IRepository<Organization> organizationRepo,
         IRepository<OrganizationMember> organizationMemberRepo,
         IRepository<User> userRepo,
@@ -68,6 +70,7 @@ public partial class GroupsService : IGroupsService
         _pollOptionRepo = pollOptionRepo;
         _pollVoteRepo = pollVoteRepo;
         _messageRepo = messageRepo;
+        _messageUserStateRepo = messageUserStateRepo;
         _organizationRepo = organizationRepo;
         _organizationMemberRepo = organizationMemberRepo;
         _userRepo = userRepo;
@@ -1310,10 +1313,21 @@ public partial class GroupsService : IGroupsService
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<PagedResult<GroupMessageDto>>();
+        }
+
         var query = _messageRepo.GetQueryable()
+            .IgnoreQueryFilters()
             .AsNoTracking()
             .Include(message => message.User)
-            .Where(message => message.WorkGroupId == groupId);
+            .Where(message =>
+                message.WorkGroupId == groupId &&
+                !message.UserStates.Any(state =>
+                    state.UserId == currentUserId.Value &&
+                    state.HiddenAt != null));
 
         var totalCount = await query.CountAsync(ct);
         var messages = await query
@@ -1373,6 +1387,183 @@ public partial class GroupsService : IGroupsService
             .FirstAsync(item => item.Id == message.Id, ct);
 
         return Result.Created(ToMessageDto(saved));
+    }
+
+    public async Task<Result<GroupMessageDto>> UpdateMessageAsync(
+        Guid groupId,
+        Guid messageId,
+        UpdateGroupMessageRequest request,
+        CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<GroupMessageDto>();
+        }
+
+        if (!await CanAccessGroupAsync(groupId, ct))
+        {
+            return Result.Forbidden<GroupMessageDto>();
+        }
+
+        var message = await _messageRepo.GetQueryable()
+            .Include(item => item.User)
+            .FirstOrDefaultAsync(item => item.Id == messageId && item.WorkGroupId == groupId, ct);
+        if (message == null)
+        {
+            return Result.NotFound<GroupMessageDto>("Message not found.");
+        }
+
+        if (message.UserId != currentUserId.Value)
+        {
+            return Result.Forbidden<GroupMessageDto>("You can only edit your own messages.");
+        }
+
+        if (!string.Equals(message.MessageType, "Text", StringComparison.OrdinalIgnoreCase))
+        {
+            return Result.Failure<GroupMessageDto>("Only text messages can be edited.");
+        }
+
+        var content = request.Content.Trim();
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return Result.Failure<GroupMessageDto>("Message content is required.");
+        }
+
+        if (content.Length > 4000)
+        {
+            return Result.Failure<GroupMessageDto>("Message content must be 4000 characters or fewer.");
+        }
+
+        message.Content = content;
+        message.EditedAt = DateTimeOffset.UtcNow;
+        await _messageRepo.UpdateAsync(message, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        return Result.Success(ToMessageDto(message));
+    }
+
+    public async Task<Result<GroupMessageDto>> RecallMessageAsync(
+        Guid groupId,
+        Guid messageId,
+        CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<GroupMessageDto>();
+        }
+
+        if (!await CanAccessGroupAsync(groupId, ct))
+        {
+            return Result.Forbidden<GroupMessageDto>();
+        }
+
+        var message = await _messageRepo.GetQueryable()
+            .Include(item => item.User)
+            .FirstOrDefaultAsync(item => item.Id == messageId && item.WorkGroupId == groupId, ct);
+        if (message == null)
+        {
+            return Result.NotFound<GroupMessageDto>("Message not found.");
+        }
+
+        if (message.UserId != currentUserId.Value)
+        {
+            return Result.Forbidden<GroupMessageDto>("You can only recall your own messages.");
+        }
+
+        message.IsDeleted = true;
+        message.DeletedAt = DateTimeOffset.UtcNow;
+        message.IsPinned = false;
+        message.PinnedAt = null;
+        message.PinnedByUserId = null;
+        await _messageRepo.UpdateAsync(message, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        return Result.Success(ToMessageDto(message));
+    }
+
+    public async Task<Result<GroupMessageDto>> SetMessagePinAsync(
+        Guid groupId,
+        Guid messageId,
+        SetGroupMessagePinRequest request,
+        CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<GroupMessageDto>();
+        }
+
+        if (!await CanAccessGroupAsync(groupId, ct))
+        {
+            return Result.Forbidden<GroupMessageDto>();
+        }
+
+        var message = await _messageRepo.GetQueryable()
+            .Include(item => item.User)
+            .FirstOrDefaultAsync(item => item.Id == messageId && item.WorkGroupId == groupId, ct);
+        if (message == null)
+        {
+            return Result.NotFound<GroupMessageDto>("Message not found.");
+        }
+
+        message.IsPinned = request.IsPinned;
+        message.PinnedAt = request.IsPinned ? DateTimeOffset.UtcNow : null;
+        message.PinnedByUserId = request.IsPinned ? currentUserId.Value : null;
+        await _messageRepo.UpdateAsync(message, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        return Result.Success(ToMessageDto(message));
+    }
+
+    public async Task<Result> HideMessageForCurrentUserAsync(
+        Guid groupId,
+        Guid messageId,
+        CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden();
+        }
+
+        if (!await CanAccessGroupAsync(groupId, ct))
+        {
+            return Result.Forbidden();
+        }
+
+        var messageExists = await _messageRepo.GetQueryable()
+            .IgnoreQueryFilters()
+            .AnyAsync(item => item.Id == messageId && item.WorkGroupId == groupId, ct);
+        if (!messageExists)
+        {
+            return Result.NotFound("Message not found.");
+        }
+
+        var state = await _messageUserStateRepo.GetQueryable()
+            .FirstOrDefaultAsync(item =>
+                item.GroupMessageId == messageId &&
+                item.UserId == currentUserId.Value, ct);
+
+        if (state == null)
+        {
+            state = new GroupMessageUserState
+            {
+                GroupMessageId = messageId,
+                UserId = currentUserId.Value,
+                HiddenAt = DateTimeOffset.UtcNow
+            };
+            await _messageUserStateRepo.AddAsync(state, ct);
+        }
+        else
+        {
+            state.HiddenAt = DateTimeOffset.UtcNow;
+            await _messageUserStateRepo.UpdateAsync(state, ct);
+        }
+
+        await _unitOfWork.SaveChangesAsync(ct);
+        return Result.Success();
     }
 
     public async Task<Result<CreateProjectFromGroupResult>> CreateProjectFromGroupAsync(Guid groupId, CreateProjectFromGroupRequest request, CancellationToken ct = default)
@@ -1619,7 +1810,10 @@ public partial class GroupsService : IGroupsService
             message.MessageType,
             message.IsDeleted,
             message.CreatedAt,
-            message.EditedAt);
+            message.EditedAt,
+            message.IsPinned,
+            message.PinnedAt,
+            message.PinnedByUserId);
 
     private async Task<bool> CanAccessOrganizationAsync(Guid organizationId, Guid ownerId, CancellationToken ct)
     {

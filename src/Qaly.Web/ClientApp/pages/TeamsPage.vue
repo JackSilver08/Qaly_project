@@ -7,13 +7,21 @@ import {
 import {
   CalendarDays,
   Check,
+  Crown,
+  Download,
+  FileText,
+  FileVideo,
+  Image as ImageIcon,
   Mail,
   Plus,
   Settings,
+  ShieldCheck,
   UserPlus,
+  UserRound,
   Users,
   Vote,
   Sparkles,
+  Trash2,
   PanelRightClose,
   PanelRightOpen,
 } from "lucide-vue-next";
@@ -70,6 +78,19 @@ interface GroupMessageDto {
   senderName: string;
   content: string;
   messageType: string;
+  isDeleted: boolean;
+  createdAt: string;
+  editedAt: string | null;
+  isPinned: boolean;
+  pinnedAt: string | null;
+  pinnedByUserId: string | null;
+}
+
+interface GroupAttachmentDto {
+  id: string;
+  fileName: string;
+  contentType: string;
+  fileSize: number;
   createdAt: string;
 }
 
@@ -113,6 +134,22 @@ const activeMessages = computed(() =>
 );
 const activePollMessages = computed(() =>
   activeMessages.value.filter((message) => message.poll?.id),
+);
+const sharedAttachments = computed(() =>
+  activeMessages.value.flatMap((message) =>
+    message.attachments.map((attachment) => ({
+      ...attachment,
+      messageId: message.id,
+      senderName: message.senderName,
+      createdAt: message.createdAt,
+    })),
+  ),
+);
+const sharedImages = computed(() =>
+  sharedAttachments.value.filter((attachment) => attachment.kind === "image"),
+);
+const sharedFiles = computed(() =>
+  sharedAttachments.value.filter((attachment) => attachment.kind !== "image"),
 );
 const canManageGroup = computed(() =>
   ["Owner", "Admin"].includes(activeDetail.value?.currentUserRole ?? ""),
@@ -276,6 +313,9 @@ async function connectRealtime() {
   });
   hubConnection.on("groupMessageReceived", (message: GroupMessageDto) => {
     upsertMessage(toMessageModel(message));
+  });
+  hubConnection.on("groupMessageChanged", (message: GroupMessageDto) => {
+    upsertMessage(toMessageModel(message), false);
   });
 
   try {
@@ -461,10 +501,14 @@ async function sendMessage(payload: {
 }) {
   if (!activeGroupId.value) return;
 
-  const content = serializeMessagePayload(payload);
-  const messageType = payload.poll ? "Poll" : "Text";
-
   try {
+    const uploadedAttachments = await uploadAttachments(payload.attachments);
+    const content = serializeMessagePayload({
+      ...payload,
+      attachments: uploadedAttachments,
+    });
+    const messageType = payload.poll ? "Poll" : "Text";
+
     if (hubConnection?.state === HubConnectionState.Connected) {
       await hubConnection.invoke("SendMessage", activeGroupId.value, content, messageType);
       return;
@@ -483,12 +527,112 @@ async function sendMessage(payload: {
   }
 }
 
-function togglePin(messageId: string) {
-  const target = messages.value.find((message) => message.id === messageId);
-  messages.value = messages.value.map((message) =>
-    message.id === messageId ? { ...message, pinned: !message.pinned } : message,
-  );
-  if (target) showSuccess(target.pinned ? "Đã bỏ ghim tin nhắn" : "Đã ghim tin nhắn");
+async function uploadAttachments(attachments: TeamChatAttachment[]) {
+  const uploaded: TeamChatAttachment[] = [];
+
+  for (const attachment of attachments) {
+    if (!attachment.sourceFile) {
+      uploaded.push(attachment);
+      continue;
+    }
+
+    const formData = new FormData();
+    formData.append("file", attachment.sourceFile);
+    const result = await apiResult<GroupAttachmentDto>(
+      `/api/groups/${activeGroupId.value}/attachments`,
+      {
+        method: "POST",
+        body: formData,
+      },
+    );
+    const url = `/api/groups/${activeGroupId.value}/attachments/${result.id}`;
+    uploaded.push({
+      id: result.id,
+      name: result.fileName,
+      contentType: result.contentType,
+      sizeLabel: formatFileSize(result.fileSize),
+      kind: attachmentKind(result.fileName, result.contentType),
+      url,
+      downloadUrl: `${url}?download=true`,
+    });
+  }
+
+  return uploaded;
+}
+
+async function editMessage(messageId: string, text: string) {
+  if (!activeGroupId.value || !text.trim()) return;
+  try {
+    const updated = await apiResult<GroupMessageDto>(
+      `/api/groups/${activeGroupId.value}/messages/${messageId}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ content: text.trim() }),
+      },
+    );
+    upsertMessage(toMessageModel(updated), false);
+    showSuccess("Đã chỉnh sửa tin nhắn");
+  } catch (error) {
+    showError(errorMessage(error, "Không thể chỉnh sửa tin nhắn."));
+  }
+}
+
+async function recallMessage(messageId: string) {
+  if (!activeGroupId.value) return;
+  try {
+    const updated = await apiResult<GroupMessageDto>(
+      `/api/groups/${activeGroupId.value}/messages/${messageId}/recall`,
+      { method: "POST" },
+    );
+    upsertMessage(toMessageModel(updated), false);
+    showSuccess("Đã thu hồi tin nhắn");
+  } catch (error) {
+    showError(errorMessage(error, "Không thể thu hồi tin nhắn."));
+  }
+}
+
+async function setMessagePin(messageId: string, isPinned: boolean) {
+  if (!activeGroupId.value) return;
+  try {
+    const updated = await apiResult<GroupMessageDto>(
+      `/api/groups/${activeGroupId.value}/messages/${messageId}/pin`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ isPinned }),
+      },
+    );
+    upsertMessage(toMessageModel(updated), false);
+    showSuccess(isPinned ? "Đã ghim tin nhắn" : "Đã bỏ ghim tin nhắn");
+  } catch (error) {
+    showError(errorMessage(error, "Không thể cập nhật ghim."));
+  }
+}
+
+async function hideMessages(messageIds: string[]) {
+  if (!activeGroupId.value || !messageIds.length) return;
+  try {
+    await Promise.all(
+      messageIds.map((messageId) =>
+        apiCommand(`/api/groups/${activeGroupId.value}/messages/${messageId}/for-me`, {
+          method: "DELETE",
+        }),
+      ),
+    );
+    const hidden = new Set(messageIds);
+    messages.value = messages.value.filter((message) => !hidden.has(message.id));
+    showSuccess(
+      messageIds.length > 1
+        ? "Đã xóa các tin nhắn ở phía bạn"
+        : "Đã xóa tin nhắn ở phía bạn",
+    );
+  } catch (error) {
+    showError(errorMessage(error, "Không thể xóa tin nhắn."));
+  }
+}
+
+function hideSharedAttachment(messageId: string) {
+  if (!window.confirm("Xóa tin nhắn chứa file này chỉ ở phía bạn?")) return;
+  void hideMessages([messageId]);
 }
 
 function joinMeeting(meetingId: string) {
@@ -512,9 +656,17 @@ function changeBackground() {
   localStorage.setItem("qaly.chatBackground", next);
 }
 
-function upsertMessage(message: TeamChatMessage) {
-  messages.value = [...messages.value.filter((item) => item.id !== message.id), message];
+function upsertMessage(message: TeamChatMessage, incrementUnread = true) {
+  const existingIndex = messages.value.findIndex((item) => item.id === message.id);
+  if (existingIndex >= 0) {
+    const next = [...messages.value];
+    next[existingIndex] = message;
+    messages.value = next;
+  } else {
+    messages.value = [...messages.value, message];
+  }
 
+  if (!incrementUnread) return;
   groups.value = groups.value.map((group) =>
     group.id === message.groupId
       ? {
@@ -544,7 +696,10 @@ function toMessageModel(message: GroupMessageDto): TeamChatMessage {
   if (message.messageType === "Poll" || meeting) {
     cleanText = "";
   } else if (attachments.length > 0) {
-    cleanText = cleanText.replace(/\[attachments\][^\n]*/i, "").trim();
+    cleanText = cleanText
+      .replace(/\[attachments\][^\n]*/gi, "")
+      .replace(/\[attachment\][^\n]*/gi, "")
+      .trim();
   }
 
   return {
@@ -555,9 +710,15 @@ function toMessageModel(message: GroupMessageDto): TeamChatMessage {
     senderInitials: initials(message.senderName),
     text: cleanText,
     createdAt: formatMessageTime(message.createdAt),
-    pinned: false,
+    createdAtRaw: message.createdAt,
+    messageType: message.messageType,
+    isDeleted: message.isDeleted,
+    editedAt: message.editedAt ?? undefined,
+    pinned: message.isPinned,
+    pinnedAt: message.pinnedAt ?? undefined,
+    pinnedByUserId: message.pinnedByUserId ?? undefined,
     attachments,
-    poll: parsePoll(message),
+    poll: message.isDeleted ? undefined : parsePoll(message),
     meeting,
   };
 }
@@ -576,7 +737,11 @@ function serializeMessagePayload(payload: {
   }
 
   if (payload.attachments.length > 0) {
-    lines.push(`[attachments] ${payload.attachments.map((file) => file.name).join(", ")}`);
+    payload.attachments.forEach((file) => {
+      lines.push(
+        `[attachment] ${file.id ?? ""}|${encodeURIComponent(file.name)}|${encodeURIComponent(file.contentType ?? "application/octet-stream")}|${file.sizeLabel}`,
+      );
+    });
   }
 
   return lines.filter(Boolean).join("\n");
@@ -621,6 +786,29 @@ function parseMeeting(message: GroupMessageDto): TeamChatMeeting | undefined {
 }
 
 function parseAttachments(message: GroupMessageDto): TeamChatAttachment[] {
+  const structured = message.content
+    .split("\n")
+    .filter((line) => line.startsWith("[attachment] "))
+    .map((line) => {
+      const [id, encodedName, encodedContentType, sizeLabel] = line
+        .replace("[attachment] ", "")
+        .split("|");
+      const name = decodeURIComponent(encodedName ?? "");
+      const contentType = decodeURIComponent(encodedContentType ?? "application/octet-stream");
+      const url = id ? `/api/groups/${message.workGroupId}/attachments/${id}` : undefined;
+      return {
+        id: id || undefined,
+        name,
+        contentType,
+        sizeLabel: sizeLabel || "Đã tải lên",
+        kind: attachmentKind(name, contentType),
+        url,
+        downloadUrl: url ? `${url}?download=true` : undefined,
+      } satisfies TeamChatAttachment;
+    })
+    .filter((attachment) => attachment.name);
+  if (structured.length) return structured;
+
   const match = message.content.match(/\[attachments\]\s*(.+)/i);
   if (!match) return [];
   
@@ -634,6 +822,26 @@ function parseAttachments(message: GroupMessageDto): TeamChatAttachment[] {
       kind: isImage ? "image" : "file"
     };
   });
+}
+
+function attachmentKind(
+  fileName: string,
+  contentType?: string,
+): TeamChatAttachment["kind"] {
+  const previewableImages = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+  if (contentType && previewableImages.includes(contentType.toLowerCase())) return "image";
+  if (contentType?.startsWith("video/")) return "video";
+
+  const ext = fileName.split(".").pop()?.toLowerCase();
+  if (ext && ["png", "jpg", "jpeg", "gif", "webp"].includes(ext)) return "image";
+  if (ext && ["mp4", "webm", "mov", "avi", "mkv"].includes(ext)) return "video";
+  return "file";
+}
+
+function formatFileSize(size: number) {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function initials(name: string) {
@@ -682,7 +890,10 @@ function formatMessageTime(value: string) {
           :current-user-id="currentUserId"
           :background-theme="backgroundTheme"
           @send="sendMessage"
-          @pin="togglePin"
+          @edit="editMessage"
+          @pin="setMessagePin"
+          @recall="recallMessage"
+          @hide="hideMessages"
           @change-background="changeBackground"
           @join-meeting="joinMeeting"
         />
@@ -700,13 +911,8 @@ function formatMessageTime(value: string) {
 
           <div v-else class="group-detail-content">
           <header class="group-detail-header">
-            <div>
-              <span>CHI TIẾT</span>
-              <h2>{{ activeGroup?.name ?? "Chọn nhóm" }}</h2>
-              <p>{{ activeDetail?.memberCount ?? members.length }} thành viên</p>
-            </div>
-            <div class="group-detail-header__actions">
-              <div class="group-role-badge">{{ roleLabel(activeDetail?.currentUserRole) }}</div>
+            <div class="group-detail-titlebar">
+              <strong>Thông tin nhóm</strong>
               <button
                 class="group-detail-icon-button"
                 type="button"
@@ -716,30 +922,65 @@ function formatMessageTime(value: string) {
                 <PanelRightClose :size="17" />
               </button>
             </div>
+
+            <div class="group-detail-profile">
+              <div class="group-detail-avatar">{{ initials(activeGroup?.name ?? "Qaly") }}</div>
+              <div class="group-detail-profile__copy">
+                <h2>{{ activeGroup?.name ?? "Chọn nhóm" }}</h2>
+                <p>
+                  {{ activeDetail?.memberCount ?? members.length }} thành viên
+                  <span aria-hidden="true">·</span>
+                  {{ activeDetail?.messageCount ?? 0 }} tin nhắn
+                </p>
+                <span v-if="activeDetail?.description" class="group-detail-description">
+                  {{ activeDetail.description }}
+                </span>
+              </div>
+              <div class="group-role-badge">
+                <Crown v-if="activeDetail?.currentUserRole === 'Owner'" :size="14" />
+                <ShieldCheck v-else-if="activeDetail?.currentUserRole === 'Admin'" :size="14" />
+                <UserRound v-else :size="14" />
+                {{ roleLabel(activeDetail?.currentUserRole) }}
+              </div>
+            </div>
           </header>
 
           <nav class="group-detail-tabs" aria-label="Group tools">
             <button :class="{ active: activeTab === 'members' }" @click="activeTab = 'members'">
-              <Users :size="15" /> Thành viên
+              <span><Users :size="19" /></span>
+              Thành viên
             </button>
             <button :class="{ active: activeTab === 'invites' }" @click="activeTab = 'invites'">
-              <Mail :size="15" /> Lời mời
+              <span><Mail :size="19" /></span>
+              Lời mời
             </button>
             <button :class="{ active: activeTab === 'polls' }" @click="activeTab = 'polls'">
-              <Vote :size="15" /> Bình chọn
+              <span><Vote :size="19" /></span>
+              Bình chọn
             </button>
             <button :class="{ active: activeTab === 'meeting' }" @click="activeTab = 'meeting'">
-              <CalendarDays :size="15" /> Cuộc họp
+              <span><CalendarDays :size="19" /></span>
+              Cuộc họp
             </button>
             <button :class="{ active: activeTab === 'project' }" @click="activeTab = 'project'">
-              <Settings :size="15" /> Dự án
+              <span><Settings :size="19" /></span>
+              Dự án
             </button>
             <button :class="{ active: activeTab === 'ai' }" @click="activeTab = 'ai'">
-              <Sparkles :size="15" /> AI
+              <span><Sparkles :size="19" /></span>
+              AI
             </button>
           </nav>
 
           <div v-if="activeTab === 'members'" class="group-tool-body">
+            <div class="group-tool-heading">
+              <div>
+                <strong>Thành viên nhóm</strong>
+                <span>{{ members.length }} người đang tham gia</span>
+              </div>
+              <ShieldCheck :size="19" />
+            </div>
+
             <form v-if="canManageGroup" class="group-inline-form" @submit.prevent="addExistingMember">
               <select v-model="addUserId">
                 <option value="">Chọn tài khoản đã đăng ký</option>
@@ -759,27 +1000,38 @@ function formatMessageTime(value: string) {
             <div class="group-member-list">
               <article v-for="member in members" :key="member.userId" class="group-member-row">
                 <div class="group-avatar">{{ initials(member.fullName) }}</div>
-                <div>
+                <div class="group-member-identity">
                   <strong>{{ member.fullName }}</strong>
                   <span>{{ member.email }}</span>
                 </div>
-                <select
-                  v-if="canManageGroup && member.role !== 'Owner'"
-                  :value="member.role"
-                  @change="updateMemberRole(member, ($event.target as HTMLSelectElement).value)"
-                >
-                  <option value="Member">Thành viên</option>
-                  <option value="Admin">Quản trị viên</option>
-                </select>
-                <small v-else>{{ roleLabel(member.role) }}</small>
-                <button
-                  v-if="canManageGroup && member.role !== 'Owner'"
-                  class="text-button"
-                  type="button"
-                  @click="removeMember(member)"
-                >
-                  Xóa
-                </button>
+                <div class="group-member-actions">
+                  <label
+                    class="group-member-role"
+                    :class="`group-member-role--${member.role.toLowerCase()}`"
+                  >
+                    <Crown v-if="member.role === 'Owner'" :size="13" />
+                    <ShieldCheck v-else-if="member.role === 'Admin'" :size="13" />
+                    <UserRound v-else :size="13" />
+                    <select
+                      v-if="canManageGroup && member.role !== 'Owner'"
+                      :value="member.role"
+                      aria-label="Vai trò thành viên"
+                      @change="updateMemberRole(member, ($event.target as HTMLSelectElement).value)"
+                    >
+                      <option value="Member">Thành viên</option>
+                      <option value="Admin">Quản trị viên</option>
+                    </select>
+                    <span v-else>{{ roleLabel(member.role) }}</span>
+                  </label>
+                  <button
+                    v-if="canManageGroup && member.role !== 'Owner'"
+                    class="group-member-remove"
+                    type="button"
+                    @click="removeMember(member)"
+                  >
+                    Xóa khỏi nhóm
+                  </button>
+                </div>
               </article>
             </div>
           </div>
@@ -881,6 +1133,85 @@ function formatMessageTime(value: string) {
               </button>
             </form>
           </div>
+
+          <section v-if="sharedAttachments.length" class="group-shared-section">
+            <div class="group-shared-heading">
+              <div>
+                <strong>Nội dung đã chia sẻ</strong>
+                <span>{{ sharedAttachments.length }} mục trong cuộc trò chuyện</span>
+              </div>
+              <FileText :size="19" />
+            </div>
+
+            <div v-if="sharedImages.length" class="group-shared-block">
+              <div class="group-shared-block__title">
+                <span><ImageIcon :size="16" /> Ảnh</span>
+                <small>{{ sharedImages.length }}</small>
+              </div>
+              <div class="group-shared-images">
+                <article
+                  v-for="file in sharedImages.slice(-6).reverse()"
+                  :key="`${file.messageId}-${file.id ?? file.name}`"
+                >
+                  <img v-if="file.url" :src="file.url" :alt="file.name" loading="lazy" />
+                  <div class="group-shared-actions">
+                    <a
+                      v-if="file.downloadUrl || file.url"
+                      :href="file.downloadUrl || file.url"
+                      :download="file.name"
+                      aria-label="Tải ảnh xuống"
+                    >
+                      <Download :size="15" />
+                    </a>
+                    <button
+                      type="button"
+                      aria-label="Xóa ảnh ở phía tôi"
+                      @click="hideSharedAttachment(file.messageId)"
+                    >
+                      <Trash2 :size="15" />
+                    </button>
+                  </div>
+                </article>
+              </div>
+            </div>
+
+            <div v-if="sharedFiles.length" class="group-shared-block">
+              <div class="group-shared-block__title">
+                <span><FileText :size="16" /> Video và tài liệu</span>
+                <small>{{ sharedFiles.length }}</small>
+              </div>
+              <div class="group-shared-files">
+                <article
+                  v-for="file in sharedFiles.slice(-6).reverse()"
+                  :key="`${file.messageId}-${file.id ?? file.name}`"
+                >
+                  <span class="group-shared-file-icon">
+                    <FileVideo v-if="file.kind === 'video'" :size="19" />
+                    <FileText v-else :size="19" />
+                  </span>
+                  <div>
+                    <strong>{{ file.name }}</strong>
+                    <span>{{ file.kind === "video" ? "Video" : "Tài liệu" }} · {{ file.sizeLabel }}</span>
+                  </div>
+                  <a
+                    v-if="file.downloadUrl || file.url"
+                    :href="file.downloadUrl || file.url"
+                    :download="file.name"
+                    aria-label="Tải file xuống"
+                  >
+                    <Download :size="16" />
+                  </a>
+                  <button
+                    type="button"
+                    aria-label="Xóa file ở phía tôi"
+                    @click="hideSharedAttachment(file.messageId)"
+                  >
+                    <Trash2 :size="16" />
+                  </button>
+                </article>
+              </div>
+            </div>
+          </section>
           </div>
         </aside>
 
@@ -1168,13 +1499,14 @@ function formatMessageTime(value: string) {
 }
 
 .group-detail-panel {
-  padding: 20px 18px;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
   min-width: 0;
   overflow-x: hidden;
-  overflow-y: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   background: #ffffff;
 }
 
@@ -1185,56 +1517,92 @@ function formatMessageTime(value: string) {
 
 .group-detail-content {
   min-width: 0;
-  min-height: 0;
-  height: 100%;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 16px;
 }
 
 .group-detail-header {
+  flex: 0 0 auto;
+  min-width: 0;
+  border-bottom: 1px solid #edf1f5;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+}
+
+.group-detail-titlebar {
+  min-height: 58px;
+  padding: 0 16px;
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  min-width: 0;
+  border-bottom: 1px solid #f1f5f9;
+  color: #0f172a;
 }
 
-.group-detail-header > div:first-child {
-  min-width: 0;
+.group-detail-titlebar > strong {
+  font-size: 1rem;
+  font-weight: 800;
 }
 
-.group-detail-header h2,
-.group-detail-header p {
+.group-detail-profile {
+  padding: 22px 18px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.group-detail-avatar {
+  width: 68px;
+  height: 68px;
+  display: grid;
+  place-items: center;
+  border: 3px solid #ffffff;
+  border-radius: 22px;
+  background: linear-gradient(145deg, #1677ff, #2456d8);
+  color: #ffffff;
+  font-size: 1.1rem;
+  font-weight: 900;
+  box-shadow: 0 8px 22px rgba(37, 99, 235, 0.2);
+}
+
+.group-detail-profile__copy {
+  min-width: 0;
+  width: 100%;
+}
+
+.group-detail-profile h2 {
+  margin: 12px 0 4px;
   overflow: hidden;
+  color: #0f172a;
+  font-size: 1.22rem;
+  font-weight: 850;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.group-detail-header span {
-  color: #64748b;
-  font-size: 0.78rem;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.group-detail-header h2 {
-  margin: 4px 0;
-  color: #111827;
-  font-size: 1.35rem;
-  line-height: 1.1;
-}
-
-.group-detail-header p {
+.group-detail-profile p {
   margin: 0;
   color: #64748b;
-  font-size: 0.88rem;
+  font-size: 0.82rem;
 }
 
-.group-detail-header__actions {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+.group-detail-profile p span {
+  margin: 0 4px;
+  color: #cbd5e1;
+}
+
+.group-detail-description {
+  display: -webkit-box;
+  margin: 8px auto 0;
+  max-width: 300px;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .group-detail-icon-button,
@@ -1266,39 +1634,46 @@ function formatMessageTime(value: string) {
 
 .group-role-badge {
   flex: 0 0 auto;
-  height: 34px;
+  min-height: 30px;
+  margin-top: 12px;
   border-radius: 999px;
-  padding: 8px 13px;
+  padding: 6px 11px;
   background: #eff6ff;
   color: #1d4ed8;
-  font-size: 0.78rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.75rem;
   font-weight: 800;
   box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.12);
 }
 
 .group-detail-tabs {
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
+  padding: 14px 16px 16px;
+  border-bottom: 8px solid #f5f7fa;
 }
 
 .group-detail-tabs button {
   min-width: 0;
-  min-height: 44px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 12px;
+  min-height: 68px;
+  border: 1px solid #e5eaf1;
+  border-radius: 14px;
   background: #ffffff;
   color: #475569;
   display: inline-flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  padding: 8px 4px;
+  gap: 7px;
+  padding: 9px 4px;
   overflow: hidden;
   text-align: center;
-  font-size: 0.64rem;
+  font-size: 0.7rem;
   font-weight: 800;
   line-height: 1.15;
   transition:
@@ -1307,10 +1682,29 @@ function formatMessageTime(value: string) {
     color 160ms ease;
 }
 
+.group-detail-tabs button > span {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: #f1f5f9;
+  color: #526176;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+
 .group-detail-tabs button:hover {
   border-color: #bfdbfe;
   background: #f8fbff;
   color: #1677ff;
+}
+
+.group-detail-tabs button:hover > span,
+.group-detail-tabs button.active > span {
+  background: #dbeafe;
+  color: #1d4ed8;
 }
 
 .group-detail-tabs button.active {
@@ -1322,10 +1716,37 @@ function formatMessageTime(value: string) {
 
 .group-tool-body {
   min-width: 0;
-  min-height: 0;
-  flex: 1;
+  min-height: auto;
+  flex: 0 0 auto;
   overflow-x: hidden;
-  overflow-y: auto;
+  overflow-y: visible;
+  padding: 16px;
+}
+
+.group-tool-heading {
+  min-width: 0;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #2563eb;
+}
+
+.group-tool-heading > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.group-tool-heading strong {
+  color: #0f172a;
+  font-size: 0.94rem;
+}
+
+.group-tool-heading span {
+  color: #64748b;
+  font-size: 0.76rem;
 }
 
 .group-inline-form,
@@ -1369,10 +1790,10 @@ function formatMessageTime(value: string) {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: 11px;
   border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 10px;
+  border-radius: 14px;
+  padding: 12px;
   background: #ffffff;
   box-shadow: none;
   transition:
@@ -1387,15 +1808,231 @@ function formatMessageTime(value: string) {
   background: #f8fbff;
 }
 
-.group-member-row select {
-  max-width: 92px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 8px;
-  padding: 7px;
+.group-member-identity {
+  min-width: 0;
 }
 
-.group-member-row .text-button {
-  grid-column: 3;
+.group-member-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 7px;
+}
+
+.group-member-role {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 9px;
+  padding: 0 8px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.group-member-role--owner {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.group-member-role--admin {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.group-member-role select {
+  max-width: 105px;
+  border: 0;
+  padding: 0;
+  outline: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.group-member-remove {
+  border: 0;
+  padding: 0;
+  color: #dc2626;
+  background: transparent;
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.group-member-remove:hover {
+  text-decoration: underline;
+}
+
+.group-shared-section {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 16px;
+  padding: 18px 16px 24px;
+  border-top: 8px solid #f5f7fa;
+}
+
+.group-shared-heading,
+.group-shared-block__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.group-shared-heading {
+  color: #2563eb;
+}
+
+.group-shared-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.group-shared-heading strong {
+  color: #0f172a;
+  font-size: 0.94rem;
+}
+
+.group-shared-heading span {
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.group-shared-block {
+  display: grid;
+  gap: 10px;
+}
+
+.group-shared-block__title {
+  color: #334155;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.group-shared-block__title > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.group-shared-block__title small {
+  min-width: 24px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  text-align: center;
+}
+
+.group-shared-images {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.group-shared-images article {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #e2e8f0;
+}
+
+.group-shared-images img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.group-shared-actions {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.5);
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.group-shared-images article:hover .group-shared-actions,
+.group-shared-images article:focus-within .group-shared-actions {
+  opacity: 1;
+}
+
+.group-shared-actions a,
+.group-shared-actions button,
+.group-shared-files a,
+.group-shared-files button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 9px;
+  color: #334155;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.group-shared-files {
+  display: grid;
+  gap: 7px;
+}
+
+.group-shared-files article {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid #e5eaf1;
+  border-radius: 12px;
+}
+
+.group-shared-file-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.group-shared-files article > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.group-shared-files strong,
+.group-shared-files span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-shared-files strong {
+  color: #0f172a;
+  font-size: 0.76rem;
+}
+
+.group-shared-files article > div span {
+  color: #64748b;
+  font-size: 0.68rem;
+}
+
+.group-shared-files button {
+  color: #dc2626;
+  background: #fef2f2;
 }
 
 .group-member-row strong,
@@ -1416,9 +2053,9 @@ function formatMessageTime(value: string) {
 }
 
 .group-avatar {
-  width: 38px;
-  height: 38px;
-  border-radius: 999px;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
   display: grid;
   place-items: center;
   background: #1677ff;

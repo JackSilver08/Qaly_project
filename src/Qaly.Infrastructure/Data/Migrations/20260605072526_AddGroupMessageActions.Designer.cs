@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Qaly.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using Qaly.Infrastructure.Data;
 namespace Qaly.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(QalyDbContext))]
-    partial class QalyDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260605072526_AddGroupMessageActions")]
+    partial class AddGroupMessageActions
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -663,54 +666,6 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("DataSubjectRequests");
-                });
-
-            modelBuilder.Entity("Qaly.Domain.Entities.GroupAttachment", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasDefaultValueSql("NEWID()");
-
-                    b.Property<string>("ContentType")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetimeoffset")
-                        .HasDefaultValueSql("SYSDATETIMEOFFSET()");
-
-                    b.Property<string>("FileName")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<string>("FilePath")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
-
-                    b.Property<long>("FileSize")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTimeOffset?>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<Guid>("UploadedById")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("WorkGroupId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UploadedById");
-
-                    b.HasIndex("WorkGroupId", "CreatedAt");
-
-                    b.ToTable("GroupAttachments");
                 });
 
             modelBuilder.Entity("Qaly.Domain.Entities.GroupInvitation", b =>
@@ -2707,25 +2662,6 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("Qaly.Domain.Entities.GroupAttachment", b =>
-                {
-                    b.HasOne("Qaly.Domain.Entities.User", "UploadedBy")
-                        .WithMany()
-                        .HasForeignKey("UploadedById")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Qaly.Domain.Entities.WorkGroup", "WorkGroup")
-                        .WithMany()
-                        .HasForeignKey("WorkGroupId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("UploadedBy");
-
-                    b.Navigation("WorkGroup");
                 });
 
             modelBuilder.Entity("Qaly.Domain.Entities.GroupInvitation", b =>

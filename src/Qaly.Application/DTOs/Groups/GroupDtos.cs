@@ -128,11 +128,32 @@ public record GroupMessageDto(
     string MessageType,
     bool IsDeleted,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? EditedAt);
+    DateTimeOffset? EditedAt,
+    bool IsPinned,
+    DateTimeOffset? PinnedAt,
+    Guid? PinnedByUserId);
 
 public record SendGroupMessageRequest(
     string Content,
     string MessageType = "Text");
+
+public record UpdateGroupMessageRequest(
+    string Content);
+
+public record SetGroupMessagePinRequest(
+    bool IsPinned);
+
+public record GroupAttachmentDto(
+    Guid Id,
+    string FileName,
+    string ContentType,
+    long FileSize,
+    DateTimeOffset CreatedAt);
+
+public record GroupAttachmentDownloadDto(
+    Stream Stream,
+    string FileName,
+    string ContentType);
 
 public record CreateProjectFromGroupRequest(
     string Name,
