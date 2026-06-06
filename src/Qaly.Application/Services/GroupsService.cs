@@ -1911,7 +1911,7 @@ public partial class GroupsService : IGroupsService
             message.PinnedByUserId,
             ToReactionDtos(message.ReactionSummaryJson));
 
-    private static IReadOnlyList<GroupMessageReactionDto> ToReactionDtos(string? reactionSummaryJson)
+    private static List<GroupMessageReactionDto> ToReactionDtos(string? reactionSummaryJson)
     {
         var reactions = ReadReactionState(reactionSummaryJson);
         return reactions
@@ -2352,7 +2352,7 @@ public partial class GroupsService : IGroupsService
     private static string BuildInternalMeetingJoinUrl(Guid groupId, Guid meetingId)
         => $"/groups/{groupId}/meeting?meetingId={meetingId}";
 
-    private GroupMeetingSessionDto ToMeetingDto(GroupMeetingSession meeting)
+    private static GroupMeetingSessionDto ToMeetingDto(GroupMeetingSession meeting)
         => new(
             meeting.Id,
             meeting.WorkGroupId,

@@ -394,8 +394,10 @@ async function publishLocalTracks(room: Room) {
     const tracks = await createLocalTracks({
       audio: true,
       video: {
-        width: 1280,
-        height: 720,
+        resolution: {
+          width: 1280,
+          height: 720,
+        },
       },
     });
 
