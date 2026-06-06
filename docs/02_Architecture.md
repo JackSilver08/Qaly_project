@@ -1,118 +1,157 @@
-# 🏗️ QALY PROJECT – THIẾT KẾ KIẾN TRÚC
+# 🏗️ QALY PROJECT – KIẾN TRÚC THỰC TẾ
 
-> **Ngày tạo:** 01/05/2026 | **Phiên bản:** 1.0 | **Trạng thái:** Draft
-
----
-
-## I. KIẾN TRÚC TỔNG QUAN
-
-### Pattern: Clean Architecture + Modular Monolith
-
-```
-┌─────────────────────────────────────────────┐
-│              Qaly.Web                       │
-│         (Razor Pages + Vue Islands)         │
-├─────────────────────────────────────────────┤
-│            Qaly.Application                 │
-│         Services, DTOs, Validation          │
-├─────────────────────────────────────────────┤
-│            Qaly.Infrastructure              │
-│         DbContext, Repositories, Identity   │
-├─────────────────────────────────────────────┤
-│              Qaly.Domain                    │
-│         Entities, Enums, Interfaces         │
-│         *** KHÔNG PHỤ THUỘC GÌ ***          │
-└─────────────────────────────────────────────┘
-```
-
-### Dependency Rule
-
-```
-Web → Application → Domain
-Web → Infrastructure → Domain
-Application ✗→ Infrastructure   (chỉ qua interface)
-Domain ✗→ bất kỳ layer nào
-```
+> Cập nhật 05/06/2026 | Trạng thái: Core đã hoàn thiện và đang chạy thử nghiệm thực tế
 
 ---
 
-## II. CẤU TRÚC THƯ MỤC
+## 1. Mô tả tổng quan
 
+Hệ thống QALY hiện tại là một modular monolith với frontend Razor Pages kết hợp Vue, backend ASP.NET Core, và SQL Server làm nguồn dữ liệu chính.
+
+- `Qaly.Web`: Web app, API controllers, SignalR hubs, authentication, Razor Pages, Vue islands.
+- `Qaly.Application`: Business logic, CQRS-like service layer, DTO, validation, mapping.
+- `Qaly.Infrastructure`: EF Core `DbContext`, SQL Server persistence, Identity stores, repository pattern, import engine, AI ingestion worker.
+- `Qaly.Domain`: Domain entities, value objects, enums, quy tắc nghiệp vụ.
+
+Phần `Core` đã hoàn thiện bao gồm luồng CRUD cơ bản, meeting start/join/end, import tài liệu, AI analytics sơ bộ và deploy Docker/Docker Compose.
+
+---
+
+## 2. Sơ đồ module và luồng dữ liệu
+
+```mermaid
+flowchart LR
+  Browser["Browser / Vue UI"]
+  Web["Qaly.Web (API + Razor + SignalR)"]
+  App["Qaly.Application (Services, DTOs, Validation)"]
+  Infra["Qaly.Infrastructure (EF Core, SQL Server, Import, AI Sync)"]
+  DB["SQL Server (QalyDb)"]
+  AI["AI Provider / Qdrant / ERUMI"]
+  SignalR["SignalR Hub / GroupHub"]
+
+  Browser -->|HTTP API| Web
+  Browser -->|SignalR| SignalR
+  Web --> App
+  App --> Infra
+  Infra --> DB
+  Infra --> AI
+  AI -->|Vector sync + analytics| DB
+  SignalR --> Web
+  SignalR --> DB
 ```
-c:\Qaly_project\
-├── Qaly_project.slnx
-├── src/
-│   ├── Qaly.Domain/           ← Entities, Enums, Interfaces
-│   ├── Qaly.Application/      ← Services, DTOs, Exceptions, Mappings
-│   ├── Qaly.Infrastructure/   ← DbContext, Configs, Repos, Migrations, Seeds
-│   └── Qaly.Web/              ← Razor Pages, Hubs, Filters, wwwroot
-├── tests/
-│   ├── Qaly.UnitTests/
-│   └── Qaly.IntegrationTests/
-├── docs/
-├── .gitignore
-└── README.md
+
+### 2.1 Luồng dữ liệu chính
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant B as Browser
+  participant API as Qaly.Web
+  participant S as SignalR Hub
+  participant A as Qaly.Application
+  participant I as Qaly.Infrastructure
+  participant DB as SQL Server
+  participant AI as AI Provider
+
+  U->>B: click tạo group / open meeting / import
+  B->>API: POST /api/groups / POST /api/import/documents/preview
+  API->>A: validate request, apply business rules
+  A->>I: persist entities / parse file / enqueue import
+  I->>DB: insert/update mapping
+  I->>AI: sync vector / request analytics
+  AI-->>I: response insights/fallback
+  I-->>API: result
+  API-->>B: HTTP response
+  B->>S: JoinGroup / SendMessage / JoinMeeting
+  S-->>B: broadcast realtime events
 ```
 
-Xem chi tiết từng file trong tài liệu phân tích `01_Analysis.md`.
+---
+
+## 3. Module chính
+
+### 3.1 Authentication & Authorization
+
+- `Qaly.Web` sử dụng ASP.NET Core Identity và middleware authentication.
+- API bảo vệ bằng `[Authorize]`.
+- Quyền nhóm: `Owner`, `Admin`, `Member`.
+- Một số endpoint yêu cầu `Owner/Admin` để thay đổi cấu hình nhóm, xóa nhóm, hoặc kết thúc meeting.
+
+### 3.2 Groups & SignalR
+
+- Hệ thống có `GroupsController` và `GroupHub` để quản lý nhóm, chat, poll, và meeting.
+- SignalR dùng cho realtime chat, join/leave group, và meeting event.
+- Hiện tại backend các route `start/join/end` meeting đã hoạt động.
+- Limit hiện tại: participant realtime/count trên UI còn lỗi P0 `DH03-BUG-MTG-001`; cần fix trước khi xem là realtime đầy đủ.
+
+### 3.3 Import tài liệu
+
+- `ImportController` cung cấp API preview/execute cho document và ZIP.
+- Giới hạn file 5MB.
+- Hỗ trợ import DOCX và ZIP bundle chứa `.md`, `.txt`, `.html`, `.docx`.
+- PDF hiện được xử lý là unsupported/roadmap nếu chưa parser, không nên ghi là hỗ trợ PDF đầy đủ.
+- Import còn bao gồm undo session và lịch sử `import sessions`.
+
+### 3.4 AI & Analytics
+
+- `AiController` xử lý AI analytics, summary, risk, smart search, task assignment và chat.
+- `GroupAiController` xử lý action item extraction, summary, draft project, và liên kết meeting transcript.
+- Backend đã có fallback/schema cho AI; không nên claim AI hoàn chỉnh khi provider chưa cấu hình.
+- `VectorSyncWorker` và ingestion service đồng bộ dữ liệu sang vector DB/AI index.
+
+### 3.5 Deploy và hạ tầng
+
+- Hệ thống hỗ trợ chạy local bằng `CMI\SQLEXPRESS` cho SQL Server.
+- Docker Compose sử dụng container `qaly-sqlserver`, `qaly-redis`, `qaly-seq`, `qaly-mailhog`.
+- Deploy hiện tại đã có cấu hình cơ bản nhưng chưa đủ bằng chứng nghiệm thu đầy đủ cho production.
 
 ---
 
-## III. NUGET PACKAGES
+## 4. Luồng import tài liệu chi tiết
 
-| Layer | Package | Version |
-|---|---|---|
-| Domain | *(Không có)* | – |
-| Application | AutoMapper.Extensions.Microsoft.DependencyInjection | 12.* |
-| Application | FluentValidation | 11.* |
-| Infrastructure | Microsoft.EntityFrameworkCore.SqlServer | 10.* |
-| Infrastructure | Microsoft.EntityFrameworkCore.Tools | 10.* |
-| Infrastructure | Microsoft.AspNetCore.Identity.EntityFrameworkCore | 10.* |
-| Web | Microsoft.EntityFrameworkCore.Design | 10.* |
-| UnitTests | xunit, Moq, FluentAssertions | latest |
-| UnitTests | Microsoft.EntityFrameworkCore.InMemory | 10.* |
+```mermaid
+flowchart TB
+  subgraph Browser
+    U[User] --> Upload[Upload DOCX/ZIP/PDF]
+  end
+  subgraph API
+    Parse[POST /api/import/documents/preview]
+    Execute[POST /api/import/documents/execute]
+    ZipPreview[POST /api/import/documents/zip/preview]
+    ZipExecute[POST /api/import/documents/zip/execute]
+  end
+  subgraph Backend
+    ImportSvc[Qaly.Application.ImportService]
+    FileSvc[IFileImportService]
+    DB[SQL Server]
+  end
 
----
-
-## IV. CONVENTIONS
-
-- **Entity**: PascalCase, singular (`TaskItem`, `Project`)
-- **Table**: PascalCase, plural (`TaskItems`, `Projects`)
-- **Interface**: Prefix `I` (`IRepository`, `ITaskService`)
-- **DTO**: Suffix `Dto` (`TaskItemDto`, `CreateProjectDto`)
-- **Git branches**: `feature/`, `bugfix/`, `hotfix/`
-- **Commits**: conventional commits (`feat:`, `fix:`, `docs:`)
-
----
-
-## V. GHI CHÚ NGHIỆM THU HIỆN TẠI
-
-Phần kiến trúc mô tả định hướng và cấu trúc kỹ thuật. Không dùng tài liệu này để khẳng định mọi chức năng đã nghiệm thu đầy đủ nếu chưa có bằng chứng QA đi kèm.
-
-| Khu vực | Trạng thái theo bằng chứng tuần 03/06/2026 - 09/06/2026 |
-|---|---|
-| Nhập tài liệu | Có bằng chứng pass cho DOCX, ZIP chứa file hỗ trợ và PDF unsupported/roadmap rõ ràng; chưa ghi nhận hỗ trợ mọi định dạng. |
-| Cuộc họp nhóm | Backend start/join/end và phân quyền có test; participant realtime/count còn lỗi P0 `DH03-BUG-MTG-001`. |
-| Chia sẻ màn hình | Browser unsupported không crash nhưng UI feedback chưa rõ, lỗi P2 `DH03-BUG-MTG-002`; cần xác minh bằng browser thật/headful cho positive case. |
-| AI analytics / Group AI | Có test smoke/fallback/schema; manual deep check và Group AI E2E chưa có bằng chứng đầy đủ. |
-| Deploy config | Chưa có bằng chứng nghiệm thu đầy đủ cho checklist deploy tuần này. |
-| Phản hồi dự phòng AI | AI có thể phụ thuộc provider/local config; khi thiếu provider phải ghi rõ fallback/mock thay vì claim AI thật đầy đủ. |
-
-### Thuật ngữ dùng trong tài liệu nghiệm thu
-
-| Thuật ngữ code/Anh | Thuật ngữ tiếng Việt ưu tiên |
-|---|---|
-| group | nhóm |
-| project | dự án |
-| task | công việc |
-| poll | bình chọn |
-| meeting | cuộc họp |
-| import | nhập tài liệu |
-| permission | phân quyền |
-| evidence | bằng chứng kiểm thử |
-| realtime | thời gian thực |
-| AI fallback | phản hồi dự phòng AI |
+  Upload --> Parse
+  Parse --> ImportSvc
+  ImportSvc --> FileSvc
+  FileSvc --> DB
+  Parse --> U
+  Upload --> ZipPreview
+  ZipPreview --> FileSvc
+  ZipExecute --> ImportSvc
+  Execute --> ImportSvc
+  Execute --> DB
+```
 
 ---
 
-*Cập nhật khi có thay đổi trong quá trình triển khai.*
+## 5. Giới hạn hiện tại
+
+- **Meeting realtime**: event `participant count` chưa cập nhật ổn định; UI có bug P0.
+- **Screen share**: chưa có positive case headful; browser unsupported hiện chỉ log console lỗi.
+- **Import**: giới hạn file 5MB; PDF vẫn trong roadmap/unsupported.
+- **AI**: có thể phụ thuộc provider/fallback; chưa đủ bằng chứng nghiệm thu full AI analytics hoặc Group AI.
+- **Deploy**: Docker Compose/infra đã cấu hình cơ bản, nhưng chưa có evidence nghiệm thu đầy đủ cho checklist deploy.
+
+---
+
+## 6. Ghi chú quan trọng
+
+- Tài liệu này mô tả kiến trúc thực tế của hệ thống ở thời điểm hiện tại.
+- Không dùng tài liệu này để khẳng định mọi tính năng chưa có bằng chứng QA đã nghiệm thu hoàn toàn.
+- Nếu cần demo meeting realtime, hãy kiểm tra kỹ bug `DH03-BUG-MTG-001` trước.
