@@ -306,6 +306,18 @@ public class GroupsController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpPost("{id:guid}/messages/{messageId:guid}/reactions")]
+    public async Task<IActionResult> ReactToMessage(
+        Guid id,
+        Guid messageId,
+        ReactToGroupMessageRequest request,
+        CancellationToken ct)
+    {
+        var result = await _groupsService.ToggleMessageReactionAsync(id, messageId, request, ct);
+        await BroadcastMessageChangedAsync(id, result, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpDelete("{id:guid}/messages/{messageId:guid}/for-me")]
     public async Task<IActionResult> HideMessageForMe(Guid id, Guid messageId, CancellationToken ct)
     {

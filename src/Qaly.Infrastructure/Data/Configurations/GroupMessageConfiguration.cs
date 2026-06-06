@@ -14,6 +14,7 @@ public class GroupMessageConfiguration : IEntityTypeConfiguration<GroupMessage>
         builder.Property(message => message.MessageType).HasMaxLength(30).IsRequired();
         builder.Property(message => message.IsDeleted).HasDefaultValue(false);
         builder.Property(message => message.IsPinned).HasDefaultValue(false);
+        builder.Property(message => message.ReactionSummaryJson).HasMaxLength(4000).HasDefaultValue("[]");
         builder.Property(message => message.CreatedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
 
         builder.HasOne(message => message.WorkGroup)

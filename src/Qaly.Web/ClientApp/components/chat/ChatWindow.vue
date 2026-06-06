@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 import {
+  ArrowLeft,
+  Check,
   Image as ImageIcon,
   Info,
   Palette,
   Paperclip,
   Pencil,
   Pin,
+  RotateCcw,
   Send,
   SmilePlus,
   Trash2,
@@ -17,6 +20,7 @@ import MessageItem from "./MessageItem.vue";
 import type {
   ChatGroupModel,
   TeamChatAttachment,
+  TeamChatMemberMention,
   TeamChatMessage,
   TeamChatPoll,
 } from "./chat-types";
@@ -25,7 +29,10 @@ const props = defineProps<{
   group: ChatGroupModel | null;
   messages: TeamChatMessage[];
   currentUserId: string;
+  members?: TeamChatMemberMention[];
+  typingUsers?: string[];
   backgroundTheme?: string;
+  backgroundImage?: string;
 }>();
 
 const emit = defineEmits<{
@@ -40,7 +47,10 @@ const emit = defineEmits<{
   pin: [messageId: string, isPinned: boolean];
   recall: [messageId: string];
   hide: [messageIds: string[]];
-  changeBackground: [];
+  react: [messageId: string, emoji: string];
+  typing: [isTyping: boolean];
+  setBackground: [theme: string];
+  setBackgroundImage: [imageUrl: string | null];
   joinMeeting: [meetingId: string];
 }>();
 
@@ -54,6 +64,8 @@ const editingMessage = ref<TeamChatMessage | null>(null);
 const detailMessage = ref<TeamChatMessage | null>(null);
 const selectionMode = ref(false);
 const selectedIds = ref<Set<string>>(new Set());
+const mentionQuery = ref<string | null>(null);
+const showBackgroundMenu = ref(false);
 
 const pinnedMessages = computed(() =>
   props.messages.filter((message) => message.pinned && !message.isDeleted),
@@ -62,7 +74,64 @@ const selectedMessages = computed(() =>
   props.messages.filter((message) => selectedIds.value.has(message.id)),
 );
 const emojiOptions = ["👍", "✅", "🔥", "🎯", "🙏", "💡"];
+const backgroundOptions = [
+  { id: "clean", name: "Tối giản", previewClass: "bg-preview--clean" },
+  { id: "soft", name: "Mây xanh", previewClass: "bg-preview--soft" },
+  { id: "mint", name: "Vườn mint", previewClass: "bg-preview--mint" },
+  { id: "paper", name: "Giấy lưới", previewClass: "bg-preview--paper" },
+  { id: "aurora", name: "Aurora", previewClass: "bg-preview--aurora" },
+  { id: "sunset", name: "Hoàng hôn", previewClass: "bg-preview--sunset" },
+  { id: "night", name: "Đêm neon", previewClass: "bg-preview--night" },
+  { id: "rose", name: "Ngày của mẹ", previewClass: "bg-preview--rose" },
+  { id: "ocean", name: "Đại dương", previewClass: "bg-preview--ocean" },
+];
+const themeBackgrounds: Record<string, string> = {
+  clean: "#fbfdff",
+  soft:
+    "radial-gradient(circle at 18% 18%, rgba(96, 165, 250, 0.32), transparent 30%), radial-gradient(circle at 82% 12%, rgba(186, 230, 253, 0.55), transparent 34%), linear-gradient(135deg, #ffffff 0%, #eaf4ff 100%)",
+  mint:
+    "radial-gradient(circle at 78% 22%, rgba(16, 185, 129, 0.24), transparent 30%), radial-gradient(circle at 12% 85%, rgba(125, 211, 252, 0.36), transparent 30%), linear-gradient(135deg, #f0fdfa 0%, #ffffff 100%)",
+  paper:
+    "linear-gradient(90deg, rgba(100, 116, 139, 0.11) 1px, transparent 1px), linear-gradient(180deg, rgba(100, 116, 139, 0.11) 1px, transparent 1px), linear-gradient(135deg, #fffef8, #f8fafc)",
+  aurora:
+    "radial-gradient(circle at 22% 22%, rgba(129, 140, 248, 0.48), transparent 32%), radial-gradient(circle at 72% 62%, rgba(45, 212, 191, 0.42), transparent 34%), linear-gradient(135deg, #eff6ff 0%, #faf5ff 52%, #ecfeff 100%)",
+  sunset:
+    "radial-gradient(circle at 65% 20%, rgba(251, 146, 60, 0.34), transparent 32%), radial-gradient(circle at 18% 80%, rgba(244, 114, 182, 0.3), transparent 34%), linear-gradient(135deg, #fff7ed 0%, #fef2f2 52%, #f8fafc 100%)",
+  night:
+    "radial-gradient(circle at 30% 18%, rgba(59, 130, 246, 0.36), transparent 26%), radial-gradient(circle at 78% 78%, rgba(168, 85, 247, 0.32), transparent 32%), linear-gradient(135deg, #0f172a 0%, #172554 100%)",
+  rose:
+    "radial-gradient(circle at 50% 52%, rgba(244, 114, 182, 0.28), transparent 26%), radial-gradient(circle at 72% 22%, rgba(251, 113, 133, 0.24), transparent 30%), linear-gradient(135deg, #fff1f2 0%, #faf5ff 100%)",
+  ocean:
+    "radial-gradient(circle at 18% 22%, rgba(14, 165, 233, 0.34), transparent 30%), radial-gradient(circle at 78% 70%, rgba(20, 184, 166, 0.24), transparent 34%), linear-gradient(135deg, #ecfeff 0%, #eff6ff 100%)",
+};
 const groupInitials = computed(() => initials(props.group?.name ?? "Qaly"));
+const chatWindowStyle = computed(() => ({
+  background: props.backgroundImage
+    ? `linear-gradient(rgba(255, 255, 255, 0.48), rgba(255, 255, 255, 0.58)), url("${props.backgroundImage}")`
+    : themeBackgrounds[props.backgroundTheme ?? "clean"] ?? themeBackgrounds.clean,
+  backgroundSize: props.backgroundTheme === "paper" && !props.backgroundImage ? "26px 26px, 26px 26px, auto" : "cover",
+  backgroundPosition: "center",
+}));
+const mentionOptions = computed(() => {
+  if (mentionQuery.value == null) return [];
+  const query = mentionQuery.value.toLowerCase();
+  const allOption: TeamChatMemberMention = {
+    id: "all",
+    name: "all",
+    initials: "@",
+    isAll: true,
+  };
+  const members = (props.members ?? [])
+    .filter((member) => member.id !== props.currentUserId)
+    .filter((member) => member.name.toLowerCase().includes(query))
+    .slice(0, 6);
+  return query === "all" || "all".includes(query) ? [allOption, ...members] : members;
+});
+const typingText = computed(() => {
+  const names = [...new Set(props.typingUsers ?? [])].filter(Boolean).slice(0, 2);
+  if (names.length === 0) return "";
+  return names.length === 1 ? `${names[0]} đang nhập` : `${names.join(", ")} đang nhập`;
+});
 
 watch(
   () => props.messages.length,
@@ -81,6 +150,7 @@ watch(
     cancelEditing();
     exitSelectionMode();
     openMenuId.value = null;
+    showBackgroundMenu.value = false;
   },
 );
 
@@ -117,6 +187,30 @@ function attachFiles(event: Event, kind: "file" | "image") {
 function addEmoji(emoji: string) {
   draft.value += emoji;
   showEmoji.value = false;
+  void nextTick(() => textareaRef.value?.focus());
+}
+
+function updateMentionQuery() {
+  const cursor = textareaRef.value?.selectionStart ?? draft.value.length;
+  const beforeCursor = draft.value.slice(0, cursor);
+  const match = beforeCursor.match(/(?:^|\s)@([\p{L}\p{N}_ .-]{0,32})$/u);
+  mentionQuery.value = match ? match[1].trimStart() : null;
+  emit("typing", Boolean(draft.value.trim()));
+}
+
+function insertMention(member: TeamChatMemberMention) {
+  const textarea = textareaRef.value;
+  const cursor = textarea?.selectionStart ?? draft.value.length;
+  const beforeCursor = draft.value.slice(0, cursor);
+  const afterCursor = draft.value.slice(cursor);
+  const match = beforeCursor.match(/(?:^|\s)@([\p{L}\p{N}_ .-]{0,32})$/u);
+  if (!match || match.index == null) return;
+
+  const prefix = beforeCursor.slice(0, match.index);
+  const separator = match[0].startsWith(" ") ? " " : "";
+  const mentionText = member.isAll ? "@all" : `@${member.name}`;
+  draft.value = `${prefix}${separator}${mentionText} ${afterCursor}`;
+  mentionQuery.value = null;
   void nextTick(() => textareaRef.value?.focus());
 }
 
@@ -223,6 +317,7 @@ function sendMessage() {
   if (editingMessage.value) {
     emit("edit", editingMessage.value.id, text);
     cancelEditing();
+    emit("typing", false);
     return;
   }
 
@@ -232,6 +327,49 @@ function sendMessage() {
   });
   draft.value = "";
   pendingAttachments.value = [];
+  mentionQuery.value = null;
+  emit("typing", false);
+}
+
+function relayReaction(messageId: string, emoji: string) {
+  emit("react", messageId, emoji);
+}
+
+function selectBackground(theme: string) {
+  emit("setBackgroundImage", null);
+  emit("setBackground", theme);
+  showBackgroundMenu.value = false;
+}
+
+function resetBackground() {
+  emit("setBackgroundImage", null);
+  emit("setBackground", "clean");
+  showBackgroundMenu.value = false;
+}
+
+function uploadBackground(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+
+  if (!file.type.startsWith("image/")) {
+    showError("Vui lòng chọn một file ảnh.");
+    return;
+  }
+  if (file.size > 2.5 * 1024 * 1024) {
+    showError("Ảnh nền nên nhỏ hơn 2.5MB để trình duyệt lưu ổn định.");
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    emit("setBackgroundImage", String(reader.result));
+    showBackgroundMenu.value = false;
+    showSuccess("Đã đổi nền chat");
+  };
+  reader.onerror = () => showError("Không thể đọc ảnh nền.");
+  reader.readAsDataURL(file);
 }
 </script>
 
@@ -239,6 +377,7 @@ function sendMessage() {
   <section
     class="team-chat-window glass-card"
     :class="`team-chat-window--${backgroundTheme ?? 'clean'}`"
+    :style="chatWindowStyle"
     @click="openMenuId = null"
   >
     <header class="team-chat-window__header">
@@ -257,7 +396,7 @@ function sendMessage() {
           class="icon-button icon-button--small"
           type="button"
           aria-label="Đổi nền chat"
-          @click.stop="$emit('changeBackground')"
+          @click.stop="showBackgroundMenu = !showBackgroundMenu"
         >
           <Palette :size="16" />
         </button>
@@ -298,8 +437,14 @@ function sendMessage() {
         @menu="toggleMenu"
         @action="handleMessageAction"
         @toggle-select="toggleSelected"
+        @react="relayReaction"
         @join-meeting="$emit('joinMeeting', $event)"
       />
+
+      <div v-if="typingText" class="team-typing-indicator">
+        <span class="typing-dots"><i></i><i></i><i></i></span>
+        <strong>{{ typingText }}</strong>
+      </div>
     </div>
 
     <div v-if="selectionMode" class="team-selection-toolbar">
@@ -347,12 +492,28 @@ function sendMessage() {
           v-model="draft"
           rows="1"
           :placeholder="editingMessage ? 'Chỉnh sửa nội dung...' : 'Nhập tin nhắn...'"
+          @input="updateMentionQuery"
+          @focus="updateMentionQuery"
+          @blur="$emit('typing', false)"
           @keydown.enter.exact.prevent="sendMessage"
         ></textarea>
         <button class="primary-button composer-send-btn" type="submit" :aria-label="editingMessage ? 'Lưu chỉnh sửa' : 'Gửi tin nhắn'">
           <Send :size="16" />
         </button>
       </form>
+
+      <div v-if="mentionOptions.length" class="team-mention-popover">
+        <button
+          v-for="member in mentionOptions"
+          :key="member.id"
+          type="button"
+          @mousedown.prevent="insertMention(member)"
+        >
+          <span>{{ member.initials }}</span>
+          <strong>{{ member.isAll ? "Tag tất cả" : member.name }}</strong>
+          <small>{{ member.isAll ? "@all" : "Thành viên" }}</small>
+        </button>
+      </div>
     </div>
 
     <div v-if="showEmoji" class="team-emoji-picker glass-card" @click.stop>
@@ -360,6 +521,58 @@ function sendMessage() {
         {{ emoji }}
       </button>
     </div>
+
+    <Teleport to="body">
+      <div v-if="showBackgroundMenu" class="chat-customize-backdrop" @click.self="showBackgroundMenu = false">
+        <section class="chat-customize-sheet" @click.stop>
+          <header class="chat-customize-header">
+            <button type="button" aria-label="Quay lại" @click="showBackgroundMenu = false">
+              <ArrowLeft :size="24" />
+            </button>
+            <h2>Tùy chỉnh</h2>
+            <button type="button" aria-label="Đóng" @click="showBackgroundMenu = false">
+              <X :size="22" />
+            </button>
+          </header>
+
+          <nav class="chat-customize-tabs" aria-label="Tùy chỉnh đoạn chat">
+            <button type="button" class="is-active">Chủ đề</button>
+            <button type="button" disabled>Cảm xúc nhanh</button>
+            <button type="button" disabled>Hiệu ứng từ ngữ</button>
+          </nav>
+
+          <div class="chat-customize-actions">
+            <label class="chat-customize-action-card">
+              <span><ImageIcon :size="31" /></span>
+              <strong>Tải hình ảnh lên</strong>
+              <input type="file" accept="image/*" @change="uploadBackground" />
+            </label>
+            <button type="button" class="chat-customize-action-card" @click="resetBackground">
+              <span><RotateCcw :size="31" /></span>
+              <strong>Đặt lại nền</strong>
+            </button>
+          </div>
+
+          <div class="chat-customize-grid">
+            <button
+              v-for="option in backgroundOptions"
+              :key="option.id"
+              type="button"
+              class="chat-theme-card"
+              :class="{ 'is-active': !backgroundImage && backgroundTheme === option.id }"
+              @click="selectBackground(option.id)"
+            >
+              <span class="chat-theme-card__preview" :class="option.previewClass">
+                <i v-if="!backgroundImage && backgroundTheme === option.id">
+                  <Check :size="18" />
+                </i>
+              </span>
+              <strong>{{ option.name }}</strong>
+            </button>
+          </div>
+        </section>
+      </div>
+    </Teleport>
 
     <Teleport to="body">
       <div v-if="detailMessage" class="message-detail-backdrop" @click.self="detailMessage = null">
@@ -474,7 +687,54 @@ function sendMessage() {
   background: #f1f5f9;
 }
 
+.team-typing-indicator {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 44px;
+  padding: 8px 11px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  color: #64748b;
+  background: rgba(255, 255, 255, 0.92);
+  font-size: 0.78rem;
+}
+
+.typing-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.typing-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: #94a3b8;
+  animation: typingPulse 1s infinite ease-in-out;
+}
+
+.typing-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes typingPulse {
+  0%, 80%, 100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  40% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
 .team-chat-composer-wrapper {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -580,6 +840,61 @@ function sendMessage() {
   outline: 0;
 }
 
+.team-mention-popover {
+  position: absolute;
+  left: 92px;
+  right: 58px;
+  bottom: calc(100% + 8px);
+  z-index: 20;
+  display: grid;
+  gap: 4px;
+  padding: 7px;
+  border: 1px solid #dbe3ef;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.18);
+}
+
+.team-mention-popover button {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-radius: 10px;
+  padding: 8px;
+  color: #0f172a;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.team-mention-popover button:hover {
+  background: #eff6ff;
+}
+
+.team-mention-popover span {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: #1d4ed8;
+  background: #dbeafe;
+  font-weight: 900;
+}
+
+.team-mention-popover strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-mention-popover small {
+  color: #64748b;
+  font-size: 0.72rem;
+}
+
 .composer-send-btn {
   width: 42px;
   height: 42px;
@@ -612,24 +927,335 @@ function sendMessage() {
   cursor: pointer;
 }
 
+.team-chat-window--clean {
+  background: #fbfdff;
+}
+
 .team-chat-window--soft {
-  background: linear-gradient(135deg, #fff, #eef6ff);
+  background:
+    radial-gradient(circle at 18% 18%, rgba(96, 165, 250, 0.32), transparent 30%),
+    radial-gradient(circle at 82% 12%, rgba(186, 230, 253, 0.55), transparent 34%),
+    linear-gradient(135deg, #ffffff 0%, #eaf4ff 100%);
 }
 
 .team-chat-window--mint {
-  background: linear-gradient(135deg, #ecfdf5, #fff);
+  background:
+    radial-gradient(circle at 78% 22%, rgba(16, 185, 129, 0.24), transparent 30%),
+    radial-gradient(circle at 12% 85%, rgba(125, 211, 252, 0.36), transparent 30%),
+    linear-gradient(135deg, #f0fdfa 0%, #ffffff 100%);
 }
 
 .team-chat-window--paper {
   background:
-    linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
-    linear-gradient(180deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
-    #fffdf8;
-  background-size: 24px 24px;
+    linear-gradient(90deg, rgba(100, 116, 139, 0.11) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(100, 116, 139, 0.11) 1px, transparent 1px),
+    linear-gradient(135deg, #fffef8, #f8fafc);
+  background-size: 26px 26px, 26px 26px, auto;
 }
 
-.team-chat-window--dark {
-  background: linear-gradient(135deg, #101827, #172033);
+.team-chat-window--aurora {
+  background:
+    radial-gradient(circle at 22% 22%, rgba(129, 140, 248, 0.48), transparent 32%),
+    radial-gradient(circle at 72% 62%, rgba(45, 212, 191, 0.42), transparent 34%),
+    linear-gradient(135deg, #eff6ff 0%, #faf5ff 52%, #ecfeff 100%);
+}
+
+.team-chat-window--sunset {
+  background:
+    radial-gradient(circle at 65% 20%, rgba(251, 146, 60, 0.34), transparent 32%),
+    radial-gradient(circle at 18% 80%, rgba(244, 114, 182, 0.3), transparent 34%),
+    linear-gradient(135deg, #fff7ed 0%, #fef2f2 52%, #f8fafc 100%);
+}
+
+.team-chat-window--night {
+  background:
+    radial-gradient(circle at 30% 18%, rgba(59, 130, 246, 0.36), transparent 26%),
+    radial-gradient(circle at 78% 78%, rgba(168, 85, 247, 0.32), transparent 32%),
+    linear-gradient(135deg, #0f172a 0%, #172554 100%);
+}
+
+.team-chat-window--rose {
+  background:
+    radial-gradient(circle at 50% 52%, rgba(244, 114, 182, 0.28), transparent 26%),
+    radial-gradient(circle at 72% 22%, rgba(251, 113, 133, 0.24), transparent 30%),
+    linear-gradient(135deg, #fff1f2 0%, #faf5ff 100%);
+}
+
+.team-chat-window--ocean {
+  background:
+    radial-gradient(circle at 18% 22%, rgba(14, 165, 233, 0.34), transparent 30%),
+    radial-gradient(circle at 78% 70%, rgba(20, 184, 166, 0.24), transparent 34%),
+    linear-gradient(135deg, #ecfeff 0%, #eff6ff 100%);
+}
+
+.team-chat-window--night .team-chat-window__header h2,
+.team-chat-window--night .team-chat-window__header span:not(.team-chat-window__avatar) {
+  color: #ffffff;
+}
+
+.team-chat-window--night .team-chat-body {
+  background: rgba(15, 23, 42, 0.16);
+  border-radius: 18px;
+}
+
+.chat-customize-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+.chat-customize-sheet {
+  width: min(820px, 100%);
+  max-height: min(860px, calc(100vh - 44px));
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 30px;
+  padding: 24px;
+  color: #f8fafc;
+  background: #050505;
+  box-shadow: 0 34px 90px rgba(0, 0, 0, 0.5);
+}
+
+.chat-customize-header {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.chat-customize-header h2 {
+  margin: 0;
+  font-size: 1.8rem;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.chat-customize-header button {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  color: #f8fafc;
+  background: transparent;
+  cursor: pointer;
+}
+
+.chat-customize-header button:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.chat-customize-tabs {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 28px;
+  overflow-x: auto;
+}
+
+.chat-customize-tabs button {
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 20px;
+  color: rgba(248, 250, 252, 0.52);
+  background: transparent;
+  font-size: 1rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.chat-customize-tabs button.is-active {
+  color: #ffffff;
+  background: #252525;
+}
+
+.chat-customize-tabs button:disabled {
+  cursor: default;
+}
+
+.chat-customize-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 30px;
+}
+
+.chat-customize-action-card {
+  min-height: 150px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 16px;
+  border: 0;
+  border-radius: 26px;
+  color: #f8fafc;
+  background: #303030;
+  font-size: 1rem;
+  text-align: center;
+  cursor: pointer;
+}
+
+.chat-customize-action-card:hover {
+  background: #3a3a3a;
+}
+
+.chat-customize-action-card span {
+  color: rgba(248, 250, 252, 0.82);
+}
+
+.chat-customize-action-card strong {
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.chat-customize-action-card input {
+  display: none;
+}
+
+.chat-customize-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 26px 22px;
+}
+
+.chat-theme-card {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  border: 0;
+  padding: 0;
+  color: #f8fafc;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-theme-card__preview {
+  position: relative;
+  aspect-ratio: 0.72;
+  overflow: hidden;
+  border-radius: 24px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.chat-theme-card:hover .chat-theme-card__preview {
+  box-shadow:
+    inset 0 0 0 2px rgba(96, 165, 250, 0.7),
+    0 16px 42px rgba(37, 99, 235, 0.22);
+}
+
+.chat-theme-card.is-active .chat-theme-card__preview {
+  box-shadow:
+    inset 0 0 0 3px #60a5fa,
+    0 0 0 4px rgba(96, 165, 250, 0.18);
+}
+
+.chat-theme-card__preview i {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #ffffff;
+  background: #2563eb;
+}
+
+.chat-theme-card strong {
+  overflow: hidden;
+  font-size: 1rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bg-preview--clean {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.4), transparent 42%),
+    #f8fafc;
+}
+
+.bg-preview--soft {
+  background:
+    radial-gradient(circle at 26% 18%, rgba(96, 165, 250, 0.85), transparent 28%),
+    radial-gradient(circle at 78% 70%, rgba(191, 219, 254, 0.9), transparent 34%),
+    linear-gradient(145deg, #eff6ff, #ffffff);
+}
+
+.bg-preview--mint {
+  background:
+    radial-gradient(circle at 70% 18%, rgba(52, 211, 153, 0.75), transparent 30%),
+    radial-gradient(circle at 18% 78%, rgba(45, 212, 191, 0.56), transparent 34%),
+    linear-gradient(145deg, #064e3b, #ecfdf5);
+}
+
+.bg-preview--paper {
+  background:
+    linear-gradient(90deg, rgba(71, 85, 105, 0.16) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(71, 85, 105, 0.16) 1px, transparent 1px),
+    linear-gradient(145deg, #fff7ed, #f8fafc);
+  background-size: 18px 18px, 18px 18px, auto;
+}
+
+.bg-preview--aurora {
+  background:
+    radial-gradient(circle at 20% 24%, #7c3aed, transparent 30%),
+    radial-gradient(circle at 70% 62%, #14b8a6, transparent 36%),
+    linear-gradient(145deg, #1e1b4b, #082f49);
+}
+
+.bg-preview--sunset {
+  background:
+    radial-gradient(circle at 66% 18%, #fb923c, transparent 28%),
+    radial-gradient(circle at 24% 70%, #ec4899, transparent 34%),
+    linear-gradient(145deg, #581c87, #f97316);
+}
+
+.bg-preview--night {
+  background:
+    radial-gradient(circle at 34% 18%, #2563eb, transparent 28%),
+    radial-gradient(circle at 72% 72%, #a855f7, transparent 34%),
+    linear-gradient(145deg, #020617, #172554);
+}
+
+.bg-preview--rose {
+  background:
+    radial-gradient(circle at 50% 48%, #ec4899, transparent 24%),
+    radial-gradient(circle at 70% 22%, #fb7185, transparent 30%),
+    linear-gradient(145deg, #2e1065, #831843);
+}
+
+.bg-preview--ocean {
+  background:
+    radial-gradient(circle at 22% 24%, #22d3ee, transparent 30%),
+    radial-gradient(circle at 74% 70%, #0f766e, transparent 36%),
+    linear-gradient(145deg, #082f49, #0e7490);
+}
+
+@media (max-width: 720px) {
+  .chat-customize-sheet {
+    min-height: calc(100vh - 28px);
+    border-radius: 26px;
+    padding: 20px;
+  }
+
+  .chat-customize-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .chat-customize-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 22px 16px;
+  }
 }
 
 .message-detail-backdrop {

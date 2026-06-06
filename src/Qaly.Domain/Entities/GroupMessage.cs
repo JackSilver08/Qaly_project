@@ -11,6 +11,7 @@ public class GroupMessage : BaseEntity, ISoftDeleteEntity
     public bool IsPinned { get; set; }
     public DateTimeOffset? PinnedAt { get; set; }
     public Guid? PinnedByUserId { get; set; }
+    public string ReactionSummaryJson { get; set; } = "[]";
     public bool IsDeleted { get; set; }
 
     public WorkGroup WorkGroup { get; set; } = null!;

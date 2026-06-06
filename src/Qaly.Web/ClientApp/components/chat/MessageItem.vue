@@ -36,11 +36,16 @@ defineEmits<{
     message: TeamChatMessage,
   ];
   toggleSelect: [messageId: string];
+  react: [messageId: string, emoji: string];
   joinMeeting: [meetingId: string];
 }>();
 
 const renderedText = computed(() => renderLightMarkdown(props.message.text));
 const isMine = computed(() => props.message.senderId === props.currentUserId);
+const hasImageAttachments = computed(() => props.message.attachments.some((file) => file.kind === "image"));
+const hasOnlyImageAttachments = computed(
+  () => props.message.attachments.length > 0 && props.message.attachments.every((file) => file.kind === "image"),
+);
 const openAttachmentMenu = ref<string | null>(null);
 const canEdit = computed(
   () =>
@@ -62,11 +67,15 @@ function escapeHtml(value: string) {
 function renderLightMarkdown(value: string) {
   return escapeHtml(value)
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(/(^|\s)@all\b/g, '$1<span class="chat-mention chat-mention--all">@all</span>')
+    .replace(/(^|\s)@([\p{L}\p{N}_ .-]{2,40})/gu, '$1<span class="chat-mention">@$2</span>')
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/_([^_]+)_/g, "<em>$1</em>")
     .replace(/\n/g, "<br>");
 }
+
+const reactionOptions = ["👍", "❤️", "😂", "😮", "😢", "🔥", "✅"];
 
 function attachmentKey(name: string, id?: string) {
   return id ?? name;
@@ -112,6 +121,8 @@ function fileIcon(name: string, contentType?: string) {
       'is-consecutive': isConsecutive,
       'is-selected': selected,
       'is-selecting': selectionMode,
+      'has-image-attachment': hasImageAttachments,
+      'has-only-image-attachments': hasOnlyImageAttachments,
     }"
     @contextmenu.prevent="$emit('menu', message.id)"
   >
@@ -157,7 +168,6 @@ function fileIcon(name: string, contentType?: string) {
             rel="noopener noreferrer"
           >
             <img :src="file.url" :alt="file.name" loading="lazy" />
-            <span>{{ file.name }}</span>
           </a>
           <a
             v-else
@@ -221,6 +231,19 @@ function fileIcon(name: string, contentType?: string) {
         <span v-if="message.pinned"><Pin :size="11" /> Đã ghim</span>
       </div>
 
+      <div v-if="message.reactions.length" class="team-message__reactions">
+        <button
+          v-for="reaction in message.reactions"
+          :key="reaction.emoji"
+          type="button"
+          :class="{ 'is-active': reaction.reactedByCurrentUser }"
+          @click="$emit('react', message.id, reaction.emoji)"
+        >
+          <span>{{ reaction.emoji }}</span>
+          <strong>{{ reaction.count }}</strong>
+        </button>
+      </div>
+
       <button
         v-if="!selectionMode"
         class="team-message__more"
@@ -232,6 +255,17 @@ function fileIcon(name: string, contentType?: string) {
       </button>
 
       <div v-if="menuOpen" class="message-action-menu" @click.stop>
+        <div v-if="!message.isDeleted" class="message-reaction-picker">
+          <button
+            v-for="emoji in reactionOptions"
+            :key="emoji"
+            type="button"
+            @click="$emit('react', message.id, emoji)"
+          >
+            {{ emoji }}
+          </button>
+        </div>
+        <div v-if="!message.isDeleted" class="message-action-menu__divider"></div>
         <button v-if="!message.isDeleted && message.text" type="button" @click="$emit('action', 'copy', message)">
           <Clipboard :size="17" /> Sao chép tin nhắn
         </button>
@@ -333,9 +367,9 @@ function fileIcon(name: string, contentType?: string) {
   padding: 10px 13px;
   border: 1px solid #e5eaf1;
   border-radius: 15px 15px 15px 5px;
-  color: #1e293b;
+  color: #0f172a;
   background: #fff;
-  box-shadow: 0 2px 7px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 3px 12px rgba(15, 23, 42, 0.07);
   font-size: 0.92rem;
   line-height: 1.45;
 }
@@ -345,14 +379,40 @@ function fileIcon(name: string, contentType?: string) {
 }
 
 .team-message.is-mine .team-message__bubble {
-  border-color: #bfdbfe;
+  border-color: #dbe3ef !important;
   border-radius: 15px 15px 5px 15px;
-  color: #12315d;
-  background: #e8f2ff;
+  color: #0f172a !important;
+  background: #ffffff !important;
+  box-shadow: 0 3px 12px rgba(15, 23, 42, 0.07) !important;
 }
 
 .team-message.is-mine.is-consecutive .team-message__bubble {
   border-radius: 15px 6px 6px 15px;
+}
+
+.team-message.has-image-attachment .team-message__bubble {
+  gap: 7px;
+  border-color: transparent !important;
+  padding: 0 !important;
+  color: #0f172a !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.team-message.has-image-attachment .team-message__text {
+  width: fit-content;
+  max-width: min(340px, 62vw);
+  margin-bottom: 1px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 14px;
+  padding: 8px 11px;
+  color: #0f172a;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+}
+
+.team-message.is-mine.has-image-attachment .team-message__text {
+  align-self: flex-end;
 }
 
 .team-message__meta {
@@ -399,6 +459,17 @@ function fileIcon(name: string, contentType?: string) {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 
+.team-message__text :deep(.chat-mention) {
+  color: #0f63d8;
+  background: transparent;
+  font-weight: 900;
+}
+
+.team-message__text :deep(.chat-mention--all) {
+  color: #0f63d8;
+  background: transparent;
+}
+
 .team-message__recalled {
   display: inline-flex;
   align-items: center;
@@ -420,6 +491,33 @@ function fileIcon(name: string, contentType?: string) {
   display: inline-flex;
   align-items: center;
   gap: 3px;
+}
+
+.team-message__reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.team-message__reactions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #334155;
+  background: #f8fbff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.team-message__reactions button.is-active {
+  border-color: #60a5fa;
+  color: #1d4ed8;
+  background: #dbeafe;
 }
 
 .team-message__more {
@@ -512,6 +610,21 @@ function fileIcon(name: string, contentType?: string) {
   background: #f1f5f9;
 }
 
+.message-reaction-picker {
+  display: flex;
+  gap: 3px;
+  padding: 3px 2px 6px;
+}
+
+.message-reaction-picker button {
+  width: 28px;
+  height: 28px;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0;
+  font-size: 1rem;
+}
+
 .message-action-menu button.is-danger {
   color: #dc2626;
 }
@@ -532,6 +645,10 @@ function fileIcon(name: string, contentType?: string) {
   min-width: min(280px, 64vw);
 }
 
+.message-attachment--image {
+  min-width: 0;
+}
+
 .message-attachment-card {
   display: flex;
   align-items: center;
@@ -548,8 +665,10 @@ function fileIcon(name: string, contentType?: string) {
   position: relative;
   display: block;
   overflow: hidden;
-  border-radius: 12px;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 14px;
   background: #e2e8f0;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
 }
 
 .message-attachment-image img {
@@ -559,17 +678,8 @@ function fileIcon(name: string, contentType?: string) {
   object-fit: cover;
 }
 
-.message-attachment-image span {
-  position: absolute;
-  inset: auto 0 0;
-  overflow: hidden;
-  padding: 22px 10px 8px;
-  color: #ffffff;
-  background: linear-gradient(transparent, rgba(15, 23, 42, 0.72));
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.team-message.has-image-attachment .team-message__attachments {
+  gap: 6px;
 }
 
 .message-attachment-icon {

@@ -31,6 +31,7 @@ public interface IGroupsService
     Task<Result<GroupMessageDto>> UpdateMessageAsync(Guid groupId, Guid messageId, UpdateGroupMessageRequest request, CancellationToken ct = default);
     Task<Result<GroupMessageDto>> RecallMessageAsync(Guid groupId, Guid messageId, CancellationToken ct = default);
     Task<Result<GroupMessageDto>> SetMessagePinAsync(Guid groupId, Guid messageId, SetGroupMessagePinRequest request, CancellationToken ct = default);
+    Task<Result<GroupMessageDto>> ToggleMessageReactionAsync(Guid groupId, Guid messageId, ReactToGroupMessageRequest request, CancellationToken ct = default);
     Task<Result> HideMessageForCurrentUserAsync(Guid groupId, Guid messageId, CancellationToken ct = default);
     Task<Result<CreateProjectFromGroupResult>> CreateProjectFromGroupAsync(Guid groupId, CreateProjectFromGroupRequest request, CancellationToken ct = default);
     Task<Result<GroupMeetingSessionDto?>> GetActiveMeetingSessionAsync(Guid groupId, CancellationToken ct = default);

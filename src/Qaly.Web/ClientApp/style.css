@@ -4733,8 +4733,7 @@ textarea::placeholder {
 .task-detail-panel,
 .kanban-column,
 .task-list-item,
-.team-chat-sidebar,
-.team-chat-window {
+.team-chat-sidebar {
   background: #ffffff !important;
 }
 

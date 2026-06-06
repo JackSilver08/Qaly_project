@@ -128,7 +128,8 @@ public record GroupMessageDto(
     DateTimeOffset? EditedAt,
     bool IsPinned,
     DateTimeOffset? PinnedAt,
-    Guid? PinnedByUserId);
+    Guid? PinnedByUserId,
+    IReadOnlyList<GroupMessageReactionDto> Reactions);
 
 public record SendGroupMessageRequest(
     string Content,
@@ -139,6 +140,15 @@ public record UpdateGroupMessageRequest(
 
 public record SetGroupMessagePinRequest(
     bool IsPinned);
+
+public record ReactToGroupMessageRequest(
+    string Emoji);
+
+public record GroupMessageReactionDto(
+    string Emoji,
+    int Count,
+    IReadOnlyList<Guid> UserIds,
+    bool ReactedByCurrentUser);
 
 public record GroupAttachmentDto(
     Guid Id,

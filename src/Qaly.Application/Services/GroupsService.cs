@@ -1,5 +1,6 @@
 using System.Net.Mail;
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Qaly.Application.Common.Interfaces;
@@ -1546,6 +1547,72 @@ public partial class GroupsService : IGroupsService
         return Result.Success(ToMessageDto(message));
     }
 
+    public async Task<Result<GroupMessageDto>> ToggleMessageReactionAsync(
+        Guid groupId,
+        Guid messageId,
+        ReactToGroupMessageRequest request,
+        CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<GroupMessageDto>();
+        }
+
+        if (!await CanAccessGroupAsync(groupId, ct))
+        {
+            return Result.Forbidden<GroupMessageDto>();
+        }
+
+        var emoji = NormalizeReactionEmoji(request.Emoji);
+        if (emoji == null)
+        {
+            return Result.Failure<GroupMessageDto>("Reaction is not supported.");
+        }
+
+        var message = await _messageRepo.GetQueryable()
+            .Include(item => item.User)
+            .FirstOrDefaultAsync(item => item.Id == messageId && item.WorkGroupId == groupId, ct);
+        if (message == null)
+        {
+            return Result.NotFound<GroupMessageDto>("Message not found.");
+        }
+
+        if (message.IsDeleted)
+        {
+            return Result.Failure<GroupMessageDto>("Cannot react to a recalled message.");
+        }
+
+        var reactions = ReadReactionState(message.ReactionSummaryJson);
+        var target = reactions.FirstOrDefault(item => item.Emoji == emoji);
+        if (target == null)
+        {
+            target = new GroupMessageReactionState(emoji, []);
+            reactions.Add(target);
+        }
+
+        if (target.UserIds.Contains(currentUserId.Value))
+        {
+            target.UserIds.Remove(currentUserId.Value);
+        }
+        else
+        {
+            target.UserIds.Add(currentUserId.Value);
+        }
+
+        reactions = reactions
+            .Where(item => item.UserIds.Count > 0)
+            .OrderByDescending(item => item.UserIds.Count)
+            .ThenBy(item => item.Emoji, StringComparer.Ordinal)
+            .ToList();
+
+        message.ReactionSummaryJson = JsonSerializer.Serialize(reactions);
+        await _messageRepo.UpdateAsync(message, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        return Result.Success(ToMessageDto(message));
+    }
+
     public async Task<Result> HideMessageForCurrentUserAsync(
         Guid groupId,
         Guid messageId,
@@ -1841,7 +1908,58 @@ public partial class GroupsService : IGroupsService
             message.EditedAt,
             message.IsPinned,
             message.PinnedAt,
-            message.PinnedByUserId);
+            message.PinnedByUserId,
+            ToReactionDtos(message.ReactionSummaryJson));
+
+    private static IReadOnlyList<GroupMessageReactionDto> ToReactionDtos(string? reactionSummaryJson)
+    {
+        var reactions = ReadReactionState(reactionSummaryJson);
+        return reactions
+            .Where(item => item.UserIds.Count > 0)
+            .Select(item => new GroupMessageReactionDto(
+                item.Emoji,
+                item.UserIds.Count,
+                item.UserIds,
+                false))
+            .ToList();
+    }
+
+    private static List<GroupMessageReactionState> ReadReactionState(string? reactionSummaryJson)
+    {
+        if (string.IsNullOrWhiteSpace(reactionSummaryJson))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<GroupMessageReactionState>>(reactionSummaryJson) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static string? NormalizeReactionEmoji(string? emoji)
+    {
+        var allowed = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "👍",
+            "❤️",
+            "😂",
+            "😮",
+            "😢",
+            "🔥",
+            "✅"
+        };
+        var normalized = emoji?.Trim();
+        return normalized != null && allowed.Contains(normalized) ? normalized : null;
+    }
+
+    private sealed record GroupMessageReactionState(
+        string Emoji,
+        List<Guid> UserIds);
 
     private async Task<bool> CanAccessOrganizationAsync(Guid organizationId, Guid ownerId, CancellationToken ct)
     {

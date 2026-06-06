@@ -30,6 +30,20 @@ export interface TeamChatMeeting {
     active: boolean;
 }
 
+export interface TeamChatReaction {
+    emoji: string;
+    count: number;
+    userIds: string[];
+    reactedByCurrentUser: boolean;
+}
+
+export interface TeamChatMemberMention {
+    id: string;
+    name: string;
+    initials: string;
+    isAll?: boolean;
+}
+
 export interface TeamChatMessage {
     id: string;
     groupId: string;
@@ -46,6 +60,7 @@ export interface TeamChatMessage {
     pinnedAt?: string;
     pinnedByUserId?: string;
     attachments: TeamChatAttachment[];
+    reactions: TeamChatReaction[];
     poll?: TeamChatPoll;
     meeting?: TeamChatMeeting;
 }

@@ -86,6 +86,17 @@ public class GroupHub : Hub
         await BroadcastMessageChangeAsync(groupId, result);
     }
 
+    public async Task ReactToMessage(Guid groupId, Guid messageId, string emoji)
+    {
+        var result = await _groupsService.ToggleMessageReactionAsync(
+            groupId,
+            messageId,
+            new ReactToGroupMessageRequest(emoji),
+            Context.ConnectionAborted);
+
+        await BroadcastMessageChangeAsync(groupId, result);
+    }
+
     public async Task TypingStarted(Guid groupId)
     {
         await BroadcastPresenceSignalAsync(groupId, "typingStarted");
@@ -174,7 +185,11 @@ public class GroupHub : Hub
             {
                 groupId,
                 connectionId = Context.ConnectionId,
-                userId = Context.UserIdentifier
+                userId = CurrentUserId(),
+                userName =
+                    Context.User?.FindFirstValue(ClaimTypes.Name) ??
+                    Context.User?.Identity?.Name ??
+                    "Thành viên"
             }, Context.ConnectionAborted);
     }
 

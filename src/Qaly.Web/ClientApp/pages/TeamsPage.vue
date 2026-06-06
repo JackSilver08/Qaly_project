@@ -35,8 +35,10 @@ import GroupAiPanel from "../components/chat/GroupAiPanel.vue";
 import type {
   ChatGroupModel,
   TeamChatAttachment,
+  TeamChatMemberMention,
   TeamChatMeeting,
   TeamChatMessage,
+  TeamChatReaction,
   TeamChatPoll,
 } from "../components/chat/chat-types";
 import { useDashboardContext } from "../composables/dashboard-context";
@@ -85,6 +87,14 @@ interface GroupMessageDto {
   isPinned: boolean;
   pinnedAt: string | null;
   pinnedByUserId: string | null;
+  reactions: GroupMessageReactionDto[];
+}
+
+interface GroupMessageReactionDto {
+  emoji: string;
+  count: number;
+  userIds: string[];
+  reactedByCurrentUser: boolean;
 }
 
 interface GroupAttachmentDto {
@@ -119,10 +129,14 @@ const addRole = ref("Member");
 const projectForm = ref({ name: "", code: "", description: "" });
 const pollForm = ref({ question: "", options: ["", ""] });
 const backgroundTheme = ref(localStorage.getItem("qaly.chatBackground") ?? "clean");
+const backgroundImage = ref(localStorage.getItem("qaly.chatBackgroundImage") ?? "");
 const isDetailPanelCollapsed = ref(false);
 const isUploadingAvatar = ref(false);
+const typingUsers = ref<Record<string, { name: string; timeoutId: number }>>({});
 
 let hubConnection: HubConnection | null = null;
+let localTypingTimer: number | undefined;
+let lastTypingState = false;
 
 const currentUserId = computed(() => currentUser.value?.id ?? "me");
 const activeGroup = computed(
@@ -160,6 +174,14 @@ const availableUsers = computed(() => {
   const memberIds = new Set(members.value.map((member) => member.userId));
   return users.value.filter((user) => user.isActive && !memberIds.has(user.id));
 });
+const mentionMembers = computed<TeamChatMemberMention[]>(() =>
+  members.value.map((member) => ({
+    id: member.userId,
+    name: member.fullName,
+    initials: initials(member.fullName),
+  })),
+);
+const activeTypingUsers = computed(() => Object.values(typingUsers.value).map((item) => item.name));
 
 function roleLabel(role?: string) {
   if (!role) return "-";
@@ -173,6 +195,8 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(async () => {
+  if (localTypingTimer) window.clearTimeout(localTypingTimer);
+  Object.values(typingUsers.value).forEach((item) => window.clearTimeout(item.timeoutId));
   if (hubConnection) {
     await hubConnection.stop();
     hubConnection = null;
@@ -190,10 +214,13 @@ watch(
 
 watch(activeGroupId, async (next, previous) => {
   if (previous && hubConnection?.state === HubConnectionState.Connected) {
+    await hubConnection.invoke("TypingStopped", previous).catch(() => undefined);
     await hubConnection.invoke("LeaveGroup", previous).catch(() => undefined);
   }
 
   if (!next) return;
+  typingUsers.value = {};
+  lastTypingState = false;
   await Promise.all([loadGroupDetail(next), loadMessages(next), loadMembers(next)]);
 
   if (canManageGroup.value) {
@@ -319,6 +346,12 @@ async function connectRealtime() {
   hubConnection.on("groupMessageChanged", (message: GroupMessageDto) => {
     upsertMessage(toMessageModel(message), false);
   });
+  hubConnection.on("typingStarted", (payload: { groupId?: string; userId?: string; userName?: string }) => {
+    handleTypingSignal(payload, true);
+  });
+  hubConnection.on("typingStopped", (payload: { groupId?: string; userId?: string; userName?: string }) => {
+    handleTypingSignal(payload, false);
+  });
   hubConnection.on("meetingStarted", async (payload: { groupId?: string }) => {
     const groupId = payload?.groupId;
     if (groupId && groupId === activeGroupId.value) await loadMessages(groupId);
@@ -337,6 +370,34 @@ async function connectRealtime() {
   } catch {
     realtimeState.value = "offline";
   }
+}
+
+function handleTypingSignal(
+  payload: { groupId?: string; userId?: string; userName?: string },
+  isTyping: boolean,
+) {
+  if (!payload?.groupId || payload.groupId !== activeGroupId.value) return;
+  if (!payload.userId || payload.userId === currentUserId.value) return;
+
+  const next = { ...typingUsers.value };
+  const existing = next[payload.userId];
+  if (existing?.timeoutId) window.clearTimeout(existing.timeoutId);
+
+  if (!isTyping) {
+    delete next[payload.userId];
+    typingUsers.value = next;
+    return;
+  }
+
+  next[payload.userId] = {
+    name: payload.userName || "Thành viên",
+    timeoutId: window.setTimeout(() => {
+      const latest = { ...typingUsers.value };
+      delete latest[payload.userId!];
+      typingUsers.value = latest;
+    }, 2600),
+  };
+  typingUsers.value = next;
 }
 
 async function createGroup() {
@@ -540,6 +601,50 @@ async function sendMessage(payload: {
   }
 }
 
+async function setTypingState(isTyping: boolean) {
+  if (!activeGroupId.value || hubConnection?.state !== HubConnectionState.Connected) return;
+
+  if (localTypingTimer) window.clearTimeout(localTypingTimer);
+
+  if (isTyping) {
+    if (!lastTypingState) {
+      await hubConnection.invoke("TypingStarted", activeGroupId.value).catch(() => undefined);
+      lastTypingState = true;
+    }
+    localTypingTimer = window.setTimeout(() => {
+      void setTypingState(false);
+    }, 1800);
+    return;
+  }
+
+  if (lastTypingState) {
+    await hubConnection.invoke("TypingStopped", activeGroupId.value).catch(() => undefined);
+    lastTypingState = false;
+  }
+}
+
+async function reactToMessage(messageId: string, emoji: string) {
+  if (!activeGroupId.value) return;
+
+  try {
+    if (hubConnection?.state === HubConnectionState.Connected) {
+      await hubConnection.invoke("ReactToMessage", activeGroupId.value, messageId, emoji);
+      return;
+    }
+
+    const updated = await apiResult<GroupMessageDto>(
+      `/api/groups/${activeGroupId.value}/messages/${messageId}/reactions`,
+      {
+        method: "POST",
+        body: JSON.stringify({ emoji }),
+      },
+    );
+    upsertMessage(toMessageModel(updated), false);
+  } catch (error) {
+    showError(errorMessage(error, "Không thể thả cảm xúc."));
+  }
+}
+
 async function uploadAttachments(attachments: TeamChatAttachment[]) {
   const uploaded: TeamChatAttachment[] = [];
 
@@ -700,11 +805,25 @@ function selectGroup(groupId: string) {
   activeGroupId.value = groupId;
 }
 
-function changeBackground() {
-  const themes = ["clean", "soft", "mint", "paper", "dark"];
-  const next = themes[(themes.indexOf(backgroundTheme.value) + 1) % themes.length];
-  backgroundTheme.value = next;
-  localStorage.setItem("qaly.chatBackground", next);
+function setChatBackground(theme: string) {
+  backgroundTheme.value = theme;
+  localStorage.setItem("qaly.chatBackground", theme);
+}
+
+function setChatBackgroundImage(imageUrl: string | null) {
+  backgroundImage.value = imageUrl ?? "";
+  if (!imageUrl) {
+    localStorage.removeItem("qaly.chatBackgroundImage");
+    return;
+  }
+
+  try {
+    localStorage.setItem("qaly.chatBackgroundImage", imageUrl);
+  } catch {
+    backgroundImage.value = "";
+    localStorage.removeItem("qaly.chatBackgroundImage");
+    showError("Ảnh quá lớn, trình duyệt không lưu được nền chat.");
+  }
 }
 
 function upsertMessage(message: TeamChatMessage, incrementUnread = true) {
@@ -768,9 +887,21 @@ function toMessageModel(message: GroupMessageDto): TeamChatMessage {
     pinnedAt: message.pinnedAt ?? undefined,
     pinnedByUserId: message.pinnedByUserId ?? undefined,
     attachments,
+    reactions: toMessageReactions(message.reactions ?? []),
     poll: message.isDeleted ? undefined : parsePoll(message),
     meeting,
   };
+}
+
+function toMessageReactions(reactions: GroupMessageReactionDto[]): TeamChatReaction[] {
+  return reactions.map((reaction) => ({
+    emoji: reaction.emoji,
+    count: reaction.count,
+    userIds: reaction.userIds,
+    reactedByCurrentUser:
+      reaction.reactedByCurrentUser ||
+      reaction.userIds.some((userId) => userId.toLowerCase() === currentUserId.value.toLowerCase()),
+  }));
 }
 
 function serializeMessagePayload(payload: {
@@ -938,13 +1069,19 @@ function formatMessageTime(value: string) {
           :group="activeGroup"
           :messages="activeMessages"
           :current-user-id="currentUserId"
+          :members="mentionMembers"
+          :typing-users="activeTypingUsers"
           :background-theme="backgroundTheme"
+          :background-image="backgroundImage"
           @send="sendMessage"
           @edit="editMessage"
           @pin="setMessagePin"
           @recall="recallMessage"
           @hide="hideMessages"
-          @change-background="changeBackground"
+          @react="reactToMessage"
+          @typing="setTypingState"
+          @set-background="setChatBackground"
+          @set-background-image="setChatBackgroundImage"
           @join-meeting="joinMeeting"
         />
 
@@ -1353,7 +1490,7 @@ function formatMessageTime(value: string) {
   background: #ffffff !important;
 }
 
-.groups-workspace :deep(.glass-card) {
+.groups-workspace :deep(.glass-card:not(.team-chat-window)) {
   border: 0;
   border-radius: 0;
   background: #ffffff;
@@ -1496,7 +1633,6 @@ function formatMessageTime(value: string) {
   padding: 18px 22px 16px;
   overflow: hidden;
   border-right: 1px solid #e2e8f0;
-  background: #fbfdff;
 }
 
 .groups-workspace :deep(.team-chat-body) {
