@@ -94,7 +94,6 @@ public partial class DataSeeder
         var group = new WorkGroup
         {
             Name = "Demo Group",
-            Description = "Group demo chứa 7 thành viên.",
             OwnerId = admin.Id,
             Organization = org
         };

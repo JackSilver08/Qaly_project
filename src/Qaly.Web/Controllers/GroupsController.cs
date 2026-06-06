@@ -1,10 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.StaticFiles;
 using Qaly.Application.DTOs.Groups;
 using Qaly.Application.DTOs.Ai;
-using Qaly.Application.Common.Interfaces;
+using Qaly.Application.Common.Models;
 using Qaly.Application.Services;
+using Qaly.Web.Hubs;
 
 namespace Qaly.Web.Controllers;
 
@@ -14,17 +15,17 @@ namespace Qaly.Web.Controllers;
 public class GroupsController : BaseApiController
 {
     private readonly IGroupsService _groupsService;
-    private readonly IFileStorageService _fileStorageService;
-    private readonly IConfiguration _configuration;
+    private readonly IGroupAttachmentService _groupAttachmentService;
+    private readonly IHubContext<GroupHub> _groupHub;
 
     public GroupsController(
         IGroupsService groupsService,
-        IFileStorageService fileStorageService,
-        IConfiguration configuration)
+        IGroupAttachmentService groupAttachmentService,
+        IHubContext<GroupHub> groupHub)
     {
         _groupsService = groupsService;
-        _fileStorageService = fileStorageService;
-        _configuration = configuration;
+        _groupAttachmentService = groupAttachmentService;
+        _groupHub = groupHub;
     }
 
     [HttpGet]
@@ -180,68 +181,136 @@ public class GroupsController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
-    [HttpPost("{id:guid}/files")]
-    [RequestSizeLimit(25_000_000)]
-    public async Task<IActionResult> UploadGroupFile(Guid id, IFormFile file, CancellationToken ct)
+    [HttpPost("{id:guid}/attachments")]
+    [RequestSizeLimit(25 * 1024 * 1024)]
+    public async Task<IActionResult> UploadAttachment(Guid id, IFormFile file, CancellationToken ct)
     {
-        if (!await _groupsService.CanAccessGroupAsync(id, ct))
+        if (file == null)
         {
-            return Forbid();
-        }
-
-        if (file.Length == 0)
-        {
-            return BadRequest(new { error = "File is empty." });
+            return BadRequest(new { error = "File is required." });
         }
 
         await using var stream = file.OpenReadStream();
-        var storedPath = await _fileStorageService.UploadAsync(stream, file.FileName, file.ContentType, ct);
-        var fileKey = Path.GetFileName(storedPath);
-        var safeName = Path.GetFileName(file.FileName);
-        var url = Url.Action(nameof(DownloadGroupFile), values: new { id, fileKey, name = safeName }) ??
-                  $"/api/groups/{id}/files/{Uri.EscapeDataString(fileKey)}?name={Uri.EscapeDataString(safeName)}";
-
-        return Ok(new
-        {
-            isSuccess = true,
-            data = new
-            {
-                name = safeName,
-                url,
-                sizeLabel = FormatFileSize(file.Length),
-                kind = IsImage(file.ContentType, safeName) ? "image" : "file",
-                contentType = file.ContentType
-            }
-        });
+        var result = await _groupAttachmentService.UploadAsync(
+            id,
+            stream,
+            file.FileName,
+            file.ContentType,
+            file.Length,
+            ct);
+        return StatusCode(result.StatusCode, result);
     }
 
-    [HttpGet("{id:guid}/files/{fileKey}")]
-    public async Task<IActionResult> DownloadGroupFile(Guid id, string fileKey, [FromQuery] string? name, CancellationToken ct)
+    [HttpPost("{id:guid}/avatar")]
+    [RequestSizeLimit(5 * 1024 * 1024)]
+    public async Task<IActionResult> UploadAvatar(Guid id, IFormFile file, CancellationToken ct)
     {
-        if (!await _groupsService.CanAccessGroupAsync(id, ct))
+        if (file == null || file.Length == 0)
+        {
+            return BadRequest(new { error = "Avatar image is required." });
+        }
+
+        if (file.Length > 5 * 1024 * 1024)
+        {
+            return BadRequest(new { error = "Avatar must be 5 MB or smaller." });
+        }
+
+        var allowedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp"
+        };
+        if (!allowedTypes.Contains(file.ContentType))
+        {
+            return BadRequest(new { error = "Avatar must be a JPG, PNG, GIF, or WEBP image." });
+        }
+
+        if (!await _groupsService.CanManageGroupAsync(id, ct))
         {
             return Forbid();
         }
 
-        if (string.IsNullOrWhiteSpace(fileKey) || fileKey != Path.GetFileName(fileKey))
+        await using var stream = file.OpenReadStream();
+        var upload = await _groupAttachmentService.UploadAsync(
+            id,
+            stream,
+            file.FileName,
+            file.ContentType,
+            file.Length,
+            ct);
+        if (!upload.IsSuccess || upload.Data == null)
         {
-            return BadRequest(new { error = "Invalid file key." });
+            return StatusCode(upload.StatusCode, upload);
         }
 
-        var fullPath = Path.Combine(GetFileStorageRootPath(), fileKey);
-        if (!System.IO.File.Exists(fullPath))
+        var avatarUrl = $"/api/groups/{id}/attachments/{upload.Data.Id}";
+        var result = await _groupsService.UpdateAvatarAsync(id, avatarUrl, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("{id:guid}/attachments/{attachmentId:guid}")]
+    public async Task<IActionResult> DownloadAttachment(
+        Guid id,
+        Guid attachmentId,
+        [FromQuery] bool download = false,
+        CancellationToken ct = default)
+    {
+        var result = await _groupAttachmentService.DownloadAsync(id, attachmentId, ct);
+        if (!result.IsSuccess || result.Data == null)
         {
-            return NotFound(new { error = "File was not found." });
+            return StatusCode(result.StatusCode, result);
         }
 
-        var provider = new FileExtensionContentTypeProvider();
-        if (!provider.TryGetContentType(name ?? fileKey, out var contentType))
-        {
-            contentType = "application/octet-stream";
-        }
+        var canPreview = result.Data.ContentType is
+            "image/jpeg" or
+            "image/png" or
+            "image/gif" or
+            "image/webp";
 
-        var downloadName = string.IsNullOrWhiteSpace(name) ? fileKey : Path.GetFileName(name);
-        return PhysicalFile(fullPath, contentType, downloadName, enableRangeProcessing: true);
+        return download || !canPreview
+            ? File(result.Data.Stream, result.Data.ContentType, result.Data.FileName, enableRangeProcessing: true)
+            : File(result.Data.Stream, result.Data.ContentType, enableRangeProcessing: true);
+    }
+
+    [HttpPatch("{id:guid}/messages/{messageId:guid}")]
+    public async Task<IActionResult> UpdateMessage(
+        Guid id,
+        Guid messageId,
+        UpdateGroupMessageRequest request,
+        CancellationToken ct)
+    {
+        var result = await _groupsService.UpdateMessageAsync(id, messageId, request, ct);
+        await BroadcastMessageChangedAsync(id, result, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("{id:guid}/messages/{messageId:guid}/recall")]
+    public async Task<IActionResult> RecallMessage(Guid id, Guid messageId, CancellationToken ct)
+    {
+        var result = await _groupsService.RecallMessageAsync(id, messageId, ct);
+        await BroadcastMessageChangedAsync(id, result, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPut("{id:guid}/messages/{messageId:guid}/pin")]
+    public async Task<IActionResult> SetMessagePin(
+        Guid id,
+        Guid messageId,
+        SetGroupMessagePinRequest request,
+        CancellationToken ct)
+    {
+        var result = await _groupsService.SetMessagePinAsync(id, messageId, request, ct);
+        await BroadcastMessageChangedAsync(id, result, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpDelete("{id:guid}/messages/{messageId:guid}/for-me")]
+    public async Task<IActionResult> HideMessageForMe(Guid id, Guid messageId, CancellationToken ct)
+    {
+        var result = await _groupsService.HideMessageForCurrentUserAsync(id, messageId, ct);
+        return StatusCode(result.StatusCode, result);
     }
 
     [HttpPost("{id:guid}/create-project")]
@@ -256,6 +325,21 @@ public class GroupsController : BaseApiController
     {
         var result = await _groupsService.StartMeetingSessionAsync(id, ct);
         return StatusCode(result.StatusCode, result);
+    }
+
+    private async Task BroadcastMessageChangedAsync(
+        Guid groupId,
+        Result<GroupMessageDto> result,
+        CancellationToken ct)
+    {
+        if (!result.IsSuccess || result.Data == null)
+        {
+            return;
+        }
+
+        await _groupHub.Clients
+            .Group(GroupHub.WorkGroup(groupId))
+            .SendAsync("groupMessageChanged", result.Data, ct);
     }
 
     [HttpGet("{id:guid}/meetings/active")]
@@ -277,28 +361,5 @@ public class GroupsController : BaseApiController
     {
         var result = await _groupsService.EndMeetingSessionAsync(groupId, meetingId, ct);
         return StatusCode(result.StatusCode, result);
-    }
-
-    private string GetFileStorageRootPath()
-        => _configuration.GetValue<string>("FileStorage:RootPath")
-           ?? Path.Combine(AppContext.BaseDirectory, "uploads");
-
-    private static string FormatFileSize(long bytes)
-    {
-        if (bytes < 1024) return $"{bytes} B";
-        if (bytes < 1024 * 1024) return $"{Math.Round(bytes / 1024d)} KB";
-        return $"{Math.Round(bytes / 1024d / 1024d, 1)} MB";
-    }
-
-    private static bool IsImage(string? contentType, string fileName)
-    {
-        if (!string.IsNullOrWhiteSpace(contentType) &&
-            contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        var extension = Path.GetExtension(fileName).ToLowerInvariant();
-        return extension is ".png" or ".jpg" or ".jpeg" or ".gif" or ".webp" or ".svg";
     }
 }

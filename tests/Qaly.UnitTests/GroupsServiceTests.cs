@@ -28,6 +28,7 @@ public class GroupsServiceTests : IDisposable
     private readonly GenericRepository<GroupPollOption> _pollOptionRepo;
     private readonly GenericRepository<GroupPollVote> _pollVoteRepo;
     private readonly GenericRepository<GroupMessage> _messageRepo;
+    private readonly GenericRepository<GroupMessageUserState> _messageUserStateRepo;
     private readonly GenericRepository<Organization> _organizationRepo;
     private readonly GenericRepository<OrganizationMember> _organizationMemberRepo;
     private readonly GenericRepository<User> _userRepo;
@@ -57,6 +58,7 @@ public class GroupsServiceTests : IDisposable
         _pollOptionRepo = new GenericRepository<GroupPollOption>(_context);
         _pollVoteRepo = new GenericRepository<GroupPollVote>(_context);
         _messageRepo = new GenericRepository<GroupMessage>(_context);
+        _messageUserStateRepo = new GenericRepository<GroupMessageUserState>(_context);
         _organizationRepo = new GenericRepository<Organization>(_context);
         _organizationMemberRepo = new GenericRepository<OrganizationMember>(_context);
         _userRepo = new GenericRepository<User>(_context);
@@ -130,7 +132,7 @@ public class GroupsServiceTests : IDisposable
 
         var service = CreateService();
 
-        var result = await service.CreateAsync(new CreateGroupRequest("Planning Group", "Discuss next project"));
+        var result = await service.CreateAsync(new CreateGroupRequest("Planning Group"));
 
         result.IsSuccess.Should().BeTrue(result.Error);
         result.Data!.Name.Should().Be("Planning Group");
@@ -1666,6 +1668,87 @@ public class GroupsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task UpdateMessageAsync_WhenUserOwnsMessage_UpdatesContentAndEditedAt()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Chat Group");
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+        var created = await CreateService().CreateMessageAsync(group.Id, new SendGroupMessageRequest("Before"));
+
+        var result = await CreateService().UpdateMessageAsync(
+            group.Id,
+            created.Data!.Id,
+            new UpdateGroupMessageRequest("After"));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Content.Should().Be("After");
+        result.Data.EditedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task UpdateMessageAsync_WhenUserDoesNotOwnMessage_ReturnsForbidden()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Chat Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+        var created = await CreateService().CreateMessageAsync(group.Id, new SendGroupMessageRequest("Owner message"));
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+
+        var result = await CreateService().UpdateMessageAsync(
+            group.Id,
+            created.Data!.Id,
+            new UpdateGroupMessageRequest("Changed"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task RecallMessageAsync_KeepsRecalledPlaceholderInMessageList()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Chat Group");
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+        var created = await CreateService().CreateMessageAsync(group.Id, new SendGroupMessageRequest("Recall me"));
+
+        var recall = await CreateService().RecallMessageAsync(group.Id, created.Data!.Id);
+        var messages = await CreateService().GetMessagesAsync(group.Id);
+
+        recall.IsSuccess.Should().BeTrue(recall.Error);
+        messages.Data!.Items.Should().ContainSingle();
+        messages.Data.Items[0].IsDeleted.Should().BeTrue();
+        messages.Data.Items[0].Content.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task HideMessageForCurrentUserAsync_HidesOnlyForThatUser()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(memberId, "Member", "member@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Chat Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+        var created = await CreateService().CreateMessageAsync(group.Id, new SendGroupMessageRequest("Visible to member"));
+
+        var hidden = await CreateService().HideMessageForCurrentUserAsync(group.Id, created.Data!.Id);
+        var ownerMessages = await CreateService().GetMessagesAsync(group.Id);
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+        var memberMessages = await CreateService().GetMessagesAsync(group.Id);
+
+        hidden.IsSuccess.Should().BeTrue(hidden.Error);
+        ownerMessages.Data!.Items.Should().BeEmpty();
+        memberMessages.Data!.Items.Should().ContainSingle(item => item.Id == created.Data.Id);
+    }
+
+    [Fact]
     public async Task CreateProjectFromGroupAsync_MapsGroupRolesToProjectRoles()
     {
         var ownerId = Guid.NewGuid();
@@ -2037,6 +2120,7 @@ public class GroupsServiceTests : IDisposable
             _pollOptionRepo,
             _pollVoteRepo,
             _messageRepo,
+            _messageUserStateRepo,
             _organizationRepo,
             _organizationMemberRepo,
             _userRepo,

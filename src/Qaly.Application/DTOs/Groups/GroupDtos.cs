@@ -5,7 +5,6 @@ namespace Qaly.Application.DTOs.Groups;
 public record GroupDto(
     Guid Id,
     string Name,
-    string? Description,
     string? AvatarUrl,
     string? Color,
     string Status,
@@ -22,14 +21,12 @@ public record GroupDto(
 
 public record CreateGroupRequest(
     string Name,
-    string? Description,
     Guid? OrganizationId = null,
     string? AvatarUrl = null,
     string? Color = null);
 
 public record UpdateGroupRequest(
     string Name,
-    string? Description,
     string? AvatarUrl,
     string? Color,
     string Status = "Active");
@@ -128,11 +125,32 @@ public record GroupMessageDto(
     string MessageType,
     bool IsDeleted,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? EditedAt);
+    DateTimeOffset? EditedAt,
+    bool IsPinned,
+    DateTimeOffset? PinnedAt,
+    Guid? PinnedByUserId);
 
 public record SendGroupMessageRequest(
     string Content,
     string MessageType = "Text");
+
+public record UpdateGroupMessageRequest(
+    string Content);
+
+public record SetGroupMessagePinRequest(
+    bool IsPinned);
+
+public record GroupAttachmentDto(
+    Guid Id,
+    string FileName,
+    string ContentType,
+    long FileSize,
+    DateTimeOffset CreatedAt);
+
+public record GroupAttachmentDownloadDto(
+    Stream Stream,
+    string FileName,
+    string ContentType);
 
 public record CreateProjectFromGroupRequest(
     string Name,

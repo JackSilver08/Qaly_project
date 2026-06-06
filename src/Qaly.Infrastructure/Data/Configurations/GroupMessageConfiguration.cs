@@ -13,6 +13,7 @@ public class GroupMessageConfiguration : IEntityTypeConfiguration<GroupMessage>
         builder.Property(message => message.Content).HasMaxLength(4000).IsRequired();
         builder.Property(message => message.MessageType).HasMaxLength(30).IsRequired();
         builder.Property(message => message.IsDeleted).HasDefaultValue(false);
+        builder.Property(message => message.IsPinned).HasDefaultValue(false);
         builder.Property(message => message.CreatedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
 
         builder.HasOne(message => message.WorkGroup)
@@ -26,6 +27,7 @@ public class GroupMessageConfiguration : IEntityTypeConfiguration<GroupMessage>
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(message => new { message.WorkGroupId, message.CreatedAt });
+        builder.HasIndex(message => new { message.WorkGroupId, message.IsPinned });
         builder.HasIndex(message => message.UserId);
     }
 }

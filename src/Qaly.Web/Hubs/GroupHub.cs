@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using System.Security.Claims;
 using Qaly.Application.Common.Interfaces;
+using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Groups;
 using Qaly.Application.Services;
 
@@ -51,6 +52,38 @@ public class GroupHub : Hub
         await Clients
             .Group(WorkGroup(groupId))
             .SendAsync("groupMessageReceived", result.Data, Context.ConnectionAborted);
+    }
+
+    public async Task UpdateMessage(Guid groupId, Guid messageId, string content)
+    {
+        var result = await _groupsService.UpdateMessageAsync(
+            groupId,
+            messageId,
+            new UpdateGroupMessageRequest(content),
+            Context.ConnectionAborted);
+
+        await BroadcastMessageChangeAsync(groupId, result);
+    }
+
+    public async Task RecallMessage(Guid groupId, Guid messageId)
+    {
+        var result = await _groupsService.RecallMessageAsync(
+            groupId,
+            messageId,
+            Context.ConnectionAborted);
+
+        await BroadcastMessageChangeAsync(groupId, result);
+    }
+
+    public async Task SetMessagePin(Guid groupId, Guid messageId, bool isPinned)
+    {
+        var result = await _groupsService.SetMessagePinAsync(
+            groupId,
+            messageId,
+            new SetGroupMessagePinRequest(isPinned),
+            Context.ConnectionAborted);
+
+        await BroadcastMessageChangeAsync(groupId, result);
     }
 
     public async Task TypingStarted(Guid groupId)
@@ -143,6 +176,18 @@ public class GroupHub : Hub
                 connectionId = Context.ConnectionId,
                 userId = Context.UserIdentifier
             }, Context.ConnectionAborted);
+    }
+
+    private async Task BroadcastMessageChangeAsync(Guid groupId, Result<GroupMessageDto> result)
+    {
+        if (!result.IsSuccess || result.Data == null)
+        {
+            throw new HubException(result.Error ?? "Message could not be updated.");
+        }
+
+        await Clients
+            .Group(WorkGroup(groupId))
+            .SendAsync("groupMessageChanged", result.Data, Context.ConnectionAborted);
     }
 
     public static string WorkGroup(Guid groupId)

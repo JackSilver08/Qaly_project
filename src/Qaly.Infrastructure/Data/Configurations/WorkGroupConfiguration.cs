@@ -11,7 +11,6 @@ public class WorkGroupConfiguration : IEntityTypeConfiguration<WorkGroup>
         builder.HasKey(group => group.Id);
         builder.Property(group => group.Id).HasDefaultValueSql("NEWID()");
         builder.Property(group => group.Name).HasMaxLength(160).IsRequired();
-        builder.Property(group => group.Description).HasMaxLength(1000);
         builder.Property(group => group.AvatarUrl).HasMaxLength(1000);
         builder.Property(group => group.Color).HasMaxLength(20);
         builder.Property(group => group.Status).HasMaxLength(20).IsRequired();

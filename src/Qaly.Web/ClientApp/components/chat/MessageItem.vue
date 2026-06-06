@@ -1,6 +1,22 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import { CalendarDays, Download, ExternalLink, Pin } from "lucide-vue-next";
+import { computed, ref } from "vue";
+import {
+  CalendarDays,
+  Check,
+  Clipboard,
+  Download,
+  FileArchive,
+  FileSpreadsheet,
+  FileText,
+  FileVideo,
+  Info,
+  ListChecks,
+  MoreHorizontal,
+  Pencil,
+  Pin,
+  RotateCcw,
+  Trash2,
+} from "lucide-vue-next";
 import type { TeamChatMessage } from "./chat-types";
 import PollCard from "./PollCard.vue";
 
@@ -8,14 +24,31 @@ const props = defineProps<{
   message: TeamChatMessage;
   currentUserId: string;
   isConsecutive?: boolean;
+  menuOpen?: boolean;
+  selectionMode?: boolean;
+  selected?: boolean;
 }>();
 
 defineEmits<{
-  pin: [messageId: string];
+  menu: [messageId: string];
+  action: [
+    action: "copy" | "pin" | "select" | "detail" | "edit" | "recall" | "hide",
+    message: TeamChatMessage,
+  ];
+  toggleSelect: [messageId: string];
   joinMeeting: [meetingId: string];
 }>();
 
 const renderedText = computed(() => renderLightMarkdown(props.message.text));
+const isMine = computed(() => props.message.senderId === props.currentUserId);
+const openAttachmentMenu = ref<string | null>(null);
+const canEdit = computed(
+  () =>
+    isMine.value &&
+    !props.message.isDeleted &&
+    props.message.messageType === "Text" &&
+    props.message.attachments.length === 0,
+);
 
 function escapeHtml(value: string) {
   return value
@@ -34,17 +67,28 @@ function renderLightMarkdown(value: string) {
     .replace(/_([^_]+)_/g, "<em>$1</em>")
     .replace(/\n/g, "<br>");
 }
+
+function attachmentKey(name: string, id?: string) {
+  return id ?? name;
+}
+
+function fileExtension(name: string) {
+  return name.split(".").pop()?.toUpperCase() || "FILE";
+}
+
+function fileIcon(name: string, contentType?: string) {
+  const extension = name.split(".").pop()?.toLowerCase();
+  if (contentType?.startsWith("video/")) return FileVideo;
+  if (["xls", "xlsx", "csv"].includes(extension ?? "")) return FileSpreadsheet;
+  if (["zip", "rar", "7z", "tar", "gz"].includes(extension ?? "")) return FileArchive;
+  return FileText;
+}
 </script>
 
 <template>
-  <article
-    v-if="message.meeting"
-    class="team-message team-message--system"
-  >
+  <article v-if="message.meeting" class="team-message team-message--system">
     <div class="team-message__system-card">
-      <span class="team-message__system-icon">
-        <CalendarDays :size="18" />
-      </span>
+      <span class="team-message__system-icon"><CalendarDays :size="18" /></span>
       <div>
         <small>Cuộc họp nhóm</small>
         <strong>{{ message.meeting.text }}</strong>
@@ -63,66 +107,571 @@ function renderLightMarkdown(value: string) {
   <article
     v-else
     class="team-message"
-    :class="{ 
-      'is-mine': message.senderId === currentUserId,
-      'is-consecutive': isConsecutive
+    :class="{
+      'is-mine': isMine,
+      'is-consecutive': isConsecutive,
+      'is-selected': selected,
+      'is-selecting': selectionMode,
     }"
+    @contextmenu.prevent="$emit('menu', message.id)"
   >
+    <button
+      v-if="selectionMode"
+      class="team-message__selector"
+      :class="{ 'is-checked': selected }"
+      type="button"
+      :aria-label="selected ? 'Bỏ chọn tin nhắn' : 'Chọn tin nhắn'"
+      @click="$emit('toggleSelect', message.id)"
+    >
+      <Check v-if="selected" :size="14" />
+    </button>
+
     <div class="team-message__avatar-container">
       <div v-if="!isConsecutive" class="team-message__avatar">{{ message.senderInitials }}</div>
     </div>
+
     <div class="team-message__bubble">
       <div v-if="!isConsecutive" class="team-message__meta">
         <strong>{{ message.senderName }}</strong>
         <span>{{ message.createdAt }}</span>
-        <button
-          type="button"
-          :aria-label="message.pinned ? 'Bỏ ghim' : 'Ghim tin nhắn'"
-          @click="$emit('pin', message.id)"
-        >
-          <Pin :size="13" />
-        </button>
       </div>
-      <p v-if="message.text" class="team-message__text" v-html="renderedText"></p>
 
-      <div v-if="message.attachments.length" class="team-message__attachments">
-        <a
+      <p v-if="message.isDeleted" class="team-message__recalled">
+        <RotateCcw :size="14" />
+        Tin nhắn đã được thu hồi
+      </p>
+      <p v-else-if="message.text" class="team-message__text" v-html="renderedText"></p>
+
+      <div v-if="!message.isDeleted && message.attachments.length" class="team-message__attachments">
+        <div
           v-for="file in message.attachments"
-          :key="`${file.name}-${file.url ?? ''}`"
-          class="message-attachment-card"
-          :class="{ 'is-clickable': Boolean(file.url) }"
-          :href="file.url"
-          target="_blank"
-          rel="noopener noreferrer"
-          :download="file.kind === 'file' ? file.name : undefined"
-          :aria-label="file.url ? `Mở ${file.name}` : file.name"
+          :key="attachmentKey(file.name, file.id)"
+          class="message-attachment"
+          :class="{ 'message-attachment--image': file.kind === 'image' }"
         >
-          <div class="message-attachment-icon">
-            <svg v-if="file.kind === 'image'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-            <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <a
+            v-if="file.kind === 'image' && file.url"
+            class="message-attachment-image"
+            :href="file.url"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <img :src="file.url" :alt="file.name" loading="lazy" />
+            <span>{{ file.name }}</span>
+          </a>
+          <a
+            v-else
+            class="message-attachment-card"
+            :href="file.downloadUrl || file.url"
+            :download="file.name"
+          >
+            <div class="message-attachment-icon">
+              <component :is="fileIcon(file.name, file.contentType)" :size="22" />
+              <small>{{ fileExtension(file.name) }}</small>
+            </div>
+            <div class="message-attachment-info">
+              <strong>{{ file.name }}</strong>
+              <span>{{ file.kind === "video" ? "Video" : "Tài liệu" }} · {{ file.sizeLabel }}</span>
+            </div>
+          </a>
+
+          <button
+            class="message-attachment-more"
+            type="button"
+            aria-label="Tùy chọn file"
+            @click.stop="
+              openAttachmentMenu =
+                openAttachmentMenu === attachmentKey(file.name, file.id)
+                  ? null
+                  : attachmentKey(file.name, file.id)
+            "
+          >
+            <MoreHorizontal :size="17" />
+          </button>
+          <div
+            v-if="openAttachmentMenu === attachmentKey(file.name, file.id)"
+            class="message-attachment-menu"
+            @click.stop
+          >
+            <a v-if="file.downloadUrl || file.url" :href="file.downloadUrl || file.url" :download="file.name">
+              <Download :size="16" /> Tải xuống
+            </a>
+            <button
+              class="is-danger"
+              type="button"
+              @click="$emit('action', 'hide', message); openAttachmentMenu = null"
+            >
+              <Trash2 :size="16" /> Xóa ở phía tôi
+            </button>
           </div>
-          <div class="message-attachment-info">
-            <strong>{{ file.name }}</strong>
-            <span>{{ file.url ? `Bấm để ${file.kind === 'image' ? 'xem' : 'tải'}` : file.sizeLabel }}</span>
-          </div>
-          <ExternalLink v-if="file.kind === 'image' && file.url" class="message-attachment-action" :size="15" />
-          <Download v-else-if="file.url" class="message-attachment-action" :size="15" />
-        </a>
+        </div>
       </div>
 
-      <div v-if="message.poll" class="team-message__poll">
-        <PollCard 
-          :group-id="message.groupId" 
+      <div v-if="!message.isDeleted && message.poll" class="team-message__poll">
+        <PollCard
+          :group-id="message.groupId"
           :poll="message.poll"
           :current-user-id="currentUserId"
           :creator-id="message.senderId"
         />
+      </div>
+
+      <div v-if="message.editedAt || message.pinned" class="team-message__flags">
+        <span v-if="message.editedAt">Đã chỉnh sửa</span>
+        <span v-if="message.pinned"><Pin :size="11" /> Đã ghim</span>
+      </div>
+
+      <button
+        v-if="!selectionMode"
+        class="team-message__more"
+        type="button"
+        aria-label="Tùy chọn tin nhắn"
+        @click.stop="$emit('menu', message.id)"
+      >
+        <MoreHorizontal :size="17" />
+      </button>
+
+      <div v-if="menuOpen" class="message-action-menu" @click.stop>
+        <button v-if="!message.isDeleted && message.text" type="button" @click="$emit('action', 'copy', message)">
+          <Clipboard :size="17" /> Sao chép tin nhắn
+        </button>
+        <button v-if="!message.isDeleted" type="button" @click="$emit('action', 'pin', message)">
+          <Pin :size="17" /> {{ message.pinned ? "Bỏ ghim tin nhắn" : "Ghim tin nhắn" }}
+        </button>
+        <button type="button" @click="$emit('action', 'select', message)">
+          <ListChecks :size="17" /> Chọn nhiều tin nhắn
+        </button>
+        <button type="button" @click="$emit('action', 'detail', message)">
+          <Info :size="17" /> Xem chi tiết
+        </button>
+        <button v-if="canEdit" type="button" @click="$emit('action', 'edit', message)">
+          <Pencil :size="17" /> Chỉnh sửa tin nhắn
+        </button>
+        <div class="message-action-menu__divider"></div>
+        <button v-if="canEdit" class="is-danger" type="button" @click="$emit('action', 'recall', message)">
+          <RotateCcw :size="17" /> Thu hồi
+        </button>
+        <button class="is-danger" type="button" @click="$emit('action', 'hide', message)">
+          <Trash2 :size="17" /> Xóa chỉ ở phía tôi
+        </button>
       </div>
     </div>
   </article>
 </template>
 
 <style scoped>
+.team-message {
+  position: relative;
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  width: max-content;
+  max-width: min(76%, 720px);
+  margin-bottom: 4px;
+}
+
+.team-message.is-mine {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.team-message.is-consecutive {
+  margin-top: -2px;
+}
+
+.team-message.is-selected .team-message__bubble {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+.team-message__selector {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  border: 1px solid #94a3b8;
+  border-radius: 999px;
+  color: #fff;
+  background: #fff;
+  cursor: pointer;
+}
+
+.team-message__selector.is-checked {
+  border-color: #2563eb;
+  background: #2563eb;
+}
+
+.team-message__avatar-container {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+}
+
+.team-message.is-mine .team-message__avatar-container {
+  display: none;
+}
+
+.team-message__avatar {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: #111827;
+  background: #e2e8f0;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.team-message__bubble {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 13px;
+  border: 1px solid #e5eaf1;
+  border-radius: 15px 15px 15px 5px;
+  color: #1e293b;
+  background: #fff;
+  box-shadow: 0 2px 7px rgba(15, 23, 42, 0.06);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.team-message.is-consecutive .team-message__bubble {
+  border-radius: 6px 15px 15px 6px;
+}
+
+.team-message.is-mine .team-message__bubble {
+  border-color: #bfdbfe;
+  border-radius: 15px 15px 5px 15px;
+  color: #12315d;
+  background: #e8f2ff;
+}
+
+.team-message.is-mine.is-consecutive .team-message__bubble {
+  border-radius: 15px 6px 6px 15px;
+}
+
+.team-message__meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 1px;
+}
+
+.team-message.is-mine .team-message__meta {
+  justify-content: flex-end;
+}
+
+.team-message__meta strong {
+  color: #0f172a;
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
+.team-message.is-mine .team-message__meta strong {
+  display: none;
+}
+
+.team-message__meta span {
+  color: #64748b;
+  font-size: 0.7rem;
+}
+
+.team-message__text {
+  margin: 0;
+  word-break: break-word;
+}
+
+.team-message__text :deep(a) {
+  color: #1d4ed8;
+  font-weight: 750;
+  text-decoration: underline;
+}
+
+.team-message__text :deep(code) {
+  border-radius: 5px;
+  padding: 2px 5px;
+  background: rgba(15, 23, 42, 0.08);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.team-message__recalled {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: #64748b;
+  font-style: italic;
+}
+
+.team-message__flags {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  color: #64748b;
+  font-size: 0.66rem;
+}
+
+.team-message__flags span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.team-message__more {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 8px);
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #000;
+  background: #fff;
+  border: 1px solid #dbe3ef;
+  box-shadow: 0 3px 12px rgba(15, 23, 42, 0.14);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-50%);
+  cursor: pointer;
+  transition:
+    opacity 140ms ease,
+    visibility 140ms ease,
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.team-message__more :deep(svg) {
+  color: #000 !important;
+  stroke: #000 !important;
+}
+
+.team-message:not(.is-mine) .team-message__more {
+  right: auto;
+  left: calc(100% + 8px);
+}
+
+.team-message:hover .team-message__more,
+.team-message:focus-within .team-message__more {
+  opacity: 1;
+  visibility: visible;
+}
+
+.team-message__more:hover,
+.team-message__more:focus-visible {
+  color: #000;
+  border-color: #93c5fd;
+  background: #eff6ff;
+  transform: translateY(-50%) scale(1.04);
+}
+
+.message-action-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 236px;
+  display: grid;
+  padding: 8px;
+  border: 1px solid #dbe3ef;
+  border-radius: 14px;
+  color: #1e293b;
+  background: #fff;
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.2);
+}
+
+.team-message:not(.is-mine) .message-action-menu {
+  right: auto;
+  left: 0;
+}
+
+.message-action-menu button {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  border: 0;
+  border-radius: 9px;
+  padding: 10px;
+  color: inherit;
+  background: transparent;
+  font-size: 0.86rem;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+
+.message-action-menu button:hover {
+  background: #f1f5f9;
+}
+
+.message-action-menu button.is-danger {
+  color: #dc2626;
+}
+
+.message-action-menu__divider {
+  height: 1px;
+  margin: 5px 4px;
+  background: #e2e8f0;
+}
+
+.team-message__attachments {
+  display: grid;
+  gap: 8px;
+}
+
+.message-attachment {
+  position: relative;
+  min-width: min(280px, 64vw);
+}
+
+.message-attachment-card {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 42px 10px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 12px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.78);
+  text-decoration: none;
+}
+
+.message-attachment-image {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #e2e8f0;
+}
+
+.message-attachment-image img {
+  display: block;
+  width: min(340px, 62vw);
+  max-height: 320px;
+  object-fit: cover;
+}
+
+.message-attachment-image span {
+  position: absolute;
+  inset: auto 0 0;
+  overflow: hidden;
+  padding: 22px 10px 8px;
+  color: #ffffff;
+  background: linear-gradient(transparent, rgba(15, 23, 42, 0.72));
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-attachment-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.message-attachment-icon small {
+  margin-top: -7px;
+  font-size: 0.46rem;
+  font-weight: 900;
+}
+
+.message-attachment-info {
+  min-width: 0;
+  display: grid;
+}
+
+.message-attachment-info strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+}
+
+.message-attachment-info span {
+  color: #64748b;
+  font-size: 0.7rem;
+}
+
+.message-attachment-more {
+  position: absolute;
+  z-index: 2;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #dbe3ef;
+  border-radius: 999px;
+  color: #111827;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.12);
+  opacity: 0;
+  visibility: hidden;
+  cursor: pointer;
+  transition: opacity 140ms ease, visibility 140ms ease;
+}
+
+.message-attachment:hover .message-attachment-more,
+.message-attachment:focus-within .message-attachment-more {
+  opacity: 1;
+  visibility: visible;
+}
+
+.message-attachment-menu {
+  position: absolute;
+  z-index: 24;
+  top: 40px;
+  right: 8px;
+  width: 170px;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid #dbe3ef;
+  border-radius: 12px;
+  color: #334155;
+  background: #ffffff;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.18);
+}
+
+.message-attachment-menu a,
+.message-attachment-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 8px;
+  padding: 9px;
+  color: inherit;
+  background: transparent;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.message-attachment-menu a:hover,
+.message-attachment-menu button:hover {
+  background: #f1f5f9;
+}
+
+.message-attachment-menu .is-danger {
+  color: #dc2626;
+}
+
 .team-message--system {
   width: min(520px, 86%);
   max-width: none;
@@ -139,7 +688,6 @@ function renderLightMarkdown(value: string) {
   border-radius: 14px;
   padding: 12px 14px;
   background: #f8fbff;
-  color: #0f172a;
 }
 
 .team-message__system-icon {
@@ -158,244 +706,30 @@ function renderLightMarkdown(value: string) {
   gap: 2px;
 }
 
-.team-message__system-card small {
-  color: #1d4ed8;
-  font-size: 0.72rem;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.team-message__system-card strong {
-  color: #0f172a;
-  font-size: 0.9rem;
-  line-height: 1.35;
-}
-
+.team-message__system-card small,
 .team-message__system-card div > span {
   color: #64748b;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
 }
 
 .team-message__system-card button {
-  width: max-content;
   border: 0;
   border-radius: 999px;
   padding: 8px 12px;
-  background: #1677ff;
   color: #fff;
+  background: #1677ff;
   font-weight: 800;
   cursor: pointer;
 }
 
-.team-message__text {
-  white-space: normal;
-}
+@media (max-width: 720px) {
+  .team-message {
+    max-width: 88%;
+  }
 
-.team-message__text :deep(a) {
-  color: inherit;
-  font-weight: 800;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.team-message__text :deep(code) {
-  border-radius: 6px;
-  padding: 2px 5px;
-  background: rgba(15, 23, 42, 0.08);
-  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
-  font-size: 0.92em;
-}
-
-.team-message {
-  display: flex;
-  gap: 12px;
-  align-items: flex-end;
-  max-width: min(75%, 720px);
-  margin-bottom: 4px;
-  width: max-content;
-}
-
-.team-message.is-mine {
-  align-self: flex-end;
-  flex-direction: row-reverse;
-}
-
-.team-message.is-consecutive {
-  margin-top: -2px;
-}
-
-.team-message__avatar-container {
-  width: 36px;
-  height: 36px;
-  flex-shrink: 0;
-}
-
-.team-message.is-mine .team-message__avatar-container {
-  display: none;
-}
-
-.team-message__avatar {
-  width: 100%;
-  height: 100%;
-  border-radius: 12px;
-  background: #e2e8f0;
-  color: #475569;
-  display: grid;
-  place-items: center;
-  font-size: 0.8rem;
-  font-weight: 700;
-}
-
-.team-message__bubble {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px 14px;
-  border-radius: 18px 18px 18px 4px;
-  background: #f1f5f9;
-  color: #1e293b;
-  font-size: 0.95rem;
-  line-height: 1.5;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-  min-width: 0;
-}
-
-.team-message.is-consecutive .team-message__bubble {
-  border-radius: 4px 18px 18px 4px;
-}
-
-.team-message.is-mine .team-message__bubble {
-  border-radius: 18px 18px 4px 18px;
-  background: #2563eb;
-  color: #ffffff;
-}
-
-.team-message.is-mine.is-consecutive .team-message__bubble {
-  border-radius: 18px 4px 4px 18px;
-}
-
-.team-message__meta {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 2px;
-}
-
-.team-message.is-mine .team-message__meta {
-  flex-direction: row-reverse;
-}
-
-.team-message__meta strong {
-  font-weight: 600;
-  font-size: 0.85rem;
-  color: #0f172a;
-}
-
-.team-message.is-mine .team-message__meta strong {
-  display: none;
-}
-
-.team-message__meta span {
-  font-size: 0.75rem;
-  color: #64748b;
-}
-
-.team-message.is-mine .team-message__meta span {
-  color: #94a3b8;
-}
-
-.team-message__meta button {
-  background: none;
-  border: none;
-  color: inherit;
-  opacity: 0;
-  transition: opacity 0.2s;
-  cursor: pointer;
-  padding: 2px;
-}
-
-.team-message:hover .team-message__meta button {
-  opacity: 0.7;
-}
-
-.team-message__meta button:hover {
-  opacity: 1;
-}
-
-.team-message__text {
-  word-break: break-word;
-  margin: 0;
-}
-
-.message-attachment-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: inherit;
-  text-decoration: none;
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.8);
-  border-radius: 10px;
-  margin-top: 6px;
-  transition: background 0.2s;
-  cursor: pointer;
-}
-
-.message-attachment-card:not(.is-clickable) {
-  cursor: default;
-}
-
-.team-message.is-mine .message-attachment-card {
-  background: rgba(255, 255, 255, 0.2);
-  color: #ffffff;
-}
-
-.message-attachment-card:hover {
-  background: rgba(255, 255, 255, 1);
-}
-
-.team-message.is-mine .message-attachment-card:hover {
-  background: rgba(255, 255, 255, 0.3);
-}
-
-.message-attachment-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: #e2e8f0;
-  display: grid;
-  place-items: center;
-  color: #475569;
-}
-
-.team-message.is-mine .message-attachment-icon {
-  background: rgba(255, 255, 255, 0.2);
-  color: #ffffff;
-}
-
-.message-attachment-info {
-  display: flex;
-  flex-direction: column;
-}
-
-.message-attachment-info strong {
-  font-size: 0.85rem;
-  line-height: 1.2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 200px;
-}
-
-.message-attachment-info span {
-  font-size: 0.75rem;
-  opacity: 0.8;
-}
-
-.message-attachment-action {
-  margin-left: 4px;
-  flex-shrink: 0;
-  opacity: 0.72;
+  .team-message__more {
+    opacity: 1;
+    visibility: visible;
+  }
 }
 </style>
