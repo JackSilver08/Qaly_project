@@ -2,7 +2,7 @@
 
 > **Ngày tạo:** 01/05/2026  
 > **Phiên bản:** 1.0  
-> **Trạng thái:** Draft
+> **Trạng thái:** Baseline lịch sử. Xem trạng thái hiện tại tại [13_Project_Status_2026-06-08.md](./13_Project_Status_2026-06-08.md).
 
 ---
 

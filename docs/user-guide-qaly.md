@@ -84,8 +84,8 @@ Tin nhắn sẽ hiển thị trong lịch sử chat và được cập nhật th
 
 > Giới hạn:
 >
-> - Tính năng participant realtime/count đang có lỗi P0 `DH03-BUG-MTG-001`.
-> - Screen share chưa có positive case headful; nếu gặp lỗi, đây là trạng thái unsupported.
+> - Realtime presence và reconnect đã được kiểm thử tự động; chất lượng media phụ thuộc cấu hình LiveKit.
+> - Screen share có thông báo lỗi rõ nhưng chưa có positive case headful trong bộ evidence hiện tại.
 
 ## 7. Import tài liệu vào Wiki
 

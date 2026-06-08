@@ -50,8 +50,8 @@
 - Owner/Admin kết thúc cuộc họp.
 - Nói rõ:
     - `Start/join/end meeting hoạt động.`
-    - `Participant count realtime hiện đang là bug P0, nên tôi không claim realtime full.`
-    - `Screen share chưa có positive case headful.`
+    - `SignalR presence/reconnect đã có regression hai context.`
+    - `Media participant count và screen share cần LiveKit thật/browser headful để xác nhận.`
 
 ### 3.5 Import Wiki (2 phút)
 
@@ -84,7 +84,7 @@
 - "Bước 1: Đăng nhập và xác nhận dashboard."
 - "Bước 2: Mở project và nhóm để chứng minh phân quyền."
 - "Bước 3: Tạo poll và vote để minh hoạ tính năng nhóm."
-- "Bước 4: Mở cuộc họp, join và kết thúc; không claim realtime participant full."
+- "Bước 4: Mở cuộc họp, join ở hai context và kết thúc; nói rõ CI dùng LiveKit fallback."
 - "Bước 5: Import DOCX/ZIP vào Wiki và mở trang kết quả."
 - "Bước 6: Hỏi Erumi và hiển thị kết quả AI."
 - "Bước 7: Trích xuất action items nhóm để minh hoạ Group AI."
@@ -94,7 +94,7 @@
 - Nếu AI chậm: chuyển sang slide/bản tóm tắt kỹ thuật và nói rõ backend có fallback AI.
 - Nếu local chậm: dùng evidence `Playwright smoke` và `backend regression` để chứng minh hệ thống chạy.
 - Nếu import quá lớn: dùng file demo nhỏ 5MB và giải thích giới hạn hiện tại.
-- Nếu meeting realtime gặp vấn đề: chỉ demo `start/join/end` và giải thích bug participant count đang fix.
+- Nếu LiveKit media gặp vấn đề: demo `start/join/end`, SignalR presence và trạng thái fallback rõ ràng.
 
 ## 6. Điểm nhấn kỹ thuật
 

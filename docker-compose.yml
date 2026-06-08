@@ -136,8 +136,14 @@ services:
       InvitationLink__AcceptInvitationPath: "${InvitationLink__AcceptInvitationPath:-/invitations/accept}"
       QALY_SEED_ADMIN_PASSWORD: "${QALY_SEED_ADMIN_PASSWORD:-Qaly@Dev2026!}"
       QALY_SEED_DEFAULT_USER_PASSWORD: "${QALY_SEED_DEFAULT_USER_PASSWORD:-Qaly@User2026!}"
+      LiveKit__ServerUrl: "${LiveKit__ServerUrl:-}"
+      LiveKit__ApiKey: "${LiveKit__ApiKey:-}"
+      LiveKit__ApiSecret: "${LiveKit__ApiSecret:-}"
+      LiveKit__TokenTtlMinutes: "${LiveKit__TokenTtlMinutes:-120}"
       Ai__OllamaUrl: "http://qaly-ollama:11434"
       Ai__QdrantUrl: "http://qaly-qdrant:6333"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
 
     ports:
       - "${APP_PORT:-5000}:5000"

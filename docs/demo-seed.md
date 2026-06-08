@@ -67,8 +67,8 @@ Có thể dùng UI tại `/groups/{groupId}/meeting` để kiểm tra luồng st
 
 Giới hạn cần nói rõ khi demo:
 
-- Participant realtime/count đang có lỗi P0 `DH03-BUG-MTG-001`; không demo participant count/list như tính năng ổn định nếu chưa fix.
-- Screen share phụ thuộc browser/provider. Headless Chromium đã ghi nhận nhánh unsupported không crash nhưng UI feedback chưa rõ (`DH03-BUG-MTG-002`, P2).
+- SignalR presence/reconnect đã có regression tự động và Playwright hai context.
+- Media participant count và screen share phụ thuộc LiveKit/browser thật; nhánh lỗi có UI feedback và không crash.
 - Nếu cần minh họa screen share positive, chạy bằng browser thật/headful và lưu bằng chứng riêng.
 
 ## Ghi chú

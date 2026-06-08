@@ -9,6 +9,7 @@ using Qaly.Application.DTOs.Groups;
 using Qaly.Application.DTOs.Project;
 using Qaly.Application.Services;
 using Qaly.Application.Services.Groups;
+using Qaly.Application.Services.Meetings;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Enums;
 using Qaly.Domain.Interfaces;
@@ -41,6 +42,7 @@ public class GroupsServiceTests : IDisposable
     private readonly Mock<IGroupInvitationEmailBuilder> _groupInvitationEmailBuilder = new();
     private readonly Mock<IGroupPollRealtimePublisher> _groupPollRealtimePublisher = new();
     private readonly Mock<IGroupMeetingRealtimePublisher> _groupMeetingRealtimePublisher = new();
+    private readonly Mock<ILiveKitTokenService> _liveKitTokenService = new();
     private readonly Mock<ILogger<GroupsService>> _logger = new();
     private readonly Mock<ICurrentUserService> _currentUser = new();
 
@@ -121,6 +123,13 @@ public class GroupsServiceTests : IDisposable
                 It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
+
+        _liveKitTokenService
+            .Setup(service => service.CreateJoinToken(It.IsAny<LiveKitTokenRequest>()))
+            .Returns(new LiveKitTokenResult(
+                "wss://livekit.qaly.test",
+                "test-livekit-token",
+                DateTimeOffset.UtcNow.AddMinutes(30)));
     }
 
     [Fact]
@@ -1818,8 +1827,10 @@ public class GroupsServiceTests : IDisposable
         result.IsSuccess.Should().BeTrue();
         result.Data!.WorkGroupId.Should().Be(groupId);
         result.Data.Status.Should().Be("Active");
-        result.Data.Provider.Should().Be("Jitsi");
-        result.Data.JoinUrl.Should().Contain("https://meet.jit.si/");
+        result.Data.Provider.Should().Be("LiveKit");
+        result.Data.JoinUrl.Should().Contain($"/groups/{groupId}/meeting");
+        result.Data.ProviderUrl.Should().Be("wss://livekit.qaly.test");
+        result.Data.AccessToken.Should().Be("test-livekit-token");
 
         var saved = await _meetingSessionRepo.GetQueryable().FirstOrDefaultAsync(m => m.WorkGroupId == groupId);
         saved.Should().NotBeNull();
@@ -1866,6 +1877,74 @@ public class GroupsServiceTests : IDisposable
         result.Data.Should().NotBeNull();
         result.Data!.Id.Should().Be(activeMeetingId);
         result.Data.Status.Should().Be("Active");
+    }
+
+    [Fact]
+    public async Task GetActiveMeetingSessionAsync_WithLiveKitMeeting_ReturnsParticipantToken()
+    {
+        var userId = Guid.NewGuid();
+        _currentUser.SetupGet(user => user.UserId).Returns(userId);
+
+        await AddUserAsync(userId, "Meeting Member", "meeting-member@qaly.dev");
+        var group = await AddGroupAsync(userId, "LiveKit Group");
+        var meetingId = Guid.NewGuid();
+        await _meetingSessionRepo.AddAsync(new GroupMeetingSession
+        {
+            Id = meetingId,
+            WorkGroupId = group.Id,
+            StartedByUserId = userId,
+            Provider = "LiveKit",
+            RoomId = "qaly-livekit-room",
+            Status = "Active",
+            StartedAt = DateTimeOffset.UtcNow
+        });
+        await _uow.SaveChangesAsync();
+
+        var result = await CreateService().GetActiveMeetingSessionAsync(group.Id);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Id.Should().Be(meetingId);
+        result.Data.ProviderUrl.Should().Be("wss://livekit.qaly.test");
+        result.Data.AccessToken.Should().Be("test-livekit-token");
+        _liveKitTokenService.Verify(service => service.CreateJoinToken(
+            It.Is<LiveKitTokenRequest>(request =>
+                request.RoomName == "qaly-livekit-room" &&
+                request.ParticipantIdentity == userId.ToString("N") &&
+                request.ParticipantName == "Meeting Member" &&
+                request.ParticipantMetadata == "meeting-member@qaly.dev")),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GetActiveMeetingSessionAsync_WhenLiveKitIsNotConfigured_ReturnsMeetingWithoutToken()
+    {
+        var userId = Guid.NewGuid();
+        _currentUser.SetupGet(user => user.UserId).Returns(userId);
+        _liveKitTokenService
+            .Setup(service => service.CreateJoinToken(It.IsAny<LiveKitTokenRequest>()))
+            .Throws(new InvalidOperationException("LiveKit is not configured."));
+
+        await AddUserAsync(userId, "Meeting Owner", "meeting-owner@qaly.dev");
+        var group = await AddGroupAsync(userId, "Fallback Meeting Group");
+        await _meetingSessionRepo.AddAsync(new GroupMeetingSession
+        {
+            Id = Guid.NewGuid(),
+            WorkGroupId = group.Id,
+            StartedByUserId = userId,
+            Provider = "LiveKit",
+            RoomId = "qaly-fallback-room",
+            Status = "Active",
+            StartedAt = DateTimeOffset.UtcNow
+        });
+        await _uow.SaveChangesAsync();
+
+        var result = await CreateService().GetActiveMeetingSessionAsync(group.Id);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data.Should().NotBeNull();
+        result.Data!.Provider.Should().Be("LiveKit");
+        result.Data.ProviderUrl.Should().BeNull();
+        result.Data.AccessToken.Should().BeNull();
     }
 
     [Fact]
@@ -1927,6 +2006,42 @@ public class GroupsServiceTests : IDisposable
         result.Data!.Id.Should().Be(meetingId);
         result.Data.Status.Should().Be("Active");
         result.Data.JoinUrl.Should().Contain("room-active");
+    }
+
+    [Fact]
+    public async Task JoinMeetingSessionAsync_WithLiveKitMeeting_ReturnsMemberToken()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        var meetingId = Guid.NewGuid();
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+
+        await AddUserAsync(ownerId, "Owner User", "owner-livekit@qaly.dev");
+        await AddUserAsync(memberId, "Member User", "member-livekit@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "LiveKit Join Group");
+        await AddMemberAsync(group.Id, memberId, GroupRoleRules.Member);
+        await _meetingSessionRepo.AddAsync(new GroupMeetingSession
+        {
+            Id = meetingId,
+            WorkGroupId = group.Id,
+            StartedByUserId = ownerId,
+            Provider = "LiveKit",
+            RoomId = "qaly-join-room",
+            JoinUrl = $"/groups/{group.Id}/meeting",
+            Status = "Active"
+        });
+        await _uow.SaveChangesAsync();
+
+        var result = await CreateService().JoinMeetingSessionAsync(group.Id, meetingId);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.ProviderUrl.Should().Be("wss://livekit.qaly.test");
+        result.Data.AccessToken.Should().Be("test-livekit-token");
+        _liveKitTokenService.Verify(service => service.CreateJoinToken(
+            It.Is<LiveKitTokenRequest>(request =>
+                request.RoomName == "qaly-join-room" &&
+                request.ParticipantIdentity == memberId.ToString("N"))),
+            Times.Once);
     }
 
     [Fact]
@@ -2132,6 +2247,7 @@ public class GroupsServiceTests : IDisposable
             _groupInvitationEmailBuilder.Object,
             _groupPollRealtimePublisher.Object,
             _groupMeetingRealtimePublisher.Object,
+            _liveKitTokenService.Object,
             _logger.Object,
             _uow,
             _currentUser.Object);

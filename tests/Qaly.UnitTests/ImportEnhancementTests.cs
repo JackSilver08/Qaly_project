@@ -628,6 +628,19 @@ public class ImportEnhancementTests : IDisposable
     }
 
     [Fact]
+    public async Task PreviewZipBundleAsync_WithCorruptZip_ReturnsValidationError()
+    {
+        var service = CreateFileImportService();
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("not-a-valid-zip"));
+
+        var result = await service.PreviewZipBundleAsync(stream, "corrupt.zip");
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+        result.Error.Should().Contain("ZIP");
+    }
+
+    [Fact]
     public async Task ImportZipBundleAsync_WithNoSupportedEntries_DoesNotCreateWikiPages()
     {
         var service = CreateFileImportService();

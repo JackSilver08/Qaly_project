@@ -1,5 +1,7 @@
 # 📋 Báo cáo Đồng bộ Tiến độ & Kế hoạch Phân công Nhiệm vụ Nhóm (Group Workflow Sync & Tasks)
 
+> **Lưu ý:** Đây là snapshot phân công/QA trước các phase ổn định hóa ngày 08/06/2026. Trạng thái hiện tại nằm tại [13_Project_Status_2026-06-08.md](./13_Project_Status_2026-06-08.md); không dùng các tỷ lệ và bug mở trong file này làm kết luận mới nhất.
+
 Tài liệu này tổng hợp toàn bộ hiện trạng mã nguồn thực tế của dự án QALY, đối chiếu chi tiết với kế hoạch tuần của nhóm (`10_group_workflow_week_plan.xlsx`), và thiết lập hướng dẫn phân công nhiệm vụ cụ thể cho từng thành viên.
 
 Tài liệu này dùng làm cơ sở tham khảo nội bộ và giao việc. Khi dùng cho nghiệm thu, phải đọc kèm bằng chứng QA mới nhất trong `docs/task/qa-evidence/` và báo cáo kiểm thử cuối tuần.

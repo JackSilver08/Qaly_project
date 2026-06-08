@@ -51,9 +51,10 @@ RUN dotnet publish -c Release -o /app/publish --no-restore
 FROM base AS production
 WORKDIR /app
 
-# Security: chạy với non-root user
-RUN adduser --disabled-password --gecos "" appuser
-USER appuser
+COPY --from=build --chown=$APP_UID:$APP_UID /app/publish .
+RUN mkdir -p /app/.keys /app/dp-keys /app/uploads \
+    && chown -R $APP_UID:$APP_UID /app/.keys /app/dp-keys /app/uploads
 
-COPY --from=build /app/publish .
+# Official .NET runtime images expose a built-in non-root application UID.
+USER $APP_UID
 ENTRYPOINT ["dotnet", "Qaly.Web.dll"]

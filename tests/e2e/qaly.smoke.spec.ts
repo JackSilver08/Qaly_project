@@ -196,7 +196,6 @@ async function createGroupViaUi(page: Page, groupName: string) {
     const modal = page.locator(".group-modal");
     await expect(modal).toBeVisible();
     await modal.locator('input[placeholder="Tên nhóm"]').fill(groupName);
-    await modal.locator('textarea[placeholder="Mô tả nhóm"]').fill("DH-02 E2E smoke");
     await modal.locator('button[type="submit"]').click();
 
     const createdGroup = page
@@ -358,7 +357,10 @@ test("should render meeting page in two authenticated contexts", async ({
         meetingId = meeting.id ?? meeting.Id;
 
         expect(meetingId, "Meeting start response phải có id").toBeTruthy();
-        await expect(page.locator(".meeting-status")).toContainText("Đang họp");
+        await expect(page.locator(".meeting-status")).toHaveClass(/active/);
+        await expect(page.locator(".meeting-status")).toContainText(
+            /Đang họp|LiveKit chưa kết nối|Cần kiểm tra kết nối/i,
+        );
         await expect(page.locator(".participants-card")).toContainText("Bạn");
 
         const secondarySession = await newSecondaryPage(browser);
@@ -367,7 +369,10 @@ test("should render meeting page in two authenticated contexts", async ({
         await expect(
             secondarySession.page.getByRole("heading", { name: /Phòng họp nhóm/i }),
         ).toBeVisible();
-        await expect(secondarySession.page.locator(".meeting-status")).toContainText("Đang họp");
+        await expect(secondarySession.page.locator(".meeting-status")).toHaveClass(/active/);
+        await expect(secondarySession.page.locator(".meeting-status")).toContainText(
+            /Đang họp|LiveKit chưa kết nối|Cần kiểm tra kết nối/i,
+        );
         await expect(secondarySession.page.locator(".participants-card")).toContainText("Bạn");
     } finally {
         if (group?.id && meetingId) {

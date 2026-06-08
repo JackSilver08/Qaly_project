@@ -4,7 +4,7 @@
 # Tự động deploy khi merge vào main
 # ========================================
 
-name: 🚀 CD - Deploy
+name: 🚀 CD - Publish Image
 
 on:
   push:
@@ -61,43 +61,21 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   # ==========================================
-  # Job 2: Deploy to Staging
+  # Deployment targets are not configured yet. This workflow publishes
+  # a production image; environment deployment remains an explicit ops step.
   # ==========================================
-  deploy-staging:
-    name: 🟡 Deploy to Staging
+  publish-summary:
+    name: 📋 Publish Summary
     runs-on: ubuntu-latest
     needs: build-and-push
-    environment:
-      name: staging
 
     steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      - name: 🚀 Deploy to staging
+      - name: Record published image
         run: |
-          echo "🟡 Deploying to staging environment..."
-          echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-          # TODO: Thêm lệnh deploy thực tế (SSH, kubectl, Azure CLI, etc.)
-          # Ví dụ:
-          # ssh user@staging-server "docker compose pull && docker compose up -d"
-
-  # ==========================================
-  # Job 3: Deploy to Production (manual approval)
-  # ==========================================
-  deploy-production:
-    name: 🟢 Deploy to Production
-    runs-on: ubuntu-latest
-    needs: deploy-staging
-    environment:
-      name: production
-
-    steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      - name: 🚀 Deploy to production
-        run: |
-          echo "🟢 Deploying to production environment..."
-          echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-          # TODO: Thêm lệnh deploy thực tế
+          {
+            echo "### Container image published"
+            echo ""
+            echo "- Registry: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`"
+            echo "- Commit tag: \`${{ github.sha }}\`"
+            echo "- Environment deployment: not configured"
+          } >> "$GITHUB_STEP_SUMMARY"

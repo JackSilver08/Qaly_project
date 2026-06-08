@@ -157,6 +157,10 @@ async function connectRealtime() {
     .withAutomaticReconnect()
     .build();
 
+  hubConnection.onreconnected(async () => {
+    await joinRealtimeGroups();
+  });
+
   hubConnection.on("peerSignal", (payload: any) => {
     const from = payload?.from;
     if (!from) return;
@@ -175,11 +179,29 @@ async function connectRealtime() {
   try {
     await hubConnection.start();
     if (hubConnection.state === HubConnectionState.Connected) {
-      await hubConnection.invoke("JoinGroup", groupId).catch(() => undefined);
+      await joinRealtimeGroups();
     }
   } catch (e) {
     console.warn("Could not start group hub", e);
   }
+}
+
+async function joinRealtimeGroups() {
+  if (!hubConnection || hubConnection.state !== HubConnectionState.Connected) return;
+
+  await hubConnection.invoke("JoinGroup", groupId).catch(() => undefined);
+  if (meetingId.value) {
+    await hubConnection.invoke("JoinMeeting", groupId, meetingId.value).catch(() => undefined);
+  }
+}
+
+async function leaveRealtimeGroups() {
+  if (!hubConnection || hubConnection.state !== HubConnectionState.Connected) return;
+
+  if (meetingId.value) {
+    await hubConnection.invoke("LeaveMeeting", groupId, meetingId.value).catch(() => undefined);
+  }
+  await hubConnection.invoke("LeaveGroup", groupId).catch(() => undefined);
 }
 
 async function endMeeting() {
@@ -192,7 +214,7 @@ async function endMeeting() {
 
   if (hubConnection && hubConnection.state === HubConnectionState.Connected) {
     try {
-      await hubConnection.invoke("LeaveGroup", groupId).catch(() => undefined);
+      await leaveRealtimeGroups();
       await hubConnection.stop();
     } catch {}
     hubConnection = null;
@@ -291,7 +313,7 @@ onBeforeUnmount(async () => {
   if (hubConnection) {
     try {
       if (hubConnection.state === HubConnectionState.Connected) {
-        await hubConnection.invoke("LeaveGroup", groupId).catch(() => undefined);
+        await leaveRealtimeGroups();
       }
       await hubConnection.stop();
     } catch {}

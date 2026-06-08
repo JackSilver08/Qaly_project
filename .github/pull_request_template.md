@@ -21,6 +21,8 @@
 ## ✅ Checklist
 - [ ] Code đã build thành công (`dotnet build`)
 - [ ] Unit tests pass (`dotnet test`)
+- [ ] Frontend typecheck/build pass (`npm run typecheck`, `npm run build`)
+- [ ] Docker Compose hợp lệ (`docker compose config --quiet`)
 - [ ] Đã tự review code
 - [ ] Đã cập nhật documentation (nếu cần)
 - [ ] Không có hardcode secrets/passwords

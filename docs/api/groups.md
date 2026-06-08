@@ -4,7 +4,7 @@ Deadline P0 ban đầu: Chủ nhật 2026-05-31.
 
 Mục tiêu của module nhóm là tạo một không gian bàn luận trước khi tạo dự án. Theo phạm vi hiện tại, nhóm hỗ trợ chat thời gian thực, quản lý thành viên, bình chọn, API cuộc họp start/join/end và tạo dự án mới từ thành viên trong nhóm.
 
-Không dùng tài liệu này để claim “realtime đầy đủ” cho tất cả luồng meeting. Theo QA tuần 03/06/2026 - 09/06/2026, participant realtime/count của cuộc họp đang có lỗi P0 `DH03-BUG-MTG-001`; screen share unsupported còn thiếu UI feedback rõ (`DH03-BUG-MTG-002`, P2).
+QA lịch sử tuần 03/06/2026 - 09/06/2026 từng ghi nhận lỗi participant realtime/count. Từ 08/06/2026, SignalR presence đã có idempotent join/leave, disconnect cleanup, reconnect rejoin và regression E2E hai context. Media participant count và screen share vẫn cần LiveKit thật/browser headful để nghiệm thu đầy đủ.
 
 ## Backend Nền Đã Có
 
@@ -234,9 +234,9 @@ Backend hiện có API start/join/end cuộc họp và test regression cho phân
 
 Giới hạn cần ghi rõ khi demo/nghiệm thu:
 
-- Participant realtime/count chưa ổn định theo evidence DH-03; không demo participant list/count như tính năng đã ổn định nếu bug P0 chưa fix.
-- Screen share phụ thuộc browser/provider; nhánh unsupported không crash nhưng UI feedback chưa rõ.
-- Chưa có bằng chứng automation SignalR end-to-end cho participant count meeting.
+- SignalR presence/reconnect đã có integration và Playwright regression.
+- Participant media count phụ thuộc kết nối LiveKit thật; CI mặc định kiểm tra fallback không secret.
+- Screen share phụ thuộc browser/provider; nhánh lỗi có UI feedback nhưng positive case headful chưa có evidence.
 
 ## Việc Team Khác Làm Tiếp
 

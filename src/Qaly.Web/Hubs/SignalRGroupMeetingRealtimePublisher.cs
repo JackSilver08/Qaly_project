@@ -37,15 +37,17 @@ public sealed class SignalRGroupMeetingRealtimePublisher : IGroupMeetingRealtime
     public async Task PublishParticipantJoinedAsync(Guid groupId, Guid meetingId, Guid? userId, string connectionId, CancellationToken ct = default)
     {
         var payload = BuildParticipantPayload(groupId, meetingId, userId, connectionId);
-        await _hubContext.Clients.Group(GroupHub.WorkGroup(groupId)).SendAsync("meetingParticipantJoined", payload, ct);
-        await _hubContext.Clients.Group(GroupHub.MeetingGroup(groupId, meetingId)).SendAsync("meetingParticipantJoined", payload, ct);
+        await _hubContext.Clients
+            .Groups(GroupHub.WorkGroup(groupId), GroupHub.MeetingGroup(groupId, meetingId))
+            .SendAsync("meetingParticipantJoined", payload, ct);
     }
 
     public async Task PublishParticipantLeftAsync(Guid groupId, Guid meetingId, Guid? userId, string connectionId, CancellationToken ct = default)
     {
         var payload = BuildParticipantPayload(groupId, meetingId, userId, connectionId);
-        await _hubContext.Clients.Group(GroupHub.WorkGroup(groupId)).SendAsync("meetingParticipantLeft", payload, ct);
-        await _hubContext.Clients.Group(GroupHub.MeetingGroup(groupId, meetingId)).SendAsync("meetingParticipantLeft", payload, ct);
+        await _hubContext.Clients
+            .Groups(GroupHub.WorkGroup(groupId), GroupHub.MeetingGroup(groupId, meetingId))
+            .SendAsync("meetingParticipantLeft", payload, ct);
     }
 
     private static object BuildMeetingPayload(Guid groupId, GroupMeetingSessionDto meeting)

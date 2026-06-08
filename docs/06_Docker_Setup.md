@@ -12,7 +12,7 @@
 | **Redis 7**         | `redis:7-alpine`                             | `6380`                     | Cache + SignalR Backplane                       |
 | **Seq**             | `datalust/seq:latest`                        | `8081` (UI), `5341` (API)  | Structured Logging Dashboard                    |
 | **MailHog**         | `mailhog/mailhog:latest`                     | `8025` (UI), `1025` (SMTP) | Fake SMTP cho dev                               |
-| **Qaly Web**        | Build từ Dockerfile                          | `5000`                     | App (chỉ khi dùng profile `full`)               |
+| **Qaly Web**        | Build từ Dockerfile                          | `5000`                     | App (chỉ khi dùng profile `docker-web`)         |
 
 ---
 
@@ -31,7 +31,7 @@ docker compose up -d
 
 ```powershell
 # Chạy tất cả, bao gồm app trong container
-docker compose --profile full up -d
+docker compose --profile docker-web up -d
 ```
 
 ### 2.3 Dừng services
@@ -86,7 +86,7 @@ docker compose logs -f qaly-web
 ```json
 {
     "ConnectionStrings": {
-        "DefaultConnection": "Server=qaly-sqlserver,1433;Database=QalyDb;User Id=sa;Password=Qaly@Dev2026!;TrustServerCertificate=True;MultipleActiveResultSets=true"
+        "DefaultConnection": "Server=qaly-sqlserver,1433;Database=QalyDb;User Id=sa;Password=<SQLSERVER_SA_PASSWORD>;TrustServerCertificate=True;MultipleActiveResultSets=true"
     },
     "Redis": {
         "ConnectionString": "qaly-redis:6379"
@@ -109,7 +109,7 @@ docker compose logs -f qaly-web
 | ------------- | --------------------- | ------------------------------------------ |
 | Seq Logging   | http://localhost:8081 | Xem structured logs                        |
 | MailHog Email | http://localhost:8025 | Xem email test                             |
-| Qaly App      | http://localhost:5000 | Web app (khi chạy local hoặc profile full) |
+| Qaly App      | http://localhost:5000 | Web app (khi chạy local hoặc profile `docker-web`) |
 
 ---
 

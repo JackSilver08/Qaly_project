@@ -82,7 +82,8 @@ sequenceDiagram
 - Hệ thống có `GroupsController` và `GroupHub` để quản lý nhóm, chat, poll, và meeting.
 - SignalR dùng cho realtime chat, join/leave group, và meeting event.
 - Hiện tại backend các route `start/join/end` meeting đã hoạt động.
-- Limit hiện tại: participant realtime/count trên UI còn lỗi P0 `DH03-BUG-MTG-001`; cần fix trước khi xem là realtime đầy đủ.
+- Participant presence đã có join/leave idempotent, cleanup khi disconnect và rejoin sau reconnect.
+- Regression hiện có integration tests cho publisher/presence và Playwright hai authenticated contexts; vẫn cần xác nhận media participant count với LiveKit thật.
 
 ### 3.3 Import tài liệu
 
@@ -142,8 +143,8 @@ flowchart TB
 
 ## 5. Giới hạn hiện tại
 
-- **Meeting realtime**: event `participant count` chưa cập nhật ổn định; UI có bug P0.
-- **Screen share**: chưa có positive case headful; browser unsupported hiện chỉ log console lỗi.
+- **Meeting realtime**: signaling/presence đã có regression fix; participant media count với LiveKit thật chưa có evidence headful.
+- **Screen share**: nhánh lỗi/unsupported có toast rõ và không crash; chưa có positive case headful.
 - **Import**: giới hạn file 5MB; PDF vẫn trong roadmap/unsupported.
 - **AI**: có thể phụ thuộc provider/fallback; chưa đủ bằng chứng nghiệm thu full AI analytics hoặc Group AI.
 - **Deploy**: Docker Compose/infra đã cấu hình cơ bản, nhưng chưa có evidence nghiệm thu đầy đủ cho checklist deploy.
@@ -154,4 +155,4 @@ flowchart TB
 
 - Tài liệu này mô tả kiến trúc thực tế của hệ thống ở thời điểm hiện tại.
 - Không dùng tài liệu này để khẳng định mọi tính năng chưa có bằng chứng QA đã nghiệm thu hoàn toàn.
-- Nếu cần demo meeting realtime, hãy kiểm tra kỹ bug `DH03-BUG-MTG-001` trước.
+- Khi demo media meeting/screen share, cần cấu hình LiveKit bằng secret ngoài repository và kiểm tra bằng browser thật.

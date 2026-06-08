@@ -13,11 +13,16 @@ public class GroupHub : Hub
 {
     private readonly IGroupsService _groupsService;
     private readonly IGroupMeetingRealtimePublisher _meetingRealtimePublisher;
+    private readonly GroupMeetingPresenceTracker _meetingPresenceTracker;
 
-    public GroupHub(IGroupsService groupsService, IGroupMeetingRealtimePublisher meetingRealtimePublisher)
+    public GroupHub(
+        IGroupsService groupsService,
+        IGroupMeetingRealtimePublisher meetingRealtimePublisher,
+        GroupMeetingPresenceTracker meetingPresenceTracker)
     {
         _groupsService = groupsService;
         _meetingRealtimePublisher = meetingRealtimePublisher;
+        _meetingPresenceTracker = meetingPresenceTracker;
     }
 
     public async Task JoinGroup(Guid groupId)
@@ -133,23 +138,51 @@ public class GroupHub : Hub
         }
 
         await Groups.AddToGroupAsync(Context.ConnectionId, MeetingGroup(groupId, meetingId), Context.ConnectionAborted);
-        await _meetingRealtimePublisher.PublishParticipantJoinedAsync(
-            groupId,
-            meetingId,
-            CurrentUserId(),
-            Context.ConnectionId,
-            Context.ConnectionAborted);
+        var userId = CurrentUserId();
+        if (_meetingPresenceTracker.TryJoin(Context.ConnectionId, groupId, meetingId, userId))
+        {
+            await _meetingRealtimePublisher.PublishParticipantJoinedAsync(
+                groupId,
+                meetingId,
+                userId,
+                Context.ConnectionId,
+                Context.ConnectionAborted);
+        }
     }
 
     public async Task LeaveMeeting(Guid groupId, Guid meetingId)
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, MeetingGroup(groupId, meetingId), Context.ConnectionAborted);
-        await _meetingRealtimePublisher.PublishParticipantLeftAsync(
-            groupId,
-            meetingId,
-            CurrentUserId(),
-            Context.ConnectionId,
-            Context.ConnectionAborted);
+        if (_meetingPresenceTracker.TryLeave(Context.ConnectionId, groupId, meetingId, out var presence))
+        {
+            await _meetingRealtimePublisher.PublishParticipantLeftAsync(
+                groupId,
+                meetingId,
+                presence!.UserId,
+                Context.ConnectionId,
+                Context.ConnectionAborted);
+        }
+    }
+
+    public override async Task OnDisconnectedAsync(Exception? exception)
+    {
+        var leaveNotifications = _meetingPresenceTracker
+            .RemoveConnection(Context.ConnectionId)
+            .Select(presence => _meetingRealtimePublisher.PublishParticipantLeftAsync(
+                presence.GroupId,
+                presence.MeetingId,
+                presence.UserId,
+                presence.ConnectionId,
+                CancellationToken.None));
+
+        try
+        {
+            await Task.WhenAll(leaveNotifications);
+        }
+        finally
+        {
+            await base.OnDisconnectedAsync(exception);
+        }
     }
 
     public async Task SendMeetingSignal(Guid groupId, Guid meetingId, object payload)

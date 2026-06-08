@@ -38,8 +38,21 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Typecheck frontend
+        run: npm run typecheck
+
       - name: Build frontend
         run: npm run build
+
+      - name: Verify committed frontend bundle
+        run: git diff --exit-code -- src/Qaly.Web/wwwroot/dist
+
+      - name: Validate configuration safety
+        shell: pwsh
+        run: ./scripts/check-configuration.ps1
+
+      - name: Validate Docker Compose
+        run: docker compose config --quiet
 
       - name: Build solution
         run: dotnet build --no-restore --configuration Release
@@ -51,14 +64,16 @@ jobs:
           --configuration Release
           --logger "trx;LogFileName=unit-test-results.trx"
           --collect:"XPlat Code Coverage"
+          --settings coverlet.runsettings
           --results-directory .test-results/unit
 
       - name: Enforce unit coverage baseline
         shell: pwsh
-        run: ./scripts/check-coverage.ps1 -CoverageRoot .test-results/unit -MinimumLineRate 8
+        run: ./scripts/check-coverage.ps1 -CoverageRoot .test-results/unit -MinimumLineRate 43
 
       - name: Security scan
-        run: dotnet list package --vulnerable
+        shell: pwsh
+        run: ./scripts/check-vulnerable-packages.ps1
 
       - name: Upload unit test artifacts
         uses: actions/upload-artifact@v4
@@ -125,11 +140,12 @@ jobs:
           --configuration Release
           --logger "trx;LogFileName=integration-test-results.trx"
           --collect:"XPlat Code Coverage"
+          --settings coverlet.runsettings
           --results-directory .test-results/integration
 
       - name: Enforce integration coverage baseline
         shell: pwsh
-        run: ./scripts/check-coverage.ps1 -CoverageRoot .test-results/integration -MinimumLineRate 5
+        run: ./scripts/check-coverage.ps1 -CoverageRoot .test-results/integration -MinimumLineRate 16
 
       - name: Upload integration test artifacts
         uses: actions/upload-artifact@v4
@@ -212,7 +228,7 @@ jobs:
         run: |
           dotnet run --project src/Qaly.Web/Qaly.Web.csproj --configuration Release --no-build --urls http://127.0.0.1:5000 > qaly-e2e.log 2>&1 &
           echo $! > qaly-e2e.pid
-          for i in {1..60}; do
+          for _ in {1..60}; do
             if curl -fsS http://127.0.0.1:5000/health > /dev/null; then
               exit 0
             fi
@@ -260,3 +276,20 @@ jobs:
 
       - name: Check formatting
         run: dotnet format --verify-no-changes --verbosity diagnostic || echo "::warning::Code formatting issues detected"
+
+  container-build:
+    name: Production Container Build
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: production
+          push: false
+          tags: qaly:ci

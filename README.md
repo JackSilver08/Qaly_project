@@ -29,39 +29,30 @@ Hệ thống quản lý dự án nội bộ với Project / Task / Comment / Not
 ```powershell
 git clone https://github.com/JackSilver08/Qaly_project.git
 cd Qaly_project
-docker compose --profile dev up -d
+Copy-Item .env.example .env
+docker compose up -d
 ```
 
-### Dev vs Full
-- `dev`: core stack for day-to-day development
-- `full`: core stack plus AI services (`qdrant`, `ollama`)
+Lệnh trên chạy hạ tầng local. Ứng dụng web chạy trên host bằng `dotnet run`.
 
-To run the full stack:
+Để chạy cả ứng dụng web trong Docker:
 ```powershell
-docker compose --profile full up -d
+docker compose --profile docker-web up -d
 ```
 
-### 2. Configure Environment Variables (Bắt buộc cho AI Cloud)
+### 2. Configure Environment Variables
 
-Các nhà cung cấp AI trong AI Gateway (như OpenAI, Gemini) sẽ đọc API Key từ biến môi trường của hệ thống. Nếu không cấu hình, hệ thống sẽ tự động đi vào chế độ fallback/mock data an toàn (mặc định cho môi trường phát triển local).
+Không ghi credential vào `appsettings*.json`. Điền secret local trong `.env` (file này bị Git ignore) hoặc biến môi trường của hệ thống:
 
-Để chạy thật hoặc demo với AI Cloud, hãy set API Key:
+```dotenv
+LiveKit__ServerUrl=wss://your-project.livekit.cloud
+LiveKit__ApiKey=...
+LiveKit__ApiSecret=...
+OPENAI_API_KEY=...
+GEMINI_API_KEY=...
+```
 
-- **Windows (PowerShell):**
-  ```powershell
-  $env:OPENAI_API_KEY="your_real_openai_api_key"
-  $env:GEMINI_API_KEY="your_real_gemini_api_key"
-  ```
-- **Windows (Command Prompt):**
-  ```cmd
-  set OPENAI_API_KEY=your_real_openai_api_key
-  set GEMINI_API_KEY=your_real_gemini_api_key
-  ```
-- **Linux/macOS:**
-  ```bash
-  export OPENAI_API_KEY="your_real_openai_api_key"
-  export GEMINI_API_KEY="your_real_gemini_api_key"
-  ```
+Nếu không cấu hình LiveKit, meeting vẫn dùng luồng fallback hiện có nhưng không cấp media token. Nếu không cấu hình AI cloud, AI Gateway dùng fallback/mock theo cấu hình development.
 
 ### 3. Run Database Migrations & Seed
 Nếu chạy cơ sở dữ liệu Microsoft SQL Server thật bằng Docker, hãy áp dụng các migrations để tạo bảng dữ liệu:
@@ -145,10 +136,10 @@ Theo bằng chứng QA tuần 03/06/2026 - 09/06/2026:
 
 - **Nhập tài liệu:** có thể demo theo scope đã kiểm thử với DOCX, ZIP chứa `.md/.txt/.html`, và luồng PDF báo unsupported/roadmap rõ ràng. Không ghi nhận là hỗ trợ mọi định dạng.
 - **Phân quyền cơ bản:** có bằng chứng E2E/backend regression cho login, admin/member boundary và outside user bị chặn ở một số API quan trọng.
-- **Cuộc họp nhóm:** API start/join/end và phân quyền có bằng chứng, nhưng participant realtime/count đang có lỗi P0 `DH03-BUG-MTG-001`; không demo participant count/list như tính năng ổn định trước khi fix.
-- **Chia sẻ màn hình:** nhánh browser unsupported không crash, nhưng UI feedback chưa rõ (`DH03-BUG-MTG-002`, P2); cần kiểm thử lại bằng browser thật/headful nếu đưa vào demo.
+- **Cuộc họp nhóm:** API start/join/end, phân quyền, SignalR presence và reconnect đã có regression; Playwright hai context pass. Media participant count vẫn cần LiveKit thật để nghiệm thu headful.
+- **Chia sẻ màn hình:** nhánh lỗi/unsupported không crash và có toast rõ; cần kiểm thử positive case bằng browser thật/headful nếu đưa vào demo.
 - **AI analytics / Group AI:** có smoke/fallback/schema tests, nhưng manual deep check và Group AI E2E chưa có bằng chứng nghiệm thu đầy đủ; cần cấu hình provider hoặc chấp nhận phản hồi dự phòng AI.
-- **Deploy config:** chưa có bằng chứng nghiệm thu đầy đủ cho checklist deploy tuần này.
+- **Deploy config:** production image build pass và chạy non-root; CD mới publish image lên GHCR, chưa deploy tới hạ tầng thật.
 
 Tài liệu QA liên quan:
 

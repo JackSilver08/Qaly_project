@@ -13,7 +13,7 @@ Dev push code
     │
     ▼
 ┌─────────────────────────┐
-│  Job 1: Build & Test    │ ← Build solution + Unit Tests
+│  Job 1: Build & Test    │ ← Vue typecheck/build + .NET build/unit
 │  (ubuntu-latest)        │
 └───────────┬─────────────┘
             │ ✅ Pass
@@ -27,9 +27,21 @@ Dev push code
 ┌─────────────────────────┐
 │  Job 3: Code Quality    │ ← Code analysis + format check
 └─────────────────────────┘
+            │
+            ▼
+┌─────────────────────────┐
+│  Job 4: Container Build │ ← Build production Docker image
+└─────────────────────────┘
 ```
 
-### CD (Continuous Deployment) – Khi merge vào main
+CI còn kiểm tra bundle frontend đã đồng bộ, cấu hình không chứa LiveKit secret trong file tracked, Docker Compose hợp lệ và coverage không thấp hơn baseline hiện tại:
+
+- Unit line coverage: tối thiểu `43%` (đo được `44,02%`).
+- Integration line coverage: tối thiểu `16%` (đo được `16,50%`).
+
+Coverage dùng `coverlet.runsettings` để loại EF migration/designer và generated source khỏi mẫu số. DTO và code nghiệp vụ vẫn được tính.
+
+### CD (Container Publishing) – Khi merge vào main
 
 ```
 Merge vào main
@@ -42,14 +54,11 @@ Merge vào main
             │
             ▼
 ┌─────────────────────────┐
-│  Deploy Staging         │ ← Tự động deploy staging
-└───────────┬─────────────┘
-            │ ⏸️ Manual Approval
-            ▼
-┌─────────────────────────┐
-│  Deploy Production      │ ← Cần approve trên GitHub
+│  Publish Summary        │ ← Ghi image/tag đã publish
 └─────────────────────────┘
 ```
+
+Pipeline hiện chưa có target hosting nên **chưa tự động deploy** staging hoặc production. Khi chốt nền tảng triển khai, cần thêm job deploy thật cùng health check và rollback.
 
 ---
 
@@ -106,14 +115,14 @@ chore: update Docker compose config
 #### Branch `main`:
 - ✅ Require a pull request before merging
 - ✅ Require approvals: **2**
-- ✅ Require status checks to pass (chọn: `🏗️ Build & Test`, `🗄️ Integration Tests`)
+- ✅ Require status checks to pass: `Build, Unit Tests, Coverage`, `Integration Tests`, `Playwright E2E Smoke`, `Code Quality`, `Production Container Build`
 - ✅ Require branches to be up to date
 - ✅ Include administrators
 
 #### Branch `develop`:
 - ✅ Require a pull request before merging
 - ✅ Require approvals: **1**
-- ✅ Require status checks to pass (chọn: `🏗️ Build & Test`)
+- ✅ Require status checks to pass: `Build, Unit Tests, Coverage`, `Integration Tests`, `Code Quality`
 - ✅ Require branches to be up to date
 
 ---
@@ -141,10 +150,11 @@ chore: update Docker compose config
 |---|---|
 | `.editorconfig` | Thống nhất code style toàn team |
 | `.gitignore` | Ignore build artifacts, secrets |
-| `global.json` | Pin SDK version (10.0.203) |
+| `global.json` | Pin SDK version (10.0.103, roll-forward latest feature) |
 | `Directory.Build.props` | Shared build properties cho tất cả projects |
 | `Dockerfile` | Multi-stage build (dev + production) |
 | `docker-compose.yml` | Infrastructure services |
+| `scripts/check-configuration.ps1` | Chặn secret LiveKit và `.env` bị track |
 
 ---
 
