@@ -1,0 +1,1222 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Đặc Tả Kỹ Thuật & Kế Hoạch Nâng Cấp Erumi Agent v2 - Qaly Project</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      /* Palette Precision Ops */
+      --bg-app: #F4F6FA;
+      --bg-surface: #FFFFFF;
+      --bg-sunken: #EEF2F7;
+      --line: #D8E0EA;
+      --text-strong: #0F172A;
+      --text: #334155;
+      --text-muted: #64748B;
+      
+      /* Brand & Semantics */
+      --brand: #2563EB;
+      --brand-hover: #1D4ED8;
+      --brand-soft: #DBEAFE;
+      --success: #0F766E;
+      --success-soft: #CCFBF1;
+      --warning: #B45309;
+      --warning-soft: #FEF3C7;
+      --danger: #B42318;
+      --danger-soft: #FEE2E2;
+      --info: #0C4A6E;
+      --info-soft: #E0F2FE;
+
+      /* Layout */
+      --sidebar-width: 290px;
+      --transition-fast: 150ms ease;
+      --transition-normal: 250ms ease;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg-app);
+      color: var(--text);
+      line-height: 1.6;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Sidebar Navigation */
+    aside {
+      width: var(--sidebar-width);
+      background-color: var(--bg-surface);
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      height: 100%;
+    }
+
+    .sidebar-header {
+      padding: 24px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .sidebar-logo {
+      width: 38px;
+      height: 38px;
+      background: linear-gradient(135deg, var(--brand) 0%, #3b82f6 100%);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 800;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+    }
+
+    .sidebar-title-wrap {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar-title {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-weight: 700;
+      font-size: 1.15rem;
+      color: var(--text-strong);
+      line-height: 1.2;
+    }
+
+    .sidebar-subtitle {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .sidebar-nav {
+      flex: 1;
+      padding: 20px 12px;
+      overflow-y: auto;
+    }
+
+    .nav-group-title {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      font-weight: 700;
+      margin: 16px 12px 8px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 12px;
+      border-radius: 6px;
+      color: var(--text);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      margin-bottom: 4px;
+      cursor: pointer;
+      transition: var(--transition-fast);
+    }
+
+    .nav-item:hover {
+      background-color: var(--bg-sunken);
+      color: var(--text-strong);
+    }
+
+    .nav-item.active {
+      background-color: var(--brand-soft);
+      color: var(--brand);
+      font-weight: 600;
+    }
+
+    .sidebar-footer {
+      padding: 16px 20px;
+      border-top: 1px solid var(--line);
+      background-color: #FAFAFC;
+    }
+
+    .meta-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 12px;
+    }
+
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      margin-bottom: 6px;
+    }
+
+    .meta-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .meta-label {
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .meta-val {
+      color: var(--text-strong);
+      font-weight: 600;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      background-color: var(--brand-soft);
+      color: var(--brand);
+      border: 1px solid rgba(37, 99, 235, 0.2);
+    }
+
+    /* Main Panel Content Area */
+    main {
+      flex: 1;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background-color: var(--bg-app);
+      overflow-y: auto;
+    }
+
+    .content-header {
+      background-color: var(--bg-surface);
+      border-bottom: 1px solid var(--line);
+      padding: 20px 40px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .header-left h2 {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-weight: 700;
+      font-size: 1.5rem;
+      color: var(--text-strong);
+    }
+
+    .header-left p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .tab-button-group {
+      display: flex;
+      gap: 6px;
+      background-color: var(--bg-sunken);
+      padding: 4px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+
+    .tab-btn {
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: none;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      background: transparent;
+      color: var(--text-muted);
+      transition: var(--transition-fast);
+    }
+
+    .tab-btn:hover {
+      color: var(--text-strong);
+    }
+
+    .tab-btn.active {
+      background-color: var(--bg-surface);
+      color: var(--brand);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    }
+
+    .content-body {
+      padding: 40px;
+      max-width: 1120px;
+      width: 100%;
+      margin: 0 auto;
+      flex: 1;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+      animation: fadeIn 300ms ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Typography & Core components */
+    h1, h2, h3, h4 {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      color: var(--text-strong);
+      margin-bottom: 12px;
+    }
+
+    h3 {
+      font-size: 1.35rem;
+      border-bottom: 2px solid var(--line);
+      padding-bottom: 8px;
+      margin-top: 36px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    h3:first-of-type {
+      margin-top: 0;
+    }
+
+    h4 {
+      font-size: 1.05rem;
+      margin-top: 20px;
+      margin-bottom: 8px;
+      font-weight: 600;
+      color: var(--text-strong);
+    }
+
+    p {
+      margin-bottom: 16px;
+      font-size: 0.95rem;
+      line-height: 1.6;
+    }
+
+    strong {
+      color: var(--text-strong);
+      font-weight: 600;
+    }
+
+    ul, ol {
+      margin-bottom: 20px;
+      padding-left: 24px;
+    }
+
+    li {
+      margin-bottom: 8px;
+      font-size: 0.95rem;
+    }
+
+    /* KPI cards */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .kpi-card {
+      background-color: var(--bg-surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      transition: var(--transition-fast);
+    }
+
+    .kpi-card:hover {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+      border-color: #cbd5e1;
+    }
+
+    .kpi-title {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .kpi-value {
+      font-size: 1.6rem;
+      font-weight: 800;
+      color: var(--text-strong);
+      line-height: 1.1;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      margin-bottom: 4px;
+    }
+
+    .kpi-desc {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    /* Feature Grid / Panels */
+    .grid-2col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 28px;
+    }
+
+    .panel-card {
+      background-color: var(--bg-surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+
+    .panel-card h4 {
+      margin-top: 0;
+      margin-bottom: 12px;
+      font-size: 1.1rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .panel-card.accent-blue {
+      border-left: 4px solid var(--brand);
+    }
+    
+    .panel-card.accent-teal {
+      border-left: 4px solid var(--success);
+    }
+
+    .panel-card.accent-warning {
+      border-left: 4px solid var(--warning);
+    }
+
+    .panel-card.accent-danger {
+      border-left: 4px solid var(--danger);
+    }
+
+    /* Alerts */
+    .alert {
+      display: flex;
+      gap: 12px;
+      padding: 16px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      margin-bottom: 24px;
+      border: 1px solid;
+    }
+
+    .alert-info {
+      background-color: var(--info-soft);
+      border-color: #bae6fd;
+      color: var(--info);
+    }
+
+    .alert-warning {
+      background-color: var(--warning-soft);
+      border-color: #fde68a;
+      color: var(--warning);
+    }
+
+    .alert-danger {
+      background-color: var(--danger-soft);
+      border-color: #fecaca;
+      color: var(--danger);
+    }
+
+    .alert-success {
+      background-color: var(--success-soft);
+      border-color: #a7f3d0;
+      color: var(--success);
+    }
+
+    .alert-icon {
+      font-size: 1.25rem;
+      font-weight: bold;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+
+    /* Code block */
+    code, pre {
+      font-family: 'Fira Code', 'Courier New', Courier, monospace;
+      font-size: 0.85rem;
+    }
+
+    code {
+      background-color: var(--bg-sunken);
+      padding: 2px 5px;
+      border-radius: 4px;
+      color: var(--danger);
+      font-weight: 500;
+    }
+
+    pre {
+      background-color: #0F172A;
+      color: #F8FAFC;
+      padding: 18px 20px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin-bottom: 20px;
+      border: 1px solid #1E293B;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    }
+
+    pre code {
+      background-color: transparent;
+      padding: 0;
+      border-radius: 0;
+      color: inherit;
+      font-weight: normal;
+    }
+
+    .code-comment {
+      color: #64748B;
+      font-style: italic;
+    }
+
+    .code-keyword {
+      color: #F472B6;
+    }
+
+    .code-type {
+      color: #38BDF8;
+    }
+
+    .code-string {
+      color: #34D399;
+    }
+
+    /* Data Tables */
+    .table-container {
+      background-color: var(--bg-surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    th {
+      background-color: #FAFAFC;
+      border-bottom: 1px solid var(--line);
+      padding: 12px 16px;
+      font-weight: 600;
+      color: var(--text-strong);
+      text-align: left;
+    }
+
+    td {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      color: var(--text);
+      vertical-align: middle;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background-color: #FAFCFF;
+    }
+
+    /* Roadmap Timeline */
+    .timeline {
+      position: relative;
+      padding-left: 32px;
+      margin-bottom: 30px;
+    }
+
+    .timeline::before {
+      content: '';
+      position: absolute;
+      left: 7px;
+      top: 10px;
+      bottom: 0;
+      width: 2px;
+      background-color: var(--line);
+    }
+
+    .timeline-node {
+      position: relative;
+      margin-bottom: 28px;
+    }
+
+    .timeline-node::before {
+      content: '';
+      position: absolute;
+      left: -32px;
+      top: 6px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background-color: var(--bg-surface);
+      border: 3px solid var(--brand);
+      z-index: 2;
+    }
+
+    .timeline-node.completed::before {
+      border-color: var(--success);
+      background-color: var(--success);
+    }
+
+    .timeline-node.active::before {
+      border-color: var(--brand);
+      background-color: var(--brand);
+    }
+
+    .timeline-node:last-child {
+      margin-bottom: 0;
+    }
+
+    .timeline-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .timeline-title {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: var(--text-strong);
+    }
+
+    .timeline-badge {
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 20px;
+    }
+
+    .badge-blue {
+      background-color: var(--brand-soft);
+      color: var(--brand);
+    }
+
+    .badge-teal {
+      background-color: var(--success-soft);
+      color: var(--success);
+    }
+
+    .badge-gray {
+      background-color: var(--bg-sunken);
+      color: var(--text-muted);
+    }
+
+    .timeline-body {
+      background-color: var(--bg-surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px 20px;
+    }
+
+    /* Diagram UI */
+    .flow-diagram-container {
+      background-color: var(--bg-surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 24px;
+      overflow-x: auto;
+    }
+
+    .flow-svg {
+      max-width: 100%;
+      height: auto;
+    }
+
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #CBD5E1;
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94A3B8;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- LEFT SIDEBAR -->
+  <aside>
+    <div class="sidebar-header">
+      <div class="sidebar-logo">Q</div>
+      <div class="sidebar-title-wrap">
+        <span class="sidebar-title">Erumi Agent v2</span>
+        <span class="sidebar-subtitle">Đặc tả Kỹ thuật Đầy đủ</span>
+      </div>
+    </div>
+    
+    <div class="sidebar-nav">
+      <div class="nav-group-title">MỤC LỤC TÀI LIỆU</div>
+      <div class="nav-item active" onclick="switchTab('gap-analysis', this)">
+        <span>1. Gap Analysis & Giải Pháp</span>
+      </div>
+      <div class="nav-item" onclick="switchTab('spec-target', this)">
+        <span>2. Đặc Tả Mục Tiêu & Ideas</span>
+      </div>
+      <div class="nav-item" onclick="switchTab('architecture', this)">
+        <span>3. Kiến Trúc & Tech Spec</span>
+      </div>
+      <div class="nav-item" onclick="switchTab('roadmap', this)">
+        <span>4. Lộ Trình Triển Khai v2.0</span>
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="meta-card">
+        <div class="meta-row">
+          <span class="meta-label">Phiên bản</span>
+          <span class="meta-val">v2.0 (Approved Plan)</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Ngày sửa</span>
+          <span class="meta-val">08/06/2026</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Trạng thái</span>
+          <span class="meta-val"><span class="status-badge">Thiết kế Sẵn sàng</span></span>
+        </div>
+        <div class="meta-row" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line);">
+          <span class="meta-label" style="display:block; margin-bottom: 2px;">Tác giả</span>
+          <span class="meta-val" style="display:block; font-size: 0.8rem; color: var(--brand);">Antigravity pair Claude v2</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN AREA -->
+  <main>
+    <header class="content-header">
+      <div class="header-left">
+        <h2 id="main-title">Phân tích khoảng cách & Giải pháp kỹ thuật</h2>
+        <p>Phát hiện các điểm thiếu sót từ kế hoạch ban đầu và giải pháp kiến trúc bù đắp</p>
+      </div>
+      <div class="tab-button-group">
+        <button class="tab-btn active" id="btn-gap-analysis" onclick="switchTab('gap-analysis', this)">Gap Analysis</button>
+        <button class="tab-btn" id="btn-spec-target" onclick="switchTab('spec-target', this)">Mục tiêu & Ý tưởng</button>
+        <button class="tab-btn" id="btn-architecture" onclick="switchTab('architecture', this)">Kiến trúc & Specs</button>
+        <button class="tab-btn" id="btn-roadmap" onclick="switchTab('roadmap', this)">Kế hoạch 4 Sprint</button>
+      </div>
+    </header>
+
+    <div class="content-body">
+      
+      <!-- ==================== TAB 1: GAP ANALYSIS ==================== -->
+      <section id="gap-analysis" class="tab-content active">
+        
+        <div class="alert alert-danger">
+          <span class="alert-icon">⚠️</span>
+          <div>
+            <strong>Đánh giá độc lập:</strong> Bản kế hoạch sơ khởi trước đây có tầm nhìn tốt nhưng bỏ qua một số thách thức kỹ thuật nghiêm trọng liên quan đến độ chính xác của Local LLM (Ollama), cơ chế xác thực tham số của AI, và phân bổ tài nguyên. Dưới đây là 5 lỗ hổng thiết kế (Gaps) lớn nhất được xác định và phương án xử lý chi tiết.
+          </div>
+        </div>
+
+        <h3>1. Chi tiết 5 Lỗ Hổng Thiết Kế & Giải Pháp Bù Đắp</h3>
+        
+        <div class="panel-card accent-danger">
+          <h4>🔴 Gap 1: Bỏ Qua Xác Thực Tham Số Của AI (Tool Parameter Validation)</h4>
+          <p><strong>Vấn đề:</strong> Kế hoạch cũ đề xuất sử dụng Draft Card cho các tác vụ Write, nhưng không nhắc tới cơ chế bảo vệ trước tham số lỗi. LLM (đặc biệt khi chạy local mô hình nhỏ thông qua Ollama) rất dễ trả về các giá trị lỗi như <code>assigneeId: null</code>, sai định dạng UUID hoặc ID không tồn tại trong DB, gây ra crash API hoặc gán nhầm dữ liệu.</p>
+          <p><strong>Giải pháp - Tool Parameter Guard:</strong></p>
+          <ul>
+            <li>Xây dựng lớp <code>ToolParameterGuard.cs</code> tại backend. Trước khi thực thi bất kỳ tool nào, hệ thống phải đối chiếu tham số mà AI sinh ra với một bộ quy tắc <code>ParameterContract</code> (các trường bắt buộc, kiểm tra kiểu dữ liệu, xác thực sự tồn tại của khóa ngoại trong DB).</li>
+            <li>Nếu phát hiện tham số không hợp lệ, hệ thống không crash mà trả về một kết quả <code>ToolError</code> có cấu trúc, bao gồm hướng dẫn sửa lỗi (Retry Hint) truyền ngược lại cho LLM.</li>
+            <li>Thiết lập <strong>Tool Call Loop</strong> (vòng lặp phản hồi sửa lỗi) tối đa 3 vòng để AI tự điều chỉnh lại tham số đúng.</li>
+          </ul>
+        </div>
+
+        <div class="panel-card accent-danger">
+          <h4>🔴 Gap 2: Vòng Lặp Gọi Hàm (Tool Call Loop) Thiếu Error Contract</h4>
+          <p><strong>Vấn đề:</strong> Luồng xử lý cũ chỉ vẽ ra kịch bản chạy mượt mà (happy path). Khi C# tool xảy ra lỗi nghiệp vụ (ví dụ: Task bị khóa, User không có quyền, hoặc timeout DB), hệ thống không có hợp đồng dữ liệu chuẩn hóa để xử lý lỗi đồng bộ, dễ dẫn đến crash hoặc phản hồi rỗng.</p>
+          <p><strong>Giải pháp - Chuẩn hóa hợp đồng dữ liệu ToolResult:</strong></p>
+          <p>Mọi Tool khi thực thi xong bắt buộc phải trả về đối tượng <code>ToolResult</code> thay vì chuỗi string thô. Chi tiết contract:</p>
+          <pre><code><span class="code-keyword">public record</span> <span class="code-type">ToolResult</span>
+{
+    <span class="code-keyword">public bool</span> Success { <span class="code-keyword">get</span>; <span class="code-keyword">init</span>; }
+    <span class="code-keyword">public string</span>? Data { <span class="code-keyword">get</span>; <span class="code-keyword">init</span>; }        <span class="code-comment">// JSON chuỗi kết quả khi thành công</span>
+    <span class="code-keyword">public string</span>? ErrorCode { <span class="code-keyword">get</span>; <span class="code-keyword">init</span>; }   <span class="code-comment">// Ví dụ: "VALIDATION_FAILED", "UNAUTHORIZED"</span>
+    <span class="code-keyword">public string</span>? UserMessage { <span class="code-keyword">get</span>; <span class="code-keyword">init</span>; } <span class="code-comment">// Nội dung thông báo hiển thị trực tiếp trong Chat widget</span>
+    <span class="code-keyword">public string</span>? RetryHint { <span class="code-keyword">get</span>; <span class="code-keyword">init</span>; }   <span class="code-comment">// Hướng dẫn kỹ thuật giúp LLM tự động sửa tham số</span>
+}</code></pre>
+        </div>
+
+        <div class="panel-card accent-danger">
+          <h4>🔴 Gap 3: Tính Năng Phím Tắt Lệnh (Slash Commands) Bị Bỏ Quên Khỏi Kế Hoạch</h4>
+          <p><strong>Vấn đề:</strong> Phần đặc tả đề xuất phím tắt nhanh dạng gõ lệnh như <code>/summary</code>, <code>/risks</code>, <code>/workload</code> để tăng tốc thao tác, nhưng roadmap 4 sprint lại hoàn toàn bỏ quên, không phân bổ tài nguyên phát triển.</p>
+          <p><strong>Giải pháp - Gộp vào Sprint 1 dạng Frontend Template Shortcut:</strong></p>
+          <ul>
+            <li>Bản chất các slash command này chỉ là bộ tiêu bản prompt (predefined prompt templates). Chúng không đòi hỏi xây dựng API backend mới.</li>
+            <li>Chúng ta sẽ triển khai **100% ở phía Frontend** tại Sprint 1: Khi người dùng gõ ký tự <code>/</code>, hiển thị popup menu đề xuất các lệnh. Khi chọn, hệ thống tự động điền prompt mẫu vào ô nhập liệu.</li>
+          </ul>
+        </div>
+
+        <div class="panel-card accent-danger">
+          <h4>🔴 Gap 4: Tính Năng @Erumi Tại Chat Nhóm Bị Đánh Giá Quá Thấp Độ Phức Tạp</h4>
+          <p><strong>Vấn đề:</strong> Kế hoạch cũ dồn việc kích hoạt @Erumi trong chat nhóm vào Sprint 4 cùng với việc tối ưu hóa RAG và kiểm thử E2E. Điều này cực kỳ nguy hiểm vì chat nhóm liên quan đến bảo mật phân quyền (Data Leakage) — một thành viên trong group chat có thể lừa AI trích xuất thông tin của một dự án khác mà họ không có quyền truy cập.</p>
+          <p><strong>Giải pháp - Tách @Erumi Tagging sang Backlog v2.1:</strong></p>
+          <ul>
+            <li>Sprint 4 sẽ được giải phóng, chỉ tập trung vào tối ưu hóa RAG, kiểm thử E2E toàn diện và sửa lỗi tồn đọng.</li>
+            <li>Đẩy tính năng @Erumi Chat nhóm sang phiên bản sau (Milestone v2.1) để có đủ thời gian xây dựng mô hình bảo mật: phân quyền ngữ cảnh theo dự án (Permission context enforcement) và giới hạn bộ nhớ tin nhắn nhóm (Group chat history limit).</li>
+          </ul>
+        </div>
+
+        <div class="panel-card accent-danger">
+          <h4>🔴 Gap 5: Ollama Local Không Hỗ Trợ Gọi Hàm Native (Native Function Calling)</h4>
+          <p><strong>Vấn đề:</strong> Plan cũ giả định Ollama hỗ trợ Tool calling mượt mà như OpenAI hay Gemini. Thực tế, các mô hình chạy local phổ biến (như Llama3, Mistral, Phi3) không hỗ trợ native function calling từ core, dẫn đến việc thư viện <code>Microsoft.Extensions.AI</code> không thể ánh xạ công cụ.</p>
+          <p><strong>Giải pháp - Chiến lược Gọi Công Cụ Phân Tầng (Tiered Tool Calling Strategy):</strong></p>
+          <p>Hệ thống AI Gateway sẽ tự động phát hiện năng lực của Model (Model Capability) để áp dụng chiến lược thích hợp:</p>
+          <ul>
+            <li><strong>Tier 1 (Native API):</strong> Dùng cho Gemini 2.0+, GPT-4o, Llama 3.1+, Qwen 2.5+. Thực hiện gọi tool qua API chuẩn của provider.</li>
+            <li><strong>Tier 2 (Prompt-based XML Fallback):</strong> Dùng cho Llama3, Mistral, Phi3. Hệ thống inject XML schema mô tả công cụ vào <code>SystemPrompt</code>, ép LLM trả về cấu trúc XML dạng <code>&lt;tool_call name="..."&gt;...&lt;/tool_call&gt;</code> rồi parse thủ công tại Gateway.</li>
+            <li><strong>Tier 3 (Text-only):</strong> Với các model quá yếu, tắt tính năng gọi tool, chỉ trả về văn bản thông thường.</li>
+          </ul>
+        </div>
+
+      </section>
+
+      <!-- ==================== TAB 2: SPEC TARGET ==================== -->
+      <section id="spec-target" class="tab-content">
+        
+        <div class="alert alert-success">
+          <span class="alert-icon">✨</span>
+          <div>
+            <strong>Đặc tả trải nghiệm mới:</strong> Ngoài việc khắc phục các khoảng cách thiết kế, Erumi Agent v2 sẽ bổ sung 5 ý tưởng nâng cấp trải nghiệm người dùng (UX) với chi phí triển khai cực kỳ tối ưu.
+          </div>
+        </div>
+
+        <h3>1. Thiết Kế Bong Bóng Chat Toàn Cục (Global Floating Chatbot Widget)</h3>
+        <ul>
+          <li><strong>Vị trí:</strong> Đặt cố định ở góc dưới bên phải màn hình.</li>
+          <li><strong>Trạng thái hiển thị:</strong> Nhấp vào bong bóng sẽ kích hoạt một Side Drawer rộng 380px (Precision Ops style), đẩy nhẹ giao diện chính sang bên trái (hoặc đè overlay tùy cấu hình) giúp người dùng vừa xem dữ liệu vừa chat với trợ lý ảo dễ dàng.</li>
+          <li><strong>Tự động nhận diện ngữ cảnh (Context Tracker):</strong> 
+            Tích hợp một bộ theo dõi Route của Vue Router tại store. Khi người dùng di chuyển giữa các màn hình, Chatbot sẽ ghi nhận ID Dự án và ID Task hiện tại để tự động đính kèm làm ngữ cảnh ngầm (System Message Context) khi chat.
+          </li>
+        </ul>
+
+        <h3>2. 5 Ý Tưởng Bổ Sung Cho Trải Nghiệm Khách Hàng (UX)</h3>
+        
+        <div class="grid-2col">
+          <div class="panel-card accent-blue">
+            <h4>💡 Idea 1: Nút Hành Động Nhanh Ngữ Cảnh (Contextual Quick Actions)</h4>
+            <p><strong>Mô tả:</strong> Dưới mỗi câu trả lời của Erumi, hệ thống tự động sinh các nút hành động nhanh dựa trên kết quả trả về. Ví dụ: sau khi Erumi liệt kê 3 công việc bị trễ hạn, chatbot sẽ hiện ngay 3 nút bấm: <code>[Giao việc cho tôi]</code>, <code>[Gia hạn thêm 3 ngày]</code>, <code>[Đăng ký chấm công]</code>. Người dùng chỉ cần click nút thay vì gõ lại yêu cầu.</p>
+            <p><strong>Triển khai:</strong> Triển khai ở Frontend tại Sprint 3 bằng cách mở rộng component Draft Card hiện tại. Hoàn toàn không cần sửa đổi API Backend.</p>
+          </div>
+
+          <div class="panel-card accent-blue">
+            <h4>💡 Idea 2: Bộ Nhớ Tạm Thời Phiên Làm Việc (Erumi Session Memory)</h4>
+            <p><strong>Mô tả:</strong> Trong suốt phiên làm việc (khi chưa đóng tab), Erumi có thể nhớ các thiết lập tạm thời của người dùng, ví dụ: <i>"Trong phiên này, khi tạo task hãy ưu tiên gán cho Nguyễn Văn A"</i>. AI sẽ bám sát preference này trong các câu lệnh tiếp theo.</p>
+            <p><strong>Triển khai:</strong> Lưu trữ tại store Pinia của Frontend, tự động giải phóng khi người dùng reload trang hoặc đóng tab để tránh làm loãng ngữ cảnh dài hạn.</p>
+          </div>
+        </div>
+
+        <div class="grid-2col">
+          <div class="panel-card accent-blue">
+            <h4>💡 Idea 3: Chỉ Số Đánh Giá Độ Tin Cậy (Confidence Indicator)</h4>
+            <p><strong>Mô tả:</strong> Do các mô hình AI (đặc biệt khi chạy offline local) có thể gặp hiện tượng ảo giác (hallucination), Erumi sẽ tự chấm điểm độ tin cậy của câu trả lời theo 3 mức (Cao / Trung bình / Thấp) kèm lý do ngắn gọn dưới giao diện bong bóng chat.</p>
+            <p><strong>Triển khai:</strong> Thực hiện ở Sprint 2. Mở rộng JSON Schema đầu ra của AI thêm trường <code>confidence</code> và <code>confidence_reason</code> để hiển thị trực tiếp lên UI.</p>
+          </div>
+
+          <div class="panel-card accent-blue">
+            <h4>💡 Idea 4: Hướng Dẫn Nạp Nhanh (What Can Erumi Do? Onboarding)</h4>
+            <p><strong>Mô tả:</strong> Khi người dùng mở widget lần đầu tiên, thay vì màn hình trống, Erumi hiển thị danh sách câu hỏi gợi ý thông minh dựa trên chính màn hình người dùng đang đứng.</p>
+            <ul>
+              <li>Đang ở Task Board: Gợi ý <i>"Ai đang quá tải việc?"</i></li>
+              <li>Đang ở Gantt Chart: Gợi ý <i>"Mốc bàn giao nào có nguy cơ trễ hạn?"</i></li>
+            </ul>
+            <p><strong>Triển khai:</strong> Hoàn thành ở Sprint 1. Hardcode các câu hỏi gợi ý tương ứng với Route Pattern tại Frontend store.</p>
+          </div>
+        </div>
+
+        <div class="panel-card accent-blue" style="margin-bottom: 0;">
+          <h4>💡 Idea 5: Nhật Ký Hành Động Tự Động (Audit Log cho AI Actions)</h4>
+          <p><strong>Mô tả:</strong> Mọi hành động ghi dữ liệu nhạy cảm do Erumi thực hiện sau khi được người dùng phê duyệt thành công (nhấn Confirm Draft Card) bắt buộc phải được lưu vào bảng cơ sở dữ liệu <code>AiAuditLog</code> để PM và quản trị viên dễ dàng rà soát lịch sử vận hành tự động.</p>
+          <p><strong>Triển khai:</strong> Thực hiện ở Sprint 3. Tạo DB Migration và viết Interceptor ghi nhận log trong lớp <code>ToolExecutor.cs</code> sau khi nhận request duyệt từ client.</p>
+        </div>
+
+      </section>
+
+      <!-- ==================== TAB 3: ARCHITECTURE ==================== -->
+      <section id="architecture" class="tab-content">
+        
+        <h3>1. Vòng Đời Yêu Cầu Hoàn Chỉnh (Erumi Agent Request Lifecycle)</h3>
+        <p>Kiến trúc nâng cấp tích hợp chặt chẽ cơ chế kiểm tra an toàn (Guard), xác thực tham số (Validation Loop) và ghi nhật ký hoạt động (Audit trail):</p>
+        
+        <div class="flow-diagram-container">
+          <svg class="flow-svg" width="900" height="520" viewBox="0 0 900 520" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="900" height="520" rx="10" fill="#F8FAFC"/>
+            <path d="M0 40H900M0 80H900M0 120H900M0 160H900M0 200H900M0 240H900M0 280H900M0 320H900M0 360H900M0 400H900M0 440H900M0 480H900" stroke="#E2E8F0" stroke-width="0.5"/>
+            <path d="M80 0V520M160 0V520M240 0V520M320 0V520M400 0V520M480 0V520M560 0V520M640 0V520M720 0V520M800 0V520" stroke="#E2E8F0" stroke-width="0.5"/>
+
+            <!-- Node 1: FE Widget -->
+            <rect x="20" y="60" width="160" height="70" rx="8" fill="#DBEAFE" stroke="#2563EB" stroke-width="2"/>
+            <text x="100" y="92" fill="#1E40AF" font-family="'Plus Jakarta Sans'" font-weight="700" font-size="12" text-anchor="middle">ErumiWidget.vue</text>
+            <text x="100" y="108" fill="#1E40AF" font-family="'Inter'" font-size="10" text-anchor="middle">Gửi msg + Route Context</text>
+
+            <!-- Node 2: Backend Controller -->
+            <rect x="230" y="60" width="160" height="70" rx="8" fill="#F1F5F9" stroke="#64748B" stroke-width="2"/>
+            <text x="310" y="92" fill="#0F172A" font-family="'Plus Jakarta Sans'" font-weight="700" font-size="12" text-anchor="middle">AiController</text>
+            <text x="310" y="108" fill="#475569" font-family="'Inter'" font-size="10" text-anchor="middle">Xác thực JWT & User claims</text>
+
+            <!-- Node 3: ErumiChatService -->
+            <rect x="440" y="60" width="160" height="70" rx="8" fill="#F1F5F9" stroke="#64748B" stroke-width="2"/>
+            <text x="520" y="92" fill="#0F172A" font-family="'Plus Jakarta Sans'" font-weight="700" font-size="12" text-anchor="middle">ErumiChatService</text>
+            <text x="520" y="108" fill="#475569" font-family="'Inter'" font-size="10" text-anchor="middle">Build request + RAG + Tool list</text>
+
+            <!-- Node 4: AiGateway Tiered -->
+            <rect x="650" y="60" width="170" height="70" rx="8" fill="#FEE2E2" stroke="#EF4444" stroke-width="2"/>
+            <text x="735" y="92" fill="#991B1B" font-family="'Plus Jakarta Sans'" font-weight="700" font-size="12" text-anchor="middle">AiGateway (Tiered)</text>
+            <text x="735" y="108" fill="#991B1B" font-family="'Inter'" font-size="10" text-anchor="middle">Route Tool Strategy</text>
+
+            <!-- Node 5: LLM Decision -->
+            <rect x="650" y="190" width="170" height="70" rx="8" fill="#FAE8FF" stroke="#A855F7" stroke-width="2"/>
+            <text x="735" y="222" fill="#6B21A8" font-family="'Plus Jakarta Sans'" font-weight="700" font-size="12" text-anchor="middle">LLM Provider</text>
+            <text x="735" y="238" fill="#6B21A8" font-family="'Inter'" font-size="10" text-anchor="middle">Text or Tool Call (Params JSON)</text>
+
+            <!-- Node 6: ToolParameterGuard (Gap 1 Fix) -->
+            <rect x="440" y="190" width="160" height="70" rx="8" fill="#FEF3C7" stroke="#D97706" stroke-width="2"/>
+            <text x="520" y="218" fill="#92400E" font-family="'Plus Jakarta Sans'" font-weight="700" font-size="12" text-anchor="middle">ParameterGuard</text>
+            <text x="520" y="236" fill="#92400E" font-family="'Inter'" font-size="9" text-anchor="middle">Validate Contract</text>
+
+            <!-- Decision Loop -->
+            <polygon points="310,180 350,225 310,270 270,225" fill="#FEF3C7" stroke="#D97706" stroke-width="1.5"/>
+            <text x="310" y="222" fill="#92400E" font-family="'Plus Jakarta Sans'" font-weight="700" font-size="9" text-anchor="middle">Hợp lệ?</text>
+
+            <!-- Node 7: Read Tool execution -->
+            <rect x="20" y="190" width="190" height="70" rx="8" fill="#ECFDF5" stroke="#10B981" stroke-width="2"/>
+            <text x="115" y="222" fill="#065F46" font-family="'Plus Jakarta Sans'" font-weight="700" font-size="12" text-anchor="middle">Read Tool Executor</text>
+            <text x="115" y="238" fill="#065F46" font-family="'Inter'" font-size="10" text-anchor="middle">Trả về ToolResult lập tức</text>
+
+            <!-- Node 8: Write Tool (Draft card) -->
+            <rect x="230" y="320" width="160" height="70" rx="8" fill="#ECFDF5" stroke="#10B981" stroke-width="2"/>
+            <text x="310" y="352" fill="#065F46" font-family="'Plus Jakarta Sans'" font-weight="700" font-size="12" text-anchor="middle">Write Draft Builder</text>
+            <text x="310" y="368" fill="#065F46" font-family="'Inter'" font-size="10" text-anchor="middle">Tạo DraftAction Object</text>
+
+            <!-- Node 9: Frontend Interactive Card -->
+            <rect x="440" y="320" width="160" height="70" rx="8" fill="#DBEAFE" stroke="#2563EB" stroke-width="2"/>
+            <text x="520" y="352" fill="#1E40AF" font-family="'Plus Jakarta Sans'" font-weight="700" font-size="12" text-anchor="middle">Draft Card Vue</text>
+            <text x="520" y="368" fill="#1E40AF" font-family="'Inter'" font-size="10" text-anchor="middle">Hiển thị [Xác nhận] / [Hủy]</text>
+
+            <!-- Node 10: DB Execution & Audit Log -->
+            <rect x="650" y="320" width="170" height="70" rx="8" fill="#ECFDF5" stroke="#10B981" stroke-width="2"/>
+            <text x="735" y="347" fill="#065F46" font-family="'Plus Jakarta Sans'" font-weight="700" font-size="12" text-anchor="middle">DB Action Executed</text>
+            <text x="735" y="363" fill="#065F46" font-family="'Inter'" font-size="9" text-anchor="middle">+ Ghi AiAuditLog (Idea 5)</text>
+
+            <!-- Lines -->
+            <path d="M180 95 H230" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow)"/>
+            <path d="M390 95 H440" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow)"/>
+            <path d="M600 95 H650" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow)"/>
+            <path d="M735 130 V190" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow)"/>
+            
+            <!-- Tool Call Request -->
+            <path d="M650 225 H600" stroke="#A855F7" stroke-width="2" marker-end="url(#arrow)"/>
+            <path d="M440 225 H350" stroke="#D97706" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+            <!-- Loop back if validation fails (Max 3 retries) -->
+            <path d="M310 180 V150 H520 V190" stroke="#D97706" stroke-dasharray="3 3" stroke-width="1.5" marker-end="url(#arrow)"/>
+            <text x="410" y="165" fill="#D97706" font-family="'Inter'" font-weight="600" font-size="9">Lỗi: Gửi RetryHint về LLM</text>
+
+            <!-- Valid path -->
+            <path d="M270 225 H210" stroke="#10B981" stroke-width="2" marker-end="url(#arrow)"/>
+            <text x="235" y="215" fill="#10B981" font-family="'Inter'" font-weight="700" font-size="9">Read Tool</text>
+
+            <path d="M310 270 V320" stroke="#10B981" stroke-width="2" marker-end="url(#arrow)"/>
+            <text x="320" y="295" fill="#10B981" font-family="'Inter'" font-weight="700" font-size="9">Write Tool</text>
+
+            <path d="M390 355 H440" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow)"/>
+            <path d="M520 390 V430 H735 V390" stroke="#2563EB" stroke-width="1.5" marker-end="url(#arrow)"/>
+            <text x="610" y="445" fill="#1E40AF" font-family="'Inter'" font-weight="700" font-size="10">User Bấm Approve</text>
+
+            <!-- Connect Read tool output back to Widget -->
+            <path d="M115 190 V130" stroke="#64748B" stroke-dasharray="2 2" stroke-width="1.5" marker-end="url(#arrow)"/>
+          </svg>
+        </div>
+
+        <h3>2. Chi Tiết Thiết Kế Hợp Đồng Dữ Liệu (API Contracts)</h3>
+        
+        <h4>A. DraftAction Contract (Bản Nháp Hành Động Phê Duyệt)</h4>
+        <p>Bất cứ khi nào AI gọi Write Tool, backend trả về một object <code>DraftAction</code> để Frontend hiển thị Draft Card tương tác:</p>
+        <pre><code><span class="code-keyword">public record</span> <span class="code-type">DraftAction</span>
+{
+    <span class="code-keyword">public string</span> ActionId { <span class="code-keyword">init</span>; }        <span class="code-comment">// GUID duy nhất cho hành động nháp</span>
+    <span class="code-keyword">public string</span> ToolName { <span class="code-keyword">init</span>; }        <span class="code-comment">// Tên tool (ví dụ: "CreateTask")</span>
+    <span class="code-keyword">public object</span> Params { <span class="code-keyword">init</span>; }          <span class="code-comment">// Các tham số dạng JSON Object</span>
+    <span class="code-keyword">public string</span> Summary { <span class="code-keyword">init</span>; }         <span class="code-comment">// Nội dung tóm tắt để User kiểm tra lại</span>
+    <span class="code-keyword">public DateTimeOffset</span> ExpiresAt { <span class="code-keyword">init</span>; } <span class="code-comment">// Hết hạn duyệt sau 5 phút</span>
+}</code></pre>
+
+        <h4>B. Phân Nhóm Quyền Hạn Sử Dụng Tools (Security Enforcements)</h4>
+        <p>Nhằm loại bỏ nguy cơ rò rỉ hoặc sửa đổi trái phép dữ liệu dự án, danh sách tool truyền xuống AI Gateway được lọc động dựa trên vai trò của User:</p>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Vai trò User (Role)</th>
+                <th>Tools được cấp phép</th>
+                <th>Yêu cầu Draft Confirmation?</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Guest (Khách)</strong></td>
+                <td>Không có tool nào (Chỉ chat text thuần túy)</td>
+                <td>-</td>
+              </tr>
+              <tr>
+                <td><strong>Project Member (Thành viên)</strong></td>
+                <td><code>GetProjectSummary</code>, <code>GetMemberWorkload</code>, <code>SearchKnowledge</code>, <code>GetMyTimeLogs</code>, <code>GenerateExcelReport</code>, <code>GenerateWordReport</code></td>
+                <td>Không (Toàn bộ là Read Tools)</td>
+              </tr>
+              <tr>
+                <td><strong>Task Assignee</strong></td>
+                <td>Được bổ sung <code>StartTimeTracking</code>, <code>StopTimeTracking</code>, <code>UpdateTaskStatus</code> (Chỉ đổi status của task được giao)</td>
+                <td><code>UpdateTaskStatus</code>: Có<br><code>TimeTracking</code>: Không</td>
+              </tr>
+              <tr>
+                <td><strong>Project Manager (PM) + Admin</strong></td>
+                <td>Bổ sung toàn bộ Write Tools: <code>CreateTask</code>, <code>AssignTask</code>, <code>SetTaskPriority</code>, <code>AddDueDate</code></td>
+                <td><strong>Có (Bắt buộc)</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>3. Các Quyết Định Thiết Kế Lớn (Architecture Decisions)</h3>
+        <div class="panel-card accent-teal">
+          <h4>ADR-01: Tiered Tool Calling (Hỗ trợ Ollama Local)</h4>
+          <p><strong>Bối cảnh:</strong> Dự án yêu cầu hệ thống phải hoạt động tốt cả ở chế độ local offline sử dụng Ollama với các model phổ biến như Llama3 hay Mistral (không hỗ trợ Native Tool Calling từ lõi).</p>
+          <p><strong>Quyết định:</strong> Xây dựng cơ chế phân tầng tại AI Gateway. Tự động kiểm tra Model Name đầu vào. Nếu là model cũ, Gateway sẽ tự động bổ sung XML Schema vào prompt hướng dẫn và sử dụng Custom XML Parser để giải mã cấu trúc tool call trả về từ Ollama, giả lập cuộc gọi tool native.</p>
+        </div>
+
+        <div class="panel-card accent-teal">
+          <h4>ADR-02: Zero-Trust Context Policy</h4>
+          <p><strong>Bối cảnh:</strong> Context Tracker tại Frontend gửi các tham số <code>projectId</code> và <code>taskId</code> ngầm theo yêu cầu chat để tăng trải nghiệm người dùng, tuy nhiên thông tin này dễ bị sửa đổi bởi công cụ nhà phát triển (DevTools) hoặc mã độc XSS.</p>
+          <p><strong>Quyết định:</strong> Áp dụng chính sách Zero-Trust. Backend <code>ErumiChatService</code> nhận context từ Client nhưng **bắt buộc kiểm tra lại quyền truy cập** của <code>userId</code> hiện tại đối với <code>projectId</code> đó thông qua cơ sở dữ liệu SQL. Nếu không có quyền, từ chối nạp RAG context và khóa toàn bộ tool calling liên quan đến dự án đó.</p>
+        </div>
+
+      </section>
+
+      <!-- ==================== TAB 4: ROADMAP ==================== -->
+      <section id="roadmap" class="tab-content">
+        
+        <div class="alert alert-info">
+          <span class="alert-icon">📅</span>
+          <div>
+            <strong>Lộ trình đã điều chỉnh (Revised):</strong> Kế hoạch 4 sprint đã được tối ưu hóa bằng cách gộp Slash Commands (low-cost) vào Sprint 1, tích hợp Audit Trail và Quick Actions vào các sprint nghiệp vụ, đồng thời trì hoãn tính năng Phản hồi Nhóm @Erumi sang Milestone v2.1 để đảm bảo tính an toàn dữ liệu và thời gian hoàn thiện dự án.
+          </div>
+        </div>
+
+        <h3>1. Chi Tiết Lộ Trình 4 Sprint</h3>
+        
+        <div class="timeline">
+          
+          <!-- Sprint 1 -->
+          <div class="timeline-node active">
+            <div class="timeline-header">
+              <span class="timeline-title">Sprint 1: Global Widget, Context Tracker & Slash Commands</span>
+              <span class="timeline-badge badge-blue">Tuần 1</span>
+            </div>
+            <div class="timeline-body">
+              <p><strong>Mục tiêu:</strong> Khôi phục và nâng cấp chatbot thành widget nổi toàn hệ thống, tự động hóa thu thập ngữ cảnh.</p>
+              <ul>
+                <li><strong>Widget UI:</strong> Phát triển component <code>ErumiWidget.vue</code> (dạng side drawer rộng 380px, slide mượt từ phải màn hình) và gắn vào layout chung <code>AppShell.vue</code>.</li>
+                <li><strong>Context Store:</strong> Tạo Pinia Store <code>ErumiContextStore</code> lắng nghe Route hiện tại để tự động lưu <code>projectId</code> và <code>taskId</code>. Tự động lazy-fetch thông tin tóm tắt task khi mở widget.</li>
+                <li><strong>Slash Commands (Predefined Shortcut):</strong> Thiết kế popup gợi ý lệnh nhanh (<code>/summary</code>, <code>/risks</code>, <code>/workload</code>) hoàn toàn ở Frontend để điền prompt mẫu vào ô chat khi người dùng nhập dấu <code>/</code> (Khắc phục Gap 3).</li>
+                <li><strong>Onboarding suggested prompts (Idea 4):</strong> Hiển thị các câu gợi ý click-to-fill tùy biến theo trang hiện tại khi người dùng mở ô chat lần đầu.</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Sprint 2 -->
+          <div class="timeline-node">
+            <div class="timeline-header">
+              <span class="timeline-title">Sprint 2: Backend Tool Calling & Read Tools</span>
+              <span class="timeline-badge badge-gray">Tuần 2</span>
+            </div>
+            <div class="timeline-body">
+              <p><strong>Mục tiêu:</strong> Thiết lập hạ tầng gọi tool của LLM, hỗ trợ phân tầng Ollama và triển khai các tool đọc thông tin.</p>
+              <ul>
+                <li><strong>Tiered Strategy (Gap 5):</strong> Triển khai bộ phân tích năng lực model tại AI Gateway và custom XML parser phục vụ các model local Ollama cũ.</li>
+                <li><strong>Security Guard (Gap 1 & 2):</strong> Xây dựng lớp <code>ToolParameterGuard.cs</code> và cấu trúc trả về <code>ToolResult</code> đồng bộ. Triển khai vòng lặp sửa lỗi tham số LLM tối đa 3 lần.</li>
+                <li><strong>Read Tools Integration:</strong> Kết nối và kiểm thử 3 tool đọc dữ liệu: <code>GetProjectSummary</code>, <code>GetMemberWorkload</code>, và <code>SearchKnowledge</code>.</li>
+                <li><strong>Confidence Indicator (Idea 3):</strong> Cập nhật prompt system yêu cầu LLM tự trả về mức độ tin cậy của câu trả lời và hiển thị badge tin cậy trên chat bubble.</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Sprint 3 -->
+          <div class="timeline-node">
+            <div class="timeline-header">
+              <span class="timeline-title">Sprint 3: Write Tools, Draft UI & Audit Logs</span>
+              <span class="timeline-badge badge-gray">Tuần 3</span>
+            </div>
+            <div class="timeline-body">
+              <p><strong>Mục tiêu:</strong> Kích hoạt các tool ghi dữ liệu thông qua cơ chế phê duyệt an toàn (Draft Card) và lưu nhật ký hoạt động.</p>
+              <ul>
+                <li><strong>Write Tools Integration:</strong> Đăng ký các công cụ: <code>CreateTask</code>, <code>UpdateTaskStatus</code>, <code>AssignTask</code>.</li>
+                <li><strong>Human-in-the-Loop:</strong> Xây dựng endpoint <code>/api/ai/execute-action</code> nhận lệnh xác nhận từ client. Xây dựng component <code>DraftCard.vue</code> hiển thị tóm tắt tham số hành động kèm nút <code>[Xác nhận]</code> / <code>[Hủy]</code>.</li>
+                <li><strong>Contextual Quick Actions (Idea 1):</strong> Hiển thị các nút thao tác nhanh (ví dụ: [Gia hạn trễ việc], [Nhận task]) trực tiếp dưới bubble trả lời của Erumi.</li>
+                <li><strong>AiAuditLog Interceptor (Idea 5):</strong> Tạo cơ sở dữ liệu và ghi nhật ký tự động các hành động AI được phê duyệt thành công.</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Sprint 4 -->
+          <div class="timeline-node">
+            <div class="timeline-header">
+              <span class="timeline-title">Sprint 4: RAG Optimization, Session Memory & Polish</span>
+              <span class="timeline-badge badge-gray">Tuần 4</span>
+            </div>
+            <div class="timeline-body">
+              <p><strong>Mục tiêu:</strong> Tối ưu hóa hiệu năng, bổ sung bộ nhớ đệm và kiểm thử E2E hệ thống.</p>
+              <ul>
+                <li><strong>RAG Metadata Filtering:</strong> Cải tiến logic tìm kiếm vector, tự động lọc ngữ cảnh theo <code>projectId</code> để tăng độ chính xác và bảo mật.</li>
+                <li><strong>Session Memory (Idea 2):</strong> Triển khai lưu trữ preference của người dùng theo phiên làm việc ở store Pinia.</li>
+                <li><strong>Polish & Latency Optimization:</strong> Triển khai streaming dữ liệu văn bản song song với việc dựng Draft Card. Tối ưu bộ nhớ đệm prompt.</li>
+                <li><strong>E2E Testing:</strong> Kiểm tra toàn bộ luồng: Widget -> Nhận ngữ cảnh -> Gọi Tool -> Parameter Guard -> Confirm Draft -> Ghi nhận DB -> Lưu Audit Log.</li>
+              </ul>
+            </div>
+          </div>
+
+        </div>
+
+        <h3>2. Ma Trận Quản Lý Rủi Ro Kỹ Thuật (Risk Matrix)</h3>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Rủi ro được xác định</th>
+                <th>Mức độ</th>
+                <th>Mitigation (Giải pháp giảm thiểu rủi ro)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Ảo giác tham số của LLM (Tool Hallucination)</strong></td>
+                <td><span style="color:var(--danger); font-weight:700;">Cao</span></td>
+                <td>Sử dụng <code>ToolParameterGuard</code> kiểm soát đầu vào trước khi gọi API. Ràng buộc mọi Write tool phải thông qua thẻ duyệt Draft Card, tuyệt đối không cho phép AI tự cập nhật database ngầm.</td>
+              </tr>
+              <tr>
+                <td><strong>Gia tăng chi phí Token (Token cost)</strong></td>
+                <td><span style="color:var(--warning); font-weight:700;">Trung bình</span></td>
+                <td>Lọc danh sách tool truyền xuống AI Gateway theo phân quyền của Route và vai trò người dùng, không truyền toàn bộ 14 tools gây lãng phí prompt context. Caching kết quả RAG trong 5 phút.</td>
+              </tr>
+              <tr>
+                <td><strong>Rò rỉ dữ liệu chéo giữa các Dự án</strong></td>
+                <td><span style="color:var(--danger); font-weight:700;">Cao</span></td>
+                <td>Backend luôn xác thực lại quyền truy cập của User đối với Project context được gửi từ client. Áp dụng filter metadata <code>projectId</code> trong các câu truy vấn cơ sở dữ liệu vector RAG.</td>
+              </tr>
+              <tr>
+                <td><strong>Tăng thời gian phản hồi (Latency)</strong></td>
+                <td><span style="color:var(--warning); font-weight:700;">Trung bình</span></td>
+                <td>Áp dụng song song hóa: text giải thích được stream trực tiếp tới client, trong khi thẻ Draft Card hoặc dữ liệu bảng được dựng bất đồng bộ ngay khi nhận được tín hiệu đầy đủ từ backend.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>3. Các Giới Hạn Của Phiên Bản v2.0 (Limitations)</h3>
+        <p>Để tránh sai lệch về kỳ vọng của nhóm phát triển (Expectation mismatch), các tính năng sau đây **không nằm trong phạm vi v2.0**:</p>
+        <ul>
+          <li><strong>Bộ nhớ dài hạn (Long-term memory):</strong> Erumi v2.0 không ghi nhớ thông tin giữa các phiên làm việc độc lập của người dùng. Bộ nhớ chỉ duy trì tạm thời tại tab làm việc hiện tại.</li>
+          <li><strong>@Erumi Chat Nhóm:</strong> Defer toàn bộ tính năng tag gọi AI trong group chat sang Milestone v2.1 để xây dựng mô hình kiểm soát dữ liệu an toàn.</li>
+          <li><strong>AI chủ động (Proactive Notification):</strong> Erumi v2.0 hoạt động theo mô hình Phản hồi (Reactive) — chỉ trả lời khi được hỏi hoặc được click hành động, không tự gửi cảnh báo trễ deadline ngầm tới người dùng.</li>
+        </ul>
+
+      </section>
+
+    </div>
+  </main>
+
+  <script>
+    function switchTab(tabId, el) {
+      // Deactivate all content tabs
+      const contents = document.querySelectorAll('.tab-content');
+      contents.forEach(content => content.classList.remove('active'));
+      
+      // Deactivate all navigation items
+      const navItems = document.querySelectorAll('.nav-item');
+      navItems.forEach(item => item.classList.remove('active'));
+      
+      const tabBtns = document.querySelectorAll('.tab-btn');
+      tabBtns.forEach(btn => btn.classList.remove('active'));
+
+      // Activate selected content tab
+      const targetContent = document.getElementById(tabId);
+      if (targetContent) {
+        targetContent.classList.add('active');
+      }
+
+      // Sync active state in Sidebar
+      const sidebarItems = document.querySelectorAll('.sidebar-nav .nav-item');
+      let index = 0;
+      if (tabId === 'gap-analysis') index = 0;
+      else if (tabId === 'spec-target') index = 1;
+      else if (tabId === 'architecture') index = 2;
+      else if (tabId === 'roadmap') index = 3;
+      sidebarItems[index].classList.add('active');
+
+      // Sync active state in Header tab buttons
+      const activeBtn = document.getElementById('btn-' + tabId);
+      if (activeBtn) {
+        activeBtn.classList.add('active');
+      }
+
+      // Update Header title dynamically
+      const titleMap = {
+        'gap-analysis': 'Phân tích khoảng cách & Giải pháp kỹ thuật',
+        'spec-target': 'Đặc tả mục tiêu & Ý tưởng trải nghiệm người dùng',
+        'architecture': 'Kiến trúc hoạt động & Tech Specs',
+        'roadmap': 'Lộ trình phát triển 4 Sprint & Ma trận rủi ro'
+      };
+      
+      document.getElementById('main-title').innerText = titleMap[tabId];
+    }
+  </script>
+</body>
+</html>
