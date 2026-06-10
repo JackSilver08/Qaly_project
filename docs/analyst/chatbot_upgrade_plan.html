@@ -713,11 +713,11 @@
       <div class="meta-card">
         <div class="meta-row">
           <span class="meta-label">Phiên bản</span>
-          <span class="meta-val">v2.0 (Approved Plan)</span>
+          <span class="meta-val">v2.0.1 (Repo-compatible Plan)</span>
         </div>
         <div class="meta-row">
           <span class="meta-label">Ngày sửa</span>
-          <span class="meta-val">08/06/2026</span>
+          <span class="meta-val">10/06/2026</span>
         </div>
         <div class="meta-row">
           <span class="meta-label">Trạng thái</span>
@@ -756,6 +756,17 @@
           <div>
             <strong>Đánh giá độc lập:</strong> Bản kế hoạch sơ khởi trước đây có tầm nhìn tốt nhưng bỏ qua một số thách thức kỹ thuật nghiêm trọng liên quan đến độ chính xác của Local LLM (Ollama), cơ chế xác thực tham số của AI, và phân bổ tài nguyên. Dưới đây là 5 lỗ hổng thiết kế (Gaps) lớn nhất được xác định và phương án xử lý chi tiết.
           </div>
+        </div>
+
+        <div class="panel-card accent-teal">
+          <h3>0. Repo Compatibility Audit - cap nhat 10/06/2026</h3>
+          <p><strong>Ket luan:</strong> Plan tuong thich mot phan voi du an hien tai, nhung can doi huong tu "xay moi agent" sang "chuan hoa va nang cap luong Erumi san co". Backend da co <code>AiGateway</code>, <code>ErumiChatService</code>, <code>AiTools</code>, <code>AiAuditEvents</code>, cost/compliance guard, schema retry va unit tests cho truy cap project. Frontend da co chat UI day du trong <code>AnalyticsPage.vue</code>; rieng <code>FloatingChatbot.vue</code> dang bi de trong va nut assistant hien chi dieu huong sang <code>/analytics</code>.</p>
+          <ul>
+            <li><strong>Can reuse:</strong> <code>/api/ai/chat/fast</code>, <code>ErumiChatResponseDto</code>, <code>AiGateway</code>, <code>AiOutputValidator</code>, <code>AiComplianceService.LogAuditEventAsync</code>, <code>GroupAiPanel.vue</code> va cac test <code>ErumiChatServiceTests</code>, <code>AiGatewayRouterTests</code>, <code>AiSecurityGuardTests</code>.</li>
+            <li><strong>Can dieu chinh trong plan:</strong> khong tao song song <code>ErumiWidget.vue</code> neu khong can; nen tach chat UI hien co trong <code>AnalyticsPage.vue</code> thanh component dung chung roi lap vao <code>FloatingChatbot.vue</code>/<code>AppShell.vue</code>. Du an chua dung Pinia, nen dung composable Vue hien co truoc khi bo sung dependency moi.</li>
+            <li><strong>Can fix truoc khi mo rong:</strong> nhieu chuoi tieng Viet trong backend/frontend dang bi mojibake trong source, co nguy co lam prompt, response fallback va UI hien thi sai. Day nen la viec P0 truoc khi danh gia chat quality.</li>
+            <li><strong>Khong lap lai:</strong> bang <code>AiAuditEvents</code> va migration audit da co; Sprint 3 chi can mo rong schema/event type cho confirmed AI write actions thay vi tao bang <code>AiAuditLog</code> moi.</li>
+          </ul>
         </div>
 
         <h3>1. Chi tiết 5 Lỗ Hổng Thiết Kế & Giải Pháp Bù Đắp</h3>
@@ -851,7 +862,7 @@
           <div class="panel-card accent-blue">
             <h4>💡 Idea 2: Bộ Nhớ Tạm Thời Phiên Làm Việc (Erumi Session Memory)</h4>
             <p><strong>Mô tả:</strong> Trong suốt phiên làm việc (khi chưa đóng tab), Erumi có thể nhớ các thiết lập tạm thời của người dùng, ví dụ: <i>"Trong phiên này, khi tạo task hãy ưu tiên gán cho Nguyễn Văn A"</i>. AI sẽ bám sát preference này trong các câu lệnh tiếp theo.</p>
-            <p><strong>Triển khai:</strong> Lưu trữ tại store Pinia của Frontend, tự động giải phóng khi người dùng reload trang hoặc đóng tab để tránh làm loãng ngữ cảnh dài hạn.</p>
+            <p><strong>Triển khai:</strong> Lưu trữ tại Vue composable/session state của Frontend, tự động giải phóng khi người dùng reload trang hoặc đóng tab để tránh làm loãng ngữ cảnh dài hạn. Chỉ thêm Pinia nếu nhóm quyết định chuẩn hóa global state sau khi tách chat component.</p>
           </div>
         </div>
 
@@ -875,8 +886,8 @@
 
         <div class="panel-card accent-blue" style="margin-bottom: 0;">
           <h4>💡 Idea 5: Nhật Ký Hành Động Tự Động (Audit Log cho AI Actions)</h4>
-          <p><strong>Mô tả:</strong> Mọi hành động ghi dữ liệu nhạy cảm do Erumi thực hiện sau khi được người dùng phê duyệt thành công (nhấn Confirm Draft Card) bắt buộc phải được lưu vào bảng cơ sở dữ liệu <code>AiAuditLog</code> để PM và quản trị viên dễ dàng rà soát lịch sử vận hành tự động.</p>
-          <p><strong>Triển khai:</strong> Thực hiện ở Sprint 3. Tạo DB Migration và viết Interceptor ghi nhận log trong lớp <code>ToolExecutor.cs</code> sau khi nhận request duyệt từ client.</p>
+          <p><strong>Mô tả:</strong> Mọi hành động ghi dữ liệu nhạy cảm do Erumi thực hiện sau khi được người dùng phê duyệt thành công (nhấn Confirm Draft Card) bắt buộc phải được lưu vào bảng <code>AiAuditEvents</code> hiện có để PM và quản trị viên dễ dàng rà soát lịch sử vận hành tự động.</p>
+          <p><strong>Triển khai:</strong> Thực hiện ở Sprint 3. Mở rộng event type/payload trong audit pipeline hiện có và ghi nhận log sau khi draft được confirm thành công; tránh tạo bảng <code>AiAuditLog</code> song song.</p>
         </div>
 
       </section>
@@ -895,7 +906,7 @@
 
             <!-- Node 1: FE Widget -->
             <rect x="20" y="60" width="160" height="70" rx="8" fill="#DBEAFE" stroke="#2563EB" stroke-width="2"/>
-            <text x="100" y="92" fill="#1E40AF" font-family="'Plus Jakarta Sans'" font-weight="700" font-size="12" text-anchor="middle">ErumiWidget.vue</text>
+            <text x="100" y="92" fill="#1E40AF" font-family="'Plus Jakarta Sans'" font-weight="700" font-size="12" text-anchor="middle">FloatingChatbot.vue</text>
             <text x="100" y="108" fill="#1E40AF" font-family="'Inter'" font-size="10" text-anchor="middle">Gửi msg + Route Context</text>
 
             <!-- Node 2: Backend Controller -->
@@ -945,7 +956,7 @@
             <!-- Node 10: DB Execution & Audit Log -->
             <rect x="650" y="320" width="170" height="70" rx="8" fill="#ECFDF5" stroke="#10B981" stroke-width="2"/>
             <text x="735" y="347" fill="#065F46" font-family="'Plus Jakarta Sans'" font-weight="700" font-size="12" text-anchor="middle">DB Action Executed</text>
-            <text x="735" y="363" fill="#065F46" font-family="'Inter'" font-size="9" text-anchor="middle">+ Ghi AiAuditLog (Idea 5)</text>
+            <text x="735" y="363" fill="#065F46" font-family="'Inter'" font-size="9" text-anchor="middle">+ Ghi AiAuditEvents (Idea 5)</text>
 
             <!-- Lines -->
             <path d="M180 95 H230" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow)"/>
@@ -1039,6 +1050,12 @@
           <p><strong>Quyết định:</strong> Áp dụng chính sách Zero-Trust. Backend <code>ErumiChatService</code> nhận context từ Client nhưng **bắt buộc kiểm tra lại quyền truy cập** của <code>userId</code> hiện tại đối với <code>projectId</code> đó thông qua cơ sở dữ liệu SQL. Nếu không có quyền, từ chối nạp RAG context và khóa toàn bộ tool calling liên quan đến dự án đó.</p>
         </div>
 
+        <div class="panel-card accent-teal">
+          <h4>ADR-03: Incremental Adoption Over Parallel Rewrite</h4>
+          <p><strong>Bối cảnh:</strong> Qaly đã có Erumi chat chạy qua <code>AnalyticsPage.vue</code>, <code>/api/ai/chat/fast</code>, <code>ErumiChatService</code>, <code>AiGateway</code>, audit/cost/compliance services và bộ test nền. Việc dựng một agent stack mới song song sẽ làm tăng rủi ro lệch contract và nhân đôi bug bảo mật.</p>
+          <p><strong>Quyết định:</strong> Nâng cấp theo từng lớp trên implementation hiện tại: tách UI dùng chung, chuẩn hóa context, harden gateway/tool guard, rồi mới bật write tools qua draft confirmation. Mọi API/entity mới phải chứng minh không thể reuse <code>AiWorkflowService</code>, <code>AiAuditEvents</code> hoặc DTO hiện có.</p>
+        </div>
+
       </section>
 
       <!-- ==================== TAB 4: ROADMAP ==================== -->
@@ -1064,10 +1081,11 @@
             <div class="timeline-body">
               <p><strong>Mục tiêu:</strong> Khôi phục và nâng cấp chatbot thành widget nổi toàn hệ thống, tự động hóa thu thập ngữ cảnh.</p>
               <ul>
-                <li><strong>Widget UI:</strong> Phát triển component <code>ErumiWidget.vue</code> (dạng side drawer rộng 380px, slide mượt từ phải màn hình) và gắn vào layout chung <code>AppShell.vue</code>.</li>
-                <li><strong>Context Store:</strong> Tạo Pinia Store <code>ErumiContextStore</code> lắng nghe Route hiện tại để tự động lưu <code>projectId</code> và <code>taskId</code>. Tự động lazy-fetch thông tin tóm tắt task khi mở widget.</li>
+                <li><strong>Widget UI:</strong> Reuse chat UI hiện có trong <code>AnalyticsPage.vue</code> bằng cách tách phần composer/message/result cards thành component dùng chung, sau đó kích hoạt lại <code>FloatingChatbot.vue</code> dạng side drawer 380px và gắn vào slot overlay của <code>AppShell.vue</code>. Không dựng song song <code>ErumiWidget.vue</code> nếu chưa có lý do kiến trúc rõ ràng.</li>
+                <li><strong>Context Store:</strong> Dự án hiện chưa dùng Pinia; ưu tiên tạo Vue composable <code>useErumiContext</code> lắng nghe <code>vue-router</code> để lưu <code>projectId</code>, <code>taskId</code>, route name và selected project/task từ dashboard context. Chỉ thêm Pinia nếu nhiều module cần state phức tạp hơn.</li>
                 <li><strong>Slash Commands (Predefined Shortcut):</strong> Thiết kế popup gợi ý lệnh nhanh (<code>/summary</code>, <code>/risks</code>, <code>/workload</code>) hoàn toàn ở Frontend để điền prompt mẫu vào ô chat khi người dùng nhập dấu <code>/</code> (Khắc phục Gap 3).</li>
                 <li><strong>Onboarding suggested prompts (Idea 4):</strong> Hiển thị các câu gợi ý click-to-fill tùy biến theo trang hiện tại khi người dùng mở ô chat lần đầu.</li>
+                <li><strong>Encoding cleanup P0:</strong> Sửa mojibake tiếng Việt trong các prompt/response/backend strings liên quan tới Erumi trước khi đánh giá chất lượng trả lời hoặc demo UI.</li>
               </ul>
             </div>
           </div>
@@ -1081,10 +1099,10 @@
             <div class="timeline-body">
               <p><strong>Mục tiêu:</strong> Thiết lập hạ tầng gọi tool của LLM, hỗ trợ phân tầng Ollama và triển khai các tool đọc thông tin.</p>
               <ul>
-                <li><strong>Tiered Strategy (Gap 5):</strong> Triển khai bộ phân tích năng lực model tại AI Gateway và custom XML parser phục vụ các model local Ollama cũ.</li>
-                <li><strong>Security Guard (Gap 1 & 2):</strong> Xây dựng lớp <code>ToolParameterGuard.cs</code> và cấu trúc trả về <code>ToolResult</code> đồng bộ. Triển khai vòng lặp sửa lỗi tham số LLM tối đa 3 lần.</li>
-                <li><strong>Read Tools Integration:</strong> Kết nối và kiểm thử 3 tool đọc dữ liệu: <code>GetProjectSummary</code>, <code>GetMemberWorkload</code>, và <code>SearchKnowledge</code>.</li>
-                <li><strong>Confidence Indicator (Idea 3):</strong> Cập nhật prompt system yêu cầu LLM tự trả về mức độ tin cậy của câu trả lời và hiển thị badge tin cậy trên chat bubble.</li>
+                <li><strong>Gateway hardening:</strong> Mở rộng <code>AiGateway</code> hiện có thay vì tạo gateway mới: chuẩn hóa provider capability, giữ schema retry đang có, bổ sung fallback parser có kiểm soát cho model Ollama không trả JSON ổn định.</li>
+                <li><strong>Security Guard (Gap 1 & 2):</strong> Bổ sung <code>ToolParameterGuard</code>/<code>ToolResult</code> quanh <code>AiTools</code>; mọi read/write tool phải kiểm tra quyền project/task bằng service/repository hiện có trước khi trả dữ liệu hoặc tạo draft.</li>
+                <li><strong>Read Tools Integration:</strong> Rà soát 3 tool đọc dữ liệu đã có (<code>GetProjectSummary</code>, <code>GetMemberWorkload</code>, <code>SearchKnowledge</code>) và thêm unit tests chống truy cập chéo project, đặc biệt cho vector filter <code>ProjectId</code>/<code>OwnerId</code>.</li>
+                <li><strong>Confidence Indicator (Idea 3):</strong> <code>ErumiChatResponseDto</code> đã có <code>Confidence</code>; chỉ bổ sung <code>ConfidenceReason</code> nếu UI thật sự cần giải thích, tránh đổi contract lớn không cần thiết.</li>
               </ul>
             </div>
           </div>
@@ -1098,10 +1116,10 @@
             <div class="timeline-body">
               <p><strong>Mục tiêu:</strong> Kích hoạt các tool ghi dữ liệu thông qua cơ chế phê duyệt an toàn (Draft Card) và lưu nhật ký hoạt động.</p>
               <ul>
-                <li><strong>Write Tools Integration:</strong> Đăng ký các công cụ: <code>CreateTask</code>, <code>UpdateTaskStatus</code>, <code>AssignTask</code>.</li>
-                <li><strong>Human-in-the-Loop:</strong> Xây dựng endpoint <code>/api/ai/execute-action</code> nhận lệnh xác nhận từ client. Xây dựng component <code>DraftCard.vue</code> hiển thị tóm tắt tham số hành động kèm nút <code>[Xác nhận]</code> / <code>[Hủy]</code>.</li>
+                <li><strong>Write Tools Integration:</strong> Các tool <code>CreateTask</code>, <code>UpdateTaskStatus</code>, <code>AssignTask</code>, <code>SetTaskPriority</code>, <code>AddDueDate</code> đã tồn tại trong <code>AiTools</code>; cần chuyển sang mô hình tạo draft trước, chỉ execute sau khi user confirm.</li>
+                <li><strong>Human-in-the-Loop:</strong> Ưu tiên dùng/hoàn thiện endpoint hiện có <code>/api/ai/jobs</code> và <code>/api/ai/drafts/{draftId}/confirm</code> của <code>AiWorkflowService</code>. Chỉ tạo <code>/api/ai/execute-action</code> nếu contract hiện tại không đáp ứng được Draft Card.</li>
                 <li><strong>Contextual Quick Actions (Idea 1):</strong> Hiển thị các nút thao tác nhanh (ví dụ: [Gia hạn trễ việc], [Nhận task]) trực tiếp dưới bubble trả lời của Erumi.</li>
-                <li><strong>AiAuditLog Interceptor (Idea 5):</strong> Tạo cơ sở dữ liệu và ghi nhật ký tự động các hành động AI được phê duyệt thành công.</li>
+                <li><strong>AiAuditEvents extension (Idea 5):</strong> Tận dụng bảng <code>AiAuditEvents</code> và <code>AiComplianceService.LogAuditEventAsync</code> đã có; thêm event type cho <code>AI_DRAFT_CREATED</code>, <code>AI_DRAFT_CONFIRMED</code>, <code>AI_TOOL_EXECUTED</code>, <code>AI_TOOL_REJECTED</code> thay vì tạo bảng <code>AiAuditLog</code> mới.</li>
               </ul>
             </div>
           </div>
@@ -1116,7 +1134,7 @@
               <p><strong>Mục tiêu:</strong> Tối ưu hóa hiệu năng, bổ sung bộ nhớ đệm và kiểm thử E2E hệ thống.</p>
               <ul>
                 <li><strong>RAG Metadata Filtering:</strong> Cải tiến logic tìm kiếm vector, tự động lọc ngữ cảnh theo <code>projectId</code> để tăng độ chính xác và bảo mật.</li>
-                <li><strong>Session Memory (Idea 2):</strong> Triển khai lưu trữ preference của người dùng theo phiên làm việc ở store Pinia.</li>
+                <li><strong>Session Memory (Idea 2):</strong> Triển khai lưu trữ preference của người dùng theo phiên làm việc bằng Vue composable/session state; chỉ thêm Pinia nếu phát sinh nhu cầu global state rõ ràng.</li>
                 <li><strong>Polish & Latency Optimization:</strong> Triển khai streaming dữ liệu văn bản song song với việc dựng Draft Card. Tối ưu bộ nhớ đệm prompt.</li>
                 <li><strong>E2E Testing:</strong> Kiểm tra toàn bộ luồng: Widget -> Nhận ngữ cảnh -> Gọi Tool -> Parameter Guard -> Confirm Draft -> Ghi nhận DB -> Lưu Audit Log.</li>
               </ul>
@@ -1155,6 +1173,16 @@
                 <td><strong>Tăng thời gian phản hồi (Latency)</strong></td>
                 <td><span style="color:var(--warning); font-weight:700;">Trung bình</span></td>
                 <td>Áp dụng song song hóa: text giải thích được stream trực tiếp tới client, trong khi thẻ Draft Card hoặc dữ liệu bảng được dựng bất đồng bộ ngay khi nhận được tín hiệu đầy đủ từ backend.</td>
+              </tr>
+              <tr>
+                <td><strong>Chuỗi tiếng Việt bị mojibake trong prompt/UI</strong></td>
+                <td><span style="color:var(--danger); font-weight:700;">Cao</span></td>
+                <td>Thêm việc P0 ở Sprint 1: chuẩn hóa encoding source file, sửa các prompt/response fallback bị lỗi ký tự trong <code>ErumiChatService</code>, <code>AiService</code>, <code>AiTools</code> và các label UI liên quan trước khi demo chất lượng AI.</td>
+              </tr>
+              <tr>
+                <td><strong>Thiết kế mới trùng chức năng đã có</strong></td>
+                <td><span style="color:var(--warning); font-weight:700;">Trung bình</span></td>
+                <td>Áp dụng ADR-03: ưu tiên reuse <code>AiGateway</code>, <code>AiWorkflowService</code>, <code>AiAuditEvents</code>, DTO/test hiện có; mọi file/API mới phải có mapping rõ ràng với phần không thể reuse.</td>
               </tr>
             </tbody>
           </table>
