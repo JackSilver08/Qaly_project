@@ -84,8 +84,12 @@ type ErumiTable = {
 type ErumiAction = {
   type: string
   label: string
-  payload?: unknown
+  payload?: any
   requiresConfirmation?: boolean
+  confirmed?: boolean
+  rejected?: boolean
+  processing?: boolean
+  confirmAction?: string
 }
 
 type ErumiFile = {
@@ -555,6 +559,40 @@ function getFallbackChatAnswer(prompt: string) {
   return `Chào bạn! Mình là Erumi. Hiện tại mô hình AI cục bộ đang ở trạng thái ngoại tuyến.\n\nTuy nhiên, bạn có thể chọn các dự án cụ thể ở dropdown phía trên và sử dụng các phím tắt nhanh như **Tóm tắt dự án**, **Phân tích rủi ro** hay **Insight** để mình trích xuất báo cáo thông minh trực tiếp từ dữ liệu hệ thống nhé!`
 }
 
+async function handleDraftAction(action: ErumiAction, confirmAction: 'execute_action' | 'reject') {
+  if (!action.payload?.draftId) return
+  action.processing = true
+  action.confirmAction = confirmAction
+  try {
+    const result = await apiJson<any>(`/api/ai/drafts/${action.payload.draftId}/confirm`, {
+      method: 'POST',
+      body: JSON.stringify({
+        confirmAction: confirmAction,
+        editedPayloadJson: null,
+        confirmationNote: confirmAction === 'reject' ? 'Rejected from chat UI' : 'Confirmed from chat UI'
+      })
+    })
+    if (confirmAction === 'execute_action') {
+      action.confirmed = true
+      chatHistory.value.push({
+        role: 'assistant',
+        text: `✅ Đã thực thi thành công hành động nháp. Số lượng công việc tạo mới: ${result.createdTaskCount || 0}.`
+      })
+    } else {
+      action.rejected = true
+      chatHistory.value.push({
+        role: 'assistant',
+        text: `❌ Đã hủy bỏ hành động nháp thành công.`
+      })
+    }
+  } catch (err: any) {
+    console.error(err)
+    alert(`Lỗi thực hiện hành động: ${err.message || err}`)
+  } finally {
+    action.processing = false
+  }
+}
+
 async function submitChat(explicitText?: string, _action?: string) {
   const prompt = (explicitText ?? chatInput.value).trim()
   const filesToSend = selectedFiles.value.slice()
@@ -595,13 +633,34 @@ async function submitChat(explicitText?: string, _action?: string) {
       })
     })
 
+    let replyActions = fastReply.actions || []
+    if (replyActions.length === 0 && fastReply.reply) {
+      const lowerReply = fastReply.reply.toLowerCase()
+      if (lowerReply.includes('trễ hạn') || lowerReply.includes('quá hạn') || lowerReply.includes('chậm tiến độ')) {
+        replyActions = [
+          { type: 'quick_action', label: 'Giao việc cho tôi' },
+          { type: 'quick_action', label: 'Gia hạn thêm 3 ngày' }
+        ]
+      } else if (lowerReply.includes('chấm công') || lowerReply.includes('timesheet') || lowerReply.includes('worklog')) {
+        replyActions = [
+          { type: 'quick_action', label: 'Đăng ký chấm công' },
+          { type: 'quick_action', label: 'Báo cáo hiệu suất' }
+        ]
+      } else if (lowerReply.includes('công việc') || lowerReply.includes('nhiệm vụ') || lowerReply.includes('task')) {
+        replyActions = [
+          { type: 'quick_action', label: 'Tạo công việc mới' },
+          { type: 'quick_action', label: 'Xem danh sách công việc' }
+        ]
+      }
+    }
+
     chatHistory.value[lastIdx] = {
       role: 'assistant',
       text: fastReply.reply,
       metrics: fastReply.metrics,
       tables: fastReply.tables,
       charts: fastReply.charts,
-      actions: fastReply.actions,
+      actions: replyActions,
       files: fastReply.files,
       sources: fastReply.sources,
       confidence: fastReply.confidence,
@@ -884,15 +943,43 @@ onBeforeUnmount(() => {
 
               <!-- Action buttons -->
               <div v-if="msg.role === 'assistant' && msg.actions?.length" class="erumi-action-list">
-                <button
-                  v-for="action in msg.actions"
-                  :key="action.type"
-                  type="button"
-                  class="erumi-action-button"
-                  @click="submitChat(action.label)"
-                >
-                  {{ action.label }}
-                </button>
+                <template v-for="action in msg.actions" :key="action.type">
+                  <!-- Draft Confirmation Card -->
+                  <div v-if="action.type === 'draft_change'" class="erumi-draft-card">
+                    <p class="erumi-draft-text">Hành động ghi dữ liệu cần xác nhận của bạn để thực thi:</p>
+                    <div class="erumi-draft-buttons">
+                      <button
+                        type="button"
+                        class="erumi-draft-btn-confirm"
+                        :disabled="action.processing || action.confirmed || action.rejected"
+                        @click="handleDraftAction(action, 'execute_action')"
+                      >
+                        <span v-if="action.processing && action.confirmAction === 'execute_action'">Đang xử lý...</span>
+                        <span v-else-if="action.confirmed">Đã xác nhận ✔</span>
+                        <span v-else>Xác nhận</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="erumi-draft-btn-reject"
+                        :disabled="action.processing || action.confirmed || action.rejected"
+                        @click="handleDraftAction(action, 'reject')"
+                      >
+                        <span v-if="action.processing && action.confirmAction === 'reject'">Đang hủy...</span>
+                        <span v-else-if="action.rejected">Đã hủy ✖</span>
+                        <span v-else>Hủy</span>
+                      </button>
+                    </div>
+                  </div>
+                  <!-- Normal Action Button -->
+                  <button
+                    v-else
+                    type="button"
+                    class="erumi-action-button"
+                    @click="submitChat(action.label)"
+                  >
+                    {{ action.label }}
+                  </button>
+                </template>
               </div>
 
               <!-- Attached files output -->
@@ -1780,6 +1867,72 @@ onBeforeUnmount(() => {
 .erumi-action-button:hover {
   background: #dbeafe;
   transform: translateY(-1px);
+}
+
+.erumi-draft-card {
+  background: rgba(248, 250, 252, 0.75);
+  border: 1px dashed #cbd5e1;
+  padding: 12px 16px;
+  border-radius: 12px;
+  margin-top: 4px;
+  width: 100%;
+}
+
+.erumi-draft-text {
+  font-size: 13px;
+  color: #475569;
+  margin: 0 0 10px 0;
+  font-weight: 600;
+}
+
+.erumi-draft-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.erumi-draft-btn-confirm {
+  background: #2563eb;
+  border: none;
+  color: #ffffff;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.erumi-draft-btn-confirm:hover:not(:disabled) {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+.erumi-draft-btn-confirm:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.erumi-draft-btn-reject {
+  background: #ef4444;
+  border: none;
+  color: #ffffff;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.erumi-draft-btn-reject:hover:not(:disabled) {
+  background: #dc2626;
+  transform: translateY(-1px);
+}
+
+.erumi-draft-btn-reject:disabled {
+  background: #cbd5e1;
+  color: #64748b;
+  cursor: not-allowed;
 }
 
 .erumi-file-list {

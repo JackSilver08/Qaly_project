@@ -34,6 +34,7 @@ public class AiWorkflowService : IAiWorkflowService
     private readonly ITaskService? _taskService;
     private readonly ICommentService? _commentService;
     private readonly ITimeTrackingService? _timeTrackingService;
+    private readonly IAiComplianceService? _complianceService;
 
     public AiWorkflowService(
         IRepository<Project> projectRepo,
@@ -51,7 +52,8 @@ public class AiWorkflowService : IAiWorkflowService
         IAuditLogService auditLogService,
         ITaskService? taskService = null,
         ICommentService? commentService = null,
-        ITimeTrackingService? timeTrackingService = null)
+        ITimeTrackingService? timeTrackingService = null,
+        IAiComplianceService? complianceService = null)
     {
         _projectRepo = projectRepo;
         _projectMemberRepo = projectMemberRepo;
@@ -69,6 +71,7 @@ public class AiWorkflowService : IAiWorkflowService
         _taskService = taskService;
         _commentService = commentService;
         _timeTrackingService = timeTrackingService;
+        _complianceService = complianceService;
     }
 
     public async Task<Result<AiJobCreatedDto>> CreateJobAsync(CreateAiJobDto dto, CancellationToken ct = default)
@@ -195,6 +198,49 @@ public class AiWorkflowService : IAiWorkflowService
         var createdTaskIds = new List<Guid>();
         var normalizedAction = dto.ConfirmAction.Trim();
 
+        if (string.Equals(normalizedAction, "reject", StringComparison.OrdinalIgnoreCase))
+        {
+            draft.Status = "Rejected";
+            draft.ConfirmedById = currentUserId.Value;
+            draft.ConfirmedAt = DateTimeOffset.UtcNow;
+            draft.ConfirmAction = normalizedAction;
+            draft.ConfirmationNote = string.IsNullOrWhiteSpace(dto.ConfirmationNote) ? null : dto.ConfirmationNote.Trim();
+            draft.AiJob.Status = "Rejected";
+
+            await _aiDraftRepo.UpdateAsync(draft, ct);
+            await _aiJobRepo.UpdateAsync(draft.AiJob, ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            if (_complianceService != null)
+            {
+                await _complianceService.LogAuditEventAsync(
+                    draft.Project.OrganizationId,
+                    draft.ProjectId,
+                    currentUserId.Value,
+                    "AI_TOOL_REJECTED",
+                    "AiGeneratedDraft",
+                    null,
+                    draft.PayloadJson,
+                    null,
+                    ct
+                );
+            }
+
+            await _auditLogService.LogAsync(
+                "RejectAiDraft",
+                nameof(AiGeneratedDraft),
+                draft.Id.ToString(),
+                new { draft.ProjectId, draft.ConfirmAction },
+                ct);
+
+            return Result.Success(new AiDraftConfirmResultDto(
+                draft.Id,
+                draft.Status,
+                normalizedAction,
+                0,
+                Array.Empty<Guid>()));
+        }
+
         if (string.Equals(normalizedAction, "execute_action", StringComparison.OrdinalIgnoreCase))
         {
             if (string.Equals(draft.DraftType, "CreateTask", StringComparison.OrdinalIgnoreCase))
@@ -219,7 +265,7 @@ public class AiWorkflowService : IAiWorkflowService
                 if (_taskService != null)
                 {
                     var taskDto = new Qaly.Application.DTOs.Task.CreateTaskDto(title, description, priority, dueDate, null, draft.ProjectId, assigneeId);
-                    var taskResult = await _taskService.CreateAsync(taskDto);
+                    var taskResult = await _taskService.CreateAsync(taskDto, ct);
                     if (!taskResult.IsSuccess)
                     {
                         return Result.Failure<AiDraftConfirmResultDto>($"Failed to execute CreateTask: {taskResult.Error}", taskResult.StatusCode);
@@ -253,7 +299,7 @@ public class AiWorkflowService : IAiWorkflowService
 
                 if (_taskService != null)
                 {
-                    var taskResult = await _taskService.UpdateStatusAsync(taskId, status);
+                    var taskResult = await _taskService.UpdateStatusAsync(taskId, status, ct: ct);
                     if (!taskResult.IsSuccess)
                     {
                         return Result.Failure<AiDraftConfirmResultDto>($"Failed to execute UpdateTaskStatus: {taskResult.Error}", taskResult.StatusCode);
@@ -283,7 +329,7 @@ public class AiWorkflowService : IAiWorkflowService
                     if (task != null)
                     {
                         var taskDto = new Qaly.Application.DTOs.Task.UpdateTaskDto(task.Title, task.Description, task.Status, task.Priority, task.DueDate, task.EstimatedHours, task.ActualHours, assigneeId, task.IsPrivate);
-                        var taskResult = await _taskService.UpdateAsync(taskId, taskDto);
+                        var taskResult = await _taskService.UpdateAsync(taskId, taskDto, ct);
                         if (!taskResult.IsSuccess)
                         {
                             return Result.Failure<AiDraftConfirmResultDto>($"Failed to execute AssignTask: {taskResult.Error}", taskResult.StatusCode);
@@ -314,7 +360,7 @@ public class AiWorkflowService : IAiWorkflowService
                     if (task != null)
                     {
                         var taskDto = new Qaly.Application.DTOs.Task.UpdateTaskDto(task.Title, task.Description, task.Status, priority, task.DueDate, task.EstimatedHours, task.ActualHours, task.AssigneeId, task.IsPrivate);
-                        var taskResult = await _taskService.UpdateAsync(taskId, taskDto);
+                        var taskResult = await _taskService.UpdateAsync(taskId, taskDto, ct);
                         if (!taskResult.IsSuccess)
                         {
                             return Result.Failure<AiDraftConfirmResultDto>($"Failed to execute SetTaskPriority: {taskResult.Error}", taskResult.StatusCode);
@@ -337,7 +383,7 @@ public class AiWorkflowService : IAiWorkflowService
                 using var doc = JsonDocument.Parse(payloadJson);
                 var root = doc.RootElement;
                 Guid taskId = Guid.Parse(root.GetProperty("taskId").GetString()!);
-                DateTimeOffset dueDate = DateTimeOffset.Parse(root.GetProperty("dueDate").GetString()!);
+                DateTimeOffset dueDate = DateTimeOffset.Parse(root.GetProperty("dueDate").GetString()!, System.Globalization.CultureInfo.InvariantCulture);
 
                 if (_taskService != null)
                 {
@@ -345,7 +391,7 @@ public class AiWorkflowService : IAiWorkflowService
                     if (task != null)
                     {
                         var taskDto = new Qaly.Application.DTOs.Task.UpdateTaskDto(task.Title, task.Description, task.Status, task.Priority, dueDate, task.EstimatedHours, task.ActualHours, task.AssigneeId, task.IsPrivate);
-                        var taskResult = await _taskService.UpdateAsync(taskId, taskDto);
+                        var taskResult = await _taskService.UpdateAsync(taskId, taskDto, ct);
                         if (!taskResult.IsSuccess)
                         {
                             return Result.Failure<AiDraftConfirmResultDto>($"Failed to execute AddDueDate: {taskResult.Error}", taskResult.StatusCode);
@@ -373,7 +419,7 @@ public class AiWorkflowService : IAiWorkflowService
                 if (_commentService != null)
                 {
                     var commentDto = new Qaly.Application.DTOs.Comment.CreateCommentDto(content, taskId);
-                    var commentResult = await _commentService.CreateAsync(commentDto);
+                    var commentResult = await _commentService.CreateAsync(commentDto, ct);
                     if (!commentResult.IsSuccess)
                     {
                         return Result.Failure<AiDraftConfirmResultDto>($"Failed to execute AddComment: {commentResult.Error}", commentResult.StatusCode);
@@ -388,7 +434,7 @@ public class AiWorkflowService : IAiWorkflowService
 
                 if (_timeTrackingService != null)
                 {
-                    var ttResult = await _timeTrackingService.StartTimerAsync(taskId);
+                    var ttResult = await _timeTrackingService.StartTimerAsync(taskId, ct);
                     if (!ttResult.IsSuccess)
                     {
                         return Result.Failure<AiDraftConfirmResultDto>($"Failed to execute StartTimeTracking: {ttResult.Error}", ttResult.StatusCode);
@@ -403,7 +449,7 @@ public class AiWorkflowService : IAiWorkflowService
 
                 if (_timeTrackingService != null)
                 {
-                    var ttResult = await _timeTrackingService.StopTimerAsync(entryId);
+                    var ttResult = await _timeTrackingService.StopTimerAsync(entryId, ct);
                     if (!ttResult.IsSuccess)
                     {
                         return Result.Failure<AiDraftConfirmResultDto>($"Failed to execute StopTimeTracking: {ttResult.Error}", ttResult.StatusCode);
@@ -416,6 +462,11 @@ public class AiWorkflowService : IAiWorkflowService
             if (!await CanManageProjectAsync(draft.Project, currentUserId.Value, ct))
             {
                 return Result.Failure<AiDraftConfirmResultDto>("Access denied for create_tasks confirm action.", 403);
+            }
+
+            if (payload == null)
+            {
+                return Result.Failure<AiDraftConfirmResultDto>("Invalid draft payload.", 400);
             }
 
             MeetingImport? meetingImport = null;
@@ -545,6 +596,39 @@ public class AiWorkflowService : IAiWorkflowService
         await _aiDraftRepo.UpdateAsync(draft, ct);
         await _aiJobRepo.UpdateAsync(draft.AiJob, ct);
         await _unitOfWork.SaveChangesAsync(ct);
+
+        if (_complianceService != null)
+        {
+            await _complianceService.LogAuditEventAsync(
+                draft.Project.OrganizationId,
+                draft.ProjectId,
+                currentUserId.Value,
+                "AI_DRAFT_CONFIRMED",
+                "AiGeneratedDraft",
+                null,
+                null,
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    draft.Id,
+                    draft.DraftType,
+                    draft.PayloadJson,
+                    draft.Status
+                }),
+                ct
+            );
+
+            await _complianceService.LogAuditEventAsync(
+                draft.Project.OrganizationId,
+                draft.ProjectId,
+                currentUserId.Value,
+                "AI_TOOL_EXECUTED",
+                draft.DraftType,
+                null,
+                draft.PayloadJson,
+                null,
+                ct
+            );
+        }
 
         await _auditLogService.LogAsync(
             "ConfirmAiDraft",

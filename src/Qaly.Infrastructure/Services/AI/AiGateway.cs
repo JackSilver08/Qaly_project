@@ -252,7 +252,10 @@ public class AiGateway : IAiGateway
                 // Check for tool call
                 if (request.Tools != null && request.Tools.Count > 0 && TryParseToolCall(finalResponse.Content, out var toolName, out var rawParams))
                 {
-                    _logger.LogInformation("AI requested tool call: {ToolName}", toolName);
+                    if (_logger.IsEnabled(Microsoft.Extensions.Logging.LogLevel.Information))
+                    {
+                        _logger.LogInformation("AI requested tool call: {ToolName}", toolName);
+                    }
 
                     if (_parameterGuard != null)
                     {
@@ -295,6 +298,24 @@ public class AiGateway : IAiGateway
                             };
                             await _aiDraftRepo.AddAsync(draft, cancellationToken);
                             await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                            await _complianceService.LogAuditEventAsync(
+                                request.TenantId ?? Guid.Empty,
+                                request.ProjectId ?? Guid.Empty,
+                                request.UserId ?? Guid.Empty,
+                                "AI_DRAFT_CREATED",
+                                "AiGeneratedDraft",
+                                null,
+                                null,
+                                System.Text.Json.JsonSerializer.Serialize(new
+                                {
+                                    draft.Id,
+                                    draft.DraftType,
+                                    draft.PayloadJson,
+                                    draft.Status
+                                }),
+                                cancellationToken
+                            );
 
                             // Return the draft_change action response immediately!
                             var draftResponseContent = $$"""
@@ -358,7 +379,10 @@ public class AiGateway : IAiGateway
                                 var invokeResult = await tool.InvokeAsync(boundArgs, cancellationToken);
                                 var resultText = invokeResult?.ToString() ?? "Success";
 
-                                _logger.LogInformation("Tool {ToolName} executed successfully. Result length: {Length}", toolName, resultText.Length);
+                                if (_logger.IsEnabled(Microsoft.Extensions.Logging.LogLevel.Information))
+                                {
+                                    _logger.LogInformation("Tool {ToolName} executed successfully. Result length: {Length}", toolName, resultText.Length);
+                                }
 
                                 // Append to request history
                                 request.History ??= new List<Qaly.Application.DTOs.Ai.AiChatMessageDto>();

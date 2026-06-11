@@ -20,6 +20,7 @@ public class MeetilyImportTests : IDisposable
     private readonly Mock<ITaskService> _taskService = new();
     private readonly Mock<ICurrentUserService> _currentUser = new();
     private readonly Mock<IAuditLogService> _auditLog = new();
+    private readonly Mock<IAiComplianceService> _complianceServiceMock = new();
     private readonly Guid _userId = Guid.NewGuid();
     private readonly Guid _projectId = Guid.NewGuid();
 
@@ -85,6 +86,62 @@ public class MeetilyImportTests : IDisposable
         mapping.TaskId.Should().Be(task.Id);
         mapping.ActionItemIndex.Should().Be(0);
         mapping.Status.Should().Be("Linked");
+
+        _complianceServiceMock.Verify(c => c.LogAuditEventAsync(
+            It.IsAny<Guid?>(),
+            It.IsAny<Guid?>(),
+            It.IsAny<Guid?>(),
+            "AI_DRAFT_CONFIRMED",
+            "AiGeneratedDraft",
+            null,
+            null,
+            It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        _complianceServiceMock.Verify(c => c.LogAuditEventAsync(
+            It.IsAny<Guid?>(),
+            It.IsAny<Guid?>(),
+            It.IsAny<Guid?>(),
+            "AI_TOOL_EXECUTED",
+            It.IsAny<string>(),
+            null,
+            It.IsAny<string>(),
+            null,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ConfirmDraftAsync_WithRejectAction_MarksDraftAsRejectedAndLogsAuditEvent()
+    {
+        var importResult = await CreateMeetingImportService().ImportMeetilyAsync(CreateRequest());
+        importResult.IsSuccess.Should().BeTrue(importResult.Error);
+        var draftId = importResult.Data!.DraftId!.Value;
+
+        var confirmResult = await CreateAiWorkflowService().ConfirmDraftAsync(
+            draftId,
+            new ConfirmAiDraftDto(null, "reject", "not interested"));
+
+        confirmResult.IsSuccess.Should().BeTrue(confirmResult.Error);
+        confirmResult.Data!.Status.Should().Be("Rejected");
+
+        var draftInDb = await _context.AiGeneratedDrafts
+            .Include(d => d.AiJob)
+            .FirstOrDefaultAsync(d => d.Id == draftId);
+        
+        draftInDb.Should().NotBeNull();
+        draftInDb!.Status.Should().Be("Rejected");
+        draftInDb.AiJob.Status.Should().Be("Rejected");
+
+        _complianceServiceMock.Verify(c => c.LogAuditEventAsync(
+            It.IsAny<Guid?>(),
+            It.IsAny<Guid?>(),
+            It.IsAny<Guid?>(),
+            "AI_TOOL_REJECTED",
+            "AiGeneratedDraft",
+            null,
+            It.IsAny<string>(),
+            null,
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -149,6 +206,7 @@ public class MeetilyImportTests : IDisposable
             new GenericRepository<User>(_context),
             new UnitOfWork(_context),
             _currentUser.Object,
-            _auditLog.Object);
+            _auditLog.Object,
+            complianceService: _complianceServiceMock.Object);
 }
 #pragma warning restore CA1707
