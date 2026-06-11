@@ -28,6 +28,7 @@ public sealed class ErumiChatService : IErumiChatService
     private readonly IRepository<ProjectMember> _memberRepo;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAiGateway _aiGateway;
+    private readonly AiTools? _aiTools;
 
     public ErumiChatService(
         IAnalyticsService analyticsService,
@@ -35,7 +36,8 @@ public sealed class ErumiChatService : IErumiChatService
         ITaskService taskService,
         IRepository<ProjectMember> memberRepo,
         ICurrentUserService currentUserService,
-        IAiGateway aiGateway)
+        IAiGateway aiGateway,
+        AiTools? aiTools = null)
     {
         _analyticsService = analyticsService;
         _projectService = projectService;
@@ -43,6 +45,7 @@ public sealed class ErumiChatService : IErumiChatService
         _memberRepo = memberRepo;
         _currentUserService = currentUserService;
         _aiGateway = aiGateway;
+        _aiTools = aiTools;
     }
 
     public async Task<Result<ErumiChatResponseDto>> ChatFastAsync(ErumiChatRequestDto request, CancellationToken ct = default)
@@ -198,7 +201,8 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             ProjectId = null,
             UserId = _currentUserService.UserId,
             History = request.History,
-            UseCache = true
+            UseCache = true,
+            Tools = _aiTools?.GetAvailableTools()
         };
 
         var aiResponse = await _aiGateway.ExecuteAsync(aiRequest, ct);
@@ -322,6 +326,8 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
   ""files"": []
 }}";
 
+        var tools = await GetFilteredToolsForProjectAsync(project.Id, _currentUserService.UserId ?? Guid.Empty, ct);
+
         var aiRequest = new AiRequest
         {
             JobType = "project_analytics_chat",
@@ -332,13 +338,98 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             ProjectId = project.Id,
             UserId = _currentUserService.UserId,
             History = request.History,
-            UseCache = true
+            UseCache = true,
+            Tools = tools
         };
 
         var aiResponse = await _aiGateway.ExecuteAsync(aiRequest, ct);
         var intent = ClassifyProjectIntent(Normalize(request.Message));
 
         return Result.Success(ParseStructuredAiResponse(aiResponse.Content, intent, sw, ProjectSources, aiResponse.IsMock));
+    }
+
+    private async Task<System.Collections.Generic.IList<Microsoft.Extensions.AI.AITool>?> GetFilteredToolsForProjectAsync(
+        Guid projectId,
+        Guid userId,
+        CancellationToken ct)
+    {
+        if (_aiTools == null)
+        {
+            return null;
+        }
+
+        var allTools = _aiTools.GetAvailableTools();
+
+        // 1. Check if the user is a system admin
+        bool isAdmin = ProjectRoleRules.IsSystemAdmin(_currentUserService.Role);
+
+        // 2. Check project owner (PM/Owner)
+        var projectResult = await _projectService.GetByIdAsync(projectId, ct);
+        if (!projectResult.IsSuccess || projectResult.Data == null)
+        {
+            return new System.Collections.Generic.List<Microsoft.Extensions.AI.AITool>();
+        }
+
+        var project = projectResult.Data;
+        bool isOwner = project.OwnerId == userId;
+
+        if (isAdmin || isOwner)
+        {
+            return allTools;
+        }
+
+        // 3. Check member role in project
+        var member = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(m => m.ProjectId == projectId && m.UserId == userId, ct);
+
+        if (member == null)
+        {
+            return new System.Collections.Generic.List<Microsoft.Extensions.AI.AITool>();
+        }
+
+        string normalizedRole = ProjectRoleRules.NormalizeProjectRole(member.Role);
+        bool isPM = ProjectRoleRules.IsProjectManager(normalizedRole);
+
+        if (isPM)
+        {
+            return allTools;
+        }
+
+        // 4. For normal members and task assignees:
+        var assignedTasksResult = await _taskService.GetByProjectAsync(
+            projectId: projectId,
+            assigneeId: userId,
+            pageSize: 1,
+            ct: ct);
+
+        bool isAssignee = assignedTasksResult.IsSuccess 
+            && assignedTasksResult.Data != null 
+            && assignedTasksResult.Data.TotalCount > 0;
+
+        var allowedToolNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "GetProjectSummary",
+            "GetOverdueTasks",
+            "GetMemberWorkload",
+            "SearchKnowledge",
+            "GetMyTimeLogs",
+            "SuggestTaskAssignment",
+            "AddComment",
+            "StartTimeTracking",
+            "StopTimeTracking"
+        };
+
+        if (isAssignee)
+        {
+            allowedToolNames.Add("UpdateTaskStatus");
+        }
+
+        return allTools
+            .OfType<AIFunction>()
+            .Where(t => allowedToolNames.Contains(t.Metadata.Name))
+            .Cast<AITool>()
+            .ToList();
     }
 
     private static ErumiChatResponseDto ParseStructuredAiResponse(
@@ -357,6 +448,7 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
         var actions = new List<ErumiActionDto>();
         var files = new List<ErumiFileDto>();
         double confidence = isMock ? 0.5 : 0.9;
+        string confidenceReason = isMock ? "Hệ thống đang hoạt động ở chế độ fallback ngoại tuyến." : "Dữ liệu được phân tích bởi mô hình AI.";
         
         try
         {
@@ -520,6 +612,23 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
                     }
                 }
             }
+
+            if (root.TryGetProperty("confidence", out var confProp))
+            {
+                if (confProp.ValueKind == System.Text.Json.JsonValueKind.Number)
+                {
+                    confidence = confProp.GetDouble();
+                }
+                else if (confProp.ValueKind == System.Text.Json.JsonValueKind.String && double.TryParse(confProp.GetString(), out var parsedConf))
+                {
+                    confidence = parsedConf;
+                }
+            }
+
+            if (root.TryGetProperty("confidence_reason", out var confReasonProp))
+            {
+                confidenceReason = confReasonProp.GetString() ?? confidenceReason;
+            }
         }
         catch
         {
@@ -537,7 +646,8 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             confidence,
             UsedAi: !isMock,
             intent,
-            LatencyMs: (int)sw.ElapsedMilliseconds);
+            LatencyMs: (int)sw.ElapsedMilliseconds,
+            ConfidenceReason: confidenceReason);
     }
 
     private static ErumiChatResponseDto BuildUploadedFileResponse(
@@ -1131,7 +1241,8 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
         IReadOnlyList<ErumiFileDto>? files = null,
         IReadOnlyList<string>? sources = null,
         double confidence = 0.9,
-        bool usedAi = false)
+        bool usedAi = false,
+        string? confidenceReason = null)
     {
         sw.Stop();
         return new ErumiChatResponseDto(
@@ -1145,7 +1256,8 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             confidence,
             UsedAi: usedAi,
             intent,
-            LatencyMs: (int)sw.ElapsedMilliseconds);
+            LatencyMs: (int)sw.ElapsedMilliseconds,
+            ConfidenceReason: confidenceReason ?? (usedAi ? "Được phân tích bởi mô hình AI." : "Dữ liệu chính xác được truy vấn trực tiếp từ cơ sở dữ liệu hệ thống."));
     }
 
     private static string ClassifyProjectIntent(string normalized)

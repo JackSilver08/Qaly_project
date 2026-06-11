@@ -16,6 +16,7 @@ using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Models;
 using Qaly.Application.Services;
 using Qaly.Domain.Entities;
+using Qaly.Domain.Interfaces;
 using Qaly.Infrastructure.Data;
 using Qaly.Infrastructure.Services.AI.Providers;
 
@@ -32,6 +33,11 @@ public class AiGateway : IAiGateway
     private readonly IEmbeddingGenerator<string, Embedding<float>>? _embeddingGenerator;
     private readonly AiProviderFactory _providerFactory;
     private readonly AiOutputValidator _outputValidator;
+    private readonly AiTools? _aiTools;
+    private readonly ToolParameterGuard? _parameterGuard;
+    private readonly IRepository<AiJob>? _aiJobRepo;
+    private readonly IRepository<AiGeneratedDraft>? _aiDraftRepo;
+    private readonly IUnitOfWork? _unitOfWork;
 
     private static readonly Action<ILogger, Exception?> _aiRequestBlockedComplianceLogger = LoggerMessage.Define(
         LogLevel.Warning,
@@ -59,7 +65,12 @@ public class AiGateway : IAiGateway
         AiProviderFactory providerFactory,
         AiOutputValidator outputValidator,
         IVectorStorageService? vectorStorage = null,
-        IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null)
+        IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
+        AiTools? aiTools = null,
+        ToolParameterGuard? parameterGuard = null,
+        IRepository<AiJob>? aiJobRepo = null,
+        IRepository<AiGeneratedDraft>? aiDraftRepo = null,
+        IUnitOfWork? unitOfWork = null)
     {
         _costService = costService;
         _complianceService = complianceService;
@@ -70,6 +81,11 @@ public class AiGateway : IAiGateway
         _outputValidator = outputValidator;
         _vectorStorage = vectorStorage;
         _embeddingGenerator = embeddingGenerator;
+        _aiTools = aiTools;
+        _parameterGuard = parameterGuard;
+        _aiJobRepo = aiJobRepo;
+        _aiDraftRepo = aiDraftRepo;
+        _unitOfWork = unitOfWork;
     }
 
     // Backwards-compatible constructor for testing
@@ -88,6 +104,11 @@ public class AiGateway : IAiGateway
               CreateMockProviderFactory(chatClient), 
               new AiOutputValidator(), 
               null, 
+              null,
+              null,
+              null,
+              null,
+              null,
               null)
     {
     }
@@ -196,7 +217,12 @@ public class AiGateway : IAiGateway
         var settings = new AiGatewaySettings();
         _configuration.GetSection(AiGatewaySettings.SectionName).Bind(settings);
 
-        // 4. Execute AI Request with Schema Validation & Retry
+        if (request.Tools != null && request.Tools.Count > 0 && !request.SystemPrompt.Contains("--- BẠN CÓ QUYỀN TRUY CẬP VÀO CÁC CÔNG CỤ SAU ---"))
+        {
+            request.SystemPrompt = InjectToolsPrompt(request.SystemPrompt, request.Tools);
+        }
+
+        // 4. Execute AI Request with Schema Validation & Retry & Tool Calling
         string currentPrompt = request.Prompt;
         int maxRetries = 2;
         int attempt = 0;
@@ -222,7 +248,149 @@ public class AiGateway : IAiGateway
                 };
 
                 finalResponse = await provider.CompleteAsync(request, providerConfig, cancellationToken);
-                
+
+                // Check for tool call
+                if (request.Tools != null && request.Tools.Count > 0 && TryParseToolCall(finalResponse.Content, out var toolName, out var rawParams))
+                {
+                    _logger.LogInformation("AI requested tool call: {ToolName}", toolName);
+
+                    if (_parameterGuard != null)
+                    {
+                        var guardResult = await _parameterGuard.GuardAsync(toolName, rawParams, cancellationToken);
+                        if (!guardResult.Success)
+                        {
+                            _logger.LogWarning("Tool parameter guard failed for tool {ToolName}. Error: {Error}, Hint: {Hint}", 
+                                toolName, guardResult.UserMessage, guardResult.RetryHint);
+
+                            validationError = $"ToolParameterGuard failed for '{toolName}': {guardResult.UserMessage}. Hint: {guardResult.RetryHint}";
+                            attempt++;
+                            continue;
+                        }
+                    }
+
+                    // Check if it is a write action
+                    if (IsWriteAction(toolName))
+                    {
+                        // Create draft in database instead of direct execution!
+                        if (_aiJobRepo != null && _aiDraftRepo != null && _unitOfWork != null)
+                        {
+                            var job = new AiJob
+                            {
+                                JobType = "DraftChange",
+                                ProjectId = request.ProjectId ?? Guid.Empty,
+                                SourceType = "Chat",
+                                Status = "DraftReady",
+                                RequestedById = request.UserId ?? Guid.Empty
+                            };
+                            await _aiJobRepo.AddAsync(job, cancellationToken);
+                            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                            var draft = new AiGeneratedDraft
+                            {
+                                AiJobId = job.Id,
+                                ProjectId = request.ProjectId ?? Guid.Empty,
+                                DraftType = toolName,
+                                PayloadJson = System.Text.Json.JsonSerializer.Serialize(rawParams),
+                                Status = "Pending"
+                            };
+                            await _aiDraftRepo.AddAsync(draft, cancellationToken);
+                            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                            // Return the draft_change action response immediately!
+                            var draftResponseContent = $$"""
+                            {
+                              "reply": "Erumi đã chuẩn bị bản nháp cho hành động thay đổi dữ liệu của bạn. Vui lòng xác nhận bên dưới.",
+                              "metrics": [],
+                              "tables": [],
+                              "charts": [],
+                              "actions": [
+                                {
+                                  "type": "draft_change",
+                                  "label": "Xác nhận thực hiện",
+                                  "payload": {
+                                    "draftId": "{{draft.Id}}",
+                                    "confirmAction": "execute_action"
+                                  },
+                                  "requiresConfirmation": true
+                                }
+                              ],
+                              "files": []
+                            }
+                            """;
+                            
+                            finalResponse = new AiResponse
+                            {
+                                Content = draftResponseContent,
+                                ProviderName = finalResponse.ProviderName,
+                                ModelName = finalResponse.ModelName,
+                                InputTokens = finalResponse.InputTokens,
+                                OutputTokens = finalResponse.OutputTokens,
+                                EstimatedCostUsd = finalResponse.EstimatedCostUsd,
+                                IsMock = finalResponse.IsMock,
+                                CacheHit = finalResponse.CacheHit
+                            };
+                            validationError = null; // Mark as valid to bypass schema checks
+                            break; // break the retry loop and return the draft action!
+                        }
+                    }
+                    else
+                    {
+                        // Execute Read Tool
+                        var tool = request.Tools
+                            .OfType<AIFunction>()
+                            .FirstOrDefault(t => string.Equals(t.Metadata.Name, toolName, System.StringComparison.OrdinalIgnoreCase));
+                        if (tool != null)
+                        {
+                            try
+                            {
+                                var boundArgs = BindArguments(tool, rawParams);
+                                
+                                // Direct safety check for project/member data leakage in read tools
+                                if (boundArgs.TryGetValue("projectId", out var pidVal) && pidVal is Guid pid && _parameterGuard != null)
+                                {
+                                    var pgResult = await _parameterGuard.GuardAsync(toolName, rawParams, cancellationToken);
+                                    if (!pgResult.Success)
+                                    {
+                                        throw new UnauthorizedAccessException($"Access denied to project {pid}");
+                                    }
+                                }
+
+                                var invokeResult = await tool.InvokeAsync(boundArgs, cancellationToken);
+                                var resultText = invokeResult?.ToString() ?? "Success";
+
+                                _logger.LogInformation("Tool {ToolName} executed successfully. Result length: {Length}", toolName, resultText.Length);
+
+                                // Append to request history
+                                request.History ??= new List<Qaly.Application.DTOs.Ai.AiChatMessageDto>();
+                                request.History.Add(new Qaly.Application.DTOs.Ai.AiChatMessageDto(
+                                    "assistant", 
+                                    $"<tool_call name=\"{toolName}\">{SerializeParameters(rawParams)}</tool_call>"
+                                ));
+                                request.History.Add(new Qaly.Application.DTOs.Ai.AiChatMessageDto(
+                                    "user", 
+                                    $"<tool_result name=\"{toolName}\">{resultText}</tool_result>"
+                                ));
+
+                                // Loop back to model for next response
+                                continue; 
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Error executing read tool {ToolName}", toolName);
+                                validationError = $"Error executing tool '{toolName}': {ex.Message}";
+                                attempt++;
+                                continue;
+                            }
+                        }
+                        else
+                        {
+                            validationError = $"Tool '{toolName}' is not defined/available.";
+                            attempt++;
+                            continue;
+                        }
+                    }
+                }
+
                 // Validate output schema if requested
                 if (string.IsNullOrWhiteSpace(request.ExpectedSchemaId) || _outputValidator.Validate(finalResponse.Content, request.ExpectedSchemaId, out validationError))
                 {
@@ -320,6 +488,177 @@ public class AiGateway : IAiGateway
         }
 
         return "{\"result\": \"Mock response due to AI failure.\"}";
+    }
+
+    private static string InjectToolsPrompt(string systemPrompt, IList<AITool> tools)
+    {
+        var sb = new StringBuilder(systemPrompt);
+        sb.AppendLine("\n\n--- BẠN CÓ QUYỀN TRUY CẬP VÀO CÁC CÔNG CỤ SAU ---");
+        sb.AppendLine("Nếu cần gọi công cụ để lấy thông tin hoặc thực hiện hành động, hãy viết một khối XML duy nhất:");
+        sb.AppendLine("<tool_call name=\"TênCôngCụ\">");
+        sb.AppendLine("  <TênThamSố>GiáTrị</TênThamSố>");
+        sb.AppendLine("</tool_call>");
+        sb.AppendLine("Lưu ý: Không viết bất kỳ văn bản nào khác ngoài XML khi gọi công cụ. Nếu bạn đã có đủ thông tin, hãy trả lời bình thường mà không gọi công cụ.");
+        sb.AppendLine("Danh sách các công cụ khả dụng:");
+        
+        foreach (var tool in tools)
+        {
+            if (tool is AIFunction function)
+            {
+                sb.AppendLine($"- Tên: {function.Metadata.Name}");
+                sb.AppendLine($"  Mô tả: {function.Metadata.Description}");
+                sb.AppendLine("  Tham số:");
+                foreach (var param in function.Metadata.Parameters)
+                {
+                    var req = param.IsRequired ? "(Bắt buộc)" : "(Tùy chọn)";
+                    sb.AppendLine($"    + {param.Name} ({param.ParameterType?.Name}): {param.Description} {req}");
+                }
+            }
+        }
+        sb.AppendLine("--------------------------------------------------\n");
+        return sb.ToString();
+    }
+
+    private static bool TryParseToolCall(string content, out string toolName, out Dictionary<string, object?> parameters)
+    {
+        toolName = string.Empty;
+        parameters = new Dictionary<string, object?>();
+
+        if (string.IsNullOrWhiteSpace(content)) return false;
+
+        // Try XML first
+        var xmlMatch = System.Text.RegularExpressions.Regex.Match(content, @"<tool_call\s+name=""([^""]+)""\s*>(.*?)</tool_call>", System.Text.RegularExpressions.RegexOptions.Singleline);
+        if (xmlMatch.Success)
+        {
+            toolName = xmlMatch.Groups[1].Value.Trim();
+            var innerContent = xmlMatch.Groups[2].Value;
+
+            var paramMatches = System.Text.RegularExpressions.Regex.Matches(innerContent, @"<([^>]+)>(.*?)</\1>", System.Text.RegularExpressions.RegexOptions.Singleline);
+            foreach (System.Text.RegularExpressions.Match paramMatch in paramMatches)
+            {
+                var key = paramMatch.Groups[1].Value.Trim();
+                var val = paramMatch.Groups[2].Value.Trim();
+                parameters[key] = val;
+            }
+            return true;
+        }
+
+        // Try JSON
+        var trimmed = content.Trim();
+        if (trimmed.StartsWith('{'))
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(trimmed);
+                var root = doc.RootElement;
+                if (root.TryGetProperty("tool_call", out var toolCallEl) && toolCallEl.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    if (toolCallEl.TryGetProperty("name", out var nameEl))
+                    {
+                        toolName = nameEl.GetString() ?? string.Empty;
+                    }
+                    if (toolCallEl.TryGetProperty("parameters", out var paramsEl) && paramsEl.ValueKind == System.Text.Json.JsonValueKind.Object)
+                    {
+                        foreach (var prop in paramsEl.EnumerateObject())
+                        {
+                            if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.Number)
+                                parameters[prop.Name] = prop.Value.GetDouble();
+                            else if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.True || prop.Value.ValueKind == System.Text.Json.JsonValueKind.False)
+                                parameters[prop.Name] = prop.Value.GetBoolean();
+                            else if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.Null)
+                                parameters[prop.Name] = null;
+                            else
+                                parameters[prop.Name] = prop.Value.GetString();
+                        }
+                    }
+                    return !string.IsNullOrWhiteSpace(toolName);
+                }
+            }
+            catch
+            {
+                // Ignore and return false
+            }
+        }
+
+        return false;
+    }
+
+    private static Dictionary<string, object?> BindArguments(AIFunction function, Dictionary<string, object?> rawParams)
+    {
+        var bound = new Dictionary<string, object?>();
+        foreach (var param in function.Metadata.Parameters)
+        {
+            if (rawParams.TryGetValue(param.Name, out var rawVal) && rawVal != null)
+            {
+                bound[param.Name] = ConvertType(rawVal, param.ParameterType);
+            }
+            else if (param.IsRequired)
+            {
+                bound[param.Name] = null;
+            }
+        }
+        return bound;
+    }
+
+    private static object? ConvertType(object val, Type? targetType)
+    {
+        if (targetType == null) return val;
+        
+        var valStr = val.ToString();
+        if (string.IsNullOrWhiteSpace(valStr)) return null;
+
+        if (targetType == typeof(Guid) || targetType == typeof(Guid?))
+        {
+            if (Guid.TryParse(valStr, out var g)) return g;
+        }
+        if (targetType == typeof(DateTimeOffset) || targetType == typeof(DateTimeOffset?))
+        {
+            if (DateTimeOffset.TryParse(valStr, out var dto)) return dto;
+        }
+        if (targetType == typeof(DateTime) || targetType == typeof(DateTime?))
+        {
+            if (DateTime.TryParse(valStr, out var dt)) return dt;
+        }
+        if (targetType == typeof(int) || targetType == typeof(int?))
+        {
+            if (int.TryParse(valStr, out var i)) return i;
+        }
+        if (targetType == typeof(double) || targetType == typeof(double?))
+        {
+            if (double.TryParse(valStr, out var d)) return d;
+        }
+        if (targetType == typeof(string))
+        {
+            return valStr;
+        }
+
+        return Convert.ChangeType(val, targetType);
+    }
+
+    private static string SerializeParameters(Dictionary<string, object?> parameters)
+    {
+        var sb = new StringBuilder();
+        foreach (var kvp in parameters)
+        {
+            sb.Append($"<{kvp.Key}>{kvp.Value}</{kvp.Key}>");
+        }
+        return sb.ToString();
+    }
+
+    private static bool IsWriteAction(string toolName)
+    {
+        return toolName switch
+        {
+            "CreateTask" => true,
+            "UpdateTaskStatus" => true,
+            "AssignTask" => true,
+            "SetTaskPriority" => true,
+            "AddDueDate" => true,
+            "AddComment" => true,
+            "StartTimeTracking" => true,
+            "StopTimeTracking" => true,
+            _ => false
+        };
     }
 
     private static string ComputeSha256Hash(string rawData)

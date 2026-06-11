@@ -15,6 +15,7 @@ import {
 } from "lucide-vue-next";
 import AppShell from "./components/AppShell.vue";
 import WelcomeOverlay from "./components/WelcomeOverlay.vue";
+import FloatingChatbot from "./components/chat/FloatingChatbot.vue";
 import { dashboardContextKey } from "./composables/dashboard-context";
 import { showError, showInfo, showSuccess } from "./composables/use-toast";
 import { useDashboard } from "./composables/use-dashboard-state";
@@ -1356,6 +1357,9 @@ provide(dashboardContextKey, {
     </div>
 
     <WelcomeOverlay />
+    <template #overlays>
+      <FloatingChatbot />
+    </template>
   </AppShell>
 </template>
 

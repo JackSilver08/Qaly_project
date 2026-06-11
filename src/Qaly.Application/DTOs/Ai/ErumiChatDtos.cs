@@ -18,7 +18,8 @@ public sealed record ErumiChatResponseDto(
     double Confidence,
     bool UsedAi,
     string Intent,
-    int LatencyMs);
+    int LatencyMs,
+    string? ConfidenceReason = null);
 
 public sealed record ErumiMetricDto(
     string Label,

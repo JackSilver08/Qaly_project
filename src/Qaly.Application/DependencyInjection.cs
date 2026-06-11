@@ -8,8 +8,8 @@ using Qaly.Application.Services.Tasks;
 namespace Qaly.Application;
 
 /// <summary>
-/// Extension method Ä‘á»ƒ Ä‘Äƒng kÃ½ táº¥t cáº£ services cá»§a Application layer.
-/// Gá»i trong Program.cs: builder.Services.AddApplication();
+/// Extension method để đăng ký tất cả services của Application layer.
+/// Gọi trong Program.cs: builder.Services.AddApplication();
 /// </summary>
 public static class DependencyInjection
 {

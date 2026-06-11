@@ -31,6 +31,9 @@ public class AiWorkflowService : IAiWorkflowService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditLogService _auditLogService;
+    private readonly ITaskService? _taskService;
+    private readonly ICommentService? _commentService;
+    private readonly ITimeTrackingService? _timeTrackingService;
 
     public AiWorkflowService(
         IRepository<Project> projectRepo,
@@ -45,7 +48,10 @@ public class AiWorkflowService : IAiWorkflowService
         IRepository<User> userRepo,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
-        IAuditLogService auditLogService)
+        IAuditLogService auditLogService,
+        ITaskService? taskService = null,
+        ICommentService? commentService = null,
+        ITimeTrackingService? timeTrackingService = null)
     {
         _projectRepo = projectRepo;
         _projectMemberRepo = projectMemberRepo;
@@ -60,6 +66,9 @@ public class AiWorkflowService : IAiWorkflowService
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
         _auditLogService = auditLogService;
+        _taskService = taskService;
+        _commentService = commentService;
+        _timeTrackingService = timeTrackingService;
     }
 
     public async Task<Result<AiJobCreatedDto>> CreateJobAsync(CreateAiJobDto dto, CancellationToken ct = default)
@@ -169,19 +178,240 @@ public class AiWorkflowService : IAiWorkflowService
         }
 
         var payloadJson = string.IsNullOrWhiteSpace(dto.EditedPayloadJson) ? draft.PayloadJson : dto.EditedPayloadJson.Trim();
-        AiTaskDraftPayload payload;
-        try
+        AiTaskDraftPayload? payload = null;
+        if (string.Equals(draft.DraftType, "MeetingActionItems", StringComparison.OrdinalIgnoreCase) || 
+            string.Equals(draft.DraftType, "TaskDraft", StringComparison.OrdinalIgnoreCase))
         {
-            payload = DeserializeTaskDraftPayload(payloadJson, draft.DraftType);
-        }
-        catch (JsonException)
-        {
-            return Result.Failure<AiDraftConfirmResultDto>("edited_payload is invalid JSON.", 400);
+            try
+            {
+                payload = DeserializeTaskDraftPayload(payloadJson, draft.DraftType);
+            }
+            catch (JsonException)
+            {
+                return Result.Failure<AiDraftConfirmResultDto>("edited_payload is invalid JSON.", 400);
+            }
         }
 
         var createdTaskIds = new List<Guid>();
         var normalizedAction = dto.ConfirmAction.Trim();
-        if (string.Equals(normalizedAction, "create_tasks", StringComparison.OrdinalIgnoreCase))
+
+        if (string.Equals(normalizedAction, "execute_action", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.Equals(draft.DraftType, "CreateTask", StringComparison.OrdinalIgnoreCase))
+            {
+                using var doc = JsonDocument.Parse(payloadJson);
+                var root = doc.RootElement;
+                
+                string title = root.GetProperty("title").GetString() ?? string.Empty;
+                string? description = root.TryGetProperty("description", out var descProp) ? descProp.GetString() : null;
+                string priority = root.TryGetProperty("priority", out var prioProp) ? prioProp.GetString() ?? "Medium" : "Medium";
+                Guid? assigneeId = null;
+                if (root.TryGetProperty("assigneeId", out var assProp) && assProp.ValueKind == JsonValueKind.String && Guid.TryParse(assProp.GetString(), out var parsedAssignee))
+                {
+                    assigneeId = parsedAssignee;
+                }
+                DateTimeOffset? dueDate = null;
+                if (root.TryGetProperty("dueDate", out var dueProp) && dueProp.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(dueProp.GetString(), out var parsedDue))
+                {
+                    dueDate = parsedDue;
+                }
+
+                if (_taskService != null)
+                {
+                    var taskDto = new Qaly.Application.DTOs.Task.CreateTaskDto(title, description, priority, dueDate, null, draft.ProjectId, assigneeId);
+                    var taskResult = await _taskService.CreateAsync(taskDto);
+                    if (!taskResult.IsSuccess)
+                    {
+                        return Result.Failure<AiDraftConfirmResultDto>($"Failed to execute CreateTask: {taskResult.Error}", taskResult.StatusCode);
+                    }
+                    createdTaskIds.Add(taskResult.Data!.Id);
+                }
+                else
+                {
+                    var task = new TaskItem
+                    {
+                        Title = title,
+                        Description = description,
+                        Priority = priority,
+                        Status = "Todo",
+                        DueDate = dueDate,
+                        ProjectId = draft.ProjectId,
+                        ReporterId = currentUserId.Value,
+                        AssigneeId = assigneeId
+                    };
+                    await _taskRepo.AddAsync(task, ct);
+                    await _unitOfWork.SaveChangesAsync(ct);
+                    createdTaskIds.Add(task.Id);
+                }
+            }
+            else if (string.Equals(draft.DraftType, "UpdateTaskStatus", StringComparison.OrdinalIgnoreCase))
+            {
+                using var doc = JsonDocument.Parse(payloadJson);
+                var root = doc.RootElement;
+                Guid taskId = Guid.Parse(root.GetProperty("taskId").GetString()!);
+                string status = root.GetProperty("status").GetString()!;
+
+                if (_taskService != null)
+                {
+                    var taskResult = await _taskService.UpdateStatusAsync(taskId, status);
+                    if (!taskResult.IsSuccess)
+                    {
+                        return Result.Failure<AiDraftConfirmResultDto>($"Failed to execute UpdateTaskStatus: {taskResult.Error}", taskResult.StatusCode);
+                    }
+                }
+                else
+                {
+                    var task = await _taskRepo.GetByIdAsync(taskId, ct);
+                    if (task != null)
+                    {
+                        task.Status = status;
+                        await _taskRepo.UpdateAsync(task, ct);
+                        await _unitOfWork.SaveChangesAsync(ct);
+                    }
+                }
+            }
+            else if (string.Equals(draft.DraftType, "AssignTask", StringComparison.OrdinalIgnoreCase))
+            {
+                using var doc = JsonDocument.Parse(payloadJson);
+                var root = doc.RootElement;
+                Guid taskId = Guid.Parse(root.GetProperty("taskId").GetString()!);
+                Guid assigneeId = Guid.Parse(root.GetProperty("assigneeId").GetString()!);
+
+                if (_taskService != null)
+                {
+                    var task = await _taskRepo.GetByIdAsync(taskId, ct);
+                    if (task != null)
+                    {
+                        var taskDto = new Qaly.Application.DTOs.Task.UpdateTaskDto(task.Title, task.Description, task.Status, task.Priority, task.DueDate, task.EstimatedHours, task.ActualHours, assigneeId, task.IsPrivate);
+                        var taskResult = await _taskService.UpdateAsync(taskId, taskDto);
+                        if (!taskResult.IsSuccess)
+                        {
+                            return Result.Failure<AiDraftConfirmResultDto>($"Failed to execute AssignTask: {taskResult.Error}", taskResult.StatusCode);
+                        }
+                    }
+                }
+                else
+                {
+                    var task = await _taskRepo.GetByIdAsync(taskId, ct);
+                    if (task != null)
+                    {
+                        task.AssigneeId = assigneeId;
+                        await _taskRepo.UpdateAsync(task, ct);
+                        await _unitOfWork.SaveChangesAsync(ct);
+                    }
+                }
+            }
+            else if (string.Equals(draft.DraftType, "SetTaskPriority", StringComparison.OrdinalIgnoreCase))
+            {
+                using var doc = JsonDocument.Parse(payloadJson);
+                var root = doc.RootElement;
+                Guid taskId = Guid.Parse(root.GetProperty("taskId").GetString()!);
+                string priority = root.GetProperty("priority").GetString()!;
+
+                if (_taskService != null)
+                {
+                    var task = await _taskRepo.GetByIdAsync(taskId, ct);
+                    if (task != null)
+                    {
+                        var taskDto = new Qaly.Application.DTOs.Task.UpdateTaskDto(task.Title, task.Description, task.Status, priority, task.DueDate, task.EstimatedHours, task.ActualHours, task.AssigneeId, task.IsPrivate);
+                        var taskResult = await _taskService.UpdateAsync(taskId, taskDto);
+                        if (!taskResult.IsSuccess)
+                        {
+                            return Result.Failure<AiDraftConfirmResultDto>($"Failed to execute SetTaskPriority: {taskResult.Error}", taskResult.StatusCode);
+                        }
+                    }
+                }
+                else
+                {
+                    var task = await _taskRepo.GetByIdAsync(taskId, ct);
+                    if (task != null)
+                    {
+                        task.Priority = priority;
+                        await _taskRepo.UpdateAsync(task, ct);
+                        await _unitOfWork.SaveChangesAsync(ct);
+                    }
+                }
+            }
+            else if (string.Equals(draft.DraftType, "AddDueDate", StringComparison.OrdinalIgnoreCase))
+            {
+                using var doc = JsonDocument.Parse(payloadJson);
+                var root = doc.RootElement;
+                Guid taskId = Guid.Parse(root.GetProperty("taskId").GetString()!);
+                DateTimeOffset dueDate = DateTimeOffset.Parse(root.GetProperty("dueDate").GetString()!);
+
+                if (_taskService != null)
+                {
+                    var task = await _taskRepo.GetByIdAsync(taskId, ct);
+                    if (task != null)
+                    {
+                        var taskDto = new Qaly.Application.DTOs.Task.UpdateTaskDto(task.Title, task.Description, task.Status, task.Priority, dueDate, task.EstimatedHours, task.ActualHours, task.AssigneeId, task.IsPrivate);
+                        var taskResult = await _taskService.UpdateAsync(taskId, taskDto);
+                        if (!taskResult.IsSuccess)
+                        {
+                            return Result.Failure<AiDraftConfirmResultDto>($"Failed to execute AddDueDate: {taskResult.Error}", taskResult.StatusCode);
+                        }
+                    }
+                }
+                else
+                {
+                    var task = await _taskRepo.GetByIdAsync(taskId, ct);
+                    if (task != null)
+                    {
+                        task.DueDate = dueDate;
+                        await _taskRepo.UpdateAsync(task, ct);
+                        await _unitOfWork.SaveChangesAsync(ct);
+                    }
+                }
+            }
+            else if (string.Equals(draft.DraftType, "AddComment", StringComparison.OrdinalIgnoreCase))
+            {
+                using var doc = JsonDocument.Parse(payloadJson);
+                var root = doc.RootElement;
+                Guid taskId = Guid.Parse(root.GetProperty("taskId").GetString()!);
+                string content = root.GetProperty("content").GetString()!;
+
+                if (_commentService != null)
+                {
+                    var commentDto = new Qaly.Application.DTOs.Comment.CreateCommentDto(content, taskId);
+                    var commentResult = await _commentService.CreateAsync(commentDto);
+                    if (!commentResult.IsSuccess)
+                    {
+                        return Result.Failure<AiDraftConfirmResultDto>($"Failed to execute AddComment: {commentResult.Error}", commentResult.StatusCode);
+                    }
+                }
+            }
+            else if (string.Equals(draft.DraftType, "StartTimeTracking", StringComparison.OrdinalIgnoreCase))
+            {
+                using var doc = JsonDocument.Parse(payloadJson);
+                var root = doc.RootElement;
+                Guid taskId = Guid.Parse(root.GetProperty("taskId").GetString()!);
+
+                if (_timeTrackingService != null)
+                {
+                    var ttResult = await _timeTrackingService.StartTimerAsync(taskId);
+                    if (!ttResult.IsSuccess)
+                    {
+                        return Result.Failure<AiDraftConfirmResultDto>($"Failed to execute StartTimeTracking: {ttResult.Error}", ttResult.StatusCode);
+                    }
+                }
+            }
+            else if (string.Equals(draft.DraftType, "StopTimeTracking", StringComparison.OrdinalIgnoreCase))
+            {
+                using var doc = JsonDocument.Parse(payloadJson);
+                var root = doc.RootElement;
+                Guid entryId = Guid.Parse(root.GetProperty("entryId").GetString()!);
+
+                if (_timeTrackingService != null)
+                {
+                    var ttResult = await _timeTrackingService.StopTimerAsync(entryId);
+                    if (!ttResult.IsSuccess)
+                    {
+                        return Result.Failure<AiDraftConfirmResultDto>($"Failed to execute StopTimeTracking: {ttResult.Error}", ttResult.StatusCode);
+                    }
+                }
+            }
+        }
+        else if (string.Equals(normalizedAction, "create_tasks", StringComparison.OrdinalIgnoreCase))
         {
             if (!await CanManageProjectAsync(draft.Project, currentUserId.Value, ct))
             {

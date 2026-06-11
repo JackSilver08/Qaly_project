@@ -109,6 +109,7 @@ public static class DependencyInjection
         }
         services.AddScoped<IAiIngestionService, AiIngestionService>();
         services.AddScoped<AiTools>();
+        services.AddScoped<ToolParameterGuard>();
         
 
 

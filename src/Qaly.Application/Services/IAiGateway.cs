@@ -1,5 +1,7 @@
+using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.AI;
 
 namespace Qaly.Application.Services;
 
@@ -15,6 +17,7 @@ public class AiRequest
     public Guid? UserId { get; set; }
     public bool UseCache { get; set; } = true;
     public System.Collections.Generic.IList<Qaly.Application.DTOs.Ai.AiChatMessageDto>? History { get; set; }
+    public System.Collections.Generic.IList<AITool>? Tools { get; set; }
 }
 
 public class AiResponse
