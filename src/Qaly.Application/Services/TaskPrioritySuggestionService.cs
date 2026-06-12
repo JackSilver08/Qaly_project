@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Domain.Interfaces;
 
@@ -5,12 +6,12 @@ namespace Qaly.Application.Services;
 
 public sealed class TaskPrioritySuggestionService : ITaskPrioritySuggestionService
 {
-    private readonly IAiGateway _aiGateway;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ICurrentUserService _currentUserService;
 
-    public TaskPrioritySuggestionService(IAiGateway aiGateway, ICurrentUserService currentUserService)
+    public TaskPrioritySuggestionService(IServiceProvider serviceProvider, ICurrentUserService currentUserService)
     {
-        _aiGateway = aiGateway;
+        _serviceProvider = serviceProvider;
         _currentUserService = currentUserService;
     }
 
@@ -25,7 +26,8 @@ Mô tả: {taskDescription}
 
 Trả lời theo định dạng: [Priority] - [Lý do]";
 
-            var response = await _aiGateway.ExecuteAsync(new AiRequest
+            var aiGateway = _serviceProvider.GetRequiredService<IAiGateway>();
+            var response = await aiGateway.ExecuteAsync(new AiRequest
             {
                 JobType = "TaskPrioritySuggestion",
                 Prompt = prompt,

@@ -140,6 +140,11 @@ const taskBoardView = ref<'kanban' | 'list'>('kanban')
 const markdown = new MarkdownIt({ linkify: true, breaks: true })
 
 const filteredTaskList = computed(() => statusColumns.flatMap((status: string) => tasksByStatus(status)))
+const kanbanTasksByStatus = computed<Record<string, DashboardTask[]>>(() =>
+  Object.fromEntries(
+    statusColumns.map((status: string) => [status, tasksByStatus(status)]),
+  ),
+)
 
 function renderMarkdown(value: string) {
   return DOMPurify.sanitize(markdown.render(value || ''))
@@ -231,7 +236,9 @@ function onDragStart(evt?: { item?: HTMLElement; data?: DashboardTask }) {
   isSuppressingTaskClick.value = true
   const taskId = evt?.item?.dataset.id ?? evt?.data?.id
   draggingTask.value = selectedProject.value?.tasks.find((task: DashboardTask) => task.id === taskId) ?? evt?.data ?? null
-  closeTaskDetails()
+  selectedTaskId.value = null
+  showManualForm.value = false
+  activeTaskMenu.value = null
 }
 
 function canSelectListStatus(task: DashboardTask, status: string) {
@@ -520,12 +527,12 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                   <span v-if="isKanbanDropBlocked(status)" class="drop-lock-badge" :title="`Không thể chuyển sang ${displayStatus(status)}`">
                     <Lock :size="13" />
                   </span>
-                  <span class="count-badge">{{ tasksByStatus(status).length }}</span>
+                  <span class="count-badge">{{ kanbanTasksByStatus[status].length }}</span>
                 </div>
               </div>
 
               <VueDraggable
-                :model-value="tasksByStatus(status)"
+                :model-value="kanbanTasksByStatus[status]"
                 :animation="200"
                 draggable=".kanban-card"
                 group="tasks"
@@ -539,7 +546,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                 @end="onDragEnd"
               >
                 <article
-                  v-for="task in tasksByStatus(status)"
+                  v-for="task in kanbanTasksByStatus[status]"
                   :key="task.id"
                   class="kanban-card draggable-item"
                   :class="{ 'is-selected': selectedTask?.id === task.id }"
@@ -583,7 +590,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                     <span v-if="isTaskOverdue(task)" class="overdue-tag">Quá hạn</span>
                   </div>
                 </article>
-                <div v-if="tasksByStatus(status).length === 0" class="empty-column-placeholder">Thả nhiệm vụ vào đây</div>
+                <div v-if="kanbanTasksByStatus[status].length === 0" class="empty-column-placeholder">Thả nhiệm vụ vào đây</div>
               </VueDraggable>
             </section>
           </div>
