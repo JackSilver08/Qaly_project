@@ -176,6 +176,52 @@ async function connectRealtime() {
     }
   });
 
+  hubConnection.on("meetingParticipantJoined", (payload: any) => {
+    const from = payload?.connectionId;
+    if (!from || from === hubConnection?.connectionId) return;
+
+    const existing = participants.value.find((p) => p.connectionId === from);
+    if (!existing) {
+      participants.value.push({
+        connectionId: from,
+        lastSeen: new Date().toISOString(),
+      });
+    } else {
+      existing.lastSeen = new Date().toISOString();
+    }
+
+    if (meetingConnectionState.value !== ConnectionState.Connected) {
+      const memberName = `Thành viên ${from.slice(0, 4)}`;
+      if (!remoteTiles.value.some((t) => t.identity === from)) {
+        remoteTiles.value.push({
+          identity: from,
+          name: memberName,
+          initials: memberName.slice(0, 2).toUpperCase(),
+          cameraOn: false,
+          micOn: false,
+          lastSeen: new Date().toISOString(),
+          videoTrack: null,
+          audioTrack: null,
+        });
+      }
+    }
+  });
+
+  hubConnection.on("meetingParticipantLeft", (payload: any) => {
+    const from = payload?.connectionId;
+    if (!from) return;
+
+    participants.value = participants.value.filter((p) => p.connectionId !== from);
+    remoteTiles.value = remoteTiles.value.filter((t) => t.identity !== from);
+  });
+
+  hubConnection.on("meetingEnded", (payload: any) => {
+    if (payload?.meetingId === meetingId.value) {
+      showSuccess("Cuộc họp đã kết thúc bởi chủ phòng.");
+      endMeeting();
+    }
+  });
+
   try {
     await hubConnection.start();
     if (hubConnection.state === HubConnectionState.Connected) {

@@ -2,11 +2,17 @@
 import { ref, onBeforeUnmount } from "vue";
 import { MonitorUp, Square } from "lucide-vue-next";
 
+import { showError } from "../../composables/use-toast";
+
 const stream = ref<MediaStream | null>(null);
 const previewEl = ref<HTMLVideoElement | null>(null);
 
 async function startShare() {
   try {
+    if (!navigator.mediaDevices || !(navigator.mediaDevices as any).getDisplayMedia) {
+      showError("Trình duyệt của bạn không hỗ trợ chia sẻ màn hình.");
+      return;
+    }
     // Request screen media
     const s = await (navigator.mediaDevices as any).getDisplayMedia({
       video: true,
@@ -14,8 +20,13 @@ async function startShare() {
     });
     stream.value = s as MediaStream;
     if (previewEl.value) previewEl.value.srcObject = stream.value;
-  } catch (e) {
-    console.warn("Người dùng đã hủy chia sẻ màn hình", e);
+  } catch (e: any) {
+    console.warn("Lỗi hoặc hủy chia sẻ màn hình", e);
+    if (e.name === "NotAllowedError") {
+      showError("Quyền chia sẻ màn hình bị từ chối.");
+    } else {
+      showError(`Không thể chia sẻ màn hình: ${e.message || e}`);
+    }
   }
 }
 

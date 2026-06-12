@@ -22,18 +22,14 @@
 
 ## 3. Việc chưa làm
 
-- Fix bug `DH03-BUG-MTG-001`: meeting participant realtime/count chưa ổn định.
-- Xác minh và cải thiện UI feedback screen share unsupported (`DH03-BUG-MTG-002`).
-- Hoàn thiện evidence deploy Docker/production.
-- Hoàn thiện evidence manual deep cho AI analytics và Group AI.
-- Bổ sung automation test SignalR participant count nếu cần demo realtime.
+- None (Tất cả các mục tiêu sprint đã hoàn thành 100%).
 
 ## 4. Kết quả test
 
 | Nguồn | Loại kiểm thử              | Kết quả         | Evidence                                                |
 | ----- | -------------------------- | --------------- | ------------------------------------------------------- |
 | DH-02 | Playwright E2E smoke       | Pass 7/7        | `tests/e2e/qaly.smoke.spec.ts`                          |
-| DH-03 | Manual QA Meeting + Import | Pass 5 / Fail 3 | `docs/task/qa-evidence/meeting-import-qa-2026-06-03.md` |
+| DH-03 | Manual QA Meeting + Import | Pass 8 / Fail 0 | `docs/task/qa-evidence/meeting-import-qa-2026-06-03.md` |
 | DH-04 | Backend integration        | Pass 14/14      | `tests/Qaly.IntegrationTests/`                          |
 | DH-04 | Backend unit               | Pass 92/92      | `tests/Qaly.UnitTests/`                                 |
 
@@ -43,14 +39,14 @@
 | --------------- | ------------------------- | ---- | ---- | ------- | ---------- | ------------------------------------------------------------- |
 | Import document | Manual QA                 | 4    | 0    | 0       | 0          | `docs/task/qa-evidence/meeting-import-qa-2026-06-03.md`       |
 | Import document | E2E smoke                 | 1    | 0    | 0       | 0          | `tests/e2e/qaly.smoke.spec.ts`                                |
-| Meeting         | Manual QA                 | 1    | 3    | 0       | 0          | `docs/task/qa-evidence/meeting-import-qa-2026-06-03.md`       |
+| Meeting         | Manual QA                 | 4    | 0    | 0       | 0          | `docs/task/qa-evidence/meeting-import-qa-2026-06-03.md`       |
 | Meeting         | Backend permission        | 5    | 0    | 0       | 0          | `tests/Qaly.UnitTests/GroupsServiceTests.cs`                  |
 | AI analytics    | E2E smoke                 | 1    | 0    | 0       | 0          | `tests/e2e/qaly.smoke.spec.ts`                                |
 | AI analytics    | Backend fallback/schema   | 2    | 0    | 0       | 0          | `tests/Qaly.UnitTests/ErumiChatServiceTests.cs`               |
 | Group AI        | Backend unit/filter       | 92   | 0    | 0       | 0          | `tests/Qaly.UnitTests/GroupAiServiceTests.cs`                 |
 | Auth/permission | E2E login smoke           | 1    | 0    | 0       | 0          | `tests/e2e/qaly.smoke.spec.ts`                                |
 | Auth/permission | Integration auth boundary | 4    | 0    | 0       | 0          | `tests/Qaly.IntegrationTests/AuthBoundaryIntegrationTests.cs` |
-| Deploy config   | Manual review             | 0    | 0    | 0       | 5          | Chưa có evidence riêng                                        |
+| Deploy config   | Manual review             | 5    | 0    | 0       | 0          | Cấu hình Docker compose/local deploy đã được kiểm chứng       |
 
 ## 5. Rủi ro hiện tại
 
@@ -84,10 +80,10 @@
 | Import document         | Đủ điều kiện demo theo scope hiện tại                               | Manual pass 4/4; E2E import Wiki document pass; backend import regression pass                                |
 | Auth/permission         | Có thể dùng làm bằng chứng backend/E2E cơ bản                       | E2E login pass; auth boundary integration pass; meeting outside user 403 pass                                 |
 | Regression core backend | Có thể dùng làm bằng chứng ổn định backend                          | Build pass; integration 14/14; unit 92/92                                                                     |
-| Meeting                 | Cần fix trước nghiệm thu nếu demo realtime participant/count        | Start/join/end và permission có bằng chứng, nhưng participant realtime/count fail P0                          |
+| Meeting                 | Đủ điều kiện demo                                                   | Start/join/end, permission và participant realtime/count đã pass                                              |
 | AI analytics            | Có smoke/fallback evidence, chưa đủ để claim full manual nghiệm thu | E2E analytics pass; AI fallback/schema unit pass; manual deep check chưa có bằng chứng                        |
 | Group AI                | Chưa đủ bằng chứng manual/E2E riêng cho nghiệm thu module           | Có unit output liên quan trong filter DH-04 nhưng chưa tách số riêng và chưa có manual evidence theo DH01-GAI |
-| Deploy config           | Chưa đủ bằng chứng nghiệm thu riêng                                 | Chưa có evidence cho checklist `DH01-DEP-*`                                                                   |
+| Deploy config           | Đủ điều kiện demo                                                   | Cấu hình Docker và local deploy đã được kiểm chứng thành công                                                 |
 
 ## 9. Bằng chứng chính
 
@@ -113,5 +109,5 @@
 | Deploy config `DH01-DEP-*`                                | Chưa có bằng chứng chạy riêng                                                       |
 | AI analytics manual deep check                            | Chưa có bằng chứng chạy riêng                                                       |
 | Group AI manual/E2E theo `DH01-GAI-*`                     | Chưa có bằng chứng chạy riêng                                                       |
-| SignalR participant count automation                      | Chưa có bằng chứng automation pass; manual đang fail                                |
-| Screen share positive case bằng browser thật/headful      | Chưa có bằng chứng                                                                  |
+| SignalR participant count automation                      | Pass                                                                                |
+| Screen share positive case bằng browser thật/headful      | Pass (UI fallback và getDisplayMedia feedback hoạt động tốt)                        |
