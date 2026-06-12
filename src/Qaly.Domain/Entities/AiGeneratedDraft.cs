@@ -11,6 +11,8 @@ public class AiGeneratedDraft : BaseEntity
     public DateTimeOffset? ConfirmedAt { get; set; }
     public string? ConfirmAction { get; set; }
     public string? ConfirmationNote { get; set; }
+    public string? SchemaId { get; set; }
+    public decimal? Confidence { get; set; }
 
     public AiJob AiJob { get; set; } = null!;
     public Project Project { get; set; } = null!;

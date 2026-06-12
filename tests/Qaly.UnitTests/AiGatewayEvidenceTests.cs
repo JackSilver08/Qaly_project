@@ -211,6 +211,26 @@ public class AiGatewayEvidenceTests : IDisposable
             .WithMessage("*current user filter*");
     }
 
+    [Fact]
+    public async Task SaveChangesAsync_WhenConfidenceIsUnderPointSix_MarksStatusAsNeedsManualReview()
+    {
+        var draft = new AiGeneratedDraft
+        {
+            ProjectId = Guid.NewGuid(),
+            AiJobId = Guid.NewGuid(),
+            DraftType = "TaskDraft",
+            PayloadJson = "{\"confidence\": 0.55, \"schema_id\": \"task_draft.v3.2\"}",
+            Status = "Pending"
+        };
+
+        _context.AiGeneratedDrafts.Add(draft);
+        await _context.SaveChangesAsync();
+
+        draft.Status.Should().Be("needs_manual_review");
+        draft.SchemaId.Should().Be("task_draft.v3.2");
+        draft.Confidence.Should().Be(0.55m);
+    }
+
     public void Dispose()
     {
         _context.Dispose();

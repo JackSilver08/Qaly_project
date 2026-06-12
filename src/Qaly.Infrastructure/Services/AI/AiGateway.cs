@@ -116,6 +116,17 @@ public class AiGateway : IAiGateway
     public async Task<AiResponse> ExecuteAsync(AiRequest request, CancellationToken cancellationToken = default)
     {
         var sw = Stopwatch.StartNew();
+
+        // Load dynamic configuration
+        var settings = new AiGatewaySettings();
+        _configuration.GetSection(AiGatewaySettings.SectionName).Bind(settings);
+
+        // Offline / Demo Fallback Mode
+        if (settings.OfflineMode)
+        {
+            _logger.LogWarning("AI Gateway is in OfflineMode/DemoMode. Returning offline fallback mock.");
+            return CreateMockResponse(GetFallbackResponse(request.ExpectedSchemaId), "OfflineMock");
+        }
         
         // 1. Compliance Check
         bool canProcessInCloud = await _complianceService.CanProcessInCloudAsync(
@@ -213,10 +224,6 @@ public class AiGateway : IAiGateway
             }
         }
 
-        // Load dynamic configuration
-        var settings = new AiGatewaySettings();
-        _configuration.GetSection(AiGatewaySettings.SectionName).Bind(settings);
-
         if (request.Tools != null && request.Tools.Count > 0 && !request.SystemPrompt.Contains("--- BẠN CÓ QUYỀN TRUY CẬP VÀO CÁC CÔNG CỤ SAU ---"))
         {
             request.SystemPrompt = InjectToolsPrompt(request.SystemPrompt, request.Tools);
@@ -231,7 +238,7 @@ public class AiGateway : IAiGateway
 
         while (attempt <= maxRetries)
         {
-            if (attempt > 0)
+            if (attempt > 0 && finalResponse != null && validationError != null)
             {
                 // Instruct provider to fix schema issues
                 request.Prompt = currentPrompt + $"\n\n[Warning]: Your previous response was invalid. It failed validation with error: '{validationError}'. Please return a valid JSON format complying with the expected schema: '{request.ExpectedSchemaId}'. Do not include markdown blocks or any conversational text around the JSON.";
@@ -247,7 +254,24 @@ public class AiGateway : IAiGateway
                     _ => settings.Ollama
                 };
 
-                finalResponse = await provider.CompleteAsync(request, providerConfig, cancellationToken);
+                // Apply timeout of 30 seconds to the provider call
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                cts.CancelAfter(TimeSpan.FromSeconds(30));
+
+                try
+                {
+                    finalResponse = await provider.CompleteAsync(request, providerConfig, cts.Token);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    throw new TimeoutException($"AI provider '{settings.Provider}' call timed out after 30 seconds.");
+                }
+
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.LogInformation("AI Provider '{ProviderName}' successfully returned response. Tokens: In={InputTokens}, Out={OutputTokens}, Latency={LatencyMs}ms",
+                        finalResponse.ProviderName, finalResponse.InputTokens, finalResponse.OutputTokens, sw.ElapsedMilliseconds);
+                }
 
                 // Check for tool call
                 if (request.Tools != null && request.Tools.Count > 0 && TryParseToolCall(finalResponse.Content, out var toolName, out var rawParams))
@@ -367,12 +391,12 @@ public class AiGateway : IAiGateway
                                 var boundArgs = BindArguments(tool, rawParams);
                                 
                                 // Direct safety check for project/member data leakage in read tools
-                                if (boundArgs.TryGetValue("projectId", out var pidVal) && pidVal is Guid pid && _parameterGuard != null)
+                                if (_parameterGuard != null)
                                 {
                                     var pgResult = await _parameterGuard.GuardAsync(toolName, rawParams, cancellationToken);
                                     if (!pgResult.Success)
                                     {
-                                        throw new UnauthorizedAccessException($"Access denied to project {pid}");
+                                        throw new UnauthorizedAccessException($"Access denied: {pgResult.UserMessage}");
                                     }
                                 }
 
@@ -492,26 +516,26 @@ public class AiGateway : IAiGateway
     {
         if (schemaId.Contains("MeetingActionItem", StringComparison.OrdinalIgnoreCase))
         {
-            return "[\"Fix login issue\", \"Update documentation\"]";
+            return "[\"Fix login issue (Fallback Warning: AI Offline)\", \"Update documentation (Fallback Warning: AI Offline)\"]";
         }
 
         if (schemaId.Contains("TextAnswer", StringComparison.OrdinalIgnoreCase))
         {
             return """
                 {
-                  "reply": "AI provider dang tam thoi khong phan hoi. Day la cau tra loi fallback de UI khong bi vo; hay thu lai sau hoac kiem tra cau hinh provider.",
+                  "reply": "AI provider đang tạm thời không phản hồi hoặc hệ thống đang ở chế độ ngoại tuyến. Đây là câu trả lời dự phòng (Fallback) để giao diện không bị lỗi. Vui lòng kiểm tra lại cấu hình AI hoặc thử lại sau.",
                   "metrics": [],
                   "tables": [],
                   "charts": [],
                   "actions": [
-                    { "type": "suggested_action", "label": "Thu lai cau hoi sau" }
+                    { "type": "suggested_action", "label": "Thử lại câu hỏi sau" }
                   ],
                   "files": []
                 }
                 """;
         }
 
-        return "{\"result\": \"Mock response due to AI failure.\"}";
+        return "{\"result\": \"Mock response due to AI failure.\", \"warning\": \"Chế độ dự phòng (AI Fallback Mock)\"}";
     }
 
     private static string InjectToolsPrompt(string systemPrompt, IList<AITool> tools)

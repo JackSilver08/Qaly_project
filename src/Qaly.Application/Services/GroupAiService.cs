@@ -87,6 +87,7 @@ public class GroupAiService : IGroupAiService
                 JobType = "ActionItemsExtraction",
                 Prompt = BuildActionItemsPrompt(context.Text),
                 UserId = _currentUserService.UserId,
+                ExpectedSchemaId = "ActionItem",
                 UseCache = true
             }, ct);
             var text = response.Content;
@@ -438,6 +439,7 @@ Source:
                 JobType = "DiscussionSummary",
                 Prompt = BuildSummaryPrompt(contextText),
                 UserId = _currentUserService.UserId,
+                ExpectedSchemaId = "DiscussionSummary",
                 UseCache = true
             }, ct);
             var text = response.Content;

@@ -16,6 +16,8 @@ public class AiGeneratedDraftConfiguration : IEntityTypeConfiguration<AiGenerate
         builder.Property(draft => draft.Status).HasMaxLength(40).IsRequired();
         builder.Property(draft => draft.ConfirmAction).HasMaxLength(80);
         builder.Property(draft => draft.ConfirmationNote).HasMaxLength(1000);
+        builder.Property(draft => draft.SchemaId).HasMaxLength(100);
+        builder.Property(draft => draft.Confidence).HasColumnType("decimal(5,4)");
         builder.Property(draft => draft.CreatedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
 
         builder.HasOne(draft => draft.AiJob)

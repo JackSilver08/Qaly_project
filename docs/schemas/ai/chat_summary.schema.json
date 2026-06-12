@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "chat_summary.v3.2",
+  "type": "object",
+  "required": [
+    "room_id",
+    "message_range",
+    "summary",
+    "key_points",
+    "open_questions",
+    "action_candidates"
+  ],
+  "properties": {
+    "room_id": {
+      "type": [
+        "integer",
+        "string"
+      ]
+    },
+    "message_range": {
+      "type": "object",
+      "required": [
+        "from",
+        "to"
+      ],
+      "properties": {
+        "from": {
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "to": {
+          "type": [
+            "integer",
+            "string"
+          ]
+        }
+      }
+    },
+    "summary": {
+      "type": "string"
+    },
+    "key_points": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "action_candidates": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

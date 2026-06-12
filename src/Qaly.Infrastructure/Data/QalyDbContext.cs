@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Qaly.Domain.Entities;
 
@@ -77,7 +78,68 @@ public class QalyDbContext : DbContext
             }
         }
 
+        foreach (var entry in ChangeTracker.Entries<AiGeneratedDraft>())
+        {
+            if (entry.State == EntityState.Added || entry.State == EntityState.Modified)
+            {
+                PopulateDraftMetadata(entry.Entity);
+            }
+        }
+
         return base.SaveChangesAsync(cancellationToken);
+    }
+
+    private static void PopulateDraftMetadata(AiGeneratedDraft draft)
+    {
+        if (string.IsNullOrWhiteSpace(draft.PayloadJson)) return;
+        try
+        {
+            using var doc = JsonDocument.Parse(draft.PayloadJson);
+            var root = doc.RootElement;
+            
+            // 1. Try to parse schema_id or version
+            if (string.IsNullOrEmpty(draft.SchemaId))
+            {
+                if (root.TryGetProperty("schema_id", out var schemaProp) && schemaProp.ValueKind == JsonValueKind.String)
+                {
+                    draft.SchemaId = schemaProp.GetString();
+                }
+                else if (root.TryGetProperty("SchemaVersion", out var verProp) && verProp.ValueKind == JsonValueKind.String)
+                {
+                    draft.SchemaId = verProp.GetString();
+                }
+                else if (root.TryGetProperty("$id", out var idProp) && idProp.ValueKind == JsonValueKind.String)
+                {
+                    draft.SchemaId = idProp.GetString();
+                }
+            }
+
+            // 2. Try to parse confidence
+            if (!draft.Confidence.HasValue)
+            {
+                if (root.TryGetProperty("confidence", out var confProp))
+                {
+                    if (confProp.ValueKind == JsonValueKind.Number)
+                    {
+                        draft.Confidence = confProp.GetDecimal();
+                    }
+                    else if (confProp.ValueKind == JsonValueKind.String && decimal.TryParse(confProp.GetString(), out var parsedConf))
+                    {
+                        draft.Confidence = parsedConf;
+                    }
+                }
+            }
+
+            // 3. Status logic: Confidence under 0.6 must mark draft as needs_manual_review
+            if (draft.Confidence.HasValue && draft.Confidence.Value < 0.6m)
+            {
+                draft.Status = "needs_manual_review";
+            }
+        }
+        catch
+        {
+            // Ignore parsing errors
+        }
     }
 
     private static void ApplySoftDeleteFilters(ModelBuilder modelBuilder)

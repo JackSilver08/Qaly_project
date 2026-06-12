@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "progress_summary.v3.2",
+  "type": "object",
+  "required": [
+    "project_id",
+    "period",
+    "summary",
+    "metrics",
+    "risks",
+    "next_actions"
+  ],
+  "properties": {
+    "project_id": {
+      "type": [
+        "integer",
+        "string"
+      ]
+    },
+    "period": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "metrics": {
+      "type": "object",
+      "required": [
+        "done",
+        "in_progress",
+        "todo",
+        "overdue"
+      ],
+      "properties": {
+        "done": {
+          "type": "integer"
+        },
+        "in_progress": {
+          "type": "integer"
+        },
+        "todo": {
+          "type": "integer"
+        },
+        "overdue": {
+          "type": "integer"
+        }
+      }
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "next_actions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

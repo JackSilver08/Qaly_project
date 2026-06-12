@@ -54,6 +54,65 @@ public class AiGatewayRouterTests : IDisposable
     }
 
     [Fact]
+    public void AiOutputValidator_WithValidChatSummary_ReturnsTrue()
+    {
+        var validator = new AiOutputValidator();
+        var json = """
+            {
+              "room_id": "room-123",
+              "message_range": { "from": 1, "to": 10 },
+              "summary": "Tóm tắt thảo luận",
+              "key_points": ["Point 1"],
+              "open_questions": [],
+              "action_candidates": []
+            }
+            """;
+
+        var result = validator.Validate(json, "chat_summary.v3.2", out var error);
+        result.Should().BeTrue();
+        error.Should().BeNull();
+    }
+
+    [Fact]
+    public void AiOutputValidator_WithValidTaskDraft_ReturnsTrue()
+    {
+        var validator = new AiOutputValidator();
+        var json = """
+            {
+              "title": "Task Title",
+              "description": "Task description details",
+              "priority": "medium",
+              "deadline": null,
+              "assignee_suggestion": "user-1",
+              "source_refs": [
+                { "source_type": "chat", "source_id": "msg-123" }
+              ],
+              "confidence": 0.95
+            }
+            """;
+
+        var result = validator.Validate(json, "task_draft.v3.2", out var error);
+        result.Should().BeTrue();
+        error.Should().BeNull();
+    }
+
+    [Fact]
+    public void AiOutputValidator_WithInvalidTaskBreakdown_ReturnsFalse()
+    {
+        var validator = new AiOutputValidator();
+        var json = """
+            {
+              "parent_task": "Parent",
+              "subtasks": []
+            }
+            """;
+
+        var result = validator.Validate(json, "task_breakdown.v3.2", out var error);
+        result.Should().BeFalse();
+        error.Should().Contain("subtasks");
+    }
+
+    [Fact]
     public void AiOutputValidator_WithMissingReplyTextAnswer_ReturnsFalse()
     {
         var validator = new AiOutputValidator();
@@ -153,7 +212,7 @@ public class AiGatewayRouterTests : IDisposable
         // Should fallback to Mock response
         response.IsMock.Should().BeTrue();
         response.ProviderName.Should().Be("FallbackMock");
-        response.Content.Should().Contain("dang tam thoi khong phan hoi");
+        response.Content.Should().Contain("tạm thời không phản hồi");
         
         // Verify CompleteAsync was called 3 times (1 initial + 2 retries)
         mockProvider.Verify(p => p.CompleteAsync(It.IsAny<AiRequest>(), It.IsAny<AiProviderSetting>(), It.IsAny<CancellationToken>()), Times.Exactly(3));

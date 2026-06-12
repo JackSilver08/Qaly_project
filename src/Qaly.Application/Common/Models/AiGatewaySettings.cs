@@ -5,6 +5,7 @@ public class AiGatewaySettings
     public const string SectionName = "AiSettings";
 
     public string Provider { get; set; } = "Ollama";
+    public bool OfflineMode { get; set; }
     public AiProviderSetting Ollama { get; set; } = new();
     public AiProviderSetting OpenAI { get; set; } = new();
     public AiProviderSetting Gemini { get; set; } = new();

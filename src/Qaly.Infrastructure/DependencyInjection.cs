@@ -84,7 +84,12 @@ public static class DependencyInjection
             sp.GetRequiredService<AiProviderFactory>(),
             sp.GetRequiredService<AiOutputValidator>(),
             sp.GetService<IVectorStorageService>(),
-            sp.GetService<IEmbeddingGenerator<string, Embedding<float>>>()
+            sp.GetService<IEmbeddingGenerator<string, Embedding<float>>>(),
+            sp.GetService<AiTools>(),
+            sp.GetService<ToolParameterGuard>(),
+            sp.GetService<IRepository<Qaly.Domain.Entities.AiJob>>(),
+            sp.GetService<IRepository<Qaly.Domain.Entities.AiGeneratedDraft>>(),
+            sp.GetService<IUnitOfWork>()
         ));
         
         services.AddHttpClient("WebhookClient");
