@@ -7,12 +7,14 @@ import {
   PhoneOff,
   Video,
   VideoOff,
+  Sparkles,
 } from "lucide-vue-next";
 
 defineProps<{
   active: boolean;
   micMuted?: boolean;
   cameraMuted?: boolean;
+  speechActive?: boolean;
   light?: boolean;
 }>();
 const emit = defineEmits<{
@@ -21,6 +23,7 @@ const emit = defineEmits<{
   share: [];
   toggleMic: [];
   toggleCamera: [];
+  toggleSpeech: [];
 }>();
 
 function start() {
@@ -58,9 +61,20 @@ function end() {
       <Video v-else :size="20" />
     </button>
     <button
+      v-if="active"
+      class="meet-control meet-control--ai"
+      :class="{ 'meet-control--ai-active': speechActive }"
+      type="button"
+      :aria-label="speechActive ? 'Tắt trợ lý AI' : 'Bật trợ lý AI'"
+      :title="speechActive ? 'Tắt trợ lý AI' : 'Bật trợ lý AI'"
+      @click="$emit('toggleSpeech')"
+    >
+      <Sparkles :size="20" />
+    </button>
+    <button
       class="meet-control meet-control--share"
       type="button"
-      :aria-label="'Chia s\u1ebb m\u00e0n h\u00ecnh'"
+      :aria-label="'Chia sẻ màn hình'"
       @click="$emit('share')"
     >
       <MonitorUp :size="20" />
@@ -69,7 +83,7 @@ function end() {
       v-if="!active"
       class="meet-control meet-control--join"
       type="button"
-      :aria-label="'B\u1eaft \u0111\u1ea7u cu\u1ed9c h\u1ecdp'"
+      :aria-label="'Bắt đầu cuộc họp'"
       @click="start"
     >
       <Phone :size="21" />
@@ -78,7 +92,7 @@ function end() {
       v-else
       class="meet-control meet-control--leave"
       type="button"
-      :aria-label="'K\u1ebft th\u00fac cu\u1ed9c h\u1ecdp'"
+      :aria-label="'Kết thúc cuộc họp'"
       @click="end"
     >
       <PhoneOff :size="21" />
@@ -87,6 +101,25 @@ function end() {
 </template>
 
 <style scoped>
+.meet-control--ai-active {
+  background: linear-gradient(135deg, #6366f1, #a855f7) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.6);
+  animation: pulse-ai 2s infinite;
+}
+
+@keyframes pulse-ai {
+  0% {
+    box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(168, 85, 247, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(168, 85, 247, 0);
+  }
+}
+
 .meet-controls {
   display: inline-flex;
   align-items: center;

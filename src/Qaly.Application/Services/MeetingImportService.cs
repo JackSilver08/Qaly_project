@@ -24,6 +24,8 @@ public partial class MeetingImportService : IMeetingImportService
     private readonly IRepository<AiGeneratedDraft> _aiDraftRepo;
     private readonly IRepository<MeetingActionItemMapping> _mappingRepo;
     private readonly IRepository<TaskItem> _taskRepo;
+    private readonly IRepository<GroupMeetingSession> _meetingSessionRepo;
+    private readonly IAiGateway _aiGateway;
     private readonly ITaskService _taskService;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
@@ -38,6 +40,8 @@ public partial class MeetingImportService : IMeetingImportService
         IRepository<AiGeneratedDraft> aiDraftRepo,
         IRepository<MeetingActionItemMapping> mappingRepo,
         IRepository<TaskItem> taskRepo,
+        IRepository<GroupMeetingSession> meetingSessionRepo,
+        IAiGateway aiGateway,
         ITaskService taskService,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
@@ -51,6 +55,8 @@ public partial class MeetingImportService : IMeetingImportService
         _aiDraftRepo = aiDraftRepo;
         _mappingRepo = mappingRepo;
         _taskRepo = taskRepo;
+        _meetingSessionRepo = meetingSessionRepo;
+        _aiGateway = aiGateway;
         _taskService = taskService;
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
@@ -815,4 +821,327 @@ public partial class MeetingImportService : IMeetingImportService
 
     [GeneratedRegex(@"[\p{L}\p{Nd}]+", RegexOptions.CultureInvariant)]
     private static partial Regex KeywordPattern();
+
+    public async Task<Result<AutoChecknoteResponseDto>> CreateAutoChecknoteAsync(
+        Guid meetingSessionId,
+        AutoChecknoteRequest request,
+        CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<AutoChecknoteResponseDto>();
+        }
+
+        // --- HARD-CAP Transcript length (Sprint 1) ---
+        if (request.TranscriptText != null && request.TranscriptText.Length > 80000)
+        {
+            return Result.Failure<AutoChecknoteResponseDto>("Độ dài transcript vượt quá giới hạn cho phép (80,000 ký tự). Vui lòng giới hạn hoặc tóm tắt thủ công.", 400);
+        }
+
+        var project = await _projectRepo.GetQueryable()
+            .FirstOrDefaultAsync(p => p.Id == request.ProjectId, ct);
+        if (project == null)
+        {
+            return Result.NotFound<AutoChecknoteResponseDto>("Không tìm thấy dự án.");
+        }
+
+        if (!await CanAccessProjectAsync(project, currentUserId.Value, ct))
+        {
+            return Result.Forbidden<AutoChecknoteResponseDto>();
+        }
+
+        // --- IDEMPOTENCY check (Sprint 2) ---
+        var sourceHash = ComputeSha256Hash(request.ProjectId, meetingSessionId, request.TranscriptText ?? string.Empty);
+        var existing = await _meetingImportRepo.GetQueryable()
+            .Include(item => item.AiDraft)
+            .FirstOrDefaultAsync(item =>
+                item.ProjectId == request.ProjectId &&
+                item.SourceProvider == "qaly-meet" &&
+                item.SourceHash == sourceHash,
+                ct);
+
+        if (existing != null)
+        {
+            var existingItemsResult = await GetMeetingActionItemsAsync(existing.Id, ct);
+            var actionItems = existingItemsResult.IsSuccess && existingItemsResult.Data != null
+                ? existingItemsResult.Data.Items
+                : Array.Empty<MeetingActionItemDto>();
+
+            return Result.Success(new AutoChecknoteResponseDto(
+                existing.Id,
+                existing.ProjectId,
+                existing.AiJobId ?? Guid.Empty,
+                existing.AiDraftId ?? Guid.Empty,
+                existing.Summary ?? string.Empty,
+                actionItems));
+        }
+
+        // 1. Call AI Gateway
+        var prompt = BuildAutoChecknotePrompt(request.TranscriptText ?? string.Empty);
+        var aiResponse = await _aiGateway.ExecuteAsync(new AiRequest
+        {
+            JobType = "AI-06_MEETING_EXTRACT",
+            Prompt = prompt,
+            UserId = currentUserId.Value,
+            ExpectedSchemaId = "AutoChecknote",
+            UseCache = true
+        }, ct);
+
+        // 2. Parse AI response
+        var (summary, actionItemsList) = ParseAutoChecknoteResponse(aiResponse.Content);
+
+        // 3. Build MeetingExtractionPayload for Draft
+        var normalizedParticipants = NormalizeParticipants(request.Participants);
+        var actionDrafts = actionItemsList.Select(x => new MeetingActionDraftDto(
+            x.Title,
+            x.Description,
+            NormalizePriority(x.Priority),
+            string.IsNullOrEmpty(x.DueDate) ? null : DateTimeOffset.Parse(x.DueDate, System.Globalization.CultureInfo.InvariantCulture),
+            x.Evidence,
+            x.SuggestedOwner
+        )).ToList();
+
+        var extraction = new MeetingExtractionPayload(
+            "qaly-meet.v1",
+            sourceHash,
+            new MeetingSummaryDto(
+                request.Title.Trim(),
+                DateTimeOffset.UtcNow,
+                summary,
+                normalizedParticipants),
+            actionDrafts,
+            ExtractKeywords($"{request.Title} {summary} {request.TranscriptText}"),
+            actionDrafts.Count == 0 ? ["No action item was detected."] : new List<string>());
+
+        // 4. Create AiJob
+        var aiJob = new AiJob
+        {
+            JobType = "AI-06_MEETING_EXTRACT",
+            ProjectId = project.Id,
+            SourceType = "qaly_meet",
+            SourceId = meetingSessionId.ToString(),
+            ProviderHint = "auto",
+            Sensitive = true,
+            Status = "DraftReady",
+            EstimatedCostUsd = EstimateCost(request.TranscriptText ?? string.Empty),
+            CacheKey = sourceHash,
+            RequestedById = currentUserId.Value
+        };
+        await _aiJobRepo.AddAsync(aiJob, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        // 5. Create AiGeneratedDraft
+        var draft = new AiGeneratedDraft
+        {
+            AiJobId = aiJob.Id,
+            ProjectId = project.Id,
+            DraftType = "MeetingActionItems",
+            PayloadJson = JsonSerializer.Serialize(extraction, JsonOptions),
+            Status = "Pending"
+        };
+        await _aiDraftRepo.AddAsync(draft, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        // 6. Create MeetingImport
+        var meetingImport = new MeetingImport
+        {
+            ProjectId = project.Id,
+            ImportedById = currentUserId.Value,
+            SourceProvider = "qaly-meet",
+            SourceId = meetingSessionId.ToString(),
+            SourceHash = sourceHash,
+            Title = request.Title.Trim(),
+            MeetingStartedAt = DateTimeOffset.UtcNow,
+            Summary = summary,
+            TranscriptText = request.TranscriptText ?? string.Empty,
+            ParticipantsJson = JsonSerializer.Serialize(normalizedParticipants, JsonOptions),
+            AiJobId = aiJob.Id,
+            AiDraftId = draft.Id
+        };
+        await _meetingImportRepo.AddAsync(meetingImport, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        // 7. Update Meeting Session if exists
+        var meetingSession = await _meetingSessionRepo.GetByIdAsync(meetingSessionId, ct);
+        if (meetingSession != null)
+        {
+            meetingSession.Summary = summary;
+            meetingSession.TranscriptSourceId = meetingImport.Id.ToString();
+            meetingSession.Status = "Ended";
+            meetingSession.EndedAt = DateTimeOffset.UtcNow;
+            await _meetingSessionRepo.UpdateAsync(meetingSession, ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+
+        await _auditLogService.LogAsync(
+            "AutoChecknoteImport",
+            nameof(MeetingImport),
+            meetingImport.Id.ToString(),
+            new { meetingImport.ProjectId, meetingImport.SourceHash, meetingImport.AiJobId },
+            ct);
+
+        // Get MeetingActionItemDto list
+        var actionItemsResult = await GetMeetingActionItemsAsync(meetingImport.Id, ct);
+        var finalActionItems = actionItemsResult.IsSuccess && actionItemsResult.Data != null
+            ? actionItemsResult.Data.Items
+            : Array.Empty<MeetingActionItemDto>();
+
+        return Result.Created(new AutoChecknoteResponseDto(
+            meetingImport.Id,
+            project.Id,
+            aiJob.Id,
+            draft.Id,
+            summary,
+            finalActionItems));
+    }
+
+    private static string ComputeSha256Hash(Guid projectId, Guid meetingSessionId, string transcript)
+    {
+        var raw = string.Join('\n',
+            projectId.ToString("D"),
+            meetingSessionId.ToString("D"),
+            transcript ?? string.Empty);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw))).ToLowerInvariant();
+    }
+
+    private static string BuildAutoChecknotePrompt(string transcriptText)
+        => $$"""
+You are an expert AI meeting assistant. Analyze the following meeting transcript in Vietnamese and:
+1. Summarize the meeting in Vietnamese (brief summary under 200 words).
+2. Extract actionable work items (Action Items) discussed in the meeting.
+
+Return only valid JSON with this shape:
+{
+  "summary": "Tóm tắt cuộc họp ngắn gọn...",
+  "actionItems": [
+    {
+      "title": "Tiêu đề công việc ngắn gọn và rõ ràng",
+      "description": "Chi tiết công việc (nếu có)",
+      "suggestedOwner": "Tên người được giao việc (hoặc null)",
+      "dueDate": "ISO-8601 date (yyyy-MM-dd) (hoặc null)",
+      "priority": "High hoặc Medium hoặc Low (mặc định Medium)",
+      "evidence": "Trích dẫn câu nói trong transcript làm bằng chứng cho việc giao việc này"
+    }
+  ]
+}
+
+Rules:
+- Title, description and summary MUST be in Vietnamese.
+- Keep title under 120 characters.
+- Use null when owner or due date is not mentioned or supported.
+- Return an empty actionItems array when there are no action items.
+- Ensure the output is strictly a valid JSON object. Do not include markdown blocks or conversational text.
+
+Transcript:
+{{transcriptText}}
+""";
+
+    private static string ExtractJson(string value)
+    {
+        var trimmed = value.Trim();
+        if (trimmed.StartsWith('{') || trimmed.StartsWith('['))
+        {
+            return trimmed;
+        }
+
+        var objectStart = trimmed.IndexOf('{', StringComparison.Ordinal);
+        var objectEnd = trimmed.LastIndexOf('}');
+        if (objectStart >= 0 && objectEnd > objectStart)
+        {
+            return trimmed[objectStart..(objectEnd + 1)];
+        }
+
+        var arrayStart = trimmed.IndexOf('[', StringComparison.Ordinal);
+        var arrayEnd = trimmed.LastIndexOf(']');
+        if (arrayStart >= 0 && arrayEnd > arrayStart)
+        {
+            return trimmed[arrayStart..(arrayEnd + 1)];
+        }
+
+        return trimmed;
+    }
+
+    private static (string Summary, List<AutoChecknoteActionItem> ActionItems) ParseAutoChecknoteResponse(string content)
+    {
+        var json = ExtractJson(content);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return ("Không có tóm tắt cuộc họp.", new List<AutoChecknoteActionItem>());
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+
+            var summary = root.TryGetProperty("summary", out var summaryProp) && summaryProp.ValueKind == JsonValueKind.String
+                ? summaryProp.GetString() ?? string.Empty
+                : string.Empty;
+
+            var actionItems = new List<AutoChecknoteActionItem>();
+            if (root.TryGetProperty("actionItems", out var itemsProp) && itemsProp.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in itemsProp.EnumerateArray())
+                {
+                    var title = item.TryGetProperty("title", out var titleProp) && titleProp.ValueKind == JsonValueKind.String
+                        ? titleProp.GetString() ?? string.Empty
+                        : string.Empty;
+
+                    if (string.IsNullOrWhiteSpace(title))
+                    {
+                        continue;
+                    }
+
+                    var description = item.TryGetProperty("description", out var descProp) && descProp.ValueKind == JsonValueKind.String
+                        ? descProp.GetString()
+                        : null;
+
+                    var owner = item.TryGetProperty("suggestedOwner", out var ownerProp) && ownerProp.ValueKind == JsonValueKind.String
+                        ? ownerProp.GetString()
+                        : null;
+
+                    string? dueDate = null;
+                    if (item.TryGetProperty("dueDate", out var dueProp) && dueProp.ValueKind == JsonValueKind.String)
+                    {
+                        dueDate = dueProp.GetString();
+                    }
+
+                    var priority = item.TryGetProperty("priority", out var priorityProp) && priorityProp.ValueKind == JsonValueKind.String
+                        ? priorityProp.GetString()
+                        : "Medium";
+
+                    var evidence = item.TryGetProperty("evidence", out var evProp) && evProp.ValueKind == JsonValueKind.String
+                        ? evProp.GetString()
+                        : null;
+
+                    actionItems.Add(new AutoChecknoteActionItem
+                    {
+                        Title = title,
+                        Description = description,
+                        SuggestedOwner = owner,
+                        DueDate = dueDate,
+                        Priority = priority,
+                        Evidence = evidence
+                    });
+                }
+            }
+
+            return (summary, actionItems);
+        }
+        catch (JsonException)
+        {
+            return ("Không thể phân tích tóm tắt cuộc họp.", new List<AutoChecknoteActionItem>());
+        }
+    }
+
+    private class AutoChecknoteActionItem
+    {
+        public string Title { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public string? SuggestedOwner { get; set; }
+        public string? DueDate { get; set; }
+        public string? Priority { get; set; }
+        public string? Evidence { get; set; }
+    }
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   CalendarDays,
   Copy,
@@ -36,6 +36,9 @@ import MeetingControls from "../components/meeting/MeetingControls.vue";
 import { apiResult } from "../utils/api-client";
 import { showError, showSuccess } from "../composables/use-toast";
 import { useRoute, useRouter } from "vue-router";
+import { useSpeechRecognition } from "../composables/use-speech-recognition";
+import { useMeetingRecovery } from "../composables/use-meeting-recovery";
+import { useDashboardContext } from "../composables/dashboard-context";
 
 const route = useRoute();
 const router = useRouter();
@@ -77,6 +80,200 @@ let localVideoTrack: LocalVideoTrack | null = null;
 const remoteVideoEls = new Map<string, HTMLVideoElement>();
 const remoteAudioEls = new Map<string, HTMLAudioElement>();
 
+// --- AI Auto Checknote States ---
+const activeSidebarTab = ref<"participants" | "transcript" | "checknote">("participants");
+const transcriptList = ref<{ senderName: string; text: string; timestamp: number }[]>([]);
+const editingTranscriptIdx = ref<number | null>(null);
+const editingTranscriptText = ref("");
+const transcriptEditInputRef = ref<HTMLInputElement | null>(null);
+const selectedProjectId = ref("");
+const isGeneratingChecknote = ref(false);
+const checknoteResult = ref<any>(null);
+const projectMembers = ref<any[]>([]);
+const isCreatingTask = ref<number | null>(null);
+
+const { saveBuffer, getBuffer, clearBuffer } = useMeetingRecovery();
+const { currentUser, dashboard } = useDashboardContext();
+
+const currentUserName = computed(() => {
+  return currentUser.value?.fullName || currentUser.value?.email || "Thành viên";
+});
+
+const projects = computed(() => {
+  return dashboard.value?.projects || [];
+});
+
+const speechRec = useSpeechRecognition((text, isFinal) => {
+  if (isFinal) {
+    const now = Date.now();
+    if (hubConnection && hubConnection.state === HubConnectionState.Connected && meetingId.value) {
+      hubConnection.invoke("SendMeetingSignal", groupId, meetingId.value, {
+        type: "speech-transcript",
+        senderName: currentUserName.value,
+        text: text,
+        clientTimestamp: now,
+      }).catch((err) => console.warn("Failed to send speech transcript:", err));
+    }
+    appendLocalTranscript(currentUserName.value, text, now);
+  } else {
+    liveCaptionText.value = text;
+    clearTimeout(liveCaptionTimeoutId);
+    liveCaptionTimeoutId = window.setTimeout(() => {
+      liveCaptionText.value = "";
+    }, 4000);
+  }
+});
+
+const isSpeechListening = computed(() => speechRec.isListening.value);
+const liveCaptionText = ref("");
+let liveCaptionTimeoutId: number | undefined;
+
+function toggleSpeech() {
+  if (speechRec.isListening.value) {
+    speechRec.stop();
+  } else {
+    speechRec.start();
+  }
+}
+
+function appendLocalTranscript(senderName: string, text: string, timestamp: number) {
+  transcriptList.value.push({ senderName, text, timestamp });
+  transcriptList.value.sort((a, b) => a.timestamp - b.timestamp);
+  if (meetingId.value) {
+    saveBuffer(meetingId.value, transcriptList.value);
+  }
+}
+
+function editTranscriptMessage(idx: number) {
+  editingTranscriptIdx.value = idx;
+  editingTranscriptText.value = transcriptList.value[idx].text;
+  nextTick(() => {
+    transcriptEditInputRef.value?.focus();
+  });
+}
+
+function saveTranscriptMessage(idx: number) {
+  if (editingTranscriptIdx.value !== idx) return;
+  const val = editingTranscriptText.value.trim();
+  if (val) {
+    transcriptList.value[idx].text = val;
+    if (meetingId.value) {
+      saveBuffer(meetingId.value, transcriptList.value);
+    }
+  }
+  editingTranscriptIdx.value = null;
+  editingTranscriptText.value = "";
+}
+
+function formatDateForInput(dateStr: string | null) {
+  if (!dateStr) return "";
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return "";
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+async function generateChecknote() {
+  if (!selectedProjectId.value || transcriptList.value.length === 0 || !meetingId.value) return;
+
+  isGeneratingChecknote.value = true;
+  try {
+    const compiledTranscriptText = transcriptList.value
+      .map((log) => `[${formatTime(log.timestamp)}] ${log.senderName}: ${log.text}`)
+      .join("\n");
+
+    const participantsList = remoteTiles.value.map((tile) => tile.name);
+    participantsList.push(currentUserName.value);
+
+    const result = await apiResult<any>(`/api/meetings/${meetingId.value}/auto-checknote`, {
+      method: "POST",
+      body: JSON.stringify({
+        projectId: selectedProjectId.value,
+        title: `Biên bản họp - ${new Date().toLocaleDateString("vi-VN")}`,
+        transcriptText: compiledTranscriptText,
+        participants: participantsList,
+      }),
+    });
+
+    if (result && result.actionItems) {
+      checknoteResult.value = {
+        meetingImportId: result.meetingImportId,
+        summary: result.summary,
+        actionItems: result.actionItems.map((item: any) => ({
+          ...item,
+          dueDateFormatted: formatDateForInput(item.dueDate),
+          assigneeId: "",
+        })),
+      };
+      showSuccess("Đã tạo biên bản AI thành công.");
+    } else {
+      showError("AI không trả về kết quả hợp lệ.");
+    }
+  } catch (e: any) {
+    console.error(e);
+    showError(e?.message || "Không thể phân tích cuộc họp qua AI.");
+  } finally {
+    isGeneratingChecknote.value = false;
+  }
+}
+
+async function createTaskFromCard(idx: number) {
+  if (!checknoteResult.value || !checknoteResult.value.actionItems[idx]) return;
+
+  const card = checknoteResult.value.actionItems[idx];
+  if (!card.title.trim()) {
+    showError("Tiêu đề công việc không được để trống.");
+    return;
+  }
+
+  isCreatingTask.value = idx;
+  try {
+    const importId = checknoteResult.value.meetingImportId;
+    const body = {
+      assigneeId: card.assigneeId || null,
+      title: card.title.trim(),
+      description: card.description || "",
+      priority: card.priority || "Medium",
+      dueDate: card.dueDateFormatted ? new Date(card.dueDateFormatted).toISOString() : null,
+      labelIds: [],
+    };
+
+    const result = await apiResult<any>(`/api/meetings/${importId}/action-items/${idx}/create-task`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+
+    if (result) {
+      card.mappingStatus = "Linked";
+      showSuccess("Đã tạo Task thành công.");
+    }
+  } catch (e: any) {
+    console.error(e);
+    showError(e?.message || "Không thể tạo Task từ Action Item.");
+  } finally {
+    isCreatingTask.value = null;
+  }
+}
+
+function resetChecknote() {
+  checknoteResult.value = null;
+}
+
+watch(selectedProjectId, async (newVal) => {
+  if (newVal) {
+    try {
+      const result = await apiResult<any[]>(`/api/projects/${newVal}/members`);
+      projectMembers.value = result || [];
+    } catch {
+      projectMembers.value = [];
+    }
+  } else {
+    projectMembers.value = [];
+  }
+});
+
 const meetingShortCode = computed(() =>
   groupId ? groupId.slice(0, 8).toUpperCase() : "QALY-MEET",
 );
@@ -103,6 +300,12 @@ const meetingConnectionLabel = computed(() => {
 onMounted(async () => {
   if (meetingId.value) {
     await joinExistingMeeting(meetingId.value);
+    // Load recovery transcript from IndexedDB
+    const recovered = await getBuffer(meetingId.value);
+    if (recovered && recovered.length > 0) {
+      transcriptList.value = recovered;
+      showSuccess(`Đã khôi phục ${recovered.length} đoạn hội thoại từ bộ nhớ đệm.`);
+    }
   }
 });
 
@@ -173,6 +376,13 @@ async function connectRealtime() {
       });
     } else {
       existing.lastSeen = new Date().toISOString();
+    }
+  });
+
+  hubConnection.on("meetingPeerSignal", (payload: any) => {
+    const signal = payload?.payload;
+    if (signal?.type === "speech-transcript") {
+      appendLocalTranscript(signal.senderName, signal.text, signal.clientTimestamp || Date.now());
     }
   });
 
@@ -251,6 +461,10 @@ async function leaveRealtimeGroups() {
 }
 
 async function endMeeting() {
+  speechRec.stop();
+  if (meetingId.value) {
+    clearBuffer(meetingId.value);
+  }
   const endingMeetingId = meetingId.value;
   if (endingMeetingId) {
     await apiResult(`/api/groups/${groupId}/meetings/${endingMeetingId}/end`, {
@@ -356,6 +570,7 @@ function formatTime(value: string) {
 }
 
 onBeforeUnmount(async () => {
+  speechRec.stop();
   if (hubConnection) {
     try {
       if (hubConnection.state === HubConnectionState.Connected) {
@@ -784,74 +999,280 @@ function disconnectLiveKit() {
             </button>
           </div>
 
+          <!-- Live Captions Overlay -->
+          <div v-if="liveCaptionText" class="live-captions-overlay">
+            <div class="live-caption-inner">{{ liveCaptionText }}</div>
+          </div>
+
           <div class="meeting-control-dock">
             <MeetingControls
               :active="active"
               :mic-muted="micMuted"
               :camera-muted="cameraMuted"
+              :speech-active="isSpeechListening"
               :light="isLightTheme"
               @start="startMeeting"
               @end="endMeeting"
               @share="openScreenShare"
               @toggle-mic="toggleMic"
               @toggle-camera="toggleCamera"
+              @toggle-speech="toggleSpeech"
             />
           </div>
         </main>
 
         <aside class="meeting-side">
-          <article class="meeting-info-card">
-            <div class="meeting-info-card__icon">
-              <ShieldCheck :size="20" />
-            </div>
-            <div>
-              <span>Bảo mật cuộc họp</span>
-              <strong>{{ participantCount }} người trong phòng</strong>
-              <p>Room id: {{ groupId }}</p>
-            </div>
-          </article>
+          <!-- Tab switch header -->
+          <div class="sidebar-tabs">
+            <button
+              class="sidebar-tab"
+              :class="{ 'sidebar-tab--active': activeSidebarTab === 'participants' }"
+              @click="activeSidebarTab = 'participants'"
+            >
+              <Users :size="16" /> Thành viên
+            </button>
+            <button
+              class="sidebar-tab"
+              :class="{ 'sidebar-tab--active': activeSidebarTab === 'transcript' }"
+              @click="activeSidebarTab = 'transcript'"
+            >
+              <MessageCircle :size="16" /> Nhật ký
+            </button>
+            <button
+              class="sidebar-tab"
+              :class="{ 'sidebar-tab--active': activeSidebarTab === 'checknote' }"
+              @click="activeSidebarTab = 'checknote'"
+            >
+              <Sparkles :size="16" /> Biên bản AI
+            </button>
+          </div>
 
-          <ScreenSharePanel ref="screenShareRef" />
-
-          <article class="participants-card">
-            <header>
+          <!-- Tab 1: Participants (Original content) -->
+          <div v-if="activeSidebarTab === 'participants'" class="tab-pane">
+            <article class="meeting-info-card">
+              <div class="meeting-info-card__icon">
+                <ShieldCheck :size="20" />
+              </div>
               <div>
-                <span>Thành viên</span>
-                <strong>Thành viên</strong>
+                <span>Bảo mật cuộc họp</span>
+                <strong>{{ participantCount }} người trong phòng</strong>
+                <p>Room id: {{ groupId }}</p>
               </div>
-              <div class="participant-count">
-                <Users :size="15" /> {{ participantCount }}
-              </div>
-            </header>
+            </article>
 
-            <div class="participant-list">
-              <div class="participant-row">
-                <div class="participant-avatar">QT</div>
+            <ScreenSharePanel ref="screenShareRef" />
+
+            <article class="participants-card">
+              <header>
                 <div>
-                  <strong>Bạn</strong>
-                  <span>Chủ phòng · trực tuyến</span>
+                  <span>Thành viên</span>
+                  <strong>Thành viên</strong>
+                </div>
+                <div class="participant-count">
+                  <Users :size="15" /> {{ participantCount }}
+                </div>
+              </header>
+
+              <div class="participant-list">
+                <div class="participant-row">
+                  <div class="participant-avatar">QT</div>
+                  <div>
+                    <strong>Bạn</strong>
+                    <span>Chủ phòng · trực tuyến</span>
+                  </div>
+                </div>
+                <div v-for="tile in remoteTiles" :key="tile.identity" class="participant-row">
+                  <div class="participant-avatar participant-avatar--soft">
+                    {{ tile.initials }}
+                  </div>
+                  <div>
+                    <strong>{{ tile.name }}</strong>
+                    <span>{{ tile.micOn ? "Mic bật" : "Mic tắt" }} · {{ tile.cameraOn ? "Camera bật" : "Camera tắt" }}</span>
+                  </div>
+                </div>
+                <div v-if="remoteTiles.length === 0" class="participants-empty">
+                  <Info :size="20" />
+                  <span>Chưa có thành viên khác tham gia.</span>
                 </div>
               </div>
-              <div v-for="tile in remoteTiles" :key="tile.identity" class="participant-row">
-                <div class="participant-avatar participant-avatar--soft">
-                  {{ tile.initials }}
+            </article>
+
+            <article class="meeting-tip">
+              <MonitorUp :size="18" />
+              <span>Dùng nút chia sẻ màn hình ở dock dưới để trình bày nhanh.</span>
+            </article>
+          </div>
+
+          <!-- Tab 2: Transcript (Nhật ký) -->
+          <div v-else-if="activeSidebarTab === 'transcript'" class="tab-pane transcript-pane">
+            <div class="transcript-log">
+              <div
+                v-for="(log, idx) in transcriptList"
+                :key="idx"
+                class="transcript-message"
+              >
+                <div class="transcript-message-header">
+                  <span class="transcript-sender">{{ log.senderName }}</span>
+                  <span class="transcript-time">{{ formatTime(log.timestamp) }}</span>
                 </div>
-                <div>
-                  <strong>{{ tile.name }}</strong>
-                  <span>{{ tile.micOn ? "Mic bật" : "Mic tắt" }} · {{ tile.cameraOn ? "Camera bật" : "Camera tắt" }}</span>
+                <div
+                  class="transcript-text"
+                  @dblclick="editTranscriptMessage(idx)"
+                  v-if="editingTranscriptIdx !== idx"
+                  title="Nhấp đúp chuột để chỉnh sửa"
+                >
+                  {{ log.text }}
                 </div>
+                <input
+                  v-else
+                  type="text"
+                  v-model="editingTranscriptText"
+                  class="transcript-edit-input"
+                  @blur="saveTranscriptMessage(idx)"
+                  @keyup.enter="saveTranscriptMessage(idx)"
+                  ref="transcriptEditInputRef"
+                />
               </div>
-              <div v-if="remoteTiles.length === 0" class="participants-empty">
+              <div v-if="transcriptList.length === 0" class="transcript-empty">
                 <Info :size="20" />
-                <span>Chưa có thành viên khác tham gia.</span>
+                <span>Chưa có nhật ký cuộc họp. Hãy nói gì đó hoặc bật micro/AI ghi chú.</span>
               </div>
             </div>
-          </article>
+          </div>
 
-          <article class="meeting-tip">
-            <MonitorUp :size="18" />
-            <span>Dùng nút chia sẻ màn hình ở dock dưới để trình bày nhanh.</span>
-          </article>
+          <!-- Tab 3: AI Checknote (Biên bản AI) -->
+          <div v-else-if="activeSidebarTab === 'checknote'" class="tab-pane checknote-pane">
+            <!-- Project Selector and Generate Button -->
+            <div v-if="!checknoteResult && !isGeneratingChecknote" class="checknote-setup">
+              <label class="checknote-label">Chọn dự án để đồng bộ Task:</label>
+              <select v-model="selectedProjectId" class="checknote-select">
+                <option value="">-- Chọn dự án --</option>
+                <option v-for="proj in projects" :key="proj.id" :value="proj.id">
+                  {{ proj.name }}
+                </option>
+              </select>
+
+              <button
+                class="checknote-btn-generate"
+                @click="generateChecknote"
+                :disabled="!selectedProjectId || transcriptList.length === 0"
+              >
+                <Sparkles :size="16" /> Tạo biên bản AI
+              </button>
+              <p class="checknote-hint" v-if="transcriptList.length === 0">
+                Nhật ký trống, không thể phân tích biên bản.
+              </p>
+            </div>
+
+            <!-- Loading indicator -->
+            <div v-else-if="isGeneratingChecknote" class="checknote-loading">
+              <div class="checknote-spinner"></div>
+              <span>Đang gọi AI phân tích cuộc họp...</span>
+            </div>
+
+            <!-- Results View -->
+            <div v-else class="checknote-results">
+              <div class="checknote-section">
+                <h3>Tóm tắt cuộc họp</h3>
+                <p class="checknote-summary">{{ checknoteResult.summary }}</p>
+              </div>
+
+              <div class="checknote-section">
+                <h3>Danh sách Action Items do AI đề xuất</h3>
+                <div class="action-items-list">
+                  <div
+                    v-for="(item, idx) in checknoteResult.actionItems"
+                    :key="idx"
+                    class="action-item-card"
+                    :class="{ 'action-item-card--linked': item.mappingStatus === 'Linked' }"
+                  >
+                    <!-- Editable title -->
+                    <div class="action-item-title-row">
+                      <input
+                        type="text"
+                        v-model="item.title"
+                        class="action-item-input-title"
+                        placeholder="Tiêu đề công việc"
+                        :disabled="item.mappingStatus === 'Linked'"
+                      />
+                    </div>
+                    <!-- Description -->
+                    <textarea
+                      v-model="item.description"
+                      class="action-item-textarea"
+                      placeholder="Mô tả chi tiết..."
+                      :disabled="item.mappingStatus === 'Linked'"
+                    ></textarea>
+
+                    <!-- Priority & Datepicker -->
+                    <div class="action-item-meta-row">
+                      <div class="meta-field">
+                        <span class="meta-lbl">Ưu tiên</span>
+                        <select
+                          v-model="item.priority"
+                          class="meta-val-select"
+                          :disabled="item.mappingStatus === 'Linked'"
+                        >
+                          <option value="Low">Thấp</option>
+                          <option value="Medium">Trung bình</option>
+                          <option value="High">Cao</option>
+                        </select>
+                      </div>
+
+                      <div class="meta-field">
+                        <span class="meta-lbl">Hạn chót</span>
+                        <input
+                          type="date"
+                          v-model="item.dueDateFormatted"
+                          class="meta-val-date"
+                          :disabled="item.mappingStatus === 'Linked'"
+                        />
+                      </div>
+                    </div>
+
+                    <!-- Member Selection -->
+                    <div class="action-item-assignee">
+                      <span class="meta-lbl">Gán cho</span>
+                      <select
+                        v-model="item.assigneeId"
+                        class="assignee-select"
+                        :disabled="item.mappingStatus === 'Linked'"
+                      >
+                        <option value="">-- Chọn thành viên --</option>
+                        <option
+                          v-for="m in projectMembers"
+                          :key="m.userId"
+                          :value="m.userId"
+                        >
+                          {{ m.fullName }}
+                        </option>
+                      </select>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="action-item-actions">
+                      <button
+                        v-if="item.mappingStatus !== 'Linked'"
+                        class="action-item-btn-create"
+                        @click="createTaskFromCard(idx)"
+                        :disabled="isCreatingTask === idx"
+                      >
+                        {{ isCreatingTask === idx ? "Đang tạo..." : "Tạo Task" }}
+                      </button>
+                      <span v-else class="action-item-linked-badge">
+                        ✓ Đã tạo Task trong dự án
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Reset/Clear button -->
+              <button class="checknote-btn-reset" @click="resetChecknote">
+                Phân tích lại / Nhập mới
+              </button>
+            </div>
+          </div>
         </aside>
       </div>
     </section>
@@ -1415,6 +1836,444 @@ function disconnectLiveKit() {
   color: #475569;
   font-size: 0.86rem;
   font-weight: 750;
+}
+
+
+/* --- Sidebar Tabs --- */
+.sidebar-tabs {
+  display: flex;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 12px;
+  padding: 4px;
+  margin-bottom: 16px;
+}
+
+.meeting-page--light .sidebar-tabs {
+  background: rgba(255, 255, 255, 0.6);
+  border-color: rgba(148, 163, 184, 0.22);
+}
+
+.sidebar-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 9px;
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.sidebar-tab--active {
+  background: #ffffff;
+  color: #2563eb;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.05);
+}
+
+.meeting-page:not(.meeting-page--light) .sidebar-tab--active {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+/* --- Transcript --- */
+.transcript-pane {
+  display: flex;
+  flex-direction: column;
+}
+
+.transcript-log {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.transcript-message {
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 0.86rem;
+  text-align: left;
+}
+
+.meeting-page:not(.meeting-page--light) .transcript-message {
+  background: rgba(15, 23, 42, 0.4);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.transcript-message-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.transcript-sender {
+  font-weight: 900;
+  color: #0f172a;
+}
+
+.meeting-page:not(.meeting-page--light) .transcript-sender {
+  color: #f8fafc;
+}
+
+.transcript-time {
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.transcript-text {
+  color: #334155;
+  white-space: pre-wrap;
+  cursor: pointer;
+}
+
+.meeting-page:not(.meeting-page--light) .transcript-text {
+  color: #cbd5e1;
+}
+
+.transcript-edit-input {
+  width: 100%;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+  outline: none;
+  font-size: 0.86rem;
+}
+
+.transcript-empty {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  min-height: 120px;
+  border: 1px dashed rgba(148, 163, 184, 0.48);
+  border-radius: 18px;
+  text-align: center;
+  color: #64748b;
+  padding: 16px;
+  font-size: 0.86rem;
+}
+
+/* --- Checknote --- */
+.checknote-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: left;
+}
+
+.checknote-label {
+  font-weight: 800;
+  font-size: 0.86rem;
+  color: #475569;
+}
+
+.meeting-page:not(.meeting-page--light) .checknote-label {
+  color: #94a3b8;
+}
+
+.checknote-select {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+  outline: none;
+}
+
+.meeting-page:not(.meeting-page--light) .checknote-select {
+  background: #1e293b;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #f8fafc;
+}
+
+.checknote-btn-generate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 0;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  color: #ffffff;
+  font-weight: 800;
+  cursor: pointer;
+  transition: opacity 150ms ease;
+  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.3);
+}
+
+.checknote-btn-generate:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.checknote-btn-generate:disabled {
+  background: #cbd5e1;
+  color: #94a3b8;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.checknote-hint {
+  font-size: 0.8rem;
+  color: #ef4444;
+  text-align: center;
+}
+
+.checknote-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 36px 0;
+  gap: 16px;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.checknote-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(37, 99, 235, 0.15);
+  border-top-color: #2563eb;
+  border-radius: 999px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.checknote-results {
+  text-align: left;
+}
+
+.checknote-section {
+  margin-bottom: 20px;
+}
+
+.checknote-section h3 {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 8px;
+}
+
+.meeting-page:not(.meeting-page--light) .checknote-section h3 {
+  color: #f8fafc;
+}
+
+.checknote-summary {
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: #334155;
+}
+
+.meeting-page:not(.meeting-page--light) .checknote-summary {
+  background: rgba(15, 23, 42, 0.35);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+}
+
+/* Action Items Card */
+.action-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.action-item-card {
+  background: #ffffff;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 16px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 150ms ease;
+}
+
+.meeting-page:not(.meeting-page--light) .action-item-card {
+  background: rgba(30, 41, 59, 0.45);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.action-item-card--linked {
+  border-color: #10b981 !important;
+  background: rgba(16, 185, 129, 0.04) !important;
+}
+
+.action-item-input-title {
+  width: 100%;
+  font-weight: 800;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  padding: 2px 0;
+  background: transparent;
+  outline: none;
+  font-size: 0.9rem;
+  color: #0f172a;
+}
+
+.meeting-page:not(.meeting-page--light) .action-item-input-title {
+  color: #f8fafc;
+}
+
+.action-item-input-title:focus {
+  border-color: #2563eb;
+}
+
+.action-item-textarea {
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  resize: vertical;
+  background: transparent;
+  outline: none;
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.meeting-page:not(.meeting-page--light) .action-item-textarea {
+  color: #94a3b8;
+}
+
+.action-item-meta-row {
+  display: flex;
+  gap: 12px;
+}
+
+.meta-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.meta-lbl {
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.meta-val-select, .meta-val-date, .assignee-select {
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+  outline: none;
+  font-size: 0.8rem;
+  width: 100%;
+}
+
+.meeting-page:not(.meeting-page--light) .meta-val-select,
+.meeting-page:not(.meeting-page--light) .meta-val-date,
+.meeting-page:not(.meeting-page--light) .assignee-select {
+  background: #1e293b;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #f8fafc;
+}
+
+.action-item-assignee {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.action-item-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.action-item-btn-create {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 0;
+  background: #2563eb;
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.action-item-btn-create:hover {
+  background: #1d4ed8;
+}
+
+.action-item-linked-badge {
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #10b981;
+}
+
+.checknote-btn-reset {
+  width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: transparent;
+  color: #64748b;
+  font-weight: 800;
+  font-size: 0.86rem;
+  cursor: pointer;
+  transition: all 150ms ease;
+  margin-top: 10px;
+}
+
+.meeting-page:not(.meeting-page--light) .checknote-btn-reset {
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+}
+
+.checknote-btn-reset:hover {
+  background: rgba(148, 163, 184, 0.1);
+}
+
+/* Live Captions Overlay */
+.live-captions-overlay {
+  position: absolute;
+  bottom: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  max-width: 80%;
+  pointer-events: none;
+}
+
+.live-caption-inner {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f8fafc;
+  font-weight: 600;
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 0.95rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(12px);
+  text-align: center;
+  animation: fadeIn 200ms ease;
 }
 
 @media (max-width: 1180px) {

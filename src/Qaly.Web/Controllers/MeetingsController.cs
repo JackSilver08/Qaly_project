@@ -24,6 +24,13 @@ public class MeetingsController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpPost("{meetingSessionId:guid}/auto-checknote")]
+    public async Task<IActionResult> CreateAutoChecknote(Guid meetingSessionId, [FromBody] AutoChecknoteRequest request, CancellationToken ct)
+    {
+        var result = await _meetingImportService.CreateAutoChecknoteAsync(meetingSessionId, request, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpPost("{meetingId:guid}/action-items/{itemIndex:int}/create-task")]
     public async Task<IActionResult> CreateTaskFromActionItem(Guid meetingId, int itemIndex, MeetingActionItemCreateRequest request, CancellationToken ct)
     {

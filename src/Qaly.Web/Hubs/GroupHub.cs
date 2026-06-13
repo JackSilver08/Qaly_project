@@ -187,6 +187,11 @@ public class GroupHub : Hub
 
     public async Task SendMeetingSignal(Guid groupId, Guid meetingId, object payload)
     {
+        if (!await _groupsService.CanAccessGroupAsync(groupId, Context.ConnectionAborted))
+        {
+            throw new HubException("Access denied.");
+        }
+
         var result = await _groupsService.JoinMeetingSessionAsync(groupId, meetingId, Context.ConnectionAborted);
         if (!result.IsSuccess)
         {

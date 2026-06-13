@@ -21,6 +21,7 @@ public class MeetilyImportTests : IDisposable
     private readonly Mock<ICurrentUserService> _currentUser = new();
     private readonly Mock<IAuditLogService> _auditLog = new();
     private readonly Mock<IAiComplianceService> _complianceServiceMock = new();
+    private readonly Mock<IAiGateway> _aiGateway = new();
     private readonly Guid _userId = Guid.NewGuid();
     private readonly Guid _projectId = Guid.NewGuid();
 
@@ -187,6 +188,8 @@ public class MeetilyImportTests : IDisposable
             new GenericRepository<AiGeneratedDraft>(_context),
             new GenericRepository<MeetingActionItemMapping>(_context),
             new GenericRepository<TaskItem>(_context),
+            new GenericRepository<GroupMeetingSession>(_context),
+            _aiGateway.Object,
             _taskService.Object,
             new UnitOfWork(_context),
             _currentUser.Object,

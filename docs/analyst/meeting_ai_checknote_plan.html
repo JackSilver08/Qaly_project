@@ -1,0 +1,1099 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Đặc Tả Kỹ Thuật & Kế Hoạch Triển Khai AI Auto Checknote - Qaly Project</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      /* Palette Precision Ops */
+      --bg-app: #F4F6FA;
+      --bg-surface: #FFFFFF;
+      --bg-sunken: #EEF2F7;
+      --line: #D8E0EA;
+      --text-strong: #0F172A;
+      --text: #334155;
+      --text-muted: #64748B;
+      
+      /* Brand & Semantics */
+      --brand: #2563EB;
+      --brand-hover: #1D4ED8;
+      --brand-soft: #DBEAFE;
+      --success: #0F766E;
+      --success-soft: #CCFBF1;
+      --warning: #B45309;
+      --warning-soft: #FEF3C7;
+      --danger: #B42318;
+      --danger-soft: #FEE2E2;
+      --info: #0C4A6E;
+      --info-soft: #E0F2FE;
+
+      /* Layout */
+      --sidebar-width: 290px;
+      --transition-fast: 150ms ease;
+      --transition-normal: 250ms ease;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg-app);
+      color: var(--text);
+      line-height: 1.6;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Sidebar Navigation */
+    aside {
+      width: var(--sidebar-width);
+      background-color: var(--bg-surface);
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      height: 100%;
+    }
+
+    .sidebar-header {
+      padding: 24px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .sidebar-logo {
+      width: 38px;
+      height: 38px;
+      background: linear-gradient(135deg, var(--brand) 0%, #3b82f6 100%);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 800;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+    }
+
+    .sidebar-title-wrap {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar-title {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-weight: 700;
+      font-size: 1.15rem;
+      color: var(--text-strong);
+      line-height: 1.2;
+    }
+
+    .sidebar-subtitle {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .sidebar-nav {
+      flex: 1;
+      padding: 24px 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .nav-item {
+      padding: 12px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: var(--text);
+      transition: background-color var(--transition-fast), color var(--transition-fast);
+    }
+
+    .nav-item:hover {
+      background-color: var(--bg-sunken);
+      color: var(--text-strong);
+    }
+
+    .nav-item.active {
+      background-color: var(--brand-soft);
+      color: var(--brand);
+    }
+
+    .sidebar-footer {
+      padding: 20px;
+      border-top: 1px solid var(--line);
+      background-color: var(--bg-sunken);
+    }
+
+    .meta-card {
+      background-color: var(--bg-surface);
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      font-size: 0.8rem;
+    }
+
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .meta-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .meta-label {
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .meta-val {
+      color: var(--text-strong);
+      font-weight: 700;
+    }
+
+    /* Main Area Layout */
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .content-header {
+      background-color: var(--bg-surface);
+      border-bottom: 1px solid var(--line);
+      padding: 24px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .header-left h2 {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-weight: 800;
+      font-size: 1.6rem;
+      color: var(--text-strong);
+      margin-bottom: 4px;
+    }
+
+    .header-left p {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    .tab-button-group {
+      display: flex;
+      background-color: var(--bg-sunken);
+      padding: 4px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+
+    .tab-btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all var(--transition-fast);
+    }
+
+    .tab-btn:hover {
+      color: var(--text-strong);
+    }
+
+    .tab-btn.active {
+      background-color: var(--bg-surface);
+      color: var(--brand);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .content-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 32px;
+    }
+
+    .tab-content {
+      display: none;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .tab-content.active {
+      display: block;
+      animation: fadeIn 250ms ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Typography & Panels */
+    h3 {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-weight: 700;
+      font-size: 1.25rem;
+      color: var(--text-strong);
+      margin: 32px 0 16px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--line);
+    }
+
+    h3:first-of-type {
+      margin-top: 0;
+    }
+
+    h4 {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: var(--text-strong);
+      margin: 20px 0 10px;
+    }
+
+    p {
+      margin-bottom: 16px;
+      line-height: 1.6;
+    }
+
+    ul, ol {
+      margin-bottom: 16px;
+      padding-left: 24px;
+    }
+
+    li {
+      margin-bottom: 8px;
+    }
+
+    code {
+      font-family: 'Fira Code', monospace;
+      background-color: var(--bg-sunken);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      color: var(--danger);
+      border: 1px solid var(--line);
+    }
+
+    pre {
+      font-family: 'Fira Code', monospace;
+      background-color: #0F172A;
+      color: #F8FAFC;
+      padding: 18px;
+      border-radius: 10px;
+      overflow-x: auto;
+      font-size: 0.85rem;
+      margin-bottom: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    pre code {
+      background: transparent;
+      padding: 0;
+      border: none;
+      color: inherit;
+    }
+
+    /* Alert Boxes */
+    .alert {
+      padding: 16px 20px;
+      border-radius: 8px;
+      border-left: 4px solid transparent;
+      margin-bottom: 24px;
+      display: flex;
+      gap: 16px;
+    }
+
+    .alert-danger {
+      background-color: var(--danger-soft);
+      border-left-color: var(--danger);
+      color: #7A150E;
+    }
+
+    .alert-success {
+      background-color: var(--success-soft);
+      border-left-color: var(--success);
+      color: #0B524C;
+    }
+
+    .alert-info {
+      background-color: var(--info-soft);
+      border-left-color: var(--brand);
+      color: #1E3A8A;
+    }
+
+    .alert-icon {
+      font-size: 1.25rem;
+      flex-shrink: 0;
+    }
+
+    /* Panel Cards */
+    .panel-card {
+      background-color: var(--bg-surface);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+
+    .panel-card.accent-teal {
+      border-top: 4px solid var(--success);
+    }
+
+    .panel-card.accent-blue {
+      border-top: 4px solid var(--brand);
+    }
+
+    /* Tables */
+    .table-container {
+      overflow-x: auto;
+      margin-bottom: 24px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.9rem;
+      background-color: var(--bg-surface);
+    }
+
+    th {
+      background-color: var(--bg-sunken);
+      color: var(--text-strong);
+      font-weight: 700;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover {
+      background-color: rgba(244, 246, 250, 0.5);
+    }
+
+    /* Status Badges */
+    .status-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      border: 1px solid transparent;
+    }
+
+    /* Steps and Timeline */
+    .timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+
+    .timeline-node {
+      position: relative;
+      background-color: var(--bg-surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    }
+
+    .timeline-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      border-bottom: 1px dashed var(--line);
+      padding-bottom: 8px;
+    }
+
+    .timeline-title {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: var(--text-strong);
+    }
+
+    .timeline-badge {
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 6px;
+    }
+
+    .badge-blue {
+      background-color: var(--brand-soft);
+      color: var(--brand);
+    }
+
+    .badge-gray {
+      background-color: var(--bg-sunken);
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- SIDEBAR -->
+  <aside>
+    <div class="sidebar-header">
+      <div class="sidebar-logo">QM</div>
+      <div class="sidebar-title-wrap">
+        <span class="sidebar-title">Qaly Meet AI</span>
+        <span class="sidebar-subtitle">Auto Checknote Spec</span>
+      </div>
+    </div>
+
+    <div class="sidebar-nav">
+      <div class="nav-item active" onclick="switchTab('gap-analysis', this)">
+        <span>1. Phân Tích Hiện Trạng (Gap)</span>
+      </div>
+      <div class="nav-item" onclick="switchTab('spec-target', this)">
+        <span>2. Nghiệp Vụ & Thiết Kế UX</span>
+      </div>
+      <div class="nav-item" onclick="switchTab('architecture', this)">
+        <span>3. Kiến Trúc & Tech Spec</span>
+      </div>
+      <div class="nav-item" onclick="switchTab('roadmap', this)">
+        <span>4. Kế Hoạch 4 Sprint</span>
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="meta-card">
+        <div class="meta-row">
+          <span class="meta-label">Phiên bản</span>
+          <span class="meta-val">v1.0.0 (Repo-compatible)</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Ngày tạo</span>
+          <span class="meta-val">13/06/2026</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Trạng thái</span>
+          <span class="meta-val"><span class="status-badge" style="background-color: var(--warning-soft); color: var(--warning); border-color: rgba(180, 83, 9, 0.2)">Đang triển khai</span></span>
+        </div>
+        <div class="meta-row" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line);">
+          <span class="meta-label" style="display:block; margin-bottom: 2px;">Tác giả</span>
+          <span class="meta-val" style="display:block; font-size: 0.8rem; color: var(--brand);">Antigravity Coding Agent</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN AREA -->
+  <main>
+    <header class="content-header">
+      <div class="header-left">
+        <h2 id="main-title">Phân Tích Hiện Trạng & Gap Analysis</h2>
+        <p>Phân tích sự khác biệt giữa cấu trúc mã nguồn hiện tại và tính năng AI Auto Checknote</p>
+      </div>
+      <div class="tab-button-group">
+        <button class="tab-btn active" id="btn-gap-analysis" onclick="switchTab('gap-analysis', this)">Hiện Trạng & Gap</button>
+        <button class="tab-btn" id="btn-spec-target" onclick="switchTab('spec-target', this)">Nghiệp Vụ & UX</button>
+        <button class="tab-btn" id="btn-architecture" onclick="switchTab('architecture', this)">Kiến Trúc & Tech Specs</button>
+        <button class="tab-btn" id="btn-roadmap" onclick="switchTab('roadmap', this)">Lộ Trình & Rủi Ro</button>
+      </div>
+    </header>
+
+    <div class="content-body">
+      
+      <!-- ==================== TAB 1: GAP ANALYSIS ==================== -->
+      <section id="gap-analysis" class="tab-content active">
+        
+        <div class="alert alert-info">
+          <span class="alert-icon">ℹ️</span>
+          <div>
+            <strong>Mục tiêu tính năng:</strong> AI Auto Checknote cho phép người dùng nhận diện giọng nói trong phòng họp nhóm (Qaly Meet LiveKit), tự động biên dịch sang văn bản (Speech-to-Text) theo thời gian thực và dùng AI để trích xuất biên bản cuộc họp, các quyết định chính, và danh sách các Action Items (công việc cần làm) kèm thời hạn và người chịu trách nhiệm, hỗ trợ phê duyệt nhanh để tạo Task trong dự án.
+          </div>
+        </div>
+
+        <div class="panel-card accent-teal">
+          <h3>Rà Soát Mã Nguồn Hiện Tại (Codebase Audit)</h3>
+          <p>Hệ thống Qaly hiện đang sở hữu một phần nền tảng nghiệp vụ rất vững chắc cho việc xử lý meeting note và AI, bao gồm các cấu trúc dữ liệu và dịch vụ sau:</p>
+          <ul>
+            <li><strong>Nhà cung cấp AI & Dịch vụ AI (Backend AI Foundation):</strong>
+              <ul>
+                <li>Đã có <code>IAiGateway</code> và <code>AiGateway</code> để gửi request đến OpenAI / Gemini / Ollama và cơ chế schema validation tự động để đảm bảo dữ liệu JSON đầu ra chính xác.</li>
+                <li>Đã có <code>GroupAiService</code> với phương thức <code>ExtractActionItemsAsync</code> nhận vào một chuỗi transcript cuộc họp (<code>TranscriptText</code>) và trả về một danh mục các action items được phân tích bằng LLM dạng cấu trúc JSON sạch.</li>
+              </ul>
+            </li>
+            <li><strong>Mô hình dữ liệu họp & Action Items (Domain Entities):</strong>
+              <ul>
+                <li><code>GroupMeetingSession</code>: quản lý phiên họp nhóm (LiveKit, started/ended time, summary, roomId).</li>
+                <li><code>MeetingImport</code>: quản lý transcript, summary, participants và metadata của các file cuộc họp được nạp vào dự án.</li>
+                <li><code>MeetingActionItemMapping</code>: ánh xạ chi tiết từng action item được AI trích xuất với Task thực tế trong database cùng trạng thái mapping (Draft, Linked, Approved).</li>
+              </ul>
+            </li>
+            <li><strong>Nghiệp vụ xử lý biên bản & tạo Task:</strong>
+              <ul>
+                <li><code>MeetingImportService</code> đã có đầy đủ các hàm cốt lõi như: <code>GetMeetingActionItemsAsync</code>, <code>CreateTaskFromMeetingActionItemAsync</code> (tự động chuyển action item thành Task chính thức và gán cho thành viên dự án), và <code>LinkMeetingActionItemToTaskAsync</code>.</li>
+                <li>Hệ thống router endpoints trong <code>MeetingsController.cs</code> đã sẵn sàng cho việc truy xuất, liên kết, và tạo task từ biên bản họp.</li>
+              </ul>
+            </li>
+            <li><strong>Giao diện phòng họp (Frontend Meeting UI):</strong>
+              <ul>
+                <li>Giao diện <code>GroupMeetingPage.vue</code> đã có cơ chế stream video, audio realtime qua LiveKit client và quản lý danh sách thành viên trực tuyến.</li>
+              </ul>
+            </li>
+          </ul>
+        </div>
+
+        <div class="panel-card accent-blue">
+          <h3>Phân Tích Khoảng Cách (Gap Analysis)</h3>
+          <p>Mặc dù backend đã hỗ trợ trích xuất action items từ transcript tĩnh và frontend đã có phòng họp LiveKit, nhưng giữa hiện trạng codebase và tính năng <strong>Real-time AI Auto Checknote</strong> vẫn tồn tại 3 khoảng cách lớn:</p>
+          
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Khoảng cách (Gap)</th>
+                  <th>Mô tả chi tiết</th>
+                  <th>Phương án khắc phục kỹ thuật</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>🔴 Gap 1: Thiếu cơ chế ghi âm và Speech-to-Text (STT)</strong></td>
+                  <td>Cả frontend (<code>GroupMeetingPage.vue</code>) và backend đều chưa có chức năng thu âm giọng nói, lưu trữ tệp âm thanh hoặc kết nối dịch vụ STT để dịch trực tiếp giọng nói sang văn bản khi họp.</td>
+                  <td><strong>Tận dụng Web Speech API của trình duyệt:</strong> Thay vì tự viết audio recorder + server-side whisper tốn tài nguyên và chi phí, sử dụng <code>SpeechRecognition</code> phía client-side để dịch giọng nói của người nói trực tiếp trong phòng họp thành chữ hoàn toàn miễn phí.</td>
+                </tr>
+                <tr>
+                  <td><strong>🔴 Gap 2: Thiếu phân biệt giọng người nói (Speaker Diarization)</strong></td>
+                  <td>Nếu chỉ dùng 1 luồng Speech API ghi âm chung, LLM sẽ không phân biệt được phát ngôn nào là của ai (Ví dụ: "Nguyễn Văn A nói...", "Trần Thị B nói...").</td>
+                  <td><strong>Kiến trúc Checknote Phân Tán (Distributed Captions):</strong> Mỗi client tự mở Web Speech API trên luồng micro của chính mình. Sau đó, văn bản nhận diện được broadcast realtime qua SignalR <code>GroupHub</code> hoặc LiveKit Data Channel đến các máy khách khác cùng định danh tên/ID người nói. Trình duyệt của Host/Client sẽ tự động lắp ghép thành một tệp transcript hoàn chỉnh theo dòng thời gian.</td>
+                </tr>
+                <tr>
+                  <td><strong>🔴 Gap 3: Thiếu cầu nối giữa Session Họp LiveKit và Module Action Items</strong></td>
+                  <td>Bảng <code>GroupMeetingSession</code> (realtime) và bảng <code>MeetingImport</code> (AI Action items) đang hoạt động độc lập, chưa có API kết nối luồng transcript realtime từ phòng họp vào hệ thống quản lý AI Draft.</td>
+                  <td><strong>Tạo API Bridge:</strong> Viết thêm API <code>POST /api/meetings/{meetingId}/auto-checknote</code>. Khi kết thúc cuộc họp, frontend gửi tệp transcript lắp ghép và danh sách người tham gia lên backend. Backend sẽ tạo bản ghi <code>MeetingImport</code> liên kết, chạy AI trích xuất action items và lưu trữ dưới dạng <code>AiGeneratedDraft</code> để kích hoạt giao diện phê duyệt Task có sẵn.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ==================== TAB 2: BUSINESS & UX SPEC ==================== -->
+      <section id="spec-target" class="tab-content">
+        
+        <div class="panel-card accent-teal">
+          <h3>Đặc Tả Quy Trình Nghiệp Vụ (User Flow)</h3>
+          <p>Quy trình tương tác của tính năng AI Auto Checknote trong một buổi họp nhóm được thiết kế như sau:</p>
+          <ol>
+            <li style="margin-left: 20px; margin-bottom: 12px;">
+              <strong>Bắt đầu cuộc họp & Kích hoạt trợ lý:</strong>
+              <p>Chủ phòng bấm <em>"Bắt đầu cuộc họp"</em> trong <code>GroupMeetingPage.vue</code>. Các thành viên tham gia. Bất kỳ thành viên nào cũng có thể bật nút toggle <strong>"Bật Trợ Lý AI Ghi Chú"</strong> ở thanh dock điều khiển hoặc bảng side panel.</p>
+            </li>
+            <li style="margin-left: 20px; margin-bottom: 12px;">
+              <strong>Nhận diện và phân phối phụ đề thời gian thực (Real-time Captions & Transcript compilation):</strong>
+              <p>Khi người dùng nói, giọng nói được chuyển thành chữ thời gian thực bằng bộ máy của trình duyệt. Văn bản tạm thời hiển thị dạng phụ đề (Live Captions) phía dưới màn hình của chính họ, văn bản chính thức (final transcript) được gửi qua SignalR đến tất cả mọi người trong phòng.</p>
+              <p>Màn hình của mỗi người hiển thị một tab <strong>"Nhật ký cuộc họp"</strong> tự động cập nhật dòng hội thoại dạng:
+                <br><code>[10:02:15] Nguyễn Văn A: Mình sẽ làm file Dockerfile cho dự án.</code>
+                <br><code>[10:02:30] Trần Thị B: OK, vậy chiều nay tôi test thử trên VPS nhé.</code>
+              </p>
+            </li>
+            <li style="margin-left: 20px; margin-bottom: 12px;">
+              <strong>Kết thúc cuộc họp và Kích hoạt AI Checknote:</strong>
+              <p>Khi cuộc họp kết thúc (hoặc giữa chừng khi người dùng bấm nút <strong>"Phân tích Checknote"</strong>), Host sẽ bấm nút <strong>"Tạo biên bản AI"</strong>. Hệ thống hiển thị hộp thoại xác nhận chọn Dự án (Project) cần map và danh sách người tham gia.</p>
+            </li>
+            <li style="margin-left: 20px; margin-bottom: 12px;">
+              <strong>Trích xuất AI & Hiển thị Thẻ Duyệt Draft Cards:</strong>
+              <p>Hệ thống gọi API backend xử lý transcript, AI Gateway phân tích và trả về danh sách Action Items. Các action items được hiển thị dạng thẻ danh sách nháp (Draft Cards) ngay tại màn hình phụ của phòng họp hoặc chuyển hướng sang trang chi tiết biên bản.</p>
+            </li>
+            <li style="margin-left: 20px; margin-bottom: 12px;">
+              <strong>Phê duyệt và Tạo Task (Human-in-the-Loop):</strong>
+              <p>Người dùng xem danh sách, chỉnh sửa nội dung tiêu đề, gán cụ thể người thực hiện (Assignee), ngày hết hạn (Due date), độ ưu tiên (Priority), sau đó nhấn <strong>"Tạo Task"</strong>. Task được tạo ngay lập tức trong bảng Kanban của dự án và gắn liên kết nguồn từ cuộc họp.</p>
+            </li>
+          </ol>
+        </div>
+
+        <div class="panel-card accent-blue">
+          <h3>Gợi Ý Thiết Kế Giao Diện (UX/UI Mockup & Components)</h3>
+          <p>Để tối ưu hóa trải nghiệm người dùng mà không phá vỡ cấu trúc CSS Glassmorphism hiện tại của <code>GroupMeetingPage.vue</code>, đề xuất bổ sung các thành phần giao diện sau:</p>
+          
+          <h4>1. Nút điều khiển AI trên dock điều khiển (MeetingControls.vue)</h4>
+          <p>Thêm một nút bấm có biểu tượng <code>Sparkles</code> (hoặc <code>Bot</code>) mang nhãn <strong>"AI Checknote"</strong>. Khi bật, nó sẽ yêu cầu quyền microphone phục vụ SpeechRecognition và chuyển sang màu sáng xanh dương (Active state).</p>
+          
+          <h4>2. Side Panel phụ bên phải (AI Meeting Sidebar)</h4>
+          <p>Thu nhỏ khung hiển thị camera một chút để chừa khoảng trống hiển thị Side Panel bên phải gồm 2 tab chính:</p>
+          <ul>
+            <li><strong>Tab Transcript (Nhật ký):</strong> Hiển thị chuỗi văn bản hội thoại cuộn tự động theo thời gian thực kèm tên người nói và avatar. Người dùng có thể nhấn double-click vào câu chữ của mình để sửa nhanh nếu bộ nhận diện ghi sai chính tả tiếng Việt.</li>
+            <li><strong>Tab AI Action Items (Biên bản AI):</strong> Sau khi nhấn "Phân tích Checknote", tab này sẽ hiển thị các thẻ Action Items được trích xuất. Mỗi thẻ có:
+              <ul>
+                <li>Tiêu đề & mô tả (có thể chỉnh sửa trực tiếp).</li>
+                <li>Dropdown chọn Assignee (lấy danh sách thành viên dự án).</li>
+                <li>Input ngày hết hạn (Date Picker).</li>
+                <li>Nút <strong>"Tạo Task"</strong> (chuyển sang màu xanh lá sau khi tạo thành công).</li>
+              </ul>
+            </li>
+          </ul>
+
+          <h4>3. Khung hiển thị phụ đề thời gian thực (Live Captions Overlay)</h4>
+          <p>Hiển thị ở cạnh dưới màn hình cuộc họp một khung nền mờ (glassmorphism đen nhạt) chứa dòng chữ người dùng hoặc người khác đang nói tại thời điểm đó, tự biến mất sau 4 giây tĩnh lặng.</p>
+        </div>
+
+      </section>
+
+      <!-- ==================== TAB 3: TECH SPEC ==================== -->
+      <section id="architecture" class="tab-content">
+        
+        <div class="panel-card accent-teal">
+          <h3>Sơ Đồ Luồng Dữ Liệu (Distributed Data Flow)</h3>
+          <pre><code>[Người nói A] --(Microphone)--> [Web Speech API (Browser)]
+                                      ↓ (Dịch âm thanh -> Văn bản tiếng Việt)
+                                [Local Transcript Chunk]
+                                      ↓
+                     [SignalR Hub Connection: SendMeetingSignal] (payload: speech-transcript)
+                                      ↓ (Realtime websocket)
+  [GroupHub] ─────────────────────────┴─────────────────────────► [Tất cả Client trong phòng]
+                                                                      ↓ (Lắp ghép + Hiển thị)
+                                                                [Compiled Group Transcript]
+                                                                      ↓ (Nhấn nút Phân tích AI)
+                                                          [POST /api/meetings/{meetingId}/auto-checknote]
+                                                                      ↓
+                                                                [Qaly Backend API]
+                                                                      ├─ Xác thực quyền truy cập
+                                                                      ├─ Tạo bản ghi MeetingImport
+                                                                      ├─ Gửi transcript sang AI Gateway
+                                                                      └─ Trích xuất JSON Action Items
+                                                                      ↓
+                                                                [Giao diện Draft Cards]
+                                                                      ↓ (User nhấn Duyệt/Tạo Task)
+                                                  [POST /api/meetings/{meetingImportId}/action-items/{index}/create-task]
+                                                                      ↓
+                                                                [Task mới được ghi nhận DB]</code></pre>
+        </div>
+
+        <div class="panel-card accent-blue">
+          <h3>Bám Sát Mã Nguồn: Chi Tiết Triển Khai Frontend (Vue 3)</h3>
+          <p>Tạo một Vue composable mới <code>useSpeechRecognition.ts</code> tại <a href="file:///D:/trung/DATN/Qaly_project/src/Qaly.Web/ClientApp/composables/useSpeechRecognition.ts">src/Qaly.Web/ClientApp/composables/useSpeechRecognition.ts</a>:</p>
+          <pre><code class="language-typescript">import { ref } from 'vue';
+
+export function useSpeechRecognition(onResultCallback: (text: string, isFinal: boolean) => void) {
+  const isSupported = ref('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+  const isListening = ref(false);
+  let recognition: any = null;
+
+  function start(lang: string = 'vi-VN') {
+    if (!isSupported.value) return;
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = lang;
+
+    recognition.onstart = () => { isListening.value = true; };
+    recognition.onend = () => { isListening.value = false; };
+    recognition.onresult = (event: any) => {
+      let interimText = '';
+      let finalText = '';
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalText += event.results[i][0].transcript;
+        } else {
+          interimText += event.results[i][0].transcript;
+        }
+      }
+      if (finalText) {
+        onResultCallback(finalText.trim(), true);
+      } else if (interimText) {
+        onResultCallback(interimText.trim(), false);
+      }
+    };
+    recognition.start();
+  }
+
+  function stop() {
+    if (recognition) {
+      recognition.stop();
+    }
+  }
+
+  return { isSupported, isListening, start, stop };
+}</code></pre>
+
+          <h4>Tích hợp SignalR Hub: Sử Dụng Lại Phương Thức Có Sẵn (Zero backend hub change)</h4>
+          <p>Lớp <code>GroupHub.cs</code> đã có sẵn phương thức <code>SendMeetingSignal(Guid groupId, Guid meetingId, object payload)</code>. Chúng ta sẽ truyền payload dạng <code>speech-transcript</code>:</p>
+          <pre><code class="language-typescript">// Trong GroupMeetingPage.vue
+import { useSpeechRecognition } from "../composables/useSpeechRecognition";
+import { useDashboardContext } from "../composables/dashboard-context";
+
+const { currentUser } = useDashboardContext();
+const currentUserName = computed(() => currentUser.value?.fullName || currentUser.value?.email || "Thành viên");
+
+const { start: startSpeech, stop: stopSpeech, isListening: isSpeechListening } = useSpeechRecognition((text, isFinal) => {
+  if (isFinal) {
+    // Phát tín hiệu SignalR qua hàm có sẵn của Hub
+    if (hubConnection && hubConnection.state === HubConnectionState.Connected) {
+      hubConnection.invoke("SendMeetingSignal", groupId, meetingId.value, {
+        type: "speech-transcript",
+        senderName: currentUserName.value,
+        text: text
+      });
+      // Tự động append vào transcript của chính mình
+      appendLocalTranscript(currentUserName.value, text);
+    }
+  }
+});
+
+// Lắng nghe sự kiện SignalR có sẵn "meetingPeerSignal" để nhận transcript từ người khác
+// Trong hàm connectRealtime() thêm listener:
+hubConnection.on("meetingPeerSignal", (payload: any) => {
+  const signal = payload?.payload;
+  if (signal?.type === "speech-transcript") {
+    appendLocalTranscript(signal.senderName, signal.text);
+  }
+});
+</code></pre>
+        </div>
+
+        <div class="panel-card accent-teal">
+          <h3>Bám Sát Mã Nguồn: Cải Tiến Backend API</h3>
+          <p>Thay vì tự tạo controller mới, chúng ta bổ sung API vào <a href="file:///D:/trung/DATN/Qaly_project/src/Qaly.Web/Controllers/MeetingsController.cs">MeetingsController.cs</a> và xử lý trong <a href="file:///D:/trung/DATN/Qaly_project/src/Qaly.Application/Services/MeetingImportService.cs">MeetingImportService.cs</a> (nơi đã có sẵn đầy đủ các dependency db context, mapping, và task manager):</p>
+          
+          <h4>1. Định nghĩa các DTO mới tại <code>src/Qaly.Application/DTOs/Meeting/MeetilyImportDtos.cs</code>:</h4>
+          <pre><code class="language-csharp">public record AutoChecknoteRequest(
+    Guid ProjectId,
+    string Title,
+    string TranscriptText,
+    IReadOnlyList<string> Participants);
+
+public record AutoChecknoteResponseDto(
+    Guid MeetingImportId,
+    Guid ProjectId,
+    Guid AiJobId,
+    Guid DraftId,
+    string Summary,
+    IReadOnlyList<GroupAiActionItemDto> ActionItems);</code></pre>
+
+          <h4>2. Cập nhật Interface <code>IMeetingImportService.cs</code>:</h4>
+          <pre><code class="language-csharp">public interface IMeetingImportService
+{
+    // Các hàm đã có...
+    Task&lt;Result&lt;AutoChecknoteResponseDto&gt;&gt; CreateAutoChecknoteAsync(Guid meetingSessionId, AutoChecknoteRequest request, CancellationToken ct = default);
+}</code></pre>
+
+          <h4>3. Thêm Endpoint vào <code>MeetingsController.cs</code>:</h4>
+          <pre><code class="language-csharp">[HttpPost("{meetingSessionId:guid}/auto-checknote")]
+public async Task&lt;IActionResult&gt; CreateAutoChecknote(Guid meetingSessionId, [FromBody] AutoChecknoteRequest request, CancellationToken ct)
+{
+    var result = await _meetingImportService.CreateAutoChecknoteAsync(meetingSessionId, request, ct);
+    return StatusCode(result.StatusCode, result);
+}</code></pre>
+
+          <h4>4. Triển khai xử lý trong <code>MeetingImportService.cs</code> (Inject thêm <code>IAiGateway</code>):</h4>
+          <pre><code class="language-csharp">// Inject IAiGateway vào Constructor của MeetingImportService
+private readonly IAiGateway _aiGateway;
+
+// Thêm logic phân tích và bridge cuộc họp:
+public async Task&lt;Result&lt;AutoChecknoteResponseDto&gt;&gt; CreateAutoChecknoteAsync(
+    Guid meetingSessionId,
+    AutoChecknoteRequest request,
+    CancellationToken ct = default)
+{
+    var currentUserId = _currentUserService.UserId;
+    if (currentUserId == null) return Result.Forbidden&lt;AutoChecknoteResponseDto&gt;();
+
+    var project = await _projectRepo.GetQueryable().FirstOrDefaultAsync(p => p.Id == request.ProjectId, ct);
+    if (project == null) return Result.NotFound&lt;AutoChecknoteResponseDto&gt;("Không tìm thấy dự án.");
+
+    // 1. Gọi AI Gateway để tóm tắt & phân tích các Action Items từ transcript thô
+    var aiPrompt = BuildChecknotePrompt(request.TranscriptText);
+    var aiResponse = await _aiGateway.ExecuteAsync(new AiRequest {
+        JobType = "AI-06_MEETING_EXTRACT",
+        Prompt = aiPrompt,
+        UserId = currentUserId.Value,
+        ExpectedSchemaId = "MeetingActionItems",
+        UseCache = true
+    }, ct);
+
+    // 2. Parse cấu trúc JSON nhận về từ LLM
+    var extraction = ParseMeetingExtraction(aiResponse.Content, request);
+
+    // 3. Tạo AiJob lưu vết
+    var aiJob = new AiJob {
+        JobType = "AI-06_MEETING_EXTRACT",
+        ProjectId = project.Id,
+        SourceType = "qaly_meet",
+        SourceId = meetingSessionId.ToString(),
+        ProviderHint = "auto",
+        Sensitive = true,
+        Status = "DraftReady",
+        EstimatedCostUsd = EstimateCost(request.TranscriptText),
+        CacheKey = GenerateSourceHash(request),
+        RequestedById = currentUserId.Value
+    };
+    await _aiJobRepo.AddAsync(aiJob, ct);
+    await _unitOfWork.SaveChangesAsync(ct);
+
+    // 4. Tạo AiGeneratedDraft để hiển thị trên UI Draft Cards phê duyệt task
+    var draft = new AiGeneratedDraft {
+        AiJobId = aiJob.Id,
+        ProjectId = project.Id,
+        DraftType = "MeetingActionItems",
+        PayloadJson = JsonSerializer.Serialize(extraction, JsonOptions),
+        Status = "Pending"
+    };
+    await _aiDraftRepo.AddAsync(draft, ct);
+    await _unitOfWork.SaveChangesAsync(ct);
+
+    // 5. Tạo MeetingImport để liên kết dữ liệu meeting session cũ với AI workflow
+    var import = new MeetingImport {
+        ProjectId = project.Id,
+        ImportedById = currentUserId.Value,
+        SourceProvider = "qaly-meet",
+        SourceId = meetingSessionId.ToString(),
+        SourceHash = aiJob.CacheKey,
+        Title = request.Title,
+        MeetingStartedAt = DateTimeOffset.UtcNow,
+        Summary = extraction.Meeting.Summary,
+        TranscriptText = request.TranscriptText,
+        ParticipantsJson = JsonSerializer.Serialize(request.Participants, JsonOptions),
+        AiJobId = aiJob.Id,
+        AiDraftId = draft.Id
+    };
+    await _meetingImportRepo.AddAsync(import, ct);
+    
+    // 6. Cập nhật Summary vào GroupMeetingSession đang chạy để đóng/kết nối phiên họp
+    var meetingSession = await _meetingSessionRepo.GetByIdAsync(meetingSessionId, ct);
+    if (meetingSession != null) {
+        meetingSession.Summary = extraction.Meeting.Summary;
+        meetingSession.TranscriptSourceId = import.Id.ToString();
+        meetingSession.Status = "Ended";
+        meetingSession.EndedAt = DateTimeOffset.UtcNow;
+        await _meetingSessionRepo.UpdateAsync(meetingSession, ct);
+    }
+
+    await _unitOfWork.SaveChangesAsync(ct);
+
+    // Trả về DTO chứa ID import mới để client gọi các API phê duyệt/tạo task có sẵn
+    var actionItemDtos = extraction.ActionItems.Select((x, i) => new GroupAiActionItemDto(
+        x.Title, x.Description, x.SuggestedOwnerName, x.DueDate, 0.9m, x.SourceEvidence
+    )).ToList();
+
+    return Result.Created(new AutoChecknoteResponseDto(
+        import.Id, project.Id, aiJob.Id, draft.Id, extraction.Meeting.Summary, actionItemDtos
+    ));
+}</code></pre>
+        </div>
+
+      </section>
+
+      <!-- ==================== TAB 4: ROADMAP & RISKS ==================== -->
+      <section id="roadmap" class="tab-content">
+        
+        <div class="panel-card accent-teal">
+          <h3>Kế Hoạch Triển Khai Trong 4 Tuần (Sprint Roadmap)</h3>
+          
+          <div class="timeline">
+            <!-- Sprint 1 -->
+            <div class="timeline-node">
+              <div class="timeline-header">
+                <span class="timeline-title">Sprint 1: Client Speech Recognition & SignalR Sync</span>
+                <span class="timeline-badge badge-blue">Tuần 1</span>
+              </div>
+              <div class="timeline-body">
+                <p><strong>Mục tiêu:</strong> Xây dựng bộ máy nhận diện giọng nói và truyền tải dòng chữ hội thoại thời gian thực qua SignalR.</p>
+                <ul>
+                  <li>Xây dựng Vue composable <code>useSpeechRecognition.ts</code> tại <a href="file:///D:/trung/DATN/Qaly_project/src/Qaly.Web/ClientApp/composables/useSpeechRecognition.ts">src/Qaly.Web/ClientApp/composables/useSpeechRecognition.ts</a>.</li>
+                  <li>Lắp ráp listener SignalR <code>meetingPeerSignal</code> và truyền payload <code>speech-transcript</code> trong [GroupMeetingPage.vue](file:///D:/trung/DATN/Qaly_project/src/Qaly.Web/ClientApp/pages/GroupMeetingPage.vue).</li>
+                  <li>Dựng khung hiển thị phụ đề thời gian thực (Live Captions Overlay) trong <code>GroupMeetingPage.vue</code>.</li>
+                  <li>Kiểm thử: Nói thử bằng microphone tiếng Việt, kiểm tra các máy khách trong cùng phòng họp có hiển thị đúng phụ đề và dồn transcript thành một cuộc hội thoại đồng nhất không.</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Sprint 2 -->
+            <div class="timeline-node">
+              <div class="timeline-header">
+                <span class="timeline-title">Sprint 2: Backend Auto-Checknote API & Bridge</span>
+                <span class="timeline-badge badge-blue">Tuần 2</span>
+              </div>
+              <div class="timeline-body">
+                <p><strong>Mục tiêu:</strong> Viết API xử lý transcript từ phòng họp, liên kết với module AI và tạo cấu trúc lưu trữ.</p>
+                <ul>
+                  <li>Mở rộng interface <code>IMeetingImportService</code> và class <code>MeetingImportService</code> để thêm phương thức <code>CreateAutoChecknoteAsync</code>.</li>
+                  <li>Viết endpoint <code>POST /api/meetings/{meetingSessionId}/auto-checknote</code> trong <code>MeetingsController.cs</code>.</li>
+                  <li>Tích hợp <code>IAiGateway</code> để thực hiện trích xuất action items và summary từ tệp transcript thô gửi từ client.</li>
+                  <li>Viết unit tests kiểm thử logic bằng cách truyền mẫu transcript thô tiếng Việt và kiểm tra dữ liệu DB sinh ra ở bảng <code>MeetingImports</code>, <code>AiJobs</code> và <code>AiGeneratedDrafts</code>.</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Sprint 3 -->
+            <div class="timeline-node">
+              <div class="timeline-header">
+                <span class="timeline-title">Sprint 3: AI Sidebar UI & Action Cards</span>
+                <span class="timeline-badge badge-blue">Tuần 3</span>
+              </div>
+              <div class="timeline-body">
+                <p><strong>Mục tiêu:</strong> Tạo giao diện hiển thị nhật ký và danh sách hành động do AI đề xuất trong phòng họp.</p>
+                <ul>
+                  <li>Xây dựng Side Panel trong <code>GroupMeetingPage.vue</code> chứa 2 tab: <em>Nhật ký (Transcript)</em> và <em>Action Items</em>.</li>
+                  <li>Hiện thực hóa tab Nhật ký: Tự động ghi lại phụ đề của tất cả mọi người nói, hỗ trợ double-click để sửa lỗi chính tả trước khi gửi đi.</li>
+                  <li>Hiện thực hóa tab Action Items: Khi cuộc họp kết thúc hoặc bấm nút phân tích, gọi API checknote và dựng các thẻ Draft Cards chứa thông tin do AI gợi ý.</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Sprint 4 -->
+            <div class="timeline-node">
+              <div class="timeline-header">
+                <span class="timeline-title">Sprint 4: Task Creation Integration, Optimization & Polish</span>
+                <span class="timeline-badge badge-blue">Tuần 4</span>
+              </div>
+              <div class="timeline-body">
+                <p><strong>Mục tiêu:</strong> Tích hợp luồng tạo Task, xử lý rủi ro và nghiệm thu E2E.</p>
+                <ul>
+                  <li>Liên kết nút "Tạo Task" trong Draft Cards với endpoint có sẵn <code>POST /api/meetings/{meetingId}/action-items/{itemIndex}/create-task</code> của <code>MeetingsController.cs</code> để tự động tạo Task và lưu ánh xạ mapping.</li>
+                  <li>Tối ưu hóa prompts của AI: Tinh chỉnh ngôn từ để trích xuất chính xác tên thành viên, thời hạn, ưu tiên từ ngữ cảnh hội thoại tiếng Việt.</li>
+                  <li>Chạy E2E regression tests bằng Playwright để đảm bảo sau khi cuộc họp kết thúc, các task gợi ý được phê duyệt sẽ hiển thị chính xác trên Kanban Board của dự án.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-card accent-blue">
+          <h3>Ma Trận Quản Lý Rủi Ro Kỹ Thuật (Risk Management)</h3>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Rủi ro / Thách thức kỹ thuật</th>
+                  <th>Mức độ</th>
+                  <th>Giải pháp giảm thiểu rủi ro (Mitigation)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Bộ Web Speech API không hỗ trợ ở một số trình duyệt (Firefox, Safari cũ)</strong></td>
+                  <td><span style="color:var(--warning); font-weight:700;">Trung bình</span></td>
+                  <td>Hiển thị cảnh báo trực quan khuyên dùng Chrome/Edge. Bổ sung nút <strong>"Nhập ghi chú thủ công"</strong> tại Side Panel để người dùng có thể dán tệp text ghi chú cuộc họp thủ công nếu trình duyệt không hỗ trợ micro.</td>
+                </tr>
+                <tr>
+                  <td><strong>Lỗi nhận diện sai giọng nói tiếng Việt (Accent/Noise)</strong></td>
+                  <td><span style="color:var(--danger); font-weight:700;">Cao</span></td>
+                  <td>Cho phép thành viên <strong>chỉnh sửa trực tiếp (inline edit)</strong> trên tệp nhật ký ghi âm ở tab Transcript trước khi bấm nút gửi cho AI Gateway. AI Gateway cũng có prompt hướng dẫn tự sửa các lỗi chính tả rõ ràng.</td>
+                  <td></td>
+                </tr>
+                <tr>
+                  <td><strong>Gia tăng chi phí token AI do transcript cuộc họp quá dài</strong></td>
+                  <td><span style="color:var(--warning); font-weight:700;">Trung bình</span></td>
+                  <td>Cấu hình AI Gateway giới hạn độ dài văn bản gửi lên. Cắt lọc các phần hội thoại thừa thãi (chào hỏi, im lặng) và chỉ truyền các đoạn hội thoại có tính chất giao việc hoặc đưa ra quyết định.</td>
+                </tr>
+                <tr>
+                  <td><strong>Rò rỉ bảo mật thông tin cuộc họp nhạy cảm</strong></td>
+                  <td><span style="color:var(--danger); font-weight:700;">Cao</span></td>
+                  <td>Xác thực quyền của người dùng đối với Project và Group trước khi chạy AI. Toàn bộ tệp transcript chỉ lưu tạm trên client, backend chỉ lưu trữ khi người dùng nhấn lưu biên bản chính thức.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel-card accent-teal">
+          <h3>Giới Hạn Của Tính Năng (Scope Boundaries)</h3>
+          <p>Để đảm bảo hoàn thành dự án trong thời hạn 10 tuần và đạt điểm nghiệm thu cao nhất, cần khoanh vùng các giới hạn sau:</p>
+          <ul>
+            <li><strong>Nhận diện giọng nói đồng thời (Realtime Multi-Speaker STT):</strong> Không sử dụng máy chủ nhận diện âm thanh tập trung hay chia luồng âm thanh phức tạp. Việc phân biệt giọng nói dựa hoàn toàn vào việc client nào gửi tin nhắn websocket qua SignalR.</li>
+            <li><strong>Xử lý ngoại tuyến (Offline Mode):</strong> Trợ lý AI nhận diện cần kết nối internet để gọi bộ máy Speech API của trình duyệt và gửi API lên OpenAI/Gemini (hoặc phải chạy Ollama local ổn định trên máy host).</li>
+          </ul>
+        </div>
+
+      </section>
+
+    </div>
+  </main>
+
+  <script>
+    function switchTab(tabId, el) {
+      // Deactivate all content tabs
+      const contents = document.querySelectorAll('.tab-content');
+      contents.forEach(content => content.classList.remove('active'));
+      
+      // Deactivate all navigation items
+      const navItems = document.querySelectorAll('.nav-item');
+      navItems.forEach(item => item.classList.remove('active'));
+      
+      const tabBtns = document.querySelectorAll('.tab-btn');
+      tabBtns.forEach(btn => btn.classList.remove('active'));
+
+      // Activate selected content tab
+      const targetContent = document.getElementById(tabId);
+      if (targetContent) {
+        targetContent.classList.add('active');
+      }
+
+      // Sync active state in Sidebar
+      const sidebarItems = document.querySelectorAll('.sidebar-nav .nav-item');
+      let index = 0;
+      if (tabId === 'gap-analysis') index = 0;
+      else if (tabId === 'spec-target') index = 1;
+      else if (tabId === 'architecture') index = 2;
+      else if (tabId === 'roadmap') index = 3;
+      sidebarItems[index].classList.add('active');
+
+      // Sync active state in Header tab buttons
+      const activeBtn = document.getElementById('btn-' + tabId);
+      if (activeBtn) {
+        activeBtn.classList.add('active');
+      }
+
+      // Update Header title dynamically
+      const titleMap = {
+        'gap-analysis': 'Phân Tích Hiện Trạng & Gap Analysis',
+        'spec-target': 'Đặc Tả Nghiệp Vụ & Thiết Kế Trải Nghiệm UX',
+        'architecture': 'Kiến Trúc Hoạt Động & Tech Specs Chi Tiết',
+        'roadmap': 'Lộ Trình Phát Triển 4 Sprint & Quản Lý Rủi Ro'
+      };
+      
+      document.getElementById('main-title').innerText = titleMap[tabId];
+    }
+  </script>
+</body>
+</html>

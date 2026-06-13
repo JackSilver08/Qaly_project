@@ -12,4 +12,5 @@ public interface IMeetingImportService
     Task<Result<MeetingActionItemTaskLinkDto>> LinkMeetingActionItemToTaskAsync(Guid meetingImportId, int actionItemIndex, LinkMeetingActionItemTaskRequest request, CancellationToken ct = default);
     Task<Result<MeetingActionItemTaskLinkDto>> GetMeetingActionItemTaskLinkAsync(Guid meetingImportId, int actionItemIndex, CancellationToken ct = default);
     Task<Result<TaskMeetingSourceDto>> GetTaskMeetingSourceAsync(Guid taskId, CancellationToken ct = default);
+    Task<Result<AutoChecknoteResponseDto>> CreateAutoChecknoteAsync(Guid meetingSessionId, AutoChecknoteRequest request, CancellationToken ct = default);
 }
