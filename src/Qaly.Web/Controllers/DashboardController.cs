@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Qaly.Infrastructure.Data;
 using Qaly.Web.Auth;
 using System.Globalization;
+using System.Text.Json;
 
 namespace Qaly.Web.Controllers;
 
@@ -489,6 +490,10 @@ public partial class DashboardController : BaseApiController
         var startOfWeek = now.Date.AddDays(-7);
 
         var query = _context.AuditLogs.AsNoTracking().Where(a => a.Timestamp >= startOfWeek);
+        var projectNames = await _context.Projects
+            .AsNoTracking()
+            .Select(project => new { project.Id, project.Name })
+            .ToDictionaryAsync(project => project.Id, project => project.Name, cancellationToken);
 
         var logs = await query.OrderByDescending(a => a.Timestamp).ToListAsync(cancellationToken);
 
@@ -508,11 +513,16 @@ public partial class DashboardController : BaseApiController
 
         var latestActivities = logs.Take(3).Select(l => 
         {
+            var projectId = InferProjectId(l);
             string? projectName = null;
+            if (projectId.HasValue && projectNames.TryGetValue(projectId.Value, out var resolvedProjectName))
+            {
+                projectName = resolvedProjectName;
+            }
             string title = l.Action + " " + l.EntityType;
             try {
                 if (!string.IsNullOrEmpty(l.ChangesJson)) {
-                    var changes = System.Text.Json.JsonDocument.Parse(l.ChangesJson);
+                    using var changes = JsonDocument.Parse(l.ChangesJson);
                     if (changes.RootElement.TryGetProperty("title", out var tProp) || changes.RootElement.TryGetProperty("Title", out tProp)) {
                         title = l.Action switch {
                             "Create" => "Tạo mới " + tProp.GetString(),
@@ -529,6 +539,7 @@ public partial class DashboardController : BaseApiController
                 title,
                 l.User?.FullName ?? "Hệ thống",
                 projectName,
+                projectId,
                 l.Timestamp.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture)
             );
         }).ToList();
@@ -539,6 +550,74 @@ public partial class DashboardController : BaseApiController
             activityByDay,
             latestActivities
         ));
+    }
+
+    private Guid? InferProjectId(AuditLog log)
+    {
+        if (log.EntityType == nameof(Project) && Guid.TryParse(log.EntityId, out var projectId))
+        {
+            return projectId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(log.ChangesJson))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(log.ChangesJson);
+                var root = doc.RootElement;
+
+                if (TryReadGuid(root, "projectId", out var parsedProjectId) || TryReadGuid(root, "ProjectId", out parsedProjectId))
+                {
+                    return parsedProjectId;
+                }
+
+                if (log.EntityType == nameof(TaskComment) || log.EntityType == nameof(TaskAttachment))
+                {
+                    if (TryReadGuid(root, "taskItemId", out var taskItemId) || TryReadGuid(root, "TaskItemId", out taskItemId))
+                    {
+                        return _context.TaskItems.AsNoTracking()
+                            .Where(task => task.Id == taskItemId)
+                            .Select(task => (Guid?)task.ProjectId)
+                            .FirstOrDefault();
+                    }
+                }
+
+                if (log.EntityType == nameof(Sprint))
+                {
+                    if (TryReadGuid(root, "sprintId", out var sprintId) || TryReadGuid(root, "SprintId", out sprintId))
+                    {
+                        return _context.TaskItems.AsNoTracking()
+                            .Where(task => task.SprintId == sprintId)
+                            .Select(task => (Guid?)task.ProjectId)
+                            .FirstOrDefault();
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        if (log.EntityType == nameof(TaskItem) && Guid.TryParse(log.EntityId, out var taskId))
+        {
+            return _context.TaskItems.AsNoTracking()
+                .Where(task => task.Id == taskId)
+                .Select(task => (Guid?)task.ProjectId)
+                .FirstOrDefault();
+        }
+
+        return null;
+    }
+
+    private static bool TryReadGuid(JsonElement root, string propertyName, out Guid value)
+    {
+        value = Guid.Empty;
+        if (!root.TryGetProperty(propertyName, out var property))
+        {
+            return false;
+        }
+
+        return property.ValueKind == JsonValueKind.String && Guid.TryParse(property.GetString(), out value);
     }
 
     [HttpGet("strategic-overview")]
@@ -791,6 +870,7 @@ public sealed record RecentActivityDto(
     string Title,
     string ActorName,
     string? ProjectName,
+    Guid? ProjectId,
     string CreatedAt);
 
 public sealed record RecentActivitiesResponseDto(

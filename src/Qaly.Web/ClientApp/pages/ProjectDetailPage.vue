@@ -3,8 +3,10 @@ import { MessageSquare, MoreHorizontal, Plus, Send, Search, Clock, Play, Square,
 // @ts-ignore
 import { VueDraggable } from '../utils/vendor/vue-draggable-plus.js'
 import ProjectDetailHeader from '../components/ProjectDetailHeader.vue'
+import ProjectActivityTab from '../components/ProjectActivityTab.vue'
 import ProjectMembersTab from '../components/ProjectMembersTab.vue'
 import ProjectStatsTab from '../components/ProjectStatsTab.vue'
+import ProjectWorkloadTab from '../components/ProjectWorkloadTab.vue'
 import ProjectWikiTab from '../components/ProjectWikiTab.vue'
 import ProjectGanttTab from '../components/ProjectGanttTab.vue'
 import WebhooksTab from '../components/WebhooksTab.vue'
@@ -398,6 +400,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
       <div v-if="activeProjectTab === 'stats'" class="tab-pane reveal">
         <ProjectStatsTab :stats="selectedProjectStats" />
+      </div>
+
+      <div v-if="activeProjectTab === 'capacity' && selectedProject" class="tab-pane reveal">
+        <ProjectWorkloadTab :project-id="selectedProject.id" />
       </div>
 
       <div v-if="activeProjectTab === 'tasks'">
@@ -882,6 +888,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
           @update-role="updateMemberRole"
           @update-permissions="updateMemberPermissions"
         />
+      </div>
+
+      <div v-if="activeProjectTab === 'activity' && selectedProject" class="tab-pane reveal">
+        <ProjectActivityTab :project-id="selectedProject.id" :project-name="selectedProject.name" />
       </div>
 
       <div v-if="activeProjectTab === 'wiki'" class="tab-pane reveal">

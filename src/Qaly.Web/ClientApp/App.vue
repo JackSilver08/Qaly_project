@@ -14,6 +14,8 @@ import {
   Settings,
 } from "lucide-vue-next";
 import AppShell from "./components/AppShell.vue";
+import ProjectActivityTab from "./components/ProjectActivityTab.vue";
+import ProjectWorkloadTab from "./components/ProjectWorkloadTab.vue";
 import WelcomeOverlay from "./components/WelcomeOverlay.vue";
 import FloatingChatbot from "./components/chat/FloatingChatbot.vue";
 import { dashboardContextKey } from "./composables/dashboard-context";
@@ -147,7 +149,9 @@ const activeProjectTab = ref("stats");
 
 const tabs = [
   { id: "stats", label: "Thống kê" },
+  { id: "capacity", label: "Capacity" },
   { id: "tasks", label: "Nhiệm vụ" },
+  { id: "activity", label: "Activity" },
   { id: "gantt", label: "Sprint & Timeline" },
   { id: "members", label: "Thành viên" },
   { id: "wiki", label: "Wiki" },

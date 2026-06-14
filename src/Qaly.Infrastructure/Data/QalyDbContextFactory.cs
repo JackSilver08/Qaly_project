@@ -22,7 +22,7 @@ public class QalyDbContextFactory : IDesignTimeDbContextFactory<QalyDbContext>
         var connectionString = configuration.GetConnectionString("DefaultConnection");
         if (string.IsNullOrWhiteSpace(connectionString))
         {
-            connectionString = "Data Source=(localdb)\\MSSQLLocalDB;Initial Catalog=QalyDb;Integrated Security=True;TrustServerCertificate=True;MultipleActiveResultSets=true";
+            connectionString = "Server=localhost;Database=QalyDb;Integrated Security=True;TrustServerCertificate=True;Encrypt=True;MultipleActiveResultSets=True";
         }
 
         var optionsBuilder = new DbContextOptionsBuilder<QalyDbContext>();

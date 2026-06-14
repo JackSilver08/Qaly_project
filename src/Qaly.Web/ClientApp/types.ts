@@ -305,6 +305,21 @@ export interface ProjectTimelineDto {
     blockedItems: TimelineDependencyDto[];
 }
 
+export interface ProjectWorkloadDto {
+    projectId: string;
+    membersWorkload: MemberWorkloadDto[];
+}
+
+export interface MemberWorkloadDto {
+    userId: string;
+    userName: string;
+    avatarUrl: string | null;
+    taskCount: number;
+    estimatedHours: number;
+    actualHours: number;
+    completedTaskCount: number;
+}
+
 export interface SprintBucketDto {
     label: string;
     startDate: string;
@@ -359,6 +374,21 @@ export interface TaskAttentionDto {
     isUnseenByAssignee: boolean;
     reasons: string[];
     allowedActions: string[];
+}
+
+export interface TaskMeetingSourceDto {
+    taskId: string;
+    meetingImportId: string;
+    meetingTitle: string;
+    meetingStartedAt: string | null;
+    actionItemIndex: number;
+    actionItemTitle: string | null;
+    actionItemDescription: string | null;
+    sourcePriority: string | null;
+    sourceDueDate: string | null;
+    sourceQuote: string | null;
+    mappingStatus: string;
+    linkedTaskId: string | null;
 }
 
 export interface TaskAssignmentInsightDto {
@@ -428,6 +458,7 @@ export interface RecentActivityDto {
     title: string;
     actorName: string;
     projectName: string | null;
+    projectId: string | null;
     createdAt: string;
 }
 

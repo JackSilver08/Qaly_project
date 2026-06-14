@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Models;
 using Qaly.Application.Services;
@@ -23,12 +24,19 @@ public class AuditLogService : IAuditLogService
 
     public async Task LogAsync(string action, string entityType, string entityId, object? changes = null, CancellationToken ct = default)
     {
+        JsonNode? changesNode = changes == null ? null : JsonSerializer.SerializeToNode(changes, JsonOptions);
+        var projectId = await InferProjectIdAsync(entityType, entityId, changesNode, ct);
+        if (changesNode is JsonObject changesObject && projectId.HasValue && !changesObject.ContainsKey("projectId") && !changesObject.ContainsKey("ProjectId"))
+        {
+            changesObject["projectId"] = projectId.Value.ToString();
+        }
+
         var log = new AuditLog
         {
             Action = action,
             EntityType = entityType,
             EntityId = entityId,
-            ChangesJson = changes == null ? null : JsonSerializer.Serialize(changes, JsonOptions),
+            ChangesJson = changesNode?.ToJsonString(JsonOptions),
             UserId = _currentUserService.UserId,
             Timestamp = DateTimeOffset.UtcNow
         };
@@ -70,6 +78,68 @@ public class AuditLogService : IAuditLogService
         => _context.AuditLogs
             .AsNoTracking()
             .Include(log => log.User);
+
+    private async Task<Guid?> InferProjectIdAsync(string entityType, string entityId, JsonNode? changes, CancellationToken ct)
+    {
+        if (entityType == nameof(Project) && Guid.TryParse(entityId, out var projectId))
+        {
+            return projectId;
+        }
+
+        if (changes is JsonObject changesObject)
+        {
+            if (TryReadGuid(changesObject, "projectId", out var parsedProjectId) || TryReadGuid(changesObject, "ProjectId", out parsedProjectId))
+            {
+                return parsedProjectId;
+            }
+
+            if (entityType == nameof(TaskComment) || entityType == nameof(TaskAttachment))
+            {
+                if (TryReadGuid(changesObject, "taskItemId", out var taskItemId) || TryReadGuid(changesObject, "TaskItemId", out taskItemId))
+                {
+                    return await _context.TaskItems
+                        .AsNoTracking()
+                        .Where(task => task.Id == taskItemId)
+                        .Select(task => (Guid?)task.ProjectId)
+                        .FirstOrDefaultAsync(ct);
+                }
+            }
+
+            if (entityType == nameof(Sprint))
+            {
+                if (TryReadGuid(changesObject, "sprintId", out var sprintId) || TryReadGuid(changesObject, "SprintId", out sprintId))
+                {
+                    return await _context.TaskItems
+                        .AsNoTracking()
+                        .Where(task => task.SprintId == sprintId)
+                        .Select(task => (Guid?)task.ProjectId)
+                        .FirstOrDefaultAsync(ct);
+                }
+            }
+        }
+
+        if (entityType == nameof(TaskItem) && Guid.TryParse(entityId, out var taskId))
+        {
+            return await _context.TaskItems
+                .AsNoTracking()
+                .Where(task => task.Id == taskId)
+                .Select(task => (Guid?)task.ProjectId)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        return null;
+    }
+
+    private static bool TryReadGuid(JsonObject obj, string propertyName, out Guid value)
+    {
+        value = Guid.Empty;
+        if (!obj.TryGetPropertyValue(propertyName, out var node) || node is not JsonValue valueNode)
+        {
+            return false;
+        }
+
+        return valueNode.TryGetValue<string>(out var raw) && Guid.TryParse(raw, out value);
+    }
 
     private static AuditLogDto ToDto(AuditLog log)
         => new(
