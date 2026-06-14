@@ -38,6 +38,7 @@ import type {
 type TaskScope = 'mine' | 'all'
 type TaskSort = 'risk' | 'dueDate' | 'priority' | 'status' | 'project' | 'alpha'
 type TaskFocus = 'all' | 'overdue' | 'dueSoon' | 'pinned' | 'high' | 'blocked'
+type TriageMode = 'all' | 'urgent' | 'atRisk' | 'watchlist' | 'stable'
 
 type SavedTaskView = {
   id: string
@@ -48,6 +49,7 @@ type SavedTaskView = {
   priorityFilter: string
   projectFilter: string
   focusFilter: TaskFocus
+  triageMode: TriageMode
   sortBy: TaskSort
 }
 
@@ -79,6 +81,7 @@ const statusFilter = ref<string>('all')
 const priorityFilter = ref<string>('all')
 const projectFilter = ref<string>('all')
 const focusFilter = ref<TaskFocus>('all')
+const triageMode = ref<TriageMode>('all')
 const sortBy = ref<TaskSort>('risk')
 const savedViews = ref<SavedTaskView[]>([])
 const activeSavedViewId = ref<string | null>(null)
@@ -155,6 +158,7 @@ const filteredTasks = computed(() => {
       if (statusFilter.value !== 'all' && task.status !== statusFilter.value) return false
       if (priorityFilter.value !== 'all' && task.priority !== priorityFilter.value) return false
       if (focusFilter.value !== 'all' && !matchesFocus(task, focusFilter.value)) return false
+      if (triageMode.value !== 'all' && taskRiskBucket(task) !== triageMode.value) return false
       if (!query) return true
 
       return [
@@ -192,6 +196,109 @@ const taskSummary = computed(() => {
     high: tasks.filter((task) => ['High', 'Critical'].includes(task.priority)).length,
   }
 })
+
+const attentionItemMap = computed(() =>
+  new Map(attentionItems.value.map((item) => [item.id, item])),
+)
+
+const triageSourceTasks = computed(() => visibleTaskBase.value)
+
+const riskRadar = computed(() => {
+  const tasks = triageSourceTasks.value
+  const total = Math.max(1, tasks.length)
+
+  const axes = [
+    {
+      id: 'deadline',
+      label: 'Deadline',
+      score: Math.round((tasks.filter((task) => isTaskOverdue(task)).length * 100 + tasks.filter((task) => isDueSoon(task)).length * 60) / total),
+      caption: 'Task quá hạn và sắp đến hạn',
+    },
+    {
+      id: 'blocker',
+      label: 'Blockers',
+      score: Math.round((tasks.filter((task) => ['Blocked', 'OnHold'].includes(task.status)).length * 100 + tasks.filter((task) => taskRiskReasons(task).some((reason) => reason === 'stale')).length * 45) / total),
+      caption: 'Task đang bị chặn hoặc quá lâu',
+    },
+    {
+      id: 'priority',
+      label: 'Priority',
+      score: Math.round(tasks.reduce((sum, task) => sum + priorityPressure(task), 0) / total),
+      caption: 'Mức ưu tiên của task đang mở',
+    },
+    {
+      id: 'ownership',
+      label: 'Ownership',
+      score: Math.round(tasks.filter((task) => !task.assigneeId).length * 100 / total),
+      caption: 'Task chưa có người phụ trách',
+    },
+    {
+      id: 'freshness',
+      label: 'Freshness',
+      score: Math.round(tasks.reduce((sum, task) => sum + freshnessPressure(task), 0) / total),
+      caption: 'Task thiếu tín hiệu cập nhật',
+    },
+  ]
+
+  return axes.map((axis) => ({
+    ...axis,
+    active: axis.score >= 70,
+  }))
+})
+
+const triageBuckets = computed(() => {
+  const tasks = triageSourceTasks.value
+  const buckets = {
+    urgent: tasks.filter((task) => taskRiskBucket(task) === 'urgent'),
+    atRisk: tasks.filter((task) => taskRiskBucket(task) === 'atRisk'),
+    watchlist: tasks.filter((task) => taskRiskBucket(task) === 'watchlist'),
+    stable: tasks.filter((task) => taskRiskBucket(task) === 'stable'),
+  }
+
+  return [
+    {
+      key: 'urgent' as const,
+      label: 'Urgent',
+      count: buckets.urgent.length,
+      description: 'Quá hạn, blocked hoặc sắp bùng rủi ro.',
+      tone: 'danger',
+    },
+    {
+      key: 'atRisk' as const,
+      label: 'At risk',
+      count: buckets.atRisk.length,
+      description: 'Nên xử lý trong ngày để tránh trễ nhịp.',
+      tone: 'warning',
+    },
+    {
+      key: 'watchlist' as const,
+      label: 'Watchlist',
+      count: buckets.watchlist.length,
+      description: 'Cần theo dõi thêm nhưng chưa đến mức gấp.',
+      tone: 'info',
+    },
+    {
+      key: 'stable' as const,
+      label: 'Stable',
+      count: buckets.stable.length,
+      description: 'Đang ổn, tiếp tục giữ nhịp hiện tại.',
+      tone: 'success',
+    },
+  ]
+})
+
+const topRiskTasks = computed(() =>
+  triageSourceTasks.value
+    .map((task) => ({
+      ...task,
+      riskScore: taskRiskScore(task),
+      riskBucket: taskRiskBucket(task),
+      riskReasons: taskRiskReasons(task),
+      nextAction: nextBestAction(task),
+    }))
+    .sort((left, right) => right.riskScore - left.riskScore)
+    .slice(0, 5),
+)
 
 const taskProjectOptions = computed(() => {
   const seen = new Map<string, { id: string; label: string }>()
@@ -232,6 +339,7 @@ const currentViewSignature = computed(() =>
     priorityFilter: priorityFilter.value,
     projectFilter: projectFilter.value,
     focusFilter: focusFilter.value,
+    triageMode: triageMode.value,
     sortBy: sortBy.value,
   }),
 )
@@ -280,6 +388,73 @@ function riskRank(task: HubTask) {
   if (task.status === 'OnHold') score -= 6
   if (task.status === 'Done') score += 20
   return score
+}
+
+function priorityPressure(task: HubTask) {
+  const ranking: Record<string, number> = { Critical: 100, High: 72, Medium: 38, Low: 16 }
+  return ranking[task.priority] ?? 24
+}
+
+function freshnessPressure(task: HubTask) {
+  const attention = attentionItemMap.value.get(task.id)
+  let score = 0
+  if (task.status === 'Todo' && (attention?.isStaleTodo ?? false)) score += 100
+  if (task.status === 'InProgress' && (attention?.isStaleInProgress ?? false)) score += 100
+  if (attention?.isUnseenByAssignee) score += 42
+  if (!task.assigneeId) score += 18
+  if (task.isPinned) score -= 4
+  return Math.max(0, score)
+}
+
+function taskRiskReasons(task: HubTask) {
+  const attention = attentionItemMap.value.get(task.id)
+  const reasons: Array<'deadline' | 'blocker' | 'priority' | 'ownership' | 'stale' | 'unseen'> = []
+
+  if (isTaskOverdue(task) || isDueSoon(task)) reasons.push('deadline')
+  if (['Blocked', 'OnHold'].includes(task.status)) reasons.push('blocker')
+  if (['High', 'Critical'].includes(task.priority)) reasons.push('priority')
+  if (!task.assigneeId) reasons.push('ownership')
+  if (attention?.isStaleTodo || attention?.isStaleInProgress) reasons.push('stale')
+  if (attention?.isUnseenByAssignee) reasons.push('unseen')
+
+  return reasons
+}
+
+function taskRiskScore(task: HubTask) {
+  const attention = attentionItemMap.value.get(task.id)
+  let score = 0
+
+  if (isTaskOverdue(task)) score += 100
+  else if (isDueSoon(task)) score += 42
+  if (['Blocked', 'OnHold'].includes(task.status)) score += 28
+  if (['Critical', 'High'].includes(task.priority)) score += task.priority === 'Critical' ? 18 : 10
+  if (!task.assigneeId) score += 12
+  if (task.status === 'Todo' && (attention?.isStaleTodo ?? false)) score += 14
+  if (task.status === 'InProgress' && (attention?.isStaleInProgress ?? false)) score += 14
+  if (attention?.isUnseenByAssignee) score += 8
+  if (task.isPinned) score += 5
+  if (task.status === 'Done' || task.status === 'Cancelled') score = Math.max(0, score - 30)
+
+  return score
+}
+
+function taskRiskBucket(task: HubTask): TriageMode {
+  const score = taskRiskScore(task)
+  if (score >= 80) return 'urgent'
+  if (score >= 45) return 'atRisk'
+  if (score >= 20) return 'watchlist'
+  return 'stable'
+}
+
+function nextBestAction(task: HubTask) {
+  const attention = attentionItemMap.value.get(task.id)
+  if (isTaskOverdue(task)) return 'Ưu tiên xử lý ngay'
+  if (['Blocked', 'OnHold'].includes(task.status)) return 'Gỡ blocker / làm rõ phụ thuộc'
+  if (!task.assigneeId) return 'Gán người phụ trách'
+  if (attention?.isStaleInProgress || attention?.isStaleTodo) return 'Nhắc cập nhật tiến độ'
+  if (isDueSoon(task)) return 'Đẩy lên đầu danh sách'
+  if (['High', 'Critical'].includes(task.priority)) return 'Theo dõi sát'
+  return 'Giữ trong watchlist'
 }
 
 function dueDateRank(task: HubTask) {
@@ -334,6 +509,7 @@ function clearFilters() {
   priorityFilter.value = 'all'
   projectFilter.value = 'all'
   focusFilter.value = 'all'
+  triageMode.value = 'all'
   sortBy.value = 'risk'
 }
 
@@ -377,6 +553,7 @@ function captureCurrentView(name: string): SavedTaskView {
     priorityFilter: priorityFilter.value,
     projectFilter: projectFilter.value,
     focusFilter: focusFilter.value,
+    triageMode: triageMode.value,
     sortBy: sortBy.value,
   }
 }
@@ -398,6 +575,7 @@ function applySavedView(view: SavedTaskView) {
   priorityFilter.value = view.priorityFilter
   projectFilter.value = view.projectFilter
   focusFilter.value = view.focusFilter
+  triageMode.value = view.triageMode ?? 'all'
   sortBy.value = view.sortBy
   activeSavedViewId.value = view.id
 }
@@ -418,6 +596,7 @@ function isSavedViewActive(view: SavedTaskView) {
     priorityFilter: view.priorityFilter,
     projectFilter: view.projectFilter,
     focusFilter: view.focusFilter,
+    triageMode: view.triageMode ?? 'all',
     sortBy: view.sortBy,
   })
 }
@@ -578,6 +757,19 @@ function humanizeAttentionReason(value: string) {
   return labels[value] ?? value
 }
 
+function humanizeRiskReason(value: string) {
+  const labels: Record<string, string> = {
+    deadline: 'Deadline',
+    blocker: 'Blocker',
+    priority: 'Priority',
+    ownership: 'ChÆ°a giao',
+    stale: 'Stale',
+    unseen: 'ChÆ°a xem',
+  }
+
+  return labels[value] ?? value
+}
+
 function humanizeAllowedAction(value: string) {
   const labels: Record<string, string> = {
     MoChiTiet: 'Mở chi tiết',
@@ -714,6 +906,81 @@ function attentionDotClass(item: TaskAttentionDto) {
       </section>
 
       <section class="task-panel glass-card reveal delay-2">
+        <div class="panel-heading task-section-heading">
+          <div>
+            <span>Task Risk Radar</span>
+            <h2>Auto triage thông minh</h2>
+          </div>
+          <div class="task-section-heading__meta">
+            <span>{{ triageBuckets.find((bucket) => bucket.key === 'urgent')?.count ?? 0 }} urgent</span>
+            <span>{{ triageBuckets.find((bucket) => bucket.key === 'atRisk')?.count ?? 0 }} at risk</span>
+          </div>
+        </div>
+
+        <div class="risk-radar-shell">
+          <div class="risk-radar-axes">
+            <article v-for="axis in riskRadar" :key="axis.id" class="risk-radar-axis" :class="{ 'is-active': axis.active }">
+              <div class="risk-radar-axis__head">
+                <div>
+                  <strong>{{ axis.label }}</strong>
+                  <span>{{ axis.caption }}</span>
+                </div>
+                <small>{{ axis.score }}%</small>
+              </div>
+              <div class="risk-radar-axis__track">
+                <span :style="{ width: `${Math.min(100, axis.score)}%` }"></span>
+              </div>
+            </article>
+          </div>
+
+          <div class="risk-buckets">
+            <article
+              v-for="bucket in triageBuckets"
+              :key="bucket.key"
+              class="risk-bucket"
+              :class="[`is-${bucket.tone}`, { 'is-active': triageMode === bucket.key }]"
+            >
+              <div class="risk-bucket__head">
+                <strong>{{ bucket.label }}</strong>
+                <span>{{ bucket.count }} task</span>
+              </div>
+              <p>{{ bucket.description }}</p>
+              <button class="task-chip" type="button" @click="triageMode = bucket.key">
+                Xem {{ bucket.label }}
+              </button>
+            </article>
+          </div>
+
+          <div class="risk-toplist">
+            <div class="risk-toplist__head">
+              <div>
+                <span>Ưu tiên xử lý</span>
+                <h3>Top task rủi ro nhất</h3>
+              </div>
+              <button class="task-chip task-chip--ghost" type="button" @click="triageMode = 'all'">
+                Reset triage
+              </button>
+            </div>
+
+            <article v-for="task in topRiskTasks" :key="task.id" class="risk-top-card">
+              <div class="risk-top-card__score">{{ task.riskScore }}</div>
+              <div class="risk-top-card__body">
+                <strong>{{ task.title }}</strong>
+                <small>{{ task.projectName }} · {{ task.assigneeName || 'Chưa giao' }}</small>
+                <div class="risk-top-card__tags">
+                  <span>{{ task.riskBucket }}</span>
+                  <span v-for="reason in task.riskReasons" :key="`${task.id}-${reason}`">{{ humanizeRiskReason(reason) }}</span>
+                </div>
+                <p>{{ task.nextAction }}</p>
+              </div>
+              <button class="icon-pill" type="button" @click="openTaskDrawer(task.id)">
+                <ArrowRight :size="15" />
+                Mở
+              </button>
+            </article>
+          </div>
+        </div>
+
         <div class="panel-heading task-section-heading">
           <div>
             <span>Attention inbox</span>
@@ -1239,6 +1506,211 @@ function attentionDotClass(item: TaskAttentionDto) {
   padding: 18px;
   display: grid;
   gap: 16px;
+}
+
+.risk-radar-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(240px, 0.85fr) minmax(280px, 1fr);
+  gap: 14px;
+}
+
+.risk-radar-axes,
+.risk-buckets,
+.risk-toplist {
+  display: grid;
+  gap: 10px;
+}
+
+.risk-radar-axes {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.72), white);
+}
+
+.risk-radar-axis {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.risk-radar-axis.is-active {
+  border-color: rgba(15, 76, 255, 0.2);
+  background: rgba(239, 246, 255, 0.96);
+}
+
+.risk-radar-axis__head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.risk-radar-axis__head strong,
+.risk-bucket__head strong,
+.risk-toplist__head h3 {
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.risk-radar-axis__head span,
+.risk-toplist__head span,
+.risk-bucket p,
+.risk-top-card small,
+.risk-top-card p {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.risk-radar-axis__head small {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.risk-radar-axis__track {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+}
+
+.risk-radar-axis__track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0f4cff, #22d3ee);
+}
+
+.risk-buckets {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.risk-bucket,
+.risk-top-card {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: white;
+}
+
+.risk-bucket.is-danger {
+  border-color: rgba(239, 68, 68, 0.22);
+  background: linear-gradient(180deg, rgba(254, 242, 242, 0.9), white 70%);
+}
+
+.risk-bucket.is-warning {
+  border-color: rgba(245, 158, 11, 0.22);
+  background: linear-gradient(180deg, rgba(255, 251, 235, 0.92), white 70%);
+}
+
+.risk-bucket.is-info {
+  border-color: rgba(59, 130, 246, 0.2);
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.92), white 70%);
+}
+
+.risk-bucket.is-success {
+  border-color: rgba(34, 197, 94, 0.2);
+  background: linear-gradient(180deg, rgba(240, 253, 244, 0.92), white 70%);
+}
+
+.risk-bucket {
+  display: grid;
+  gap: 10px;
+}
+
+.risk-bucket.is-active {
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+}
+
+.risk-bucket__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.risk-bucket__head span {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.risk-toplist {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--bg-soft);
+}
+
+.risk-toplist__head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.risk-toplist__head span {
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.risk-toplist__head h3 {
+  margin-top: 4px;
+  font-size: 16px;
+}
+
+.risk-top-card {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.risk-top-card__score {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  color: white;
+  font-size: 16px;
+  font-weight: 900;
+  background: linear-gradient(135deg, #0f4cff, #22d3ee);
+}
+
+.risk-top-card__body {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.risk-top-card__body strong {
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.risk-top-card__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.risk-top-card__tags span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--primary);
+  background: rgba(239, 246, 255, 0.92);
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .task-section-heading {
@@ -1861,12 +2333,17 @@ function attentionDotClass(item: TaskAttentionDto) {
   .task-detail-drawer {
     position: static;
   }
+
+  .risk-radar-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 960px) {
   .task-hub-metrics,
   .attention-grid,
-  .task-detail__facts {
+  .task-detail__facts,
+  .risk-buckets {
     grid-template-columns: 1fr;
   }
 
@@ -1876,6 +2353,16 @@ function attentionDotClass(item: TaskAttentionDto) {
 
   .task-row__actions {
     justify-content: flex-start;
+  }
+
+  .risk-top-card {
+    grid-template-columns: 1fr;
+  }
+
+  .risk-top-card__score {
+    width: 100%;
+    height: 42px;
+    border-radius: 14px;
   }
 }
 
