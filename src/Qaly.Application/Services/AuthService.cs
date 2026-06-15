@@ -190,7 +190,7 @@ public class AuthService : IAuthService
         return true;
     }
 
-    private string? GetSeedPassword(string email)
+    private static string? GetSeedPassword(string email)
     {
         return email switch
         {
