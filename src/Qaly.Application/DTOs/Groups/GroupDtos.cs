@@ -7,6 +7,8 @@ public record GroupDto(
     string Name,
     string? AvatarUrl,
     string? Color,
+    string? BackgroundTheme,
+    string? BackgroundImageUrl,
     string Status,
     Guid OwnerId,
     string OwnerName,
@@ -30,6 +32,10 @@ public record UpdateGroupRequest(
     string? AvatarUrl,
     string? Color,
     string Status = "Active");
+
+public record UpdateGroupBackgroundRequest(
+    string? Theme,
+    string? ImageUrl);
 
 public record GroupMemberDto(
     Guid UserId,

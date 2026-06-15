@@ -33,6 +33,7 @@ const props = defineProps<{
   typingUsers?: string[];
   backgroundTheme?: string;
   backgroundImage?: string;
+  canCustomizeBackground?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -50,7 +51,7 @@ const emit = defineEmits<{
   react: [messageId: string, emoji: string];
   typing: [isTyping: boolean];
   setBackground: [theme: string];
-  setBackgroundImage: [imageUrl: string | null];
+  setBackgroundImage: [file: File | null];
   joinMeeting: [meetingId: string];
 }>();
 
@@ -336,14 +337,12 @@ function relayReaction(messageId: string, emoji: string) {
 }
 
 function selectBackground(theme: string) {
-  emit("setBackgroundImage", null);
   emit("setBackground", theme);
   showBackgroundMenu.value = false;
 }
 
 function resetBackground() {
   emit("setBackgroundImage", null);
-  emit("setBackground", "clean");
   showBackgroundMenu.value = false;
 }
 
@@ -362,14 +361,8 @@ function uploadBackground(event: Event) {
     return;
   }
 
-  const reader = new FileReader();
-  reader.onload = () => {
-    emit("setBackgroundImage", String(reader.result));
-    showBackgroundMenu.value = false;
-    showSuccess("Đã đổi nền chat");
-  };
-  reader.onerror = () => showError("Không thể đọc ảnh nền.");
-  reader.readAsDataURL(file);
+  emit("setBackgroundImage", file);
+  showBackgroundMenu.value = false;
 }
 </script>
 
@@ -393,6 +386,7 @@ function uploadBackground(event: Event) {
       </div>
       <div class="team-chat-window__actions">
         <button
+          v-if="canCustomizeBackground"
           class="icon-button icon-button--small"
           type="button"
           aria-label="Đổi nền chat"

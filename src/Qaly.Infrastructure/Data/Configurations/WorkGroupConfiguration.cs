@@ -13,6 +13,8 @@ public class WorkGroupConfiguration : IEntityTypeConfiguration<WorkGroup>
         builder.Property(group => group.Name).HasMaxLength(160).IsRequired();
         builder.Property(group => group.AvatarUrl).HasMaxLength(1000);
         builder.Property(group => group.Color).HasMaxLength(20);
+        builder.Property(group => group.BackgroundTheme).HasMaxLength(40);
+        builder.Property(group => group.BackgroundImageUrl).HasMaxLength(1000);
         builder.Property(group => group.Status).HasMaxLength(20).IsRequired();
         builder.Property(group => group.CreatedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
 

@@ -14,6 +14,7 @@ import {
   FileVideo,
   Image as ImageIcon,
   Mail,
+  LogOut,
   Plus,
   Settings,
   ShieldCheck,
@@ -51,6 +52,8 @@ interface GroupDto {
   name: string;
   avatarUrl: string | null;
   color: string | null;
+  backgroundTheme: string | null;
+  backgroundImageUrl: string | null;
   currentUserRole: string;
   memberCount: number;
   messageCount: number;
@@ -128,8 +131,6 @@ const addUserId = ref("");
 const addRole = ref("Member");
 const projectForm = ref({ name: "", code: "", description: "" });
 const pollForm = ref({ question: "", options: ["", ""] });
-const backgroundTheme = ref(localStorage.getItem("qaly.chatBackground") ?? "clean");
-const backgroundImage = ref(localStorage.getItem("qaly.chatBackgroundImage") ?? "");
 const isDetailPanelCollapsed = ref(false);
 const isUploadingAvatar = ref(false);
 const typingUsers = ref<Record<string, { name: string; timeoutId: number }>>({});
@@ -170,6 +171,9 @@ const sharedFiles = computed(() =>
 const canManageGroup = computed(() =>
   ["Owner", "Admin"].includes(activeDetail.value?.currentUserRole ?? ""),
 );
+const isGroupOwner = computed(() => activeDetail.value?.currentUserRole === "Owner");
+const activeBackgroundTheme = computed(() => activeDetail.value?.backgroundTheme || "clean");
+const activeBackgroundImage = computed(() => activeDetail.value?.backgroundImageUrl || "");
 const availableUsers = computed(() => {
   const memberIds = new Set(members.value.map((member) => member.userId));
   return users.value.filter((user) => user.isActive && !memberIds.has(user.id));
@@ -187,6 +191,13 @@ function roleLabel(role?: string) {
   if (!role) return "-";
   const map: Record<string, string> = { Owner: "Chủ nhóm", Admin: "Quản trị viên", Member: "Thành viên" };
   return map[role] ?? role;
+}
+
+function canManageMember(member: GroupMemberDto) {
+  const currentRole = activeDetail.value?.currentUserRole;
+  if (currentRole === "Owner") return member.role !== "Owner";
+  if (currentRole === "Admin") return member.role === "Member";
+  return false;
 }
 
 onMounted(async () => {
@@ -346,6 +357,30 @@ async function connectRealtime() {
   hubConnection.on("groupMessageChanged", (message: GroupMessageDto) => {
     upsertMessage(toMessageModel(message), false);
   });
+  hubConnection.on("groupUpdated", (group: GroupDto) => {
+    groupDetails.value[group.id] = group;
+    groups.value = groups.value.map((item) =>
+      item.id === group.id ? toGroupModel(group) : item,
+    );
+  });
+  hubConnection.on("groupMemberRemoved", async (payload: { groupId?: string; userId?: string }) => {
+    if (!payload?.groupId) return;
+    if (payload.userId?.toLowerCase() === currentUserId.value.toLowerCase()) {
+      await removeGroupLocally(payload.groupId, "Bạn đã được đưa ra khỏi nhóm.");
+      return;
+    }
+
+    if (payload.groupId === activeGroupId.value) {
+      await Promise.all([loadMembers(payload.groupId), loadGroupDetail(payload.groupId)]);
+    }
+  });
+  hubConnection.on("groupRemoved", async (payload: { groupId?: string; reason?: string }) => {
+    if (!payload?.groupId) return;
+    await removeGroupLocally(
+      payload.groupId,
+      payload.reason === "dissolved" ? "Nhóm đã được giải tán." : "Nhóm đã bị xóa.",
+    );
+  });
   hubConnection.on("typingStarted", (payload: { groupId?: string; userId?: string; userName?: string }) => {
     handleTypingSignal(payload, true);
   });
@@ -472,17 +507,93 @@ async function updateMemberRole(member: GroupMemberDto, role: string) {
 
 async function removeMember(member: GroupMemberDto) {
   if (!activeGroupId.value || member.role === "Owner") return;
-  if (!window.confirm(`Xóa ${member.fullName} khỏi nhóm?`)) return;
+  if (!window.confirm(`Kick ${member.fullName} khỏi nhóm này?`)) return;
 
   try {
     await apiCommand(`/api/groups/${activeGroupId.value}/members/${member.userId}`, {
       method: "DELETE",
     });
     await Promise.all([loadMembers(activeGroupId.value), loadGroupDetail(activeGroupId.value)]);
-    showSuccess("Đã xóa thành viên khỏi nhóm");
+    showSuccess("Đã kick thành viên khỏi nhóm");
   } catch (error) {
     showError(errorMessage(error, "Không thể xóa thành viên."));
   }
+}
+
+async function leaveGroup() {
+  if (!activeGroupId.value) return;
+  if (isGroupOwner.value) {
+    showError("Chủ nhóm cần giải tán nhóm hoặc chuyển quyền trước khi rời.");
+    return;
+  }
+  const groupName = activeGroup.value?.name ?? "nhóm này";
+  if (!window.confirm(`Rời khỏi "${groupName}"? Bạn sẽ không còn xem được tin nhắn trong nhóm.`)) return;
+
+  const leavingGroupId = activeGroupId.value;
+  try {
+    await apiCommand(`/api/groups/${leavingGroupId}/members/me`, { method: "DELETE" });
+    groups.value = groups.value.filter((group) => group.id !== leavingGroupId);
+    delete groupDetails.value[leavingGroupId];
+    messages.value = messages.value.filter((message) => message.groupId !== leavingGroupId);
+    activeGroupId.value = groups.value[0]?.id ?? "";
+    if (activeGroupId.value) {
+      await router.replace({ name: "group-detail", params: { groupId: activeGroupId.value } });
+    } else {
+      await router.replace({ name: "groups" });
+    }
+    showSuccess("Bạn đã rời nhóm");
+  } catch (error) {
+    showError(errorMessage(error, "Không thể rời nhóm."));
+  }
+}
+
+async function dissolveGroup() {
+  if (!activeGroupId.value || !isGroupOwner.value) return;
+  const groupName = activeGroup.value?.name ?? "nhóm này";
+  const confirmed = window.confirm(
+    `Giải tán "${groupName}"? Tất cả thành viên sẽ bị đưa ra khỏi nhóm và nhóm sẽ biến mất khỏi danh sách.`,
+  );
+  if (!confirmed) return;
+
+  const dissolvedGroupId = activeGroupId.value;
+  try {
+    await apiCommand(`/api/groups/${dissolvedGroupId}/dissolve`, { method: "DELETE" });
+    groups.value = groups.value.filter((group) => group.id !== dissolvedGroupId);
+    delete groupDetails.value[dissolvedGroupId];
+    messages.value = messages.value.filter((message) => message.groupId !== dissolvedGroupId);
+    activeGroupId.value = groups.value[0]?.id ?? "";
+    if (activeGroupId.value) {
+      await router.replace({ name: "group-detail", params: { groupId: activeGroupId.value } });
+    } else {
+      await router.replace({ name: "groups" });
+    }
+    showSuccess("Đã giải tán nhóm");
+  } catch (error) {
+    showError(errorMessage(error, "Không thể giải tán nhóm."));
+  }
+}
+
+async function removeGroupLocally(groupId: string, message?: string) {
+  const hadGroup = groups.value.some((group) => group.id === groupId);
+  if (!hadGroup) return;
+
+  const wasActive = activeGroupId.value === groupId;
+  groups.value = groups.value.filter((group) => group.id !== groupId);
+  delete groupDetails.value[groupId];
+  messages.value = messages.value.filter((item) => item.groupId !== groupId);
+
+  if (!wasActive) {
+    if (message) showSuccess(message);
+    return;
+  }
+
+  activeGroupId.value = groups.value[0]?.id ?? "";
+  if (activeGroupId.value) {
+    await router.replace({ name: "group-detail", params: { groupId: activeGroupId.value } });
+  } else {
+    await router.replace({ name: "groups" });
+  }
+  if (message) showSuccess(message);
 }
 
 async function startMeeting() {
@@ -805,25 +916,51 @@ function selectGroup(groupId: string) {
   activeGroupId.value = groupId;
 }
 
-function setChatBackground(theme: string) {
-  backgroundTheme.value = theme;
-  localStorage.setItem("qaly.chatBackground", theme);
-}
-
-function setChatBackgroundImage(imageUrl: string | null) {
-  backgroundImage.value = imageUrl ?? "";
-  if (!imageUrl) {
-    localStorage.removeItem("qaly.chatBackgroundImage");
-    return;
-  }
+async function setChatBackground(theme: string) {
+  if (!activeGroupId.value || !canManageGroup.value) return;
 
   try {
-    localStorage.setItem("qaly.chatBackgroundImage", imageUrl);
-  } catch {
-    backgroundImage.value = "";
-    localStorage.removeItem("qaly.chatBackgroundImage");
-    showError("Ảnh quá lớn, trình duyệt không lưu được nền chat.");
+    const updated = await apiResult<GroupDto>(`/api/groups/${activeGroupId.value}/background`, {
+      method: "PATCH",
+      body: JSON.stringify({ theme, imageUrl: null }),
+    });
+    groupDetails.value[updated.id] = updated;
+    groups.value = groups.value.map((group) =>
+      group.id === updated.id ? toGroupModel(updated) : group,
+    );
+    showSuccess("Đã đổi nền nhóm");
+  } catch (error) {
+    showError(errorMessage(error, "Không thể đổi nền nhóm."));
   }
+}
+
+async function setChatBackgroundImage(file: File | null) {
+  if (!activeGroupId.value || !canManageGroup.value) return;
+
+  try {
+    const updated = file
+      ? await uploadGroupBackgroundImage(file)
+      : await apiResult<GroupDto>(`/api/groups/${activeGroupId.value}/background`, {
+          method: "PATCH",
+          body: JSON.stringify({ theme: "clean", imageUrl: null }),
+        });
+    groupDetails.value[updated.id] = updated;
+    groups.value = groups.value.map((group) =>
+      group.id === updated.id ? toGroupModel(updated) : group,
+    );
+    showSuccess(file ? "Đã đổi ảnh nền nhóm" : "Đã đặt lại nền nhóm");
+  } catch (error) {
+    showError(errorMessage(error, "Không thể cập nhật ảnh nền nhóm."));
+  }
+}
+
+async function uploadGroupBackgroundImage(file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return await apiResult<GroupDto>(`/api/groups/${activeGroupId.value}/background-image`, {
+    method: "POST",
+    body: formData,
+  });
 }
 
 function upsertMessage(message: TeamChatMessage, incrementUnread = true) {
@@ -1071,8 +1208,9 @@ function formatMessageTime(value: string) {
           :current-user-id="currentUserId"
           :members="mentionMembers"
           :typing-users="activeTypingUsers"
-          :background-theme="backgroundTheme"
-          :background-image="backgroundImage"
+          :background-theme="activeBackgroundTheme"
+          :background-image="activeBackgroundImage"
+          :can-customize-background="canManageGroup"
           @send="sendMessage"
           @edit="editMessage"
           @pin="setMessagePin"
@@ -1218,7 +1356,7 @@ function formatMessageTime(value: string) {
                     <ShieldCheck v-else-if="member.role === 'Admin'" :size="13" />
                     <UserRound v-else :size="13" />
                     <select
-                      v-if="canManageGroup && member.role !== 'Owner'"
+                      v-if="canManageMember(member)"
                       :value="member.role"
                       aria-label="Vai trò thành viên"
                       @change="updateMemberRole(member, ($event.target as HTMLSelectElement).value)"
@@ -1229,7 +1367,7 @@ function formatMessageTime(value: string) {
                     <span v-else>{{ roleLabel(member.role) }}</span>
                   </label>
                   <button
-                    v-if="canManageGroup && member.role !== 'Owner'"
+                    v-if="canManageMember(member)"
                     class="group-member-remove"
                     type="button"
                     @click="removeMember(member)"
@@ -1238,6 +1376,27 @@ function formatMessageTime(value: string) {
                   </button>
                 </div>
               </article>
+            </div>
+
+            <div class="group-danger-zone">
+              <button
+                v-if="!isGroupOwner"
+                class="group-danger-action"
+                type="button"
+                @click="leaveGroup"
+              >
+                <LogOut :size="16" />
+                Rời khỏi nhóm
+              </button>
+              <button
+                v-if="isGroupOwner"
+                class="group-danger-action group-danger-action--strong"
+                type="button"
+                @click="dissolveGroup"
+              >
+                <Trash2 :size="16" />
+                Giải tán nhóm
+              </button>
             </div>
           </div>
 
@@ -2113,6 +2272,50 @@ function formatMessageTime(value: string) {
 
 .group-member-remove:hover {
   text-decoration: underline;
+}
+
+.group-danger-zone {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #fee2e2;
+}
+
+.group-danger-action {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #fecaca;
+  border-radius: 13px;
+  color: #b91c1c;
+  background: #fff7f7;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 0.84rem;
+  font-weight: 850;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.group-danger-action:hover {
+  border-color: #fca5a5;
+  background: #fee2e2;
+  transform: translateY(-1px);
+}
+
+.group-danger-action--strong {
+  color: #ffffff;
+  border-color: #dc2626;
+  background: #dc2626;
+  box-shadow: 0 12px 24px rgba(220, 38, 38, 0.18);
+}
+
+.group-danger-action--strong:hover {
+  border-color: #b91c1c;
+  background: #b91c1c;
 }
 
 .group-shared-section {

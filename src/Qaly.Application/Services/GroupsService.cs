@@ -284,6 +284,48 @@ public partial class GroupsService : IGroupsService
         return await GetByIdAsync(groupId, ct);
     }
 
+    public async Task<Result<GroupDto>> UpdateBackgroundAsync(
+        Guid groupId,
+        UpdateGroupBackgroundRequest request,
+        CancellationToken ct = default)
+    {
+        var group = await _groupRepo.GetByIdAsync(groupId, ct);
+        if (group == null)
+        {
+            return Result.NotFound<GroupDto>();
+        }
+
+        if (!await CanManageGroupAsync(groupId, ct))
+        {
+            return Result.Forbidden<GroupDto>();
+        }
+
+        var theme = NormalizeOptional(request.Theme);
+        var imageUrl = NormalizeOptional(request.ImageUrl);
+        if (theme is { Length: > 40 })
+        {
+            return Result.Failure<GroupDto>("Background theme is too long.");
+        }
+
+        if (imageUrl is { Length: > 1000 })
+        {
+            return Result.Failure<GroupDto>("Background image URL is too long.");
+        }
+
+        group.BackgroundTheme = theme ?? "clean";
+        group.BackgroundImageUrl = imageUrl;
+        await _groupRepo.UpdateAsync(group, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync(
+            "UpdateBackground",
+            nameof(WorkGroup),
+            groupId.ToString(),
+            new { group.BackgroundTheme, group.BackgroundImageUrl },
+            ct);
+
+        return await GetByIdAsync(groupId, ct);
+    }
+
     public async Task<Result> DeleteAsync(Guid groupId, CancellationToken ct = default)
     {
         var group = await _groupRepo.GetByIdAsync(groupId, ct);
@@ -300,6 +342,45 @@ public partial class GroupsService : IGroupsService
         await _groupRepo.DeleteAsync(group, ct);
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("Delete", nameof(WorkGroup), groupId.ToString(), new { group.Name }, ct);
+
+        return Result.Success();
+    }
+
+    public async Task<Result> DissolveAsync(Guid groupId, CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Failure("Authentication is required.", 401);
+        }
+
+        var group = await _groupRepo.GetByIdAsync(groupId, ct);
+        if (group == null)
+        {
+            return Result.NotFound();
+        }
+
+        var canDissolve = IsSystemAdmin() || group.OwnerId == currentUserId.Value;
+        if (!canDissolve)
+        {
+            var ownerMembership = await _memberRepo.GetQueryable()
+                .AsNoTracking()
+                .AnyAsync(member =>
+                    member.WorkGroupId == groupId &&
+                    member.UserId == currentUserId.Value &&
+                    member.Role == GroupRoleRules.Owner,
+                    ct);
+            canDissolve = ownerMembership;
+        }
+
+        if (!canDissolve)
+        {
+            return Result.Forbidden("Chỉ chủ nhóm mới có quyền giải tán nhóm.");
+        }
+
+        await _groupRepo.DeleteAsync(group, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync("Dissolve", nameof(WorkGroup), groupId.ToString(), new { group.Name }, ct);
 
         return Result.Success();
     }
@@ -1837,6 +1918,8 @@ public partial class GroupsService : IGroupsService
             group.Name,
             group.AvatarUrl,
             group.Color,
+            group.BackgroundTheme,
+            group.BackgroundImageUrl,
             group.Status,
             group.OwnerId,
             group.Owner?.FullName ?? string.Empty,

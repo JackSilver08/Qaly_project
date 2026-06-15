@@ -5,6 +5,7 @@ using Qaly.Application.DTOs.Groups;
 using Qaly.Application.DTOs.Ai;
 using Qaly.Application.Common.Models;
 using Qaly.Application.Services;
+using Qaly.Web.Auth;
 using Qaly.Web.Hubs;
 
 namespace Qaly.Web.Controllers;
@@ -60,6 +61,29 @@ public class GroupsController : BaseApiController
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
         var result = await _groupsService.DeleteAsync(id, ct);
+        if (result.IsSuccess)
+        {
+            await BroadcastGroupRemovedAsync(id, "deleted", ct);
+        }
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpDelete("{id:guid}/dissolve")]
+    public async Task<IActionResult> Dissolve(Guid id, CancellationToken ct)
+    {
+        var result = await _groupsService.DissolveAsync(id, ct);
+        if (result.IsSuccess)
+        {
+            await BroadcastGroupRemovedAsync(id, "dissolved", ct);
+        }
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPatch("{id:guid}/background")]
+    public async Task<IActionResult> UpdateBackground(Guid id, UpdateGroupBackgroundRequest request, CancellationToken ct)
+    {
+        var result = await _groupsService.UpdateBackgroundAsync(id, request, ct);
+        await BroadcastGroupUpdatedAsync(id, result, ct);
         return StatusCode(result.StatusCode, result);
     }
 
@@ -164,6 +188,31 @@ public class GroupsController : BaseApiController
     public async Task<IActionResult> RemoveMember(Guid id, Guid userId, CancellationToken ct)
     {
         var result = await _groupsService.RemoveMemberAsync(id, userId, ct);
+        if (result.IsSuccess)
+        {
+            await _groupHub.Clients
+                .Group(GroupHub.WorkGroup(id))
+                .SendAsync("groupMemberRemoved", new { groupId = id, userId }, ct);
+        }
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpDelete("{id:guid}/members/me")]
+    public async Task<IActionResult> LeaveGroup(Guid id, CancellationToken ct)
+    {
+        var currentUserId = User.GetUserId();
+        if (currentUserId == null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await _groupsService.RemoveMemberAsync(id, currentUserId.Value, ct);
+        if (result.IsSuccess)
+        {
+            await _groupHub.Clients
+                .Group(GroupHub.WorkGroup(id))
+                .SendAsync("groupMemberRemoved", new { groupId = id, userId = currentUserId.Value }, ct);
+        }
         return StatusCode(result.StatusCode, result);
     }
 
@@ -247,6 +296,59 @@ public class GroupsController : BaseApiController
 
         var avatarUrl = $"/api/groups/{id}/attachments/{upload.Data.Id}";
         var result = await _groupsService.UpdateAvatarAsync(id, avatarUrl, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("{id:guid}/background-image")]
+    [RequestSizeLimit(8 * 1024 * 1024)]
+    public async Task<IActionResult> UploadBackgroundImage(Guid id, IFormFile file, CancellationToken ct)
+    {
+        if (file == null || file.Length == 0)
+        {
+            return BadRequest(new { error = "Background image is required." });
+        }
+
+        if (file.Length > 8 * 1024 * 1024)
+        {
+            return BadRequest(new { error = "Background image must be 8 MB or smaller." });
+        }
+
+        var allowedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp"
+        };
+        if (!allowedTypes.Contains(file.ContentType))
+        {
+            return BadRequest(new { error = "Background must be a JPG, PNG, GIF, or WEBP image." });
+        }
+
+        if (!await _groupsService.CanManageGroupAsync(id, ct))
+        {
+            return Forbid();
+        }
+
+        await using var stream = file.OpenReadStream();
+        var upload = await _groupAttachmentService.UploadAsync(
+            id,
+            stream,
+            file.FileName,
+            file.ContentType,
+            file.Length,
+            ct);
+        if (!upload.IsSuccess || upload.Data == null)
+        {
+            return StatusCode(upload.StatusCode, upload);
+        }
+
+        var backgroundUrl = $"/api/groups/{id}/attachments/{upload.Data.Id}";
+        var result = await _groupsService.UpdateBackgroundAsync(
+            id,
+            new UpdateGroupBackgroundRequest("custom", backgroundUrl),
+            ct);
+        await BroadcastGroupUpdatedAsync(id, result, ct);
         return StatusCode(result.StatusCode, result);
     }
 
@@ -352,6 +454,25 @@ public class GroupsController : BaseApiController
         await _groupHub.Clients
             .Group(GroupHub.WorkGroup(groupId))
             .SendAsync("groupMessageChanged", result.Data, ct);
+    }
+
+    private async Task BroadcastGroupUpdatedAsync(Guid groupId, Result<GroupDto> result, CancellationToken ct)
+    {
+        if (!result.IsSuccess || result.Data == null)
+        {
+            return;
+        }
+
+        await _groupHub.Clients
+            .Group(GroupHub.WorkGroup(groupId))
+            .SendAsync("groupUpdated", result.Data, ct);
+    }
+
+    private async Task BroadcastGroupRemovedAsync(Guid groupId, string reason, CancellationToken ct)
+    {
+        await _groupHub.Clients
+            .Group(GroupHub.WorkGroup(groupId))
+            .SendAsync("groupRemoved", new { groupId, reason }, ct);
     }
 
     [HttpGet("{id:guid}/meetings/active")]
