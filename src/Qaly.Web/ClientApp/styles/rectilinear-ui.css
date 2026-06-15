@@ -6,12 +6,12 @@
  */
 
 :root {
-  --radius-shell: 4px;
-  --radius-panel: 4px;
-  --radius-card: 4px;
-  --ui-surface-radius: 4px;
-  --ui-cluster-gap: 12px;
-  --ui-section-gap: 14px;
+  --radius-shell: 0;
+  --radius-panel: 0;
+  --radius-card: 0;
+  --ui-surface-radius: 0;
+  --ui-cluster-gap: 8px;
+  --ui-section-gap: 10px;
   --ui-surface-border: 1px solid var(--line);
   --ui-surface-shadow: 0 2px 8px rgba(15, 23, 42, 0.045);
 }
@@ -93,6 +93,31 @@
   border-radius: var(--ui-surface-radius) !important;
 }
 
+/* Page-level density: use the available canvas instead of maintaining wide gutters. */
+#qaly-dashboard-app .dashboard-container {
+  padding: 16px !important;
+}
+
+#qaly-dashboard-app .project-home-main {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 16px !important;
+}
+
+#qaly-dashboard-app .project-home-main:has(> .groups-workspace) {
+  padding: 0 !important;
+}
+
+#qaly-dashboard-app .projects-panel,
+#qaly-dashboard-app .project-workspace,
+#qaly-dashboard-app .task-panel,
+#qaly-dashboard-app .task-hub-hero,
+#qaly-dashboard-app .project-detail-card,
+#qaly-dashboard-app .project-detail-panel {
+  padding: 16px !important;
+}
+
 /* Cards read as one system through a crisp edge and restrained elevation. */
 #qaly-dashboard-app .summary-card,
 #qaly-dashboard-app .metric-card,
@@ -129,6 +154,18 @@
   gap: var(--ui-cluster-gap) !important;
 }
 
+#qaly-dashboard-app .task-hub-page {
+  grid-template-columns: minmax(0, 1fr) 320px !important;
+  gap: var(--ui-cluster-gap) !important;
+}
+
+#qaly-dashboard-app .task-hub-main,
+#qaly-dashboard-app .task-hub-metrics,
+#qaly-dashboard-app .risk-radar-shell,
+#qaly-dashboard-app .attention-grid {
+  gap: var(--ui-cluster-gap) !important;
+}
+
 #qaly-dashboard-app .project-workspace,
 #qaly-dashboard-app .projects-panel,
 #qaly-dashboard-app .task-board-shell,
@@ -140,8 +177,84 @@
 
 #qaly-dashboard-app .summary-card,
 #qaly-dashboard-app .project-grid-card {
-  gap: 12px !important;
-  padding: 18px !important;
+  gap: 10px !important;
+  padding: 16px !important;
+}
+
+/* Let dense pages grow into the space that used to be empty. */
+#qaly-dashboard-app .summary-card-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+
+#qaly-dashboard-app .custom-chart-card {
+  padding: 20px !important;
+}
+
+#qaly-dashboard-app .custom-chart-header {
+  margin-bottom: 12px !important;
+}
+
+#qaly-dashboard-app .custom-chart-body {
+  height: clamp(420px, 35vw, 560px) !important;
+}
+
+#qaly-dashboard-app .project-grid-shell {
+  gap: 8px !important;
+}
+
+#qaly-dashboard-app .project-grid-card {
+  min-height: 0 !important;
+}
+
+#qaly-dashboard-app .wiki-detail-page {
+  justify-content: stretch !important;
+  padding: 12px 0 !important;
+}
+
+#qaly-dashboard-app .wiki-detail-container,
+#qaly-dashboard-app .wiki-detail-container.editing-mode {
+  width: 100% !important;
+  max-width: none !important;
+  padding: 0 16px !important;
+}
+
+#qaly-dashboard-app .wiki-layout {
+  gap: 8px !important;
+}
+
+#qaly-dashboard-app .wiki-content-card,
+#qaly-dashboard-app .toc-container {
+  padding: 16px !important;
+}
+
+#qaly-dashboard-app .analytics-chat-portal .chat-empty-state,
+#qaly-dashboard-app .analytics-chat-portal .composer-wrap-center,
+#qaly-dashboard-app .analytics-chat-portal .erumi-composer,
+#qaly-dashboard-app .analytics-chat-portal .suggestion-pills-wrap,
+#qaly-dashboard-app .analytics-chat-portal .chat-thread-width,
+#qaly-dashboard-app .analytics-chat-portal .bottom-bar-width {
+  width: min(920px, calc(100% - 32px)) !important;
+  max-width: 920px !important;
+}
+
+#qaly-dashboard-app .analytics-chat-portal .chat-thread-container {
+  padding-inline: 16px !important;
+}
+
+#qaly-dashboard-app .groups-workspace {
+  grid-template-columns: minmax(230px, 260px) minmax(460px, 1fr) minmax(320px, 360px) !important;
+}
+
+#qaly-dashboard-app .groups-workspace--detail-collapsed {
+  grid-template-columns: minmax(230px, 260px) minmax(460px, 1fr) 52px !important;
+}
+
+#qaly-dashboard-app .groups-workspace .team-chat-sidebar {
+  padding: 12px 8px !important;
+}
+
+#qaly-dashboard-app .group-detail-panel {
+  padding-inline: 12px !important;
 }
 
 #qaly-dashboard-app .project-grid-card:hover,
@@ -163,6 +276,31 @@
 #qaly-dashboard-app .group-modal,
 #qaly-dashboard-app .message-action-menu {
   border-radius: var(--ui-surface-radius) !important;
+}
+
+/* Straighten nested structural blocks that are defined inside scoped pages. */
+#qaly-dashboard-app .task-hub-hero,
+#qaly-dashboard-app .task-detail-drawer,
+#qaly-dashboard-app .task-metric,
+#qaly-dashboard-app .risk-radar-axes,
+#qaly-dashboard-app .risk-radar-axis,
+#qaly-dashboard-app .risk-buckets,
+#qaly-dashboard-app .risk-toplist,
+#qaly-dashboard-app .risk-top-card,
+#qaly-dashboard-app .task-toolbar,
+#qaly-dashboard-app .task-row,
+#qaly-dashboard-app .attention-card,
+#qaly-dashboard-app .project-detail-header,
+#qaly-dashboard-app .project-overview,
+#qaly-dashboard-app .overview-main,
+#qaly-dashboard-app .overview-side,
+#qaly-dashboard-app .attention-panel,
+#qaly-dashboard-app .gantt-chart,
+#qaly-dashboard-app .timeline-shell,
+#qaly-dashboard-app .profile-page__item,
+#qaly-dashboard-app .toc-container,
+#qaly-dashboard-app .wiki-content-card {
+  border-radius: 0 !important;
 }
 
 /*
@@ -201,12 +339,32 @@
 
 @media (max-width: 767px) {
   :root {
-    --ui-cluster-gap: 10px;
-    --ui-section-gap: 12px;
+    --ui-cluster-gap: 6px;
+    --ui-section-gap: 8px;
+  }
+
+  #qaly-dashboard-app .dashboard-container,
+  #qaly-dashboard-app .project-home-main {
+    padding: 10px !important;
   }
 
   #qaly-dashboard-app .summary-card,
   #qaly-dashboard-app .project-grid-card {
-    padding: 14px !important;
+    padding: 12px !important;
+  }
+
+  #qaly-dashboard-app .custom-chart-body {
+    height: 340px !important;
+  }
+
+  #qaly-dashboard-app .wiki-detail-container,
+  #qaly-dashboard-app .wiki-detail-container.editing-mode {
+    padding: 0 10px !important;
+  }
+}
+
+@media (max-width: 1280px) {
+  #qaly-dashboard-app .task-hub-page {
+    grid-template-columns: minmax(0, 1fr) !important;
   }
 }

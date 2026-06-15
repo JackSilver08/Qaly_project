@@ -9,9 +9,9 @@
 
 ## Nguyên tắc thiết kế
 
-1. Card và panel chính dùng bán kính 4px, viền 1px và bóng nhẹ.
-2. Khoảng cách card trong cùng cụm dùng 12px trên desktop, 10px trên mobile.
-3. Khoảng cách giữa các phần nội dung dùng 14px trên desktop, 12px trên mobile.
+1. Card và panel chính dùng góc vuông 0px, viền 1px và bóng nhẹ.
+2. Khoảng cách card trong cùng cụm dùng 8px trên desktop, 6px trên mobile.
+3. Khoảng cách giữa các phần nội dung dùng 10px trên desktop, 8px trên mobile.
 4. Hover ưu tiên đổi viền và bóng; không nâng card bằng chuyển động theo trục dọc.
 5. Avatar, badge trạng thái, progress bar và nút dạng pill không bị ép vuông.
 6. Comment/message bubble dùng 14px; attachment/upload/dropzone dùng 12px.
@@ -24,6 +24,8 @@
 - Teams/Groups: workspace, sidebar, member/poll cards và chat shell.
 - Analytics, Wiki, AI panels, search overlay, modal và toast.
 - Light mode, dark mode và breakpoint mobile.
+- Dashboard, Projects, Tasks và Wiki dùng toàn bộ chiều ngang khả dụng.
+- Analytics mở rộng vùng hội thoại chính; Tasks ưu tiên chiều rộng cho danh sách.
 
 ## Lộ trình
 
@@ -49,7 +51,7 @@
 
 ## Tiêu chí nghiệm thu
 
-- Các card chính có góc 4px và khoảng cách cụm không vượt quá 12px trên desktop.
+- Các card chính có góc 0px và khoảng cách cụm không vượt quá 8px trên desktop.
 - Card vẫn phân biệt rõ nhờ viền, nền và elevation nhẹ.
 - Comment, chat bubble, composer, attachment và upload không bị ép vuông.
 - Không có thay đổi API, dữ liệu hoặc hành vi nghiệp vụ.
