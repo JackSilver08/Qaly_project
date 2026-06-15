@@ -8,7 +8,8 @@
     "build": "node ./node_modules/vite/dist/node/cli.js build",
     "preview": "node ./node_modules/vite/dist/node/cli.js preview",
     "typecheck": "node ./scripts/vue-tsc.mjs --noEmit -p tsconfig.json",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:browser-console": "playwright test tests/e2e/browser-console.spec.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

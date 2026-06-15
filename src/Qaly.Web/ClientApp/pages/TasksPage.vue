@@ -322,7 +322,7 @@ const selectedTaskSummary = computed(() => {
 const selectedTaskProject = computed(() => {
   const summary = selectedTaskSummary.value
   if (!summary) return null
-  return projects.value.find((project) => project.id === summary.projectId) ?? null
+  return projects.value.find((project: DashboardProject) => project.id === summary.projectId) ?? null
 })
 
 const selectedCount = computed(() => selectedTaskIds.value.length)
@@ -681,7 +681,7 @@ function taskActionLabel(status: string) {
   return displayStatus(status)
 }
 
-async function updateSingleTaskStatus(task: HubTask, status: string) {
+async function updateSingleTaskStatus(task: Pick<DashboardTask, 'id'>, status: string) {
   try {
     await apiCommand('/api/tasks/batch-status', {
       method: 'POST',
@@ -1050,7 +1050,7 @@ function attentionDotClass(item: TaskAttentionDto) {
                 v-if="item.allowedActions.includes('BatDauLam')"
                 class="text-button"
                 type="button"
-                @click="updateSingleTaskStatus({ ...item, projectCode: '', projectOwnerName: '', projectStatus: '', projectMemberCount: 0, projectProgressPercentage: 0, projectCreatedAt: '' } as HubTask, 'InProgress')"
+                @click="updateSingleTaskStatus(item, 'InProgress')"
               >
                 <Waypoints :size="14" />
                 Bắt đầu

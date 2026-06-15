@@ -560,7 +560,7 @@ async function toggleCamera() {
   }
 }
 
-function formatTime(value: string) {
+function formatTime(value: string | number) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "vừa xong";
   return new Intl.DateTimeFormat("vi", {

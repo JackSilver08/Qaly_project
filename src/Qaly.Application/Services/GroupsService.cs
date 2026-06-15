@@ -704,6 +704,22 @@ public partial class GroupsService : IGroupsService
 
         var deletedPollId = poll.Id;
         await _pollRepo.DeleteAsync(poll, ct);
+
+        var pollIdMarker = $"[pollid] {deletedPollId}";
+        var pollMessages = await _messageRepo.GetQueryable()
+            .Where(message =>
+                message.WorkGroupId == groupId &&
+                message.MessageType == "Poll" &&
+                message.Content.Contains(pollIdMarker))
+            .ToListAsync(ct);
+
+        foreach (var message in pollMessages)
+        {
+            message.IsDeleted = true;
+            message.DeletedAt = DateTimeOffset.UtcNow;
+            await _messageRepo.UpdateAsync(message, ct);
+        }
+
         await _unitOfWork.SaveChangesAsync(ct);
 
         var deletedAt = DateTimeOffset.UtcNow;
@@ -1365,6 +1381,27 @@ public partial class GroupsService : IGroupsService
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(ct);
+
+        var pollMessages = messages
+            .Where(message => !message.IsDeleted && message.MessageType == "Poll")
+            .Select(message => new { Message = message, PollId = TryExtractPollId(message.Content) })
+            .Where(item => item.PollId.HasValue)
+            .ToList();
+
+        if (pollMessages.Count > 0)
+        {
+            var pollIds = pollMessages.Select(item => item.PollId!.Value).Distinct().ToList();
+            var existingPollIds = await _pollRepo.GetQueryable()
+                .AsNoTracking()
+                .Where(poll => poll.GroupId == groupId && pollIds.Contains(poll.Id))
+                .Select(poll => poll.Id)
+                .ToHashSetAsync(ct);
+
+            foreach (var item in pollMessages.Where(item => !existingPollIds.Contains(item.PollId!.Value)))
+            {
+                item.Message.IsDeleted = true;
+            }
+        }
 
         messages.Reverse();
 
@@ -2029,6 +2066,21 @@ public partial class GroupsService : IGroupsService
         }
 
         return "Text";
+    }
+
+    private static Guid? TryExtractPollId(string content)
+    {
+        foreach (var line in content.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            const string marker = "[pollid] ";
+            if (line.StartsWith(marker, StringComparison.OrdinalIgnoreCase) &&
+                Guid.TryParse(line[marker.Length..].Trim(), out var pollId))
+            {
+                return pollId;
+            }
+        }
+
+        return null;
     }
 
     private async Task<string> GenerateUniqueInvitationTokenAsync(CancellationToken ct)

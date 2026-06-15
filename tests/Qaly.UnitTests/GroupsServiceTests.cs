@@ -1736,6 +1736,57 @@ public class GroupsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetMessagesAsync_WhenPollNoLongerExists_ReturnsDeletedPlaceholder()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Chat Group");
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+        var missingPollId = Guid.NewGuid();
+
+        await CreateService().CreateMessageAsync(
+            group.Id,
+            new SendGroupMessageRequest(
+                $"[poll] Archived poll\n[pollid] {missingPollId}\n1. Yes\n2. No",
+                "Poll"));
+
+        var messages = await CreateService().GetMessagesAsync(group.Id);
+
+        messages.IsSuccess.Should().BeTrue(messages.Error);
+        messages.Data!.Items.Should().ContainSingle();
+        messages.Data.Items[0].IsDeleted.Should().BeTrue();
+        messages.Data.Items[0].Content.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task DeletePollAsync_AlsoRecallsAssociatedPollMessage()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Chat Group");
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+        var (poll, _) = await AddPollWithOptionsAsync(
+            group.Id,
+            ownerId,
+            allowMultiple: false,
+            optionContents: ["Yes", "No"]);
+        var message = await CreateService().CreateMessageAsync(
+            group.Id,
+            new SendGroupMessageRequest(
+                $"[poll] Active poll\n[pollid] {poll.Id}\n1. Yes\n2. No",
+                "Poll"));
+
+        var deleted = await CreateService().DeletePollAsync(group.Id, poll.Id);
+        var messages = await CreateService().GetMessagesAsync(group.Id);
+
+        deleted.IsSuccess.Should().BeTrue(deleted.Error);
+        messages.Data!.Items.Should().ContainSingle(item =>
+            item.Id == message.Data!.Id &&
+            item.IsDeleted &&
+            string.IsNullOrEmpty(item.Content));
+    }
+
+    [Fact]
     public async Task HideMessageForCurrentUserAsync_HidesOnlyForThatUser()
     {
         var ownerId = Guid.NewGuid();

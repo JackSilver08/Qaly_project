@@ -519,6 +519,7 @@ li {
 .login-page {
   width: 100%;
   min-height: 100vh;
+  min-height: 100dvh;
   background: #f8fafc;
   overflow-x: hidden;
   overflow-y: auto;
@@ -540,7 +541,9 @@ li {
   grid-template-columns: minmax(320px, 30%) minmax(0, 70%);
   width: 100%;
   min-height: 100vh;
-  height: auto;
+  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
   max-width: none;
   margin: 0;
   background: #f8fafc;
@@ -558,9 +561,12 @@ li {
   align-items: center;
   justify-content: center;
   min-width: 0;
+  min-height: 0;
   padding: clamp(32px, 3.4vw, 48px);
   background: #f8fafc;
   box-shadow: inset -1px 0 0 rgba(148, 163, 184, 0.16);
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .login-form-shell {
@@ -941,6 +947,44 @@ li {
   }
 }
 
+@media (min-width: 761px) and (max-height: 900px) {
+  .login-page .auth-card__brand {
+    margin-bottom: clamp(18px, 2.6vh, 26px);
+  }
+
+  .login-page .auth-card__brand h1 {
+    margin-bottom: 8px;
+    font-size: clamp(32px, 4.8vh, 42px);
+  }
+
+  .login-page .auth-card__brand p {
+    font-size: 15px;
+    line-height: 1.4;
+  }
+
+  .login-page .auth-form {
+    gap: clamp(12px, 1.8vh, 16px);
+  }
+
+  .login-page .auth-form label {
+    gap: 6px;
+  }
+
+  .login-page .auth-form input,
+  .login-page .auth-form button {
+    min-height: clamp(48px, 6vh, 54px);
+  }
+
+  .login-page .auth-link {
+    margin-top: clamp(16px, 2.4vh, 22px);
+  }
+
+  .login-page .auth-hint {
+    margin-top: clamp(18px, 2.8vh, 26px);
+    padding: 10px 14px;
+  }
+}
+
 @media (max-width: 760px) {
   .login-page {
     overflow-y: auto;
@@ -949,6 +993,8 @@ li {
   .login-page .auth-container {
     display: flex;
     min-height: 100vh;
+    min-height: 100dvh;
+    height: auto;
     flex-direction: column;
   }
 

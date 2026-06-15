@@ -106,6 +106,8 @@ public static class QalyWebServiceExtensions
             options.Conventions.AddPageRoute("/Index", "projects/{projectId}/wiki/{wikiId}");
             options.Conventions.AddPageRoute("/Index", "tasks");
             options.Conventions.AddPageRoute("/Index", "teams");
+            options.Conventions.AddPageRoute("/Index", "analytics");
+            options.Conventions.AddPageRoute("/Index", "settings");
             options.Conventions.AddPageRoute("/Index", "groups");
             options.Conventions.AddPageRoute("/Index", "groups/{groupId}");
             options.Conventions.AddPageRoute("/Index", "groups/{groupId}/meeting");
