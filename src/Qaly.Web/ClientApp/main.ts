@@ -4,6 +4,7 @@ import ToastContainer from './components/ToastContainer.vue'
 import { router } from './router'
 import { showError, showSuccess, showToast, type ToastInput, type ToastType } from './composables/use-toast'
 import './style.css'
+import './styles/rectilinear-ui.css'
 
 const themeStorageKey = 'qaly-theme'
 const savedTheme = localStorage.getItem(themeStorageKey)

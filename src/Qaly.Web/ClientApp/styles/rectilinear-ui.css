@@ -1,0 +1,212 @@
+/*
+ * Rectilinear UI experiment
+ *
+ * Keep structural surfaces compact and square while preserving the softer
+ * shapes that communicate conversation and file-transfer affordances.
+ */
+
+:root {
+  --radius-shell: 4px;
+  --radius-panel: 4px;
+  --radius-card: 4px;
+  --ui-surface-radius: 4px;
+  --ui-cluster-gap: 12px;
+  --ui-section-gap: 14px;
+  --ui-surface-border: 1px solid var(--line);
+  --ui-surface-shadow: 0 2px 8px rgba(15, 23, 42, 0.045);
+}
+
+:root[data-theme='dark'] {
+  --ui-surface-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+}
+
+/* Primary structural surfaces. */
+#qaly-dashboard-app .glass-card,
+#qaly-dashboard-app .glass-panel,
+#qaly-dashboard-app .summary-card,
+#qaly-dashboard-app .metric-card,
+#qaly-dashboard-app .chart-card,
+#qaly-dashboard-app .custom-chart-card,
+#qaly-dashboard-app .calendar-card,
+#qaly-dashboard-app .insight-card,
+#qaly-dashboard-app .meeting-card,
+#qaly-dashboard-app .attention-card,
+#qaly-dashboard-app .activity-card,
+#qaly-dashboard-app .stat-card,
+#qaly-dashboard-app .ai-card,
+#qaly-dashboard-app .ai-panel,
+#qaly-dashboard-app .ai-panel-card,
+#qaly-dashboard-app .strategy-ai-insight,
+#qaly-dashboard-app .project-workspace,
+#qaly-dashboard-app .project-panel,
+#qaly-dashboard-app .projects-panel,
+#qaly-dashboard-app .project-grid-card,
+#qaly-dashboard-app .project-list-item,
+#qaly-dashboard-app .project-detail-card,
+#qaly-dashboard-app .project-detail-panel,
+#qaly-dashboard-app .project-summary-card,
+#qaly-dashboard-app .project-filter-panel,
+#qaly-dashboard-app .project-form-panel,
+#qaly-dashboard-app .project-toolbar,
+#qaly-dashboard-app .project-tabs,
+#qaly-dashboard-app .project-inline-form,
+#qaly-dashboard-app .task-board-shell,
+#qaly-dashboard-app .task-panel,
+#qaly-dashboard-app .task-detail-panel,
+#qaly-dashboard-app .task-list-item,
+#qaly-dashboard-app .task-snapshot,
+#qaly-dashboard-app .kanban-column,
+#qaly-dashboard-app .kanban-card,
+#qaly-dashboard-app .team-card,
+#qaly-dashboard-app .team-mini-card,
+#qaly-dashboard-app .team-mini-section,
+#qaly-dashboard-app .team-panel,
+#qaly-dashboard-app .team-chat-sidebar,
+#qaly-dashboard-app .team-chat-window,
+#qaly-dashboard-app .groups-workspace,
+#qaly-dashboard-app .group-detail-panel,
+#qaly-dashboard-app .group-member-row,
+#qaly-dashboard-app .group-pending-list article,
+#qaly-dashboard-app .group-poll-composer,
+#qaly-dashboard-app .group-poll-item,
+#qaly-dashboard-app .group-empty-state,
+#qaly-dashboard-app .poll-card,
+#qaly-dashboard-app .poll-option,
+#qaly-dashboard-app .poll-choice,
+#qaly-dashboard-app .wiki-card,
+#qaly-dashboard-app .wiki-panel,
+#qaly-dashboard-app .erumi-metric,
+#qaly-dashboard-app .erumi-table-card,
+#qaly-dashboard-app .erumi-chart-card,
+#qaly-dashboard-app .global-search-panel,
+#qaly-dashboard-app .global-search-shortcuts,
+#qaly-dashboard-app .performance-banner,
+#qaly-dashboard-app .abstract-ui,
+#qaly-dashboard-app .abstract-ui-card,
+#qaly-dashboard-app .import-modal,
+#qaly-dashboard-app .summary-panel,
+#qaly-dashboard-app .mapping-table,
+#qaly-dashboard-app .preview-table,
+#qaly-dashboard-app .confirm-table,
+#qaly-dashboard-app .toast-card,
+#qaly-dashboard-app .empty-state-container {
+  border-radius: var(--ui-surface-radius) !important;
+}
+
+/* Cards read as one system through a crisp edge and restrained elevation. */
+#qaly-dashboard-app .summary-card,
+#qaly-dashboard-app .metric-card,
+#qaly-dashboard-app .chart-card,
+#qaly-dashboard-app .custom-chart-card,
+#qaly-dashboard-app .attention-card,
+#qaly-dashboard-app .activity-card,
+#qaly-dashboard-app .stat-card,
+#qaly-dashboard-app .project-grid-card,
+#qaly-dashboard-app .project-list-item,
+#qaly-dashboard-app .kanban-card,
+#qaly-dashboard-app .team-card,
+#qaly-dashboard-app .team-mini-card,
+#qaly-dashboard-app .poll-card {
+  border: var(--ui-surface-border) !important;
+  box-shadow: var(--ui-surface-shadow) !important;
+}
+
+/* Bring card clusters closer without collapsing their visual boundaries. */
+#qaly-dashboard-app .dashboard-container,
+#qaly-dashboard-app .dashboard-main-col,
+#qaly-dashboard-app .dashboard-side-col,
+#qaly-dashboard-app .summary-card-grid,
+#qaly-dashboard-app .content-grid,
+#qaly-dashboard-app .home-secondary-grid,
+#qaly-dashboard-app .metric-grid,
+#qaly-dashboard-app .calendar-grid,
+#qaly-dashboard-app .project-grid-shell,
+#qaly-dashboard-app .project-list-shell,
+#qaly-dashboard-app .team-grid,
+#qaly-dashboard-app .team-mini-grid,
+#qaly-dashboard-app .aside-stat-grid,
+#qaly-dashboard-app .task-detail-grid {
+  gap: var(--ui-cluster-gap) !important;
+}
+
+#qaly-dashboard-app .project-workspace,
+#qaly-dashboard-app .projects-panel,
+#qaly-dashboard-app .task-board-shell,
+#qaly-dashboard-app .task-detail-panel,
+#qaly-dashboard-app .team-panel,
+#qaly-dashboard-app .group-detail-panel {
+  gap: var(--ui-section-gap) !important;
+}
+
+#qaly-dashboard-app .summary-card,
+#qaly-dashboard-app .project-grid-card {
+  gap: 12px !important;
+  padding: 18px !important;
+}
+
+#qaly-dashboard-app .project-grid-card:hover,
+#qaly-dashboard-app .project-grid-card:focus-visible,
+#qaly-dashboard-app .project-grid-card.is-active,
+#qaly-dashboard-app .kanban-card:hover,
+#qaly-dashboard-app .kanban-card.is-selected {
+  transform: none !important;
+  box-shadow: 0 4px 12px rgba(15, 82, 186, 0.1) !important;
+}
+
+/* Menus and overlays follow the same straight-edged visual language. */
+#qaly-dashboard-app .shell-user-dropdown-menu,
+#qaly-dashboard-app .dropdown-content,
+#qaly-dashboard-app .task-menu-dropdown,
+#qaly-dashboard-app .home-notification-popover,
+#qaly-dashboard-app .notification-popover,
+#qaly-dashboard-app .global-search-panel,
+#qaly-dashboard-app .group-modal,
+#qaly-dashboard-app .message-action-menu {
+  border-radius: var(--ui-surface-radius) !important;
+}
+
+/*
+ * Deliberate exceptions: conversational bubbles, comments, composers,
+ * attachments and upload/drop zones stay soft so their purpose remains clear.
+ */
+#qaly-dashboard-app .comment-row,
+#qaly-dashboard-app .comment-form,
+#qaly-dashboard-app .attention-comment input,
+#qaly-dashboard-app .team-message__bubble,
+#qaly-dashboard-app .msg-bubble-user,
+#qaly-dashboard-app .msg-bubble-assistant,
+#qaly-dashboard-app .message-card,
+#qaly-dashboard-app .team-chat-composer,
+#qaly-dashboard-app .chat-drawer__composer,
+#qaly-dashboard-app .erumi-composer,
+#qaly-dashboard-app .erumi-input-shell {
+  border-radius: 14px !important;
+}
+
+#qaly-dashboard-app .attachment-panel,
+#qaly-dashboard-app .attachment-row,
+#qaly-dashboard-app .attachment-upload,
+#qaly-dashboard-app .team-attachment-preview,
+#qaly-dashboard-app .message-attachment-card,
+#qaly-dashboard-app .message-attachment-image,
+#qaly-dashboard-app .attached-file-chip,
+#qaly-dashboard-app .msg-attachment-chip,
+#qaly-dashboard-app .erumi-file-chip,
+#qaly-dashboard-app .upload-card,
+#qaly-dashboard-app .file-card,
+#qaly-dashboard-app .import-dropzone,
+#qaly-dashboard-app .notion-dropzone {
+  border-radius: 12px !important;
+}
+
+@media (max-width: 767px) {
+  :root {
+    --ui-cluster-gap: 10px;
+    --ui-section-gap: 12px;
+  }
+
+  #qaly-dashboard-app .summary-card,
+  #qaly-dashboard-app .project-grid-card {
+    padding: 14px !important;
+  }
+}
