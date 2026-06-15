@@ -36,7 +36,7 @@ public sealed class DashboardSummaryService : IDashboardSummaryService
         var projectInfo = await _repository.GetProjectInfoAsync(projectId, ct);
         if (projectInfo == null)
         {
-            return Result.NotFound<ProjectDashboardSummaryDto>("Project was not found.");
+            return Result.NotFound<ProjectDashboardSummaryDto>("Không tìm thấy dự án.");
         }
 
         if (!await _taskAccessPolicy.CanAccessProjectAsync(projectId, projectInfo.OwnerId, ct))
@@ -101,7 +101,7 @@ public sealed class DashboardSummaryService : IDashboardSummaryService
 
         var statusBreakdown = rawStatusBreakdown
             .Select(item => new ProjectDashboardStatusBreakdownDto(
-                string.IsNullOrWhiteSpace(item.Status) ? "Unknown" : item.Status!,
+                string.IsNullOrWhiteSpace(item.Status) ? "Không xác định" : item.Status!,
                 item.Count))
             .OrderByDescending(item => item.Count)
             .ToList();

@@ -37,7 +37,7 @@ function toggleDrawer() {
           <div class="drawer-header-left">
             <ChatbotAvatar size="small" />
             <div class="drawer-title-wrap">
-              <span class="drawer-title">Erumi Assistant</span>
+              <span class="drawer-title">Trợ lý Erumi</span>
               <span class="drawer-subtitle">Trợ lý AI phân tích</span>
             </div>
           </div>

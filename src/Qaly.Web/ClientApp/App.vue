@@ -149,13 +149,13 @@ const activeProjectTab = ref("stats");
 
 const tabs = [
   { id: "stats", label: "Thống kê" },
-  { id: "capacity", label: "Capacity" },
+  { id: "capacity", label: "Dung lượng" },
   { id: "tasks", label: "Nhiệm vụ" },
-  { id: "activity", label: "Activity" },
-  { id: "gantt", label: "Sprint & Timeline" },
+  { id: "activity", label: "Hoạt động" },
+  { id: "gantt", label: "Sprint và dòng thời gian" },
   { id: "members", label: "Thành viên" },
   { id: "wiki", label: "Wiki" },
-  { id: "webhooks", label: "Webhooks" },
+  { id: "webhooks", label: "Webhook" },
 ];
 
 const newComment = ref("");
@@ -583,7 +583,7 @@ async function markTaskViewed(projectId: string, taskId: string) {
       method: "POST",
     });
   } catch (e) {
-    console.warn("Khong the ghi nhan task da xem.", e);
+    console.warn("Không thể ghi nhận nhiệm vụ đã xem.", e);
   }
 }
 

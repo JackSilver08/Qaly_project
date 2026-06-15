@@ -762,9 +762,9 @@ function humanizeRiskReason(value: string) {
     deadline: 'Deadline',
     blocker: 'Blocker',
     priority: 'Priority',
-    ownership: 'ChÆ°a giao',
+    ownership: 'Chưa giao',
     stale: 'Stale',
-    unseen: 'ChÆ°a xem',
+    unseen: 'Chưa xem',
   }
 
   return labels[value] ?? value
@@ -824,7 +824,7 @@ function attentionDotClass(item: TaskAttentionDto) {
     <div class="dashboard-main task-hub-main no-scrollbar">
       <section class="task-hub-hero glass-card reveal">
         <div class="task-hub-hero__copy">
-          <span>Task Hub</span>
+          <span>Trung tâm nhiệm vụ</span>
           <h2>Trung tâm xử lý nhiệm vụ của bạn</h2>
           <p>
             Theo dõi task, tín hiệu rủi ro, thao tác nhanh và xử lý hàng loạt ngay trong một màn hình.
@@ -908,7 +908,7 @@ function attentionDotClass(item: TaskAttentionDto) {
       <section class="task-panel glass-card reveal delay-2">
         <div class="panel-heading task-section-heading">
           <div>
-            <span>Task Risk Radar</span>
+            <span>Theo dõi rủi ro nhiệm vụ</span>
             <h2>Auto triage thông minh</h2>
           </div>
           <div class="task-section-heading__meta">
@@ -1292,7 +1292,7 @@ function attentionDotClass(item: TaskAttentionDto) {
             </div>
 
             <div v-if="selectedTaskMeetingSource" class="task-detail__meeting">
-              <span>Meeting source</span>
+              <span>Nguồn cuộc họp</span>
               <strong>{{ selectedTaskMeetingSource.meetingTitle }}</strong>
               <p>{{ selectedTaskMeetingSource.actionItemTitle || selectedTaskMeetingSource.actionItemDescription || selectedTaskMeetingSource.sourceQuote || 'Không có trích dẫn bổ sung.' }}</p>
               <small>{{ formatMeetingDate(selectedTaskMeetingSource.meetingStartedAt) }}</small>

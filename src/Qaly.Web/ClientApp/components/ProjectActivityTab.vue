@@ -54,9 +54,9 @@ function sparklineHeight(count: number) {
   <section class="activity-tab glass-card reveal">
     <div class="activity-tab__header">
       <div>
-        <div class="eyebrow"><Activity :size="14" /> Activity timeline</div>
+        <div class="eyebrow"><Activity :size="14" /> Dòng thời gian hoạt động</div>
         <h2>Nhịp hoạt động của dự án</h2>
-        <p>Timeline bên dưới chỉ hiển thị activity liên quan đến project <strong>{{ projectName }}</strong>. Biểu đồ 7 ngày phản ánh nhịp hoạt động của workspace.</p>
+        <p>Dòng thời gian bên dưới chỉ hiển thị hoạt động liên quan đến dự án <strong>{{ projectName }}</strong>. Biểu đồ 7 ngày phản ánh nhịp hoạt động của không gian làm việc.</p>
       </div>
       <div class="activity-tab__stats">
         <article>
@@ -117,8 +117,8 @@ function sparklineHeight(count: number) {
 
         <div v-if="projectActivities.length === 0" class="activity-empty activity-empty--compact">
           <Clock3 :size="18" />
-          <strong>Chưa có activity riêng cho project này</strong>
-          <p>Hãy tạo task, bình luận hoặc cập nhật tiến độ để timeline xuất hiện ở đây.</p>
+          <strong>Chưa có hoạt động riêng cho dự án này</strong>
+          <p>Hãy tạo nhiệm vụ, bình luận hoặc cập nhật tiến độ để dòng thời gian xuất hiện ở đây.</p>
         </div>
       </div>
     </div>

@@ -38,7 +38,7 @@ public partial class FileImportService : IFileImportService
     {
         var parsed = await ParseDocumentAsync(fileStream, fileName, ct);
         if (!parsed.IsSuccess)
-            return Result.Failure<DocumentImportPreviewResult>(parsed.Error ?? "Khong the doc file.", parsed.StatusCode);
+            return Result.Failure<DocumentImportPreviewResult>(parsed.Error ?? "Không thể đọc tệp.", parsed.StatusCode);
 
         var document = parsed.Data!;
         return Result.Success(new DocumentImportPreviewResult(
@@ -60,7 +60,7 @@ public partial class FileImportService : IFileImportService
     {
         var parsed = await ParseDocumentAsync(fileStream, fileName, ct);
         if (!parsed.IsSuccess)
-            return Result.Failure<DocumentImportResult>(parsed.Error ?? "Khong the doc file.", parsed.StatusCode);
+            return Result.Failure<DocumentImportResult>(parsed.Error ?? "Không thể đọc tệp.", parsed.StatusCode);
 
         var document = parsed.Data!;
         var pageTitle = string.IsNullOrWhiteSpace(title) ? document.Title : title.Trim();
@@ -70,7 +70,7 @@ public partial class FileImportService : IFileImportService
             "internal"), ct);
 
         if (!created.IsSuccess)
-            return Result.Failure<DocumentImportResult>(created.Error ?? "Khong the tao wiki page.", created.StatusCode);
+            return Result.Failure<DocumentImportResult>(created.Error ?? "Không thể tạo trang Wiki.", created.StatusCode);
 
         return Result.Success(new DocumentImportResult(
             created.Data!.Id,
@@ -87,7 +87,7 @@ public partial class FileImportService : IFileImportService
     {
         var parsed = await PreviewZipBundleAsyncInternal(fileStream, fileName, ct);
         if (!parsed.IsSuccess)
-            return Result.Failure<ZipBundlePreviewResult>(parsed.Error ?? "Khong the doc ZIP.", parsed.StatusCode);
+            return Result.Failure<ZipBundlePreviewResult>(parsed.Error ?? "Không thể đọc tệp ZIP.", parsed.StatusCode);
 
         return Result.Success(parsed.Data!);
     }
@@ -100,7 +100,7 @@ public partial class FileImportService : IFileImportService
     {
         var parsed = await ImportZipBundleAsyncInternal(projectId, fileStream, fileName, ct);
         if (!parsed.IsSuccess)
-            return Result.Failure<ZipBundleImportResult>(parsed.Error ?? "Khong the doc ZIP.", parsed.StatusCode);
+            return Result.Failure<ZipBundleImportResult>(parsed.Error ?? "Không thể đọc tệp ZIP.", parsed.StatusCode);
 
         return Result.Success(parsed.Data!);
     }
@@ -114,7 +114,7 @@ public partial class FileImportService : IFileImportService
         if (!DocumentExtensions.Contains(extension))
         {
             return Result.Failure<ParsedDocument>(
-                "Dinh dang document nay chua duoc ho tro. Hien co: .md, .markdown, .txt, .html, .htm, .docx.",
+                "Định dạng tài liệu này chưa được hỗ trợ. Hiện hỗ trợ: .md, .markdown, .txt, .html, .htm, .docx.",
                 400);
         }
 
@@ -131,7 +131,7 @@ public partial class FileImportService : IFileImportService
             ".docx" => ParseDocx(fileStream, fileName),
             ".txt" => Result.Success(ParsePlainText(raw, fileName)),
             ".html" or ".htm" => Result.Success(ParseHtml(raw, fileName)),
-            _ => Result.Failure<ParsedDocument>("Dinh dang document khong ho tro.", 400)
+            _ => Result.Failure<ParsedDocument>("Định dạng tài liệu không được hỗ trợ.", 400)
         };
     }
 
@@ -142,7 +142,7 @@ public partial class FileImportService : IFileImportService
     {
         var bundle = await ReadZipBundleAsync(fileStream, fileName, ct);
         if (!bundle.IsSuccess)
-            return Result.Failure<ZipBundlePreviewResult>(bundle.Error ?? "Khong the doc ZIP.", bundle.StatusCode);
+            return Result.Failure<ZipBundlePreviewResult>(bundle.Error ?? "Không thể đọc tệp ZIP.", bundle.StatusCode);
 
         var data = bundle.Data!;
         return Result.Success(new ZipBundlePreviewResult(
@@ -169,7 +169,7 @@ public partial class FileImportService : IFileImportService
     {
         var bundle = await ReadZipBundleAsync(fileStream, fileName, ct);
         if (!bundle.IsSuccess)
-            return Result.Failure<ZipBundleImportResult>(bundle.Error ?? "Khong the doc ZIP.", bundle.StatusCode);
+            return Result.Failure<ZipBundleImportResult>(bundle.Error ?? "Không thể đọc tệp ZIP.", bundle.StatusCode);
 
         var data = bundle.Data!;
         var importedPages = new List<ZipBundlePageResult>();
@@ -184,7 +184,7 @@ public partial class FileImportService : IFileImportService
 
             if (!created.IsSuccess)
             {
-                warnings.Add($"Khong the tao Wiki page cho {entry.FileName}: {created.Error}");
+                warnings.Add($"Không thể tạo trang Wiki cho {entry.FileName}: {created.Error}");
                 continue;
             }
 
@@ -197,7 +197,7 @@ public partial class FileImportService : IFileImportService
         }
 
         if (importedPages.Count == 0)
-            return Result.Failure<ZipBundleImportResult>("Khong co Wiki page nao duoc tao tu ZIP.", 400);
+            return Result.Failure<ZipBundleImportResult>("Không có trang Wiki nào được tạo từ tệp ZIP.", 400);
 
         return Result.Success(new ZipBundleImportResult(
             projectId,
@@ -249,7 +249,7 @@ public partial class FileImportService : IFileImportService
                 var parsed = await ParseDocumentAsync(memoryStream, entry.Name, ct);
                 if (!parsed.IsSuccess)
                 {
-                    warnings.Add($"Bo qua {entry.FullName}: {parsed.Error}");
+                    warnings.Add($"Bỏ qua {entry.FullName}: {parsed.Error}");
                     continue;
                 }
 
@@ -283,7 +283,7 @@ public partial class FileImportService : IFileImportService
         }
         catch (Exception ex)
         {
-            return Result.Failure<ZipBundleBundleData>($"Khong the doc ZIP: {ex.Message}", 400);
+            return Result.Failure<ZipBundleBundleData>($"Không thể đọc tệp ZIP: {ex.Message}", 400);
         }
     }
 
@@ -418,7 +418,7 @@ public partial class FileImportService : IFileImportService
         }
         catch (Exception ex)
         {
-            return Result.Failure<ParsedDocument>($"Khong the doc DOCX: {ex.Message}", 400);
+            return Result.Failure<ParsedDocument>($"Không thể đọc tệp DOCX: {ex.Message}", 400);
         }
     }
 

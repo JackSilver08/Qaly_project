@@ -47,8 +47,8 @@ const isLoadingImportSessions = ref(false)
 const isNewProject = computed(() => !props.projectId)
 
 const stepLabels = computed(() => importMode.value === 'table'
-  ? ['Discover', 'Map columns', 'Confirm', 'Done']
-  : ['Discover', 'Preview', 'Confirm', 'Done'])
+  ? ['Khám phá', 'Ánh xạ cột', 'Xác nhận', 'Hoàn tất']
+  : ['Khám phá', 'Xem trước', 'Xác nhận', 'Hoàn tất'])
 
 const tableExtensions = ['csv', 'xlsx', 'tsv', 'dsv', 'psv', 'json']
 const documentExtensions = ['md', 'markdown', 'txt', 'html', 'htm', 'docx']
@@ -99,7 +99,7 @@ async function parseFile(sheetName?: string | null) {
       const data = await res.json()
 
       if (!data.isSuccess) {
-        showError(data.error || 'Khong the doc file')
+        showError(data.error || 'Không thể đọc tệp.')
         return
       }
 
@@ -117,7 +117,7 @@ async function parseFile(sheetName?: string | null) {
       const data = await res.json()
 
       if (!data.isSuccess) {
-        showError(data.error || 'Khong the doc file')
+        showError(data.error || 'Không thể đọc tệp.')
         return
       }
 
@@ -154,7 +154,7 @@ async function parseFile(sheetName?: string | null) {
     }
     step.value = 2
   } catch (e: any) {
-    showError('Lỗi kết nối server')
+    showError('Không thể kết nối đến máy chủ.')
   } finally {
     isLoading.value = false
   }
@@ -192,7 +192,7 @@ async function executeImport() {
 
     if (importMode.value === 'document') {
       if (!props.projectId) {
-        showError('Hay vao mot du an cu the de import document thanh Wiki page.')
+        showError('Hãy mở một dự án cụ thể để nhập tài liệu thành trang Wiki.')
         return
       }
 
@@ -206,19 +206,19 @@ async function executeImport() {
       const data = await res.json()
 
       if (!data.isSuccess) {
-        showError(data.error || 'Import document that bai')
+        showError(data.error || 'Nhập tài liệu thất bại.')
         return
       }
 
       importResult.value = { ...data.data, kind: 'document' }
       step.value = 4
-      showSuccess(`Da tao Wiki page "${data.data.title}"`)
+      showSuccess(`Đã tạo trang Wiki "${data.data.title}".`)
       return
     }
 
     if (importMode.value === 'zip') {
       if (!props.projectId) {
-        showError('Hay vao mot du an cu the de import ZIP thanh nhieu Wiki page.')
+        showError('Hãy mở một dự án cụ thể để nhập ZIP thành nhiều trang Wiki.')
         return
       }
 
@@ -231,13 +231,13 @@ async function executeImport() {
       const data = await res.json()
 
       if (!data.isSuccess) {
-        showError(data.error || 'Import ZIP that bai')
+        showError(data.error || 'Nhập ZIP thất bại.')
         return
       }
 
       importResult.value = { ...data.data, kind: 'zip' }
       step.value = 4
-      showSuccess(`Da import ZIP: ${data.data.importedPages} Wiki page`)
+      showSuccess(`Đã nhập ZIP và tạo ${data.data.importedPages} trang Wiki.`)
       return
     }
 
@@ -274,9 +274,9 @@ async function executeImport() {
       failedCount > 0 ? `${failedCount} dòng lỗi` : '',
       duplicateSkippedCount > 0 ? `${duplicateSkippedCount} dòng trùng đã bỏ qua` : '',
     ].filter(Boolean).join(', ')
-    showSuccess(`Import xong: ${data.data.importedCount} task thành công${suffix ? `, ${suffix}` : ''}.`)
+    showSuccess(`Nhập xong: ${data.data.importedCount} nhiệm vụ thành công${suffix ? `, ${suffix}` : ''}.`)
   } catch (e: any) {
-    showError('Lỗi kết nối server')
+    showError('Không thể kết nối đến máy chủ.')
   } finally {
     isLoading.value = false
   }
@@ -286,7 +286,7 @@ async function executeImport() {
 
 async function undoImport() {
   if (!importResult.value?.importSessionId) return
-  if (!confirm('Bạn có chắc chắn muốn hoàn tác? Tất cả task đã import sẽ bị xóa.')) return
+  if (!confirm('Bạn có chắc chắn muốn hoàn tác? Tất cả nhiệm vụ đã nhập sẽ bị xóa.')) return
 
   isLoading.value = true
   try {
@@ -295,13 +295,13 @@ async function undoImport() {
     })
     const data = await res.json()
     if (data.isSuccess) {
-      showSuccess(`Đã hoàn tác ${data.data} task`)
+      showSuccess(`Đã hoàn tác ${data.data} nhiệm vụ.`)
       emit('close')
     } else {
       showError(data.error || 'Không thể hoàn tác')
     }
   } catch {
-    showError('Lỗi kết nối')
+    showError('Không thể kết nối đến máy chủ.')
   } finally {
     isLoading.value = false
   }
@@ -323,7 +323,7 @@ onMounted(loadImportSessions)
         <div class="import-header">
           <div class="import-header__left">
             <FileUp :size="22" />
-            <h2>Import</h2>
+            <h2>Nhập dữ liệu</h2>
           </div>
           <button class="icon-button" @click="$emit('close')"><X :size="18" /></button>
         </div>
@@ -367,23 +367,23 @@ onMounted(loadImportSessions)
             <FileText :size="26" />
             <div>
               <span>{{ parseResult.fileType }}</span>
-              <h3>Preview Wiki page import</h3>
+              <h3>Xem trước trang Wiki sẽ nhập</h3>
             </div>
           </div>
 
           <div class="import-field">
-            <label>Page title</label>
+            <label>Tiêu đề trang</label>
             <input v-model="documentTitle" class="import-input" type="text" />
           </div>
 
           <div class="document-preview__stats">
             <div>
-              <span>Blocks detected</span>
+              <span>Số khối nội dung</span>
               <strong>{{ parseResult.blockCount }}</strong>
             </div>
             <div>
-              <span>Target</span>
-              <strong>{{ projectName || 'Current project' }}</strong>
+              <span>Dự án đích</span>
+              <strong>{{ projectName || 'Dự án hiện tại' }}</strong>
             </div>
           </div>
 
@@ -396,16 +396,16 @@ onMounted(loadImportSessions)
           </div>
 
           <div class="document-preview__blocks">
-            <p>First blocks</p>
+            <p>Các khối nội dung đầu tiên</p>
             <ul>
               <li v-for="(block, index) in parseResult.previewBlocks" :key="index">{{ block }}</li>
             </ul>
           </div>
 
           <div class="import-actions">
-            <button class="btn btn--ghost" type="button" @click="step = 1"><ArrowLeft :size="16" /> Back</button>
+            <button class="btn btn--ghost" type="button" @click="step = 1"><ArrowLeft :size="16" /> Quay lại</button>
             <button class="btn btn--primary" :disabled="!documentTitle.trim()" type="button" @click="step = 3">
-              Continue
+              Tiếp tục
             </button>
           </div>
         </div>
@@ -414,18 +414,18 @@ onMounted(loadImportSessions)
           <div class="document-preview__hero">
             <Archive :size="26" />
             <div>
-              <span>ZIP Bundle</span>
-              <h3>Preview bundle import</h3>
+              <span>Gói ZIP</span>
+              <h3>Xem trước nội dung gói ZIP</h3>
             </div>
           </div>
 
           <div class="document-preview__stats">
             <div>
-              <span>Total entries</span>
+              <span>Tổng số mục</span>
               <strong>{{ parseResult.totalEntries }}</strong>
             </div>
             <div>
-              <span>Supported entries</span>
+              <span>Mục được hỗ trợ</span>
               <strong>{{ parseResult.supportedEntries }}</strong>
             </div>
           </div>
@@ -435,11 +435,11 @@ onMounted(loadImportSessions)
           </div>
 
           <div class="document-preview__blocks">
-            <p>Supported child files</p>
+            <p>Các tệp con được hỗ trợ</p>
             <ul class="bundle-preview-list">
               <li v-for="(entry, index) in parseResult.entries" :key="index">
                 <strong>{{ entry.title }}</strong>
-                <span>{{ entry.fileName }} - {{ entry.fileType }} - {{ entry.blockCount }} blocks</span>
+                <span>{{ entry.fileName }} - {{ entry.fileType }} - {{ entry.blockCount }} khối</span>
                 <div v-if="entry.previewBlocks?.length" class="bundle-preview-list__blocks">
                   <em v-for="(block, blockIndex) in entry.previewBlocks.slice(0, 3)" :key="blockIndex">{{ block }}</em>
                 </div>
@@ -449,9 +449,9 @@ onMounted(loadImportSessions)
           </div>
 
           <div class="import-actions">
-            <button class="btn btn--ghost" type="button" @click="step = 1"><ArrowLeft :size="16" /> Back</button>
+            <button class="btn btn--ghost" type="button" @click="step = 1"><ArrowLeft :size="16" /> Quay lại</button>
             <button class="btn btn--primary" type="button" @click="step = 3">
-              Continue
+              Tiếp tục
             </button>
           </div>
         </div>
@@ -486,33 +486,33 @@ onMounted(loadImportSessions)
         <div v-if="step === 3 && parseResult && importMode === 'document'" class="import-step document-confirm">
           <div class="confirm-hero">
             <div class="confirm-icon"><FileText :size="34" /></div>
-            <h3>Confirm document import</h3>
+            <h3>Xác nhận nhập tài liệu</h3>
             <p class="confirm-subtitle">
-              QALY will create a Wiki page in <strong>{{ projectName }}</strong>.
+              QALY sẽ tạo một trang Wiki trong dự án <strong>{{ projectName }}</strong>.
             </p>
           </div>
 
           <div class="confirm-stats">
             <div class="confirm-stat">
-              <span class="confirm-stat__label">File type</span>
+              <span class="confirm-stat__label">Loại tệp</span>
               <span class="confirm-stat__value confirm-stat__value--text">{{ parseResult.fileType }}</span>
             </div>
             <div class="confirm-stat confirm-stat--success">
-              <span class="confirm-stat__label">Blocks</span>
+              <span class="confirm-stat__label">Khối nội dung</span>
               <span class="confirm-stat__value">{{ parseResult.blockCount }}</span>
             </div>
           </div>
 
           <div class="confirm-notice">
-            <span>Preview</span>
+            <span>Xem trước</span>
             <p>{{ documentTitle }}</p>
           </div>
 
           <div class="import-actions">
-            <button class="btn btn--ghost" type="button" @click="step = 2"><ArrowLeft :size="16" /> Back</button>
+            <button class="btn btn--ghost" type="button" @click="step = 2"><ArrowLeft :size="16" /> Quay lại</button>
             <button class="btn btn--primary btn--import-confirm" :disabled="isLoading" @click="executeImport">
-              <template v-if="isLoading">Importing...</template>
-              <template v-else>Create Wiki page <Check :size="16" /></template>
+              <template v-if="isLoading">Đang nhập...</template>
+              <template v-else>Tạo trang Wiki <Check :size="16" /></template>
             </button>
           </div>
         </div>
@@ -520,37 +520,37 @@ onMounted(loadImportSessions)
         <div v-if="step === 3 && parseResult && importMode === 'zip'" class="import-step document-confirm">
           <div class="confirm-hero">
             <div class="confirm-icon"><Archive :size="34" /></div>
-            <h3>Confirm ZIP bundle import</h3>
+            <h3>Xác nhận nhập gói ZIP</h3>
             <p class="confirm-subtitle">
-              QALY will create <strong>{{ parseResult.supportedEntries }}</strong> Wiki pages in <strong>{{ projectName }}</strong>.
+              QALY sẽ tạo <strong>{{ parseResult.supportedEntries }}</strong> trang Wiki trong dự án <strong>{{ projectName }}</strong>.
             </p>
           </div>
 
           <div class="confirm-stats">
             <div class="confirm-stat">
-              <span class="confirm-stat__label">Total entries</span>
+              <span class="confirm-stat__label">Tổng số mục</span>
               <span class="confirm-stat__value">{{ parseResult.totalEntries }}</span>
             </div>
             <div class="confirm-stat confirm-stat--success">
-              <span class="confirm-stat__label">Supported</span>
+              <span class="confirm-stat__label">Được hỗ trợ</span>
               <span class="confirm-stat__value">{{ parseResult.supportedEntries }}</span>
             </div>
             <div class="confirm-stat">
-              <span class="confirm-stat__label">Skipped</span>
+              <span class="confirm-stat__label">Bỏ qua</span>
               <span class="confirm-stat__value">{{ parseResult.unsupportedEntries }}</span>
             </div>
           </div>
 
           <div class="confirm-notice">
-            <span>Bundle</span>
+            <span>Gói ZIP</span>
             <p>{{ parseResult.fileName }}</p>
           </div>
 
           <div class="import-actions">
-            <button class="btn btn--ghost" type="button" @click="step = 2"><ArrowLeft :size="16" /> Back</button>
+            <button class="btn btn--ghost" type="button" @click="step = 2"><ArrowLeft :size="16" /> Quay lại</button>
             <button class="btn btn--primary btn--import-confirm" :disabled="isLoading" @click="executeImport">
-              <template v-if="isLoading">Importing...</template>
-              <template v-else>Create Wiki pages <Check :size="16" /></template>
+              <template v-if="isLoading">Đang nhập...</template>
+              <template v-else>Tạo các trang Wiki <Check :size="16" /></template>
             </button>
           </div>
         </div>
@@ -583,39 +583,39 @@ onMounted(loadImportSessions)
                 <path class="checkmark-check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
               </svg>
             </div>
-            <h3>Import hoàn tất!</h3>
+            <h3>Nhập dữ liệu hoàn tất!</h3>
           </div>
 
           <div v-if="importMode === 'document'" class="document-success">
             <FileText :size="24" />
             <div>
               <strong>{{ importResult.title }}</strong>
-              <p>Created a Wiki page with {{ importResult.blockCount }} blocks.</p>
+              <p>Đã tạo một trang Wiki gồm {{ importResult.blockCount }} khối nội dung.</p>
             </div>
           </div>
 
           <div v-if="importMode === 'zip'" class="document-success">
             <Archive :size="24" />
             <div>
-              <strong>{{ importResult.importedPages }} Wiki pages created</strong>
-              <p>{{ importResult.fileName }} produced {{ importResult.supportedEntries }} supported entries.</p>
+              <strong>Đã tạo {{ importResult.importedPages }} trang Wiki</strong>
+              <p>{{ importResult.fileName }} có {{ importResult.supportedEntries }} mục được hỗ trợ.</p>
             </div>
           </div>
 
           <div v-if="importMode === 'zip' && importResult.pages?.length" class="zip-result-list">
             <article v-for="page in importResult.pages" :key="page.pageId" class="zip-result-item">
               <strong>{{ page.title }}</strong>
-              <span>{{ page.sourceFileName }} - {{ page.blockCount }} blocks</span>
+              <span>{{ page.sourceFileName }} - {{ page.blockCount }} khối nội dung</span>
             </article>
           </div>
 
           <div v-if="importMode === 'table'" class="import-result-stats">
             <div class="stat-item"><span class="stat-label">Tổng dòng</span><span class="stat-value">{{ importResult.totalRows }}</span></div>
-            <div class="stat-item stat--success"><span class="stat-label">Đã import</span><span class="stat-value">{{ importResult.importedCount }}</span></div>
+            <div class="stat-item stat--success"><span class="stat-label">Đã nhập</span><span class="stat-value">{{ importResult.importedCount }}</span></div>
             <div v-if="(importResult.failedCount ?? 0) > 0" class="stat-item stat--error"><span class="stat-label">Thất bại</span><span class="stat-value">{{ importResult.failedCount }}</span></div>
             <div v-if="(importResult.duplicateSkippedCount ?? 0) > 0" class="stat-item stat--warn"><span class="stat-label">Trùng bỏ qua</span><span class="stat-value">{{ importResult.duplicateSkippedCount }}</span></div>
             <div v-if="importResult.skippedCount > 0" class="stat-item"><span class="stat-label">Không nhập</span><span class="stat-value">{{ importResult.skippedCount }}</span></div>
-            <div v-if="importResult.newLabelsCreated > 0" class="stat-item"><span class="stat-label">Label mới</span><span class="stat-value">{{ importResult.newLabelsCreated }}</span></div>
+            <div v-if="importResult.newLabelsCreated > 0" class="stat-item"><span class="stat-label">Nhãn mới</span><span class="stat-value">{{ importResult.newLabelsCreated }}</span></div>
           </div>
 
           <!-- Status distribution -->
@@ -633,7 +633,7 @@ onMounted(loadImportSessions)
           <!-- Unmapped statuses warning -->
           <div v-if="importResult.unmappedStatuses?.length" class="import-warning">
             <span>⚠️</span>
-            <span>Các giá trị Status không nhận diện (đã đặt về Todo): {{ importResult.unmappedStatuses.join(', ') }}</span>
+            <span>Các giá trị trạng thái không nhận diện được (đã đặt về Chưa làm): {{ importResult.unmappedStatuses.join(', ') }}</span>
           </div>
 
           <!-- Skipped Rows Detail -->
@@ -652,7 +652,7 @@ onMounted(loadImportSessions)
 
           <div class="import-actions">
             <button v-if="importMode === 'table'" class="btn btn--ghost btn--danger" @click="undoImport" :disabled="isLoading">
-              Hoàn tác import
+              Hoàn tác nhập dữ liệu
             </button>
             <button class="btn btn--primary" @click="finish">
               Xong ✓

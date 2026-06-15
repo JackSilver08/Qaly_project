@@ -29,7 +29,7 @@ public class WikiController : BaseApiController
     {
         if (dto == null)
         {
-            return BadRequest(new { error = "Wiki request payload is required." });
+            return BadRequest(new { error = "Vui lòng cung cấp nội dung trang Wiki." });
         }
 
         var result = await _wikiService.CreateAsync(projectId, dto, ct);
@@ -41,7 +41,7 @@ public class WikiController : BaseApiController
     {
         if (dto == null)
         {
-            return BadRequest(new { error = "Wiki request payload is required." });
+            return BadRequest(new { error = "Vui lòng cung cấp nội dung trang Wiki." });
         }
 
         var result = await _wikiService.UpdateAsync(projectId, id, dto, ct);

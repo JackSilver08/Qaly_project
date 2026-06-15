@@ -54,23 +54,23 @@ function onFileInput(e: Event) {
 function selectFile(f: File) {
   const ext = f.name.split('.').pop()?.toLowerCase()
   if (roadmapExtensions.includes(ext || '')) {
-    showError('Dinh dang nay nam trong lo trinh, nhung hien tai chua co parser nen chua the import.')
+    showError('Định dạng này nằm trong lộ trình, nhưng hiện chưa có bộ phân tích nên chưa thể nhập.')
     return
   }
   if (!supportedExtensions.includes(ext || '')) {
-    showError('Dinh dang nay chua duoc ho tro.')
+    showError('Định dạng này chưa được hỗ trợ.')
     return
   }
   if (f.size > 5 * 1024 * 1024) {
-    showError('Phase dau dang gioi han 5MB de xu ly an toan.')
+    showError('Giai đoạn đầu giới hạn tệp ở mức 5 MB để xử lý an toàn.')
     return
   }
   if (ext === 'zip' && !props.projectId) {
-    showError('Hay vao mot du an cu the de import ZIP bundle thanh nhieu Wiki page.')
+    showError('Hãy mở một dự án cụ thể để nhập gói ZIP thành nhiều trang Wiki.')
     return
   }
   if (!props.projectId && !tableExtensions.includes(ext || '')) {
-    showError('Hay vao mot du an cu the de import document hoac ZIP bundle thanh Wiki page.')
+    showError('Hãy mở một dự án cụ thể để nhập tài liệu hoặc gói ZIP thành trang Wiki.')
     return
   }
   emit('update:file', f)
@@ -88,40 +88,40 @@ function extensionOf(name: string) {
 
 function fileKindLabel(name: string) {
   const ext = extensionOf(name)
-  if (tableExtensions.includes(ext)) return 'Task table import'
-  if (ext === 'zip') return 'ZIP bundle import'
-  if (phaseOneDocumentExtensions.includes(ext)) return 'Wiki page import'
-  if (roadmapExtensions.includes(ext)) return 'Roadmap importer'
-  return 'Unsupported file'
+  if (tableExtensions.includes(ext)) return 'Nhập bảng nhiệm vụ'
+  if (ext === 'zip') return 'Nhập gói ZIP'
+  if (phaseOneDocumentExtensions.includes(ext)) return 'Nhập trang Wiki'
+  if (roadmapExtensions.includes(ext)) return 'Định dạng trong lộ trình'
+  return 'Tệp không được hỗ trợ'
 }
 </script>
 
 <template>
   <div class="import-step import-discover">
     <div class="import-intro">
-      <h3>Import</h3>
-      <p>Import data from other apps and files into QALY</p>
+      <h3>Nhập dữ liệu</h3>
+      <p>Nhập dữ liệu từ ứng dụng và tệp khác vào QALY</p>
     </div>
 
-    <div class="import-tabs" role="tablist" aria-label="Import views">
-      <button type="button" :class="{ active: activeTab === 'discover' }" @click="activeTab = 'discover'">Discover</button>
-      <button type="button" :class="{ active: activeTab === 'completed' }" @click="activeTab = 'completed'">Completed</button>
+    <div class="import-tabs" role="tablist" aria-label="Các chế độ nhập dữ liệu">
+      <button type="button" :class="{ active: activeTab === 'discover' }" @click="activeTab = 'discover'">Khám phá</button>
+      <button type="button" :class="{ active: activeTab === 'completed' }" @click="activeTab = 'completed'">Đã hoàn tất</button>
     </div>
 
     <template v-if="activeTab === 'discover'">
       <div class="import-section-heading">
-        <h4>Import your content</h4>
-        <p>Supported now: CSV, Excel, JSON, TXT, Markdown, HTML, DOCX, and ZIP bundle import. PDF and EPUB stay in the roadmap until their parsers are ready.</p>
+        <h4>Nhập nội dung của bạn</h4>
+        <p>Hiện hỗ trợ CSV, Excel, JSON, TXT, Markdown, HTML, DOCX và gói ZIP. PDF và EPUB sẽ được bổ sung khi bộ phân tích sẵn sàng.</p>
       </div>
 
-      <div class="template-actions" aria-label="Download import templates">
+      <div class="template-actions" aria-label="Tải mẫu nhập dữ liệu">
         <a class="template-link" href="/api/import/templates/tasks.xlsx" download>
           <Download :size="15" />
-          Excel template
+          Mẫu Excel
         </a>
         <a class="template-link" href="/api/import/templates/tasks.csv" download>
           <Download :size="15" />
-          CSV template
+          Mẫu CSV
         </a>
       </div>
 
@@ -133,15 +133,15 @@ function fileKindLabel(name: string) {
       >
         <template v-if="!file">
           <Upload :size="34" class="dropzone-icon" />
-          <p class="dropzone-text">Import your content to QALY</p>
+          <p class="dropzone-text">Nhập nội dung vào QALY</p>
           <p class="dropzone-hint">
-            Drag and drop CSV, Excel, JSON, text, markdown, or HTML files, or
+            Kéo thả tệp CSV, Excel, JSON, văn bản, Markdown hoặc HTML, hoặc
             <label class="choose-link">
-              choose a file
+              chọn tệp
               <input type="file" :accept="acceptedTypes" hidden @change="onFileInput" />
             </label>
           </p>
-          <p class="dropzone-formats">Available now: CSV, Excel, JSON, TXT, Markdown, HTML, DOCX, and ZIP bundle import. Roadmap: PDF and EPUB after we add parsers.</p>
+          <p class="dropzone-formats">Hiện hỗ trợ CSV, Excel, JSON, TXT, Markdown, HTML, DOCX và gói ZIP. PDF và EPUB đang nằm trong lộ trình.</p>
         </template>
         <template v-else>
           <FileSpreadsheet v-if="tableExtensions.includes(extensionOf(file.name))" :size="34" class="dropzone-icon--selected" />
@@ -149,45 +149,45 @@ function fileKindLabel(name: string) {
           <FileText v-else :size="34" class="dropzone-icon--selected" />
           <p class="dropzone-filename">{{ file.name }}</p>
           <p class="dropzone-filesize">{{ fileKindLabel(file.name) }} - {{ formatFileSize(file.size) }}</p>
-          <button class="btn btn--ghost btn--sm" type="button" @click="emit('update:file', null)">Choose another file</button>
+          <button class="btn btn--ghost btn--sm" type="button" @click="emit('update:file', null)">Chọn tệp khác</button>
         </template>
       </div>
 
       <div class="import-type-section">
-        <h4>File-based imports</h4>
-        <p>Import CSV, Excel, JSON, TXT, Markdown, HTML, DOCX, and ZIP now. PDF and EPUB stay in the roadmap until their parsers are ready.</p>
+        <h4>Nhập dữ liệu từ tệp</h4>
+        <p>Có thể nhập CSV, Excel, JSON, TXT, Markdown, HTML, DOCX và ZIP ngay lúc này. PDF và EPUB đang nằm trong lộ trình.</p>
         <div class="import-type-grid">
           <article>
             <FileText :size="18" />
-            <strong>Documents now</strong>
-            <span>Markdown, text, HTML, and DOCX convert to Wiki pages today.</span>
+            <strong>Tài liệu</strong>
+            <span>Markdown, văn bản, HTML và DOCX được chuyển thành trang Wiki.</span>
           </article>
           <article>
             <FileSpreadsheet :size="18" />
-            <strong>Tables now</strong>
-            <span>CSV, Excel, TSV, PSV, and JSON import to tasks today.</span>
+            <strong>Bảng dữ liệu</strong>
+            <span>CSV, Excel, TSV, PSV và JSON được nhập thành nhiệm vụ.</span>
           </article>
           <article>
             <Archive :size="18" />
-            <strong>ZIP bundles now</strong>
-            <span>ZIP archives can preview supported child files and create multiple Wiki pages today.</span>
+            <strong>Gói ZIP</strong>
+            <span>Có thể xem trước các tệp con được hỗ trợ và tạo nhiều trang Wiki.</span>
           </article>
         </div>
       </div>
 
       <div v-if="isNewProject" class="import-field">
-        <label>New project name for table imports</label>
+        <label>Tên dự án mới khi nhập bảng dữ liệu</label>
         <input
           :value="newProjectName"
           type="text"
-          placeholder="Enter project name..."
+          placeholder="Nhập tên dự án..."
           class="import-input"
           @input="emit('update:newProjectName', ($event.target as HTMLInputElement).value)"
         />
       </div>
       <div v-else class="import-info-banner">
         <CheckCircle2 :size="16" />
-        <p>Target project: <strong>{{ projectName }}</strong></p>
+        <p>Dự án đích: <strong>{{ projectName }}</strong></p>
       </div>
     </template>
 
@@ -214,15 +214,15 @@ function fileKindLabel(name: string) {
 
     <div v-else class="completed-empty">
       <CheckCircle2 :size="28" />
-      <strong>No completed imports in this panel yet</strong>
+      <strong>Chưa có lần nhập dữ liệu nào hoàn tất</strong>
       <p>{{ projectId ? 'Dự án này chưa có phiên import task-table nào.' : 'Lịch sử import chỉ hiển thị khi bạn import trong một dự án cụ thể.' }}</p>
     </div>
 
     <div class="import-actions">
-      <button class="btn btn--ghost" type="button" @click="emit('cancel')">Cancel</button>
+      <button class="btn btn--ghost" type="button" @click="emit('cancel')">Hủy</button>
       <button class="btn btn--primary" :disabled="!file || isLoading" @click="emit('next')">
-        <template v-if="isLoading">Reading...</template>
-        <template v-else>Continue</template>
+        <template v-if="isLoading">Đang đọc...</template>
+        <template v-else>Tiếp tục</template>
       </button>
     </div>
   </div>

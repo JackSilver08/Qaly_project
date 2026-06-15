@@ -126,34 +126,34 @@ function updateMappingField(index: number, targetField: string) {
       </div>
 
       <div class="import-field">
-        <label>Cột Kanban mặc định (Status)</label>
+        <label>Cột Kanban mặc định (trạng thái)</label>
         <select
           :value="defaultStatus || ''"
           class="import-select"
           @change="emit('update:defaultStatus', ($event.target as HTMLSelectElement).value || null)"
         >
-          <option value="">Todo</option>
-          <option value="Todo">Todo</option>
-          <option value="InProgress">InProgress</option>
-          <option value="OnHold">OnHold</option>
-          <option value="InReview">InReview</option>
-          <option value="Done">Done</option>
-          <option value="Cancelled">Cancelled</option>
+          <option value="">Chưa làm</option>
+          <option value="Todo">Chưa làm</option>
+          <option value="InProgress">Đang thực hiện</option>
+          <option value="OnHold">Tạm dừng</option>
+          <option value="InReview">Đang xem xét</option>
+          <option value="Done">Hoàn thành</option>
+          <option value="Cancelled">Đã hủy</option>
         </select>
       </div>
 
       <div class="import-field">
-        <label>Độ ưu tiên mặc định (Priority)</label>
+        <label>Mức ưu tiên mặc định</label>
         <select
           :value="defaultPriority || ''"
           class="import-select"
           @change="emit('update:defaultPriority', ($event.target as HTMLSelectElement).value || null)"
         >
-          <option value="">-- Bỏ qua (hoặc dùng Medium) --</option>
-          <option value="Low">Low</option>
-          <option value="Medium">Medium</option>
-          <option value="High">High</option>
-          <option value="Critical">Critical</option>
+          <option value="">-- Bỏ qua (hoặc dùng Trung bình) --</option>
+          <option value="Low">Thấp</option>
+          <option value="Medium">Trung bình</option>
+          <option value="High">Cao</option>
+          <option value="Critical">Khẩn cấp</option>
         </select>
       </div>
 
@@ -165,7 +165,7 @@ function updateMappingField(index: number, targetField: string) {
             :checked="enableAiCategorization"
             @change="emit('update:enableAiCategorization', ($event.target as HTMLInputElement).checked)"
           />
-          <span>✨ Dùng AI để phân loại Kanban & Labels (Task trống sẽ được AI đọc nội dung)</span>
+          <span>Dùng AI để phân loại Kanban và nhãn (nhiệm vụ còn trống sẽ được AI đọc nội dung)</span>
         </label>
       </div>
     </div>

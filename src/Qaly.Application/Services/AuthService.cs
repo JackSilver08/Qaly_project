@@ -37,12 +37,12 @@ public class AuthService : IAuthService
 
         if (string.IsNullOrWhiteSpace(dto.FullName))
         {
-            return Result.Failure<UserDto>("Full name is required.");
+            return Result.Failure<UserDto>("Vui lòng nhập họ và tên.");
         }
 
         if (string.IsNullOrWhiteSpace(email))
         {
-            return Result.Failure<UserDto>("Email is required.");
+            return Result.Failure<UserDto>("Vui lòng nhập email.");
         }
 
         if (dto.Password.Length < 8)
@@ -86,14 +86,14 @@ public class AuthService : IAuthService
 
         if (user == null || !user.IsActive)
         {
-            return Result.Failure<UserDto>("Invalid email or password.", 401);
+            return Result.Failure<UserDto>("Email hoặc mật khẩu không đúng.", 401);
         }
 
         if (!VerifyPassword(dto.Password, user.PasswordHash))
         {
             if (!await TrySynchronizeSeedPasswordAsync(user, email, dto.Password, ct))
             {
-                return Result.Failure<UserDto>("Invalid email or password.", 401);
+                return Result.Failure<UserDto>("Email hoặc mật khẩu không đúng.", 401);
             }
         }
 
@@ -118,7 +118,7 @@ public class AuthService : IAuthService
 
         if (string.IsNullOrWhiteSpace(dto.FullName))
         {
-            return Result.Failure<UserDto>("Full name is required.");
+            return Result.Failure<UserDto>("Vui lòng nhập họ và tên.");
         }
 
         user.FullName = dto.FullName.Trim();

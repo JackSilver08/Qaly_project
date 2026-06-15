@@ -128,7 +128,7 @@ const tooltipStyle = computed(() => {
         <header class="dashboard-welcome-banner">
           <div>
             <h1>Chào mừng bạn quay trở lại!</h1>
-            <p>Dưới đây là tóm tắt hoạt động của Workspace ngày hôm nay.</p>
+            <p>Dưới đây là tóm tắt hoạt động của không gian làm việc hôm nay.</p>
           </div>
           <button class="primary-button" type="button" @click="openCreateProject">
             <Plus :size="18" />

@@ -72,7 +72,7 @@ function statusLabel(member: MemberWorkloadDto) {
   <section class="workload-tab glass-card reveal">
     <div class="workload-hero">
       <div>
-        <div class="eyebrow"><Gauge :size="14" /> Capacity planning</div>
+        <div class="eyebrow"><Gauge :size="14" /> Kế hoạch phân bổ nguồn lực</div>
         <h2>Workload theo thành viên</h2>
         <p>Theo dõi số task đang mở, ước lượng giờ và mức tải để phân công công việc hợp lý hơn.</p>
       </div>

@@ -12,7 +12,7 @@ defineProps<{
     <div class="panel-heading">
       <div>
         <span>Đội ngũ</span>
-        <h2>Team snapshot</h2>
+        <h2>Tổng quan đội ngũ</h2>
       </div>
       <Users :size="18" />
     </div>

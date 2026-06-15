@@ -509,6 +509,10 @@ function percent(value: number) {
   box-shadow: 0 12px 30px rgba(15, 23, 42, .08);
 }
 
+.donut-chart::after {
+  display: none;
+}
+
 .donut-center {
   width: 116px;
   height: 116px;
@@ -517,12 +521,14 @@ function percent(value: number) {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: var(--panel);
-  box-shadow: inset 0 0 0 1px var(--line);
+  background: linear-gradient(145deg, #ffffff 0%, #eef6ff 100%);
+  box-shadow:
+    inset 0 0 0 1px #d6e6f8,
+    0 6px 18px rgba(37, 99, 235, .1);
 }
 
-.donut-center strong { color: var(--text-strong); font-size: 31px; letter-spacing: -.04em; }
-.donut-center span { color: var(--muted); font-size: 10px; font-weight: 700; }
+.donut-center strong { color: #173b70; font-size: 31px; letter-spacing: -.04em; }
+.donut-center span { color: #60738f; font-size: 10px; font-weight: 700; }
 
 .status-breakdown {
   display: flex;

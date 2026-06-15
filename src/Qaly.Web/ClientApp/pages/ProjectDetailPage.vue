@@ -420,7 +420,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
               </div>
             </div>
             <div class="board-actions">
-              <div class="task-view-toggle" aria-label="Che do hien thi nhiem vu">
+              <div class="task-view-toggle" aria-label="Chế độ hiển thị nhiệm vụ">
                 <button
                   type="button"
                   class="task-view-toggle__button"
@@ -670,7 +670,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
         <Teleport to="body">
           <Transition name="task-detail-drawer">
             <div v-if="selectedTask" class="task-detail-backdrop" @click.self="closeTaskDetails">
-              <aside class="task-detail-panel task-detail-drawer glass-card" role="dialog" aria-modal="true" aria-label="Chi tiet nhiem vu">
+              <aside class="task-detail-panel task-detail-drawer glass-card" role="dialog" aria-modal="true" aria-label="Chi tiết nhiệm vụ">
           <div class="panel-heading">
             <div>
               <span>Chi tiết nhiệm vụ</span>
@@ -678,7 +678,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
             </div>
             <div class="task-detail-drawer__actions">
               <div v-if="selectedTask" class="task-id-badge">#{{ selectedTask.id.slice(0, 4) }}</div>
-              <button type="button" class="task-detail-drawer__close" aria-label="Dong chi tiet nhiem vu" @click="closeTaskDetails">
+              <button type="button" class="task-detail-drawer__close" aria-label="Đóng chi tiết nhiệm vụ" @click="closeTaskDetails">
                 <X :size="18" />
               </button>
             </div>

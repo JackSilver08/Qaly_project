@@ -1319,8 +1319,8 @@ function formatMessageTime(value: string) {
 
           <div v-else-if="activeTab === 'meeting'" class="group-tool-body group-tool-empty">
             <CalendarDays :size="28" />
-            <strong>Meeting nhóm</strong>
-            <p>Bắt đầu phiên meeting cho thành viên trong nhóm.</p>
+            <strong>Cuộc họp nhóm</strong>
+            <p>Bắt đầu phiên họp cho các thành viên trong nhóm.</p>
             <button class="primary-button" type="button" @click="startMeeting">Bắt đầu cuộc họp</button>
           </div>
 

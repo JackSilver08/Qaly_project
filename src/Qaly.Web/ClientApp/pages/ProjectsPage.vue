@@ -161,7 +161,7 @@ async function handleUndoFromBanner() {
           </div>
           <div style="margin-top: 8px;">
             <strong style="font-size: 28px; font-weight: 800; color: var(--text);">{{ totalProjectsCount }}</strong>
-            <p style="font-size: 11px; color: var(--muted); margin-top: 2px; margin-bottom: 0;">Dự án hoạt động trong Workspace</p>
+            <p style="font-size: 11px; color: var(--muted); margin-top: 2px; margin-bottom: 0;">Dự án đang hoạt động trong không gian làm việc</p>
           </div>
         </article>
 
@@ -196,7 +196,7 @@ async function handleUndoFromBanner() {
       <section class="project-workspace glass-card">
         <div class="project-workspace__header">
           <div>
-            <span>Projects</span>
+            <span>Dự án</span>
             <h2>Dự án</h2>
           </div>
           <p>{{ activeProjectCards.length }} dự án đang hiển thị</p>

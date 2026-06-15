@@ -1144,7 +1144,7 @@ function disconnectLiveKit() {
           <div v-else-if="activeSidebarTab === 'checknote'" class="tab-pane checknote-pane">
             <!-- Project Selector and Generate Button -->
             <div v-if="!checknoteResult && !isGeneratingChecknote" class="checknote-setup">
-              <label class="checknote-label">Chọn dự án để đồng bộ Task:</label>
+              <label class="checknote-label">Chọn dự án để đồng bộ nhiệm vụ:</label>
               <select v-model="selectedProjectId" class="checknote-select">
                 <option value="">-- Chọn dự án --</option>
                 <option v-for="proj in projects" :key="proj.id" :value="proj.id">
@@ -1178,7 +1178,7 @@ function disconnectLiveKit() {
               </div>
 
               <div class="checknote-section">
-                <h3>Danh sách Action Items do AI đề xuất</h3>
+                <h3>Danh sách việc cần làm do AI đề xuất</h3>
                 <div class="action-items-list">
                   <div
                     v-for="(item, idx) in checknoteResult.actionItems"

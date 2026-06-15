@@ -295,7 +295,7 @@ Yêu cầu:
 
         var recommended = candidates.FirstOrDefault();
         var summary = recommended == null
-            ? "Khong co du lieu de de xuat."
+            ? "Không có dữ liệu để đề xuất."
             : $"Uu tien {recommended.FullName} vi workload thap, co {recommended.ActiveTaskCount} task dang mo va phu hop voi {string.Join(", ", recommended.SkillSignals.Take(3))}.";
 
         return Result.Success(new TaskAssignmentInsightDto(

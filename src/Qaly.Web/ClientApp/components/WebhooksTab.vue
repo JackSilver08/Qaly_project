@@ -19,11 +19,11 @@ const newWebhook = ref({
 })
 
 const availableEvents = [
-  { id: 'task.created', label: 'Task Created' },
-  { id: 'task.updated', label: 'Task Updated' },
-  { id: 'task.deleted', label: 'Task Deleted' },
-  { id: 'comment.added', label: 'Comment Added' },
-  { id: 'project.updated', label: 'Project Updated' }
+  { id: 'task.created', label: 'Đã tạo nhiệm vụ' },
+  { id: 'task.updated', label: 'Đã cập nhật nhiệm vụ' },
+  { id: 'task.deleted', label: 'Đã xóa nhiệm vụ' },
+  { id: 'comment.added', label: 'Đã thêm bình luận' },
+  { id: 'project.updated', label: 'Đã cập nhật dự án' }
 ]
 
 async function fetchWebhooks() {
@@ -74,7 +74,7 @@ async function testWebhook(id: string) {
   try {
     await apiCommand(`/api/projects/${props.projectId}/webhooks/${id}/test`, { method: 'POST' })
 
-    showSuccess('Đã gửi test payload thành công!')
+    showSuccess('Đã gửi dữ liệu kiểm thử thành công!')
   } catch (e) {
     showError(errorMessage(e, 'Không thể gửi webhook test.'))
   }
@@ -88,25 +88,25 @@ onMounted(fetchWebhooks)
     <div class="panel-header">
       <div class="title-group">
         <Webhook :size="20" class="icon-primary" />
-        <h3>Webhooks</h3>
+        <h3>Webhook</h3>
       </div>
       <button class="primary-button primary-button--compact" type="button" @click="showCreateForm = !showCreateForm">
-        <Plus :size="16" /> Add Webhook
+        <Plus :size="16" /> Thêm webhook
       </button>
     </div>
 
     <transition name="expand">
       <form v-if="showCreateForm" class="webhook-form glass-card" @submit.prevent="createWebhook">
         <div class="form-group">
-          <label>Payload URL</label>
+          <label>URL nhận dữ liệu</label>
           <input v-model="newWebhook.payloadUrl" type="url" placeholder="https://your-app.com/webhook" required />
         </div>
         <div class="form-group">
-          <label>Secret (Optional)</label>
-          <input v-model="newWebhook.secret" type="password" placeholder="Webhook secret for validation" />
+          <label>Khóa bí mật (không bắt buộc)</label>
+          <input v-model="newWebhook.secret" type="password" placeholder="Khóa bí mật để xác thực webhook" />
         </div>
         <div class="form-group">
-          <label>Events to trigger</label>
+          <label>Sự kiện kích hoạt</label>
           <div class="events-grid">
             <label v-for="event in availableEvents" :key="event.id" class="event-checkbox">
               <input type="checkbox" :value="event.id" v-model="newWebhook.events" />
@@ -115,9 +115,9 @@ onMounted(fetchWebhooks)
           </div>
         </div>
         <div class="form-actions">
-          <button type="button" class="ghost-button" @click="showCreateForm = false">Cancel</button>
+          <button type="button" class="ghost-button" @click="showCreateForm = false">Hủy</button>
           <button type="submit" class="primary-button" :disabled="isLoading">
-            {{ isLoading ? 'Đang tạo...' : 'Create Webhook' }}
+            {{ isLoading ? 'Đang tạo...' : 'Tạo webhook' }}
           </button>
         </div>
       </form>
@@ -128,17 +128,17 @@ onMounted(fetchWebhooks)
         <div class="hook-main">
           <div class="hook-url">
             <strong>{{ hook.payloadUrl }}</strong>
-            <span v-if="hook.secret" class="secure-badge"><ShieldCheck :size="12" /> Secured</span>
+            <span v-if="hook.secret" class="secure-badge"><ShieldCheck :size="12" /> Đã bảo mật</span>
           </div>
           <div class="hook-events">
             <span v-for="ev in hook.events" :key="ev" class="event-tag">{{ ev }}</span>
           </div>
         </div>
         <div class="hook-actions">
-          <button type="button" @click="testWebhook(hook.id)" class="icon-button" title="Test Connection">
+          <button type="button" @click="testWebhook(hook.id)" class="icon-button" title="Kiểm tra kết nối">
             <Activity :size="16" />
           </button>
-          <button type="button" @click="deleteWebhook(hook.id)" class="revoke-button" title="Delete">
+          <button type="button" @click="deleteWebhook(hook.id)" class="revoke-button" title="Xóa">
             <Trash2 :size="16" />
           </button>
         </div>

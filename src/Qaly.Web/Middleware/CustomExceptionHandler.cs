@@ -29,7 +29,7 @@ public partial class CustomExceptionHandler : IExceptionHandler
             Status = StatusCodes.Status500InternalServerError,
             Title = "Server Error",
             Type = "https://tools.ietf.org/html/rfc7807#section-6.6.1",
-            Detail = "An unexpected error occurred on the server.",
+            Detail = "Máy chủ đã xảy ra lỗi không mong muốn.",
             Instance = requestPath
         };
 

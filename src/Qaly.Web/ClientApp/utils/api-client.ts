@@ -37,7 +37,7 @@ export async function apiJson<T>(url: string, options: RequestInit = {}): Promis
 
   if (response.status === 401) {
     window.location.href = `/Account/Login?returnUrl=${encodeURIComponent(window.location.pathname)}`
-    throw new Error('Authentication required.')
+    throw new Error('Bạn cần đăng nhập để tiếp tục.')
   }
 
   const text = await response.text()

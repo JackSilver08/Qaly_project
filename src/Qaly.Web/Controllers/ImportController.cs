@@ -81,10 +81,10 @@ public class ImportController : BaseApiController
     public async Task<IActionResult> PreviewDocument([FromForm] IFormFile file, CancellationToken ct = default)
     {
         if (file == null || file.Length == 0)
-            return BadRequest(new { error = "Vui long chon file." });
+            return BadRequest(new { error = "Vui lòng chọn tệp." });
 
         if (file.Length > MaxFileSize)
-            return BadRequest(new { error = "File vuot qua gioi han 5MB." });
+            return BadRequest(new { error = "Tệp vượt quá giới hạn 5 MB." });
 
         using var stream = file.OpenReadStream();
         var result = await _fileImportService.PreviewDocumentAsync(stream, file.FileName, ct);
@@ -100,10 +100,10 @@ public class ImportController : BaseApiController
         CancellationToken ct = default)
     {
         if (file == null || file.Length == 0)
-            return BadRequest(new { error = "Vui long chon file." });
+            return BadRequest(new { error = "Vui lòng chọn tệp." });
 
         if (file.Length > MaxFileSize)
-            return BadRequest(new { error = "File vuot qua gioi han 5MB." });
+            return BadRequest(new { error = "Tệp vượt quá giới hạn 5 MB." });
 
         using var stream = file.OpenReadStream();
         var result = await _fileImportService.ImportDocumentAsync(projectId, stream, file.FileName, title, ct);
@@ -115,10 +115,10 @@ public class ImportController : BaseApiController
     public async Task<IActionResult> PreviewZipBundle([FromForm] IFormFile file, CancellationToken ct = default)
     {
         if (file == null || file.Length == 0)
-            return BadRequest(new { error = "Vui long chon file." });
+            return BadRequest(new { error = "Vui lòng chọn tệp." });
 
         if (file.Length > MaxFileSize)
-            return BadRequest(new { error = "File vuot qua gioi han 5MB." });
+            return BadRequest(new { error = "Tệp vượt quá giới hạn 5 MB." });
 
         using var stream = file.OpenReadStream();
         var result = await _fileImportService.PreviewZipBundleAsync(stream, file.FileName, ct);
@@ -133,10 +133,10 @@ public class ImportController : BaseApiController
         CancellationToken ct = default)
     {
         if (file == null || file.Length == 0)
-            return BadRequest(new { error = "Vui long chon file." });
+            return BadRequest(new { error = "Vui lòng chọn tệp." });
 
         if (file.Length > MaxFileSize)
-            return BadRequest(new { error = "File vuot qua gioi han 5MB." });
+            return BadRequest(new { error = "Tệp vượt quá giới hạn 5 MB." });
 
         using var stream = file.OpenReadStream();
         var result = await _fileImportService.ImportZipBundleAsync(projectId, stream, file.FileName, ct);

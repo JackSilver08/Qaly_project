@@ -146,9 +146,9 @@ const statusLabels: Record<string, string> = {
   <div class="import-step">
     <div class="confirm-hero">
       <div class="confirm-icon">📋</div>
-      <h3>Xác nhận Import</h3>
+      <h3>Xác nhận nhập dữ liệu</h3>
       <p class="confirm-subtitle">
-        Kiểm tra thông tin trước khi import vào
+        Kiểm tra thông tin trước khi nhập vào
         <strong>{{ previewSummary.targetProjectName }}</strong>
       </p>
     </div>
@@ -160,7 +160,7 @@ const statusLabels: Record<string, string> = {
         <span class="confirm-stat__value">{{ previewSummary.totalRows }}</span>
       </div>
       <div class="confirm-stat confirm-stat--success">
-        <span class="confirm-stat__label">Tasks sẽ được tạo</span>
+        <span class="confirm-stat__label">Nhiệm vụ sẽ được tạo</span>
         <span class="confirm-stat__value">~{{ previewSummary.estimatedImport }}</span>
       </div>
       <div v-if="previewSummary.estimatedSkip > 0" class="confirm-stat confirm-stat--warn">
@@ -168,14 +168,14 @@ const statusLabels: Record<string, string> = {
         <span class="confirm-stat__value">~{{ previewSummary.estimatedSkip }}</span>
       </div>
       <div v-if="previewSummary.newLabelsEstimate > 0" class="confirm-stat">
-        <span class="confirm-stat__label">Labels phát hiện</span>
+        <span class="confirm-stat__label">Nhãn phát hiện được</span>
         <span class="confirm-stat__value">{{ previewSummary.newLabelsEstimate }}</span>
       </div>
     </div>
 
     <!-- Status distribution -->
     <div v-if="Object.keys(previewSummary.statusDistribution).length" class="confirm-distribution">
-      <p class="confirm-section-title">Phân bố theo cột Kanban <span class="hint">(ước lượng từ {{ previewSummary.previewRowCount }} dòng preview)</span></p>
+      <p class="confirm-section-title">Phân bố theo cột Kanban <span class="hint">(ước lượng từ {{ previewSummary.previewRowCount }} dòng xem trước)</span></p>
       <div v-for="(count, status) in previewSummary.statusDistribution" :key="status" class="dist-row">
         <span class="dist-status">{{ statusIcons[status as string] || '📌' }} {{ statusLabels[status as string] || status }}</span>
         <div class="dist-bar-wrap">
@@ -189,7 +189,7 @@ const statusLabels: Record<string, string> = {
     <div v-if="previewSummary.unmappedStatuses.length" class="import-warning">
       <AlertTriangle :size="16" />
       <div>
-        <strong>Status không nhận diện được</strong> (sẽ đặt về Todo):
+        <strong>Trạng thái không nhận diện được</strong> (sẽ đặt về Chưa làm):
         <span class="unmapped-list">{{ previewSummary.unmappedStatuses.join(', ') }}</span>
       </div>
     </div>
@@ -198,10 +198,10 @@ const statusLabels: Record<string, string> = {
     <div class="confirm-options">
       <span v-if="defaultAssigneeId" class="option-badge">Có người phụ trách mặc định</span>
       <span v-if="enableAiCategorization" class="option-badge option-badge--ai">
-        AI sẽ phân loại khoảng {{ previewSummary.estimatedAiCategorization }} task
+        AI sẽ phân loại khoảng {{ previewSummary.estimatedAiCategorization }} nhiệm vụ
       </span>
-      <span v-if="skipDuplicates" class="option-badge option-badge--active">✓ Bỏ qua task trùng tên</span>
-        <span v-else class="option-badge">Thêm tất cả, không kiểm tra trùng</span>
+      <span v-if="skipDuplicates" class="option-badge option-badge--active">Bỏ qua nhiệm vụ trùng tên</span>
+      <span v-else class="option-badge">Thêm tất cả, không kiểm tra trùng lặp</span>
 
       <span v-if="assignToMeIfEmpty" class="option-badge">Giao cho tôi (nếu trống)</span>
       <span v-if="defaultPriority" class="option-badge">Ưu tiên mặc định: {{ defaultPriority }}</span>
@@ -209,25 +209,25 @@ const statusLabels: Record<string, string> = {
       <span v-if="enableAiCategorization" class="option-badge option-badge--ai">✨ Dùng AI phân loại</span>
 
       <span v-if="isNewProject" class="option-badge option-badge--new">+ Tạo dự án mới</span>
-      <span v-else class="option-badge option-badge--merge">↗ Merge vào dự án có sẵn</span>
+      <span v-else class="option-badge option-badge--merge">Gộp vào dự án có sẵn</span>
     </div>
 
     <!-- Safety notice -->
     <div class="confirm-notice">
       <span>⚠️</span>
-      <p>Card cũ không bị thay đổi. Bạn có thể hoàn tác (undo) trong vòng 30 phút sau khi import.</p>
+      <p>Thẻ cũ không bị thay đổi. Bạn có thể hoàn tác trong vòng 30 phút sau khi nhập.</p>
     </div>
 
     <div class="confirm-notice confirm-notice--subtle">
       <span>i</span>
-      <p>Những con số ở bước này là ước lượng từ preview. Số thành công, thất bại và trùng bỏ qua chính xác sẽ hiện ở màn hình kết quả sau import.</p>
+      <p>Những con số ở bước này là ước lượng từ dữ liệu xem trước. Số thành công, thất bại và trùng lặp bị bỏ qua sẽ hiển thị chính xác sau khi nhập.</p>
     </div>
 
     <div class="import-actions">
       <button class="btn btn--ghost" type="button" @click="emit('back')"><ArrowLeft :size="16" /> Quay lại</button>
       <button class="btn btn--primary btn--import-confirm" :disabled="isLoading" @click="emit('confirm')">
         <template v-if="isLoading">
-          <span class="spinner"></span> Đang import...
+          <span class="spinner"></span> Đang nhập...
         </template>
         <template v-else>
           Nhập {{ previewSummary.totalRows }} task <Check :size="16" />

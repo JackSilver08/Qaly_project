@@ -402,7 +402,7 @@ function confidenceLabel(value: number) {
     <header class="group-ai-panel__header">
       <div class="header-title">
         <Sparkles class="ai-spark-icon animate-pulse" :size="18" />
-        <h2>AI Assistant</h2>
+        <h2>Trợ lý AI</h2>
       </div>
     </header>
 
@@ -516,7 +516,7 @@ function confidenceLabel(value: number) {
       <div v-if="subTab === 'draft'" class="tab-view-container">
         
         <div v-if="!hasGeneratedDraft" class="action-trigger-box">
-          <p class="helper-text">Tự động đề xuất cấu trúc Project và lập danh sách các công việc cụ thể dựa trên trao đổi của nhóm.</p>
+          <p class="helper-text">Tự động đề xuất cấu trúc dự án và lập danh sách công việc cụ thể dựa trên trao đổi của nhóm.</p>
           
           <div class="instructions-input-group">
             <label for="extra-instructions">Yêu cầu bổ sung cho AI (Tùy chọn):</label>
@@ -608,9 +608,9 @@ function confidenceLabel(value: number) {
                   <div class="metadata-col">
                     <label>Độ ưu tiên</label>
                     <select v-model="task.priority" class="metadata-select">
-                      <option value="Low">Low</option>
-                      <option value="Medium">Medium</option>
-                      <option value="High">High</option>
+                      <option value="Low">Thấp</option>
+                      <option value="Medium">Trung bình</option>
+                      <option value="High">Cao</option>
                     </select>
                   </div>
 
@@ -652,7 +652,7 @@ function confidenceLabel(value: number) {
             >
               <Loader2 v-if="isCreatingProject" :size="16" class="spin-icon" />
               <Check v-else :size="16" />
-              <span>Xác nhận tạo Project thật</span>
+              <span>Xác nhận tạo dự án chính thức</span>
             </button>
             <button 
               class="text-button text-button--danger text-center w-full"
@@ -673,7 +673,7 @@ function confidenceLabel(value: number) {
       <!-- SUB-TAB 3: ACTION ITEMS / HÀNH ĐỘNG -->
       <div v-if="subTab === 'action-items'" class="tab-view-container">
         <div class="action-trigger-box">
-          <p class="helper-text">Tìm kiếm và trích xuất trực tiếp các việc cần làm (Action Items) được đề cập trong hội thoại.</p>
+          <p class="helper-text">Tìm kiếm và trích xuất trực tiếp các việc cần làm được đề cập trong hội thoại.</p>
           <button
             class="primary-button ai-action-btn"
             type="button"
@@ -717,7 +717,7 @@ function confidenceLabel(value: number) {
 
         <div v-else-if="hasGeneratedActions && !actionItems.length" class="panel-empty-placeholder">
           <ListChecks :size="24" class="muted-icon" />
-          <span>Không phát hiện Action items nào trong đoạn chat gần đây.</span>
+          <span>Không phát hiện việc cần làm nào trong đoạn chat gần đây.</span>
         </div>
 
         <div v-else-if="!isActionLoading" class="panel-empty-placeholder">

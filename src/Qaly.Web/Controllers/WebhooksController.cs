@@ -29,7 +29,7 @@ public class WebhooksController : BaseApiController
     {
         if (request == null)
         {
-            return BadRequest(new { error = "Webhook request payload is required." });
+            return BadRequest(new { error = "Vui lòng cung cấp thông tin webhook." });
         }
 
         var dto = new CreateWebhookDto(projectId, request.PayloadUrl, request.Secret, request.Events);
@@ -42,7 +42,7 @@ public class WebhooksController : BaseApiController
     {
         if (dto == null)
         {
-            return BadRequest(new { error = "Webhook request payload is required." });
+            return BadRequest(new { error = "Vui lòng cung cấp thông tin webhook." });
         }
 
         var result = await _webhookService.UpdateAsync(projectId, id, dto, ct);

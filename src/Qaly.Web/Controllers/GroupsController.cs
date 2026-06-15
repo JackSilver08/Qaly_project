@@ -82,7 +82,7 @@ public class GroupsController : BaseApiController
     {
         if (request == null)
         {
-            return BadRequest(new { error = "Invitation request payload is required." });
+            return BadRequest(new { error = "Vui lòng cung cấp thông tin lời mời." });
         }
 
         var result = await _groupsService.CreateInvitationAsync(id, request, ct);
@@ -187,7 +187,7 @@ public class GroupsController : BaseApiController
     {
         if (file == null)
         {
-            return BadRequest(new { error = "File is required." });
+            return BadRequest(new { error = "Vui lòng chọn tệp." });
         }
 
         await using var stream = file.OpenReadStream();
@@ -207,12 +207,12 @@ public class GroupsController : BaseApiController
     {
         if (file == null || file.Length == 0)
         {
-            return BadRequest(new { error = "Avatar image is required." });
+            return BadRequest(new { error = "Vui lòng chọn ảnh đại diện." });
         }
 
         if (file.Length > 5 * 1024 * 1024)
         {
-            return BadRequest(new { error = "Avatar must be 5 MB or smaller." });
+            return BadRequest(new { error = "Ảnh đại diện phải có dung lượng không quá 5 MB." });
         }
 
         var allowedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -224,7 +224,7 @@ public class GroupsController : BaseApiController
         };
         if (!allowedTypes.Contains(file.ContentType))
         {
-            return BadRequest(new { error = "Avatar must be a JPG, PNG, GIF, or WEBP image." });
+            return BadRequest(new { error = "Ảnh đại diện phải có định dạng JPG, PNG, GIF hoặc WEBP." });
         }
 
         if (!await _groupsService.CanManageGroupAsync(id, ct))

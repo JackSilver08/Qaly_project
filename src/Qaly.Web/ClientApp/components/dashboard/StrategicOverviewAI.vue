@@ -96,7 +96,7 @@ onMounted(() => {
         <div class="stat-card">
           <div class="stat-icon alert-icon"><AlertCircle :size="20"/></div>
           <div class="stat-info">
-            <span class="stat-label">Dự án rủi ro / Task trễ</span>
+            <span class="stat-label">Dự án rủi ro / Nhiệm vụ trễ</span>
             <strong class="stat-value">{{ statsData.riskProjectCount }} / {{ statsData.overdueTaskCount }}</strong>
           </div>
         </div>
@@ -116,14 +116,14 @@ onMounted(() => {
         
         <div v-if="isLoadingAi" class="ai-loading">
           <BrainCircuit class="spin-icon" :size="32" />
-          <p>AI đang tổng hợp và phân tích dữ liệu Workspace...</p>
+          <p>AI đang tổng hợp và phân tích dữ liệu không gian làm việc...</p>
         </div>
 
         <div v-else-if="!aiData" class="ai-empty">
           <div class="ai-empty-icon">
             <BrainCircuit :size="48" style="color: rgba(15, 82, 186, 0.3);" />
           </div>
-          <p>Nhấn <strong>Tạo phân tích AI</strong> để nhận insight chiến lược và đề xuất hành động cho tuần này.</p>
+          <p>Nhấn <strong>Tạo phân tích AI</strong> để nhận nhận định chiến lược và đề xuất hành động cho tuần này.</p>
         </div>
 
         <div v-else class="ai-results">
