@@ -1739,7 +1739,11 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   position: sticky;
   top: 16px;
   min-width: 0;
-  overflow: hidden;
+  max-height: calc(100dvh - 104px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .task-detail {
@@ -2544,6 +2548,8 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 
   .task-detail-drawer {
     position: static;
+    max-height: none;
+    overflow: visible;
   }
 
   .task-detail__top {

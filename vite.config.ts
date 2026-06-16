@@ -37,6 +37,17 @@ export default defineConfig({
           'vendor-realtime': ['@microsoft/signalr'],
         },
       },
+      onwarn(warning, defaultHandler) {
+        const warningPath = warning.id?.replace(/\\/g, '/')
+        if (
+          warning.code === 'INVALID_ANNOTATION' &&
+          warningPath?.includes('node_modules/@microsoft/signalr/')
+        ) {
+          return
+        }
+
+        defaultHandler(warning)
+      },
     },
   },
   server: {

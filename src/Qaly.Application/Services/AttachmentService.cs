@@ -356,7 +356,13 @@ public class AttachmentService : IAttachmentService
 
     private async Task<bool> CanReviewEvidenceAsync(TaskItem task, Guid currentUserId, CancellationToken ct)
     {
-        if (task.Project != null && (IsAdmin() || task.Project.OwnerId == currentUserId))
+        var project = task.Project;
+        if (project == null)
+        {
+            return false;
+        }
+
+        if (IsAdmin() || project.OwnerId == currentUserId)
         {
             return true;
         }
@@ -370,13 +376,13 @@ public class AttachmentService : IAttachmentService
             return true;
         }
 
-        if (!task.Project.OrganizationId.HasValue)
+        if (!project.OrganizationId.HasValue)
         {
             return false;
         }
 
         var organizationRole = await _organizationMemberRepo.GetQueryable()
-            .Where(member => member.OrganizationId == task.Project.OrganizationId.Value && member.UserId == currentUserId)
+            .Where(member => member.OrganizationId == project.OrganizationId.Value && member.UserId == currentUserId)
             .Select(member => member.Role)
             .FirstOrDefaultAsync(ct);
 
