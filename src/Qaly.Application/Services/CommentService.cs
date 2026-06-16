@@ -175,6 +175,11 @@ public class CommentService : ICommentService
             return false;
         }
 
+        if (task.Project == null)
+        {
+            return false;
+        }
+
         if (IsAdmin() ||
             task.ReporterId == currentUserId ||
             task.AssigneeId == currentUserId ||

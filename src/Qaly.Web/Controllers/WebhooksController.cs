@@ -21,6 +21,10 @@ public class WebhooksController : BaseApiController
     public async Task<IActionResult> GetByProject(Guid projectId, CancellationToken ct)
     {
         var result = await _webhookService.GetByProjectAsync(projectId, ct);
+        if (result.StatusCode is 403 or 404)
+        {
+            return Ok(Array.Empty<WebhookDto>());
+        }
         return StatusCode(result.StatusCode, result);
     }
 

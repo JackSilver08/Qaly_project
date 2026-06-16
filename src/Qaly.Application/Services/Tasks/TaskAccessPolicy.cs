@@ -68,6 +68,11 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
             return true;
         }
 
+        if (task.Project == null)
+        {
+            return false;
+        }
+
         if (!await CanAccessProjectAsync(task.ProjectId, task.Project.OwnerId, ct))
         {
             return false;
@@ -89,6 +94,11 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
     {
         var currentUserId = CurrentUserId;
         if (currentUserId == null)
+        {
+            return false;
+        }
+
+        if (task.Project == null)
         {
             return false;
         }

@@ -3,10 +3,9 @@ import { computed, onMounted, ref, watch } from 'vue'
 import {
   ArrowRight,
   BadgeAlert,
-  BellRing,
+  Circle,
   CheckCheck,
   CheckSquare2,
-  Circle,
   Clock3,
   Filter,
   ListFilter,
@@ -17,11 +16,10 @@ import {
   Send,
   SquareCheckBig,
   Trash2,
-  Waypoints,
   X,
 } from 'lucide-vue-next'
 import { useDashboardContext } from '../composables/dashboard-context'
-import { apiCommand, apiJson, apiResult, errorMessage } from '../utils/api-client'
+import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
 import { showError, showSuccess } from '../composables/use-toast'
 import type {
   AttachmentDto,
@@ -38,20 +36,8 @@ import type {
 type TaskScope = 'mine' | 'all'
 type TaskSort = 'risk' | 'dueDate' | 'priority' | 'status' | 'project' | 'alpha'
 type TaskFocus = 'all' | 'overdue' | 'dueSoon' | 'pinned' | 'high' | 'blocked'
-type TriageMode = 'all' | 'urgent' | 'atRisk' | 'watchlist' | 'stable'
-
-type SavedTaskView = {
-  id: string
-  name: string
-  scope: TaskScope
-  searchQuery: string
-  statusFilter: string
-  priorityFilter: string
-  projectFilter: string
-  focusFilter: TaskFocus
-  triageMode: TriageMode
-  sortBy: TaskSort
-}
+type WorkflowStage = 'needsOwner' | 'todo' | 'inProgress' | 'inReview' | 'blocked' | 'done'
+type WorkflowMiniStage = 'todo' | 'inProgress' | 'inReview' | 'done'
 
 type HubTask = DashboardTask & {
   projectId: string
@@ -61,6 +47,16 @@ type HubTask = DashboardTask & {
   projectMemberCount: number
   projectProgressPercentage: number
   projectCreatedAt: string
+}
+
+type WorkflowTask = {
+  id: string
+  status: string
+  assigneeId: string | null
+  dueDate: string | null
+  priority: string
+  isPinned?: boolean
+  assigneeName?: string | null
 }
 
 const {
@@ -75,21 +71,17 @@ const {
   projects,
 } = useDashboardContext()
 
-const taskScope = ref<TaskScope>('mine')
+const taskScope = ref<TaskScope>('all')
 const searchQuery = ref('')
 const statusFilter = ref<string>('all')
 const priorityFilter = ref<string>('all')
 const projectFilter = ref<string>('all')
 const focusFilter = ref<TaskFocus>('all')
-const triageMode = ref<TriageMode>('all')
 const sortBy = ref<TaskSort>('risk')
-const savedViews = ref<SavedTaskView[]>([])
-const activeSavedViewId = ref<string | null>(null)
-
-const savedViewsStorageKey = 'qaly.task-hub.saved-views'
 
 const attentionItems = ref<TaskAttentionDto[]>([])
 const attentionLoading = ref(false)
+
 const selectedTaskId = ref<string | null>(null)
 const selectedTaskDetail = ref<TaskItemDto | null>(null)
 const selectedTaskComments = ref<CommentDto[]>([])
@@ -97,6 +89,7 @@ const selectedTaskAttachments = ref<AttachmentDto[]>([])
 const selectedTaskTimeEntries = ref<TimeEntryDto[]>([])
 const selectedTaskMeetingSource = ref<TaskMeetingSourceDto | null>(null)
 const selectedTaskLoading = ref(false)
+const taskDetailCache = ref(new Map<string, TaskItemDto>())
 
 const selectedTaskIds = ref<string[]>([])
 
@@ -117,6 +110,18 @@ const sortOptions: Array<{ label: string; value: TaskSort }> = [
   { label: 'Trạng thái', value: 'status' },
   { label: 'Dự án', value: 'project' },
   { label: 'A-Z', value: 'alpha' },
+]
+
+const workflowMiniSteps: Array<{
+  key: WorkflowMiniStage
+  label: string
+  status: string
+  hint: string
+}> = [
+  { key: 'todo', label: 'Todo', status: 'Todo', hint: 'Chưa bắt đầu' },
+  { key: 'inProgress', label: 'In Progress', status: 'InProgress', hint: 'Đang triển khai' },
+  { key: 'inReview', label: 'In Review', status: 'InReview', hint: 'Chờ duyệt' },
+  { key: 'done', label: 'Done', status: 'Done', hint: 'Hoàn tất' },
 ]
 
 const allTasks = computed<HubTask[]>(() =>
@@ -149,6 +154,14 @@ const mineTasks = computed(() => {
 
 const visibleTaskBase = computed(() => (taskScope.value === 'mine' ? mineTasks.value : allTasks.value))
 
+const shouldFallbackToAll = computed(
+  () => taskScope.value === 'mine' && mineTasks.value.length === 0 && allTasks.value.length > 0,
+)
+
+const attentionItemMap = computed(() =>
+  new Map(attentionItems.value.map((item) => [item.id, item])),
+)
+
 const filteredTasks = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
 
@@ -158,7 +171,6 @@ const filteredTasks = computed(() => {
       if (statusFilter.value !== 'all' && task.status !== statusFilter.value) return false
       if (priorityFilter.value !== 'all' && task.priority !== priorityFilter.value) return false
       if (focusFilter.value !== 'all' && !matchesFocus(task, focusFilter.value)) return false
-      if (triageMode.value !== 'all' && taskRiskBucket(task) !== triageMode.value) return false
       if (!query) return true
 
       return [
@@ -178,127 +190,14 @@ const filteredTasks = computed(() => {
     .sort(compareTasks)
 })
 
-const attentionSummary = computed(() => ({
-  total: attentionItems.value.length,
-  overdue: attentionItems.value.filter((item) => item.isOverdue).length,
-  dueSoon: attentionItems.value.filter((item) => item.isDueSoon).length,
-  stale: attentionItems.value.filter((item) => item.isStaleTodo || item.isStaleInProgress).length,
-  unseen: attentionItems.value.filter((item) => item.isUnseenByAssignee).length,
-}))
-
 const taskSummary = computed(() => {
   const tasks = visibleTaskBase.value
   return {
     total: tasks.length,
     overdue: tasks.filter((task) => isTaskOverdue(task)).length,
     dueSoon: tasks.filter((task) => isDueSoon(task)).length,
-    pinned: tasks.filter((task) => task.isPinned).length,
-    high: tasks.filter((task) => ['High', 'Critical'].includes(task.priority)).length,
   }
 })
-
-const attentionItemMap = computed(() =>
-  new Map(attentionItems.value.map((item) => [item.id, item])),
-)
-
-const triageSourceTasks = computed(() => visibleTaskBase.value)
-
-const riskRadar = computed(() => {
-  const tasks = triageSourceTasks.value
-  const total = Math.max(1, tasks.length)
-
-  const axes = [
-    {
-      id: 'deadline',
-      label: 'Deadline',
-      score: Math.round((tasks.filter((task) => isTaskOverdue(task)).length * 100 + tasks.filter((task) => isDueSoon(task)).length * 60) / total),
-      caption: 'Task quá hạn và sắp đến hạn',
-    },
-    {
-      id: 'blocker',
-      label: 'Blockers',
-      score: Math.round((tasks.filter((task) => ['Blocked', 'OnHold'].includes(task.status)).length * 100 + tasks.filter((task) => taskRiskReasons(task).some((reason) => reason === 'stale')).length * 45) / total),
-      caption: 'Task đang bị chặn hoặc quá lâu',
-    },
-    {
-      id: 'priority',
-      label: 'Priority',
-      score: Math.round(tasks.reduce((sum, task) => sum + priorityPressure(task), 0) / total),
-      caption: 'Mức ưu tiên của task đang mở',
-    },
-    {
-      id: 'ownership',
-      label: 'Ownership',
-      score: Math.round(tasks.filter((task) => !task.assigneeId).length * 100 / total),
-      caption: 'Task chưa có người phụ trách',
-    },
-    {
-      id: 'freshness',
-      label: 'Freshness',
-      score: Math.round(tasks.reduce((sum, task) => sum + freshnessPressure(task), 0) / total),
-      caption: 'Task thiếu tín hiệu cập nhật',
-    },
-  ]
-
-  return axes.map((axis) => ({
-    ...axis,
-    active: axis.score >= 70,
-  }))
-})
-
-const triageBuckets = computed(() => {
-  const tasks = triageSourceTasks.value
-  const buckets = {
-    urgent: tasks.filter((task) => taskRiskBucket(task) === 'urgent'),
-    atRisk: tasks.filter((task) => taskRiskBucket(task) === 'atRisk'),
-    watchlist: tasks.filter((task) => taskRiskBucket(task) === 'watchlist'),
-    stable: tasks.filter((task) => taskRiskBucket(task) === 'stable'),
-  }
-
-  return [
-    {
-      key: 'urgent' as const,
-      label: 'Urgent',
-      count: buckets.urgent.length,
-      description: 'Quá hạn, blocked hoặc sắp bùng rủi ro.',
-      tone: 'danger',
-    },
-    {
-      key: 'atRisk' as const,
-      label: 'At risk',
-      count: buckets.atRisk.length,
-      description: 'Nên xử lý trong ngày để tránh trễ nhịp.',
-      tone: 'warning',
-    },
-    {
-      key: 'watchlist' as const,
-      label: 'Watchlist',
-      count: buckets.watchlist.length,
-      description: 'Cần theo dõi thêm nhưng chưa đến mức gấp.',
-      tone: 'info',
-    },
-    {
-      key: 'stable' as const,
-      label: 'Stable',
-      count: buckets.stable.length,
-      description: 'Đang ổn, tiếp tục giữ nhịp hiện tại.',
-      tone: 'success',
-    },
-  ]
-})
-
-const topRiskTasks = computed(() =>
-  triageSourceTasks.value
-    .map((task) => ({
-      ...task,
-      riskScore: taskRiskScore(task),
-      riskBucket: taskRiskBucket(task),
-      riskReasons: taskRiskReasons(task),
-      nextAction: nextBestAction(task),
-    }))
-    .sort((left, right) => right.riskScore - left.riskScore)
-    .slice(0, 5),
-)
 
 const taskProjectOptions = computed(() => {
   const seen = new Map<string, { id: string; label: string }>()
@@ -319,10 +218,121 @@ const selectedTaskSummary = computed(() => {
   return allTasks.value.find((task) => task.id === selectedTaskId.value) ?? attentionItems.value.find((item) => item.id === selectedTaskId.value) ?? null
 })
 
-const selectedTaskProject = computed(() => {
+const selectedTaskDisplay = computed(() => selectedTaskDetail.value ?? selectedTaskSummary.value)
+
+type SelectedWorkflowTask = {
+  id: string
+  status: string
+  assigneeId: string | null
+  dueDate: string | null
+  priority: string
+  isPinned: boolean
+  assigneeName: string | null
+}
+
+const selectedWorkflowTask = computed<SelectedWorkflowTask | null>(() => {
+  const detail = selectedTaskDetail.value
   const summary = selectedTaskSummary.value
-  if (!summary) return null
-  return projects.value.find((project: DashboardProject) => project.id === summary.projectId) ?? null
+
+  if (!detail && !summary) return null
+
+  return {
+    id: detail?.id ?? summary!.id,
+    status: detail?.status ?? summary!.status,
+    assigneeId: detail?.assigneeId ?? summary!.assigneeId ?? null,
+    dueDate: detail?.dueDate ?? summary!.dueDate ?? null,
+    priority: detail?.priority ?? summary!.priority,
+    isPinned: summary?.isPinned ?? false,
+    assigneeName: detail?.assigneeName ?? summary?.assigneeName ?? null,
+  }
+})
+
+const selectedWorkflowStage = computed<WorkflowStage | null>(() => {
+  const task = selectedWorkflowTask.value
+  if (!task) return null
+  return deriveWorkflowStage(task)
+})
+
+const selectedWorkflowIsUrgent = computed(() => {
+  const task = selectedWorkflowTask.value
+  if (!task) return false
+  return isWorkflowUrgent(task, attentionItemMap.value.get(task.id) ?? null)
+})
+
+const selectedWorkflowNextAction = computed(() => {
+  const task = selectedWorkflowTask.value
+  if (!task) return ''
+  return workflowNextAction(task, attentionItemMap.value.get(task.id) ?? null)
+})
+
+const selectedWorkflowOwnerName = computed(() => {
+  const task = selectedWorkflowTask.value
+  if (!task) return 'Chưa giao'
+  return task.assigneeName || 'Chưa giao'
+})
+
+const selectedWorkflowActiveKey = computed<WorkflowMiniStage | 'overdue'>(() => {
+  const task = selectedWorkflowTask.value
+  if (!task) return 'todo'
+  return workflowProgressKey(task)
+})
+
+type WorkflowDetailState = 'pending' | 'current' | 'complete' | 'danger'
+
+const workflowDetailStages = computed(() => {
+  const task = selectedWorkflowTask.value
+  if (!task) return []
+
+  const activeKey = selectedWorkflowActiveKey.value
+  const overdue = isWorkflowUrgent(task, attentionItemMap.value.get(task.id) ?? null)
+  return [
+    {
+      key: 'todo',
+      step: '01',
+      label: 'Chưa làm',
+      note: 'Task mới tạo hoặc chưa bắt đầu triển khai.',
+      state: activeKey === 'todo' ? 'current' : 'pending',
+      tone: 'neutral',
+      active: activeKey === 'todo',
+    },
+    {
+      key: 'inProgress',
+      step: '02',
+      label: 'Đang làm',
+      note: 'Task đang được xử lý trong sprint hiện tại.',
+      state: activeKey === 'inProgress' ? 'current' : 'pending',
+      tone: 'warning',
+      active: activeKey === 'inProgress',
+    },
+    {
+      key: 'done',
+      step: '03',
+      label: 'Đã làm',
+      note: 'Công việc đã hoàn tất và sẵn sàng bàn giao.',
+      state: activeKey === 'done' ? 'current' : 'pending',
+      tone: 'success',
+      active: activeKey === 'done',
+    },
+    {
+      key: 'overdue',
+      step: '04',
+      label: 'Chậm tiến độ',
+      note: overdue ? 'Task đang quá hạn hoặc có rủi ro trễ.' : 'Chỉ bật đỏ khi task bị chậm tiến độ.',
+      state: overdue ? 'danger' : 'pending',
+      tone: 'danger',
+      active: false,
+      hot: overdue,
+    },
+  ] as Array<{
+    key: string
+    step: string
+    label: string
+    note: string
+    state: WorkflowDetailState
+    tone: 'neutral' | 'warning' | 'success' | 'danger'
+    active: boolean
+    hot?: boolean
+  }>
 })
 
 const selectedCount = computed(() => selectedTaskIds.value.length)
@@ -331,21 +341,7 @@ const isAllVisibleSelected = computed(() =>
   filteredTasks.value.every((task) => selectedTaskIds.value.includes(task.id)),
 )
 
-const currentViewSignature = computed(() =>
-  JSON.stringify({
-    scope: taskScope.value,
-    searchQuery: searchQuery.value.trim(),
-    statusFilter: statusFilter.value,
-    priorityFilter: priorityFilter.value,
-    projectFilter: projectFilter.value,
-    focusFilter: focusFilter.value,
-    triageMode: triageMode.value,
-    sortBy: sortBy.value,
-  }),
-)
-
 onMounted(async () => {
-  loadSavedViews()
   await Promise.all([refreshAttentionInbox(), refreshDashboard()])
 })
 
@@ -359,6 +355,26 @@ watch(
 
     await loadTaskDetail(taskId)
   },
+)
+
+watch(
+  shouldFallbackToAll,
+  (value) => {
+    if (value) {
+      taskScope.value = 'all'
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  filteredTasks,
+  (tasks) => {
+    if (selectedTaskId.value && !tasks.some((task) => task.id === selectedTaskId.value)) {
+      closeTaskDrawer()
+    }
+  },
+  { immediate: true },
 )
 
 function compareTasks(left: HubTask, right: HubTask) {
@@ -379,6 +395,33 @@ function priorityRank(priority: string) {
   return ranking[priority] ?? 99
 }
 
+function taskCardProgress(task: HubTask) {
+  if (task.status === 'Done') return 100
+  if (task.status === 'InReview') return 78
+  if (task.status === 'InProgress') return 56
+  if (task.status === 'OnHold') return 34
+  if (task.status === 'Cancelled') return 12
+  return isTaskOverdue(task) ? 18 : 22
+}
+
+function taskCardTone(task: HubTask) {
+  if (isTaskOverdue(task)) return 'danger'
+  if (task.status === 'Done') return 'success'
+  if (task.status === 'InReview') return 'info'
+  if (task.status === 'InProgress') return 'warning'
+  if (task.status === 'OnHold') return 'neutral'
+  return 'muted'
+}
+
+function taskCardToneLabel(task: HubTask) {
+  if (isTaskOverdue(task)) return 'Quá hạn'
+  if (task.status === 'Done') return 'Hoàn tất'
+  if (task.status === 'InReview') return 'Đang duyệt'
+  if (task.status === 'InProgress') return 'Đang làm'
+  if (task.status === 'OnHold') return 'Tạm dừng'
+  return 'Sẵn sàng'
+}
+
 function riskRank(task: HubTask) {
   let score = 0
   if (isTaskOverdue(task)) score -= 100
@@ -388,73 +431,6 @@ function riskRank(task: HubTask) {
   if (task.status === 'OnHold') score -= 6
   if (task.status === 'Done') score += 20
   return score
-}
-
-function priorityPressure(task: HubTask) {
-  const ranking: Record<string, number> = { Critical: 100, High: 72, Medium: 38, Low: 16 }
-  return ranking[task.priority] ?? 24
-}
-
-function freshnessPressure(task: HubTask) {
-  const attention = attentionItemMap.value.get(task.id)
-  let score = 0
-  if (task.status === 'Todo' && (attention?.isStaleTodo ?? false)) score += 100
-  if (task.status === 'InProgress' && (attention?.isStaleInProgress ?? false)) score += 100
-  if (attention?.isUnseenByAssignee) score += 42
-  if (!task.assigneeId) score += 18
-  if (task.isPinned) score -= 4
-  return Math.max(0, score)
-}
-
-function taskRiskReasons(task: HubTask) {
-  const attention = attentionItemMap.value.get(task.id)
-  const reasons: Array<'deadline' | 'blocker' | 'priority' | 'ownership' | 'stale' | 'unseen'> = []
-
-  if (isTaskOverdue(task) || isDueSoon(task)) reasons.push('deadline')
-  if (['Blocked', 'OnHold'].includes(task.status)) reasons.push('blocker')
-  if (['High', 'Critical'].includes(task.priority)) reasons.push('priority')
-  if (!task.assigneeId) reasons.push('ownership')
-  if (attention?.isStaleTodo || attention?.isStaleInProgress) reasons.push('stale')
-  if (attention?.isUnseenByAssignee) reasons.push('unseen')
-
-  return reasons
-}
-
-function taskRiskScore(task: HubTask) {
-  const attention = attentionItemMap.value.get(task.id)
-  let score = 0
-
-  if (isTaskOverdue(task)) score += 100
-  else if (isDueSoon(task)) score += 42
-  if (['Blocked', 'OnHold'].includes(task.status)) score += 28
-  if (['Critical', 'High'].includes(task.priority)) score += task.priority === 'Critical' ? 18 : 10
-  if (!task.assigneeId) score += 12
-  if (task.status === 'Todo' && (attention?.isStaleTodo ?? false)) score += 14
-  if (task.status === 'InProgress' && (attention?.isStaleInProgress ?? false)) score += 14
-  if (attention?.isUnseenByAssignee) score += 8
-  if (task.isPinned) score += 5
-  if (task.status === 'Done' || task.status === 'Cancelled') score = Math.max(0, score - 30)
-
-  return score
-}
-
-function taskRiskBucket(task: HubTask): TriageMode {
-  const score = taskRiskScore(task)
-  if (score >= 80) return 'urgent'
-  if (score >= 45) return 'atRisk'
-  if (score >= 20) return 'watchlist'
-  return 'stable'
-}
-
-function nextBestAction(task: HubTask) {
-  const attention = attentionItemMap.value.get(task.id)
-  if (isTaskOverdue(task)) return 'Ưu tiên xử lý ngay'
-  if (['Blocked', 'OnHold'].includes(task.status)) return 'Gỡ blocker / làm rõ phụ thuộc'
-  if (!task.assigneeId) return 'Gán người phụ trách'
-  if (attention?.isStaleInProgress || attention?.isStaleTodo) return 'Nhắc cập nhật tiến độ'
-  if (isDueSoon(task)) return 'Đẩy lên đầu danh sách'
-  if (['High', 'Critical'].includes(task.priority)) return 'Theo dõi sát'
-  return 'Giữ trong watchlist'
 }
 
 function dueDateRank(task: HubTask) {
@@ -509,7 +485,6 @@ function clearFilters() {
   priorityFilter.value = 'all'
   projectFilter.value = 'all'
   focusFilter.value = 'all'
-  triageMode.value = 'all'
   sortBy.value = 'risk'
 }
 
@@ -521,88 +496,6 @@ function resetDefaultView() {
   selectScope('mine')
   clearFilters()
   clearSelection()
-  activeSavedViewId.value = null
-}
-
-function loadSavedViews() {
-  try {
-    const raw = window.localStorage.getItem(savedViewsStorageKey)
-    if (!raw) {
-      savedViews.value = []
-      return
-    }
-
-    const parsed = JSON.parse(raw) as SavedTaskView[]
-    savedViews.value = Array.isArray(parsed) ? parsed.slice(0, 8) : []
-  } catch {
-    savedViews.value = []
-  }
-}
-
-function persistSavedViews() {
-  window.localStorage.setItem(savedViewsStorageKey, JSON.stringify(savedViews.value.slice(0, 8)))
-}
-
-function captureCurrentView(name: string): SavedTaskView {
-  return {
-    id: crypto.randomUUID(),
-    name,
-    scope: taskScope.value,
-    searchQuery: searchQuery.value.trim(),
-    statusFilter: statusFilter.value,
-    priorityFilter: priorityFilter.value,
-    projectFilter: projectFilter.value,
-    focusFilter: focusFilter.value,
-    triageMode: triageMode.value,
-    sortBy: sortBy.value,
-  }
-}
-
-function saveCurrentView() {
-  const name = window.prompt('Đặt tên cho saved view này', 'Việc cần làm hôm nay')?.trim()
-  if (!name) return
-
-  const nextView = captureCurrentView(name)
-  savedViews.value = [nextView, ...savedViews.value.filter((view) => view.name !== name)].slice(0, 8)
-  activeSavedViewId.value = nextView.id
-  persistSavedViews()
-}
-
-function applySavedView(view: SavedTaskView) {
-  taskScope.value = view.scope
-  searchQuery.value = view.searchQuery
-  statusFilter.value = view.statusFilter
-  priorityFilter.value = view.priorityFilter
-  projectFilter.value = view.projectFilter
-  focusFilter.value = view.focusFilter
-  triageMode.value = view.triageMode ?? 'all'
-  sortBy.value = view.sortBy
-  activeSavedViewId.value = view.id
-}
-
-function removeSavedView(viewId: string) {
-  savedViews.value = savedViews.value.filter((view) => view.id !== viewId)
-  if (activeSavedViewId.value === viewId) {
-    activeSavedViewId.value = null
-  }
-  persistSavedViews()
-}
-
-function isSavedViewActive(view: SavedTaskView) {
-  return currentViewSignature.value === JSON.stringify({
-    scope: view.scope,
-    searchQuery: view.searchQuery.trim(),
-    statusFilter: view.statusFilter,
-    priorityFilter: view.priorityFilter,
-    projectFilter: view.projectFilter,
-    focusFilter: view.focusFilter,
-    triageMode: view.triageMode ?? 'all',
-    sortBy: view.sortBy,
-  })
-}
-
-function describeSavedViewStatus(status: string) {
-  return status === 'all' ? 'Mọi trạng thái' : displayStatus(status)
 }
 
 async function refreshDashboard() {
@@ -618,7 +511,7 @@ async function refreshAttentionInbox() {
   try {
     const result = await apiResult<PagedResult<TaskAttentionDto>>('/api/tasks/attention?page=1&pageSize=8&sort=risk')
     attentionItems.value = result.items ?? []
-  } catch (error) {
+  } catch {
     attentionItems.value = []
   } finally {
     attentionLoading.value = false
@@ -635,28 +528,72 @@ async function refreshAll() {
 async function loadTaskDetail(taskId: string) {
   selectedTaskLoading.value = true
   try {
-    const [detail, comments, attachments, timeEntries, meetingSource] = await Promise.all([
-      apiResult<TaskItemDto>(`/api/tasks/${taskId}`),
-      apiResult<CommentDto[]>(`/api/comments/task/${taskId}`),
-      apiResult<AttachmentDto[]>(`/api/attachments/task/${taskId}`),
-      apiJson<TimeEntryDto[]>(`/api/tasks/${taskId}/time-entries`),
-      apiResult<TaskMeetingSourceDto>(`/api/tasks/${taskId}/meeting-source`).catch(() => null),
-    ])
+    const cachedDetail = taskDetailCache.value.get(taskId) ?? null
+    if (cachedDetail) {
+      selectedTaskDetail.value = cachedDetail
+    }
 
-    selectedTaskDetail.value = detail
-    selectedTaskComments.value = comments ?? []
-    selectedTaskAttachments.value = attachments ?? []
-    selectedTaskTimeEntries.value = timeEntries ?? []
-    selectedTaskMeetingSource.value = meetingSource
-  } catch (error) {
-    selectedTaskDetail.value = null
+    const detailResult =
+      cachedDetail ?? await apiResult<TaskItemDto>(`/api/tasks/${taskId}`)
+
+    if (selectedTaskId.value !== taskId) return
+
+    if (detailResult) {
+      taskDetailCache.value.set(taskId, detailResult)
+    }
+
+    selectedTaskDetail.value = detailResult ?? (selectedTaskSummary.value as TaskItemDto | null)
+
     selectedTaskComments.value = []
     selectedTaskAttachments.value = []
     selectedTaskTimeEntries.value = []
     selectedTaskMeetingSource.value = null
-    showError(errorMessage(error, 'Không thể tải chi tiết nhiệm vụ.'))
+
+    void loadTaskDetailExtras(taskId)
+  } catch (error) {
+    if (selectedTaskId.value !== taskId) return
+    selectedTaskDetail.value = selectedTaskSummary.value as TaskItemDto | null
+    selectedTaskComments.value = []
+    selectedTaskAttachments.value = []
+    selectedTaskTimeEntries.value = []
+    selectedTaskMeetingSource.value = null
+    console.warn(error)
   } finally {
     selectedTaskLoading.value = false
+  }
+}
+
+async function loadTaskDetailExtras(taskId: string) {
+  try {
+    const [commentsResult, attachmentsResult, timeEntriesResult, meetingSourceResult] = await Promise.allSettled([
+      apiResult<CommentDto[]>(`/api/comments/task/${taskId}`),
+      apiResult<AttachmentDto[]>(`/api/attachments/task/${taskId}`),
+      apiResult<TimeEntryDto[]>(`/api/tasks/${taskId}/time-entries`),
+      apiResult<TaskMeetingSourceDto>(`/api/tasks/${taskId}/meeting-source`),
+    ])
+
+    if (selectedTaskId.value !== taskId) return
+
+    selectedTaskComments.value = commentsResult.status === 'fulfilled' ? commentsResult.value ?? [] : []
+    selectedTaskAttachments.value = attachmentsResult.status === 'fulfilled' ? attachmentsResult.value ?? [] : []
+    selectedTaskTimeEntries.value = timeEntriesResult.status === 'fulfilled' ? timeEntriesResult.value ?? [] : []
+    selectedTaskMeetingSource.value = meetingSourceResult.status === 'fulfilled' ? meetingSourceResult.value : null
+  } catch (error) {
+    if (selectedTaskId.value !== taskId) return
+    console.warn(error)
+  }
+}
+
+async function prefetchTaskDetail(taskId: string) {
+  if (taskDetailCache.value.has(taskId)) return
+
+  try {
+    const detailResult = await apiResult<TaskItemDto>(`/api/tasks/${taskId}`)
+    if (detailResult) {
+      taskDetailCache.value.set(taskId, detailResult)
+    }
+  } catch {
+    // Prefetch is best-effort only.
   }
 }
 
@@ -670,6 +607,12 @@ function resetTaskDrawer() {
 }
 
 function openTaskDrawer(taskId: string) {
+  selectedTaskDetail.value = selectedTaskSummary.value as TaskItemDto | null
+  selectedTaskComments.value = []
+  selectedTaskAttachments.value = []
+  selectedTaskTimeEntries.value = []
+  selectedTaskMeetingSource.value = null
+  selectedTaskLoading.value = true
   selectedTaskId.value = taskId
 }
 
@@ -683,9 +626,9 @@ function taskActionLabel(status: string) {
 
 async function updateSingleTaskStatus(task: Pick<DashboardTask, 'id'>, status: string) {
   try {
-    await apiCommand('/api/tasks/batch-status', {
-      method: 'POST',
-      body: JSON.stringify({ ids: [task.id], status }),
+    await apiCommand(`/api/tasks/${task.id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
     })
     showSuccess(`Đã chuyển sang ${displayStatus(status)}`)
     await refreshAll()
@@ -696,12 +639,13 @@ async function updateSingleTaskStatus(task: Pick<DashboardTask, 'id'>, status: s
 
 async function bulkUpdateStatus(status: string) {
   if (selectedTaskIds.value.length === 0) return
+  const total = selectedTaskIds.value.length
   try {
     await apiCommand('/api/tasks/batch-status', {
       method: 'POST',
       body: JSON.stringify({ ids: selectedTaskIds.value, status }),
     })
-    showSuccess(`Đã đổi ${selectedTaskIds.value.length} task sang ${displayStatus(status)}`)
+    showSuccess(`Đã đổi ${total} task sang ${displayStatus(status)}`)
     clearSelection()
     await refreshAll()
   } catch (error) {
@@ -741,51 +685,22 @@ function openProjectTask(task: HubTask | TaskAttentionDto) {
   openTask(task.projectId, task.id)
 }
 
-function openDetailAndFocus(task: HubTask | TaskAttentionDto) {
-  openTaskDrawer(task.id)
+function showQuickStatusButtons(task: DashboardTask) {
+  return nextStatuses(task.status).slice(0, 3)
 }
 
-function humanizeAttentionReason(value: string) {
-  const labels: Record<string, string> = {
-    QuaHan: 'Quá hạn',
-    SapToiHan: 'Sắp đến hạn',
-    ChuaBatDau: 'Chưa bắt đầu',
-    DangLamQuaLau: 'Đang làm quá lâu',
-    ChuaXem: 'Chưa được xem',
-  }
-
-  return labels[value] ?? value
-}
-
-function humanizeRiskReason(value: string) {
-  const labels: Record<string, string> = {
-    deadline: 'Deadline',
-    blocker: 'Blocker',
-    priority: 'Priority',
-    ownership: 'Chưa giao',
-    stale: 'Stale',
-    unseen: 'Chưa xem',
-  }
-
-  return labels[value] ?? value
-}
-
-function humanizeAllowedAction(value: string) {
-  const labels: Record<string, string> = {
-    MoChiTiet: 'Mở chi tiết',
-    BinhLuan: 'Bình luận',
-    NhacNguoiPhuTrach: 'Nhắc',
-    BatDauLam: 'Bắt đầu',
-  }
-
-  return labels[value] ?? value
+function canNudge(task: HubTask | TaskAttentionDto) {
+  const current = currentUser.value
+  if (!current) return false
+  return task.assigneeId != null && task.assigneeId !== current.id
 }
 
 function formatMeetingDate(value: string | null) {
   return value ? formatTime(value) : 'Chưa rõ'
 }
 
-function totalTrackedMinutes(entries: TimeEntryDto[]) {
+function totalTrackedMinutes(entries: TimeEntryDto[] | null | undefined) {
+  if (!Array.isArray(entries)) return 0
   return entries.reduce((total, entry) => total + (entry.totalMinutes || 0), 0)
 }
 
@@ -796,289 +711,125 @@ function formatMinutes(total: number) {
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`
 }
 
-function projectLabel(projectId: string) {
-  const project = projects.value.find((item: DashboardProject) => item.id === projectId)
-  return project ? `${project.name} · ${project.code}` : 'Unknown project'
+function workflowMiniStepIndex(step: WorkflowMiniStage) {
+  return workflowMiniSteps.findIndex((item) => item.key === step)
 }
 
-function showQuickStatusButtons(task: HubTask) {
-  return nextStatuses(task.status).slice(0, 3)
+function workflowProgressKey(task: WorkflowTask): WorkflowMiniStage {
+  if (task.status === 'Done') return 'done'
+  if (task.status === 'InReview') return 'inReview'
+  if (task.status === 'InProgress' || task.status === 'Blocked' || task.status === 'OnHold') return 'inProgress'
+  return 'todo'
 }
 
-function canNudge(task: HubTask | TaskAttentionDto) {
-  const current = currentUser.value
-  if (!current) return false
-  return task.assigneeId != null && task.assigneeId !== current.id
+function deriveWorkflowStage(task: Pick<WorkflowTask, 'status' | 'assigneeId'>): WorkflowStage {
+  if (!task.assigneeId) return 'needsOwner'
+  if (['Blocked', 'OnHold'].includes(task.status)) return 'blocked'
+  if (task.status === 'InReview') return 'inReview'
+  if (task.status === 'InProgress') return 'inProgress'
+  if (task.status === 'Done') return 'done'
+  return 'todo'
 }
 
-function attentionDotClass(item: TaskAttentionDto) {
-  if (item.isOverdue) return 'is-overdue'
-  if (item.isDueSoon) return 'is-due-soon'
-  if (item.isStaleInProgress || item.isStaleTodo) return 'is-stale'
-  return 'is-normal'
+function describeWorkflowStage(stage: WorkflowStage) {
+  const labels: Record<WorkflowStage, string> = {
+    needsOwner: 'Needs Owner',
+    todo: 'Todo',
+    inProgress: 'In Progress',
+    inReview: 'In Review',
+    blocked: 'Blocked',
+    done: 'Done',
+  }
+
+  return labels[stage]
 }
+
+function isWorkflowUrgent(task: Pick<WorkflowTask, 'status' | 'assigneeId' | 'dueDate' | 'priority'>, attention: TaskAttentionDto | null) {
+  if (isTaskOverdue(task)) return true
+  if (task.priority === 'Critical') return true
+  if (task.status === 'InProgress' && (attention?.isStaleInProgress ?? false)) return true
+  if (task.status === 'Todo' && (attention?.isStaleTodo ?? false)) return true
+  return false
+}
+
+function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | 'dueDate' | 'priority'>, attention: TaskAttentionDto | null) {
+  if (!task.assigneeId) return 'Gán owner trước để task có bước tiếp theo rõ ràng.'
+  if (isWorkflowUrgent(task, attention)) return 'Ưu tiên xử lý ngay, rồi đẩy task sang In Progress.'
+  if (['Blocked', 'OnHold'].includes(task.status)) return 'Gỡ blocker hoặc cập nhật trạng thái chờ xử lý.'
+  if (task.status === 'InReview') return 'Đang chờ xác nhận. Nếu ổn, chuyển sang Done.'
+  if (task.status === 'InProgress' && (attention?.isStaleInProgress ?? false)) return 'Task đang stale. Cần cập nhật tiến độ.'
+  if (task.status === 'Todo') return 'Bắt đầu làm để task đi vào luồng thực thi.'
+  return 'Chọn bước kế tiếp phù hợp trong workflow.'
+}
+
 </script>
 
 <template>
-  <div class="task-hub-page dashboard-scroll dashboard-scroll--embedded no-scrollbar">
-    <div class="dashboard-main task-hub-main no-scrollbar">
-      <section class="task-hub-hero glass-card reveal">
-        <div class="task-hub-hero__copy">
+  <div class="tasks-page" :class="{ 'has-detail': Boolean(selectedTaskId) }">
+    <div class="tasks-main">
+      <section class="tasks-hero glass-card reveal">
+        <div class="tasks-hero__copy">
           <span>Trung tâm nhiệm vụ</span>
-          <h2>Trung tâm xử lý nhiệm vụ của bạn</h2>
-          <p>
-            Theo dõi task, tín hiệu rủi ro, thao tác nhanh và xử lý hàng loạt ngay trong một màn hình.
-          </p>
+          <h2>Nhiệm vụ của tôi</h2>
+          <p>Một nơi để lọc nhanh, xem task quan trọng và mở chi tiết chỉ khi bạn thực sự cần.</p>
         </div>
 
-        <div class="task-hub-hero__actions">
-          <button class="task-chip" type="button" :class="{ 'is-active': taskScope === 'mine' }" @click="selectScope('mine')">
+        <div class="tasks-hero__actions">
+          <button class="pill-button" type="button" :class="{ 'is-active': taskScope === 'mine' }" @click="selectScope('mine')">
             Của tôi
           </button>
-          <button class="task-chip" type="button" :class="{ 'is-active': taskScope === 'all' }" @click="selectScope('all')">
+          <button class="pill-button" type="button" :class="{ 'is-active': taskScope === 'all' }" @click="selectScope('all')">
             Tất cả
           </button>
-          <button class="task-chip" type="button" @click="refreshAll">
+          <button class="pill-button" type="button" @click="refreshAll">
             <RefreshCw :size="15" />
             Làm mới
           </button>
         </div>
       </section>
 
-      <section class="task-panel glass-card reveal delay-1">
-        <div class="panel-heading task-section-heading">
-          <div>
-            <span>Saved views</span>
-            <h2>Bộ lọc dùng nhanh</h2>
-          </div>
-          <div class="saved-views-actions">
-            <button class="secondary-button" type="button" @click="resetDefaultView">
-              <SquareCheckBig :size="16" />
-              <span>Default view</span>
-            </button>
-            <button class="secondary-button" type="button" @click="saveCurrentView">
-              <Pin :size="16" />
-              <span>Lưu view</span>
-            </button>
-          </div>
-        </div>
-
-        <div v-if="savedViews.length" class="saved-views-list">
-          <article
-            v-for="view in savedViews"
-            :key="view.id"
-            class="saved-view-pill"
-            :class="{ 'is-active': isSavedViewActive(view) }"
-            @click="applySavedView(view)"
-          >
-            <strong>{{ view.name }}</strong>
-            <span>{{ view.scope === 'mine' ? 'Của tôi' : 'Tất cả' }} · {{ describeSavedViewStatus(view.statusFilter) }}</span>
-            <small>{{ view.sortBy }}</small>
-            <button type="button" class="saved-view-pill__remove" aria-label="Xóa saved view" @click.stop="removeSavedView(view.id)">×</button>
-          </article>
-        </div>
-        <div v-else class="saved-views-empty">
-          Chưa có view nào được lưu. Hãy lọc xong rồi bấm “Lưu view”.
-        </div>
-      </section>
-
-      <section class="task-hub-metrics">
-        <article class="task-metric glass-card reveal delay-1">
+      <section class="tasks-stats">
+        <article class="stat-card glass-card reveal delay-1">
           <span>Tổng task</span>
           <strong>{{ taskSummary.total }}</strong>
-          <small>{{ taskScope === 'mine' ? 'Những task đang liên quan trực tiếp tới bạn' : 'Task bạn có thể truy cập' }}</small>
+          <small>{{ taskScope === 'mine' ? 'Task đang liên quan trực tiếp tới bạn' : 'Task trong toàn bộ workspace' }}</small>
         </article>
-        <article class="task-metric glass-card reveal delay-2">
+        <article class="stat-card glass-card reveal delay-2">
           <span>Quá hạn</span>
           <strong>{{ taskSummary.overdue }}</strong>
-          <small>{{ attentionSummary.overdue }} tín hiệu trong inbox</small>
+          <small>Những task cần xử lý ngay</small>
         </article>
-        <article class="task-metric glass-card reveal delay-3">
+        <article class="stat-card glass-card reveal delay-3">
           <span>Sắp đến hạn</span>
           <strong>{{ taskSummary.dueSoon }}</strong>
-          <small>{{ attentionSummary.dueSoon }} task cần chú ý</small>
+          <small>Task nên ưu tiên trong 48h tới</small>
         </article>
-        <article class="task-metric glass-card reveal delay-4">
-          <span>Attention inbox</span>
-          <strong>{{ attentionSummary.total }}</strong>
-          <small>{{ attentionSummary.stale }} task đang stale, {{ attentionSummary.unseen }} task chưa được xem</small>
+        <article class="stat-card glass-card reveal delay-4">
+          <span>Đã chọn</span>
+          <strong>{{ selectedCount }}</strong>
+          <small>Có thể áp dụng thao tác hàng loạt</small>
         </article>
       </section>
 
-      <section class="task-panel glass-card reveal delay-2">
-        <div class="panel-heading task-section-heading">
-          <div>
-            <span>Theo dõi rủi ro nhiệm vụ</span>
-            <h2>Auto triage thông minh</h2>
-          </div>
-          <div class="task-section-heading__meta">
-            <span>{{ triageBuckets.find((bucket) => bucket.key === 'urgent')?.count ?? 0 }} urgent</span>
-            <span>{{ triageBuckets.find((bucket) => bucket.key === 'atRisk')?.count ?? 0 }} at risk</span>
-          </div>
-        </div>
-
-        <div class="risk-radar-shell">
-          <div class="risk-radar-axes">
-            <article v-for="axis in riskRadar" :key="axis.id" class="risk-radar-axis" :class="{ 'is-active': axis.active }">
-              <div class="risk-radar-axis__head">
-                <div>
-                  <strong>{{ axis.label }}</strong>
-                  <span>{{ axis.caption }}</span>
-                </div>
-                <small>{{ axis.score }}%</small>
-              </div>
-              <div class="risk-radar-axis__track">
-                <span :style="{ width: `${Math.min(100, axis.score)}%` }"></span>
-              </div>
-            </article>
-          </div>
-
-          <div class="risk-buckets">
-            <article
-              v-for="bucket in triageBuckets"
-              :key="bucket.key"
-              class="risk-bucket"
-              :class="[`is-${bucket.tone}`, { 'is-active': triageMode === bucket.key }]"
-            >
-              <div class="risk-bucket__head">
-                <strong>{{ bucket.label }}</strong>
-                <span>{{ bucket.count }} task</span>
-              </div>
-              <p>{{ bucket.description }}</p>
-              <button class="task-chip" type="button" @click="triageMode = bucket.key">
-                Xem {{ bucket.label }}
-              </button>
-            </article>
-          </div>
-
-          <div class="risk-toplist">
-            <div class="risk-toplist__head">
-              <div>
-                <span>Ưu tiên xử lý</span>
-                <h3>Top task rủi ro nhất</h3>
-              </div>
-              <button class="task-chip task-chip--ghost" type="button" @click="triageMode = 'all'">
-                Reset triage
-              </button>
-            </div>
-
-            <article v-for="task in topRiskTasks" :key="task.id" class="risk-top-card">
-              <div class="risk-top-card__score">{{ task.riskScore }}</div>
-              <div class="risk-top-card__body">
-                <strong>{{ task.title }}</strong>
-                <small>{{ task.projectName }} · {{ task.assigneeName || 'Chưa giao' }}</small>
-                <div class="risk-top-card__tags">
-                  <span>{{ task.riskBucket }}</span>
-                  <span v-for="reason in task.riskReasons" :key="`${task.id}-${reason}`">{{ humanizeRiskReason(reason) }}</span>
-                </div>
-                <p>{{ task.nextAction }}</p>
-              </div>
-              <button class="icon-pill" type="button" @click="openTaskDrawer(task.id)">
-                <ArrowRight :size="15" />
-                Mở
-              </button>
-            </article>
-          </div>
-        </div>
-
-        <div class="panel-heading task-section-heading">
-          <div>
-            <span>Attention inbox</span>
-            <h2>Việc cần xử lý ngay</h2>
-          </div>
-          <button class="secondary-button" type="button" @click="refreshAttentionInbox">
-            <BellRing :size="16" />
-            <span>Tải lại</span>
-          </button>
-        </div>
-
-        <div v-if="attentionLoading" class="task-empty-state">
-          <Loader2 :size="20" class="is-spinning" />
-          <strong>Đang tải tín hiệu</strong>
-          <p>Đang đồng bộ danh sách task cần chú ý từ hệ thống.</p>
-        </div>
-
-        <div v-else-if="attentionItems.length === 0" class="task-empty-state">
-          <CheckCheck :size="22" />
-          <strong>Không có tín hiệu khẩn</strong>
-          <p>Tất cả task đang ở trạng thái tương đối ổn định.</p>
-        </div>
-
-        <div v-else class="attention-grid">
-          <article
-            v-for="item in attentionItems"
-            :key="item.id"
-            class="attention-card"
-            :class="{ 'is-overdue': item.isOverdue, 'is-due-soon': item.isDueSoon }"
-          >
-            <div class="attention-card__header">
-              <div class="attention-card__dot" :class="attentionDotClass(item)"></div>
-              <div class="attention-card__title">
-                <strong>{{ item.title }}</strong>
-                <small>{{ item.projectName }} · {{ item.assigneeName || 'Chưa giao' }}</small>
-              </div>
-              <span class="attention-card__priority">{{ item.priority }}</span>
-            </div>
-
-            <div class="attention-card__badges">
-              <span v-if="item.isOverdue">Quá hạn</span>
-              <span v-if="item.isDueSoon">Sắp đến hạn</span>
-              <span v-if="item.isStaleTodo">Stale TODO</span>
-              <span v-if="item.isStaleInProgress">Stale In Progress</span>
-              <span v-if="item.isUnseenByAssignee">Chưa xem</span>
-            </div>
-
-            <div class="attention-card__reasons">
-              <span v-for="reason in item.reasons" :key="reason">{{ humanizeAttentionReason(reason) }}</span>
-            </div>
-
-            <div class="attention-card__actions">
-              <button class="text-button" type="button" @click="openDetailAndFocus(item)">
-                <Circle :size="14" />
-                Mở chi tiết
-              </button>
-              <button
-                v-if="item.allowedActions.includes('NhacNguoiPhuTrach') && canNudge(item)"
-                class="text-button"
-                type="button"
-                @click="nudgeTask(item)"
-              >
-                <Send :size="14" />
-                Nhắc việc
-              </button>
-              <button
-                v-if="item.allowedActions.includes('BatDauLam')"
-                class="text-button"
-                type="button"
-                @click="updateSingleTaskStatus(item, 'InProgress')"
-              >
-                <Waypoints :size="14" />
-                Bắt đầu
-              </button>
-            </div>
-          </article>
-        </div>
-      </section>
-
-      <section class="task-panel glass-card reveal delay-3">
-        <div class="panel-heading task-section-heading">
+      <section class="panel-card glass-card reveal delay-2">
+        <div class="panel-head">
           <div>
             <span>Bộ lọc</span>
-            <h2>Tìm kiếm, lọc và sắp xếp</h2>
+            <h3>Tìm nhanh và thu hẹp danh sách</h3>
           </div>
-          <div class="task-section-heading__meta">
-            <span>{{ filteredTasks.length }} task</span>
-            <span>{{ selectedCount }} đã chọn</span>
+          <div class="panel-head__meta">
+            <button class="link-button" type="button" @click="resetDefaultView">Default view</button>
+            <button class="link-button" type="button" @click="clearFilters">Xóa lọc</button>
           </div>
         </div>
 
-        <div class="task-toolbar">
-          <label class="task-search">
+        <div class="filter-grid">
+          <label class="field field--search">
             <Search :size="16" />
             <input v-model="searchQuery" type="search" placeholder="Tìm task, dự án, người giao..." />
           </label>
 
-          <label class="task-select">
+          <label class="field">
             <ListFilter :size="15" />
             <select v-model="projectFilter">
               <option value="all">Tất cả dự án</option>
@@ -1088,7 +839,7 @@ function attentionDotClass(item: TaskAttentionDto) {
             </select>
           </label>
 
-          <label class="task-select">
+          <label class="field">
             <Filter :size="15" />
             <select v-model="statusFilter">
               <option value="all">Tất cả trạng thái</option>
@@ -1098,26 +849,7 @@ function attentionDotClass(item: TaskAttentionDto) {
             </select>
           </label>
 
-          <label class="task-select">
-            <SquareCheckBig :size="15" />
-            <select v-model="priorityFilter">
-              <option value="all">Tất cả ưu tiên</option>
-              <option v-for="priority in priorityOptions" :key="priority" :value="priority">
-                {{ priority }}
-              </option>
-            </select>
-          </label>
-
-          <label class="task-select">
-            <BadgeAlert :size="15" />
-            <select v-model="focusFilter">
-              <option v-for="focus in focusOptions" :key="focus.value" :value="focus.value">
-                {{ focus.label }}
-              </option>
-            </select>
-          </label>
-
-          <label class="task-select">
+          <label class="field">
             <Clock3 :size="15" />
             <select v-model="sortBy">
               <option v-for="sort in sortOptions" :key="sort.value" :value="sort.value">
@@ -1126,295 +858,336 @@ function attentionDotClass(item: TaskAttentionDto) {
             </select>
           </label>
 
-          <button class="task-chip task-chip--ghost" type="button" @click="clearFilters">
-            Xóa lọc
-          </button>
+          <label class="field">
+            <BadgeAlert :size="15" />
+            <select v-model="focusFilter">
+              <option v-for="focus in focusOptions" :key="focus.value" :value="focus.value">
+                {{ focus.label }}
+              </option>
+            </select>
+          </label>
+
+          <label class="field">
+            <SquareCheckBig :size="15" />
+            <select v-model="priorityFilter">
+              <option value="all">Tất cả ưu tiên</option>
+              <option v-for="priority in priorityOptions" :key="priority" :value="priority">
+                {{ priority }}
+              </option>
+            </select>
+          </label>
         </div>
       </section>
 
-      <section class="task-panel glass-card reveal delay-4">
-        <div class="panel-heading task-section-heading">
+      <section class="panel-card glass-card reveal delay-3">
+        <div class="panel-head">
           <div>
-            <span>Danh sách task</span>
-            <h2>Đang hiển thị {{ filteredTasks.length }} nhiệm vụ</h2>
+            <span>Danh sách</span>
+            <h3>{{ filteredTasks.length }} nhiệm vụ đang hiển thị</h3>
           </div>
-          <div class="task-section-heading__meta">
-            <label class="task-inline-check">
+          <div class="panel-head__meta">
+            <label class="select-all">
               <input type="checkbox" :checked="isAllVisibleSelected" @change="toggleSelectAllVisible" />
               <span>Chọn tất cả</span>
             </label>
-            <button class="secondary-button" type="button" :disabled="selectedCount === 0" @click="clearSelection">
-              <X :size="15" />
-              <span>Bỏ chọn</span>
+            <button class="link-button" type="button" :disabled="selectedCount === 0" @click="clearSelection">
+              Bỏ chọn
             </button>
           </div>
         </div>
 
-        <div v-if="selectedCount > 0" class="bulk-action-bar">
+        <div v-if="selectedCount > 0" class="bulk-bar">
           <div>
             <strong>{{ selectedCount }} task đã chọn</strong>
-            <small>Áp dụng thao tác hàng loạt cho các task đang được đánh dấu.</small>
+            <small>Áp dụng thay đổi hàng loạt cho các task này.</small>
           </div>
-          <div class="bulk-action-bar__actions">
-            <button class="task-chip" type="button" @click="bulkUpdateStatus('InProgress')">Sang In Progress</button>
-            <button class="task-chip" type="button" @click="bulkUpdateStatus('Done')">Đánh dấu Done</button>
-            <button class="task-chip task-chip--danger" type="button" @click="bulkDeleteTasks">
+          <div class="bulk-bar__actions">
+            <button class="pill-button" type="button" @click="bulkUpdateStatus('InProgress')">Sang In Progress</button>
+            <button class="pill-button" type="button" @click="bulkUpdateStatus('Done')">Đánh dấu Done</button>
+            <button class="pill-button pill-button--danger" type="button" @click="bulkDeleteTasks">
               <Trash2 :size="14" />
               Xóa
             </button>
           </div>
         </div>
 
-        <div v-if="filteredTasks.length === 0" class="task-empty-state task-empty-state--wide">
+        <div v-if="filteredTasks.length === 0" class="empty-state">
           <ListFilter :size="24" />
           <strong>Không có task phù hợp</strong>
-          <p>Thử mở rộng bộ lọc hoặc đổi sang phạm vi khác.</p>
+          <p>Thử xóa bớt bộ lọc hoặc đổi sang phạm vi khác.</p>
         </div>
 
-        <div v-else class="task-list">
+        <div v-else class="task-cards">
           <article
             v-for="task in filteredTasks"
             :key="task.id"
-            class="task-row"
+            class="task-card"
             :class="{ 'is-selected': selectedTaskIds.includes(task.id), 'is-overdue': isTaskOverdue(task) }"
+            :style="{ '--task-accent': `var(--task-${taskCardTone(task)})` }"
           >
-            <label class="task-row__check">
+            <label class="task-card__check">
               <input :checked="selectedTaskIds.includes(task.id)" type="checkbox" @change="toggleSelectTask(task.id)" />
             </label>
 
-            <button class="task-row__content" type="button" @click="openTaskDrawer(task.id)">
-              <div class="task-row__headline">
-                <strong>{{ task.title }}</strong>
-                <div class="task-row__badges">
-                  <span class="task-badge task-badge--priority" :class="`is-${task.priority.toLowerCase()}`">{{ task.priority }}</span>
-                  <span v-if="task.isPinned" class="task-badge task-badge--pin">
-                    <Pin :size="12" />
-                    Ghim
-                  </span>
-                  <span v-if="task.isPrivate" class="task-badge task-badge--private">Riêng tư</span>
-                  <span v-if="isTaskOverdue(task)" class="task-badge task-badge--danger">Quá hạn</span>
-                  <span v-else-if="isDueSoon(task)" class="task-badge task-badge--warning">Sắp đến hạn</span>
+            <button
+              class="task-card__body"
+              type="button"
+              @click="openTaskDrawer(task.id)"
+              @mouseenter="prefetchTaskDetail(task.id)"
+              @focus="prefetchTaskDetail(task.id)"
+            >
+              <div class="task-card__eyebrow">
+                <span class="task-card__tag">{{ task.projectCode }}</span>
+                <span class="task-card__status">{{ taskCardToneLabel(task) }}</span>
+              </div>
+
+              <div class="task-card__titleRow">
+                <div class="task-card__titleWrap">
+                  <strong>{{ task.title }}</strong>
+                  <div class="task-card__progress" aria-hidden="true">
+                    <span class="task-card__progressFill" :style="{ width: `${taskCardProgress(task)}%` }"></span>
+                  </div>
                 </div>
+                <span class="task-card__peek" aria-hidden="true">
+                  <ArrowRight :size="14" />
+                </span>
               </div>
 
-              <div class="task-row__meta">
-                <span>{{ task.projectName }} · {{ task.projectCode }}</span>
-                <span>{{ task.status }}</span>
-                <span>{{ task.assigneeName || 'Chưa giao' }}</span>
-                <span>{{ task.reporterName }}</span>
-                <span>{{ task.dueDate ? `Hạn ${formatDate(task.dueDate)}` : 'Chưa có hạn' }}</span>
-              </div>
-
-              <div class="task-row__signals">
-                <span>{{ task.commentCount }} comment</span>
-                <span>{{ task.attachmentCount }} file</span>
-                <span>{{ task.upvoteCount - task.downvoteCount }} score</span>
+              <div class="task-card__footerline">
+                <span class="task-card__chip">{{ task.projectName }}</span>
+                <span class="task-card__chip task-card__chip--soft">{{ task.assigneeName || 'Chưa giao' }}</span>
+                <span class="task-card__metaTone">{{ displayStatus(task.status) }}</span>
               </div>
             </button>
-
-            <div class="task-row__actions">
-              <button class="icon-pill" type="button" @click.stop="openProjectTask(task)">
-                <ArrowRight :size="15" />
-                Mở
-              </button>
-
-              <button
-                v-for="status in showQuickStatusButtons(task)"
-                :key="`${task.id}-${status}`"
-                class="icon-pill"
-                type="button"
-                @click.stop="updateSingleTaskStatus(task, status)"
-              >
-                <CheckSquare2 :size="14" />
-                {{ taskActionLabel(status) }}
-              </button>
-
-              <button
-                v-if="canNudge(task)"
-                class="icon-pill icon-pill--ghost"
-                type="button"
-                @click.stop="nudgeTask(task)"
-              >
-                <Send :size="14" />
-                Nhắc
-              </button>
-            </div>
           </article>
         </div>
       </section>
     </div>
 
-    <aside class="task-detail-drawer glass-card" :class="{ 'is-open': Boolean(selectedTaskId) }">
-      <div v-if="selectedTaskId" class="task-detail">
+    <aside v-if="selectedTaskId" class="task-detail-drawer glass-card">
+      <div class="task-detail">
         <div class="task-detail__header">
           <div>
             <span>Chi tiết task</span>
-            <h2>{{ selectedTaskSummary?.title || 'Đang tải...' }}</h2>
+            <h2>{{ selectedTaskDisplay?.title || 'Đang tải...' }}</h2>
+            <p v-if="selectedTaskDisplay">
+              {{ selectedTaskDisplay.projectName }} · {{ selectedTaskDisplay.projectCode }}
+            </p>
           </div>
-          <button class="icon-pill icon-pill--ghost" type="button" @click="closeTaskDrawer">
+          <button class="icon-button" type="button" @click="closeTaskDrawer">
             <X :size="16" />
           </button>
         </div>
 
-        <div v-if="selectedTaskLoading" class="task-empty-state task-empty-state--compact">
-          <Loader2 :size="20" class="is-spinning" />
-          <strong>Đang tải chi tiết</strong>
-        </div>
+        <section v-if="selectedTaskDisplay" class="task-detail__top">
+          <div class="task-detail__summary">
+            <div v-if="selectedTaskLoading" class="task-detail__skeleton" aria-hidden="true">
+              <div class="skeleton-line skeleton-line--short"></div>
+              <div class="skeleton-line skeleton-line--title"></div>
+              <div class="skeleton-line skeleton-line--body"></div>
+              <div class="skeleton-grid">
+                <div class="skeleton-card"></div>
+                <div class="skeleton-card"></div>
+                <div class="skeleton-card"></div>
+                <div class="skeleton-card"></div>
+              </div>
+            </div>
 
-        <template v-else>
-          <section v-if="selectedTaskDetail" class="task-detail__summary">
-            <div class="task-detail__title-row">
-              <span class="task-detail__project">{{ selectedTaskDetail.projectName }}</span>
-              <span class="task-detail__status">{{ displayStatus(selectedTaskDetail.status) }}</span>
+            <div class="task-detail__summary-head">
+              <span class="task-detail__project">{{ selectedTaskDisplay.projectName }}</span>
+              <span class="task-detail__status">{{ displayStatus(selectedTaskDisplay.status) }}</span>
             </div>
 
             <p class="task-detail__description">
-              {{ selectedTaskDetail.description || 'Task này chưa có mô tả chi tiết.' }}
+              {{ selectedTaskDisplay.description || 'Task này chưa có mô tả chi tiết.' }}
             </p>
 
             <div class="task-detail__facts">
               <div>
                 <span>Priority</span>
-                <strong>{{ selectedTaskDetail.priority }}</strong>
+                <strong>{{ selectedTaskDisplay.priority }}</strong>
               </div>
               <div>
                 <span>Assignee</span>
-                <strong>{{ selectedTaskDetail.assigneeName || 'Chưa giao' }}</strong>
+                <strong>{{ selectedTaskDisplay.assigneeName || 'Chưa giao' }}</strong>
               </div>
               <div>
                 <span>Reporter</span>
-                <strong>{{ selectedTaskDetail.reporterName }}</strong>
+                <strong>{{ selectedTaskDisplay.reporterName }}</strong>
               </div>
               <div>
                 <span>Due date</span>
-                <strong>{{ selectedTaskDetail.dueDate ? formatDate(selectedTaskDetail.dueDate) : 'Chưa có' }}</strong>
+                <strong>{{ selectedTaskDisplay.dueDate ? formatDate(selectedTaskDisplay.dueDate) : 'Chưa có' }}</strong>
               </div>
             </div>
 
             <div v-if="selectedTaskMeetingSource" class="task-detail__meeting">
               <span>Nguồn cuộc họp</span>
               <strong>{{ selectedTaskMeetingSource.meetingTitle }}</strong>
-              <p>{{ selectedTaskMeetingSource.actionItemTitle || selectedTaskMeetingSource.actionItemDescription || selectedTaskMeetingSource.sourceQuote || 'Không có trích dẫn bổ sung.' }}</p>
+              <p>
+                {{ selectedTaskMeetingSource.actionItemTitle || selectedTaskMeetingSource.actionItemDescription || selectedTaskMeetingSource.sourceQuote || 'Không có trích dẫn bổ sung.' }}
+              </p>
               <small>{{ formatMeetingDate(selectedTaskMeetingSource.meetingStartedAt) }}</small>
             </div>
 
-            <div class="task-detail__action-row">
+            <div class="task-detail__actions">
               <button
-                v-for="status in showQuickStatusButtons({ ...selectedTaskSummary, ...selectedTaskDetail } as HubTask)"
+                v-for="status in showQuickStatusButtons({ ...selectedTaskSummary, ...selectedTaskDisplay } as DashboardTask)"
                 :key="status"
-                class="task-chip"
+                class="pill-button"
                 type="button"
-                @click="updateSingleTaskStatus({ ...selectedTaskSummary, ...selectedTaskDetail } as HubTask, status)"
+                @click="updateSingleTaskStatus({ ...selectedTaskSummary, ...selectedTaskDisplay } as DashboardTask, status)"
               >
                 {{ taskActionLabel(status) }}
               </button>
               <button
-                v-if="canNudge({ ...selectedTaskSummary, ...selectedTaskDetail } as HubTask)"
-                class="task-chip"
+                v-if="canNudge({ ...selectedTaskSummary, ...selectedTaskDisplay } as HubTask)"
+                class="pill-button"
                 type="button"
-                @click="nudgeTask({ ...selectedTaskSummary, ...selectedTaskDetail } as HubTask)"
+                @click="nudgeTask({ ...selectedTaskSummary, ...selectedTaskDisplay } as HubTask)"
               >
                 <Send :size="14" />
                 Nhắc
               </button>
-              <button class="task-chip task-chip--ghost" type="button" @click="openProjectTask({ ...selectedTaskSummary, ...selectedTaskDetail } as HubTask)">
+              <button class="pill-button pill-button--ghost" type="button" @click="openProjectTask({ ...selectedTaskSummary, ...selectedTaskDisplay } as HubTask)">
                 Mở project
               </button>
             </div>
-          </section>
+          </div>
 
-          <section class="task-detail__blocks">
-            <div class="task-detail-block">
-              <div class="task-detail-block__header">
-                <h3>Comment</h3>
-                <span>{{ selectedTaskComments.length }}</span>
+          <div v-if="selectedWorkflowTask" class="workflow-mini workflow-mini--vertical">
+            <div class="workflow-mini__head workflow-mini__head--stacked">
+              <div>
+                <span>Workflow</span>
+                <strong>{{ selectedWorkflowStage ? describeWorkflowStage(selectedWorkflowStage) : 'Chưa bắt đầu' }}</strong>
               </div>
-              <article v-for="comment in selectedTaskComments.slice(0, 4)" :key="comment.id" class="task-mini-item">
-                <strong>{{ comment.authorName }}</strong>
-                <p>{{ comment.content }}</p>
-                <small>{{ formatTime(comment.createdAt) }}</small>
-              </article>
-              <div v-if="selectedTaskComments.length === 0" class="task-mini-empty">Chưa có comment.</div>
+              <div class="workflow-mini__signals">
+                <span v-if="selectedWorkflowIsUrgent" class="workflow-signal is-danger">Cần chú ý</span>
+                <span v-if="selectedWorkflowTask.assigneeId" class="workflow-signal is-success">Có người được giao</span>
+                <span v-else class="workflow-signal is-warning">Chưa có owner</span>
+              </div>
             </div>
 
-            <div class="task-detail-block">
-              <div class="task-detail-block__header">
-                <h3>File đính kèm</h3>
-                <span>{{ selectedTaskAttachments.length }}</span>
-              </div>
-              <article v-for="attachment in selectedTaskAttachments.slice(0, 4)" :key="attachment.id" class="task-mini-item">
-                <strong>{{ attachment.fileName }}</strong>
-                <p>{{ attachment.uploadedByName }} · {{ formatDate(attachment.uploadedAt) }}</p>
-              </article>
-              <div v-if="selectedTaskAttachments.length === 0" class="task-mini-empty">Chưa có file đính kèm.</div>
+            <div class="workflow-owner">
+              <span>Người được giao</span>
+              <strong>{{ selectedWorkflowOwnerName }}</strong>
+              <small>{{ selectedWorkflowTask.assigneeId ? 'Task đang có người phụ trách' : 'Task chưa có người phụ trách' }}</small>
             </div>
 
-            <div class="task-detail-block">
-              <div class="task-detail-block__header">
-                <h3>Time tracking</h3>
-                <span>{{ formatMinutes(totalTrackedMinutes(selectedTaskTimeEntries)) }}</span>
-              </div>
-              <article v-for="entry in selectedTaskTimeEntries.slice(0, 4)" :key="entry.id" class="task-mini-item">
-                <strong>{{ entry.userName }}</strong>
-                <p>{{ entry.note || 'Không có ghi chú' }}</p>
-                <small>{{ formatTime(entry.startedAt) }}</small>
-              </article>
-              <div v-if="selectedTaskTimeEntries.length === 0" class="task-mini-empty">Chưa ghi nhận thời gian.</div>
-            </div>
-          </section>
-        </template>
-      </div>
+            <p class="workflow-mini__note">{{ selectedWorkflowNextAction }}</p>
 
-      <div v-else class="task-detail task-detail--placeholder">
-        <Waypoints :size="26" />
-        <h3>Chọn một task để xem chi tiết</h3>
-        <p>
-          Drawer này sẽ hiển thị mô tả, comment, file đính kèm, time tracking và meeting source.
-        </p>
-        <button class="task-chip task-chip--ghost" type="button" @click="selectScope('mine')">
-          Quay về task của tôi
-        </button>
+            <div class="workflow-track">
+              <div
+                v-for="(stage, index) in workflowDetailStages"
+                :key="stage.key"
+                class="workflow-track__item"
+                :class="[`is-${stage.state}`, `is-${stage.tone}`, stage.active ? 'is-active' : 'is-muted', stage.hot ? 'is-hot' : '']"
+                :style="{ '--stage-delay': `${index * 150}ms` }"
+              >
+                <span v-if="index < workflowDetailStages.length - 1" class="workflow-track__rail"></span>
+                <span class="workflow-track__dot">
+                  <span class="workflow-track__pulse" aria-hidden="true"></span>
+                  <span class="workflow-track__spark" aria-hidden="true"></span>
+                  <Circle v-if="stage.tone === 'neutral'" :size="12" />
+                  <Clock3 v-else-if="stage.tone === 'warning'" :size="13" />
+                  <CheckCheck v-else-if="stage.tone === 'success'" :size="13" />
+                  <BadgeAlert v-else :size="13" />
+                </span>
+                <div class="workflow-track__body">
+                  <span class="workflow-track__step">{{ stage.step }}</span>
+                  <strong>{{ stage.label }}</strong>
+                  <small>{{ stage.note }}</small>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section v-if="selectedTaskDisplay" class="detail-grid">
+          <div class="detail-block">
+            <div class="detail-block__header">
+              <h3>Comment</h3>
+              <span>{{ selectedTaskComments.length }}</span>
+            </div>
+            <article v-for="comment in selectedTaskComments.slice(0, 4)" :key="comment.id" class="detail-item">
+              <strong>{{ comment.authorName }}</strong>
+              <p>{{ comment.content }}</p>
+              <small>{{ formatTime(comment.createdAt) }}</small>
+            </article>
+            <div v-if="selectedTaskComments.length === 0" class="detail-empty">Chưa có comment.</div>
+          </div>
+
+          <div class="detail-block">
+            <div class="detail-block__header">
+              <h3>File đính kèm</h3>
+              <span>{{ selectedTaskAttachments.length }}</span>
+            </div>
+            <article v-for="attachment in selectedTaskAttachments.slice(0, 4)" :key="attachment.id" class="detail-item">
+              <strong>{{ attachment.fileName }}</strong>
+              <p>{{ attachment.uploadedByName }} · {{ formatDate(attachment.uploadedAt) }}</p>
+            </article>
+            <div v-if="selectedTaskAttachments.length === 0" class="detail-empty">Chưa có file đính kèm.</div>
+          </div>
+
+          <div class="detail-block">
+            <div class="detail-block__header">
+              <h3>Time tracking</h3>
+              <span>{{ formatMinutes(totalTrackedMinutes(selectedTaskTimeEntries)) }}</span>
+            </div>
+            <article v-for="entry in selectedTaskTimeEntries.slice(0, 4)" :key="entry.id" class="detail-item">
+              <strong>{{ entry.userName }}</strong>
+              <p>{{ entry.note || 'Không có ghi chú' }}</p>
+              <small>{{ formatTime(entry.startedAt) }}</small>
+            </article>
+            <div v-if="selectedTaskTimeEntries.length === 0" class="detail-empty">Chưa ghi nhận thời gian.</div>
+          </div>
+        </section>
       </div>
     </aside>
   </div>
 </template>
 
 <style scoped>
-.task-hub-page {
+.tasks-page {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
   align-items: start;
 }
 
-.task-hub-main {
+.tasks-page.has-detail {
+  grid-template-columns: minmax(0, 1fr) 392px;
+}
+
+.tasks-main {
   min-width: 0;
   display: grid;
   gap: 16px;
 }
 
-.task-hub-hero,
-.task-panel,
+.tasks-hero,
+.panel-card,
 .task-detail-drawer {
   border-radius: 22px;
 }
 
-.task-hub-hero {
+.tasks-hero {
   display: flex;
   justify-content: space-between;
   gap: 18px;
   padding: 22px 24px;
-  background: linear-gradient(135deg, rgba(15, 82, 186, 0.12), rgba(255, 255, 255, 0.88));
+  background: linear-gradient(135deg, rgba(15, 82, 186, 0.12), rgba(255, 255, 255, 0.92));
 }
 
-.task-hub-hero__copy {
+.tasks-hero__copy {
   display: grid;
   gap: 8px;
 }
 
-.task-hub-hero__copy span,
-.panel-heading span,
-.task-detail__header span {
+.tasks-hero__copy span,
+.panel-head span,
+.task-detail__header span,
+.workflow-mini__head span {
   color: var(--primary);
   font-size: 12px;
   font-weight: 800;
@@ -1422,20 +1195,20 @@ function attentionDotClass(item: TaskAttentionDto) {
   text-transform: uppercase;
 }
 
-.task-hub-hero__copy h2,
-.panel-heading h2,
+.tasks-hero__copy h2,
+.panel-head h3,
 .task-detail__header h2 {
   color: var(--text-strong);
-  font-size: clamp(24px, 3vw, 32px);
-  font-weight: 850;
+  font-size: clamp(24px, 3vw, 34px);
+  font-weight: 900;
 }
 
-.task-hub-hero__copy p {
+.tasks-hero__copy p {
   max-width: 68ch;
   color: var(--muted);
 }
 
-.task-hub-hero__actions {
+.tasks-hero__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1443,747 +1216,624 @@ function attentionDotClass(item: TaskAttentionDto) {
   gap: 10px;
 }
 
-.task-chip {
+.pill-button,
+.mini-button,
+.link-button,
+.icon-button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  min-height: 40px;
-  padding: 0 14px;
   border: 1px solid rgba(193, 211, 232, 0.95);
   border-radius: 999px;
-  color: var(--primary);
-  background: rgba(255, 255, 255, 0.94);
   font-weight: 800;
 }
 
-.task-chip.is-active {
+.pill-button {
+  min-height: 40px;
+  padding: 0 14px;
+  color: var(--primary);
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.pill-button.is-active {
   border-color: rgba(31, 128, 255, 0.34);
   color: white;
   background: var(--primary);
 }
 
-.task-chip--ghost {
+.pill-button--ghost,
+.link-button {
   background: transparent;
 }
 
-.task-chip--danger {
+.pill-button--danger {
   color: #dc2626;
   border-color: rgba(239, 68, 68, 0.24);
   background: rgba(254, 242, 242, 0.96);
 }
 
-.task-hub-metrics {
+.tasks-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
 }
 
-.task-metric {
+.stat-card {
   display: grid;
   gap: 6px;
   padding: 18px;
 }
 
-.task-metric span {
+.stat-card span {
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
 }
 
-.task-metric strong {
+.stat-card strong {
   color: var(--text-strong);
   font-size: 30px;
   line-height: 1;
   font-weight: 900;
 }
 
-.task-metric small {
+.stat-card small {
   color: var(--muted);
 }
 
-.task-panel {
+.panel-card {
   padding: 18px;
   display: grid;
   gap: 16px;
 }
 
-.risk-radar-shell {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(240px, 0.85fr) minmax(280px, 1fr);
-  gap: 14px;
+.panel-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.risk-radar-axes,
-.risk-buckets,
-.risk-toplist {
-  display: grid;
+.panel-head__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
   gap: 10px;
 }
 
-.risk-radar-axes {
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: linear-gradient(180deg, rgba(239, 246, 255, 0.72), white);
+.filter-grid {
+  display: grid;
+  grid-template-columns: 2fr repeat(5, minmax(0, 1fr));
+  gap: 12px;
 }
 
-.risk-radar-axis {
+.field {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid rgba(203, 213, 225, 0.95);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--muted);
+}
+
+.field--search {
+  min-width: 0;
+}
+
+.field svg {
+  flex: none;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-strong);
+  font: inherit;
+}
+
+.select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(191, 219, 254, 0.9);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.9), white);
+}
+
+.bulk-bar strong {
+  color: var(--text-strong);
+}
+
+.bulk-bar small {
+  color: var(--muted);
+}
+
+.bulk-bar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.empty-state {
   display: grid;
   gap: 8px;
-  padding: 12px;
-  border: 1px solid transparent;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.72);
-}
-
-.risk-radar-axis.is-active {
-  border-color: rgba(15, 76, 255, 0.2);
-  background: rgba(239, 246, 255, 0.96);
-}
-
-.risk-radar-axis__head {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.risk-radar-axis__head strong,
-.risk-bucket__head strong,
-.risk-toplist__head h3 {
-  color: var(--text-strong);
-  font-size: 14px;
-  font-weight: 850;
-}
-
-.risk-radar-axis__head span,
-.risk-toplist__head span,
-.risk-bucket p,
-.risk-top-card small,
-.risk-top-card p {
+  justify-items: center;
+  padding: 36px 18px;
+  border: 1px dashed rgba(191, 219, 254, 0.9);
+  border-radius: 18px;
+  background: rgba(248, 250, 252, 0.8);
   color: var(--muted);
-  font-size: 12px;
+  text-align: center;
 }
 
-.risk-radar-axis__head small {
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 900;
+.empty-state strong {
+  color: var(--text-strong);
+  font-size: 16px;
 }
 
-.risk-radar-axis__track {
-  height: 9px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.18);
+.empty-state--compact {
+  min-height: 220px;
+  align-content: center;
 }
 
-.risk-radar-axis__track span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #0f4cff, #22d3ee);
-}
-
-.risk-buckets {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.risk-bucket,
-.risk-top-card {
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: white;
-}
-
-.risk-bucket.is-danger {
-  border-color: rgba(239, 68, 68, 0.22);
-  background: linear-gradient(180deg, rgba(254, 242, 242, 0.9), white 70%);
-}
-
-.risk-bucket.is-warning {
-  border-color: rgba(245, 158, 11, 0.22);
-  background: linear-gradient(180deg, rgba(255, 251, 235, 0.92), white 70%);
-}
-
-.risk-bucket.is-info {
-  border-color: rgba(59, 130, 246, 0.2);
-  background: linear-gradient(180deg, rgba(239, 246, 255, 0.92), white 70%);
-}
-
-.risk-bucket.is-success {
-  border-color: rgba(34, 197, 94, 0.2);
-  background: linear-gradient(180deg, rgba(240, 253, 244, 0.92), white 70%);
-}
-
-.risk-bucket {
+.task-cards {
   display: grid;
-  gap: 10px;
-}
-
-.risk-bucket.is-active {
-  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
-}
-
-.risk-bucket__head {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  align-items: center;
-}
-
-.risk-bucket__head span {
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.risk-toplist {
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: var(--bg-soft);
-}
-
-.risk-toplist__head {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
   gap: 12px;
 }
 
-.risk-toplist__head span {
-  color: var(--primary);
+.task-card {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  padding: 18px 18px 16px;
+  border: 1px solid rgba(191, 219, 254, 0.74);
+  border-radius: 22px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.99) 0%, rgba(248, 250, 255, 0.98) 42%, rgba(244, 248, 255, 0.96) 100%);
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    0 16px 34px rgba(15, 23, 42, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94);
+  transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, background 0.22s ease;
+}
+
+.task-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.96), rgba(96, 165, 250, 0.86));
+  opacity: 0.98;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.45),
+    0 0 18px rgba(59, 130, 246, 0.2);
+}
+
+.task-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(147, 197, 253, 0.98);
+  box-shadow:
+    0 24px 44px rgba(15, 23, 42, 0.09),
+    0 0 0 1px rgba(191, 219, 254, 0.34);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 1) 0%, rgba(248, 250, 255, 0.99) 44%, rgba(242, 247, 255, 0.97) 100%);
+}
+
+.task-card.is-selected {
+  border-color: rgba(31, 128, 255, 0.3);
+  box-shadow:
+    0 20px 38px rgba(31, 128, 255, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.task-card.is-selected::before {
+  background: linear-gradient(180deg, rgba(31, 128, 255, 1), rgba(99, 102, 241, 0.8));
+}
+
+.task-card.is-overdue {
+  border-color: rgba(248, 113, 113, 0.26);
+  box-shadow:
+    0 18px 38px rgba(248, 113, 113, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.task-card.is-overdue::before {
+  background: linear-gradient(180deg, rgba(248, 113, 113, 0.96), rgba(251, 146, 60, 0.84));
+}
+
+.task-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(255, 255, 255, 0.98), transparent 28%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.34), transparent 22%);
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.task-card__check {
+  padding-top: 0;
+  align-self: start;
+  display: grid;
+  place-items: center;
+}
+
+.task-card__check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
+
+.task-card__body {
+  display: grid;
+  gap: 13px;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  min-width: 0;
+  align-self: stretch;
+}
+
+.task-card__titleRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  position: relative;
+}
+
+.task-card__titleWrap {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.task-card__titleWrap strong {
+  color: #0f172a;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1.35;
+  max-width: 100%;
+}
+
+.task-card__eyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.task-card__tag,
+.task-card__status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
   font-size: 11px;
   font-weight: 800;
+}
+
+.task-card__tag {
+  color: #1d4ed8;
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.98), rgba(245, 249, 255, 0.98));
+  box-shadow: inset 0 0 0 1px rgba(191, 219, 254, 0.75);
+}
+
+.task-card__status {
+  color: #334155;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.96));
+  box-shadow: inset 0 0 0 1px rgba(226, 232, 240, 0.82);
+}
+
+.task-card__footerline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  align-items: center;
+  color: #64748b;
+  font-size: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.task-card__footerline span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-card__chip {
+  min-height: 28px;
+  padding: 0 11px;
+  border-radius: 999px;
+  color: #334155;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 247, 255, 0.95));
+  box-shadow: inset 0 0 0 1px rgba(226, 232, 240, 0.8);
+}
+
+.task-card__chip--soft {
+  color: #475569;
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.98), rgba(247, 250, 255, 0.98));
+  box-shadow: inset 0 0 0 1px rgba(191, 219, 254, 0.7);
+}
+
+.task-card__metaTone {
+  margin-left: auto;
+  color: color-mix(in srgb, var(--task-accent) 90%, #0f172a);
+  font-size: 10px;
+  font-weight: 900;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.risk-toplist__head h3 {
-  margin-top: 4px;
-  font-size: 16px;
-}
-
-.risk-top-card {
-  display: grid;
-  grid-template-columns: 52px minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-}
-
-.risk-top-card__score {
-  display: grid;
-  place-items: center;
-  width: 52px;
-  height: 52px;
-  border-radius: 16px;
-  color: white;
-  font-size: 16px;
-  font-weight: 900;
-  background: linear-gradient(135deg, #0f4cff, #22d3ee);
-}
-
-.risk-top-card__body {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-}
-
-.risk-top-card__body strong {
-  color: var(--text-strong);
-  font-size: 14px;
-  font-weight: 850;
-}
-
-.risk-top-card__tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.risk-top-card__tags span {
-  padding: 4px 8px;
-  border-radius: 999px;
-  color: var(--primary);
-  background: rgba(239, 246, 255, 0.92);
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.task-section-heading {
-  align-items: start;
-}
-
-.saved-views-actions {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: flex-end;
-}
-
-.task-section-heading__meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  color: var(--muted);
-  font-weight: 700;
-}
-
-.saved-views-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.saved-view-pill {
+.task-card__progress {
   position: relative;
-  display: grid;
-  gap: 4px;
-  min-width: 180px;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  color: var(--text);
-  background: var(--panel-soft);
-  text-align: left;
-  cursor: pointer;
-}
-
-.saved-view-pill.is-active {
-  border-color: rgba(31, 128, 255, 0.3);
-  background: rgba(239, 246, 255, 0.92);
-}
-
-.saved-view-pill strong {
-  color: var(--text-strong);
-  font-size: 13px;
-  font-weight: 850;
-}
-
-.saved-view-pill span,
-.saved-view-pill small {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.saved-view-pill__remove {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 22px;
-  height: 22px;
-  border: 0;
-  border-radius: 999px;
-  color: var(--muted);
-  background: white;
-  cursor: pointer;
-}
-
-.saved-view-pill__remove:hover {
-  color: #dc2626;
-}
-
-.saved-views-empty {
-  padding: 14px 16px;
-  border: 1px dashed var(--line);
-  border-radius: 16px;
-  color: var(--muted);
-  background: var(--bg-soft);
-}
-
-.task-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: var(--panel-soft);
-}
-
-.task-search,
-.task-select {
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 14px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: white;
-  color: var(--muted);
-}
-
-.task-search {
-  flex: 1 1 320px;
-}
-
-.task-search input,
-.task-select select {
-  width: 100%;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--text-strong);
-}
-
-.task-select {
-  flex: 1 1 180px;
-}
-
-.task-inline-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.task-inline-check input {
-  accent-color: var(--primary);
-}
-
-.bulk-action-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
-  border: 1px solid rgba(31, 128, 255, 0.16);
-  border-radius: 16px;
-  background: rgba(239, 246, 255, 0.84);
-}
-
-.bulk-action-bar strong {
-  color: var(--text-strong);
-}
-
-.bulk-action-bar small {
-  color: var(--muted);
-}
-
-.bulk-action-bar__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.attention-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.attention-card {
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: var(--panel-soft);
-}
-
-.attention-card.is-overdue {
-  border-color: rgba(239, 68, 68, 0.24);
-  background: rgba(254, 242, 242, 0.72);
-}
-
-.attention-card.is-due-soon {
-  border-color: rgba(245, 158, 11, 0.22);
-  background: rgba(255, 251, 235, 0.78);
-}
-
-.attention-card__header {
-  display: grid;
-  grid-template-columns: 12px minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: start;
-}
-
-.attention-card__dot {
-  width: 12px;
-  height: 12px;
-  margin-top: 4px;
-  border-radius: 50%;
-  background: #64748b;
-}
-
-.attention-card__dot.is-overdue {
-  background: #dc2626;
-}
-
-.attention-card__dot.is-due-soon {
-  background: #f59e0b;
-}
-
-.attention-card__dot.is-stale {
-  background: #8b5cf6;
-}
-
-.attention-card__title {
-  display: grid;
-  gap: 4px;
-}
-
-.attention-card__title strong {
-  color: var(--text-strong);
-  font-size: 15px;
-  font-weight: 850;
-}
-
-.attention-card__title small,
-.attention-card__actions,
-.task-row__meta,
-.task-row__signals,
-.task-mini-item small {
-  color: var(--muted);
-}
-
-.attention-card__priority {
-  padding: 5px 10px;
-  border-radius: 999px;
-  background: rgba(15, 82, 186, 0.1);
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.attention-card__badges,
-.attention-card__reasons,
-.task-row__badges,
-.task-row__signals {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.attention-card__badges {
-  margin-top: 12px;
-}
-
-.attention-card__badges span,
-.attention-card__reasons span,
-.task-badge {
-  padding: 5px 9px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.84);
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.attention-card__reasons {
-  margin-top: 12px;
-}
-
-.attention-card__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.text-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  border: 0;
-  padding: 0;
-  color: var(--primary);
-  background: transparent;
-  font-weight: 800;
-}
-
-.task-empty-state {
-  min-height: 160px;
-  display: grid;
-  place-items: center;
-  gap: 8px;
-  padding: 18px;
-  text-align: center;
-  border: 1px dashed var(--line);
-  border-radius: 18px;
-  background: var(--panel-soft);
-}
-
-.task-empty-state--wide {
-  min-height: 220px;
-}
-
-.task-empty-state--compact {
-  min-height: 120px;
-}
-
-.task-empty-state strong {
-  color: var(--text-strong);
-  font-size: 15px;
-  font-weight: 850;
-}
-
-.task-empty-state p {
-  color: var(--muted);
-}
-
-.task-list {
-  display: grid;
-  gap: 12px;
-}
-
-.task-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 14px;
-  align-items: center;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: white;
-}
-
-.task-row.is-selected {
-  border-color: rgba(31, 128, 255, 0.32);
-  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
-}
-
-.task-row.is-overdue {
-  background: linear-gradient(90deg, rgba(254, 242, 242, 0.9), white 55%);
-}
-
-.task-row__check input {
-  accent-color: var(--primary);
-}
-
-.task-row__content {
-  min-width: 0;
-  display: grid;
-  gap: 8px;
-  border: 0;
-  padding: 0;
-  text-align: left;
-  background: transparent;
-}
-
-.task-row__headline {
-  display: grid;
-  gap: 8px;
-}
-
-.task-row__headline strong {
   overflow: hidden;
-  color: var(--text-strong);
-  font-size: 15px;
-  font-weight: 850;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  height: 9px;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(226, 232, 240, 0.95), rgba(241, 245, 249, 0.98)),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.42), transparent);
+  box-shadow:
+    inset 0 1px 1px rgba(15, 23, 42, 0.04),
+    0 0 0 1px rgba(255, 255, 255, 0.7);
 }
 
-.task-badge--priority.is-critical {
-  color: #b91c1c;
-  background: rgba(254, 226, 226, 0.96);
+.task-card__progress::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.8), transparent);
+  width: 28%;
+  transform: translateX(-120%);
+  opacity: 0.72;
+  animation: task-card-progress-sheen 2.2s linear infinite;
 }
 
+.task-card__progressFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--task-accent) 94%, white), var(--task-accent)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0));
+  box-shadow:
+    0 0 18px color-mix(in srgb, var(--task-accent) 42%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.task-card__peek {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  color: white;
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.98), rgba(59, 130, 246, 0.96));
+  opacity: 0;
+  transform: translateX(-4px) scale(0.96);
+  box-shadow:
+    0 10px 22px rgba(37, 99, 235, 0.16),
+    0 0 0 1px rgba(255, 255, 255, 0.28);
+  transition: opacity 0.18s ease, transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+  flex: none;
+}
+
+.task-card:hover .task-card__peek,
+.task-card:focus-within .task-card__peek {
+  opacity: 1;
+  transform: translateX(0) scale(1);
+}
+
+.task-card.is-selected .task-card__peek {
+  opacity: 1;
+}
+
+.task-card__body:hover .task-card__peek {
+  background: linear-gradient(180deg, rgba(29, 78, 216, 0.98), rgba(37, 99, 235, 0.98));
+  box-shadow:
+    0 12px 26px rgba(37, 99, 235, 0.22),
+    0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.mini-button {
+  min-height: 36px;
+  padding: 0 12px;
+  color: var(--primary);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(241, 248, 255, 0.95));
+  box-shadow: 0 8px 18px rgba(31, 128, 255, 0.06);
+}
+
+.mini-button--ghost {
+  color: #334155;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(248, 250, 252, 0.96));
+  box-shadow: inset 0 0 0 1px rgba(226, 232, 240, 0.85);
+}
+
+.icon-button {
+  width: 40px;
+  height: 40px;
+  background: white;
+  color: var(--primary);
+}
+
+.task-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.task-badge--priority.is-critical,
 .task-badge--priority.is-high {
-  color: #c2410c;
-  background: rgba(255, 237, 213, 0.96);
+  color: #b91c1c;
+  background: linear-gradient(180deg, rgba(254, 226, 226, 0.98), rgba(254, 242, 242, 0.98));
 }
 
 .task-badge--priority.is-medium {
-  color: #1d4ed8;
-  background: rgba(219, 234, 254, 0.96);
+  color: #a16207;
+  background: linear-gradient(180deg, rgba(254, 249, 195, 0.98), rgba(255, 251, 235, 0.98));
 }
 
 .task-badge--priority.is-low {
-  color: #0f766e;
-  background: rgba(204, 251, 241, 0.96);
+  color: #047857;
+  background: linear-gradient(180deg, rgba(236, 253, 245, 0.98), rgba(240, 253, 250, 0.98));
 }
 
 .task-badge--pin {
-  color: #7c3aed;
-}
-
-.task-badge--private {
-  color: #475569;
+  color: var(--primary);
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.98), rgba(245, 249, 255, 0.98));
 }
 
 .task-badge--danger {
   color: #b91c1c;
-  background: rgba(254, 226, 226, 0.96);
+  background: linear-gradient(180deg, rgba(254, 226, 226, 0.98), rgba(255, 241, 241, 0.98));
 }
 
 .task-badge--warning {
-  color: #b45309;
-  background: rgba(254, 243, 199, 0.96);
-}
-
-.task-row__meta,
-.task-row__signals {
-  font-size: 12px;
-}
-
-.task-row__actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.icon-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 36px;
-  padding: 0 12px;
-  border: 1px solid rgba(193, 211, 232, 0.95);
-  border-radius: 999px;
-  color: var(--primary);
-  background: rgba(239, 246, 255, 0.84);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.icon-pill--ghost {
-  background: white;
+  color: #a16207;
+  background: linear-gradient(180deg, rgba(255, 251, 235, 0.98), rgba(255, 253, 242, 0.98));
 }
 
 .task-detail-drawer {
   position: sticky;
   top: 16px;
   min-width: 0;
-  padding: 18px;
+  overflow: hidden;
 }
 
 .task-detail {
   display: grid;
   gap: 16px;
+  padding: 18px;
 }
 
 .task-detail__header {
   display: flex;
-  align-items: start;
   justify-content: space-between;
   gap: 12px;
 }
 
-.task-detail__summary {
-  display: grid;
-  gap: 14px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: var(--panel-soft);
+.task-detail__header p {
+  color: var(--muted);
+  margin-top: 4px;
 }
 
-.task-detail__title-row {
+.task-detail__skeleton {
+  display: grid;
+  gap: 10px;
+  padding: 2px 0 6px;
+}
+
+.skeleton-line,
+.skeleton-card {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(90deg, rgba(226, 232, 240, 0.9), rgba(241, 245, 249, 1), rgba(226, 232, 240, 0.9));
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+.skeleton-line {
+  height: 12px;
+  border-radius: 999px;
+}
+
+.skeleton-line--short {
+  width: 110px;
+}
+
+.skeleton-line--title {
+  width: 78%;
+  height: 18px;
+}
+
+.skeleton-line--body {
+  width: 92%;
+  height: 12px;
+}
+
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.skeleton-card {
+  height: 54px;
+  border-radius: 14px;
+}
+
+.task-detail__top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.task-detail__summary {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.9), white);
+}
+
+.task-detail__summary-head {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 12px;
   align-items: center;
 }
 
 .task-detail__project,
 .task-detail__status {
-  padding: 6px 10px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 800;
@@ -2191,16 +1841,17 @@ function attentionDotClass(item: TaskAttentionDto) {
 
 .task-detail__project {
   color: var(--primary);
-  background: rgba(239, 246, 255, 0.9);
+  background: rgba(239, 246, 255, 0.96);
 }
 
 .task-detail__status {
-  color: #0f172a;
-  background: rgba(226, 232, 240, 0.92);
+  color: #047857;
+  background: rgba(236, 253, 245, 0.96);
 }
 
 .task-detail__description {
-  color: var(--text);
+  color: var(--muted);
+  line-height: 1.65;
 }
 
 .task-detail__facts {
@@ -2210,109 +1861,670 @@ function attentionDotClass(item: TaskAttentionDto) {
 }
 
 .task-detail__facts div,
-.task-detail__meeting {
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
+.detail-block,
+.workflow-mini {
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 18px;
   background: white;
 }
 
+.task-detail__facts div {
+  padding: 12px;
+  display: grid;
+  gap: 4px;
+}
+
 .task-detail__facts span,
-.task-detail__meeting span {
-  display: block;
+.detail-block__header span {
   color: var(--muted);
   font-size: 11px;
   font-weight: 800;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
-.task-detail__facts strong,
-.task-detail__meeting strong {
+.task-detail__facts strong {
   color: var(--text-strong);
   font-size: 13px;
 }
 
-.task-detail__meeting p {
+.task-detail__meeting {
+  padding: 14px;
+  border: 1px solid rgba(191, 219, 254, 0.9);
+  border-radius: 18px;
+  background: rgba(239, 246, 255, 0.78);
+}
+
+.task-detail__meeting span {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.task-detail__meeting strong {
+  display: block;
   margin-top: 6px;
+  color: var(--text-strong);
+}
+
+.task-detail__meeting p {
+  margin-top: 8px;
+  color: var(--muted);
+  line-height: 1.6;
 }
 
 .task-detail__meeting small {
+  display: block;
+  margin-top: 6px;
   color: var(--muted);
 }
 
-.task-detail__action-row {
+.task-detail__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.task-detail__blocks {
+.workflow-mini {
+  padding: 16px;
   display: grid;
-  gap: 12px;
-}
-
-.task-detail-block {
-  display: grid;
-  gap: 10px;
-  padding: 14px;
-  border: 1px solid var(--line);
+  gap: 14px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
   border-radius: 18px;
-  background: white;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(249, 250, 251, 0.98));
 }
 
-.task-detail-block__header {
+.workflow-mini--vertical {
+  position: relative;
+}
+
+.workflow-mini__head {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
+  align-items: start;
 }
 
-.task-detail-block__header h3 {
+.workflow-mini__head--stacked {
+  align-items: flex-start;
+}
+
+.workflow-mini__head strong {
+  display: block;
   color: var(--text-strong);
   font-size: 15px;
-  font-weight: 850;
+  font-weight: 900;
 }
 
-.task-detail-block__header span {
-  color: var(--muted);
-  font-size: 12px;
+.workflow-mini__signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.workflow-signal {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
   font-weight: 800;
 }
 
-.task-mini-item {
-  display: grid;
-  gap: 4px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: var(--panel-soft);
+.workflow-signal.is-danger {
+  color: #b91c1c;
+  background: rgba(254, 226, 226, 0.96);
 }
 
-.task-mini-item strong {
+.workflow-signal.is-warning {
+  color: #a16207;
+  background: rgba(255, 251, 235, 0.96);
+}
+
+.workflow-signal.is-success {
+  color: #047857;
+  background: rgba(236, 253, 245, 0.96);
+}
+
+.workflow-owner {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(191, 219, 254, 0.8);
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.94), rgba(255, 255, 255, 0.98));
+}
+
+.workflow-owner span {
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.workflow-owner strong {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.workflow-owner small,
+.workflow-mini__note {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.workflow-track {
+  display: grid;
+  gap: 12px;
+  padding-left: 2px;
+}
+
+.workflow-track__item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 10px 12px 10px 0;
+  opacity: 1;
+  filter: none;
+  transform: translateY(6px);
+  animation: workflow-step-in 0.4s ease forwards;
+  animation-delay: var(--stage-delay, 0ms);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.workflow-track__rail {
+  position: absolute;
+  left: 19px;
+  top: 34px;
+  bottom: -14px;
+  width: 3px;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(226, 232, 240, 0.86), rgba(191, 219, 254, 0.58)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0));
+  background-size: 100% 240%;
+  overflow: hidden;
+  box-shadow:
+    0 0 18px rgba(96, 165, 250, 0.08),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+}
+
+.workflow-track__rail::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0));
+  filter: blur(0.8px);
+  opacity: 0.88;
+}
+
+.workflow-track__rail::after {
+  content: '';
+  position: absolute;
+  inset: -30% 0 auto;
+  height: 34%;
+  border-radius: inherit;
+  background:
+    linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.98), transparent),
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.82), transparent);
+  opacity: 0;
+  filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.78));
+}
+
+.workflow-track__dot {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  border: 1px solid rgba(203, 213, 225, 0.95);
+  color: #64748b;
+  background:
+    radial-gradient(circle at 30% 28%, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(245, 248, 255, 0.98));
+  box-shadow:
+    0 10px 22px rgba(15, 23, 42, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transition: transform 0.22s ease, box-shadow 0.22s ease, background 0.22s ease;
+}
+
+.workflow-track__pulse {
+  position: absolute;
+  inset: -6px;
+  border-radius: inherit;
+  opacity: 0;
+  transform: scale(0.72);
+  filter: blur(1px);
+}
+
+.workflow-track__spark {
+  position: absolute;
+  left: 50%;
+  top: -12px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  transform: translateX(-50%);
+  opacity: 0;
+  box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.9);
+  filter: blur(0.2px);
+}
+
+.workflow-track__body {
+  display: grid;
+  gap: 3px;
+  padding-top: 3px;
+}
+
+.workflow-track__step {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workflow-track__body strong {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.workflow-track__body small {
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.workflow-track__item.is-active {
+  opacity: 1;
+  filter: none;
+  transform: translateX(1px);
+}
+
+.workflow-track__item.is-active .workflow-track__body strong {
+  color: #0f172a;
+}
+
+.workflow-track__item.is-active .workflow-track__body small {
+  color: var(--muted);
+}
+
+.workflow-track__item.is-active.is-neutral .workflow-track__step {
+  color: #64748b;
+}
+
+.workflow-track__item.is-active.is-warning .workflow-track__step {
+  color: #d97706;
+}
+
+.workflow-track__item.is-active.is-success .workflow-track__step {
+  color: #16a34a;
+}
+
+.workflow-track__item.is-active.is-danger .workflow-track__step {
+  color: #dc2626;
+}
+
+.workflow-track__item.is-active.is-neutral .workflow-track__dot {
+  color: #64748b;
+  background: linear-gradient(180deg, rgba(243, 244, 246, 0.98), rgba(226, 232, 240, 0.94));
+}
+
+.workflow-track__item.is-active.is-warning .workflow-track__dot {
+  color: white;
+  background: linear-gradient(180deg, rgba(250, 204, 21, 0.98), rgba(245, 158, 11, 0.94));
+  border-color: transparent;
+  box-shadow:
+    0 12px 26px rgba(245, 158, 11, 0.2),
+    0 0 0 6px rgba(250, 204, 21, 0.12);
+}
+
+.workflow-track__item.is-active.is-success .workflow-track__dot {
+  color: white;
+  background: linear-gradient(180deg, rgba(34, 197, 94, 0.96), rgba(22, 163, 74, 0.94));
+  border-color: transparent;
+  box-shadow:
+    0 12px 26px rgba(22, 163, 74, 0.2),
+    0 0 0 6px rgba(34, 197, 94, 0.12);
+  animation: workflow-heartbeat 1.35s ease-in-out infinite;
+}
+
+.workflow-track__item.is-active.is-danger .workflow-track__dot {
+  color: white;
+  background: linear-gradient(180deg, rgba(248, 113, 113, 0.96), rgba(239, 68, 68, 0.94));
+  border-color: transparent;
+  box-shadow:
+    0 12px 26px rgba(239, 68, 68, 0.2),
+    0 0 0 6px rgba(248, 113, 113, 0.12);
+}
+
+.workflow-track__item.is-active.is-warning .workflow-track__pulse {
+  background: rgba(245, 158, 11, 0.24);
+  animation: workflow-pulse 1.65s ease-in-out infinite;
+}
+
+.workflow-track__item.is-active.is-success .workflow-track__pulse {
+  background: rgba(22, 163, 74, 0.24);
+  animation: workflow-pulse 1.35s ease-in-out infinite;
+}
+
+.workflow-track__item.is-active.is-danger .workflow-track__pulse {
+  background: rgba(239, 68, 68, 0.24);
+  animation: workflow-pulse 1.65s ease-in-out infinite;
+}
+
+.workflow-track__item.is-active.is-neutral .workflow-track__pulse {
+  background: rgba(148, 163, 184, 0.22);
+  animation: workflow-pulse 1.65s ease-in-out infinite;
+}
+
+.workflow-track__item.is-active.is-neutral .workflow-track__spark {
+  background: rgba(148, 163, 184, 0.96);
+  animation: workflow-spark 2.8s ease-in-out infinite;
+}
+
+.workflow-track__item.is-active.is-warning .workflow-track__spark {
+  background: rgba(245, 158, 11, 0.96);
+  animation: workflow-spark 2.8s ease-in-out infinite;
+}
+
+.workflow-track__item.is-active.is-success .workflow-track__spark {
+  background: rgba(34, 197, 94, 0.96);
+  animation: workflow-spark 2.4s ease-in-out infinite;
+}
+
+.workflow-track__item.is-active.is-danger .workflow-track__spark {
+  background: rgba(239, 68, 68, 0.96);
+  animation: workflow-spark 2.8s ease-in-out infinite;
+}
+
+.workflow-track__item.is-muted .workflow-track__dot {
+  color: #cbd5e1;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.96));
+  border-color: rgba(226, 232, 240, 0.96);
+  box-shadow: none;
+}
+
+.workflow-track__item.is-muted .workflow-track__rail {
+  background: linear-gradient(180deg, rgba(226, 232, 240, 0.7), rgba(226, 232, 240, 0.44));
+}
+
+.workflow-track__item.is-hot .workflow-track__dot {
+  color: #dc2626;
+  background:
+    radial-gradient(circle at 30% 28%, rgba(255, 255, 255, 0.98), rgba(254, 242, 242, 0.98)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(254, 242, 242, 0.98));
+  border-color: rgba(248, 113, 113, 0.42);
+  box-shadow:
+    0 10px 22px rgba(248, 113, 113, 0.08),
+    0 0 0 6px rgba(248, 113, 113, 0.08);
+}
+
+.workflow-track__item.is-hot .workflow-track__step {
+  color: #dc2626;
+}
+
+.workflow-track__item.is-hot .workflow-track__body strong {
+  color: #0f172a;
+}
+
+.workflow-track__item.is-hot .workflow-track__body small {
+  color: #ef4444;
+}
+
+.workflow-track__item.is-hot .workflow-track__rail {
+  background: linear-gradient(180deg, rgba(248, 113, 113, 0.34), rgba(248, 113, 113, 0.12));
+  animation: workflow-rail-flow 2.2s ease-in-out infinite;
+}
+
+.workflow-track__item.is-hot .workflow-track__rail::after {
+  opacity: 1;
+  animation: workflow-rail-sheen 1.35s linear infinite;
+}
+
+.workflow-track__item.is-active.is-neutral .workflow-track__rail {
+  background:
+    linear-gradient(180deg, rgba(148, 163, 184, 0.4), rgba(148, 163, 184, 0.08)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.24), transparent);
+  animation:
+    workflow-rail-flow 2.4s linear infinite,
+    workflow-rail-breathe 1.8s ease-in-out infinite;
+}
+
+.workflow-track__item.is-active.is-warning .workflow-track__rail {
+  background:
+    linear-gradient(180deg, rgba(245, 158, 11, 0.5), rgba(245, 158, 11, 0.12)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.26), transparent);
+  animation:
+    workflow-rail-flow 2.4s linear infinite,
+    workflow-rail-breathe 1.8s ease-in-out infinite;
+}
+
+.workflow-track__item.is-active.is-success .workflow-track__rail {
+  background:
+    linear-gradient(180deg, rgba(34, 197, 94, 0.5), rgba(34, 197, 94, 0.12)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.26), transparent);
+  animation:
+    workflow-rail-flow 2.4s linear infinite,
+    workflow-rail-breathe 1.8s ease-in-out infinite;
+}
+
+.workflow-track__item.is-active.is-danger .workflow-track__rail {
+  background:
+    linear-gradient(180deg, rgba(239, 68, 68, 0.5), rgba(239, 68, 68, 0.12)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.26), transparent);
+  animation:
+    workflow-rail-flow 2.4s linear infinite,
+    workflow-rail-breathe 1.8s ease-in-out infinite;
+}
+
+.workflow-track__item.is-active .workflow-track__rail::after {
+  opacity: 1;
+  animation: workflow-rail-sheen 1.1s linear infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes workflow-pulse {
+  0% {
+    opacity: 0;
+    transform: scale(0.72);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.22);
+  }
+}
+
+@keyframes workflow-heartbeat {
+  0% {
+    transform: scale(1);
+    box-shadow:
+      0 12px 26px rgba(22, 163, 74, 0.2),
+      0 0 0 6px rgba(34, 197, 94, 0.12);
+  }
+  18% {
+    transform: scale(1.08);
+  }
+  36% {
+    transform: scale(0.98);
+  }
+  54% {
+    transform: scale(1.1);
+    box-shadow:
+      0 14px 30px rgba(22, 163, 74, 0.24),
+      0 0 0 10px rgba(34, 197, 94, 0.08);
+  }
+  72% {
+    transform: scale(1.01);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 12px 26px rgba(22, 163, 74, 0.2),
+      0 0 0 6px rgba(34, 197, 94, 0.12);
+  }
+}
+
+@keyframes workflow-spark {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-8px) scale(0.75);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.15);
+  }
+  20% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(calc(100% + 24px)) scale(1);
+    box-shadow: 0 0 0 14px rgba(255, 255, 255, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(calc(100% + 24px)) scale(0.75);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+}
+
+@keyframes workflow-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes workflow-rail-flow {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 0 240%;
+  }
+}
+
+@keyframes workflow-rail-breathe {
+  0% {
+    filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.24));
+  }
+  50% {
+    filter: drop-shadow(0 0 14px rgba(255, 255, 255, 0.5));
+  }
+  100% {
+    filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.24));
+  }
+}
+
+@keyframes workflow-rail-sheen {
+  0% {
+    transform: translateY(-22%);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(360%);
+    opacity: 0;
+  }
+}
+
+@keyframes task-card-progress-sheen {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(380%);
+  }
+}
+
+@media (max-width: 520px) {
+  .task-detail__facts {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow-track__item {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .workflow-track__dot {
+    width: 34px;
+    height: 34px;
+  }
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.detail-block {
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.detail-block__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.detail-block__header h3 {
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.detail-item {
+  display: grid;
+  gap: 4px;
+}
+
+.detail-item strong {
   color: var(--text-strong);
   font-size: 13px;
 }
 
-.task-mini-item p,
-.task-mini-empty {
+.detail-item p,
+.detail-empty {
   color: var(--muted);
   font-size: 12px;
+  line-height: 1.55;
 }
 
-.task-mini-empty {
-  padding: 8px 2px;
-}
-
-.task-detail--placeholder {
-  min-height: calc(100dvh - 110px);
-  align-content: center;
-  justify-items: center;
-  text-align: center;
-}
-
-.task-detail--placeholder h3 {
-  color: var(--text-strong);
-  font-size: 18px;
-  font-weight: 850;
+.detail-empty {
+  padding: 8px 0 2px;
 }
 
 .is-spinning {
@@ -2326,7 +2538,7 @@ function attentionDotClass(item: TaskAttentionDto) {
 }
 
 @media (max-width: 1280px) {
-  .task-hub-page {
+  .tasks-page.has-detail {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -2334,54 +2546,56 @@ function attentionDotClass(item: TaskAttentionDto) {
     position: static;
   }
 
-  .risk-radar-shell {
-    grid-template-columns: minmax(0, 1fr);
+  .task-detail__top {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 960px) {
-  .task-hub-metrics,
-  .attention-grid,
-  .task-detail__facts,
-  .risk-buckets {
+  .tasks-stats,
+  .task-detail__facts {
     grid-template-columns: 1fr;
   }
 
-  .task-row {
+  .filter-grid {
     grid-template-columns: 1fr;
   }
 
-  .task-row__actions {
+  .task-card {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .task-card__check {
+    padding-top: 0;
+    align-self: start;
+  }
+
+  .task-card__actions {
     justify-content: flex-start;
-  }
-
-  .risk-top-card {
-    grid-template-columns: 1fr;
-  }
-
-  .risk-top-card__score {
-    width: 100%;
-    height: 42px;
-    border-radius: 14px;
   }
 }
 
 @media (max-width: 720px) {
-  .task-hub-hero {
+  .tasks-hero {
     flex-direction: column;
   }
 
-  .task-toolbar {
-    padding: 12px;
+  .bulk-bar {
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  .task-search,
-  .task-select {
-    flex: 1 1 100%;
+  .task-card__head {
+    flex-direction: column;
   }
 
-  .task-section-heading__meta {
-    justify-content: flex-start;
+  .panel-head {
+    flex-direction: column;
   }
 }
 </style>

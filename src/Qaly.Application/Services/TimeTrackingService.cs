@@ -38,6 +38,7 @@ public class TimeTrackingService : ITimeTrackingService
             .Include(t => t.Project)
             .FirstOrDefaultAsync(t => t.Id == taskId, ct);
         if (task == null) return Result.NotFound<TimeEntryDto>();
+        if (task.Project == null) return Result.NotFound<TimeEntryDto>();
 
         if (!await IsProjectMember(task.ProjectId, userId.Value, ct)) return Result.Forbidden<TimeEntryDto>();
 
@@ -93,6 +94,7 @@ public class TimeTrackingService : ITimeTrackingService
             .Include(t => t.Project)
             .FirstOrDefaultAsync(t => t.Id == dto.TaskId, ct);
         if (task == null) return Result.NotFound<TimeEntryDto>();
+        if (task.Project == null) return Result.NotFound<TimeEntryDto>();
 
         if (!await IsProjectMember(task.ProjectId, userId.Value, ct)) return Result.Forbidden<TimeEntryDto>();
 
@@ -119,8 +121,10 @@ public class TimeTrackingService : ITimeTrackingService
 
         var task = await _taskRepo.GetQueryable()
             .AsNoTracking()
+            .Include(t => t.Project)
             .FirstOrDefaultAsync(t => t.Id == taskId, ct);
         if (task == null) return Result.NotFound<List<TimeEntryDto>>();
+        if (task.Project == null) return Result.NotFound<List<TimeEntryDto>>();
 
         if (!await IsProjectMember(task.ProjectId, userId.Value, ct))
             return Result.Forbidden<List<TimeEntryDto>>();
@@ -160,11 +164,18 @@ public class TimeTrackingService : ITimeTrackingService
         if (string.Equals(_currentUserService.Role, "Admin", StringComparison.OrdinalIgnoreCase))
             return true;
 
-        // Check if the user is the project owner
-        var isOwner = await _taskRepo.GetQueryable()
+        var project = await _taskRepo.GetQueryable()
             .AsNoTracking()
+            .Where(t => t.ProjectId == projectId)
             .Select(t => t.Project)
-            .AnyAsync(p => p.Id == projectId && p.OwnerId == userId, ct);
+            .FirstOrDefaultAsync(ct);
+
+        if (project == null)
+        {
+            return false;
+        }
+
+        var isOwner = project.OwnerId == userId;
         if (isOwner) return true;
 
         return await _memberRepo.GetQueryable()

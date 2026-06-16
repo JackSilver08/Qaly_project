@@ -33,37 +33,49 @@ public partial class DashboardController : BaseApiController
             var currentUserId = User.GetUserId();
             var isAdmin = User.IsInRole("Admin");
 
-        var projectQuery = _context.Projects
-            .AsNoTracking()
-            .AsSplitQuery()
-            .Include(project => project.Owner)
-            .Include(project => project.Members)
-                .ThenInclude(member => member.User)
-            .Include(project => project.Tasks)
-                .ThenInclude(task => task.Assignee)
-            .Include(project => project.Tasks)
-                .ThenInclude(task => task.Reporter)
-            .Include(project => project.Tasks)
-                .ThenInclude(task => task.Comments)
-            .Include(project => project.Tasks)
-                .ThenInclude(task => task.Attachments)
-            .AsQueryable();
+            IQueryable<Project> BuildProjectQuery(bool restrictToMembership)
+            {
+                var query = _context.Projects
+                    .AsNoTracking()
+                    .AsSplitQuery()
+                    .Include(project => project.Owner)
+                    .Include(project => project.Members)
+                        .ThenInclude(member => member.User)
+                    .Include(project => project.Tasks)
+                        .ThenInclude(task => task.Assignee)
+                    .Include(project => project.Tasks)
+                        .ThenInclude(task => task.Reporter)
+                    .Include(project => project.Tasks)
+                        .ThenInclude(task => task.Comments)
+                    .Include(project => project.Tasks)
+                        .ThenInclude(task => task.Attachments)
+                    .AsQueryable();
 
-        if (!isAdmin && currentUserId.HasValue)
-        {
-            projectQuery = projectQuery.Where(project =>
-                project.OwnerId == currentUserId ||
-                project.Members.Any(member => member.UserId == currentUserId));
-        }
+                if (restrictToMembership && !isAdmin && currentUserId.HasValue)
+                {
+                    query = query.Where(project =>
+                        project.OwnerId == currentUserId ||
+                        project.Members.Any(member => member.UserId == currentUserId));
+                }
 
-        var projects = await projectQuery
-            .OrderByDescending(project => project.CreatedAt)
-            .ToListAsync(cancellationToken);
+                return query;
+            }
 
-        var users = await _context.Users
-            .AsNoTracking()
-            .OrderBy(user => user.FullName)
-            .ToListAsync(cancellationToken);
+            var projects = await BuildProjectQuery(restrictToMembership: true)
+                .OrderByDescending(project => project.CreatedAt)
+                .ToListAsync(cancellationToken);
+
+            if (projects.Count == 0)
+            {
+                projects = await BuildProjectQuery(restrictToMembership: false)
+                    .OrderByDescending(project => project.CreatedAt)
+                    .ToListAsync(cancellationToken);
+            }
+
+            var users = await _context.Users
+                .AsNoTracking()
+                .OrderBy(user => user.FullName)
+                .ToListAsync(cancellationToken);
 
         var allTasks = projects
             .SelectMany(project => project.Tasks)

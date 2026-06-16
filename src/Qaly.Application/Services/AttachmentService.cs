@@ -287,6 +287,11 @@ public class AttachmentService : IAttachmentService
             return false;
         }
 
+        if (task.Project == null)
+        {
+            return false;
+        }
+
         if (IsAdmin() ||
             task.ReporterId == currentUserId ||
             task.AssigneeId == currentUserId ||
@@ -308,6 +313,11 @@ public class AttachmentService : IAttachmentService
     {
         var currentUserId = _currentUserService.UserId;
         if (currentUserId == null)
+        {
+            return false;
+        }
+
+        if (task.Project == null)
         {
             return false;
         }
@@ -346,7 +356,7 @@ public class AttachmentService : IAttachmentService
 
     private async Task<bool> CanReviewEvidenceAsync(TaskItem task, Guid currentUserId, CancellationToken ct)
     {
-        if (IsAdmin() || task.Project.OwnerId == currentUserId)
+        if (task.Project != null && (IsAdmin() || task.Project.OwnerId == currentUserId))
         {
             return true;
         }

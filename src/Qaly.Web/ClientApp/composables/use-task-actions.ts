@@ -57,17 +57,26 @@ export function useTaskActions(
 
   async function batchUpdateTaskStatus(status: string) {
     if (selectedTaskIds.value.size === 0) return
+    const ids = Array.from(selectedTaskIds.value)
     try {
-      await apiCommand('/api/tasks/batch-status', {
-        method: 'POST',
-        body: JSON.stringify({
-          ids: Array.from(selectedTaskIds.value),
-          status,
-        }),
-      })
+      if (ids.length === 1) {
+        await apiCommand(`/api/tasks/${ids[0]}/status`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status }),
+        })
+      } else {
+        await apiCommand('/api/tasks/batch-status', {
+          method: 'POST',
+          body: JSON.stringify({
+            ids,
+            status,
+          }),
+        })
+      }
+
       selectedTaskIds.value.clear()
       await loadDashboard()
-      showSuccess(`Đã chuyển ${selectedTaskIds.value.size} sang ${displayStatus(status)}`)
+      showSuccess(`Đã chuyển ${ids.length} sang ${displayStatus(status)}`)
     } catch (e) {
       showError(errorMessage(e, 'Lỗi khi cập nhật hàng loạt'))
     }

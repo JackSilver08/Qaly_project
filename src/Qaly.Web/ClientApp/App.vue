@@ -149,10 +149,8 @@ const activeProjectTab = ref("stats");
 
 const tabs = [
   { id: "stats", label: "Thống kê" },
-  { id: "capacity", label: "Dung lượng" },
   { id: "tasks", label: "Nhiệm vụ" },
   { id: "activity", label: "Hoạt động" },
-  { id: "gantt", label: "Sprint và dòng thời gian" },
   { id: "members", label: "Thành viên" },
   { id: "wiki", label: "Wiki" },
   { id: "webhooks", label: "Webhook" },
@@ -481,7 +479,6 @@ watch(
   (id) => {
     if (typeof id === "string") {
       selectedTaskId.value = id;
-      activeProjectTab.value = "tasks";
       return;
     }
 
@@ -745,16 +742,14 @@ function closeProjectDetails() {
 }
 function selectTaskInProject(id: string) {
   selectedTaskId.value = id;
-  activeProjectTab.value = "tasks";
   if (selectedProject.value?.id)
-    void router.push(`/projects/${selectedProject.value.id}/tasks/${id}`);
+    void router.push(`/projects/${selectedProject.value.id}`);
 }
 
 function openTask(pId: string, tId: string) {
   activeProjectId.value = pId;
   selectedTaskId.value = tId;
-  activeProjectTab.value = "tasks";
-  void router.push(`/projects/${pId}/tasks/${tId}`);
+  void router.push(`/projects/${pId}`);
 }
 
 async function createTask() {

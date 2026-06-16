@@ -50,8 +50,14 @@ export function useDashboard() {
   async function loadDashboard() {
     isLoading.value = true
     try {
-      dashboard.value = normalizeDashboard(await apiJson<DashboardResponse>('/api/dashboard/overview'))
-      usingFallback.value = false
+      const normalized = normalizeDashboard(await apiJson<DashboardResponse>('/api/dashboard/overview'))
+      if (isEmptyDashboard(normalized)) {
+        dashboard.value = fallbackDashboard
+        usingFallback.value = true
+      } else {
+        dashboard.value = normalized
+        usingFallback.value = false
+      }
     } catch (error) {
       console.warn('Using fallback dashboard data.', error)
       dashboard.value = fallbackDashboard
@@ -109,4 +115,12 @@ function normalizeDashboard(dashboard: DashboardResponse): DashboardResponse {
     team: Array.isArray(dashboard.team) ? dashboard.team : [],
     notifications: Array.isArray(dashboard.notifications) ? dashboard.notifications : [],
   }
+}
+
+function isEmptyDashboard(dashboard: DashboardResponse) {
+  return (
+    (dashboard.projects?.length ?? 0) === 0 &&
+    (dashboard.stats?.totalTasks ?? 0) === 0 &&
+    (dashboard.team?.length ?? 0) === 0
+  )
 }

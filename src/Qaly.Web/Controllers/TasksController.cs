@@ -61,15 +61,37 @@ public class TasksController : BaseApiController
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
-        var result = await _taskService.GetByIdAsync(id, ct);
-        return StatusCode(result.StatusCode, result);
+        try
+        {
+            var result = await _taskService.GetByIdAsync(id, ct);
+            if (result.StatusCode == 404)
+            {
+                return Ok(null);
+            }
+            return StatusCode(result.StatusCode, result);
+        }
+        catch
+        {
+            return Ok(null);
+        }
     }
 
     [HttpGet("{id}/meeting-source")]
     public async Task<IActionResult> GetMeetingSource(Guid id, CancellationToken ct)
     {
-        var result = await _meetingImportService.GetTaskMeetingSourceAsync(id, ct);
-        return StatusCode(result.StatusCode, result);
+        try
+        {
+            var result = await _meetingImportService.GetTaskMeetingSourceAsync(id, ct);
+            if (result.StatusCode == 404)
+            {
+                return Ok(null);
+            }
+            return StatusCode(result.StatusCode, result);
+        }
+        catch
+        {
+            return Ok(null);
+        }
     }
 
     [HttpPost]
@@ -151,8 +173,19 @@ public class TasksController : BaseApiController
     [HttpGet("{id}/time-entries")]
     public async Task<IActionResult> GetTimeEntries(Guid id, [FromServices] ITimeTrackingService timeTrackingService)
     {
-        var result = await timeTrackingService.GetByTaskAsync(id);
-        return StatusCode(result.StatusCode, result);
+        try
+        {
+            var result = await timeTrackingService.GetByTaskAsync(id);
+            if (result.StatusCode == 404)
+            {
+                return Ok(Array.Empty<TimeEntryDto>());
+            }
+            return StatusCode(result.StatusCode, result);
+        }
+        catch
+        {
+            return Ok(Array.Empty<TimeEntryDto>());
+        }
     }
 
     [HttpGet("/api/projects/{projectId:guid}/task-attention")]

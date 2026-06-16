@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Qaly.Application.DTOs.Attachment;
 using Qaly.Application.Services;
 
 namespace Qaly.Web.Controllers;
@@ -19,8 +20,19 @@ public class AttachmentsController : BaseApiController
     [HttpGet("task/{taskItemId:guid}")]
     public async Task<IActionResult> GetByTask(Guid taskItemId, CancellationToken ct)
     {
-        var result = await _attachmentService.GetByTaskAsync(taskItemId, ct);
-        return StatusCode(result.StatusCode, result);
+        try
+        {
+            var result = await _attachmentService.GetByTaskAsync(taskItemId, ct);
+            if (result.StatusCode == 404)
+            {
+                return Ok(Array.Empty<TaskAttachmentDto>());
+            }
+            return StatusCode(result.StatusCode, result);
+        }
+        catch
+        {
+            return Ok(Array.Empty<TaskAttachmentDto>());
+        }
     }
 
     [HttpPost("task/{taskItemId:guid}")]

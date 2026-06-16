@@ -20,8 +20,19 @@ public class CommentsController : BaseApiController
     [HttpGet("task/{taskItemId:guid}")]
     public async Task<IActionResult> GetByTask(Guid taskItemId, CancellationToken ct)
     {
-        var result = await _commentService.GetByTaskAsync(taskItemId, ct);
-        return StatusCode(result.StatusCode, result);
+        try
+        {
+            var result = await _commentService.GetByTaskAsync(taskItemId, ct);
+            if (result.StatusCode == 404)
+            {
+                return Ok(Array.Empty<CommentDto>());
+            }
+            return StatusCode(result.StatusCode, result);
+        }
+        catch
+        {
+            return Ok(Array.Empty<CommentDto>());
+        }
     }
 
     [HttpPost]
