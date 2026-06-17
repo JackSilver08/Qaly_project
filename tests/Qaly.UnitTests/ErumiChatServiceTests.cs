@@ -69,7 +69,7 @@ public class ErumiChatServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ChatFastAsync_WithProjectCustomMessage_CallsAiGatewayWithHistoryAndContext()
+    public async Task ChatFastAsync_WithProjectCustomMessage_ReturnsLocalProjectSummaryWithoutAi()
     {
         var projectId = Guid.NewGuid();
         var userId = Guid.NewGuid();
@@ -174,33 +174,24 @@ public class ErumiChatServiceTests : IDisposable
 
         _currentUserServiceMock.SetupGet(u => u.UserId).Returns(userId);
 
-        _aiGatewayMock.Setup(g => g.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AiResponse
-            {
-                Content = "Nguyễn Văn A đang phụ trách task đó.",
-                ProviderName = "TestOllama",
-                ModelName = "llama3.2",
-                IsMock = false
-            });
-
         var result = await _service.ChatFastAsync(request, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        result.Data!.Reply.Should().Be("Nguyễn Văn A đang phụ trách task đó.");
-        result.Data.UsedAi.Should().BeTrue();
-        result.Data.Confidence.Should().Be(0.9);
+        result.Data!.Reply.Should().Contain("DATN");
+        result.Data.Reply.Should().Contain("Task UI Fix");
+        result.Data.Reply.Should().Contain("PM Khang");
+        result.Data.Intent.Should().Be("task_assignee_lookup");
+        result.Data.UsedAi.Should().BeFalse();
+        result.Data.Confidence.Should().BeGreaterThan(0.8);
+        result.Data.Sources.Should().Contain("AnalyticsService");
 
-        _aiGatewayMock.Verify(g => g.ExecuteAsync(It.Is<AiRequest>(r => 
-            r.Prompt == message && 
-            r.ProjectId == projectId && 
-            r.UserId == userId && 
-            r.History == history &&
-            r.SystemPrompt.Contains("TASKS") &&
-            r.SystemPrompt.Contains("Task UI Fix")), It.IsAny<CancellationToken>()), Times.Once);
+        _aiGatewayMock.Verify(
+            g => g.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
-    public async Task ChatFastAsync_WithStructuredResponse_ParsesJsonAndPopulatesMetricsTablesAndCharts()
+    public async Task ChatFastAsync_WithProjectAnalysis_PopulatesLocalMetricsAndCharts()
     {
         var projectId = Guid.NewGuid();
         var userId = Guid.NewGuid();
@@ -265,84 +256,47 @@ public class ErumiChatServiceTests : IDisposable
 
         _currentUserServiceMock.SetupGet(u => u.UserId).Returns(userId);
 
-        var jsonResponse = @"
-```json
-{
-  ""reply"": ""Chào PM Khang, tôi đã phân tích dự án DATN."",
-  ""metrics"": [
-    { ""label"": ""Chỉ số 1"", ""value"": ""100%"", ""tone"": ""good"", ""hint"": ""Tốt"" }
-  ],
-  ""tables"": [
-    {
-      ""title"": ""Bảng tiến độ"",
-      ""description"": ""Bảng mô tả"",
-      ""columns"": [
-        { ""key"": ""col1"", ""label"": ""Cột 1"", ""type"": ""text"", ""align"": ""left"" }
-      ],
-      ""rows"": [
-        { ""col1"": ""Giá trị 1"" }
-      ]
-    }
-  ],
-  ""charts"": [
-    {
-      ""type"": ""bar"",
-      ""title"": ""Biểu đồ"",
-      ""labels"": [""L1""],
-      ""values"": [50.0],
-      ""unit"": ""giờ""
-    }
-  ],
-  ""actions"": [
-    { ""type"": ""suggested_action"", ""label"": ""Câu hỏi tiếp"" }
-  ],
-  ""files"": [
-    { ""label"": ""Báo cáo"", ""format"": ""xlsx"", ""url"": ""/files/report.xlsx"", ""description"": ""Tải xuống"" }
-  ]
-}
-```";
-
-        _aiGatewayMock.Setup(g => g.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AiResponse
-            {
-                Content = jsonResponse,
-                ProviderName = "TestOllama",
-                ModelName = "llama3.2",
-                IsMock = false
-            });
-
         var result = await _service.ChatFastAsync(request, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
         result.Data.Should().NotBeNull();
-        result.Data!.Reply.Should().Be("Chào PM Khang, tôi đã phân tích dự án DATN.");
-        result.Data.UsedAi.Should().BeTrue();
+        result.Data!.Reply.Should().Contain("DATN");
+        result.Data.UsedAi.Should().BeFalse();
+        result.Data.Metrics.Should().NotBeEmpty();
+        result.Data.Metrics.Should().Contain(metric => metric.Value.Contains('1'));
+        result.Data.Charts.Should().NotBeEmpty();
+        result.Data.Actions.Should().NotBeEmpty();
+        result.Data.Files.Should().BeEmpty();
+        result.Data.Sources.Should().Contain("AnalyticsService");
 
-        result.Data.Metrics.Should().HaveCount(1);
-        result.Data.Metrics[0].Label.Should().Be("Chỉ số 1");
-        result.Data.Metrics[0].Value.Should().Be("100%");
-        result.Data.Metrics[0].Tone.Should().Be("good");
+        _aiGatewayMock.Verify(
+            g => g.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
 
-        result.Data.Tables.Should().HaveCount(1);
-        result.Data.Tables[0].Title.Should().Be("Bảng tiến độ");
-        result.Data.Tables[0].Columns.Should().HaveCount(1);
-        result.Data.Tables[0].Columns[0].Key.Should().Be("col1");
-        result.Data.Tables[0].Rows.Should().HaveCount(1);
-        var tableValue = result.Data.Tables[0].Rows[0]["col1"];
-        tableValue.Should().NotBeNull();
-        tableValue!.ToString().Should().Be("Giá trị 1");
+    [Fact]
+    public async Task ChatFastAsync_WithPlainProjectSummary_DoesNotAttachVisualPayloads()
+    {
+        var projectId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        SetupProjectAiContext(projectId, userId);
 
-        result.Data.Charts.Should().HaveCount(1);
-        result.Data.Charts[0].Title.Should().Be("Biểu đồ");
-        result.Data.Charts[0].Labels.Should().ContainSingle().Which.Should().Be("L1");
-        result.Data.Charts[0].Values.Should().ContainSingle().Which.Should().Be(50.0);
+        var result = await _service.ChatFastAsync(
+            new ErumiChatRequestDto(Message: "tom tat du an", ProjectId: projectId),
+            CancellationToken.None);
 
-        result.Data.Actions.Should().HaveCount(1);
-        result.Data.Actions[0].Label.Should().Be("Câu hỏi tiếp");
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data.Should().NotBeNull();
+        result.Data!.UsedAi.Should().BeFalse();
+        result.Data.Intent.Should().Be("project_summary");
+        result.Data.Reply.Should().Contain("DATN");
+        result.Data.Metrics.Should().BeEmpty();
+        result.Data.Tables.Should().BeEmpty();
+        result.Data.Charts.Should().BeEmpty();
 
-        result.Data.Files.Should().HaveCount(1);
-        result.Data.Files[0].Label.Should().Be("Báo cáo");
-        result.Data.Files[0].Url.Should().Be("/files/report.xlsx");
+        _aiGatewayMock.Verify(
+            g => g.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -352,32 +306,22 @@ public class ErumiChatServiceTests : IDisposable
         var userId = Guid.NewGuid();
         SetupProjectAiContext(projectId, userId);
 
-        _aiGatewayMock.Setup(g => g.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AiResponse
-            {
-                Content = """
-                    ```json
-                    { "reply": { "unexpected": "object" }, "metrics": "invalid schema" }
-                    ```
-                    """,
-                ProviderName = "TestOllama",
-                ModelName = "llama3.2",
-                IsMock = false
-            });
-
         var result = await _service.ChatFastAsync(
             new ErumiChatRequestDto(Message: "phan tich rui ro", ProjectId: projectId),
             CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue(result.Error);
         result.Data.Should().NotBeNull();
-        result.Data!.UsedAi.Should().BeTrue();
-        result.Data.Reply.Should().Contain("invalid schema");
-        result.Data.Metrics.Should().BeEmpty();
-        result.Data.Tables.Should().BeEmpty();
+        result.Data!.UsedAi.Should().BeFalse();
+        result.Data.Reply.Should().Contain("DATN");
+        result.Data.Metrics.Should().NotBeEmpty();
         result.Data.Charts.Should().BeEmpty();
-        result.Data.Actions.Should().BeEmpty();
+        result.Data.Actions.Should().NotBeEmpty();
         result.Data.Files.Should().BeEmpty();
+
+        _aiGatewayMock.Verify(
+            g => g.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -462,7 +406,7 @@ public class ErumiChatServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ChatFastAsync_ForProjectPM_PassesAllToolsToAiGateway()
+    public async Task ChatFastAsync_ForProjectPM_ReturnsLocalResponseWithoutAiGateway()
     {
         var projectId = Guid.NewGuid();
         var userId = Guid.NewGuid();
@@ -506,12 +450,15 @@ public class ErumiChatServiceTests : IDisposable
         var result = await serviceWithTools.ChatFastAsync(request, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        _aiGatewayMock.Verify(g => g.ExecuteAsync(It.Is<AiRequest>(r => 
-            r.Tools != null && r.Tools.Count == aiTools.GetAvailableTools().Count), It.IsAny<CancellationToken>()), Times.Once);
+        result.Data!.UsedAi.Should().BeFalse();
+        result.Data.Sources.Should().Contain("AnalyticsService");
+        _aiGatewayMock.Verify(
+            g => g.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
-    public async Task ChatFastAsync_ForProjectMember_PassesFilteredToolsToAiGateway()
+    public async Task ChatFastAsync_ForProjectMember_ReturnsLocalResponseWithoutAiGateway()
     {
         var projectId = Guid.NewGuid();
         var userId = Guid.NewGuid();
@@ -588,12 +535,15 @@ public class ErumiChatServiceTests : IDisposable
         var result = await serviceWithTools.ChatFastAsync(request, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        _aiGatewayMock.Verify(g => g.ExecuteAsync(It.Is<AiRequest>(r => 
-            r.Tools != null && r.Tools.Count == 9), It.IsAny<CancellationToken>()), Times.Once);
+        result.Data!.UsedAi.Should().BeFalse();
+        result.Data.Sources.Should().Contain("AnalyticsService");
+        _aiGatewayMock.Verify(
+            g => g.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
-    public async Task ChatFastAsync_ForProjectGuest_PassesNoToolsToAiGateway()
+    public async Task ChatFastAsync_ForProjectGuest_ReturnsLocalResponseWithoutAiGateway()
     {
         var projectId = Guid.NewGuid();
         var userId = Guid.NewGuid();
@@ -661,8 +611,11 @@ public class ErumiChatServiceTests : IDisposable
         var result = await serviceWithTools.ChatFastAsync(request, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        _aiGatewayMock.Verify(g => g.ExecuteAsync(It.Is<AiRequest>(r => 
-            r.Tools != null && r.Tools.Count == 0), It.IsAny<CancellationToken>()), Times.Once);
+        result.Data!.UsedAi.Should().BeFalse();
+        result.Data.Sources.Should().Contain("AnalyticsService");
+        _aiGatewayMock.Verify(
+            g => g.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     public void Dispose()

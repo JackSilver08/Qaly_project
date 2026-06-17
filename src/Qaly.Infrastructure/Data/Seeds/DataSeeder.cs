@@ -27,53 +27,68 @@ public partial class DataSeeder
         await EnsureTimelineSchemaCompatibilityAsync();
         LogDatabaseMigrated(_logger);
 
-        var admin = await _context.Users.FirstOrDefaultAsync(u => u.Email == "admin@qaly.dev");
-        var qalyProject = await _context.Projects.FirstOrDefaultAsync(p => p.Code == "qaly-mvp");
-        var needsReseed =
-            (admin != null && admin.FullName != "Quản trị viên hệ thống") ||
-            (qalyProject != null && qalyProject.Name != "Hệ thống Quản lý Qaly MVP");
-
-        if (needsReseed)
+        if (_configuration.GetValue("Seed:UseRichDemoSeed", true))
         {
-            LogStaleDataDetected(_logger);
-            _context.TaskComments.RemoveRange(_context.TaskComments);
-            _context.TaskItems.RemoveRange(_context.TaskItems);
-            _context.ProjectMembers.RemoveRange(_context.ProjectMembers);
-            _context.Projects.RemoveRange(_context.Projects);
-            _context.Users.RemoveRange(_context.Users);
-            await _context.SaveChangesAsync();
-        }
-
-        var seededAnyData = false;
-
-        if (!await _context.Users.AnyAsync())
-        {
-            await SeedUsersAsync();
-            seededAnyData = true;
-        }
-
-        if (!await _context.Projects.AnyAsync())
-        {
-            await SeedProjectsAsync();
-            await SeedKnowledgeBaseAsync(); // ThÃªm dá»¯ liá»‡u tri thá»©c má»Ÿ rá»™ng
-            await _context.SaveChangesAsync();
-            seededAnyData = true;
-        }
-
-        if (!await _context.WorkGroups.AnyAsync())
-        {
-            await SeedGroupsDemoAsync();
-            await _context.SaveChangesAsync();
-            seededAnyData = true;
-        }
-
-        if (seededAnyData)
-        {
-            LogSeedDataCreated(_logger);
+            var seededRichDemoData = await EnsureRichDemoSeedAsync();
+            if (seededRichDemoData)
+            {
+                LogSeedDataCreated(_logger);
+            }
+            else
+            {
+                LogSeedSkipped(_logger);
+            }
         }
         else
         {
-            LogSeedSkipped(_logger);
+            var admin = await _context.Users.FirstOrDefaultAsync(u => u.Email == "admin@qaly.dev");
+            var qalyProject = await _context.Projects.FirstOrDefaultAsync(p => p.Code == "qaly-mvp");
+            var needsReseed =
+                (admin != null && admin.FullName != "Quản trị viên hệ thống") ||
+                (qalyProject != null && qalyProject.Name != "Hệ thống Quản lý Qaly MVP");
+
+            if (needsReseed)
+            {
+                LogStaleDataDetected(_logger);
+                _context.TaskComments.RemoveRange(_context.TaskComments);
+                _context.TaskItems.RemoveRange(_context.TaskItems);
+                _context.ProjectMembers.RemoveRange(_context.ProjectMembers);
+                _context.Projects.RemoveRange(_context.Projects);
+                _context.Users.RemoveRange(_context.Users);
+                await _context.SaveChangesAsync();
+            }
+
+            var seededAnyData = false;
+
+            if (!await _context.Users.AnyAsync())
+            {
+                await SeedUsersAsync();
+                seededAnyData = true;
+            }
+
+            if (!await _context.Projects.AnyAsync())
+            {
+                await SeedProjectsAsync();
+                await SeedKnowledgeBaseAsync(); // ThÃªm dá»¯ liá»‡u tri thá»©c má»Ÿ rá»™ng
+                await _context.SaveChangesAsync();
+                seededAnyData = true;
+            }
+
+            if (!await _context.WorkGroups.AnyAsync())
+            {
+                await SeedGroupsDemoAsync();
+                await _context.SaveChangesAsync();
+                seededAnyData = true;
+            }
+
+            if (seededAnyData)
+            {
+                LogSeedDataCreated(_logger);
+            }
+            else
+            {
+                LogSeedSkipped(_logger);
+            }
         }
     }
 

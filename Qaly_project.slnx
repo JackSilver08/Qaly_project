@@ -8,5 +8,6 @@
   <Folder Name="/tests/">
     <Project Path="tests/Qaly.IntegrationTests/Qaly.IntegrationTests.csproj" />
     <Project Path="tests/Qaly.UnitTests/Qaly.UnitTests.csproj" />
+    <Project Path="tests/Qaly.WebFeatureTests/Qaly.WebFeatureTests.csproj" />
   </Folder>
 </Solution>

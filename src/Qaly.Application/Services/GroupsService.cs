@@ -18,6 +18,11 @@ namespace Qaly.Application.Services;
 
 public partial class GroupsService : IGroupsService
 {
+    private static readonly JsonSerializerOptions ReactionJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     private readonly IRepository<WorkGroup> _groupRepo;
     private readonly IRepository<WorkGroupMember> _memberRepo;
     private readonly IRepository<GroupInvitation> _invitationRepo;
@@ -2053,7 +2058,17 @@ public partial class GroupsService : IGroupsService
 
         try
         {
-            return JsonSerializer.Deserialize<List<GroupMessageReactionState>>(reactionSummaryJson) ?? [];
+            var reactions = JsonSerializer.Deserialize<List<GroupMessageReactionState>>(reactionSummaryJson, ReactionJsonOptions) ?? [];
+            return reactions
+                .Where(item => !string.IsNullOrWhiteSpace(item.Emoji))
+                .Select(item => new GroupMessageReactionState(
+                    item.Emoji.Trim(),
+                    item.UserIds
+                        .Where(userId => userId != Guid.Empty)
+                        .Distinct()
+                        .ToList()))
+                .Where(item => item.UserIds.Count > 0)
+                .ToList();
         }
         catch (JsonException)
         {
@@ -2077,9 +2092,22 @@ public partial class GroupsService : IGroupsService
         return normalized != null && allowed.Contains(normalized) ? normalized : null;
     }
 
-    private sealed record GroupMessageReactionState(
-        string Emoji,
-        List<Guid> UserIds);
+    private sealed class GroupMessageReactionState
+    {
+        public GroupMessageReactionState()
+        {
+        }
+
+        public GroupMessageReactionState(string emoji, List<Guid> userIds)
+        {
+            Emoji = emoji;
+            UserIds = userIds;
+        }
+
+        public string Emoji { get; init; } = string.Empty;
+
+        public List<Guid> UserIds { get; init; } = [];
+    }
 
     private async Task<bool> CanAccessOrganizationAsync(Guid organizationId, Guid ownerId, CancellationToken ct)
     {

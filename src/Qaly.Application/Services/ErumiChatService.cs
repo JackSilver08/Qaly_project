@@ -22,6 +22,19 @@ public sealed class ErumiChatService : IErumiChatService
     private static readonly string[] WorkspaceChartLabels = { "Task hoàn thành", "Giờ đã log" };
     private static readonly string[] StatusChartLabels = { "Hoàn thành", "Đang làm", "Khác/chưa bắt đầu" };
 
+    private sealed record WorkspaceProjectSnapshot(
+        ProjectDto Project,
+        ProjectAnalyticsDto Analytics,
+        double Progress,
+        string Risk);
+
+    private sealed record LocalResponseProfile(
+        bool IncludeMetrics,
+        bool IncludeTables,
+        bool IncludeCharts,
+        bool IncludeActions,
+        bool FullReport);
+
     private readonly IAnalyticsService _analyticsService;
     private readonly IProjectService _projectService;
     private readonly ITaskService _taskService;
@@ -112,7 +125,134 @@ public sealed class ErumiChatService : IErumiChatService
             return await BuildWorkspaceProjectComparisonResponseAsync(normalized, data, sw, ct);
         }
 
-        return await ExecuteWorkspaceAiChatAsync(request, data, sw, ct);
+        if (IsTaskTableQuestion(normalized))
+        {
+            return await BuildWorkspaceAttentionTaskTableResponseAsync(normalized, sw, ct);
+        }
+
+        return await BuildWorkspaceLocalResponseAsync(request, data, sw, ct);
+    }
+
+    private async Task<Result<ErumiChatResponseDto>> BuildWorkspaceLocalResponseAsync(
+        ErumiChatRequestDto request,
+        WorkspaceAnalyticsDto data,
+        Stopwatch sw,
+        CancellationToken ct)
+    {
+        var normalized = Normalize(request.Message);
+        var snapshotsResult = await LoadWorkspaceProjectSnapshotsAsync(ct);
+        if (!snapshotsResult.IsSuccess || snapshotsResult.Data == null)
+        {
+            return Result.Failure<ErumiChatResponseDto>(
+                snapshotsResult.Error ?? "Không thể lấy dữ liệu dự án trong workspace.",
+                snapshotsResult.StatusCode);
+        }
+
+        var snapshots = snapshotsResult.Data;
+        var intent = ClassifyWorkspaceIntent(normalized);
+        var profile = AnalyzeLocalResponseProfile(normalized, intent);
+
+        if (intent == "workspace_risk")
+        {
+            return Result.Success(BuildWorkspaceRiskResponse(data, snapshots, profile, sw));
+        }
+
+        if (intent == "workspace_productivity")
+        {
+            return Result.Success(BuildWorkspaceProductivityResponse(data, snapshots, profile, sw));
+        }
+
+        return Result.Success(BuildWorkspaceSummaryResponse(data, snapshots, profile, sw));
+    }
+
+    private async Task<Result<List<WorkspaceProjectSnapshot>>> LoadWorkspaceProjectSnapshotsAsync(CancellationToken ct)
+    {
+        var projectsResult = await _projectService.GetAllAsync(pageSize: 100, ct: ct);
+        if (!projectsResult.IsSuccess || projectsResult.Data == null)
+        {
+            return Result.Failure<List<WorkspaceProjectSnapshot>>(
+                projectsResult.Error ?? "Không thể lấy danh sách dự án.",
+                projectsResult.StatusCode);
+        }
+
+        var snapshots = new List<WorkspaceProjectSnapshot>();
+        foreach (var project in projectsResult.Data.Items
+                     .Where(project => !string.Equals(project.Status, "Archived", StringComparison.OrdinalIgnoreCase)))
+        {
+            var analyticsResult = await _analyticsService.GetProjectAnalyticsAsync(project.Id, ct);
+            if (!analyticsResult.IsSuccess || analyticsResult.Data == null)
+            {
+                continue;
+            }
+
+            var analytics = analyticsResult.Data;
+            snapshots.Add(new WorkspaceProjectSnapshot(
+                project,
+                analytics,
+                Percent(analytics.DoneTasks, analytics.TotalTasks),
+                ProjectRiskLabel(analytics)));
+        }
+
+        return Result.Success(snapshots);
+    }
+
+    private async Task<Result<ErumiChatResponseDto>> BuildWorkspaceAttentionTaskTableResponseAsync(
+        string normalized,
+        Stopwatch sw,
+        CancellationToken ct)
+    {
+        var riskType = ContainsAny(normalized, "sap toi han", "gan deadline", "due soon")
+            ? "duesoon"
+            : ContainsAny(normalized, "qua han", "tre han", "deadline", "risk", "rui ro")
+                ? "overdue"
+                : null;
+
+        var attentionResult = await _taskService.GetGlobalAttentionAsync(
+            riskType: riskType,
+            pageSize: 20,
+            sort: "risk",
+            ct: ct);
+
+        if (attentionResult is not { IsSuccess: true, Data: not null })
+        {
+            return Result.Failure<ErumiChatResponseDto>(
+                attentionResult?.Error ?? "Không thể lấy danh sách task cần chú ý.",
+                attentionResult?.StatusCode ?? 500);
+        }
+
+        var items = attentionResult.Data.Items.ToList();
+        var title = riskType == "overdue"
+            ? "Task quá hạn trong workspace"
+            : riskType == "duesoon"
+                ? "Task gần deadline trong workspace"
+                : "Task cần chú ý trong workspace";
+
+        var table = new ErumiTableDto(
+            title,
+            WorkspaceAttentionTaskColumns(),
+            items.Select(item => (IReadOnlyDictionary<string, object?>)BuildAttentionTaskRow(item, includeProject: true)).ToList(),
+            "Tối đa 20 task theo quyền xem hiện tại, sắp xếp theo mức độ cần chú ý.");
+
+        var metrics = new List<ErumiMetricDto>
+        {
+            new("Task hiển thị", items.Count.ToString(CultureInfo.InvariantCulture), items.Count > 0 ? "warning" : "good"),
+            new("Tổng mục phù hợp", attentionResult.Data.TotalCount.ToString(CultureInfo.InvariantCulture), attentionResult.Data.TotalCount > 0 ? "warning" : "good")
+        };
+
+        var reply = items.Count == 0
+            ? "Mình chưa thấy task nào phù hợp với điều kiện này trong phạm vi dữ liệu bạn có quyền xem."
+            : $"Mình tìm thấy **{attentionResult.Data.TotalCount} task** cần chú ý trong workspace và đã liệt kê **{items.Count} task đầu tiên** để bạn xử lý nhanh.";
+
+        return Result.Success(CreateResponse(
+            reply,
+            riskType == "overdue" ? "workspace_overdue_tasks" : "workspace_attention_tasks",
+            sw,
+            metrics,
+            tables: new[] { table },
+            actions: SuggestedActions("So sánh các dự án đang rủi ro", "Dự án nào có nhiều task quá hạn?"),
+            sources: ConcatSources(WorkspaceSources, "TaskAttention"),
+            confidence: 0.94,
+            confidenceReason: BuildRealtimeReason()));
     }
 
     private async Task<Result<ErumiChatResponseDto>> ExecuteWorkspaceAiChatAsync(
@@ -251,7 +391,179 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             return await BuildProjectTaskTableResponseAsync(project.Id, project.Name, normalized, sw, ct);
         }
 
-        return await ExecuteProjectAiChatAsync(request, project, data, sw, ct);
+        return await BuildProjectLocalResponseAsync(project, data, normalized, sw, ct);
+    }
+
+    private async Task<Result<ErumiChatResponseDto>> BuildProjectLocalResponseAsync(
+        ProjectDto project,
+        ProjectAnalyticsDto data,
+        string normalized,
+        Stopwatch sw,
+        CancellationToken ct)
+    {
+        var intent = ClassifyProjectIntent(normalized);
+        var profile = AnalyzeLocalResponseProfile(normalized, intent);
+
+        if (IsAssigneeQuestion(normalized))
+        {
+            return await BuildProjectAssigneeResponseAsync(project, normalized, profile, sw, ct);
+        }
+
+        if (intent == "project_team")
+        {
+            return await BuildProjectTeamResponseAsync(project.Id, project.Name, project.OwnerId, project.OwnerName, normalized, sw, ct);
+        }
+
+        if (intent == "risk")
+        {
+            return await BuildProjectRiskLocalResponseAsync(project, data, profile, sw, ct);
+        }
+
+        if (intent == "productivity")
+        {
+            return Result.Success(BuildProjectProductivityResponse(project.Name, data, profile, sw));
+        }
+
+        if (intent == "project_analysis")
+        {
+            return Result.Success(BuildProjectAnalysisResponse(project.Name, data, profile, sw));
+        }
+
+        return Result.Success(BuildProjectSummaryResponse(project, data, profile, sw));
+    }
+
+    private async Task<Result<ErumiChatResponseDto>> BuildProjectRiskLocalResponseAsync(
+        ProjectDto project,
+        ProjectAnalyticsDto data,
+        LocalResponseProfile profile,
+        Stopwatch sw,
+        CancellationToken ct)
+    {
+        var attentionResult = await _taskService.GetAttentionByProjectAsync(
+            project.Id,
+            pageSize: 10,
+            sort: "risk",
+            ct: ct);
+
+        ErumiTableDto[]? tables = null;
+        int attentionCount = 0;
+        if (attentionResult is { IsSuccess: true, Data: not null })
+        {
+            var items = attentionResult.Data.Items.ToList();
+            attentionCount = attentionResult.Data.TotalCount;
+            if (profile.IncludeTables && items.Count > 0)
+            {
+                tables = new[]
+                {
+                    new ErumiTableDto(
+                        "Task cần chú ý",
+                        ProjectAttentionTaskColumns(),
+                        items.Select(item => (IReadOnlyDictionary<string, object?>)BuildAttentionTaskRow(item, includeProject: false)).ToList(),
+                        "Tối đa 10 task theo quyền xem hiện tại, sắp xếp theo mức độ rủi ro.")
+                };
+            }
+        }
+
+        var reply = BuildRiskReply(project.Name, data);
+        if (attentionCount > 0)
+        {
+            reply += profile.IncludeTables
+                ? $"\n\nMình cũng ghi nhận **{attentionCount} task cần chú ý** theo dữ liệu attention hiện tại. Bảng bên dưới ưu tiên các task quá hạn, gần deadline hoặc có tín hiệu bị kẹt."
+                : $"\n\nMình cũng ghi nhận **{attentionCount} task cần chú ý** theo dữ liệu attention hiện tại. Nếu bạn muốn xem cụ thể, hãy hỏi `liệt kê task cần chú ý`.";
+        }
+
+        return Result.Success(CreateResponse(
+            reply,
+            "risk",
+            sw,
+            profile.IncludeMetrics ? BuildProjectMetrics(data) : null,
+            tables: tables,
+            charts: profile.IncludeCharts ? BuildProjectCharts(data) : null,
+            actions: profile.IncludeActions ? SuggestedActions("Liệt kê task quá hạn", "Xem workload thành viên", "Xuất báo cáo dự án") : null,
+            sources: ConcatSources(ProjectSources, "TaskAttention"),
+            confidence: ProjectDataConfidence(data),
+            confidenceReason: BuildRealtimeReason()));
+    }
+
+    private async Task<Result<ErumiChatResponseDto>> BuildProjectAssigneeResponseAsync(
+        ProjectDto project,
+        string normalized,
+        LocalResponseProfile profile,
+        Stopwatch sw,
+        CancellationToken ct)
+    {
+        var tasksResult = await _taskService.GetByProjectAsync(project.Id, pageSize: 100, ct: ct);
+        if (!tasksResult.IsSuccess || tasksResult.Data == null)
+        {
+            return Result.Failure<ErumiChatResponseDto>(
+                tasksResult.Error ?? "Không thể lấy danh sách task.",
+                tasksResult.StatusCode);
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var openOnly = ContainsAny(normalized, "dang lam", "dang phu trach", "chua xong", "open", "active");
+        var tasks = tasksResult.Data.Items
+            .Where(task => !openOnly || !IsDoneStatus(task.Status))
+            .OrderByDescending(task => PriorityWeight(task.Priority))
+            .ThenBy(task => task.DueDate ?? DateTimeOffset.MaxValue)
+            .Take(profile.IncludeTables ? 20 : 6)
+            .ToList();
+
+        if (tasks.Count == 0)
+        {
+            return Result.Success(CreateResponse(
+                $"Mình chưa thấy task phù hợp trong dự án **{project.Name}** để xác định người phụ trách.",
+                "task_assignee_lookup",
+                sw,
+                actions: profile.IncludeActions ? SuggestedActions("Liệt kê task dự án", "Xem workload thành viên") : null,
+                sources: ConcatSources(ProjectSources, "TaskService"),
+                confidence: 0.84,
+                confidenceReason: BuildRealtimeReason()));
+        }
+
+        var assigned = tasks.Where(task => !string.IsNullOrWhiteSpace(task.AssigneeName)).ToList();
+        var unassignedCount = tasks.Count - assigned.Count;
+        var reply = assigned.Count == 0
+            ? $"Trong **{project.Name}**, các task phù hợp hiện chưa có người phụ trách rõ ràng."
+            : assigned.Count == 1
+                ? $"Trong **{project.Name}**, task **{assigned[0].Title}** đang do **{assigned[0].AssigneeName}** phụ trách."
+                : $"Trong **{project.Name}**, mình thấy các task phù hợp đang được phụ trách bởi: {string.Join(", ", assigned.Take(4).Select(task => $"**{task.AssigneeName}** ({task.Title})"))}.";
+
+        if (unassignedCount > 0)
+        {
+            reply += $" Có **{unassignedCount} task** trong nhóm này chưa có assignee.";
+        }
+
+        var table = profile.IncludeTables
+            ? new[]
+            {
+                new ErumiTableDto(
+                    "Task và người phụ trách",
+                    TaskTableColumns(),
+                    tasks.Select(task => (IReadOnlyDictionary<string, object?>)BuildTaskRow(task, now)).ToList(),
+                    "Danh sách task phù hợp với câu hỏi của bạn.")
+            }
+            : null;
+
+        var metrics = profile.IncludeMetrics
+            ? new List<ErumiMetricDto>
+            {
+                new("Task phù hợp", tasks.Count.ToString(CultureInfo.InvariantCulture), "neutral"),
+                new("Đã có assignee", assigned.Count.ToString(CultureInfo.InvariantCulture), assigned.Count == tasks.Count ? "good" : "warning"),
+                new("Chưa phân công", unassignedCount.ToString(CultureInfo.InvariantCulture), unassignedCount > 0 ? "warning" : "good")
+            }
+            : null;
+
+        return Result.Success(CreateResponse(
+            reply,
+            "task_assignee_lookup",
+            sw,
+            metrics,
+            tables: table,
+            actions: profile.IncludeActions ? SuggestedActions("Lập bảng task và assignee", "Xem workload thành viên") : null,
+            sources: ConcatSources(ProjectSources, "TaskService"),
+            confidence: 0.92,
+            confidenceReason: BuildRealtimeReason()));
     }
 
     private async Task<Result<ErumiChatResponseDto>> ExecuteProjectAiChatAsync(
@@ -1037,6 +1349,330 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
         };
     }
 
+    private static ErumiChatResponseDto BuildWorkspaceSummaryResponse(
+        WorkspaceAnalyticsDto data,
+        IReadOnlyList<WorkspaceProjectSnapshot> snapshots,
+        LocalResponseProfile profile,
+        Stopwatch sw)
+    {
+        var riskCount = snapshots.Count(item => RiskWeight(item.Risk) >= 2);
+        var avgProgress = snapshots.Count == 0 ? 0 : Math.Round(snapshots.Average(item => item.Progress), 1);
+        var topRisk = snapshots
+            .OrderByDescending(item => RiskWeight(item.Risk))
+            .ThenByDescending(item => item.Analytics.OverdueTasks)
+            .ThenBy(item => item.Project.Name)
+            .Take(5)
+            .ToList();
+
+        var reply = data.TotalProjects == 0
+            ? "Mình chưa thấy dự án nào trong workspace mà bạn có quyền truy cập."
+            : $"Mình đã đọc dữ liệu workspace trực tiếp từ database. Hiện có **{data.TotalProjects} dự án**, **{data.TotalTasks} task**, tuần qua hoàn thành **{data.DoneTasksThisWeek} task** và log **{data.TotalHoursLoggedThisWeek:0.##}h**. Tiến độ trung bình các dự án đang đọc được là **{avgProgress:0.#}%**.";
+
+        if (riskCount > 0)
+        {
+            reply += $" Có **{riskCount} dự án** đang cần theo dõi do tiến độ hoặc task quá hạn.";
+        }
+
+        var tables = !profile.IncludeTables || topRisk.Count == 0
+            ? null
+            : new[] { BuildWorkspaceProjectSnapshotTable("Dự án cần theo dõi", topRisk) };
+
+        return CreateResponse(
+            reply,
+            "workspace_summary",
+            sw,
+            profile.IncludeMetrics ? BuildWorkspaceMetrics(data, snapshots) : null,
+            tables: tables,
+            charts: profile.IncludeCharts ? BuildWorkspaceCharts(data, snapshots) : null,
+            actions: profile.IncludeActions ? SuggestedActions("Dự án nào đang rủi ro?", "So sánh các dự án", "Task nào quá hạn?") : null,
+            sources: WorkspaceSources,
+            confidence: WorkspaceDataConfidence(data, snapshots),
+            confidenceReason: BuildRealtimeReason());
+    }
+
+    private static ErumiChatResponseDto BuildWorkspaceRiskResponse(
+        WorkspaceAnalyticsDto data,
+        IReadOnlyList<WorkspaceProjectSnapshot> snapshots,
+        LocalResponseProfile profile,
+        Stopwatch sw)
+    {
+        var riskSnapshots = snapshots
+            .Where(item => RiskWeight(item.Risk) >= 2)
+            .OrderByDescending(item => RiskWeight(item.Risk))
+            .ThenByDescending(item => item.Analytics.OverdueTasks)
+            .ThenBy(item => item.Progress)
+            .Take(8)
+            .ToList();
+
+        var totalOverdue = snapshots.Sum(item => item.Analytics.OverdueTasks);
+        var reply = riskSnapshots.Count == 0
+            ? $"Mình chưa thấy dự án nào có tín hiệu rủi ro lớn trong dữ liệu hiện tại. Tổng task quá hạn toàn workspace đang là **{totalOverdue}**."
+            : $"Có **{riskSnapshots.Count} dự án** đang nổi bật về rủi ro trong phạm vi dữ liệu bạn có quyền xem. Tổng task quá hạn toàn workspace là **{totalOverdue}**; bảng bên dưới ưu tiên dự án có rủi ro cao và nhiều task quá hạn.";
+
+        if (!profile.IncludeTables && riskSnapshots.Count > 0)
+        {
+            reply = $"Có **{riskSnapshots.Count} dự án** đang nổi bật về rủi ro trong phạm vi dữ liệu bạn có quyền xem. Đáng chú ý nhất: {string.Join(", ", riskSnapshots.Take(3).Select(item => $"**{item.Project.Name}** ({item.Analytics.OverdueTasks} task quá hạn, tiến độ {item.Progress:0.#}%)"))}.";
+        }
+
+        var tables = !profile.IncludeTables || riskSnapshots.Count == 0
+            ? null
+            : new[] { BuildWorkspaceProjectSnapshotTable("Dự án rủi ro", riskSnapshots) };
+
+        return CreateResponse(
+            reply,
+            "workspace_risk",
+            sw,
+            profile.IncludeMetrics ? BuildWorkspaceMetrics(data, snapshots) : null,
+            tables: tables,
+            charts: profile.IncludeCharts ? BuildWorkspaceCharts(data, snapshots) : null,
+            actions: profile.IncludeActions ? SuggestedActions("Liệt kê task quá hạn", "So sánh các dự án đang hoạt động", "Xem workload team") : null,
+            sources: WorkspaceSources,
+            confidence: WorkspaceDataConfidence(data, snapshots),
+            confidenceReason: BuildRealtimeReason());
+    }
+
+    private static ErumiChatResponseDto BuildWorkspaceProductivityResponse(
+        WorkspaceAnalyticsDto data,
+        IReadOnlyList<WorkspaceProjectSnapshot> snapshots,
+        LocalResponseProfile profile,
+        Stopwatch sw)
+    {
+        var mostDone = snapshots.OrderByDescending(item => item.Analytics.DoneTasks).FirstOrDefault();
+        var mostLogged = snapshots.OrderByDescending(item => item.Analytics.TotalActualHours).FirstOrDefault();
+        var avgProgress = snapshots.Count == 0 ? 0 : Math.Round(snapshots.Average(item => item.Progress), 1);
+
+        var reply = $"Tuần qua workspace hoàn thành **{data.DoneTasksThisWeek} task** và log **{data.TotalHoursLoggedThisWeek:0.##}h**. Tiến độ trung bình các dự án đang đọc được là **{avgProgress:0.#}%**.";
+        if (mostDone != null)
+        {
+            reply += $" Dự án có nhiều task hoàn thành nhất hiện là **{mostDone.Project.Name}** ({mostDone.Analytics.DoneTasks} task done).";
+        }
+
+        if (mostLogged != null)
+        {
+            reply += $" Dự án log nhiều thời gian nhất là **{mostLogged.Project.Name}** ({mostLogged.Analytics.TotalActualHours:0.##}h).";
+        }
+
+        return CreateResponse(
+            reply,
+            "workspace_productivity",
+            sw,
+            profile.IncludeMetrics ? BuildWorkspaceMetrics(data, snapshots) : null,
+            charts: profile.IncludeCharts ? BuildWorkspaceCharts(data, snapshots) : null,
+            actions: profile.IncludeActions ? SuggestedActions("So sánh tiến độ dự án", "Dự án nào chậm tiến độ?", "Task nào quá hạn?") : null,
+            sources: WorkspaceSources,
+            confidence: WorkspaceDataConfidence(data, snapshots),
+            confidenceReason: BuildRealtimeReason());
+    }
+
+    private static ErumiChatResponseDto BuildProjectSummaryResponse(
+        ProjectDto project,
+        ProjectAnalyticsDto data,
+        LocalResponseProfile profile,
+        Stopwatch sw)
+        => CreateResponse(
+            BuildSummaryReply(project.Name, project.Description, data),
+            "project_summary",
+            sw,
+            profile.IncludeMetrics ? BuildProjectMetrics(data) : null,
+            charts: profile.IncludeCharts ? BuildProjectCharts(data) : null,
+            actions: profile.IncludeActions ? SuggestedActions("Phân tích rủi ro", "Xem workload thành viên", "Liệt kê task quá hạn") : null,
+            sources: ProjectSources,
+            confidence: ProjectDataConfidence(data),
+            confidenceReason: BuildRealtimeReason());
+
+    private static ErumiChatResponseDto BuildProjectProductivityResponse(
+        string projectName,
+        ProjectAnalyticsDto data,
+        LocalResponseProfile profile,
+        Stopwatch sw)
+        => CreateResponse(
+            BuildProductivityReply(projectName, data),
+            "productivity",
+            sw,
+            profile.IncludeMetrics ? BuildProjectMetrics(data) : null,
+            charts: profile.IncludeCharts ? BuildProjectCharts(data) : null,
+            actions: profile.IncludeActions ? SuggestedActions("Lập bảng workload", "Ai đang quá tải?", "Liệt kê task quá hạn") : null,
+            sources: ProjectSources,
+            confidence: ProjectDataConfidence(data),
+            confidenceReason: BuildRealtimeReason());
+
+    private static ErumiChatResponseDto BuildProjectAnalysisResponse(
+        string projectName,
+        ProjectAnalyticsDto data,
+        LocalResponseProfile profile,
+        Stopwatch sw)
+        => CreateResponse(
+            BuildProjectAnalysisReply(projectName, data),
+            "project_analysis",
+            sw,
+            profile.IncludeMetrics ? BuildProjectMetrics(data) : null,
+            charts: profile.IncludeCharts ? BuildProjectCharts(data) : null,
+            actions: profile.IncludeActions ? SuggestedActions("Phân tích rủi ro", "Lập bảng workload", "Xuất báo cáo dự án") : null,
+            sources: ProjectSources,
+            confidence: ProjectDataConfidence(data),
+            confidenceReason: BuildRealtimeReason());
+
+    private static List<ErumiMetricDto> BuildWorkspaceMetrics(
+        WorkspaceAnalyticsDto data,
+        IReadOnlyList<WorkspaceProjectSnapshot> snapshots)
+    {
+        var riskCount = snapshots.Count(item => RiskWeight(item.Risk) >= 2);
+        var avgProgress = snapshots.Count == 0 ? 0 : Math.Round(snapshots.Average(item => item.Progress), 1);
+        var overdueTotal = snapshots.Sum(item => item.Analytics.OverdueTasks);
+
+        return new List<ErumiMetricDto>
+        {
+            new("Dự án", data.TotalProjects.ToString(CultureInfo.InvariantCulture), "neutral"),
+            new("Task workspace", data.TotalTasks.ToString(CultureInfo.InvariantCulture), "neutral"),
+            new("Done tuần này", data.DoneTasksThisWeek.ToString(CultureInfo.InvariantCulture), "good"),
+            new("Giờ log tuần này", $"{data.TotalHoursLoggedThisWeek:0.##}h", "neutral"),
+            new("Tiến độ TB", $"{avgProgress:0.#}%", avgProgress >= 70 ? "good" : avgProgress >= 40 ? "warning" : "danger"),
+            new("Task quá hạn", overdueTotal.ToString(CultureInfo.InvariantCulture), overdueTotal > 0 ? "danger" : "good"),
+            new("Dự án rủi ro", riskCount.ToString(CultureInfo.InvariantCulture), riskCount > 0 ? "warning" : "good")
+        };
+    }
+
+    private static List<ErumiChartDto> BuildWorkspaceCharts(
+        WorkspaceAnalyticsDto data,
+        IReadOnlyList<WorkspaceProjectSnapshot> snapshots)
+    {
+        var charts = new List<ErumiChartDto>
+        {
+            new(
+                "bar",
+                "Hiệu suất tuần này",
+                WorkspaceChartLabels,
+                new[] { (double)data.DoneTasksThisWeek, data.TotalHoursLoggedThisWeek },
+                null)
+        };
+
+        var progressRows = snapshots
+            .OrderByDescending(item => item.Progress)
+            .Take(8)
+            .ToList();
+
+        if (progressRows.Count > 0)
+        {
+            charts.Add(new ErumiChartDto(
+                "bar",
+                "Tiến độ theo dự án",
+                progressRows.Select(item => item.Project.Name).ToArray(),
+                progressRows.Select(item => item.Progress).ToArray(),
+                "%"));
+        }
+
+        var overdueRows = snapshots
+            .Where(item => item.Analytics.OverdueTasks > 0)
+            .OrderByDescending(item => item.Analytics.OverdueTasks)
+            .Take(8)
+            .ToList();
+
+        if (overdueRows.Count > 0)
+        {
+            charts.Add(new ErumiChartDto(
+                "bar",
+                "Task quá hạn theo dự án",
+                overdueRows.Select(item => item.Project.Name).ToArray(),
+                overdueRows.Select(item => (double)item.Analytics.OverdueTasks).ToArray(),
+                "task"));
+        }
+
+        return charts;
+    }
+
+    private static ErumiTableDto BuildWorkspaceProjectSnapshotTable(
+        string title,
+        IReadOnlyList<WorkspaceProjectSnapshot> snapshots)
+        => new(
+            title,
+            ProjectComparisonColumns(),
+            snapshots.Select(item => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>
+            {
+                ["name"] = item.Project.Name,
+                ["status"] = item.Project.Status,
+                ["totalTasks"] = item.Analytics.TotalTasks,
+                ["doneTasks"] = item.Analytics.DoneTasks,
+                ["progress"] = $"{item.Progress:0.#}%",
+                ["overdueTasks"] = item.Analytics.OverdueTasks,
+                ["actualHours"] = $"{item.Analytics.TotalActualHours:0.##}h",
+                ["risk"] = item.Risk
+            }).ToList(),
+            "Dữ liệu được truy vấn trực tiếp theo quyền truy cập hiện tại.");
+
+    private static ErumiTableColumnDto[] ProjectAttentionTaskColumns()
+        => new[]
+        {
+            new ErumiTableColumnDto("title", "Task"),
+            new ErumiTableColumnDto("status", "Trạng thái"),
+            new ErumiTableColumnDto("priority", "Ưu tiên"),
+            new ErumiTableColumnDto("assignee", "Người làm"),
+            new ErumiTableColumnDto("dueDate", "Deadline"),
+            new ErumiTableColumnDto("reasons", "Tín hiệu")
+        };
+
+    private static ErumiTableColumnDto[] WorkspaceAttentionTaskColumns()
+        => new[]
+        {
+            new ErumiTableColumnDto("project", "Dự án"),
+            new ErumiTableColumnDto("title", "Task"),
+            new ErumiTableColumnDto("status", "Trạng thái"),
+            new ErumiTableColumnDto("priority", "Ưu tiên"),
+            new ErumiTableColumnDto("assignee", "Người làm"),
+            new ErumiTableColumnDto("dueDate", "Deadline"),
+            new ErumiTableColumnDto("reasons", "Tín hiệu")
+        };
+
+    private static Dictionary<string, object?> BuildAttentionTaskRow(TaskAttentionDto item, bool includeProject)
+    {
+        var row = new Dictionary<string, object?>
+        {
+            ["title"] = item.Title,
+            ["status"] = item.Status,
+            ["priority"] = item.Priority,
+            ["assignee"] = string.IsNullOrWhiteSpace(item.AssigneeName) ? "Chưa phân công" : item.AssigneeName,
+            ["dueDate"] = item.DueDate?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) ?? "Chưa có",
+            ["reasons"] = item.AttentionReasons.Any() ? string.Join(", ", item.AttentionReasons) : "Cần theo dõi"
+        };
+
+        if (includeProject)
+        {
+            row["project"] = item.ProjectName;
+        }
+
+        return row;
+    }
+
+    private static ErumiActionDto[] SuggestedActions(params string[] labels)
+        => labels
+            .Where(label => !string.IsNullOrWhiteSpace(label))
+            .Select(label => new ErumiActionDto("suggested_action", label))
+            .ToArray();
+
+    private static string BuildRealtimeReason()
+        => $"Dữ liệu được truy vấn trực tiếp từ database lúc {DateTimeOffset.Now.ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture)}.";
+
+    private static double ProjectDataConfidence(ProjectAnalyticsDto data)
+    {
+        if (data.TotalTasks == 0)
+        {
+            return 0.72;
+        }
+
+        return data.MemberProductivity.Count == 0 ? 0.84 : 0.95;
+    }
+
+    private static double WorkspaceDataConfidence(
+        WorkspaceAnalyticsDto data,
+        IReadOnlyList<WorkspaceProjectSnapshot> snapshots)
+    {
+        if (data.TotalProjects == 0)
+        {
+            return 0.72;
+        }
+
+        return snapshots.Count == 0 ? 0.82 : 0.95;
+    }
+
     private static ErumiFileDto[] BuildProjectExportFiles(Guid projectId, string projectName)
         => new[]
         {
@@ -1285,6 +1921,133 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
         return "project_summary";
     }
 
+    private static string ClassifyWorkspaceIntent(string normalized)
+    {
+        if (ContainsAny(normalized, "rui ro", "qua han", "tre han", "cham tien do", "deadline", "risk"))
+        {
+            return "workspace_risk";
+        }
+
+        if (ContainsAny(normalized, "nang suat", "hieu suat", "workload", "khoi luong", "gio log", "time log", "tuan qua", "productivity"))
+        {
+            return "workspace_productivity";
+        }
+
+        if (IsWorkspaceProjectTableQuestion(normalized))
+        {
+            return "workspace_projects";
+        }
+
+        return "workspace_summary";
+    }
+
+    private static LocalResponseProfile AnalyzeLocalResponseProfile(string normalized, string intent)
+    {
+        var wantsBrief = WantsBriefAnswer(normalized);
+        if (wantsBrief)
+        {
+            return new LocalResponseProfile(
+                IncludeMetrics: false,
+                IncludeTables: false,
+                IncludeCharts: false,
+                IncludeActions: true,
+                FullReport: false);
+        }
+
+        var wantsFull = WantsFullReport(normalized) || intent.EndsWith("_analysis", StringComparison.OrdinalIgnoreCase) || intent == "project_analysis";
+        var wantsTable = WantsTable(normalized);
+        var wantsChart = WantsChart(normalized);
+        var wantsMetrics = WantsMetrics(normalized);
+        var analyticalIntent = intent.Contains("risk", StringComparison.OrdinalIgnoreCase)
+                               || intent.Contains("productivity", StringComparison.OrdinalIgnoreCase);
+
+        return new LocalResponseProfile(
+            IncludeMetrics: wantsFull || wantsMetrics || analyticalIntent,
+            IncludeTables: wantsFull || wantsTable,
+            IncludeCharts: wantsFull || wantsChart,
+            IncludeActions: true,
+            FullReport: wantsFull);
+    }
+
+    private static bool WantsBriefAnswer(string normalized)
+        => ContainsAny(
+            normalized,
+            "ngan gon",
+            "noi ngan",
+            "tra loi ngan",
+            "tom tat nhanh",
+            "chi can",
+            "mot cau",
+            "khong can bieu do",
+            "khong can bang",
+            "khong can thong ke");
+
+    private static bool WantsFullReport(string normalized)
+        => ContainsAny(
+            normalized,
+            "phan tich chi tiet",
+            "bao cao chi tiet",
+            "bao cao day du",
+            "day du",
+            "toan canh",
+            "tong hop day du",
+            "dashboard",
+            "insight day du");
+
+    private static bool WantsMetrics(string normalized)
+        => ContainsAny(
+            normalized,
+            "thong ke",
+            "so lieu",
+            "chi so",
+            "metric",
+            "metrics",
+            "bao nhieu",
+            "dem",
+            "tong so",
+            "ti le",
+            "ty le",
+            "phan tram");
+
+    private static bool WantsChart(string normalized)
+        => ContainsAny(
+            normalized,
+            "bieu do",
+            "do thi",
+            "chart",
+            "visual",
+            "pie",
+            "bar chart",
+            "line chart",
+            "ve hinh");
+
+    private static bool WantsTable(string normalized)
+        => ContainsAny(
+            normalized,
+            "bang",
+            "table",
+            "danh sach",
+            "liet ke",
+            "so sanh",
+            "compare",
+            "xep hang",
+            "rank",
+            "top ");
+
+    private static bool IsAssigneeQuestion(string normalized)
+        => ContainsAny(
+            normalized,
+            "ai dang lam",
+            "ai dang phu trach",
+            "ai phu trach",
+            "ai duoc giao",
+            "giao cho ai",
+            "dang giao cho ai",
+            "nguoi lam",
+            "assignee",
+            "owner task",
+            "phu trach task");
+
     private static bool IsTeamQuestion(string normalized)
         => IsBossQuestion(normalized)
            || ContainsAny(
@@ -1313,7 +2076,6 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             "bang du an",
             "danh sach du an",
             "liet ke du an",
-            "du an nao",
             "xep hang du an",
             "rank project",
             "rank du an");
@@ -1330,11 +2092,11 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             "danh sach cong viec",
             "liet ke task",
             "liet ke cong viec",
-            "task nao",
-            "cong viec nao");
+            "top task",
+            "top cong viec");
 
     private static bool IsTableQuestion(string normalized)
-        => ContainsAny(normalized, "bang", "table", "danh sach", "liet ke", "so sanh", "compare", "xep hang", "rank");
+        => WantsTable(normalized);
 
     private static bool IsExportQuestion(string normalized)
         => ContainsAny(
@@ -1412,6 +2174,15 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
 
         return "Thấp";
     }
+
+    private static int RiskWeight(string risk)
+        => risk switch
+        {
+            "Cao" => 3,
+            "Trung bình" => 2,
+            "Chưa đủ dữ liệu" => 1,
+            _ => 0
+        };
 
     private static string WorkloadLabel(int openTasks)
         => openTasks switch

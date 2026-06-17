@@ -1736,6 +1736,32 @@ public class GroupsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetMessagesAsync_WhenReactionSummaryUsesLegacyCountShape_IgnoresMalformedReactions()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Chat Group");
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+
+        await _messageRepo.AddAsync(new GroupMessage
+        {
+            WorkGroupId = group.Id,
+            UserId = ownerId,
+            Content = "Seeded message",
+            MessageType = "Text",
+            ReactionSummaryJson = """[{"emoji":"✅","count":5}]"""
+        });
+        await _uow.SaveChangesAsync();
+
+        var messages = await CreateService().GetMessagesAsync(group.Id);
+
+        messages.IsSuccess.Should().BeTrue(messages.Error);
+        messages.Data!.Items.Should().ContainSingle();
+        messages.Data.Items[0].Content.Should().Be("Seeded message");
+        messages.Data.Items[0].Reactions.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task GetMessagesAsync_WhenPollNoLongerExists_ReturnsDeletedPlaceholder()
     {
         var ownerId = Guid.NewGuid();
