@@ -24,6 +24,7 @@ const isDragging = ref(false)
 const activeTab = ref<'discover' | 'completed'>('discover')
 
 const isNewProject = !props.projectId
+const hasCompletedImports = computed(() => !!props.projectId && (props.importSessions?.length ?? 0) > 0)
 const acceptedTypes = '.csv,.xlsx,.tsv,.dsv,.txt,.psv,.json,.md,.markdown,.html,.htm,.docx,.zip'
 const tableExtensions = ['csv', 'xlsx', 'tsv', 'dsv', 'psv', 'json']
 const phaseOneDocumentExtensions = ['md', 'markdown', 'txt', 'html', 'htm', 'docx', 'zip']
@@ -197,7 +198,7 @@ function fileKindLabel(name: string) {
       <p>QALY đang kiểm tra các phiên import gần đây của dự án này.</p>
     </div>
 
-    <div v-else-if="projectId && importSessions?.length" class="completed-imports">
+    <div v-else-if="hasCompletedImports" class="completed-imports">
       <article v-for="session in importSessions" :key="session.id" class="completed-import">
         <div>
           <strong>{{ session.fileName }}</strong>

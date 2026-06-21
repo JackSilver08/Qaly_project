@@ -156,6 +156,8 @@ const hasGeneratedDraft = ref(false)
 const actionItems = ref<GroupAiActionItem[]>([])
 const actionWarnings = ref<string[]>([])
 const hasGeneratedActions = ref(false)
+const showActionItemsList = computed(() => hasGeneratedActions.value && actionItems.value.length > 0)
+const showEmptyActionPlaceholder = computed(() => hasGeneratedActions.value && actionItems.value.length === 0)
 
 const hasGroup = computed(() => Boolean(props.groupId))
 
@@ -693,7 +695,7 @@ function confidenceLabel(value: number) {
           </div>
         </div>
 
-        <div v-if="hasGeneratedActions && actionItems.length" class="action-items-list">
+        <div v-if="showActionItemsList" class="action-items-list">
           <article v-for="item in actionItems" :key="`${item.title}-${item.confidence}`" class="group-ai-item">
             <div class="group-ai-item__title">
               <ListChecks :size="15" />
@@ -715,7 +717,7 @@ function confidenceLabel(value: number) {
           </article>
         </div>
 
-        <div v-else-if="hasGeneratedActions && !actionItems.length" class="panel-empty-placeholder">
+        <div v-else-if="showEmptyActionPlaceholder" class="panel-empty-placeholder">
           <ListChecks :size="24" class="muted-icon" />
           <span>Không phát hiện việc cần làm nào trong đoạn chat gần đây.</span>
         </div>

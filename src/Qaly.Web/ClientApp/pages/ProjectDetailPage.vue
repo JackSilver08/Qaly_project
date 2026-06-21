@@ -147,6 +147,25 @@ const kanbanTasksByStatus = computed<Record<string, DashboardTask[]>>(() =>
     statusColumns.value.map((status: string) => [status, tasksByStatus(status)]),
   ),
 )
+const canShowCapacityTab = computed(() => activeProjectTab.value === 'capacity' && !!selectedProject.value)
+const canShowActivityTab = computed(() => activeProjectTab.value === 'activity' && !!selectedProject.value)
+const canShowGanttTab = computed(() => activeProjectTab.value === 'gantt' && !!selectedProject.value)
+const canShowWebhooksTab = computed(() => activeProjectTab.value === 'webhooks' && !!selectedProject.value)
+const canShowImportModal = computed(() => showImportModal.value && !!selectedProject.value)
+const canShowTaskComments = computed(() => !!selectedTask.value && !selectedTask.value.isRestricted)
+
+function canManageTask(task: DashboardTask) {
+  return isProjectAdmin.value && !task.isRestricted
+}
+
+function canReviewEvidence(attachment: any) {
+  return isProjectAdmin.value && attachment.evidenceApprovalStatus !== 'Approved'
+}
+
+function handleTaskTitleDoubleClick(task: DashboardTask) {
+  if (task.isRestricted) return
+  startQuickEdit(task)
+}
 
 function renderMarkdown(value: string) {
   return DOMPurify.sanitize(markdown.render(value || ''))
@@ -402,7 +421,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
         <ProjectStatsTab :stats="selectedProjectStats" />
       </div>
 
-      <div v-if="activeProjectTab === 'capacity' && selectedProject" class="tab-pane reveal">
+      <div v-if="canShowCapacityTab" class="tab-pane reveal">
         <ProjectWorkloadTab :project-id="selectedProject.id" />
       </div>
 
@@ -569,7 +588,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                       @keyup.enter="saveQuickEdit"
                       @click.stop
                     />
-                    <strong v-else @dblclick.stop="!task.isRestricted && startQuickEdit(task)">
+                    <strong v-else @dblclick.stop="handleTaskTitleDoubleClick(task)">
                       <span v-if="task.isPrivate" title="Nhiệm vụ riêng tư">Khóa</span>
                       <span v-if="task.isPinned" title="Nhiệm vụ đã ghim">Ghim</span>
                       {{ task.title }}
@@ -578,7 +597,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                     <div class="task-card-actions">
                       <span :class="`priority priority--${task.priority.toLowerCase()}`">{{ task.priority }}</span>
 
-                      <div v-if="isProjectAdmin && !task.isRestricted" class="task-menu-dropdown">
+                      <div v-if="canManageTask(task)" class="task-menu-dropdown">
                         <button class="icon-button icon-button--small" type="button" @click.stop="toggleTaskMenu(task.id)">
                           <MoreHorizontal :size="14" />
                         </button>
@@ -649,7 +668,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                 <span class="meta-item"><MessageSquare :size="12" /> {{ task.commentCount }}</span>
                 <span class="meta-item">▲ {{ task.upvoteCount || 0 }}</span>
                 <span v-if="isTaskOverdue(task)" class="overdue-tag">Quá hạn</span>
-                <div v-if="isProjectAdmin && !task.isRestricted" class="task-menu-dropdown task-list-menu">
+                <div v-if="canManageTask(task)" class="task-menu-dropdown task-list-menu">
                   <button class="icon-button icon-button--small" type="button" @click.stop="toggleTaskMenu(task.id)">
                     <MoreHorizontal :size="14" />
                   </button>
@@ -684,7 +703,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
             </div>
           </div>
 
-          <div v-if="selectedTask && !selectedTask.isRestricted" class="comment-list">
+          <div v-if="canShowTaskComments" class="comment-list">
             <div class="assignment-insight glass-card">
               <div class="section-header section-header--space">
                 <strong>Gợi ý assignee AI</strong>
@@ -718,7 +737,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
             <div class="time-tracking-section">
               <div class="section-header">
                 <Clock :size="16" />
-                <strong>Nhật ký hoạt động & Giờ làm</strong>
+                <strong>Nhật ký hoạt động và giờ làm</strong>
               </div>
               
               <div class="timer-display glass-card">
@@ -766,7 +785,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
               <div class="section-header">
                 <div style="display: flex; align-items: center; gap: 8px;">
                   <File :size="16" />
-                  <strong>Tệp đính kèm & Minh chứng</strong>
+                  <strong>Tệp đính kèm và minh chứng</strong>
                 </div>
                 <label class="upload-pill">
                   <input type="file" @change="uploadAttachment" />
@@ -802,7 +821,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                         {{ attachment.evidenceApprovalStatus === 'Approved' ? 'Đã duyệt' : (attachment.evidenceApprovalStatus === 'Rejected' ? 'Từ chối' : 'Chờ duyệt') }}
                       </span>
                       
-                      <div v-if="isProjectAdmin && attachment.evidenceApprovalStatus !== 'Approved'" class="manager-actions">
+                      <div v-if="canReviewEvidence(attachment)" class="manager-actions">
                         <button class="approve-btn" title="Duyệt minh chứng" @click="reviewEvidence(attachment.id, true, '')">
                           <Check :size="14" /> Duyệt
                         </button>
@@ -890,7 +909,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
         />
       </div>
 
-      <div v-if="activeProjectTab === 'activity' && selectedProject" class="tab-pane reveal">
+      <div v-if="canShowActivityTab" class="tab-pane reveal">
         <ProjectActivityTab :project-id="selectedProject.id" :project-name="selectedProject.name" />
       </div>
 
@@ -898,7 +917,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
         <ProjectWikiTab :project-name="selectedProject?.name ?? ''" :is-admin="isProjectAdmin" />
       </div>
 
-      <div v-if="activeProjectTab === 'gantt' && selectedProject" class="tab-pane reveal">
+      <div v-if="canShowGanttTab" class="tab-pane reveal">
         <ProjectGanttTab
           :project-id="selectedProject.id"
           :project-members="selectedProject.members"
@@ -906,12 +925,12 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
         />
       </div>
 
-      <div v-if="activeProjectTab === 'webhooks' && selectedProject" class="tab-pane reveal">
+      <div v-if="canShowWebhooksTab" class="tab-pane reveal">
         <WebhooksTab :project-id="selectedProject.id" />
       </div>
 
       <ImportModal
-        v-if="showImportModal && selectedProject"
+        v-if="canShowImportModal"
         :project-id="selectedProject.id"
         :project-name="selectedProject.name"
         :project-members="selectedProject.members"

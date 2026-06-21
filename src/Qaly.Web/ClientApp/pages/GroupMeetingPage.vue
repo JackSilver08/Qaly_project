@@ -91,6 +91,17 @@ const isGeneratingChecknote = ref(false);
 const checknoteResult = ref<any>(null);
 const projectMembers = ref<any[]>([]);
 const isCreatingTask = ref<number | null>(null);
+const showMeetingFrame = computed(() => active.value && !!roomName.value);
+const showChecknoteSetup = computed(() => !checknoteResult.value && !isGeneratingChecknote.value);
+const showChecknoteHint = computed(() => transcriptList.value.length === 0);
+
+function showRemoteVideo(tile: any) {
+  return tile.cameraOn && !!tile.videoTrack;
+}
+
+function showRemoteCameraOff(tile: any) {
+  return !tile.cameraOn || !tile.videoTrack;
+}
 
 const { saveBuffer, getBuffer, clearBuffer } = useMeetingRecovery();
 const { currentUser, dashboard } = useDashboardContext();
@@ -927,7 +938,7 @@ function disconnectLiveKit() {
             </div>
           </div>
 
-          <div v-if="active && roomName" class="meeting-frame-shell">
+          <div v-if="showMeetingFrame" class="meeting-frame-shell">
             <div class="qaly-meet-stage" :class="`qaly-meet-stage--count-${Math.min(stageTileCount, 4)}`">
               <article class="meeting-video-tile local-participant-tile">
                 <video
@@ -954,7 +965,7 @@ function disconnectLiveKit() {
                 class="meeting-video-tile remote-participant-tile"
               >
                 <video
-                  v-show="tile.cameraOn && tile.videoTrack"
+                  v-show="showRemoteVideo(tile)"
                   :ref="(el) => setRemoteVideoRef(tile.identity, el as HTMLVideoElement | null)"
                   class="remote-video"
                   autoplay
@@ -964,7 +975,7 @@ function disconnectLiveKit() {
                   :ref="(el) => setRemoteAudioRef(tile.identity, el as HTMLAudioElement | null)"
                   autoplay
                 ></audio>
-                <div v-if="!tile.cameraOn || !tile.videoTrack" class="camera-off-state">
+                <div v-if="showRemoteCameraOff(tile)" class="camera-off-state">
                   <div class="meeting-avatar meeting-avatar--large">{{ tile.initials }}</div>
                   <span><VideoOff :size="18" /> Camera đang tắt</span>
                 </div>
@@ -1143,7 +1154,7 @@ function disconnectLiveKit() {
           <!-- Tab 3: AI Checknote (Biên bản AI) -->
           <div v-else-if="activeSidebarTab === 'checknote'" class="tab-pane checknote-pane">
             <!-- Project Selector and Generate Button -->
-            <div v-if="!checknoteResult && !isGeneratingChecknote" class="checknote-setup">
+            <div v-if="showChecknoteSetup" class="checknote-setup">
               <label class="checknote-label">Chọn dự án để đồng bộ nhiệm vụ:</label>
               <select v-model="selectedProjectId" class="checknote-select">
                 <option value="">-- Chọn dự án --</option>
@@ -1159,7 +1170,7 @@ function disconnectLiveKit() {
               >
                 <Sparkles :size="16" /> Tạo biên bản AI
               </button>
-              <p class="checknote-hint" v-if="transcriptList.length === 0">
+              <p class="checknote-hint" v-if="showChecknoteHint">
                 Nhật ký trống, không thể phân tích biên bản.
               </p>
             </div>

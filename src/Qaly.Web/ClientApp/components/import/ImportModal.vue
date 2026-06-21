@@ -45,6 +45,15 @@ const importSessions = ref<any[]>([])
 const isLoadingImportSessions = ref(false)
 
 const isNewProject = computed(() => !props.projectId)
+const showDocumentPreviewStep = computed(() => step.value === 2 && !!parseResult.value && importMode.value === 'document')
+const showZipPreviewStep = computed(() => step.value === 2 && !!parseResult.value && importMode.value === 'zip')
+const showTablePreviewStep = computed(() => step.value === 2 && !!parseResult.value && importMode.value === 'table')
+const showDocumentConfirmStep = computed(() => step.value === 3 && !!parseResult.value && importMode.value === 'document')
+const showZipConfirmStep = computed(() => step.value === 3 && !!parseResult.value && importMode.value === 'zip')
+const showTableConfirmStep = computed(() => step.value === 3 && !!parseResult.value && importMode.value === 'table')
+const showFinalStep = computed(() => step.value === 4 && !!importResult.value)
+const showZipResults = computed(() => importMode.value === 'zip' && (importResult.value?.pages?.length ?? 0) > 0)
+const showTableDistribution = computed(() => importMode.value === 'table' && Object.keys(importResult.value?.statusDistribution ?? {}).length > 0)
 
 const stepLabels = computed(() => importMode.value === 'table'
   ? ['Khám phá', 'Ánh xạ cột', 'Xác nhận', 'Hoàn tất']
@@ -362,7 +371,7 @@ onMounted(loadImportSessions)
           @next="parseFile"
         />
 
-        <div v-if="step === 2 && parseResult && importMode === 'document'" class="import-step document-preview">
+        <div v-if="showDocumentPreviewStep" class="import-step document-preview">
           <div class="document-preview__hero">
             <FileText :size="26" />
             <div>
@@ -410,7 +419,7 @@ onMounted(loadImportSessions)
           </div>
         </div>
 
-        <div v-if="step === 2 && parseResult && importMode === 'zip'" class="import-step document-preview">
+        <div v-if="showZipPreviewStep" class="import-step document-preview">
           <div class="document-preview__hero">
             <Archive :size="26" />
             <div>
@@ -458,7 +467,7 @@ onMounted(loadImportSessions)
 
         <!-- Step 2: Mapping -->
         <ImportMappingStep
-          v-if="step === 2 && parseResult && importMode === 'table'"
+          v-if="showTablePreviewStep"
           :parse-result="parseResult"
           :mappings="mappings"
           :first-row-is-header="firstRowIsHeader"
@@ -483,7 +492,7 @@ onMounted(loadImportSessions)
           @next="goToConfirm"
         />
 
-        <div v-if="step === 3 && parseResult && importMode === 'document'" class="import-step document-confirm">
+        <div v-if="showDocumentConfirmStep" class="import-step document-confirm">
           <div class="confirm-hero">
             <div class="confirm-icon"><FileText :size="34" /></div>
             <h3>Xác nhận nhập tài liệu</h3>
@@ -517,7 +526,7 @@ onMounted(loadImportSessions)
           </div>
         </div>
 
-        <div v-if="step === 3 && parseResult && importMode === 'zip'" class="import-step document-confirm">
+        <div v-if="showZipConfirmStep" class="import-step document-confirm">
           <div class="confirm-hero">
             <div class="confirm-icon"><Archive :size="34" /></div>
             <h3>Xác nhận nhập gói ZIP</h3>
@@ -557,7 +566,7 @@ onMounted(loadImportSessions)
 
         <!-- Step 3: Confirm (NEW — preview BEFORE import) -->
         <ImportConfirmStep
-          v-if="step === 3 && parseResult && importMode === 'table'"
+          v-if="showTableConfirmStep"
           :parse-result="parseResult"
           :mappings="mappings"
           :skip-duplicates="skipDuplicates"
@@ -575,7 +584,7 @@ onMounted(loadImportSessions)
         />
 
         <!-- Step 4: Result -->
-        <div v-if="step === 4 && importResult" class="import-step">
+        <div v-if="showFinalStep" class="import-step">
           <div class="import-result-hero">
             <div class="result-check-anim">
               <svg viewBox="0 0 52 52" class="checkmark-svg">
@@ -602,7 +611,7 @@ onMounted(loadImportSessions)
             </div>
           </div>
 
-          <div v-if="importMode === 'zip' && importResult.pages?.length" class="zip-result-list">
+          <div v-if="showZipResults" class="zip-result-list">
             <article v-for="page in importResult.pages" :key="page.pageId" class="zip-result-item">
               <strong>{{ page.title }}</strong>
               <span>{{ page.sourceFileName }} - {{ page.blockCount }} khối nội dung</span>
@@ -619,7 +628,7 @@ onMounted(loadImportSessions)
           </div>
 
           <!-- Status distribution -->
-          <div v-if="importMode === 'table' && Object.keys(importResult.statusDistribution).length" class="import-distribution">
+          <div v-if="showTableDistribution" class="import-distribution">
             <p class="dist-title">Phân bố theo cột Kanban</p>
             <div v-for="(count, status) in importResult.statusDistribution" :key="status" class="dist-row">
               <span class="dist-status">{{ status }}</span>

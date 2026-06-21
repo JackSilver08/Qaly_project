@@ -48,6 +48,14 @@ function toggleTimelinePermission(member: Member, enabled: boolean) {
     canViewUnseenTaskSignal: enabled,
   })
 }
+
+function canManageMember(member: Member) {
+  return props.isAdmin && member.role !== 'Owner'
+}
+
+function canToggleTimeline(member: Member) {
+  return member.canViewProjectTimeline && member.canViewTaskRisk
+}
 </script>
 
 <template>
@@ -98,7 +106,7 @@ function toggleTimelinePermission(member: Member, enabled: boolean) {
 
         <div class="member-role-actions">
           <!-- Role Selector for Admin -->
-          <div v-if="isAdmin && member.role !== 'Owner'" class="role-selector">
+          <div v-if="canManageMember(member)" class="role-selector">
             <select :value="member.role" @change="e => $emit('update-role', member.id, (e.target as HTMLSelectElement).value)">
               <option v-for="role in roles" :key="role" :value="role">{{ role }}</option>
             </select>
@@ -109,7 +117,7 @@ function toggleTimelinePermission(member: Member, enabled: boolean) {
           </span>
 
           <button 
-            v-if="isAdmin && member.role !== 'Owner'" 
+            v-if="canManageMember(member)" 
             class="icon-button icon-button--small" 
             style="color: var(--peach-500); margin-left: 12px;" 
             type="button" 
@@ -119,10 +127,10 @@ function toggleTimelinePermission(member: Member, enabled: boolean) {
           </button>
         </div>
 
-        <label v-if="isAdmin && member.role !== 'Owner'" class="timeline-permission-toggle">
+        <label v-if="canManageMember(member)" class="timeline-permission-toggle">
           <input
             type="checkbox"
-            :checked="member.canViewProjectTimeline && member.canViewTaskRisk"
+            :checked="canToggleTimeline(member)"
             @change="e => toggleTimelinePermission(member, (e.target as HTMLInputElement).checked)"
           />
           <span>Được xem timeline dự án</span>

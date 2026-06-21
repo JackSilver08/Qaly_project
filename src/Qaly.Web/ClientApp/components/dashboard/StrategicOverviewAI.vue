@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { BrainCircuit, Activity, Target, AlertCircle, PlayCircle, BarChart3 } from 'lucide-vue-next'
 import { apiJson } from '../../utils/api-client'
 import type { StrategicOverviewDto, AiStrategyResponseDto } from '../../types'
@@ -9,6 +9,7 @@ const isLoadingAi = ref(false)
 
 const statsData = ref<StrategicOverviewDto | null>(null)
 const aiData = ref<AiStrategyResponseDto | null>(null)
+const canGenerateAiInsight = computed(() => !aiData.value && !isLoadingAi.value)
 
 const loadStats = async () => {
   try {
@@ -52,7 +53,7 @@ onMounted(() => {
       </div>
       <div class="header-actions">
         <button 
-          v-if="!aiData && !isLoadingAi" 
+          v-if="canGenerateAiInsight" 
           @click="generateAiInsight" 
           class="ai-button"
         >
