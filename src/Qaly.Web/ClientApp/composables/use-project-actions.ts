@@ -108,9 +108,50 @@ export function useProjectActions(
     }
   }
 
-  function selectProject(projectId: string) {
-    activeProjectId.value = projectId
-    void router.push(`/projects/${projectId}`)
+  async function archiveProject(projectId: string) {
+    const project = projects.value.find((item) => item.id === projectId)
+    if (!project) return
+    if (!confirm(`Bạn có chắc muốn lưu trữ dự án "${project.name}"? Dự án sẽ chuyển sang chế độ chỉ đọc.`)) return
+
+    try {
+      await apiResult<ProjectDto>(`/api/projects/${projectId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          name: project.name,
+          description: project.description,
+          status: 'Archived',
+          startDate: null,
+          endDate: project.endDate,
+        }),
+      })
+      await loadDashboard()
+      showSuccess(`Đã lưu trữ dự án "${project.name}"`)
+    } catch (error) {
+      showError(errorMessage(error, 'Không thể lưu trữ dự án'))
+    }
+  }
+
+  async function restoreProject(projectId: string) {
+    const project = projects.value.find((item) => item.id === projectId)
+    if (!project) return
+    if (!confirm(`Khôi phục dự án "${project.name}" về trạng thái hoạt động?`)) return
+
+    try {
+      await apiResult<ProjectDto>(`/api/projects/${projectId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          name: project.name,
+          description: project.description,
+          status: 'Active',
+          startDate: null,
+          endDate: project.endDate,
+        }),
+      })
+      await loadDashboard()
+      showSuccess(`Đã khôi phục dự án "${project.name}"`)
+    } catch (error) {
+      showError(errorMessage(error, 'Không thể khôi phục dự án'))
+    }
   }
 
   return {
@@ -127,5 +168,8 @@ export function useProjectActions(
     saveProjectEdit,
     deleteProject,
     selectProject,
+    archiveProject,
+    restoreProject,
   }
 }
+

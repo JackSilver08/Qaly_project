@@ -18,7 +18,12 @@ public record ProjectDto(
     DateTimeOffset CreatedAt,
     Guid? OrganizationId,
     string? OrganizationName,
-    Guid? SourceGroupId = null);
+    Guid? SourceGroupId = null,
+    bool EnableOnHold = true,
+    bool EnableInReview = true,
+    bool RequireEvidenceToDone = false,
+    bool RestrictTransitionsToAdmin = false,
+    DateTimeOffset? DeletedAt = null);
 
 public record CreateProjectDto(
     string Name,
@@ -38,7 +43,11 @@ public record UpdateProjectDto(
     string Status,
     DateTimeOffset? StartDate,
     DateTimeOffset? EndDate,
-    Guid? OrganizationId = null);
+    Guid? OrganizationId = null,
+    bool? EnableOnHold = null,
+    bool? EnableInReview = null,
+    bool? RequireEvidenceToDone = null,
+    bool? RestrictTransitionsToAdmin = null);
 
 public record ProjectLabelDto(
     Guid Id,
@@ -70,7 +79,10 @@ public record OrganizationDto(
     string OwnerName,
     int MemberCount,
     int ProjectCount,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? AllowedEmailDomains = null,
+    string? WorkspaceIcon = null,
+    string? WorkspaceCover = null);
 
 public record CreateOrganizationDto(
     string Name,
@@ -81,7 +93,10 @@ public record UpdateOrganizationDto(
     string Name,
     string? Code,
     string? Description,
-    bool IsActive = true);
+    bool IsActive = true,
+    string? AllowedEmailDomains = null,
+    string? WorkspaceIcon = null,
+    string? WorkspaceCover = null);
 
 public record OrganizationMemberDto(
     Guid UserId,

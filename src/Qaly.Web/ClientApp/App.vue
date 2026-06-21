@@ -88,6 +88,8 @@ const {
   saveProjectEdit,
   deleteProject,
   selectProject: baseSelectProject,
+  archiveProject,
+  restoreProject,
 } = useProjectActions(projects, activeProjectId, loadDashboard);
 
 const {
@@ -121,7 +123,17 @@ const navigation: ShellNavItem[] = [
   { label: "Phân tích", to: "/analytics", icon: BarChart3 },
 ];
 
-const statusColumns = ["Todo", "InProgress", "OnHold", "InReview", "Done"];
+const statusColumns = computed(() => {
+  const cols = ["Todo", "InProgress"];
+  if (!selectedProject.value || selectedProject.value.enableOnHold !== false) {
+    cols.push("OnHold");
+  }
+  if (!selectedProject.value || selectedProject.value.enableInReview !== false) {
+    cols.push("InReview");
+  }
+  cols.push("Done");
+  return cols;
+});
 const priorities = ["Low", "Medium", "High", "Critical"];
 
 const notifications = ref<NotificationDto[]>([]);
@@ -1053,7 +1065,7 @@ function nextStatuses(status: string) {
   };
 
   return (allowedTransitions[status] ?? []).filter((item) =>
-    statusColumns.includes(item),
+    statusColumns.value.includes(item),
   );
 }
 
@@ -1103,6 +1115,8 @@ provide(dashboardContextKey, {
   addManualTimeEntry,
   addMember,
   archivedProjectCards,
+  archiveProject,
+  restoreProject,
   assignedTaskCards,
   attachments,
   beginEditProject,

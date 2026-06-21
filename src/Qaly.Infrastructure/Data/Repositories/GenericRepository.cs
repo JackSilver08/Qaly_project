@@ -60,6 +60,12 @@ public class GenericRepository<T> : IRepository<T> where T : BaseEntity
         return Task.CompletedTask;
     }
 
+    public Task HardDeleteAsync(T entity, CancellationToken cancellationToken = default)
+    {
+        _dbSet.Remove(entity);
+        return Task.CompletedTask;
+    }
+
     public async Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken = default)
         => await _dbSet.AnyAsync(e => e.Id == id, cancellationToken);
 

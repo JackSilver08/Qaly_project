@@ -873,14 +873,42 @@ public partial class DataSeeder
             CreatedAt = now.AddDays(-3).AddHours(5)
         });
 
+        var file1 = new PhysicalFile
+        {
+            ContentHash = "demo_hash_storyline",
+            FilePath = "/uploads/demo/projects/qaly-demo-storyline.pdf",
+            FileSize = 1_204_912,
+            ReferenceCount = 1
+        };
+        var file2 = new PhysicalFile
+        {
+            ContentHash = "demo_hash_evidence_flow",
+            FilePath = "/uploads/demo/tasks/evidence-review-flow.png",
+            FileSize = 428_640,
+            ReferenceCount = 1
+        };
+        var file3 = new PhysicalFile
+        {
+            ContentHash = "demo_hash_checklist",
+            FilePath = "/uploads/demo/tasks/store-training-checklist.xlsx",
+            FileSize = 316_004,
+            ReferenceCount = 1
+        };
+        var file4 = new PhysicalFile
+        {
+            ContentHash = "demo_hash_sku",
+            FilePath = "/uploads/demo/comments/sku-mismatch-sample.csv",
+            FileSize = 18_228,
+            ReferenceCount = 1
+        };
+
         await _context.TaskAttachments.AddRangeAsync(
             new TaskAttachment
             {
                 ProjectId = tasks["workos-kpi-dashboard"].ProjectId,
                 UploadedById = U("admin@qaly.dev").Id,
                 FileName = "qaly-demo-storyline.pdf",
-                FilePath = "/uploads/demo/projects/qaly-demo-storyline.pdf",
-                FileSize = 1_204_912,
+                PhysicalFile = file1,
                 ContentType = "application/pdf",
                 Scope = "Project",
                 UploadedAt = now.AddDays(-4),
@@ -891,8 +919,7 @@ public partial class DataSeeder
                 TaskItemId = tasks["workos-evidence-flow"].Id,
                 UploadedById = U("tuan.kiet@qaly.dev").Id,
                 FileName = "evidence-review-flow.png",
-                FilePath = "/uploads/demo/tasks/evidence-review-flow.png",
-                FileSize = 428_640,
+                PhysicalFile = file2,
                 ContentType = "image/png",
                 Scope = "Task",
                 IsEvidence = true,
@@ -908,8 +935,7 @@ public partial class DataSeeder
                 TaskItemId = tasks["nova-store-training"].Id,
                 UploadedById = U("thu.ha@qaly.dev").Id,
                 FileName = "store-training-checklist.xlsx",
-                FilePath = "/uploads/demo/tasks/store-training-checklist.xlsx",
-                FileSize = 316_004,
+                PhysicalFile = file3,
                 ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 Scope = "Task",
                 IsEvidence = true,
@@ -922,8 +948,7 @@ public partial class DataSeeder
                 CommentId = comments[2].Id,
                 UploadedById = U("bao.ngoc@qaly.dev").Id,
                 FileName = "sku-mismatch-sample.csv",
-                FilePath = "/uploads/demo/comments/sku-mismatch-sample.csv",
-                FileSize = 18_228,
+                PhysicalFile = file4,
                 ContentType = "text/csv",
                 Scope = "Comment",
                 UploadedAt = now.AddDays(-1).AddHours(3),

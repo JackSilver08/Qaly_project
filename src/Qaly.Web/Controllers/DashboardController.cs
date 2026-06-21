@@ -188,7 +188,11 @@ public partial class DashboardController : BaseApiController
                             isRestricted ? 0 : task.Attachments.Count);
                     }).ToList(),
                     project.CreatedAt,
-                    project.EndDate);
+                    project.EndDate,
+                    project.EnableOnHold,
+                    project.EnableInReview,
+                    project.RequireEvidenceToDone,
+                    project.RestrictTransitionsToAdmin);
             })
             .ToList();
 
@@ -812,7 +816,11 @@ public sealed record DashboardProjectResponse(
     IReadOnlyList<DashboardProjectMemberResponse> Members,
     IReadOnlyList<DashboardTaskResponse> Tasks,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? EndDate);
+    DateTimeOffset? EndDate,
+    bool EnableOnHold = true,
+    bool EnableInReview = true,
+    bool RequireEvidenceToDone = false,
+    bool RestrictTransitionsToAdmin = false);
 
 public sealed record DashboardProjectMemberResponse(
     Guid UserId,

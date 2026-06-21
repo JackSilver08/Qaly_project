@@ -18,4 +18,17 @@ public record TaskAttachmentDto(
     Guid? EvidenceReviewedById,
     string? EvidenceReviewedByName,
     DateTimeOffset? EvidenceReviewedAt,
-    string? EvidenceReviewNote);
+    string? EvidenceReviewNote,
+    string? ContentHash = null);
+
+public record DuplicateFileDto(
+    Guid Id,
+    string Name,
+    string Size,
+    string Path,
+    string DuplicateOf);
+
+public record DeduplicateResultDto(
+    int TotalProcessed,
+    int TotalMerged,
+    long BytesSaved);

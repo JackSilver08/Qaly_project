@@ -64,6 +64,22 @@ public class AttachmentsController : BaseApiController
         var result = await _attachmentService.ReviewEvidenceAsync(id, request.Approve, request.ReviewNote, ct);
         return StatusCode(result.StatusCode, result);
     }
+
+    [Authorize(Roles = "Admin")]
+    [HttpGet("duplicates")]
+    public async Task<IActionResult> GetDuplicates(CancellationToken ct)
+    {
+        var result = await _attachmentService.GetDuplicatesAsync(ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpPost("deduplicate")]
+    public async Task<IActionResult> Deduplicate(CancellationToken ct)
+    {
+        var result = await _attachmentService.DeduplicateAsync(ct);
+        return StatusCode(result.StatusCode, result);
+    }
 }
 
 public sealed record UpdateEvidenceFlagRequest(bool IsEvidence);

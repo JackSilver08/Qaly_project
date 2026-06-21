@@ -141,10 +141,10 @@ const draggingTask = ref<DashboardTask | null>(null)
 const taskBoardView = ref<'kanban' | 'list'>('kanban')
 const markdown = new MarkdownIt({ linkify: true, breaks: true })
 
-const filteredTaskList = computed(() => statusColumns.flatMap((status: string) => tasksByStatus(status)))
+const filteredTaskList = computed(() => statusColumns.value.flatMap((status: string) => tasksByStatus(status)))
 const kanbanTasksByStatus = computed<Record<string, DashboardTask[]>>(() =>
   Object.fromEntries(
-    statusColumns.map((status: string) => [status, tasksByStatus(status)]),
+    statusColumns.value.map((status: string) => [status, tasksByStatus(status)]),
   ),
 )
 
@@ -317,7 +317,7 @@ const onDragEnd = async (evt: {
   const taskId = evt.item.dataset.id
   const newStatus = kanbanStatusFromElement(evt.to)
   const project = selectedProject.value
-  if (!taskId || !newStatus || !project || !statusColumns.includes(newStatus)) {
+  if (!taskId || !newStatus || !project || !statusColumns.value.includes(newStatus)) {
     await loadDashboard()
     showError('Không thể xác định cột đích khi kéo thả nhiệm vụ.')
     return

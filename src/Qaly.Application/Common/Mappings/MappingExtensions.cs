@@ -38,7 +38,12 @@ public static class MappingExtensions
             project.CreatedAt,
             project.OrganizationId,
             project.Organization?.Name,
-            project.SourceGroupId);
+            project.SourceGroupId,
+            project.EnableOnHold,
+            project.EnableInReview,
+            project.RequireEvidenceToDone,
+            project.RestrictTransitionsToAdmin,
+            project.DeletedAt);
 
     public static Project ToEntity(this CreateProjectDto dto)
         => new()
@@ -62,6 +67,11 @@ public static class MappingExtensions
         project.Status = dto.Status;
         project.StartDate = dto.StartDate;
         project.EndDate = dto.EndDate;
+
+        if (dto.EnableOnHold.HasValue) project.EnableOnHold = dto.EnableOnHold.Value;
+        if (dto.EnableInReview.HasValue) project.EnableInReview = dto.EnableInReview.Value;
+        if (dto.RequireEvidenceToDone.HasValue) project.RequireEvidenceToDone = dto.RequireEvidenceToDone.Value;
+        if (dto.RestrictTransitionsToAdmin.HasValue) project.RestrictTransitionsToAdmin = dto.RestrictTransitionsToAdmin.Value;
     }
 
     public static OrganizationDto ToDto(this Organization organization)
@@ -75,7 +85,10 @@ public static class MappingExtensions
             organization.Owner?.FullName ?? string.Empty,
             organization.Members?.Count ?? 0,
             organization.Projects?.Count ?? 0,
-            organization.CreatedAt);
+            organization.CreatedAt,
+            organization.AllowedEmailDomains,
+            organization.WorkspaceIcon,
+            organization.WorkspaceCover);
 
     public static ProjectLabelDto ToDto(this ProjectLabel label)
         => new(label.Id, label.Name, label.Color, label.CreatedAt);
@@ -305,5 +318,6 @@ public static class MappingExtensions
             attachment.EvidenceReviewedById,
             attachment.EvidenceReviewedBy?.FullName,
             attachment.EvidenceReviewedAt,
-            attachment.EvidenceReviewNote);
+            attachment.EvidenceReviewNote,
+            attachment.ContentHash);
 }

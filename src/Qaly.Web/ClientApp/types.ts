@@ -36,6 +36,10 @@ export interface DashboardProject {
     tasks: DashboardTask[];
     createdAt: string;
     endDate: string | null;
+    enableOnHold: boolean;
+    enableInReview: boolean;
+    requireEvidenceToDone: boolean;
+    restrictTransitionsToAdmin: boolean;
 }
 
 export interface DashboardProjectMember {

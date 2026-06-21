@@ -12,6 +12,11 @@ public class Project : BaseEntity, ISoftDeleteEntity
     public bool IsDeleted { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
 
+    public bool EnableOnHold { get; set; } = true;
+    public bool EnableInReview { get; set; } = true;
+    public bool RequireEvidenceToDone { get; set; }
+    public bool RestrictTransitionsToAdmin { get; set; }
+
     // Foreign keys
     public Guid OwnerId { get; set; }
     public Guid? OrganizationId { get; set; }

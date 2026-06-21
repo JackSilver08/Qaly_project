@@ -12,6 +12,7 @@ namespace Qaly.Application.Services;
 public class AttachmentService : IAttachmentService
 {
     private readonly IRepository<TaskAttachment> _attachmentRepo;
+    private readonly IRepository<PhysicalFile> _physicalFileRepo;
     private readonly IRepository<TaskItem> _taskRepo;
     private readonly IRepository<ProjectMember> _memberRepo;
     private readonly IRepository<OrganizationMember> _organizationMemberRepo;
@@ -23,6 +24,7 @@ public class AttachmentService : IAttachmentService
 
     public AttachmentService(
         IRepository<TaskAttachment> attachmentRepo,
+        IRepository<PhysicalFile> physicalFileRepo,
         IRepository<TaskItem> taskRepo,
         IRepository<ProjectMember> memberRepo,
         IRepository<OrganizationMember> organizationMemberRepo,
@@ -33,6 +35,7 @@ public class AttachmentService : IAttachmentService
         INotificationService notificationService)
     {
         _attachmentRepo = attachmentRepo;
+        _physicalFileRepo = physicalFileRepo;
         _taskRepo = taskRepo;
         _memberRepo = memberRepo;
         _organizationMemberRepo = organizationMemberRepo;
@@ -60,6 +63,7 @@ public class AttachmentService : IAttachmentService
             .AsNoTracking()
             .Include(attachment => attachment.UploadedBy)
             .Include(attachment => attachment.EvidenceReviewedBy)
+            .Include(attachment => attachment.PhysicalFile)
             .Where(attachment => attachment.TaskItemId == taskItemId)
             .OrderByDescending(attachment => attachment.UploadedAt)
             .ToListAsync(ct);
@@ -91,25 +95,59 @@ public class AttachmentService : IAttachmentService
             return Result.Forbidden<TaskAttachmentDto>();
         }
 
-        var storedPath = await _fileStorageService.UploadAsync(content, fileName, contentType, ct);
+        // Copy content stream to MemoryStream to calculate hash and seek
+        using var ms = new MemoryStream();
+        await content.CopyToAsync(ms, ct);
+        ms.Position = 0;
+
+        // Calculate SHA-256 hash
+        using var sha256 = System.Security.Cryptography.SHA256.Create();
+        var hashBytes = sha256.ComputeHash(ms);
+        var contentHash = Convert.ToHexStringLower(hashBytes);
+        ms.Position = 0;
+
+        // Check if there is an existing physical file with the same hash
+        var physicalFile = await _physicalFileRepo.GetQueryable()
+            .FirstOrDefaultAsync(f => f.ContentHash == contentHash, ct);
+
+        if (physicalFile != null)
+        {
+            physicalFile.ReferenceCount++;
+            await _physicalFileRepo.UpdateAsync(physicalFile, ct);
+        }
+        else
+        {
+            var storedPath = await _fileStorageService.UploadAsync(ms, fileName, contentType, ct);
+            physicalFile = new PhysicalFile
+            {
+                ContentHash = contentHash,
+                FilePath = storedPath,
+                FileSize = fileSize,
+                ReferenceCount = 1
+            };
+            await _physicalFileRepo.AddAsync(physicalFile, ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+
         var attachment = new TaskAttachment
         {
             TaskItemId = taskItemId,
             Scope = "Task",
             UploadedById = currentUserId.Value,
             FileName = Path.GetFileName(fileName),
-            FilePath = storedPath,
-            FileSize = fileSize,
-            ContentType = string.IsNullOrWhiteSpace(contentType) ? null : contentType
+            ContentType = string.IsNullOrWhiteSpace(contentType) ? null : contentType,
+            PhysicalFileId = physicalFile.Id,
+            PhysicalFile = physicalFile
         };
 
         await _attachmentRepo.AddAsync(attachment, ct);
         await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("Create", nameof(TaskAttachment), attachment.Id.ToString(), new { taskItemId, attachment.FileName }, ct);
+        await _auditLogService.LogAsync("Create", nameof(TaskAttachment), attachment.Id.ToString(), new { taskItemId, attachment.FileName, contentHash }, ct);
 
         var saved = await _attachmentRepo.GetQueryable()
             .Include(item => item.UploadedBy)
             .Include(item => item.EvidenceReviewedBy)
+            .Include(item => item.PhysicalFile)
             .FirstAsync(item => item.Id == attachment.Id, ct);
 
         return Result.Created(saved.ToDto());
@@ -206,7 +244,7 @@ public class AttachmentService : IAttachmentService
     {
         var attachment = await _attachmentRepo.GetQueryable()
             .Include(item => item.TaskItem)
-            .ThenInclude(task => task!.Project)
+                .ThenInclude(task => task!.Project)
             .FirstOrDefaultAsync(item => item.Id == id, ct);
 
         if (attachment == null)
@@ -219,7 +257,6 @@ public class AttachmentService : IAttachmentService
             return Result.Failure("Access denied.", 403);
         }
 
-        await _fileStorageService.DeleteAsync(attachment.FilePath, ct);
         await _attachmentRepo.DeleteAsync(attachment, ct);
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("Delete", nameof(TaskAttachment), id.ToString(), new { attachment.TaskItemId, attachment.FileName }, ct);
@@ -236,6 +273,7 @@ public class AttachmentService : IAttachmentService
 
     private async Task<TaskAttachment?> LoadAttachmentAsync(Guid attachmentId, CancellationToken ct)
         => await _attachmentRepo.GetQueryable()
+            .Include(item => item.PhysicalFile)
             .Include(item => item.TaskItem)
                 .ThenInclude(task => task!.Project)
                     .ThenInclude(project => project.Organization)
@@ -391,4 +429,211 @@ public class AttachmentService : IAttachmentService
 
     private bool IsAdmin()
         => string.Equals(_currentUserService.Role, "Admin", StringComparison.OrdinalIgnoreCase);
+
+    public async Task<Result<IReadOnlyList<DuplicateFileDto>>> GetDuplicatesAsync(CancellationToken ct = default)
+    {
+        var attachments = await _attachmentRepo.GetQueryable()
+            .Include(a => a.PhysicalFile)
+            .ToListAsync(ct);
+
+        var list = new List<DuplicateFileDto>();
+        var reportedAttachmentIds = new HashSet<Guid>();
+
+        var groups = attachments
+            .GroupBy(a => a.PhysicalFileId)
+            .Where(g => g.Count() > 1)
+            .ToList();
+
+        foreach (var group in groups)
+        {
+            var sorted = group.OrderBy(a => a.UploadedAt).ToList();
+            var original = sorted.First();
+            var duplicates = sorted.Skip(1);
+
+            foreach (var dup in duplicates)
+            {
+                var size = original.PhysicalFile?.FileSize ?? 0;
+                var sizeLabel = size < 1024 * 1024
+                    ? $"{(size / 1024.0):F1} KB"
+                    : $"{(size / (1024.0 * 1024.0)):F1} MB";
+
+                list.Add(new DuplicateFileDto(
+                    dup.Id,
+                    dup.FileName,
+                    sizeLabel,
+                    original.PhysicalFile?.FilePath ?? string.Empty,
+                    original.FileName
+                ));
+                reportedAttachmentIds.Add(dup.Id);
+            }
+        }
+
+        var physicalFiles = attachments
+            .Where(a => a.PhysicalFile != null)
+            .Select(a => a.PhysicalFile!)
+            .DistinctBy(file => file.Id)
+            .ToList();
+        var physicalFilesByActualHash = new Dictionary<string, List<PhysicalFile>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var file in physicalFiles)
+        {
+            try
+            {
+                await using var content = await _fileStorageService.DownloadAsync(file.FilePath, ct);
+                var actualHash = await ComputeSha256Async(content, ct);
+
+                if (!physicalFilesByActualHash.TryGetValue(actualHash, out var hashGroup))
+                {
+                    hashGroup = [];
+                    physicalFilesByActualHash[actualHash] = hashGroup;
+                }
+
+                hashGroup.Add(file);
+            }
+            catch
+            {
+                continue;
+            }
+        }
+
+        foreach (var hashGroup in physicalFilesByActualHash.Values.Where(group => group.Count > 1))
+        {
+            var originalFile = hashGroup
+                .OrderBy(file => file.CreatedAt)
+                .First();
+            var originalAttachment = attachments
+                .Where(attachment => attachment.PhysicalFileId == originalFile.Id)
+                .OrderBy(attachment => attachment.UploadedAt)
+                .FirstOrDefault();
+
+            if (originalAttachment == null)
+            {
+                continue;
+            }
+
+            foreach (var duplicateFile in hashGroup.Where(file => file.Id != originalFile.Id))
+            {
+                var duplicateAttachments = attachments
+                    .Where(attachment => attachment.PhysicalFileId == duplicateFile.Id)
+                    .OrderBy(attachment => attachment.UploadedAt);
+
+                foreach (var duplicateAttachment in duplicateAttachments)
+                {
+                    if (!reportedAttachmentIds.Add(duplicateAttachment.Id))
+                    {
+                        continue;
+                    }
+
+                    list.Add(new DuplicateFileDto(
+                        duplicateAttachment.Id,
+                        duplicateAttachment.FileName,
+                        FormatFileSize(duplicateFile.FileSize),
+                        duplicateFile.FilePath,
+                        originalAttachment.FileName));
+                }
+            }
+        }
+
+        return Result.Success<IReadOnlyList<DuplicateFileDto>>(list);
+    }
+
+    public async Task<Result<DeduplicateResultDto>> DeduplicateAsync(CancellationToken ct = default)
+    {
+        var physicalFiles = await _physicalFileRepo.GetQueryable().ToListAsync(ct);
+        var filesByActualHash = new Dictionary<string, List<PhysicalFile>>(StringComparer.OrdinalIgnoreCase);
+
+        int totalProcessed = 0;
+        int totalMerged = 0;
+        int totalHashUpdates = 0;
+        long bytesSaved = 0;
+
+        foreach (var file in physicalFiles)
+        {
+            string actualHash;
+            try
+            {
+                await using var content = await _fileStorageService.DownloadAsync(file.FilePath, ct);
+                actualHash = await ComputeSha256Async(content, ct);
+            }
+            catch
+            {
+                continue;
+            }
+
+            totalProcessed++;
+            if (!filesByActualHash.TryGetValue(actualHash, out var group))
+            {
+                group = [];
+                filesByActualHash[actualHash] = group;
+            }
+
+            group.Add(file);
+        }
+
+        foreach (var hashGroup in filesByActualHash)
+        {
+            var sorted = hashGroup.Value
+                .OrderBy(f => string.Equals(f.ContentHash, hashGroup.Key, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .ThenBy(f => f.CreatedAt)
+                .ToList();
+
+            var original = sorted.First();
+            if (!string.Equals(original.ContentHash, hashGroup.Key, StringComparison.OrdinalIgnoreCase))
+            {
+                original.ContentHash = hashGroup.Key;
+                await _physicalFileRepo.UpdateAsync(original, ct);
+                totalHashUpdates++;
+            }
+
+            foreach (var duplicate in sorted.Skip(1))
+            {
+                var attachmentsToUpdate = await _attachmentRepo.GetQueryable()
+                    .IgnoreQueryFilters()
+                    .Where(a => a.PhysicalFileId == duplicate.Id)
+                    .ToListAsync(ct);
+
+                foreach (var att in attachmentsToUpdate)
+                {
+                    att.PhysicalFileId = original.Id;
+                    att.PhysicalFile = original;
+                    await _attachmentRepo.UpdateAsync(att, ct);
+                }
+
+                original.ReferenceCount += attachmentsToUpdate.Count;
+                await _physicalFileRepo.UpdateAsync(original, ct);
+
+                try
+                {
+                    await _fileStorageService.DeleteAsync(duplicate.FilePath, ct);
+                }
+                catch
+                {
+                    // Ignore storage deletion errors
+                }
+
+                bytesSaved += duplicate.FileSize;
+                await _physicalFileRepo.HardDeleteAsync(duplicate, ct);
+                totalMerged++;
+            }
+        }
+
+        if (totalMerged > 0 || totalHashUpdates > 0)
+        {
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+
+        return Result.Success(new DeduplicateResultDto(totalProcessed, totalMerged, bytesSaved));
+    }
+
+    private static async Task<string> ComputeSha256Async(Stream content, CancellationToken ct)
+    {
+        using var sha256 = System.Security.Cryptography.SHA256.Create();
+        var hashBytes = await sha256.ComputeHashAsync(content, ct);
+        return Convert.ToHexStringLower(hashBytes);
+    }
+
+    private static string FormatFileSize(long size)
+        => size < 1024 * 1024
+            ? $"{(size / 1024.0):F1} KB"
+            : $"{(size / (1024.0 * 1024.0)):F1} MB";
 }

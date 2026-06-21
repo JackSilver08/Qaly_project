@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Mappings;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Project;
@@ -17,8 +18,11 @@ public class ProjectService : IProjectService
     private readonly IRepository<ProjectMember> _memberRepo;
     private readonly IRepository<User> _userRepo;
     private readonly IRepository<ProjectLabel> _labelRepo;
+    private readonly IRepository<TaskAttachment> _attachmentRepo;
+    private readonly IRepository<PhysicalFile> _physicalFileRepo;
     private readonly IRepository<VectorSyncOutbox> _outboxRepo;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IFileStorageService _fileStorageService;
     private readonly ICurrentUserService _currentUserService;
     private readonly INotificationService _notificationService;
     private readonly IAuditLogService _auditLogService;
@@ -30,8 +34,11 @@ public class ProjectService : IProjectService
         IRepository<ProjectMember> memberRepo,
         IRepository<User> userRepo,
         IRepository<ProjectLabel> labelRepo,
+        IRepository<TaskAttachment> attachmentRepo,
+        IRepository<PhysicalFile> physicalFileRepo,
         IRepository<VectorSyncOutbox> outboxRepo,
         IUnitOfWork unitOfWork,
+        IFileStorageService fileStorageService,
         ICurrentUserService currentUserService,
         INotificationService notificationService,
         IAuditLogService auditLogService)
@@ -42,8 +49,11 @@ public class ProjectService : IProjectService
         _memberRepo = memberRepo;
         _userRepo = userRepo;
         _labelRepo = labelRepo;
+        _attachmentRepo = attachmentRepo;
+        _physicalFileRepo = physicalFileRepo;
         _outboxRepo = outboxRepo;
         _unitOfWork = unitOfWork;
+        _fileStorageService = fileStorageService;
         _currentUserService = currentUserService;
         _notificationService = notificationService;
         _auditLogService = auditLogService;
@@ -735,4 +745,152 @@ public class ProjectService : IProjectService
 
         return Result.Success();
     }
+
+    public async Task<Result<PagedResult<ProjectDto>>> GetTrashAsync(int page = 1, int pageSize = 10, CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<PagedResult<ProjectDto>>();
+        }
+
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var query = ProjectDetailsQuery()
+            .IgnoreQueryFilters()
+            .Where(project => project.IsDeleted);
+
+        if (!IsAdmin())
+        {
+            query = query.Where(project =>
+                project.OwnerId == currentUserId ||
+                project.Members.Any(member => member.UserId == currentUserId) ||
+                (project.OrganizationId != null &&
+                 (project.Organization!.OwnerId == currentUserId ||
+                  project.Organization.Members.Any(member => member.UserId == currentUserId))));
+        }
+
+        var totalCount = await query.CountAsync(ct);
+        var items = await query
+            .OrderByDescending(p => p.DeletedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        return Result.Success(new PagedResult<ProjectDto>
+        {
+            Items = items.Select(item => item.ToDto()).ToList(),
+            TotalCount = totalCount,
+            PageNumber = page,
+            PageSize = pageSize
+        });
+    }
+
+    public async Task<Result> RestoreAsync(Guid id, CancellationToken ct = default)
+    {
+        var project = await _projectRepo.GetQueryable()
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(p => p.Id == id, ct);
+
+        if (project == null)
+        {
+            return Result.Failure("Project was not found.", 404);
+        }
+
+        if (!await CanManageProjectAsync(project.Id, project.OwnerId, ct))
+        {
+            return Result.Failure("Access denied.", 403);
+        }
+
+        project.IsDeleted = false;
+        project.DeletedAt = null;
+        project.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await _projectRepo.UpdateAsync(project, ct);
+        await AddToOutboxAsync("ProjectRestored", new { Id = project.Id }, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync("Restore", nameof(Project), id.ToString(), new { project.Name }, ct);
+
+        return Result.Success();
+    }
+
+    public async Task<Result> HardDeleteAsync(Guid id, CancellationToken ct = default)
+    {
+        var project = await _projectRepo.GetQueryable()
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(p => p.Id == id, ct);
+
+        if (project == null)
+        {
+            return Result.Failure("Project was not found.", 404);
+        }
+
+        if (!await CanManageProjectAsync(project.Id, project.OwnerId, ct))
+        {
+            return Result.Failure("Access denied.", 403);
+        }
+
+        await HardDeleteProjectAttachmentsAsync(project.Id, ct);
+
+        await _projectRepo.HardDeleteAsync(project, ct);
+        await AddToOutboxAsync("ProjectHardDeleted", new { Id = project.Id }, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync("HardDelete", nameof(Project), id.ToString(), new { project.Name }, ct);
+
+        return Result.Success();
+    }
+
+    private async Task HardDeleteProjectAttachmentsAsync(Guid projectId, CancellationToken ct)
+    {
+        var attachments = await GetProjectAttachmentsForHardDeleteAsync(projectId, ct);
+        var releaseCounts = attachments
+            .Where(attachment => attachment.PhysicalFileId != Guid.Empty)
+            .GroupBy(attachment => attachment.PhysicalFileId)
+            .ToDictionary(group => group.Key, group => group.Count());
+
+        foreach (var attachment in attachments)
+        {
+            await _attachmentRepo.HardDeleteAsync(attachment, ct);
+        }
+
+        foreach (var (physicalFileId, releaseCount) in releaseCounts)
+        {
+            var physicalFile = await _physicalFileRepo.GetQueryable()
+                .FirstOrDefaultAsync(file => file.Id == physicalFileId, ct);
+
+            if (physicalFile == null)
+            {
+                continue;
+            }
+
+            physicalFile.ReferenceCount -= releaseCount;
+            if (physicalFile.ReferenceCount > 0)
+            {
+                await _physicalFileRepo.UpdateAsync(physicalFile, ct);
+                continue;
+            }
+
+            try
+            {
+                await _fileStorageService.DeleteAsync(physicalFile.FilePath, ct);
+            }
+            catch
+            {
+                // DB cleanup must still proceed; missing files are handled as already removed.
+            }
+
+            await _physicalFileRepo.HardDeleteAsync(physicalFile, ct);
+        }
+    }
+
+    private async Task<IReadOnlyList<TaskAttachment>> GetProjectAttachmentsForHardDeleteAsync(Guid projectId, CancellationToken ct)
+        => await _attachmentRepo.GetQueryable()
+            .IgnoreQueryFilters()
+            .Include(attachment => attachment.PhysicalFile)
+            .Where(attachment =>
+                attachment.ProjectId == projectId ||
+                (attachment.TaskItem != null && attachment.TaskItem.ProjectId == projectId) ||
+                (attachment.Comment != null && attachment.Comment.TaskItem.ProjectId == projectId))
+            .ToListAsync(ct);
 }

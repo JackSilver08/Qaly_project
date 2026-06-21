@@ -6,6 +6,9 @@ public class Organization : BaseEntity
     public string Code { get; set; } = string.Empty;
     public string? Description { get; set; }
     public bool IsActive { get; set; } = true;
+    public string? AllowedEmailDomains { get; set; }
+    public string? WorkspaceIcon { get; set; }
+    public string? WorkspaceCover { get; set; }
 
     public Guid OwnerId { get; set; }
 

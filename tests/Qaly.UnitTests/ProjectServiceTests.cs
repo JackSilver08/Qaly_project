@@ -21,8 +21,11 @@ public class ProjectServiceTests : IDisposable
     private readonly GenericRepository<ProjectMember> _memberRepo;
     private readonly GenericRepository<User> _userRepo;
     private readonly GenericRepository<ProjectLabel> _labelRepo;
+    private readonly GenericRepository<TaskAttachment> _attachmentRepo;
+    private readonly GenericRepository<PhysicalFile> _physicalFileRepo;
     private readonly GenericRepository<VectorSyncOutbox> _outboxRepo;
     private readonly UnitOfWork _uow;
+    private readonly Mock<IFileStorageService> _fileStorage;
     private readonly Mock<ICurrentUserService> _currentUser;
     private readonly Mock<INotificationService> _notification;
     private readonly Mock<IAuditLogService> _audit;
@@ -40,9 +43,12 @@ public class ProjectServiceTests : IDisposable
         _memberRepo = new GenericRepository<ProjectMember>(_context);
         _userRepo = new GenericRepository<User>(_context);
         _labelRepo = new GenericRepository<ProjectLabel>(_context);
+        _attachmentRepo = new GenericRepository<TaskAttachment>(_context);
+        _physicalFileRepo = new GenericRepository<PhysicalFile>(_context);
         _outboxRepo = new GenericRepository<VectorSyncOutbox>(_context);
         _uow = new UnitOfWork(_context);
 
+        _fileStorage = new Mock<IFileStorageService>();
         _currentUser = new Mock<ICurrentUserService>();
         _notification = new Mock<INotificationService>();
         _audit = new Mock<IAuditLogService>();
@@ -57,8 +63,11 @@ public class ProjectServiceTests : IDisposable
             _memberRepo,
             _userRepo,
             _labelRepo,
+            _attachmentRepo,
+            _physicalFileRepo,
             _outboxRepo,
             _uow,
+            _fileStorage.Object,
             _currentUser.Object,
             _notification.Object,
             _audit.Object);

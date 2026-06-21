@@ -149,6 +149,7 @@ public class TaskConcurrencyTests : IDisposable
             Mock.Of<INotificationService>(),
             Mock.Of<IAuditLogService>(),
             Mock.Of<ITaskPrioritySuggestionService>(),
-            Mock.Of<IWebhookPublisher>());
+            Mock.Of<IWebhookPublisher>(),
+            _currentUser.Object);
     }
 }

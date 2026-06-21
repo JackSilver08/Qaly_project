@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from "vue-router";
 const ArchivedProjectsPage = () => import("../pages/ArchivedProjectsPage.vue");
 const DashboardPage = () => import("../pages/DashboardPage.vue");
 const ProfilePage = () => import("../pages/ProfilePage.vue");
+const SettingsPage = () => import("../pages/SettingsPage.vue");
 const ProjectDetailPage = () => import("../pages/ProjectDetailPage.vue");
 const ProjectsPage = () => import("../pages/ProjectsPage.vue");
 const TasksPage = () => import("../pages/TasksPage.vue");
@@ -64,7 +65,7 @@ export const router = createRouter({
             name: "group-poll-detail",
             component: () => import("../pages/GroupPollPage.vue"),
         },
-        { path: "/settings", name: "settings", component: ProfilePage },
+        { path: "/settings", name: "settings", component: SettingsPage },
         { path: "/:pathMatch(.*)*", redirect: "/dashboard" },
     ],
     scrollBehavior() {

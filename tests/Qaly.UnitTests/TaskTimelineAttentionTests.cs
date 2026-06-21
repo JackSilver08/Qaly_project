@@ -288,7 +288,8 @@ public class TaskTimelineAttentionTests : IDisposable
             Mock.Of<INotificationService>(),
             Mock.Of<IAuditLogService>(),
             Mock.Of<ITaskPrioritySuggestionService>(),
-            Mock.Of<IWebhookPublisher>());
+            Mock.Of<IWebhookPublisher>(),
+            _currentUser.Object);
     }
 }
 #pragma warning restore CA1707

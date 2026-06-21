@@ -154,6 +154,9 @@ public class OrganizationService : IOrganizationService
         organization.Code = await GenerateUniqueCodeAsync(dto.Code, dto.Name, ct, organization.Id);
         organization.Description = NormalizeOptional(dto.Description);
         organization.IsActive = dto.IsActive;
+        organization.AllowedEmailDomains = dto.AllowedEmailDomains;
+        organization.WorkspaceIcon = dto.WorkspaceIcon;
+        organization.WorkspaceCover = dto.WorkspaceCover;
 
         await _organizationRepo.UpdateAsync(organization, ct);
         await _unitOfWork.SaveChangesAsync(ct);

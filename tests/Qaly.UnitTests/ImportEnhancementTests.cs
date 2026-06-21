@@ -548,7 +548,7 @@ public class ImportEnhancementTests : IDisposable
 
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().Be(400);
-        result.Error.Should().Contain("chua duoc ho tro");
+        result.Error.Should().Contain("chưa được hỗ trợ");
     }
 
     [Fact]

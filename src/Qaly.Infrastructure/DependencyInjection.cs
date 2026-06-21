@@ -123,6 +123,7 @@ public static class DependencyInjection
         // Background Workers
         services.AddHostedService<EmailDigestWorker>();
         services.AddHostedService<TaskAttentionSignalWorker>();
+        services.AddHostedService<ProjectTrashCleanupWorker>();
 
         return services;
     }

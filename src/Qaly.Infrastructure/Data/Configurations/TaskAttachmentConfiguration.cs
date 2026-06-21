@@ -11,13 +11,21 @@ public class TaskAttachmentConfiguration : IEntityTypeConfiguration<TaskAttachme
         builder.HasKey(a => a.Id);
         builder.Property(a => a.Id).HasDefaultValueSql("NEWID()");
         builder.Property(a => a.FileName).HasMaxLength(500).IsRequired();
-        builder.Property(a => a.FilePath).IsRequired();
         builder.Property(a => a.ContentType).HasMaxLength(100);
         builder.Property(a => a.Scope).HasMaxLength(20).IsRequired().HasDefaultValue("Task");
         builder.Property(a => a.IsEvidence).HasDefaultValue(false);
         builder.Property(a => a.EvidenceApprovalStatus).HasMaxLength(20).IsRequired().HasDefaultValue("None");
         builder.Property(a => a.EvidenceReviewNote).HasMaxLength(1000);
         builder.Property(a => a.UploadedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
+
+        builder.HasOne(a => a.PhysicalFile)
+            .WithMany()
+            .HasForeignKey(a => a.PhysicalFileId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Ignore(a => a.FilePath);
+        builder.Ignore(a => a.FileSize);
+        builder.Ignore(a => a.ContentHash);
 
         builder.HasOne(a => a.TaskItem)
             .WithMany(t => t.Attachments)

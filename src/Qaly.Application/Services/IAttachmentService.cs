@@ -10,4 +10,6 @@ public interface IAttachmentService
     Task<Result<TaskAttachmentDto>> MarkAsEvidenceAsync(Guid id, bool isEvidence, CancellationToken ct = default);
     Task<Result<TaskAttachmentDto>> ReviewEvidenceAsync(Guid id, bool approve, string? reviewNote, CancellationToken ct = default);
     Task<Result> DeleteAsync(Guid id, CancellationToken ct = default);
+    Task<Result<IReadOnlyList<DuplicateFileDto>>> GetDuplicatesAsync(CancellationToken ct = default);
+    Task<Result<DeduplicateResultDto>> DeduplicateAsync(CancellationToken ct = default);
 }

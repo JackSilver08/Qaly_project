@@ -3,8 +3,6 @@ namespace Qaly.Domain.Entities;
 public class TaskAttachment : BaseEntity, ISoftDeleteEntity
 {
     public string FileName { get; set; } = string.Empty;
-    public string FilePath { get; set; } = string.Empty;
-    public long FileSize { get; set; }
     public string? ContentType { get; set; }
     public DateTimeOffset UploadedAt { get; set; } = DateTimeOffset.UtcNow;
     public string Scope { get; set; } = "Task";
@@ -15,6 +13,15 @@ public class TaskAttachment : BaseEntity, ISoftDeleteEntity
     public string? EvidenceReviewNote { get; set; }
     public bool IsDeleted { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
+
+    // CAS linking
+    public Guid PhysicalFileId { get; set; }
+    public PhysicalFile PhysicalFile { get; set; } = null!;
+
+    // Delegated properties for backwards compatibility
+    public string FilePath => PhysicalFile?.FilePath ?? string.Empty;
+    public long FileSize => PhysicalFile?.FileSize ?? 0;
+    public string? ContentHash => PhysicalFile?.ContentHash;
 
     // Foreign keys
     public Guid? TaskItemId { get; set; }
@@ -29,3 +36,4 @@ public class TaskAttachment : BaseEntity, ISoftDeleteEntity
     public User UploadedBy { get; set; } = null!;
     public User? EvidenceReviewedBy { get; set; }
 }
+

@@ -18,4 +18,7 @@ public interface IProjectService
     Task<Result<ProjectLabelDto>> CreateLabelAsync(Guid projectId, CreateProjectLabelDto dto, CancellationToken ct = default);
     Task<Result<ProjectLabelDto>> UpdateLabelAsync(Guid projectId, Guid labelId, UpdateProjectLabelDto dto, CancellationToken ct = default);
     Task<Result> DeleteLabelAsync(Guid projectId, Guid labelId, CancellationToken ct = default);
+    Task<Result<PagedResult<ProjectDto>>> GetTrashAsync(int page = 1, int pageSize = 10, CancellationToken ct = default);
+    Task<Result> RestoreAsync(Guid id, CancellationToken ct = default);
+    Task<Result> HardDeleteAsync(Guid id, CancellationToken ct = default);
 }

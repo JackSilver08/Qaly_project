@@ -104,6 +104,12 @@ public class AuthServiceTests
             return Task.CompletedTask;
         }
 
+        public Task HardDeleteAsync(T entity, CancellationToken cancellationToken = default)
+        {
+            _items.Remove(entity);
+            return Task.CompletedTask;
+        }
+
         public Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken = default)
             => Task.FromResult(_items.Any(item => item.Id == id));
 

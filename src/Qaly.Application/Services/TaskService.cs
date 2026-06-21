@@ -34,6 +34,7 @@ public class TaskService : ITaskService
     private readonly IAuditLogService _auditLogService;
     private readonly ITaskPrioritySuggestionService _taskPrioritySuggestionService;
     private readonly IWebhookPublisher _webhookPublisher;
+    private readonly ICurrentUserService _currentUserService;
 
     private enum RowVersionValidation
     {
@@ -60,7 +61,8 @@ public class TaskService : ITaskService
         INotificationService notificationService,
         IAuditLogService auditLogService,
         ITaskPrioritySuggestionService taskPrioritySuggestionService,
-        IWebhookPublisher webhookPublisher)
+        IWebhookPublisher webhookPublisher,
+        ICurrentUserService currentUserService)
     {
         _taskRepo = taskRepo;
         _dependencyRepo = dependencyRepo;
@@ -80,6 +82,7 @@ public class TaskService : ITaskService
         _auditLogService = auditLogService;
         _taskPrioritySuggestionService = taskPrioritySuggestionService;
         _webhookPublisher = webhookPublisher;
+        _currentUserService = currentUserService;
     }
 
     public async Task<Result<TaskItemDto>> GetByIdAsync(Guid id, CancellationToken ct = default)
@@ -232,9 +235,10 @@ public class TaskService : ITaskService
             return Result.Failure<KanbanMoveResultDto>($"Cannot transition task from {task.Status} to {normalizedToStatus}.", 400);
         }
 
-        if (RequiresApprovedEvidence(task.Status, normalizedToStatus) && !await HasApprovedEvidenceAsync(task.Id, ct))
+        var transitionValidation = await ValidateTransitionAsync(task, task.Status, normalizedToStatus, ct);
+        if (!transitionValidation.IsSuccess)
         {
-            return Result.Failure<KanbanMoveResultDto>("Cannot mark task as done before an evidence attachment is approved.", 400);
+            return Result.Failure<KanbanMoveResultDto>(transitionValidation.Error ?? "Lỗi di chuyển trạng thái.", transitionValidation.StatusCode);
         }
 
         var targetColumnTasks = await _taskRepo.GetQueryable()
@@ -739,9 +743,10 @@ public class TaskService : ITaskService
             return Result.Failure<TaskItemDto>($"Không cho phép chuyển trạng thái từ {oldStatus} sang {normalizedStatus}.", 400);
         }
 
-        if (RequiresApprovedEvidence(oldStatus, normalizedStatus) && !await HasApprovedEvidenceAsync(task.Id, ct))
+        var transitionValidation = await ValidateTransitionAsync(task, oldStatus, normalizedStatus, ct);
+        if (!transitionValidation.IsSuccess)
         {
-            return Result.Failure<TaskItemDto>("Không thể đánh dấu hoàn thành vì chưa có minh chứng được duyệt.", 400);
+            return Result.Failure<TaskItemDto>(transitionValidation.Error ?? "Lỗi di chuyển trạng thái.", transitionValidation.StatusCode);
         }
 
         var previousAssignees = task.Assignees.Select(assignment => assignment.UserId).ToHashSet();
@@ -826,9 +831,10 @@ public class TaskService : ITaskService
             return Result.Failure($"Không cho phép chuyển trạng thái từ {oldStatus} sang {normalizedStatus}.", 400);
         }
 
-        if (RequiresApprovedEvidence(oldStatus, normalizedStatus) && !await HasApprovedEvidenceAsync(task.Id, ct))
+        var transitionValidation = await ValidateTransitionAsync(task, oldStatus, normalizedStatus, ct);
+        if (!transitionValidation.IsSuccess)
         {
-            return Result.Failure("Không thể đánh dấu hoàn thành vì chưa có minh chứng được duyệt.", 400);
+            return Result.Failure<TaskItemDto>(transitionValidation.Error ?? "Lỗi di chuyển trạng thái.", transitionValidation.StatusCode);
         }
 
         task.Status = normalizedStatus;
@@ -975,7 +981,8 @@ public class TaskService : ITaskService
                 continue;
             }
 
-            if (RequiresApprovedEvidence(oldStatus, normalizedStatus) && !await HasApprovedEvidenceAsync(task.Id, ct))
+            var transitionValidation = await ValidateTransitionAsync(task, oldStatus, normalizedStatus, ct);
+            if (!transitionValidation.IsSuccess)
             {
                 continue;
             }
@@ -2066,5 +2073,44 @@ public class TaskService : ITaskService
         }).OrderByDescending(w => w.TaskCount).ToList();
 
         return Result.Success(new ProjectWorkloadDto(projectId, workloads));
+    }
+
+    private async Task<Result> ValidateTransitionAsync(TaskItem task, string oldStatus, string newStatus, CancellationToken ct)
+    {
+        if (task.Project == null) return Result.Success();
+
+        if (task.Project.RequireEvidenceToDone && RequiresApprovedEvidence(oldStatus, newStatus) && !await HasApprovedEvidenceAsync(task.Id, ct))
+        {
+            return Result.Failure("Không thể đánh dấu hoàn thành vì chưa có minh chứng được duyệt.", 400);
+        }
+
+        if (task.Project.RestrictTransitionsToAdmin && IsDone(newStatus) && !IsDone(oldStatus))
+        {
+            var currentUserId = _currentUserService.UserId;
+            if (currentUserId == null)
+            {
+                return Result.Failure("Yêu cầu đăng nhập.", 401);
+            }
+
+            var isAdmin = string.Equals(_currentUserService.Role, "Admin", StringComparison.OrdinalIgnoreCase);
+            var isOwner = task.Project.OwnerId == currentUserId.Value;
+            var isManager = false;
+
+            if (!isAdmin && !isOwner)
+            {
+                var projectRole = await _memberRepo.GetQueryable()
+                    .Where(member => member.ProjectId == task.ProjectId && member.UserId == currentUserId.Value)
+                    .Select(member => member.Role)
+                    .FirstOrDefaultAsync(ct);
+                isManager = string.Equals(projectRole, "Manager", StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (!isAdmin && !isOwner && !isManager)
+            {
+                return Result.Failure("Chỉ Quản lý dự án hoặc Chủ sở hữu mới có quyền hoàn thành nhiệm vụ.", 403);
+            }
+        }
+
+        return Result.Success();
     }
 }
