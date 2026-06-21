@@ -31,4 +31,11 @@
     <UseSharedCompilation>false</UseSharedCompilation>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Frontend assets are built by Vite (separate process). Exclude its output
+         from dotnet watch so a Vite rebuild writing many files at once does not
+         trigger "Too many changes at once" and crash hot reload. -->
+    <Watch Remove="wwwroot\dist\**\*" />
+  </ItemGroup>
+
 </Project>
