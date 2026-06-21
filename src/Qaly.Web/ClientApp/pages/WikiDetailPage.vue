@@ -28,6 +28,7 @@ const projectId = computed(() => route.params.projectId as string);
 const currentPage = computed(() => {
   return wikiPages.value.find((p: WikiPageDto) => p.id === wikiId.value);
 });
+const showWikiSidebar = computed(() => !isEditing.value && !!currentPage.value?.content);
 
 const isEditing = ref(false);
 const editTitle = ref("");
@@ -142,7 +143,7 @@ async function saveEdit() {
         </div>
         
         <!-- Table of Contents Sidebar -->
-        <div v-if="!isEditing && currentPage.content" class="wiki-sidebar">
+        <div v-if="showWikiSidebar" class="wiki-sidebar">
           <div class="toc-container glass-card">
             <h3 class="toc-title">Mục lục</h3>
             <MdCatalog editorId="wiki-preview" :scrollElement="scrollElement" />

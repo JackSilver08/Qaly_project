@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from "vue";
+import { computed, ref, onMounted, onBeforeUnmount } from "vue";
 import {
   HubConnectionBuilder,
   type HubConnection,
@@ -17,6 +17,7 @@ const question = ref("");
 const options = ref(["", ""]);
 const results = ref<any | null>(null);
 let hubConnection: HubConnection | null = null;
+const canVote = computed(() => Array.isArray(results.value?.currentUserOptionIds) && results.value.currentUserOptionIds.length === 0);
 
 async function createPoll() {
   try {
@@ -162,10 +163,7 @@ onBeforeUnmount(async () => {
           <div class="flex items-center gap-3">
             <div>{{ opt.voteCount ?? opt.voteCount ?? 0 }} votes</div>
             <button
-              v-if="
-                results.currentUserOptionIds &&
-                !results.currentUserOptionIds.length
-              "
+              v-if="canVote"
               class="primary-button"
               @click="vote(opt.optionId || opt.id || opt.optionId)"
             >

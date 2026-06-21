@@ -280,6 +280,15 @@ const chatHistory = ref<ChatEntry[]>([
 
 const isChatActive = computed(() => chatHistory.value.length > 1 || isChatting.value)
 const canSubmit = computed(() => (!!chatInput.value.trim() || selectedFiles.value.length > 0) && !isChatting.value)
+const showSlashCommandsPopup = computed(() => showSlashCommands.value && filteredSlashCommands.value.length > 0)
+
+function isExecutingDraftAction(action: any) {
+  return action.processing && action.confirmAction === 'execute_action'
+}
+
+function isRejectingDraftAction(action: any) {
+  return action.processing && action.confirmAction === 'reject'
+}
 const autoSyncLabel = computed(() => {
   if (backgroundRefreshing.value) return 'Đang cập nhật nền...'
   if (!lastRefreshedAt.value) return 'Tự cập nhật dữ liệu'
@@ -798,7 +807,7 @@ onBeforeUnmount(() => {
 
             <div class="erumi-input-shell-container">
               <!-- Slash command autocomplete list -->
-              <div v-if="showSlashCommands && filteredSlashCommands.length > 0" class="slash-commands-popup">
+              <div v-if="showSlashCommandsPopup" class="slash-commands-popup">
                 <div 
                   v-for="cmd in filteredSlashCommands" 
                   :key="cmd.code" 
@@ -947,7 +956,7 @@ onBeforeUnmount(() => {
                           :disabled="action.processing || action.confirmed || action.rejected"
                           @click="handleDraftAction(action, 'execute_action')"
                         >
-                          <span v-if="action.processing && action.confirmAction === 'execute_action'">Đang xử lý...</span>
+                          <span v-if="isExecutingDraftAction(action)">Đang xử lý...</span>
                           <span v-else-if="action.confirmed">Đã xác nhận</span>
                           <span v-else>Xác nhận</span>
                         </button>
@@ -957,7 +966,7 @@ onBeforeUnmount(() => {
                           :disabled="action.processing || action.confirmed || action.rejected"
                           @click="handleDraftAction(action, 'reject')"
                         >
-                          <span v-if="action.processing && action.confirmAction === 'reject'">Đang hủy...</span>
+                          <span v-if="isRejectingDraftAction(action)">Đang hủy...</span>
                           <span v-else-if="action.rejected">Đã hủy</span>
                           <span v-else>Hủy</span>
                         </button>
@@ -1088,7 +1097,7 @@ onBeforeUnmount(() => {
 
           <div class="erumi-input-shell-container">
             <!-- Slash command autocomplete list -->
-            <div v-if="showSlashCommands && filteredSlashCommands.length > 0" class="slash-commands-popup">
+            <div v-if="showSlashCommandsPopup" class="slash-commands-popup">
               <div 
                 v-for="cmd in filteredSlashCommands" 
                 :key="cmd.code" 

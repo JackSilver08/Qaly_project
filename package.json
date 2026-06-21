@@ -28,6 +28,7 @@
     "@types/markdown-it": "^14.1.2",
     "chart.js": "^4.5.1",
     "dompurify": "^3.4.2",
+    "entities": "^7.0.1",
     "esbuild": "^0.25.12",
     "livekit-client": "^2.19.1",
     "lucide-vue-next": "^1.0.0",

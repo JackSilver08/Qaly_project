@@ -38,6 +38,18 @@ type TaskSort = 'risk' | 'dueDate' | 'priority' | 'status' | 'project' | 'alpha'
 type TaskFocus = 'all' | 'overdue' | 'dueSoon' | 'pinned' | 'high' | 'blocked'
 type WorkflowStage = 'needsOwner' | 'todo' | 'inProgress' | 'inReview' | 'blocked' | 'done'
 type WorkflowMiniStage = 'todo' | 'inProgress' | 'inReview' | 'done'
+type SavedTaskView = {
+  id: string
+  name: string
+  scope: TaskScope
+  searchQuery: string
+  statusFilter: string
+  priorityFilter: string
+  projectFilter: string
+  focusFilter: TaskFocus
+  sortBy: TaskSort
+  signature: string
+}
 
 type HubTask = DashboardTask & {
   projectId: string
@@ -78,6 +90,8 @@ const priorityFilter = ref<string>('all')
 const projectFilter = ref<string>('all')
 const focusFilter = ref<TaskFocus>('all')
 const sortBy = ref<TaskSort>('risk')
+const savedTaskViews = ref<SavedTaskView[]>([])
+const savedTaskViewsStorageKey = 'qaly.tasks.saved-views.v1'
 
 const attentionItems = ref<TaskAttentionDto[]>([])
 const attentionLoading = ref(false)
@@ -161,6 +175,26 @@ const shouldFallbackToAll = computed(
 const attentionItemMap = computed(() =>
   new Map(attentionItems.value.map((item) => [item.id, item])),
 )
+
+const currentTaskViewSignature = computed(() => buildTaskViewSignature({
+  scope: taskScope.value,
+  searchQuery: searchQuery.value,
+  statusFilter: statusFilter.value,
+  priorityFilter: priorityFilter.value,
+  projectFilter: projectFilter.value,
+  focusFilter: focusFilter.value,
+  sortBy: sortBy.value,
+}))
+
+const savedTaskViewLookup = computed(() => {
+  const map = new Map<string, SavedTaskView>()
+  for (const view of savedTaskViews.value) {
+    map.set(view.signature, view)
+  }
+  return map
+})
+
+const activeSavedTaskView = computed(() => savedTaskViewLookup.value.get(currentTaskViewSignature.value) ?? null)
 
 const filteredTasks = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
@@ -342,6 +376,7 @@ const isAllVisibleSelected = computed(() =>
 )
 
 onMounted(async () => {
+  loadSavedTaskViews()
   await Promise.all([refreshAttentionInbox(), refreshDashboard()])
 })
 
@@ -422,6 +457,41 @@ function taskCardToneLabel(task: HubTask) {
   return 'Sẵn sàng'
 }
 
+function taskSmartSignals(task: HubTask) {
+  const signals: Array<{ label: string; tone: 'neutral' | 'warning' | 'danger' | 'success' }> = []
+
+  if (!task.assigneeId) {
+    signals.push({ label: 'Cần owner', tone: 'warning' })
+  }
+
+  if (isTaskOverdue(task)) {
+    signals.push({ label: 'Quá hạn', tone: 'danger' })
+  } else if (isDueSoon(task)) {
+    signals.push({ label: 'Sắp đến hạn', tone: 'warning' })
+  }
+
+  if (task.status === 'InProgress') {
+    signals.push({ label: 'Đang làm', tone: 'neutral' })
+  }
+
+  if (task.status === 'Done') {
+    signals.push({ label: 'Hoàn tất', tone: 'success' })
+  }
+
+  return signals.slice(0, 3)
+}
+
+function priorityLabel(priority: string) {
+  const labels: Record<string, string> = {
+    Low: 'Thấp',
+    Medium: 'Trung bình',
+    High: 'Cao',
+    Critical: 'Khẩn cấp',
+  }
+
+  return labels[priority] ?? priority
+}
+
 function riskRank(task: HubTask) {
   let score = 0
   if (isTaskOverdue(task)) score -= 100
@@ -496,6 +566,105 @@ function resetDefaultView() {
   selectScope('mine')
   clearFilters()
   clearSelection()
+}
+
+function buildTaskViewSignature(view: Pick<SavedTaskView, 'scope' | 'searchQuery' | 'statusFilter' | 'priorityFilter' | 'projectFilter' | 'focusFilter' | 'sortBy'>) {
+  return JSON.stringify({
+    scope: view.scope,
+    searchQuery: view.searchQuery.trim().toLowerCase(),
+    statusFilter: view.statusFilter,
+    priorityFilter: view.priorityFilter,
+    projectFilter: view.projectFilter,
+    focusFilter: view.focusFilter,
+    sortBy: view.sortBy,
+  })
+}
+
+function loadSavedTaskViews() {
+  if (typeof window === 'undefined') return
+
+  try {
+    const raw = window.localStorage.getItem(savedTaskViewsStorageKey)
+    if (!raw) {
+      savedTaskViews.value = []
+      return
+    }
+
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      savedTaskViews.value = []
+      return
+    }
+
+    savedTaskViews.value = parsed
+      .filter((view) => view && typeof view === 'object')
+      .map((view) => ({
+        id: String(view.id ?? (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `view-${Date.now()}`)),
+        name: String(view.name ?? 'Saved view'),
+        scope: view.scope === 'all' ? 'all' : 'mine',
+        searchQuery: String(view.searchQuery ?? ''),
+        statusFilter: String(view.statusFilter ?? 'all'),
+        priorityFilter: String(view.priorityFilter ?? 'all'),
+        projectFilter: String(view.projectFilter ?? 'all'),
+        focusFilter: (view.focusFilter as TaskFocus) ?? 'all',
+        sortBy: (view.sortBy as TaskSort) ?? 'risk',
+        signature: String(view.signature ?? ''),
+      }))
+  } catch {
+    savedTaskViews.value = []
+  }
+}
+
+function persistSavedTaskViews() {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(savedTaskViewsStorageKey, JSON.stringify(savedTaskViews.value))
+  } catch {
+    // Best effort only.
+  }
+}
+
+function saveCurrentView() {
+  const signature = currentTaskViewSignature.value
+  const existing = savedTaskViews.value.find((view) => view.signature === signature)
+  if (existing) {
+    existing.name = existing.name || 'Saved view'
+    persistSavedTaskViews()
+    showSuccess('View đã được lưu')
+    return
+  }
+
+  const created: SavedTaskView = {
+    id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `view-${Date.now()}`,
+    name: `View ${savedTaskViews.value.length + 1}`,
+    scope: taskScope.value,
+    searchQuery: searchQuery.value,
+    statusFilter: statusFilter.value,
+    priorityFilter: priorityFilter.value,
+    projectFilter: projectFilter.value,
+    focusFilter: focusFilter.value,
+    sortBy: sortBy.value,
+    signature,
+  }
+
+  savedTaskViews.value = [created, ...savedTaskViews.value].slice(0, 8)
+  persistSavedTaskViews()
+  showSuccess('Đã lưu view hiện tại')
+}
+
+function applySavedTaskView(view: SavedTaskView) {
+  taskScope.value = view.scope
+  searchQuery.value = view.searchQuery
+  statusFilter.value = view.statusFilter
+  priorityFilter.value = view.priorityFilter
+  projectFilter.value = view.projectFilter
+  focusFilter.value = view.focusFilter
+  sortBy.value = view.sortBy
+}
+
+function deleteSavedTaskView(viewId: string) {
+  savedTaskViews.value = savedTaskViews.value.filter((view) => view.id !== viewId)
+  persistSavedTaskViews()
 }
 
 async function refreshDashboard() {
@@ -722,12 +891,41 @@ function workflowProgressKey(task: WorkflowTask): WorkflowMiniStage {
   return 'todo'
 }
 
+function workflowStageStatus(stage: WorkflowMiniStage) {
+  const mapping: Record<WorkflowMiniStage, string> = {
+    todo: 'Todo',
+    inProgress: 'InProgress',
+    inReview: 'InReview',
+    done: 'Done',
+  }
+
+  return mapping[stage]
+}
+
+function workflowStageActionEnabled(stage: WorkflowMiniStage) {
+  return stage === 'todo' || stage === 'inProgress' || stage === 'inReview' || stage === 'done'
+}
+
+async function setWorkflowStage(stage: string) {
+  const task = selectedTaskSummary.value
+  if (!task || !workflowStageActionEnabled(stage as WorkflowMiniStage)) return
+
+  try {
+    await updateSingleTaskStatus(
+      { id: task.id },
+      workflowStageStatus(stage as WorkflowMiniStage),
+    )
+  } catch {
+    // handled by updateSingleTaskStatus
+  }
+}
+
 function deriveWorkflowStage(task: Pick<WorkflowTask, 'status' | 'assigneeId'>): WorkflowStage {
-  if (!task.assigneeId) return 'needsOwner'
-  if (['Blocked', 'OnHold'].includes(task.status)) return 'blocked'
+  if (task.status === 'Done') return 'done'
   if (task.status === 'InReview') return 'inReview'
   if (task.status === 'InProgress') return 'inProgress'
-  if (task.status === 'Done') return 'done'
+  if (['Blocked', 'OnHold'].includes(task.status)) return 'blocked'
+  if (!task.assigneeId) return 'needsOwner'
   return 'todo'
 }
 
@@ -753,7 +951,8 @@ function isWorkflowUrgent(task: Pick<WorkflowTask, 'status' | 'assigneeId' | 'du
 }
 
 function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | 'dueDate' | 'priority'>, attention: TaskAttentionDto | null) {
-  if (!task.assigneeId) return 'Gán owner trước để task có bước tiếp theo rõ ràng.'
+  if (!task.assigneeId && task.status === 'Todo') return 'Gán owner trước để task có bước tiếp theo rõ ràng.'
+  if (!task.assigneeId) return 'Gán owner để luồng theo dõi rõ ràng hơn, nhưng trạng thái hiện tại vẫn giữ nguyên.'
   if (isWorkflowUrgent(task, attention)) return 'Ưu tiên xử lý ngay, rồi đẩy task sang In Progress.'
   if (['Blocked', 'OnHold'].includes(task.status)) return 'Gỡ blocker hoặc cập nhật trạng thái chờ xử lý.'
   if (task.status === 'InReview') return 'Đang chờ xác nhận. Nếu ổn, chuyển sang Done.'
@@ -775,55 +974,100 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
         </div>
 
         <div class="tasks-hero__actions">
-          <button class="pill-button" type="button" :class="{ 'is-active': taskScope === 'mine' }" @click="selectScope('mine')">
-            Của tôi
-          </button>
-          <button class="pill-button" type="button" :class="{ 'is-active': taskScope === 'all' }" @click="selectScope('all')">
-            Tất cả
-          </button>
-          <button class="pill-button" type="button" @click="refreshAll">
+          <div class="tasks-hero__segmented">
+            <button class="pill-button" type="button" :class="{ 'is-active': taskScope === 'mine' }" @click="selectScope('mine')">
+              Của tôi
+            </button>
+            <button class="pill-button" type="button" :class="{ 'is-active': taskScope === 'all' }" @click="selectScope('all')">
+              Tất cả
+            </button>
+          </div>
+
+          <button class="pill-button pill-button--soft" type="button" @click="refreshAll">
             <RefreshCw :size="15" />
             Làm mới
           </button>
+
+          <div class="tasks-hero__summary">
+            <span>Hiển thị</span>
+            <strong>{{ taskScope === 'mine' ? 'Công việc của bạn' : 'Toàn workspace' }}</strong>
+            <small>{{ filteredTasks.length }} task đang hiển thị</small>
+          </div>
         </div>
       </section>
 
       <section class="tasks-stats">
         <article class="stat-card glass-card reveal delay-1">
-          <span>Tổng task</span>
+          <div class="stat-card__head">
+            <span>Tổng task</span>
+            <span class="stat-card__icon is-blue"><ListFilter :size="15" /></span>
+          </div>
           <strong>{{ taskSummary.total }}</strong>
           <small>{{ taskScope === 'mine' ? 'Task đang liên quan trực tiếp tới bạn' : 'Task trong toàn bộ workspace' }}</small>
         </article>
         <article class="stat-card glass-card reveal delay-2">
-          <span>Quá hạn</span>
+          <div class="stat-card__head">
+            <span>Quá hạn</span>
+            <span class="stat-card__icon is-red"><BadgeAlert :size="15" /></span>
+          </div>
           <strong>{{ taskSummary.overdue }}</strong>
           <small>Những task cần xử lý ngay</small>
         </article>
         <article class="stat-card glass-card reveal delay-3">
-          <span>Sắp đến hạn</span>
+          <div class="stat-card__head">
+            <span>Sắp đến hạn</span>
+            <span class="stat-card__icon is-amber"><Clock3 :size="15" /></span>
+          </div>
           <strong>{{ taskSummary.dueSoon }}</strong>
           <small>Task nên ưu tiên trong 48h tới</small>
         </article>
         <article class="stat-card glass-card reveal delay-4">
-          <span>Đã chọn</span>
+          <div class="stat-card__head">
+            <span>Đã chọn</span>
+            <span class="stat-card__icon is-green"><CheckSquare2 :size="15" /></span>
+          </div>
           <strong>{{ selectedCount }}</strong>
           <small>Có thể áp dụng thao tác hàng loạt</small>
         </article>
       </section>
 
       <section class="panel-card glass-card reveal delay-2">
-        <div class="panel-head">
-          <div>
+        <div class="panel-head panel-head--split">
+          <div class="panel-head__title">
             <span>Bộ lọc</span>
             <h3>Tìm nhanh và thu hẹp danh sách</h3>
+            <p>Giữ mọi thứ gọn hơn bằng một hàng điều khiển ngắn, rõ, dễ quét.</p>
           </div>
           <div class="panel-head__meta">
             <button class="link-button" type="button" @click="resetDefaultView">Default view</button>
+            <button class="link-button" type="button" @click="saveCurrentView">Lưu view</button>
             <button class="link-button" type="button" @click="clearFilters">Xóa lọc</button>
           </div>
         </div>
 
-        <div class="filter-grid">
+        <div class="saved-views" v-if="savedTaskViews.length > 0">
+          <div
+            v-for="view in savedTaskViews"
+            :key="view.id"
+            class="saved-view-chip"
+            :class="{ 'is-active': activeSavedTaskView?.id === view.id }"
+            role="button"
+            tabindex="0"
+            @click="applySavedTaskView(view)"
+          >
+            <span>{{ view.name }}</span>
+            <button
+              type="button"
+              class="saved-view-chip__remove"
+              @click.stop="deleteSavedTaskView(view.id)"
+              aria-label="Xóa view đã lưu"
+            >
+              <X :size="12" />
+            </button>
+          </div>
+        </div>
+
+        <div class="filter-grid filter-grid--modern">
           <label class="field field--search">
             <Search :size="16" />
             <input v-model="searchQuery" type="search" placeholder="Tìm task, dự án, người giao..." />
@@ -936,27 +1180,58 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
               @mouseenter="prefetchTaskDetail(task.id)"
               @focus="prefetchTaskDetail(task.id)"
             >
-              <div class="task-card__eyebrow">
-                <span class="task-card__tag">{{ task.projectCode }}</span>
-                <span class="task-card__status">{{ taskCardToneLabel(task) }}</span>
-              </div>
+              <div class="task-card__visual">
+                <span class="task-card__marker" :class="`is-${taskCardTone(task)}`" aria-hidden="true"></span>
 
-              <div class="task-card__titleRow">
-                <div class="task-card__titleWrap">
-                  <strong>{{ task.title }}</strong>
-                  <div class="task-card__progress" aria-hidden="true">
-                    <span class="task-card__progressFill" :style="{ width: `${taskCardProgress(task)}%` }"></span>
+                <div class="task-card__content">
+                  <div class="task-card__eyebrow">
+                    <span class="task-card__tag">{{ task.projectCode }}</span>
+                    <span class="task-card__priority" :class="`is-${task.priority.toLowerCase()}`">
+                      {{ priorityLabel(task.priority) }}
+                    </span>
+                  </div>
+
+                  <div class="task-card__titleRow">
+                    <div class="task-card__titleWrap">
+                      <strong>{{ task.title }}</strong>
+                      <span class="task-card__subtitle">{{ task.projectName }}</span>
+                    </div>
+                  </div>
+
+                  <div class="task-card__metaRow">
+                    <span class="task-card__meta task-card__meta--assignee">{{ task.assigneeName || 'Chưa giao' }}</span>
+                    <span class="task-card__meta task-card__meta--due">
+                      {{ task.dueDate ? formatDate(task.dueDate) : 'Chưa có hạn' }}
+                    </span>
+                    <span class="task-card__meta task-card__meta--status">{{ taskCardToneLabel(task) }}</span>
+                  </div>
+
+                  <div v-if="taskSmartSignals(task).length > 0" class="task-card__signalRow">
+                    <span
+                      v-for="signal in taskSmartSignals(task)"
+                      :key="signal.label"
+                      class="task-card__signal"
+                      :class="`is-${signal.tone}`"
+                    >
+                      {{ signal.label }}
+                    </span>
+                  </div>
+
+                  <div class="task-card__progressRow">
+                    <div class="task-card__progress" aria-hidden="true">
+                      <span class="task-card__progressFill" :style="{ width: `${taskCardProgress(task)}%` }"></span>
+                    </div>
+                    <span class="task-card__progressText">{{ taskCardProgress(task) }}%</span>
                   </div>
                 </div>
-                <span class="task-card__peek" aria-hidden="true">
-                  <ArrowRight :size="14" />
-                </span>
-              </div>
 
-              <div class="task-card__footerline">
-                <span class="task-card__chip">{{ task.projectName }}</span>
-                <span class="task-card__chip task-card__chip--soft">{{ task.assigneeName || 'Chưa giao' }}</span>
-                <span class="task-card__metaTone">{{ displayStatus(task.status) }}</span>
+                <div class="task-card__side">
+                  <span class="task-card__status">{{ taskCardToneLabel(task) }}</span>
+                  <span class="task-card__owner">{{ task.assigneeName || 'Chưa giao' }}</span>
+                  <span class="task-card__peek" aria-hidden="true">
+                    <ArrowRight :size="14" />
+                  </span>
+                </div>
               </div>
             </button>
           </article>
@@ -982,14 +1257,26 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
         <section v-if="selectedTaskDisplay" class="task-detail__top">
           <div class="task-detail__summary">
             <div v-if="selectedTaskLoading" class="task-detail__skeleton" aria-hidden="true">
-              <div class="skeleton-line skeleton-line--short"></div>
-              <div class="skeleton-line skeleton-line--title"></div>
-              <div class="skeleton-line skeleton-line--body"></div>
+              <div class="skeleton-hero">
+                <div class="skeleton-line skeleton-line--short"></div>
+                <div class="skeleton-line skeleton-line--title"></div>
+                <div class="skeleton-line skeleton-line--body"></div>
+              </div>
               <div class="skeleton-grid">
-                <div class="skeleton-card"></div>
-                <div class="skeleton-card"></div>
-                <div class="skeleton-card"></div>
-                <div class="skeleton-card"></div>
+                <div class="skeleton-card skeleton-card--wide"></div>
+                <div class="skeleton-card skeleton-card--wide"></div>
+                <div class="skeleton-card skeleton-card--wide"></div>
+                <div class="skeleton-card skeleton-card--wide"></div>
+              </div>
+              <div class="skeleton-track">
+                <span class="skeleton-track__rail"></span>
+                <div v-for="step in 4" :key="step" class="skeleton-track__step">
+                  <span class="skeleton-track__dot"></span>
+                  <div class="skeleton-track__copy">
+                    <span class="skeleton-line skeleton-line--tiny"></span>
+                    <span class="skeleton-line skeleton-line--body"></span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1083,8 +1370,13 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
                 class="workflow-track__item"
                 :class="[`is-${stage.state}`, `is-${stage.tone}`, stage.active ? 'is-active' : 'is-muted', stage.hot ? 'is-hot' : '']"
                 :style="{ '--stage-delay': `${index * 150}ms` }"
+                role="button"
+                tabindex="0"
+                @click="setWorkflowStage(stage.key)"
               >
-                <span v-if="index < workflowDetailStages.length - 1" class="workflow-track__rail"></span>
+                <span v-if="index < workflowDetailStages.length - 1" class="workflow-track__rail" aria-hidden="true">
+                  <span class="workflow-track__rail-flow"></span>
+                </span>
                 <span class="workflow-track__dot">
                   <span class="workflow-track__pulse" aria-hidden="true"></span>
                   <span class="workflow-track__spark" aria-hidden="true"></span>
@@ -1151,8 +1443,12 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 .tasks-page {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 18px;
+  gap: 20px;
   align-items: start;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(59, 130, 246, 0.08), transparent 24%),
+    radial-gradient(circle at 88% 0%, rgba(16, 185, 129, 0.06), transparent 20%),
+    linear-gradient(180deg, rgba(248, 250, 255, 0.94), rgba(255, 255, 255, 0.98));
 }
 
 .tasks-page.has-detail {
@@ -1168,15 +1464,22 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 .tasks-hero,
 .panel-card,
 .task-detail-drawer {
-  border-radius: 22px;
+  border-radius: 28px;
 }
 
 .tasks-hero {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.95fr);
   gap: 18px;
-  padding: 22px 24px;
-  background: linear-gradient(135deg, rgba(15, 82, 186, 0.12), rgba(255, 255, 255, 0.92));
+  padding: 28px;
+  background:
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.12), transparent 34%),
+    radial-gradient(circle at 10% 12%, rgba(99, 102, 241, 0.07), transparent 30%),
+    linear-gradient(135deg, rgba(15, 82, 186, 0.08), rgba(255, 255, 255, 0.98));
+  border: 1px solid rgba(191, 219, 254, 0.58);
+  box-shadow:
+    0 20px 40px rgba(15, 23, 42, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 
 .tasks-hero__copy {
@@ -1199,7 +1502,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 .panel-head h3,
 .task-detail__header h2 {
   color: var(--text-strong);
-  font-size: clamp(24px, 3vw, 34px);
+  font-size: clamp(26px, 3vw, 34px);
   font-weight: 900;
 }
 
@@ -1209,11 +1512,50 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 }
 
 .tasks-hero__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
+  display: grid;
+  align-content: start;
+  justify-items: stretch;
   gap: 10px;
+}
+
+.tasks-hero__segmented {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.tasks-hero__summary {
+  display: grid;
+  gap: 4px;
+  padding: 16px 18px;
+  border: 1px solid rgba(191, 219, 254, 0.72);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 248, 255, 0.96));
+  box-shadow:
+    0 10px 22px rgba(15, 23, 42, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+.tasks-hero__summary span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.tasks-hero__summary strong {
+  color: var(--text-strong);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.tasks-hero__summary small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .pill-button,
@@ -1224,7 +1566,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px solid rgba(193, 211, 232, 0.95);
+  border: 1px solid rgba(193, 211, 232, 0.9);
   border-radius: 999px;
   font-weight: 800;
 }
@@ -1233,13 +1575,23 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   min-height: 40px;
   padding: 0 14px;
   color: var(--primary);
-  background: rgba(255, 255, 255, 0.95);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 248, 255, 0.96));
+  box-shadow: 0 8px 18px rgba(31, 128, 255, 0.05);
 }
 
 .pill-button.is-active {
   border-color: rgba(31, 128, 255, 0.34);
   color: white;
   background: var(--primary);
+  box-shadow:
+    0 12px 24px rgba(31, 128, 255, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.pill-button--soft {
+  color: #0f172a;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(246, 249, 255, 0.96));
 }
 
 .pill-button--ghost,
@@ -1250,7 +1602,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 .pill-button--danger {
   color: #dc2626;
   border-color: rgba(239, 68, 68, 0.24);
-  background: rgba(254, 242, 242, 0.96);
+  background: linear-gradient(180deg, rgba(254, 242, 242, 0.98), rgba(255, 247, 247, 0.98));
 }
 
 .tasks-stats {
@@ -1261,8 +1613,31 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 
 .stat-card {
   display: grid;
-  gap: 6px;
-  padding: 18px;
+  gap: 10px;
+  padding: 16px 16px 15px;
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 4px;
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.28), rgba(99, 102, 241, 0.16), rgba(59, 130, 246, 0.28));
+}
+
+.stat-card:nth-child(2)::before {
+  background: linear-gradient(90deg, rgba(248, 113, 113, 0.28), rgba(251, 146, 60, 0.16), rgba(248, 113, 113, 0.28));
+}
+
+.stat-card:nth-child(3)::before {
+  background: linear-gradient(90deg, rgba(250, 204, 21, 0.26), rgba(245, 158, 11, 0.16), rgba(250, 204, 21, 0.26));
+}
+
+.stat-card:nth-child(4)::before {
+  background: linear-gradient(90deg, rgba(34, 197, 94, 0.24), rgba(59, 130, 246, 0.16), rgba(34, 197, 94, 0.24));
 }
 
 .stat-card span {
@@ -1270,6 +1645,43 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
+}
+
+.stat-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stat-card__icon {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: inset 0 0 0 1px rgba(226, 232, 240, 0.84);
+}
+
+.stat-card__icon.is-blue {
+  color: #2563eb;
+  background: rgba(239, 246, 255, 0.96);
+}
+
+.stat-card__icon.is-red {
+  color: #dc2626;
+  background: rgba(254, 242, 242, 0.96);
+}
+
+.stat-card__icon.is-amber {
+  color: #d97706;
+  background: rgba(255, 251, 235, 0.96);
+}
+
+.stat-card__icon.is-green {
+  color: #16a34a;
+  background: rgba(236, 253, 245, 0.96);
 }
 
 .stat-card strong {
@@ -1284,16 +1696,46 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 }
 
 .panel-card {
-  padding: 18px;
+  padding: 20px 22px 22px;
   display: grid;
-  gap: 16px;
+  gap: 18px;
+  background:
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 28%),
+    radial-gradient(circle at left top, rgba(16, 185, 129, 0.05), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 255, 0.92));
+  border: 1px solid rgba(223, 231, 242, 0.82);
+  box-shadow:
+    0 18px 36px rgba(15, 23, 42, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
 }
 
 .panel-head {
   display: flex;
-  align-items: start;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.76);
+}
+
+.panel-head--split {
+  align-items: center;
+}
+
+.panel-head > div:first-child {
+  display: grid;
+  gap: 6px;
+}
+
+.panel-head__title {
+  display: grid;
+  gap: 4px;
+}
+
+.panel-head__title p {
+  color: var(--muted);
+  line-height: 1.55;
+  max-width: 64ch;
 }
 
 .panel-head__meta {
@@ -1301,12 +1743,59 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
+}
+
+.saved-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.saved-view-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px 0 12px;
+  border: 1px solid rgba(191, 219, 254, 0.9);
+  border-radius: 999px;
+  color: #1d4ed8;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.96));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.saved-view-chip.is-active {
+  color: white;
+  border-color: rgba(31, 128, 255, 0.52);
+  background: linear-gradient(180deg, rgba(31, 128, 255, 0.98), rgba(37, 99, 235, 0.96));
+  box-shadow: 0 12px 24px rgba(31, 128, 255, 0.18);
+}
+
+.saved-view-chip__remove {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 999px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.saved-view-chip:not(.is-active) .saved-view-chip__remove {
+  background: rgba(148, 163, 184, 0.1);
 }
 
 .filter-grid {
   display: grid;
-  grid-template-columns: 2fr repeat(5, minmax(0, 1fr));
+  grid-template-columns: minmax(280px, 2.1fr) repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.filter-grid--modern {
   gap: 12px;
 }
 
@@ -1315,11 +1804,20 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   align-items: center;
   gap: 10px;
   min-height: 48px;
-  padding: 0 14px;
-  border: 1px solid rgba(203, 213, 225, 0.95);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.96);
-  color: var(--muted);
+  padding: 0 13px;
+  border: 1px solid rgba(214, 226, 241, 0.88);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 255, 0.94)),
+    linear-gradient(135deg, rgba(59, 130, 246, 0.03), rgba(99, 102, 241, 0.015));
+  color: #64748b;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    0 10px 20px rgba(15, 23, 42, 0.025);
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
 }
 
 .field--search {
@@ -1341,13 +1839,64 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   font: inherit;
 }
 
+.field input::placeholder {
+  color: #94a3b8;
+}
+
+.field input,
+.field select {
+  font-size: 14px;
+}
+
+.field select {
+  cursor: pointer;
+  appearance: none;
+}
+
+.field:focus-within {
+  border-color: rgba(59, 130, 246, 0.42);
+  box-shadow:
+    0 0 0 4px rgba(59, 130, 246, 0.09),
+    0 14px 24px rgba(59, 130, 246, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  transform: translateY(-1px);
+}
+
+.field:hover {
+  border-color: rgba(191, 219, 254, 0.98);
+  box-shadow:
+    0 12px 24px rgba(15, 23, 42, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
 .select-all {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: var(--muted);
+  color: #475569;
   font-size: 14px;
   font-weight: 700;
+}
+
+.select-all input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
+
+.panel-head .link-button {
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(191, 219, 254, 0.9);
+  color: #0f172a;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 255, 0.95));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+.panel-head .link-button:hover:not(:disabled) {
+  border-color: rgba(96, 165, 250, 0.48);
+  color: var(--primary);
 }
 
 .bulk-bar {
@@ -1356,9 +1905,10 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   justify-content: space-between;
   gap: 12px;
   padding: 14px 16px;
-  border: 1px solid rgba(191, 219, 254, 0.9);
+  border: 1px solid rgba(191, 219, 254, 0.74);
   border-radius: 18px;
-  background: linear-gradient(180deg, rgba(239, 246, 255, 0.9), white);
+  background:
+    linear-gradient(180deg, rgba(239, 246, 255, 0.9), rgba(255, 255, 255, 0.98));
 }
 
 .bulk-bar strong {
@@ -1380,9 +1930,11 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   gap: 8px;
   justify-items: center;
   padding: 36px 18px;
-  border: 1px dashed rgba(191, 219, 254, 0.9);
+  border: 1px dashed rgba(191, 219, 254, 0.86);
   border-radius: 18px;
-  background: rgba(248, 250, 252, 0.8);
+  background:
+    radial-gradient(circle at top, rgba(59, 130, 246, 0.04), transparent 34%),
+    rgba(248, 250, 252, 0.82);
   color: var(--muted);
   text-align: center;
 }
@@ -1399,7 +1951,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 
 .task-cards {
   display: grid;
-  gap: 12px;
+  gap: 16px;
 }
 
 .task-card {
@@ -1407,40 +1959,47 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   grid-template-columns: 22px minmax(0, 1fr);
   gap: 14px;
   align-items: start;
-  padding: 18px 18px 16px;
-  border: 1px solid rgba(191, 219, 254, 0.74);
+  padding: 15px 18px 14px;
+  border: 1px solid rgba(203, 213, 225, 0.64);
   border-radius: 22px;
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.99) 0%, rgba(248, 250, 255, 0.98) 42%, rgba(244, 248, 255, 0.96) 100%);
+    radial-gradient(circle at 14% 0%, rgba(59, 130, 246, 0.06), transparent 26%),
+    radial-gradient(circle at 86% 10%, rgba(16, 185, 129, 0.03), transparent 22%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.995) 0%, rgba(250, 252, 255, 0.985) 100%);
   position: relative;
   overflow: hidden;
   box-shadow:
-    0 16px 34px rgba(15, 23, 42, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.94);
-  transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, background 0.22s ease;
+    0 12px 26px rgba(15, 23, 42, 0.045),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  transition:
+    transform 0.24s ease,
+    box-shadow 0.24s ease,
+    border-color 0.24s ease,
+    background 0.24s ease;
 }
 
 .task-card::before {
   content: '';
   position: absolute;
   inset: 0 auto 0 0;
-  width: 5px;
+  width: 4px;
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(59, 130, 246, 0.96), rgba(96, 165, 250, 0.86));
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.98), rgba(96, 165, 250, 0.92));
   opacity: 0.98;
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.45),
-    0 0 18px rgba(59, 130, 246, 0.2);
+    0 0 0 1px rgba(255, 255, 255, 0.5),
+    0 0 18px rgba(37, 99, 235, 0.22);
 }
 
 .task-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(147, 197, 253, 0.98);
+  transform: translateY(-3px);
+  border-color: rgba(96, 165, 250, 0.72);
   box-shadow:
-    0 24px 44px rgba(15, 23, 42, 0.09),
-    0 0 0 1px rgba(191, 219, 254, 0.34);
+    0 20px 36px rgba(15, 23, 42, 0.075),
+    0 0 0 1px rgba(191, 219, 254, 0.32);
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 1) 0%, rgba(248, 250, 255, 0.99) 44%, rgba(242, 247, 255, 0.97) 100%);
+    radial-gradient(circle at 10% 0%, rgba(59, 130, 246, 0.1), transparent 24%),
+    linear-gradient(135deg, rgba(255, 255, 255, 1) 0%, rgba(249, 252, 255, 0.99) 56%, rgba(246, 249, 255, 0.98) 100%);
 }
 
 .task-card.is-selected {
@@ -1470,9 +2029,9 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at 12% 0%, rgba(255, 255, 255, 0.98), transparent 28%),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.34), transparent 22%);
-  opacity: 0.72;
+    radial-gradient(circle at 14% 0%, rgba(255, 255, 255, 0.95), transparent 24%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.16), transparent 16%);
+  opacity: 0.2;
   pointer-events: none;
 }
 
@@ -1484,14 +2043,14 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 }
 
 .task-card__check input {
-  width: 16px;
-  height: 16px;
+  width: 17px;
+  height: 17px;
   accent-color: var(--primary);
 }
 
 .task-card__body {
   display: grid;
-  gap: 13px;
+  gap: 10px;
   text-align: left;
   cursor: pointer;
   background: transparent;
@@ -1501,29 +2060,75 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   align-self: stretch;
 }
 
-.task-card__titleRow {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+.task-card__visual {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
   gap: 14px;
+  align-items: start;
+  min-width: 0;
+}
+
+.task-card__marker {
+  width: 14px;
+  height: 14px;
+  margin-top: 7px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.06);
+}
+
+.task-card__marker.is-success {
+  background: linear-gradient(180deg, rgba(34, 197, 94, 0.98), rgba(22, 163, 74, 0.96));
+  box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.08);
+}
+
+.task-card__marker.is-warning {
+  background: linear-gradient(180deg, rgba(250, 204, 21, 0.98), rgba(245, 158, 11, 0.94));
+  box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.08);
+}
+
+.task-card__marker.is-danger {
+  background: linear-gradient(180deg, rgba(248, 113, 113, 0.98), rgba(239, 68, 68, 0.96));
+  box-shadow: 0 0 0 6px rgba(248, 113, 113, 0.1);
+}
+
+.task-card__marker.is-info,
+.task-card__marker.is-muted,
+.task-card__marker.is-neutral {
+  background: linear-gradient(180deg, rgba(148, 163, 184, 0.96), rgba(100, 116, 139, 0.9));
+  box-shadow: 0 0 0 6px rgba(148, 163, 184, 0.08);
+}
+
+.task-card__content {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.task-card__titleRow {
+  display: block;
   min-width: 0;
   position: relative;
 }
 
 .task-card__titleWrap {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
-  flex: 1;
 }
 
 .task-card__titleWrap strong {
   color: #0f172a;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 900;
   letter-spacing: -0.02em;
-  line-height: 1.35;
+  line-height: 1.28;
   max-width: 100%;
+}
+
+.task-card__subtitle {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .task-card__eyebrow {
@@ -1534,6 +2139,14 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   min-width: 0;
   position: relative;
   z-index: 1;
+}
+
+.task-card__eyebrowRight {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .task-card__tag,
@@ -1549,14 +2162,51 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 
 .task-card__tag {
   color: #1d4ed8;
-  background: linear-gradient(180deg, rgba(239, 246, 255, 0.98), rgba(245, 249, 255, 0.98));
-  box-shadow: inset 0 0 0 1px rgba(191, 219, 254, 0.75);
+  background:
+    linear-gradient(180deg, rgba(239, 246, 255, 0.98), rgba(248, 251, 255, 0.98)),
+    linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(99, 102, 241, 0.04));
+  box-shadow:
+    inset 0 0 0 1px rgba(191, 219, 254, 0.78),
+    0 8px 18px rgba(59, 130, 246, 0.05);
 }
 
 .task-card__status {
-  color: #334155;
-  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.96));
-  box-shadow: inset 0 0 0 1px rgba(226, 232, 240, 0.82);
+  color: #475569;
+  background:
+    linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(242, 246, 252, 0.98)),
+    linear-gradient(135deg, rgba(148, 163, 184, 0.06), rgba(148, 163, 184, 0.02));
+  box-shadow:
+    inset 0 0 0 1px rgba(226, 232, 240, 0.74),
+    0 8px 18px rgba(15, 23, 42, 0.04);
+}
+
+.task-card__priority {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.task-card__priority.is-critical,
+.task-card__priority.is-high {
+  color: #b91c1c;
+  background: linear-gradient(180deg, rgba(254, 226, 226, 0.98), rgba(255, 241, 241, 0.98));
+  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.16);
+}
+
+.task-card__priority.is-medium {
+  color: #a16207;
+  background: linear-gradient(180deg, rgba(255, 251, 235, 0.98), rgba(255, 253, 242, 0.98));
+  box-shadow: inset 0 0 0 1px rgba(250, 204, 21, 0.16);
+}
+
+.task-card__priority.is-low {
+  color: #047857;
+  background: linear-gradient(180deg, rgba(236, 253, 245, 0.98), rgba(240, 253, 250, 0.98));
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.14);
 }
 
 .task-card__footerline {
@@ -1574,6 +2224,95 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.task-card__metaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  color: #64748b;
+  font-size: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.task-card__meta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(250, 252, 255, 0.99), rgba(245, 248, 255, 0.98)),
+    linear-gradient(135deg, rgba(59, 130, 246, 0.03), transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(214, 226, 241, 0.82),
+    0 8px 20px rgba(15, 23, 42, 0.04);
+}
+
+.task-card__meta--project {
+  color: #1d4ed8;
+}
+
+.task-card__meta--assignee {
+  color: #334155;
+}
+
+.task-card__meta--due {
+  color: #475569;
+}
+
+.task-card__meta--status {
+  color: #0f766e;
+}
+
+.task-card__signalRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.task-card__signal {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.task-card__signal.is-neutral {
+  color: #475569;
+  background: rgba(241, 245, 249, 0.98);
+}
+
+.task-card__signal.is-warning {
+  color: #a16207;
+  background: rgba(255, 251, 235, 0.98);
+}
+
+.task-card__signal.is-danger {
+  color: #dc2626;
+  background: rgba(254, 242, 242, 0.98);
+}
+
+.task-card__signal.is-success {
+  color: #047857;
+  background: rgba(236, 253, 245, 0.98);
+}
+
+.task-card__progressRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+  padding-top: 2px;
 }
 
 .task-card__chip {
@@ -1603,14 +2342,15 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 .task-card__progress {
   position: relative;
   overflow: hidden;
-  height: 9px;
+  height: 6px;
+  flex: 1;
   border-radius: 999px;
   background:
-    linear-gradient(180deg, rgba(226, 232, 240, 0.95), rgba(241, 245, 249, 0.98)),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.42), transparent);
+    linear-gradient(180deg, rgba(226, 232, 240, 0.98), rgba(246, 249, 253, 0.98)),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.52), transparent);
   box-shadow:
-    inset 0 1px 1px rgba(15, 23, 42, 0.04),
-    0 0 0 1px rgba(255, 255, 255, 0.7);
+    inset 0 1px 1px rgba(15, 23, 42, 0.05),
+    0 0 0 1px rgba(255, 255, 255, 0.75);
 }
 
 .task-card__progress::after {
@@ -1629,28 +2369,67 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   inset: 0 auto 0 0;
   border-radius: inherit;
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--task-accent) 94%, white), var(--task-accent)),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0));
+    linear-gradient(90deg, color-mix(in srgb, var(--task-accent) 96%, white), var(--task-accent)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0));
   box-shadow:
     0 0 18px color-mix(in srgb, var(--task-accent) 42%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.task-card__progressText {
+  color: color-mix(in srgb, var(--task-accent) 82%, #0f172a);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  min-width: 34px;
+  text-align: right;
+}
+
+.task-card__progressRow::after {
+  content: '';
+  position: absolute;
+  inset: -1px auto 0 0;
+  width: 14px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--task-accent) 18%, white), transparent);
+  opacity: 0.7;
+  pointer-events: none;
 }
 
 .task-card__peek {
   display: inline-grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border-radius: 999px;
   color: white;
-  background: linear-gradient(180deg, rgba(37, 99, 235, 0.98), rgba(59, 130, 246, 0.96));
+  background:
+    linear-gradient(180deg, rgba(37, 99, 235, 0.98), rgba(59, 130, 246, 0.96)),
+    linear-gradient(135deg, rgba(96, 165, 250, 0.3), rgba(37, 99, 235, 0.12));
   opacity: 0;
   transform: translateX(-4px) scale(0.96);
   box-shadow:
-    0 10px 22px rgba(37, 99, 235, 0.16),
-    0 0 0 1px rgba(255, 255, 255, 0.28);
+    0 12px 26px rgba(37, 99, 235, 0.22),
+    0 0 0 1px rgba(255, 255, 255, 0.32);
   transition: opacity 0.18s ease, transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
   flex: none;
+}
+
+.task-card__side {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+  align-content: start;
+  min-width: 122px;
+  padding-left: 8px;
+}
+
+.task-card__owner {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+  line-height: 1.4;
 }
 
 .task-card:hover .task-card__peek,
@@ -1744,6 +2523,10 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  border: 1px solid rgba(223, 231, 242, 0.96);
+  box-shadow:
+    0 18px 34px rgba(15, 23, 42, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88);
 }
 
 .task-detail {
@@ -1765,7 +2548,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 
 .task-detail__skeleton {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   padding: 2px 0 6px;
 }
 
@@ -1776,6 +2559,15 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   background: linear-gradient(90deg, rgba(226, 232, 240, 0.9), rgba(241, 245, 249, 1), rgba(226, 232, 240, 0.9));
   background-size: 200% 100%;
   animation: skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+.skeleton-hero {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.82), rgba(255, 255, 255, 0.98));
+  border: 1px solid rgba(226, 232, 240, 0.9);
 }
 
 .skeleton-line {
@@ -1797,16 +2589,73 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   height: 12px;
 }
 
+.skeleton-line--tiny {
+  width: 58%;
+  height: 10px;
+}
+
 .skeleton-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 .skeleton-card {
   height: 54px;
   border-radius: 14px;
+}
+
+.skeleton-card--wide {
+  height: 48px;
+}
+
+.skeleton-track {
+  display: grid;
+  gap: 12px;
+  position: relative;
+  padding: 4px 2px 0 28px;
+}
+
+.skeleton-track__rail {
+  position: absolute;
+  left: 16px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(191, 219, 254, 0.35), rgba(59, 130, 246, 0.2), rgba(191, 219, 254, 0.35));
+  overflow: hidden;
+}
+
+.skeleton-track__rail::after {
+  content: '';
+  position: absolute;
+  inset: -20% 0 auto;
+  height: 30%;
+  border-radius: inherit;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.96), transparent);
+  animation: skeleton-track-flow 1.8s linear infinite;
+}
+
+.skeleton-track__step {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.skeleton-track__dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(226, 232, 240, 0.95), rgba(241, 245, 249, 0.98));
+  box-shadow: inset 0 0 0 1px rgba(226, 232, 240, 0.9);
+}
+
+.skeleton-track__copy {
+  display: grid;
+  gap: 6px;
 }
 
 .task-detail__top {
@@ -1820,9 +2669,11 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   display: grid;
   gap: 16px;
   padding: 16px;
-  border: 1px solid rgba(226, 232, 240, 0.95);
+  border: 1px solid rgba(226, 232, 240, 0.84);
   border-radius: 20px;
-  background: linear-gradient(180deg, rgba(248, 250, 252, 0.9), white);
+  background:
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.07), transparent 34%),
+    linear-gradient(180deg, rgba(253, 254, 255, 0.98), white);
 }
 
 .task-detail__summary-head {
@@ -1867,7 +2718,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 .task-detail__facts div,
 .detail-block,
 .workflow-mini {
-  border: 1px solid rgba(226, 232, 240, 0.95);
+  border: 1px solid rgba(226, 232, 240, 0.9);
   border-radius: 18px;
   background: white;
 }
@@ -1934,10 +2785,12 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   padding: 16px;
   display: grid;
   gap: 14px;
-  border: 1px solid rgba(226, 232, 240, 0.95);
+  border: 1px solid rgba(226, 232, 240, 0.88);
   border-radius: 18px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(249, 250, 251, 0.98));
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.1), transparent 30%),
+    radial-gradient(circle at left top, rgba(16, 185, 129, 0.05), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(249, 251, 255, 0.98));
 }
 
 .workflow-mini--vertical {
@@ -1999,8 +2852,13 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   gap: 4px;
   padding: 12px 14px;
   border-radius: 16px;
-  border: 1px solid rgba(191, 219, 254, 0.8);
-  background: linear-gradient(180deg, rgba(239, 246, 255, 0.94), rgba(255, 255, 255, 0.98));
+  border: 1px solid rgba(191, 219, 254, 0.82);
+  background:
+    radial-gradient(circle at 10% 0%, rgba(59, 130, 246, 0.08), transparent 28%),
+    linear-gradient(180deg, rgba(239, 246, 255, 0.98), rgba(255, 255, 255, 0.99));
+  box-shadow:
+    0 10px 22px rgba(59, 130, 246, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94);
 }
 
 .workflow-owner span {
@@ -2035,7 +2893,8 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   grid-template-columns: 40px minmax(0, 1fr);
   gap: 12px;
   align-items: start;
-  padding: 10px 12px 10px 0;
+  padding: 12px 12px 12px 0;
+  cursor: pointer;
   opacity: 1;
   filter: none;
   transform: translateY(6px);
@@ -2044,21 +2903,84 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   transition: opacity 0.18s ease, transform 0.18s ease;
 }
 
+.workflow-track__item:hover {
+  transform: translateX(2px);
+}
+
+.workflow-track__item.is-active::before {
+  content: '';
+  position: absolute;
+  inset: 4px 0 4px 34px;
+  border-radius: 18px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.12)),
+    linear-gradient(90deg, rgba(239, 246, 255, 0.9), rgba(239, 246, 255, 0));
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.workflow-track__item:focus-visible {
+  outline: none;
+}
+
+.workflow-track__item:focus-visible::before {
+  opacity: 0.95;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.08);
+}
+
+.workflow-track__item.is-active.is-neutral::before {
+  background:
+    linear-gradient(90deg, rgba(248, 250, 252, 0.9), rgba(248, 250, 252, 0.18)),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.08), rgba(148, 163, 184, 0));
+}
+
+.workflow-track__item.is-active.is-warning::before {
+  background:
+    linear-gradient(90deg, rgba(255, 251, 235, 0.94), rgba(255, 251, 235, 0.16)),
+    linear-gradient(90deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0));
+}
+
+.workflow-track__item.is-active.is-success::before {
+  background:
+    linear-gradient(90deg, rgba(236, 253, 245, 0.94), rgba(236, 253, 245, 0.16)),
+    linear-gradient(90deg, rgba(34, 197, 94, 0.1), rgba(34, 197, 94, 0));
+}
+
+.workflow-track__item.is-active.is-danger::before {
+  background:
+    linear-gradient(90deg, rgba(254, 242, 242, 0.94), rgba(254, 242, 242, 0.16)),
+    linear-gradient(90deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0));
+}
+
 .workflow-track__rail {
   position: absolute;
-  left: 19px;
+  left: 18px;
   top: 34px;
   bottom: -14px;
-  width: 3px;
+  width: 6px;
   border-radius: 999px;
   background:
-    linear-gradient(180deg, rgba(226, 232, 240, 0.86), rgba(191, 219, 254, 0.58)),
+    linear-gradient(180deg, rgba(191, 219, 254, 0.2), rgba(59, 130, 246, 0.56), rgba(191, 219, 254, 0.22)),
     linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0));
-  background-size: 100% 240%;
+  background-size: 100% 260%;
   overflow: hidden;
   box-shadow:
-    0 0 18px rgba(96, 165, 250, 0.08),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+    0 0 20px rgba(59, 130, 246, 0.18),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+}
+
+.workflow-track__rail-flow {
+  position: absolute;
+  inset: -26% 0 auto;
+  height: 34%;
+  border-radius: inherit;
+  background:
+    linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.98), transparent),
+    linear-gradient(180deg, rgba(96, 165, 250, 0.02), rgba(96, 165, 250, 0.36), rgba(96, 165, 250, 0.02));
+  filter:
+    drop-shadow(0 0 10px rgba(255, 255, 255, 0.92))
+    drop-shadow(0 0 14px rgba(59, 130, 246, 0.12));
+  animation: workflow-rail-stream 1.35s linear infinite;
 }
 
 .workflow-track__rail::before {
@@ -2087,16 +3009,16 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 .workflow-track__dot {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   border-radius: 999px;
   border: 1px solid rgba(203, 213, 225, 0.95);
   color: #64748b;
   background:
-    radial-gradient(circle at 30% 28%, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96)),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(245, 248, 255, 0.98));
+    radial-gradient(circle at 30% 28%, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(245, 248, 255, 0.96));
   box-shadow:
-    0 10px 22px rgba(15, 23, 42, 0.07),
+    0 12px 24px rgba(15, 23, 42, 0.07),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
   transition: transform 0.22s ease, box-shadow 0.22s ease, background 0.22s ease;
 }
@@ -2153,6 +3075,8 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   opacity: 1;
   filter: none;
   transform: translateX(1px);
+  background: linear-gradient(90deg, rgba(239, 246, 255, 0.48), rgba(255, 255, 255, 0));
+  border-radius: 18px;
 }
 
 .workflow-track__item.is-active .workflow-track__body strong {
@@ -2190,16 +3114,16 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   border-color: transparent;
   box-shadow:
     0 12px 26px rgba(245, 158, 11, 0.2),
-    0 0 0 6px rgba(250, 204, 21, 0.12);
+    0 0 0 7px rgba(250, 204, 21, 0.12);
 }
 
 .workflow-track__item.is-active.is-success .workflow-track__dot {
   color: white;
-  background: linear-gradient(180deg, rgba(34, 197, 94, 0.96), rgba(22, 163, 74, 0.94));
+  background: linear-gradient(180deg, rgba(34, 197, 94, 0.98), rgba(22, 163, 74, 0.95));
   border-color: transparent;
   box-shadow:
     0 12px 26px rgba(22, 163, 74, 0.2),
-    0 0 0 6px rgba(34, 197, 94, 0.12);
+    0 0 0 7px rgba(34, 197, 94, 0.12);
   animation: workflow-heartbeat 1.35s ease-in-out infinite;
 }
 
@@ -2209,7 +3133,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   border-color: transparent;
   box-shadow:
     0 12px 26px rgba(239, 68, 68, 0.2),
-    0 0 0 6px rgba(248, 113, 113, 0.12);
+    0 0 0 7px rgba(248, 113, 113, 0.12);
 }
 
 .workflow-track__item.is-active.is-warning .workflow-track__pulse {
@@ -2256,11 +3180,18 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   color: #cbd5e1;
   background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.96));
   border-color: rgba(226, 232, 240, 0.96);
-  box-shadow: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 .workflow-track__item.is-muted .workflow-track__rail {
-  background: linear-gradient(180deg, rgba(226, 232, 240, 0.7), rgba(226, 232, 240, 0.44));
+  background: linear-gradient(180deg, rgba(226, 232, 240, 0.42), rgba(226, 232, 240, 0.08));
+}
+
+.workflow-track__item.is-muted .workflow-track__rail-flow {
+  background:
+    linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.96), transparent),
+    linear-gradient(180deg, rgba(226, 232, 240, 0.04), rgba(191, 219, 254, 0.16), rgba(226, 232, 240, 0.04));
+  animation: workflow-rail-stream 2.2s linear infinite;
 }
 
 .workflow-track__item.is-hot .workflow-track__dot {
@@ -2287,7 +3218,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 }
 
 .workflow-track__item.is-hot .workflow-track__rail {
-  background: linear-gradient(180deg, rgba(248, 113, 113, 0.34), rgba(248, 113, 113, 0.12));
+  background: linear-gradient(180deg, rgba(248, 113, 113, 0.42), rgba(248, 113, 113, 0.14));
   animation: workflow-rail-flow 2.2s ease-in-out infinite;
 }
 
@@ -2296,9 +3227,16 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   animation: workflow-rail-sheen 1.35s linear infinite;
 }
 
+.workflow-track__item.is-hot .workflow-track__rail-flow {
+  background:
+    linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.98), transparent),
+    linear-gradient(180deg, rgba(248, 113, 113, 0.08), rgba(248, 113, 113, 0.42), rgba(248, 113, 113, 0.08));
+  animation: workflow-rail-stream 1.55s linear infinite;
+}
+
 .workflow-track__item.is-active.is-neutral .workflow-track__rail {
   background:
-    linear-gradient(180deg, rgba(148, 163, 184, 0.4), rgba(148, 163, 184, 0.08)),
+    linear-gradient(180deg, rgba(148, 163, 184, 0.34), rgba(148, 163, 184, 0.08)),
     linear-gradient(180deg, rgba(255, 255, 255, 0.24), transparent);
   animation:
     workflow-rail-flow 2.4s linear infinite,
@@ -2307,7 +3245,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 
 .workflow-track__item.is-active.is-warning .workflow-track__rail {
   background:
-    linear-gradient(180deg, rgba(245, 158, 11, 0.5), rgba(245, 158, 11, 0.12)),
+    linear-gradient(180deg, rgba(245, 158, 11, 0.44), rgba(245, 158, 11, 0.12)),
     linear-gradient(180deg, rgba(255, 255, 255, 0.26), transparent);
   animation:
     workflow-rail-flow 2.4s linear infinite,
@@ -2316,7 +3254,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 
 .workflow-track__item.is-active.is-success .workflow-track__rail {
   background:
-    linear-gradient(180deg, rgba(34, 197, 94, 0.5), rgba(34, 197, 94, 0.12)),
+    linear-gradient(180deg, rgba(34, 197, 94, 0.44), rgba(34, 197, 94, 0.12)),
     linear-gradient(180deg, rgba(255, 255, 255, 0.26), transparent);
   animation:
     workflow-rail-flow 2.4s linear infinite,
@@ -2325,7 +3263,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 
 .workflow-track__item.is-active.is-danger .workflow-track__rail {
   background:
-    linear-gradient(180deg, rgba(239, 68, 68, 0.5), rgba(239, 68, 68, 0.12)),
+    linear-gradient(180deg, rgba(239, 68, 68, 0.44), rgba(239, 68, 68, 0.12)),
     linear-gradient(180deg, rgba(255, 255, 255, 0.26), transparent);
   animation:
     workflow-rail-flow 2.4s linear infinite,
@@ -2335,6 +3273,10 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 .workflow-track__item.is-active .workflow-track__rail::after {
   opacity: 1;
   animation: workflow-rail-sheen 1.1s linear infinite;
+}
+
+.workflow-track__item.is-active .workflow-track__rail-flow {
+  animation: workflow-rail-stream 1.35s linear infinite;
 }
 
 @keyframes skeleton-shimmer {
@@ -2461,12 +3403,43 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   }
 }
 
+@keyframes workflow-rail-stream {
+  0% {
+    transform: translateY(-28%);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(360%);
+    opacity: 0;
+  }
+}
+
 @keyframes task-card-progress-sheen {
   0% {
     transform: translateX(-120%);
   }
   100% {
     transform: translateX(380%);
+  }
+}
+
+@keyframes skeleton-track-flow {
+  0% {
+    transform: translateY(-22%);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(360%);
+    opacity: 0;
   }
 }
 
@@ -2576,6 +3549,17 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
     align-items: start;
   }
 
+  .task-card__visual {
+    grid-template-columns: 14px minmax(0, 1fr);
+  }
+
+  .task-card__side {
+    grid-column: 1 / -1;
+    justify-items: start;
+    min-width: 0;
+    padding-left: 0;
+  }
+
   .task-card__check {
     padding-top: 0;
     align-self: start;
@@ -2588,7 +3572,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 
 @media (max-width: 720px) {
   .tasks-hero {
-    flex-direction: column;
+    grid-template-columns: 1fr;
   }
 
   .bulk-bar {
@@ -2602,6 +3586,27 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 
   .panel-head {
     flex-direction: column;
+  }
+
+  .task-card {
+    padding: 16px;
+  }
+
+  .task-card__visual {
+    gap: 12px;
+  }
+
+  .task-card__titleWrap strong {
+    font-size: 17px;
+  }
+
+  .task-card__metaRow,
+  .task-card__signalRow {
+    gap: 6px;
+  }
+
+  .tasks-hero__summary {
+    padding: 14px 16px;
   }
 }
 </style>

@@ -115,6 +115,11 @@ const tooltipStyle = computed(() => {
     pointerEvents: 'none'
   }
 })
+
+const hoveredProject = computed(() => {
+  if (hoveredIndex.value === null) return null
+  return projects.value[hoveredIndex.value] ?? null
+})
 </script>
 
 <template>
@@ -207,7 +212,7 @@ const tooltipStyle = computed(() => {
           <div class="custom-chart-body-wrapper" style="position: relative; width: 100%;">
             <!-- Floating glass tooltip -->
             <div 
-              v-if="hoveredIndex !== null && projects[hoveredIndex]" 
+              v-if="hoveredProject" 
               class="chart-tooltip-glass" 
               :style="tooltipStyle"
               style="
@@ -277,7 +282,7 @@ const tooltipStyle = computed(() => {
                   </filter>
                 </defs>
                 
-                <!-- Y-Axis Grid Lines & Labels -->
+                <!-- Y-Axis Grid Lines and Labels -->
                 <g class="grid-lines" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="4,4">
                   <!-- 100% -->
                   <text x="35" y="44" text-anchor="end" fill="#94a3b8" font-size="10" font-weight="600" stroke="none">100%</text>
@@ -528,7 +533,7 @@ const tooltipStyle = computed(() => {
             </div>
           </div>
 
-          <!-- Chart Legend & Counters -->
+            <!-- Chart Legend and Counters -->
           <div class="chart-summary-row">
             <div class="chart-summary-item">
               <span class="color-on-track">Đúng tiến độ</span>
