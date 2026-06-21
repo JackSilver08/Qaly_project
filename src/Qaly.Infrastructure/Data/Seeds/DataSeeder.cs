@@ -286,6 +286,20 @@ public partial class DataSeeder
                 ALTER TABLE [TaskAttachments] ADD [Scope] nvarchar(20) NOT NULL CONSTRAINT [DF_TaskAttachments_Scope] DEFAULT N'Task';
             END;
 
+            -- Project-scoped and comment-scoped attachments are not tied to a task,
+            -- so TaskItemId must be nullable. Legacy databases created the column as
+            -- NOT NULL; relax it so those attachments (and the demo seed) can insert.
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'[TaskAttachments]')
+                  AND name = N'TaskItemId'
+                  AND is_nullable = 0
+            )
+            BEGIN
+                ALTER TABLE [TaskAttachments] ALTER COLUMN [TaskItemId] uniqueidentifier NULL;
+            END;
+
             IF NOT EXISTS (
                 SELECT 1
                 FROM sys.foreign_keys
