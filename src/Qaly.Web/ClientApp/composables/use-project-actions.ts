@@ -108,6 +108,11 @@ export function useProjectActions(
     }
   }
 
+  function selectProject(projectId: string) {
+    activeProjectId.value = projectId
+    void router.push(`/projects/${projectId}`)
+  }
+
   async function archiveProject(projectId: string) {
     const project = projects.value.find((item) => item.id === projectId)
     if (!project) return

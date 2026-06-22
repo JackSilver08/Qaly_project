@@ -8,7 +8,7 @@ using Qaly.Infrastructure.Data;
 
 namespace Qaly.Infrastructure.Services;
 
-public class ProjectTrashCleanupWorker : BackgroundService
+public partial class ProjectTrashCleanupWorker : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<ProjectTrashCleanupWorker> _logger;
@@ -25,7 +25,7 @@ public class ProjectTrashCleanupWorker : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            _logger.LogInformation("Starting project trash cleanup scan for soft-deleted projects older than 30 days.");
+            LogScanStarting();
 
             try
             {
@@ -41,11 +41,7 @@ public class ProjectTrashCleanupWorker : BackgroundService
 
                 foreach (var project in expiredProjects)
                 {
-                    _logger.LogInformation(
-                        "Hard-deleting expired project {ProjectName} ({ProjectId}), deleted at {DeletedAt}.",
-                        project.Name,
-                        project.Id,
-                        project.DeletedAt);
+                    LogHardDeletingProject(project.Name, project.Id, project.DeletedAt);
 
                     await HardDeleteProjectAttachmentsAsync(dbContext, fileStorage, project.Id, stoppingToken);
 
@@ -55,11 +51,11 @@ public class ProjectTrashCleanupWorker : BackgroundService
                 if (expiredProjects.Count > 0)
                 {
                     await dbContext.SaveChangesAsync(stoppingToken);
-                    _logger.LogInformation("Completed cleanup for {ProjectCount} expired trashed projects.", expiredProjects.Count);
+                    LogCleanupCompleted(expiredProjects.Count);
                 }
                 else
                 {
-                    _logger.LogInformation("No expired trashed projects found.");
+                    LogNoExpiredProjects();
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -68,7 +64,7 @@ public class ProjectTrashCleanupWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Project trash cleanup failed.");
+                LogCleanupFailed(ex);
             }
 
             await Task.Delay(TimeSpan.FromHours(24), stoppingToken);
@@ -115,7 +111,7 @@ public class ProjectTrashCleanupWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Could not delete physical file {PhysicalFileId} at {FilePath}.", physicalFile.Id, physicalFile.FilePath);
+                LogPhysicalFileDeleteFailed(ex, physicalFile.Id, physicalFile.FilePath);
             }
 
             dbContext.PhysicalFiles.Remove(physicalFile);
@@ -134,4 +130,22 @@ public class ProjectTrashCleanupWorker : BackgroundService
                 (attachment.TaskItem != null && attachment.TaskItem.ProjectId == projectId) ||
                 (attachment.Comment != null && attachment.Comment.TaskItem.ProjectId == projectId))
             .ToListAsync(ct);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Starting project trash cleanup scan for soft-deleted projects older than 30 days.")]
+    private partial void LogScanStarting();
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Hard-deleting expired project {ProjectName} ({ProjectId}), deleted at {DeletedAt}.")]
+    private partial void LogHardDeletingProject(string projectName, Guid projectId, DateTimeOffset? deletedAt);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Completed cleanup for {ProjectCount} expired trashed projects.")]
+    private partial void LogCleanupCompleted(int projectCount);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "No expired trashed projects found.")]
+    private partial void LogNoExpiredProjects();
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Project trash cleanup failed.")]
+    private partial void LogCleanupFailed(Exception ex);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not delete physical file {PhysicalFileId} at {FilePath}.")]
+    private partial void LogPhysicalFileDeleteFailed(Exception ex, Guid physicalFileId, string filePath);
 }
