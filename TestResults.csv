@@ -1,0 +1,10 @@
+Suite,Test Case,Status,Duration (ms)
+"browser-console.spec.ts","public authentication pages have no browser errors","failed",6338
+"browser-console.spec.ts","main authenticated routes have no browser errors","failed",6268
+"qaly.smoke.spec.ts","should login successfully","failed",6410
+"qaly.smoke.spec.ts","should create a group and open group page","skipped",0
+"qaly.smoke.spec.ts","should send a chat message and receive it in a second context","skipped",0
+"qaly.smoke.spec.ts","should vote in a group poll","skipped",0
+"qaly.smoke.spec.ts","should open analytics page","skipped",0
+"qaly.smoke.spec.ts","should render meeting page in two authenticated contexts","skipped",0
+"qaly.smoke.spec.ts","should preview and import a Wiki document","skipped",0

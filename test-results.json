@@ -1,0 +1,521 @@
+﻿{
+  "config": {
+    "configFile": "D:\\QaLy\\Qaly_project\\playwright.config.ts",
+    "rootDir": "D:/QaLy/Qaly_project/tests/e2e",
+    "forbidOnly": false,
+    "fullyParallel": true,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 3
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "D:/QaLy/Qaly_project/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 3
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "D:/QaLy/Qaly_project/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.60.0",
+    "workers": 6,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "browser-console.spec.ts",
+      "file": "browser-console.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "public authentication pages have no browser errors",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 6338,
+                  "error": {
+                    "message": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5000/Account/Login\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5000/Account/Login\", waiting until \"networkidle\"\u001b[22m\n",
+                    "stack": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5000/Account/Login\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5000/Account/Login\", waiting until \"networkidle\"\u001b[22m\n\n    at D:\\QaLy\\Qaly_project\\tests\\e2e\\browser-console.spec.ts:60:16",
+                    "location": {
+                      "file": "D:\\QaLy\\Qaly_project\\tests\\e2e\\browser-console.spec.ts",
+                      "column": 16,
+                      "line": 60
+                    },
+                    "snippet": "\u001b[0m \u001b[90m 58 |\u001b[39m     \u001b[36mconst\u001b[39m problems \u001b[33m=\u001b[39m collectBrowserProblems(page)\u001b[33m;\u001b[39m\n \u001b[90m 59 |\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 60 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m\"/Account/Login\"\u001b[39m\u001b[33m,\u001b[39m { waitUntil\u001b[33m:\u001b[39m \u001b[32m\"networkidle\"\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 61 |\u001b[39m     \u001b[36mawait\u001b[39m expect(page\u001b[33m.\u001b[39mlocator(\u001b[32m\"#loginForm\"\u001b[39m))\u001b[33m.\u001b[39mtoBeVisible()\u001b[33m;\u001b[39m\n \u001b[90m 62 |\u001b[39m\n \u001b[90m 63 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m\"/Account/Register\"\u001b[39m\u001b[33m,\u001b[39m { waitUntil\u001b[33m:\u001b[39m \u001b[32m\"networkidle\"\u001b[39m })\u001b[33m;\u001b[39m\u001b[0m"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "D:\\QaLy\\Qaly_project\\tests\\e2e\\browser-console.spec.ts",
+                        "column": 16,
+                        "line": 60
+                      },
+                      "message": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5000/Account/Login\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5000/Account/Login\", waiting until \"networkidle\"\u001b[22m\n\n\n  58 |     const problems = collectBrowserProblems(page);\n  59 |\n> 60 |     await page.goto(\"/Account/Login\", { waitUntil: \"networkidle\" });\n     |                ^\n  61 |     await expect(page.locator(\"#loginForm\")).toBeVisible();\n  62 |\n  63 |     await page.goto(\"/Account/Register\", { waitUntil: \"networkidle\" });\n    at D:\\QaLy\\Qaly_project\\tests\\e2e\\browser-console.spec.ts:60:16"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-06-22T04:25:15.707Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "D:\\QaLy\\Qaly_project\\test-results\\browser-console-public-aut-24b13-ages-have-no-browser-errors-chromium\\test-failed-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "D:\\QaLy\\Qaly_project\\test-results\\browser-console-public-aut-24b13-ages-have-no-browser-errors-chromium\\video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "D:\\QaLy\\Qaly_project\\test-results\\browser-console-public-aut-24b13-ages-have-no-browser-errors-chromium\\error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "D:\\QaLy\\Qaly_project\\test-results\\browser-console-public-aut-24b13-ages-have-no-browser-errors-chromium\\trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "D:\\QaLy\\Qaly_project\\tests\\e2e\\browser-console.spec.ts",
+                    "column": 16,
+                    "line": 60
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "41f1bd4817ddd72faf08-d697eba0957184e73555",
+          "file": "browser-console.spec.ts",
+          "line": 57,
+          "column": 1
+        },
+        {
+          "title": "main authenticated routes have no browser errors",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 1,
+                  "status": "failed",
+                  "duration": 6268,
+                  "error": {
+                    "message": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5000/Account/Login\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5000/Account/Login\", waiting until \"networkidle\"\u001b[22m\n",
+                    "stack": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5000/Account/Login\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5000/Account/Login\", waiting until \"networkidle\"\u001b[22m\n\n    at login (D:\\QaLy\\Qaly_project\\tests\\e2e\\browser-console.spec.ts:39:16)\n    at D:\\QaLy\\Qaly_project\\tests\\e2e\\browser-console.spec.ts:70:11",
+                    "location": {
+                      "file": "D:\\QaLy\\Qaly_project\\tests\\e2e\\browser-console.spec.ts",
+                      "column": 16,
+                      "line": 39
+                    },
+                    "snippet": "\u001b[0m \u001b[90m 37 |\u001b[39m\n \u001b[90m 38 |\u001b[39m \u001b[36masync\u001b[39m \u001b[36mfunction\u001b[39m login(page\u001b[33m:\u001b[39m \u001b[33mPage\u001b[39m) {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 39 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m\"/Account/Login\"\u001b[39m\u001b[33m,\u001b[39m { waitUntil\u001b[33m:\u001b[39m \u001b[32m\"networkidle\"\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 40 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mlocator(\u001b[32m'input[name=\"Email\"]'\u001b[39m)\u001b[33m.\u001b[39mfill(adminEmail)\u001b[33m;\u001b[39m\n \u001b[90m 41 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mlocator(\u001b[32m'input[name=\"Password\"]'\u001b[39m)\u001b[33m.\u001b[39mfill(adminPassword)\u001b[33m;\u001b[39m\n \u001b[90m 42 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mlocator(\u001b[32m\"#loginForm button[type='submit']\"\u001b[39m)\u001b[33m.\u001b[39mclick()\u001b[33m;\u001b[39m\u001b[0m"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "D:\\QaLy\\Qaly_project\\tests\\e2e\\browser-console.spec.ts",
+                        "column": 16,
+                        "line": 39
+                      },
+                      "message": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5000/Account/Login\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5000/Account/Login\", waiting until \"networkidle\"\u001b[22m\n\n\n  37 |\n  38 | async function login(page: Page) {\n> 39 |     await page.goto(\"/Account/Login\", { waitUntil: \"networkidle\" });\n     |                ^\n  40 |     await page.locator('input[name=\"Email\"]').fill(adminEmail);\n  41 |     await page.locator('input[name=\"Password\"]').fill(adminPassword);\n  42 |     await page.locator(\"#loginForm button[type='submit']\").click();\n    at login (D:\\QaLy\\Qaly_project\\tests\\e2e\\browser-console.spec.ts:39:16)\n    at D:\\QaLy\\Qaly_project\\tests\\e2e\\browser-console.spec.ts:70:11"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-06-22T04:25:15.827Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "D:\\QaLy\\Qaly_project\\test-results\\browser-console-main-authe-debbc-utes-have-no-browser-errors-chromium\\test-failed-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "D:\\QaLy\\Qaly_project\\test-results\\browser-console-main-authe-debbc-utes-have-no-browser-errors-chromium\\video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "D:\\QaLy\\Qaly_project\\test-results\\browser-console-main-authe-debbc-utes-have-no-browser-errors-chromium\\error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "D:\\QaLy\\Qaly_project\\test-results\\browser-console-main-authe-debbc-utes-have-no-browser-errors-chromium\\trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "D:\\QaLy\\Qaly_project\\tests\\e2e\\browser-console.spec.ts",
+                    "column": 16,
+                    "line": 39
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "41f1bd4817ddd72faf08-095eb780305b4e134c92",
+          "file": "browser-console.spec.ts",
+          "line": 69,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "qaly.smoke.spec.ts",
+      "file": "qaly.smoke.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "should login successfully",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 2,
+                  "status": "failed",
+                  "duration": 6410,
+                  "error": {
+                    "message": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5000/Account/Login\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5000/Account/Login\", waiting until \"domcontentloaded\"\u001b[22m\n",
+                    "stack": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5000/Account/Login\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5000/Account/Login\", waiting until \"domcontentloaded\"\u001b[22m\n\n    at login (D:\\QaLy\\Qaly_project\\tests\\e2e\\qaly.smoke.spec.ts:56:16)\n    at D:\\QaLy\\Qaly_project\\tests\\e2e\\qaly.smoke.spec.ts:232:11",
+                    "location": {
+                      "file": "D:\\QaLy\\Qaly_project\\tests\\e2e\\qaly.smoke.spec.ts",
+                      "column": 16,
+                      "line": 56
+                    },
+                    "snippet": "\u001b[0m \u001b[90m 54 |\u001b[39m     password \u001b[33m=\u001b[39m adminPassword\u001b[33m,\u001b[39m\n \u001b[90m 55 |\u001b[39m ) {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 56 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m\"/Account/Login\"\u001b[39m\u001b[33m,\u001b[39m { waitUntil\u001b[33m:\u001b[39m \u001b[32m\"domcontentloaded\"\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 57 |\u001b[39m     \u001b[36mawait\u001b[39m expect(page\u001b[33m.\u001b[39mlocator(\u001b[32m\"#loginForm\"\u001b[39m))\u001b[33m.\u001b[39mtoBeVisible()\u001b[33m;\u001b[39m\n \u001b[90m 58 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mlocator(\u001b[32m'input[name=\"Email\"]'\u001b[39m)\u001b[33m.\u001b[39mfill(email)\u001b[33m;\u001b[39m\n \u001b[90m 59 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mlocator(\u001b[32m'input[name=\"Password\"]'\u001b[39m)\u001b[33m.\u001b[39mfill(password)\u001b[33m;\u001b[39m\u001b[0m"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "D:\\QaLy\\Qaly_project\\tests\\e2e\\qaly.smoke.spec.ts",
+                        "column": 16,
+                        "line": 56
+                      },
+                      "message": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5000/Account/Login\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5000/Account/Login\", waiting until \"domcontentloaded\"\u001b[22m\n\n\n  54 |     password = adminPassword,\n  55 | ) {\n> 56 |     await page.goto(\"/Account/Login\", { waitUntil: \"domcontentloaded\" });\n     |                ^\n  57 |     await expect(page.locator(\"#loginForm\")).toBeVisible();\n  58 |     await page.locator('input[name=\"Email\"]').fill(email);\n  59 |     await page.locator('input[name=\"Password\"]').fill(password);\n    at login (D:\\QaLy\\Qaly_project\\tests\\e2e\\qaly.smoke.spec.ts:56:16)\n    at D:\\QaLy\\Qaly_project\\tests\\e2e\\qaly.smoke.spec.ts:232:11"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-06-22T04:25:15.965Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "D:\\QaLy\\Qaly_project\\test-results\\qaly.smoke-should-login-successfully-chromium\\test-failed-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "D:\\QaLy\\Qaly_project\\test-results\\qaly.smoke-should-login-successfully-chromium\\video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "D:\\QaLy\\Qaly_project\\test-results\\qaly.smoke-should-login-successfully-chromium\\error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "D:\\QaLy\\Qaly_project\\test-results\\qaly.smoke-should-login-successfully-chromium\\trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "D:\\QaLy\\Qaly_project\\tests\\e2e\\qaly.smoke.spec.ts",
+                    "column": 16,
+                    "line": 56
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "72e22cdd68f8202675e6-eafda139feebe683d7fd",
+          "file": "qaly.smoke.spec.ts",
+          "line": 231,
+          "column": 1
+        },
+        {
+          "title": "should create a group and open group page",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": -1,
+                  "parallelIndex": -1,
+                  "status": "skipped",
+                  "duration": 0,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-06-22T04:25:28.260Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "72e22cdd68f8202675e6-a62ef0427909d3807314",
+          "file": "qaly.smoke.spec.ts",
+          "line": 243,
+          "column": 1
+        },
+        {
+          "title": "should send a chat message and receive it in a second context",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": -1,
+                  "parallelIndex": -1,
+                  "status": "skipped",
+                  "duration": 0,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-06-22T04:25:28.260Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "72e22cdd68f8202675e6-6b63f14b005bd418e890",
+          "file": "qaly.smoke.spec.ts",
+          "line": 258,
+          "column": 1
+        },
+        {
+          "title": "should vote in a group poll",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": -1,
+                  "parallelIndex": -1,
+                  "status": "skipped",
+                  "duration": 0,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-06-22T04:25:28.261Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "72e22cdd68f8202675e6-9548b5f31364ed77aa3a",
+          "file": "qaly.smoke.spec.ts",
+          "line": 291,
+          "column": 1
+        },
+        {
+          "title": "should open analytics page",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": -1,
+                  "parallelIndex": -1,
+                  "status": "skipped",
+                  "duration": 0,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-06-22T04:25:28.261Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "72e22cdd68f8202675e6-3e473682d8c809757849",
+          "file": "qaly.smoke.spec.ts",
+          "line": 325,
+          "column": 1
+        },
+        {
+          "title": "should render meeting page in two authenticated contexts",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": -1,
+                  "parallelIndex": -1,
+                  "status": "skipped",
+                  "duration": 0,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-06-22T04:25:28.261Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "72e22cdd68f8202675e6-67806d9e4d0a2407bd87",
+          "file": "qaly.smoke.spec.ts",
+          "line": 334,
+          "column": 1
+        },
+        {
+          "title": "should preview and import a Wiki document",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": -1,
+                  "parallelIndex": -1,
+                  "status": "skipped",
+                  "duration": 0,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-06-22T04:25:28.261Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "72e22cdd68f8202675e6-e8c354771dbab6736233",
+          "file": "qaly.smoke.spec.ts",
+          "line": 388,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-06-22T04:25:12.685Z",
+    "duration": 15914.712999999998,
+    "expected": 0,
+    "skipped": 6,
+    "unexpected": 3,
+    "flaky": 0
+  }
+}
