@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount } from "vue";
+import { computed, ref, onMounted, onBeforeUnmount, watch } from "vue";
 import {
   HubConnectionBuilder,
   type HubConnection,
   HubConnectionState,
 } from "@microsoft/signalr";
 import { ApiError, apiResult, apiCommand } from "../../utils/api-client";
+import { showError, showSuccess } from "../../composables/use-toast";
 import type { TeamChatPoll } from "./chat-types";
-import { Trash2, Edit2, Plus, X } from "lucide-vue-next";
+import { Check, CheckCircle2, Trash2, Edit2, Plus, Users, Vote, X } from "lucide-vue-next";
 
 const props = defineProps<{
   groupId: string;
@@ -18,6 +19,8 @@ const props = defineProps<{
 
 const results = ref<any | null>(null);
 const loading = ref(false);
+const selectedOptionIds = ref<string[]>([]);
+const expandedOptionId = ref<string | null>(null);
 let hubConnection: HubConnection | null = null;
 const isDeleted = ref(false);
 
@@ -31,6 +34,16 @@ const canEdit = computed(() => {
 
 const hasVoted = computed(() =>
   Boolean(results.value?.currentUserOptionIds?.length),
+);
+
+const isOpen = computed(() => (results.value?.status ?? "Open") === "Open");
+
+watch(
+  () => results.value?.currentUserOptionIds,
+  (optionIds) => {
+    selectedOptionIds.value = [...(optionIds ?? [])];
+  },
+  { immediate: true },
 );
 
 function optionPercent(voteCount: number) {
@@ -71,28 +84,48 @@ async function loadResults() {
   }
 }
 
-async function vote(optionId: string) {
-  if (!props.poll?.id || !optionId) return;
+async function submitVote(optionIds: string[]) {
+  if (!props.poll?.id || !optionIds.length || !isOpen.value) return;
+  const hadVotedBefore = hasVoted.value;
   loading.value = true;
   try {
-    await apiResult(
+    results.value = await apiResult(
       `/api/groups/${props.groupId}/polls/${props.poll.id}/vote`,
       {
         method: "POST",
-        body: JSON.stringify({ optionIds: [optionId] }),
+        body: JSON.stringify({ optionIds }),
       },
     );
-    await loadResults();
-  } catch (e) {
+    showSuccess(hadVotedBefore ? "Đã cập nhật lựa chọn" : "Đã ghi nhận bình chọn");
+  } catch (e: unknown) {
     if (e instanceof ApiError && e.status === 404) {
       isDeleted.value = true;
       return;
     }
 
-    console.warn("Bình chọn thất bại", e);
+    selectedOptionIds.value = [...(results.value?.currentUserOptionIds ?? [])];
+    showError(e instanceof Error ? e.message : "Không thể gửi bình chọn.");
   } finally {
     loading.value = false;
   }
+}
+
+async function selectOption(optionId: string) {
+  if (!optionId || loading.value || !isOpen.value) return;
+
+  if (!results.value?.allowMultiple) {
+    selectedOptionIds.value = [optionId];
+    await submitVote([optionId]);
+    return;
+  }
+
+  selectedOptionIds.value = selectedOptionIds.value.includes(optionId)
+    ? selectedOptionIds.value.filter((id) => id !== optionId)
+    : [...selectedOptionIds.value, optionId];
+}
+
+function toggleVoters(optionId: string) {
+  expandedOptionId.value = expandedOptionId.value === optionId ? null : optionId;
 }
 
 function startEditing() {
@@ -256,14 +289,17 @@ onBeforeUnmount(async () => {
     <template v-else>
       <div class="poll-header">
         <div class="poll-header-top">
-          <span>Bình chọn</span>
+          <span><Vote :size="13" /> Bình chọn nhóm</span>
           <div class="poll-actions" v-if="canEdit">
             <button type="button" @click="startEditing" title="Sửa"><Edit2 :size="14" /></button>
             <button type="button" @click="deletePoll" title="Xóa" class="text-danger"><Trash2 :size="14" /></button>
           </div>
         </div>
         <strong>{{ results?.question || props.poll.question }}</strong>
-        <small v-if="results">{{ results.totalVoters ?? 0 }} người tham gia</small>
+        <div v-if="results" class="poll-summary">
+          <span><Users :size="14" /> {{ results.totalVoters ?? 0 }} người tham gia</span>
+          <span>{{ results.allowMultiple ? "Chọn nhiều đáp án" : "Chọn một đáp án" }}</span>
+        </div>
       </div>
 
       <div v-if="results" class="poll-results">
@@ -273,19 +309,30 @@ onBeforeUnmount(async () => {
           class="poll-option"
           type="button"
           :class="{
-            'is-selected': results.currentUserOptionIds?.includes(opt.optionId || opt.id),
+            'is-selected': selectedOptionIds.includes(opt.optionId || opt.id),
           }"
-          :disabled="loading"
-          @click="vote(opt.optionId || opt.id || opt.optionId)"
+          :disabled="loading || !isOpen"
+          @click="selectOption(opt.optionId || opt.id)"
         >
           <div class="option-row">
-            <span class="option-label">{{ opt.content || opt.Content }}</span>
+            <span class="option-choice">
+              <span class="option-check">
+                <Check v-if="selectedOptionIds.includes(opt.optionId || opt.id)" :size="14" />
+              </span>
+              <span class="option-label">{{ opt.content || opt.Content }}</span>
+            </span>
             <strong>{{ opt.voteCount ?? 0 }} chọn · {{ optionPercent(opt.voteCount || 0) }}%</strong>
           </div>
           <div class="percent">
             <div class="bar" :style="{ width: optionPercent(opt.voteCount || 0) + '%' }"></div>
           </div>
-          <div class="poll-voters">
+          <div
+            class="poll-voters"
+            role="button"
+            tabindex="0"
+            @click.stop="toggleVoters(opt.optionId || opt.id)"
+            @keydown.enter.stop="toggleVoters(opt.optionId || opt.id)"
+          >
             <span
               v-for="voter in (opt.voters || opt.Voters || []).slice(0, 4)"
               :key="voter.userId || voter.UserId"
@@ -295,8 +342,31 @@ onBeforeUnmount(async () => {
             </span>
             <small>{{ voterNames(opt.voters || opt.Voters || []) }}</small>
           </div>
+          <div v-if="expandedOptionId === (opt.optionId || opt.id)" class="poll-voter-list">
+            <div v-for="voter in (opt.voters || opt.Voters || [])" :key="voter.userId || voter.UserId">
+              <span>{{ initials(voter.fullName || voter.FullName || "") }}</span>
+              <p>
+                <strong>{{ voter.fullName || voter.FullName }}</strong>
+                <small>{{ voter.email || voter.Email }}</small>
+              </p>
+              <CheckCircle2 :size="16" />
+            </div>
+            <small v-if="!(opt.voters || opt.Voters || []).length">Chưa có thành viên chọn đáp án này.</small>
+          </div>
         </button>
       </div>
+
+      <button
+        v-if="results?.allowMultiple && isOpen"
+        class="poll-submit"
+        type="button"
+        :disabled="loading || selectedOptionIds.length === 0"
+        @click="submitVote(selectedOptionIds)"
+      >
+        <Vote :size="16" />
+        {{ loading ? "Đang gửi..." : hasVoted ? "Cập nhật bình chọn" : "Gửi bình chọn" }}
+      </button>
+      <div v-if="!isOpen" class="poll-closed">Bình chọn đã kết thúc</div>
 
       <div v-else class="poll-options">
         <button
@@ -455,6 +525,9 @@ onBeforeUnmount(async () => {
   font-size: 0.7rem;
   font-weight: 900;
   text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .poll-header strong {
@@ -468,6 +541,25 @@ onBeforeUnmount(async () => {
   color: #64748b;
   font-size: 0.75rem;
   font-weight: 700;
+}
+
+.poll-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #64748b;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.poll-summary span {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  text-transform: none;
 }
 
 .poll-results,
@@ -510,6 +602,30 @@ onBeforeUnmount(async () => {
   gap: 12px;
 }
 
+.option-choice {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.option-check {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 50%;
+  background: #fff;
+  color: #fff;
+}
+
+.poll-option.is-selected .option-check {
+  border-color: #2563eb;
+  background: #2563eb;
+}
+
 .option-row strong {
   color: #1d4ed8;
   font-size: 0.78rem;
@@ -545,6 +661,7 @@ onBeforeUnmount(async () => {
   display: flex;
   align-items: center;
   gap: 6px;
+  cursor: pointer;
 }
 
 .poll-voters span {
@@ -566,6 +683,80 @@ onBeforeUnmount(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.poll-voter-list {
+  display: grid;
+  gap: 7px;
+  padding-top: 8px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.poll-voter-list > div {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 8px;
+}
+
+.poll-voter-list > div > span {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.poll-voter-list p {
+  min-width: 0;
+  display: grid;
+  margin: 0;
+}
+
+.poll-voter-list p strong,
+.poll-voter-list p small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.poll-voter-list > div > svg {
+  color: #2563eb;
+}
+
+.poll-card .poll-submit {
+  width: 100%;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 11px;
+  border: 0;
+  border-radius: 8px;
+  background: #1769e0;
+  color: #fff !important;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.poll-submit:disabled {
+  opacity: 0.55;
+}
+
+.poll-closed {
+  margin-top: 10px;
+  padding: 9px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: #64748b;
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 button:disabled {

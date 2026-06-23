@@ -243,6 +243,41 @@ public class GroupsController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpPost("{id:guid}/read")]
+    public async Task<IActionResult> MarkRead(Guid id, CancellationToken ct)
+    {
+        var result = await _groupsService.MarkReadAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPut("{id:guid}/notification-preference")]
+    public async Task<IActionResult> UpdateNotificationPreference(
+        Guid id,
+        UpdateGroupNotificationPreferenceRequest request,
+        CancellationToken ct)
+    {
+        var result = await _groupsService.UpdateNotificationPreferenceAsync(id, request, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("{id:guid}/messages/{messageId:guid}/forward")]
+    public async Task<IActionResult> ForwardMessage(
+        Guid id,
+        Guid messageId,
+        ForwardGroupMessageRequest request,
+        CancellationToken ct)
+    {
+        var result = await _groupsService.ForwardMessageAsync(id, messageId, request, ct);
+        if (result.IsSuccess && result.Data != null)
+        {
+            await _groupHub.Clients
+                .Group(GroupHub.WorkGroup(request.TargetGroupId))
+                .SendAsync("groupMessageReceived", result.Data, ct);
+        }
+
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpPost("{id:guid}/attachments")]
     [RequestSizeLimit(25 * 1024 * 1024)]
     public async Task<IActionResult> UploadAttachment(Guid id, IFormFile file, CancellationToken ct)

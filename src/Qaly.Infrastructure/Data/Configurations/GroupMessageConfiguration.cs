@@ -27,8 +27,20 @@ public class GroupMessageConfiguration : IEntityTypeConfiguration<GroupMessage>
             .HasForeignKey(message => message.UserId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(message => message.ReplyToMessage)
+            .WithMany()
+            .HasForeignKey(message => message.ReplyToMessageId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasOne(message => message.ForwardedFromMessage)
+            .WithMany()
+            .HasForeignKey(message => message.ForwardedFromMessageId)
+            .OnDelete(DeleteBehavior.NoAction);
+
         builder.HasIndex(message => new { message.WorkGroupId, message.CreatedAt });
         builder.HasIndex(message => new { message.WorkGroupId, message.IsPinned });
         builder.HasIndex(message => message.UserId);
+        builder.HasIndex(message => message.ReplyToMessageId);
+        builder.HasIndex(message => message.ForwardedFromMessageId);
     }
 }

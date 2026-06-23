@@ -18,6 +18,8 @@ public record GroupDto(
     int MemberCount,
     int MessageCount,
     int OpenPollCount,
+    int UnreadCount,
+    bool IsMuted,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt);
 
@@ -36,6 +38,9 @@ public record UpdateGroupRequest(
 public record UpdateGroupBackgroundRequest(
     string? Theme,
     string? ImageUrl);
+
+public record UpdateGroupNotificationPreferenceRequest(
+    bool IsMuted);
 
 public record GroupMemberDto(
     Guid UserId,
@@ -135,11 +140,26 @@ public record GroupMessageDto(
     bool IsPinned,
     DateTimeOffset? PinnedAt,
     Guid? PinnedByUserId,
-    IReadOnlyList<GroupMessageReactionDto> Reactions);
+    IReadOnlyList<GroupMessageReactionDto> Reactions,
+    GroupMessageReferenceDto? ReplyTo,
+    GroupMessageReferenceDto? ForwardedFrom);
+
+public record GroupMessageReferenceDto(
+    Guid Id,
+    Guid WorkGroupId,
+    Guid UserId,
+    string SenderName,
+    string Content,
+    string MessageType,
+    bool IsDeleted);
 
 public record SendGroupMessageRequest(
     string Content,
-    string MessageType = "Text");
+    string MessageType = "Text",
+    Guid? ReplyToMessageId = null);
+
+public record ForwardGroupMessageRequest(
+    Guid TargetGroupId);
 
 public record UpdateGroupMessageRequest(
     string Content);

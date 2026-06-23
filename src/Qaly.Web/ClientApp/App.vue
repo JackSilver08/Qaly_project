@@ -1095,6 +1095,7 @@ function notificationTitle(type: string) {
     GroupInvitationReceived: "Lời mời nhóm",
     TaskAssigned: "Nhiệm vụ mới",
     Mentioned: "Bạn được nhắc đến",
+    GroupMention: "Bạn được nhắc trong nhóm",
     CommentAdded: "Bình luận mới",
     TaskStatusChanged: "Cập nhật nhiệm vụ",
     ReviewCompleted: "Duyệt minh chứng",

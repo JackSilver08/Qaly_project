@@ -11,6 +11,8 @@ public class WorkGroupMemberConfiguration : IEntityTypeConfiguration<WorkGroupMe
         builder.HasKey(member => member.Id);
         builder.Property(member => member.Id).HasDefaultValueSql("NEWID()");
         builder.Property(member => member.Role).HasMaxLength(20).IsRequired();
+        builder.Property(member => member.LastReadAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
+        builder.Property(member => member.IsMuted).HasDefaultValue(false);
         builder.Property(member => member.JoinedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
         builder.Property(member => member.CreatedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
 

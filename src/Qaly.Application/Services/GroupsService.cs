@@ -390,6 +390,51 @@ public partial class GroupsService : IGroupsService
         return Result.Success();
     }
 
+    public async Task<Result<GroupDto>> MarkReadAsync(Guid groupId, CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<GroupDto>();
+        }
+
+        var membership = await _memberRepo.GetQueryable()
+            .FirstOrDefaultAsync(member => member.WorkGroupId == groupId && member.UserId == currentUserId.Value, ct);
+        if (membership == null)
+        {
+            return Result.Forbidden<GroupDto>();
+        }
+
+        membership.LastReadAt = DateTimeOffset.UtcNow;
+        await _memberRepo.UpdateAsync(membership, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        return await GetByIdAsync(groupId, ct);
+    }
+
+    public async Task<Result<GroupDto>> UpdateNotificationPreferenceAsync(
+        Guid groupId,
+        UpdateGroupNotificationPreferenceRequest request,
+        CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<GroupDto>();
+        }
+
+        var membership = await _memberRepo.GetQueryable()
+            .FirstOrDefaultAsync(member => member.WorkGroupId == groupId && member.UserId == currentUserId.Value, ct);
+        if (membership == null)
+        {
+            return Result.Forbidden<GroupDto>();
+        }
+
+        membership.IsMuted = request.IsMuted;
+        await _memberRepo.UpdateAsync(membership, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        return await GetByIdAsync(groupId, ct);
+    }
+
     public async Task<Result<IReadOnlyList<GroupMemberDto>>> GetMembersAsync(Guid groupId, CancellationToken ct = default)
     {
         if (!await CanAccessGroupAsync(groupId, ct))
@@ -1455,6 +1500,10 @@ public partial class GroupsService : IGroupsService
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Include(message => message.User)
+            .Include(message => message.ReplyToMessage)
+                .ThenInclude(message => message!.User)
+            .Include(message => message.ForwardedFromMessage)
+                .ThenInclude(message => message!.User)
             .Where(message =>
                 message.WorkGroupId == groupId &&
                 !message.UserStates.Any(state =>
@@ -1523,21 +1572,89 @@ public partial class GroupsService : IGroupsService
             return Result.Failure<GroupMessageDto>("Message content must be 4000 characters or fewer.");
         }
 
+        GroupMessage? replyToMessage = null;
+        if (request.ReplyToMessageId.HasValue)
+        {
+            replyToMessage = await _messageRepo.GetQueryable()
+                .Include(item => item.User)
+                .FirstOrDefaultAsync(item =>
+                    item.Id == request.ReplyToMessageId.Value &&
+                    item.WorkGroupId == groupId,
+                    ct);
+            if (replyToMessage == null)
+            {
+                return Result.NotFound<GroupMessageDto>("Tin nhắn được trả lời không còn tồn tại.");
+            }
+        }
+
         var message = new GroupMessage
         {
             WorkGroupId = groupId,
             UserId = currentUserId.Value,
             Content = request.Content.Trim(),
-            MessageType = NormalizeMessageType(request.MessageType)
+            MessageType = NormalizeMessageType(request.MessageType),
+            ReplyToMessageId = replyToMessage?.Id
         };
 
         await _messageRepo.AddAsync(message, ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
+        await NotifyMentionedMembersAsync(message, ct);
+
         var saved = await _messageRepo.GetQueryable()
             .AsNoTracking()
             .Include(item => item.User)
+            .Include(item => item.ReplyToMessage)
+                .ThenInclude(item => item!.User)
             .FirstAsync(item => item.Id == message.Id, ct);
+
+        return Result.Created(ToMessageDto(saved));
+    }
+
+    public async Task<Result<GroupMessageDto>> ForwardMessageAsync(
+        Guid groupId,
+        Guid messageId,
+        ForwardGroupMessageRequest request,
+        CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<GroupMessageDto>();
+        }
+
+        if (!await CanAccessGroupAsync(groupId, ct) || !await CanAccessGroupAsync(request.TargetGroupId, ct))
+        {
+            return Result.Forbidden<GroupMessageDto>();
+        }
+
+        var source = await _messageRepo.GetQueryable()
+            .AsNoTracking()
+            .Include(item => item.User)
+            .FirstOrDefaultAsync(item => item.Id == messageId && item.WorkGroupId == groupId, ct);
+        if (source == null || source.IsDeleted)
+        {
+            return Result.NotFound<GroupMessageDto>("Tin nhắn không còn khả dụng để chuyển tiếp.");
+        }
+
+        var forwarded = new GroupMessage
+        {
+            WorkGroupId = request.TargetGroupId,
+            UserId = currentUserId.Value,
+            Content = "Tin nhắn được chuyển tiếp",
+            MessageType = "Forwarded",
+            ForwardedFromMessageId = source.ForwardedFromMessageId ?? source.Id
+        };
+
+        await _messageRepo.AddAsync(forwarded, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        var saved = await _messageRepo.GetQueryable()
+            .AsNoTracking()
+            .Include(item => item.User)
+            .Include(item => item.ForwardedFromMessage)
+                .ThenInclude(item => item!.User)
+            .FirstAsync(item => item.Id == forwarded.Id, ct);
 
         return Result.Created(ToMessageDto(saved));
     }
@@ -1909,9 +2026,10 @@ public partial class GroupsService : IGroupsService
 
     private GroupDto ToDto(WorkGroup group, Guid currentUserId)
     {
+        var currentMembership = group.Members.FirstOrDefault(member => member.UserId == currentUserId);
         var currentRole = group.OwnerId == currentUserId
             ? GroupRoleRules.Owner
-            : group.Members.FirstOrDefault(member => member.UserId == currentUserId)?.Role;
+            : currentMembership?.Role;
 
         if (currentRole == null && IsSystemAdmin())
         {
@@ -1934,8 +2052,59 @@ public partial class GroupsService : IGroupsService
             group.Members?.Count ?? 0,
             group.Messages?.Count(message => !message.IsDeleted) ?? 0,
             group.Polls?.Count(poll => poll.Status == GroupPollStatus.Open) ?? 0,
+            currentMembership == null
+                ? 0
+                : group.Messages?.Count(message =>
+                    !message.IsDeleted &&
+                    message.UserId != currentUserId &&
+                    message.CreatedAt > currentMembership.LastReadAt) ?? 0,
+            currentMembership?.IsMuted ?? false,
             group.CreatedAt,
             group.UpdatedAt);
+    }
+
+    private async Task NotifyMentionedMembersAsync(GroupMessage message, CancellationToken ct)
+    {
+        if (message.IsDeleted || string.IsNullOrWhiteSpace(message.Content))
+        {
+            return;
+        }
+
+        var members = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .Include(member => member.User)
+            .Where(member => member.WorkGroupId == message.WorkGroupId && member.UserId != message.UserId)
+            .ToListAsync(ct);
+        var mentionAll = message.Content.Contains("@all", StringComparison.OrdinalIgnoreCase);
+        var groupName = await _groupRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(group => group.Id == message.WorkGroupId)
+            .Select(group => group.Name)
+            .FirstOrDefaultAsync(ct) ?? "nhóm chat";
+
+        foreach (var member in members)
+        {
+            if (member.IsMuted)
+            {
+                continue;
+            }
+
+            var explicitlyMentioned = message.Content.Contains($"@{member.User.FullName}", StringComparison.OrdinalIgnoreCase);
+            if (!mentionAll && !explicitlyMentioned)
+            {
+                continue;
+            }
+
+            await _notificationService.CreateAsync(
+                member.UserId,
+                $"Bạn được nhắc đến trong nhóm \"{groupName}\".",
+                "GroupMention",
+                "info",
+                message.Id,
+                nameof(GroupMessage),
+                $"group:{message.WorkGroupId}:message:{message.Id}:mention:{member.UserId}",
+                ct);
+        }
     }
 
     private static GroupMemberDto ToMemberDto(WorkGroupMember member)
@@ -2034,7 +2203,21 @@ public partial class GroupsService : IGroupsService
             message.IsPinned,
             message.PinnedAt,
             message.PinnedByUserId,
-            ToReactionDtos(message.ReactionSummaryJson));
+            ToReactionDtos(message.ReactionSummaryJson),
+            ToMessageReferenceDto(message.ReplyToMessage),
+            ToMessageReferenceDto(message.ForwardedFromMessage));
+
+    private static GroupMessageReferenceDto? ToMessageReferenceDto(GroupMessage? message)
+        => message == null
+            ? null
+            : new GroupMessageReferenceDto(
+                message.Id,
+                message.WorkGroupId,
+                message.UserId,
+                message.User?.FullName ?? "Thành viên",
+                message.IsDeleted ? string.Empty : message.Content,
+                message.MessageType,
+                message.IsDeleted);
 
     private static List<GroupMessageReactionDto> ToReactionDtos(string? reactionSummaryJson)
     {

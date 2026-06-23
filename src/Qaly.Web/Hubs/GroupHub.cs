@@ -42,11 +42,15 @@ public class GroupHub : Hub
         await Clients.Caller.SendAsync("groupLeft", new { groupId }, Context.ConnectionAborted);
     }
 
-    public async Task SendMessage(Guid groupId, string content, string messageType = "Text")
+    public async Task SendMessage(
+        Guid groupId,
+        string content,
+        string messageType = "Text",
+        Guid? replyToMessageId = null)
     {
         var result = await _groupsService.CreateMessageAsync(
             groupId,
-            new SendGroupMessageRequest(content, messageType),
+            new SendGroupMessageRequest(content, messageType, replyToMessageId),
             Context.ConnectionAborted);
 
         if (!result.IsSuccess || result.Data == null)

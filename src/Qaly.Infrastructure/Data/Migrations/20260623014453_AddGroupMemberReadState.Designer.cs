@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Qaly.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using Qaly.Infrastructure.Data;
 namespace Qaly.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(QalyDbContext))]
-    partial class QalyDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260623014453_AddGroupMemberReadState")]
+    partial class AddGroupMemberReadState
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1337,9 +1340,6 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasDefaultValueSql("NEWID()");
 
-                    b.Property<string>("AllowedEmailDomains")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<string>("Code")
                         .IsRequired()
                         .HasMaxLength(80)
@@ -1369,12 +1369,6 @@ namespace Qaly.Infrastructure.Data.Migrations
 
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("WorkspaceCover")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("WorkspaceIcon")
-                        .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
 
@@ -1423,44 +1417,6 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("OrganizationMembers");
-                });
-
-            modelBuilder.Entity("Qaly.Domain.Entities.PhysicalFile", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasDefaultValueSql("NEWID()");
-
-                    b.Property<string>("ContentHash")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("FilePath")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<long>("FileSize")
-                        .HasColumnType("bigint");
-
-                    b.Property<int>("ReferenceCount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasDefaultValue(1);
-
-                    b.Property<DateTimeOffset?>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ContentHash")
-                        .IsUnique();
-
-                    b.ToTable("PhysicalFiles");
                 });
 
             modelBuilder.Entity("Qaly.Domain.Entities.PrivacyConsent", b =>
@@ -1539,12 +1495,6 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<bool>("EnableInReview")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("EnableOnHold")
-                        .HasColumnType("bit");
-
                     b.Property<DateTimeOffset?>("EndDate")
                         .HasColumnType("datetimeoffset");
 
@@ -1567,12 +1517,6 @@ namespace Qaly.Infrastructure.Data.Migrations
 
                     b.Property<Guid>("OwnerId")
                         .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool>("RequireEvidenceToDone")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("RestrictTransitionsToAdmin")
-                        .HasColumnType("bit");
 
                     b.Property<Guid?>("SourceGroupId")
                         .HasColumnType("uniqueidentifier");
@@ -1874,6 +1818,13 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<string>("FilePath")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long>("FileSize")
+                        .HasColumnType("bigint");
+
                     b.Property<bool>("IsDeleted")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
@@ -1883,9 +1834,6 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
-
-                    b.Property<Guid>("PhysicalFileId")
-                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid?>("ProjectId")
                         .HasColumnType("uniqueidentifier");
@@ -1916,8 +1864,6 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.HasIndex("CommentId");
 
                     b.HasIndex("EvidenceReviewedById");
-
-                    b.HasIndex("PhysicalFileId");
 
                     b.HasIndex("ProjectId");
 
@@ -3202,12 +3148,6 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .HasForeignKey("EvidenceReviewedById")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("Qaly.Domain.Entities.PhysicalFile", "PhysicalFile")
-                        .WithMany()
-                        .HasForeignKey("PhysicalFileId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("Qaly.Domain.Entities.Project", "Project")
                         .WithMany("Attachments")
                         .HasForeignKey("ProjectId")
@@ -3227,8 +3167,6 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Navigation("Comment");
 
                     b.Navigation("EvidenceReviewedBy");
-
-                    b.Navigation("PhysicalFile");
 
                     b.Navigation("Project");
 

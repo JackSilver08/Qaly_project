@@ -5,6 +5,10 @@ import {
   Check,
   Image as ImageIcon,
   Info,
+  Search,
+  Images,
+  Forward,
+  Reply,
   Palette,
   Paperclip,
   Pencil,
@@ -34,6 +38,7 @@ const props = defineProps<{
   backgroundTheme?: string;
   backgroundImage?: string;
   canCustomizeBackground?: boolean;
+  availableGroups?: ChatGroupModel[];
 }>();
 
 const emit = defineEmits<{
@@ -42,6 +47,7 @@ const emit = defineEmits<{
       text: string;
       attachments: TeamChatAttachment[];
       poll?: TeamChatPoll;
+      replyToMessageId?: string;
     },
   ];
   edit: [messageId: string, text: string];
@@ -53,6 +59,7 @@ const emit = defineEmits<{
   setBackground: [theme: string];
   setBackgroundImage: [file: File | null];
   joinMeeting: [meetingId: string];
+  forward: [messageId: string, targetGroupId: string];
 }>();
 
 const draft = ref("");
@@ -67,6 +74,13 @@ const selectionMode = ref(false);
 const selectedIds = ref<Set<string>>(new Set());
 const mentionQuery = ref<string | null>(null);
 const showBackgroundMenu = ref(false);
+const replyingMessage = ref<TeamChatMessage | null>(null);
+const forwardingMessage = ref<TeamChatMessage | null>(null);
+const forwardTargetGroupId = ref("");
+const showSearch = ref(false);
+const searchQuery = ref("");
+const showPinnedPanel = ref(false);
+const galleryIndex = ref(-1);
 
 const pinnedMessages = computed(() =>
   props.messages.filter((message) => message.pinned && !message.isDeleted),
@@ -74,6 +88,20 @@ const pinnedMessages = computed(() =>
 const selectedMessages = computed(() =>
   props.messages.filter((message) => selectedIds.value.has(message.id)),
 );
+const filteredMessages = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase();
+  if (!query) return props.messages;
+  return props.messages.filter((message) =>
+    `${message.senderName} ${message.text} ${message.forwardedFrom?.text ?? ""}`.toLowerCase().includes(query),
+  );
+});
+const galleryImages = computed(() =>
+  props.messages.flatMap((message) => [
+    ...message.attachments,
+    ...(message.forwardedFrom?.attachments ?? []),
+  ]).filter((attachment) => attachment.kind === "image" && attachment.url),
+);
+const activeGalleryImage = computed(() => galleryImages.value[galleryIndex.value]);
 const emojiOptions = ["👍", "✅", "🔥", "🎯", "🙏", "💡"];
 const backgroundOptions = [
   { id: "clean", name: "Tối giản", previewClass: "bg-preview--clean" },
@@ -152,6 +180,9 @@ watch(
     exitSelectionMode();
     openMenuId.value = null;
     showBackgroundMenu.value = false;
+    replyingMessage.value = null;
+    forwardingMessage.value = null;
+    searchQuery.value = "";
   },
 );
 
@@ -229,13 +260,24 @@ function toggleMenu(messageId: string) {
 }
 
 async function handleMessageAction(
-  action: "copy" | "pin" | "select" | "detail" | "edit" | "recall" | "hide",
+  action: "copy" | "pin" | "select" | "detail" | "edit" | "recall" | "hide" | "reply" | "forward",
   message: TeamChatMessage,
 ) {
   openMenuId.value = null;
 
   if (action === "copy") {
     await copyText(message.text);
+    return;
+  }
+  if (action === "reply") {
+    replyingMessage.value = message;
+    await nextTick();
+    textareaRef.value?.focus();
+    return;
+  }
+  if (action === "forward") {
+    forwardingMessage.value = message;
+    forwardTargetGroupId.value = (props.availableGroups ?? []).find((group) => group.id !== props.group?.id)?.id ?? "";
     return;
   }
   if (action === "pin") {
@@ -325,11 +367,39 @@ function sendMessage() {
   emit("send", {
     text,
     attachments: pendingAttachments.value,
+    replyToMessageId: replyingMessage.value?.id,
   });
   draft.value = "";
   pendingAttachments.value = [];
   mentionQuery.value = null;
+  replyingMessage.value = null;
   emit("typing", false);
+}
+
+function confirmForward() {
+  if (!forwardingMessage.value || !forwardTargetGroupId.value) return;
+  emit("forward", forwardingMessage.value.id, forwardTargetGroupId.value);
+  forwardingMessage.value = null;
+}
+
+function openGallery(messageId: string, attachmentId?: string) {
+  const message = props.messages.find((item) => item.id === messageId);
+  const target = [...(message?.attachments ?? []), ...(message?.forwardedFrom?.attachments ?? [])]
+    .find((attachment) => attachment.id === attachmentId) ?? message?.attachments.find((attachment) => attachment.kind === "image");
+  const index = galleryImages.value.findIndex((attachment) =>
+    attachment.id === target?.id && attachment.url === target?.url,
+  );
+  galleryIndex.value = index >= 0 ? index : 0;
+}
+
+function moveGallery(direction: number) {
+  if (!galleryImages.value.length) return;
+  galleryIndex.value = (galleryIndex.value + direction + galleryImages.value.length) % galleryImages.value.length;
+}
+
+function scrollToMessage(messageId: string) {
+  document.getElementById(`group-message-${messageId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  showPinnedPanel.value = false;
 }
 
 function relayReaction(messageId: string, emoji: string) {
@@ -385,6 +455,12 @@ function uploadBackground(event: Event) {
         </div>
       </div>
       <div class="team-chat-window__actions">
+        <button class="icon-button icon-button--small" type="button" aria-label="Tìm trong đoạn chat" @click.stop="showSearch = !showSearch">
+          <Search :size="16" />
+        </button>
+        <button v-if="galleryImages.length" class="icon-button icon-button--small" type="button" aria-label="Xem thư viện ảnh" @click.stop="galleryIndex = 0">
+          <Images :size="16" />
+        </button>
         <button
           v-if="canCustomizeBackground"
           class="icon-button icon-button--small"
@@ -394,17 +470,31 @@ function uploadBackground(event: Event) {
         >
           <Palette :size="16" />
         </button>
-        <div v-if="pinnedMessages.length" class="team-pinned">
+        <button v-if="pinnedMessages.length" class="team-pinned" type="button" @click.stop="showPinnedPanel = !showPinnedPanel">
           <Pin :size="14" />
           <span>{{ pinnedMessages.length }} tin đã ghim</span>
-        </div>
+        </button>
       </div>
     </header>
 
-    <div v-if="pinnedMessages.length" class="team-pinned-list">
+    <div v-if="showSearch" class="team-chat-search">
+      <Search :size="16" />
+      <input v-model="searchQuery" type="search" placeholder="Tìm nội dung hoặc người gửi..." autofocus />
+      <span>{{ filteredMessages.length }} kết quả</span>
+      <button type="button" aria-label="Đóng tìm kiếm" @click="showSearch = false; searchQuery = ''"><X :size="16" /></button>
+    </div>
+
+    <button v-if="pinnedMessages.length" class="team-pinned-list" type="button" @click="scrollToMessage(pinnedMessages[0].id)">
       <Pin :size="15" />
       <span>{{ pinnedMessages[0]?.text || "Tin nhắn đã ghim" }}</span>
       <small v-if="pinnedMessages.length > 1">+{{ pinnedMessages.length - 1 }}</small>
+    </button>
+
+    <div v-if="showPinnedPanel" class="team-pinned-panel">
+      <button v-for="message in pinnedMessages" :key="message.id" type="button" @click="scrollToMessage(message.id)">
+        <strong>{{ message.senderName }}</strong>
+        <span>{{ message.text || 'Ảnh, file hoặc nội dung đặc biệt' }}</span>
+      </button>
     </div>
 
     <div ref="bodyRef" class="team-chat-body no-scrollbar">
@@ -416,14 +506,14 @@ function uploadBackground(event: Event) {
       </div>
 
       <MessageItem
-        v-for="(message, index) in messages"
+        v-for="(message, index) in filteredMessages"
         :key="message.id"
         :message="message"
         :current-user-id="currentUserId"
         :is-consecutive="
           index > 0 &&
-          messages[index - 1].senderId === message.senderId &&
-          !messages[index - 1].meeting
+          filteredMessages[index - 1].senderId === message.senderId &&
+          !filteredMessages[index - 1].meeting
         "
         :menu-open="openMenuId === message.id"
         :selection-mode="selectionMode"
@@ -433,7 +523,13 @@ function uploadBackground(event: Event) {
         @toggle-select="toggleSelected"
         @react="relayReaction"
         @join-meeting="$emit('joinMeeting', $event)"
+        @open-image="openGallery"
       />
+
+      <div v-if="searchQuery && !filteredMessages.length" class="team-chat-empty">
+        <strong>Không tìm thấy tin nhắn</strong>
+        <span>Thử một từ khóa ngắn hơn hoặc tên người gửi.</span>
+      </div>
 
       <div v-if="typingText" class="team-typing-indicator">
         <span class="typing-dots"><i></i><i></i><i></i></span>
@@ -451,6 +547,14 @@ function uploadBackground(event: Event) {
     </div>
 
     <div v-else class="team-chat-composer-wrapper">
+      <div v-if="replyingMessage" class="team-reply-banner">
+        <Reply :size="15" />
+        <div>
+          <strong>Trả lời {{ replyingMessage.senderName }}</strong>
+          <span>{{ replyingMessage.text || 'Ảnh hoặc tệp đính kèm' }}</span>
+        </div>
+        <button type="button" aria-label="Hủy trả lời" @click="replyingMessage = null"><X :size="17" /></button>
+      </div>
       <div v-if="editingMessage" class="team-edit-banner">
         <Pencil :size="15" />
         <div>
@@ -515,6 +619,31 @@ function uploadBackground(event: Event) {
         {{ emoji }}
       </button>
     </div>
+
+    <Teleport to="body">
+      <div v-if="forwardingMessage" class="message-detail-backdrop" @click.self="forwardingMessage = null">
+        <section class="message-detail-card team-forward-card">
+          <header><div><Forward :size="18" /><strong>Chuyển tiếp tin nhắn</strong></div><button type="button" @click="forwardingMessage = null"><X :size="18" /></button></header>
+          <p>{{ forwardingMessage.text || 'Ảnh hoặc tệp đính kèm' }}</p>
+          <label>Chọn nhóm nhận
+            <select v-model="forwardTargetGroupId">
+              <option value="">Chọn nhóm</option>
+              <option v-for="target in availableGroups?.filter(item => item.id !== group?.id)" :key="target.id" :value="target.id">{{ target.name }}</option>
+            </select>
+          </label>
+          <button class="primary-button" type="button" :disabled="!forwardTargetGroupId" @click="confirmForward">Chuyển tiếp</button>
+        </section>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="activeGalleryImage" class="team-gallery-backdrop" @click.self="galleryIndex = -1">
+        <button type="button" class="team-gallery-close" aria-label="Đóng thư viện" @click="galleryIndex = -1"><X :size="24" /></button>
+        <button type="button" class="team-gallery-nav is-prev" aria-label="Ảnh trước" @click="moveGallery(-1)">‹</button>
+        <figure><img :src="activeGalleryImage.url" :alt="activeGalleryImage.name" /><figcaption>{{ activeGalleryImage.name }} · {{ galleryIndex + 1 }}/{{ galleryImages.length }}</figcaption></figure>
+        <button type="button" class="team-gallery-nav is-next" aria-label="Ảnh sau" @click="moveGallery(1)">›</button>
+      </div>
+    </Teleport>
 
     <Teleport to="body">
       <div v-if="showBackgroundMenu" class="chat-customize-backdrop" @click.self="showBackgroundMenu = false">
@@ -638,6 +767,88 @@ function uploadBackground(event: Event) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.team-chat-search {
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.team-chat-search input {
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: #0f172a;
+  background: transparent;
+}
+
+.team-chat-search span { color: #64748b; font-size: 0.72rem; }
+.team-chat-search button { border: 0; background: transparent; cursor: pointer; }
+
+.team-pinned-panel {
+  position: absolute;
+  z-index: 30;
+  top: 72px;
+  right: 18px;
+  width: min(340px, calc(100% - 36px));
+  max-height: 280px;
+  overflow-y: auto;
+  display: grid;
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid #dbe3ef;
+  border-radius: 13px;
+  background: #fff;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18);
+}
+
+.team-pinned-panel button { display: grid; gap: 3px; border: 0; border-radius: 9px; padding: 9px; background: transparent; text-align: left; cursor: pointer; }
+.team-pinned-panel button:hover { background: #eff6ff; }
+.team-pinned-panel span { overflow: hidden; color: #64748b; font-size: 0.76rem; text-overflow: ellipsis; white-space: nowrap; }
+
+.team-reply-banner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 11px;
+  border-left: 3px solid #2563eb;
+  border-radius: 9px;
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.team-reply-banner div { min-width: 0; display: grid; }
+.team-reply-banner span { overflow: hidden; color: #64748b; font-size: 0.74rem; text-overflow: ellipsis; white-space: nowrap; }
+.team-reply-banner button { border: 0; background: transparent; cursor: pointer; }
+
+.team-forward-card { display: grid; gap: 14px; }
+.team-forward-card label { display: grid; gap: 7px; color: #475569; font-size: 0.8rem; font-weight: 750; }
+.team-forward-card select { width: 100%; border: 1px solid #dbe3ef; border-radius: 10px; padding: 10px; background: #fff; }
+
+.team-gallery-backdrop {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) 58px;
+  align-items: center;
+  padding: 24px;
+  background: rgba(2, 6, 23, 0.94);
+}
+
+.team-gallery-backdrop figure { min-width: 0; height: min(86vh, 900px); margin: 0; display: grid; place-items: center; grid-template-rows: minmax(0, 1fr) auto; gap: 10px; }
+.team-gallery-backdrop img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.team-gallery-backdrop figcaption { color: #e2e8f0; font-size: 0.82rem; }
+.team-gallery-close, .team-gallery-nav { border: 0; color: #fff; background: rgba(30, 41, 59, 0.82); cursor: pointer; }
+.team-gallery-close { position: absolute; top: 20px; right: 20px; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 999px; }
+.team-gallery-nav { width: 46px; height: 46px; border-radius: 999px; font-size: 2rem; }
 
 .team-selection-toolbar {
   min-height: 58px;

@@ -14,6 +14,8 @@ import {
   MoreHorizontal,
   Pencil,
   Pin,
+  Reply,
+  Forward,
   RotateCcw,
   Trash2,
 } from "lucide-vue-next";
@@ -32,12 +34,13 @@ const props = defineProps<{
 defineEmits<{
   menu: [messageId: string];
   action: [
-    action: "copy" | "pin" | "select" | "detail" | "edit" | "recall" | "hide",
+    action: "copy" | "pin" | "select" | "detail" | "edit" | "recall" | "hide" | "reply" | "forward",
     message: TeamChatMessage,
   ];
   toggleSelect: [messageId: string];
   react: [messageId: string, emoji: string];
   joinMeeting: [meetingId: string];
+  openImage: [messageId: string, attachmentId: string | undefined];
 }>();
 
 const renderedText = computed(() => renderLightMarkdown(props.message.text));
@@ -115,6 +118,7 @@ function fileIcon(name: string, contentType?: string) {
 
   <article
     v-else
+    :id="`group-message-${message.id}`"
     class="team-message"
     :class="{
       'is-mine': isMine,
@@ -151,7 +155,27 @@ function fileIcon(name: string, contentType?: string) {
         <RotateCcw :size="14" />
         Tin nhắn đã được thu hồi
       </p>
-      <p v-else-if="message.text" class="team-message__text" v-html="renderedText"></p>
+      <button
+        v-if="!message.isDeleted && message.replyTo"
+        class="team-message-reference"
+        type="button"
+        @click="$emit('action', 'detail', message)"
+      >
+        <span>Đang trả lời {{ message.replyTo.senderName }}</span>
+        <strong>{{ message.replyTo.text || (message.replyTo.attachments.length ? 'Ảnh hoặc tệp đính kèm' : 'Tin nhắn') }}</strong>
+      </button>
+      <div v-if="!message.isDeleted && message.forwardedFrom" class="team-message-reference team-message-reference--forwarded">
+        <span><Forward :size="12" /> Đã chuyển tiếp từ {{ message.forwardedFrom.senderName }}</span>
+        <strong>{{ message.forwardedFrom.text || (message.forwardedFrom.attachments.length ? 'Ảnh hoặc tệp đính kèm' : 'Tin nhắn') }}</strong>
+        <button
+          v-if="message.forwardedFrom.attachments[0]?.kind === 'image'"
+          type="button"
+          @click="$emit('openImage', message.id, message.forwardedFrom.attachments[0]?.id)"
+        >
+          <img :src="message.forwardedFrom.attachments[0]?.url" alt="Ảnh được chuyển tiếp" />
+        </button>
+      </div>
+      <p v-if="!message.isDeleted && message.text" class="team-message__text" v-html="renderedText"></p>
 
       <div v-if="!message.isDeleted && message.attachments.length" class="team-message__attachments">
         <div
@@ -160,15 +184,14 @@ function fileIcon(name: string, contentType?: string) {
           class="message-attachment"
           :class="{ 'message-attachment--image': file.kind === 'image' }"
         >
-          <a
+          <button
             v-if="file.kind === 'image' && file.url"
             class="message-attachment-image"
-            :href="file.url"
-            target="_blank"
-            rel="noopener noreferrer"
+            type="button"
+            @click="$emit('openImage', message.id, file.id)"
           >
             <img :src="file.url" :alt="file.name" loading="lazy" />
-          </a>
+          </button>
           <a
             v-else
             class="message-attachment-card"
@@ -268,6 +291,12 @@ function fileIcon(name: string, contentType?: string) {
         <div v-if="!message.isDeleted" class="message-action-menu__divider"></div>
         <button v-if="!message.isDeleted && message.text" type="button" @click="$emit('action', 'copy', message)">
           <Clipboard :size="17" /> Sao chép tin nhắn
+        </button>
+        <button v-if="!message.isDeleted" type="button" @click="$emit('action', 'reply', message)">
+          <Reply :size="17" /> Trả lời
+        </button>
+        <button v-if="!message.isDeleted" type="button" @click="$emit('action', 'forward', message)">
+          <Forward :size="17" /> Chuyển tiếp
         </button>
         <button v-if="!message.isDeleted" type="button" @click="$emit('action', 'pin', message)">
           <Pin :size="17" /> {{ message.pinned ? "Bỏ ghim tin nhắn" : "Ghim tin nhắn" }}
@@ -491,6 +520,61 @@ function fileIcon(name: string, contentType?: string) {
   display: inline-flex;
   align-items: center;
   gap: 3px;
+}
+
+.team-message-reference {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  border: 0;
+  border-left: 3px solid #3b82f6;
+  border-radius: 8px;
+  padding: 7px 9px;
+  color: #334155;
+  background: #f1f5f9;
+  text-align: left;
+}
+
+.team-message-reference > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #2563eb;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.team-message-reference > strong {
+  overflow: hidden;
+  font-size: 0.76rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-message-reference--forwarded {
+  border-left-color: #14b8a6;
+}
+
+.team-message-reference--forwarded > span {
+  color: #0f766e;
+}
+
+.team-message-reference--forwarded > button {
+  border: 0;
+  border-radius: 8px;
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+  cursor: pointer;
+}
+
+.team-message-reference--forwarded img {
+  display: block;
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
 }
 
 .team-message__reactions {

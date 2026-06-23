@@ -6,6 +6,8 @@ public class WorkGroupMember : BaseEntity
     public Guid UserId { get; set; }
     public string Role { get; set; } = "Member";
     public DateTimeOffset JoinedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset LastReadAt { get; set; } = DateTimeOffset.UtcNow;
+    public bool IsMuted { get; set; }
 
     public WorkGroup WorkGroup { get; set; } = null!;
     public User User { get; set; } = null!;

@@ -11,6 +11,7 @@ public class GroupAttachmentService : IGroupAttachmentService
 {
     private const long MaxFileSize = 25 * 1024 * 1024;
     private readonly IRepository<GroupAttachment> _attachmentRepo;
+    private readonly IRepository<GroupMessage> _messageRepo;
     private readonly IGroupsService _groupsService;
     private readonly IFileStorageService _fileStorage;
     private readonly ICurrentUserService _currentUserService;
@@ -18,12 +19,14 @@ public class GroupAttachmentService : IGroupAttachmentService
 
     public GroupAttachmentService(
         IRepository<GroupAttachment> attachmentRepo,
+        IRepository<GroupMessage> messageRepo,
         IGroupsService groupsService,
         IFileStorageService fileStorage,
         ICurrentUserService currentUserService,
         IUnitOfWork unitOfWork)
     {
         _attachmentRepo = attachmentRepo;
+        _messageRepo = messageRepo;
         _groupsService = groupsService;
         _fileStorage = fileStorage;
         _currentUserService = currentUserService;
@@ -74,7 +77,7 @@ public class GroupAttachmentService : IGroupAttachmentService
         Guid attachmentId,
         CancellationToken ct = default)
     {
-        if (!await _groupsService.CanAccessGroupAsync(groupId, ct))
+        if (!await CanAccessAttachmentAsync(groupId, attachmentId, ct))
         {
             return Result.Forbidden<GroupAttachmentDownloadDto>();
         }
@@ -99,6 +102,35 @@ public class GroupAttachmentService : IGroupAttachmentService
         {
             return Result.NotFound<GroupAttachmentDownloadDto>("Attachment file not found.");
         }
+    }
+
+    private async Task<bool> CanAccessAttachmentAsync(Guid sourceGroupId, Guid attachmentId, CancellationToken ct)
+    {
+        if (await _groupsService.CanAccessGroupAsync(sourceGroupId, ct))
+        {
+            return true;
+        }
+
+        var attachmentToken = attachmentId.ToString();
+        var forwardedTargetGroupIds = await _messageRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(message =>
+                message.ForwardedFromMessageId != null &&
+                message.ForwardedFromMessage!.WorkGroupId == sourceGroupId &&
+                message.ForwardedFromMessage.Content.Contains(attachmentToken))
+            .Select(message => message.WorkGroupId)
+            .Distinct()
+            .ToListAsync(ct);
+
+        foreach (var targetGroupId in forwardedTargetGroupIds)
+        {
+            if (await _groupsService.CanAccessGroupAsync(targetGroupId, ct))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static GroupAttachmentDto ToDto(GroupAttachment attachment)

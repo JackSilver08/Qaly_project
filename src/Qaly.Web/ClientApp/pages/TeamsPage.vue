@@ -26,6 +26,10 @@ import {
   Trash2,
   PanelRightClose,
   PanelRightOpen,
+  Bell,
+  BellOff,
+  Search,
+  X,
 } from "lucide-vue-next";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -58,6 +62,8 @@ interface GroupDto {
   memberCount: number;
   messageCount: number;
   openPollCount: number;
+  unreadCount: number;
+  isMuted: boolean;
 }
 
 interface GroupMemberDto {
@@ -91,6 +97,18 @@ interface GroupMessageDto {
   pinnedAt: string | null;
   pinnedByUserId: string | null;
   reactions: GroupMessageReactionDto[];
+  replyTo: GroupMessageReferenceDto | null;
+  forwardedFrom: GroupMessageReferenceDto | null;
+}
+
+interface GroupMessageReferenceDto {
+  id: string;
+  workGroupId: string;
+  userId: string;
+  senderName: string;
+  content: string;
+  messageType: string;
+  isDeleted: boolean;
 }
 
 interface GroupMessageReactionDto {
@@ -128,9 +146,12 @@ const showCreateModal = ref(false);
 const createForm = ref({ name: "", color: "#2563eb" });
 const inviteEmail = ref("");
 const addUserId = ref("");
+const addUserSearch = ref("");
+const showAddUserSuggestions = ref(false);
 const addRole = ref("Member");
 const projectForm = ref({ name: "", code: "", description: "" });
-const pollForm = ref({ question: "", options: ["", ""] });
+const pollForm = ref({ question: "", options: ["", ""], allowMultiple: false });
+const isCreatingPoll = ref(false);
 const isDetailPanelCollapsed = ref(false);
 const isUploadingAvatar = ref(false);
 const typingUsers = ref<Record<string, { name: string; timeoutId: number }>>({});
@@ -177,6 +198,16 @@ const activeBackgroundImage = computed(() => activeDetail.value?.backgroundImage
 const availableUsers = computed(() => {
   const memberIds = new Set(members.value.map((member) => member.userId));
   return users.value.filter((user) => user.isActive && !memberIds.has(user.id));
+});
+const selectedAddUser = computed(() =>
+  availableUsers.value.find((user) => user.id === addUserId.value) ?? null,
+);
+const filteredAvailableUsers = computed(() => {
+  const query = addUserSearch.value.trim().toLowerCase();
+  if (!query) return availableUsers.value.slice(0, 6);
+  return availableUsers.value
+    .filter((user) => user.email.toLowerCase().includes(query))
+    .slice(0, 8);
 });
 const mentionMembers = computed<TeamChatMemberMention[]>(() =>
   members.value.map((member) => ({
@@ -233,6 +264,7 @@ watch(activeGroupId, async (next, previous) => {
   typingUsers.value = {};
   lastTypingState = false;
   await Promise.all([loadGroupDetail(next), loadMessages(next), loadMembers(next)]);
+  await markGroupRead(next);
 
   if (canManageGroup.value) {
     await loadInvitations(next);
@@ -296,7 +328,8 @@ async function loadUsers() {
 async function loadMembers(groupId: string) {
   try {
     members.value = await apiResult<GroupMemberDto[]>(`/api/groups/${groupId}/members`);
-    if (!addUserId.value && availableUsers.value[0]) addUserId.value = availableUsers.value[0].id;
+    addUserId.value = "";
+    addUserSearch.value = "";
   } catch (error) {
     showError(errorMessage(error, "Không thể tải thành viên nhóm."));
   }
@@ -332,6 +365,37 @@ async function loadMessages(groupId: string) {
   }
 }
 
+async function markGroupRead(groupId: string) {
+  if (!groupId) return;
+  groups.value = groups.value.map((group) =>
+    group.id === groupId ? { ...group, unreadCount: 0 } : group,
+  );
+  try {
+    const updated = await apiResult<GroupDto>(`/api/groups/${groupId}/read`, { method: "POST" });
+    groupDetails.value[updated.id] = updated;
+  } catch {
+    // A temporary read-receipt failure must not interrupt chat usage.
+  }
+}
+
+async function toggleGroupMute() {
+  if (!activeGroupId.value || !activeDetail.value) return;
+  const isMuted = !activeDetail.value.isMuted;
+  try {
+    const updated = await apiResult<GroupDto>(
+      `/api/groups/${activeGroupId.value}/notification-preference`,
+      { method: "PUT", body: JSON.stringify({ isMuted }) },
+    );
+    groupDetails.value[updated.id] = updated;
+    groups.value = groups.value.map((group) =>
+      group.id === updated.id ? toGroupModel(updated) : group,
+    );
+    showSuccess(isMuted ? "Đã tắt thông báo nhóm" : "Đã bật thông báo nhóm");
+  } catch (error) {
+    showError(errorMessage(error, "Không thể cập nhật thông báo nhóm."));
+  }
+}
+
 async function connectRealtime() {
   realtimeState.value = "connecting";
   hubConnection = new HubConnectionBuilder()
@@ -352,7 +416,9 @@ async function connectRealtime() {
     realtimeState.value = "offline";
   });
   hubConnection.on("groupMessageReceived", (message: GroupMessageDto) => {
-    upsertMessage(toMessageModel(message));
+    const mapped = toMessageModel(message);
+    upsertMessage(mapped);
+    if (mapped.groupId === activeGroupId.value) void markGroupRead(mapped.groupId);
   });
   hubConnection.on("groupMessageChanged", (message: GroupMessageDto) => {
     upsertMessage(toMessageModel(message), false);
@@ -484,6 +550,8 @@ async function addExistingMember() {
       body: JSON.stringify({ userId: addUserId.value, role: addRole.value }),
     });
     await Promise.all([loadMembers(activeGroupId.value), loadGroupDetail(activeGroupId.value)]);
+    addUserId.value = "";
+    addUserSearch.value = "";
     showSuccess("Đã thêm thành viên vào nhóm");
   } catch (error) {
     showError(errorMessage(error, "Không thể thêm thành viên."));
@@ -634,39 +702,59 @@ async function createProjectFromGroup() {
 }
 
 async function createPanelPoll() {
-  if (!activeGroupId.value) return;
+  if (!activeGroupId.value || isCreatingPoll.value) return;
 
-  const question = pollForm.value.question.trim() || "Bình chọn";
+  const question = pollForm.value.question.trim();
   const options = pollForm.value.options.map((option) => option.trim()).filter(Boolean);
+  if (!question) {
+    showError("Vui lòng nhập câu hỏi bình chọn.");
+    return;
+  }
   if (options.length < 2) {
     showError("Poll cần ít nhất 2 lựa chọn.");
     return;
   }
 
+  isCreatingPoll.value = true;
+  let createdPollId = "";
   try {
     const poll = await apiResult<any>(`/api/groups/${activeGroupId.value}/polls`, {
       method: "POST",
       body: JSON.stringify({
         question,
         options: options.map((content) => ({ content })),
-        allowMultiple: false,
+        allowMultiple: pollForm.value.allowMultiple,
       }),
     });
+    createdPollId = poll.id ?? poll.Id;
 
-    await sendMessage({
+    const sent = await sendMessage({
       text: "",
       attachments: [],
       poll: {
-        id: poll.id ?? poll.Id,
+        id: createdPollId,
         question,
         options,
       },
     });
+    if (!sent) {
+      await apiCommand(`/api/groups/${activeGroupId.value}/polls/${createdPollId}`, {
+        method: "DELETE",
+      }).catch(() => undefined);
+      return;
+    }
 
-    pollForm.value = { question: "", options: ["", ""] };
+    pollForm.value = { question: "", options: ["", ""], allowMultiple: false };
     showSuccess("Đã tạo bình chọn trong nhóm");
   } catch (error) {
+    if (createdPollId) {
+      await apiCommand(`/api/groups/${activeGroupId.value}/polls/${createdPollId}`, {
+        method: "DELETE",
+      }).catch(() => undefined);
+    }
     showError(errorMessage(error, "Không thể tạo bình chọn."));
+  } finally {
+    isCreatingPoll.value = false;
   }
 }
 
@@ -683,8 +771,9 @@ async function sendMessage(payload: {
   text: string;
   attachments: TeamChatAttachment[];
   poll?: TeamChatPoll;
+  replyToMessageId?: string;
 }) {
-  if (!activeGroupId.value) return;
+  if (!activeGroupId.value) return false;
 
   try {
     const uploadedAttachments = await uploadAttachments(payload.attachments);
@@ -695,20 +784,28 @@ async function sendMessage(payload: {
     const messageType = payload.poll ? "Poll" : "Text";
 
     if (hubConnection?.state === HubConnectionState.Connected) {
-      await hubConnection.invoke("SendMessage", activeGroupId.value, content, messageType);
-      return;
+      await hubConnection.invoke(
+        "SendMessage",
+        activeGroupId.value,
+        content,
+        messageType,
+        payload.replyToMessageId ?? null,
+      );
+      return true;
     }
 
     const saved = await apiResult<GroupMessageDto>(
       `/api/groups/${activeGroupId.value}/messages`,
       {
         method: "POST",
-        body: JSON.stringify({ content, messageType }),
+        body: JSON.stringify({ content, messageType, replyToMessageId: payload.replyToMessageId ?? null }),
       },
     );
     upsertMessage(toMessageModel(saved));
+    return true;
   } catch (error) {
     showError(errorMessage(error, "Không thể gửi tin nhắn."));
+    return false;
   }
 }
 
@@ -990,7 +1087,7 @@ function toGroupModel(group: GroupDto): ChatGroupModel {
     name: group.name,
     avatarUrl: group.avatarUrl ?? undefined,
     summary: `${group.memberCount ?? 0} thành viên · ${group.messageCount ?? 0} tin nhắn`,
-    unreadCount: 0,
+    unreadCount: group.unreadCount ?? 0,
   };
 }
 
@@ -1027,7 +1124,68 @@ function toMessageModel(message: GroupMessageDto): TeamChatMessage {
     reactions: toMessageReactions(message.reactions ?? []),
     poll: message.isDeleted ? undefined : parsePoll(message),
     meeting,
+    replyTo: toMessageReferenceModel(message.replyTo),
+    forwardedFrom: toMessageReferenceModel(message.forwardedFrom),
   };
+}
+
+function updateAddUserSearch(value: string) {
+  addUserSearch.value = value;
+  if (selectedAddUser.value?.email.toLowerCase() !== value.trim().toLowerCase()) {
+    addUserId.value = "";
+  }
+  showAddUserSuggestions.value = true;
+}
+
+function selectAddUser(user: UserDto) {
+  addUserId.value = user.id;
+  addUserSearch.value = user.email;
+  showAddUserSuggestions.value = false;
+}
+
+function closeAddUserSuggestions() {
+  window.setTimeout(() => {
+    showAddUserSuggestions.value = false;
+  }, 140);
+}
+
+async function forwardMessage(messageId: string, targetGroupId: string) {
+  if (!activeGroupId.value || !targetGroupId) return;
+  try {
+    const forwarded = await apiResult<GroupMessageDto>(
+      `/api/groups/${activeGroupId.value}/messages/${messageId}/forward`,
+      {
+        method: "POST",
+        body: JSON.stringify({ targetGroupId }),
+      },
+    );
+    if (targetGroupId === activeGroupId.value) upsertMessage(toMessageModel(forwarded));
+    showSuccess("Đã chuyển tiếp tin nhắn");
+  } catch (error) {
+    showError(errorMessage(error, "Không thể chuyển tiếp tin nhắn."));
+  }
+}
+
+function toMessageReferenceModel(reference: GroupMessageReferenceDto | null) {
+  if (!reference) return undefined;
+  return {
+    id: reference.id,
+    groupId: reference.workGroupId,
+    senderId: reference.userId,
+    senderName: reference.senderName,
+    text: reference.isDeleted ? "Tin nhắn đã được thu hồi" : cleanReferenceText(reference),
+    messageType: reference.messageType,
+    isDeleted: reference.isDeleted,
+    attachments: parseAttachmentsContent(reference.content, reference.workGroupId),
+  };
+}
+
+function cleanReferenceText(reference: GroupMessageReferenceDto) {
+  if (reference.messageType === "Poll" || reference.messageType === "Meeting") return reference.messageType === "Poll" ? "Bình chọn" : "Cuộc họp nhóm";
+  return reference.content
+    .replace(/\[attachments\][^\n]*/gi, "")
+    .replace(/\[attachment\][^\n]*/gi, "")
+    .trim();
 }
 
 function toMessageReactions(reactions: GroupMessageReactionDto[]): TeamChatReaction[] {
@@ -1104,7 +1262,11 @@ function parseMeeting(message: GroupMessageDto): TeamChatMeeting | undefined {
 }
 
 function parseAttachments(message: GroupMessageDto): TeamChatAttachment[] {
-  const structured = message.content
+  return parseAttachmentsContent(message.content, message.workGroupId);
+}
+
+function parseAttachmentsContent(content: string, groupId: string): TeamChatAttachment[] {
+  const structured = content
     .split("\n")
     .filter((line) => line.startsWith("[attachment] "))
     .map((line) => {
@@ -1113,7 +1275,7 @@ function parseAttachments(message: GroupMessageDto): TeamChatAttachment[] {
         .split("|");
       const name = decodeURIComponent(encodedName ?? "");
       const contentType = decodeURIComponent(encodedContentType ?? "application/octet-stream");
-      const url = id ? `/api/groups/${message.workGroupId}/attachments/${id}` : undefined;
+      const url = id ? `/api/groups/${groupId}/attachments/${id}` : undefined;
       return {
         id: id || undefined,
         name,
@@ -1127,7 +1289,7 @@ function parseAttachments(message: GroupMessageDto): TeamChatAttachment[] {
     .filter((attachment) => attachment.name);
   if (structured.length) return structured;
 
-  const match = message.content.match(/\[attachments\]\s*(.+)/i);
+  const match = content.match(/\[attachments\]\s*(.+)/i);
   if (!match) return [];
   
   const names = match[1].split(",").map(name => name.trim()).filter(Boolean);
@@ -1211,12 +1373,14 @@ function formatMessageTime(value: string) {
           :background-theme="activeBackgroundTheme"
           :background-image="activeBackgroundImage"
           :can-customize-background="canManageGroup"
+          :available-groups="groups"
           @send="sendMessage"
           @edit="editMessage"
           @pin="setMessagePin"
           @recall="recallMessage"
           @hide="hideMessages"
           @react="reactToMessage"
+          @forward="forwardMessage"
           @typing="setTypingState"
           @set-background="setChatBackground"
           @set-background-image="setChatBackgroundImage"
@@ -1238,14 +1402,26 @@ function formatMessageTime(value: string) {
           <header class="group-detail-header">
             <div class="group-detail-titlebar">
               <strong>Thông tin nhóm</strong>
-              <button
-                class="group-detail-icon-button"
-                type="button"
-                aria-label="Thu gọn chi tiết nhóm"
-                @click="isDetailPanelCollapsed = true"
-              >
-                <PanelRightClose :size="17" />
-              </button>
+              <div class="group-detail-titlebar__actions">
+                <button
+                  class="group-detail-icon-button"
+                  type="button"
+                  :aria-label="activeDetail?.isMuted ? 'Bật thông báo nhóm' : 'Tắt thông báo nhóm'"
+                  :title="activeDetail?.isMuted ? 'Bật thông báo nhóm' : 'Tắt thông báo nhóm'"
+                  @click="toggleGroupMute"
+                >
+                  <BellOff v-if="activeDetail?.isMuted" :size="17" />
+                  <Bell v-else :size="17" />
+                </button>
+                <button
+                  class="group-detail-icon-button"
+                  type="button"
+                  aria-label="Thu gọn chi tiết nhóm"
+                  @click="isDetailPanelCollapsed = true"
+                >
+                  <PanelRightClose :size="17" />
+                </button>
+              </div>
             </div>
 
             <div class="group-detail-profile">
@@ -1325,17 +1501,52 @@ function formatMessageTime(value: string) {
             </div>
 
             <form v-if="canManageGroup" class="group-inline-form" @submit.prevent="addExistingMember">
-              <select v-model="addUserId">
-                <option value="">Chọn tài khoản đã đăng ký</option>
-                <option v-for="user in availableUsers" :key="user.id" :value="user.id">
-                  {{ user.fullName }} - {{ user.email }}
-                </option>
-              </select>
+              <div class="group-user-search">
+                <Search :size="17" />
+                <input
+                  :value="addUserSearch"
+                  type="email"
+                  autocomplete="off"
+                  placeholder="Tìm tài khoản bằng email..."
+                  aria-label="Tìm tài khoản bằng email"
+                  @input="updateAddUserSearch(($event.target as HTMLInputElement).value)"
+                  @focus="showAddUserSuggestions = true"
+                  @blur="closeAddUserSuggestions"
+                />
+                <button
+                  v-if="addUserSearch"
+                  type="button"
+                  aria-label="Xóa email tìm kiếm"
+                  @mousedown.prevent="addUserSearch = ''; addUserId = ''; showAddUserSuggestions = true"
+                >
+                  <X :size="15" />
+                </button>
+
+                <div v-if="showAddUserSuggestions" class="group-user-suggestions">
+                  <button
+                    v-for="user in filteredAvailableUsers"
+                    :key="user.id"
+                    type="button"
+                    :class="{ 'is-selected': user.id === addUserId }"
+                    @mousedown.prevent="selectAddUser(user)"
+                  >
+                    <span class="group-user-suggestion__avatar">{{ initials(user.fullName) }}</span>
+                    <span class="group-user-suggestion__identity">
+                      <strong>{{ user.email }}</strong>
+                      <small>{{ user.fullName }}</small>
+                    </span>
+                    <Check v-if="user.id === addUserId" :size="16" />
+                  </button>
+                  <div v-if="!filteredAvailableUsers.length" class="group-user-suggestions__empty">
+                    Không tìm thấy tài khoản nào với email này.
+                  </div>
+                </div>
+              </div>
               <select v-model="addRole">
                 <option value="Member">Thành viên</option>
                 <option value="Admin">Quản trị viên</option>
               </select>
-              <button class="primary-button primary-button--compact" type="submit">
+              <button class="primary-button primary-button--compact" type="submit" :disabled="!addUserId">
                   <UserPlus :size="15" /> Thêm
               </button>
             </form>
@@ -1444,12 +1655,24 @@ function formatMessageTime(value: string) {
                   </button>
                 </label>
               </div>
+              <label class="group-poll-multiple">
+                <input v-model="pollForm.allowMultiple" type="checkbox" />
+                <span>
+                  <strong>Cho phép chọn nhiều đáp án</strong>
+                  <small>Thành viên có thể chọn nhiều phương án trong cùng một lần.</small>
+                </span>
+              </label>
               <div class="group-poll-actions">
                 <button class="secondary-button" type="button" @click="addPollOption">
                   <Plus :size="15" /> Thêm lựa chọn
                 </button>
-                <button class="primary-button" type="button" @click="createPanelPoll">
-                  <Vote :size="15" /> Gửi poll
+                <button
+                  class="primary-button"
+                  type="button"
+                  :disabled="isCreatingPoll"
+                  @click="createPanelPoll"
+                >
+                  <Vote :size="15" /> {{ isCreatingPoll ? "Đang gửi..." : "Gửi bình chọn" }}
                 </button>
               </div>
             </div>
@@ -2167,8 +2390,125 @@ function formatMessageTime(value: string) {
   margin-bottom: 14px;
 }
 
-.group-inline-form select:first-child {
+.group-user-search {
   grid-column: 1 / -1;
+  position: relative;
+  min-width: 0;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid #dbe3ef;
+  border-radius: 12px;
+  padding: 0 11px;
+  color: #64748b;
+  background: #ffffff;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.group-detail-titlebar__actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.group-user-search:focus-within {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.group-user-search > input {
+  min-width: 0;
+  height: 42px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  outline: 0;
+  box-shadow: none !important;
+}
+
+.group-user-search > button {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: #64748b;
+  background: #f1f5f9;
+  cursor: pointer;
+}
+
+.group-user-suggestions {
+  position: absolute;
+  z-index: 60;
+  inset: calc(100% + 7px) 0 auto 0;
+  max-height: 290px;
+  overflow-y: auto;
+  display: grid;
+  gap: 3px;
+  border: 1px solid #dbe3ef;
+  border-radius: 13px;
+  padding: 6px;
+  background: #ffffff;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.16);
+}
+
+.group-user-suggestions > button {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 10px;
+  padding: 9px;
+  color: #0f172a;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.group-user-suggestions > button:hover,
+.group-user-suggestions > button.is-selected {
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.group-user-suggestion__avatar {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: #ffffff;
+  background: #2563eb;
+  font-size: 0.7rem;
+  font-weight: 850;
+}
+
+.group-user-suggestion__identity {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.group-user-suggestion__identity strong,
+.group-user-suggestion__identity small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-user-suggestion__identity strong { font-size: 0.8rem; }
+.group-user-suggestion__identity small { color: #64748b; font-size: 0.72rem; }
+
+.group-user-suggestions__empty {
+  padding: 18px 12px;
+  color: #64748b;
+  text-align: center;
+  font-size: 0.78rem;
 }
 
 .group-inline-form input,
@@ -2568,6 +2908,40 @@ function formatMessageTime(value: string) {
   background: #ffffff;
   color: #111827;
   font-weight: 600;
+}
+
+.group-poll-multiple {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #dbe5f2;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.group-poll-multiple input {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  accent-color: #2563eb;
+}
+
+.group-poll-multiple span {
+  display: grid;
+  gap: 2px;
+}
+
+.group-poll-multiple strong {
+  color: #172033;
+  font-size: 0.78rem;
+}
+
+.group-poll-multiple small {
+  color: #718096;
+  font-size: 0.68rem;
+  line-height: 1.35;
 }
 
 .group-poll-options {

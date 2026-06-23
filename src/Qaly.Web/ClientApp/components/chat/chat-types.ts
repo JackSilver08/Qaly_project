@@ -44,6 +44,17 @@ export interface TeamChatMemberMention {
     isAll?: boolean;
 }
 
+export interface TeamChatMessageReference {
+    id: string;
+    groupId: string;
+    senderId: string;
+    senderName: string;
+    text: string;
+    messageType: string;
+    isDeleted: boolean;
+    attachments: TeamChatAttachment[];
+}
+
 export interface TeamChatMessage {
     id: string;
     groupId: string;
@@ -63,4 +74,6 @@ export interface TeamChatMessage {
     reactions: TeamChatReaction[];
     poll?: TeamChatPoll;
     meeting?: TeamChatMeeting;
+    replyTo?: TeamChatMessageReference;
+    forwardedFrom?: TeamChatMessageReference;
 }
