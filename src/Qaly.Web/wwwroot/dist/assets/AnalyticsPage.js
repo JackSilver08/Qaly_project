@@ -1,0 +1,1 @@
+import{E as a,_ as t}from"./main.js";import{o,g as e,B as r}from"./vendor-vue.js";import"./vendor-ui.js";import"./vendor-markdown.js";import"./vendor-realtime.js";const s=o({__name:"AnalyticsPage",setup(c){return(n,p)=>(r(),e(a))}}),u=t(s,[["__scopeId","data-v-7a098a10"]]);export{u as default};
