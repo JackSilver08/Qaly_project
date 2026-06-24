@@ -306,7 +306,7 @@ test("should vote in a group poll", async ({ page }) => {
             .fill(question);
         await pollComposer.locator(".group-poll-options input").nth(0).fill("Đỏ");
         await pollComposer.locator(".group-poll-options input").nth(1).fill("Xanh");
-        await pollComposer.getByRole("button", { name: /Gửi poll/i }).click();
+        await pollComposer.getByRole("button", { name: /Gửi bình chọn/i }).click();
 
         const pollCard = page.locator(".poll-card").filter({ hasText: question }).first();
         await expect(pollCard).toBeVisible();
@@ -406,19 +406,24 @@ test("should preview and import a Wiki document", async ({ page }) => {
         await modal.locator('input[type="file"]').setInputFiles(wikiFixturePath);
         await expect(modal).toContainText("wiki-smoke.md");
 
-        await modal.getByRole("button", { name: /Continue/i }).click();
+        await modal.getByRole("button", { name: /Tiếp tục/i }).click();
         await expect(
-            modal.getByRole("heading", { name: /Preview Wiki page import/i }),
+            modal.getByRole("heading", { name: /Xem trước trang Wiki sẽ nhập/i }),
+        ).toBeVisible();
+        await expect(modal.locator(".document-preview .import-input")).toHaveValue(
+            /DH02 Wiki Smoke/i,
+        );
+
+        await modal.getByRole("button", { name: /Tiếp tục/i }).click();
+        await expect(
+            modal.getByRole("heading", { name: /Xác nhận nhập tài liệu/i }),
         ).toBeVisible();
         await expect(modal).toContainText("DH02 Wiki Smoke");
 
-        await modal.getByRole("button", { name: /Continue/i }).click();
+        await modal.getByRole("button", { name: /Tạo trang Wiki/i }).click();
         await expect(
-            modal.getByRole("heading", { name: /Confirm document import/i }),
+            modal.getByRole("heading", { name: /Nhập dữ liệu hoàn tất/i }),
         ).toBeVisible();
-
-        await modal.getByRole("button", { name: /Create Wiki page/i }).click();
-        await expect(modal.getByRole("heading", { name: /Import hoàn tất!/i })).toBeVisible();
         await expect(modal).toContainText("DH02 Wiki Smoke");
     } finally {
         await cleanupProject(page, project?.id);
