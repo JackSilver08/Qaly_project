@@ -9,6 +9,7 @@
     "preview": "node ./node_modules/vite/dist/node/cli.js preview --configLoader runner",
     "typecheck": "node ./scripts/vue-tsc.mjs --noEmit -p tsconfig.json",
     "test:e2e": "playwright test",
+    "test:e2e:basic": "playwright test tests/e2e/basic-seed-navigation.spec.ts",
     "test:browser-console": "playwright test tests/e2e/browser-console.spec.ts"
   },
   "devDependencies": {

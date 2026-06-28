@@ -1,0 +1,128 @@
+name: E2E Playwright - Daily Commit Tracking
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+  schedule:
+    - cron: '0 17 * * *'
+
+jobs:
+  e2e-basic:
+    name: Basic E2E on seeded in-memory app
+    runs-on: ubuntu-latest
+
+    env:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://127.0.0.1:5000
+      UseInMemoryDatabase: true
+      E2E_BASE_URL: http://127.0.0.1:5000
+      E2E_ADMIN_EMAIL: admin@qaly.dev
+      E2E_ADMIN_PASSWORD: Admin@123456
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Restore .NET dependencies
+        run: dotnet restore src/Qaly.Web/Qaly.Web.csproj
+
+      - name: Build frontend assets
+        run: npm run build
+
+      - name: Start .NET server with in-memory database
+        run: |
+          dotnet run --no-restore --project src/Qaly.Web --urls http://127.0.0.1:5000 > server.log 2>&1 &
+          echo $! > server.pid
+          echo "Server PID: $(cat server.pid)"
+
+      - name: Wait for server readiness
+        run: |
+          set +e
+          SERVER_READY=false
+          for attempt in {1..60}; do
+            if curl -fsS http://127.0.0.1:5000/Account/Login > /dev/null; then
+              SERVER_READY=true
+              break
+            fi
+            echo "Waiting for server on port 5000... attempt ${attempt}/60"
+            sleep 2
+          done
+
+          echo "SERVER_READY=${SERVER_READY}" >> "$GITHUB_ENV"
+
+          if [ "${SERVER_READY}" != "true" ]; then
+            {
+              echo "Blocked do moi truong ha tang: server local khong san sang sau 120 giay."
+              echo ""
+              echo "Commit: ${GITHUB_SHA}"
+              echo "Branch: ${GITHUB_REF_NAME}"
+              echo ""
+              echo "server.log tail:"
+              tail -200 server.log || true
+            } > blocked-infra.md
+          fi
+
+          exit 0
+
+      - name: Run Playwright basic E2E tests
+        run: npm run test:e2e:basic
+
+      - name: Write QA summary
+        if: always()
+        run: |
+          {
+            echo "## E2E Playwright QA Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Date UTC | $(date -u +'%Y-%m-%d %H:%M:%S') |"
+            echo "| Commit | ${GITHUB_SHA} |"
+            echo "| Branch | ${GITHUB_REF_NAME} |"
+            echo "| Server Ready | ${SERVER_READY:-unknown} |"
+            echo "| Test Command | npm run test:e2e:basic |"
+            echo ""
+            if [ -f blocked-infra.md ]; then
+              echo "### Blocked"
+              cat blocked-infra.md
+            else
+              echo "Playwright report and evidence are uploaded as workflow artifacts."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Playwright evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-e2e-evidence-${{ github.sha }}
+          if-no-files-found: ignore
+          path: |
+            playwright-report/
+            test-results/
+            server.log
+            blocked-infra.md
+
+      - name: Stop .NET server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then
+            kill "$(cat server.pid)" 2>/dev/null || true
+          fi
