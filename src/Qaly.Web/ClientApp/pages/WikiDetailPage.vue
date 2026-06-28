@@ -196,7 +196,7 @@ async function saveEdit() {
   font-size: 14px;
   cursor: pointer;
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   transition: all 0.2s ease;
 }
 
@@ -208,9 +208,9 @@ async function saveEdit() {
 .wiki-document {
   flex: 1;
   background: var(--panel);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   padding: 40px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--qaly-shadow-md);
   min-height: 600px;
   min-width: 0; /* Prevent flex overflow */
 }
@@ -224,9 +224,9 @@ async function saveEdit() {
 
 .toc-container {
   background: var(--panel);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   padding: 20px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--qaly-shadow-md);
   max-height: calc(100vh - 48px);
   overflow-y: auto;
 }
@@ -305,7 +305,7 @@ async function saveEdit() {
   padding: 12px 16px;
   margin-bottom: 24px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--bg-soft);
   color: var(--text-strong);
   outline: none;

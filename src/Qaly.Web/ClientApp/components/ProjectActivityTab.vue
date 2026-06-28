@@ -175,7 +175,7 @@ function sparklineHeight(count: number) {
 .activity-tab__stats article {
   padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--bg-soft);
 }
 
@@ -201,7 +201,7 @@ function sparklineHeight(count: number) {
 .activity-sparkline {
   padding: 16px;
   border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--bg-soft);
 }
 
@@ -222,8 +222,8 @@ function sparklineHeight(count: number) {
 .sparkline-bar {
   width: 100%;
   min-height: 8px;
-  border-radius: 12px 12px 6px 6px;
-  background: linear-gradient(180deg, #38bdf8, #0f4cff);
+  border-radius: var(--qaly-radius-lg);
+  background: var(--primary);
   opacity: 0.72;
 }
 
@@ -266,7 +266,7 @@ function sparklineHeight(count: number) {
   gap: 12px;
   padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--qaly-radius-lg);
   background: white;
 }
 
@@ -302,7 +302,7 @@ function sparklineHeight(count: number) {
   gap: 8px;
   padding: 18px;
   border: 1px dashed var(--line);
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
   color: var(--muted);
   text-align: center;
   background: var(--bg-soft);

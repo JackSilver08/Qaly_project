@@ -774,7 +774,7 @@ function confidenceLabel(value: number) {
   display: flex;
   background: rgba(148, 163, 184, 0.08);
   padding: 4px;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   gap: 4px;
   border: 1px solid rgba(148, 163, 184, 0.12);
 }
@@ -791,7 +791,7 @@ function confidenceLabel(value: number) {
   border: none;
   background: transparent;
   color: var(--muted);
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   cursor: pointer;
   transition: all 0.25s ease;
 }
@@ -804,7 +804,7 @@ function confidenceLabel(value: number) {
 .group-ai-tabs button.active {
   background: #ffffff;
   color: var(--primary);
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.05);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 /* Content Area */
@@ -825,12 +825,12 @@ function confidenceLabel(value: number) {
 .action-trigger-box {
   background: rgba(255, 255, 255, 0.65);
   border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.02);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .helper-text {
@@ -849,7 +849,7 @@ function confidenceLabel(value: number) {
   padding: 10px 16px;
   font-size: 0.8rem;
   font-weight: 800;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
 }
 
 /* Warnings Box */
@@ -858,7 +858,7 @@ function confidenceLabel(value: number) {
   align-items: flex-start;
   gap: 8px;
   border: 1px solid rgba(245, 158, 11, 0.24);
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   background: rgba(255, 251, 235, 0.92);
   color: #b45309;
   padding: 10px 12px;
@@ -882,9 +882,9 @@ function confidenceLabel(value: number) {
 .result-section {
   background: rgba(255, 255, 255, 0.75);
   border: 1px solid rgba(148, 163, 184, 0.15);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   padding: 12px;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.02);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .section-title {
@@ -943,7 +943,7 @@ function confidenceLabel(value: number) {
 .draft-project-info {
   background: rgba(255, 255, 255, 0.8);
   border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -966,7 +966,7 @@ function confidenceLabel(value: number) {
 
 .premium-input {
   border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   padding: 8px 10px;
   font-size: 0.82rem;
   color: var(--text-strong);
@@ -982,7 +982,7 @@ function confidenceLabel(value: number) {
 .premium-textarea,
 .ai-instructions-textarea {
   border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   padding: 8px 10px;
   font-size: 0.78rem;
   line-height: 1.45;
@@ -1027,7 +1027,7 @@ function confidenceLabel(value: number) {
 .draft-task-card {
   background: rgba(255, 255, 255, 0.8);
   border: 1px solid rgba(193, 211, 232, 0.72);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -1201,7 +1201,7 @@ function confidenceLabel(value: number) {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
 }
 
 /* Action Items Listing styling */
@@ -1216,10 +1216,10 @@ function confidenceLabel(value: number) {
   flex-direction: column;
   gap: 6px;
   border: 1px solid rgba(193, 211, 232, 0.72);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   background: rgba(255, 255, 255, 0.82);
   padding: 12px;
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.01);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .group-ai-item__title {
@@ -1285,7 +1285,7 @@ function confidenceLabel(value: number) {
   text-align: center;
   padding: 20px;
   border: 2px dashed rgba(148, 163, 184, 0.16);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   background: rgba(255, 255, 255, 0.15);
 }
 

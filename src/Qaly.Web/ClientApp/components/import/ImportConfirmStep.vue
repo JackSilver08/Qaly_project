@@ -265,7 +265,7 @@ const statusLabels: Record<string, string> = {
 }
 .confirm-stat {
   padding: 14px;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   text-align: center;
   background: rgba(255,255,255,.04);
   border: 1px solid #e5e7eb;
@@ -273,7 +273,7 @@ const statusLabels: Record<string, string> = {
 }
 .confirm-stat:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0,0,0,.2);
+  box-shadow: var(--qaly-shadow-md);
 }
 .confirm-stat--success {
   border-color: rgba(34,197,94,.25);
@@ -315,7 +315,7 @@ const statusLabels: Record<string, string> = {
 .dist-bar-wrap { flex: 1; height: 8px; border-radius: 4px; background: #eef2f7; overflow: hidden; }
 .dist-bar {
   height: 100%; border-radius: 4px;
-  background: linear-gradient(90deg, #0f4cff, #22d3ee);
+  background: var(--primary);
   transition: width .6s cubic-bezier(.22,1,.36,1);
 }
 .dist-count { font-size: .78rem; width: 28px; text-align: right; color: #6b7280; }
@@ -328,7 +328,7 @@ const statusLabels: Record<string, string> = {
 }
 .option-badge {
   padding: 4px 12px;
-  border-radius: 20px;
+  border-radius: var(--qaly-radius-lg);
   font-size: .72rem;
   font-weight: 500;
   background: rgba(255,255,255,.05);
@@ -361,7 +361,7 @@ const statusLabels: Record<string, string> = {
   align-items: flex-start;
   gap: 10px;
   padding: 12px 16px;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   background: rgba(31,128,255,.08);
   border: 1px solid rgba(117,182,255,.24);
   font-size: .8rem;

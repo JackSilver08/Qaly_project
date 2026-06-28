@@ -155,7 +155,7 @@ async function handleUndoFromBanner() {
         <article class="summary-card glass-card">
           <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
             <span style="font-size: 11px; font-weight: 800; color: var(--muted); letter-spacing: 0.5px;">TỔNG DỰ ÁN</span>
-            <div style="width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--blue-100); color: var(--primary);">
+            <div style="width: 34px; height: 34px; border-radius: var(--qaly-radius-lg); display: grid; place-items: center; background: var(--blue-100); color: var(--primary);">
               <FolderKanban :size="16" />
             </div>
           </div>
@@ -168,7 +168,7 @@ async function handleUndoFromBanner() {
         <article class="summary-card glass-card">
           <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
             <span style="font-size: 11px; font-weight: 800; color: var(--muted); letter-spacing: 0.5px;">ĐÚNG TIẾN ĐỘ</span>
-            <div style="width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--mint-100); color: #047857; position: relative;">
+            <div style="width: 34px; height: 34px; border-radius: var(--qaly-radius-lg); display: grid; place-items: center; background: var(--mint-100); color: #047857; position: relative;">
               <CheckCircle2 :size="16" />
               <span style="position: absolute; width: 6px; height: 6px; border-radius: 50%; background: #10b981; top: 6px; right: 6px; display: inline-block; animation: pulse 2s infinite;"></span>
             </div>
@@ -182,7 +182,7 @@ async function handleUndoFromBanner() {
         <article class="summary-card glass-card">
           <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
             <span style="font-size: 11px; font-weight: 800; color: var(--muted); letter-spacing: 0.5px;">CÓ RỦI RO / CHẬM</span>
-            <div style="width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: #fee2e2; color: #ef4444;">
+            <div style="width: 34px; height: 34px; border-radius: var(--qaly-radius-lg); display: grid; place-items: center; background: #fee2e2; color: #ef4444;">
               <AlertTriangle :size="16" />
             </div>
           </div>
@@ -355,7 +355,7 @@ async function handleUndoFromBanner() {
   gap: 6px;
   padding: 7px 14px;
   border: 1px solid rgba(184, 219, 255, 0.34);
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   background: rgb(15, 0, 130);
   color: #d9e9ff;
   font-size: 0.8rem;
@@ -367,15 +367,15 @@ async function handleUndoFromBanner() {
   transform: translateY(-1px);
   border-color: rgba(117, 182, 255, 0.62);
   background: rgba(31, 128, 255, 0.2);
-  box-shadow: 0 14px 28px rgba(15, 76, 255, 0.24);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 /* Modal Styles */
 .project-modal-backdrop {
   position: fixed; inset: 0; z-index: 9999;
   background: rgba(15, 23, 42, 0.4);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   display: flex; align-items: center; justify-content: center;
   animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -390,12 +390,10 @@ async function handleUndoFromBanner() {
   width: min(480px, 94vw);
   max-height: 88vh;
   overflow-y: auto;
-  border-radius: 20px;
+  border-radius: var(--qaly-radius-lg);
   padding: 0;
   background: #ffffff;
-  box-shadow: 
-    0 10px 40px -10px rgba(0,0,0,0.1), 
-    0 0 0 1px rgba(0,0,0,0.05);
+  box-shadow: var(--qaly-shadow-md);
   transform-origin: center;
   animation: modalScaleIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -448,7 +446,7 @@ async function handleUndoFromBanner() {
 .modal-input {
   width: 100%; 
   padding: 12px 16px; 
-  border-radius: 12px; 
+  border-radius: var(--qaly-radius-lg); 
   font-size: 0.95rem;
   background: #f8fafc; 
   border: 1px solid var(--border-color);
@@ -483,7 +481,7 @@ textarea.modal-input {
 .project-source-toggle button {
   min-height: 38px;
   border: 1px solid var(--border-color);
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   background: #f8fafc;
   color: var(--text-muted);
   font-weight: 700;
@@ -503,7 +501,7 @@ textarea.modal-input {
   gap: 8px;
   padding: 8px;
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   background: #f8fafc;
 }
 
@@ -513,7 +511,7 @@ textarea.modal-input {
   gap: 8px;
   margin: 0;
   padding: 8px;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   background: #ffffff;
   color: var(--text-main);
 }
@@ -531,7 +529,7 @@ textarea.modal-input {
 
 .btn {
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 10px 24px; border-radius: 10px; font-size: 0.95rem;
+  padding: 10px 24px; border-radius: var(--qaly-radius-lg); font-size: 0.95rem;
   font-weight: 600; border: none; cursor: pointer; transition: all 0.2s;
 }
 .btn--primary { 
@@ -542,7 +540,7 @@ textarea.modal-input {
 .btn--primary:hover:not(:disabled) { 
   background: var(--accent-hover); 
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px -2px rgba(37, 99, 235, 0.5);
+  box-shadow: var(--qaly-shadow-md);
 }
 .btn--primary:active:not(:disabled) {
   transform: translateY(0);
@@ -565,8 +563,8 @@ textarea.modal-input {
 }
 
 @keyframes fadeIn { 
-  from { opacity: 0; backdrop-filter: blur(0px); } 
-  to { opacity: 1; backdrop-filter: blur(8px); } 
+  from { opacity: 0; backdrop-filter: none; } 
+  to { opacity: 1; backdrop-filter: none; } 
 }
 @keyframes modalScaleIn {
   from { opacity: 0; transform: scale(0.96) translateY(10px); }

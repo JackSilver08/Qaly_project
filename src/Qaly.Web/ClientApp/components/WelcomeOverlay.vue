@@ -63,7 +63,7 @@ onMounted(() => {
   left: 0;
   transform-origin: left;
   border-right: 2px solid #22d3ee;
-  box-shadow: 10px 0 30px rgba(34, 211, 238, 0.25);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 /* Right Panel */
@@ -71,7 +71,7 @@ onMounted(() => {
   right: 0;
   transform-origin: right;
   border-left: 2px solid #22d3ee;
-  box-shadow: -10px 0 30px rgba(34, 211, 238, 0.25);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 /* Open state (sliding back to sides) */

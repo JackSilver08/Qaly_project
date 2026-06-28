@@ -1152,7 +1152,7 @@ onBeforeUnmount(() => {
   gap: 10px;
   background: #fffbeb;
   border: 1px solid #fde68a;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   padding: 10px 14px;
   margin-bottom: 16px;
   color: #b45309;
@@ -1211,7 +1211,7 @@ onBeforeUnmount(() => {
   border: 1px solid transparent;
   color: #64748b;
   padding: 6px 9px;
-  border-radius: 9px;
+  border-radius: var(--qaly-radius-lg);
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
@@ -1324,7 +1324,7 @@ onBeforeUnmount(() => {
 .suggestion-pill {
   padding: 10px 18px;
   border: none;
-  border-radius: 24px;
+  border-radius: var(--qaly-radius-lg);
   font-size: 13px;
   font-weight: 500;
   color: #334155;
@@ -1370,7 +1370,7 @@ onBeforeUnmount(() => {
   color: #0f172a;
   cursor: pointer;
   padding: 8px 16px;
-  border-radius: 20px;
+  border-radius: var(--qaly-radius-lg);
   background: transparent;
   transition: all 0.25s ease;
   border: 1px solid transparent;
@@ -1423,10 +1423,8 @@ onBeforeUnmount(() => {
   overscroll-behavior: contain;
   background: rgba(255, 255, 255, 0.98);
   border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 18px;
-  box-shadow:
-    0 18px 45px rgba(15, 23, 42, 0.12),
-    0 8px 18px rgba(15, 23, 42, 0.06);
+  border-radius: var(--qaly-radius-lg);
+  box-shadow: var(--qaly-shadow-md);
   padding: 8px;
   z-index: 999;
   display: block;
@@ -1443,7 +1441,7 @@ onBeforeUnmount(() => {
 
 .erumi-dropdown-item {
   padding: 11px 14px;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   cursor: pointer;
   font-size: 14px;
   font-weight: 600;
@@ -1502,7 +1500,7 @@ onBeforeUnmount(() => {
   gap: 2px;
   max-width: 100%;
   border: 1px solid rgba(15, 82, 186, 0.14);
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   background: rgba(15, 82, 186, 0.04);
   color: #0f172a;
   padding: 7px 10px;
@@ -1536,9 +1534,7 @@ onBeforeUnmount(() => {
   outline: none;
   border-radius: 32px;
   background: rgba(255, 255, 255, 0.92);
-  box-shadow:
-    0 16px 40px rgba(15, 23, 42, 0.08),
-    0 4px 12px rgba(15, 23, 42, 0.04);
+  box-shadow: var(--qaly-shadow-md);
   transition:
     box-shadow 0.25s ease,
     transform 0.25s ease,
@@ -1549,9 +1545,7 @@ onBeforeUnmount(() => {
   border: none;
   outline: none;
   background: #ffffff;
-  box-shadow:
-    0 18px 46px rgba(15, 23, 42, 0.1),
-    0 0 0 3px rgba(31, 128, 255, 0.08);
+  box-shadow: var(--qaly-shadow-md);
   transform: translateY(-1px);
 }
 
@@ -1627,7 +1621,7 @@ onBeforeUnmount(() => {
 .erumi-send-btn.is-ready {
   background: #1f80ff;
   color: #ffffff;
-  box-shadow: 0 4px 14px rgba(31, 128, 255, 0.35);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .erumi-send-btn.is-ready:hover {
@@ -1643,8 +1637,8 @@ onBeforeUnmount(() => {
   width: 100%;
   background: #ffffff;
   border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 16px;
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+  border-radius: var(--qaly-radius-lg);
+  box-shadow: var(--qaly-shadow-md);
   z-index: 1000;
   max-height: 240px;
   overflow-y: auto;
@@ -1659,7 +1653,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -1720,15 +1714,15 @@ onBeforeUnmount(() => {
   place-items: center;
   overflow: hidden;
   border: 1px solid #dbe6f5;
-  border-radius: 13px;
+  border-radius: var(--qaly-radius-lg);
   background: linear-gradient(145deg, #ffffff, #edf4ff);
-  box-shadow: 0 8px 20px rgba(31, 128, 255, 0.12);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .msg-avatar-col :deep(.chatbot-avatar) {
   width: 38px !important;
   height: 38px !important;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
 }
 
 .msg-avatar-col :deep(.chatbot-avatar img) {
@@ -1759,11 +1753,11 @@ onBeforeUnmount(() => {
   background: linear-gradient(135deg, #2486ff, #1268e8);
   color: #ffffff;
   padding: 11px 16px;
-  border-radius: 18px 18px 5px 18px;
+  border-radius: 6px 6px 2px 6px;
   font-size: 14px;
   font-weight: 600;
   line-height: 1.5;
-  box-shadow: 0 8px 22px rgba(31, 128, 255, 0.2);
+  box-shadow: var(--qaly-shadow-md);
   overflow-wrap: anywhere;
 }
 
@@ -1771,11 +1765,11 @@ onBeforeUnmount(() => {
   width: 100%;
   background: #ffffff;
   color: #0f172a;
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
   font-size: 14px;
   line-height: 1.7;
   border: 1px solid #dfe7f3;
-  box-shadow: 0 12px 32px rgba(43, 65, 104, 0.08);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .assistant-response-card {
@@ -1853,7 +1847,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   background: #f8faff;
   border: 1px solid #e3eaf5;
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   padding: 13px 15px;
   display: flex;
   flex-direction: column;
@@ -1899,7 +1893,7 @@ onBeforeUnmount(() => {
 .erumi-table-card {
   background: #ffffff;
   border: 1px solid #dfe7f3;
-  border-radius: 15px;
+  border-radius: var(--qaly-radius-lg);
   overflow: hidden;
 }
 
@@ -1964,7 +1958,7 @@ onBeforeUnmount(() => {
 .erumi-chart-card {
   background: #fbfcff;
   border: 1px solid #dfe7f3;
-  border-radius: 15px;
+  border-radius: var(--qaly-radius-lg);
   padding: 16px;
 }
 
@@ -1991,7 +1985,7 @@ onBeforeUnmount(() => {
   border: 1px solid #cfddfb;
   color: #205fc7;
   padding: 8px 13px;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -2008,7 +2002,7 @@ onBeforeUnmount(() => {
   background: rgba(248, 250, 252, 0.75);
   border: 1px dashed #cbd5e1;
   padding: 12px 16px;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   margin-top: 4px;
   width: 100%;
 }
@@ -2030,7 +2024,7 @@ onBeforeUnmount(() => {
   border: none;
   color: #ffffff;
   padding: 8px 16px;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -2052,7 +2046,7 @@ onBeforeUnmount(() => {
   border: none;
   color: #ffffff;
   padding: 8px 16px;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -2083,7 +2077,7 @@ onBeforeUnmount(() => {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   padding: 8px 12px;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   font-size: 13px;
   font-weight: 700;
   color: #0f172a;
@@ -2178,7 +2172,7 @@ onBeforeUnmount(() => {
   background: #ffffff;
   border: 1px solid #cbd5e1;
   padding: 6px 12px;
-  border-radius: 16px;
+  border-radius: var(--qaly-radius-lg);
   font-size: 12px;
   font-weight: 600;
   color: #475569;
@@ -2203,7 +2197,7 @@ onBeforeUnmount(() => {
 /* Drawer mode overrides (Sprint 1) */
 .is-drawer-mode {
   border-left: 1px solid #e2e8f0;
-  box-shadow: -4px 0 24px rgba(15, 23, 42, 0.04);
+  box-shadow: var(--qaly-shadow-md);
   background: #ffffff;
 }
 
@@ -2236,7 +2230,7 @@ onBeforeUnmount(() => {
 }
 
 .is-drawer-mode .suggestion-pill {
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   text-align: left;
   padding: 8px 12px;
   font-size: 12px;
@@ -2265,13 +2259,13 @@ onBeforeUnmount(() => {
 .is-drawer-mode .msg-avatar-col {
   width: 34px;
   height: 34px;
-  border-radius: 11px;
+  border-radius: var(--qaly-radius-lg);
 }
 
 .is-drawer-mode .msg-avatar-col :deep(.chatbot-avatar) {
   width: 32px !important;
   height: 32px !important;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
 }
 
 .is-drawer-mode .msg-assistant .msg-bubble-content {
@@ -2422,7 +2416,7 @@ onBeforeUnmount(() => {
   .msg-avatar-col {
     width: 34px;
     height: 34px;
-    border-radius: 11px;
+    border-radius: var(--qaly-radius-lg);
   }
 
   .msg-avatar-col :deep(.chatbot-avatar) {

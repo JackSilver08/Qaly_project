@@ -676,18 +676,18 @@ onMounted(loadImportSessions)
 <style scoped>
 .import-backdrop {
   position: fixed; inset: 0; z-index: 9999;
-  background: rgba(15, 23, 42, 0.38); backdrop-filter: blur(6px);
+  background: rgba(15, 23, 42, 0.38); backdrop-filter: none;
   display: flex; align-items: center; justify-content: center;
   animation: fadeIn .2s ease;
 }
 .import-modal {
   --accent: #1f80ff;
   width: min(1000px, 94vw); max-height: 90vh; overflow-y: auto;
-  border-radius: 14px; padding: 0;
+  border-radius: var(--qaly-radius-lg); padding: 0;
   background: #ffffff;
   color: #111827;
   border: 1px solid rgba(15, 23, 42, 0.08);
-  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.22);
+  box-shadow: var(--qaly-shadow-md);
 }
 .import-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -725,10 +725,10 @@ onMounted(loadImportSessions)
 }
 .stepper-dot.active {
   background: var(--accent, #6366f1); color: #fff;
-  box-shadow: 0 4px 16px rgba(99,102,241,.3);
+  box-shadow: var(--qaly-shadow-md);
 }
 .stepper-dot.current {
-  box-shadow: 0 0 0 4px rgba(99,102,241,.25), 0 4px 16px rgba(99,102,241,.3);
+  box-shadow: var(--qaly-shadow-md);
   transform: scale(1.08);
 }
 .stepper-labels {
@@ -747,7 +747,7 @@ onMounted(loadImportSessions)
 
 /* ── Upload (shared styles for sub-components) ── */
 :deep(.import-dropzone) {
-  border: 2px dashed rgba(255,255,255,.1); border-radius: 14px;
+  border: 2px dashed rgba(255,255,255,.1); border-radius: var(--qaly-radius-lg);
   padding: 40px 24px; text-align: center;
   transition: all .25s ease; cursor: pointer;
   margin: 12px 0;
@@ -764,7 +764,7 @@ onMounted(loadImportSessions)
 
 :deep(.import-info-banner) {
   display: flex; align-items: center; gap: 10px;
-  padding: 10px 14px; border-radius: 8px;
+  padding: 10px 14px; border-radius: var(--qaly-radius-lg);
   background: #eff6ff; border: 1px solid #bfdbfe;
   margin-bottom: 8px;
 }
@@ -781,7 +781,7 @@ onMounted(loadImportSessions)
 :deep(.import-preview-wrap) { margin-bottom: 20px; }
 :deep(.import-preview-title) { font-size: .82rem; color: #6b7280; margin: 0 0 8px; }
 :deep(.import-preview-table-wrap) {
-  overflow-x: auto; border-radius: 8px;
+  overflow-x: auto; border-radius: var(--qaly-radius-lg);
   border: 1px solid #e5e7eb;
 }
 :deep(.import-preview-table) { width: 100%; border-collapse: collapse; font-size: .78rem; }
@@ -813,7 +813,7 @@ onMounted(loadImportSessions)
 :deep(.import-field) { margin-bottom: 14px; }
 :deep(.import-field label) { display: block; font-size: .8rem; color: #4b5563; margin-bottom: 6px; }
 :deep(.import-input), :deep(.import-select) {
-  width: 100%; padding: 8px 12px; border-radius: 8px; font-size: .85rem;
+  width: 100%; padding: 8px 12px; border-radius: var(--qaly-radius-lg); font-size: .85rem;
   background: #ffffff; border: 1px solid #d1d5db;
   color: inherit; outline: none; transition: border-color .2s;
 }
@@ -823,7 +823,7 @@ onMounted(loadImportSessions)
 /* ── Warning ── */
 :deep(.import-warning), .import-warning {
   display: flex; align-items: center; gap: 8px;
-  padding: 10px 14px; border-radius: 8px; margin: 12px 0;
+  padding: 10px 14px; border-radius: var(--qaly-radius-lg); margin: 12px 0;
   background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.2);
   color: #f59e0b; font-size: .82rem;
 }
@@ -855,7 +855,7 @@ onMounted(loadImportSessions)
   gap: 10px; margin: 16px 0;
 }
 .stat-item {
-  padding: 14px; border-radius: 12px; text-align: center;
+  padding: 14px; border-radius: var(--qaly-radius-lg); text-align: center;
   background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.06);
   transition: transform .2s;
 }
@@ -888,7 +888,7 @@ onMounted(loadImportSessions)
 /* ── Shared buttons ── */
 :deep(.btn), .btn {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 18px; border-radius: 8px; font-size: .85rem;
+  padding: 8px 18px; border-radius: var(--qaly-radius-lg); font-size: .85rem;
   font-weight: 500; border: none; cursor: pointer; transition: all .2s;
 }
 :deep(.btn--primary), .btn--primary { background: var(--accent, #6366f1); color: #fff; }
@@ -907,7 +907,7 @@ onMounted(loadImportSessions)
   margin: 16px 0;
   background: rgba(239, 68, 68, 0.08);
   border: 1px solid rgba(239, 68, 68, 0.2);
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   padding: 12px;
 }
 .import-skipped-rows details summary {
@@ -945,7 +945,7 @@ onMounted(loadImportSessions)
   gap: 12px;
   padding: 14px;
   border: 1px solid #dbeafe;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   background: #eff6ff;
   color: #1f2937;
   margin-bottom: 16px;
@@ -980,7 +980,7 @@ onMounted(loadImportSessions)
 .document-preview__stats div {
   padding: 14px;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   background: #fff;
 }
 
@@ -1020,7 +1020,7 @@ onMounted(loadImportSessions)
   padding: 0;
   list-style: none;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   overflow: hidden;
 }
 
@@ -1048,7 +1048,7 @@ onMounted(loadImportSessions)
   gap: 4px;
   padding: 10px 12px;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   background: #fff;
 }
 
@@ -1085,7 +1085,7 @@ onMounted(loadImportSessions)
   gap: 4px;
   padding: 12px 14px;
   border: 1px solid #dbeafe;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   background: #eff6ff;
 }
 

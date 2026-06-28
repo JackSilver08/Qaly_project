@@ -1387,7 +1387,7 @@ provide(dashboardContextKey, {
   align-items: flex-start;
   padding: 88px 20px 24px;
   background: rgba(15, 23, 42, 0.28);
-  backdrop-filter: blur(8px);
+  backdrop-filter: none;
 }
 
 .global-search-panel {
@@ -1397,9 +1397,9 @@ provide(dashboardContextKey, {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   border: 1px solid rgba(203, 213, 225, 0.92);
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
   background: #ffffff;
-  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.22);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .global-search-input {
@@ -1428,7 +1428,7 @@ provide(dashboardContextKey, {
   display: grid;
   place-items: center;
   border: 1px solid #cbd5e1;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   color: #475569;
   background: #f8fafc;
   cursor: pointer;
@@ -1448,7 +1448,7 @@ provide(dashboardContextKey, {
   align-items: center;
   gap: 6px;
   border: 1px solid #bfdbfe;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   padding: 8px 12px;
   color: #0f52ba;
   background: #eff6ff;
@@ -1493,7 +1493,7 @@ provide(dashboardContextKey, {
   gap: 12px;
   width: 100%;
   border: 1px solid transparent;
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   padding: 12px;
   background: transparent;
   text-align: left;
@@ -1512,7 +1512,7 @@ provide(dashboardContextKey, {
   height: 42px;
   display: grid;
   place-items: center;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   color: #ffffff;
   background: #0f52ba;
   font-size: 12px;
@@ -1568,7 +1568,7 @@ provide(dashboardContextKey, {
 .global-search-empty {
   padding: 34px 18px;
   border: 1px dashed #cbd5e1;
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   color: #64748b;
   background: #f8fafc;
   text-align: center;

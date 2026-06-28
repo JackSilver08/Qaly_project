@@ -70,7 +70,7 @@ function toggleDrawer() {
   border-radius: 50%;
   background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
   border: none;
-  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.35);
+  box-shadow: var(--qaly-shadow-md);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -80,13 +80,13 @@ function toggleDrawer() {
 
 .erumi-bubble-trigger:hover {
   transform: translateY(-4px) scale(1.06);
-  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.45);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .erumi-bubble-trigger.is-active {
   transform: rotate(90deg) scale(0.9);
   background: #64748b;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .bubble-sparkle {
@@ -112,7 +112,7 @@ function toggleDrawer() {
   bottom: 0;
   width: 380px;
   background: #ffffff;
-  box-shadow: -8px 0 32px rgba(15, 23, 42, 0.12);
+  box-shadow: var(--qaly-shadow-md);
   display: flex;
   flex-direction: column;
   border-left: 1px solid #e2e8f0;

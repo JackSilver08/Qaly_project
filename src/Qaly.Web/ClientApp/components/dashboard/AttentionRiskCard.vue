@@ -126,7 +126,7 @@ const chartOptions = {
       <button 
         @click="router.push('/tasks')" 
         class="attention-view-all" 
-        style="width: 100%; margin-top: 8px; padding: 10px; border-radius: 8px; border: 1px solid rgba(15, 82, 186, 0.2); background: rgba(15, 82, 186, 0.05); color: #1f80ff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;"
+        style="width: 100%; margin-top: 8px; padding: 10px; border-radius: var(--qaly-radius-lg); border: 1px solid rgba(15, 82, 186, 0.2); background: rgba(15, 82, 186, 0.05); color: #1f80ff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;"
         onmouseover="this.style.background='rgba(15, 82, 186, 0.1)'"
         onmouseout="this.style.background='rgba(15, 82, 186, 0.05)'"
       >
@@ -140,10 +140,10 @@ const chartOptions = {
 <style scoped>
 .attention-card {
   background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(12px);
+  backdrop-filter: none;
   border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: 16px;
+  border-radius: var(--qaly-radius-lg);
   padding: 20px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+  box-shadow: var(--qaly-shadow-md);
 }
 </style>

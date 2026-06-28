@@ -150,7 +150,7 @@ function canToggleTimeline(member: Member) {
   margin-bottom: 24px;
   background: var(--blue-50);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
 }
 
 .add-member-form h3 {
@@ -169,7 +169,7 @@ function canToggleTimeline(member: Member) {
 .form-row select {
   flex: 1;
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   border: 1px solid var(--line);
   color: var(--text-strong);
   background: var(--panel);
@@ -228,7 +228,7 @@ function canToggleTimeline(member: Member) {
   align-items: center;
   gap: 16px;
   padding: 16px;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--bg-soft);
   border: 1px solid var(--line);
 }
@@ -236,8 +236,8 @@ function canToggleTimeline(member: Member) {
 .member-avatar {
   width: 44px;
   height: 44px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #0f4cff, #1f80ff);
+  border-radius: var(--qaly-radius-lg);
+  background: var(--primary);
   color: white;
   display: grid;
   place-items: center;
@@ -274,7 +274,7 @@ function canToggleTimeline(member: Member) {
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  border-radius: 20px;
+  border-radius: var(--qaly-radius-lg);
   font-size: 12px;
   font-weight: 700;
 }
@@ -319,7 +319,7 @@ function canToggleTimeline(member: Member) {
 
 .empty-state {
   border: 1px dashed var(--line);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--bg-soft);
   padding: 16px;
   color: var(--muted);

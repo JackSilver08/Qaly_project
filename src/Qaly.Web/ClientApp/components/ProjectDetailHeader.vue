@@ -110,7 +110,7 @@ defineEmits<{
   place-items: center;
   background: var(--bg-soft);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   transition: all 0.3s;
 }
 
@@ -131,10 +131,10 @@ defineEmits<{
   padding: 8px 16px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(182, 194, 217, 0.26);
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   font-weight: 800;
   color: var(--surface-milk);
-  box-shadow: 0 10px 24px rgba(2, 8, 23, 0.32);
+  box-shadow: var(--qaly-shadow-md);
   transition: all 0.3s;
   cursor: pointer;
 }
@@ -143,7 +143,7 @@ defineEmits<{
   transform: translateY(-2px);
   border-color: rgba(117, 182, 255, 0.68);
   background: rgba(31, 128, 255, 0.2);
-  box-shadow: 0 14px 28px rgba(15, 76, 255, 0.3);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .project-detail-header__main {
@@ -169,10 +169,10 @@ defineEmits<{
 .project-icon-box {
   width: 56px;
   height: 56px;
-  background: linear-gradient(135deg, #0f4cff, #22d3ee);
+  background: var(--primary);
   display: grid;
   place-items: center;
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
   flex-shrink: 0;
 }
 
@@ -236,7 +236,7 @@ defineEmits<{
 
 .progress-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #0f4cff, #22d3ee);
+  background: var(--primary);
   border-radius: 6px;
   transition: width 1s cubic-bezier(0.65, 0, 0.35, 1);
   position: relative;
@@ -260,7 +260,7 @@ defineEmits<{
 
 .project-status {
   padding: 4px 12px;
-  border-radius: 20px;
+  border-radius: var(--qaly-radius-lg);
   font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
@@ -270,7 +270,7 @@ defineEmits<{
 
 .project-status--active {
   border: 1px solid rgba(184, 219, 255, 0.44);
-  background: linear-gradient(135deg, #0f4cff, #22d3ee);
+  background: var(--primary);
   color: #f8fafc;
 }
 

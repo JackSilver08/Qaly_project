@@ -228,7 +228,7 @@ function updateMappingField(index: number, targetField: string) {
 .import-settings-box {
   background: #f9fafb;
   border: 1px solid #e5e7eb;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   padding: 16px;
   margin-bottom: 20px;
 }

@@ -1425,7 +1425,7 @@ function disconnectLiveKit() {
   border: 1px solid var(--meet-stage-border);
   border-radius: 28px;
   background: var(--meet-stage-bg);
-  box-shadow: 0 34px 90px rgba(15, 23, 42, 0.2);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .meeting-stage__topbar {
@@ -1450,7 +1450,7 @@ function disconnectLiveKit() {
   background: var(--meet-chip-bg);
   border-color: rgba(255, 255, 255, 0.1);
   color: var(--meet-chip-color);
-  backdrop-filter: blur(16px);
+  backdrop-filter: none;
 }
 
 .meeting-frame-shell {
@@ -1470,7 +1470,7 @@ function disconnectLiveKit() {
   gap: 14px;
   padding: 66px 18px 72px;
   border: 0;
-  border-radius: 22px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--meet-tile-bg);
   overflow: hidden;
 }
@@ -1494,7 +1494,7 @@ function disconnectLiveKit() {
   min-height: 220px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
+  border-radius: var(--qaly-radius-lg);
   background:
     radial-gradient(circle at 50% 35%, rgba(37, 99, 235, 0.15), transparent 28%),
     rgba(2, 6, 23, 0.46);
@@ -1536,9 +1536,7 @@ function disconnectLiveKit() {
   width: 148px;
   height: 148px;
   font-size: 3.4rem;
-  box-shadow:
-    0 0 0 18px rgba(255, 255, 255, 0.045),
-    0 34px 90px rgba(37, 99, 235, 0.22);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .meeting-tile-footer {
@@ -1554,7 +1552,7 @@ function disconnectLiveKit() {
   padding: 9px 12px;
   background: rgba(2, 6, 23, 0.62);
   color: #e2e8f0;
-  backdrop-filter: blur(16px);
+  backdrop-filter: none;
 }
 
 .meeting-page--light .meeting-tile-footer {
@@ -1594,7 +1592,7 @@ function disconnectLiveKit() {
   color: var(--meet-chip-color);
   font-size: 0.82rem;
   font-weight: 900;
-  backdrop-filter: blur(16px);
+  backdrop-filter: none;
 }
 
 .meeting-brand-chip {
@@ -1648,9 +1646,7 @@ function disconnectLiveKit() {
   background:
     linear-gradient(135deg, rgba(37, 99, 235, 0.32), rgba(20, 184, 166, 0.18)),
     rgba(255, 255, 255, 0.08);
-  box-shadow:
-    0 0 0 18px rgba(255, 255, 255, 0.035),
-    0 34px 80px rgba(37, 99, 235, 0.18);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .meeting-avatar {
@@ -1699,7 +1695,7 @@ function disconnectLiveKit() {
   color: #fff;
   font-weight: 900;
   cursor: pointer;
-  box-shadow: 0 20px 40px rgba(37, 99, 235, 0.26);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .meeting-control-dock {
@@ -1722,10 +1718,10 @@ function disconnectLiveKit() {
 .participants-card,
 .meeting-tip {
   border: 1px solid rgba(203, 213, 225, 0.76);
-  border-radius: 22px;
+  border-radius: var(--qaly-radius-lg);
   background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 24px 58px rgba(15, 23, 42, 0.08);
-  backdrop-filter: blur(18px);
+  box-shadow: var(--qaly-shadow-md);
+  backdrop-filter: none;
 }
 
 .meeting-info-card {
@@ -1738,7 +1734,7 @@ function disconnectLiveKit() {
   height: 44px;
   display: grid;
   place-items: center;
-  border-radius: 16px;
+  border-radius: var(--qaly-radius-lg);
   background: #eff6ff;
   color: #2563eb;
 }
@@ -1798,7 +1794,7 @@ function disconnectLiveKit() {
   gap: 10px;
   padding: 10px;
   border: 1px solid rgba(226, 232, 240, 0.9);
-  border-radius: 16px;
+  border-radius: var(--qaly-radius-lg);
   background: #fff;
 }
 
@@ -1836,7 +1832,7 @@ function disconnectLiveKit() {
   gap: 8px;
   min-height: 120px;
   border: 1px dashed rgba(148, 163, 184, 0.48);
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
   text-align: center;
   color: #64748b;
 }
@@ -1856,7 +1852,7 @@ function disconnectLiveKit() {
   gap: 6px;
   background: rgba(15, 23, 42, 0.08);
   border: 1px solid rgba(148, 163, 184, 0.12);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   padding: 4px;
   margin-bottom: 16px;
 }
@@ -1873,7 +1869,7 @@ function disconnectLiveKit() {
   justify-content: center;
   gap: 6px;
   padding: 8px 12px;
-  border-radius: 9px;
+  border-radius: var(--qaly-radius-lg);
   border: 0;
   background: transparent;
   color: #64748b;
@@ -1886,7 +1882,7 @@ function disconnectLiveKit() {
 .sidebar-tab--active {
   background: #ffffff;
   color: #2563eb;
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.05);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .meeting-page:not(.meeting-page--light) .sidebar-tab--active {
@@ -1912,7 +1908,7 @@ function disconnectLiveKit() {
 .transcript-message {
   background: rgba(255, 255, 255, 0.5);
   border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   padding: 10px 12px;
   font-size: 0.86rem;
   text-align: left;
@@ -1970,7 +1966,7 @@ function disconnectLiveKit() {
   gap: 8px;
   min-height: 120px;
   border: 1px dashed rgba(148, 163, 184, 0.48);
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
   text-align: center;
   color: #64748b;
   padding: 16px;
@@ -1997,7 +1993,7 @@ function disconnectLiveKit() {
 
 .checknote-select {
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   border: 1px solid #cbd5e1;
   background: #ffffff;
   color: #0f172a;
@@ -2016,14 +2012,14 @@ function disconnectLiveKit() {
   justify-content: center;
   gap: 8px;
   padding: 12px;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   border: 0;
-  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  background: var(--primary);
   color: #ffffff;
   font-weight: 800;
   cursor: pointer;
   transition: opacity 150ms ease;
-  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.3);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .checknote-btn-generate:hover:not(:disabled) {
@@ -2089,7 +2085,7 @@ function disconnectLiveKit() {
 .checknote-summary {
   background: rgba(255, 255, 255, 0.6);
   border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   padding: 12px;
   font-size: 0.86rem;
   line-height: 1.5;
@@ -2115,7 +2111,7 @@ function disconnectLiveKit() {
 .action-item-card {
   background: #ffffff;
   border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 16px;
+  border-radius: var(--qaly-radius-lg);
   padding: 14px;
   display: flex;
   flex-direction: column;
@@ -2189,7 +2185,7 @@ function disconnectLiveKit() {
 
 .meta-val-select, .meta-val-date, .assignee-select {
   padding: 6px 8px;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   border: 1px solid #cbd5e1;
   background: #ffffff;
   color: #0f172a;
@@ -2220,7 +2216,7 @@ function disconnectLiveKit() {
 
 .action-item-btn-create {
   padding: 8px 14px;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   border: 0;
   background: #2563eb;
   color: #ffffff;
@@ -2242,7 +2238,7 @@ function disconnectLiveKit() {
 .checknote-btn-reset {
   width: 100%;
   padding: 10px;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   border: 1px solid #cbd5e1;
   background: transparent;
   color: #64748b;
@@ -2281,8 +2277,8 @@ function disconnectLiveKit() {
   padding: 10px 18px;
   border-radius: 999px;
   font-size: 0.95rem;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(12px);
+  box-shadow: var(--qaly-shadow-md);
+  backdrop-filter: none;
   text-align: center;
   animation: fadeIn 200ms ease;
 }

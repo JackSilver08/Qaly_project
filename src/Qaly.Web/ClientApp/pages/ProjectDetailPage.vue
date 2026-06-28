@@ -1001,7 +1001,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--bg-soft);
 }
 
@@ -1011,7 +1011,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   align-items: center;
   gap: 6px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--qaly-radius-lg);
   padding: 0 10px;
   color: var(--muted);
   background: transparent;
@@ -1024,7 +1024,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .task-view-toggle__button.is-active {
   color: #ffffff;
   background: var(--primary);
-  box-shadow: 0 8px 16px rgba(31, 128, 255, 0.22);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .task-view-toggle__button.is-active span,
@@ -1072,7 +1072,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   min-height: 300px;
   padding: 4px;
   border: 1px dashed transparent;
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
   transition: border-color 0.16s ease, background 0.16s ease;
 }
 
@@ -1096,7 +1096,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   transform: translateY(-2px);
   border-color: rgba(16, 185, 129, 0.48);
   background: linear-gradient(180deg, rgba(236, 253, 245, 0.96), rgba(255, 255, 255, 0.88));
-  box-shadow: 0 18px 42px rgba(16, 185, 129, 0.14);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .kanban-board.is-dragging-task .kanban-column.is-drop-blocked {
@@ -1167,7 +1167,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
 .dragging-card {
   transform: rotate(2deg);
-  box-shadow: 0 20px 40px rgba(15, 76, 255, 0.12) !important;
+  box-shadow: var(--qaly-shadow-md) !important;
 }
 
 .count-badge {
@@ -1201,7 +1201,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   align-items: center;
   justify-content: center;
   border: 1px dashed var(--line);
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--bg-soft);
   color: var(--muted);
   font-size: 13px;
@@ -1233,7 +1233,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   min-height: 72px;
   padding: 14px 16px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--panel);
   cursor: pointer;
   transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
@@ -1242,7 +1242,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .task-list-row:hover,
 .task-list-row.is-selected {
   border-color: var(--blue-300);
-  box-shadow: 0 14px 30px rgba(15, 82, 186, 0.08);
+  box-shadow: var(--qaly-shadow-md);
   transform: translateY(-1px);
 }
 
@@ -1382,8 +1382,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   min-height: 100vh;
   max-height: 100vh;
   overflow-y: auto;
-  border-radius: 22px 0 0 22px;
-  box-shadow: -28px 0 70px rgba(15, 23, 42, 0.18);
+  border-radius: var(--qaly-radius-lg) 0 0 var(--qaly-radius-lg);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .task-detail-drawer__actions {
@@ -1447,15 +1447,15 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   padding: 14px 14px 12px;
   min-height: 132px;
   border: 1px solid rgba(226, 232, 240, 0.95);
-  border-radius: 16px;
+  border-radius: var(--qaly-radius-lg);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.92));
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .kanban-card:hover,
 .kanban-card.is-selected {
   border-color: rgba(31, 128, 255, 0.26);
-  box-shadow: 0 14px 28px rgba(31, 128, 255, 0.09);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .kanban-card__top {
@@ -1522,7 +1522,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .task-list-row {
   min-height: 68px;
   padding: 14px 16px;
-  border-radius: 16px;
+  border-radius: var(--qaly-radius-lg);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.92));
 }
 
@@ -1541,8 +1541,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 }
 
 .task-board-shell {
-  border-radius: 24px;
-  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.05);
+  border-radius: var(--qaly-radius-lg);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 @media (max-width: 640px) {
@@ -1568,7 +1568,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .timer-display {
   padding: 16px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--panel);
 }
 
@@ -1610,13 +1610,13 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 }
 
 .start-pill {
-  background: linear-gradient(135deg, #0f4cff, #22d3ee);
-  box-shadow: 0 14px 26px rgba(15, 76, 255, 0.28);
+  background: var(--primary);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .stop-pill {
-  background: linear-gradient(135deg, #ef4444, #f97316);
-  box-shadow: 0 14px 26px rgba(239, 68, 68, 0.24);
+  background: var(--danger);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .ghost-pill {
@@ -1635,14 +1635,14 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .manual-log-form {
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--panel);
 }
 
 .manual-log-form input {
   min-height: 38px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   padding: 0 12px;
   color: var(--text-strong);
   background: var(--panel);
@@ -1657,7 +1657,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   justify-content: space-between;
   padding: 8px 10px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--bg-soft);
   color: var(--muted);
 }
@@ -1678,7 +1678,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .attachment-section {
   padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--panel);
 }
 
@@ -1712,7 +1712,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   align-items: center;
   gap: 8px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--bg-soft);
 }
 
@@ -1757,7 +1757,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   margin-bottom: 10px;
   padding: 12px 14px;
   border: 1px solid var(--line);
-  border-radius: 14px 14px 14px 6px;
+  border-radius: 6px 6px 6px 2px;
   background: var(--bg-soft);
 }
 
@@ -1825,7 +1825,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   height: 40px;
   border: 1px solid rgba(184, 219, 255, 0.4);
   color: white;
-  background: linear-gradient(135deg, #0f4cff, #1f80ff);
+  background: var(--primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1833,7 +1833,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
 .send-pill:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 14px 24px rgba(15, 76, 255, 0.34);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .send-pill:disabled {
@@ -1848,7 +1848,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   justify-content: center;
   gap: 8px;
   border: 1px dashed var(--line);
-  border-radius: 16px;
+  border-radius: var(--qaly-radius-lg);
   color: var(--muted);
   background: var(--bg-soft);
 }
@@ -1870,7 +1870,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .assignment-insight {
   padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--panel);
 }
 
@@ -1905,7 +1905,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .assignment-candidate {
   padding: 10px 12px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--panel);
 }
 
@@ -1926,7 +1926,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .quick-edit-input {
   min-height: 30px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   padding: 4px 8px;
   color: var(--text-strong);
   background: var(--bg-soft);
@@ -1944,7 +1944,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   min-width: 92px;
   padding: 6px 12px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--panel);
   color: var(--text-strong);
   font-size: 12px;
@@ -1958,7 +1958,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   transform: translateY(-1px);
   border-color: var(--line);
   background: var(--bg-soft);
-  box-shadow: 0 10px 20px rgba(15, 76, 255, 0.08);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 /* Animations */
@@ -1990,7 +1990,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   }
   70% {
     transform: scale(1);
-    box-shadow: 0 0 0 10px rgba(34, 211, 238, 0);
+    box-shadow: var(--qaly-shadow-md);
   }
   100% {
     transform: scale(0.95);
@@ -2054,7 +2054,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   color: var(--muted);
   background: var(--bg-soft);
   padding: 6px 10px;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   border: 1px solid var(--line);
 }
 
@@ -2077,19 +2077,19 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   padding: 12px;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   transition: transform 200ms ease, box-shadow 200ms ease;
 }
 
 .attachment-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .attachment-card__icon {
   width: 40px;
   height: 40px;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--bg-soft);
   color: var(--primary);
   display: flex;
@@ -2227,7 +2227,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   color: var(--muted);
   font-size: 13px;
   border: 1px dashed var(--line);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
 }
 
 /* Chat Redesign */
@@ -2236,7 +2236,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   flex-direction: column;
   height: 400px;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--panel);
   overflow: hidden;
 }
@@ -2276,7 +2276,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 }
 
 .chat-message--own .chat-avatar {
-  background: linear-gradient(135deg, #0f4cff, #22d3ee);
+  background: var(--primary);
 }
 
 .chat-bubble-wrapper {
@@ -2318,9 +2318,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 }
 
 .chat-message--own .chat-bubble {
-  background: #0f4cff;
+  background: var(--primary);
   color: white;
-  border-radius: 16px 0 16px 16px;
+  border-radius: 6px 0 6px 6px;
 }
 
 .chat-message--own .comment-markdown :deep(*) {
@@ -2359,7 +2359,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   align-items: center;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 24px;
+  border-radius: var(--qaly-radius-lg);
   padding: 4px 4px 4px 16px;
 }
 
@@ -2377,7 +2377,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   height: 32px;
   border-radius: 50%;
   border: none;
-  background: linear-gradient(135deg, #0f4cff, #22d3ee);
+  background: var(--primary);
   color: white;
   display: flex;
   align-items: center;
@@ -2406,8 +2406,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .task-modal-backdrop {
   position: fixed; inset: 0; z-index: 9999;
   background: rgba(15, 23, 42, 0.4);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   display: flex; align-items: center; justify-content: center;
   animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -2422,12 +2422,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   width: min(520px, 94vw);
   max-height: 88vh;
   overflow-y: auto;
-  border-radius: 20px;
+  border-radius: var(--qaly-radius-lg);
   padding: 0;
   background: #ffffff;
-  box-shadow: 
-    0 10px 40px -10px rgba(0,0,0,0.1), 
-    0 0 0 1px rgba(0,0,0,0.05);
+  box-shadow: var(--qaly-shadow-md);
   transform-origin: center;
   animation: modalScaleIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -2486,7 +2484,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .modal-input {
   width: 100%; 
   padding: 12px 16px; 
-  border-radius: 12px; 
+  border-radius: var(--qaly-radius-lg); 
   font-size: 0.95rem;
   background: #f8fafc; 
   border: 1px solid var(--border-color);
@@ -2519,7 +2517,7 @@ textarea.modal-input {
   margin-bottom: 24px;
   padding: 12px;
   background: #f8fafc;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   border: 1px solid var(--border-color);
 }
 
@@ -2547,7 +2545,7 @@ textarea.modal-input {
 
 .btn {
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 10px 24px; border-radius: 10px; font-size: 0.95rem;
+  padding: 10px 24px; border-radius: var(--qaly-radius-lg); font-size: 0.95rem;
   font-weight: 600; border: none; cursor: pointer; transition: all 0.2s;
 }
 .btn--primary { 
@@ -2558,7 +2556,7 @@ textarea.modal-input {
 .btn--primary:hover:not(:disabled) { 
   background: var(--accent-hover); 
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px -2px rgba(37, 99, 235, 0.5);
+  box-shadow: var(--qaly-shadow-md);
 }
 .btn--primary:active:not(:disabled) {
   transform: translateY(0);
@@ -2581,8 +2579,8 @@ textarea.modal-input {
 }
 
 @keyframes fadeIn { 
-  from { opacity: 0; backdrop-filter: blur(0px); } 
-  to { opacity: 1; backdrop-filter: blur(8px); } 
+  from { opacity: 0; backdrop-filter: none; } 
+  to { opacity: 1; backdrop-filter: none; } 
 }
 @keyframes modalScaleIn {
   from { opacity: 0; transform: scale(0.96) translateY(10px); }
