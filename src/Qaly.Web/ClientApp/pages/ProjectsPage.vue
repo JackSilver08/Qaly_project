@@ -217,19 +217,10 @@ async function handleUndoFromBanner() {
             </button>
           </div>
 
-          <div class="projects-hero__stats">
-            <span class="projects-hero__metric">
-              <strong>{{ visibleProjectsCount }}</strong>
-              <small>Tổng dự án</small>
-            </span>
-            <span class="projects-hero__metric">
-              <strong>{{ onTrackCount }}</strong>
-              <small>Đúng tiến độ</small>
-            </span>
-            <span class="projects-hero__metric">
-              <strong>{{ atRiskCount }}</strong>
-              <small>Cần chú ý</small>
-            </span>
+          <div class="projects-hero__summary">
+            <span><strong>{{ visibleProjectsCount }}</strong> dự án đang mở</span>
+            <span><strong>{{ onTrackCount }}</strong> đúng tiến độ</span>
+            <span><strong>{{ atRiskCount }}</strong> cần chú ý</span>
           </div>
         </div>
 
@@ -265,11 +256,11 @@ async function handleUndoFromBanner() {
               <p>Tạo dự án đầu tiên để bắt đầu theo dõi tiến độ, nhiệm vụ và thành viên.</p>
             </template>
           </article>
-          <div class="projects-hero__mini-strip">
-            <span><strong>{{ activeProjectCount }}</strong> Đang chạy</span>
-            <span><strong>{{ plannedProjectCount }}</strong> Lên kế hoạch</span>
-            <span><strong>{{ archivedProjectCount }}</strong> Lưu trữ</span>
-            <span><strong>{{ activeUsers.length }}</strong> Thành viên</span>
+          <div class="projects-hero__summary projects-hero__summary--compact">
+            <span><strong>{{ activeProjectCount }}</strong> đang chạy</span>
+            <span><strong>{{ plannedProjectCount }}</strong> lên kế hoạch</span>
+            <span><strong>{{ archivedProjectCount }}</strong> lưu trữ</span>
+            <span><strong>{{ activeUsers.length }}</strong> thành viên</span>
           </div>
         </div>
       </section>
@@ -299,8 +290,7 @@ async function handleUndoFromBanner() {
         </ProjectToolbar>
 
         <div class="project-workspace__hint">
-          <span><CheckCircle2 :size="14" /> Dùng lưới để quét nhanh.</span>
-          <span><AlertTriangle :size="14" /> Chuyển sang rủi ro khi cần ưu tiên.</span>
+          <span><CheckCircle2 :size="14" /> Lưới cho thao tác nhanh, danh sách cho rà soát kỹ hơn.</span>
         </div>
 
         <ProjectGrid
@@ -451,7 +441,7 @@ async function handleUndoFromBanner() {
   position: fixed;
   pointer-events: none;
   z-index: -1;
-  filter: blur(14px);
+  filter: blur(18px);
 }
 
 .projects-page-shell::before {
@@ -460,7 +450,7 @@ async function handleUndoFromBanner() {
   width: 180px;
   height: 180px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(37, 99, 235, 0.1) 0%, rgba(37, 99, 235, 0) 72%);
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.025) 0%, rgba(37, 99, 235, 0) 74%);
 }
 
 .projects-page-shell::after {
@@ -469,7 +459,7 @@ async function handleUndoFromBanner() {
   width: 220px;
   height: 220px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(16, 185, 129, 0.08) 0%, rgba(16, 185, 129, 0) 74%);
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.02) 0%, rgba(16, 185, 129, 0) 76%);
 }
 
 .projects-page-main {
@@ -483,21 +473,18 @@ async function handleUndoFromBanner() {
   gap: 12px;
   padding: 16px;
   overflow: hidden;
-  border-color: rgba(37, 99, 235, 0.08);
-  background:
-    linear-gradient(135deg, rgba(15, 23, 42, 0.98) 0%, rgba(30, 41, 59, 0.96) 50%, rgba(37, 99, 235, 0.16) 100%);
+  border-color: rgba(226, 232, 240, 0.96);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.995), rgba(249, 251, 255, 0.98));
   box-shadow:
-    0 12px 26px rgba(15, 23, 42, 0.05),
-    0 0 0 1px rgba(255, 255, 255, 0.18) inset;
+    0 12px 26px rgba(15, 23, 42, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94);
 }
 
 .projects-hero::before {
   content: '';
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(circle at 16% 18%, rgba(255, 255, 255, 0.16), transparent 24%),
-    radial-gradient(circle at 84% 22%, rgba(59, 130, 246, 0.12), transparent 20%);
+  background: linear-gradient(90deg, rgba(239, 246, 255, 0.22), transparent 30%, transparent 70%, rgba(239, 246, 255, 0.16));
   pointer-events: none;
 }
 
@@ -518,10 +505,10 @@ async function handleUndoFromBanner() {
   align-items: center;
   gap: 8px;
   padding: 7px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
+  border: 1px solid rgba(191, 219, 254, 0.66);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #eff6ff;
+  background: rgba(248, 250, 252, 0.98);
+  color: #1d4ed8;
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.06em;
@@ -530,17 +517,17 @@ async function handleUndoFromBanner() {
 
 .projects-hero h1 {
   max-width: 640px;
-  font-size: clamp(22px, 2.8vw, 34px);
+  font-size: clamp(24px, 2.9vw, 36px);
   line-height: 1.02;
   letter-spacing: -0.04em;
-  color: #f8fafc;
+  color: #0f172a;
 }
 
 .projects-hero p {
   max-width: 610px;
-  color: rgba(241, 245, 249, 0.82);
-  font-size: 12px;
-  line-height: 1.45;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 .projects-hero__actions {
@@ -555,10 +542,10 @@ async function handleUndoFromBanner() {
   gap: 8px;
   min-height: 36px;
   padding: 0 11px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(191, 219, 254, 0.88);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #f8fafc;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(244, 249, 255, 0.98));
+  color: #0f172a;
   font-size: 0.92rem;
   font-weight: 700;
   transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease;
@@ -567,54 +554,69 @@ async function handleUndoFromBanner() {
 
 .hero-action:hover {
   transform: translateY(-1px);
-  border-color: rgba(255, 255, 255, 0.34);
-  background: rgba(255, 255, 255, 0.12);
-  box-shadow: 0 10px 18px rgba(2, 6, 23, 0.12);
+  border-color: rgba(96, 165, 250, 0.5);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(235, 243, 255, 0.98));
+  box-shadow: 0 10px 18px rgba(15, 23, 42, 0.06);
 }
 
 .hero-action--primary {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.06));
-  color: #fff;
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.16);
+  border-color: rgba(37, 99, 235, 0.18);
+  background: linear-gradient(135deg, #2563eb, #1e40af);
+  color: #ffffff;
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.18);
 }
 
 .hero-action--primary:hover {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.09));
-  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.18);
+  background: linear-gradient(135deg, #1d4ed8, #1e3a8a);
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.22);
 }
 
-.projects-hero__stats {
+.projects-hero__summary {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.projects-hero__metric {
+.projects-hero__summary span {
   display: inline-flex;
   align-items: baseline;
   gap: 8px;
-  min-height: 36px;
-  padding: 8px 11px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(12px);
+  min-height: 32px;
+  padding: 0;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
 }
 
-.projects-hero__metric strong {
-  color: #fff;
-  font-size: 18px;
+.projects-hero__summary strong {
+  color: #0f172a;
+  font-size: 17px;
   line-height: 1;
   font-weight: 900;
 }
 
-.projects-hero__metric small {
-  color: rgba(241, 245, 249, 0.76);
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+.projects-hero__summary--compact {
+  gap: 10px 14px;
+}
+
+.projects-hero__summary--compact span {
+  padding: 6px 0;
+}
+
+.projects-hero__summary--compact span + span {
+  position: relative;
+  padding-left: 14px;
+}
+
+.projects-hero__summary--compact span + span::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 1px;
+  height: 16px;
+  background: rgba(148, 163, 184, 0.24);
+  transform: translateY(-50%);
 }
 
 .projects-hero__sidebar {
@@ -626,21 +628,20 @@ async function handleUndoFromBanner() {
 .projects-spotlight {
   display: grid;
   gap: 7px;
-  padding: 11px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 252, 0.82));
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(250, 252, 255, 0.98));
   box-shadow:
-    0 8px 18px rgba(15, 23, 42, 0.045),
-    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+    0 8px 18px rgba(15, 23, 42, 0.035),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
 .projects-spotlight__header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  color: var(--primary);
+  color: #2563eb;
   font-size: 12px;
   font-weight: 900;
   text-transform: uppercase;
@@ -655,8 +656,8 @@ async function handleUndoFromBanner() {
 
 .projects-spotlight p {
   color: var(--muted);
-  line-height: 1.4;
-  font-size: 11px;
+  line-height: 1.5;
+  font-size: 12px;
 }
 
 .projects-spotlight__metrics {
@@ -678,44 +679,17 @@ async function handleUndoFromBanner() {
 }
 
 .projects-hero__mini-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.projects-hero__mini-strip span {
-  display: grid;
-  gap: 2px;
-  min-width: 108px;
-  padding: 8px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(12px);
-}
-
-.projects-hero__mini-strip strong {
-  color: #fff;
-  font-size: 16px;
-  font-weight: 900;
-}
-
-.projects-hero__mini-strip {
-  color: rgba(241, 245, 249, 0.78);
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  display: none;
 }
 
 .project-workspace--modern {
   display: grid;
   gap: 10px;
   padding: 14px;
-  border-color: rgba(37, 99, 235, 0.09);
+  border-color: rgba(226, 232, 240, 0.92);
   box-shadow:
-    0 8px 18px rgba(15, 23, 42, 0.035),
-    0 0 0 1px rgba(255, 255, 255, 0.65) inset;
+    0 8px 18px rgba(15, 23, 42, 0.03),
+    0 0 0 1px rgba(255, 255, 255, 0.86) inset;
 }
 
 .project-workspace__hint {
@@ -729,14 +703,10 @@ async function handleUndoFromBanner() {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 9px;
-  border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(241, 245, 249, 0.8));
-  color: var(--text);
-  font-size: 9px;
-  font-weight: 700;
-  box-shadow: 0 5px 10px rgba(15, 23, 42, 0.025);
+  padding: 0;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .btn-import {
@@ -744,22 +714,22 @@ async function handleUndoFromBanner() {
   align-items: center;
   gap: 6px;
   padding: 7px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(191, 219, 254, 0.82);
   border-radius: 11px;
-  background: linear-gradient(135deg, #1d4ed8, #312e81);
-  color: #eef4ff;
+  background: linear-gradient(135deg, #2563eb, #1e40af);
+  color: #ffffff;
   font-size: 0.78rem;
   font-weight: 700;
   cursor: pointer;
   transition: transform 220ms ease, border-color 220ms ease, background 220ms ease, box-shadow 220ms ease, color 220ms ease;
-  box-shadow: 0 12px 20px rgba(37, 99, 235, 0.16);
+  box-shadow: 0 12px 20px rgba(37, 99, 235, 0.18);
 }
 
 .btn-import:hover {
   transform: translateY(-1px);
-  border-color: rgba(255, 255, 255, 0.32);
-  background: linear-gradient(135deg, #2563eb, #4338ca);
-  box-shadow: 0 18px 32px rgba(37, 99, 235, 0.24);
+  border-color: rgba(96, 165, 250, 0.7);
+  background: linear-gradient(135deg, #1d4ed8, #1e3a8a);
+  box-shadow: 0 18px 32px rgba(37, 99, 235, 0.18);
 }
 
 .project-workspace {
@@ -808,7 +778,7 @@ async function handleUndoFromBanner() {
 }
 
 @media (max-width: 840px) {
-  .projects-hero__mini-strip {
+  .projects-hero__summary--compact {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

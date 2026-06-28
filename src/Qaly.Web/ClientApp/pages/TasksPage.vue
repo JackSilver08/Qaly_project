@@ -1443,41 +1443,60 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 .tasks-page {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 20px;
+  gap: 18px;
   align-items: start;
   background:
-    radial-gradient(circle at 12% 8%, rgba(59, 130, 246, 0.08), transparent 24%),
-    radial-gradient(circle at 88% 0%, rgba(16, 185, 129, 0.06), transparent 20%),
-    linear-gradient(180deg, rgba(248, 250, 255, 0.94), rgba(255, 255, 255, 0.98));
+    radial-gradient(circle at 12% 8%, rgba(59, 130, 246, 0.08), transparent 22%),
+    radial-gradient(circle at 86% 2%, rgba(16, 185, 129, 0.05), transparent 18%),
+    linear-gradient(180deg, #f8fbff 0%, #ffffff 54%, #f8fafc 100%);
 }
 
 .tasks-page.has-detail {
-  grid-template-columns: minmax(0, 1fr) 392px;
+  grid-template-columns: minmax(0, 1fr) 368px;
 }
 
 .tasks-main {
   min-width: 0;
   display: grid;
-  gap: 16px;
+  gap: 14px;
 }
 
 .tasks-hero,
 .panel-card,
 .task-detail-drawer {
-  border-radius: 28px;
+  border-radius: 24px;
 }
 
 .tasks-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.95fr);
-  gap: 18px;
-  padding: 28px;
+  gap: 16px;
+  padding: 24px;
   background:
-    radial-gradient(circle at top right, rgba(59, 130, 246, 0.12), transparent 34%),
-    radial-gradient(circle at 10% 12%, rgba(99, 102, 241, 0.07), transparent 30%),
-    linear-gradient(135deg, rgba(15, 82, 186, 0.08), rgba(255, 255, 255, 0.98));
-  border: 1px solid rgba(191, 219, 254, 0.58);
-  box-shadow: var(--qaly-shadow-md);
+    radial-gradient(circle at 82% 10%, rgba(59, 130, 246, 0.08), transparent 26%),
+    radial-gradient(circle at 10% 20%, rgba(16, 185, 129, 0.05), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 255, 0.96));
+  border: 1px solid rgba(191, 219, 254, 0.72);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.06);
+  position: relative;
+  overflow: hidden;
+}
+
+.tasks-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, #2563eb, #38bdf8, #22c55e);
+}
+
+.tasks-hero::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 120px;
+  background: radial-gradient(circle at 100% 100%, rgba(59, 130, 246, 0.12), transparent 55%);
+  pointer-events: none;
 }
 
 .tasks-hero__copy {
@@ -1500,38 +1519,45 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 .panel-head h3,
 .task-detail__header h2 {
   color: var(--text-strong);
-  font-size: clamp(26px, 3vw, 34px);
+  font-size: clamp(28px, 3.2vw, 38px);
   font-weight: 900;
+  letter-spacing: -0.04em;
 }
 
 .tasks-hero__copy p {
-  max-width: 68ch;
+  max-width: 62ch;
   color: var(--muted);
+  line-height: 1.6;
 }
 
 .tasks-hero__actions {
   display: grid;
   align-content: start;
   justify-items: stretch;
-  gap: 10px;
+  gap: 12px;
 }
 
 .tasks-hero__segmented {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
+  padding: 4px;
+  border: 1px solid rgba(191, 219, 254, 0.72);
+  border-radius: 999px;
+  background: rgba(239, 246, 255, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88);
 }
 
 .tasks-hero__summary {
   display: grid;
-  gap: 4px;
-  padding: 16px 18px;
-  border: 1px solid rgba(191, 219, 254, 0.72);
-  border-radius: var(--qaly-radius-lg);
+  gap: 3px;
+  padding: 15px 16px;
+  border: 1px solid rgba(191, 219, 254, 0.68);
+  border-radius: 18px;
   background:
     radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 28%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 248, 255, 0.96));
-  box-shadow: var(--qaly-shadow-md);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 255, 0.94));
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
 }
 
 .tasks-hero__summary span {
@@ -1570,16 +1596,16 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 .pill-button {
   min-height: 40px;
   padding: 0 14px;
-  color: var(--primary);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 248, 255, 0.96));
-  box-shadow: var(--qaly-shadow-md);
+  color: #1d4ed8;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(243, 248, 255, 0.98));
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
 }
 
 .pill-button.is-active {
-  border-color: rgba(31, 128, 255, 0.34);
+  border-color: rgba(37, 99, 235, 0.26);
   color: white;
-  background: var(--primary);
-  box-shadow: var(--qaly-shadow-md);
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  box-shadow: 0 14px 26px rgba(37, 99, 235, 0.24);
 }
 
 .pill-button--soft {
@@ -1602,13 +1628,13 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 .tasks-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+  gap: 12px;
 }
 
 .stat-card {
   display: grid;
-  gap: 10px;
-  padding: 16px 16px 15px;
+  gap: 9px;
+  padding: 15px 16px 14px;
   position: relative;
   overflow: hidden;
 }
@@ -1619,7 +1645,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   inset: 0 auto auto 0;
   width: 100%;
   height: 4px;
-  background: linear-gradient(90deg, rgba(59, 130, 246, 0.28), rgba(99, 102, 241, 0.16), rgba(59, 130, 246, 0.28));
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.38), rgba(99, 102, 241, 0.2), rgba(59, 130, 246, 0.38));
 }
 
 .stat-card:nth-child(2)::before {
@@ -1680,7 +1706,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 
 .stat-card strong {
   color: var(--text-strong);
-  font-size: 30px;
+  font-size: 28px;
   line-height: 1;
   font-weight: 900;
 }
@@ -1690,15 +1716,15 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 }
 
 .panel-card {
-  padding: 20px 22px 22px;
+  padding: 18px 20px 20px;
   display: grid;
-  gap: 18px;
+  gap: 16px;
   background:
-    radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 28%),
-    radial-gradient(circle at left top, rgba(16, 185, 129, 0.05), transparent 24%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 255, 0.92));
-  border: 1px solid rgba(223, 231, 242, 0.82);
-  box-shadow: var(--qaly-shadow-md);
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.06), transparent 28%),
+    radial-gradient(circle at left top, rgba(16, 185, 129, 0.04), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(247, 250, 255, 0.94));
+  border: 1px solid rgba(223, 231, 242, 0.86);
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.05);
 }
 
 .panel-head {
@@ -1707,7 +1733,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   justify-content: space-between;
   gap: 12px;
   padding-bottom: 2px;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.76);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.7);
 }
 
 .panel-head--split {
@@ -1750,11 +1776,11 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   gap: 8px;
   min-height: 34px;
   padding: 0 10px 0 12px;
-  border: 1px solid rgba(191, 219, 254, 0.9);
+  border: 1px solid rgba(191, 219, 254, 0.86);
   border-radius: 999px;
   color: #1d4ed8;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.96));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.94));
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.04);
   font-size: 13px;
   font-weight: 800;
 }
@@ -1762,8 +1788,8 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 .saved-view-chip.is-active {
   color: white;
   border-color: rgba(31, 128, 255, 0.52);
-  background: linear-gradient(180deg, rgba(31, 128, 255, 0.98), rgba(37, 99, 235, 0.96));
-  box-shadow: var(--qaly-shadow-md);
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.2);
 }
 
 .saved-view-chip__remove {
@@ -1783,8 +1809,8 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 
 .filter-grid {
   display: grid;
-  grid-template-columns: minmax(280px, 2.1fr) repeat(5, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: minmax(300px, 2.1fr) repeat(5, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .filter-grid--modern {
@@ -1797,13 +1823,13 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   gap: 10px;
   min-height: 48px;
   padding: 0 13px;
-  border: 1px solid rgba(214, 226, 241, 0.88);
+  border: 1px solid rgba(214, 226, 241, 0.92);
   border-radius: var(--qaly-radius-lg);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 255, 0.94)),
-    linear-gradient(135deg, rgba(59, 130, 246, 0.03), rgba(99, 102, 241, 0.015));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(246, 249, 255, 0.97)),
+    linear-gradient(135deg, rgba(59, 130, 246, 0.025), rgba(99, 102, 241, 0.01));
   color: #64748b;
-  box-shadow: var(--qaly-shadow-md);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
   transition:
     border-color 0.18s ease,
     box-shadow 0.18s ease,
@@ -1845,13 +1871,13 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 
 .field:focus-within {
   border-color: rgba(59, 130, 246, 0.42);
-  box-shadow: var(--qaly-shadow-md);
+  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.08);
   transform: translateY(-1px);
 }
 
 .field:hover {
   border-color: rgba(191, 219, 254, 0.98);
-  box-shadow: var(--qaly-shadow-md);
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.05);
 }
 
 .select-all {
@@ -1876,7 +1902,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   border: 1px solid rgba(191, 219, 254, 0.9);
   color: #0f172a;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 255, 0.95));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.04);
 }
 
 .panel-head .link-button:hover:not(:disabled) {
@@ -1890,10 +1916,10 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   justify-content: space-between;
   gap: 12px;
   padding: 14px 16px;
-  border: 1px solid rgba(191, 219, 254, 0.74);
+  border: 1px solid rgba(191, 219, 254, 0.76);
   border-radius: var(--qaly-radius-lg);
   background:
-    linear-gradient(180deg, rgba(239, 246, 255, 0.9), rgba(255, 255, 255, 0.98));
+    linear-gradient(180deg, rgba(239, 246, 255, 0.82), rgba(255, 255, 255, 0.98));
 }
 
 .bulk-bar strong {
@@ -1919,7 +1945,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   border-radius: var(--qaly-radius-lg);
   background:
     radial-gradient(circle at top, rgba(59, 130, 246, 0.04), transparent 34%),
-    rgba(248, 250, 252, 0.82);
+    rgba(248, 250, 252, 0.9);
   color: var(--muted);
   text-align: center;
 }
@@ -1944,16 +1970,16 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   grid-template-columns: 22px minmax(0, 1fr);
   gap: 14px;
   align-items: start;
-  padding: 15px 18px 14px;
-  border: 1px solid rgba(203, 213, 225, 0.64);
+  padding: 16px 18px 15px;
+  border: 1px solid rgba(203, 213, 225, 0.7);
   border-radius: var(--qaly-radius-lg);
   background:
-    radial-gradient(circle at 14% 0%, rgba(59, 130, 246, 0.06), transparent 26%),
-    radial-gradient(circle at 86% 10%, rgba(16, 185, 129, 0.03), transparent 22%),
+    radial-gradient(circle at 14% 0%, rgba(59, 130, 246, 0.055), transparent 26%),
+    radial-gradient(circle at 86% 10%, rgba(16, 185, 129, 0.028), transparent 22%),
     linear-gradient(135deg, rgba(255, 255, 255, 0.995) 0%, rgba(250, 252, 255, 0.985) 100%);
   position: relative;
   overflow: hidden;
-  box-shadow: var(--qaly-shadow-md);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.05);
   transition:
     transform 0.24s ease,
     box-shadow 0.24s ease,
@@ -1967,17 +1993,17 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   inset: 0 auto 0 0;
   width: 4px;
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(37, 99, 235, 0.98), rgba(96, 165, 250, 0.92));
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.98), rgba(59, 130, 246, 0.86));
   opacity: 0.98;
-  box-shadow: var(--qaly-shadow-md);
+  box-shadow: 0 8px 16px rgba(37, 99, 235, 0.18);
 }
 
 .task-card:hover {
-  transform: translateY(-3px);
+  transform: translateY(-2px);
   border-color: rgba(96, 165, 250, 0.72);
-  box-shadow: var(--qaly-shadow-md);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.08);
   background:
-    radial-gradient(circle at 10% 0%, rgba(59, 130, 246, 0.1), transparent 24%),
+    radial-gradient(circle at 10% 0%, rgba(59, 130, 246, 0.08), transparent 24%),
     linear-gradient(135deg, rgba(255, 255, 255, 1) 0%, rgba(249, 252, 255, 0.99) 56%, rgba(246, 249, 255, 0.98) 100%);
 }
 
@@ -2093,7 +2119,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 
 .task-card__titleWrap strong {
   color: #0f172a;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 900;
   letter-spacing: -0.02em;
   line-height: 1.28;
@@ -2102,7 +2128,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 
 .task-card__subtitle {
   color: #64748b;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -2140,7 +2166,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   background:
     linear-gradient(180deg, rgba(239, 246, 255, 0.98), rgba(248, 251, 255, 0.98)),
     linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(99, 102, 241, 0.04));
-  box-shadow: var(--qaly-shadow-md);
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.04);
 }
 
 .task-card__status {
@@ -2148,7 +2174,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   background:
     linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(242, 246, 252, 0.98)),
     linear-gradient(135deg, rgba(148, 163, 184, 0.06), rgba(148, 163, 184, 0.02));
-  box-shadow: var(--qaly-shadow-md);
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.04);
 }
 
 .task-card__priority {
@@ -2315,7 +2341,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   flex: 1;
   border-radius: 999px;
   background:
-    linear-gradient(180deg, rgba(226, 232, 240, 0.98), rgba(246, 249, 253, 0.98)),
+    linear-gradient(180deg, rgba(226, 232, 240, 0.92), rgba(246, 249, 253, 0.98)),
     linear-gradient(90deg, rgba(255, 255, 255, 0.52), transparent);
   box-shadow:
     inset 0 1px 1px rgba(15, 23, 42, 0.05),
@@ -2340,7 +2366,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--task-accent) 96%, white), var(--task-accent)),
     linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0));
-  box-shadow: var(--qaly-shadow-md);
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.05);
 }
 
 .task-card__progressText {
@@ -2486,14 +2512,14 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  border: 1px solid rgba(223, 231, 242, 0.96);
-  box-shadow: var(--qaly-shadow-md);
+  border: 1px solid rgba(223, 231, 242, 0.92);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.06);
 }
 
 .task-detail {
   display: grid;
-  gap: 16px;
-  padding: 18px;
+  gap: 14px;
+  padding: 16px;
 }
 
 .task-detail__header {
@@ -2628,12 +2654,12 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 
 .task-detail__summary {
   display: grid;
-  gap: 16px;
+  gap: 14px;
   padding: 16px;
   border: 1px solid rgba(226, 232, 240, 0.84);
   border-radius: var(--qaly-radius-lg);
   background:
-    radial-gradient(circle at top right, rgba(59, 130, 246, 0.07), transparent 34%),
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.06), transparent 34%),
     linear-gradient(180deg, rgba(253, 254, 255, 0.98), white);
 }
 
@@ -2708,7 +2734,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   padding: 14px;
   border: 1px solid rgba(191, 219, 254, 0.9);
   border-radius: var(--qaly-radius-lg);
-  background: rgba(239, 246, 255, 0.78);
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.88), rgba(255, 255, 255, 0.98));
 }
 
 .task-detail__meeting span {
