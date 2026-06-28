@@ -11,303 +11,399 @@ namespace Qaly.Infrastructure.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropIndex(
-                name: "IX_TaskAttachments_TaskItemId",
-                table: "TaskAttachments");
+            migrationBuilder.Sql(
+                """
+                IF EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_TaskAttachments_TaskItemId'
+                      AND object_id = OBJECT_ID(N'[TaskAttachments]')
+                )
+                BEGIN
+                    DROP INDEX [IX_TaskAttachments_TaskItemId] ON [TaskAttachments];
+                END;
 
-            migrationBuilder.AddColumn<string>(
-                name: "EvidenceApprovalStatus",
-                table: "TaskAttachments",
-                type: "nvarchar(20)",
-                maxLength: 20,
-                nullable: false,
-                defaultValue: "None");
+                IF COL_LENGTH(N'[TaskAttachments]', N'EvidenceApprovalStatus') IS NULL
+                BEGIN
+                    ALTER TABLE [TaskAttachments] ADD [EvidenceApprovalStatus] nvarchar(20) NOT NULL CONSTRAINT [DF_TaskAttachments_EvidenceApprovalStatus] DEFAULT N'None';
+                END;
 
-            migrationBuilder.AddColumn<string>(
-                name: "EvidenceReviewNote",
-                table: "TaskAttachments",
-                type: "nvarchar(1000)",
-                maxLength: 1000,
-                nullable: true);
+                IF COL_LENGTH(N'[TaskAttachments]', N'EvidenceReviewNote') IS NULL
+                BEGIN
+                    ALTER TABLE [TaskAttachments] ADD [EvidenceReviewNote] nvarchar(1000) NULL;
+                END;
 
-            migrationBuilder.AddColumn<DateTimeOffset>(
-                name: "EvidenceReviewedAt",
-                table: "TaskAttachments",
-                type: "datetimeoffset",
-                nullable: true);
+                IF COL_LENGTH(N'[TaskAttachments]', N'EvidenceReviewedAt') IS NULL
+                BEGIN
+                    ALTER TABLE [TaskAttachments] ADD [EvidenceReviewedAt] datetimeoffset NULL;
+                END;
 
-            migrationBuilder.AddColumn<Guid>(
-                name: "EvidenceReviewedById",
-                table: "TaskAttachments",
-                type: "uniqueidentifier",
-                nullable: true);
+                IF COL_LENGTH(N'[TaskAttachments]', N'EvidenceReviewedById') IS NULL
+                BEGIN
+                    ALTER TABLE [TaskAttachments] ADD [EvidenceReviewedById] uniqueidentifier NULL;
+                END;
 
-            migrationBuilder.AddColumn<bool>(
-                name: "IsEvidence",
-                table: "TaskAttachments",
-                type: "bit",
-                nullable: false,
-                defaultValue: false);
+                IF COL_LENGTH(N'[TaskAttachments]', N'IsEvidence') IS NULL
+                BEGIN
+                    ALTER TABLE [TaskAttachments] ADD [IsEvidence] bit NOT NULL CONSTRAINT [DF_TaskAttachments_IsEvidence] DEFAULT 0;
+                END;
 
-            migrationBuilder.AddColumn<Guid>(
-                name: "OrganizationId",
-                table: "Projects",
-                type: "uniqueidentifier",
-                nullable: true);
+                IF COL_LENGTH(N'[Projects]', N'OrganizationId') IS NULL
+                BEGIN
+                    ALTER TABLE [Projects] ADD [OrganizationId] uniqueidentifier NULL;
+                END;
 
-            migrationBuilder.CreateTable(
-                name: "AiJobs",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false, defaultValueSql: "NEWID()"),
-                    JobType = table.Column<string>(type: "nvarchar(80)", maxLength: 80, nullable: false),
-                    ProjectId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    SourceType = table.Column<string>(type: "nvarchar(80)", maxLength: 80, nullable: false),
-                    SourceId = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
-                    ProviderHint = table.Column<string>(type: "nvarchar(40)", maxLength: 40, nullable: false),
-                    Sensitive = table.Column<bool>(type: "bit", nullable: false),
-                    Status = table.Column<string>(type: "nvarchar(40)", maxLength: 40, nullable: false),
-                    EstimatedCostUsd = table.Column<decimal>(type: "decimal(18,6)", precision: 18, scale: 6, nullable: false),
-                    CacheKey = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    RequestedById = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false, defaultValueSql: "SYSDATETIMEOFFSET()"),
-                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_AiJobs", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_AiJobs_Projects_ProjectId",
-                        column: x => x.ProjectId,
-                        principalTable: "Projects",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_AiJobs_Users_RequestedById",
-                        column: x => x.RequestedById,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                });
+                IF OBJECT_ID(N'[AiJobs]', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [AiJobs] (
+                        [Id] uniqueidentifier NOT NULL CONSTRAINT [PK_AiJobs] PRIMARY KEY DEFAULT NEWID(),
+                        [JobType] nvarchar(80) NOT NULL,
+                        [ProjectId] uniqueidentifier NOT NULL,
+                        [SourceType] nvarchar(80) NOT NULL,
+                        [SourceId] nvarchar(200) NULL,
+                        [ProviderHint] nvarchar(40) NOT NULL,
+                        [Sensitive] bit NOT NULL,
+                        [Status] nvarchar(40) NOT NULL,
+                        [EstimatedCostUsd] decimal(18,6) NOT NULL,
+                        [CacheKey] nvarchar(200) NOT NULL,
+                        [RequestedById] uniqueidentifier NOT NULL,
+                        [CreatedAt] datetimeoffset NOT NULL CONSTRAINT [DF_AiJobs_CreatedAt] DEFAULT SYSDATETIMEOFFSET(),
+                        [UpdatedAt] datetimeoffset NULL
+                    );
+                END;
 
-            migrationBuilder.CreateTable(
-                name: "Organizations",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false, defaultValueSql: "NEWID()"),
-                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    Code = table.Column<string>(type: "nvarchar(80)", maxLength: 80, nullable: false),
-                    Description = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true),
-                    IsActive = table.Column<bool>(type: "bit", nullable: false, defaultValue: true),
-                    OwnerId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false, defaultValueSql: "SYSDATETIMEOFFSET()"),
-                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Organizations", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Organizations_Users_OwnerId",
-                        column: x => x.OwnerId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                });
+                IF OBJECT_ID(N'[Organizations]', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [Organizations] (
+                        [Id] uniqueidentifier NOT NULL CONSTRAINT [PK_Organizations] PRIMARY KEY DEFAULT NEWID(),
+                        [Name] nvarchar(200) NOT NULL,
+                        [Code] nvarchar(80) NOT NULL,
+                        [Description] nvarchar(2000) NULL,
+                        [IsActive] bit NOT NULL CONSTRAINT [DF_Organizations_IsActive] DEFAULT 1,
+                        [OwnerId] uniqueidentifier NOT NULL,
+                        [CreatedAt] datetimeoffset NOT NULL CONSTRAINT [DF_Organizations_CreatedAt] DEFAULT SYSDATETIMEOFFSET(),
+                        [UpdatedAt] datetimeoffset NULL
+                    );
+                END;
 
-            migrationBuilder.CreateTable(
-                name: "TaskAttentionSignals",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false, defaultValueSql: "NEWID()"),
-                    TaskItemId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    SignalType = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
-                    FirstDetectedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false, defaultValueSql: "SYSDATETIMEOFFSET()"),
-                    LastSentAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    CooldownHours = table.Column<int>(type: "int", nullable: false, defaultValue: 24),
-                    ResolvedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false, defaultValueSql: "SYSDATETIMEOFFSET()"),
-                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_TaskAttentionSignals", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_TaskAttentionSignals_TaskItems_TaskItemId",
-                        column: x => x.TaskItemId,
-                        principalTable: "TaskItems",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_TaskAttentionSignals_Users_UserId",
-                        column: x => x.UserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
+                IF OBJECT_ID(N'[TaskAttentionSignals]', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [TaskAttentionSignals] (
+                        [Id] uniqueidentifier NOT NULL CONSTRAINT [PK_TaskAttentionSignals] PRIMARY KEY DEFAULT NEWID(),
+                        [TaskItemId] uniqueidentifier NOT NULL,
+                        [UserId] uniqueidentifier NOT NULL,
+                        [SignalType] nvarchar(50) NOT NULL,
+                        [FirstDetectedAt] datetimeoffset NOT NULL CONSTRAINT [DF_TaskAttentionSignals_FirstDetectedAt] DEFAULT SYSDATETIMEOFFSET(),
+                        [LastSentAt] datetimeoffset NULL,
+                        [CooldownHours] int NOT NULL CONSTRAINT [DF_TaskAttentionSignals_CooldownHours] DEFAULT 24,
+                        [ResolvedAt] datetimeoffset NULL,
+                        [CreatedAt] datetimeoffset NOT NULL CONSTRAINT [DF_TaskAttentionSignals_CreatedAt] DEFAULT SYSDATETIMEOFFSET(),
+                        [UpdatedAt] datetimeoffset NULL
+                    );
+                END;
 
-            migrationBuilder.CreateTable(
-                name: "AiGeneratedDrafts",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false, defaultValueSql: "NEWID()"),
-                    AiJobId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    ProjectId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    DraftType = table.Column<string>(type: "nvarchar(80)", maxLength: 80, nullable: false),
-                    PayloadJson = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    Status = table.Column<string>(type: "nvarchar(40)", maxLength: 40, nullable: false),
-                    ConfirmedById = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
-                    ConfirmedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    ConfirmAction = table.Column<string>(type: "nvarchar(80)", maxLength: 80, nullable: true),
-                    ConfirmationNote = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
-                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false, defaultValueSql: "SYSDATETIMEOFFSET()"),
-                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_AiGeneratedDrafts", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_AiGeneratedDrafts_AiJobs_AiJobId",
-                        column: x => x.AiJobId,
-                        principalTable: "AiJobs",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_AiGeneratedDrafts_Projects_ProjectId",
-                        column: x => x.ProjectId,
-                        principalTable: "Projects",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_AiGeneratedDrafts_Users_ConfirmedById",
-                        column: x => x.ConfirmedById,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                });
+                IF OBJECT_ID(N'[AiGeneratedDrafts]', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [AiGeneratedDrafts] (
+                        [Id] uniqueidentifier NOT NULL CONSTRAINT [PK_AiGeneratedDrafts] PRIMARY KEY DEFAULT NEWID(),
+                        [AiJobId] uniqueidentifier NOT NULL,
+                        [ProjectId] uniqueidentifier NOT NULL,
+                        [DraftType] nvarchar(80) NOT NULL,
+                        [PayloadJson] nvarchar(max) NOT NULL,
+                        [Status] nvarchar(40) NOT NULL,
+                        [ConfirmedById] uniqueidentifier NULL,
+                        [ConfirmedAt] datetimeoffset NULL,
+                        [ConfirmAction] nvarchar(80) NULL,
+                        [ConfirmationNote] nvarchar(1000) NULL,
+                        [CreatedAt] datetimeoffset NOT NULL CONSTRAINT [DF_AiGeneratedDrafts_CreatedAt] DEFAULT SYSDATETIMEOFFSET(),
+                        [UpdatedAt] datetimeoffset NULL
+                    );
+                END;
 
-            migrationBuilder.CreateTable(
-                name: "OrganizationMembers",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false, defaultValueSql: "NEWID()"),
-                    OrganizationId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Role = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
-                    JoinedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false, defaultValueSql: "SYSDATETIMEOFFSET()"),
-                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
-                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_OrganizationMembers", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_OrganizationMembers_Organizations_OrganizationId",
-                        column: x => x.OrganizationId,
-                        principalTable: "Organizations",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_OrganizationMembers_Users_UserId",
-                        column: x => x.UserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
+                IF OBJECT_ID(N'[OrganizationMembers]', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [OrganizationMembers] (
+                        [Id] uniqueidentifier NOT NULL CONSTRAINT [PK_OrganizationMembers] PRIMARY KEY DEFAULT NEWID(),
+                        [OrganizationId] uniqueidentifier NOT NULL,
+                        [UserId] uniqueidentifier NOT NULL,
+                        [Role] nvarchar(20) NOT NULL,
+                        [JoinedAt] datetimeoffset NOT NULL CONSTRAINT [DF_OrganizationMembers_JoinedAt] DEFAULT SYSDATETIMEOFFSET(),
+                        [CreatedAt] datetimeoffset NOT NULL,
+                        [UpdatedAt] datetimeoffset NULL
+                    );
+                END;
 
-            migrationBuilder.CreateIndex(
-                name: "IX_TaskAttachments_EvidenceReviewedById",
-                table: "TaskAttachments",
-                column: "EvidenceReviewedById");
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_TaskAttachments_EvidenceReviewedById'
+                      AND object_id = OBJECT_ID(N'[TaskAttachments]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_TaskAttachments_EvidenceReviewedById] ON [TaskAttachments]([EvidenceReviewedById]);
+                END;
 
-            migrationBuilder.CreateIndex(
-                name: "IX_TaskAttachments_TaskItemId_IsEvidence_EvidenceApprovalStatus",
-                table: "TaskAttachments",
-                columns: new[] { "TaskItemId", "IsEvidence", "EvidenceApprovalStatus" });
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_TaskAttachments_TaskItemId_IsEvidence_EvidenceApprovalStatus'
+                      AND object_id = OBJECT_ID(N'[TaskAttachments]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_TaskAttachments_TaskItemId_IsEvidence_EvidenceApprovalStatus] ON [TaskAttachments]([TaskItemId], [IsEvidence], [EvidenceApprovalStatus]);
+                END;
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Projects_OrganizationId",
-                table: "Projects",
-                column: "OrganizationId");
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_Projects_OrganizationId'
+                      AND object_id = OBJECT_ID(N'[Projects]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_Projects_OrganizationId] ON [Projects]([OrganizationId]);
+                END;
 
-            migrationBuilder.CreateIndex(
-                name: "IX_AiGeneratedDrafts_AiJobId",
-                table: "AiGeneratedDrafts",
-                column: "AiJobId");
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_AiGeneratedDrafts_AiJobId'
+                      AND object_id = OBJECT_ID(N'[AiGeneratedDrafts]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_AiGeneratedDrafts_AiJobId] ON [AiGeneratedDrafts]([AiJobId]);
+                END;
 
-            migrationBuilder.CreateIndex(
-                name: "IX_AiGeneratedDrafts_ConfirmedById",
-                table: "AiGeneratedDrafts",
-                column: "ConfirmedById");
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_AiGeneratedDrafts_ConfirmedById'
+                      AND object_id = OBJECT_ID(N'[AiGeneratedDrafts]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_AiGeneratedDrafts_ConfirmedById] ON [AiGeneratedDrafts]([ConfirmedById]);
+                END;
 
-            migrationBuilder.CreateIndex(
-                name: "IX_AiGeneratedDrafts_ProjectId_Status",
-                table: "AiGeneratedDrafts",
-                columns: new[] { "ProjectId", "Status" });
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_AiGeneratedDrafts_ProjectId_Status'
+                      AND object_id = OBJECT_ID(N'[AiGeneratedDrafts]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_AiGeneratedDrafts_ProjectId_Status] ON [AiGeneratedDrafts]([ProjectId], [Status]);
+                END;
 
-            migrationBuilder.CreateIndex(
-                name: "IX_AiJobs_CacheKey",
-                table: "AiJobs",
-                column: "CacheKey");
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_AiJobs_CacheKey'
+                      AND object_id = OBJECT_ID(N'[AiJobs]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_AiJobs_CacheKey] ON [AiJobs]([CacheKey]);
+                END;
 
-            migrationBuilder.CreateIndex(
-                name: "IX_AiJobs_ProjectId_CreatedAt",
-                table: "AiJobs",
-                columns: new[] { "ProjectId", "CreatedAt" });
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_AiJobs_ProjectId_CreatedAt'
+                      AND object_id = OBJECT_ID(N'[AiJobs]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_AiJobs_ProjectId_CreatedAt] ON [AiJobs]([ProjectId], [CreatedAt]);
+                END;
 
-            migrationBuilder.CreateIndex(
-                name: "IX_AiJobs_RequestedById",
-                table: "AiJobs",
-                column: "RequestedById");
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_AiJobs_RequestedById'
+                      AND object_id = OBJECT_ID(N'[AiJobs]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_AiJobs_RequestedById] ON [AiJobs]([RequestedById]);
+                END;
 
-            migrationBuilder.CreateIndex(
-                name: "IX_OrganizationMembers_OrganizationId_UserId",
-                table: "OrganizationMembers",
-                columns: new[] { "OrganizationId", "UserId" },
-                unique: true);
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_OrganizationMembers_OrganizationId_UserId'
+                      AND object_id = OBJECT_ID(N'[OrganizationMembers]')
+                )
+                BEGIN
+                    CREATE UNIQUE INDEX [IX_OrganizationMembers_OrganizationId_UserId] ON [OrganizationMembers]([OrganizationId], [UserId]);
+                END;
 
-            migrationBuilder.CreateIndex(
-                name: "IX_OrganizationMembers_UserId",
-                table: "OrganizationMembers",
-                column: "UserId");
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_OrganizationMembers_UserId'
+                      AND object_id = OBJECT_ID(N'[OrganizationMembers]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_OrganizationMembers_UserId] ON [OrganizationMembers]([UserId]);
+                END;
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Organizations_Code",
-                table: "Organizations",
-                column: "Code",
-                unique: true);
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_Organizations_Code'
+                      AND object_id = OBJECT_ID(N'[Organizations]')
+                )
+                BEGIN
+                    CREATE UNIQUE INDEX [IX_Organizations_Code] ON [Organizations]([Code]);
+                END;
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Organizations_OwnerId_IsActive",
-                table: "Organizations",
-                columns: new[] { "OwnerId", "IsActive" });
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_Organizations_OwnerId_IsActive'
+                      AND object_id = OBJECT_ID(N'[Organizations]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_Organizations_OwnerId_IsActive] ON [Organizations]([OwnerId], [IsActive]);
+                END;
 
-            migrationBuilder.CreateIndex(
-                name: "IX_TaskAttentionSignals_TaskItemId_UserId_SignalType",
-                table: "TaskAttentionSignals",
-                columns: new[] { "TaskItemId", "UserId", "SignalType" },
-                unique: true);
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_TaskAttentionSignals_TaskItemId_UserId_SignalType'
+                      AND object_id = OBJECT_ID(N'[TaskAttentionSignals]')
+                )
+                BEGIN
+                    CREATE UNIQUE INDEX [IX_TaskAttentionSignals_TaskItemId_UserId_SignalType] ON [TaskAttentionSignals]([TaskItemId], [UserId], [SignalType]);
+                END;
 
-            migrationBuilder.CreateIndex(
-                name: "IX_TaskAttentionSignals_UserId_ResolvedAt_LastSentAt",
-                table: "TaskAttentionSignals",
-                columns: new[] { "UserId", "ResolvedAt", "LastSentAt" });
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_TaskAttentionSignals_UserId_ResolvedAt_LastSentAt'
+                      AND object_id = OBJECT_ID(N'[TaskAttentionSignals]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_TaskAttentionSignals_UserId_ResolvedAt_LastSentAt] ON [TaskAttentionSignals]([UserId], [ResolvedAt], [LastSentAt]);
+                END;
 
-            migrationBuilder.AddForeignKey(
-                name: "FK_Projects_Organizations_OrganizationId",
-                table: "Projects",
-                column: "OrganizationId",
-                principalTable: "Organizations",
-                principalColumn: "Id",
-                onDelete: ReferentialAction.Restrict);
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.foreign_keys
+                    WHERE name = N'FK_Projects_Organizations_OrganizationId'
+                )
+                BEGIN
+                    ALTER TABLE [Projects]
+                        ADD CONSTRAINT [FK_Projects_Organizations_OrganizationId]
+                        FOREIGN KEY ([OrganizationId]) REFERENCES [Organizations]([Id]) ON DELETE NO ACTION;
+                END;
 
-            migrationBuilder.AddForeignKey(
-                name: "FK_TaskAttachments_Users_EvidenceReviewedById",
-                table: "TaskAttachments",
-                column: "EvidenceReviewedById",
-                principalTable: "Users",
-                principalColumn: "Id",
-                onDelete: ReferentialAction.Restrict);
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.foreign_keys
+                    WHERE name = N'FK_TaskAttachments_Users_EvidenceReviewedById'
+                )
+                BEGIN
+                    ALTER TABLE [TaskAttachments]
+                        ADD CONSTRAINT [FK_TaskAttachments_Users_EvidenceReviewedById]
+                        FOREIGN KEY ([EvidenceReviewedById]) REFERENCES [Users]([Id]) ON DELETE NO ACTION;
+                END;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.foreign_keys
+                    WHERE name = N'FK_AiJobs_Projects_ProjectId'
+                )
+                BEGIN
+                    ALTER TABLE [AiJobs]
+                        ADD CONSTRAINT [FK_AiJobs_Projects_ProjectId]
+                        FOREIGN KEY ([ProjectId]) REFERENCES [Projects]([Id]) ON DELETE CASCADE;
+                END;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.foreign_keys
+                    WHERE name = N'FK_AiJobs_Users_RequestedById'
+                )
+                BEGIN
+                    ALTER TABLE [AiJobs]
+                        ADD CONSTRAINT [FK_AiJobs_Users_RequestedById]
+                        FOREIGN KEY ([RequestedById]) REFERENCES [Users]([Id]) ON DELETE NO ACTION;
+                END;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.foreign_keys
+                    WHERE name = N'FK_TaskAttentionSignals_TaskItems_TaskItemId'
+                )
+                BEGIN
+                    ALTER TABLE [TaskAttentionSignals]
+                        ADD CONSTRAINT [FK_TaskAttentionSignals_TaskItems_TaskItemId]
+                        FOREIGN KEY ([TaskItemId]) REFERENCES [TaskItems]([Id]) ON DELETE CASCADE;
+                END;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.foreign_keys
+                    WHERE name = N'FK_TaskAttentionSignals_Users_UserId'
+                )
+                BEGIN
+                    ALTER TABLE [TaskAttentionSignals]
+                        ADD CONSTRAINT [FK_TaskAttentionSignals_Users_UserId]
+                        FOREIGN KEY ([UserId]) REFERENCES [Users]([Id]) ON DELETE CASCADE;
+                END;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.foreign_keys
+                    WHERE name = N'FK_AiGeneratedDrafts_AiJobs_AiJobId'
+                )
+                BEGIN
+                    ALTER TABLE [AiGeneratedDrafts]
+                        ADD CONSTRAINT [FK_AiGeneratedDrafts_AiJobs_AiJobId]
+                        FOREIGN KEY ([AiJobId]) REFERENCES [AiJobs]([Id]) ON DELETE CASCADE;
+                END;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.foreign_keys
+                    WHERE name = N'FK_AiGeneratedDrafts_Projects_ProjectId'
+                )
+                BEGIN
+                    ALTER TABLE [AiGeneratedDrafts]
+                        ADD CONSTRAINT [FK_AiGeneratedDrafts_Projects_ProjectId]
+                        FOREIGN KEY ([ProjectId]) REFERENCES [Projects]([Id]) ON DELETE NO ACTION;
+                END;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.foreign_keys
+                    WHERE name = N'FK_AiGeneratedDrafts_Users_ConfirmedById'
+                )
+                BEGIN
+                    ALTER TABLE [AiGeneratedDrafts]
+                        ADD CONSTRAINT [FK_AiGeneratedDrafts_Users_ConfirmedById]
+                        FOREIGN KEY ([ConfirmedById]) REFERENCES [Users]([Id]) ON DELETE NO ACTION;
+                END;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.foreign_keys
+                    WHERE name = N'FK_OrganizationMembers_Organizations_OrganizationId'
+                )
+                BEGIN
+                    ALTER TABLE [OrganizationMembers]
+                        ADD CONSTRAINT [FK_OrganizationMembers_Organizations_OrganizationId]
+                        FOREIGN KEY ([OrganizationId]) REFERENCES [Organizations]([Id]) ON DELETE CASCADE;
+                END;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.foreign_keys
+                    WHERE name = N'FK_OrganizationMembers_Users_UserId'
+                )
+                BEGIN
+                    ALTER TABLE [OrganizationMembers]
+                        ADD CONSTRAINT [FK_OrganizationMembers_Users_UserId]
+                        FOREIGN KEY ([UserId]) REFERENCES [Users]([Id]) ON DELETE CASCADE;
+                END;
+                """);
         }
 
         /// <inheritdoc />

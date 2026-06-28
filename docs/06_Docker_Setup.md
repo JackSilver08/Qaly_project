@@ -66,7 +66,7 @@ docker compose logs -f qaly-web
 ```json
 {
     "ConnectionStrings": {
-        "DefaultConnection": "Data Source=CMI\\SQLEXPRESS;Initial Catalog=QalyDb;Integrated Security=True;TrustServerCertificate=True;MultipleActiveResultSets=true"
+        "DefaultConnection": "Server=localhost;Database=QalyDb;Trusted_Connection=True;TrustServerCertificate=True;Encrypt=True;MultipleActiveResultSets=True"
     },
     "Redis": {
         "ConnectionString": "localhost:6380"

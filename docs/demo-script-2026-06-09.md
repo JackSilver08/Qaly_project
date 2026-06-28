@@ -102,4 +102,4 @@
 - SignalR cho chat và meeting events.
 - Import engine preview + execute.
 - AI analytics và Group AI có luồng fallback.
-- Local SQL dev link hướng dẫn dùng `CMI\SQLEXPRESS`.
+- Local SQL dev link hướng dẫn dùng `localhost`.

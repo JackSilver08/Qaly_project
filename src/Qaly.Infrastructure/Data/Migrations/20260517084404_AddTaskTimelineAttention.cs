@@ -44,6 +44,49 @@ namespace Qaly.Infrastructure.Data.Migrations
                 BEGIN
                     ALTER TABLE [TaskItems] ADD [ImportSessionId] uniqueidentifier NULL;
                 END;
+
+                IF COL_LENGTH(N'[TaskAssignments]', N'AssignedAt') IS NULL
+                BEGIN
+                    ALTER TABLE [TaskAssignments] ADD [AssignedAt] datetimeoffset NOT NULL CONSTRAINT [DF_TaskAssignments_AssignedAt] DEFAULT SYSDATETIMEOFFSET();
+                END;
+
+                IF COL_LENGTH(N'[TaskAssignments]', N'AssignedByUserId') IS NULL
+                BEGIN
+                    ALTER TABLE [TaskAssignments] ADD [AssignedByUserId] uniqueidentifier NULL;
+                END;
+
+                IF COL_LENGTH(N'[ProjectMembers]', N'CanNudgeAssignee') IS NULL
+                BEGIN
+                    ALTER TABLE [ProjectMembers] ADD [CanNudgeAssignee] bit NOT NULL CONSTRAINT [DF_ProjectMembers_CanNudgeAssignee] DEFAULT 0;
+                END;
+
+                IF COL_LENGTH(N'[ProjectMembers]', N'CanViewProjectTimeline') IS NULL
+                BEGIN
+                    ALTER TABLE [ProjectMembers] ADD [CanViewProjectTimeline] bit NOT NULL CONSTRAINT [DF_ProjectMembers_CanViewProjectTimeline] DEFAULT 0;
+                END;
+
+                IF COL_LENGTH(N'[ProjectMembers]', N'CanViewTaskRisk') IS NULL
+                BEGIN
+                    ALTER TABLE [ProjectMembers] ADD [CanViewTaskRisk] bit NOT NULL CONSTRAINT [DF_ProjectMembers_CanViewTaskRisk] DEFAULT 0;
+                END;
+
+                IF COL_LENGTH(N'[ProjectMembers]', N'CanViewUnseenTaskSignal') IS NULL
+                BEGIN
+                    ALTER TABLE [ProjectMembers] ADD [CanViewUnseenTaskSignal] bit NOT NULL CONSTRAINT [DF_ProjectMembers_CanViewUnseenTaskSignal] DEFAULT 0;
+                END;
+
+                IF OBJECT_ID(N'[TaskViewEvents]', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [TaskViewEvents] (
+                        [Id] uniqueidentifier NOT NULL CONSTRAINT [PK_TaskViewEvents] PRIMARY KEY DEFAULT NEWID(),
+                        [TaskItemId] uniqueidentifier NOT NULL,
+                        [UserId] uniqueidentifier NOT NULL,
+                        [ViewedAt] datetimeoffset NOT NULL CONSTRAINT [DF_TaskViewEvents_ViewedAt] DEFAULT SYSDATETIMEOFFSET(),
+                        [ViewCount] int NOT NULL CONSTRAINT [DF_TaskViewEvents_ViewCount] DEFAULT 1,
+                        [CreatedAt] datetimeoffset NOT NULL CONSTRAINT [DF_TaskViewEvents_CreatedAt] DEFAULT SYSDATETIMEOFFSET(),
+                        [UpdatedAt] datetimeoffset NULL
+                    );
+                END;
                 """);
 
             migrationBuilder.Sql(
@@ -59,108 +102,92 @@ namespace Qaly.Infrastructure.Data.Migrations
                 END
                 """);
 
-            migrationBuilder.AddColumn<DateTimeOffset>(
-                name: "AssignedAt",
-                table: "TaskAssignments",
-                type: "datetimeoffset",
-                nullable: false,
-                defaultValueSql: "SYSDATETIMEOFFSET()");
+            migrationBuilder.Sql(
+                """
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_TaskAssignments_AssignedAt'
+                      AND object_id = OBJECT_ID(N'[TaskAssignments]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_TaskAssignments_AssignedAt] ON [TaskAssignments]([AssignedAt]);
+                END;
 
-            migrationBuilder.AddColumn<Guid>(
-                name: "AssignedByUserId",
-                table: "TaskAssignments",
-                type: "uniqueidentifier",
-                nullable: true);
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_TaskAssignments_AssignedByUserId'
+                      AND object_id = OBJECT_ID(N'[TaskAssignments]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_TaskAssignments_AssignedByUserId] ON [TaskAssignments]([AssignedByUserId]);
+                END;
 
-            migrationBuilder.AddColumn<bool>(
-                name: "CanNudgeAssignee",
-                table: "ProjectMembers",
-                type: "bit",
-                nullable: false,
-                defaultValue: false);
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_TaskViewEvents_TaskItemId_UserId'
+                      AND object_id = OBJECT_ID(N'[TaskViewEvents]')
+                )
+                BEGIN
+                    CREATE UNIQUE INDEX [IX_TaskViewEvents_TaskItemId_UserId]
+                    ON [TaskViewEvents]([TaskItemId], [UserId]);
+                END;
 
-            migrationBuilder.AddColumn<bool>(
-                name: "CanViewProjectTimeline",
-                table: "ProjectMembers",
-                type: "bit",
-                nullable: false,
-                defaultValue: false);
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_TaskViewEvents_UserId'
+                      AND object_id = OBJECT_ID(N'[TaskViewEvents]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_TaskViewEvents_UserId] ON [TaskViewEvents]([UserId]);
+                END;
 
-            migrationBuilder.AddColumn<bool>(
-                name: "CanViewTaskRisk",
-                table: "ProjectMembers",
-                type: "bit",
-                nullable: false,
-                defaultValue: false);
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_TaskViewEvents_ViewedAt'
+                      AND object_id = OBJECT_ID(N'[TaskViewEvents]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_TaskViewEvents_ViewedAt] ON [TaskViewEvents]([ViewedAt]);
+                END;
 
-            migrationBuilder.AddColumn<bool>(
-                name: "CanViewUnseenTaskSignal",
-                table: "ProjectMembers",
-                type: "bit",
-                nullable: false,
-                defaultValue: false);
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.foreign_keys
+                    WHERE name = N'FK_TaskAssignments_Users_AssignedByUserId'
+                )
+                BEGIN
+                    ALTER TABLE [TaskAssignments]
+                        ADD CONSTRAINT [FK_TaskAssignments_Users_AssignedByUserId]
+                        FOREIGN KEY ([AssignedByUserId]) REFERENCES [Users]([Id]);
+                END;
 
-            migrationBuilder.CreateTable(
-                name: "TaskViewEvents",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false, defaultValueSql: "NEWID()"),
-                    TaskItemId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    ViewedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false, defaultValueSql: "SYSDATETIMEOFFSET()"),
-                    ViewCount = table.Column<int>(type: "int", nullable: false, defaultValue: 1),
-                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false, defaultValueSql: "SYSDATETIMEOFFSET()"),
-                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_TaskViewEvents", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_TaskViewEvents_TaskItems_TaskItemId",
-                        column: x => x.TaskItemId,
-                        principalTable: "TaskItems",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_TaskViewEvents_Users_UserId",
-                        column: x => x.UserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.foreign_keys
+                    WHERE name = N'FK_TaskViewEvents_TaskItems_TaskItemId'
+                )
+                BEGIN
+                    ALTER TABLE [TaskViewEvents]
+                        ADD CONSTRAINT [FK_TaskViewEvents_TaskItems_TaskItemId]
+                        FOREIGN KEY ([TaskItemId]) REFERENCES [TaskItems]([Id]) ON DELETE CASCADE;
+                END;
 
-            migrationBuilder.CreateIndex(
-                name: "IX_TaskAssignments_AssignedAt",
-                table: "TaskAssignments",
-                column: "AssignedAt");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_TaskAssignments_AssignedByUserId",
-                table: "TaskAssignments",
-                column: "AssignedByUserId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_TaskViewEvents_TaskItemId_UserId",
-                table: "TaskViewEvents",
-                columns: new[] { "TaskItemId", "UserId" },
-                unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_TaskViewEvents_UserId",
-                table: "TaskViewEvents",
-                column: "UserId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_TaskViewEvents_ViewedAt",
-                table: "TaskViewEvents",
-                column: "ViewedAt");
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_TaskAssignments_Users_AssignedByUserId",
-                table: "TaskAssignments",
-                column: "AssignedByUserId",
-                principalTable: "Users",
-                principalColumn: "Id");
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.foreign_keys
+                    WHERE name = N'FK_TaskViewEvents_Users_UserId'
+                )
+                BEGIN
+                    ALTER TABLE [TaskViewEvents]
+                        ADD CONSTRAINT [FK_TaskViewEvents_Users_UserId]
+                        FOREIGN KEY ([UserId]) REFERENCES [Users]([Id]) ON DELETE CASCADE;
+                END;
+                """);
 
             migrationBuilder.Sql(
                 """

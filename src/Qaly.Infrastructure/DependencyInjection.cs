@@ -121,6 +121,7 @@ public static class DependencyInjection
         services.AddSingleton<Microsoft.AspNetCore.Authentication.Cookies.ITicketStore, Auth.RedisTicketStore>();
 
         // Background Workers
+        services.AddHostedService<DatabaseMigrationHostedService>();
         services.AddHostedService<EmailDigestWorker>();
         services.AddHostedService<TaskAttentionSignalWorker>();
         services.AddHostedService<ProjectTrashCleanupWorker>();

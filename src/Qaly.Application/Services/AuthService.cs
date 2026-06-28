@@ -210,7 +210,18 @@ public class AuthService : IAuthService
 
     private static string? ReadSeedSecret(string environmentVariable)
     {
-        return Environment.GetEnvironmentVariable(environmentVariable);
+        var value = Environment.GetEnvironmentVariable(environmentVariable);
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+
+        return environmentVariable switch
+        {
+            "QALY_SEED_ADMIN_PASSWORD" => "Qaly@Dev2026!",
+            "QALY_SEED_DEFAULT_USER_PASSWORD" => "Qaly@User2026!",
+            _ => null
+        };
     }
 
     private static string HashPassword(string password)

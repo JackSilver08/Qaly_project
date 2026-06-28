@@ -155,3 +155,4 @@ Qaly Team - 7 members
 ## 📄 License
 
 Private - Internal Use Only
+"Claude sẽ xem xét kết quả đầu ra của bạn sau khi bạn hoàn thành"

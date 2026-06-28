@@ -102,7 +102,7 @@ sequenceDiagram
 
 ### 3.5 Deploy và hạ tầng
 
-- Hệ thống hỗ trợ chạy local bằng `CMI\SQLEXPRESS` cho SQL Server.
+- Hệ thống hỗ trợ chạy local bằng `localhost` cho SQL Server.
 - Docker Compose sử dụng container `qaly-sqlserver`, `qaly-redis`, `qaly-seq`, `qaly-mailhog`.
 - Deploy hiện tại đã có cấu hình cơ bản nhưng chưa đủ bằng chứng nghiệm thu đầy đủ cho production.
 

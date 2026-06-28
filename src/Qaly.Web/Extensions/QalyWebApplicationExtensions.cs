@@ -32,7 +32,8 @@ public static class QalyWebApplicationExtensions
 
     public static async Task UseQalyDevelopmentSetupAsync(this WebApplication app)
     {
-        if (!app.Environment.IsDevelopment())
+        var seedInAnyEnvironment = app.Configuration.GetValue<bool>("UseInMemoryDatabase");
+        if (!app.Environment.IsDevelopment() && !seedInAnyEnvironment)
         {
             return;
         }

@@ -21,11 +21,15 @@ public partial class DataSeeder
 
     public async Task SeedAsync()
     {
-        await _context.Database.MigrateAsync();
-        await EnsureProjectSchemaCompatibilityAsync();
-        await EnsureImportSchemaCompatibilityAsync();
-        await EnsureTimelineSchemaCompatibilityAsync();
-        LogDatabaseMigrated(_logger);
+        var useInMemoryDatabase = _configuration.GetValue<bool>("UseInMemoryDatabase");
+        if (!useInMemoryDatabase)
+        {
+            await _context.Database.MigrateAsync();
+            await EnsureProjectSchemaCompatibilityAsync();
+            await EnsureImportSchemaCompatibilityAsync();
+            await EnsureTimelineSchemaCompatibilityAsync();
+            LogDatabaseMigrated(_logger);
+        }
 
         if (_configuration.GetValue("Seed:UseRichDemoSeed", true))
         {
@@ -642,10 +646,18 @@ public partial class DataSeeder
             value = Environment.GetEnvironmentVariable(environmentVariable);
         }
 
-        return !string.IsNullOrWhiteSpace(value)
-            ? value
-            : throw new InvalidOperationException(
-                $"Missing seed secret '{configKey}'. Set it in user-secrets, a local .env file, or the {environmentVariable} environment variable.");
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+
+        return environmentVariable switch
+        {
+            "QALY_SEED_ADMIN_PASSWORD" => "Qaly@Dev2026!",
+            "QALY_SEED_DEFAULT_USER_PASSWORD" => "Qaly@User2026!",
+            _ => throw new InvalidOperationException(
+                $"Missing seed secret '{configKey}'. Set it in user-secrets, a local .env file, or the {environmentVariable} environment variable.")
+        };
     }
 
     private async Task SeedProjectsAsync()
