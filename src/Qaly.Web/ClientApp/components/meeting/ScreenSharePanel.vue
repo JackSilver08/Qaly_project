@@ -74,10 +74,10 @@ defineExpose({ startShare, stopShare });
   gap: 12px;
   padding: 14px;
   border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
   background: rgba(15, 23, 42, 0.72);
   color: #f8fafc;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .screen-share-card__header,
@@ -116,7 +116,7 @@ defineExpose({ startShare, stopShare });
   width: 100%;
   aspect-ratio: 16 / 9;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   background:
     radial-gradient(circle at 50% 40%, rgba(59, 130, 246, 0.2), transparent 28%),
     #020617;
@@ -129,7 +129,7 @@ defineExpose({ startShare, stopShare });
   align-items: center;
   gap: 7px;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   padding: 8px 11px;
   background: rgba(255, 255, 255, 0.08);
   color: #f8fafc;

@@ -217,11 +217,11 @@ const hoveredProject = computed(() => {
               :style="tooltipStyle"
               style="
                 background: rgba(255, 255, 255, 0.95);
-                backdrop-filter: blur(8px);
+                backdrop-filter: none;
                 border: 1px solid rgba(15, 82, 186, 0.15);
-                border-radius: 12px;
+                border-radius: var(--qaly-radius-lg);
                 padding: 12px 14px;
-                box-shadow: 0 10px 25px -5px rgba(15, 82, 186, 0.15), 0 8px 16px -6px rgba(0, 0, 0, 0.04);
+                box-shadow: var(--qaly-shadow-md);
                 min-width: 160px;
                 display: flex;
                 flex-direction: column;

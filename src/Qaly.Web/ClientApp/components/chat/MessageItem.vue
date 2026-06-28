@@ -380,7 +380,7 @@ function fileIcon(name: string, contentType?: string) {
   height: 100%;
   display: grid;
   place-items: center;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   color: #111827;
   background: #e2e8f0;
   font-size: 0.75rem;
@@ -395,10 +395,10 @@ function fileIcon(name: string, contentType?: string) {
   gap: 5px;
   padding: 10px 13px;
   border: 1px solid #e5eaf1;
-  border-radius: 15px 15px 15px 5px;
+  border-radius: 6px 6px 6px 2px;
   color: #0f172a;
   background: #fff;
-  box-shadow: 0 3px 12px rgba(15, 23, 42, 0.07);
+  box-shadow: var(--qaly-shadow-md);
   font-size: 0.92rem;
   line-height: 1.45;
 }
@@ -409,14 +409,14 @@ function fileIcon(name: string, contentType?: string) {
 
 .team-message.is-mine .team-message__bubble {
   border-color: #dbe3ef !important;
-  border-radius: 15px 15px 5px 15px;
+  border-radius: 6px 6px 2px 6px;
   color: #0f172a !important;
   background: #ffffff !important;
-  box-shadow: 0 3px 12px rgba(15, 23, 42, 0.07) !important;
+  box-shadow: var(--qaly-shadow-md) !important;
 }
 
 .team-message.is-mine.is-consecutive .team-message__bubble {
-  border-radius: 15px 6px 6px 15px;
+  border-radius: var(--qaly-radius-lg);
 }
 
 .team-message.has-image-attachment .team-message__bubble {
@@ -433,11 +433,11 @@ function fileIcon(name: string, contentType?: string) {
   max-width: min(340px, 62vw);
   margin-bottom: 1px;
   border: 1px solid rgba(226, 232, 240, 0.9);
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   padding: 8px 11px;
   color: #0f172a;
   background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .team-message.is-mine.has-image-attachment .team-message__text {
@@ -529,7 +529,7 @@ function fileIcon(name: string, contentType?: string) {
   gap: 3px;
   border: 0;
   border-left: 3px solid #3b82f6;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   padding: 7px 9px;
   color: #334155;
   background: #f1f5f9;
@@ -563,7 +563,7 @@ function fileIcon(name: string, contentType?: string) {
 
 .team-message-reference--forwarded > button {
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   padding: 0;
   overflow: hidden;
   background: transparent;
@@ -616,7 +616,7 @@ function fileIcon(name: string, contentType?: string) {
   color: #000;
   background: #fff;
   border: 1px solid #dbe3ef;
-  box-shadow: 0 3px 12px rgba(15, 23, 42, 0.14);
+  box-shadow: var(--qaly-shadow-md);
   opacity: 0;
   visibility: hidden;
   transform: translateY(-50%);
@@ -663,10 +663,10 @@ function fileIcon(name: string, contentType?: string) {
   display: grid;
   padding: 8px;
   border: 1px solid #dbe3ef;
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   color: #1e293b;
   background: #fff;
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.2);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .team-message:not(.is-mine) .message-action-menu {
@@ -680,7 +680,7 @@ function fileIcon(name: string, contentType?: string) {
   gap: 11px;
   width: 100%;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--qaly-radius-lg);
   padding: 10px;
   color: inherit;
   background: transparent;
@@ -739,7 +739,7 @@ function fileIcon(name: string, contentType?: string) {
   gap: 9px;
   padding: 10px 42px 10px 10px;
   border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   color: inherit;
   background: rgba(255, 255, 255, 0.78);
   text-decoration: none;
@@ -750,9 +750,9 @@ function fileIcon(name: string, contentType?: string) {
   display: block;
   overflow: hidden;
   border: 1px solid rgba(226, 232, 240, 0.8);
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   background: #e2e8f0;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .message-attachment-image img {
@@ -771,7 +771,7 @@ function fileIcon(name: string, contentType?: string) {
   height: 40px;
   display: grid;
   place-items: center;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   color: #1d4ed8;
   background: #dbeafe;
 }
@@ -812,7 +812,7 @@ function fileIcon(name: string, contentType?: string) {
   border-radius: 999px;
   color: #111827;
   background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.12);
+  box-shadow: var(--qaly-shadow-md);
   opacity: 0;
   visibility: hidden;
   cursor: pointer;
@@ -835,10 +835,10 @@ function fileIcon(name: string, contentType?: string) {
   gap: 2px;
   padding: 6px;
   border: 1px solid #dbe3ef;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   color: #334155;
   background: #ffffff;
-  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.18);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .message-attachment-menu a,
@@ -847,7 +847,7 @@ function fileIcon(name: string, contentType?: string) {
   align-items: center;
   gap: 8px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   padding: 9px;
   color: inherit;
   background: transparent;
@@ -879,7 +879,7 @@ function fileIcon(name: string, contentType?: string) {
   align-items: center;
   gap: 12px;
   border: 1px solid #dbeafe;
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   padding: 12px 14px;
   background: #f8fbff;
 }
@@ -889,7 +889,7 @@ function fileIcon(name: string, contentType?: string) {
   height: 36px;
   display: grid;
   place-items: center;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   color: #1677ff;
   background: #eff6ff;
 }

@@ -165,11 +165,11 @@ onMounted(() => {
 <style scoped>
 .glass-panel {
   background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(16px);
+  backdrop-filter: none;
   border: 1px solid rgba(255, 255, 255, 0.6);
-  border-radius: 20px;
+  border-radius: var(--qaly-radius-lg);
   padding: 24px;
-  box-shadow: 0 10px 40px -10px rgba(15, 82, 186, 0.1);
+  box-shadow: var(--qaly-shadow-md);
   margin-top: 24px;
 }
 
@@ -204,17 +204,17 @@ onMounted(() => {
   color: white;
   border: none;
   padding: 10px 18px;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   font-weight: 600;
   font-size: 14px;
   cursor: pointer;
   transition: transform 0.2s, box-shadow 0.2s;
-  box-shadow: 0 4px 12px rgba(31, 128, 255, 0.3);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .ai-button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(31, 128, 255, 0.4);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .secondary-button {
@@ -222,7 +222,7 @@ onMounted(() => {
   color: #1f80ff;
   border: none;
   padding: 10px 18px;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   font-weight: 600;
   font-size: 14px;
   cursor: pointer;
@@ -252,14 +252,14 @@ onMounted(() => {
   gap: 16px;
   background: rgba(255,255,255,0.6);
   padding: 16px;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   border: 1px solid rgba(15, 82, 186, 0.05);
 }
 
 .stat-icon {
   width: 48px;
   height: 48px;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   background: rgba(31, 128, 255, 0.1);
   color: #1f80ff;
   display: flex;
@@ -292,7 +292,7 @@ onMounted(() => {
 .strategy-ai-insight {
   flex: 1;
   background: linear-gradient(145deg, rgba(31, 128, 255, 0.03), rgba(31, 128, 255, 0.08));
-  border-radius: 16px;
+  border-radius: var(--qaly-radius-lg);
   padding: 24px;
   border: 1px solid rgba(31, 128, 255, 0.1);
   display: flex;
@@ -332,7 +332,7 @@ onMounted(() => {
   color: #1e293b;
   background: rgba(255,255,255,0.7);
   padding: 16px;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   border-left: 4px solid #1f80ff;
 }
 
@@ -350,7 +350,7 @@ onMounted(() => {
 
 .ai-box {
   padding: 16px;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   background: rgba(255,255,255,0.7);
 }
 
@@ -392,7 +392,7 @@ onMounted(() => {
   background: #1f80ff;
   color: white;
   padding: 6px 12px;
-  border-radius: 20px;
+  border-radius: var(--qaly-radius-lg);
   font-size: 12px;
   font-weight: 600;
   box-shadow: 0 2px 8px rgba(31, 128, 255, 0.2);

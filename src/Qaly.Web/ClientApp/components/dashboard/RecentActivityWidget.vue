@@ -45,7 +45,7 @@ const getSparklineHeight = (count: number) => {
     <div v-else-if="data" style="display: flex; flex-direction: column; gap: 20px;">
       
       <!-- Mini Sparkline (7 days) -->
-      <div class="activity-sparkline" style="background: rgba(15, 82, 186, 0.03); border-radius: 12px; padding: 12px;">
+      <div class="activity-sparkline" style="background: rgba(15, 82, 186, 0.03); border-radius: var(--qaly-radius-lg); padding: 12px;">
         <div style="display: flex; justify-content: space-between; align-items: flex-end; height: 48px; gap: 4px;">
           <div 
             v-for="(day, idx) in data.activityByDay" 
@@ -103,10 +103,10 @@ const getSparklineHeight = (count: number) => {
 <style scoped>
 .activity-card {
   background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(12px);
+  backdrop-filter: none;
   border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: 16px;
+  border-radius: var(--qaly-radius-lg);
   padding: 20px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+  box-shadow: var(--qaly-shadow-md);
 }
 </style>

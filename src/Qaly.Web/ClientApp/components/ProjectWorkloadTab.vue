@@ -187,7 +187,7 @@ function statusLabel(member: MemberWorkloadDto) {
   min-width: 0;
   padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--bg-soft);
 }
 
@@ -214,14 +214,14 @@ function statusLabel(member: MemberWorkloadDto) {
 .workload-card {
   padding: 16px;
   border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
   background: white;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .workload-card.is-overloaded {
   border-color: rgba(239, 68, 68, 0.45);
-  box-shadow: 0 16px 34px rgba(239, 68, 68, 0.12);
+  box-shadow: var(--qaly-shadow-md);
   background: linear-gradient(180deg, rgba(255, 241, 241, 0.95), #ffffff 58%);
 }
 
@@ -235,11 +235,11 @@ function statusLabel(member: MemberWorkloadDto) {
 .workload-avatar {
   width: 38px;
   height: 38px;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   display: grid;
   place-items: center;
   color: white;
-  background: linear-gradient(135deg, #0f4cff, #22d3ee);
+  background: var(--primary);
 }
 
 .workload-title {
@@ -271,7 +271,7 @@ function statusLabel(member: MemberWorkloadDto) {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #0f4cff, #22d3ee);
+  background: var(--primary);
 }
 
 .workload-bar.is-overloaded span {
@@ -300,7 +300,7 @@ function statusLabel(member: MemberWorkloadDto) {
   gap: 8px;
   padding: 18px;
   border: 1px dashed var(--line);
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
   color: var(--muted);
   text-align: center;
   background: var(--bg-soft);

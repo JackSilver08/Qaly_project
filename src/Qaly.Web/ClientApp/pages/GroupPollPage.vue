@@ -182,9 +182,9 @@ onBeforeUnmount(async () => {
 <style scoped>
 .glass-card {
   background: white;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   padding: 12px;
-  box-shadow: 0 6px 20px rgba(2, 6, 23, 0.06);
+  box-shadow: var(--qaly-shadow-md);
 }
 .primary-button {
   background: #2563eb;

@@ -288,7 +288,7 @@ function fileKindLabel(name: string) {
   min-height: 238px;
   margin: 24px 0 34px;
   border: 1.5px dashed #2f80ed;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   background: #f4faff;
   display: flex;
   align-items: center;
@@ -315,7 +315,7 @@ function fileKindLabel(name: string) {
   min-height: 34px;
   padding: 7px 11px;
   border: 1px solid #dbeafe;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   background: #eff6ff;
   color: #1d4ed8;
   font-size: 13px;
@@ -383,7 +383,7 @@ function fileKindLabel(name: string) {
   min-height: 96px;
   padding: 14px;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   background: #fff;
   display: flex;
   flex-direction: column;
@@ -437,7 +437,7 @@ function fileKindLabel(name: string) {
   gap: 16px;
   padding: 13px 14px;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   background: #fff;
 }
 

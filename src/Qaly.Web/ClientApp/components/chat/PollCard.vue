@@ -392,11 +392,11 @@ onBeforeUnmount(async () => {
   min-width: min(100%, 340px);
   padding: 14px;
   border: 1px solid rgba(203, 213, 225, 0.82);
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
   color: #0f172a;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
-  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .poll-card button {
@@ -461,7 +461,7 @@ onBeforeUnmount(async () => {
   width: 100%;
   padding: 8px 12px;
   border: 1px solid #cbd5e1;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   font-size: 0.9rem;
   color: #0f172a;
   background: #fff;
@@ -490,7 +490,7 @@ onBeforeUnmount(async () => {
   background: #f1f5f9;
   border: 1px dashed #cbd5e1;
   padding: 8px;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   color: #3b82f6;
   cursor: pointer;
 }
@@ -502,7 +502,7 @@ onBeforeUnmount(async () => {
   color: #fff;
   border: none;
   padding: 10px;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   font-weight: 600;
   cursor: pointer;
 }
@@ -573,7 +573,7 @@ onBeforeUnmount(async () => {
   display: grid;
   gap: 7px;
   border: 1px solid rgba(203, 213, 225, 0.9);
-  border-radius: 14px !important;
+  border-radius: var(--qaly-radius-lg) !important;
   padding: 10px;
   background: #ffffff !important;
   color: #0f172a !important;
@@ -585,14 +585,14 @@ onBeforeUnmount(async () => {
 .poll-option:hover:not(:disabled) {
   transform: translateY(-1px);
   border-color: rgba(37, 99, 235, 0.42);
-  box-shadow: 0 12px 22px rgba(37, 99, 235, 0.1);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .poll-option.is-selected {
   border-color: rgba(37, 99, 235, 0.64);
   background:
     linear-gradient(135deg, rgba(239, 246, 255, 0.98), rgba(219, 234, 254, 0.72));
-  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.12);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .option-row {
@@ -737,7 +737,7 @@ onBeforeUnmount(async () => {
   gap: 7px;
   margin-top: 11px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   background: #1769e0;
   color: #fff !important;
   font-weight: 800;
@@ -751,7 +751,7 @@ onBeforeUnmount(async () => {
 .poll-closed {
   margin-top: 10px;
   padding: 9px;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   background: #f1f5f9;
   color: #64748b;
   text-align: center;

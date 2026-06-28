@@ -248,7 +248,7 @@ function percent(value: number) {
   border: 1px solid var(--line);
   border-radius: var(--radius-shell);
   background: var(--panel);
-  box-shadow: 0 14px 36px rgba(15, 23, 42, .05);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .health-panel {
@@ -444,7 +444,7 @@ function percent(value: number) {
   gap: 10px;
   min-height: 76px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   padding: 11px;
   background: var(--panel);
 }
@@ -459,7 +459,7 @@ function percent(value: number) {
   height: 38px;
   display: grid;
   place-items: center;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
 }
 
 .metric-icon.is-blue { color: #2563eb; background: rgba(37, 99, 235, .09); }
@@ -489,7 +489,7 @@ function percent(value: number) {
   border: 1px solid var(--line);
   border-radius: var(--radius-shell);
   background: var(--panel);
-  box-shadow: 0 14px 36px rgba(15, 23, 42, .045);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .distribution-content {
@@ -506,7 +506,7 @@ function percent(value: number) {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, .08);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .donut-chart::after {
@@ -522,9 +522,7 @@ function percent(value: number) {
   justify-content: center;
   border-radius: 50%;
   background: linear-gradient(145deg, #ffffff 0%, #eef6ff 100%);
-  box-shadow:
-    inset 0 0 0 1px #d6e6f8,
-    0 6px 18px rgba(37, 99, 235, .1);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .donut-center strong { color: #173b70; font-size: 31px; letter-spacing: -.04em; }
@@ -589,7 +587,7 @@ function percent(value: number) {
   gap: 9px;
   margin-top: auto;
   border: 1px solid rgba(16, 185, 129, .18);
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   padding: 10px 12px;
   color: #047857;
   background: rgba(236, 253, 245, .65);

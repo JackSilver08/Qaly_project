@@ -634,7 +634,7 @@ const userInitials = computed(() => {
 
               <div v-if="projects.length > 0" class="form-group" style="margin-bottom: 24px;">
                 <label for="settings-project-select">Chọn dự án để cấu hình</label>
-                <select id="settings-project-select" v-model="selectedProjectId" @change="loadProjectSettings" style="width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; background: var(--panel-soft); color: var(--text);">
+                <select id="settings-project-select" v-model="selectedProjectId" @change="loadProjectSettings" style="width: 100%; border: 1px solid var(--line); border-radius: var(--qaly-radius-lg); padding: 10px 14px; background: var(--panel-soft); color: var(--text);">
                   <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
                 </select>
               </div>
@@ -847,7 +847,7 @@ const userInitials = computed(() => {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  box-shadow: 0 4px 12px var(--primary-soft);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .profile-meta span {
@@ -905,7 +905,7 @@ const userInitials = computed(() => {
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   color: var(--muted);
   font-size: 14px;
   font-weight: 600;
@@ -985,7 +985,7 @@ const userInitials = computed(() => {
 .form-group input,
 .form-group select {
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   padding: 10px 14px;
   outline: none;
   font-size: 13.5px;
@@ -1015,7 +1015,7 @@ const userInitials = computed(() => {
   font-size: 24px;
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   padding: 6px 12px;
 }
 
@@ -1033,7 +1033,7 @@ const userInitials = computed(() => {
 
 .cover-opt {
   height: 54px;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   border: 2px solid transparent;
   color: white;
   font-size: 12px;
@@ -1057,7 +1057,7 @@ const userInitials = computed(() => {
   padding: 20px;
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1150,7 +1150,7 @@ const userInitials = computed(() => {
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   border: 1px solid var(--line);
   background: var(--panel-soft);
   color: var(--text);
@@ -1184,7 +1184,7 @@ const userInitials = computed(() => {
   align-items: center;
   gap: 12px;
   padding: 12px;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   border: 1px solid var(--line);
   background: var(--panel-soft);
   cursor: pointer;
@@ -1228,7 +1228,7 @@ const userInitials = computed(() => {
   gap: 16px;
   align-items: flex-start;
   padding: 16px;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--panel-soft);
   cursor: pointer;
   transition: background 0.2s;
@@ -1275,7 +1275,7 @@ const userInitials = computed(() => {
   background: rgba(148, 163, 184, 0.05);
   border: 1px solid var(--line);
   padding: 14px;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   font-size: 12.5px;
   color: var(--muted);
 }

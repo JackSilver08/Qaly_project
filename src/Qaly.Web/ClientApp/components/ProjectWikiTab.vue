@@ -279,7 +279,7 @@ function navigateToWiki(page: WikiPageDto) {
   margin-bottom: 24px;
   background: var(--blue-50);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
 }
 
 .wiki-add-form h3 {
@@ -293,7 +293,7 @@ function navigateToWiki(page: WikiPageDto) {
   width: 100%;
   padding: 10px 14px;
   margin-bottom: 12px;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   border: 1px solid var(--line);
   color: var(--text-strong);
   background: var(--panel);
@@ -302,7 +302,7 @@ function navigateToWiki(page: WikiPageDto) {
 
 .markdown-editor {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--panel);
   margin-bottom: 16px;
   overflow: hidden;
@@ -422,7 +422,7 @@ function navigateToWiki(page: WikiPageDto) {
   padding: 12px 16px;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
 }
 
 .wiki-search-bar input {
@@ -438,7 +438,7 @@ function navigateToWiki(page: WikiPageDto) {
   align-items: center;
   gap: 16px;
   padding: 14px 18px;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   background: var(--bg-soft);
   border: 1px solid var(--line);
   transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
@@ -450,7 +450,7 @@ function navigateToWiki(page: WikiPageDto) {
 
 .wiki-item:hover {
   transform: translateY(-2px);
-  box-shadow: 0 10px 20px rgba(15, 76, 255, 0.08);
+  box-shadow: var(--qaly-shadow-md);
   border-color: rgba(117, 182, 255, 0.4);
 }
 
@@ -495,8 +495,8 @@ function navigateToWiki(page: WikiPageDto) {
 .wiki-empty__icon {
   width: 80px;
   height: 80px;
-  border-radius: 20px;
-  background: linear-gradient(135deg, #0f4cff, #22d3ee);
+  border-radius: var(--qaly-radius-lg);
+  background: var(--primary);
   color: #f8fafc;
   display: grid;
   place-items: center;

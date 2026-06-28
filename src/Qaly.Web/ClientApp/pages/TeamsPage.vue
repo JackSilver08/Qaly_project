@@ -1910,7 +1910,7 @@ function formatMessageTime(value: string) {
   gap: 6px;
   min-height: 180px;
   border: 1px dashed #cbd5e1;
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   color: #64748b;
   text-align: center;
   padding: 18px;
@@ -1945,7 +1945,7 @@ function formatMessageTime(value: string) {
   min-height: 66px;
   align-items: center;
   justify-content: flex-start;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   padding: 11px 12px;
   border-left: 3px solid transparent;
   transition:
@@ -1977,7 +1977,7 @@ function formatMessageTime(value: string) {
 .groups-workspace :deep(.team-chat-group__avatar) {
   width: 38px;
   height: 38px;
-  border-radius: 13px;
+  border-radius: var(--qaly-radius-lg);
   font-size: 0.78rem;
 }
 
@@ -2050,14 +2050,14 @@ function formatMessageTime(value: string) {
 .groups-workspace :deep(.team-chat-window__avatar) {
   width: 42px;
   height: 42px;
-  border-radius: 15px;
+  border-radius: var(--qaly-radius-lg);
   font-size: 0.82rem;
 }
 
 .groups-workspace :deep(.team-chat-window__actions .icon-button) {
   width: 38px;
   height: 38px;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   box-shadow: none;
   transition:
     border-color 160ms ease,
@@ -2077,13 +2077,13 @@ function formatMessageTime(value: string) {
   inset: 16px 24px auto 24px;
   z-index: 2;
   border: 1px solid rgba(59, 130, 246, 0.18);
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   background: rgba(239, 246, 255, 0.92);
   color: #1e3a8a;
   padding: 10px 14px;
   font-size: 0.88rem;
   font-weight: 600;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .team-chat-banner--error {
@@ -2153,12 +2153,12 @@ function formatMessageTime(value: string) {
   display: grid;
   place-items: center;
   border: 3px solid #ffffff;
-  border-radius: 22px;
+  border-radius: var(--qaly-radius-lg);
   background: linear-gradient(145deg, #1677ff, #2456d8);
   color: #ffffff;
   font-size: 1.1rem;
   font-weight: 900;
-  box-shadow: 0 8px 22px rgba(37, 99, 235, 0.2);
+  box-shadow: var(--qaly-shadow-md);
   overflow: visible;
 }
 
@@ -2166,7 +2166,7 @@ function formatMessageTime(value: string) {
   width: 100%;
   height: 100%;
   display: block;
-  border-radius: 19px;
+  border-radius: var(--qaly-radius-lg);
   object-fit: cover;
 }
 
@@ -2187,7 +2187,7 @@ function formatMessageTime(value: string) {
   border-radius: 999px;
   color: #ffffff;
   background: #1d4ed8;
-  box-shadow: 0 5px 14px rgba(15, 23, 42, 0.2);
+  box-shadow: var(--qaly-shadow-md);
   cursor: pointer;
   transition:
     background 160ms ease,
@@ -2238,7 +2238,7 @@ function formatMessageTime(value: string) {
 .group-detail-icon-button,
 .group-detail-collapse-button {
   border: 1px solid #dbe3ef;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   color: #475569;
   background: #ffffff;
   display: grid;
@@ -2292,7 +2292,7 @@ function formatMessageTime(value: string) {
   min-width: 0;
   min-height: 68px;
   border: 1px solid #e5eaf1;
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   background: #ffffff;
   color: #475569;
   display: inline-flex;
@@ -2317,7 +2317,7 @@ function formatMessageTime(value: string) {
   height: 32px;
   display: grid;
   place-items: center;
-  border-radius: 11px;
+  border-radius: var(--qaly-radius-lg);
   background: #f1f5f9;
   color: #526176;
   transition:
@@ -2400,7 +2400,7 @@ function formatMessageTime(value: string) {
   align-items: center;
   gap: 9px;
   border: 1px solid #dbe3ef;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   padding: 0 11px;
   color: #64748b;
   background: #ffffff;
@@ -2432,7 +2432,7 @@ function formatMessageTime(value: string) {
   width: 28px;
   height: 28px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   display: grid;
   place-items: center;
   color: #64748b;
@@ -2449,10 +2449,10 @@ function formatMessageTime(value: string) {
   display: grid;
   gap: 3px;
   border: 1px solid #dbe3ef;
-  border-radius: 13px;
+  border-radius: var(--qaly-radius-lg);
   padding: 6px;
   background: #ffffff;
-  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.16);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .group-user-suggestions > button {
@@ -2462,7 +2462,7 @@ function formatMessageTime(value: string) {
   align-items: center;
   gap: 10px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   padding: 9px;
   color: #0f172a;
   background: transparent;
@@ -2481,7 +2481,7 @@ function formatMessageTime(value: string) {
   height: 34px;
   display: grid;
   place-items: center;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   color: #ffffff;
   background: #2563eb;
   font-size: 0.7rem;
@@ -2519,7 +2519,7 @@ function formatMessageTime(value: string) {
 .group-modal textarea {
   width: 100%;
   border: 1px solid #dbe3ef;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   padding: 10px 12px;
   color: #111827;
   background: #ffffff;
@@ -2539,7 +2539,7 @@ function formatMessageTime(value: string) {
   align-items: center;
   gap: 11px;
   border: 1px solid #e5e7eb;
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   padding: 12px;
   background: #ffffff;
   box-shadow: none;
@@ -2571,7 +2571,7 @@ function formatMessageTime(value: string) {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border-radius: 9px;
+  border-radius: var(--qaly-radius-lg);
   padding: 0 8px;
   background: #f1f5f9;
   color: #475569;
@@ -2624,7 +2624,7 @@ function formatMessageTime(value: string) {
   width: 100%;
   min-height: 44px;
   border: 1px solid #fecaca;
-  border-radius: 13px;
+  border-radius: var(--qaly-radius-lg);
   color: #b91c1c;
   background: #fff7f7;
   display: inline-flex;
@@ -2650,7 +2650,7 @@ function formatMessageTime(value: string) {
   color: #ffffff;
   border-color: #dc2626;
   background: #dc2626;
-  box-shadow: 0 12px 24px rgba(220, 38, 38, 0.18);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .group-danger-action--strong:hover {
@@ -2729,7 +2729,7 @@ function formatMessageTime(value: string) {
   position: relative;
   aspect-ratio: 1;
   overflow: hidden;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   background: #e2e8f0;
 }
 
@@ -2766,7 +2766,7 @@ function formatMessageTime(value: string) {
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--qaly-radius-lg);
   color: #334155;
   background: #ffffff;
   cursor: pointer;
@@ -2785,7 +2785,7 @@ function formatMessageTime(value: string) {
   gap: 8px;
   padding: 9px;
   border: 1px solid #e5eaf1;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
 }
 
 .group-shared-file-icon {
@@ -2793,7 +2793,7 @@ function formatMessageTime(value: string) {
   height: 36px;
   display: grid;
   place-items: center;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   color: #1d4ed8;
   background: #eff6ff;
 }
@@ -2846,7 +2846,7 @@ function formatMessageTime(value: string) {
 .group-avatar {
   width: 42px;
   height: 42px;
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   display: grid;
   place-items: center;
   background: #1677ff;
@@ -2894,7 +2894,7 @@ function formatMessageTime(value: string) {
   min-width: 0;
   padding: 12px;
   border: 1px solid #dbeafe;
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   background: #f8fbff;
   box-shadow: none;
 }
@@ -2903,7 +2903,7 @@ function formatMessageTime(value: string) {
   width: 100%;
   min-height: 42px;
   border: 1px solid #dbe3ef;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   padding: 10px 12px;
   background: #ffffff;
   color: #111827;
@@ -2916,7 +2916,7 @@ function formatMessageTime(value: string) {
   gap: 10px;
   padding: 10px 12px;
   border: 1px solid #dbe5f2;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   background: #fff;
   cursor: pointer;
 }
@@ -2990,7 +2990,7 @@ function formatMessageTime(value: string) {
   flex: 1 1 150px;
   min-width: 0;
   min-height: 40px;
-  border-radius: 13px;
+  border-radius: var(--qaly-radius-lg);
   padding-inline: 10px;
 }
 
@@ -3006,7 +3006,7 @@ function formatMessageTime(value: string) {
   min-width: 0;
   padding: 10px;
   border: 1px solid #e5e7eb;
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   background: #ffffff;
   box-shadow: none;
   transition:
@@ -3034,7 +3034,7 @@ function formatMessageTime(value: string) {
   align-content: center;
   gap: 8px;
   border: 1px dashed rgba(148, 163, 184, 0.5);
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   color: #64748b;
   text-align: center;
 }
@@ -3068,7 +3068,7 @@ function formatMessageTime(value: string) {
   color: #475569;
   padding: 7px 12px;
   font-size: 0.78rem;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  box-shadow: var(--qaly-shadow-md);
   pointer-events: none;
 }
 

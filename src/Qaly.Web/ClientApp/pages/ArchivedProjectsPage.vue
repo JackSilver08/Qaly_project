@@ -816,7 +816,7 @@ onMounted(() => {
   background: var(--primary);
   color: white;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   padding: 8px;
   font-size: 12px;
   font-weight: 700;
@@ -875,21 +875,21 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  background: var(--primary);
   color: white;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   padding: 10px 16px;
   font-weight: 700;
   font-size: 13px;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2);
+  box-shadow: var(--qaly-shadow-md);
   transition: all 0.2s ease;
 }
 
 .ai-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(139, 92, 246, 0.3);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .ai-warning-banner {
@@ -898,7 +898,7 @@ onMounted(() => {
   background: rgba(139, 92, 246, 0.08);
   border: 1px dashed #a78bfa;
   padding: 12px 16px;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   font-size: 12.5px;
   color: var(--text);
   margin: 16px 0;
@@ -955,7 +955,7 @@ onMounted(() => {
   background: rgba(16, 185, 129, 0.06);
   border: 1px solid rgba(16, 185, 129, 0.15);
   padding: 16px;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   margin-top: 16px;
 }
 
@@ -1022,7 +1022,7 @@ onMounted(() => {
   padding: 16px 20px;
   background: var(--panel-soft);
   border: 1px solid var(--line-light);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
 }
 
 @media (max-width: 640px) {
@@ -1091,7 +1091,7 @@ onMounted(() => {
   color: var(--muted);
   background: var(--panel-soft);
   padding: 12px 16px;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   border: 1px dashed var(--line);
 }
 
@@ -1129,7 +1129,7 @@ onMounted(() => {
   border: 1px solid var(--line);
   background: var(--panel-soft);
   color: var(--text);
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   padding: 10px 16px 10px 42px;
   outline: none;
   font-size: 13.5px;
@@ -1151,7 +1151,7 @@ onMounted(() => {
   border: 1px solid var(--line);
   background: var(--panel-soft);
   color: var(--text);
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   padding: 8px 12px;
   outline: none;
   font-size: 13px;
@@ -1302,7 +1302,7 @@ onMounted(() => {
   justify-content: center;
   gap: 6px;
   padding: 8px 4px;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;

@@ -104,7 +104,7 @@ function end() {
 .meet-control--ai-active {
   background: linear-gradient(135deg, #6366f1, #a855f7) !important;
   color: #ffffff !important;
-  box-shadow: 0 0 12px rgba(168, 85, 247, 0.6);
+  box-shadow: var(--qaly-shadow-md);
   animation: pulse-ai 2s infinite;
 }
 
@@ -128,14 +128,14 @@ function end() {
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.76);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(18px);
+  box-shadow: var(--qaly-shadow-md);
+  backdrop-filter: none;
 }
 
 .meet-controls--light {
   border-color: rgba(148, 163, 184, 0.32);
   background: rgba(255, 255, 255, 0.82);
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.16);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .meet-controls--light .meet-control {

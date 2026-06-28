@@ -80,11 +80,11 @@ onUnmounted(() => {
   transform: translateX(-50%);
   z-index: 10000;
   width: min(560px, 92vw);
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   background: rgba(30, 30, 45, .95);
   border: 1px solid rgba(255,255,255,.08);
-  box-shadow: 0 16px 60px rgba(0,0,0,.5);
-  backdrop-filter: blur(12px);
+  box-shadow: var(--qaly-shadow-md);
+  backdrop-filter: none;
   overflow: hidden;
 }
 
@@ -93,7 +93,7 @@ onUnmounted(() => {
   top: 0;
   left: 0;
   height: 3px;
-  background: linear-gradient(90deg, #0f4cff, #22d3ee);
+  background: var(--primary);
   transition: width 1s linear;
   border-radius: 3px 0 0 0;
 }
@@ -139,7 +139,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 5px;
   padding: 6px 16px;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   font-size: .8rem;
   font-weight: 600;
   background: rgba(239,68,68,.12);

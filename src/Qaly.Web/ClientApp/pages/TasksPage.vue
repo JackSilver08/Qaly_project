@@ -1477,9 +1477,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
     radial-gradient(circle at 10% 12%, rgba(99, 102, 241, 0.07), transparent 30%),
     linear-gradient(135deg, rgba(15, 82, 186, 0.08), rgba(255, 255, 255, 0.98));
   border: 1px solid rgba(191, 219, 254, 0.58);
-  box-shadow:
-    0 20px 40px rgba(15, 23, 42, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .tasks-hero__copy {
@@ -1529,13 +1527,11 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   gap: 4px;
   padding: 16px 18px;
   border: 1px solid rgba(191, 219, 254, 0.72);
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
   background:
     radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 28%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 248, 255, 0.96));
-  box-shadow:
-    0 10px 22px rgba(15, 23, 42, 0.04),
-    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .tasks-hero__summary span {
@@ -1576,16 +1572,14 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   padding: 0 14px;
   color: var(--primary);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 248, 255, 0.96));
-  box-shadow: 0 8px 18px rgba(31, 128, 255, 0.05);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .pill-button.is-active {
   border-color: rgba(31, 128, 255, 0.34);
   color: white;
   background: var(--primary);
-  box-shadow:
-    0 12px 24px rgba(31, 128, 255, 0.18),
-    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .pill-button--soft {
@@ -1659,7 +1653,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   place-items: center;
   width: 28px;
   height: 28px;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   background: rgba(255, 255, 255, 0.94);
   box-shadow: inset 0 0 0 1px rgba(226, 232, 240, 0.84);
 }
@@ -1704,9 +1698,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
     radial-gradient(circle at left top, rgba(16, 185, 129, 0.05), transparent 24%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 255, 0.92));
   border: 1px solid rgba(223, 231, 242, 0.82);
-  box-shadow:
-    0 18px 36px rgba(15, 23, 42, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .panel-head {
@@ -1771,7 +1763,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   color: white;
   border-color: rgba(31, 128, 255, 0.52);
   background: linear-gradient(180deg, rgba(31, 128, 255, 0.98), rgba(37, 99, 235, 0.96));
-  box-shadow: 0 12px 24px rgba(31, 128, 255, 0.18);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .saved-view-chip__remove {
@@ -1806,14 +1798,12 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   min-height: 48px;
   padding: 0 13px;
   border: 1px solid rgba(214, 226, 241, 0.88);
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 255, 0.94)),
     linear-gradient(135deg, rgba(59, 130, 246, 0.03), rgba(99, 102, 241, 0.015));
   color: #64748b;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.88),
-    0 10px 20px rgba(15, 23, 42, 0.025);
+  box-shadow: var(--qaly-shadow-md);
   transition:
     border-color 0.18s ease,
     box-shadow 0.18s ease,
@@ -1855,18 +1845,13 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 
 .field:focus-within {
   border-color: rgba(59, 130, 246, 0.42);
-  box-shadow:
-    0 0 0 4px rgba(59, 130, 246, 0.09),
-    0 14px 24px rgba(59, 130, 246, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  box-shadow: var(--qaly-shadow-md);
   transform: translateY(-1px);
 }
 
 .field:hover {
   border-color: rgba(191, 219, 254, 0.98);
-  box-shadow:
-    0 12px 24px rgba(15, 23, 42, 0.04),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .select-all {
@@ -1906,7 +1891,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   gap: 12px;
   padding: 14px 16px;
   border: 1px solid rgba(191, 219, 254, 0.74);
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
   background:
     linear-gradient(180deg, rgba(239, 246, 255, 0.9), rgba(255, 255, 255, 0.98));
 }
@@ -1931,7 +1916,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   justify-items: center;
   padding: 36px 18px;
   border: 1px dashed rgba(191, 219, 254, 0.86);
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
   background:
     radial-gradient(circle at top, rgba(59, 130, 246, 0.04), transparent 34%),
     rgba(248, 250, 252, 0.82);
@@ -1961,16 +1946,14 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   align-items: start;
   padding: 15px 18px 14px;
   border: 1px solid rgba(203, 213, 225, 0.64);
-  border-radius: 22px;
+  border-radius: var(--qaly-radius-lg);
   background:
     radial-gradient(circle at 14% 0%, rgba(59, 130, 246, 0.06), transparent 26%),
     radial-gradient(circle at 86% 10%, rgba(16, 185, 129, 0.03), transparent 22%),
     linear-gradient(135deg, rgba(255, 255, 255, 0.995) 0%, rgba(250, 252, 255, 0.985) 100%);
   position: relative;
   overflow: hidden;
-  box-shadow:
-    0 12px 26px rgba(15, 23, 42, 0.045),
-    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  box-shadow: var(--qaly-shadow-md);
   transition:
     transform 0.24s ease,
     box-shadow 0.24s ease,
@@ -1986,17 +1969,13 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   border-radius: 999px;
   background: linear-gradient(180deg, rgba(37, 99, 235, 0.98), rgba(96, 165, 250, 0.92));
   opacity: 0.98;
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.5),
-    0 0 18px rgba(37, 99, 235, 0.22);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .task-card:hover {
   transform: translateY(-3px);
   border-color: rgba(96, 165, 250, 0.72);
-  box-shadow:
-    0 20px 36px rgba(15, 23, 42, 0.075),
-    0 0 0 1px rgba(191, 219, 254, 0.32);
+  box-shadow: var(--qaly-shadow-md);
   background:
     radial-gradient(circle at 10% 0%, rgba(59, 130, 246, 0.1), transparent 24%),
     linear-gradient(135deg, rgba(255, 255, 255, 1) 0%, rgba(249, 252, 255, 0.99) 56%, rgba(246, 249, 255, 0.98) 100%);
@@ -2004,9 +1983,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 
 .task-card.is-selected {
   border-color: rgba(31, 128, 255, 0.3);
-  box-shadow:
-    0 20px 38px rgba(31, 128, 255, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .task-card.is-selected::before {
@@ -2015,9 +1992,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 
 .task-card.is-overdue {
   border-color: rgba(248, 113, 113, 0.26);
-  box-shadow:
-    0 18px 38px rgba(248, 113, 113, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .task-card.is-overdue::before {
@@ -2165,9 +2140,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   background:
     linear-gradient(180deg, rgba(239, 246, 255, 0.98), rgba(248, 251, 255, 0.98)),
     linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(99, 102, 241, 0.04));
-  box-shadow:
-    inset 0 0 0 1px rgba(191, 219, 254, 0.78),
-    0 8px 18px rgba(59, 130, 246, 0.05);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .task-card__status {
@@ -2175,9 +2148,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   background:
     linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(242, 246, 252, 0.98)),
     linear-gradient(135deg, rgba(148, 163, 184, 0.06), rgba(148, 163, 184, 0.02));
-  box-shadow:
-    inset 0 0 0 1px rgba(226, 232, 240, 0.74),
-    0 8px 18px rgba(15, 23, 42, 0.04);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .task-card__priority {
@@ -2246,9 +2217,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   background:
     linear-gradient(180deg, rgba(250, 252, 255, 0.99), rgba(245, 248, 255, 0.98)),
     linear-gradient(135deg, rgba(59, 130, 246, 0.03), transparent);
-  box-shadow:
-    inset 0 0 0 1px rgba(214, 226, 241, 0.82),
-    0 8px 20px rgba(15, 23, 42, 0.04);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .task-card__meta--project {
@@ -2371,9 +2340,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--task-accent) 96%, white), var(--task-accent)),
     linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0));
-  box-shadow:
-    0 0 18px color-mix(in srgb, var(--task-accent) 42%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .task-card__progressText {
@@ -2408,9 +2375,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
     linear-gradient(135deg, rgba(96, 165, 250, 0.3), rgba(37, 99, 235, 0.12));
   opacity: 0;
   transform: translateX(-4px) scale(0.96);
-  box-shadow:
-    0 12px 26px rgba(37, 99, 235, 0.22),
-    0 0 0 1px rgba(255, 255, 255, 0.32);
+  box-shadow: var(--qaly-shadow-md);
   transition: opacity 0.18s ease, transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
   flex: none;
 }
@@ -2444,9 +2409,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 
 .task-card__body:hover .task-card__peek {
   background: linear-gradient(180deg, rgba(29, 78, 216, 0.98), rgba(37, 99, 235, 0.98));
-  box-shadow:
-    0 12px 26px rgba(37, 99, 235, 0.22),
-    0 0 0 1px rgba(255, 255, 255, 0.18);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .mini-button {
@@ -2455,7 +2418,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   color: var(--primary);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(241, 248, 255, 0.95));
-  box-shadow: 0 8px 18px rgba(31, 128, 255, 0.06);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .mini-button--ghost {
@@ -2524,9 +2487,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   border: 1px solid rgba(223, 231, 242, 0.96);
-  box-shadow:
-    0 18px 34px rgba(15, 23, 42, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.88);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .task-detail {
@@ -2565,7 +2526,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   display: grid;
   gap: 10px;
   padding: 14px;
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
   background: linear-gradient(180deg, rgba(248, 250, 252, 0.82), rgba(255, 255, 255, 0.98));
   border: 1px solid rgba(226, 232, 240, 0.9);
 }
@@ -2603,7 +2564,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 
 .skeleton-card {
   height: 54px;
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
 }
 
 .skeleton-card--wide {
@@ -2670,7 +2631,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   gap: 16px;
   padding: 16px;
   border: 1px solid rgba(226, 232, 240, 0.84);
-  border-radius: 20px;
+  border-radius: var(--qaly-radius-lg);
   background:
     radial-gradient(circle at top right, rgba(59, 130, 246, 0.07), transparent 34%),
     linear-gradient(180deg, rgba(253, 254, 255, 0.98), white);
@@ -2719,7 +2680,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 .detail-block,
 .workflow-mini {
   border: 1px solid rgba(226, 232, 240, 0.9);
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
   background: white;
 }
 
@@ -2746,7 +2707,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 .task-detail__meeting {
   padding: 14px;
   border: 1px solid rgba(191, 219, 254, 0.9);
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
   background: rgba(239, 246, 255, 0.78);
 }
 
@@ -2786,7 +2747,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   display: grid;
   gap: 14px;
   border: 1px solid rgba(226, 232, 240, 0.88);
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
   background:
     radial-gradient(circle at top right, rgba(59, 130, 246, 0.1), transparent 30%),
     radial-gradient(circle at left top, rgba(16, 185, 129, 0.05), transparent 28%),
@@ -2851,14 +2812,12 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   display: grid;
   gap: 4px;
   padding: 12px 14px;
-  border-radius: 16px;
+  border-radius: var(--qaly-radius-lg);
   border: 1px solid rgba(191, 219, 254, 0.82);
   background:
     radial-gradient(circle at 10% 0%, rgba(59, 130, 246, 0.08), transparent 28%),
     linear-gradient(180deg, rgba(239, 246, 255, 0.98), rgba(255, 255, 255, 0.99));
-  box-shadow:
-    0 10px 22px rgba(59, 130, 246, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.94);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .workflow-owner span {
@@ -2911,7 +2870,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   content: '';
   position: absolute;
   inset: 4px 0 4px 34px;
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.12)),
     linear-gradient(90deg, rgba(239, 246, 255, 0.9), rgba(239, 246, 255, 0));
@@ -2964,9 +2923,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
     linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0));
   background-size: 100% 260%;
   overflow: hidden;
-  box-shadow:
-    0 0 20px rgba(59, 130, 246, 0.18),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .workflow-track__rail-flow {
@@ -3017,9 +2974,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   background:
     radial-gradient(circle at 30% 28%, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94)),
     linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(245, 248, 255, 0.96));
-  box-shadow:
-    0 12px 24px rgba(15, 23, 42, 0.07),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  box-shadow: var(--qaly-shadow-md);
   transition: transform 0.22s ease, box-shadow 0.22s ease, background 0.22s ease;
 }
 
@@ -3076,7 +3031,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   filter: none;
   transform: translateX(1px);
   background: linear-gradient(90deg, rgba(239, 246, 255, 0.48), rgba(255, 255, 255, 0));
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
 }
 
 .workflow-track__item.is-active .workflow-track__body strong {
@@ -3112,18 +3067,14 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   color: white;
   background: linear-gradient(180deg, rgba(250, 204, 21, 0.98), rgba(245, 158, 11, 0.94));
   border-color: transparent;
-  box-shadow:
-    0 12px 26px rgba(245, 158, 11, 0.2),
-    0 0 0 7px rgba(250, 204, 21, 0.12);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .workflow-track__item.is-active.is-success .workflow-track__dot {
   color: white;
   background: linear-gradient(180deg, rgba(34, 197, 94, 0.98), rgba(22, 163, 74, 0.95));
   border-color: transparent;
-  box-shadow:
-    0 12px 26px rgba(22, 163, 74, 0.2),
-    0 0 0 7px rgba(34, 197, 94, 0.12);
+  box-shadow: var(--qaly-shadow-md);
   animation: workflow-heartbeat 1.35s ease-in-out infinite;
 }
 
@@ -3131,9 +3082,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   color: white;
   background: linear-gradient(180deg, rgba(248, 113, 113, 0.96), rgba(239, 68, 68, 0.94));
   border-color: transparent;
-  box-shadow:
-    0 12px 26px rgba(239, 68, 68, 0.2),
-    0 0 0 7px rgba(248, 113, 113, 0.12);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .workflow-track__item.is-active.is-warning .workflow-track__pulse {
@@ -3200,9 +3149,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
     radial-gradient(circle at 30% 28%, rgba(255, 255, 255, 0.98), rgba(254, 242, 242, 0.98)),
     linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(254, 242, 242, 0.98));
   border-color: rgba(248, 113, 113, 0.42);
-  box-shadow:
-    0 10px 22px rgba(248, 113, 113, 0.08),
-    0 0 0 6px rgba(248, 113, 113, 0.08);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .workflow-track__item.is-hot .workflow-track__step {
@@ -3306,9 +3253,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 @keyframes workflow-heartbeat {
   0% {
     transform: scale(1);
-    box-shadow:
-      0 12px 26px rgba(22, 163, 74, 0.2),
-      0 0 0 6px rgba(34, 197, 94, 0.12);
+    box-shadow: var(--qaly-shadow-md);
   }
   18% {
     transform: scale(1.08);
@@ -3318,18 +3263,14 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   }
   54% {
     transform: scale(1.1);
-    box-shadow:
-      0 14px 30px rgba(22, 163, 74, 0.24),
-      0 0 0 10px rgba(34, 197, 94, 0.08);
+    box-shadow: var(--qaly-shadow-md);
   }
   72% {
     transform: scale(1.01);
   }
   100% {
     transform: scale(1);
-    box-shadow:
-      0 12px 26px rgba(22, 163, 74, 0.2),
-      0 0 0 6px rgba(34, 197, 94, 0.12);
+    box-shadow: var(--qaly-shadow-md);
   }
 }
 
@@ -3345,7 +3286,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   50% {
     opacity: 1;
     transform: translateX(-50%) translateY(calc(100% + 24px)) scale(1);
-    box-shadow: 0 0 0 14px rgba(255, 255, 255, 0);
+    box-shadow: var(--qaly-shadow-md);
   }
   100% {
     opacity: 0;

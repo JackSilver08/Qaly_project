@@ -754,7 +754,7 @@ function uploadBackground(event: Event) {
   min-height: 38px;
   padding: 8px 12px;
   border: 1px solid #dbeafe;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   color: #1d4ed8;
   background: #f8fbff;
   font-size: 0.8rem;
@@ -776,7 +776,7 @@ function uploadBackground(event: Event) {
   gap: 9px;
   padding: 7px 10px;
   border: 1px solid #dbeafe;
-  border-radius: 11px;
+  border-radius: var(--qaly-radius-lg);
   background: rgba(255, 255, 255, 0.96);
 }
 
@@ -803,12 +803,12 @@ function uploadBackground(event: Event) {
   gap: 5px;
   padding: 8px;
   border: 1px solid #dbe3ef;
-  border-radius: 13px;
+  border-radius: var(--qaly-radius-lg);
   background: #fff;
-  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18);
+  box-shadow: var(--qaly-shadow-md);
 }
 
-.team-pinned-panel button { display: grid; gap: 3px; border: 0; border-radius: 9px; padding: 9px; background: transparent; text-align: left; cursor: pointer; }
+.team-pinned-panel button { display: grid; gap: 3px; border: 0; border-radius: var(--qaly-radius-lg); padding: 9px; background: transparent; text-align: left; cursor: pointer; }
 .team-pinned-panel button:hover { background: #eff6ff; }
 .team-pinned-panel span { overflow: hidden; color: #64748b; font-size: 0.76rem; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -819,7 +819,7 @@ function uploadBackground(event: Event) {
   gap: 10px;
   padding: 8px 11px;
   border-left: 3px solid #2563eb;
-  border-radius: 9px;
+  border-radius: var(--qaly-radius-lg);
   color: #2563eb;
   background: #eff6ff;
 }
@@ -830,7 +830,7 @@ function uploadBackground(event: Event) {
 
 .team-forward-card { display: grid; gap: 14px; }
 .team-forward-card label { display: grid; gap: 7px; color: #475569; font-size: 0.8rem; font-weight: 750; }
-.team-forward-card select { width: 100%; border: 1px solid #dbe3ef; border-radius: 10px; padding: 10px; background: #fff; }
+.team-forward-card select { width: 100%; border: 1px solid #dbe3ef; border-radius: var(--qaly-radius-lg); padding: 10px; background: #fff; }
 
 .team-gallery-backdrop {
   position: fixed;
@@ -857,9 +857,9 @@ function uploadBackground(event: Event) {
   gap: 10px;
   padding: 9px 12px;
   border: 1px solid #dbeafe;
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   background: #fff;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .team-selection-toolbar strong {
@@ -873,7 +873,7 @@ function uploadBackground(event: Event) {
   align-items: center;
   gap: 6px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--qaly-radius-lg);
   padding: 9px 11px;
   color: #1d4ed8;
   background: #eff6ff;
@@ -952,7 +952,7 @@ function uploadBackground(event: Event) {
   gap: 10px;
   padding: 9px 12px;
   border-left: 3px solid #2563eb;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   color: #1d4ed8;
   background: #eff6ff;
 }
@@ -1001,9 +1001,9 @@ function uploadBackground(event: Event) {
   gap: 6px;
   padding: 7px 8px;
   border: 1px solid #dbe5f1;
-  border-radius: 16px;
+  border-radius: var(--qaly-radius-lg);
   background: #fff;
-  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.06);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .team-chat-composer:focus-within {
@@ -1018,7 +1018,7 @@ function uploadBackground(event: Event) {
   display: grid;
   place-items: center;
   border: 1px solid #e2e8f0;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   color: #64748b;
   background: #f8fafc;
   cursor: pointer;
@@ -1055,9 +1055,9 @@ function uploadBackground(event: Event) {
   gap: 4px;
   padding: 7px;
   border: 1px solid #dbe3ef;
-  border-radius: 14px;
+  border-radius: var(--qaly-radius-lg);
   background: #fff;
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.18);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .team-mention-popover button {
@@ -1066,7 +1066,7 @@ function uploadBackground(event: Event) {
   align-items: center;
   gap: 9px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   padding: 8px;
   color: #0f172a;
   background: transparent;
@@ -1083,7 +1083,7 @@ function uploadBackground(event: Event) {
   height: 30px;
   display: grid;
   place-items: center;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   color: #1d4ed8;
   background: #dbeafe;
   font-weight: 900;
@@ -1106,7 +1106,7 @@ function uploadBackground(event: Event) {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  border-radius: 13px;
+  border-radius: var(--qaly-radius-lg);
 }
 
 .team-emoji-picker {
@@ -1118,14 +1118,14 @@ function uploadBackground(event: Event) {
   gap: 4px;
   padding: 8px;
   border: 1px solid #e2e8f0;
-  border-radius: 12px;
+  border-radius: var(--qaly-radius-lg);
   background: #fff;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.16);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .team-emoji-picker button {
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--qaly-radius-lg);
   padding: 7px;
   background: transparent;
   font-size: 1.15rem;
@@ -1200,7 +1200,7 @@ function uploadBackground(event: Event) {
 
 .team-chat-window--night .team-chat-body {
   background: rgba(15, 23, 42, 0.16);
-  border-radius: 18px;
+  border-radius: var(--qaly-radius-lg);
 }
 
 .chat-customize-backdrop {
@@ -1211,7 +1211,7 @@ function uploadBackground(event: Event) {
   place-items: center;
   padding: 22px;
   background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(10px);
+  backdrop-filter: none;
 }
 
 .chat-customize-sheet {
@@ -1223,7 +1223,7 @@ function uploadBackground(event: Event) {
   padding: 24px;
   color: #f8fafc;
   background: #050505;
-  box-shadow: 0 34px 90px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .chat-customize-header {
@@ -1346,14 +1346,12 @@ function uploadBackground(event: Event) {
   position: relative;
   aspect-ratio: 0.72;
   overflow: hidden;
-  border-radius: 24px;
+  border-radius: var(--qaly-radius-lg);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 .chat-theme-card:hover .chat-theme-card__preview {
-  box-shadow:
-    inset 0 0 0 2px rgba(96, 165, 250, 0.7),
-    0 16px 42px rgba(37, 99, 235, 0.22);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .chat-theme-card.is-active .chat-theme-card__preview {
@@ -1478,9 +1476,9 @@ function uploadBackground(event: Event) {
   display: grid;
   gap: 16px;
   padding: 20px;
-  border-radius: 15px;
+  border-radius: var(--qaly-radius-lg);
   background: #fff;
-  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.24);
+  box-shadow: var(--qaly-shadow-md);
 }
 
 .message-detail-card header,
@@ -1523,7 +1521,7 @@ function uploadBackground(event: Event) {
 .message-detail-card p {
   margin: 0;
   padding: 12px;
-  border-radius: 10px;
+  border-radius: var(--qaly-radius-lg);
   background: #f8fafc;
   white-space: pre-wrap;
 }
