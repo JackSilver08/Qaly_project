@@ -7,7 +7,6 @@ import {
   Edit3,
   FileUp,
   FolderKanban,
-  RefreshCcw,
   Sparkles,
   TrendingUp,
   Users,
@@ -54,9 +53,6 @@ const selectedMemberIds = ref<string[]>([])
 const selectedGroupId = ref('')
 const availableGroups = ref<{ id: string; name: string; description: string | null; memberCount: number }[]>([])
 
-const visibleProjectsCount = computed(() => projects.value.filter((p: any) => p.status !== 'Archived').length)
-const onTrackCount = computed(() => projects.value.filter((p: any) => p.status !== 'Archived' && p.overdueTaskCount === 0).length)
-const atRiskCount = computed(() => projects.value.filter((p: any) => p.status !== 'Archived' && p.overdueTaskCount > 0).length)
 const activeProjectCount = computed(() => activeProjectCards.value.filter((p: any) => p.status === 'Active').length)
 const plannedProjectCount = computed(() => activeProjectCards.value.filter((p: any) => p.status === 'Planned').length)
 const archivedProjectCount = computed(() => projects.value.filter((p: any) => p.status === 'Archived').length)
@@ -201,27 +197,6 @@ async function handleUndoFromBanner() {
 
           <h1>Không gian dự án hiện đại, gọn và dễ điều hướng</h1>
           <p>{{ heroSubtitle }}</p>
-
-          <div class="projects-hero__actions">
-            <button class="hero-action hero-action--primary" type="button" @click="openCreateProject">
-              <FolderKanban :size="16" />
-              <span>Tạo dự án</span>
-            </button>
-            <button class="hero-action" type="button" @click="showImportModal = true">
-              <FileUp :size="16" />
-              <span>Nhập dữ liệu</span>
-            </button>
-            <button class="hero-action" type="button" @click="loadDashboard">
-              <RefreshCcw :size="16" />
-              <span>Làm mới</span>
-            </button>
-          </div>
-
-          <div class="projects-hero__summary">
-            <span><strong>{{ visibleProjectsCount }}</strong> dự án đang mở</span>
-            <span><strong>{{ onTrackCount }}</strong> đúng tiến độ</span>
-            <span><strong>{{ atRiskCount }}</strong> cần chú ý</span>
-          </div>
         </div>
 
         <div class="projects-hero__sidebar">
@@ -528,47 +503,6 @@ async function handleUndoFromBanner() {
   color: #64748b;
   font-size: 13px;
   line-height: 1.55;
-}
-
-.projects-hero__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.hero-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 36px;
-  padding: 0 11px;
-  border: 1px solid rgba(191, 219, 254, 0.88);
-  border-radius: 12px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(244, 249, 255, 0.98));
-  color: #0f172a;
-  font-size: 0.92rem;
-  font-weight: 700;
-  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease;
-  backdrop-filter: blur(10px);
-}
-
-.hero-action:hover {
-  transform: translateY(-1px);
-  border-color: rgba(96, 165, 250, 0.5);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(235, 243, 255, 0.98));
-  box-shadow: 0 10px 18px rgba(15, 23, 42, 0.06);
-}
-
-.hero-action--primary {
-  border-color: rgba(37, 99, 235, 0.18);
-  background: linear-gradient(135deg, #2563eb, #1e40af);
-  color: #ffffff;
-  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.18);
-}
-
-.hero-action--primary:hover {
-  background: linear-gradient(135deg, #1d4ed8, #1e3a8a);
-  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.22);
 }
 
 .projects-hero__summary {
