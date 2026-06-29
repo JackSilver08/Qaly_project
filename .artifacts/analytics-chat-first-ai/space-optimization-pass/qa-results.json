@@ -1,0 +1,80 @@
+{
+  "results": [
+    {
+      "name": "login analytics",
+      "passed": true,
+      "detail": "http://localhost:5000/analytics"
+    },
+    {
+      "name": "compact toolbar mounted",
+      "passed": true,
+      "detail": "6 buttons"
+    },
+    {
+      "name": "onboarding suggestion limited",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "model compact label visible",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "planned provider buttons disabled",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "palette action does not auto-send",
+      "passed": true,
+      "detail": "0->0"
+    },
+    {
+      "name": "project dropdown visible within viewport",
+      "passed": true,
+      "detail": "{\"x\":526,\"y\":629.5,\"width\":360,\"height\":276}"
+    },
+    {
+      "name": "chat prompt created active state/history seed",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "history drawer stores local prompt",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "sources control reachable",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "slash command popup visible",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "attachment input present",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "mobile no horizontal overflow",
+      "passed": true,
+      "detail": "390x844"
+    },
+    {
+      "name": "tablet no horizontal overflow",
+      "passed": true,
+      "detail": "820x1180"
+    },
+    {
+      "name": "/dashboard not turned into analytics cockpit",
+      "passed": true,
+      "detail": "toolbar=0, model=0"
+    }
+  ],
+  "errors": []
+}

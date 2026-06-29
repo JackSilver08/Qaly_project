@@ -13,8 +13,23 @@ import {
 import { useDashboardContext } from '../../composables/dashboard-context'
 import { useErumiContext } from '../../composables/use-erumi-context'
 import { apiJson } from '../../utils/api-client'
-import { showSuccess } from '../../composables/use-toast'
+import { showError, showSuccess } from '../../composables/use-toast'
 import ChatbotAvatar from '../ChatbotAvatar.vue'
+import AiAnswerMetaChips from '../analytics-ai/AiAnswerMetaChips.vue'
+import AiModelSelector from '../analytics-ai/AiModelSelector.vue'
+import AiQuickToolbar from '../analytics-ai/AiQuickToolbar.vue'
+import AnalyticsSideDrawer from '../analytics-ai/AnalyticsSideDrawer.vue'
+import ConversationHistoryDrawer from '../analytics-ai/ConversationHistoryDrawer.vue'
+import SourceRefsDrawer from '../analytics-ai/SourceRefsDrawer.vue'
+import {
+  AI_MODEL_OPTIONS,
+  aiModelCompactLabel,
+  type AiModelOption,
+  type AiToolbarAction,
+  type AnalyticsMiniTab,
+  type ConversationHistoryItem,
+  type SourceRef
+} from '../analytics-ai/types'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import { Bar, Doughnut, Line } from 'vue-chartjs'
@@ -99,6 +114,13 @@ type ErumiFile = {
   description?: string | null
 }
 
+type AiModelMetadata = {
+  id?: string | null
+  label?: string | null
+  provider?: string | null
+  status?: string | null
+}
+
 type ErumiChatResponse = {
   reply: string
   metrics: ErumiMetric[]
@@ -107,10 +129,14 @@ type ErumiChatResponse = {
   actions: ErumiAction[]
   files: ErumiFile[]
   sources: string[]
+  sourceRefs?: SourceRef[] | null
   confidence: number
+  confidenceReason?: string | null
+  freshness?: string | null
   usedAi: boolean
   intent: string
   latencyMs: number
+  model?: AiModelMetadata | null
 }
 
 type ChatEntry = {
@@ -123,9 +149,13 @@ type ChatEntry = {
   actions?: ErumiAction[]
   files?: ErumiFile[]
   sources?: string[]
+  sourceRefs?: SourceRef[] | null
   confidence?: number
+  confidenceReason?: string | null
+  freshness?: string | null
   latencyMs?: number
   usedAi?: boolean
+  model?: AiModelMetadata | null
 }
 
 type ErumiUploadedFile = {
@@ -166,6 +196,19 @@ const isDropdownOpen1 = ref(false)
 const isDropdownOpen2 = ref(false)
 const dropdownRef1 = ref<HTMLElement | null>(null)
 const dropdownRef2 = ref<HTMLElement | null>(null)
+const selectedAiModel = ref(AI_MODEL_OPTIONS[0]?.id ?? 'fast-current')
+const activeDrawerTab = ref<AnalyticsMiniTab>('sources')
+const cockpitDrawerOpen = ref(false)
+const selectedDrawerMessage = ref<ChatEntry | null>(null)
+const isCompactViewport = ref(false)
+const toolPaletteOpen = ref(false)
+const conversationHistory = ref<ConversationHistoryItem[]>([])
+const dropdownPlacement1 = ref<'up' | 'down'>('down')
+const dropdownPlacement2 = ref<'up' | 'down'>('down')
+const dropdownMaxHeight1 = ref('320px')
+const dropdownMaxHeight2 = ref('320px')
+const ANALYTICS_HISTORY_KEY = 'qaly.analytics.erumi.history.v1'
+const MAX_ANALYTICS_HISTORY_ITEMS = 20
 
 // Slash commands predefined popup list (Sprint 1)
 const slashCommands = [
@@ -237,13 +280,59 @@ const onboardingSuggestions = computed(() => {
   ]
 })
 
-// Quick suggestions to show when chat is active
+const visibleOnboardingSuggestions = computed(() => onboardingSuggestions.value.slice(0, 3))
+
+// Quick suggestions to show when chat is active. Keep a larger internal pool,
+// then render only three chips plus a lightweight "More" affordance.
 const currentSuggestions = computed(() => {
+  const latest = chatHistory.value
+    .slice()
+    .reverse()
+    .find(msg => msg.role === 'assistant' && !!msg.text)
+  const latestText = latest?.text.toLowerCase() || ''
+
+  if (latest?.actions?.length || latestText.includes('rủi ro') || latestText.includes('quá hạn') || latestText.includes('chậm')) {
+    return [
+      { label: 'Task cần chú ý', prompt: 'Liệt kê các task cần chú ý nhất và lý do rủi ro.' },
+      { label: 'Kế hoạch xử lý', prompt: 'Tạo kế hoạch xử lý nháp cho các rủi ro vừa nêu, chưa thực thi.' },
+      { label: 'Nguồn chứng minh', prompt: 'Nguồn nào chứng minh các nhận định rủi ro này?' },
+      { label: 'Báo cáo standup', prompt: 'Rút gọn phần rủi ro thành báo cáo standup.' }
+    ]
+  }
+
+  if (latest?.metrics?.length || latest?.charts?.length || latest?.tables?.length) {
+    return [
+      { label: 'Giải thích số này', prompt: 'Giải thích các số liệu quan trọng nhất trong phản hồi vừa rồi.' },
+      { label: 'So sánh tuần trước', prompt: 'So sánh các số liệu này với tuần trước nếu có dữ liệu.' },
+      { label: 'Xuất báo cáo', prompt: 'Chuyển các số liệu này thành bản báo cáo markdown ngắn.' },
+      { label: 'Tìm bất thường', prompt: 'Chỉ ra các điểm bất thường trong số liệu vừa phân tích.' }
+    ]
+  }
+
+  if (latest?.files?.length || latestText.includes('báo cáo') || latestText.includes('standup')) {
+    return [
+      { label: 'Rút gọn standup', prompt: 'Rút gọn nội dung này thành bản standup 5 gạch đầu dòng.' },
+      { label: 'Copy markdown', prompt: 'Định dạng lại câu trả lời vừa rồi thành markdown sạch để copy.' },
+      { label: 'Checklist tiếp theo', prompt: 'Tạo checklist việc cần làm tiếp theo từ báo cáo vừa rồi.' },
+      { label: 'Nguồn báo cáo', prompt: 'Nguồn nào được dùng để tạo báo cáo vừa rồi?' }
+    ]
+  }
+
+  if (latest?.sources?.length || latest?.sourceRefs?.length) {
+    return [
+      { label: 'Nguồn chứng minh', prompt: 'Giải thích các nguồn đã dùng trong câu trả lời vừa rồi.' },
+      { label: 'Điểm chưa chắc', prompt: 'Nhận định nào trong câu trả lời cần kiểm chứng thêm?' },
+      { label: 'Tạo báo cáo', prompt: 'Tạo báo cáo ngắn kèm nguồn tham chiếu.' },
+      { label: 'Hỏi tiếp', prompt: 'Đặt câu hỏi follow-up tốt nhất dựa trên các nguồn này.' }
+    ]
+  }
+
   if (selectedTarget.value === 'workspace') {
     return [
-      { label: 'Đánh giá hiệu suất tuần qua', prompt: 'Hãy đánh giá hiệu suất làm việc của toàn bộ các dự án trong tuần qua.' },
-      { label: 'Dự án nào đang rủi ro?', prompt: 'Hiện tại có dự án nào đang gặp rủi ro hoặc chậm tiến độ không?' },
-      { label: 'So sánh các dự án', prompt: 'So sánh các dự án đang hoạt động dưới dạng bảng.' }
+      { label: 'Hiệu suất tuần qua', prompt: 'Hãy đánh giá hiệu suất làm việc của toàn bộ các dự án trong tuần qua.' },
+      { label: 'Dự án rủi ro?', prompt: 'Hiện tại có dự án nào đang gặp rủi ro hoặc chậm tiến độ không?' },
+      { label: 'So sánh dự án', prompt: 'So sánh các dự án đang hoạt động dưới dạng bảng.' },
+      { label: 'Báo cáo standup', prompt: 'Tạo báo cáo standup ngắn cho toàn workspace.' }
     ]
   }
 
@@ -256,6 +345,9 @@ const currentSuggestions = computed(() => {
     { label: 'Task quá hạn', action: 'overdue', prompt: `Liệt kê các task quá hạn của dự án ${name} dưới dạng bảng.` }
   ]
 })
+
+const visibleCurrentSuggestions = computed(() => currentSuggestions.value.slice(0, 3))
+const hiddenCurrentSuggestionCount = computed(() => Math.max(0, currentSuggestions.value.length - visibleCurrentSuggestions.value.length))
 
 function selectTarget(id: string, instance: number) {
   selectedTarget.value = id
@@ -281,6 +373,50 @@ const chatHistory = ref<ChatEntry[]>([
 const isChatActive = computed(() => chatHistory.value.length > 1 || isChatting.value)
 const canSubmit = computed(() => (!!chatInput.value.trim() || selectedFiles.value.length > 0) && !isChatting.value)
 const showSlashCommandsPopup = computed(() => showSlashCommands.value && filteredSlashCommands.value.length > 0)
+const selectedAiModelOption = computed<AiModelOption | undefined>(() => {
+  return AI_MODEL_OPTIONS.find(option => option.id === selectedAiModel.value) ?? AI_MODEL_OPTIONS[0]
+})
+const activeToolbarTab = computed<AnalyticsMiniTab | undefined>(() => {
+  return cockpitDrawerOpen.value ? activeDrawerTab.value : undefined
+})
+const selectedAiModelCompactLabel = computed(() => aiModelCompactLabel(selectedAiModelOption.value))
+const latestAssistantMessage = computed(() => {
+  return chatHistory.value
+    .slice()
+    .reverse()
+    .find(msg => msg.role === 'assistant' && (!!msg.text || !!msg.metrics?.length || !!msg.sources?.length))
+})
+const drawerMessage = computed(() => selectedDrawerMessage.value ?? latestAssistantMessage.value ?? null)
+const drawerSources = computed(() => drawerMessage.value?.sources ?? [])
+const drawerSourceRefs = computed(() => drawerMessage.value?.sourceRefs ?? [])
+const drawerMetrics = computed(() => drawerMessage.value?.metrics ?? [])
+const drawerTables = computed(() => drawerMessage.value?.tables ?? [])
+const drawerActions = computed(() => drawerMessage.value?.actions ?? [])
+const primaryComposerPlaceholder = computed(() => {
+  return isCompactViewport.value ? 'Hỏi Erumi...' : 'Hỏi bất kỳ thứ gì... (gõ / để xem lệnh nhanh)'
+})
+const secondaryComposerPlaceholder = computed(() => {
+  return isCompactViewport.value ? 'Hỏi Erumi...' : 'Nhập liệu... (gõ / để xem lệnh nhanh)'
+})
+const freshnessChipLabel = computed(() => {
+  if (backgroundRefreshing.value) return 'Đang cập nhật'
+  if (!lastRefreshedAt.value) return 'Fresh'
+  return `Fresh ${lastRefreshedAt.value.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
+})
+const cockpitDrawerTitle = computed(() => {
+  const titles: Record<AnalyticsMiniTab, string> = {
+    insights: 'Insights',
+    metrics: 'Metrics',
+    risks: 'Risks',
+    sources: 'Nguồn tham chiếu',
+    report: 'Report',
+    actions: 'Actions',
+    model: 'Model registry',
+    history: 'Lịch sử trò chuyện',
+    settings: 'Cài đặt AI'
+  }
+  return titles[activeDrawerTab.value]
+})
 
 function isExecutingDraftAction(action: any) {
   return action.processing && action.confirmAction === 'execute_action'
@@ -289,12 +425,6 @@ function isExecutingDraftAction(action: any) {
 function isRejectingDraftAction(action: any) {
   return action.processing && action.confirmAction === 'reject'
 }
-const autoSyncLabel = computed(() => {
-  if (backgroundRefreshing.value) return 'Đang cập nhật nền...'
-  if (!lastRefreshedAt.value) return 'Tự cập nhật dữ liệu'
-  return `Đã cập nhật ${lastRefreshedAt.value.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
-})
-
 function chartComponent(type: string) {
   if (type === 'line') return Line
   if (type === 'bar') return Bar
@@ -372,11 +502,6 @@ function tableCell(row: Record<string, unknown>, key: string) {
   return String(value)
 }
 
-function confidenceLabel(value?: number) {
-  if (value === undefined || value === null) return ''
-  return `${Math.round(value * 100)}% tin cậy`
-}
-
 function formatUploadSize(size: number) {
   if (size < 1024) return `${size} B`
   if (size < 1024 * 1024) return `${Math.round(size / 102.4) / 10} KB`
@@ -385,6 +510,155 @@ function formatUploadSize(size: number) {
 
 function openFilePicker() {
   fileInputRef.value?.click()
+}
+
+function syncViewportFlag() {
+  isCompactViewport.value = window.innerWidth <= 640
+  if (isDropdownOpen1.value) setDropdownPlacement(1)
+  if (isDropdownOpen2.value) setDropdownPlacement(2)
+}
+
+function focusComposer() {
+  nextTick(() => {
+    textareaRef.value?.focus()
+    autoResize()
+  })
+}
+
+function fillComposer(prompt: string) {
+  chatInput.value = prompt
+  focusComposer()
+}
+
+function openCockpitDrawer(tab: AnalyticsMiniTab, message?: ChatEntry) {
+  activeDrawerTab.value = tab
+  selectedDrawerMessage.value = message ?? null
+  cockpitDrawerOpen.value = true
+}
+
+function closeCockpitDrawer() {
+  cockpitDrawerOpen.value = false
+}
+
+function handleQuickToolbarSelect(action: AiToolbarAction) {
+  if (action.behavior === 'open-drawer') {
+    openCockpitDrawer(action.tab)
+    return
+  }
+
+  if (action.prompt) {
+    fillComposer(action.prompt)
+  }
+}
+
+function openSourcesForMessage(message: ChatEntry) {
+  openCockpitDrawer('sources', message)
+}
+
+function askAboutSource(sourceLabel: string) {
+  fillComposer(`Giải thích nguồn "${sourceLabel}" và dữ liệu nào đã được dùng để tạo nhận định này.`)
+}
+
+function loadConversationHistory() {
+  try {
+    const raw = window.localStorage.getItem(ANALYTICS_HISTORY_KEY)
+    const parsed = raw ? JSON.parse(raw) : []
+    conversationHistory.value = Array.isArray(parsed)
+      ? parsed
+          .filter((item: ConversationHistoryItem) => item?.prompt && item?.createdAt)
+          .slice(0, MAX_ANALYTICS_HISTORY_ITEMS)
+      : []
+  } catch {
+    conversationHistory.value = []
+  }
+}
+
+function persistConversationHistory() {
+  try {
+    window.localStorage.setItem(ANALYTICS_HISTORY_KEY, JSON.stringify(conversationHistory.value.slice(0, MAX_ANALYTICS_HISTORY_ITEMS)))
+  } catch {
+    // Local history is a convenience only; storage failures should not block chat.
+  }
+}
+
+function rememberConversationPrompt(prompt: string, attachmentCount: number) {
+  if (!prompt.trim()) return
+  const item: ConversationHistoryItem = {
+    id: `analytics-history-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    prompt: prompt.trim(),
+    projectId: selectedTarget.value === 'workspace' ? null : selectedTarget.value,
+    projectLabel: selectedTargetLabel.value,
+    createdAt: new Date().toISOString(),
+    attachmentCount: attachmentCount || undefined
+  }
+
+  conversationHistory.value = [
+    item,
+    ...conversationHistory.value.filter(existing => existing.prompt.trim() !== item.prompt || existing.projectId !== item.projectId)
+  ].slice(0, MAX_ANALYTICS_HISTORY_ITEMS)
+  persistConversationHistory()
+}
+
+function updateLatestConversationSnippet(text: string) {
+  const first = conversationHistory.value[0]
+  if (!first || !text.trim()) return
+  first.assistantSnippet = text.replace(/\s+/g, ' ').trim().slice(0, 160)
+  persistConversationHistory()
+}
+
+function restoreHistoryItem(item: ConversationHistoryItem) {
+  fillComposer(item.prompt)
+  closeCockpitDrawer()
+}
+
+function deleteHistoryItem(id: string) {
+  conversationHistory.value = conversationHistory.value.filter(item => item.id !== id)
+  persistConversationHistory()
+}
+
+function clearConversationHistory() {
+  conversationHistory.value = []
+  persistConversationHistory()
+}
+
+function handleToolPaletteOpen(open: boolean) {
+  toolPaletteOpen.value = open
+}
+
+function setDropdownPlacement(instance: number) {
+  const root = instance === 1 ? dropdownRef1.value : dropdownRef2.value
+  if (!root) return
+
+  const rect = root.getBoundingClientRect()
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight
+  const spaceBelow = viewportHeight - rect.bottom
+  const spaceAbove = rect.top
+  const shouldOpenUp = spaceBelow < 240 && spaceAbove > spaceBelow
+  const availableSpace = Math.max(160, Math.min(360, (shouldOpenUp ? spaceAbove : spaceBelow) - 18))
+
+  if (instance === 1) {
+    dropdownPlacement1.value = shouldOpenUp ? 'up' : 'down'
+    dropdownMaxHeight1.value = `${availableSpace}px`
+  } else {
+    dropdownPlacement2.value = shouldOpenUp ? 'up' : 'down'
+    dropdownMaxHeight2.value = `${availableSpace}px`
+  }
+}
+
+function toggleProjectDropdown(instance: number) {
+  const willOpen = instance === 1 ? !isDropdownOpen1.value : !isDropdownOpen2.value
+
+  if (instance === 1) {
+    isDropdownOpen1.value = willOpen
+    isDropdownOpen2.value = false
+  } else {
+    isDropdownOpen2.value = willOpen
+    isDropdownOpen1.value = false
+  }
+
+  if (willOpen) {
+    nextTick(() => setDropdownPlacement(instance))
+  }
 }
 
 function handleFileSelection(event: Event) {
@@ -608,6 +882,7 @@ async function submitChat(explicitText?: string, _action?: string) {
   if ((!prompt && filesToSend.length === 0) || isChatting.value) return
 
   const userText = prompt || 'Phân tích file đã đính kèm'
+  rememberConversationPrompt(userText, filesToSend.length)
   chatHistory.value.push({
     role: 'user',
     text: userText,
@@ -672,10 +947,15 @@ async function submitChat(explicitText?: string, _action?: string) {
       actions: replyActions,
       files: fastReply.files,
       sources: fastReply.sources,
+      sourceRefs: fastReply.sourceRefs,
       confidence: fastReply.confidence,
+      confidenceReason: fastReply.confidenceReason,
+      freshness: fastReply.freshness,
       latencyMs: fastReply.latencyMs,
-      usedAi: fastReply.usedAi
+      usedAi: fastReply.usedAi,
+      model: fastReply.model
     }
+    updateLatestConversationSnippet(fastReply.reply)
   } catch (e) {
     const lastIdx = chatHistory.value.length - 1
     const fallbackText = getFallbackChatAnswer(userText)
@@ -685,15 +965,20 @@ async function submitChat(explicitText?: string, _action?: string) {
       text: fallbackText,
       usedAi: false
     }
+    updateLatestConversationSnippet(fallbackText)
   } finally {
     isChatting.value = false
     await scrollToBottom()
   }
 }
 
-function copyToClipboard(text: string) {
-  navigator.clipboard.writeText(text)
-  showSuccess('Đã sao chép phản hồi vào clipboard!')
+async function copyToClipboard(text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    showSuccess('Đã sao chép phản hồi vào clipboard!')
+  } catch {
+    showError('Không thể sao chép phản hồi.')
+  }
 }
 
 function exportAsMarkdown(projectName: string, text: string) {
@@ -718,11 +1003,14 @@ function handleDocumentClick(e: MouseEvent) {
 }
 
 onMounted(() => {
+  syncViewportFlag()
+  loadConversationHistory()
   if (selectedProject.value) {
     selectedTarget.value = selectedProject.value.id
   }
   refreshAnalyticsContext()
   refreshTimer = window.setInterval(refreshAnalyticsContext, 30000)
+  window.addEventListener('resize', syncViewportFlag)
   window.addEventListener('focus', refreshAnalyticsContext)
   window.addEventListener('click', handleDocumentClick)
   scrollToBottom()
@@ -730,6 +1018,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (refreshTimer) window.clearInterval(refreshTimer)
+  window.removeEventListener('resize', syncViewportFlag)
   window.removeEventListener('focus', refreshAnalyticsContext)
   window.removeEventListener('click', handleDocumentClick)
 })
@@ -759,9 +1048,9 @@ onBeforeUnmount(() => {
         </div>
         
         <!-- Suggestions above composer in empty state (Sprint 1 dynamic suggested prompts) -->
-        <div class="suggestion-pills-wrap">
+        <div v-if="!toolPaletteOpen" class="suggestion-pills-wrap">
           <button 
-            v-for="(s, idx) in onboardingSuggestions" 
+            v-for="(s, idx) in visibleOnboardingSuggestions"
             :key="idx"
             class="suggestion-pill"
             @click="submitChat(s.prompt)"
@@ -770,26 +1059,49 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
+        <AiQuickToolbar
+          v-if="!isDrawer"
+          :active-tab="activeToolbarTab"
+          :history-count="conversationHistory.length"
+          @select="handleQuickToolbarSelect"
+          @palette-open-change="handleToolPaletteOpen"
+        />
+
         <!-- Centered Composer -->
         <div class="composer-wrap-center">
           <div class="erumi-composer">
             <div class="erumi-project-row">
-              <div class="erumi-custom-dropdown" ref="dropdownRef1" @click="isDropdownOpen1 = !isDropdownOpen1">
-                <div class="erumi-project-trigger" :class="{ 'is-open': isDropdownOpen1 }">
-                  <Folder :size="20" class="folder-icon" />
-                  <span class="erumi-project-name">{{ selectedTargetLabel }}</span>
-                  <ChevronDown :size="16" class="erumi-project-chevron" :class="{ 'rotate-180': isDropdownOpen1 }" />
-                </div>
-                <Transition name="dropdown-fade">
-                  <div class="erumi-dropdown-menu" v-if="isDropdownOpen1" @wheel.stop>
-                    <div class="erumi-dropdown-item" @click.stop="selectTarget('workspace', 1)" :class="{ active: selectedTarget === 'workspace' }">Tất cả dự án</div>
-                    <div v-for="p in activeProjects" :key="p.id" class="erumi-dropdown-item" @click.stop="selectTarget(p.id, 1)" :class="{ active: selectedTarget === p.id }">
-                      {{ p.name }}
-                    </div>
+              <div class="erumi-context-controls">
+                <div class="erumi-custom-dropdown" :class="{ 'is-open': isDropdownOpen1 }" ref="dropdownRef1" @click.stop="toggleProjectDropdown(1)">
+                  <div class="erumi-project-trigger" :class="{ 'is-open': isDropdownOpen1 }">
+                    <Folder :size="20" class="folder-icon" />
+                    <span class="erumi-project-name">{{ selectedTargetLabel }}</span>
+                    <ChevronDown :size="16" class="erumi-project-chevron" :class="{ 'rotate-180': isDropdownOpen1 }" />
                   </div>
-                </Transition>
+                  <Transition name="dropdown-fade">
+                    <div
+                      class="erumi-dropdown-menu"
+                      :class="{ 'opens-up': dropdownPlacement1 === 'up' }"
+                      :style="{ maxHeight: dropdownMaxHeight1 }"
+                      v-if="isDropdownOpen1"
+                      @wheel.stop
+                    >
+                      <div class="erumi-dropdown-item" @click.stop="selectTarget('workspace', 1)" :class="{ active: selectedTarget === 'workspace' }">Tất cả dự án</div>
+                      <div v-for="p in activeProjects" :key="p.id" class="erumi-dropdown-item" @click.stop="selectTarget(p.id, 1)" :class="{ active: selectedTarget === p.id }">
+                        {{ p.name }}
+                      </div>
+                    </div>
+                  </Transition>
+                </div>
+                <AiModelSelector
+                  v-if="!isDrawer"
+                  v-model="selectedAiModel"
+                  :options="AI_MODEL_OPTIONS"
+                  compact
+                  @open-settings="openCockpitDrawer('model')"
+                />
               </div>
-              <span class="erumi-last-updated" v-if="!isDrawer">{{ autoSyncLabel }}</span>
+              <span class="erumi-last-updated erumi-freshness-chip" v-if="!isDrawer">{{ freshnessChipLabel }}</span>
             </div>
 
             <div v-if="selectedFiles.length" class="attached-file-list">
@@ -827,7 +1139,7 @@ onBeforeUnmount(() => {
                   ref="textareaRef"
                   v-model="chatInput"
                   class="erumi-message-input"
-                  placeholder="Hỏi bất kì thứ gì... (gõ / để xem lệnh nhanh)"
+                  :placeholder="primaryComposerPlaceholder"
                   :disabled="isChatting"
                   aria-label="Nhập câu hỏi"
                   rows="1"
@@ -948,8 +1260,10 @@ onBeforeUnmount(() => {
                 <div v-if="msg.actions?.length" class="erumi-action-list">
                   <template v-for="action in msg.actions" :key="action.type">
                     <div v-if="action.type === 'draft_change'" class="erumi-draft-card">
-                      <p class="erumi-draft-text">Hành động ghi dữ liệu cần xác nhận của bạn để thực thi:</p>
-                      <div class="erumi-draft-buttons">
+                      <p class="erumi-draft-text">
+                        {{ action.payload?.draftId && isDrawer ? 'Hành động ghi dữ liệu cần xác nhận của bạn để thực thi:' : 'Erumi đã chuẩn bị gợi ý hành động, nhưng pass này không thực thi hành động ghi dữ liệu trực tiếp trên /analytics.' }}
+                      </p>
+                      <div v-if="action.payload?.draftId && isDrawer" class="erumi-draft-buttons">
                         <button
                           type="button"
                           class="erumi-draft-btn-confirm"
@@ -971,6 +1285,7 @@ onBeforeUnmount(() => {
                           <span v-else>Hủy</span>
                         </button>
                       </div>
+                      <p v-else class="erumi-draft-note">Bạn có thể hỏi Erumi tạo lại bản nháp chi tiết hơn hoặc copy nội dung này để xử lý thủ công.</p>
                     </div>
                     <button
                       v-else
@@ -991,20 +1306,16 @@ onBeforeUnmount(() => {
                 </div>
 
                 <footer class="assistant-response-footer">
-                  <div class="erumi-response-meta">
-                    <span v-if="msg.latencyMs !== undefined">
-                      <small>Phản hồi</small>
-                      {{ msg.latencyMs }}ms
-                    </span>
-                    <span v-if="msg.confidence !== undefined">
-                      <small>Độ tin cậy</small>
-                      {{ confidenceLabel(msg.confidence) }}
-                    </span>
-                    <span v-if="msg.sources?.length">
-                      <small>Nguồn</small>
-                      {{ msg.sources.join(', ') }}
-                    </span>
-                  </div>
+                  <AiAnswerMetaChips
+                    :latency-ms="msg.latencyMs"
+                    :confidence="msg.confidence"
+                    :confidence-reason="msg.confidenceReason"
+                    :freshness="msg.freshness"
+                    :sources="msg.sources"
+                    :used-ai="msg.usedAi"
+                    :model-label="msg.model?.label"
+                    @open-sources="openSourcesForMessage(msg)"
+                  />
 
                   <div class="bubble-actions-toolbar">
                     <button class="bubble-action-btn" title="Sao chép phản hồi" type="button" @click="copyToClipboard(msg.text)">
@@ -1050,36 +1361,66 @@ onBeforeUnmount(() => {
       <div class="bottom-bar-width">
         
         <!-- Suggestions Chips (horizontal scrollable above input) -->
-        <div class="suggestion-chips-horizontal no-scrollbar">
+        <div v-if="!toolPaletteOpen" class="suggestion-chips-horizontal no-scrollbar">
           <button 
-            v-for="(s, idx) in currentSuggestions" 
+            v-for="(s, idx) in visibleCurrentSuggestions"
             :key="idx"
             class="suggestion-chip-small"
             @click="submitChat(s.prompt, (s as any).action)"
           >
             {{ s.label }}
           </button>
+          <button
+            v-if="hiddenCurrentSuggestionCount"
+            type="button"
+            class="suggestion-chip-small suggestion-chip-more"
+            @click="fillComposer('/')"
+          >
+            Xem thêm
+          </button>
         </div>
+
+        <AiQuickToolbar
+          v-if="!isDrawer"
+          :active-tab="activeToolbarTab"
+          :history-count="conversationHistory.length"
+          @select="handleQuickToolbarSelect"
+          @palette-open-change="handleToolPaletteOpen"
+        />
 
         <!-- Premium Composer -->
         <div class="erumi-composer">
           <div class="erumi-project-row">
-            <div class="erumi-custom-dropdown" ref="dropdownRef2" @click="isDropdownOpen2 = !isDropdownOpen2">
-              <div class="erumi-project-trigger" :class="{ 'is-open': isDropdownOpen2 }">
-                <Folder :size="20" class="folder-icon" />
-                <span class="erumi-project-name">{{ selectedTargetLabel }}</span>
-                <ChevronDown :size="16" class="erumi-project-chevron" :class="{ 'rotate-180': isDropdownOpen2 }" />
-              </div>
-              <Transition name="dropdown-fade">
-                <div class="erumi-dropdown-menu" v-if="isDropdownOpen2">
-                  <div class="erumi-dropdown-item" @click.stop="selectTarget('workspace', 2)" :class="{ active: selectedTarget === 'workspace' }">Tất cả dự án</div>
-                  <div v-for="p in activeProjects" :key="p.id" class="erumi-dropdown-item" @click.stop="selectTarget(p.id, 2)" :class="{ active: selectedTarget === p.id }">
-                    {{ p.name }}
-                  </div>
+            <div class="erumi-context-controls">
+              <div class="erumi-custom-dropdown" :class="{ 'is-open': isDropdownOpen2 }" ref="dropdownRef2" @click.stop="toggleProjectDropdown(2)">
+                <div class="erumi-project-trigger" :class="{ 'is-open': isDropdownOpen2 }">
+                  <Folder :size="20" class="folder-icon" />
+                  <span class="erumi-project-name">{{ selectedTargetLabel }}</span>
+                  <ChevronDown :size="16" class="erumi-project-chevron" :class="{ 'rotate-180': isDropdownOpen2 }" />
                 </div>
-              </Transition>
+                <Transition name="dropdown-fade">
+                  <div
+                    class="erumi-dropdown-menu"
+                    :class="{ 'opens-up': dropdownPlacement2 === 'up' }"
+                    :style="{ maxHeight: dropdownMaxHeight2 }"
+                    v-if="isDropdownOpen2"
+                  >
+                    <div class="erumi-dropdown-item" @click.stop="selectTarget('workspace', 2)" :class="{ active: selectedTarget === 'workspace' }">Tất cả dự án</div>
+                    <div v-for="p in activeProjects" :key="p.id" class="erumi-dropdown-item" @click.stop="selectTarget(p.id, 2)" :class="{ active: selectedTarget === p.id }">
+                      {{ p.name }}
+                    </div>
+                  </div>
+                </Transition>
+              </div>
+              <AiModelSelector
+                v-if="!isDrawer"
+                v-model="selectedAiModel"
+                :options="AI_MODEL_OPTIONS"
+                compact
+                @open-settings="openCockpitDrawer('model')"
+              />
             </div>
-            <span class="erumi-last-updated" v-if="!isDrawer">{{ autoSyncLabel }}</span>
+            <span class="erumi-last-updated erumi-freshness-chip" v-if="!isDrawer">{{ freshnessChipLabel }}</span>
           </div>
 
           <div v-if="selectedFiles.length" class="attached-file-list">
@@ -1117,7 +1458,7 @@ onBeforeUnmount(() => {
                 ref="textareaRef"
                 v-model="chatInput"
                 class="erumi-message-input"
-                placeholder="Nhập liệu... (gõ / để xem lệnh nhanh)"
+                :placeholder="secondaryComposerPlaceholder"
                 :disabled="isChatting"
                 aria-label="Nhập câu hỏi tiếp theo"
                 rows="1"
@@ -1141,6 +1482,93 @@ onBeforeUnmount(() => {
         <p class="chat-disclaimer" v-if="!isDrawer">Erumi AI có thể mắc sai sót. Vui lòng kiểm tra lại thông tin quan trọng.</p>
       </div>
     </footer>
+
+    <AnalyticsSideDrawer
+      v-if="!isDrawer"
+      :open="cockpitDrawerOpen"
+      :title="cockpitDrawerTitle"
+      :subtitle="selectedAiModelCompactLabel"
+      @close="closeCockpitDrawer"
+    >
+      <div class="analytics-drawer-content">
+        <SourceRefsDrawer
+          v-if="activeDrawerTab === 'sources'"
+          :sources="drawerSources"
+          :source-refs="drawerSourceRefs"
+          @ask-source="askAboutSource"
+        />
+
+        <ConversationHistoryDrawer
+          v-else-if="activeDrawerTab === 'history'"
+          :items="conversationHistory"
+          @restore="restoreHistoryItem"
+          @delete="deleteHistoryItem"
+          @clear="clearConversationHistory"
+        />
+
+        <section v-else-if="activeDrawerTab === 'metrics'" class="analytics-drawer-section">
+          <p class="analytics-drawer-muted">Metrics được lấy từ phản hồi Erumi gần nhất, không gọi backend mới.</p>
+          <div v-if="drawerMetrics.length" class="analytics-drawer-metric-list">
+            <article v-for="metric in drawerMetrics" :key="metric.label" class="analytics-drawer-metric" :class="`tone-${metric.tone || 'neutral'}`">
+              <span>{{ metric.label }}</span>
+              <strong>{{ metric.value }}</strong>
+              <small v-if="metric.hint">{{ metric.hint }}</small>
+            </article>
+          </div>
+          <div v-else class="analytics-drawer-empty">
+            <strong>Chưa có metric</strong>
+            <span>Hãy hỏi Erumi về tiến độ, workload hoặc rủi ro để tạo metric.</span>
+          </div>
+        </section>
+
+        <section v-else-if="activeDrawerTab === 'model' || activeDrawerTab === 'settings'" class="analytics-drawer-section">
+          <p class="analytics-drawer-muted">Registry này chỉ điều khiển UI. Provider planned chưa được kích hoạt live.</p>
+          <AiModelSelector
+            v-model="selectedAiModel"
+            :options="AI_MODEL_OPTIONS"
+            @open-settings="openCockpitDrawer('model')"
+          />
+          <div class="analytics-model-registry">
+            <article v-for="option in AI_MODEL_OPTIONS" :key="option.id">
+              <span>{{ option.badge }}</span>
+              <strong>{{ option.label }}</strong>
+              <p>{{ option.description }}</p>
+            </article>
+          </div>
+        </section>
+
+        <section v-else-if="activeDrawerTab === 'actions'" class="analytics-drawer-section">
+          <p class="analytics-drawer-muted">Actions ở pass này chỉ là gợi ý hoặc prompt nháp, chưa thực thi ghi dữ liệu trực tiếp.</p>
+          <div v-if="drawerActions.length" class="analytics-action-list">
+            <button
+              v-for="action in drawerActions"
+              :key="action.label"
+              type="button"
+              class="analytics-action-draft"
+              @click="fillComposer(action.label)"
+            >
+              {{ action.label }}
+            </button>
+          </div>
+          <div v-else class="analytics-drawer-empty">
+            <strong>Chưa có action</strong>
+            <span>Dùng toolbar Actions để điền prompt tạo đề xuất tiếp theo.</span>
+          </div>
+        </section>
+
+        <section v-else class="analytics-drawer-section">
+          <p class="analytics-drawer-muted">Khu vực này giữ vai trò cockpit phụ, không thay thế luồng chat chính.</p>
+          <div v-if="drawerTables.length" class="analytics-drawer-table-note">
+            <strong>{{ drawerTables.length }} bảng dữ liệu</strong>
+            <span>Các bảng chi tiết vẫn hiển thị trong câu trả lời chat để tránh nhân đôi dashboard.</span>
+          </div>
+          <div v-else class="analytics-drawer-empty">
+            <strong>Chưa có dữ liệu</strong>
+            <span>Chọn prompt từ toolbar hoặc hỏi Erumi trực tiếp trong composer.</span>
+          </div>
+        </section>
+      </div>
+    </AnalyticsSideDrawer>
   </div>
 </template>
 
@@ -1229,10 +1657,16 @@ onBeforeUnmount(() => {
   flex-direction: column;
   height: 100%;
   width: 100%;
+  max-width: 100%;
   background: #f7f9fc;
   position: relative;
   overflow: hidden;
   font-family: 'Inter', sans-serif;
+}
+
+.analytics-chat-portal,
+.analytics-chat-portal * {
+  box-sizing: border-box;
 }
 
 .hidden-file-input {
@@ -1251,6 +1685,7 @@ onBeforeUnmount(() => {
   margin: auto;
   width: 100%;
   max-width: 680px;
+  min-width: 0;
   padding: 28px 22px 20px;
   display: flex;
   flex-direction: column;
@@ -1299,6 +1734,7 @@ onBeforeUnmount(() => {
 .composer-wrap-center {
   width: 100%;
   max-width: 640px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1349,31 +1785,52 @@ onBeforeUnmount(() => {
 }
 
 .erumi-project-row {
+  position: relative;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 8px;
+  min-width: 0;
   padding: 0 4px;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
+}
+
+.erumi-context-controls {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .erumi-custom-dropdown {
   position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: min(340px, 48vw);
+}
+
+.erumi-custom-dropdown.is-open {
+  z-index: 1600;
 }
 
 .erumi-project-trigger {
   position: relative;
   min-width: 0;
+  max-width: 100%;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
+  height: 34px;
   color: #0f172a;
   cursor: pointer;
-  padding: 8px 16px;
+  padding: 0 10px;
   border-radius: var(--qaly-radius-lg);
-  background: transparent;
+  background: #ffffff;
   transition: all 0.25s ease;
-  border: 1px solid transparent;
+  border: 1px solid #dbeafe;
 }
 
 .erumi-project-trigger:hover,
@@ -1390,13 +1847,14 @@ onBeforeUnmount(() => {
 }
 
 .erumi-project-name {
-  max-width: 300px;
+  max-width: 100%;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #0f172a;
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 850;
 }
 
 .erumi-project-chevron {
@@ -1413,11 +1871,11 @@ onBeforeUnmount(() => {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  width: max-content;
+  width: min(360px, calc(100vw - 32px));
   min-width: 260px;
-  max-width: 360px;
+  max-width: calc(100vw - 32px);
   height: auto;
-  max-height: 190px;
+  max-height: 320px;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -1426,11 +1884,16 @@ onBeforeUnmount(() => {
   border-radius: var(--qaly-radius-lg);
   box-shadow: var(--qaly-shadow-md);
   padding: 8px;
-  z-index: 999;
+  z-index: 1601;
   display: block;
   scrollbar-width: none;
   -ms-overflow-style: none;
   scroll-behavior: smooth;
+}
+
+.erumi-dropdown-menu.opens-up {
+  top: auto;
+  bottom: calc(100% + 8px);
 }
 
 .erumi-dropdown-menu::-webkit-scrollbar {
@@ -1478,11 +1941,26 @@ onBeforeUnmount(() => {
 }
 
 .erumi-last-updated {
-  flex-shrink: 0;
+  min-width: 0;
+  max-width: 128px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 0 auto;
   color: #8a8f98;
-  font-size: 15px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 800;
   white-space: nowrap;
+}
+
+.erumi-freshness-chip {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #dbeafe;
+  border-radius: var(--qaly-radius-lg);
+  background: #ffffff;
+  color: #335274;
+  padding: 0 9px;
 }
 
 .attached-file-list {
@@ -1682,7 +2160,7 @@ onBeforeUnmount(() => {
 .chat-thread-container {
   flex: 1;
   overflow-y: auto;
-  padding: 32px 24px 220px;
+  padding: 32px 24px 190px;
   scroll-behavior: smooth;
 }
 
@@ -2142,7 +2620,7 @@ onBeforeUnmount(() => {
   left: 0;
   width: 100%;
   background: linear-gradient(rgba(247, 249, 252, 0) 0%, #f7f9fc 20%);
-  padding: 16px 16px 20px;
+  padding: 10px 16px 16px;
   z-index: 10;
 }
 
@@ -2152,14 +2630,14 @@ onBeforeUnmount(() => {
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .suggestion-chips-horizontal {
   display: flex;
   gap: 8px;
   overflow-x: auto;
-  padding: 4px 0 8px;
+  padding: 0 0 4px;
   scrollbar-width: none;
 }
 
@@ -2187,11 +2665,132 @@ onBeforeUnmount(() => {
   color: #0f172a;
 }
 
+.suggestion-chip-more {
+  border-color: #b9d5ff;
+  color: #185fb8;
+  background: #f5f9ff;
+}
+
 .chat-disclaimer {
   font-size: 11px;
   color: #94a3b8;
   text-align: center;
   margin: 0;
+}
+
+.analytics-drawer-content,
+.analytics-drawer-section {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.analytics-drawer-muted,
+.analytics-drawer-empty span,
+.analytics-drawer-table-note span,
+.analytics-model-registry p {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.analytics-drawer-metric-list,
+.analytics-model-registry,
+.analytics-action-list {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.analytics-drawer-metric,
+.analytics-model-registry article,
+.analytics-drawer-empty,
+.analytics-drawer-table-note,
+.analytics-action-draft {
+  min-width: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--qaly-radius-lg);
+  background: #f8fafc;
+  padding: 12px;
+}
+
+.analytics-drawer-metric {
+  display: grid;
+  gap: 4px;
+}
+
+.analytics-drawer-metric span,
+.analytics-drawer-metric small,
+.analytics-model-registry span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.analytics-drawer-metric strong,
+.analytics-drawer-empty strong,
+.analytics-drawer-table-note strong,
+.analytics-model-registry strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+}
+
+.analytics-drawer-metric.tone-good {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.analytics-drawer-metric.tone-warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.analytics-drawer-metric.tone-danger {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.analytics-model-registry article,
+.analytics-drawer-empty,
+.analytics-drawer-table-note {
+  display: grid;
+  gap: 5px;
+}
+
+.analytics-model-registry span {
+  width: max-content;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #1d4ed8;
+  padding: 2px 7px;
+}
+
+.analytics-action-draft {
+  width: 100%;
+  color: #1d4ed8;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.analytics-action-draft:hover,
+.analytics-action-draft:focus-visible {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  outline: none;
+}
+
+.erumi-draft-note {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 /* Drawer mode overrides (Sprint 1) */
@@ -2404,9 +3003,100 @@ onBeforeUnmount(() => {
   background: var(--panel-soft);
 }
 
+:global(:root[data-theme='dark']) .analytics-drawer-metric,
+:global(:root[data-theme='dark']) .analytics-model-registry article,
+:global(:root[data-theme='dark']) .analytics-drawer-empty,
+:global(:root[data-theme='dark']) .analytics-drawer-table-note,
+:global(:root[data-theme='dark']) .analytics-action-draft {
+  border-color: var(--line) !important;
+  background: var(--panel-soft) !important;
+  color: var(--text) !important;
+}
+
+:global(:root[data-theme='dark']) .analytics-drawer-metric strong,
+:global(:root[data-theme='dark']) .analytics-drawer-empty strong,
+:global(:root[data-theme='dark']) .analytics-drawer-table-note strong,
+:global(:root[data-theme='dark']) .analytics-model-registry strong {
+  color: var(--text-strong) !important;
+}
+
+:global(:root[data-theme='dark']) .analytics-drawer-muted,
+:global(:root[data-theme='dark']) .analytics-drawer-metric span,
+:global(:root[data-theme='dark']) .analytics-drawer-metric small,
+:global(:root[data-theme='dark']) .analytics-drawer-empty span,
+:global(:root[data-theme='dark']) .analytics-drawer-table-note span,
+:global(:root[data-theme='dark']) .analytics-model-registry p,
+:global(:root[data-theme='dark']) .erumi-draft-note {
+  color: var(--muted) !important;
+}
+
 @media (max-width: 720px) {
+  .chat-empty-state {
+    max-width: 100%;
+    padding: 18px 12px 16px;
+    gap: 14px;
+  }
+
+  .welcome-heading {
+    font-size: 24px;
+  }
+
+  .suggestion-pills-wrap {
+    max-width: 100%;
+    align-self: stretch;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .suggestion-pills-wrap::-webkit-scrollbar {
+    display: none;
+  }
+
+  .suggestion-pill {
+    flex: 0 0 auto;
+    padding: 9px 13px;
+  }
+
+  .erumi-project-row {
+    align-items: flex-start;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .erumi-context-controls {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .erumi-custom-dropdown {
+    flex: 1 1 190px;
+    max-width: 100%;
+  }
+
+  .erumi-project-trigger {
+    width: 100%;
+    padding: 8px 10px;
+  }
+
+  .erumi-project-name {
+    max-width: 100%;
+    font-size: 14px;
+  }
+
+  .erumi-last-updated {
+    max-width: 100%;
+    font-size: 12px;
+  }
+
+  .erumi-freshness-chip {
+    max-width: 100%;
+  }
+
   .chat-thread-container {
-    padding: 20px 12px 205px;
+    padding: 20px 12px 220px;
   }
 
   .chat-thread-width {

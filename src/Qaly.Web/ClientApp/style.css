@@ -5950,13 +5950,16 @@ textarea::placeholder {
   display: none;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  flex: 1 1 260px;
   background: #f1f5f9;
   border: 1px solid transparent;
   border-radius: var(--qaly-radius-lg);
   padding: 0 16px;
   height: 40px;
-  width: 320px;
-  margin-left: 24px;
+  width: clamp(220px, 30vw, 420px);
+  max-width: min(420px, 38vw);
+  margin-left: 0;
   color: var(--muted);
   cursor: pointer;
   text-align: left;
@@ -5969,9 +5972,26 @@ textarea::placeholder {
   }
 }
 
+@media (min-width: 768px) and (max-width: 1023px) {
+  .header-search {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .shell-header-actions {
+    min-width: 0;
+  }
+}
+
 @media (max-width: 767px) {
   .shell-header {
     grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .header-search {
+    display: none;
   }
 }
 
@@ -6016,6 +6036,28 @@ textarea::placeholder {
   color: var(--text-muted);
   font-weight: 700;
   text-transform: uppercase;
+}
+
+@media (max-width: 1240px) {
+  .user-meta-text {
+    display: none !important;
+  }
+
+  .shell-user-menu {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 767px) {
+  .shell-user-menu {
+    width: 42px;
+    min-width: 42px;
+    padding: 0 5px;
+  }
+
+  .shell-user-menu > svg {
+    display: none;
+  }
 }
 
 /* 3D SVG Bar Chart Hover Micro-animations */

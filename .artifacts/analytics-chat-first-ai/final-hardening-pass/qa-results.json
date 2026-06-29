@@ -1,0 +1,279 @@
+{
+  "startedAt": "2026-06-29T06:33:33.886Z",
+  "baseUrl": "http://localhost:5000",
+  "screenshots": {
+    "analytics-desktop-final.png": "C:\\Users\\Lenovo\\Documents\\Qaly\\Qaly_project\\.artifacts\\analytics-chat-first-ai\\final-hardening-pass\\analytics-desktop-final.png",
+    "analytics-desktop-active-chat-final.png": "C:\\Users\\Lenovo\\Documents\\Qaly\\Qaly_project\\.artifacts\\analytics-chat-first-ai\\final-hardening-pass\\analytics-desktop-active-chat-final.png",
+    "analytics-desktop-tool-palette-final.png": "C:\\Users\\Lenovo\\Documents\\Qaly\\Qaly_project\\.artifacts\\analytics-chat-first-ai\\final-hardening-pass\\analytics-desktop-tool-palette-final.png",
+    "analytics-desktop-project-dropdown-final.png": "C:\\Users\\Lenovo\\Documents\\Qaly\\Qaly_project\\.artifacts\\analytics-chat-first-ai\\final-hardening-pass\\analytics-desktop-project-dropdown-final.png",
+    "analytics-desktop-history-drawer-final.png": "C:\\Users\\Lenovo\\Documents\\Qaly\\Qaly_project\\.artifacts\\analytics-chat-first-ai\\final-hardening-pass\\analytics-desktop-history-drawer-final.png",
+    "analytics-desktop-sources-drawer-final.png": "C:\\Users\\Lenovo\\Documents\\Qaly\\Qaly_project\\.artifacts\\analytics-chat-first-ai\\final-hardening-pass\\analytics-desktop-sources-drawer-final.png",
+    "analytics-tablet-final.png": "C:\\Users\\Lenovo\\Documents\\Qaly\\Qaly_project\\.artifacts\\analytics-chat-first-ai\\final-hardening-pass\\analytics-tablet-final.png",
+    "analytics-mobile-final.png": "C:\\Users\\Lenovo\\Documents\\Qaly\\Qaly_project\\.artifacts\\analytics-chat-first-ai\\final-hardening-pass\\analytics-mobile-final.png",
+    "dashboard-floating-chatbot-final.png": "C:\\Users\\Lenovo\\Documents\\Qaly\\Qaly_project\\.artifacts\\analytics-chat-first-ai\\final-hardening-pass\\dashboard-floating-chatbot-final.png",
+    "reload-verified-final.png": "C:\\Users\\Lenovo\\Documents\\Qaly\\Qaly_project\\.artifacts\\analytics-chat-first-ai\\final-hardening-pass\\reload-verified-final.png"
+  },
+  "checks": [
+    {
+      "name": "ASP.NET static dist manifest is served",
+      "pass": true,
+      "details": {
+        "status": 200
+      }
+    },
+    {
+      "name": "desktop analytics has no horizontal overflow",
+      "pass": true,
+      "details": {
+        "url": "http://localhost:5000/analytics",
+        "width": 1440,
+        "height": 900,
+        "overflowX": 0,
+        "nativeFileInputVisible": false,
+        "analyticsPortal": true,
+        "floatingChatbot": false,
+        "analyticsToolbar": true,
+        "drawerCount": 0
+      }
+    },
+    {
+      "name": "native file input is hidden",
+      "pass": true,
+      "details": {
+        "url": "http://localhost:5000/analytics",
+        "width": 1440,
+        "height": 900,
+        "overflowX": 0,
+        "nativeFileInputVisible": false,
+        "analyticsPortal": true,
+        "floatingChatbot": false,
+        "analyticsToolbar": true,
+        "drawerCount": 0
+      }
+    },
+    {
+      "name": "slash command popup stays in viewport",
+      "pass": true,
+      "details": {
+        "rect": {
+          "x": 522,
+          "y": 542.5,
+          "width": 636,
+          "height": 59
+        },
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      }
+    },
+    {
+      "name": "Shift+Enter inserts newline",
+      "pass": true,
+      "details": {
+        "inputValue": "Dòng 1\nDòng 2"
+      }
+    },
+    {
+      "name": "Enter sends a chat prompt",
+      "pass": true,
+      "details": {}
+    },
+    {
+      "name": "active desktop chat has no horizontal overflow",
+      "pass": true,
+      "details": {
+        "url": "http://localhost:5000/analytics",
+        "width": 1440,
+        "height": 900,
+        "overflowX": 0,
+        "nativeFileInputVisible": false,
+        "analyticsPortal": true,
+        "floatingChatbot": false,
+        "analyticsToolbar": true,
+        "drawerCount": 0
+      }
+    },
+    {
+      "name": "tool palette stays in viewport",
+      "pass": true,
+      "details": {
+        "rect": {
+          "x": 740,
+          "y": 440,
+          "width": 420,
+          "height": 265.5
+        },
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      }
+    },
+    {
+      "name": "project dropdown stays in viewport",
+      "pass": true,
+      "details": {
+        "rect": {
+          "x": 524,
+          "y": 467.5,
+          "width": 360,
+          "height": 276
+        },
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      }
+    },
+    {
+      "name": "model selector stays in viewport",
+      "pass": true,
+      "details": {
+        "rect": {
+          "x": 637,
+          "y": 367.25,
+          "width": 360,
+          "height": 376.25
+        },
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      }
+    },
+    {
+      "name": "history drawer stays in viewport",
+      "pass": true,
+      "details": {
+        "rect": {
+          "x": 1008,
+          "y": 84,
+          "width": 420,
+          "height": 804
+        },
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      }
+    },
+    {
+      "name": "sources drawer stays in viewport",
+      "pass": true,
+      "details": {
+        "rect": {
+          "x": 1008,
+          "y": 84,
+          "width": 420,
+          "height": 804
+        },
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      }
+    },
+    {
+      "name": "tablet analytics has no horizontal overflow",
+      "pass": true,
+      "details": {
+        "url": "http://localhost:5000/analytics",
+        "width": 834,
+        "height": 1112,
+        "overflowX": 0,
+        "nativeFileInputVisible": false,
+        "analyticsPortal": true,
+        "floatingChatbot": false,
+        "analyticsToolbar": true,
+        "drawerCount": 0
+      }
+    },
+    {
+      "name": "mobile analytics has no horizontal overflow",
+      "pass": true,
+      "details": {
+        "url": "http://localhost:5000/analytics",
+        "width": 390,
+        "height": 844,
+        "overflowX": 0,
+        "nativeFileInputVisible": false,
+        "analyticsPortal": true,
+        "floatingChatbot": false,
+        "analyticsToolbar": true,
+        "drawerCount": 0
+      }
+    },
+    {
+      "name": "dashboard floating chatbot remains available",
+      "pass": true,
+      "details": {
+        "url": "http://localhost:5000/dashboard",
+        "width": 1440,
+        "height": 900,
+        "overflowX": 0,
+        "nativeFileInputVisible": false,
+        "analyticsPortal": false,
+        "floatingChatbot": true,
+        "analyticsToolbar": false,
+        "drawerCount": 0
+      }
+    },
+    {
+      "name": "analytics cockpit toolbar does not leak onto dashboard",
+      "pass": true,
+      "details": {
+        "url": "http://localhost:5000/dashboard",
+        "width": 1440,
+        "height": 900,
+        "overflowX": 0,
+        "nativeFileInputVisible": false,
+        "analyticsPortal": false,
+        "floatingChatbot": true,
+        "analyticsToolbar": false,
+        "drawerCount": 0
+      }
+    },
+    {
+      "name": "reload after corrupt history has no horizontal overflow",
+      "pass": true,
+      "details": {
+        "url": "http://localhost:5000/analytics",
+        "width": 1440,
+        "height": 900,
+        "overflowX": 0,
+        "nativeFileInputVisible": false,
+        "analyticsPortal": true,
+        "floatingChatbot": false,
+        "analyticsToolbar": true,
+        "drawerCount": 0
+      }
+    },
+    {
+      "name": "corrupt localStorage history does not crash analytics",
+      "pass": true,
+      "details": {}
+    },
+    {
+      "name": "no actionable browser console errors during analytics QA",
+      "pass": true,
+      "details": {
+        "actionableConsoleErrors": [],
+        "knownEnvironmentConsoleErrors": []
+      }
+    },
+    {
+      "name": "no uncaught page errors during QA",
+      "pass": true,
+      "details": {
+        "pageErrors": []
+      }
+    }
+  ],
+  "consoleErrors": [],
+  "knownEnvironmentConsoleErrors": [],
+  "pageErrors": [],
+  "notes": [],
+  "finishedAt": "2026-06-29T06:34:41.353Z",
+  "failedChecks": []
+}

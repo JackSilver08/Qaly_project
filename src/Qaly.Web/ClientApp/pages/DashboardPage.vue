@@ -231,28 +231,28 @@ const hoveredProject = computed(() => {
               "
             >
               <div class="tooltip-project-name" style="font-size: 12px; font-weight: 750; color: #0f172a; border-bottom: 1px solid #f1f5f9; padding-bottom: 4px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;">
-                {{ projects[hoveredIndex].name }}
+                {{ hoveredProject.name }}
               </div>
               <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
                 <span style="color: #64748b; display: flex; align-items: center; gap: 6px;">
                   <span style="width: 6px; height: 6px; border-radius: 50%; background: #2563eb; display: inline-block;"></span>
                   Tiến độ
                 </span>
-                <strong style="color: #0f172a; font-weight: 800;">{{ projects[hoveredIndex].progressPercentage }}%</strong>
+                <strong style="color: #0f172a; font-weight: 800;">{{ hoveredProject.progressPercentage }}%</strong>
               </div>
               <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
                 <span style="color: #64748b; display: flex; align-items: center; gap: 6px;">
                   <span style="width: 6px; height: 6px; border-radius: 50%; background: #10b981; display: inline-block;"></span>
                   Nhiệm vụ
                 </span>
-                <strong style="color: #0f172a; font-weight: 800;">{{ projects[hoveredIndex].taskCount || 0 }}</strong>
+                <strong style="color: #0f172a; font-weight: 800;">{{ hoveredProject.taskCount || 0 }}</strong>
               </div>
-              <div v-if="projects[hoveredIndex].overdueTaskCount > 0" style="display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
+              <div v-if="hoveredProject.overdueTaskCount > 0" style="display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
                 <span style="color: #ef4444; display: flex; align-items: center; gap: 6px;">
                   <span style="width: 6px; height: 6px; border-radius: 50%; background: #ef4444; display: inline-block;"></span>
                   Quá hạn
                 </span>
-                <strong style="color: #ef4444; font-weight: 800;">{{ projects[hoveredIndex].overdueTaskCount }}</strong>
+                <strong style="color: #ef4444; font-weight: 800;">{{ hoveredProject.overdueTaskCount }}</strong>
               </div>
             </div>
 

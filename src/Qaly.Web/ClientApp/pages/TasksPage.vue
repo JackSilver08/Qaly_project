@@ -61,6 +61,9 @@ type HubTask = DashboardTask & {
   projectCreatedAt: string
 }
 
+type TaskSummary = HubTask | TaskAttentionDto
+type TaskDisplay = TaskItemDto | TaskSummary
+
 type WorkflowTask = {
   id: string
   status: string
@@ -252,7 +255,23 @@ const selectedTaskSummary = computed(() => {
   return allTasks.value.find((task) => task.id === selectedTaskId.value) ?? attentionItems.value.find((item) => item.id === selectedTaskId.value) ?? null
 })
 
-const selectedTaskDisplay = computed(() => selectedTaskDetail.value ?? selectedTaskSummary.value)
+const selectedTaskDisplay = computed<TaskDisplay | null>(() => selectedTaskDetail.value ?? selectedTaskSummary.value)
+
+const selectedTaskProjectLine = computed(() => {
+  const task = selectedTaskDisplay.value
+  if (!task) return ''
+
+  return 'projectCode' in task ? `${task.projectName} · ${task.projectCode}` : task.projectName
+})
+
+const selectedTaskDescription = computed(() => {
+  const task = selectedTaskDisplay.value
+  if (task && 'description' in task && task.description) {
+    return task.description
+  }
+
+  return 'Task này chưa có mô tả chi tiết.'
+})
 
 type SelectedWorkflowTask = {
   id: string
@@ -276,7 +295,7 @@ const selectedWorkflowTask = computed<SelectedWorkflowTask | null>(() => {
     assigneeId: detail?.assigneeId ?? summary!.assigneeId ?? null,
     dueDate: detail?.dueDate ?? summary!.dueDate ?? null,
     priority: detail?.priority ?? summary!.priority,
-    isPinned: summary?.isPinned ?? false,
+    isPinned: summary && 'isPinned' in summary ? summary.isPinned : false,
     assigneeName: detail?.assigneeName ?? summary?.assigneeName ?? null,
   }
 })
@@ -1246,7 +1265,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
             <span>Chi tiết task</span>
             <h2>{{ selectedTaskDisplay?.title || 'Đang tải...' }}</h2>
             <p v-if="selectedTaskDisplay">
-              {{ selectedTaskDisplay.projectName }} · {{ selectedTaskDisplay.projectCode }}
+              {{ selectedTaskProjectLine }}
             </p>
           </div>
           <button class="icon-button" type="button" @click="closeTaskDrawer">
@@ -1286,7 +1305,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
             </div>
 
             <p class="task-detail__description">
-              {{ selectedTaskDisplay.description || 'Task này chưa có mô tả chi tiết.' }}
+              {{ selectedTaskDescription }}
             </p>
 
             <div class="task-detail__facts">
