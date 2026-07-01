@@ -92,6 +92,38 @@ dotnet test tests/Qaly.UnitTests/Qaly.UnitTests.csproj --filter "FullyQualifiedN
 - **Seq Logs (Logging tập trung):** http://localhost:8081
 - **MailHog (Bắt email test):** http://localhost:8025
 
+
+## 🧑‍💻 Hướng dẫn chạy dự án nhanh cho khangphma
+
+Dành cho **khangphma** để tự khởi chạy dự án bằng SQL Server Express cục bộ (`LAPTOP-OTB0GQMG\SQLEXPRESS`) mà không cần cài đặt Docker phức tạp:
+
+### 1. Cấu hình Connection String
+Đảm bảo Connection String trong các file [appsettings.Development.json](file:///d:/trung/DATN/Qaly_project/src/Qaly.Web/appsettings.Development.json) và [appsettings.json](file:///d:/trung/DATN/Qaly_project/src/Qaly.Web/appsettings.json) đã được cập nhật chính xác (đã được cấu hình sẵn):
+```json
+"ConnectionStrings": {
+  "DefaultConnection": "Server=LAPTOP-OTB0GQMG\\SQLEXPRESS;Database=QalyDb;Trusted_Connection=True;TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=True"
+}
+```
+
+### 2. Các lệnh khởi chạy
+Chỉ cần copy và paste lệnh này vào Terminal ở thư mục gốc dự án:
+```powershell
+# Restore và chạy Backend (DB Migration và Rich Seed Data sẽ tự động chạy)
+dotnet restore
+dotnet run --project src/Qaly.Web --urls "http://localhost:5000"
+```
+*(Lưu ý: Giao diện Frontend đã được biên dịch sẵn tại thư mục `wwwroot/dist` nên bạn có thể truy cập ngay mà không cần chạy `npm build` hay `npm run dev`.)*
+
+### 3. Thông tin đăng nhập Demo
+- **Tài khoản Admin (Quản trị viên Qaly):**
+  - **Email:** `admin@qaly.dev`
+  - **Mật khẩu:** `Admin@123456`
+- **Tài khoản Manager/Member:**
+  - **Email:** `minh.anh@qaly.dev` hoặc `bao.ngoc@qaly.dev`
+  - **Mật khẩu:** `Qaly@123456`
+
+---
+
 ## 📁 Project Structure
 
 ```
