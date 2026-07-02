@@ -49,16 +49,19 @@ public static class QalyWebApplicationExtensions
             Log.Error(ex, "Lỗi khi seed dữ liệu. Hãy kiểm tra kết nối SQL Server.");
         }
 
-        var ingestionService = scope.ServiceProvider.GetRequiredService<IAiIngestionService>();
-        try
+        if (app.Configuration.GetValue("Ai:SyncOnStartup", false))
         {
-            Log.Information("Bắt đầu đồng bộ dữ liệu vào Vector Database...");
-            await ingestionService.SyncAllDataAsync();
-            Log.Information("Đồng bộ dữ liệu AI hoàn tất.");
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "Không thể đồng bộ dữ liệu AI. Hãy đảm bảo Ollama và Qdrant đang chạy.");
+            var ingestionService = scope.ServiceProvider.GetRequiredService<IAiIngestionService>();
+            try
+            {
+                Log.Information("Bắt đầu đồng bộ dữ liệu vào Vector Database...");
+                await ingestionService.SyncAllDataAsync();
+                Log.Information("Đồng bộ dữ liệu AI hoàn tất.");
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Không thể đồng bộ dữ liệu AI. Hãy đảm bảo Ollama và Qdrant đang chạy.");
+            }
         }
 
         app.MapOpenApi();

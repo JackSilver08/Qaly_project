@@ -486,6 +486,31 @@ watch(
   },
   { immediate: true },
 );
+
+watch(
+  () => [
+    route.name,
+    route.params.projectId,
+    selectedProject.value?.id,
+    projects.value.length,
+  ],
+  ([routeName, routeProjectId, selectedProjectId]) => {
+    const isProjectRoute = ["project-detail", "project-task"].includes(
+      String(routeName ?? ""),
+    );
+    if (!isProjectRoute || typeof routeProjectId !== "string") return;
+    if (!selectedProjectId || routeProjectId === selectedProjectId) return;
+    if (projects.value.some((project) => project.id === routeProjectId)) return;
+
+    activeProjectId.value = String(selectedProjectId);
+    void router.replace({
+      name: routeName as string,
+      params: { ...route.params, projectId: selectedProjectId },
+      query: route.query,
+    });
+  },
+  { immediate: true },
+);
 watch(
   () => route.params.taskId,
   (id) => {
