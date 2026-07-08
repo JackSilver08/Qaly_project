@@ -1,17 +1,23 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
+  AlertTriangle,
   CalendarDays,
+  Captions,
+  ChevronDown,
   Copy,
   Info,
   MessageCircle,
   Moon,
   MonitorUp,
+  PanelRightClose,
+  PanelRightOpen,
   ShieldCheck,
   Sparkles,
   Sun,
   Users,
   VideoOff,
+  X,
 } from "lucide-vue-next";
 import {
   HubConnectionBuilder,
@@ -61,6 +67,8 @@ const theme = ref<"dark" | "light">(
 );
 const localVideoRef = ref<HTMLVideoElement | null>(null);
 const screenShareRef = ref<InstanceType<typeof ScreenSharePanel> | null>(null);
+const sidebarOpen = ref(true);
+const transcriptLogRef = ref<HTMLElement | null>(null);
 const participants = ref<{ connectionId: string; lastSeen: string }[]>([]);
 type RemoteTile = {
   identity: string;
@@ -136,6 +144,7 @@ const speechRec = useSpeechRecognition((text, isFinal) => {
 });
 
 const isSpeechListening = computed(() => speechRec.isListening.value);
+const speechError = computed(() => speechRec.hasError.value);
 const liveCaptionText = ref("");
 let liveCaptionTimeoutId: number | undefined;
 
@@ -153,6 +162,12 @@ function appendLocalTranscript(senderName: string, text: string, timestamp: numb
   if (meetingId.value) {
     saveBuffer(meetingId.value, transcriptList.value);
   }
+  // Auto-scroll transcript
+  nextTick(() => {
+    if (transcriptLogRef.value) {
+      transcriptLogRef.value.scrollTop = transcriptLogRef.value.scrollHeight;
+    }
+  });
 }
 
 function editTranscriptMessage(idx: number) {
@@ -901,236 +916,262 @@ function disconnectLiveKit() {
 </script>
 
 <template>
-  <div class="meeting-page" :class="{ 'meeting-page--light': isLightTheme }">
-    <section class="meeting-room">
-      <header class="meeting-room__header">
-        <button class="meeting-back" type="button" @click="router.push({ name: 'group-detail', params: { groupId } })">
-          <MessageCircle :size="16" />
-          Trở lại trò chuyện
+  <div class="gm" :class="{ 'gm--light': isLightTheme }">
+    <!-- ── Top Bar ── -->
+    <header class="gm-topbar">
+      <div class="gm-topbar__left">
+        <button class="gm-back" type="button" @click="router.push({ name: 'group-detail', params: { groupId } })">
+          <ChevronDown :size="16" style="transform:rotate(90deg)" />
+          <span>Trở lại</span>
         </button>
-        <div>
-          <span>Qaly Meet</span>
-          <h1>Phòng họp nhóm</h1>
+        <div class="gm-brand">
+          <span class="gm-brand__badge">QALY MEET</span>
+          <span class="gm-brand__room">{{ meetingShortCode }}</span>
         </div>
-        <div class="meeting-status" :class="{ active }">
-          <span></span>
+      </div>
+
+      <div class="gm-topbar__right">
+        <div class="gm-status" :class="{ 'gm-status--active': active }">
+          <span class="gm-status__dot"></span>
           {{ meetingConnectionLabel }}
         </div>
-      </header>
+        <button class="gm-topbar-btn" type="button" @click="toggleTheme" :title="isLightTheme ? 'Giao diện tối' : 'Giao diện sáng'">
+          <Moon v-if="isLightTheme" :size="16" />
+          <Sun v-else :size="16" />
+        </button>
+        <button class="gm-topbar-btn" type="button" @click="copyMeetingLink" title="Sao chép link phòng họp">
+          <Copy :size="16" />
+        </button>
+        <button class="gm-topbar-btn" type="button" @click="sidebarOpen = !sidebarOpen" :title="sidebarOpen ? 'Ẩn Sidebar' : 'Hiện Sidebar'">
+          <PanelRightClose v-if="sidebarOpen" :size="16" />
+          <PanelRightOpen v-else :size="16" />
+        </button>
+      </div>
+    </header>
 
-      <div class="meeting-layout">
-        <main class="meeting-stage">
-          <div class="meeting-stage__topbar">
-            <div class="meeting-code">
-              <CalendarDays :size="16" />
-              <span>{{ meetingShortCode }}</span>
-            </div>
-            <div class="meeting-stage__actions">
-              <button class="stage-action" type="button" @click="toggleTheme">
-                <Moon v-if="isLightTheme" :size="15" />
-                <Sun v-else :size="15" />
-                {{ isLightTheme ? "Giao diện tối" : "Giao diện sáng" }}
-              </button>
-              <button class="stage-action" type="button" @click="copyMeetingLink">
-                <Copy :size="15" />
-                Sao chép link
-              </button>
-            </div>
-          </div>
-
-          <div v-if="showMeetingFrame" class="meeting-frame-shell">
-            <div class="qaly-meet-stage" :class="`qaly-meet-stage--count-${Math.min(stageTileCount, 4)}`">
-              <article class="meeting-video-tile local-participant-tile">
-                <video
-                  v-show="!cameraMuted"
-                  ref="localVideoRef"
-                  class="local-video"
-                  autoplay
-                  playsinline
-                  muted
-                ></video>
-                <div v-if="cameraMuted" class="camera-off-state">
-                  <div class="meeting-avatar meeting-avatar--large">QT</div>
-                  <span><VideoOff :size="18" /> Camera đang tắt</span>
-                </div>
-                <footer class="meeting-tile-footer">
-                  <strong>Bạn</strong>
-                  <span>{{ micMuted ? "Mic tắt" : "Mic bật" }}</span>
-                </footer>
-              </article>
-
-              <article
-                v-for="tile in remoteTiles"
-                :key="tile.identity"
-                class="meeting-video-tile remote-participant-tile"
-              >
-                <video
-                  v-show="showRemoteVideo(tile)"
-                  :ref="(el) => setRemoteVideoRef(tile.identity, el as HTMLVideoElement | null)"
-                  class="remote-video"
-                  autoplay
-                  playsinline
-                ></video>
-                <audio
-                  :ref="(el) => setRemoteAudioRef(tile.identity, el as HTMLAudioElement | null)"
-                  autoplay
-                ></audio>
-                <div v-if="showRemoteCameraOff(tile)" class="camera-off-state">
-                  <div class="meeting-avatar meeting-avatar--large">{{ tile.initials }}</div>
-                  <span><VideoOff :size="18" /> Camera đang tắt</span>
-                </div>
-                <footer class="meeting-tile-footer">
-                  <strong>{{ tile.name }}</strong>
-                  <span>{{ tile.micOn ? "Mic bật" : "Mic tắt" }}</span>
-                </footer>
-              </article>
-
-              <div class="meeting-brand-chip">QALY Meet</div>
-              <div class="meeting-live-chip">
-                <span></span>
-                {{ participantCount }} người · {{ micMuted ? "Mic tắt" : "Mic bật" }}
-              </div>
-              <div v-if="meetingError" class="meeting-error-chip">
-                {{ meetingError }}
+    <!-- ── Main Body ── -->
+    <div class="gm-body" :class="{ 'gm-body--sidebar-closed': !sidebarOpen }">
+      <!-- Video Stage -->
+      <main class="gm-stage">
+        <!-- Video Grid -->
+        <div v-if="showMeetingFrame" class="gm-grid" :class="`gm-grid--count-${Math.min(stageTileCount, 4)}`">
+          <!-- Local Tile -->
+          <article class="gm-tile gm-tile--local">
+            <video
+              v-show="!cameraMuted"
+              ref="localVideoRef"
+              class="gm-tile__video gm-tile__video--mirror"
+              autoplay playsinline muted
+            ></video>
+            <div v-if="cameraMuted" class="gm-tile__placeholder">
+              <div class="gm-avatar gm-avatar--xl">
+                {{ currentUserName.slice(0, 2).toUpperCase() }}
               </div>
             </div>
-          </div>
+            <footer class="gm-tile__label">
+              <strong>Bạn</strong>
+              <span :class="{ 'gm-mic--off': micMuted }">{{ micMuted ? "🔇" : "🎤" }}</span>
+            </footer>
+          </article>
 
-          <div v-else class="meeting-prejoin">
-            <div class="meeting-orbit">
-              <div class="meeting-avatar">QT</div>
+          <!-- Remote Tiles -->
+          <article
+            v-for="tile in remoteTiles"
+            :key="tile.identity"
+            class="gm-tile"
+          >
+            <video
+              v-show="showRemoteVideo(tile)"
+              :ref="(el) => setRemoteVideoRef(tile.identity, el as HTMLVideoElement | null)"
+              class="gm-tile__video"
+              autoplay playsinline
+            ></video>
+            <audio
+              :ref="(el) => setRemoteAudioRef(tile.identity, el as HTMLAudioElement | null)"
+              autoplay
+            ></audio>
+            <div v-if="showRemoteCameraOff(tile)" class="gm-tile__placeholder">
+              <div class="gm-avatar gm-avatar--xl">{{ tile.initials }}</div>
             </div>
-            <span class="meeting-eyebrow">
-              <Sparkles :size="15" /> Không gian họp Qaly
-            </span>
-            <h2>{{ isStarting ? "Đang chuẩn bị phòng họp..." : "Sẵn sàng bắt đầu cuộc họp" }}</h2>
-            <p>Kiểm tra camera, chia sẻ màn hình hoặc vào phòng họp cho nhóm này.</p>
-            <button class="meeting-start-button" type="button" @click="startMeeting" :disabled="isStarting">
-              Bắt đầu cuộc họp
-            </button>
+            <footer class="gm-tile__label">
+              <strong>{{ tile.name }}</strong>
+              <span :class="{ 'gm-mic--off': !tile.micOn }">{{ tile.micOn ? "🎤" : "🔇" }}</span>
+            </footer>
+          </article>
+
+          <!-- Overlays -->
+          <div class="gm-grid__info-chip">
+            <span class="gm-dot gm-dot--green"></span>
+            {{ participantCount }} người tham gia
+          </div>
+          <div v-if="meetingError" class="gm-grid__error">
+            <AlertTriangle :size="16" />
+            {{ meetingError }}
+          </div>
+        </div>
+
+        <!-- Pre-join State -->
+        <div v-else class="gm-prejoin">
+          <div class="gm-prejoin__orbit">
+            <div class="gm-avatar gm-avatar--hero">
+              {{ currentUserName.slice(0, 2).toUpperCase() }}
+            </div>
+          </div>
+          <span class="gm-prejoin__eyebrow">
+            <Sparkles :size="14" /> Không gian họp Qaly
+          </span>
+          <h2 class="gm-prejoin__heading">
+            {{ isStarting ? "Đang chuẩn bị..." : "Sẵn sàng bắt đầu" }}
+          </h2>
+          <p class="gm-prejoin__copy">Kiểm tra camera, bật micro và vào phòng họp nhóm.</p>
+          <button class="gm-prejoin__btn" type="button" @click="startMeeting" :disabled="isStarting">
+            Bắt đầu cuộc họp
+          </button>
+        </div>
+
+        <!-- Live Captions Overlay -->
+        <Transition name="caption-fade">
+          <div v-if="liveCaptionText" class="gm-captions">
+            <Captions :size="14" />
+            <span>{{ liveCaptionText }}</span>
+          </div>
+        </Transition>
+
+        <!-- Speech Error Banner -->
+        <Transition name="caption-fade">
+          <div v-if="speechError" class="gm-speech-error">
+            <AlertTriangle :size="14" />
+            <span>{{ speechError }}</span>
+            <button type="button" @click="speechRec.stop(); speechRec.start();" class="gm-speech-error__retry">Thử lại</button>
+          </div>
+        </Transition>
+
+        <!-- Control Dock -->
+        <div class="gm-dock-wrapper">
+          <MeetingControls
+            :active="active"
+            :mic-muted="micMuted"
+            :camera-muted="cameraMuted"
+            :speech-active="isSpeechListening"
+            :light="isLightTheme"
+            @start="startMeeting"
+            @end="endMeeting"
+            @share="openScreenShare"
+            @toggle-mic="toggleMic"
+            @toggle-camera="toggleCamera"
+            @toggle-speech="toggleSpeech"
+          />
+        </div>
+      </main>
+
+      <!-- ── Sidebar ── -->
+      <aside v-show="sidebarOpen" class="gm-sidebar">
+        <!-- Tab Switcher -->
+        <nav class="gm-tabs">
+          <button
+            class="gm-tab"
+            :class="{ 'gm-tab--active': activeSidebarTab === 'participants' }"
+            @click="activeSidebarTab = 'participants'"
+          >
+            <Users :size="15" />
+            <span>Thành viên</span>
+          </button>
+          <button
+            class="gm-tab"
+            :class="{ 'gm-tab--active': activeSidebarTab === 'transcript' }"
+            @click="activeSidebarTab = 'transcript'"
+          >
+            <Captions :size="15" />
+            <span>Phụ đề</span>
+            <span v-if="transcriptList.length > 0" class="gm-tab__badge">{{ transcriptList.length }}</span>
+          </button>
+          <button
+            class="gm-tab"
+            :class="{ 'gm-tab--active': activeSidebarTab === 'checknote' }"
+            @click="activeSidebarTab = 'checknote'"
+          >
+            <Sparkles :size="15" />
+            <span>AI</span>
+          </button>
+        </nav>
+
+        <!-- ── Tab 1: Participants ── -->
+        <div v-if="activeSidebarTab === 'participants'" class="gm-pane">
+          <div class="gm-section-card">
+            <div class="gm-section-card__icon"><ShieldCheck :size="18" /></div>
+            <div>
+              <strong>{{ participantCount }} trong phòng</strong>
+              <p>Room: {{ groupId.slice(0, 8) }}</p>
+            </div>
           </div>
 
-          <!-- Live Captions Overlay -->
-          <div v-if="liveCaptionText" class="live-captions-overlay">
-            <div class="live-caption-inner">{{ liveCaptionText }}</div>
-          </div>
+          <ScreenSharePanel ref="screenShareRef" />
 
-          <div class="meeting-control-dock">
-            <MeetingControls
-              :active="active"
-              :mic-muted="micMuted"
-              :camera-muted="cameraMuted"
-              :speech-active="isSpeechListening"
-              :light="isLightTheme"
-              @start="startMeeting"
-              @end="endMeeting"
-              @share="openScreenShare"
-              @toggle-mic="toggleMic"
-              @toggle-camera="toggleCamera"
-              @toggle-speech="toggleSpeech"
-            />
-          </div>
-        </main>
-
-        <aside class="meeting-side">
-          <!-- Tab switch header -->
-          <div class="sidebar-tabs">
-            <button
-              class="sidebar-tab"
-              :class="{ 'sidebar-tab--active': activeSidebarTab === 'participants' }"
-              @click="activeSidebarTab = 'participants'"
-            >
-              <Users :size="16" /> Thành viên
-            </button>
-            <button
-              class="sidebar-tab"
-              :class="{ 'sidebar-tab--active': activeSidebarTab === 'transcript' }"
-              @click="activeSidebarTab = 'transcript'"
-            >
-              <MessageCircle :size="16" /> Nhật ký
-            </button>
-            <button
-              class="sidebar-tab"
-              :class="{ 'sidebar-tab--active': activeSidebarTab === 'checknote' }"
-              @click="activeSidebarTab = 'checknote'"
-            >
-              <Sparkles :size="16" /> Biên bản AI
-            </button>
-          </div>
-
-          <!-- Tab 1: Participants (Original content) -->
-          <div v-if="activeSidebarTab === 'participants'" class="tab-pane">
-            <article class="meeting-info-card">
-              <div class="meeting-info-card__icon">
-                <ShieldCheck :size="20" />
+          <div class="gm-participant-list">
+            <!-- Self -->
+            <div class="gm-participant">
+              <div class="gm-avatar gm-avatar--sm">{{ currentUserName.slice(0, 2).toUpperCase() }}</div>
+              <div class="gm-participant__info">
+                <strong>{{ currentUserName }} <span class="gm-you-badge">bạn</span></strong>
+                <span>Chủ phòng</span>
               </div>
-              <div>
-                <span>Bảo mật cuộc họp</span>
-                <strong>{{ participantCount }} người trong phòng</strong>
-                <p>Room id: {{ groupId }}</p>
+              <span :class="micMuted ? 'gm-mic-badge gm-mic-badge--off' : 'gm-mic-badge'">
+                {{ micMuted ? '🔇' : '🎤' }}
+              </span>
+            </div>
+            <!-- Remotes -->
+            <div v-for="tile in remoteTiles" :key="tile.identity" class="gm-participant">
+              <div class="gm-avatar gm-avatar--sm gm-avatar--secondary">{{ tile.initials }}</div>
+              <div class="gm-participant__info">
+                <strong>{{ tile.name }}</strong>
+                <span>{{ tile.micOn ? "Mic bật" : "Mic tắt" }} · {{ tile.cameraOn ? "Camera bật" : "Camera tắt" }}</span>
               </div>
-            </article>
+              <span :class="tile.micOn ? 'gm-mic-badge' : 'gm-mic-badge gm-mic-badge--off'">
+                {{ tile.micOn ? '🎤' : '🔇' }}
+              </span>
+            </div>
+            <div v-if="remoteTiles.length === 0" class="gm-empty-state">
+              <Info :size="22" />
+              <span>Chưa có thành viên khác.</span>
+              <p>Sao chép link phòng họp để mời.</p>
+            </div>
+          </div>
+        </div>
 
-            <ScreenSharePanel ref="screenShareRef" />
-
-            <article class="participants-card">
-              <header>
-                <div>
-                  <span>Thành viên</span>
-                  <strong>Thành viên</strong>
-                </div>
-                <div class="participant-count">
-                  <Users :size="15" /> {{ participantCount }}
-                </div>
-              </header>
-
-              <div class="participant-list">
-                <div class="participant-row">
-                  <div class="participant-avatar">QT</div>
-                  <div>
-                    <strong>Bạn</strong>
-                    <span>Chủ phòng · trực tuyến</span>
-                  </div>
-                </div>
-                <div v-for="tile in remoteTiles" :key="tile.identity" class="participant-row">
-                  <div class="participant-avatar participant-avatar--soft">
-                    {{ tile.initials }}
-                  </div>
-                  <div>
-                    <strong>{{ tile.name }}</strong>
-                    <span>{{ tile.micOn ? "Mic bật" : "Mic tắt" }} · {{ tile.cameraOn ? "Camera bật" : "Camera tắt" }}</span>
-                  </div>
-                </div>
-                <div v-if="remoteTiles.length === 0" class="participants-empty">
-                  <Info :size="20" />
-                  <span>Chưa có thành viên khác tham gia.</span>
-                </div>
-              </div>
-            </article>
-
-            <article class="meeting-tip">
-              <MonitorUp :size="18" />
-              <span>Dùng nút chia sẻ màn hình ở dock dưới để trình bày nhanh.</span>
-            </article>
+        <!-- ── Tab 2: Transcript ── -->
+        <div v-else-if="activeSidebarTab === 'transcript'" class="gm-pane gm-pane--transcript">
+          <!-- Transcript Header -->
+          <div class="gm-transcript-header">
+            <div>
+              <strong>Phụ đề thời gian thực</strong>
+              <p v-if="isSpeechListening" class="gm-recording-label">
+                <span class="gm-rec-dot"></span> Đang ghi nhận...
+              </p>
+              <p v-else class="gm-recording-label gm-recording-label--off">
+                Chưa bật · Nhấn nút <Captions :size="12" /> trên thanh điều khiển
+              </p>
+            </div>
+            <span class="gm-transcript-count">{{ transcriptList.length }}</span>
           </div>
 
-          <!-- Tab 2: Transcript (Nhật ký) -->
-          <div v-else-if="activeSidebarTab === 'transcript'" class="tab-pane transcript-pane">
-            <div class="transcript-log">
+          <!-- Transcript Messages -->
+          <div ref="transcriptLogRef" class="gm-transcript-log">
+            <TransitionGroup name="bubble">
               <div
                 v-for="(log, idx) in transcriptList"
                 :key="idx"
-                class="transcript-message"
+                class="gm-bubble"
+                :class="{ 'gm-bubble--self': log.senderName === currentUserName }"
               >
-                <div class="transcript-message-header">
-                  <span class="transcript-sender">{{ log.senderName }}</span>
-                  <span class="transcript-time">{{ formatTime(log.timestamp) }}</span>
+                <div class="gm-bubble__meta">
+                  <span class="gm-bubble__sender">{{ log.senderName }}</span>
+                  <span class="gm-bubble__time">{{ formatTime(log.timestamp) }}</span>
                 </div>
                 <div
-                  class="transcript-text"
+                  class="gm-bubble__text"
                   @dblclick="editTranscriptMessage(idx)"
                   v-if="editingTranscriptIdx !== idx"
-                  title="Nhấp đúp chuột để chỉnh sửa"
+                  title="Nhấp đúp để chỉnh sửa"
                 >
                   {{ log.text }}
                 </div>
@@ -1138,1179 +1179,1278 @@ function disconnectLiveKit() {
                   v-else
                   type="text"
                   v-model="editingTranscriptText"
-                  class="transcript-edit-input"
+                  class="gm-bubble__edit"
                   @blur="saveTranscriptMessage(idx)"
                   @keyup.enter="saveTranscriptMessage(idx)"
                   ref="transcriptEditInputRef"
                 />
               </div>
-              <div v-if="transcriptList.length === 0" class="transcript-empty">
-                <Info :size="20" />
-                <span>Chưa có nhật ký cuộc họp. Hãy nói gì đó hoặc bật micro/AI ghi chú.</span>
-              </div>
+            </TransitionGroup>
+            <div v-if="transcriptList.length === 0" class="gm-empty-state gm-empty-state--compact">
+              <Captions :size="28" />
+              <span>Chưa có phụ đề nào.</span>
+              <p>Bật tính năng Phụ đề AI trên thanh điều khiển phía dưới và bắt đầu nói.</p>
             </div>
           </div>
+        </div>
 
-          <!-- Tab 3: AI Checknote (Biên bản AI) -->
-          <div v-else-if="activeSidebarTab === 'checknote'" class="tab-pane checknote-pane">
-            <!-- Project Selector and Generate Button -->
-            <div v-if="showChecknoteSetup" class="checknote-setup">
-              <label class="checknote-label">Chọn dự án để đồng bộ nhiệm vụ:</label>
-              <select v-model="selectedProjectId" class="checknote-select">
-                <option value="">-- Chọn dự án --</option>
-                <option v-for="proj in projects" :key="proj.id" :value="proj.id">
-                  {{ proj.name }}
-                </option>
-              </select>
-
-              <button
-                class="checknote-btn-generate"
-                @click="generateChecknote"
-                :disabled="!selectedProjectId || transcriptList.length === 0"
-              >
-                <Sparkles :size="16" /> Tạo biên bản AI
-              </button>
-              <p class="checknote-hint" v-if="showChecknoteHint">
-                Nhật ký trống, không thể phân tích biên bản.
-              </p>
+        <!-- ── Tab 3: AI Checknote ── -->
+        <div v-else-if="activeSidebarTab === 'checknote'" class="gm-pane gm-pane--checknote">
+          <!-- Setup View -->
+          <div v-if="showChecknoteSetup" class="gm-checknote-setup">
+            <div class="gm-checknote-hero">
+              <Sparkles :size="32" />
+              <h3>Biên bản AI</h3>
+              <p>AI sẽ phân tích phụ đề cuộc họp, tóm tắt nội dung chính và gợi ý công việc cần làm.</p>
             </div>
 
-            <!-- Loading indicator -->
-            <div v-else-if="isGeneratingChecknote" class="checknote-loading">
-              <div class="checknote-spinner"></div>
-              <span>Đang gọi AI phân tích cuộc họp...</span>
+            <label class="gm-field-label">Dự án đích</label>
+            <select v-model="selectedProjectId" class="gm-select">
+              <option value="">-- Chọn dự án --</option>
+              <option v-for="proj in projects" :key="proj.id" :value="proj.id">
+                {{ proj.name }}
+              </option>
+            </select>
+
+            <button
+              class="gm-btn-generate"
+              @click="generateChecknote"
+              :disabled="!selectedProjectId || transcriptList.length === 0"
+            >
+              <Sparkles :size="16" /> Tạo biên bản AI
+            </button>
+            <p v-if="showChecknoteHint" class="gm-hint gm-hint--warn">
+              <AlertTriangle :size="14" />
+              Phụ đề trống, không thể phân tích.
+            </p>
+          </div>
+
+          <!-- Loading -->
+          <div v-else-if="isGeneratingChecknote" class="gm-checknote-loading">
+            <div class="gm-pulse-ring"></div>
+            <Sparkles :size="24" class="gm-pulse-icon" />
+            <span>Đang phân tích cuộc họp bằng AI...</span>
+            <p>Quá trình có thể mất 10-30 giây.</p>
+          </div>
+
+          <!-- Results -->
+          <div v-else class="gm-checknote-results">
+            <div class="gm-cn-section">
+              <h4><Sparkles :size="14" /> Tóm tắt cuộc họp</h4>
+              <div class="gm-cn-summary">{{ checknoteResult.summary }}</div>
             </div>
 
-            <!-- Results View -->
-            <div v-else class="checknote-results">
-              <div class="checknote-section">
-                <h3>Tóm tắt cuộc họp</h3>
-                <p class="checknote-summary">{{ checknoteResult.summary }}</p>
-              </div>
-
-              <div class="checknote-section">
-                <h3>Danh sách việc cần làm do AI đề xuất</h3>
-                <div class="action-items-list">
-                  <div
-                    v-for="(item, idx) in checknoteResult.actionItems"
-                    :key="idx"
-                    class="action-item-card"
-                    :class="{ 'action-item-card--linked': item.mappingStatus === 'Linked' }"
-                  >
-                    <!-- Editable title -->
-                    <div class="action-item-title-row">
-                      <input
-                        type="text"
-                        v-model="item.title"
-                        class="action-item-input-title"
-                        placeholder="Tiêu đề công việc"
-                        :disabled="item.mappingStatus === 'Linked'"
-                      />
-                    </div>
-                    <!-- Description -->
-                    <textarea
-                      v-model="item.description"
-                      class="action-item-textarea"
-                      placeholder="Mô tả chi tiết..."
+            <div class="gm-cn-section">
+              <h4>📋 Công việc cần làm ({{ checknoteResult.actionItems.length }})</h4>
+              <div class="gm-cn-items">
+                <div
+                  v-for="(item, idx) in checknoteResult.actionItems"
+                  :key="idx"
+                  class="gm-cn-card"
+                  :class="{ 'gm-cn-card--linked': item.mappingStatus === 'Linked' }"
+                >
+                  <div class="gm-cn-card__head">
+                    <input
+                      type="text"
+                      v-model="item.title"
+                      class="gm-cn-card__title"
+                      placeholder="Tiêu đề công việc"
                       :disabled="item.mappingStatus === 'Linked'"
-                    ></textarea>
-
-                    <!-- Priority & Datepicker -->
-                    <div class="action-item-meta-row">
-                      <div class="meta-field">
-                        <span class="meta-lbl">Ưu tiên</span>
-                        <select
-                          v-model="item.priority"
-                          class="meta-val-select"
-                          :disabled="item.mappingStatus === 'Linked'"
-                        >
-                          <option value="Low">Thấp</option>
-                          <option value="Medium">Trung bình</option>
-                          <option value="High">Cao</option>
-                        </select>
-                      </div>
-
-                      <div class="meta-field">
-                        <span class="meta-lbl">Hạn chót</span>
-                        <input
-                          type="date"
-                          v-model="item.dueDateFormatted"
-                          class="meta-val-date"
-                          :disabled="item.mappingStatus === 'Linked'"
-                        />
-                      </div>
+                    />
+                    <span v-if="item.mappingStatus === 'Linked'" class="gm-cn-linked-badge">✓ Đã tạo</span>
+                  </div>
+                  <textarea
+                    v-model="item.description"
+                    class="gm-cn-card__desc"
+                    placeholder="Mô tả..."
+                    :disabled="item.mappingStatus === 'Linked'"
+                  ></textarea>
+                  <div class="gm-cn-card__meta">
+                    <div class="gm-cn-field">
+                      <label>Ưu tiên</label>
+                      <select v-model="item.priority" :disabled="item.mappingStatus === 'Linked'">
+                        <option value="Low">Thấp</option>
+                        <option value="Medium">Trung bình</option>
+                        <option value="High">Cao</option>
+                      </select>
                     </div>
-
-                    <!-- Member Selection -->
-                    <div class="action-item-assignee">
-                      <span class="meta-lbl">Gán cho</span>
-                      <select
-                        v-model="item.assigneeId"
-                        class="assignee-select"
-                        :disabled="item.mappingStatus === 'Linked'"
-                      >
-                        <option value="">-- Chọn thành viên --</option>
-                        <option
-                          v-for="m in projectMembers"
-                          :key="m.userId"
-                          :value="m.userId"
-                        >
+                    <div class="gm-cn-field">
+                      <label>Hạn chót</label>
+                      <input type="date" v-model="item.dueDateFormatted" :disabled="item.mappingStatus === 'Linked'" />
+                    </div>
+                  </div>
+                  <div class="gm-cn-card__meta">
+                    <div class="gm-cn-field" style="flex:1">
+                      <label>Gán cho</label>
+                      <select v-model="item.assigneeId" :disabled="item.mappingStatus === 'Linked'">
+                        <option value="">-- Chọn --</option>
+                        <option v-for="m in projectMembers" :key="m.userId" :value="m.userId">
                           {{ m.fullName }}
                         </option>
                       </select>
                     </div>
-
-                    <!-- Actions -->
-                    <div class="action-item-actions">
-                      <button
-                        v-if="item.mappingStatus !== 'Linked'"
-                        class="action-item-btn-create"
-                        @click="createTaskFromCard(idx)"
-                        :disabled="isCreatingTask === idx"
-                      >
-                        {{ isCreatingTask === idx ? "Đang tạo..." : "Tạo Task" }}
-                      </button>
-                      <span v-else class="action-item-linked-badge">
-                        ✓ Đã tạo Task trong dự án
-                      </span>
-                    </div>
+                  </div>
+                  <div v-if="item.mappingStatus !== 'Linked'" class="gm-cn-card__actions">
+                    <button
+                      class="gm-btn-create-task"
+                      @click="createTaskFromCard(idx)"
+                      :disabled="isCreatingTask === idx"
+                    >
+                      {{ isCreatingTask === idx ? "Đang tạo..." : "➕ Tạo Task" }}
+                    </button>
                   </div>
                 </div>
               </div>
-
-              <!-- Reset/Clear button -->
-              <button class="checknote-btn-reset" @click="resetChecknote">
-                Phân tích lại / Nhập mới
-              </button>
             </div>
+
+            <button class="gm-btn-reset" @click="resetChecknote">
+              Phân tích lại
+            </button>
           </div>
-        </aside>
-      </div>
-    </section>
+        </div>
+      </aside>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.meeting-page {
-  --meet-page-bg:
-    radial-gradient(circle at 16% 4%, rgba(37, 99, 235, 0.13), transparent 28%),
-    radial-gradient(circle at 88% 12%, rgba(20, 184, 166, 0.1), transparent 26%),
-    #f8fafc;
-  --meet-stage-bg:
-    radial-gradient(circle at 50% 0%, rgba(37, 99, 235, 0.24), transparent 34%),
-    linear-gradient(135deg, #020617, #101827 55%, #111827);
-  --meet-tile-bg:
-    radial-gradient(circle at 50% 42%, rgba(20, 184, 166, 0.22), transparent 24%),
-    linear-gradient(135deg, #050816, #020617 55%, #111827);
-  --meet-chip-bg: rgba(15, 23, 42, 0.62);
-  --meet-chip-color: #e2e8f0;
-  --meet-stage-border: rgba(15, 23, 42, 0.12);
-  --meet-heading-color: #f8fafc;
-  --meet-copy-color: #94a3b8;
-  --meet-eyebrow-bg: rgba(255, 255, 255, 0.09);
-  --meet-eyebrow-color: #bfdbfe;
+/* ═══════════════════════════════════════════════
+   QALY MEET — Premium Meeting UI
+   ═══════════════════════════════════════════════ */
+
+/* ── CSS Variables ── */
+.gm {
+  --gm-bg: linear-gradient(145deg, #0c1222 0%, #111827 50%, #0f172a 100%);
+  --gm-surface: rgba(15, 23, 42, 0.65);
+  --gm-surface-border: rgba(255, 255, 255, 0.06);
+  --gm-surface-hover: rgba(255, 255, 255, 0.08);
+  --gm-text-primary: #f1f5f9;
+  --gm-text-secondary: #94a3b8;
+  --gm-text-muted: #64748b;
+  --gm-accent: #3b82f6;
+  --gm-accent-soft: rgba(59, 130, 246, 0.15);
+  --gm-radius: 14px;
+  --gm-radius-sm: 10px;
+  --gm-radius-xs: 8px;
+  --gm-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+
   min-height: calc(100dvh - 74px);
-  padding: 18px;
-  background: var(--meet-page-bg);
-}
-
-.meeting-page--light {
-  --meet-page-bg:
-    radial-gradient(circle at 12% 2%, rgba(14, 165, 233, 0.18), transparent 26%),
-    radial-gradient(circle at 92% 8%, rgba(34, 197, 94, 0.12), transparent 24%),
-    #eef4ff;
-  --meet-stage-bg:
-    linear-gradient(135deg, #f8fbff, #eaf2ff 54%, #f8fafc);
-  --meet-tile-bg:
-    radial-gradient(circle at 50% 42%, rgba(59, 130, 246, 0.18), transparent 26%),
-    linear-gradient(135deg, #ffffff, #edf4ff 58%, #f8fafc);
-  --meet-chip-bg: rgba(255, 255, 255, 0.76);
-  --meet-chip-color: #0f172a;
-  --meet-stage-border: rgba(148, 163, 184, 0.32);
-  --meet-heading-color: #0f172a;
-  --meet-copy-color: #64748b;
-  --meet-eyebrow-bg: rgba(37, 99, 235, 0.1);
-  --meet-eyebrow-color: #1d4ed8;
-}
-
-.meeting-room {
-  min-height: calc(100dvh - 110px);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 16px;
+  gap: 0;
+  background: var(--gm-bg);
+  font-family: inherit;
 }
 
-.meeting-room__header,
-.meeting-layout,
-.meeting-stage__topbar,
-.meeting-info-card,
-.participants-card header,
-.participant-row,
-.meeting-tip {
+.gm--light {
+  --gm-bg: linear-gradient(145deg, #f0f4ff 0%, #f8fafc 50%, #eef2ff 100%);
+  --gm-surface: rgba(255, 255, 255, 0.75);
+  --gm-surface-border: rgba(148, 163, 184, 0.2);
+  --gm-surface-hover: rgba(241, 245, 249, 0.9);
+  --gm-text-primary: #0f172a;
+  --gm-text-secondary: #475569;
+  --gm-text-muted: #94a3b8;
+  --gm-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+}
+
+/* ── Top Bar ── */
+.gm-topbar {
   display: flex;
   align-items: center;
-}
-
-.meeting-room__header {
   justify-content: space-between;
-  gap: 16px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--gm-surface-border);
+  background: var(--gm-surface);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
 }
 
-.meeting-room__header span {
-  color: #64748b;
-  font-size: 0.78rem;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.meeting-room__header h1 {
-  margin: 3px 0 0;
-  color: #0f172a;
-  font-size: 1.45rem;
-}
-
-.meeting-back,
-.stage-action {
-  border: 1px solid rgba(203, 213, 225, 0.82);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.82);
-  color: #334155;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.meeting-back {
-  padding: 10px 16px;
-}
-
-.meeting-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border-radius: 999px;
-  padding: 9px 13px;
-  background: #e2e8f0;
-  color: #475569;
-  font-size: 0.82rem;
-  font-weight: 900;
-}
-
-.meeting-status span {
-  width: 9px;
-  height: 9px;
-  border-radius: 999px;
-  background: #94a3b8;
-}
-
-.meeting-status.active {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.meeting-status.active span {
-  background: #22c55e;
-}
-
-.meeting-layout {
-  align-items: stretch;
-  gap: 18px;
-  min-height: 0;
-}
-
-.meeting-stage {
-  position: relative;
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  border: 1px solid var(--meet-stage-border);
-  border-radius: 28px;
-  background: var(--meet-stage-bg);
-  box-shadow: var(--qaly-shadow-md);
-}
-
-.meeting-stage__topbar {
-  position: absolute;
-  inset: 18px 18px auto 18px;
-  z-index: 3;
-  justify-content: space-between;
-}
-
-.meeting-stage__actions {
-  display: inline-flex;
+.gm-topbar__left,
+.gm-topbar__right {
+  display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.meeting-code,
-.stage-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 13px;
-  background: var(--meet-chip-bg);
-  border-color: rgba(255, 255, 255, 0.1);
-  color: var(--meet-chip-color);
-  backdrop-filter: none;
-}
-
-.meeting-frame-shell {
-  height: 100%;
-  min-height: 640px;
-  padding: 72px 18px 100px;
-}
-
-.qaly-meet-stage {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  min-height: 520px;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
-  grid-auto-rows: minmax(220px, 1fr);
-  gap: 14px;
-  padding: 66px 18px 72px;
-  border: 0;
-  border-radius: var(--qaly-radius-lg);
-  background: var(--meet-tile-bg);
-  overflow: hidden;
-}
-
-.qaly-meet-stage--count-1 {
-  grid-template-columns: 1fr;
-}
-
-.qaly-meet-stage--count-2 {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.qaly-meet-stage--count-3,
-.qaly-meet-stage--count-4 {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.meeting-video-tile {
-  position: relative;
-  min-width: 0;
-  min-height: 220px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--qaly-radius-lg);
-  background:
-    radial-gradient(circle at 50% 35%, rgba(37, 99, 235, 0.15), transparent 28%),
-    rgba(2, 6, 23, 0.46);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-}
-
-.meeting-page--light .meeting-video-tile {
-  border-color: rgba(148, 163, 184, 0.28);
-  background:
-    radial-gradient(circle at 50% 35%, rgba(37, 99, 235, 0.13), transparent 30%),
-    rgba(255, 255, 255, 0.72);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
-}
-
-.local-video {
-  transform: scaleX(-1);
-}
-
-.local-video,
-.remote-video {
-  width: 100%;
-  height: 100%;
-  min-height: 220px;
-  object-fit: cover;
-}
-
-.camera-off-state {
-  width: 100%;
-  height: 100%;
-  min-height: 220px;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 18px;
-  color: var(--meet-chip-color);
-}
-
-.meeting-avatar--large {
-  width: 148px;
-  height: 148px;
-  font-size: 3.4rem;
-  box-shadow: var(--qaly-shadow-md);
-}
-
-.meeting-tile-footer {
-  position: absolute;
-  left: 14px;
-  right: 14px;
-  bottom: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  border-radius: 999px;
-  padding: 9px 12px;
-  background: rgba(2, 6, 23, 0.62);
-  color: #e2e8f0;
-  backdrop-filter: none;
-}
-
-.meeting-page--light .meeting-tile-footer {
-  background: rgba(255, 255, 255, 0.78);
-  color: #0f172a;
-}
-
-.meeting-tile-footer strong,
-.meeting-tile-footer span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.meeting-tile-footer strong {
-  font-size: 0.9rem;
-}
-
-.meeting-tile-footer span {
-  color: inherit;
-  opacity: 0.74;
-  font-size: 0.78rem;
-  font-weight: 900;
-}
-
-.camera-off-state span,
-.meeting-brand-chip,
-.meeting-live-chip,
-.meeting-error-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border-radius: 999px;
-  padding: 9px 13px;
-  background: var(--meet-chip-bg);
-  color: var(--meet-chip-color);
-  font-size: 0.82rem;
-  font-weight: 900;
-  backdrop-filter: none;
-}
-
-.meeting-brand-chip {
-  position: absolute;
-  left: 18px;
-  top: 18px;
-}
-
-.meeting-live-chip {
-  position: absolute;
-  right: 18px;
-  top: 18px;
-}
-
-.meeting-error-chip {
-  position: absolute;
-  left: 50%;
-  bottom: 22px;
-  max-width: min(620px, calc(100% - 40px));
-  transform: translateX(-50%);
-  background: rgba(254, 242, 242, 0.92);
-  color: #991b1b;
-  text-align: center;
-}
-
-.meeting-live-chip span {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: #22c55e;
-  box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.13);
-}
-
-.meeting-prejoin {
-  min-height: 640px;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 14px;
-  padding: 80px 28px 120px;
-  text-align: center;
-  color: var(--meet-heading-color);
-}
-
-.meeting-orbit {
-  width: 172px;
-  height: 172px;
-  display: grid;
-  place-items: center;
-  border-radius: 999px;
-  background:
-    linear-gradient(135deg, rgba(37, 99, 235, 0.32), rgba(20, 184, 166, 0.18)),
-    rgba(255, 255, 255, 0.08);
-  box-shadow: var(--qaly-shadow-md);
-}
-
-.meeting-avatar {
-  width: 104px;
-  height: 104px;
-  display: grid;
-  place-items: center;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #1d4ed8, #60a5fa);
-  color: #fff;
-  font-size: 2rem;
-  font-weight: 950;
-}
-
-.meeting-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  border-radius: 999px;
-  padding: 8px 12px;
-  background: var(--meet-eyebrow-bg);
-  color: var(--meet-eyebrow-color);
-  font-size: 0.78rem;
-  font-weight: 900;
-}
-
-.meeting-prejoin h2 {
-  margin: 0;
-  color: var(--meet-heading-color);
-  font-size: clamp(2rem, 4vw, 3.6rem);
-  line-height: 1;
-}
-
-.meeting-prejoin p {
-  max-width: 520px;
-  margin: 0;
-  color: var(--meet-copy-color);
-}
-
-.meeting-start-button {
-  min-height: 48px;
-  border: 0;
-  border-radius: 999px;
-  padding: 0 22px;
-  background: #2563eb;
-  color: #fff;
-  font-weight: 900;
-  cursor: pointer;
-  box-shadow: var(--qaly-shadow-md);
-}
-
-.meeting-control-dock {
-  position: absolute;
-  left: 50%;
-  bottom: 20px;
-  z-index: 4;
-  transform: translateX(-50%);
-}
-
-.meeting-side {
-  width: min(380px, 28vw);
-  min-width: 320px;
-  display: grid;
-  align-content: start;
-  gap: 14px;
-}
-
-.meeting-info-card,
-.participants-card,
-.meeting-tip {
-  border: 1px solid rgba(203, 213, 225, 0.76);
-  border-radius: var(--qaly-radius-lg);
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: var(--qaly-shadow-md);
-  backdrop-filter: none;
-}
-
-.meeting-info-card {
-  gap: 13px;
-  padding: 16px;
-}
-
-.meeting-info-card__icon {
-  width: 44px;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--qaly-radius-lg);
-  background: #eff6ff;
-  color: #2563eb;
-}
-
-.meeting-info-card span,
-.participants-card header span {
-  color: #64748b;
-  font-size: 0.72rem;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.meeting-info-card strong,
-.participants-card header strong {
-  display: block;
-  color: #0f172a;
-  font-size: 1rem;
-}
-
-.meeting-info-card p {
-  max-width: 250px;
-  margin: 2px 0 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #64748b;
-  font-size: 0.78rem;
-}
-
-.participants-card {
-  display: grid;
-  gap: 12px;
-  padding: 16px;
-}
-
-.participants-card header {
-  justify-content: space-between;
-}
-
-.participant-count {
+.gm-back {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border-radius: 999px;
-  padding: 7px 10px;
-  background: #f1f5f9;
-  color: #334155;
-  font-weight: 900;
+  padding: 7px 14px;
+  border: 1px solid var(--gm-surface-border);
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--gm-text-secondary);
+  font-weight: 600;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: all 150ms ease;
 }
 
-.participant-list {
+.gm-back:hover {
+  background: var(--gm-surface-hover);
+  color: var(--gm-text-primary);
+}
+
+.gm-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gm-brand__badge {
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.gm-brand__room {
+  color: var(--gm-text-secondary);
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.gm-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  background: rgba(100, 116, 139, 0.15);
+  color: var(--gm-text-secondary);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.gm-status__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: var(--gm-text-muted);
+  transition: background 300ms ease;
+}
+
+.gm-status--active {
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+}
+
+.gm-status--active .gm-status__dot {
+  background: #22c55e;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
+}
+
+.gm-topbar-btn {
+  width: 36px;
+  height: 36px;
   display: grid;
-  gap: 10px;
+  place-items: center;
+  border: 1px solid var(--gm-surface-border);
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--gm-text-secondary);
+  cursor: pointer;
+  transition: all 150ms ease;
 }
 
-.participant-row {
-  gap: 10px;
-  padding: 10px;
-  border: 1px solid rgba(226, 232, 240, 0.9);
-  border-radius: var(--qaly-radius-lg);
-  background: #fff;
+.gm-topbar-btn:hover {
+  background: var(--gm-surface-hover);
+  color: var(--gm-text-primary);
 }
 
-.participant-avatar {
+/* ── Body Layout ── */
+.gm-body {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.gm-body--sidebar-closed {
+  grid-template-columns: 1fr;
+}
+
+/* ── Video Stage ── */
+.gm-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Video Grid ── */
+.gm-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(400px, 100%), 1fr));
+  grid-auto-rows: minmax(260px, 1fr);
+  gap: 8px;
+  padding: 12px;
+  position: relative;
+}
+
+.gm-grid--count-1 { grid-template-columns: 1fr; }
+.gm-grid--count-2 { grid-template-columns: repeat(2, 1fr); }
+.gm-grid--count-3,
+.gm-grid--count-4 { grid-template-columns: repeat(2, 1fr); }
+
+/* ── Tiles ── */
+.gm-tile {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--gm-radius);
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(59, 130, 246, 0.08) 0%, transparent 60%),
+    rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: box-shadow 200ms ease;
+}
+
+.gm-tile:hover {
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.gm--light .gm-tile {
+  background: rgba(255, 255, 255, 0.6);
+  border-color: rgba(148, 163, 184, 0.18);
+}
+
+.gm-tile__video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.gm-tile__video--mirror {
+  transform: scaleX(-1);
+}
+
+.gm-tile__placeholder {
+  width: 100%;
+  height: 100%;
+  min-height: 260px;
+  display: grid;
+  place-items: center;
+}
+
+.gm-tile__label {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #f1f5f9;
+  font-size: 0.82rem;
+}
+
+.gm--light .gm-tile__label {
+  background: rgba(255, 255, 255, 0.8);
+  color: #1e293b;
+}
+
+.gm-tile__label strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gm-mic--off { opacity: 0.5; }
+
+/* ── Avatars ── */
+.gm-avatar {
+  display: grid;
+  place-items: center;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  color: #fff;
+  font-weight: 800;
+}
+
+.gm-avatar--xl { width: 120px; height: 120px; font-size: 2.2rem; }
+.gm-avatar--hero { width: 96px; height: 96px; font-size: 1.8rem; }
+.gm-avatar--sm { width: 36px; height: 36px; font-size: 0.72rem; min-width: 36px; }
+.gm-avatar--secondary { background: linear-gradient(135deg, #475569, #64748b); }
+
+/* ── Grid Overlays ── */
+.gm-grid__info-chip {
+  position: absolute;
+  top: 22px;
+  right: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+  color: #e2e8f0;
+  font-size: 0.76rem;
+  font-weight: 700;
+  z-index: 2;
+}
+
+.gm-dot { width: 7px; height: 7px; border-radius: 9999px; }
+.gm-dot--green { background: #22c55e; box-shadow: 0 0 6px rgba(34, 197, 94, 0.5); }
+
+.gm-grid__error {
+  position: absolute;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(560px, calc(100% - 40px));
+  padding: 10px 18px;
+  border-radius: 9999px;
+  background: rgba(254, 226, 226, 0.92);
+  color: #991b1b;
+  font-size: 0.82rem;
+  font-weight: 600;
+  z-index: 2;
+}
+
+/* ── Pre-Join ── */
+.gm-prejoin {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 16px;
+  padding: 60px 28px;
+  text-align: center;
+}
+
+.gm-prejoin__orbit {
+  width: 150px;
+  height: 150px;
+  display: grid;
+  place-items: center;
+  border-radius: 9999px;
+  background:
+    linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(99, 102, 241, 0.15)),
+    var(--gm-surface);
+  box-shadow: var(--gm-shadow);
+}
+
+.gm-prejoin__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  background: var(--gm-accent-soft);
+  color: var(--gm-accent);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.gm-prejoin__heading {
+  margin: 0;
+  color: var(--gm-text-primary);
+  font-size: clamp(1.6rem, 3vw, 2.8rem);
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.gm-prejoin__copy {
+  margin: 0;
+  color: var(--gm-text-secondary);
+  font-size: 0.92rem;
+  max-width: 400px;
+}
+
+.gm-prejoin__btn {
+  min-height: 48px;
+  padding: 0 28px;
+  border: 0;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.35);
+  transition: all 200ms ease;
+}
+
+.gm-prejoin__btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px rgba(59, 130, 246, 0.45);
+}
+
+.gm-prejoin__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Live Captions ── */
+.gm-captions {
+  position: absolute;
+  bottom: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(600px, 80%);
+  padding: 10px 20px;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(12px);
+  color: #f1f5f9;
+  font-size: 0.88rem;
+  font-weight: 500;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.caption-fade-enter-active,
+.caption-fade-leave-active {
+  transition: all 250ms ease;
+}
+.caption-fade-enter-from,
+.caption-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(8px);
+}
+
+/* ── Speech Error ── */
+.gm-speech-error {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border-radius: 9999px;
+  background: rgba(254, 243, 199, 0.95);
+  color: #92400e;
+  font-size: 0.82rem;
+  font-weight: 600;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+}
+
+.gm-speech-error__retry {
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(146, 64, 14, 0.12);
+  color: #92400e;
+  font-weight: 700;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+
+/* ── Dock ── */
+.gm-dock-wrapper {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+}
+
+/* ═══════════ SIDEBAR ═══════════ */
+.gm-sidebar {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--gm-surface-border);
+  background: var(--gm-surface);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  overflow: hidden;
+}
+
+/* ── Tabs ── */
+.gm-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 8px 8px 0 8px;
+  border-bottom: 1px solid var(--gm-surface-border);
+  flex-shrink: 0;
+}
+
+.gm-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 8px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--gm-radius-xs) var(--gm-radius-xs) 0 0;
+  background: transparent;
+  color: var(--gm-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 150ms ease;
+  position: relative;
+}
+
+.gm-tab:hover {
+  color: var(--gm-text-secondary);
+  background: var(--gm-surface-hover);
+}
+
+.gm-tab--active {
+  color: var(--gm-accent) !important;
+  border-bottom-color: var(--gm-accent);
+}
+
+.gm-tab__badge {
+  padding: 1px 7px;
+  border-radius: 9999px;
+  background: var(--gm-accent);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  min-width: 18px;
+  text-align: center;
+}
+
+/* ── Pane ── */
+.gm-pane {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Section Card ── */
+.gm-section-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--gm-radius-sm);
+  background: var(--gm-accent-soft);
+  border: 1px solid rgba(59, 130, 246, 0.1);
+}
+
+.gm-section-card__icon {
   width: 38px;
   height: 38px;
   display: grid;
   place-items: center;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #1d4ed8, #60a5fa);
+  border-radius: var(--gm-radius-xs);
+  background: var(--gm-accent);
   color: #fff;
-  font-size: 0.78rem;
-  font-weight: 950;
+  flex-shrink: 0;
 }
 
-.participant-avatar--soft {
-  background: #e2e8f0;
-  color: #334155;
-}
-
-.participant-row strong {
+.gm-section-card strong {
   display: block;
-  color: #0f172a;
+  color: var(--gm-text-primary);
+  font-size: 0.88rem;
 }
 
-.participant-row span,
-.participants-empty span {
-  color: #64748b;
-  font-size: 0.82rem;
+.gm-section-card p {
+  margin: 2px 0 0;
+  color: var(--gm-text-muted);
+  font-size: 0.76rem;
+  font-family: 'SF Mono', 'Fira Code', monospace;
 }
 
-.participants-empty {
-  display: grid;
-  place-items: center;
-  gap: 8px;
-  min-height: 120px;
-  border: 1px dashed rgba(148, 163, 184, 0.48);
-  border-radius: var(--qaly-radius-lg);
-  text-align: center;
-  color: #64748b;
-}
-
-.meeting-tip {
-  gap: 10px;
-  padding: 14px;
-  color: #475569;
-  font-size: 0.86rem;
-  font-weight: 750;
-}
-
-
-/* --- Sidebar Tabs --- */
-.sidebar-tabs {
+/* ── Participant List ── */
+.gm-participant-list {
   display: flex;
+  flex-direction: column;
   gap: 6px;
-  background: rgba(15, 23, 42, 0.08);
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  border-radius: var(--qaly-radius-lg);
-  padding: 4px;
-  margin-bottom: 16px;
 }
 
-.meeting-page--light .sidebar-tabs {
-  background: rgba(255, 255, 255, 0.6);
-  border-color: rgba(148, 163, 184, 0.22);
-}
-
-.sidebar-tab {
-  flex: 1;
-  display: inline-flex;
+.gm-participant {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border-radius: var(--qaly-radius-lg);
-  border: 0;
-  background: transparent;
-  color: #64748b;
-  font-size: 0.8rem;
-  font-weight: 800;
-  cursor: pointer;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--gm-radius-sm);
+  border: 1px solid var(--gm-surface-border);
+  background: var(--gm-surface-hover);
   transition: all 150ms ease;
 }
 
-.sidebar-tab--active {
-  background: #ffffff;
-  color: #2563eb;
-  box-shadow: var(--qaly-shadow-md);
+.gm-participant:hover {
+  background: rgba(59, 130, 246, 0.06);
+  border-color: rgba(59, 130, 246, 0.12);
 }
 
-.meeting-page:not(.meeting-page--light) .sidebar-tab--active {
-  background: rgba(255, 255, 255, 0.15);
-  color: #ffffff;
+.gm-participant__info {
+  flex: 1;
+  min-width: 0;
 }
 
-/* --- Transcript --- */
-.transcript-pane {
+.gm-participant__info strong {
+  display: block;
+  color: var(--gm-text-primary);
+  font-size: 0.86rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gm-participant__info span {
+  color: var(--gm-text-muted);
+  font-size: 0.76rem;
+}
+
+.gm-you-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--gm-accent-soft);
+  color: var(--gm-accent) !important;
+  font-size: 0.65rem !important;
+  font-weight: 700;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+
+.gm-mic-badge {
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.gm-mic-badge--off {
+  opacity: 0.35;
+}
+
+/* ── Empty State ── */
+.gm-empty-state {
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  min-height: 140px;
+  padding: 24px 16px;
+  border: 1px dashed var(--gm-surface-border);
+  border-radius: var(--gm-radius-sm);
+  text-align: center;
+  color: var(--gm-text-muted);
+}
+
+.gm-empty-state span {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--gm-text-secondary);
+}
+
+.gm-empty-state p {
+  margin: 0;
+  font-size: 0.78rem;
+  max-width: 240px;
+}
+
+.gm-empty-state--compact {
+  min-height: 200px;
+}
+
+/* ═══════════ TRANSCRIPT ═══════════ */
+.gm-pane--transcript {
+  gap: 0;
+}
+
+.gm-transcript-header {
   display: flex;
-  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 0 0 12px 0;
+  border-bottom: 1px solid var(--gm-surface-border);
+  margin-bottom: 12px;
+  flex-shrink: 0;
 }
 
-.transcript-log {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-height: 520px;
+.gm-transcript-header strong {
+  color: var(--gm-text-primary);
+  font-size: 0.92rem;
+}
+
+.gm-recording-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 0;
+  color: #22c55e;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.gm-recording-label--off {
+  color: var(--gm-text-muted);
+}
+
+.gm-rec-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: #ef4444;
+  animation: blink-rec 1.2s ease-in-out infinite;
+}
+
+@keyframes blink-rec {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+.gm-transcript-count {
+  padding: 4px 10px;
+  border-radius: 9999px;
+  background: var(--gm-surface-hover);
+  color: var(--gm-text-secondary);
+  font-size: 0.76rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.gm-transcript-log {
+  flex: 1;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding-right: 4px;
 }
 
-.transcript-message {
-  background: rgba(255, 255, 255, 0.5);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: var(--qaly-radius-lg);
-  padding: 10px 12px;
-  font-size: 0.86rem;
-  text-align: left;
+/* ── Chat Bubble ── */
+.gm-bubble {
+  max-width: 92%;
+  padding: 10px 14px;
+  border-radius: var(--gm-radius-sm) var(--gm-radius-sm) var(--gm-radius-sm) 4px;
+  background: var(--gm-surface-hover);
+  border: 1px solid var(--gm-surface-border);
+  animation: bubble-in 200ms ease;
 }
 
-.meeting-page:not(.meeting-page--light) .transcript-message {
-  background: rgba(15, 23, 42, 0.4);
-  border-color: rgba(255, 255, 255, 0.08);
+.gm-bubble--self {
+  margin-left: auto;
+  border-radius: var(--gm-radius-sm) var(--gm-radius-sm) 4px var(--gm-radius-sm);
+  background: var(--gm-accent-soft);
+  border-color: rgba(59, 130, 246, 0.12);
 }
 
-.transcript-message-header {
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.bubble-enter-active { animation: bubble-in 200ms ease; }
+.bubble-leave-active { transition: opacity 150ms ease; }
+.bubble-leave-to { opacity: 0; }
+
+.gm-bubble__meta {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   margin-bottom: 4px;
 }
 
-.transcript-sender {
-  font-weight: 900;
-  color: #0f172a;
+.gm-bubble__sender {
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: var(--gm-accent);
 }
 
-.meeting-page:not(.meeting-page--light) .transcript-sender {
-  color: #f8fafc;
+.gm-bubble--self .gm-bubble__sender {
+  color: #6366f1;
 }
 
-.transcript-time {
-  font-size: 0.75rem;
-  color: #94a3b8;
+.gm-bubble__time {
+  font-size: 0.68rem;
+  color: var(--gm-text-muted);
 }
 
-.transcript-text {
-  color: #334155;
+.gm-bubble__text {
+  color: var(--gm-text-primary);
+  font-size: 0.86rem;
+  line-height: 1.5;
   white-space: pre-wrap;
   cursor: pointer;
 }
 
-.meeting-page:not(.meeting-page--light) .transcript-text {
-  color: #cbd5e1;
-}
-
-.transcript-edit-input {
+.gm-bubble__edit {
   width: 100%;
   padding: 4px 8px;
   border-radius: 6px;
-  border: 1px solid #cbd5e1;
-  background: #ffffff;
-  color: #0f172a;
+  border: 1px solid var(--gm-accent);
+  background: transparent;
+  color: var(--gm-text-primary);
   outline: none;
   font-size: 0.86rem;
 }
 
-.transcript-empty {
-  display: grid;
-  place-items: center;
-  gap: 8px;
-  min-height: 120px;
-  border: 1px dashed rgba(148, 163, 184, 0.48);
-  border-radius: var(--qaly-radius-lg);
-  text-align: center;
-  color: #64748b;
-  padding: 16px;
-  font-size: 0.86rem;
+/* ═══════════ AI CHECKNOTE ═══════════ */
+.gm-pane--checknote {
+  gap: 0;
 }
 
-/* --- Checknote --- */
-.checknote-setup {
+.gm-checknote-setup {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  text-align: left;
 }
 
-.checknote-label {
-  font-weight: 800;
-  font-size: 0.86rem;
-  color: #475569;
+.gm-checknote-hero {
+  text-align: center;
+  padding: 24px 16px;
+  border-radius: var(--gm-radius);
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(168, 85, 247, 0.12), transparent 65%),
+    var(--gm-surface-hover);
+  border: 1px solid var(--gm-surface-border);
 }
 
-.meeting-page:not(.meeting-page--light) .checknote-label {
-  color: #94a3b8;
+.gm-checknote-hero h3 {
+  margin: 10px 0 6px;
+  color: var(--gm-text-primary);
+  font-size: 1.1rem;
 }
 
-.checknote-select {
+.gm-checknote-hero p {
+  margin: 0;
+  color: var(--gm-text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.gm-field-label {
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: var(--gm-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.gm-select,
+.gm-cn-field select,
+.gm-cn-field input {
+  width: 100%;
   padding: 10px 12px;
-  border-radius: var(--qaly-radius-lg);
-  border: 1px solid #cbd5e1;
-  background: #ffffff;
-  color: #0f172a;
+  border-radius: var(--gm-radius-xs);
+  border: 1px solid var(--gm-surface-border);
+  background: var(--gm-surface-hover);
+  color: var(--gm-text-primary);
   outline: none;
+  font-size: 0.86rem;
+  transition: border-color 150ms ease;
 }
 
-.meeting-page:not(.meeting-page--light) .checknote-select {
-  background: #1e293b;
-  border-color: rgba(255, 255, 255, 0.1);
-  color: #f8fafc;
+.gm-select:focus,
+.gm-cn-field select:focus,
+.gm-cn-field input:focus {
+  border-color: var(--gm-accent);
 }
 
-.checknote-btn-generate {
+.gm-btn-generate {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 12px;
-  border-radius: var(--qaly-radius-lg);
+  padding: 12px 16px;
   border: 0;
-  background: var(--primary);
-  color: #ffffff;
-  font-weight: 800;
+  border-radius: var(--gm-radius-xs);
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.88rem;
   cursor: pointer;
-  transition: opacity 150ms ease;
-  box-shadow: var(--qaly-shadow-md);
+  box-shadow: 0 4px 16px rgba(124, 58, 237, 0.3);
+  transition: all 200ms ease;
 }
 
-.checknote-btn-generate:hover:not(:disabled) {
-  opacity: 0.9;
+.gm-btn-generate:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px rgba(124, 58, 237, 0.4);
 }
 
-.checknote-btn-generate:disabled {
-  background: #cbd5e1;
-  color: #94a3b8;
-  cursor: not-allowed;
+.gm-btn-generate:disabled {
+  background: rgba(100, 116, 139, 0.2);
+  color: var(--gm-text-muted);
   box-shadow: none;
+  cursor: not-allowed;
 }
 
-.checknote-hint {
-  font-size: 0.8rem;
-  color: #ef4444;
-  text-align: center;
+.gm-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--gm-text-muted);
 }
 
-.checknote-loading {
+.gm-hint--warn {
+  color: #f59e0b;
+}
+
+/* ── Loading ── */
+.gm-checknote-loading {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 36px 0;
-  gap: 16px;
-  color: #64748b;
-  font-size: 0.9rem;
+  gap: 14px;
+  padding: 48px 16px;
+  text-align: center;
+  position: relative;
 }
 
-.checknote-spinner {
-  width: 36px;
-  height: 36px;
-  border: 3px solid rgba(37, 99, 235, 0.15);
-  border-top-color: #2563eb;
-  border-radius: 999px;
-  animation: spin 1s linear infinite;
+.gm-pulse-ring {
+  width: 64px;
+  height: 64px;
+  border-radius: 9999px;
+  border: 3px solid rgba(168, 85, 247, 0.2);
+  animation: pulse-ring 1.8s ease-out infinite;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+@keyframes pulse-ring {
+  0% { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(1.6); opacity: 0; }
 }
 
-.checknote-results {
-  text-align: left;
+.gm-pulse-icon {
+  position: absolute;
+  top: 68px;
+  color: #a855f7;
+  animation: pulse-glow 1.8s ease-in-out infinite;
 }
 
-.checknote-section {
-  margin-bottom: 20px;
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
 }
 
-.checknote-section h3 {
-  font-size: 0.95rem;
-  font-weight: 800;
-  color: #0f172a;
-  margin-bottom: 8px;
+.gm-checknote-loading span {
+  font-weight: 700;
+  color: var(--gm-text-primary);
+  font-size: 0.92rem;
 }
 
-.meeting-page:not(.meeting-page--light) .checknote-section h3 {
-  color: #f8fafc;
+.gm-checknote-loading p {
+  margin: 0;
+  color: var(--gm-text-muted);
+  font-size: 0.78rem;
 }
 
-.checknote-summary {
-  background: rgba(255, 255, 255, 0.6);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: var(--qaly-radius-lg);
-  padding: 12px;
-  font-size: 0.86rem;
-  line-height: 1.5;
-  color: #334155;
-}
-
-.meeting-page:not(.meeting-page--light) .checknote-summary {
-  background: rgba(15, 23, 42, 0.35);
-  border-color: rgba(255, 255, 255, 0.08);
-  color: #cbd5e1;
-}
-
-/* Action Items Card */
-.action-items-list {
+/* ── Results ── */
+.gm-checknote-results {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  max-height: 360px;
+  gap: 16px;
+}
+
+.gm-cn-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  color: var(--gm-text-primary);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.gm-cn-summary {
+  padding: 14px;
+  border-radius: var(--gm-radius-sm);
+  background: var(--gm-surface-hover);
+  border: 1px solid var(--gm-surface-border);
+  color: var(--gm-text-secondary);
+  font-size: 0.86rem;
+  line-height: 1.6;
+}
+
+.gm-cn-items {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 400px;
   overflow-y: auto;
   padding-right: 4px;
 }
 
-.action-item-card {
-  background: #ffffff;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: var(--qaly-radius-lg);
+.gm-cn-card {
   padding: 14px;
+  border-radius: var(--gm-radius-sm);
+  border: 1px solid var(--gm-surface-border);
+  background: var(--gm-surface-hover);
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  transition: all 150ms ease;
+  gap: 8px;
+  transition: all 200ms ease;
 }
 
-.meeting-page:not(.meeting-page--light) .action-item-card {
-  background: rgba(30, 41, 59, 0.45);
-  border-color: rgba(255, 255, 255, 0.06);
+.gm-cn-card:hover {
+  border-color: rgba(59, 130, 246, 0.15);
 }
 
-.action-item-card--linked {
-  border-color: #10b981 !important;
-  background: rgba(16, 185, 129, 0.04) !important;
+.gm-cn-card--linked {
+  border-color: rgba(16, 185, 129, 0.3) !important;
+  background: rgba(16, 185, 129, 0.04);
 }
 
-.action-item-input-title {
-  width: 100%;
-  font-weight: 800;
+.gm-cn-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.gm-cn-card__title {
+  flex: 1;
   border: 0;
   border-bottom: 1px solid transparent;
   padding: 2px 0;
   background: transparent;
+  color: var(--gm-text-primary);
+  font-weight: 700;
+  font-size: 0.88rem;
   outline: none;
-  font-size: 0.9rem;
-  color: #0f172a;
 }
 
-.meeting-page:not(.meeting-page--light) .action-item-input-title {
-  color: #f8fafc;
+.gm-cn-card__title:focus {
+  border-bottom-color: var(--gm-accent);
 }
 
-.action-item-input-title:focus {
-  border-color: #2563eb;
+.gm-cn-linked-badge {
+  padding: 3px 10px;
+  border-radius: 9999px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  font-size: 0.72rem;
+  font-weight: 700;
+  flex-shrink: 0;
 }
 
-.action-item-textarea {
+.gm-cn-card__desc {
   width: 100%;
-  min-height: 48px;
+  min-height: 36px;
   border: 0;
   resize: vertical;
   background: transparent;
-  outline: none;
+  color: var(--gm-text-secondary);
   font-size: 0.8rem;
-  color: #475569;
+  outline: none;
+  line-height: 1.5;
 }
 
-.meeting-page:not(.meeting-page--light) .action-item-textarea {
-  color: #94a3b8;
-}
-
-.action-item-meta-row {
+.gm-cn-card__meta {
   display: flex;
-  gap: 12px;
+  gap: 10px;
 }
 
-.meta-field {
+.gm-cn-field {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.meta-lbl {
-  font-size: 0.72rem;
-  font-weight: 900;
+.gm-cn-field label {
+  font-size: 0.68rem;
+  font-weight: 700;
   text-transform: uppercase;
-  color: #94a3b8;
+  color: var(--gm-text-muted);
+  letter-spacing: 0.04em;
 }
 
-.meta-val-select, .meta-val-date, .assignee-select {
-  padding: 6px 8px;
-  border-radius: var(--qaly-radius-lg);
-  border: 1px solid #cbd5e1;
-  background: #ffffff;
-  color: #0f172a;
-  outline: none;
-  font-size: 0.8rem;
-  width: 100%;
-}
-
-.meeting-page:not(.meeting-page--light) .meta-val-select,
-.meeting-page:not(.meeting-page--light) .meta-val-date,
-.meeting-page:not(.meeting-page--light) .assignee-select {
-  background: #1e293b;
-  border-color: rgba(255, 255, 255, 0.1);
-  color: #f8fafc;
-}
-
-.action-item-assignee {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.action-item-actions {
+.gm-cn-card__actions {
   display: flex;
   justify-content: flex-end;
-  margin-top: 4px;
+  padding-top: 4px;
 }
 
-.action-item-btn-create {
-  padding: 8px 14px;
-  border-radius: var(--qaly-radius-lg);
+.gm-btn-create-task {
+  padding: 7px 16px;
   border: 0;
-  background: #2563eb;
-  color: #ffffff;
-  font-weight: 800;
+  border-radius: var(--gm-radius-xs);
+  background: var(--gm-accent);
+  color: #fff;
+  font-weight: 700;
   font-size: 0.8rem;
-  cursor: pointer;
-}
-
-.action-item-btn-create:hover {
-  background: #1d4ed8;
-}
-
-.action-item-linked-badge {
-  font-size: 0.8rem;
-  font-weight: 800;
-  color: #10b981;
-}
-
-.checknote-btn-reset {
-  width: 100%;
-  padding: 10px;
-  border-radius: var(--qaly-radius-lg);
-  border: 1px solid #cbd5e1;
-  background: transparent;
-  color: #64748b;
-  font-weight: 800;
-  font-size: 0.86rem;
   cursor: pointer;
   transition: all 150ms ease;
-  margin-top: 10px;
 }
 
-.meeting-page:not(.meeting-page--light) .checknote-btn-reset {
-  border-color: rgba(255, 255, 255, 0.1);
-  color: #94a3b8;
+.gm-btn-create-task:hover:not(:disabled) {
+  background: #2563eb;
+  transform: translateY(-1px);
 }
 
-.checknote-btn-reset:hover {
-  background: rgba(148, 163, 184, 0.1);
+.gm-btn-create-task:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-/* Live Captions Overlay */
-.live-captions-overlay {
-  position: absolute;
-  bottom: 84px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
-  max-width: 80%;
-  pointer-events: none;
+.gm-btn-reset {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--gm-surface-border);
+  border-radius: var(--gm-radius-xs);
+  background: transparent;
+  color: var(--gm-text-secondary);
+  font-weight: 700;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: all 150ms ease;
 }
 
-.live-caption-inner {
-  background: rgba(15, 23, 42, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #f8fafc;
-  font-weight: 600;
-  padding: 10px 18px;
-  border-radius: 999px;
-  font-size: 0.95rem;
-  box-shadow: var(--qaly-shadow-md);
-  backdrop-filter: none;
-  text-align: center;
-  animation: fadeIn 200ms ease;
+.gm-btn-reset:hover {
+  background: var(--gm-surface-hover);
+  color: var(--gm-text-primary);
 }
 
-@media (max-width: 1180px) {
-  .meeting-layout {
-    display: grid;
-  }
-
-  .meeting-side {
-    width: 100%;
-    min-width: 0;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+/* ═══════════ RESPONSIVE ═══════════ */
+@media (max-width: 1200px) {
+  .gm-body {
+    grid-template-columns: 1fr 340px;
   }
 }
 
-@media (max-width: 760px) {
-  .meeting-page {
-    padding: 10px;
-  }
-
-  .meeting-room__header {
-    align-items: flex-start;
-  }
-
-  .meeting-side {
+@media (max-width: 960px) {
+  .gm-body {
     grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto;
   }
 
-  .meeting-frame-shell,
-  .meeting-prejoin {
-    min-height: 560px;
+  .gm-sidebar {
+    border-left: none;
+    border-top: 1px solid var(--gm-surface-border);
+    max-height: 360px;
+  }
+}
+
+@media (max-width: 640px) {
+  .gm-topbar {
+    padding: 8px 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .gm-brand { display: none; }
+
+  .gm-grid {
+    grid-template-columns: 1fr !important;
+    padding: 8px;
+    gap: 6px;
   }
 }
 </style>
