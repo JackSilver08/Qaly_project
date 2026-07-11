@@ -75,22 +75,7 @@ public static class DependencyInjection
         services.AddScoped<AiProviderFactory>();
         services.AddSingleton<AiOutputValidator>();
 
-        services.AddScoped<IAiGateway>(sp => new Qaly.Infrastructure.Services.AI.AiGateway(
-            sp.GetRequiredService<IAiCostService>(),
-            sp.GetRequiredService<IAiComplianceService>(),
-            sp.GetRequiredService<QalyDbContext>(),
-            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Qaly.Infrastructure.Services.AI.AiGateway>>(),
-            sp.GetRequiredService<IConfiguration>(),
-            sp.GetRequiredService<AiProviderFactory>(),
-            sp.GetRequiredService<AiOutputValidator>(),
-            sp.GetService<IVectorStorageService>(),
-            sp.GetService<IEmbeddingGenerator<string, Embedding<float>>>(),
-            sp.GetService<AiTools>(),
-            sp.GetService<ToolParameterGuard>(),
-            sp.GetService<IRepository<Qaly.Domain.Entities.AiJob>>(),
-            sp.GetService<IRepository<Qaly.Domain.Entities.AiGeneratedDraft>>(),
-            sp.GetService<IUnitOfWork>()
-        ));
+        services.AddScoped<IAiGateway, Qaly.Infrastructure.Services.AI.AiGateway>();
         
         services.AddHttpClient("WebhookClient");
 

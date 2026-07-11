@@ -339,8 +339,9 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             ExpectedSchemaId = "TextAnswer.v1",
             IsSensitive = false,
             ProjectId = null,
+            TenantId = null,
             UserId = _currentUserService.UserId,
-            History = request.History,
+            History = PruneChatHistory(request.History),
             UseCache = true,
             Tools = _aiTools?.GetAvailableTools()
         };
@@ -648,8 +649,9 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             ExpectedSchemaId = "TextAnswer.v1",
             IsSensitive = false,
             ProjectId = project.Id,
+            TenantId = project.OrganizationId,
             UserId = _currentUserService.UserId,
-            History = request.History,
+            History = PruneChatHistory(request.History),
             UseCache = true,
             Tools = tools
         };
@@ -2227,5 +2229,31 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             .Normalize(NormalizationForm.FormC)
             .ToLowerInvariant()
             .Replace('đ', 'd');
+    }
+
+    private static IList<AiChatMessageDto>? PruneChatHistory(
+        IList<AiChatMessageDto>? history, 
+        int maxCharacters = 12000)
+    {
+        if (history == null || history.Count == 0) return history;
+
+        var pruned = new List<AiChatMessageDto>(history);
+
+        int TotalLength()
+        {
+            int sum = 0;
+            foreach (var msg in pruned)
+            {
+                sum += msg.Content?.Length ?? 0;
+            }
+            return sum;
+        }
+
+        while (pruned.Count > 0 && TotalLength() > maxCharacters)
+        {
+            pruned.RemoveAt(0);
+        }
+
+        return pruned;
     }
 }

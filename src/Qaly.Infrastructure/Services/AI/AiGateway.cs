@@ -88,30 +88,7 @@ public class AiGateway : IAiGateway
         _unitOfWork = unitOfWork;
     }
 
-    // Backwards-compatible constructor for testing
-    public AiGateway(
-        IChatClient chatClient, 
-        IAiCostService costService, 
-        IAiComplianceService complianceService, 
-        QalyDbContext context,
-        ILogger<AiGateway> logger)
-        : this(
-              costService, 
-              complianceService, 
-              context, 
-              logger, 
-              CreateMockConfiguration(), 
-              CreateMockProviderFactory(chatClient), 
-              new AiOutputValidator(), 
-              null, 
-              null,
-              null,
-              null,
-              null,
-              null,
-              null)
-    {
-    }
+
 
     public async Task<AiResponse> ExecuteAsync(AiRequest request, CancellationToken cancellationToken = default)
     {
@@ -231,7 +208,8 @@ public class AiGateway : IAiGateway
 
         // 4. Execute AI Request with Schema Validation & Retry & Tool Calling
         string currentPrompt = request.Prompt;
-        int maxRetries = 2;
+        int maxRetries = settings.MaxRetries > 0 ? settings.MaxRetries : 2;
+        int timeoutSeconds = settings.TimeoutSeconds > 0 ? settings.TimeoutSeconds : 30;
         int attempt = 0;
         AiResponse? finalResponse = null;
         string? validationError = null;
@@ -254,9 +232,9 @@ public class AiGateway : IAiGateway
                     _ => settings.Ollama
                 };
 
-                // Apply timeout of 30 seconds to the provider call
+                // Apply timeout to the provider call
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                cts.CancelAfter(TimeSpan.FromSeconds(30));
+                cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
                 try
                 {
@@ -264,7 +242,7 @@ public class AiGateway : IAiGateway
                 }
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
-                    throw new TimeoutException($"AI provider '{settings.Provider}' call timed out after 30 seconds.");
+                    throw new TimeoutException($"AI provider '{settings.Provider}' call timed out after {timeoutSeconds} seconds.");
                 }
 
                 if (_logger.IsEnabled(LogLevel.Information))
@@ -720,67 +698,4 @@ public class AiGateway : IAiGateway
         return builder.ToString();
     }
 
-    private static IConfiguration CreateMockConfiguration()
-    {
-        var inMemorySettings = new Dictionary<string, string?> {
-            {"AiSettings:Provider", "Ollama"}
-        };
-        return new ConfigurationBuilder().AddInMemoryCollection(inMemorySettings).Build();
-    }
-
-    private static AiProviderFactory CreateMockProviderFactory(IChatClient chatClient)
-    {
-        var mockOllamaProvider = new MockChatClientProvider(chatClient);
-        return new AiProviderFactory(new List<IAiProvider> { mockOllamaProvider });
-    }
-
-    private sealed class MockChatClientProvider : IAiProvider
-    {
-        private readonly IChatClient _chatClient;
-
-        public MockChatClientProvider(IChatClient chatClient)
-        {
-            _chatClient = chatClient;
-        }
-
-        public string ProviderName => "Ollama";
-
-        public async Task<AiResponse> CompleteAsync(AiRequest request, AiProviderSetting config, CancellationToken cancellationToken = default)
-        {
-            var chatMessages = new List<ChatMessage>
-            {
-                new ChatMessage(ChatRole.System, request.SystemPrompt)
-            };
-
-            if (request.History != null)
-            {
-                foreach (var msg in request.History)
-                {
-                    var role = string.Equals(msg.Role, "assistant", StringComparison.OrdinalIgnoreCase) 
-                        ? ChatRole.Assistant : ChatRole.User;
-                    chatMessages.Add(new ChatMessage(role, msg.Content));
-                }
-            }
-
-            chatMessages.Add(new ChatMessage(ChatRole.User, request.Prompt));
-
-            var response = await _chatClient.CompleteAsync(chatMessages, cancellationToken: cancellationToken);
-            var content = response.Message.Text ?? string.Empty;
-
-            int inputTokens = response.Usage?.InputTokenCount ?? (request.Prompt.Length + request.SystemPrompt.Length) / 4;
-            int outputTokens = response.Usage?.OutputTokenCount ?? content.Length / 4;
-
-            return new AiResponse
-            {
-                Content = content,
-                ProviderName = ProviderName,
-                ModelName = "mock-model",
-                InputTokens = inputTokens,
-                OutputTokens = outputTokens,
-                EstimatedCostUsd = 0m,
-                IsMock = false,
-                CacheHit = false
-            };
-        }
-    }
 }

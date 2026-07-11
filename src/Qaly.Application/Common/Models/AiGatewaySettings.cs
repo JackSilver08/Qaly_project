@@ -6,6 +6,8 @@ public class AiGatewaySettings
 
     public string Provider { get; set; } = "Ollama";
     public bool OfflineMode { get; set; }
+    public int TimeoutSeconds { get; set; } = 30;
+    public int MaxRetries { get; set; } = 2;
     public AiProviderSetting Ollama { get; set; } = new();
     public AiProviderSetting OpenAI { get; set; } = new();
     public AiProviderSetting Gemini { get; set; } = new();

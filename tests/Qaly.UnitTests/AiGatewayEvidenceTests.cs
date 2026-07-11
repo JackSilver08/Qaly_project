@@ -8,11 +8,15 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Qaly.Application.Common.Interfaces;
+using Qaly.Application.Common.Models;
 using Qaly.Application.Services;
 using Qaly.Domain.Entities;
+using Qaly.Domain.Interfaces;
 using Qaly.Infrastructure.Data;
 using Qaly.Infrastructure.Services;
 using Qaly.Infrastructure.Services.AI;
+using Qaly.Infrastructure.Services.AI.Providers;
+using Qaly.Application.DTOs.Ai;
 
 namespace Qaly.UnitTests;
 
@@ -100,20 +104,27 @@ public class AiGatewayEvidenceTests : IDisposable
     [Fact]
     public async Task ExecuteAsync_WhenProviderFailsForTextAnswer_ReturnsUiSafeTextAnswerFallback()
     {
-        var chatClient = new Mock<IChatClient>();
-        chatClient
-            .Setup(client => client.CompleteAsync(
-                It.IsAny<IList<ChatMessage>>(),
-                It.IsAny<ChatOptions?>(),
-                It.IsAny<CancellationToken>()))
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            {"AiSettings:Provider", "Ollama"}
+        }).Build();
+
+        var mockOllamaProvider = new Mock<IAiProvider>();
+        mockOllamaProvider.Setup(p => p.ProviderName).Returns("Ollama");
+        mockOllamaProvider.Setup(p => p.CompleteAsync(It.IsAny<AiRequest>(), It.IsAny<AiProviderSetting>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("provider unavailable"));
 
+        var providerFactory = new AiProviderFactory(new List<IAiProvider> { mockOllamaProvider.Object });
+
         var gateway = new AiGateway(
-            chatClient.Object,
             new AiCostService(_context),
             new AiComplianceService(_context),
             _context,
-            NullLogger<AiGateway>.Instance);
+            NullLogger<AiGateway>.Instance,
+            config,
+            providerFactory,
+            new AiOutputValidator()
+        );
 
         var response = await gateway.ExecuteAsync(new AiRequest
         {
@@ -231,6 +242,91 @@ public class AiGatewayEvidenceTests : IDisposable
         draft.Confidence.Should().Be(0.55m);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_WithCustomTimeoutAndRetry_AppliesConfiguration()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            {"AiSettings:Provider", "Ollama"},
+            {"AiSettings:TimeoutSeconds", "1"},
+            {"AiSettings:MaxRetries", "3"}
+        }).Build();
+
+        var mockProvider = new Mock<IAiProvider>();
+        mockProvider.Setup(p => p.ProviderName).Returns("Ollama");
+        mockProvider.Setup(p => p.CompleteAsync(It.IsAny<AiRequest>(), It.IsAny<AiProviderSetting>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+
+        var providerFactory = new AiProviderFactory(new List<IAiProvider> { mockProvider.Object });
+
+        var gateway = new AiGateway(
+            new AiCostService(_context),
+            new AiComplianceService(_context),
+            _context,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<AiGateway>.Instance,
+            config,
+            providerFactory,
+            new AiOutputValidator()
+        );
+
+        var request = new AiRequest
+        {
+            JobType = "test_timeout",
+            Prompt = "test",
+            UseCache = false
+        };
+
+        var response = await gateway.ExecuteAsync(request);
+
+        mockProvider.Verify(p => p.CompleteAsync(It.IsAny<AiRequest>(), It.IsAny<AiProviderSetting>(), It.IsAny<CancellationToken>()), Times.Exactly(4));
+        response.IsMock.Should().BeTrue();
+        response.ProviderName.Should().Be("FallbackMock");
+    }
+
+    [Fact]
+    public async Task ChatFastAsync_WithLongHistory_PrunesHistoryBeforeCallingGateway()
+    {
+        var gatewayMock = new Mock<IAiGateway>();
+        gatewayMock.Setup(g => g.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiResponse { Content = "{}", ProviderName = "Mock" });
+
+        var analyticsMock = new Mock<IAnalyticsService>();
+        analyticsMock.Setup(x => x.GetWorkspaceAnalyticsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new Qaly.Application.DTOs.Analytics.WorkspaceAnalyticsDto(1, 1, 1, 1, 1.0)));
+
+        var projectMock = new Mock<IProjectService>();
+        var taskMock = new Mock<ITaskService>();
+        var memberRepoMock = new Mock<IRepository<ProjectMember>>();
+        var currentUserServiceMock = new Mock<ICurrentUserService>();
+        currentUserServiceMock.Setup(u => u.UserId).Returns(Guid.NewGuid());
+
+        var chatService = new ErumiChatService(
+            analyticsMock.Object,
+            projectMock.Object,
+            taskMock.Object,
+            memberRepoMock.Object,
+            currentUserServiceMock.Object,
+            gatewayMock.Object
+        );
+
+        var history = new List<AiChatMessageDto>();
+        for (int i = 0; i < 100; i++)
+        {
+            history.Add(new AiChatMessageDto("user", "This is a very long chat message that will be pruned because it exceeds the maximum character limit. We want to make sure it gets truncated."));
+        }
+
+        var request = new ErumiChatRequestDto(
+            Message: "analyze progress",
+            ProjectId: null,
+            Mode: "erumi",
+            History: history
+        );
+
+        await chatService.ChatFastAsync(request);
+
+        gatewayMock.Verify(g => g.ExecuteAsync(It.Is<AiRequest>(r => r.History != null && r.History.Count < 100), It.IsAny<CancellationToken>()));
+    }
+
     public void Dispose()
     {
         _context.Dispose();
@@ -238,12 +334,29 @@ public class AiGatewayEvidenceTests : IDisposable
     }
 
     private AiGateway CreateGateway()
-        => new(
-            Mock.Of<IChatClient>(),
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            {"AiSettings:Provider", "Ollama"}
+        }).Build();
+
+        var mockOllamaProvider = new Mock<IAiProvider>();
+        mockOllamaProvider.Setup(p => p.ProviderName).Returns("Ollama");
+        mockOllamaProvider.Setup(p => p.CompleteAsync(It.IsAny<AiRequest>(), It.IsAny<AiProviderSetting>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiResponse { Content = "{}", ProviderName = "Ollama" });
+
+        var providerFactory = new AiProviderFactory(new List<IAiProvider> { mockOllamaProvider.Object });
+
+        return new AiGateway(
             new AiCostService(_context),
             new AiComplianceService(_context),
             _context,
-            NullLogger<AiGateway>.Instance);
+            NullLogger<AiGateway>.Instance,
+            config,
+            providerFactory,
+            new AiOutputValidator()
+        );
+    }
 
     private static QdrantVectorStorageService CreateQdrantService()
     {

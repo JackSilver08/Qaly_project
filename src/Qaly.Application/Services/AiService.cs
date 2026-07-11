@@ -92,6 +92,7 @@ Trả lời theo định dạng: [Priority] - [Lý do]";
             JobType = "GenerateProjectSummary",
             Prompt = prompt,
             ProjectId = projectId,
+            TenantId = project.OrganizationId,
             UserId = _currentUserService.UserId,
             UseCache = true
         });
@@ -116,6 +117,7 @@ Trả lời theo định dạng: [Priority] - [Lý do]";
             JobType = "AnalyzeProjectRisks",
             Prompt = prompt,
             ProjectId = projectId,
+            TenantId = project.OrganizationId,
             UserId = _currentUserService.UserId,
             UseCache = true
         });
@@ -162,11 +164,13 @@ Yêu cầu:
 1. Đề xuất 1-2 người phù hợp nhất (ưu tiên người đang rảnh hoặc có vai trò phù hợp).
 2. Giải thích lý do chọn họ dựa trên thông tin trên.
 3. Trả lời ngắn gọn, chuyên nghiệp bằng Tiếng Việt.";
+        var tenantId = await GetProjectTenantIdAsync(projectId);
         var response = await _aiGateway.ExecuteAsync(new AiRequest
         {
             JobType = "SuggestTaskAssignment",
             Prompt = prompt,
             ProjectId = projectId,
+            TenantId = tenantId,
             UserId = _currentUserService.UserId,
             UseCache = true
         });
@@ -443,12 +447,14 @@ Thời gian hiện tại: {DateTime.Now.ToString("dd/MM/yyyy HH:mm", System.Glob
 
         chatHistory.Add(new ChatMessage(ChatRole.User, userMessage));
 
+        var tenantId = await GetProjectTenantIdAsync(projectId);
         var request = new AiRequest
         {
             JobType = "Chat",
             Prompt = userMessage,
             SystemPrompt = systemPrompt,
             ProjectId = projectId,
+            TenantId = tenantId,
             UserId = _currentUserService.UserId,
             History = history,
             UseCache = false
@@ -532,12 +538,14 @@ Thời gian: {DateTime.Now.ToString("dd/MM/yyyy HH:mm", System.Globalization.Cul
 
         chatHistory.Add(new ChatMessage(ChatRole.User, userMessage));
 
+        var tenantId = await GetProjectTenantIdAsync(projectId);
         var request = new AiRequest
         {
             JobType = "ChatStream",
             Prompt = userMessage,
             SystemPrompt = systemPrompt,
             ProjectId = projectId,
+            TenantId = tenantId,
             UserId = _currentUserService.UserId,
             History = history,
             UseCache = false
@@ -652,6 +660,7 @@ Yêu cầu:
             JobType = "GenerateAnalyticsInsights",
             Prompt = prompt,
             ProjectId = projectId,
+            TenantId = project.OrganizationId,
             UserId = _currentUserService.UserId,
             UseCache = true
         });
@@ -673,6 +682,13 @@ Yêu cầu:
 
         return await _memberRepo.GetQueryable()
             .AnyAsync(m => m.ProjectId == projectId && m.UserId == currentUserId);
+    }
+
+    private async Task<Guid?> GetProjectTenantIdAsync(Guid? projectId)
+    {
+        if (!projectId.HasValue) return null;
+        var project = await _projectRepo.GetByIdAsync(projectId.Value);
+        return project?.OrganizationId;
     }
 
     private static bool IsDone(TaskItem task)
