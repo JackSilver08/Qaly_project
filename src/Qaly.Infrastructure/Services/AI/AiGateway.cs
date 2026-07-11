@@ -54,8 +54,6 @@ public class AiGateway : IAiGateway
         new EventId(1003, "ErrorCallingAiProvider"),
         "Error calling AI Provider.");
 
-    // Primary constructor for dependency injection
-    [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor]
     public AiGateway(
         IAiCostService costService,
         IAiComplianceService complianceService,
@@ -87,8 +85,6 @@ public class AiGateway : IAiGateway
         _aiDraftRepo = aiDraftRepo;
         _unitOfWork = unitOfWork;
     }
-
-
 
     public async Task<AiResponse> ExecuteAsync(AiRequest request, CancellationToken cancellationToken = default)
     {

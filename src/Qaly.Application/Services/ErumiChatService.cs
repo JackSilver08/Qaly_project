@@ -2231,7 +2231,7 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             .Replace('đ', 'd');
     }
 
-    private static IList<AiChatMessageDto>? PruneChatHistory(
+    internal static IList<AiChatMessageDto>? PruneChatHistory(
         IList<AiChatMessageDto>? history, 
         int maxCharacters = 12000)
     {
