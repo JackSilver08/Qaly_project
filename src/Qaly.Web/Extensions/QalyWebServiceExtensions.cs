@@ -173,10 +173,22 @@ public static class QalyWebServiceExtensions
             ? "localhost:6379"
             : redisConnection;
 
-        return redisConnection.Contains("abortConnect=", StringComparison.OrdinalIgnoreCase)
-            ? redisConnection
-            : redisConnection.Contains('?')
-                ? $"{redisConnection}&abortConnect=false"
-                : $"{redisConnection},abortConnect=false";
+        var options = new[]
+        {
+            ("abortConnect", "false"),
+            ("connectTimeout", "250"),
+            ("syncTimeout", "250"),
+            ("asyncTimeout", "250")
+        };
+
+        foreach (var (key, value) in options)
+        {
+            if (!redisConnection.Contains($"{key}=", StringComparison.OrdinalIgnoreCase))
+            {
+                redisConnection = $"{redisConnection},{key}={value}";
+            }
+        }
+
+        return redisConnection;
     }
 }
