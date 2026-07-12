@@ -45,7 +45,17 @@ jobs:
         run: npm run build
 
       - name: Verify committed frontend bundle
+        id: verify_frontend_bundle
         run: git diff --exit-code -- src/Qaly.Web/wwwroot/dist
+
+      - name: Upload generated frontend bundle on mismatch
+        if: ${{ failure() && steps.verify_frontend_bundle.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-bundle-${{ github.sha }}
+          path: src/Qaly.Web/wwwroot/dist
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Validate configuration safety
         shell: pwsh
