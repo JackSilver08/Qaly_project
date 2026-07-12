@@ -578,6 +578,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                   :data-id="task.id"
                   @click="handleTaskCardClick(task.id)"
                 >
+                  <small v-if="task.key" class="task-key-chip">{{ task.key }}</small>
                   <div class="kanban-card__top">
                     <input
                       v-if="taskBeingQuickEditedId === task.id"
@@ -643,7 +644,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                   <span v-if="task.isPinned" title="Nhiệm vụ đã ghim">Ghim</span>
                   {{ task.title }}
                 </strong>
-                <small>#{{ task.id.slice(0, 4) }}</small>
+                <small>{{ task.key ?? ('#' + task.id.slice(0, 4)) }}</small>
               </div>
               <span class="task-list-row__muted">{{ task.isRestricted ? 'Bị giới hạn quyền xem' : (task.assigneeName || 'Chưa giao') }}</span>
               <span class="task-list-row__muted">{{ formatDate(task.dueDate) }}</span>
@@ -696,7 +697,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
               <h2>{{ selectedTask?.title ?? 'Chưa chọn nhiệm vụ' }}</h2>
             </div>
             <div class="task-detail-drawer__actions">
-              <div v-if="selectedTask" class="task-id-badge">#{{ selectedTask.id.slice(0, 4) }}</div>
+              <div v-if="selectedTask" class="task-id-badge">{{ selectedTask.key ?? ('#' + selectedTask.id.slice(0, 4)) }}</div>
               <button type="button" class="task-detail-drawer__close" aria-label="Đóng chi tiết nhiệm vụ" @click="closeTaskDetails">
                 <X :size="18" />
               </button>
@@ -1456,6 +1457,15 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .kanban-card.is-selected {
   border-color: rgba(31, 128, 255, 0.26);
   box-shadow: var(--qaly-shadow-md);
+}
+
+.task-key-chip {
+  display: inline-block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--muted);
 }
 
 .kanban-card__top {

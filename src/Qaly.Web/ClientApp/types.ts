@@ -73,6 +73,8 @@ export interface DashboardTask {
     downvoteCount: number;
     commentCount: number;
     attachmentCount: number;
+    number?: number;
+    key?: string | null;
 }
 
 export interface DashboardMember {
@@ -183,6 +185,8 @@ export interface TaskItemDto {
     createdAt: string;
     sortOrder: number;
     rowVersion: string;
+    number: number;
+    key: string | null;
 }
 
 export interface KanbanBoardDto {

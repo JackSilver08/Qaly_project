@@ -28,7 +28,9 @@ public record TaskItemDto(
     string? AiPrioritySuggestion,
     DateTimeOffset CreatedAt,
     int SortOrder,
-    string RowVersion);
+    string RowVersion,
+    int Number = 0,
+    string? Key = null);
 
 public record CreateTaskDto(
     string Title,

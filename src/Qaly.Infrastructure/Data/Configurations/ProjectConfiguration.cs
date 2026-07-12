@@ -15,6 +15,9 @@ public class ProjectConfiguration : IEntityTypeConfiguration<Project>
         builder.Property(p => p.Code).HasMaxLength(80).IsRequired();
         builder.Property(p => p.LogoUrl).HasMaxLength(1000);
         builder.Property(p => p.Status).HasMaxLength(20).IsRequired();
+        // Plain column (not store-generated) so in-memory increments during
+        // new-project + task creation are persisted correctly.
+        builder.Property(p => p.TaskSequence);
         builder.Property(p => p.CreatedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
 
         builder.HasOne(p => p.Owner)

@@ -11,6 +11,10 @@ public class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
         builder.HasKey(t => t.Id);
         builder.Property(t => t.Id).HasDefaultValueSql("NEWID()");
 
+        // Number is allocated explicitly per project in QalyDbContext.SaveChanges,
+        // so it must stay a plain (non store-generated) column.
+        builder.Ignore(t => t.Key);
+
         builder.Property(t => t.Title).HasMaxLength(300).IsRequired();
         builder.Property(t => t.Status).HasMaxLength(20).IsRequired().HasDefaultValue("Todo");
         builder.Property(t => t.Priority).HasMaxLength(20).IsRequired().HasDefaultValue("Medium");
@@ -45,6 +49,9 @@ public class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
 
         // Indexes
         builder.HasIndex(t => t.ProjectId);
+
+        // Task key uniqueness per project (backs "QALY-142" resolution).
+        builder.HasIndex(t => new { t.ProjectId, t.Number }).IsUnique();
         builder.HasIndex(t => t.SprintId);
         builder.HasIndex(t => t.AssigneeId);
         builder.HasIndex(t => t.Status);

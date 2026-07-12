@@ -505,7 +505,7 @@ watch(
     activeProjectId.value = String(selectedProjectId);
     void router.replace({
       name: routeName as string,
-      params: { ...route.params, projectId: selectedProjectId },
+      params: { ...route.params, projectId: String(selectedProjectId) },
       query: route.query,
     });
   },

@@ -180,7 +180,9 @@ public static class MappingExtensions
             null,
             task.CreatedAt,
             task.SortOrder,
-            EncodeRowVersion(task.RowVersion));
+            EncodeRowVersion(task.RowVersion),
+            task.Number,
+            BuildTaskKey(task));
     }
 
     public static TaskItemDto ToDto(this TaskItem task)
@@ -249,7 +251,9 @@ public static class MappingExtensions
             null,
             task.CreatedAt,
             task.SortOrder,
-            EncodeRowVersion(task.RowVersion));
+            EncodeRowVersion(task.RowVersion),
+            task.Number,
+            BuildTaskKey(task));
 
     public static TaskItem ToEntity(this CreateTaskDto dto)
         => new()
@@ -283,6 +287,15 @@ public static class MappingExtensions
 
     public static string EncodeRowVersion(byte[]? rowVersion)
         => Convert.ToBase64String(rowVersion is { Length: > 0 } ? rowVersion : []);
+
+    /// <summary>
+    /// Dựng Task Key dạng "QALY-142" từ Project.Code và Number. Trả về null khi
+    /// chưa có số (task cũ chưa backfill) hoặc project chưa được nạp/không có Code.
+    /// </summary>
+    public static string? BuildTaskKey(TaskItem task)
+        => task.Number > 0 && !string.IsNullOrEmpty(task.Project?.Code)
+            ? $"{task.Project!.Code}-{task.Number}"
+            : null;
 
     public static CommentDto ToDto(this TaskComment comment)
         => new(

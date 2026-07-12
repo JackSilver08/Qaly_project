@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Services;
+using Qaly.Application.Services.GitHub;
 using Qaly.Application.Services.Groups;
 using Qaly.Application.Services.Meetings;
 using Qaly.Application.Services.Tasks;
@@ -23,6 +24,8 @@ public static class DependencyInjection
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IOrganizationService, OrganizationService>();
         services.AddScoped<IProjectService, ProjectService>();
+        services.AddScoped<IGitHubAccessGuard, GitHubAccessGuard>();
+        services.AddScoped<IGitHubRepositoryConnectionService, GitHubRepositoryConnectionService>();
         services.AddScoped<IGroupsService, GroupsService>();
         services.AddScoped<IGroupAttachmentService, GroupAttachmentService>();
         services.AddScoped<IGroupInvitationEmailBuilder, GroupInvitationEmailBuilder>();

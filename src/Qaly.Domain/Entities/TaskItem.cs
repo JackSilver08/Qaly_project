@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace Qaly.Domain.Entities;
 
 /// <summary>
@@ -5,6 +7,13 @@ namespace Qaly.Domain.Entities;
 /// </summary>
 public class TaskItem : BaseEntity, ISoftDeleteEntity
 {
+    /// <summary>
+    /// Số thứ tự task tăng dần theo từng project, bất biến sau khi tạo.
+    /// Được cấp tập trung trong <c>QalyDbContext.SaveChanges</c>. Kết hợp với
+    /// <see cref="Project.Code"/> để tạo Task Key dạng "QALY-142".
+    /// </summary>
+    public int Number { get; set; }
+
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string Status { get; set; } = "Todo";
@@ -43,4 +52,15 @@ public class TaskItem : BaseEntity, ISoftDeleteEntity
     public ICollection<TaskDependency> PredecessorDependencies { get; set; } = new List<TaskDependency>();
     public ICollection<TaskDependency> SuccessorDependencies { get; set; } = new List<TaskDependency>();
     public ICollection<TaskViewEvent> ViewEvents { get; set; } = new List<TaskViewEvent>();
+
+    /// <summary>
+    /// Task Key hiển thị dạng "QALY-142". Chỉ khả dụng khi navigation
+    /// <see cref="Project"/> đã được nạp; ngược lại trả về null để nơi gọi tự
+    /// dựng key từ Project.Code khi cần.
+    /// </summary>
+    [NotMapped]
+    public string? Key =>
+        Project is not null && !string.IsNullOrEmpty(Project.Code) && Number > 0
+            ? $"{Project.Code}-{Number}"
+            : null;
 }

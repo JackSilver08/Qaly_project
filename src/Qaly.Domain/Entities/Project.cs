@@ -17,6 +17,12 @@ public class Project : BaseEntity, ISoftDeleteEntity
     public bool RequireEvidenceToDone { get; set; }
     public bool RestrictTransitionsToAdmin { get; set; }
 
+    /// <summary>
+    /// Bộ đếm task key theo project. Lưu giá trị số lớn nhất đã cấp; task mới
+    /// nhận <c>TaskSequence + 1</c>. Không tái sử dụng số kể cả khi task bị xóa.
+    /// </summary>
+    public int TaskSequence { get; set; }
+
     // Foreign keys
     public Guid OwnerId { get; set; }
     public Guid? OrganizationId { get; set; }
