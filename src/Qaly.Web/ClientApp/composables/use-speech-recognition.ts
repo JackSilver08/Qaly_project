@@ -6,13 +6,16 @@ export function useSpeechRecognition(onResultCallback: (text: string, isFinal: b
       ("SpeechRecognition" in window || "webkitSpeechRecognition" in window)
   );
   const isListening = ref(false);
+  const hasError = ref<string | null>(null);
   let recognition: any = null;
   let shouldBeActive = false;
+  let restartTimeout: number | undefined;
 
   function start(lang: string = "vi-VN") {
     if (!isSupported.value) return;
 
     shouldBeActive = true;
+    hasError.value = null;
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
@@ -24,17 +27,31 @@ export function useSpeechRecognition(onResultCallback: (text: string, isFinal: b
 
       recognition.onstart = () => {
         isListening.value = true;
+        hasError.value = null;
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn("Speech recognition error:", event.error);
+        if (event.error === 'not-allowed') {
+          hasError.value = "Chưa cấp quyền Micro cho trình duyệt.";
+          shouldBeActive = false;
+        } else if (event.error === 'network') {
+          hasError.value = "Lỗi mạng khi nhận diện giọng nói.";
+        }
       };
 
       recognition.onend = () => {
         isListening.value = false;
         // Auto-restart if we expect it to be active
         if (shouldBeActive) {
-          try {
-            recognition.start();
-          } catch (e) {
-            console.warn("Failed to auto-restart speech recognition:", e);
-          }
+          clearTimeout(restartTimeout);
+          restartTimeout = window.setTimeout(() => {
+            try {
+              recognition.start();
+            } catch (e) {
+              console.warn("Failed to auto-restart speech recognition:", e);
+            }
+          }, 300);
         }
       };
 
@@ -58,15 +75,17 @@ export function useSpeechRecognition(onResultCallback: (text: string, isFinal: b
     }
 
     try {
-      recognition.start();
+      if (!isListening.value) {
+        recognition.start();
+      }
     } catch (e) {
-      // Speech recognition might already be running
       console.warn("Speech recognition start attempt:", e);
     }
   }
 
   function stop() {
     shouldBeActive = false;
+    clearTimeout(restartTimeout);
     if (recognition) {
       try {
         recognition.stop();
@@ -80,6 +99,7 @@ export function useSpeechRecognition(onResultCallback: (text: string, isFinal: b
   return {
     isSupported,
     isListening,
+    hasError,
     start,
     stop,
   };

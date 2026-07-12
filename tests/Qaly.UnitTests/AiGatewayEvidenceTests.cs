@@ -3,16 +3,18 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Qaly.Application.Common.Interfaces;
+using Qaly.Application.Common.Models;
+using Qaly.Application.DTOs.Ai;
 using Qaly.Application.Services;
 using Qaly.Domain.Entities;
 using Qaly.Infrastructure.Data;
 using Qaly.Infrastructure.Services;
 using Qaly.Infrastructure.Services.AI;
+using Qaly.Infrastructure.Services.AI.Providers;
 
 namespace Qaly.UnitTests;
 
@@ -100,20 +102,11 @@ public class AiGatewayEvidenceTests : IDisposable
     [Fact]
     public async Task ExecuteAsync_WhenProviderFailsForTextAnswer_ReturnsUiSafeTextAnswerFallback()
     {
-        var chatClient = new Mock<IChatClient>();
-        chatClient
-            .Setup(client => client.CompleteAsync(
-                It.IsAny<IList<ChatMessage>>(),
-                It.IsAny<ChatOptions?>(),
-                It.IsAny<CancellationToken>()))
+        var mockProvider = CreateMockProvider("Ollama");
+        mockProvider.Setup(p => p.CompleteAsync(It.IsAny<AiRequest>(), It.IsAny<AiProviderSetting>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("provider unavailable"));
 
-        var gateway = new AiGateway(
-            chatClient.Object,
-            new AiCostService(_context),
-            new AiComplianceService(_context),
-            _context,
-            NullLogger<AiGateway>.Instance);
+        var gateway = CreateGatewayWithProvider(mockProvider);
 
         var response = await gateway.ExecuteAsync(new AiRequest
         {
@@ -231,19 +224,133 @@ public class AiGatewayEvidenceTests : IDisposable
         draft.Confidence.Should().Be(0.55m);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_WithCustomTimeoutAndRetry_AppliesConfiguration()
+    {
+        var mockProvider = CreateMockProvider("Ollama");
+        mockProvider.Setup(p => p.CompleteAsync(It.IsAny<AiRequest>(), It.IsAny<AiProviderSetting>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+
+        var gateway = CreateGatewayWithProvider(mockProvider, new Dictionary<string, string?>
+        {
+            {"AiSettings:TimeoutSeconds", "1"},
+            {"AiSettings:MaxRetries", "3"}
+        });
+
+        var request = new AiRequest
+        {
+            JobType = "test_timeout",
+            Prompt = "test",
+            UseCache = false
+        };
+
+        var response = await gateway.ExecuteAsync(request);
+
+        mockProvider.Verify(p => p.CompleteAsync(It.IsAny<AiRequest>(), It.IsAny<AiProviderSetting>(), It.IsAny<CancellationToken>()), Times.Exactly(4));
+        response.IsMock.Should().BeTrue();
+        response.ProviderName.Should().Be("FallbackMock");
+    }
+
+    [Fact]
+    public void PruneChatHistory_WithLongHistory_TruncatesOldestMessages()
+    {
+        // Arrange: 100 messages, each ~150 chars → ~15,000 chars total (over default 12,000 limit)
+        var history = new List<AiChatMessageDto>();
+        for (int i = 0; i < 100; i++)
+        {
+            history.Add(new AiChatMessageDto("user",
+                "This is a very long chat message that will be pruned because it exceeds the maximum character limit. We want to make sure it gets truncated."));
+        }
+
+        // Act
+        var pruned = ErumiChatService.PruneChatHistory(history);
+
+        // Assert: should have fewer messages and total chars within limit
+        pruned.Should().NotBeNull();
+        pruned!.Count.Should().BeLessThan(100);
+        pruned.Sum(m => m.Content?.Length ?? 0).Should().BeLessThanOrEqualTo(12000);
+    }
+
+    [Fact]
+    public void PruneChatHistory_WithShortHistory_ReturnsAllMessages()
+    {
+        var history = new List<AiChatMessageDto>
+        {
+            new("user", "Hello"),
+            new("assistant", "Hi there!")
+        };
+
+        var pruned = ErumiChatService.PruneChatHistory(history);
+
+        pruned.Should().NotBeNull();
+        pruned!.Count.Should().Be(2);
+    }
+
+    [Fact]
+    public void PruneChatHistory_WithNull_ReturnsNull()
+    {
+        var result = ErumiChatService.PruneChatHistory(null);
+        result.Should().BeNull();
+    }
+
     public void Dispose()
     {
         _context.Dispose();
         GC.SuppressFinalize(this);
     }
 
+    /// <summary>
+    /// Creates a default AiGateway with an Ollama mock provider that returns empty JSON.
+    /// Used by tests that only exercise compliance/budget/cache logic.
+    /// </summary>
     private AiGateway CreateGateway()
-        => new(
-            Mock.Of<IChatClient>(),
+    {
+        var mockProvider = CreateMockProvider("Ollama");
+        mockProvider.Setup(p => p.CompleteAsync(It.IsAny<AiRequest>(), It.IsAny<AiProviderSetting>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiResponse { Content = "{}", ProviderName = "Ollama" });
+        return CreateGatewayWithProvider(mockProvider);
+    }
+
+    /// <summary>
+    /// Creates an AiGateway with a specific mock provider and optional extra config overrides.
+    /// </summary>
+    private AiGateway CreateGatewayWithProvider(
+        Mock<IAiProvider> mockProvider,
+        Dictionary<string, string?>? extraConfig = null)
+    {
+        var settings = new Dictionary<string, string?>
+        {
+            {"AiSettings:Provider", mockProvider.Object.ProviderName}
+        };
+        if (extraConfig != null)
+        {
+            foreach (var kvp in extraConfig)
+                settings[kvp.Key] = kvp.Value;
+        }
+
+        var config = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+        var factory = new AiProviderFactory(new List<IAiProvider> { mockProvider.Object });
+
+        return new AiGateway(
             new AiCostService(_context),
             new AiComplianceService(_context),
             _context,
-            NullLogger<AiGateway>.Instance);
+            NullLogger<AiGateway>.Instance,
+            config,
+            factory,
+            new AiOutputValidator()
+        );
+    }
+
+    /// <summary>
+    /// Creates a mock IAiProvider with the given provider name. Caller must set up CompleteAsync behavior.
+    /// </summary>
+    private static Mock<IAiProvider> CreateMockProvider(string providerName)
+    {
+        var mock = new Mock<IAiProvider>();
+        mock.Setup(p => p.ProviderName).Returns(providerName);
+        return mock;
+    }
 
     private static QdrantVectorStorageService CreateQdrantService()
     {

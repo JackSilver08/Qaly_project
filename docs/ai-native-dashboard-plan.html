@@ -1,0 +1,1337 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Native Dashboard Architecture & Integration Plan - Qaly</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #060913;
+            --bg-surface: #0b0f19;
+            --bg-card: #151c2c;
+            --border-color: #1e293b;
+            --border-hover: #334155;
+            
+            --color-text-primary: #f8fafc;
+            --color-text-secondary: #94a3b8;
+            --color-text-muted: #64748b;
+
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --primary-glow: rgba(99, 102, 241, 0.18);
+            
+            --success: #10b981;
+            --success-glow: rgba(16, 185, 129, 0.15);
+            
+            --warning: #f59e0b;
+            --warning-glow: rgba(245, 158, 11, 0.15);
+            
+            --danger: #ef4444;
+            --danger-glow: rgba(239, 68, 68, 0.15);
+
+            --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+            --font-mono: 'Space Grotesk', monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--color-text-primary);
+            font-family: var(--font-sans);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Scrollbar custom */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--bg-base);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--border-hover);
+        }
+
+        /* Container Layout */
+        .app-container {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            min-height: 100vh;
+        }
+
+        /* Sidebar Navigation */
+        aside {
+            background-color: var(--bg-surface);
+            border-right: 1px solid var(--border-color);
+            padding: 2rem 1.5rem;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            z-index: 10;
+        }
+
+        .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .logo-icon {
+            width: 38px;
+            height: 38px;
+            background: linear-gradient(135deg, var(--primary), #8b5cf6);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-family: var(--font-mono);
+            color: white;
+            box-shadow: 0 0 25px var(--primary-glow);
+        }
+
+        .logo-text {
+            font-size: 1.3rem;
+            font-weight: 800;
+            letter-spacing: -0.025em;
+            background: linear-gradient(to right, #ffffff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+        }
+
+        .nav-item a {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.7rem 0.9rem;
+            color: var(--color-text-secondary);
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            border-left: 3px solid transparent;
+        }
+
+        .nav-item a:hover {
+            color: var(--color-text-primary);
+            background-color: rgba(255, 255, 255, 0.02);
+            border-left-color: var(--border-hover);
+        }
+
+        .nav-item.active a {
+            border-left-color: var(--primary);
+            background-color: var(--primary-glow);
+            color: #c7d2fe;
+            font-weight: 600;
+        }
+
+        .sidebar-footer {
+            font-size: 0.75rem;
+            color: var(--color-text-muted);
+            border-top: 1px solid var(--border-color);
+            padding-top: 1.25rem;
+        }
+
+        /* Main Content Area */
+        main {
+            padding: 3rem 5rem;
+            max-width: 1300px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        header {
+            margin-bottom: 3.5rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 2.5rem;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.3rem 0.8rem;
+            border-radius: 9999px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            margin-bottom: 1rem;
+            border: 1px solid currentColor;
+        }
+
+        .badge-ai {
+            background-color: var(--primary-glow);
+            color: #a5b4fc;
+            border-color: rgba(99, 102, 241, 0.3);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            margin-bottom: 1rem;
+            line-height: 1.15;
+            background: linear-gradient(to right, #ffffff, #cbd5e1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .lead {
+            font-size: 1.1rem;
+            color: var(--color-text-secondary);
+            max-width: 900px;
+        }
+
+        section {
+            margin-bottom: 4.5rem;
+            scroll-margin-top: 2rem;
+        }
+
+        h2 {
+            font-size: 1.6rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.75rem;
+            color: #f1f5f9;
+        }
+
+        h2::before {
+            content: '';
+            display: inline-block;
+            width: 4px;
+            height: 22px;
+            background: var(--primary);
+            border-radius: 2px;
+        }
+
+        h3 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-top: 2rem;
+            margin-bottom: 0.75rem;
+            color: #f8fafc;
+        }
+
+        p {
+            color: var(--color-text-secondary);
+            margin-bottom: 1.25rem;
+            font-size: 0.95rem;
+        }
+
+        strong {
+            color: var(--color-text-primary);
+        }
+
+        ul, ol {
+            margin-left: 1.5rem;
+            margin-bottom: 1.25rem;
+            color: var(--color-text-secondary);
+            font-size: 0.95rem;
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+        }
+
+        /* Cards and Grids */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background-color: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .card:hover {
+            border-color: var(--border-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
+        }
+
+        .card-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-bottom: 0.75rem;
+            color: var(--color-text-primary);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .card-desc {
+            font-size: 0.9rem;
+            color: var(--color-text-secondary);
+            line-height: 1.5;
+        }
+
+        /* Mockup Sandbox (Interactive Preview) */
+        .sandbox {
+            background-color: #030712;
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+            margin: 2rem 0;
+        }
+
+        .sandbox-header {
+            background-color: var(--bg-surface);
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .sandbox-dots {
+            display: flex;
+            gap: 6px;
+        }
+
+        .sandbox-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #374151;
+        }
+
+        .sandbox-dot.red { background-color: var(--danger); }
+        .sandbox-dot.yellow { background-color: var(--warning); }
+        .sandbox-dot.green { background-color: var(--success); }
+
+        .sandbox-title {
+            font-size: 0.85rem;
+            font-family: var(--font-mono);
+            color: var(--color-text-secondary);
+            font-weight: 500;
+        }
+
+        .sandbox-body {
+            padding: 1.5rem;
+            display: grid;
+            grid-template-columns: 1.8fr 1.2fr;
+            gap: 1.5rem;
+            min-height: 520px;
+        }
+
+        /* Simulated Dashboard UI */
+        .sim-dashboard {
+            background-color: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .sim-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: #fff;
+        }
+
+        .sim-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .sim-metric-card {
+            background-color: rgba(255, 255, 255, 0.01);
+            border: 1px solid rgba(255,255,255,0.03);
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .sim-metric-card.active-change {
+            border-color: var(--success);
+            box-shadow: 0 0 10px var(--success-glow);
+        }
+
+        .sim-metric-label {
+            font-size: 0.75rem;
+            color: var(--color-text-secondary);
+            margin-bottom: 0.25rem;
+        }
+
+        .sim-metric-value {
+            font-size: 1.4rem;
+            font-weight: 700;
+            font-family: var(--font-mono);
+        }
+
+        .sim-metric-value.danger { color: var(--danger); }
+        .sim-metric-value.warning { color: var(--warning); }
+        .sim-metric-value.success { color: var(--success); }
+
+        .sim-progress-bar {
+            height: 6px;
+            background-color: #1e293b;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+
+        .sim-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), var(--success));
+            width: 38%;
+            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .sim-task-list {
+            margin-top: 1rem;
+        }
+
+        .sim-task-item {
+            background-color: rgba(255,255,255,0.01);
+            border: 1px solid rgba(255,255,255,0.03);
+            border-radius: 6px;
+            padding: 0.6rem 0.8rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            transition: all 0.3s ease;
+        }
+
+        .sim-task-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.1rem;
+        }
+
+        .sim-task-title {
+            font-weight: 600;
+            color: #e2e8f0;
+        }
+
+        .sim-task-meta {
+            font-size: 0.7rem;
+            color: var(--color-text-muted);
+        }
+
+        .sim-task-assignee {
+            background-color: rgba(255,255,255,0.04);
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        /* Simulated AI native companion box */
+        .sim-ai-companion {
+            background-color: rgba(99, 102, 241, 0.02);
+            border: 1px solid rgba(99, 102, 241, 0.15);
+            border-radius: 12px;
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
+        }
+
+        .sim-ai-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: #a5b4fc;
+            margin-bottom: 0.75rem;
+        }
+
+        .sim-ai-pulsar {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--primary);
+            box-shadow: 0 0 10px var(--primary);
+            animation: pulse 1.8s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.9); opacity: 0.5; }
+            50% { transform: scale(1.2); opacity: 1; }
+            100% { transform: scale(0.9); opacity: 0.5; }
+        }
+
+        .sim-ai-insight-box {
+            background-color: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 0.85rem;
+            border-left: 3px solid var(--primary);
+            font-size: 0.8rem;
+            line-height: 1.5;
+            margin-bottom: 0.75rem;
+            transition: all 0.5s ease;
+        }
+
+        .sim-ai-insight-title {
+            font-weight: 700;
+            margin-bottom: 0.35rem;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .sim-ai-confidence {
+            font-size: 0.7rem;
+            background-color: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+            padding: 0.1rem 0.35rem;
+            border-radius: 4px;
+            font-family: var(--font-mono);
+        }
+
+        .sim-payload-editor {
+            background-color: #020617;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 0.5rem 0.75rem;
+            margin-top: 0.5rem;
+            font-family: var(--font-mono);
+            font-size: 0.725rem;
+            color: #94a3b8;
+        }
+
+        .sim-payload-editable {
+            color: #60a5fa;
+            border-bottom: 1px dashed #60a5fa;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .sim-payload-input-inline {
+            background: #1e293b;
+            border: 1px solid #3b82f6;
+            color: #fff;
+            padding: 0.1rem 0.25rem;
+            font-size: 0.725rem;
+            width: 90px;
+            border-radius: 3px;
+            outline: none;
+        }
+
+        .sim-ai-action-btn {
+            background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+            color: white;
+            border: none;
+            padding: 0.7rem 1rem;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+            margin-bottom: 0.5rem;
+        }
+
+        .sim-ai-action-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(99, 102, 241, 0.45);
+        }
+
+        .sim-ai-action-btn:disabled {
+            background: #1e293b;
+            box-shadow: none;
+            cursor: not-allowed;
+            color: var(--color-text-muted);
+        }
+
+        .sim-ai-action-btn.success {
+            background: linear-gradient(135deg, var(--success), #059669);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+
+        .sim-ai-reject-btn {
+            background: transparent;
+            color: var(--color-text-muted);
+            border: 1px solid var(--border-color);
+            padding: 0.4rem;
+            border-radius: 8px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+
+        .sim-ai-reject-btn:hover {
+            color: #ef4444;
+            border-color: rgba(239, 68, 68, 0.3);
+            background-color: rgba(239, 68, 68, 0.02);
+        }
+
+        .sim-undo-bar {
+            background-color: #1e1b4b;
+            border: 1px solid #4338ca;
+            padding: 0.5rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.725rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 0.5rem;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .sim-undo-link {
+            color: #a5b4fc;
+            text-decoration: underline;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Code Block */
+        pre {
+            background-color: #020617;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1.25rem;
+            overflow-x: auto;
+            margin: 1.5rem 0;
+        }
+
+        code {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: #e2e8f0;
+        }
+
+        .code-keyword { color: #f472b6; }
+        .code-string { color: #34d399; }
+        .code-type { color: #60a5fa; }
+        .code-comment { color: #64748b; font-style: italic; }
+
+        /* Timeline / Roadmap */
+        .timeline {
+            position: relative;
+            padding-left: 2rem;
+            margin: 2.5rem 0;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 5px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background-color: var(--border-color);
+        }
+
+        .timeline-item {
+            position: relative;
+            margin-bottom: 2.5rem;
+        }
+
+        .timeline-marker {
+            position: absolute;
+            left: -31px;
+            top: 4px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: var(--bg-base);
+            border: 2px solid var(--primary);
+        }
+
+        .timeline-item.done .timeline-marker {
+            background-color: var(--success);
+            border-color: var(--success);
+        }
+
+        .timeline-item.current .timeline-marker {
+            background-color: var(--warning);
+            border-color: var(--warning);
+            box-shadow: 0 0 8px var(--warning-glow);
+        }
+
+        .timeline-title {
+            font-size: 1rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+            color: #f1f5f9;
+        }
+
+        .timeline-date {
+            font-size: 0.8rem;
+            color: var(--color-text-muted);
+            margin-bottom: 0.5rem;
+            font-family: var(--font-mono);
+        }
+
+        /* UI Table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+        }
+
+        th, td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            font-weight: 600;
+            color: var(--color-text-primary);
+            background-color: rgba(255,255,255,0.01);
+            font-size: 0.9rem;
+        }
+
+        td {
+            font-size: 0.875rem;
+            color: var(--color-text-secondary);
+        }
+
+        /* Alerts */
+        .alert {
+            border: 1px solid;
+            border-radius: 8px;
+            padding: 1.25rem;
+            margin: 1.5rem 0;
+            display: flex;
+            gap: 0.75rem;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        .alert-info {
+            background-color: rgba(99, 102, 241, 0.05);
+            border-color: rgba(99, 102, 241, 0.25);
+            color: #a5b4fc;
+        }
+
+        .alert-success {
+            background-color: rgba(16, 185, 129, 0.05);
+            border-color: rgba(16, 185, 129, 0.25);
+            color: #6ee7b7;
+        }
+
+        .alert-warning {
+            background-color: rgba(245, 158, 11, 0.05);
+            border-color: rgba(245, 158, 11, 0.25);
+            color: #fde047;
+        }
+
+        .alert-icon {
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+
+        /* Success screen simulated */
+        .toast-notify {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background-color: var(--bg-surface);
+            border: 1px solid var(--success);
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            z-index: 100;
+            transform: translateY(150%);
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .toast-notify.show {
+            transform: translateY(0);
+        }
+
+        /* Tabs for detail view */
+        .tabs-header {
+            display: flex;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 1.5rem;
+            gap: 1.5rem;
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            color: var(--color-text-secondary);
+            font-size: 0.9rem;
+            font-weight: 600;
+            padding: 0.5rem 0;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s ease;
+        }
+
+        .tab-btn:hover {
+            color: var(--color-text-primary);
+        }
+
+        .tab-btn.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        <!-- Navigation Sidebar -->
+        <aside>
+            <div>
+                <div class="logo-section">
+                    <div class="logo-icon">Q</div>
+                    <div class="logo-text">Qaly AI Architecture</div>
+                </div>
+                <nav>
+                    <ul class="nav-list">
+                        <li class="nav-item active"><a href="#tong-quan">💡 Tầm nhìn & Tổng quan</a></li>
+                        <li class="nav-item"><a href="#kien-truc-chong-gaps">🛠️ Giải pháp cho Gaps Kỹ Thuật</a></li>
+                        <li class="nav-item"><a href="#mockup-trai-nghiem">🕹️ Trải nghiệm Sandbox</a></li>
+                        <li class="nav-item"><a href="#chi-tiet-thiet-ke-api">🏗️ API & Data Flow</a></li>
+                        <li class="nav-item"><a href="#lo-trinh-nang-cap">📅 Lộ trình & Shadow Mode</a></li>
+                    </ul>
+                </nav>
+            </div>
+            <div class="sidebar-footer">
+                <p style="font-size: inherit; margin: 0;">Phiên bản: 2.0.0-revised</p>
+                <p style="font-size: inherit; margin: 0; color: var(--color-text-muted);">Qaly Enterprise Tech Stack</p>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main>
+            <header>
+                <div class="badge badge-ai">Enterprise-Grade Plan</div>
+                <h1>Kế Hoạch Kiến Trúc AI Native Dashboard (V2)</h1>
+                <p class="lead">Bản thiết kế nâng cấp giải quyết triệt để 16 lỗ hổng kiến trúc và sản phẩm liên quan đến Chi phí, Đồng thời (Concurrency), Bảo mật (PII Masking), Xác thực (Validation Layer), và Hoàn tác (Undo Pattern).</p>
+            </header>
+
+            <!-- SECTION 1 -->
+            <section id="tong-quan">
+                <h2>1. Tầm nhìn & Cải tiến cốt lõi</h2>
+                <p>Kế hoạch V2 này dịch chuyển từ mô hình "gọi AI trực tiếp khi load trang" thiếu kiểm soát sang kiến trúc **Event-Driven & Cache-Aside**, đồng thời bổ sung các lớp lọc bảo mật dữ liệu và kiểm chứng nghiệp vụ độc lập trước khi dữ liệu được ghi xuống database.</p>
+                
+                <div class="grid-2">
+                    <div class="card">
+                        <div class="card-title">🛡️ Lớp Validation Độc Lập</div>
+                        <div class="card-desc">AI chỉ đóng vai trò "Bộ não đề xuất" (Reasoning Layer). Việc thực thi do một "Business Rule Engine" ở backend kiểm duyệt nghiêm ngặt (quyền hạn, lịch PTO, năng lực thực tế).</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">🔏 Masking & Bảo mật Dữ liệu (PII)</div>
+                        <div class="card-desc">Dữ liệu nhạy cảm của khách hàng sẽ được ẩn danh hóa (Anonymized) trước khi gửi qua API Gemini/OpenAI. Tên nhân viên và mô tả nhạy cảm được thay thế bằng token an toàn.</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">⚡ Background Engine & Cache</div>
+                        <div class="card-desc">Hệ thống sinh insight chạy ngầm qua Background Job (mỗi giờ hoặc theo event lớn), lưu kết quả vào Redis. Độ trễ hiển thị giảm từ 5s xuống còn &lt;50ms.</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">⏳ Concurrency & Idempotency</div>
+                        <div class="card-desc">Sử dụng Optimistic Concurrency (`RowVersion`) để chặn Race condition và cơ chế Idempotency Key chống Double-click hoặc retry mạng gây lặp lệnh.</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 2 -->
+            <section id="kien-truc-chong-gaps">
+                <h2>2. Giải quyết 8 Gaps Kỹ Thuật Nghiêm Trọng</h2>
+                <p>Các giải pháp chi tiết được áp dụng vào cấu trúc ASP.NET Core 10 của Qaly:</p>
+
+                <div class="tabs-header">
+                    <button class="tab-btn active" onclick="switchTab(event, 'tab-cost')">1. Tần suất & Chi phí</button>
+                    <button class="tab-btn" onclick="switchTab(event, 'tab-race')">2. Concurrency & Idempotency</button>
+                    <button class="tab-btn" onclick="switchTab(event, 'tab-val')">3. Security & PII Masking</button>
+                    <button class="tab-btn" onclick="switchTab(event, 'tab-undo')">4. Validation & Revert Pattern</button>
+                </div>
+
+                <!-- Tab 1: Cost & Job -->
+                <div id="tab-cost" class="tab-content active">
+                    <h3>Hệ thống sinh Insight định kỳ & Invalidation Trigger</h3>
+                    <p>Để tối ưu hóa chi phí API và giảm độ trễ hiển thị cho Client:</p>
+                    <ul>
+                        <li><strong>Background Worker:</strong> Chạy ngầm <code>InsightGenerationJob</code> thông qua Hangfire/Quartz mỗi 1 giờ đối với các dự án đang hoạt động tích cực.</li>
+                        <li><strong>Event-Driven Invalidations:</strong> Đăng ký lắng nghe các Domain Events quan trọng (ví dụ: <code>TaskOverdueEvent</code>, <code>MilestoneDelayedEvent</code>). Khi xảy ra, Job sẽ được xếp hàng để tính toán lại Insight cho riêng dự án đó.</li>
+                        <li><strong>Redis Caching:</strong> Insights được lưu trữ trong Redis với Key <code>dashboard:insights:{workspaceId}</code>. API GET chỉ lấy trực tiếp từ cache.</li>
+                        <li><strong>Pre-filtering (Context Reduction):</strong> Thay vì gửi toàn bộ hàng nghìn task, một bộ lọc C# sẽ tổng hợp trước (số lượng task quá hạn, tỷ lệ tải của từng user, critical path tasks) và chỉ gửi tối đa 15 dòng dữ liệu tóm tắt cho LLM.</li>
+                    </ul>
+                </div>
+
+                <!-- Tab 2: Concurrency & Idempotency -->
+                <div id="tab-race" class="tab-content">
+                    <h3>Chống Race Condition & Double-Click</h3>
+                    <p>Giải quyết vấn đề dữ liệu bị thay đổi giữa lúc AI gợi ý và lúc user click thực thi:</p>
+                    <ul>
+                        <li><strong>Optimistic Concurrency Check (OCC):</strong>
+                            Khi AI đề xuất hành động (ví dụ: Reassign task), payload đính kèm sẽ ghi nhận <code>RowVersion</code> của task tại thời điểm quét. Lúc thực thi, EF Core sẽ kiểm tra:
+                            <pre><code><span class="code-comment">// Trong DbContext thực thi:</span>
+_context.Entry(task).OriginalValues[<span class="code-string">"RowVersion"</span>] = actionPayload.RowVersion;
+<span class="code-keyword">await</span> _context.SaveChangesAsync(); <span class="code-comment">// Ném DbUpdateConcurrencyException nếu dữ liệu đã bị sửa bởi người khác</span></code></pre>
+                        </li>
+                        <li><strong>Idempotency Key Pipeline:</strong>
+                            Mỗi đề xuất gửi xuống client đi kèm một <code>IdempotencyKey</code> (UUID v4). Khi client execute, API Gate kiểm tra key này trong Redis. Nếu key đã có trạng thái "Success", trả về kết quả cũ ngay lập tức mà không chạy lại nghiệp vụ DB.
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Tab 3: Security & Masking -->
+                <div id="tab-val" class="tab-content">
+                    <h3>Bảo mật dữ liệu (Data Residency & PII Masking)</h3>
+                    <p>Đảm bảo không rò rỉ dữ liệu nhạy cảm ra LLM của bên thứ ba:</p>
+                    <ul>
+                        <li><strong>Data Anonymizer Engine:</strong>
+                            Một dịch vụ trung gian (Utility) sẽ chạy trước khi xây dựng prompt để quét và mã hóa các trường thông tin nhạy cảm:
+                            <table style="margin-top:0.5rem; margin-bottom:0.5rem;">
+                                <thead>
+                                    <tr>
+                                        <th>Trường dữ liệu</th>
+                                        <th>Phương pháp Masking</th>
+                                        <th>Ví dụ trước Masking</th>
+                                        <th>Ví dụ sau Masking</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>Tên thành viên</td>
+                                        <td>Map Token ID</td>
+                                        <td>Nguyễn Văn A</td>
+                                        <td><code>User_01</code></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Tiêu đề Task</td>
+                                        <td>Truncate & Hóa giản</td>
+                                        <td>Sửa lỗi rò rỉ JWT Token trên API Đăng nhập</td>
+                                        <td><code>Fix auth issue on main API</code></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Mô tả Task</td>
+                                        <td>Bỏ qua, chỉ gửi Key Phrases</td>
+                                        <td>Nội dung code / Mật khẩu hệ thống...</td>
+                                        <td>[Removed for Security]</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </li>
+                        <li><strong>Workspace Opt-in Policy:</strong> Mỗi dự án có cờ <code>EnableAiFeatures</code> trong bảng Project Settings. Mặc định tắt (Opt-in). PM phải đồng ý ký số điều khoản chia sẻ dữ liệu thì AI mới hoạt động.</li>
+                    </ul>
+                </div>
+
+                <!-- Tab 4: Validation & Revert -->
+                <div id="tab-undo" class="tab-content">
+                    <h3>Bộ Xác Thực Nghiệp Vụ Độc Lập & Cơ Chế Revert</h3>
+                    <p>Tuyệt đối không tin tưởng hoàn toàn vào dữ liệu sinh ra bởi AI:</p>
+                    <ul>
+                        <li><strong>Execution Validation Layer:</strong> 
+                            Trước khi ghi DB, payload được đưa qua <code>IActionValidator</code> để kiểm tra:
+                            <ol>
+                                <li><code>AssigneeId</code> mới có thực sự là Member hợp lệ của dự án hay không.</li>
+                                <li>Kiểm tra hệ thống Lịch/PTO của công ty xem nhân sự đó có đang xin nghỉ phép trong giai đoạn task diễn ra hay không.</li>
+                                <li>Kiểm tra workload thực tế (nếu nhận thêm task thì tổng workload có vượt quá 100% capacity quy định hay không).</li>
+                            </ol>
+                        </li>
+                        <li><strong>Reversible Action Pattern (Undo):</strong>
+                            Khi AI đề xuất action, hệ thống sẽ snapshot (chụp ảnh) trạng thái cũ của thực thể lưu vào bảng <code>AiActionExecutionLog</code>. Khi người dùng click Undo:
+                            <pre><code><span class="code-comment">// Revert Logic</span>
+<span class="code-keyword">var</span> originalSnapshot = log.OriginalStateJson;
+<span class="code-keyword">if</span> (currentTask.RowVersion != log.ExecutedRowVersion) {
+    <span class="code-comment">// Dữ liệu đã bị chỉnh sửa tiếp bởi con người sau thời điểm AI thay đổi</span>
+    <span class="code-keyword">return</span> Error(<span class="code-string">"Task has been modified by someone else. Automatic undo is blocked."</span>);
+}
+ApplySnapshot(currentTask, originalSnapshot);</code></pre>
+                        </li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- SECTION 3 -->
+            <section id="mockup-trai-nghiem">
+                <h2>3. Trải nghiệm thực tế (Sandbox nâng cấp)</h2>
+                <p>Mockup dưới đây tích hợp các tính năng Product UX cải tiến: **Xem độ tin cậy (Confidence)**, **Chỉnh sửa payload trực tiếp trước khi duyệt**, và **Giao diện Undo / Feedback loop**:</p>
+
+                <div class="sandbox">
+                    <div class="sandbox-header">
+                        <div class="sandbox-dots">
+                            <div class="sandbox-dot red"></div>
+                            <div class="sandbox-dot yellow"></div>
+                            <div class="sandbox-dot green"></div>
+                        </div>
+                        <div class="sandbox-title">QALY ENTERPRISE DASHBOARD - AI COMPANION V2</div>
+                        <div style="width: 40px;"></div>
+                    </div>
+                    <div class="sandbox-body">
+                        <!-- Left: Dashboard -->
+                        <div class="sim-dashboard">
+                            <div>
+                                <div class="sim-title">
+                                    <span>📊 Project Stats</span>
+                                    <span style="font-size: 0.7rem; color: var(--color-text-muted);" id="sim-ver-token">DB Version Token: 0x00A38D</span>
+                                </div>
+                                <div class="sim-grid">
+                                    <div class="sim-metric-card" id="card-overdue">
+                                        <div class="sim-metric-label">Trễ Hạn (Overdue)</div>
+                                        <div class="sim-metric-value danger" id="val-overdue">5</div>
+                                    </div>
+                                    <div class="sim-metric-card" id="card-workload">
+                                        <div class="sim-metric-label">Phân Tải (A vs B)</div>
+                                        <div class="sim-metric-value warning" id="val-workload">A: 9 | B: 1</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="sim-task-list">
+                                <div style="font-size: 0.8rem; font-weight: 700; margin-bottom: 0.5rem; color:#fff;">Đường găng & Task phân bổ</div>
+                                <div class="sim-task-item" id="task-1">
+                                    <div class="sim-task-info">
+                                        <span class="sim-task-title">Gia cố API Gateway</span>
+                                        <span class="sim-task-meta text-danger" id="task-1-date">Due: 3 ngày trước</span>
+                                    </div>
+                                    <span class="sim-task-assignee" style="color: #f472b6;">User_01 (A)</span>
+                                </div>
+                                <div class="sim-task-item" id="task-2">
+                                    <div class="sim-task-info">
+                                        <span class="sim-task-title">Landing Page Dev</span>
+                                        <span class="sim-task-meta">Due: 26-07-2026</span>
+                                    </div>
+                                    <span class="sim-task-assignee" id="task-2-assignee" style="color: #f472b6;">User_01 (A)</span>
+                                </div>
+                            </div>
+                            
+                            <div style="font-size:0.7rem; color: var(--color-text-muted); text-align:right; margin-top:1rem;">
+                                Cache: Sinh cách đây 14 phút
+                            </div>
+                        </div>
+
+                        <!-- Right: AI Native V2 Box -->
+                        <div class="sim-ai-companion" id="ai-companion-card">
+                            <div>
+                                <div class="sim-ai-header">
+                                    <div class="sim-ai-pulsar"></div>
+                                    <span>AI NATIVE ENGINE</span>
+                                </div>
+
+                                <div id="ai-panel">
+                                    <div class="sim-ai-insight-box">
+                                        <div class="sim-ai-insight-title">
+                                            <span>💡 Đề xuất tối ưu hóa tải</span>
+                                            <span class="sim-ai-confidence">Độ tin cậy: 92%</span>
+                                        </div>
+                                        <p style="font-size: 0.75rem; color: #94a3b8; margin: 0.25rem 0;">
+                                            Chuyển giao việc cho <strong>User_02 (B)</strong> để tránh A quá tải.
+                                        </p>
+                                        
+                                        <!-- Editable Payload Field -->
+                                        <div class="sim-payload-editor">
+                                            Action: Reassign Task<br>
+                                            Task ID: #task-2<br>
+                                            New Assignee: 
+                                            <span class="sim-payload-editable" id="editable-assignee" onclick="editAssigneeInline()">User_02 (B)</span>
+                                        </div>
+                                    </div>
+
+                                    <button class="sim-ai-action-btn" id="btn-confirm" onclick="confirmAiProposal()">
+                                        Xác nhận thực hiện
+                                    </button>
+                                    <button class="sim-ai-reject-btn" id="btn-reject" onclick="rejectAiProposal()">
+                                        Từ chối & Ghi nhận Feedback
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div id="undo-container" style="display:none;">
+                                <div class="sim-undo-bar">
+                                    <span>Đã thực hiện reassign.</span>
+                                    <span class="sim-undo-link" onclick="undoAction()">[Hoàn tác (Undo)]</span>
+                                </div>
+                            </div>
+
+                            <div class="toast-notify" id="sim-toast-v2">
+                                <span style="color: var(--success); font-size: 1.2rem;">✓</span>
+                                <div style="font-size: 0.75rem;">
+                                    <strong>Idempotency Checked!</strong><br>
+                                    Database đã lưu vết và đổi Assignee.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <script>
+                    let assigneeName = "User_02 (B)";
+                    let previousState = null;
+
+                    function editAssigneeInline() {
+                        const span = document.getElementById('editable-assignee');
+                        span.innerHTML = `<select class="sim-payload-input-inline" id="assignee-select" onblur="saveAssigneeInline()" onchange="saveAssigneeInline()">
+                            <option value="User_02 (B)">User_02 (B)</option>
+                            <option value="User_01 (A)">User_01 (A)</option>
+                            <option value="User_03 (C)">User_03 (C)</option>
+                        </select>`;
+                        document.getElementById('assignee-select').focus();
+                    }
+
+                    function saveAssigneeInline() {
+                        const select = document.getElementById('assignee-select');
+                        if (select) {
+                            assigneeName = select.value;
+                        }
+                        const span = document.getElementById('editable-assignee');
+                        span.innerText = assigneeName;
+                        span.onclick = editAssigneeInline;
+                    }
+
+                    function confirmAiProposal() {
+                        const btn = document.getElementById('btn-confirm');
+                        const btnReject = document.getElementById('btn-reject');
+                        const toast = document.getElementById('sim-toast-v2');
+                        const workload = document.getElementById('val-workload');
+                        const cardWorkload = document.getElementById('card-workload');
+                        const assigneeSpan = document.getElementById('task-2-assignee');
+                        const undoContainer = document.getElementById('undo-container');
+                        const aiPanel = document.getElementById('ai-panel');
+                        const versionToken = document.getElementById('sim-ver-token');
+
+                        // Save current state for undo
+                        previousState = {
+                            workload: workload.innerText,
+                            assigneeText: assigneeSpan.innerText,
+                            assigneeColor: assigneeSpan.style.color,
+                            versionToken: versionToken.innerText
+                        };
+
+                        btn.disabled = true;
+                        btn.innerText = "⏳ Đang kiểm tra Concurrency & PTO...";
+
+                        setTimeout(() => {
+                            // Apply validation checks & execute
+                            toast.classList.add('show');
+                            setTimeout(() => toast.classList.remove('show'), 3500);
+
+                            // Change stats
+                            if (assigneeName.includes("B")) {
+                                workload.innerText = "A: 8 | B: 2";
+                                assigneeSpan.innerText = "User_02 (B)";
+                                assigneeSpan.style.color = "#10b981";
+                            } else if (assigneeName.includes("C")) {
+                                workload.innerText = "A: 8 | B: 1 | C: 1";
+                                assigneeSpan.innerText = "User_03 (C)";
+                                assigneeSpan.style.color = "#60a5fa";
+                            }
+                            
+                            cardWorkload.classList.add('active-change');
+                            setTimeout(() => cardWorkload.classList.remove('active-change'), 2000);
+                            
+                            versionToken.innerText = "DB Version Token: 0x00A39F (Updated)";
+
+                            // Transition UI to Undo Mode
+                            aiPanel.style.opacity = '0.3';
+                            btn.disabled = true;
+                            btnReject.disabled = true;
+                            undoContainer.style.display = 'block';
+                        }, 1000);
+                    }
+
+                    function undoAction() {
+                        if (!previousState) return;
+
+                        const workload = document.getElementById('val-workload');
+                        const assigneeSpan = document.getElementById('task-2-assignee');
+                        const undoContainer = document.getElementById('undo-container');
+                        const aiPanel = document.getElementById('ai-panel');
+                        const versionToken = document.getElementById('sim-ver-token');
+                        const btn = document.getElementById('btn-confirm');
+                        const btnReject = document.getElementById('btn-reject');
+
+                        workload.innerText = previousState.workload;
+                        assigneeSpan.innerText = previousState.assigneeText;
+                        assigneeSpan.style.color = previousState.assigneeColor;
+                        versionToken.innerText = previousState.versionToken;
+
+                        undoContainer.style.display = 'none';
+                        aiPanel.style.opacity = '1';
+                        btn.disabled = false;
+                        btn.innerText = "Xác nhận thực hiện";
+                        btnReject.disabled = false;
+                        
+                        alert("Đã khôi phục (Undo) trạng thái dữ liệu cũ thành công!");
+                    }
+
+                    function rejectAiProposal() {
+                        const panel = document.getElementById('ai-panel');
+                        panel.innerHTML = `<div style="text-align:center; padding:1rem; font-size:0.85rem; color:var(--color-text-secondary);">
+                            <span style="font-size:1.5rem; display:block; margin-bottom:0.5rem;">✍️ Feedback Loop</span>
+                            Ghi nhận lý do từ chối để tối ưu hóa mô hình AI trong tương lai.<br>
+                            <textarea style="background:#020617; border:1px solid var(--border-color); color:#fff; width:100%; border-radius:6px; padding:0.4rem; font-size:0.8rem; margin:0.75rem 0;" placeholder="Nhập lý do (Ví dụ: B không quen code React)..."></textarea>
+                            <button class="sim-ai-action-btn success" style="padding:0.4rem;" onclick="location.reload()">Gửi Feedback</button>
+                        </div>`;
+                    }
+                </script>
+            </section>
+
+            <!-- SECTION 4 -->
+            <section id="chi-tiet-thiet-ke-api">
+                <h2>4. Thiết kế Luồng dữ liệu (Hybrid System)</h2>
+                <p>Sự kết hợp giữa <strong>Thuật toán Đường găng truyền thống (Critical Path Method - CPM)</strong> và <strong>LLM Reasoning Engine</strong> để giải quyết triệt để vấn đề tính toán hạn chót:</p>
+                
+                <div class="alert alert-warning">
+                    <span class="alert-icon">⚠️</span>
+                    <div>
+                        <strong>Không sử dụng LLM để tính toán ngày:</strong> LLM rất dễ gặp lỗi logic số học khi cộng trừ ngày tháng. Chúng tôi sử dụng các thư viện lập lịch CPM thuần túy (C#) để tính toán hạn chót tối ưu dựa trên phụ thuộc (Dependencies). LLM chỉ đóng vai trò phân tích ngữ cảnh, viết văn bản giải thích và đề xuất phương án.
+                    </div>
+                </div>
+
+                <h3>Cơ cấu dữ liệu Actionable Insight Schema (Structured Output)</h3>
+                <pre><code>{
+  <span class="code-keyword">"$schema"</span>: <span class="code-string">"https://qaly.dev/schemas/ai-action-proposal.json"</span>,
+  <span class="code-keyword">"confidenceScore"</span>: <span class="code-type">0.92</span>,
+  <span class="code-keyword">"insightSummary"</span>: <span class="code-string">"Hệ thống phát hiện User_01 đang có nguy cơ trễ hạn 5 task."</span>,
+  <span class="code-keyword">"proposedActions"</span>: [
+    {
+      <span class="code-keyword">"id"</span>: <span class="code-string">"act_01j7y21..."</span>,
+      <span class="code-keyword">"type"</span>: <span class="code-string">"ReassignTask"</span>,
+      <span class="code-keyword">"description"</span>: <span class="code-string">"Chuyển task Landing Page từ User_01 sang User_02"</span>,
+      <span class="code-keyword">"payload"</span>: {
+        <span class="code-keyword">"taskId"</span>: <span class="code-string">"3829adbf-c682-4148-9cde-6500e5720023"</span>,
+        <span class="code-keyword">"targetAssigneeId"</span>: <span class="code-string">"89110052-a5e2-4df7-8761-125c110bfd21"</span>,
+        <span class="code-keyword">"originalAssigneeId"</span>: <span class="code-string">"a18a82b9-..."</span>,
+        <span class="code-keyword">"expectedConcurrencyToken"</span>: <span class="code-string">"0x00A38D"</span>
+      }
+    }
+  ]
+}</code></pre>
+            </section>
+
+            <!-- SECTION 5 -->
+            <section id="lo-trinh-nang-cap">
+                <h2>5. Lộ trình triển khai nâng cấp (6 Tuần)</h2>
+                <p>Để đảm bảo độ an toàn dữ liệu và tính ổn định của hệ thống trước khi vận hành thực tế:</p>
+
+                <div class="timeline">
+                    <div class="timeline-item done">
+                        <div class="timeline-marker"></div>
+                        <div class="timeline-title">Phase 1: API Core & Validation Engine (Tuần 1-2)</div>
+                        <div class="timeline-date">Hoàn thành hạ tầng cơ bản</div>
+                        <p>Xây dựng các Action Validators kiểm duyệt nghiệp vụ độc lập, cấu hình Concurrency Token trong DB Entity.</p>
+                    </div>
+
+                    <div class="timeline-item current">
+                        <div class="timeline-marker"></div>
+                        <div class="timeline-title">Phase 2: Job Scheduling & Cache Strategy (Tuần 3)</div>
+                        <div class="timeline-date">ĐANG TRIỂN KHAI</div>
+                        <p>Tích hợp Hangfire scheduler chạy ngầm Insight generation, lưu trữ Redis Cache, lọc nhiễu dữ liệu trước khi gửi Prompt.</p>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-marker"></div>
+                        <div class="timeline-title">Phase 3: Shadow Mode Integration (Tuần 4)</div>
+                        <div class="timeline-date">Chưa chạy</div>
+                        <p><strong>Cơ chế Shadow Mode:</strong> Kích hoạt AI đề xuất ngầm trên môi trường Production. Hệ thống ghi nhận mọi đề xuất nhưng KHÔNG hiển thị nút Execute cho người dùng. So sánh độ chính xác của đề xuất AI với hành động thực tế của PM để đo lường KPI.</p>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-marker"></div>
+                        <div class="timeline-title">Phase 4: Tích hợp Vue 3 Interactive UI & Feedback Loop (Tuần 5)</div>
+                        <div class="timeline-date">Chưa chạy</div>
+                        <p>Hoàn thiện component AI companion cho phép chỉnh sửa trực tiếp thông tin trong payload trước khi bấm duyệt và ghi nhận phản hồi reject.</p>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-marker"></div>
+                        <div class="timeline-title">Phase 5: Kiểm thử tải, Bảo mật & Release (Tuần 6)</div>
+                        <div class="timeline-date">Chưa chạy</div>
+                        <p>Đánh giá PII data masking, kiểm tra hiệu năng (load test latency), tích hợp cơ chế Rate limiting chống DDoS API AI và hoàn thành rollout.</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        function switchTab(evt, tabId) {
+            const contents = document.getElementsByClassName('tab-content');
+            for (let i = 0; i < contents.length; i++) {
+                contents[i].classList.remove('active');
+            }
+            const btns = document.getElementsByClassName('tab-btn');
+            for (let i = 0; i < btns.length; i++) {
+                btns[i].classList.remove('active');
+            }
+            document.getElementById(tabId).classList.add('active');
+            evt.currentTarget.classList.add('active');
+        }
+    </script>
+</body>
+</html>
