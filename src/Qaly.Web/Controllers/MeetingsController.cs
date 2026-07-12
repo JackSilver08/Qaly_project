@@ -18,6 +18,7 @@ public class MeetingsController : BaseApiController
     }
 
     [HttpPost("import/meetily")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ImportMeetily(MeetilyImportRequest request, CancellationToken ct)
     {
         var result = await _meetingImportService.ImportMeetilyAsync(request, ct);
@@ -25,6 +26,7 @@ public class MeetingsController : BaseApiController
     }
 
     [HttpPost("{meetingSessionId:guid}/auto-checknote")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> CreateAutoChecknote(Guid meetingSessionId, [FromBody] AutoChecknoteRequest request, CancellationToken ct)
     {
         var result = await _meetingImportService.CreateAutoChecknoteAsync(meetingSessionId, request, ct);
@@ -32,6 +34,7 @@ public class MeetingsController : BaseApiController
     }
 
     [HttpPost("{meetingId:guid}/action-items/{itemIndex:int}/create-task")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> CreateTaskFromActionItem(Guid meetingId, int itemIndex, MeetingActionItemCreateRequest request, CancellationToken ct)
     {
         var result = await _meetingImportService.CreateTaskFromMeetingActionItemAsync(meetingId, itemIndex, request, ct);
@@ -46,6 +49,7 @@ public class MeetingsController : BaseApiController
     }
 
     [HttpPost("{meetingId:guid}/action-items/{itemIndex:int}/link-task")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> LinkActionItemToTask(Guid meetingId, int itemIndex, [FromBody] LinkMeetingActionItemTaskRequest request, CancellationToken ct)
     {
         var result = await _meetingImportService.LinkMeetingActionItemToTaskAsync(meetingId, itemIndex, request, ct);

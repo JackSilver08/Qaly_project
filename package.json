@@ -14,33 +14,33 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
+    "@types/dompurify": "^3.0.5",
+    "@types/markdown-it": "^14.1.2",
     "@types/node": "^25.6.0",
     "@vitejs/plugin-vue": "^5.2.1",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
-    "vite": "^6.0.7",
-    "vue-tsc": "^2.2.0"
+    "vite": "^6.4.3",
+    "vue-tsc": "^2.2.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "dependencies": {
     "@microsoft/signalr": "^10.0.0",
-    "@types/dompurify": "^3.0.5",
-    "@types/markdown-it": "^14.1.2",
     "chart.js": "^4.5.1",
-    "dompurify": "^3.4.2",
+    "dompurify": "^3.4.11",
     "entities": "^7.0.1",
     "esbuild": "^0.25.12",
     "livekit-client": "^2.19.1",
     "lucide-vue-next": "^1.0.0",
-    "markdown-it": "^14.1.1",
+    "markdown-it": "^14.3.0",
     "md-editor-v3": "^6.5.1",
     "sortablejs": "^1.15.7",
     "vue": "^3.5.13",
     "vue-chartjs": "^5.3.3",
     "vue-draggable-plus": "^0.6.1",
-    "vue-router": "^4.6.4",
-    "xlsx": "^0.18.5"
+    "vue-router": "^4.6.4"
   },
   "optionalDependencies": {
     "@esbuild/win32-x64": "^0.25.12"

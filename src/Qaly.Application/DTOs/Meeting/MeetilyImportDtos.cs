@@ -9,7 +9,12 @@ public record MeetilyImportRequest(
     string? TranscriptText,
     IReadOnlyList<string>? Participants,
     IReadOnlyList<MeetilyActionItemInput>? ActionItems,
-    string? RawPayloadJson);
+    string? RawPayloadJson,
+    Guid? ConsentId = null,
+    Guid? RetentionPolicyId = null,
+    string ProcessingMode = "local_only",
+    int? RetentionDays = null,
+    string? NoticeVersion = null);
 
 public record MeetilyActionItemInput(
     string Title,

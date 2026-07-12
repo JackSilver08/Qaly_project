@@ -28,4 +28,22 @@ public interface IAiCostService
         string status, 
         bool cacheHit,
         CancellationToken cancellationToken = default);
+
+    Task RecordJobUsageAsync(
+        Guid? tenantId,
+        Guid? projectId,
+        Guid? userId,
+        string jobType,
+        string providerName,
+        string modelName,
+        int inputTokens,
+        int outputTokens,
+        decimal estimatedCostUsd,
+        int? latencyMs,
+        string status,
+        bool cacheHit,
+        Guid? aiJobId = null,
+        Guid? providerAttemptId = null,
+        string? errorCode = null,
+        CancellationToken cancellationToken = default);
 }

@@ -4,15 +4,20 @@ import {
   AlertTriangle,
   CalendarDays,
   Captions,
+  CheckCircle2,
   ChevronDown,
+  Cloud,
   Copy,
   Info,
+  LockKeyhole,
+  Loader2,
   MessageCircle,
   Moon,
   MonitorUp,
   PanelRightClose,
   PanelRightOpen,
   ShieldCheck,
+  Server,
   Sparkles,
   Sun,
   Users,
@@ -99,9 +104,55 @@ const isGeneratingChecknote = ref(false);
 const checknoteResult = ref<any>(null);
 const projectMembers = ref<any[]>([]);
 const isCreatingTask = ref<number | null>(null);
+type PrivacyAction = "speech" | "checknote";
+type MeetingPrivacyContext = {
+  projectId: string;
+  consentId: string;
+  retentionPolicyId: string;
+  processingMode: "local_only" | "cloud_allowed";
+  retentionDays: number;
+  noticeVersion: string;
+};
+type MeetingPrivacyPolicy = {
+  id: string;
+  name: string;
+  purpose: string;
+  defaultRetentionDays: number;
+  allowedRetentionDays: number[];
+  expiryAction: string;
+  allowCloudProcessing: boolean;
+  allowLocalProcessing: boolean;
+  isActive: boolean;
+  policyVersion: string;
+};
+type MeetingConsent = {
+  id: string;
+  projectId: string | null;
+  sourceEntityId: string | null;
+  retentionPolicyId: string | null;
+  providerClass: string;
+  purpose: string;
+  status: string;
+  expiresAt: string | null;
+};
+const showPrivacyGate = ref(false);
+const privacyAction = ref<PrivacyAction | null>(null);
+const privacyPolicies = ref<MeetingPrivacyPolicy[]>([]);
+const privacyConsents = ref<MeetingConsent[]>([]);
+const privacyPolicyId = ref("");
+const privacyProcessingMode = ref<"local_only" | "cloud_allowed">("local_only");
+const privacyRetentionDays = ref(30);
+const privacyAccepted = ref(false);
+const privacyLoading = ref(false);
+const privacyError = ref("");
+const privacyContext = ref<MeetingPrivacyContext | null>(null);
+const privacyNoticeVersion = "qaly-meeting-privacy-v4.0";
 const showMeetingFrame = computed(() => active.value && !!roomName.value);
 const showChecknoteSetup = computed(() => !checknoteResult.value && !isGeneratingChecknote.value);
 const showChecknoteHint = computed(() => transcriptList.value.length === 0);
+const selectedPrivacyPolicy = computed(() =>
+  privacyPolicies.value.find((policy) => policy.id === privacyPolicyId.value) ?? null,
+);
 
 function showRemoteVideo(tile: any) {
   return tile.cameraOn && !!tile.videoTrack;
@@ -112,14 +163,14 @@ function showRemoteCameraOff(tile: any) {
 }
 
 const { saveBuffer, getBuffer, clearBuffer } = useMeetingRecovery();
-const { currentUser, dashboard } = useDashboardContext();
+const { currentUser, projects: dashboardProjects } = useDashboardContext();
 
 const currentUserName = computed(() => {
   return currentUser.value?.fullName || currentUser.value?.email || "Thành viên";
 });
 
 const projects = computed(() => {
-  return dashboard.value?.projects || [];
+  return dashboardProjects.value || [];
 });
 
 const speechRec = useSpeechRecognition((text, isFinal) => {
@@ -148,12 +199,137 @@ const speechError = computed(() => speechRec.hasError.value);
 const liveCaptionText = ref("");
 let liveCaptionTimeoutId: number | undefined;
 
-function toggleSpeech() {
+async function toggleSpeech() {
   if (speechRec.isListening.value) {
     speechRec.stop();
-  } else {
-    speechRec.start();
+    return;
   }
+
+  if (await ensureMeetingPrivacy("speech")) speechRec.start();
+}
+
+async function ensureMeetingPrivacy(action: PrivacyAction) {
+  if (!meetingId.value) {
+    showError("Cuộc họp cần được khởi tạo trước khi ghi phụ đề.");
+    return false;
+  }
+
+  if (!selectedProjectId.value) selectedProjectId.value = projects.value[0]?.id || "";
+  if (!selectedProjectId.value) {
+    showError("Hãy chọn dự án áp dụng cho dữ liệu cuộc họp.");
+    return false;
+  }
+
+  if (privacyContext.value?.projectId === selectedProjectId.value) return true;
+  privacyAction.value = action;
+  privacyAccepted.value = false;
+  privacyError.value = "";
+  showPrivacyGate.value = true;
+  await loadMeetingPrivacyOptions();
+  return false;
+}
+
+async function loadMeetingPrivacyOptions() {
+  const project = projects.value.find((item: any) => item.id === selectedProjectId.value);
+  const tenantId = project?.organizationId || project?.id;
+  if (!tenantId || !selectedProjectId.value) return;
+
+  privacyLoading.value = true;
+  privacyError.value = "";
+  try {
+    const [policies, consents] = await Promise.all([
+      apiResult<MeetingPrivacyPolicy[]>(
+        `/api/privacy/policies?tenantId=${encodeURIComponent(tenantId)}&projectId=${encodeURIComponent(selectedProjectId.value)}`,
+      ),
+      apiResult<MeetingConsent[]>(
+        `/api/privacy/consents?projectId=${encodeURIComponent(selectedProjectId.value)}`,
+      ),
+    ]);
+    privacyPolicies.value = policies.filter(
+      (policy) => policy.isActive && policy.purpose === "meeting_action_extraction",
+    );
+    privacyConsents.value = consents.filter(
+      (consent) =>
+        consent.status === "granted" &&
+        consent.purpose === "meeting_action_extraction" &&
+        (!consent.expiresAt || new Date(consent.expiresAt).getTime() > Date.now()) &&
+        (!consent.sourceEntityId || consent.sourceEntityId === meetingId.value),
+    );
+    privacyPolicyId.value = privacyPolicies.value[0]?.id || "";
+    privacyRetentionDays.value = privacyPolicies.value[0]?.defaultRetentionDays || 30;
+    if (!privacyPolicies.value.length) {
+      privacyError.value = "Dự án chưa có retention policy đang hoạt động.";
+    }
+  } catch (error: any) {
+    privacyError.value = error?.message || "Không thể tải policy và consent.";
+  } finally {
+    privacyLoading.value = false;
+  }
+}
+
+function updatePrivacyPolicy() {
+  const policy = selectedPrivacyPolicy.value;
+  if (!policy) return;
+  privacyRetentionDays.value = policy.defaultRetentionDays;
+  if (!policy.allowCloudProcessing) privacyProcessingMode.value = "local_only";
+}
+
+async function confirmMeetingPrivacy() {
+  const policy = selectedPrivacyPolicy.value;
+  if (!policy || !privacyAccepted.value || !meetingId.value) {
+    privacyError.value = "Chọn policy và xác nhận consent trước khi tiếp tục.";
+    return;
+  }
+
+  privacyLoading.value = true;
+  privacyError.value = "";
+  try {
+    const providerClass = privacyProcessingMode.value === "local_only" ? "local" : "any";
+    const existing = privacyConsents.value.find(
+      (consent) =>
+        consent.retentionPolicyId === policy.id &&
+        consent.providerClass === providerClass &&
+        (!consent.sourceEntityId || consent.sourceEntityId === meetingId.value),
+    );
+    const consent = existing ?? await apiResult<MeetingConsent>("/api/privacy/consents", {
+      method: "POST",
+      body: JSON.stringify({
+        projectId: selectedProjectId.value,
+        retentionPolicyId: policy.id,
+        purpose: "meeting_action_extraction",
+        providerClass,
+        sourceType: "meeting",
+        sourceEntityId: meetingId.value,
+        noticeVersion: privacyNoticeVersion,
+        expiresAt: null,
+      }),
+    });
+
+    privacyContext.value = {
+      projectId: selectedProjectId.value,
+      consentId: consent.id,
+      retentionPolicyId: policy.id,
+      processingMode: privacyProcessingMode.value,
+      retentionDays: privacyRetentionDays.value,
+      noticeVersion: privacyNoticeVersion,
+    };
+    const pendingAction = privacyAction.value;
+    showPrivacyGate.value = false;
+    privacyAction.value = null;
+    privacyAccepted.value = false;
+    if (pendingAction === "speech") speechRec.start();
+    if (pendingAction === "checknote") await runGenerateChecknote();
+  } catch (error: any) {
+    privacyError.value = error?.message || "Không thể ghi nhận consent.";
+  } finally {
+    privacyLoading.value = false;
+  }
+}
+
+function closePrivacyGate() {
+  showPrivacyGate.value = false;
+  privacyAction.value = null;
+  privacyAccepted.value = false;
 }
 
 function appendLocalTranscript(senderName: string, text: string, timestamp: number) {
@@ -204,6 +380,13 @@ function formatDateForInput(dateStr: string | null) {
 async function generateChecknote() {
   if (!selectedProjectId.value || transcriptList.value.length === 0 || !meetingId.value) return;
 
+  if (await ensureMeetingPrivacy("checknote")) await runGenerateChecknote();
+}
+
+async function runGenerateChecknote() {
+  const context = privacyContext.value;
+  if (!selectedProjectId.value || transcriptList.value.length === 0 || !meetingId.value || !context) return;
+
   isGeneratingChecknote.value = true;
   try {
     const compiledTranscriptText = transcriptList.value
@@ -220,6 +403,11 @@ async function generateChecknote() {
         title: `Biên bản họp - ${new Date().toLocaleDateString("vi-VN")}`,
         transcriptText: compiledTranscriptText,
         participants: participantsList,
+        consentId: context.consentId,
+        retentionPolicyId: context.retentionPolicyId,
+        processingMode: context.processingMode,
+        retentionDays: context.retentionDays,
+        noticeVersion: context.noticeVersion,
       }),
     });
 
@@ -288,6 +476,7 @@ function resetChecknote() {
 }
 
 watch(selectedProjectId, async (newVal) => {
+  if (privacyContext.value?.projectId !== newVal) privacyContext.value = null;
   if (newVal) {
     try {
       const result = await apiResult<any[]>(`/api/projects/${newVal}/members`);
@@ -917,6 +1106,76 @@ function disconnectLiveKit() {
 
 <template>
   <div class="gm" :class="{ 'gm--light': isLightTheme }">
+    <div v-if="showPrivacyGate" class="gm-privacy-overlay" role="presentation" @click.self="closePrivacyGate">
+      <section class="gm-privacy-dialog" role="dialog" aria-modal="true" aria-labelledby="meeting-privacy-title">
+        <header class="gm-privacy-dialog__header">
+          <div class="gm-privacy-dialog__title">
+            <LockKeyhole :size="19" />
+            <div>
+              <h2 id="meeting-privacy-title">Xác nhận xử lý dữ liệu cuộc họp</h2>
+              <span>{{ privacyAction === 'speech' ? 'Bật phụ đề thời gian thực' : 'Tạo biên bản AI' }}</span>
+            </div>
+          </div>
+          <button class="gm-icon-button" type="button" title="Đóng" @click="closePrivacyGate"><X :size="17" /></button>
+        </header>
+
+        <div class="gm-privacy-dialog__body">
+          <label class="gm-privacy-field">Dự án
+            <select v-model="selectedProjectId" @change="loadMeetingPrivacyOptions">
+              <option value="" disabled>Chọn dự án</option>
+              <option v-for="proj in projects" :key="proj.id" :value="proj.id">{{ proj.name }}</option>
+            </select>
+          </label>
+          <label class="gm-privacy-field">Retention policy
+            <select v-model="privacyPolicyId" :disabled="privacyLoading" @change="updatePrivacyPolicy">
+              <option value="" disabled>Chọn policy</option>
+              <option v-for="policy in privacyPolicies" :key="policy.id" :value="policy.id">
+                {{ policy.name }} · {{ policy.policyVersion }}
+              </option>
+            </select>
+          </label>
+
+          <div class="gm-privacy-field">
+            <span>Provider</span>
+            <div class="gm-privacy-segmented">
+              <button type="button" :class="{ active: privacyProcessingMode === 'local_only' }" @click="privacyProcessingMode = 'local_only'">
+                <Server :size="16" /> Local only
+              </button>
+              <button type="button" :disabled="!selectedPrivacyPolicy?.allowCloudProcessing" :class="{ active: privacyProcessingMode === 'cloud_allowed' }" @click="privacyProcessingMode = 'cloud_allowed'">
+                <Cloud :size="16" /> Cloud allowed
+              </button>
+            </div>
+          </div>
+
+          <label class="gm-privacy-field">Thời hạn lưu trữ
+            <select v-model="privacyRetentionDays" :disabled="!selectedPrivacyPolicy">
+              <option v-for="day in selectedPrivacyPolicy?.allowedRetentionDays || []" :key="day" :value="day">{{ day }} ngày</option>
+            </select>
+          </label>
+
+          <div v-if="selectedPrivacyPolicy" class="gm-privacy-summary">
+            <ShieldCheck :size="17" />
+            <span>Dữ liệu được phân loại sensitive collaboration; khi hết hạn sẽ {{ selectedPrivacyPolicy.expiryAction }}. Qaly chỉ tạo task sau khi bạn duyệt draft.</span>
+          </div>
+
+          <label class="gm-privacy-consent">
+            <input v-model="privacyAccepted" type="checkbox" />
+            <span>Tôi đồng ý ghi nhận và xử lý nội dung cuộc họp để tạo phụ đề, tóm tắt và action item theo policy, provider và thời hạn đã chọn.</span>
+          </label>
+
+          <div v-if="privacyError" class="gm-privacy-error"><AlertTriangle :size="16" />{{ privacyError }}</div>
+        </div>
+
+        <footer class="gm-privacy-dialog__footer">
+          <button class="gm-btn-secondary" type="button" @click="closePrivacyGate">Hủy</button>
+          <button class="gm-btn-primary" type="button" :disabled="privacyLoading || !privacyPolicyId || !privacyAccepted" @click="confirmMeetingPrivacy">
+            <Loader2 v-if="privacyLoading" :size="16" class="gm-spin" />
+            <CheckCircle2 v-else :size="16" />
+            Xác nhận
+          </button>
+        </footer>
+      </section>
+    </div>
     <!-- ── Top Bar ── -->
     <header class="gm-topbar">
       <div class="gm-topbar__left">
@@ -1314,6 +1573,74 @@ function disconnectLiveKit() {
 </template>
 
 <style scoped>
+.gm-privacy-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(2, 6, 23, 0.72);
+}
+
+.gm-privacy-dialog {
+  width: min(520px, 100%);
+  max-height: calc(100dvh - 36px);
+  overflow: auto;
+  border: 1px solid var(--gm-surface-border);
+  border-radius: 8px;
+  background: #111827;
+  color: var(--gm-text-primary);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.36);
+}
+
+.gm--light .gm-privacy-dialog { background: #ffffff; }
+
+.gm-privacy-dialog__header,
+.gm-privacy-dialog__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+}
+
+.gm-privacy-dialog__header { border-bottom: 1px solid var(--gm-surface-border); }
+.gm-privacy-dialog__footer { border-top: 1px solid var(--gm-surface-border); justify-content: flex-end; }
+.gm-privacy-dialog__title { display: flex; align-items: center; gap: 10px; color: var(--gm-accent); }
+.gm-privacy-dialog__title h2 { margin: 0; font-size: 0.98rem; color: var(--gm-text-primary); }
+.gm-privacy-dialog__title span { display: block; margin-top: 3px; color: var(--gm-text-muted); font-size: 0.75rem; }
+.gm-privacy-dialog__body { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 18px; }
+.gm-privacy-field { display: flex; flex-direction: column; gap: 7px; color: var(--gm-text-secondary); font-size: 0.78rem; font-weight: 700; }
+.gm-privacy-field select { min-height: 40px; width: 100%; border: 1px solid var(--gm-surface-border); border-radius: 6px; background: var(--gm-surface); color: var(--gm-text-primary); padding: 8px 10px; }
+.gm-privacy-segmented { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--gm-surface-border); border-radius: 6px; overflow: hidden; }
+.gm-privacy-segmented button { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; border: 0; background: transparent; color: var(--gm-text-secondary); cursor: pointer; font-size: 0.74rem; font-weight: 700; }
+.gm-privacy-segmented button + button { border-left: 1px solid var(--gm-surface-border); }
+.gm-privacy-segmented button.active { background: var(--gm-accent-soft); color: var(--gm-accent); }
+.gm-privacy-segmented button:disabled { opacity: 0.42; cursor: not-allowed; }
+.gm-privacy-summary,
+.gm-privacy-consent,
+.gm-privacy-error { grid-column: 1 / -1; display: flex; align-items: flex-start; gap: 9px; padding: 11px 12px; border: 1px solid var(--gm-surface-border); border-radius: 6px; font-size: 0.76rem; line-height: 1.5; }
+.gm-privacy-summary { color: var(--gm-text-secondary); }
+.gm-privacy-summary svg { flex: 0 0 auto; color: var(--gm-accent); margin-top: 1px; }
+.gm-privacy-consent { cursor: pointer; color: var(--gm-text-primary); }
+.gm-privacy-consent input { width: 17px; height: 17px; flex: 0 0 auto; margin-top: 2px; accent-color: var(--gm-accent); }
+.gm-privacy-error { color: #fca5a5; border-color: rgba(239, 68, 68, 0.45); }
+.gm-btn-primary,
+.gm-btn-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 38px; border-radius: 6px; padding: 8px 14px; font-size: 0.78rem; font-weight: 800; cursor: pointer; }
+.gm-btn-primary { border: 1px solid var(--gm-accent); background: var(--gm-accent); color: white; }
+.gm-btn-secondary { border: 1px solid var(--gm-surface-border); background: var(--gm-surface); color: var(--gm-text-secondary); }
+.gm-btn-primary:disabled { opacity: 0.48; cursor: not-allowed; }
+.gm-icon-button { display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 34px; border: 1px solid var(--gm-surface-border); border-radius: 6px; background: var(--gm-surface); color: var(--gm-text-secondary); cursor: pointer; }
+.gm-spin { animation: gm-spin 1s linear infinite; }
+@keyframes gm-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 560px) {
+  .gm-privacy-dialog__body { grid-template-columns: 1fr; }
+  .gm-privacy-summary, .gm-privacy-consent, .gm-privacy-error { grid-column: 1; }
+  .gm-privacy-dialog__footer .gm-btn-primary, .gm-privacy-dialog__footer .gm-btn-secondary { flex: 1; }
+}
+
 /* ═══════════════════════════════════════════════
    QALY MEET — Premium Meeting UI
    ═══════════════════════════════════════════════ */

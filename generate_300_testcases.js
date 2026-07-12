@@ -1,6 +1,8 @@
 import fs from 'fs';
 import * as xlsx from 'xlsx';
 
+xlsx.set_fs(fs);
+
 const modules = [
     { name: 'Authentication (Login/Register)', count: 30 },
     { name: 'User Profile & Settings', count: 30 },

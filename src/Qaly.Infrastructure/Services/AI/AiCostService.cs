@@ -53,12 +53,53 @@ public class AiCostService : IAiCostService
         string status, 
         bool cacheHit,
         CancellationToken cancellationToken = default)
+        => await RecordJobUsageAsync(
+            tenantId,
+            projectId,
+            userId,
+            jobType,
+            providerName,
+            modelName,
+            inputTokens,
+            outputTokens,
+            estimatedCostUsd,
+            latencyMs,
+            status,
+            cacheHit,
+            cancellationToken: cancellationToken);
+
+    public async Task RecordJobUsageAsync(
+        Guid? tenantId,
+        Guid? projectId,
+        Guid? userId,
+        string jobType,
+        string providerName,
+        string modelName,
+        int inputTokens,
+        int outputTokens,
+        decimal estimatedCostUsd,
+        int? latencyMs,
+        string status,
+        bool cacheHit,
+        Guid? aiJobId = null,
+        Guid? providerAttemptId = null,
+        string? errorCode = null,
+        CancellationToken cancellationToken = default)
     {
+        if (aiJobId.HasValue && providerAttemptId.HasValue && await _context.AiUsageLedger.AnyAsync(
+                entry => entry.AiJobId == aiJobId && entry.ProviderAttemptId == providerAttemptId,
+                cancellationToken))
+        {
+            return;
+        }
+
         var ledgerEntry = new AiUsageLedger
         {
             TenantId = tenantId,
             ProjectId = projectId,
             UserId = userId,
+            AiJobId = aiJobId,
+            ProviderAttemptId = providerAttemptId,
             JobType = jobType,
             ProviderName = providerName,
             ModelName = modelName,
@@ -67,7 +108,8 @@ public class AiCostService : IAiCostService
             EstimatedCostUsd = estimatedCostUsd,
             LatencyMs = latencyMs,
             Status = status,
-            CacheHit = cacheHit
+            CacheHit = cacheHit,
+            ErrorCode = errorCode
         };
 
         _context.AiUsageLedger.Add(ledgerEntry);

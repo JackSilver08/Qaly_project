@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Meeting;
 using Qaly.Application.DTOs.Task;
@@ -30,6 +31,10 @@ public partial class MeetingImportService : IMeetingImportService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditLogService _auditLogService;
+    private readonly IAiComplianceService? _complianceService;
+    private readonly IRepository<PrivacyRetentionAction>? _retentionActionRepo;
+    private readonly IRepository<AiAuditEvent>? _aiAuditRepo;
+    private readonly PrivacyV4Options _privacyOptions;
 
     public MeetingImportService(
         IRepository<Project> projectRepo,
@@ -45,7 +50,11 @@ public partial class MeetingImportService : IMeetingImportService
         ITaskService taskService,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
-        IAuditLogService auditLogService)
+        IAuditLogService auditLogService,
+        IAiComplianceService? complianceService = null,
+        IRepository<PrivacyRetentionAction>? retentionActionRepo = null,
+        IRepository<AiAuditEvent>? aiAuditRepo = null,
+        IOptions<PrivacyV4Options>? privacyOptions = null)
     {
         _projectRepo = projectRepo;
         _projectMemberRepo = projectMemberRepo;
@@ -61,6 +70,10 @@ public partial class MeetingImportService : IMeetingImportService
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
         _auditLogService = auditLogService;
+        _complianceService = complianceService;
+        _retentionActionRepo = retentionActionRepo;
+        _aiAuditRepo = aiAuditRepo;
+        _privacyOptions = privacyOptions?.Value ?? new PrivacyV4Options();
     }
 
     public async Task<Result<MeetilyImportResult>> ImportMeetilyAsync(MeetilyImportRequest request, CancellationToken ct = default)
@@ -90,6 +103,35 @@ public partial class MeetingImportService : IMeetingImportService
             return Result.Forbidden<MeetilyImportResult>();
         }
 
+        if (EstimateSensitivePayloadCharacters(request) > Math.Max(1, _privacyOptions.MaxPayloadCharacters))
+        {
+            return Result.Failure<MeetilyImportResult>(
+                $"Meeting payload exceeds the {_privacyOptions.MaxPayloadCharacters:N0}-character limit.",
+                413,
+                PrivacyErrorCodes.PayloadTooLarge);
+        }
+
+        var tenantId = project.OrganizationId ?? project.Id;
+        var privacyDecisionResult = await EvaluateMeetingPrivacyAsync(
+            tenantId,
+            project.Id,
+            currentUserId.Value,
+            request.ConsentId,
+            request.RetentionPolicyId,
+            request.ProcessingMode,
+            request.RetentionDays,
+            request.NoticeVersion,
+            sourceEntityId: null,
+            ct);
+        if (!privacyDecisionResult.IsSuccess)
+        {
+            return Result.Failure<MeetilyImportResult>(
+                privacyDecisionResult.Error!,
+                privacyDecisionResult.StatusCode,
+                privacyDecisionResult.ErrorCode);
+        }
+        var privacyDecision = privacyDecisionResult.Data;
+
         var sourceHash = GenerateSourceHash(request);
         var existing = await _meetingImportRepo.GetQueryable()
             .AsNoTracking()
@@ -101,6 +143,14 @@ public partial class MeetingImportService : IMeetingImportService
 
         if (existing != null)
         {
+            if (IsPrivacyEnforced && existing.PrivacyState != MeetingPrivacyStates.Active)
+            {
+                return Result.Failure<MeetilyImportResult>(
+                    "The existing meeting import requires privacy migration review.",
+                    409,
+                    PrivacyErrorCodes.PolicyRequired);
+            }
+
             var duplicateExtraction = BuildExtraction(request, sourceHash);
             return Result.Success(new MeetilyImportResult(
                 existing.Id,
@@ -115,37 +165,87 @@ public partial class MeetingImportService : IMeetingImportService
 
         var extraction = BuildExtraction(request, sourceHash);
         var sourceText = BuildSourceText(request, extraction);
+        var resultJson = JsonSerializer.Serialize(extraction, JsonOptions);
+        var requestJson = JsonSerializer.Serialize(new
+        {
+            projectId = project.Id,
+            sourceProvider = "meetily",
+            sourceHash,
+            sourceId = request.SourceId,
+            consentId = privacyDecision?.ConsentId,
+            retentionPolicyId = privacyDecision?.RetentionPolicyId,
+            policyVersion = privacyDecision?.PolicyVersion,
+            providerClass = privacyDecision?.ProviderClass
+        }, JsonOptions);
+        var now = DateTimeOffset.UtcNow;
+        var meetingImportId = Guid.NewGuid();
+        var normalizedSummary = NormalizeOptional(request.Summary);
+        var normalizedTranscript = NormalizeOptional(request.TranscriptText) ?? string.Empty;
+        var canonicalSourceHash = HashText(
+            $"{meetingImportId}|{sourceHash}|{request.Title.Trim()}|{normalizedSummary}|{normalizedTranscript}|");
         var aiJob = new AiJob
         {
-            JobType = "AI-06_MEETING_EXTRACT",
+            TenantId = tenantId,
+            JobType = "meetily_import",
             ProjectId = project.Id,
-            SourceType = "meetily_import",
-            SourceId = string.IsNullOrWhiteSpace(request.SourceId) ? sourceHash : request.SourceId.Trim(),
-            ProviderHint = "local",
+            SourceType = "meeting",
+            SourceId = meetingImportId.ToString(),
+            SchemaId = "meetily_import.v4",
+            SchemaVersion = "4.0",
+            RequestJson = requestJson,
+            RequestHash = HashText(requestJson),
+            IdempotencyKey = $"meetily:{project.Id:N}:{sourceHash}",
+            ProviderHint = privacyDecision?.ProviderClass == PrivacyProviderClasses.Local ? "local" : "auto",
             Sensitive = true,
-            Status = "DraftReady",
+            ConsentId = privacyDecision?.ConsentId,
+            RetentionPolicyId = privacyDecision?.RetentionPolicyId,
+            CloudEligible = privacyDecision?.CloudEligible == true,
+            PolicyCheckedAt = now,
+            PolicyDecisionJson = BuildPolicyDecisionJson(privacyDecision, IsPrivacyEnforced),
+            Status = AiJobStatuses.Succeeded,
+            ProgressPercent = 100,
+            AvailableAt = now,
+            FinishedAt = now,
+            ResultJson = resultJson,
+            ResultHash = HashText(resultJson),
+            SelectedProvider = "MeetilyImport",
+            SelectedModel = "deterministic-v1",
             EstimatedCostUsd = EstimateCost(sourceText),
             CacheKey = sourceHash,
             RequestedById = currentUserId.Value
         };
+        aiJob.Sources.Add(new AiJobSource
+        {
+            AiJobId = aiJob.Id,
+            SourceType = "meeting",
+            SourceEntityId = meetingImportId,
+            SourceHash = canonicalSourceHash,
+            SourceTimestamp = now,
+            SortOrder = 0
+        });
 
         await _aiJobRepo.AddAsync(aiJob, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
 
         var draft = new AiGeneratedDraft
         {
             AiJobId = aiJob.Id,
             ProjectId = project.Id,
             DraftType = "MeetingActionItems",
-            PayloadJson = JsonSerializer.Serialize(extraction, JsonOptions),
-            Status = "Pending"
+            PayloadJson = resultJson,
+            OriginalPayloadJson = resultJson,
+            WorkingPayloadJson = resultJson,
+            Status = AiDraftStatuses.PendingReview,
+            SchemaId = aiJob.SchemaId,
+            SourceHashAtGeneration = canonicalSourceHash,
+            ExpiresAt = DraftExpiry(now, privacyDecision?.RetentionExpiresAt)
         };
 
         await _aiDraftRepo.AddAsync(draft, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
 
         var meetingImport = new MeetingImport
         {
+            Id = meetingImportId,
+            TenantId = tenantId,
             ProjectId = project.Id,
             ImportedById = currentUserId.Value,
             SourceProvider = "meetily",
@@ -153,15 +253,24 @@ public partial class MeetingImportService : IMeetingImportService
             SourceHash = sourceHash,
             Title = request.Title.Trim(),
             MeetingStartedAt = request.MeetingStartedAt,
-            Summary = NormalizeOptional(request.Summary),
-            TranscriptText = NormalizeOptional(request.TranscriptText) ?? string.Empty,
+            Summary = normalizedSummary,
+            TranscriptText = normalizedTranscript,
             ParticipantsJson = JsonSerializer.Serialize(NormalizeParticipants(request.Participants), JsonOptions),
             RawPayloadJson = NormalizeRawPayload(request),
+            DataClassification = PrivacyDataClasses.SensitiveCollaboration,
+            PrivacyState = IsPrivacyEnforced ? MeetingPrivacyStates.Active : MeetingPrivacyStates.MigrationReview,
+            ProcessingPurpose = PrivacyPurposes.MeetingActionExtraction,
+            ProviderClass = privacyDecision?.ProviderClass ?? PrivacyProviderClasses.Unknown,
+            ConsentId = privacyDecision?.ConsentId,
+            RetentionPolicyId = privacyDecision?.RetentionPolicyId,
+            PolicyVersion = privacyDecision?.PolicyVersion,
+            RetentionExpiresAt = privacyDecision?.RetentionExpiresAt,
             AiJobId = aiJob.Id,
             AiDraftId = draft.Id
         };
 
         await _meetingImportRepo.AddAsync(meetingImport, ct);
+        await AddPrivacyRetentionAndAuditAsync(meetingImport, privacyDecision, currentUserId.Value, ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
         await _auditLogService.LogAsync(
@@ -833,13 +942,21 @@ public partial class MeetingImportService : IMeetingImportService
             return Result.Forbidden<AutoChecknoteResponseDto>();
         }
 
-        // --- HARD-CAP Transcript length (Sprint 1) ---
-        if (request.TranscriptText != null && request.TranscriptText.Length > 80000)
+        if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.TranscriptText))
         {
-            return Result.Failure<AutoChecknoteResponseDto>("Độ dài transcript vượt quá giới hạn cho phép (80,000 ký tự). Vui lòng giới hạn hoặc tóm tắt thủ công.", 400);
+            return Result.Failure<AutoChecknoteResponseDto>("Meeting title and transcript are required.", 400);
+        }
+
+        if (request.TranscriptText.Length > Math.Max(1, _privacyOptions.MaxPayloadCharacters))
+        {
+            return Result.Failure<AutoChecknoteResponseDto>(
+                $"Meeting transcript exceeds the {_privacyOptions.MaxPayloadCharacters:N0}-character limit.",
+                413,
+                PrivacyErrorCodes.PayloadTooLarge);
         }
 
         var project = await _projectRepo.GetQueryable()
+            .Include(item => item.Organization)
             .FirstOrDefaultAsync(p => p.Id == request.ProjectId, ct);
         if (project == null)
         {
@@ -850,6 +967,27 @@ public partial class MeetingImportService : IMeetingImportService
         {
             return Result.Forbidden<AutoChecknoteResponseDto>();
         }
+
+        var tenantId = project.OrganizationId ?? project.Id;
+        var privacyDecisionResult = await EvaluateMeetingPrivacyAsync(
+            tenantId,
+            project.Id,
+            currentUserId.Value,
+            request.ConsentId,
+            request.RetentionPolicyId,
+            request.ProcessingMode,
+            request.RetentionDays,
+            request.NoticeVersion,
+            meetingSessionId,
+            ct);
+        if (!privacyDecisionResult.IsSuccess)
+        {
+            return Result.Failure<AutoChecknoteResponseDto>(
+                privacyDecisionResult.Error!,
+                privacyDecisionResult.StatusCode,
+                privacyDecisionResult.ErrorCode);
+        }
+        var privacyDecision = privacyDecisionResult.Data;
 
         // --- IDEMPOTENCY check (Sprint 2) ---
         var sourceHash = ComputeSha256Hash(request.ProjectId, meetingSessionId, request.TranscriptText ?? string.Empty);
@@ -863,6 +1001,14 @@ public partial class MeetingImportService : IMeetingImportService
 
         if (existing != null)
         {
+            if (IsPrivacyEnforced && existing.PrivacyState != MeetingPrivacyStates.Active)
+            {
+                return Result.Failure<AutoChecknoteResponseDto>(
+                    "The existing meeting import requires privacy migration review.",
+                    409,
+                    PrivacyErrorCodes.PolicyRequired);
+            }
+
             var existingItemsResult = await GetMeetingActionItemsAsync(existing.Id, ct);
             var actionItems = existingItemsResult.IsSuccess && existingItemsResult.Data != null
                 ? existingItemsResult.Data.Items
@@ -883,10 +1029,30 @@ public partial class MeetingImportService : IMeetingImportService
         {
             JobType = "AI-06_MEETING_EXTRACT",
             Prompt = prompt,
+            ProjectId = project.Id,
+            TenantId = tenantId,
             UserId = currentUserId.Value,
+            IsSensitive = true,
+            ConsentId = privacyDecision?.ConsentId,
+            RetentionPolicyId = privacyDecision?.RetentionPolicyId,
+            Purpose = PrivacyPurposes.MeetingActionExtraction,
+            DataClassification = PrivacyDataClasses.SensitiveCollaboration,
+            ProviderClass = privacyDecision?.ProviderClass ?? PrivacyProviderClasses.Unknown,
+            RetentionDays = privacyDecision?.RetentionDays,
+            SourceType = "meeting",
+            SourceEntityId = meetingSessionId,
+            ProviderHint = privacyDecision?.ProviderClass == PrivacyProviderClasses.Local ? "local" : "auto",
             ExpectedSchemaId = "AutoChecknote",
             UseCache = true
         }, ct);
+
+        if (!aiResponse.IsSuccess)
+        {
+            return Result.Failure<AutoChecknoteResponseDto>(
+                aiResponse.ErrorMessage ?? "AI meeting extraction failed.",
+                AiFailureStatus(aiResponse.ErrorCode),
+                aiResponse.ErrorCode);
+        }
 
         // 2. Parse AI response
         var (summary, actionItemsList) = ParseAutoChecknoteResponse(aiResponse.Content);
@@ -913,23 +1079,69 @@ public partial class MeetingImportService : IMeetingImportService
             actionDrafts,
             ExtractKeywords($"{request.Title} {summary} {request.TranscriptText}"),
             actionDrafts.Count == 0 ? ["No action item was detected."] : new List<string>());
+        var resultJson = JsonSerializer.Serialize(extraction, JsonOptions);
+        var requestJson = JsonSerializer.Serialize(new
+        {
+            projectId = project.Id,
+            meetingSessionId,
+            sourceHash,
+            sourceProvider = "qaly-meet",
+            consentId = privacyDecision?.ConsentId,
+            retentionPolicyId = privacyDecision?.RetentionPolicyId,
+            policyVersion = privacyDecision?.PolicyVersion,
+            providerClass = privacyDecision?.ProviderClass
+        }, JsonOptions);
+        var now = DateTimeOffset.UtcNow;
+        var meetingImportId = Guid.NewGuid();
+        var canonicalSourceHash = HashText(
+            $"{meetingImportId}|{sourceHash}|{request.Title.Trim()}|{summary}|{request.TranscriptText ?? string.Empty}|");
 
         // 4. Create AiJob
         var aiJob = new AiJob
         {
-            JobType = "AI-06_MEETING_EXTRACT",
+            TenantId = tenantId,
+            JobType = "meeting_action_extract",
             ProjectId = project.Id,
-            SourceType = "qaly_meet",
-            SourceId = meetingSessionId.ToString(),
-            ProviderHint = "auto",
+            SourceType = "meeting",
+            SourceId = meetingImportId.ToString(),
+            SchemaId = "meeting_action_extract.v4",
+            SchemaVersion = "4.0",
+            RequestJson = requestJson,
+            RequestHash = HashText(requestJson),
+            IdempotencyKey = $"qaly-meet:{project.Id:N}:{sourceHash}",
+            ProviderHint = privacyDecision?.ProviderClass == PrivacyProviderClasses.Local ? "local" : "auto",
             Sensitive = true,
-            Status = "DraftReady",
-            EstimatedCostUsd = EstimateCost(request.TranscriptText ?? string.Empty),
+            ConsentId = privacyDecision?.ConsentId,
+            RetentionPolicyId = privacyDecision?.RetentionPolicyId,
+            CloudEligible = privacyDecision?.CloudEligible == true,
+            PolicyCheckedAt = now,
+            PolicyDecisionJson = BuildPolicyDecisionJson(privacyDecision, IsPrivacyEnforced),
+            Status = AiJobStatuses.Succeeded,
+            ProgressPercent = 100,
+            AvailableAt = now,
+            FinishedAt = now,
+            ResultJson = resultJson,
+            ResultHash = HashText(resultJson),
+            SelectedProvider = aiResponse.ProviderName,
+            SelectedModel = aiResponse.ModelName,
+            EstimatedCostUsd = aiResponse.EstimatedCostUsd,
+            ActualCostUsd = aiResponse.EstimatedCostUsd,
+            CacheHit = aiResponse.CacheHit,
+            IsMock = aiResponse.IsMock,
+            MockReason = aiResponse.MockReason,
             CacheKey = sourceHash,
             RequestedById = currentUserId.Value
         };
+        aiJob.Sources.Add(new AiJobSource
+        {
+            AiJobId = aiJob.Id,
+            SourceType = "meeting",
+            SourceEntityId = meetingImportId,
+            SourceHash = canonicalSourceHash,
+            SourceTimestamp = now,
+            SortOrder = 0
+        });
         await _aiJobRepo.AddAsync(aiJob, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
 
         // 5. Create AiGeneratedDraft
         var draft = new AiGeneratedDraft
@@ -937,15 +1149,21 @@ public partial class MeetingImportService : IMeetingImportService
             AiJobId = aiJob.Id,
             ProjectId = project.Id,
             DraftType = "MeetingActionItems",
-            PayloadJson = JsonSerializer.Serialize(extraction, JsonOptions),
-            Status = "Pending"
+            PayloadJson = resultJson,
+            OriginalPayloadJson = resultJson,
+            WorkingPayloadJson = resultJson,
+            Status = AiDraftStatuses.PendingReview,
+            SchemaId = aiJob.SchemaId,
+            SourceHashAtGeneration = canonicalSourceHash,
+            ExpiresAt = DraftExpiry(now, privacyDecision?.RetentionExpiresAt)
         };
         await _aiDraftRepo.AddAsync(draft, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
 
         // 6. Create MeetingImport
         var meetingImport = new MeetingImport
         {
+            Id = meetingImportId,
+            TenantId = tenantId,
             ProjectId = project.Id,
             ImportedById = currentUserId.Value,
             SourceProvider = "qaly-meet",
@@ -956,11 +1174,25 @@ public partial class MeetingImportService : IMeetingImportService
             Summary = summary,
             TranscriptText = request.TranscriptText ?? string.Empty,
             ParticipantsJson = JsonSerializer.Serialize(normalizedParticipants, JsonOptions),
+            RawPayloadJson = JsonSerializer.Serialize(new
+            {
+                meetingSessionId,
+                request.Title,
+                request.Participants
+            }, JsonOptions),
+            DataClassification = PrivacyDataClasses.SensitiveCollaboration,
+            PrivacyState = IsPrivacyEnforced ? MeetingPrivacyStates.Active : MeetingPrivacyStates.MigrationReview,
+            ProcessingPurpose = PrivacyPurposes.MeetingActionExtraction,
+            ProviderClass = privacyDecision?.ProviderClass ?? PrivacyProviderClasses.Unknown,
+            ConsentId = privacyDecision?.ConsentId,
+            RetentionPolicyId = privacyDecision?.RetentionPolicyId,
+            PolicyVersion = privacyDecision?.PolicyVersion,
+            RetentionExpiresAt = privacyDecision?.RetentionExpiresAt,
             AiJobId = aiJob.Id,
             AiDraftId = draft.Id
         };
         await _meetingImportRepo.AddAsync(meetingImport, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
+        await AddPrivacyRetentionAndAuditAsync(meetingImport, privacyDecision, currentUserId.Value, ct);
 
         // 7. Update Meeting Session if exists
         var meetingSession = await _meetingSessionRepo.GetByIdAsync(meetingSessionId, ct);
@@ -971,8 +1203,9 @@ public partial class MeetingImportService : IMeetingImportService
             meetingSession.Status = "Ended";
             meetingSession.EndedAt = DateTimeOffset.UtcNow;
             await _meetingSessionRepo.UpdateAsync(meetingSession, ct);
-            await _unitOfWork.SaveChangesAsync(ct);
         }
+
+        await _unitOfWork.SaveChangesAsync(ct);
 
         await _auditLogService.LogAsync(
             "AutoChecknoteImport",
@@ -996,6 +1229,171 @@ public partial class MeetingImportService : IMeetingImportService
             finalActionItems));
     }
 
+    private bool IsPrivacyEnforced
+        => _privacyOptions.Enabled && _privacyOptions.EnforceSensitiveIngestion;
+
+    private async Task<Result<PrivacyProcessingDecision?>> EvaluateMeetingPrivacyAsync(
+        Guid tenantId,
+        Guid projectId,
+        Guid userId,
+        Guid? consentId,
+        Guid? retentionPolicyId,
+        string processingMode,
+        int? retentionDays,
+        string? noticeVersion,
+        Guid? sourceEntityId,
+        CancellationToken ct)
+    {
+        if (!IsPrivacyEnforced)
+        {
+            return Result.Success<PrivacyProcessingDecision?>(null);
+        }
+
+        if (_complianceService == null || _retentionActionRepo == null || _aiAuditRepo == null)
+        {
+            return Result.Failure<PrivacyProcessingDecision?>(
+                "Privacy enforcement dependencies are unavailable.",
+                503,
+                PrivacyErrorCodes.WorkerUnavailable);
+        }
+
+        var providerClass = ProviderClassForProcessingMode(processingMode);
+        if (providerClass == PrivacyProviderClasses.Unknown ||
+            string.IsNullOrWhiteSpace(noticeVersion) || noticeVersion.Trim().Length > 80)
+        {
+            return Result.Failure<PrivacyProcessingDecision?>(
+                "A valid processing mode and notice version are required.",
+                400,
+                PrivacyErrorCodes.ConsentInvalid);
+        }
+
+        var decision = await _complianceService.EvaluateProcessingAsync(new PrivacyProcessingRequest
+        {
+            TenantId = tenantId,
+            ProjectId = projectId,
+            UserId = userId,
+            Purpose = PrivacyPurposes.MeetingActionExtraction,
+            DataClassification = PrivacyDataClasses.SensitiveCollaboration,
+            ProviderClass = providerClass,
+            ConsentId = consentId,
+            RetentionPolicyId = retentionPolicyId,
+            RetentionDays = retentionDays,
+            NoticeVersion = noticeVersion.Trim(),
+            SourceType = "meeting",
+            SourceEntityId = sourceEntityId
+        }, ct);
+        if (!decision.Allowed)
+        {
+            var statusCode = decision.ErrorCode == PrivacyErrorCodes.RetentionUnsupported ? 422 : 403;
+            return Result.Failure<PrivacyProcessingDecision?>(decision.Reason, statusCode, decision.ErrorCode);
+        }
+
+        return Result.Success<PrivacyProcessingDecision?>(decision);
+    }
+
+    private async Task AddPrivacyRetentionAndAuditAsync(
+        MeetingImport meetingImport,
+        PrivacyProcessingDecision? decision,
+        Guid actorUserId,
+        CancellationToken ct)
+    {
+        if (decision == null)
+        {
+            return;
+        }
+
+        if (_retentionActionRepo == null || _aiAuditRepo == null ||
+            !decision.RetentionPolicyId.HasValue ||
+            !decision.RetentionExpiresAt.HasValue ||
+            string.IsNullOrWhiteSpace(decision.ExpiryAction))
+        {
+            throw new InvalidOperationException("An allowed privacy decision is missing retention evidence.");
+        }
+
+        await _retentionActionRepo.AddAsync(new PrivacyRetentionAction
+        {
+            TenantId = decision.TenantId,
+            ProjectId = decision.ProjectId,
+            RetentionPolicyId = decision.RetentionPolicyId.Value,
+            EntityType = nameof(MeetingImport),
+            EntityId = meetingImport.Id,
+            ActionType = decision.ExpiryAction,
+            Status = PrivacyWorkerStatuses.Pending,
+            DueAt = decision.RetentionExpiresAt.Value,
+            AvailableAt = decision.RetentionExpiresAt.Value,
+            MaxAttempts = Math.Max(1, _privacyOptions.MaxAttempts)
+        }, ct);
+
+        await _aiAuditRepo.AddAsync(new AiAuditEvent
+        {
+            TenantId = decision.TenantId,
+            ProjectId = decision.ProjectId,
+            ActorUserId = actorUserId,
+            EventType = "MEETING_SENSITIVE_INGESTED",
+            EntityType = nameof(MeetingImport),
+            EntityGuid = meetingImport.Id,
+            EntityKey = meetingImport.Id.ToString(),
+            AiJobId = meetingImport.AiJobId,
+            PrivacyConsentId = decision.ConsentId,
+            RetentionPolicyId = decision.RetentionPolicyId,
+            Purpose = PrivacyPurposes.MeetingActionExtraction,
+            PolicyVersion = decision.PolicyVersion,
+            DataClassification = PrivacyDataClasses.SensitiveCollaboration,
+            ProviderClass = decision.ProviderClass,
+            Outcome = "allowed",
+            AfterJson = JsonSerializer.Serialize(new
+            {
+                sourceProvider = meetingImport.SourceProvider,
+                retentionDays = decision.RetentionDays,
+                expiryAction = decision.ExpiryAction,
+                cloudEligible = decision.CloudEligible,
+                localEligible = decision.LocalEligible
+            }, JsonOptions)
+        }, ct);
+    }
+
+    private static string BuildPolicyDecisionJson(PrivacyProcessingDecision? decision, bool enforced)
+        => JsonSerializer.Serialize(new
+        {
+            enforced,
+            checkedAt = decision?.EvaluatedAt ?? DateTimeOffset.UtcNow,
+            allowed = decision?.Allowed ?? !enforced,
+            consentId = decision?.ConsentId,
+            retentionPolicyId = decision?.RetentionPolicyId,
+            policyVersion = decision?.PolicyVersion,
+            providerClass = decision?.ProviderClass ?? PrivacyProviderClasses.Unknown,
+            cloudEligible = decision?.CloudEligible ?? false,
+            localEligible = decision?.LocalEligible ?? false,
+            errorCode = decision?.ErrorCode
+        }, JsonOptions);
+
+    private static DateTimeOffset DraftExpiry(DateTimeOffset now, DateTimeOffset? retentionExpiresAt)
+    {
+        var reviewExpiry = now.AddDays(30);
+        return retentionExpiresAt.HasValue && retentionExpiresAt.Value < reviewExpiry
+            ? retentionExpiresAt.Value
+            : reviewExpiry;
+    }
+
+    private static int EstimateSensitivePayloadCharacters(MeetilyImportRequest request)
+        => (request.Title?.Length ?? 0) +
+            (request.Summary?.Length ?? 0) +
+            (request.TranscriptText?.Length ?? 0) +
+            (request.RawPayloadJson?.Length ?? 0) +
+            (request.Participants?.Sum(item => item?.Length ?? 0) ?? 0) +
+            (request.ActionItems?.Sum(item =>
+                (item.Title?.Length ?? 0) +
+                (item.Owner?.Length ?? 0) +
+                (item.Evidence?.Length ?? 0)) ?? 0);
+
+    private static string ProviderClassForProcessingMode(string? processingMode)
+        => processingMode?.Trim().ToLowerInvariant() switch
+        {
+            PrivacyProcessingModes.LocalOnly => PrivacyProviderClasses.Local,
+            PrivacyProcessingModes.CloudAllowed => PrivacyProviderClasses.Any,
+            _ => PrivacyProviderClasses.Unknown
+        };
+
     private static string ComputeSha256Hash(Guid projectId, Guid meetingSessionId, string transcript)
     {
         var raw = string.Join('\n',
@@ -1004,6 +1402,18 @@ public partial class MeetingImportService : IMeetingImportService
             transcript ?? string.Empty);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw))).ToLowerInvariant();
     }
+
+    private static string HashText(string value)
+        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+
+    private static int AiFailureStatus(string? errorCode)
+        => errorCode switch
+        {
+            AiErrorCodes.BudgetExceeded => 429,
+            AiErrorCodes.SensitiveBlocked or AiErrorCodes.ConsentRequired or AiErrorCodes.PermissionDenied => 403,
+            AiErrorCodes.SchemaInvalid => 422,
+            _ => 503
+        };
 
     private static string BuildAutoChecknotePrompt(string transcriptText)
         => $$"""
