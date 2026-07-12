@@ -1,26 +1,28 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
-import { 
-  ChevronDown,
-  Folder,
-  Send, 
+import {
+  Send,
   Square,
-  Paperclip,
+  AlertTriangle,
   Copy,
   Download,
-  AlertTriangle
+  Database,
+  Clock3,
+  Settings2,
+  MessageSquarePlus,
+  X
 } from 'lucide-vue-next'
 import { useDashboardContext } from '../../composables/dashboard-context'
 import { useErumiContext } from '../../composables/use-erumi-context'
 import { apiJson } from '../../utils/api-client'
 import { showError, showSuccess } from '../../composables/use-toast'
 import ChatbotAvatar from '../ChatbotAvatar.vue'
-import AiAnswerMetaChips from '../analytics-ai/AiAnswerMetaChips.vue'
 import AiModelSelector from '../analytics-ai/AiModelSelector.vue'
-import AiQuickToolbar from '../analytics-ai/AiQuickToolbar.vue'
 import AnalyticsSideDrawer from '../analytics-ai/AnalyticsSideDrawer.vue'
 import ConversationHistoryDrawer from '../analytics-ai/ConversationHistoryDrawer.vue'
 import SourceRefsDrawer from '../analytics-ai/SourceRefsDrawer.vue'
+import ComposerPlusMenu from '../analytics-ai/ComposerPlusMenu.vue'
+import OverflowMenu from '../analytics-ai/OverflowMenu.vue'
 import {
   AI_MODEL_OPTIONS,
   aiModelCompactLabel,
@@ -192,21 +194,12 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 let refreshTimer: number | undefined
 
-const isDropdownOpen1 = ref(false)
-const isDropdownOpen2 = ref(false)
-const dropdownRef1 = ref<HTMLElement | null>(null)
-const dropdownRef2 = ref<HTMLElement | null>(null)
 const selectedAiModel = ref(AI_MODEL_OPTIONS[0]?.id ?? 'fast-current')
 const activeDrawerTab = ref<AnalyticsMiniTab>('sources')
 const cockpitDrawerOpen = ref(false)
 const selectedDrawerMessage = ref<ChatEntry | null>(null)
 const isCompactViewport = ref(false)
-const toolPaletteOpen = ref(false)
 const conversationHistory = ref<ConversationHistoryItem[]>([])
-const dropdownPlacement1 = ref<'up' | 'down'>('down')
-const dropdownPlacement2 = ref<'up' | 'down'>('down')
-const dropdownMaxHeight1 = ref('320px')
-const dropdownMaxHeight2 = ref('320px')
 const ANALYTICS_HISTORY_KEY = 'qaly.analytics.erumi.history.v1'
 const MAX_ANALYTICS_HISTORY_ITEMS = 20
 
@@ -241,118 +234,66 @@ function applySlashCommand(cmd: typeof slashCommands[0]) {
   })
 }
 
-// Onboarding suggested prompts depending on the active route (Sprint 1)
-const onboardingSuggestions = computed(() => {
-  const path = erumiContext.routePath.value || ''
-  const name = String(erumiContext.routeName.value || '')
-  
-  if (path.includes('/tasks') || name === 'tasks') {
-    return [
-      { label: 'Ai đang quá tải việc?', prompt: 'Ai đang quá tải việc và cần phân bổ lại nhiệm vụ?' },
-      { label: 'Có nhiệm vụ nào quá hạn không?', prompt: 'Liệt kê các nhiệm vụ quá hạn dưới dạng bảng.' },
-      { label: 'Thống kê trạng thái task', prompt: 'Thống kê số lượng nhiệm vụ theo từng trạng thái.' }
-    ]
+// Suggested questions surfaced inside the "+" menu (progressive disclosure).
+// Selecting one only fills the composer so the user can edit before sending.
+const menuSuggestions = [
+  { label: 'Đánh giá hiệu suất tuần qua', prompt: 'Hãy đánh giá hiệu suất làm việc của toàn bộ các dự án trong tuần qua.' },
+  { label: 'Tìm dự án đang có rủi ro', prompt: 'Hiện tại có dự án nào đang gặp rủi ro hoặc chậm tiến độ không?' },
+  { label: 'So sánh tiến độ các dự án', prompt: 'So sánh tiến độ và số lượng task của các dự án đang hoạt động dưới dạng bảng.' },
+  { label: 'Tóm tắt vấn đề cần xử lý', prompt: 'Tóm tắt các vấn đề cần xử lý và ưu tiên hành động tiếp theo.' }
+]
+
+// Analysis tools surfaced inside the "+" menu. Prompts reuse the existing
+// wording so the underlying chat behaviour is preserved.
+const analysisTools: AiToolbarAction[] = [
+  {
+    key: 'risks',
+    label: 'Rủi ro',
+    description: 'Tìm dự án, task hoặc tiến độ cần chú ý.',
+    tab: 'risks',
+    behavior: 'fill-prompt',
+    prompt: 'Phân tích các rủi ro hiện tại và đề xuất bước xử lý tiếp theo.'
+  },
+  {
+    key: 'report',
+    label: 'Báo cáo',
+    description: 'Soạn bản nháp báo cáo theo dữ liệu hiện tại.',
+    tab: 'report',
+    behavior: 'fill-prompt',
+    prompt: 'Tạo báo cáo tuần này dựa trên dữ liệu hiện tại.'
+  },
+  {
+    key: 'insights',
+    label: 'Insight',
+    description: 'Tóm tắt các tín hiệu nổi bật.',
+    tab: 'insights',
+    behavior: 'fill-prompt',
+    prompt: 'Tóm tắt 3 insight quan trọng nhất từ dữ liệu hiện tại.'
+  },
+  {
+    key: 'metrics',
+    label: 'Số liệu',
+    description: 'Xem metric từ phản hồi gần nhất.',
+    tab: 'metrics',
+    behavior: 'open-drawer'
+  },
+  {
+    key: 'actions',
+    label: 'Việc cần làm',
+    description: 'Tạo đề xuất dạng nháp, chưa thực thi.',
+    tab: 'actions',
+    behavior: 'fill-prompt',
+    prompt: 'Đề xuất các hành động tiếp theo dưới dạng bản nháp, chưa thực thi.',
+    isWriteLike: true
   }
-  
-  if (path.includes('/gantt') || path.includes('/timeline')) {
-    return [
-      { label: 'Mốc bàn giao có nguy cơ trễ?', prompt: 'Mốc bàn giao nào có nguy cơ trễ hạn trong dự án?' },
-      { label: 'Đường găng của dự án', prompt: 'Hãy chỉ ra các nhiệm vụ thuộc đường găng (critical path) ảnh hưởng tiến độ.' },
-      { label: 'Tóm tắt timeline dự án', prompt: 'Tóm tắt timeline và tiến trình thực tế so với kế hoạch.' }
-    ]
-  }
+]
 
-  if (path.includes('/projects') || name === 'project-detail') {
-    const proj = projects.value.find((p: any) => p.id === selectedTarget.value)
-    const nameStr = proj?.name || 'dự án'
-    return [
-      { label: 'Tóm tắt dự án', prompt: `Tóm tắt nhanh tình hình hiện tại của dự án ${nameStr}.` },
-      { label: 'Phân tích rủi ro', prompt: `Phân tích các rủi ro quá hạn và trễ việc của dự án ${nameStr}.` },
-      { label: 'Workload thành viên', prompt: `Liệt kê workload thành viên của dự án ${nameStr} dưới dạng bảng.` }
-    ]
-  }
-
-  // Default suggestions
-  return [
-    { label: 'Đánh giá hiệu suất tuần qua', prompt: 'Hãy đánh giá hiệu suất làm việc của toàn bộ các dự án trong tuần qua.' },
-    { label: 'Dự án nào đang rủi ro?', prompt: 'Hiện tại có dự án nào đang gặp rủi ro hoặc chậm tiến độ không?' },
-    { label: 'So sánh các dự án', prompt: 'So sánh tiến độ và số lượng task của các dự án đang hoạt động dưới dạng bảng.' }
-  ]
-})
-
-const visibleOnboardingSuggestions = computed(() => onboardingSuggestions.value.slice(0, 3))
-
-// Quick suggestions to show when chat is active. Keep a larger internal pool,
-// then render only three chips plus a lightweight "More" affordance.
-const currentSuggestions = computed(() => {
-  const latest = chatHistory.value
-    .slice()
-    .reverse()
-    .find(msg => msg.role === 'assistant' && !!msg.text)
-  const latestText = latest?.text.toLowerCase() || ''
-
-  if (latest?.actions?.length || latestText.includes('rủi ro') || latestText.includes('quá hạn') || latestText.includes('chậm')) {
-    return [
-      { label: 'Task cần chú ý', prompt: 'Liệt kê các task cần chú ý nhất và lý do rủi ro.' },
-      { label: 'Kế hoạch xử lý', prompt: 'Tạo kế hoạch xử lý nháp cho các rủi ro vừa nêu, chưa thực thi.' },
-      { label: 'Nguồn chứng minh', prompt: 'Nguồn nào chứng minh các nhận định rủi ro này?' },
-      { label: 'Báo cáo standup', prompt: 'Rút gọn phần rủi ro thành báo cáo standup.' }
-    ]
-  }
-
-  if (latest?.metrics?.length || latest?.charts?.length || latest?.tables?.length) {
-    return [
-      { label: 'Giải thích số này', prompt: 'Giải thích các số liệu quan trọng nhất trong phản hồi vừa rồi.' },
-      { label: 'So sánh tuần trước', prompt: 'So sánh các số liệu này với tuần trước nếu có dữ liệu.' },
-      { label: 'Xuất báo cáo', prompt: 'Chuyển các số liệu này thành bản báo cáo markdown ngắn.' },
-      { label: 'Tìm bất thường', prompt: 'Chỉ ra các điểm bất thường trong số liệu vừa phân tích.' }
-    ]
-  }
-
-  if (latest?.files?.length || latestText.includes('báo cáo') || latestText.includes('standup')) {
-    return [
-      { label: 'Rút gọn standup', prompt: 'Rút gọn nội dung này thành bản standup 5 gạch đầu dòng.' },
-      { label: 'Copy markdown', prompt: 'Định dạng lại câu trả lời vừa rồi thành markdown sạch để copy.' },
-      { label: 'Checklist tiếp theo', prompt: 'Tạo checklist việc cần làm tiếp theo từ báo cáo vừa rồi.' },
-      { label: 'Nguồn báo cáo', prompt: 'Nguồn nào được dùng để tạo báo cáo vừa rồi?' }
-    ]
-  }
-
-  if (latest?.sources?.length || latest?.sourceRefs?.length) {
-    return [
-      { label: 'Nguồn chứng minh', prompt: 'Giải thích các nguồn đã dùng trong câu trả lời vừa rồi.' },
-      { label: 'Điểm chưa chắc', prompt: 'Nhận định nào trong câu trả lời cần kiểm chứng thêm?' },
-      { label: 'Tạo báo cáo', prompt: 'Tạo báo cáo ngắn kèm nguồn tham chiếu.' },
-      { label: 'Hỏi tiếp', prompt: 'Đặt câu hỏi follow-up tốt nhất dựa trên các nguồn này.' }
-    ]
-  }
-
-  if (selectedTarget.value === 'workspace') {
-    return [
-      { label: 'Hiệu suất tuần qua', prompt: 'Hãy đánh giá hiệu suất làm việc của toàn bộ các dự án trong tuần qua.' },
-      { label: 'Dự án rủi ro?', prompt: 'Hiện tại có dự án nào đang gặp rủi ro hoặc chậm tiến độ không?' },
-      { label: 'So sánh dự án', prompt: 'So sánh các dự án đang hoạt động dưới dạng bảng.' },
-      { label: 'Báo cáo standup', prompt: 'Tạo báo cáo standup ngắn cho toàn workspace.' }
-    ]
-  }
-
-  const proj = projects.value.find((p: any) => p.id === selectedTarget.value)
-  const name = proj?.name || 'dự án'
-  return [
-    { label: 'Tóm tắt dự án', action: 'summary', prompt: `Tóm tắt nhanh tình hình hiện tại của dự án ${name}.` },
-    { label: 'Phân tích rủi ro', action: 'risks', prompt: `Phân tích các rủi ro quá hạn và trễ việc của dự án ${name}.` },
-    { label: 'Bảng workload', action: 'workload', prompt: `Liệt kê workload thành viên của dự án ${name} dưới dạng bảng.` },
-    { label: 'Task quá hạn', action: 'overdue', prompt: `Liệt kê các task quá hạn của dự án ${name} dưới dạng bảng.` }
-  ]
-})
-
-const visibleCurrentSuggestions = computed(() => currentSuggestions.value.slice(0, 3))
-const hiddenCurrentSuggestionCount = computed(() => Math.max(0, currentSuggestions.value.length - visibleCurrentSuggestions.value.length))
-
-function selectTarget(id: string, instance: number) {
+function handleSelectProject(id: string) {
   selectedTarget.value = id
-  if (instance === 1) isDropdownOpen1.value = false
-  if (instance === 2) isDropdownOpen2.value = false
+}
+
+function clearProjectContext() {
+  selectedTarget.value = 'workspace'
 }
 
 // Watchers
@@ -361,6 +302,21 @@ watch(() => erumiContext.projectId.value, (newProjectId) => {
     selectedTarget.value = newProjectId
   }
 }, { immediate: true })
+
+function buildWelcomeMessage(): ChatEntry {
+  if (selectedTarget.value === 'workspace') {
+    return {
+      role: 'assistant',
+      text: 'Xin chào! Mình là Erumi, trợ lý phân tích AI của Qaly. Hãy hỏi mình bất kỳ câu hỏi nào về các chỉ số hoặc dự án trong Workspace của bạn nhé.'
+    }
+  }
+  const proj = projects.value.find((p: any) => p.id === selectedTarget.value)
+  const name = proj?.name || 'Dự án'
+  return {
+    role: 'assistant',
+    text: `Chào bạn! Mình đã nạp thành công dữ liệu dự án **${name}**. Hãy yêu cầu mình xuất các báo cáo nhanh hoặc hỏi bất cứ thông tin nào liên quan nhé.`
+  }
+}
 
 // Initial chat history with welcome message
 const chatHistory = ref<ChatEntry[]>([
@@ -376,9 +332,6 @@ const showSlashCommandsPopup = computed(() => showSlashCommands.value && filtere
 const selectedAiModelOption = computed<AiModelOption | undefined>(() => {
   return AI_MODEL_OPTIONS.find(option => option.id === selectedAiModel.value) ?? AI_MODEL_OPTIONS[0]
 })
-const activeToolbarTab = computed<AnalyticsMiniTab | undefined>(() => {
-  return cockpitDrawerOpen.value ? activeDrawerTab.value : undefined
-})
 const selectedAiModelCompactLabel = computed(() => aiModelCompactLabel(selectedAiModelOption.value))
 const latestAssistantMessage = computed(() => {
   return chatHistory.value
@@ -392,31 +345,99 @@ const drawerSourceRefs = computed(() => drawerMessage.value?.sourceRefs ?? [])
 const drawerMetrics = computed(() => drawerMessage.value?.metrics ?? [])
 const drawerTables = computed(() => drawerMessage.value?.tables ?? [])
 const drawerActions = computed(() => drawerMessage.value?.actions ?? [])
-const primaryComposerPlaceholder = computed(() => {
-  return isCompactViewport.value ? 'Hỏi Erumi...' : 'Hỏi bất kỳ thứ gì... (gõ / để xem lệnh nhanh)'
+const composerPlaceholder = computed(() => {
+  return isCompactViewport.value ? 'Hỏi Erumi...' : 'Hỏi bất kỳ điều gì về dự án... (gõ / để xem lệnh nhanh)'
 })
-const secondaryComposerPlaceholder = computed(() => {
-  return isCompactViewport.value ? 'Hỏi Erumi...' : 'Nhập liệu... (gõ / để xem lệnh nhanh)'
-})
-const freshnessChipLabel = computed(() => {
-  if (backgroundRefreshing.value) return 'Đang cập nhật'
-  if (!lastRefreshedAt.value) return 'Fresh'
-  return `Fresh ${lastRefreshedAt.value.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
+const freshnessLabel = computed(() => {
+  if (backgroundRefreshing.value) return 'Đang cập nhật dữ liệu...'
+  if (!lastRefreshedAt.value) return 'Dữ liệu mới'
+  return `Dữ liệu cập nhật lúc ${lastRefreshedAt.value.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
 })
 const cockpitDrawerTitle = computed(() => {
   const titles: Record<AnalyticsMiniTab, string> = {
     insights: 'Insights',
     metrics: 'Metrics',
     risks: 'Risks',
-    sources: 'Nguồn tham chiếu',
+    sources: 'Nguồn dữ liệu',
     report: 'Report',
     actions: 'Actions',
-    model: 'Model registry',
+    model: 'Thiết lập model',
     history: 'Lịch sử trò chuyện',
-    settings: 'Cài đặt AI'
+    settings: 'Thiết lập'
   }
   return titles[activeDrawerTab.value]
 })
+
+// Kebab (•••) menus. Keep secondary actions out of the default view while
+// staying keyboard + screen-reader accessible.
+const headerMenuItems = computed(() => [
+  { key: 'new', label: 'Cuộc trò chuyện mới', icon: MessageSquarePlus },
+  { key: 'history', label: 'Lịch sử', icon: Clock3 },
+  { key: 'sources', label: 'Nguồn dữ liệu', icon: Database },
+  { key: 'export', label: 'Xuất báo cáo', icon: Download },
+  { key: 'settings', label: 'Thiết lập', icon: Settings2 }
+])
+
+function messageMenuItems(msg: ChatEntry) {
+  const items = [
+    { key: 'copy', label: 'Sao chép', icon: Copy },
+    { key: 'export', label: 'Xuất báo cáo', icon: Download }
+  ]
+  if (msg.sources?.length || msg.sourceRefs?.length) {
+    items.push({ key: 'sources', label: 'Xem nguồn', icon: Database })
+  }
+  return items
+}
+
+function handleHeaderMenu(key: string) {
+  switch (key) {
+    case 'new':
+      startNewConversation()
+      break
+    case 'history':
+      openCockpitDrawer('history')
+      break
+    case 'sources':
+      openCockpitDrawer('sources')
+      break
+    case 'export':
+      exportLatestReport()
+      break
+    case 'settings':
+      openCockpitDrawer('settings')
+      break
+  }
+}
+
+function handleMessageMenu(key: string, msg: ChatEntry) {
+  switch (key) {
+    case 'copy':
+      copyToClipboard(msg.text)
+      break
+    case 'export':
+      exportAsMarkdown(selectedTargetLabel.value, msg.text)
+      break
+    case 'sources':
+      openSourcesForMessage(msg)
+      break
+  }
+}
+
+function startNewConversation() {
+  chatHistory.value = [buildWelcomeMessage()]
+  selectedDrawerMessage.value = null
+  closeCockpitDrawer()
+  focusComposer()
+}
+
+function exportLatestReport() {
+  const message = latestAssistantMessage.value
+  if (!message?.text) {
+    showError('Chưa có phản hồi nào để xuất báo cáo.')
+    return
+  }
+  exportAsMarkdown(selectedTargetLabel.value, message.text)
+}
 
 function isExecutingDraftAction(action: any) {
   return action.processing && action.confirmAction === 'execute_action'
@@ -514,8 +535,6 @@ function openFilePicker() {
 
 function syncViewportFlag() {
   isCompactViewport.value = window.innerWidth <= 640
-  if (isDropdownOpen1.value) setDropdownPlacement(1)
-  if (isDropdownOpen2.value) setDropdownPlacement(2)
 }
 
 function focusComposer() {
@@ -538,17 +557,6 @@ function openCockpitDrawer(tab: AnalyticsMiniTab, message?: ChatEntry) {
 
 function closeCockpitDrawer() {
   cockpitDrawerOpen.value = false
-}
-
-function handleQuickToolbarSelect(action: AiToolbarAction) {
-  if (action.behavior === 'open-drawer') {
-    openCockpitDrawer(action.tab)
-    return
-  }
-
-  if (action.prompt) {
-    fillComposer(action.prompt)
-  }
 }
 
 function openSourcesForMessage(message: ChatEntry) {
@@ -619,46 +627,6 @@ function deleteHistoryItem(id: string) {
 function clearConversationHistory() {
   conversationHistory.value = []
   persistConversationHistory()
-}
-
-function handleToolPaletteOpen(open: boolean) {
-  toolPaletteOpen.value = open
-}
-
-function setDropdownPlacement(instance: number) {
-  const root = instance === 1 ? dropdownRef1.value : dropdownRef2.value
-  if (!root) return
-
-  const rect = root.getBoundingClientRect()
-  const viewportHeight = window.innerHeight || document.documentElement.clientHeight
-  const spaceBelow = viewportHeight - rect.bottom
-  const spaceAbove = rect.top
-  const shouldOpenUp = spaceBelow < 240 && spaceAbove > spaceBelow
-  const availableSpace = Math.max(160, Math.min(360, (shouldOpenUp ? spaceAbove : spaceBelow) - 18))
-
-  if (instance === 1) {
-    dropdownPlacement1.value = shouldOpenUp ? 'up' : 'down'
-    dropdownMaxHeight1.value = `${availableSpace}px`
-  } else {
-    dropdownPlacement2.value = shouldOpenUp ? 'up' : 'down'
-    dropdownMaxHeight2.value = `${availableSpace}px`
-  }
-}
-
-function toggleProjectDropdown(instance: number) {
-  const willOpen = instance === 1 ? !isDropdownOpen1.value : !isDropdownOpen2.value
-
-  if (instance === 1) {
-    isDropdownOpen1.value = willOpen
-    isDropdownOpen2.value = false
-  } else {
-    isDropdownOpen2.value = willOpen
-    isDropdownOpen1.value = false
-  }
-
-  if (willOpen) {
-    nextTick(() => setDropdownPlacement(instance))
-  }
 }
 
 function handleFileSelection(event: Event) {
@@ -752,21 +720,9 @@ async function scrollToBottom() {
   }
 }
 
-watch(selectedTarget, (val) => {
-  chatHistory.value = []
-  if (val === 'workspace') {
-    chatHistory.value.push({
-      role: 'assistant',
-      text: 'Xin chào! Mình đã kết nối với dữ liệu **Workspace (Tất cả dự án)**. Hãy hỏi mình bất kỳ câu hỏi nào hoặc sử dụng các gợi ý bên dưới.'
-    })
-  } else {
-    const proj = projects.value.find((p: any) => p.id === val)
-    const name = proj?.name || 'Dự án'
-    chatHistory.value.push({
-      role: 'assistant',
-      text: `Chào bạn! Mình đã nạp thành công dữ liệu dự án **${name}**. Hãy yêu cầu mình xuất các báo cáo nhanh hoặc hỏi bất cứ thông tin nào liên quan nhé.`
-    })
-  }
+watch(selectedTarget, () => {
+  chatHistory.value = [buildWelcomeMessage()]
+  selectedDrawerMessage.value = null
   scrollToBottom()
 })
 
@@ -799,7 +755,7 @@ function isTeamPrompt(value: string) {
 function getFallbackTeamAnswer(prompt: string) {
   const proj = projects.value.find((p: any) => p.id === selectedTarget.value)
   if (!proj || selectedTarget.value === 'workspace') {
-    return 'Bạn hãy chọn một dự án cụ thể ở dropdown phía trên, rồi hỏi lại về sếp hoặc thành viên trong dự án nhé.'
+    return 'Bạn hãy chọn một dự án cụ thể ở menu ngữ cảnh, rồi hỏi lại về sếp hoặc thành viên trong dự án nhé.'
   }
 
   const userId = String(currentUser.value?.id || '').toLowerCase()
@@ -839,7 +795,7 @@ function getFallbackChatAnswer(prompt: string) {
   if (p.includes('rủi ro') || p.includes('chậm') || p.includes('risk') || p.includes('quá hạn')) {
     return `### ⚠️ Đánh giá rủi ro toàn Workspace\n\n- **Nhiệm vụ trễ hạn**: Phát hiện dự án đang có **1 nhiệm vụ quá hạn** cần xử lý.\n- **Dự án chịu ảnh hưởng**: Dự án DATN đang có tỉ lệ quá hạn nhẹ.\n- **Giải pháp**: Nhắc nhở người thực hiện trực tiếp hoặc phân bổ thêm thành viên hỗ trợ để tháo gỡ điểm nghẽn.`
   }
-  return `Chào bạn! Mình là Erumi. Hiện tại mô hình AI cục bộ đang ở trạng thái ngoại tuyến.\n\nTuy nhiên, bạn có thể chọn các dự án cụ thể ở dropdown phía trên và sử dụng các phím tắt nhanh như **Tóm tắt dự án**, **Phân tích rủi ro** hay **Insight** để mình trích xuất báo cáo thông minh trực tiếp từ dữ liệu hệ thống nhé!`
+  return `Chào bạn! Mình là Erumi. Hiện tại mô hình AI cục bộ đang ở trạng thái ngoại tuyến.\n\nTuy nhiên, bạn có thể chọn các dự án cụ thể trong menu ngữ cảnh và dùng nút **+** để mở các câu hỏi gợi ý hay công cụ phân tích để mình trích xuất báo cáo thông minh trực tiếp từ dữ liệu hệ thống nhé!`
 }
 
 async function handleDraftAction(action: ErumiAction, confirmAction: 'execute_action' | 'reject') {
@@ -891,7 +847,7 @@ async function submitChat(explicitText?: string, _action?: string) {
   chatInput.value = ''
   selectedFiles.value = []
   isChatting.value = true
-  
+
   if (textareaRef.value) {
     textareaRef.value.style.height = 'auto'
   }
@@ -993,15 +949,6 @@ function exportAsMarkdown(projectName: string, text: string) {
   showSuccess('Đã xuất báo cáo thành công!')
 }
 
-function handleDocumentClick(e: MouseEvent) {
-  if (dropdownRef1.value && !dropdownRef1.value.contains(e.target as Node)) {
-    isDropdownOpen1.value = false
-  }
-  if (dropdownRef2.value && !dropdownRef2.value.contains(e.target as Node)) {
-    isDropdownOpen2.value = false
-  }
-}
-
 onMounted(() => {
   syncViewportFlag()
   loadConversationHistory()
@@ -1012,7 +959,6 @@ onMounted(() => {
   refreshTimer = window.setInterval(refreshAnalyticsContext, 30000)
   window.addEventListener('resize', syncViewportFlag)
   window.addEventListener('focus', refreshAnalyticsContext)
-  window.addEventListener('click', handleDocumentClick)
   scrollToBottom()
 })
 
@@ -1020,7 +966,6 @@ onBeforeUnmount(() => {
   if (refreshTimer) window.clearInterval(refreshTimer)
   window.removeEventListener('resize', syncViewportFlag)
   window.removeEventListener('focus', refreshAnalyticsContext)
-  window.removeEventListener('click', handleDocumentClick)
 })
 </script>
 
@@ -1035,305 +980,269 @@ onBeforeUnmount(() => {
       @change="handleFileSelection"
     />
 
-    <!-- Main Chat Workspace -->
-    <div class="chat-main-area">
-      
-      <!-- EMPTY STATE: Initial Center Layout -->
-      <div v-if="!isChatActive" class="chat-empty-state">
-        <div class="avatar-holder">
+    <!-- EMPTY STATE -->
+    <div v-if="!isChatActive" class="chat-empty">
+      <div class="empty-inner">
+        <div class="empty-avatar">
           <ChatbotAvatar size="medium" />
         </div>
-        <div class="welcome-text-block">
-          <h1 class="welcome-heading">Hôm nay Erumi<br>có thể giúp gì cho bạn?</h1>
-        </div>
-        
-        <!-- Suggestions above composer in empty state (Sprint 1 dynamic suggested prompts) -->
-        <div v-if="!toolPaletteOpen" class="suggestion-pills-wrap">
-          <button 
-            v-for="(s, idx) in visibleOnboardingSuggestions"
-            :key="idx"
-            class="suggestion-pill"
-            @click="submitChat(s.prompt)"
-          >
-            {{ s.label }}
-          </button>
-        </div>
+        <h1 class="empty-heading">Bạn muốn phân tích điều gì?</h1>
 
-        <AiQuickToolbar
-          v-if="!isDrawer"
-          :active-tab="activeToolbarTab"
-          :history-count="conversationHistory.length"
-          @select="handleQuickToolbarSelect"
-          @palette-open-change="handleToolPaletteOpen"
-        />
-
-        <!-- Centered Composer -->
-        <div class="composer-wrap-center">
-          <div class="erumi-composer">
-            <div class="erumi-project-row">
-              <div class="erumi-context-controls">
-                <div class="erumi-custom-dropdown" :class="{ 'is-open': isDropdownOpen1 }" ref="dropdownRef1" @click.stop="toggleProjectDropdown(1)">
-                  <div class="erumi-project-trigger" :class="{ 'is-open': isDropdownOpen1 }">
-                    <Folder :size="20" class="folder-icon" />
-                    <span class="erumi-project-name">{{ selectedTargetLabel }}</span>
-                    <ChevronDown :size="16" class="erumi-project-chevron" :class="{ 'rotate-180': isDropdownOpen1 }" />
-                  </div>
-                  <Transition name="dropdown-fade">
-                    <div
-                      class="erumi-dropdown-menu"
-                      :class="{ 'opens-up': dropdownPlacement1 === 'up' }"
-                      :style="{ maxHeight: dropdownMaxHeight1 }"
-                      v-if="isDropdownOpen1"
-                      @wheel.stop
-                    >
-                      <div class="erumi-dropdown-item" @click.stop="selectTarget('workspace', 1)" :class="{ active: selectedTarget === 'workspace' }">Tất cả dự án</div>
-                      <div v-for="p in activeProjects" :key="p.id" class="erumi-dropdown-item" @click.stop="selectTarget(p.id, 1)" :class="{ active: selectedTarget === p.id }">
-                        {{ p.name }}
-                      </div>
-                    </div>
-                  </Transition>
-                </div>
-                <AiModelSelector
-                  v-if="!isDrawer"
-                  v-model="selectedAiModel"
-                  :options="AI_MODEL_OPTIONS"
-                  compact
-                  @open-settings="openCockpitDrawer('model')"
-                />
-              </div>
-              <span class="erumi-last-updated erumi-freshness-chip" v-if="!isDrawer">{{ freshnessChipLabel }}</span>
-            </div>
-
-            <div v-if="selectedFiles.length" class="attached-file-list">
+        <!-- Composer -->
+        <div class="composer">
+          <div class="composer-surface">
+            <div v-if="showSlashCommandsPopup" class="slash-popup">
               <button
-                v-for="(file, index) in selectedFiles"
-                :key="`${file.name}-${index}`"
+                v-for="cmd in filteredSlashCommands"
+                :key="cmd.code"
                 type="button"
-                class="attached-file-chip"
-                @click="removeSelectedFile(index)"
+                class="slash-item"
+                @click="applySlashCommand(cmd)"
               >
-                <span>{{ file.name }}</span>
-                <small>{{ formatUploadSize(file.size) }} · bỏ chọn</small>
+                <span class="slash-code">{{ cmd.code }}</span>
+                <span class="slash-desc">{{ cmd.description }}</span>
               </button>
             </div>
 
-            <div class="erumi-input-shell-container">
-              <!-- Slash command autocomplete list -->
-              <div v-if="showSlashCommandsPopup" class="slash-commands-popup">
-                <div 
-                  v-for="cmd in filteredSlashCommands" 
-                  :key="cmd.code" 
-                  class="slash-command-item"
-                  @click="applySlashCommand(cmd)"
+            <textarea
+              ref="textareaRef"
+              v-model="chatInput"
+              class="composer-input"
+              :placeholder="composerPlaceholder"
+              :disabled="isChatting"
+              aria-label="Nhập câu hỏi cho Erumi"
+              rows="1"
+              @input="autoResize"
+              @keydown="handleKeydown"
+            />
+
+            <div v-if="selectedFiles.length" class="composer-files">
+              <span
+                v-for="(file, index) in selectedFiles"
+                :key="`${file.name}-${index}`"
+                class="file-chip"
+              >
+                <span class="file-name">{{ file.name }}</span>
+                <small>{{ formatUploadSize(file.size) }}</small>
+                <button
+                  type="button"
+                  class="file-remove"
+                  :aria-label="`Bỏ tệp ${file.name}`"
+                  @click="removeSelectedFile(index)"
                 >
-                  <span class="cmd-code">{{ cmd.code }}</span>
-                  <span class="cmd-desc">{{ cmd.description }}</span>
-                </div>
+                  <X :size="13" aria-hidden="true" />
+                </button>
+              </span>
+            </div>
+
+            <div class="composer-footer">
+              <div class="composer-context">
+                <ComposerPlusMenu
+                  :projects="activeProjects"
+                  :selected-target="selectedTarget"
+                  :suggestions="menuSuggestions"
+                  :tools="analysisTools"
+                  :is-compact="isCompactViewport"
+                  :hide-system="isDrawer"
+                  @attach="openFilePicker"
+                  @select-project="handleSelectProject"
+                  @fill-prompt="fillComposer"
+                  @open-drawer="openCockpitDrawer"
+                />
+
+                <button
+                  v-if="selectedTarget !== 'workspace'"
+                  type="button"
+                  class="ctx-chip"
+                  @click="clearProjectContext"
+                >
+                  <span class="ctx-name">{{ selectedTargetLabel }}</span>
+                  <span class="ctx-x" aria-label="Bỏ chọn dự án"><X :size="13" aria-hidden="true" /></span>
+                </button>
+                <span v-else class="ctx-label">{{ selectedTargetLabel }}</span>
               </div>
 
-              <div class="erumi-input-shell">
-                <button class="erumi-attach-btn" title="Đính kèm tệp" type="button" @click="openFilePicker">
-                  <Paperclip :size="25" />
-                </button>
-                <textarea
-                  ref="textareaRef"
-                  v-model="chatInput"
-                  class="erumi-message-input"
-                  :placeholder="primaryComposerPlaceholder"
-                  :disabled="isChatting"
-                  aria-label="Nhập câu hỏi"
-                  rows="1"
-                  @input="autoResize"
-                  @keydown="handleKeydown"
-                />
-                <button 
-                  class="erumi-send-btn"
-                  type="button"
-                  :disabled="!canSubmit"
-                  :class="{ 'is-ready': canSubmit }"
-                  @click="submitChat()"
-                >
-                  <Send :size="24" v-if="!isChatting" />
-                  <Square :size="14" v-else />
-                </button>
-              </div>
+              <button
+                class="send-btn"
+                type="button"
+                :disabled="!canSubmit"
+                :class="{ 'is-ready': canSubmit }"
+                :aria-label="isChatting ? 'Đang xử lý' : 'Gửi câu hỏi'"
+                @click="submitChat()"
+              >
+                <Send :size="18" v-if="!isChatting" aria-hidden="true" />
+                <Square :size="16" v-else aria-hidden="true" />
+              </button>
             </div>
           </div>
-          <p class="composer-hint" v-if="!isDrawer">Enter để gửi · Shift+Enter để xuống dòng</p>
         </div>
       </div>
+    </div>
 
-      <!-- ACTIVE STATE: Scrolling chat thread -->
-      <div v-else class="chat-thread-container no-scrollbar" ref="chatContainerRef">
-        <div class="chat-thread-width">
-          
-          <!-- Insufficient Data Warning -->
-          <div v-if="isDataInsufficient" class="data-warning-banner">
-            <AlertTriangle :size="16" class="warning-icon" />
-            <div class="warning-text">
-              <strong>Cảnh báo dữ liệu:</strong> Dự án này hiện tại có quá ít dữ liệu (dưới 3 nhiệm vụ). Các phân tích từ AI có thể chưa tối ưu hoặc kém chính xác. Hãy bổ sung thêm nhiệm vụ để nhận kết quả tốt nhất.
-            </div>
+    <!-- ACTIVE STATE -->
+    <template v-else>
+      <header class="chat-header">
+        <h1 class="chat-title">Phân tích dự án</h1>
+        <OverflowMenu
+          :items="headerMenuItems"
+          aria-label="Tùy chọn cuộc trò chuyện"
+          trigger-title="Tùy chọn"
+          @select="handleHeaderMenu"
+        />
+      </header>
+
+      <div class="chat-thread no-scrollbar" ref="chatContainerRef">
+        <div class="thread-width">
+          <div v-if="isDataInsufficient" class="data-warning">
+            <AlertTriangle :size="16" class="warning-icon" aria-hidden="true" />
+            <p>
+              <strong>Cảnh báo dữ liệu:</strong> Dự án này hiện có quá ít dữ liệu (dưới 3 nhiệm vụ). Phân tích từ AI có thể chưa tối ưu. Hãy bổ sung thêm nhiệm vụ để nhận kết quả tốt nhất.
+            </p>
           </div>
 
-          <div 
-            v-for="(msg, i) in chatHistory" 
-            :key="i" 
-            :class="['msg-bubble-row', `msg-${msg.role}`]"
+          <div
+            v-for="(msg, i) in chatHistory"
+            :key="i"
+            :class="['msg-row', `msg-${msg.role}`]"
           >
-            <div v-if="msg.role === 'assistant'" class="msg-avatar-col">
+            <div v-if="msg.role === 'assistant'" class="msg-avatar">
               <ChatbotAvatar size="small" />
             </div>
-            
-            <div class="msg-bubble-content">
-              <article v-if="msg.role === 'assistant'" class="msg-bubble-assistant assistant-response-card">
-                <header class="assistant-response-header">
-                  <div class="assistant-identity">
-                    <strong>Erumi</strong>
-                    <span>Trợ lý phân tích</span>
+
+            <div class="msg-content">
+              <template v-if="msg.role === 'assistant'">
+                <div class="assistant-body">
+                  <div v-if="msg.text" class="markdown-body" v-html="renderMarkdown(msg.text)"></div>
+
+                  <div v-if="msg.metrics?.length" class="erumi-metrics-grid">
+                    <article v-for="metric in msg.metrics" :key="metric.label" class="erumi-metric" :class="`tone-${metric.tone || 'neutral'}`">
+                      <span>{{ metric.label }}</span>
+                      <strong>{{ metric.value }}</strong>
+                      <small v-if="metric.hint">{{ metric.hint }}</small>
+                    </article>
                   </div>
-                  <div class="origin-badge" :class="msg.usedAi ? 'origin-ai' : 'origin-rule'">
-                    <span class="origin-indicator" aria-hidden="true"></span>
-                    <span>{{ msg.usedAi ? 'Erumi AI' : 'Dữ liệu hệ thống' }}</span>
-                  </div>
-                </header>
 
-                <div class="markdown-body" v-html="renderMarkdown(msg.text)"></div>
-
-                <div v-if="msg.metrics?.length" class="erumi-metrics-grid">
-                  <article v-for="metric in msg.metrics" :key="metric.label" class="erumi-metric" :class="`tone-${metric.tone || 'neutral'}`">
-                    <span>{{ metric.label }}</span>
-                    <strong>{{ metric.value }}</strong>
-                    <small v-if="metric.hint">{{ metric.hint }}</small>
-                  </article>
-                </div>
-
-                <div v-if="msg.tables?.length" class="erumi-table-stack">
-                  <article v-for="table in msg.tables" :key="table.title" class="erumi-table-card">
-                    <header>
-                      <strong>{{ table.title }}</strong>
-                      <span v-if="table.description">{{ table.description }}</span>
-                    </header>
-                    <div class="erumi-table-wrap">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th
-                              v-for="column in table.columns"
-                              :key="column.key"
-                              :class="`align-${column.align || 'left'}`"
-                            >
-                              {{ column.label }}
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr v-if="!table.rows.length">
-                            <td :colspan="table.columns.length" class="empty-cell">Không có dữ liệu phù hợp</td>
-                          </tr>
-                          <tr v-for="(row, rowIndex) in table.rows" :key="rowIndex">
-                            <td
-                              v-for="column in table.columns"
-                              :key="column.key"
-                              :class="`align-${column.align || 'left'}`"
-                            >
-                              {{ tableCell(row, column.key) }}
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  </article>
-                </div>
-
-                <div v-if="msg.charts?.length" class="erumi-chart-grid">
-                  <article v-for="chart in msg.charts" :key="chart.title" class="erumi-chart-card">
-                    <header>
-                      <strong>{{ chart.title }}</strong>
-                      <span v-if="chart.unit">{{ chart.unit }}</span>
-                    </header>
-                    <div class="erumi-chart-canvas">
-                      <component :is="chartComponent(chart.type)" :data="chartData(chart)" :options="chartOptions(chart)" />
-                    </div>
-                  </article>
-                </div>
-
-                <div v-if="msg.actions?.length" class="erumi-action-list">
-                  <template v-for="action in msg.actions" :key="action.type">
-                    <div v-if="action.type === 'draft_change'" class="erumi-draft-card">
-                      <p class="erumi-draft-text">
-                        {{ action.payload?.draftId && isDrawer ? 'Hành động ghi dữ liệu cần xác nhận của bạn để thực thi:' : 'Erumi đã chuẩn bị gợi ý hành động, nhưng pass này không thực thi hành động ghi dữ liệu trực tiếp trên /analytics.' }}
-                      </p>
-                      <div v-if="action.payload?.draftId && isDrawer" class="erumi-draft-buttons">
-                        <button
-                          type="button"
-                          class="erumi-draft-btn-confirm"
-                          :disabled="action.processing || action.confirmed || action.rejected"
-                          @click="handleDraftAction(action, 'execute_action')"
-                        >
-                          <span v-if="isExecutingDraftAction(action)">Đang xử lý...</span>
-                          <span v-else-if="action.confirmed">Đã xác nhận</span>
-                          <span v-else>Xác nhận</span>
-                        </button>
-                        <button
-                          type="button"
-                          class="erumi-draft-btn-reject"
-                          :disabled="action.processing || action.confirmed || action.rejected"
-                          @click="handleDraftAction(action, 'reject')"
-                        >
-                          <span v-if="isRejectingDraftAction(action)">Đang hủy...</span>
-                          <span v-else-if="action.rejected">Đã hủy</span>
-                          <span v-else>Hủy</span>
-                        </button>
+                  <div v-if="msg.tables?.length" class="erumi-table-stack">
+                    <article v-for="table in msg.tables" :key="table.title" class="erumi-table-card">
+                      <header>
+                        <strong>{{ table.title }}</strong>
+                        <span v-if="table.description">{{ table.description }}</span>
+                      </header>
+                      <div class="erumi-table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th
+                                v-for="column in table.columns"
+                                :key="column.key"
+                                :class="`align-${column.align || 'left'}`"
+                              >
+                                {{ column.label }}
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr v-if="!table.rows.length">
+                              <td :colspan="table.columns.length" class="empty-cell">Không có dữ liệu phù hợp</td>
+                            </tr>
+                            <tr v-for="(row, rowIndex) in table.rows" :key="rowIndex">
+                              <td
+                                v-for="column in table.columns"
+                                :key="column.key"
+                                :class="`align-${column.align || 'left'}`"
+                              >
+                                {{ tableCell(row, column.key) }}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
                       </div>
-                      <p v-else class="erumi-draft-note">Bạn có thể hỏi Erumi tạo lại bản nháp chi tiết hơn hoặc copy nội dung này để xử lý thủ công.</p>
-                    </div>
-                    <button
-                      v-else
-                      type="button"
-                      class="erumi-action-button"
-                      @click="submitChat(action.label)"
-                    >
-                      {{ action.label }}
-                    </button>
-                  </template>
+                    </article>
+                  </div>
+
+                  <div v-if="msg.charts?.length" class="erumi-chart-grid">
+                    <article v-for="chart in msg.charts" :key="chart.title" class="erumi-chart-card">
+                      <header>
+                        <strong>{{ chart.title }}</strong>
+                        <span v-if="chart.unit">{{ chart.unit }}</span>
+                      </header>
+                      <div class="erumi-chart-canvas">
+                        <component :is="chartComponent(chart.type)" :data="chartData(chart)" :options="chartOptions(chart)" />
+                      </div>
+                    </article>
+                  </div>
+
+                  <div v-if="msg.actions?.length" class="erumi-action-list">
+                    <template v-for="action in msg.actions" :key="action.type">
+                      <div v-if="action.type === 'draft_change'" class="erumi-draft-card">
+                        <p class="erumi-draft-text">
+                          {{ action.payload?.draftId && isDrawer ? 'Hành động ghi dữ liệu cần xác nhận của bạn để thực thi:' : 'Erumi đã chuẩn bị gợi ý hành động, nhưng pass này không thực thi hành động ghi dữ liệu trực tiếp trên /analytics.' }}
+                        </p>
+                        <div v-if="action.payload?.draftId && isDrawer" class="erumi-draft-buttons">
+                          <button
+                            type="button"
+                            class="erumi-draft-btn-confirm"
+                            :disabled="action.processing || action.confirmed || action.rejected"
+                            @click="handleDraftAction(action, 'execute_action')"
+                          >
+                            <span v-if="isExecutingDraftAction(action)">Đang xử lý...</span>
+                            <span v-else-if="action.confirmed">Đã xác nhận</span>
+                            <span v-else>Xác nhận</span>
+                          </button>
+                          <button
+                            type="button"
+                            class="erumi-draft-btn-reject"
+                            :disabled="action.processing || action.confirmed || action.rejected"
+                            @click="handleDraftAction(action, 'reject')"
+                          >
+                            <span v-if="isRejectingDraftAction(action)">Đang hủy...</span>
+                            <span v-else-if="action.rejected">Đã hủy</span>
+                            <span v-else>Hủy</span>
+                          </button>
+                        </div>
+                        <p v-else class="erumi-draft-note">Bạn có thể hỏi Erumi tạo lại bản nháp chi tiết hơn hoặc copy nội dung này để xử lý thủ công.</p>
+                      </div>
+                      <button
+                        v-else
+                        type="button"
+                        class="erumi-action-button"
+                        @click="submitChat(action.label)"
+                      >
+                        {{ action.label }}
+                      </button>
+                    </template>
+                  </div>
+
+                  <div v-if="msg.files?.length" class="erumi-file-list">
+                    <a v-for="file in msg.files" :key="file.url" class="erumi-file-chip" :href="file.url">
+                      <span>{{ file.label }}</span>
+                      <small>{{ file.format.toUpperCase() }}</small>
+                    </a>
+                  </div>
                 </div>
 
-                <div v-if="msg.files?.length" class="erumi-file-list">
-                  <a v-for="file in msg.files" :key="file.url" class="erumi-file-chip" :href="file.url">
-                    <span>{{ file.label }}</span>
-                    <small>{{ file.format.toUpperCase() }}</small>
-                  </a>
-                </div>
-
-                <footer class="assistant-response-footer">
-                  <AiAnswerMetaChips
-                    :latency-ms="msg.latencyMs"
-                    :confidence="msg.confidence"
-                    :confidence-reason="msg.confidenceReason"
-                    :freshness="msg.freshness"
-                    :sources="msg.sources"
-                    :used-ai="msg.usedAi"
-                    :model-label="msg.model?.label"
-                    @open-sources="openSourcesForMessage(msg)"
-                  />
-
-                  <div class="bubble-actions-toolbar">
-                    <button class="bubble-action-btn" title="Sao chép phản hồi" type="button" @click="copyToClipboard(msg.text)">
-                      <Copy :size="14" />
-                      <span>Sao chép</span>
-                    </button>
-                    <button class="bubble-action-btn" title="Xuất báo cáo Markdown" type="button" @click="exportAsMarkdown(selectedTargetLabel, msg.text)">
-                      <Download :size="14" />
-                      <span>Xuất</span>
-                    </button>
+                <footer v-if="msg.text" class="assistant-meta">
+                  <span class="assistant-mode" :class="msg.usedAi ? 'is-ai' : 'is-rule'">
+                    {{ msg.usedAi ? 'Erumi AI' : 'Dữ liệu hệ thống' }}
+                  </span>
+                  <span v-if="typeof msg.confidence === 'number'" class="assistant-conf" :title="msg.confidenceReason || undefined">
+                    Độ tin cậy {{ Math.round(msg.confidence * 100) }}%
+                  </span>
+                  <div class="assistant-actions">
+                    <OverflowMenu
+                      :items="messageMenuItems(msg)"
+                      aria-label="Tùy chọn phản hồi"
+                      trigger-title="Tùy chọn phản hồi"
+                      @select="key => handleMessageMenu(key, msg)"
+                    />
                   </div>
                 </footer>
-              </article>
+              </template>
 
               <template v-else>
-                <div class="msg-bubble-user">{{ msg.text }}</div>
-                <div v-if="msg.attachments?.length" class="msg-attachment-list">
-                  <span v-for="file in msg.attachments" :key="file.name" class="msg-attachment-chip">
+                <div class="msg-user">{{ msg.text }}</div>
+                <div v-if="msg.attachments?.length" class="msg-attach">
+                  <span v-for="file in msg.attachments" :key="file.name" class="msg-attach-chip">
                     {{ file.name }} · {{ formatUploadSize(file.size) }}
                   </span>
                 </div>
@@ -1341,147 +1250,110 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <div v-if="isChatting" class="msg-bubble-row msg-assistant">
-            <div class="msg-avatar-col">
+          <div v-if="isChatting" class="msg-row msg-assistant">
+            <div class="msg-avatar">
               <ChatbotAvatar size="small" />
             </div>
-            <div class="msg-bubble-content">
-              <div class="msg-bubble-assistant typing-loader">
+            <div class="msg-content">
+              <div class="typing-loader">
                 <span></span><span></span><span></span>
               </div>
             </div>
           </div>
-
         </div>
       </div>
-    </div>
 
-    <!-- Sticky Bottom Bar (Only visible when chat is active) -->
-    <footer v-if="isChatActive" class="chat-bottom-bar">
-      <div class="bottom-bar-width">
-        
-        <!-- Suggestions Chips (horizontal scrollable above input) -->
-        <div v-if="!toolPaletteOpen" class="suggestion-chips-horizontal no-scrollbar">
-          <button 
-            v-for="(s, idx) in visibleCurrentSuggestions"
-            :key="idx"
-            class="suggestion-chip-small"
-            @click="submitChat(s.prompt, (s as any).action)"
-          >
-            {{ s.label }}
-          </button>
-          <button
-            v-if="hiddenCurrentSuggestionCount"
-            type="button"
-            class="suggestion-chip-small suggestion-chip-more"
-            @click="fillComposer('/')"
-          >
-            Xem thêm
-          </button>
-        </div>
-
-        <AiQuickToolbar
-          v-if="!isDrawer"
-          :active-tab="activeToolbarTab"
-          :history-count="conversationHistory.length"
-          @select="handleQuickToolbarSelect"
-          @palette-open-change="handleToolPaletteOpen"
-        />
-
-        <!-- Premium Composer -->
-        <div class="erumi-composer">
-          <div class="erumi-project-row">
-            <div class="erumi-context-controls">
-              <div class="erumi-custom-dropdown" :class="{ 'is-open': isDropdownOpen2 }" ref="dropdownRef2" @click.stop="toggleProjectDropdown(2)">
-                <div class="erumi-project-trigger" :class="{ 'is-open': isDropdownOpen2 }">
-                  <Folder :size="20" class="folder-icon" />
-                  <span class="erumi-project-name">{{ selectedTargetLabel }}</span>
-                  <ChevronDown :size="16" class="erumi-project-chevron" :class="{ 'rotate-180': isDropdownOpen2 }" />
-                </div>
-                <Transition name="dropdown-fade">
-                  <div
-                    class="erumi-dropdown-menu"
-                    :class="{ 'opens-up': dropdownPlacement2 === 'up' }"
-                    :style="{ maxHeight: dropdownMaxHeight2 }"
-                    v-if="isDropdownOpen2"
-                  >
-                    <div class="erumi-dropdown-item" @click.stop="selectTarget('workspace', 2)" :class="{ active: selectedTarget === 'workspace' }">Tất cả dự án</div>
-                    <div v-for="p in activeProjects" :key="p.id" class="erumi-dropdown-item" @click.stop="selectTarget(p.id, 2)" :class="{ active: selectedTarget === p.id }">
-                      {{ p.name }}
-                    </div>
-                  </div>
-                </Transition>
-              </div>
-              <AiModelSelector
-                v-if="!isDrawer"
-                v-model="selectedAiModel"
-                :options="AI_MODEL_OPTIONS"
-                compact
-                @open-settings="openCockpitDrawer('model')"
-              />
-            </div>
-            <span class="erumi-last-updated erumi-freshness-chip" v-if="!isDrawer">{{ freshnessChipLabel }}</span>
-          </div>
-
-          <div v-if="selectedFiles.length" class="attached-file-list">
-            <button
-              v-for="(file, index) in selectedFiles"
-              :key="`${file.name}-${index}`"
-              type="button"
-              class="attached-file-chip"
-              @click="removeSelectedFile(index)"
-            >
-              <span>{{ file.name }}</span>
-              <small>{{ formatUploadSize(file.size) }} · bỏ chọn</small>
-            </button>
-          </div>
-
-          <div class="erumi-input-shell-container">
-            <!-- Slash command autocomplete list -->
-            <div v-if="showSlashCommandsPopup" class="slash-commands-popup">
-              <div 
-                v-for="cmd in filteredSlashCommands" 
-                :key="cmd.code" 
-                class="slash-command-item"
+      <footer class="chat-composer-bar">
+        <div class="composer">
+          <div class="composer-surface">
+            <div v-if="showSlashCommandsPopup" class="slash-popup">
+              <button
+                v-for="cmd in filteredSlashCommands"
+                :key="cmd.code"
+                type="button"
+                class="slash-item"
                 @click="applySlashCommand(cmd)"
               >
-                <span class="cmd-code">{{ cmd.code }}</span>
-                <span class="cmd-desc">{{ cmd.description }}</span>
-              </div>
+                <span class="slash-code">{{ cmd.code }}</span>
+                <span class="slash-desc">{{ cmd.description }}</span>
+              </button>
             </div>
 
-            <div class="erumi-input-shell">
-              <button class="erumi-attach-btn" title="Đính kèm tệp" type="button" @click="openFilePicker">
-                <Paperclip :size="25" />
-              </button>
-              <textarea
-                ref="textareaRef"
-                v-model="chatInput"
-                class="erumi-message-input"
-                :placeholder="secondaryComposerPlaceholder"
-                :disabled="isChatting"
-                aria-label="Nhập câu hỏi tiếp theo"
-                rows="1"
-                @input="autoResize"
-                @keydown="handleKeydown"
-              />
-              <button 
-                class="erumi-send-btn"
+            <textarea
+              ref="textareaRef"
+              v-model="chatInput"
+              class="composer-input"
+              :placeholder="composerPlaceholder"
+              :disabled="isChatting"
+              aria-label="Nhập câu hỏi tiếp theo"
+              rows="1"
+              @input="autoResize"
+              @keydown="handleKeydown"
+            />
+
+            <div v-if="selectedFiles.length" class="composer-files">
+              <span
+                v-for="(file, index) in selectedFiles"
+                :key="`${file.name}-${index}`"
+                class="file-chip"
+              >
+                <span class="file-name">{{ file.name }}</span>
+                <small>{{ formatUploadSize(file.size) }}</small>
+                <button
+                  type="button"
+                  class="file-remove"
+                  :aria-label="`Bỏ tệp ${file.name}`"
+                  @click="removeSelectedFile(index)"
+                >
+                  <X :size="13" aria-hidden="true" />
+                </button>
+              </span>
+            </div>
+
+            <div class="composer-footer">
+              <div class="composer-context">
+                <ComposerPlusMenu
+                  :projects="activeProjects"
+                  :selected-target="selectedTarget"
+                  :suggestions="menuSuggestions"
+                  :tools="analysisTools"
+                  :is-compact="isCompactViewport"
+                  :hide-system="isDrawer"
+                  @attach="openFilePicker"
+                  @select-project="handleSelectProject"
+                  @fill-prompt="fillComposer"
+                  @open-drawer="openCockpitDrawer"
+                />
+
+                <button
+                  v-if="selectedTarget !== 'workspace'"
+                  type="button"
+                  class="ctx-chip"
+                  @click="clearProjectContext"
+                >
+                  <span class="ctx-name">{{ selectedTargetLabel }}</span>
+                  <span class="ctx-x" aria-label="Bỏ chọn dự án"><X :size="13" aria-hidden="true" /></span>
+                </button>
+                <span v-else class="ctx-label">{{ selectedTargetLabel }}</span>
+              </div>
+
+              <button
+                class="send-btn"
                 type="button"
                 :disabled="!canSubmit"
                 :class="{ 'is-ready': canSubmit }"
+                :aria-label="isChatting ? 'Đang xử lý' : 'Gửi câu hỏi'"
                 @click="submitChat()"
               >
-                <Send :size="24" v-if="!isChatting" />
-                <Square :size="14" v-else />
+                <Send :size="18" v-if="!isChatting" aria-hidden="true" />
+                <Square :size="16" v-else aria-hidden="true" />
               </button>
             </div>
           </div>
+          <p class="composer-disclaimer" v-if="!isDrawer">Erumi AI có thể mắc sai sót. Vui lòng kiểm tra lại thông tin quan trọng.</p>
         </div>
-
-        <p class="chat-disclaimer" v-if="!isDrawer">Erumi AI có thể mắc sai sót. Vui lòng kiểm tra lại thông tin quan trọng.</p>
-      </div>
-    </footer>
+      </footer>
+    </template>
 
     <AnalyticsSideDrawer
       v-if="!isDrawer"
@@ -1491,12 +1363,14 @@ onBeforeUnmount(() => {
       @close="closeCockpitDrawer"
     >
       <div class="analytics-drawer-content">
-        <SourceRefsDrawer
-          v-if="activeDrawerTab === 'sources'"
-          :sources="drawerSources"
-          :source-refs="drawerSourceRefs"
-          @ask-source="askAboutSource"
-        />
+        <template v-if="activeDrawerTab === 'sources'">
+          <p class="analytics-drawer-freshness">{{ freshnessLabel }}</p>
+          <SourceRefsDrawer
+            :sources="drawerSources"
+            :source-refs="drawerSourceRefs"
+            @ask-source="askAboutSource"
+          />
+        </template>
 
         <ConversationHistoryDrawer
           v-else-if="activeDrawerTab === 'history'"
@@ -1552,7 +1426,7 @@ onBeforeUnmount(() => {
           </div>
           <div v-else class="analytics-drawer-empty">
             <strong>Chưa có action</strong>
-            <span>Dùng toolbar Actions để điền prompt tạo đề xuất tiếp theo.</span>
+            <span>Dùng công cụ phân tích trong nút + để điền prompt tạo đề xuất tiếp theo.</span>
           </div>
         </section>
 
@@ -1564,7 +1438,7 @@ onBeforeUnmount(() => {
           </div>
           <div v-else class="analytics-drawer-empty">
             <strong>Chưa có dữ liệu</strong>
-            <span>Chọn prompt từ toolbar hoặc hỏi Erumi trực tiếp trong composer.</span>
+            <span>Chọn prompt từ nút + hoặc hỏi Erumi trực tiếp trong composer.</span>
           </div>
         </section>
       </div>
@@ -1573,95 +1447,16 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* Scoped styles copied and refined from AnalyticsPage.vue */
-.data-warning-banner {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: var(--qaly-radius-lg);
-  padding: 10px 14px;
-  margin-bottom: 16px;
-  color: #b45309;
-  font-size: 0.8rem;
-  line-height: 1.45;
-}
-.warning-icon {
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-.origin-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 5px 9px;
-  border-radius: 999px;
-}
-
-.origin-ai {
-  background: #eefbf6;
-  color: #08775b;
-  border: 1px solid #c8f0e1;
-}
-
-.origin-rule {
-  background: #f1f5ff;
-  color: #52658f;
-  border: 1px solid #dbe5f7;
-}
-
-.origin-indicator {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: currentColor;
-  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 13%, transparent);
-}
-
-.bubble-actions-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-  margin-left: auto;
-}
-
-.bubble-action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: transparent;
-  border: 1px solid transparent;
-  color: #64748b;
-  padding: 6px 9px;
-  border-radius: var(--qaly-radius-lg);
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.bubble-action-btn:hover {
-  background: #eef4ff;
-  color: #1d5fd1;
-  border-color: #d9e6ff;
-}
-
 .analytics-chat-portal {
   display: flex;
   flex-direction: column;
   height: 100%;
   width: 100%;
   max-width: 100%;
-  background: #f7f9fc;
+  background: var(--bg);
+  color: var(--text);
   position: relative;
   overflow: hidden;
-  font-family: 'Inter', sans-serif;
 }
 
 .analytics-chat-portal,
@@ -1673,507 +1468,116 @@ onBeforeUnmount(() => {
   display: none;
 }
 
-.chat-main-area {
+/* ============ EMPTY STATE ============ */
+.chat-empty {
   flex: 1;
-  overflow: hidden;
-  position: relative;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
-  flex-direction: column;
 }
 
-.chat-empty-state {
+.empty-inner {
   margin: auto;
   width: 100%;
   max-width: 680px;
-  min-width: 0;
-  padding: 28px 22px 20px;
+  padding: 32px 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  text-align: center;
-  gap: 18px;
+  gap: 20px;
 }
 
-.avatar-holder {
-  width: 72px;
-  height: 72px;
+.empty-avatar {
+  width: 64px;
+  height: 64px;
   display: grid;
   place-items: center;
 }
 
-.avatar-holder :deep(.chatbot-avatar) {
-  width: 72px !important;
-  height: 72px !important;
+.empty-avatar :deep(.chatbot-avatar) {
+  width: 64px !important;
+  height: 64px !important;
   border-radius: 50%;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
   display: inline-grid;
   place-items: center;
 }
 
-.avatar-holder :deep(.chatbot-avatar img) {
+.empty-avatar :deep(.chatbot-avatar img) {
   width: 70% !important;
   height: 70% !important;
 }
 
-.welcome-text-block {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.welcome-heading {
-  font-size: 30px;
-  font-weight: 800;
-  color: #0f172a;
-  letter-spacing: -0.5px;
-  line-height: 1.2;
+.empty-heading {
   margin: 0;
-}
-
-.composer-wrap-center {
-  width: 100%;
-  max-width: 640px;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  order: 10;
-}
-
-.composer-hint {
-  font-size: 11px;
-  color: #94a3b8;
-  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text-strong);
+  letter-spacing: -0.4px;
+  line-height: 1.25;
   text-align: center;
 }
 
-.suggestion-pills-wrap {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  max-width: 600px;
-}
-
-.suggestion-pill {
-  padding: 10px 18px;
-  border: none;
-  border-radius: var(--qaly-radius-lg);
-  font-size: 13px;
-  font-weight: 500;
-  color: #334155;
-  background: #f1f5f9;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.suggestion-pill:hover {
-  background: #e2e8f0;
-  color: #0f172a;
-}
-
-.erumi-composer {
-  width: 100%;
-  max-width: 640px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  background: transparent;
-  color: #0f172a;
-}
-
-.erumi-project-row {
-  position: relative;
-  z-index: 20;
+/* ============ ACTIVE STATE ============ */
+.chat-header {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-  padding: 0 4px;
-  margin-bottom: 2px;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
 }
 
-.erumi-context-controls {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.chat-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-strong);
 }
 
-.erumi-custom-dropdown {
-  position: relative;
-  z-index: 1;
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: min(340px, 48vw);
-}
-
-.erumi-custom-dropdown.is-open {
-  z-index: 1600;
-}
-
-.erumi-project-trigger {
-  position: relative;
-  min-width: 0;
-  max-width: 100%;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 34px;
-  color: #0f172a;
-  cursor: pointer;
-  padding: 0 10px;
-  border-radius: var(--qaly-radius-lg);
-  background: #ffffff;
-  transition: all 0.25s ease;
-  border: 1px solid #dbeafe;
-}
-
-.erumi-project-trigger:hover,
-.erumi-project-trigger.is-open {
-  background: #f1f5f9;
-  border-color: #e2e8f0;
-}
-
-.folder-icon {
-  color: #1f80ff;
-  fill: rgba(31, 128, 255, 0.15);
-  stroke-width: 2;
-  flex-shrink: 0;
-}
-
-.erumi-project-name {
-  max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #0f172a;
-  font-size: 13px;
-  font-weight: 850;
-}
-
-.erumi-project-chevron {
-  color: #64748b;
-  transition: transform 0.3s ease;
-  flex-shrink: 0;
-}
-
-.rotate-180 {
-  transform: rotate(180deg);
-}
-
-.erumi-dropdown-menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  width: min(360px, calc(100vw - 32px));
-  min-width: 260px;
-  max-width: calc(100vw - 32px);
-  height: auto;
-  max-height: 320px;
+.chat-thread {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  overflow-x: hidden;
-  overscroll-behavior: contain;
-  background: rgba(255, 255, 255, 0.98);
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: var(--qaly-radius-lg);
-  box-shadow: var(--qaly-shadow-md);
-  padding: 8px;
-  z-index: 1601;
-  display: block;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  padding: 24px 20px;
   scroll-behavior: smooth;
 }
 
-.erumi-dropdown-menu.opens-up {
-  top: auto;
-  bottom: calc(100% + 8px);
-}
-
-.erumi-dropdown-menu::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
-}
-
-.erumi-dropdown-item {
-  padding: 11px 14px;
-  border-radius: var(--qaly-radius-lg);
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-  color: #334155;
-  transition:
-    background 0.18s ease,
-    color 0.18s ease,
-    transform 0.18s ease;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.erumi-dropdown-item:hover {
-  background: rgba(31, 128, 255, 0.08);
-  color: #1f80ff;
-  transform: translateX(2px);
-}
-
-.erumi-dropdown-item.active {
-  background: rgba(31, 128, 255, 0.12);
-  color: #1f80ff;
-  font-weight: 700;
-}
-
-.dropdown-fade-enter-active,
-.dropdown-fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-.dropdown-fade-enter-from,
-.dropdown-fade-leave-to {
-  opacity: 0;
-  transform: translateY(-8px);
-}
-
-.erumi-last-updated {
-  min-width: 0;
-  max-width: 128px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 0 0 auto;
-  color: #8a8f98;
-  font-size: 12px;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-.erumi-freshness-chip {
-  height: 30px;
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid #dbeafe;
-  border-radius: var(--qaly-radius-lg);
-  background: #ffffff;
-  color: #335274;
-  padding: 0 9px;
-}
-
-.attached-file-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 0;
-}
-
-.attached-file-chip,
-.msg-attachment-chip {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  max-width: 100%;
-  border: 1px solid rgba(15, 82, 186, 0.14);
-  border-radius: var(--qaly-radius-lg);
-  background: rgba(15, 82, 186, 0.04);
-  color: #0f172a;
-  padding: 7px 10px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.attached-file-chip {
-  cursor: pointer;
-}
-
-.attached-file-chip small,
-.msg-attachment-chip small {
-  color: #64748b;
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.erumi-input-shell-container {
-  position: relative;
+.thread-width {
   width: 100%;
-}
-
-.erumi-input-shell {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 64px;
-  padding: 8px 14px;
-  border: none;
-  outline: none;
-  border-radius: 32px;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: var(--qaly-shadow-md);
-  transition:
-    box-shadow 0.25s ease,
-    transform 0.25s ease,
-    background 0.25s ease;
-}
-
-.erumi-input-shell:focus-within {
-  border: none;
-  outline: none;
-  background: #ffffff;
-  box-shadow: var(--qaly-shadow-md);
-  transform: translateY(-1px);
-}
-
-.erumi-message-input {
-  flex: 1;
-  width: 100%;
-  min-width: 0;
-  appearance: none;
-  background: transparent !important;
-  border: 0 !important;
-  outline: 0 !important;
-  box-shadow: none !important;
-  resize: none;
-  padding: 10px 4px;
-  font-family: inherit;
-  font-size: 17px;
-  font-weight: 600;
-  color: #0f172a;
-  line-height: 1.4;
-  height: 44px;
-  max-height: 160px;
-}
-
-.erumi-message-input:focus,
-.erumi-message-input:focus-visible,
-.erumi-message-input:disabled {
-  background: transparent !important;
-  border: 0 !important;
-  outline: 0 !important;
-  box-shadow: none !important;
-}
-
-.erumi-message-input::placeholder {
-  color: #94a3b8;
-  font-weight: 600;
-}
-
-.erumi-attach-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: none;
-  background: #f1f5f9;
-  color: #475569;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
-
-.erumi-attach-btn:hover {
-  background: #e2e8f0;
-  color: #0f172a;
-}
-
-.erumi-send-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: none;
-  background: #e2e8f0;
-  color: #94a3b8;
-  cursor: pointer;
-  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
-  flex-shrink: 0;
-}
-
-.erumi-send-btn.is-ready {
-  background: #1f80ff;
-  color: #ffffff;
-  box-shadow: var(--qaly-shadow-md);
-}
-
-.erumi-send-btn.is-ready:hover {
-  background: #0066eb;
-  transform: scale(1.04);
-}
-
-/* Slash commands styles (Sprint 1) */
-.slash-commands-popup {
-  position: absolute;
-  bottom: calc(100% + 10px);
-  left: 0;
-  width: 100%;
-  background: #ffffff;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: var(--qaly-radius-lg);
-  box-shadow: var(--qaly-shadow-md);
-  z-index: 1000;
-  max-height: 240px;
-  overflow-y: auto;
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.slash-command-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  border-radius: var(--qaly-radius-lg);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.slash-command-item:hover {
-  background: #f1f5f9;
-}
-
-.cmd-code {
-  font-family: monospace;
-  font-weight: 700;
-  color: #1f80ff;
-  font-size: 14px;
-  background: rgba(31, 128, 255, 0.08);
-  padding: 2px 6px;
-  border-radius: 6px;
-}
-
-.cmd-desc {
-  font-size: 13px;
-  color: #475569;
-  font-weight: 600;
-}
-
-/* Active Chat Thread */
-.chat-thread-container {
-  flex: 1;
-  overflow-y: auto;
-  padding: 32px 24px 190px;
-  scroll-behavior: smooth;
-}
-
-.chat-thread-width {
-  width: 100%;
-  max-width: 840px;
+  max-width: 780px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 22px;
 }
 
-.msg-bubble-row {
+.data-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--warning-soft);
+  border: 1px solid var(--warning);
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: var(--warning-dark);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.data-warning p {
+  margin: 0;
+}
+
+.warning-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.msg-row {
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -2184,151 +1588,163 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
 }
 
-.msg-avatar-col {
-  width: 40px;
-  height: 40px;
+.msg-avatar {
+  width: 34px;
+  height: 34px;
   flex-shrink: 0;
   display: grid;
   place-items: center;
   overflow: hidden;
-  border: 1px solid #dbe6f5;
-  border-radius: var(--qaly-radius-lg);
-  background: linear-gradient(145deg, #ffffff, #edf4ff);
-  box-shadow: var(--qaly-shadow-md);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
 }
 
-.msg-avatar-col :deep(.chatbot-avatar) {
-  width: 38px !important;
-  height: 38px !important;
-  border-radius: var(--qaly-radius-lg);
+.msg-avatar :deep(.chatbot-avatar) {
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 8px;
 }
 
-.msg-avatar-col :deep(.chatbot-avatar img) {
+.msg-avatar :deep(.chatbot-avatar img) {
   width: 100% !important;
   height: 100% !important;
   object-fit: contain;
 }
 
-.msg-bubble-content {
+.msg-content {
   min-width: 0;
   max-width: 74%;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
-.msg-assistant .msg-bubble-content {
+.msg-assistant .msg-content {
   flex: 1;
-  max-width: calc(100% - 52px);
+  max-width: calc(100% - 46px);
 }
 
-.msg-user .msg-bubble-content {
+.msg-user .msg-content {
   align-items: flex-end;
 }
 
-.msg-bubble-user {
+.msg-user-row {
+  justify-content: flex-end;
+}
+
+/* User bubble: single solid accent, no decorative gradient */
+.msg-user {
   max-width: 100%;
-  background: linear-gradient(135deg, #2486ff, #1268e8);
+  background: var(--primary);
   color: #ffffff;
-  padding: 11px 16px;
-  border-radius: 6px 6px 2px 6px;
+  padding: 10px 15px;
+  border-radius: 10px 10px 3px 10px;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.5;
-  box-shadow: var(--qaly-shadow-md);
   overflow-wrap: anywhere;
 }
 
-.msg-bubble-assistant {
-  width: 100%;
-  background: #ffffff;
-  color: #0f172a;
-  border-radius: var(--qaly-radius-lg);
+/* Assistant response: flat, no card wrapper */
+.assistant-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  color: var(--text);
   font-size: 14px;
   line-height: 1.7;
-  border: 1px solid #dfe7f3;
-  box-shadow: var(--qaly-shadow-md);
 }
 
-.assistant-response-card {
-  overflow: hidden;
-}
-
-.assistant-response-header {
+.assistant-meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 54px;
-  padding: 11px 14px 11px 18px;
-  border-bottom: 1px solid #edf1f7;
-  background: linear-gradient(90deg, #fbfdff, #ffffff);
+  gap: 10px;
+  min-height: 30px;
 }
 
-.assistant-identity {
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.assistant-identity strong {
-  color: #172033;
-  font-size: 14px;
-  font-weight: 800;
-}
-
-.assistant-identity > span {
-  color: #8a97ad;
+.assistant-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11px;
   font-weight: 600;
+  color: var(--muted);
 }
 
-.assistant-response-card > .markdown-body {
-  padding: 18px 20px 16px;
+.assistant-mode::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
-.assistant-response-card > .erumi-metrics-grid,
-.assistant-response-card > .erumi-table-stack,
-.assistant-response-card > .erumi-chart-grid,
-.assistant-response-card > .erumi-action-list,
-.assistant-response-card > .erumi-file-list {
-  width: auto;
-  margin: 0 20px 18px;
+.assistant-mode.is-ai {
+  color: var(--success);
 }
 
-.assistant-response-footer {
-  min-height: 48px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 10px 8px 18px;
-  border-top: 1px solid #edf1f7;
-  background: #fbfcfe;
+.assistant-mode.is-rule {
+  color: var(--muted);
 }
 
-.msg-attachment-list {
+.assistant-conf {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.assistant-actions {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.14s ease;
+}
+
+.msg-row:hover .assistant-actions,
+.assistant-actions:focus-within {
+  opacity: 1;
+}
+
+.msg-attach {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-/* Metrics and Custom Content */
+.msg-attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* Metrics / tables / charts keep their own surface */
 .erumi-metrics-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 10px;
   width: 100%;
 }
 
 .erumi-metric {
   min-width: 0;
-  background: #f8faff;
-  border: 1px solid #e3eaf5;
-  border-radius: var(--qaly-radius-lg);
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
   padding: 13px 15px;
   display: flex;
   flex-direction: column;
+}
+
+.erumi-metric span {
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .erumi-metric.tone-good {
@@ -2351,17 +1767,23 @@ onBeforeUnmount(() => {
 
 .erumi-metric strong {
   font-size: 20px;
-  font-weight: 800;
+  font-weight: 700;
   margin-top: 4px;
+  color: var(--text-strong);
+}
+
+.erumi-metric.tone-good strong,
+.erumi-metric.tone-warning strong,
+.erumi-metric.tone-danger strong {
+  color: inherit;
 }
 
 .erumi-metric small {
   font-size: 11px;
-  color: #64748b;
+  color: var(--muted);
   margin-top: 2px;
 }
 
-/* Tables and Charts */
 .erumi-table-stack {
   display: flex;
   flex-direction: column;
@@ -2369,28 +1791,28 @@ onBeforeUnmount(() => {
 }
 
 .erumi-table-card {
-  background: #ffffff;
-  border: 1px solid #dfe7f3;
-  border-radius: var(--qaly-radius-lg);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
   overflow: hidden;
 }
 
 .erumi-table-card header {
   padding: 12px 16px;
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
+  background: var(--panel-soft);
+  border-bottom: 1px solid var(--line);
   display: flex;
   flex-direction: column;
 }
 
 .erumi-table-card header strong {
   font-size: 14px;
-  color: #0f172a;
+  color: var(--text-strong);
 }
 
 .erumi-table-card header span {
   font-size: 11px;
-  color: #64748b;
+  color: var(--muted);
 }
 
 .erumi-table-wrap {
@@ -2405,18 +1827,18 @@ onBeforeUnmount(() => {
 }
 
 .erumi-table-wrap th {
-  background: #fafafc;
-  border-bottom: 1px solid #e2e8f0;
+  background: var(--panel-soft);
+  border-bottom: 1px solid var(--line);
   padding: 8px 12px;
-  font-weight: 700;
-  color: #475569;
+  font-weight: 600;
+  color: var(--muted);
   text-align: left;
 }
 
 .erumi-table-wrap td {
   padding: 10px 12px;
-  border-bottom: 1px solid #f1f5f9;
-  color: #334155;
+  border-bottom: 1px solid var(--line-light);
+  color: var(--text);
 }
 
 .erumi-table-wrap tr:last-child td {
@@ -2434,9 +1856,9 @@ onBeforeUnmount(() => {
 }
 
 .erumi-chart-card {
-  background: #fbfcff;
-  border: 1px solid #dfe7f3;
-  border-radius: var(--qaly-radius-lg);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
   padding: 16px;
 }
 
@@ -2446,12 +1868,21 @@ onBeforeUnmount(() => {
   margin-bottom: 12px;
 }
 
+.erumi-chart-card header strong {
+  font-size: 14px;
+  color: var(--text-strong);
+}
+
+.erumi-chart-card header span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
 .erumi-chart-canvas {
   height: 240px;
   position: relative;
 }
 
-/* Actions and Files */
 .erumi-action-list {
   display: flex;
   flex-wrap: wrap;
@@ -2459,37 +1890,36 @@ onBeforeUnmount(() => {
 }
 
 .erumi-action-button {
-  background: #f4f7ff;
-  border: 1px solid #cfddfb;
-  color: #205fc7;
+  background: var(--primary-soft);
+  border: 1px solid transparent;
+  color: var(--primary-strong);
   padding: 8px 13px;
-  border-radius: var(--qaly-radius-lg);
+  border-radius: 8px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.16s ease, border-color 0.16s ease;
 }
 
-.erumi-action-button:hover {
-  background: #e9f1ff;
-  border-color: #9cbcf5;
-  transform: translateY(-1px);
+.erumi-action-button:hover,
+.erumi-action-button:focus-visible {
+  border-color: var(--primary);
+  outline: none;
 }
 
 .erumi-draft-card {
-  background: rgba(248, 250, 252, 0.75);
-  border: 1px dashed #cbd5e1;
+  background: var(--panel-soft);
+  border: 1px dashed var(--line);
   padding: 12px 16px;
-  border-radius: var(--qaly-radius-lg);
-  margin-top: 4px;
+  border-radius: 10px;
   width: 100%;
 }
 
 .erumi-draft-text {
   font-size: 13px;
-  color: #475569;
+  color: var(--muted);
   margin: 0 0 10px 0;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .erumi-draft-buttons {
@@ -2497,49 +1927,46 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 
-.erumi-draft-btn-confirm {
-  background: #2563eb;
+.erumi-draft-btn-confirm,
+.erumi-draft-btn-reject {
   border: none;
   color: #ffffff;
   padding: 8px 16px;
-  border-radius: var(--qaly-radius-lg);
+  border-radius: 8px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.16s ease;
+}
+
+.erumi-draft-btn-confirm {
+  background: var(--primary);
 }
 
 .erumi-draft-btn-confirm:hover:not(:disabled) {
-  background: #1d4ed8;
-  transform: translateY(-1px);
+  background: var(--primary-hover);
 }
 
 .erumi-draft-btn-confirm:disabled {
-  background: #94a3b8;
+  background: var(--border-strong, #94a3b8);
   cursor: not-allowed;
 }
 
 .erumi-draft-btn-reject {
-  background: #ef4444;
-  border: none;
-  color: #ffffff;
-  padding: 8px 16px;
-  border-radius: var(--qaly-radius-lg);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.erumi-draft-btn-reject:hover:not(:disabled) {
-  background: #dc2626;
-  transform: translateY(-1px);
+  background: var(--danger);
 }
 
 .erumi-draft-btn-reject:disabled {
-  background: #cbd5e1;
-  color: #64748b;
+  background: var(--line);
+  color: var(--muted);
   cursor: not-allowed;
+}
+
+.erumi-draft-note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .erumi-file-list {
@@ -2552,40 +1979,14 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
   padding: 8px 12px;
-  border-radius: var(--qaly-radius-lg);
+  border-radius: 8px;
   font-size: 13px;
-  font-weight: 700;
-  color: #0f172a;
-  text-decoration: none;
-}
-
-.erumi-response-meta {
-  min-width: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 14px;
-  font-size: 11px;
-  color: #7b879b;
   font-weight: 600;
-}
-
-.erumi-response-meta span {
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.erumi-response-meta small {
-  color: #9aa5b6;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  color: var(--text);
+  text-decoration: none;
 }
 
 /* Typing loader */
@@ -2594,90 +1995,356 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 14px 18px;
+  padding: 10px 2px;
 }
 
 .typing-loader span {
   width: 6px;
   height: 6px;
-  background: #94a3b8;
+  background: var(--muted);
   border-radius: 50%;
-  animation: typing 1s infinite alternate;
+  animation: erumi-typing 1s infinite alternate;
 }
 
 .typing-loader span:nth-child(2) { animation-delay: 0.2s; }
 .typing-loader span:nth-child(3) { animation-delay: 0.4s; }
 
-@keyframes typing {
+@keyframes erumi-typing {
   from { opacity: 0.3; transform: translateY(0); }
   to { opacity: 1; transform: translateY(-4px); }
 }
 
-/* Bottom Bar */
-.chat-bottom-bar {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  background: linear-gradient(rgba(247, 249, 252, 0) 0%, #f7f9fc 20%);
-  padding: 10px 16px 16px;
-  z-index: 10;
+/* ============ COMPOSER ============ */
+.chat-composer-bar {
+  flex: 0 0 auto;
+  padding: 8px 16px 14px;
+  background: var(--bg);
+  border-top: 1px solid var(--line);
 }
 
-.bottom-bar-width {
+.composer {
   width: 100%;
-  max-width: 640px;
+  max-width: 680px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.suggestion-chips-horizontal {
+.composer-surface {
+  position: relative;
   display: flex;
+  flex-direction: column;
   gap: 8px;
-  overflow-x: auto;
-  padding: 0 0 4px;
-  scrollbar-width: none;
+  padding: 14px 18px;
+  border: none;
+  border-radius: 26px;
+  background: var(--panel);
+  box-shadow: var(--qaly-shadow-md);
 }
 
-.suggestion-chips-horizontal::-webkit-scrollbar {
-  display: none;
+.composer-input {
+  width: 100%;
+  min-width: 0;
+  appearance: none;
+  background: transparent !important;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  resize: none;
+  padding: 2px;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--text-strong);
+  line-height: 1.5;
+  height: 28px;
+  max-height: 160px;
 }
 
-.suggestion-chip-small {
-  white-space: nowrap;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  padding: 6px 12px;
-  border-radius: var(--qaly-radius-lg);
+.composer-input:hover,
+.composer-input:focus,
+.composer-input:focus-visible,
+.composer-input:active,
+.composer-input:disabled {
+  background: transparent !important;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+}
+
+.composer-input::placeholder {
+  color: var(--text-muted);
+}
+
+.composer-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--text);
+  padding: 5px 6px 5px 10px;
   font-size: 12px;
-  font-weight: 600;
-  color: #475569;
+  font-weight: 500;
+}
+
+.file-chip .file-name {
+  min-width: 0;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-chip small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.file-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
   cursor: pointer;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
+  transition: background-color 0.14s ease, color 0.14s ease;
 }
 
-.suggestion-chip-small:hover {
-  background: #f1f5f9;
-  border-color: #94a3b8;
-  color: #0f172a;
+.file-remove:hover,
+.file-remove:focus-visible {
+  background: var(--danger-soft);
+  color: var(--danger);
+  outline: none;
 }
 
-.suggestion-chip-more {
-  border-color: #b9d5ff;
-  color: #185fb8;
-  background: #f5f9ff;
+.composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
-.chat-disclaimer {
-  font-size: 11px;
-  color: #94a3b8;
-  text-align: center;
+.composer-context {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ctx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 220px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--text);
+  padding: 5px 6px 5px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.14s ease;
+}
+
+.ctx-chip:hover,
+.ctx-chip:focus-visible {
+  border-color: var(--primary);
+  outline: none;
+}
+
+.ctx-name {
+  min-width: 0;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ctx-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  color: var(--muted);
+}
+
+.ctx-label {
+  min-width: 0;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.send-btn {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  border: none;
+  background: var(--panel-soft);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color 0.16s ease, color 0.16s ease;
+}
+
+.send-btn.is-ready {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.send-btn.is-ready:hover {
+  background: var(--primary-hover);
+}
+
+.send-btn:disabled {
+  cursor: default;
+}
+
+.composer-disclaimer {
   margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
 }
 
+/* Slash command popup */
+.slash-popup {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--qaly-shadow-md);
+  z-index: 1000;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.slash-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.14s ease;
+}
+
+.slash-item:hover,
+.slash-item:focus-visible {
+  background: var(--panel-soft);
+  outline: none;
+}
+
+.slash-code {
+  font-family: ui-monospace, monospace;
+  font-weight: 600;
+  color: var(--primary-strong);
+  font-size: 13px;
+  background: var(--primary-soft);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.slash-desc {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* ============ MARKDOWN ============ */
+.markdown-body :deep(h1),
+.markdown-body :deep(h2),
+.markdown-body :deep(h3) {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 14px 0 7px;
+  color: var(--text-strong);
+  letter-spacing: -0.01em;
+}
+
+.markdown-body :deep(h1:first-child),
+.markdown-body :deep(h2:first-child),
+.markdown-body :deep(h3:first-child),
+.markdown-body :deep(p:first-child) {
+  margin-top: 0;
+}
+
+.markdown-body :deep(p) {
+  margin: 0 0 10px;
+  color: var(--text);
+}
+
+.markdown-body :deep(ul),
+.markdown-body :deep(ol) {
+  margin: 8px 0 10px;
+  padding-left: 22px;
+}
+
+.markdown-body :deep(li) {
+  margin-bottom: 5px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.markdown-body :deep(p:last-child),
+.markdown-body :deep(ul:last-child),
+.markdown-body :deep(ol:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown-body :deep(a) {
+  color: var(--primary-strong);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.markdown-body :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.markdown-body :deep(code) {
+  border-radius: 6px;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  padding: 2px 5px;
+  font-size: 0.9em;
+}
+
+/* ============ DRAWER CONTENT ============ */
 .analytics-drawer-content,
 .analytics-drawer-section {
   min-width: 0;
@@ -2685,12 +2352,23 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
+.analytics-drawer-freshness {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .analytics-drawer-muted,
 .analytics-drawer-empty span,
 .analytics-drawer-table-note span,
 .analytics-model-registry p {
   margin: 0;
-  color: #64748b;
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
 }
@@ -2709,9 +2387,9 @@ onBeforeUnmount(() => {
 .analytics-drawer-table-note,
 .analytics-action-draft {
   min-width: 0;
-  border: 1px solid #e2e8f0;
-  border-radius: var(--qaly-radius-lg);
-  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-soft);
   padding: 12px;
 }
 
@@ -2723,9 +2401,9 @@ onBeforeUnmount(() => {
 .analytics-drawer-metric span,
 .analytics-drawer-metric small,
 .analytics-model-registry span {
-  color: #64748b;
+  color: var(--muted);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .analytics-drawer-metric strong,
@@ -2734,9 +2412,9 @@ onBeforeUnmount(() => {
 .analytics-model-registry strong {
   min-width: 0;
   overflow: hidden;
-  color: #0f172a;
+  color: var(--text-strong);
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 700;
   text-overflow: ellipsis;
 }
 
@@ -2765,396 +2443,144 @@ onBeforeUnmount(() => {
 .analytics-model-registry span {
   width: max-content;
   border-radius: 999px;
-  background: #eef4ff;
-  color: #1d4ed8;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
   padding: 2px 7px;
 }
 
 .analytics-action-draft {
   width: 100%;
-  color: #1d4ed8;
+  color: var(--primary-strong);
   text-align: left;
   font-size: 13px;
-  font-weight: 850;
+  font-weight: 600;
   cursor: pointer;
 }
 
 .analytics-action-draft:hover,
 .analytics-action-draft:focus-visible {
-  border-color: #bfdbfe;
-  background: #eff6ff;
+  border-color: var(--primary);
   outline: none;
 }
 
-.erumi-draft-note {
-  margin: 8px 0 0;
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-/* Drawer mode overrides (Sprint 1) */
+/* ============ DRAWER MODE (FloatingChatbot) ============ */
 .is-drawer-mode {
-  border-left: 1px solid #e2e8f0;
-  box-shadow: var(--qaly-shadow-md);
-  background: #ffffff;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
 }
 
-.is-drawer-mode .chat-thread-container {
-  padding: 18px 12px 150px;
-}
-
-.is-drawer-mode .bottom-bar-width {
+.is-drawer-mode .composer,
+.is-drawer-mode .thread-width {
   max-width: 100%;
 }
 
-.is-drawer-mode .erumi-composer {
+.is-drawer-mode .empty-inner {
   max-width: 100%;
+  padding: 18px 12px;
 }
 
-.is-drawer-mode .chat-empty-state {
-  max-width: 100%;
-  padding: 16px 12px;
-  gap: 12px;
+.is-drawer-mode .empty-heading {
+  font-size: 20px;
 }
 
-.is-drawer-mode .welcome-heading {
-  font-size: 22px;
-}
-
-.is-drawer-mode .suggestion-pills-wrap {
-  flex-direction: column;
-  width: 100%;
-  align-items: stretch;
-}
-
-.is-drawer-mode .suggestion-pill {
-  border-radius: var(--qaly-radius-lg);
-  text-align: left;
-  padding: 8px 12px;
-  font-size: 12px;
+.is-drawer-mode .chat-thread {
+  padding: 18px 12px;
 }
 
 .is-drawer-mode .erumi-metrics-grid {
   grid-template-columns: 1fr;
 }
 
-.is-drawer-mode .erumi-chart-card {
-  padding: 10px;
-}
-
 .is-drawer-mode .erumi-chart-canvas {
   height: 180px;
 }
 
-.is-drawer-mode .chat-thread-width {
-  gap: 16px;
-}
-
-.is-drawer-mode .msg-bubble-row {
-  gap: 8px;
-}
-
-.is-drawer-mode .msg-avatar-col {
-  width: 34px;
-  height: 34px;
-  border-radius: var(--qaly-radius-lg);
-}
-
-.is-drawer-mode .msg-avatar-col :deep(.chatbot-avatar) {
-  width: 32px !important;
-  height: 32px !important;
-  border-radius: var(--qaly-radius-lg);
-}
-
-.is-drawer-mode .msg-assistant .msg-bubble-content {
+.is-drawer-mode .msg-assistant .msg-content {
   max-width: calc(100% - 42px);
 }
 
-.is-drawer-mode .assistant-response-header {
-  align-items: flex-start;
-  padding: 10px 12px;
+/* Dark-mode metric tone tweaks */
+:global(:root[data-theme='dark']) .erumi-metric.tone-good,
+:global(:root[data-theme='dark']) .analytics-drawer-metric.tone-good {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.4);
+  color: #86efac;
 }
 
-.is-drawer-mode .assistant-identity {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0;
+:global(:root[data-theme='dark']) .erumi-metric.tone-warning,
+:global(:root[data-theme='dark']) .analytics-drawer-metric.tone-warning {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fcd34d;
 }
 
-.is-drawer-mode .assistant-response-card > .markdown-body {
-  padding: 14px;
+:global(:root[data-theme='dark']) .erumi-metric.tone-danger,
+:global(:root[data-theme='dark']) .analytics-drawer-metric.tone-danger {
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.4);
+  color: #fca5a5;
 }
 
-.is-drawer-mode .assistant-response-card > .erumi-metrics-grid,
-.is-drawer-mode .assistant-response-card > .erumi-table-stack,
-.is-drawer-mode .assistant-response-card > .erumi-chart-grid,
-.is-drawer-mode .assistant-response-card > .erumi-action-list,
-.is-drawer-mode .assistant-response-card > .erumi-file-list {
-  margin: 0 14px 14px;
+/* Keyboard-only navigation should never be revealed only on hover */
+@media (hover: none) {
+  .assistant-actions {
+    opacity: 1;
+  }
 }
 
-.is-drawer-mode .assistant-response-footer {
-  align-items: flex-start;
-  flex-direction: column;
-  padding: 9px 12px;
-}
+@media (prefers-reduced-motion: reduce) {
+  .composer-surface,
+  .send-btn,
+  .erumi-action-button,
+  .slash-item,
+  .file-remove,
+  .ctx-chip,
+  .assistant-actions {
+    transition: none;
+  }
 
-.is-drawer-mode .bubble-actions-toolbar {
-  width: 100%;
-  margin-left: 0;
-  justify-content: flex-start;
-}
+  .typing-loader span {
+    animation: none;
+  }
 
-.is-drawer-mode .erumi-input-shell {
-  min-height: 52px;
-  padding: 6px 10px;
-}
-
-.is-drawer-mode .erumi-message-input {
-  font-size: 15px;
-  height: 36px;
-}
-
-.is-drawer-mode .erumi-attach-btn,
-.is-drawer-mode .erumi-send-btn {
-  width: 36px;
-  height: 36px;
-}
-
-.is-drawer-mode .erumi-project-name {
-  max-width: 180px;
-  font-size: 14px;
-}
-
-.markdown-body :deep(h1), 
-.markdown-body :deep(h2), 
-.markdown-body :deep(h3) {
-  font-size: 16px;
-  font-weight: 800;
-  margin: 16px 0 7px;
-  color: #0f172a;
-  letter-spacing: -0.01em;
-}
-
-.markdown-body :deep(p) {
-  margin: 0 0 10px;
-  color: #46546a;
-}
-
-.markdown-body :deep(ul), 
-.markdown-body :deep(ol) {
-  margin: 8px 0 10px;
-  padding-left: 22px;
-}
-
-.markdown-body :deep(li) {
-  margin-bottom: 5px;
-  font-size: 14px;
-  color: #46546a;
-}
-
-.markdown-body :deep(p:last-child),
-.markdown-body :deep(ul:last-child),
-.markdown-body :deep(ol:last-child) {
-  margin-bottom: 0;
-}
-
-.markdown-body :deep(a) {
-  color: #1268e8;
-  font-weight: 700;
-  text-decoration: none;
-}
-
-.markdown-body :deep(a:hover) {
-  text-decoration: underline;
-}
-
-.markdown-body :deep(code) {
-  border-radius: 6px;
-  background: #eef3fb;
-  color: #244b83;
-  padding: 2px 5px;
-  font-size: 0.9em;
-}
-
-:global(:root[data-theme='dark']) .assistant-response-header,
-:global(:root[data-theme='dark']) .assistant-response-footer {
-  border-color: var(--line);
-  background: var(--panel-soft);
-}
-
-:global(:root[data-theme='dark']) .assistant-identity strong,
-:global(:root[data-theme='dark']) .markdown-body :deep(h1),
-:global(:root[data-theme='dark']) .markdown-body :deep(h2),
-:global(:root[data-theme='dark']) .markdown-body :deep(h3) {
-  color: var(--text-strong);
-}
-
-:global(:root[data-theme='dark']) .assistant-identity > span,
-:global(:root[data-theme='dark']) .markdown-body :deep(p),
-:global(:root[data-theme='dark']) .markdown-body :deep(li),
-:global(:root[data-theme='dark']) .erumi-response-meta {
-  color: var(--muted);
-}
-
-:global(:root[data-theme='dark']) .msg-avatar-col {
-  border-color: var(--line);
-  background: var(--panel-soft);
-}
-
-:global(:root[data-theme='dark']) .analytics-drawer-metric,
-:global(:root[data-theme='dark']) .analytics-model-registry article,
-:global(:root[data-theme='dark']) .analytics-drawer-empty,
-:global(:root[data-theme='dark']) .analytics-drawer-table-note,
-:global(:root[data-theme='dark']) .analytics-action-draft {
-  border-color: var(--line) !important;
-  background: var(--panel-soft) !important;
-  color: var(--text) !important;
-}
-
-:global(:root[data-theme='dark']) .analytics-drawer-metric strong,
-:global(:root[data-theme='dark']) .analytics-drawer-empty strong,
-:global(:root[data-theme='dark']) .analytics-drawer-table-note strong,
-:global(:root[data-theme='dark']) .analytics-model-registry strong {
-  color: var(--text-strong) !important;
-}
-
-:global(:root[data-theme='dark']) .analytics-drawer-muted,
-:global(:root[data-theme='dark']) .analytics-drawer-metric span,
-:global(:root[data-theme='dark']) .analytics-drawer-metric small,
-:global(:root[data-theme='dark']) .analytics-drawer-empty span,
-:global(:root[data-theme='dark']) .analytics-drawer-table-note span,
-:global(:root[data-theme='dark']) .analytics-model-registry p,
-:global(:root[data-theme='dark']) .erumi-draft-note {
-  color: var(--muted) !important;
+  .chat-thread {
+    scroll-behavior: auto;
+  }
 }
 
 @media (max-width: 720px) {
-  .chat-empty-state {
-    max-width: 100%;
-    padding: 18px 12px 16px;
-    gap: 14px;
-  }
-
-  .welcome-heading {
-    font-size: 24px;
-  }
-
-  .suggestion-pills-wrap {
-    max-width: 100%;
-    align-self: stretch;
-    flex-wrap: nowrap;
-    justify-content: flex-start;
-    overflow-x: auto;
-    padding-bottom: 2px;
-    scrollbar-width: none;
-  }
-
-  .suggestion-pills-wrap::-webkit-scrollbar {
-    display: none;
-  }
-
-  .suggestion-pill {
-    flex: 0 0 auto;
-    padding: 9px 13px;
-  }
-
-  .erumi-project-row {
-    align-items: flex-start;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .erumi-context-controls {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-
-  .erumi-custom-dropdown {
-    flex: 1 1 190px;
-    max-width: 100%;
-  }
-
-  .erumi-project-trigger {
-    width: 100%;
-    padding: 8px 10px;
-  }
-
-  .erumi-project-name {
-    max-width: 100%;
-    font-size: 14px;
-  }
-
-  .erumi-last-updated {
-    max-width: 100%;
-    font-size: 12px;
-  }
-
-  .erumi-freshness-chip {
-    max-width: 100%;
-  }
-
-  .chat-thread-container {
-    padding: 20px 12px 220px;
-  }
-
-  .chat-thread-width {
+  .empty-inner {
+    padding: 20px 14px;
     gap: 16px;
   }
 
-  .msg-avatar-col {
-    width: 34px;
-    height: 34px;
-    border-radius: var(--qaly-radius-lg);
+  .empty-heading {
+    font-size: 22px;
   }
 
-  .msg-avatar-col :deep(.chatbot-avatar) {
-    width: 32px !important;
-    height: 32px !important;
+  .chat-header {
+    padding: 10px 14px;
   }
 
-  .msg-assistant .msg-bubble-content {
+  .chat-thread {
+    padding: 18px 12px;
+  }
+
+  .chat-composer-bar {
+    padding: 8px 12px 12px;
+  }
+
+  .msg-content {
+    max-width: 84%;
+  }
+
+  .msg-assistant .msg-content {
     max-width: calc(100% - 46px);
   }
 
-  .msg-user .msg-bubble-content {
-    max-width: 88%;
-  }
-
-  .assistant-response-header {
-    align-items: flex-start;
-    padding: 10px 12px;
-  }
-
-  .assistant-identity {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0;
-  }
-
-  .assistant-response-card > .markdown-body {
-    padding: 14px;
-  }
-
-  .assistant-response-card > .erumi-metrics-grid,
-  .assistant-response-card > .erumi-table-stack,
-  .assistant-response-card > .erumi-chart-grid,
-  .assistant-response-card > .erumi-action-list,
-  .assistant-response-card > .erumi-file-list {
-    margin: 0 14px 14px;
-  }
-
-  .assistant-response-footer {
-    align-items: flex-start;
-    flex-direction: column;
-    padding: 9px 12px;
-  }
-
-  .bubble-actions-toolbar {
-    width: 100%;
-    margin-left: 0;
-    justify-content: flex-start;
+  /* Always expose per-message actions on touch/mobile */
+  .assistant-actions {
+    opacity: 1;
   }
 }
 </style>
