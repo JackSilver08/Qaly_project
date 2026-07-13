@@ -67,7 +67,7 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
             LeaseExpiresAt = now.AddMinutes(-1)
         });
         _db.AiUsageLedger.AddRange(
-            Usage(running.Id, now.AddHours(-1), "success", 1.25m, cacheHit: true),
+            Usage(running.Id, now, "success", 1.25m, cacheHit: true),
             Usage(retrying.Id, now.AddDays(-2), "failed", 2.75m, cacheHit: false));
         _db.AiBudgetPolicies.Add(new AiBudgetPolicy
         {
