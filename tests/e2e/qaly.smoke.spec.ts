@@ -327,8 +327,8 @@ test("should open analytics page", async ({ page }) => {
 
     await page.locator('a[href="/analytics"]').click();
     await expect(page).toHaveURL(/\/analytics$/);
-    await expect(page.getByRole("heading", { name: /Hôm nay Erumi/i })).toBeVisible();
-    await expect(page.locator(".erumi-composer").first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Bạn muốn phân tích điều gì/i })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: /Erumi/i })).toBeVisible();
 });
 
 test("should render meeting page in two authenticated contexts", async ({

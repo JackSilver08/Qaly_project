@@ -402,7 +402,9 @@ public partial class GroupsService : IGroupsService
             .FirstOrDefaultAsync(member => member.WorkGroupId == groupId && member.UserId == currentUserId.Value, ct);
         if (membership == null)
         {
-            return Result.Forbidden<GroupDto>();
+            return IsSystemAdmin()
+                ? await GetByIdAsync(groupId, ct)
+                : Result.Forbidden<GroupDto>();
         }
 
         membership.LastReadAt = DateTimeOffset.UtcNow;

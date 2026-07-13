@@ -78,7 +78,7 @@ After integrating upstream Task Key and GitHub schema migrations, the isolated L
 | Gate | Command or evidence | Result |
 |---|---|---|
 | Backend build | `dotnet build Qaly_project.slnx -c Release --no-restore` | Passed; 0 warnings, 0 errors |
-| Unit regression and coverage | `dotnet test tests/Qaly.UnitTests/Qaly.UnitTests.csproj -c Release --no-build --collect:"XPlat Code Coverage" --settings coverlet.runsettings` | 268 passed, 0 failed; line coverage 43.51% (`9,784 / 22,485`), above the unchanged 43% gate |
+| Unit regression and coverage | `dotnet test tests/Qaly.UnitTests/Qaly.UnitTests.csproj -c Release --no-build --collect:"XPlat Code Coverage" --settings coverlet.runsettings` | 269 passed, 0 failed; line coverage 43.56% (`9,796 / 22,487`), above the unchanged 43% gate |
 | SQL/API integration | `dotnet test tests/Qaly.IntegrationTests/Qaly.IntegrationTests.csproj -c Release --no-build --no-restore` | 45 passed, 0 failed |
 | Web feature regression | `dotnet test tests/Qaly.WebFeatureTests/Qaly.WebFeatureTests.csproj -c Release --no-build --no-restore` | 9 passed, 0 failed |
 | Frontend typecheck | `npm.cmd run typecheck` | Passed |

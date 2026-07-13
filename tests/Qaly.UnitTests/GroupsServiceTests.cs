@@ -170,6 +170,26 @@ public class GroupsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task MarkReadAsync_WhenSystemAdminIsNotMember_ReturnsGroupWithoutCreatingMembership()
+    {
+        var ownerId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(adminId, "Admin", "admin@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Admin visible group");
+        _currentUser.SetupGet(user => user.UserId).Returns(adminId);
+        _currentUser.SetupGet(user => user.Role).Returns(ProjectRoleRules.SystemAdmin);
+
+        var result = await CreateService().MarkReadAsync(group.Id);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Id.Should().Be(group.Id);
+        result.Data.CurrentUserRole.Should().Be(ProjectRoleRules.SystemAdmin);
+        (await _context.WorkGroupMembers.AnyAsync(member =>
+            member.WorkGroupId == group.Id && member.UserId == adminId)).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task CreateInvitationAsync_WhenEmailHasNoAccount_ReturnsNotFound()
     {
         var ownerId = Guid.NewGuid();
