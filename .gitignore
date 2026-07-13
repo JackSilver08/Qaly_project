@@ -64,6 +64,8 @@ dotnet-sdk-*.zip
 
 ## Test results
 TestResults/
+.test-results/
+test-results/
 coverage/
 *.trx
 *.coveragexml

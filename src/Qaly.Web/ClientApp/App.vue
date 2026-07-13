@@ -488,11 +488,11 @@ watch(
 );
 
 watch(
-  () => [
-    route.name,
-    route.params.projectId,
-    selectedProject.value?.id,
-    projects.value.length,
+  [
+    () => route.name,
+    () => route.params.projectId,
+    () => selectedProject.value?.id,
+    () => projects.value.length,
   ],
   ([routeName, routeProjectId, selectedProjectId]) => {
     const isProjectRoute = ["project-detail", "project-task"].includes(
@@ -503,9 +503,19 @@ watch(
     if (projects.value.some((project) => project.id === routeProjectId)) return;
 
     activeProjectId.value = String(selectedProjectId);
+    const taskId = route.params.taskId;
+    if (routeName === "project-task" && typeof taskId === "string") {
+      void router.replace({
+        name: "project-task",
+        params: { projectId: selectedProjectId, taskId },
+        query: route.query,
+      });
+      return;
+    }
+
     void router.replace({
-      name: routeName as string,
-      params: { ...route.params, projectId: String(selectedProjectId) },
+      name: "project-detail",
+      params: { projectId: String(selectedProjectId) },
       query: route.query,
     });
   },
@@ -516,6 +526,7 @@ watch(
   (id) => {
     if (typeof id === "string") {
       selectedTaskId.value = id;
+      activeProjectTab.value = "tasks";
       return;
     }
 
@@ -529,7 +540,12 @@ watch(
 watch(
   selectedTask,
   (task) => {
-    selectedTaskId.value = task?.id ?? null;
+    if (task) {
+      selectedTaskId.value = task.id;
+    } else if (typeof route.params.taskId !== "string") {
+      selectedTaskId.value = null;
+    }
+
     if (task && !usingFallback.value) {
       if (selectedProject.value?.id)
         void markTaskViewed(selectedProject.value.id, task.id);

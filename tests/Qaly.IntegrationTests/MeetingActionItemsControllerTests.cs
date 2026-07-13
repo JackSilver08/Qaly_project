@@ -14,6 +14,7 @@ namespace Qaly.IntegrationTests;
 #pragma warning disable CA1707
 public class MeetingActionItemsControllerTests : IClassFixture<IntegrationTestFactory>
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly IntegrationTestFactory _factory;
     private readonly HttpClient _client;
 
@@ -62,7 +63,7 @@ public class MeetingActionItemsControllerTests : IClassFixture<IntegrationTestFa
         var seed = await SeedMeetingImportAsync();
         var taskId = await SeedTaskAsync(seed.ProjectId, "Manual existing task");
 
-        var response = await _client.PostAsJsonAsync(
+        var response = await PostWithCsrfAsync(
             $"/api/meetings/{seed.MeetingImportId}/action-items/0/link-task",
             new LinkMeetingActionItemTaskRequest(taskId));
 
@@ -90,7 +91,7 @@ public class MeetingActionItemsControllerTests : IClassFixture<IntegrationTestFa
 
         await SeedTaskAndMappingAsync(seed.ProjectId, seed.MeetingImportId, existingTaskId, itemIndex: 0);
 
-        var response = await _client.PostAsJsonAsync(
+        var response = await PostWithCsrfAsync(
             $"/api/meetings/{seed.MeetingImportId}/action-items/0/link-task",
             new LinkMeetingActionItemTaskRequest(newTaskId));
 
@@ -100,7 +101,7 @@ public class MeetingActionItemsControllerTests : IClassFixture<IntegrationTestFa
     [Fact]
     public async Task LinkTask_WhenMeetingImportNotFound_ReturnsNotFound()
     {
-        var response = await _client.PostAsJsonAsync(
+        var response = await PostWithCsrfAsync(
             $"/api/meetings/{Guid.NewGuid()}/action-items/0/link-task",
             new LinkMeetingActionItemTaskRequest(Guid.NewGuid()));
 
@@ -113,7 +114,7 @@ public class MeetingActionItemsControllerTests : IClassFixture<IntegrationTestFa
         var seed = await SeedMeetingImportAsync();
         var taskId = await SeedTaskAsync(seed.ProjectId, "Out of range task");
 
-        var response = await _client.PostAsJsonAsync(
+        var response = await PostWithCsrfAsync(
             $"/api/meetings/{seed.MeetingImportId}/action-items/99/link-task",
             new LinkMeetingActionItemTaskRequest(taskId));
 
@@ -174,7 +175,7 @@ public class MeetingActionItemsControllerTests : IClassFixture<IntegrationTestFa
     {
         var seed = await SeedMeetingImportAsync();
 
-        var response = await _client.PostAsJsonAsync(
+        var response = await PostWithCsrfAsync(
             $"/api/meetings/{seed.MeetingImportId}/action-items/0/create-task",
             new MeetingActionItemCreateRequest(null, null, null, null, null, null));
 
@@ -190,6 +191,33 @@ public class MeetingActionItemsControllerTests : IClassFixture<IntegrationTestFa
             item.ActionItemIndex == 0);
         mapping.TaskId.Should().Be(payload.Data!.Id);
         mapping.Status.Should().Be("Linked");
+    }
+
+    [Fact]
+    public async Task LinkTask_WithoutCsrfToken_ReturnsBadRequest()
+    {
+        var response = await _client.PostAsJsonAsync(
+            $"/api/meetings/{Guid.NewGuid()}/action-items/0/link-task",
+            new LinkMeetingActionItemTaskRequest(Guid.NewGuid()));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    private async Task<HttpResponseMessage> PostWithCsrfAsync<TRequest>(string requestUri, TRequest payload)
+    {
+        var csrf = await GetCsrfTokenAsync();
+        using var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
+        {
+            Content = JsonContent.Create(payload)
+        };
+        request.Headers.Add("X-CSRF-TOKEN", csrf);
+        return await _client.SendAsync(request);
+    }
+
+    private async Task<string> GetCsrfTokenAsync()
+    {
+        var payload = await _client.GetFromJsonAsync<CsrfResponse>("/api/security/csrf", JsonOptions);
+        return payload!.Token;
     }
 
     private async Task<(Guid ProjectId, Guid MeetingImportId)> SeedMeetingImportAsync()
@@ -352,6 +380,7 @@ public class MeetingActionItemsControllerTests : IClassFixture<IntegrationTestFa
         }
     }
 
+    private sealed record CsrfResponse(string Token);
     private sealed record ApiResult<T>(bool IsSuccess, T? Data, string? Error, int StatusCode);
 }
 #pragma warning restore CA1707

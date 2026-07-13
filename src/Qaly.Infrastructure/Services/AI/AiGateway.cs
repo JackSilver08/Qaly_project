@@ -94,24 +94,78 @@ public class AiGateway : IAiGateway
         var settings = new AiGatewaySettings();
         _configuration.GetSection(AiGatewaySettings.SectionName).Bind(settings);
 
-        // Offline / Demo Fallback Mode
-        if (settings.OfflineMode)
+        // 1. Compliance check. Sensitive v4 requests carry the exact consent and policy IDs.
+        PrivacyProcessingDecision? privacyDecision = null;
+        if (request.IsSensitive && request.RetentionPolicyId.HasValue)
         {
-            _logger.LogWarning("AI Gateway is in OfflineMode/DemoMode. Returning offline fallback mock.");
-            return CreateMockResponse(GetFallbackResponse(request.ExpectedSchemaId), "OfflineMock");
+            privacyDecision = await _complianceService.EvaluateProcessingAsync(new PrivacyProcessingRequest
+            {
+                TenantId = request.TenantId ?? Guid.Empty,
+                ProjectId = request.ProjectId ?? Guid.Empty,
+                UserId = request.UserId ?? Guid.Empty,
+                Purpose = string.IsNullOrWhiteSpace(request.Purpose)
+                    ? PrivacyPurposes.AiCloudProcessing
+                    : request.Purpose,
+                DataClassification = string.IsNullOrWhiteSpace(request.DataClassification)
+                    ? PrivacyDataClasses.SensitiveCollaboration
+                    : request.DataClassification,
+                ProviderClass = string.IsNullOrWhiteSpace(request.ProviderClass)
+                    ? PrivacyProviderClasses.Any
+                    : request.ProviderClass,
+                ConsentId = request.ConsentId,
+                RetentionPolicyId = request.RetentionPolicyId,
+                RetentionDays = request.RetentionDays,
+                SourceType = string.IsNullOrWhiteSpace(request.SourceType) ? "ai_job" : request.SourceType,
+                SourceEntityId = request.SourceEntityId
+            }, cancellationToken);
         }
-        
-        // 1. Compliance Check
-        bool canProcessInCloud = await _complianceService.CanProcessInCloudAsync(
-            request.TenantId ?? Guid.Empty, request.ProjectId ?? Guid.Empty, request.UserId ?? Guid.Empty, request.IsSensitive, cancellationToken);
 
-        if (!canProcessInCloud)
+        var canProcessInCloud = privacyDecision?.CloudEligible ?? await _complianceService.CanProcessInCloudAsync(
+            request.TenantId ?? Guid.Empty,
+            request.ProjectId ?? Guid.Empty,
+            request.UserId ?? Guid.Empty,
+            request.IsSensitive,
+            cancellationToken);
+        var localPolicyEligible = privacyDecision?.LocalEligible ?? true;
+        var canUseLocalSensitiveProvider = localPolicyEligible &&
+            (settings.OfflineMode || settings.AllowLocalSensitiveProcessing);
+        if (privacyDecision?.Allowed == false || (!canProcessInCloud && !canUseLocalSensitiveProvider))
         {
             _aiRequestBlockedComplianceLogger(_logger, null);
-            await _complianceService.LogAuditEventAsync(request.TenantId ?? Guid.Empty, request.ProjectId ?? Guid.Empty, request.UserId ?? Guid.Empty, 
-                "AI_BLOCKED", "AiRequest", null, null, "Blocked due to sensitive data", cancellationToken);
-            
-            return CreateMockResponse(GetFallbackResponse(request.ExpectedSchemaId), "ComplianceMock");
+            await _complianceService.LogPrivacyAuditEventAsync(new PrivacyAuditRecord
+            {
+                TenantId = request.TenantId,
+                ProjectId = request.ProjectId,
+                ActorUserId = request.UserId,
+                EventType = "AI_PROCESSING_BLOCKED",
+                EntityType = "AiRequest",
+                EntityId = request.SourceEntityId,
+                AiJobId = request.JobId,
+                ProviderAttemptId = request.ProviderAttemptId,
+                PrivacyConsentId = request.ConsentId,
+                RetentionPolicyId = request.RetentionPolicyId,
+                Purpose = request.Purpose,
+                PolicyVersion = privacyDecision?.PolicyVersion,
+                DataClassification = request.DataClassification,
+                ProviderClass = request.ProviderClass,
+                Outcome = "blocked",
+                FailureCode = privacyDecision?.ErrorCode ?? PrivacyErrorCodes.CloudBlocked,
+                Metadata = new Dictionary<string, string?>
+                {
+                    ["jobType"] = request.JobType,
+                    ["reason"] = privacyDecision?.Reason ?? "No eligible provider class"
+                }
+            }, cancellationToken);
+
+            return CreateFailureResponse(
+                privacyDecision?.ErrorCode is PrivacyErrorCodes.ConsentRequired or
+                    PrivacyErrorCodes.ConsentInvalid or
+                    PrivacyErrorCodes.ConsentRevoked or
+                    PrivacyErrorCodes.ConsentExpired
+                    ? AiErrorCodes.ConsentRequired
+                    : AiErrorCodes.SensitiveBlocked,
+                privacyDecision?.Reason ?? "Sensitive input has no eligible provider.",
+                retryable: false);
         }
 
         // 2. Budget Check
@@ -119,7 +173,17 @@ public class AiGateway : IAiGateway
         if (!hasBudget)
         {
             _aiRequestBlockedBudgetLogger(_logger, null);
-            return CreateMockResponse(GetFallbackResponse(request.ExpectedSchemaId), "BudgetMock");
+            return CreateFailureResponse(
+                AiErrorCodes.BudgetExceeded,
+                "The effective AI budget has been exceeded.",
+                retryable: false);
+        }
+
+        // Offline/demo output is still subject to compliance and budget policy.
+        if (settings.OfflineMode)
+        {
+            _logger.LogWarning("AI Gateway is in OfflineMode/DemoMode. Returning offline fallback mock.");
+            return CreateMockResponse(GetFallbackResponse(request.ExpectedSchemaId), "OfflineMock", "offline_mode");
         }
 
         // Proactive RAG (Context Retrieval)
@@ -178,10 +242,12 @@ public class AiGateway : IAiGateway
                 cachedPrompt.HitCount++;
                 await _context.SaveChangesAsync(cancellationToken);
 
-                await _costService.RecordUsageAsync(
+                await _costService.RecordJobUsageAsync(
                     request.TenantId ?? Guid.Empty, request.ProjectId ?? Guid.Empty, request.UserId ?? Guid.Empty, request.JobType,
                     cachedPrompt.ProviderName ?? "Cache", cachedPrompt.ModelName ?? "Cache",
-                    0, 0, 0m, (int)sw.ElapsedMilliseconds, "success", true, cancellationToken);
+                    0, 0, 0m, (int)sw.ElapsedMilliseconds, "success", true,
+                    request.JobId, request.ProviderAttemptId,
+                    cancellationToken: cancellationToken);
 
                 return new AiResponse
                 {
@@ -203,43 +269,69 @@ public class AiGateway : IAiGateway
         }
 
         // 4. Execute AI Request with Schema Validation & Retry & Tool Calling
-        string currentPrompt = request.Prompt;
-        int maxRetries = settings.MaxRetries > 0 ? settings.MaxRetries : 2;
-        int timeoutSeconds = settings.TimeoutSeconds > 0 ? settings.TimeoutSeconds : 30;
-        int attempt = 0;
+        string originalPrompt = request.Prompt;
+        int maxRetries = Math.Max(0, settings.SchemaRepairAttempts);
         AiResponse? finalResponse = null;
         string? validationError = null;
+        bool anyProviderResponse = false;
+        string lastProviderName = settings.Provider;
+        var providerOrder = ResolveProviderOrder(
+            settings,
+            request.ProviderHint,
+            canProcessInCloud || !request.IsSensitive,
+            canUseLocalSensitiveProvider || !request.IsSensitive);
 
-        while (attempt <= maxRetries)
+        if (providerOrder.Count == 0)
         {
-            if (attempt > 0 && finalResponse != null && validationError != null)
+            return CreateFailureResponse(
+                AiErrorCodes.SensitiveBlocked,
+                "Sensitive input has no eligible local provider.",
+                retryable: false);
+        }
+
+        var availableProviderOrder = providerOrder
+            .Where(providerName =>
+                _providerFactory.TryGetProvider(providerName, out var provider) && provider != null)
+            .ToList();
+
+        for (var providerIndex = 0; providerIndex < availableProviderOrder.Count; providerIndex++)
+        {
+            var providerName = availableProviderOrder[providerIndex];
+            if (!_providerFactory.TryGetProvider(providerName, out var provider) || provider == null)
             {
-                // Instruct provider to fix schema issues
-                request.Prompt = currentPrompt + $"\n\n[Warning]: Your previous response was invalid. It failed validation with error: '{validationError}'. Please return a valid JSON format complying with the expected schema: '{request.ExpectedSchemaId}'. Do not include markdown blocks or any conversational text around the JSON.";
+                continue;
             }
 
-            try
-            {
-                var provider = _providerFactory.GetProvider(settings.Provider);
-                AiProviderSetting providerConfig = settings.Provider.ToLowerInvariant() switch
-                {
-                    "openai" => settings.OpenAI,
-                    "gemini" => settings.Gemini,
-                    _ => settings.Ollama
-                };
+            var hasFallbackProvider = providerIndex < availableProviderOrder.Count - 1;
+            lastProviderName = providerName;
+            request.Prompt = originalPrompt;
+            finalResponse = null;
+            validationError = null;
+            int attempt = 0;
 
-                // Apply timeout to the provider call
-                using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+            while (attempt <= maxRetries)
+            {
+                if (attempt > 0 && finalResponse != null && validationError != null)
+                {
+                    request.Prompt = originalPrompt + $"\n\n[Warning]: Your previous response was invalid. It failed validation with error: '{validationError}'. Please return a valid JSON format complying with the expected schema: '{request.ExpectedSchemaId}'. Do not include markdown blocks or any conversational text around the JSON.";
+                }
 
                 try
                 {
-                    finalResponse = await provider.CompleteAsync(request, providerConfig, cts.Token);
-                }
-                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-                {
-                    throw new TimeoutException($"AI provider '{settings.Provider}' call timed out after {timeoutSeconds} seconds.");
-                }
+                    var providerConfig = GetProviderSetting(settings, providerName);
+                    var timeoutSeconds = Math.Max(1, settings.ProviderTimeoutSeconds);
+                    using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+
+                    try
+                    {
+                        finalResponse = await provider.CompleteAsync(request, providerConfig, cts.Token);
+                        anyProviderResponse = true;
+                    }
+                    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                    {
+                        throw new TimeoutException($"AI provider '{providerName}' call timed out after {timeoutSeconds} seconds.");
+                    }
 
                 if (_logger.IsEnabled(LogLevel.Information))
                 {
@@ -273,47 +365,75 @@ public class AiGateway : IAiGateway
                     if (IsWriteAction(toolName))
                     {
                         // Create draft in database instead of direct execution!
-                        if (_aiJobRepo != null && _aiDraftRepo != null && _unitOfWork != null)
+                        if (_aiJobRepo != null && _aiDraftRepo != null && _unitOfWork != null &&
+                            request.ProjectId.HasValue && request.UserId.HasValue)
                         {
-                            var job = new AiJob
+                            var job = request.JobId.HasValue
+                                ? await _aiJobRepo.GetByIdAsync(request.JobId.Value, cancellationToken)
+                                : null;
+                            if (job == null)
                             {
-                                JobType = "DraftChange",
-                                ProjectId = request.ProjectId ?? Guid.Empty,
-                                SourceType = "Chat",
-                                Status = "DraftReady",
-                                RequestedById = request.UserId ?? Guid.Empty
-                            };
-                            await _aiJobRepo.AddAsync(job, cancellationToken);
-                            await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-                            var draft = new AiGeneratedDraft
-                            {
-                                AiJobId = job.Id,
-                                ProjectId = request.ProjectId ?? Guid.Empty,
-                                DraftType = toolName,
-                                PayloadJson = System.Text.Json.JsonSerializer.Serialize(rawParams),
-                                Status = "Pending"
-                            };
-                            await _aiDraftRepo.AddAsync(draft, cancellationToken);
-                            await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-                            await _complianceService.LogAuditEventAsync(
-                                request.TenantId ?? Guid.Empty,
-                                request.ProjectId ?? Guid.Empty,
-                                request.UserId ?? Guid.Empty,
-                                "AI_DRAFT_CREATED",
-                                "AiGeneratedDraft",
-                                null,
-                                null,
-                                System.Text.Json.JsonSerializer.Serialize(new
+                                var legacyKey = $"legacy-gateway:{Guid.NewGuid():N}";
+                                job = new AiJob
                                 {
-                                    draft.Id,
-                                    draft.DraftType,
-                                    draft.PayloadJson,
-                                    draft.Status
-                                }),
-                                cancellationToken
-                            );
+                                    TenantId = request.TenantId,
+                                    JobType = "DraftChange",
+                                    ProjectId = request.ProjectId.Value,
+                                    SourceType = "Chat",
+                                    SchemaId = string.IsNullOrWhiteSpace(request.ExpectedSchemaId) ? "draft_change.v4" : request.ExpectedSchemaId,
+                                    SchemaVersion = "4.0",
+                                    RequestJson = "{}",
+                                    RequestHash = ComputeSha256Hash(request.SystemPrompt + "|" + request.Prompt),
+                                    IdempotencyKey = legacyKey,
+                                    Status = AiJobStatuses.Succeeded,
+                                    ProgressPercent = 100,
+                                    AvailableAt = DateTimeOffset.UtcNow,
+                                    FinishedAt = DateTimeOffset.UtcNow,
+                                    ResultJson = finalResponse.Content,
+                                    ResultHash = ComputeSha256Hash(finalResponse.Content),
+                                    CacheKey = legacyKey,
+                                    RequestedById = request.UserId.Value
+                                };
+                                await _aiJobRepo.AddAsync(job, cancellationToken);
+                                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                            }
+
+                            var draft = await _aiDraftRepo.GetQueryable()
+                                .FirstOrDefaultAsync(item => item.AiJobId == job.Id, cancellationToken);
+                            if (draft == null)
+                            {
+                                var payloadJson = System.Text.Json.JsonSerializer.Serialize(rawParams);
+                                draft = new AiGeneratedDraft
+                                {
+                                    AiJobId = job.Id,
+                                    ProjectId = request.ProjectId.Value,
+                                    DraftType = toolName,
+                                    PayloadJson = payloadJson,
+                                    OriginalPayloadJson = payloadJson,
+                                    WorkingPayloadJson = payloadJson,
+                                    Status = AiDraftStatuses.PendingReview,
+                                    SchemaId = job.SchemaId
+                                };
+                                await _aiDraftRepo.AddAsync(draft, cancellationToken);
+                                await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                                await _complianceService.LogAuditEventAsync(
+                                    request.TenantId ?? Guid.Empty,
+                                    request.ProjectId ?? Guid.Empty,
+                                    request.UserId ?? Guid.Empty,
+                                    "AI_DRAFT_CREATED",
+                                    "AiGeneratedDraft",
+                                    null,
+                                    null,
+                                    System.Text.Json.JsonSerializer.Serialize(new
+                                    {
+                                        draft.Id,
+                                        draft.DraftType,
+                                        draft.Status
+                                    }),
+                                    cancellationToken
+                                );
+                            }
 
                             // Return the draft_change action response immediately!
                             var draftResponseContent = $$"""
@@ -422,14 +542,37 @@ public class AiGateway : IAiGateway
 
                 _logger.LogWarning("AI output validation failed for schema {SchemaId} on attempt {Attempt}. Error: {ValidationError}", 
                     request.ExpectedSchemaId, attempt + 1, validationError);
-            }
-            catch (Exception ex)
-            {
-                _errorCallingAiProviderLogger(_logger, ex);
-                validationError = ex.Message;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _errorCallingAiProviderLogger(_logger, ex);
+                    validationError = ex.Message;
+                    await LogProviderRouteEventAsync(request, providerName, "AI_PROVIDER_FAILED", ex.Message, cancellationToken);
+                    if (hasFallbackProvider)
+                    {
+                        break;
+                    }
+                }
+
+                attempt++;
             }
 
-            attempt++;
+            if (finalResponse != null &&
+                (string.IsNullOrWhiteSpace(request.ExpectedSchemaId) || validationError == null))
+            {
+                break;
+            }
+
+            await LogProviderRouteEventAsync(
+                request,
+                providerName,
+                "AI_PROVIDER_FALLBACK",
+                validationError ?? "Provider did not produce a usable response.",
+                cancellationToken);
         }
 
         if (finalResponse != null && (string.IsNullOrWhiteSpace(request.ExpectedSchemaId) || validationError == null))
@@ -454,27 +597,107 @@ public class AiGateway : IAiGateway
             }
 
             // Log Usage
-            await _costService.RecordUsageAsync(
+            await _costService.RecordJobUsageAsync(
                 request.TenantId ?? Guid.Empty, request.ProjectId ?? Guid.Empty, request.UserId ?? Guid.Empty, request.JobType,
                 finalResponse.ProviderName, finalResponse.ModelName, finalResponse.InputTokens, finalResponse.OutputTokens, finalResponse.EstimatedCostUsd, 
-                (int)sw.ElapsedMilliseconds, "success", false, cancellationToken);
+                (int)sw.ElapsedMilliseconds, "success", false,
+                request.JobId, request.ProviderAttemptId,
+                cancellationToken: cancellationToken);
 
             return finalResponse;
         }
 
         // Log failed usage
-        await _costService.RecordUsageAsync(
+        await _costService.RecordJobUsageAsync(
             request.TenantId ?? Guid.Empty, request.ProjectId ?? Guid.Empty, request.UserId ?? Guid.Empty, request.JobType,
-            settings.Provider, "Unknown", 0, 0, 0m, (int)sw.ElapsedMilliseconds, "failed", false, cancellationToken);
+            lastProviderName, "Unknown", 0, 0, 0m, (int)sw.ElapsedMilliseconds, "failed", false,
+            request.JobId, request.ProviderAttemptId,
+            anyProviderResponse ? AiErrorCodes.SchemaInvalid : AiErrorCodes.ProviderUnavailable,
+            cancellationToken);
 
-        // Fallback Mock for Demo Reliability
-        return CreateMockResponse(GetFallbackResponse(request.ExpectedSchemaId), "FallbackMock");
+        if (request.AllowMockFallback && settings.AllowProviderDegradedMock)
+        {
+            return CreateMockResponse(GetFallbackResponse(request.ExpectedSchemaId), "ProviderDegradedMock", "provider_degraded");
+        }
+
+        return CreateFailureResponse(
+            anyProviderResponse ? AiErrorCodes.SchemaInvalid : AiErrorCodes.ProviderUnavailable,
+            anyProviderResponse
+                ? "AI output failed schema validation after the permitted repair attempts."
+                : "No eligible AI provider completed the request.",
+            retryable: !anyProviderResponse);
     }
 
-    private static AiResponse CreateMockResponse(string content, string provider)
+    private async Task LogProviderRouteEventAsync(
+        AiRequest request,
+        string providerName,
+        string eventType,
+        string detail,
+        CancellationToken cancellationToken)
+    {
+        await _complianceService.LogJobAuditEventAsync(
+            request.TenantId,
+            request.ProjectId,
+            request.UserId,
+            eventType,
+            nameof(AiRequest),
+            null,
+            null,
+            System.Text.Json.JsonSerializer.Serialize(new
+            {
+                provider = providerName,
+                detail = detail.Length <= 500 ? detail : detail[..500]
+            }),
+            aiJobId: request.JobId,
+            providerAttemptId: request.ProviderAttemptId,
+            cancellationToken: cancellationToken);
+    }
+
+    private static List<string> ResolveProviderOrder(
+        AiGatewaySettings settings,
+        string? providerHint,
+        bool canProcessInCloud,
+        bool canProcessLocally)
+    {
+        var requestedProvider = NormalizeProviderName(providerHint);
+        var candidates = new[] { requestedProvider, settings.Provider }
+            .Concat(settings.FallbackProviders ?? [])
+            .Where(provider => !string.IsNullOrWhiteSpace(provider))
+            .Select(provider => provider!.Trim())
+            .Where(provider => IsLocalProvider(provider) ? canProcessLocally : canProcessInCloud)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return candidates;
+    }
+
+    private static string? NormalizeProviderName(string? providerHint)
+        => providerHint?.Trim().ToLowerInvariant() switch
+        {
+            null or "" or "auto" => null,
+            "local" => "Ollama",
+            "openai" => "OpenAI",
+            "gemini" => "Gemini",
+            "ollama" => "Ollama",
+            _ => providerHint.Trim()
+        };
+
+    private static bool IsLocalProvider(string providerName)
+        => string.Equals(providerName, "Ollama", StringComparison.OrdinalIgnoreCase);
+
+    private static AiProviderSetting GetProviderSetting(AiGatewaySettings settings, string providerName)
+        => providerName.Trim().ToLowerInvariant() switch
+        {
+            "openai" => settings.OpenAI,
+            "gemini" => settings.Gemini,
+            _ => settings.Ollama
+        };
+
+    private static AiResponse CreateMockResponse(string content, string provider, string reason)
     {
         return new AiResponse
         {
+            IsSuccess = true,
             Content = content,
             ProviderName = provider,
             ModelName = "Mock-1.0",
@@ -482,9 +705,19 @@ public class AiGateway : IAiGateway
             OutputTokens = 0,
             EstimatedCostUsd = 0m,
             IsMock = true,
-            CacheHit = false
+            CacheHit = false,
+            MockReason = reason
         };
     }
+
+    private static AiResponse CreateFailureResponse(string errorCode, string message, bool retryable)
+        => new()
+        {
+            IsSuccess = false,
+            ErrorCode = errorCode,
+            ErrorMessage = message,
+            Retryable = retryable
+        };
 
     private static string GetFallbackResponse(string schemaId)
     {

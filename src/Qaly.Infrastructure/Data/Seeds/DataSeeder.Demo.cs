@@ -72,10 +72,10 @@ public partial class DataSeeder
         await RemoveEntitiesAsync(_context.MeetingActionItemMappings);
         await RemoveEntitiesAsync(_context.MeetingImports);
         await RemoveEntitiesAsync(_context.AiGeneratedDrafts);
-        await RemoveEntitiesAsync(_context.AiJobs);
-        await RemoveEntitiesAsync(_context.AiJobQueue);
-        await RemoveEntitiesAsync(_context.AiPromptCache);
         await RemoveEntitiesAsync(_context.AiUsageLedger);
+        await RemoveEntitiesAsync(_context.AiPromptCache);
+        await RemoveEntitiesAsync(_context.AiJobQueue);
+        await RemoveEntitiesAsync(_context.AiJobs);
         await RemoveEntitiesAsync(_context.AiAuditEvents);
         await RemoveEntitiesAsync(_context.AiBudgetPolicies);
         await RemoveEntitiesAsync(_context.AiProviderConfigs);
@@ -1051,21 +1051,68 @@ public partial class DataSeeder
         tasks["nova-customer-signoff"].ImportSessionId = importSession.Id;
         await _context.SaveChangesAsync();
 
+        var completedJobCreatedAt = now.AddDays(-1).AddHours(-2);
+        const string completedJobRequest = """{"meeting_id":"nova-pilot-weekly-202606","purpose":"meeting_action_extraction"}""";
+        const string completedJobResult = """{"schema_id":"qaly.task_draft.v1","confidence":0.91,"items":[{"title":"Resolve remaining SKU mappings","priority":"Critical"},{"title":"Prepare Wave 2 acceptance record","priority":"Medium"}]}""";
         var aiJob = new AiJob
         {
-            ProjectId = projects["erumi-local-analytics"].Id,
-            RequestedById = U("linh.chi@qaly.dev").Id,
-            JobType = "MeetingActionExtraction",
-            SourceType = "MeetingImport",
+            TenantId = organization.Id,
+            ProjectId = projects["nova-retail-pilot"].Id,
+            RequestedById = U("minh.anh@qaly.dev").Id,
+            JobType = "meeting_action_extract",
+            SourceType = "meeting",
             SourceId = "meetily:nova-pilot-weekly-202606",
+            SchemaId = "meeting_action_extract.v4",
+            SchemaVersion = "4.0",
+            RequestJson = completedJobRequest,
+            RequestHash = ComputeDemoHash(completedJobRequest),
+            IdempotencyKey = "demo:meeting-action-extract:nova-pilot-weekly-202606",
             ProviderHint = "local",
             Sensitive = true,
-            Status = "Succeeded",
+            CloudEligible = false,
+            PolicyDecisionJson = """{"allowed":true,"provider_class":"local","reason":"demo_policy"}""",
+            PolicyCheckedAt = completedJobCreatedAt,
+            Status = AiJobStatuses.Succeeded,
+            ProgressPercent = 100,
+            AvailableAt = completedJobCreatedAt,
+            StartedAt = completedJobCreatedAt.AddSeconds(2),
+            FinishedAt = completedJobCreatedAt.AddSeconds(6),
+            AttemptCount = 1,
+            MaxAttempts = 3,
+            ResultJson = completedJobResult,
+            ResultHash = ComputeDemoHash(completedJobResult),
+            SelectedProvider = "LocalRules",
+            SelectedModel = "erumi-local-intent-v1",
             EstimatedCostUsd = 0.000000m,
+            ActualCostUsd = 0.000000m,
+            PricingVersion = "demo-local-v1",
             CacheKey = "demo:meeting:nova-pilot-weekly-202606",
-            CreatedAt = now.AddDays(-1).AddHours(-2)
+            CreatedAt = completedJobCreatedAt,
+            UpdatedAt = completedJobCreatedAt.AddSeconds(6)
         };
         await _context.AiJobs.AddAsync(aiJob);
+        await _context.SaveChangesAsync();
+
+        await _context.AiJobDispatches.AddAsync(new AiJobDispatch
+        {
+            AiJobId = aiJob.Id,
+            Priority = 50,
+            AvailableAt = completedJobCreatedAt,
+            DeliveryCount = 1,
+            CompletedAt = aiJob.FinishedAt,
+            CreatedAt = completedJobCreatedAt
+        });
+        await _context.AiJobSources.AddAsync(new AiJobSource
+        {
+            AiJobId = aiJob.Id,
+            SourceType = "meeting",
+            LegacySourceKey = aiJob.SourceId,
+            SourceVersion = "demo-v1",
+            SourceHash = "8f14e45fceea167a5a36dedd4bea2543",
+            SourceTimestamp = completedJobCreatedAt,
+            SortOrder = 0,
+            CreatedAt = completedJobCreatedAt
+        });
         await _context.SaveChangesAsync();
 
         var draft = new AiGeneratedDraft
@@ -1074,7 +1121,7 @@ public partial class DataSeeder
             ProjectId = projects["nova-retail-pilot"].Id,
             DraftType = "TaskDraft",
             PayloadJson = """{"schema_id":"qaly.task_draft.v1","confidence":0.91,"items":[{"title":"Chốt mapping SKU cho 2 cửa hàng còn lại","priority":"Critical"},{"title":"Chuẩn bị biên bản nghiệm thu Wave 2","priority":"Medium"}]}""",
-            Status = "Confirmed",
+            Status = AiDraftStatuses.Confirmed,
             ConfirmedById = U("minh.anh@qaly.dev").Id,
             ConfirmedAt = now.AddDays(-1).AddHours(-1),
             ConfirmAction = "CreateTasks",
@@ -1083,6 +1130,9 @@ public partial class DataSeeder
             Confidence = 0.91m,
             CreatedAt = now.AddDays(-1).AddHours(-2)
         };
+        draft.PayloadJson = completedJobResult;
+        draft.OriginalPayloadJson = completedJobResult;
+        draft.WorkingPayloadJson = completedJobResult;
         await _context.AiGeneratedDrafts.AddAsync(draft);
         await _context.SaveChangesAsync();
 
@@ -1158,7 +1208,7 @@ public partial class DataSeeder
 
         await _context.AiUsageLedger.AddRangeAsync(
             new AiUsageLedger { TenantId = organization.Id, ProjectId = projects["erumi-local-analytics"].Id, UserId = U("linh.chi@qaly.dev").Id, JobType = "analytics_chat", ProviderName = "LocalRules", ModelName = "erumi-local-intent-v1", InputTokens = 0, OutputTokens = 0, EstimatedCostUsd = 0m, LatencyMs = 46, Status = "succeeded", CacheHit = false, PromptHash = "demo-local-question-1", ResponseHash = "demo-local-answer-1", CreatedAt = now.AddHours(-3) },
-            new AiUsageLedger { TenantId = organization.Id, ProjectId = projects["nova-retail-pilot"].Id, UserId = U("minh.anh@qaly.dev").Id, JobType = "meeting_extract", ProviderName = "LocalRules", ModelName = "erumi-local-intent-v1", InputTokens = 0, OutputTokens = 0, EstimatedCostUsd = 0m, LatencyMs = 88, Status = "succeeded", CacheHit = true, PromptHash = "demo-meeting-1", ResponseHash = "demo-draft-1", CreatedAt = now.AddDays(-1) });
+            new AiUsageLedger { TenantId = organization.Id, ProjectId = projects["nova-retail-pilot"].Id, UserId = U("minh.anh@qaly.dev").Id, AiJobId = aiJob.Id, JobType = "meeting_action_extract", ProviderName = "LocalRules", ModelName = "erumi-local-intent-v1", InputTokens = 0, OutputTokens = 0, EstimatedCostUsd = 0m, ActualCostUsd = 0m, PricingVersion = "demo-local-v1", LatencyMs = 88, Status = "succeeded", CacheHit = true, PromptHash = aiJob.RequestHash, ResponseHash = aiJob.ResultHash!, CreatedAt = now.AddDays(-1) });
 
         await _context.AiPromptCache.AddAsync(new AiPromptCache
         {
@@ -1176,20 +1226,52 @@ public partial class DataSeeder
             CreatedAt = now.AddHours(-8)
         });
 
-        await _context.AiJobQueue.AddAsync(new AiJobItem
+        const string queuedJobRequest = """{"scope":"demo","project":"ops-compliance-readiness"}""";
+        var queuedJob = new AiJob
         {
             TenantId = organization.Id,
             ProjectId = projects["ops-compliance-readiness"].Id,
-            RequestedBy = U("thanh.tam@qaly.dev").Id,
-            JobType = "compliance_summary",
-            SchemaId = "qaly.compliance.summary.v1",
-            Status = "queued",
-            Priority = 50,
+            RequestedById = U("thanh.tam@qaly.dev").Id,
+            JobType = "progress_summary",
+            SourceType = "project",
+            SourceId = projects["ops-compliance-readiness"].Id.ToString(),
+            SchemaId = "progress_summary.v4",
+            SchemaVersion = "4.0",
+            RequestJson = queuedJobRequest,
+            RequestHash = ComputeDemoHash(queuedJobRequest),
+            IdempotencyKey = "demo:progress-summary:ops-compliance-readiness",
             Sensitive = false,
             ProviderHint = "local",
-            PayloadJson = """{"scope":"demo","project":"ops-compliance-readiness"}""",
+            CloudEligible = false,
+            PolicyDecisionJson = """{"allowed":true,"provider_class":"local","reason":"demo_policy"}""",
+            PolicyCheckedAt = now.AddMinutes(-20),
+            Status = AiJobStatuses.Queued,
+            AvailableAt = now.AddMinutes(-20),
+            MaxAttempts = 3,
             EstimatedCostUsd = 0m,
+            MaximumCostUsd = 0m,
+            CacheKey = "demo:progress-summary:ops-compliance-readiness",
             CreatedAt = now.AddMinutes(-20)
+        };
+        await _context.AiJobs.AddAsync(queuedJob);
+        await _context.SaveChangesAsync();
+        await _context.AiJobDispatches.AddAsync(new AiJobDispatch
+        {
+            AiJobId = queuedJob.Id,
+            Priority = 50,
+            AvailableAt = queuedJob.AvailableAt,
+            CreatedAt = queuedJob.CreatedAt
+        });
+        await _context.AiJobSources.AddAsync(new AiJobSource
+        {
+            AiJobId = queuedJob.Id,
+            SourceType = "project",
+            SourceEntityId = projects["ops-compliance-readiness"].Id,
+            SourceVersion = "demo-v1",
+            SourceHash = ComputeDemoHash(queuedJobRequest),
+            SourceTimestamp = queuedJob.CreatedAt,
+            SortOrder = 0,
+            CreatedAt = queuedJob.CreatedAt
         });
 
         await _context.AiAuditEvents.AddRangeAsync(
@@ -1267,4 +1349,8 @@ public partial class DataSeeder
 
         await _context.SaveChangesAsync();
     }
+
+    private static string ComputeDemoHash(string value)
+        => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value)))
+            .ToLowerInvariant();
 }

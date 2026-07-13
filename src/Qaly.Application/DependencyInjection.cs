@@ -40,6 +40,7 @@ public static class DependencyInjection
         services.AddScoped<IAiService, AiService>();
         services.AddScoped<IErumiChatService, ErumiChatService>();
         services.AddScoped<IAiWorkflowService, AiWorkflowService>();
+        services.AddScoped<IAiPlatformQueryService, AiPlatformQueryService>();
         services.AddScoped<IGroupAiService, GroupAiService>();
         services.AddScoped<IWebhookService, WebhookService>();
         services.AddScoped<IAnalyticsService, AnalyticsService>();

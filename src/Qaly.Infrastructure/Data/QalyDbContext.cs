@@ -8,6 +8,8 @@ namespace Qaly.Infrastructure.Data;
 
 public class QalyDbContext : DbContext
 {
+    private static readonly string[] LowConfidenceDraftWarnings = ["low_confidence"];
+
     public QalyDbContext(DbContextOptions<QalyDbContext> options) : base(options)
     {
     }
@@ -41,6 +43,10 @@ public class QalyDbContext : DbContext
     public DbSet<WikiPage> WikiPages => Set<WikiPage>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<AiJob> AiJobs => Set<AiJob>();
+    public DbSet<AiJobSource> AiJobSources => Set<AiJobSource>();
+    public DbSet<AiJobDispatch> AiJobDispatches => Set<AiJobDispatch>();
+    public DbSet<AiProviderAttempt> AiProviderAttempts => Set<AiProviderAttempt>();
+    public DbSet<AiJobMigrationRecord> AiJobMigrationRecords => Set<AiJobMigrationRecord>();
     public DbSet<AiGeneratedDraft> AiGeneratedDrafts => Set<AiGeneratedDraft>();
     public DbSet<MeetingImport> MeetingImports => Set<MeetingImport>();
     public DbSet<MeetingActionItemMapping> MeetingActionItemMappings => Set<MeetingActionItemMapping>();
@@ -60,6 +66,9 @@ public class QalyDbContext : DbContext
     public DbSet<AiAuditEvent> AiAuditEvents => Set<AiAuditEvent>();
     public DbSet<PrivacyConsent> PrivacyConsents => Set<PrivacyConsent>();
     public DbSet<DataSubjectRequest> DataSubjectRequests => Set<DataSubjectRequest>();
+    public DbSet<RetentionPolicy> RetentionPolicies => Set<RetentionPolicy>();
+    public DbSet<PrivacyRetentionAction> PrivacyRetentionActions => Set<PrivacyRetentionAction>();
+    public DbSet<PrivacyLegalHold> PrivacyLegalHolds => Set<PrivacyLegalHold>();
 
     // GitHub integration (read-only metadata)
     public DbSet<GitHubInstallation> GitHubInstallations => Set<GitHubInstallation>();
@@ -109,6 +118,14 @@ public class QalyDbContext : DbContext
             if (entry.State == EntityState.Added || entry.State == EntityState.Modified)
             {
                 PopulateDraftMetadata(entry.Entity);
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<AiJob>())
+        {
+            if (entry.State == EntityState.Added || entry.State == EntityState.Modified)
+            {
+                entry.Entity.Status = NormalizeJobStatus(entry.Entity.Status);
             }
         }
     }
@@ -227,10 +244,24 @@ public class QalyDbContext : DbContext
 
     private static void PopulateDraftMetadata(AiGeneratedDraft draft)
     {
-        if (string.IsNullOrWhiteSpace(draft.PayloadJson)) return;
+        draft.Status = NormalizeDraftStatus(draft.Status);
+        if (string.IsNullOrWhiteSpace(draft.OriginalPayloadJson) ||
+            string.Equals(draft.OriginalPayloadJson, "{}", StringComparison.Ordinal))
+        {
+            draft.OriginalPayloadJson = draft.PayloadJson;
+        }
+
+        if (string.IsNullOrWhiteSpace(draft.WorkingPayloadJson) ||
+            string.Equals(draft.WorkingPayloadJson, "{}", StringComparison.Ordinal))
+        {
+            draft.WorkingPayloadJson = draft.PayloadJson;
+        }
+
+        draft.PayloadJson = draft.WorkingPayloadJson;
+        if (string.IsNullOrWhiteSpace(draft.WorkingPayloadJson)) return;
         try
         {
-            using var doc = JsonDocument.Parse(draft.PayloadJson);
+            using var doc = JsonDocument.Parse(draft.WorkingPayloadJson);
             var root = doc.RootElement;
             
             // 1. Try to parse schema_id or version
@@ -269,7 +300,7 @@ public class QalyDbContext : DbContext
             // 3. Status logic: Confidence under 0.6 must mark draft as needs_manual_review
             if (draft.Confidence.HasValue && draft.Confidence.Value < 0.6m)
             {
-                draft.Status = "needs_manual_review";
+                draft.WarningsJson ??= JsonSerializer.Serialize(LowConfidenceDraftWarnings);
             }
         }
         catch
@@ -277,6 +308,27 @@ public class QalyDbContext : DbContext
             // Ignore parsing errors
         }
     }
+
+    private static string NormalizeJobStatus(string status)
+        => status.Trim().ToLowerInvariant() switch
+        {
+            "queued" => AiJobStatuses.Queued,
+            "running" => AiJobStatuses.Running,
+            "retrying" => AiJobStatuses.Retrying,
+            "failed" => AiJobStatuses.Failed,
+            "canceled" or "cancelled" => AiJobStatuses.Canceled,
+            "draftready" or "confirmed" or "rejected" or "succeeded" or "success" => AiJobStatuses.Succeeded,
+            _ => AiJobStatuses.Failed
+        };
+
+    private static string NormalizeDraftStatus(string status)
+        => status.Trim().ToLowerInvariant() switch
+        {
+            "confirmed" => AiDraftStatuses.Confirmed,
+            "rejected" => AiDraftStatuses.Rejected,
+            "expired" => AiDraftStatuses.Expired,
+            _ => AiDraftStatuses.PendingReview
+        };
 
     private static void ApplySoftDeleteFilters(ModelBuilder modelBuilder)
     {

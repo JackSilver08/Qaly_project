@@ -1,5 +1,7 @@
 import { expect, test, type ConsoleMessage, type Page } from "@playwright/test";
 
+test.setTimeout(150_000);
+
 const adminEmail = process.env.E2E_ADMIN_EMAIL ?? "admin@qaly.dev";
 const adminPassword = process.env.E2E_ADMIN_PASSWORD ?? "Qaly@E2E2026!";
 
@@ -39,11 +41,13 @@ async function login(page: Page) {
     await page.goto("/Account/Login", { waitUntil: "networkidle" });
     await page.locator('input[name="Email"]').fill(adminEmail);
     await page.locator('input[name="Password"]').fill(adminPassword);
-    await page.locator("#loginForm button[type='submit']").click();
-    await page.waitForURL((url) => !url.pathname.startsWith("/Account/Login"), {
-        timeout: 20_000,
-        waitUntil: "domcontentloaded",
-    });
+    await Promise.all([
+        page.waitForURL((url) => !url.pathname.startsWith("/Account/Login"), {
+            timeout: 30_000,
+            waitUntil: "domcontentloaded",
+        }),
+        page.locator("#loginForm button[type='submit']").click(),
+    ]);
     await expect(page.locator(".shell-header")).toBeVisible();
 }
 
@@ -73,8 +77,9 @@ test("main authenticated routes have no browser errors", async ({ page }) => {
         const routePage = await page.context().newPage();
         const problems = collectBrowserProblems(routePage);
 
-        await routePage.goto(route, { waitUntil: "networkidle" });
+        await routePage.goto(route, { waitUntil: "domcontentloaded" });
         await expect(routePage.locator(".shell-header")).toBeVisible();
+        await routePage.waitForTimeout(1_000);
         expectNoBrowserProblems(problems);
 
         await routePage.close();

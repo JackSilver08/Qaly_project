@@ -7,7 +7,12 @@ public record AutoChecknoteRequest(
     Guid ProjectId,
     string Title,
     string TranscriptText,
-    IReadOnlyList<string> Participants);
+    IReadOnlyList<string> Participants,
+    Guid? ConsentId = null,
+    Guid? RetentionPolicyId = null,
+    string ProcessingMode = "local_only",
+    int? RetentionDays = null,
+    string? NoticeVersion = null);
 
 public record AutoChecknoteResponseDto(
     Guid MeetingImportId,

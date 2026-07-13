@@ -327,8 +327,8 @@ test("should open analytics page", async ({ page }) => {
 
     await page.locator('a[href="/analytics"]').click();
     await expect(page).toHaveURL(/\/analytics$/);
-    await expect(page.getByRole("heading", { name: /Hôm nay Erumi/i })).toBeVisible();
-    await expect(page.locator(".erumi-composer").first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Bạn muốn phân tích điều gì/i })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: /Erumi/i })).toBeVisible();
 });
 
 test("should render meeting page in two authenticated contexts", async ({
@@ -345,7 +345,8 @@ test("should render meeting page in two authenticated contexts", async ({
         await addSecondaryUserToGroupIfNeeded(page, group.id);
 
         await page.goto(`/groups/${group.id}/meeting`);
-        await expect(page.getByRole("heading", { name: /Phòng họp nhóm/i })).toBeVisible();
+        await expect(page.getByText("QALY MEET", { exact: true })).toBeVisible();
+        await expect(page.locator(".gm-prejoin__heading")).toContainText(/Sẵn sàng bắt đầu/i);
 
         const startResponsePromise = page.waitForResponse(
             (response) =>
@@ -357,23 +358,19 @@ test("should render meeting page in two authenticated contexts", async ({
         meetingId = meeting.id ?? meeting.Id;
 
         expect(meetingId, "Meeting start response phải có id").toBeTruthy();
-        await expect(page.locator(".meeting-status")).toHaveClass(/active/);
-        await expect(page.locator(".meeting-status")).toContainText(
-            /Đang họp|LiveKit chưa kết nối|Cần kiểm tra kết nối/i,
-        );
-        await expect(page.locator(".participants-card")).toContainText("Bạn");
+        await expect(page.locator(".gm-status")).toHaveClass(/gm-status--active/);
+        await expect(page.locator(".gm-status")).toContainText(/LiveKit|Cần kiểm tra kết nối/i);
+        await expect(page.locator(".gm-tile--local")).toContainText("Bạn");
 
         const secondarySession = await newSecondaryPage(browser);
         secondary.context = secondarySession.context;
         await secondarySession.page.goto(`/groups/${group.id}/meeting?meetingId=${meetingId}`);
-        await expect(
-            secondarySession.page.getByRole("heading", { name: /Phòng họp nhóm/i }),
-        ).toBeVisible();
-        await expect(secondarySession.page.locator(".meeting-status")).toHaveClass(/active/);
-        await expect(secondarySession.page.locator(".meeting-status")).toContainText(
-            /Đang họp|LiveKit chưa kết nối|Cần kiểm tra kết nối/i,
+        await expect(secondarySession.page.getByText("QALY MEET", { exact: true })).toBeVisible();
+        await expect(secondarySession.page.locator(".gm-status")).toHaveClass(/gm-status--active/);
+        await expect(secondarySession.page.locator(".gm-status")).toContainText(
+            /LiveKit|Cần kiểm tra kết nối/i,
         );
-        await expect(secondarySession.page.locator(".participants-card")).toContainText("Bạn");
+        await expect(secondarySession.page.locator(".gm-tile--local")).toContainText("Bạn");
     } finally {
         if (group?.id && meetingId) {
             await page.request

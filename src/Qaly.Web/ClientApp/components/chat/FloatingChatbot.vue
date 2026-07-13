@@ -1,18 +1,50 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useRoute } from 'vue-router'
-import { X, Sparkles } from 'lucide-vue-next'
+import { ref, computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { Activity, MessageSquare, X, Sparkles } from 'lucide-vue-next'
 import ChatbotAvatar from '../ChatbotAvatar.vue'
 import ErumiChatPanel from './ErumiChatPanel.vue'
+import AiActivityPanel from './AiActivityPanel.vue'
 
 const route = useRoute()
+const router = useRouter()
 const isOpen = ref(false)
+const activeView = ref<'chat' | 'activity'>('chat')
 
 const isAnalyticsPage = computed(() => route.path === '/analytics')
 
 function toggleDrawer() {
-  isOpen.value = !isOpen.value
+  if (isOpen.value) {
+    closeDrawer()
+    return
+  }
+
+  isOpen.value = true
 }
+
+function closeDrawer() {
+  isOpen.value = false
+
+  if (!route.query.aiActivity && !route.query.aiJob && !route.query.aiDraft) return
+
+  const query = { ...route.query }
+  delete query.aiActivity
+  delete query.aiTab
+  delete query.aiJob
+  delete query.aiDraft
+  void router.replace({ query })
+}
+
+watch(
+  () => [route.query.aiActivity, route.query.aiJob, route.query.aiDraft],
+  ([activity, jobId, draftId]) => {
+    if (activity === '1' || jobId || draftId) {
+      isOpen.value = true
+      activeView.value = 'activity'
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -37,17 +69,20 @@ function toggleDrawer() {
           <div class="drawer-header-left">
             <ChatbotAvatar size="small" />
             <div class="drawer-title-wrap">
-              <span class="drawer-title">Trợ lý Erumi</span>
-              <span class="drawer-subtitle">Trợ lý AI phân tích</span>
+              <span class="drawer-title">{{ activeView === 'chat' ? 'Trợ lý Erumi' : 'Hoạt động AI' }}</span>
+              <span class="drawer-subtitle">{{ activeView === 'chat' ? 'Trợ lý AI phân tích' : 'Jobs và bản nháp cần duyệt' }}</span>
             </div>
           </div>
-          <button class="drawer-close-btn" @click="isOpen = false" aria-label="Đóng">
-            <X :size="20" />
-          </button>
+          <div class="drawer-header-actions">
+            <button class="drawer-icon-btn" :class="{ active: activeView === 'chat' }" title="Trò chuyện" @click="activeView = 'chat'"><MessageSquare :size="17" /></button>
+            <button class="drawer-icon-btn" :class="{ active: activeView === 'activity' }" title="Hoạt động AI" @click="activeView = 'activity'"><Activity :size="17" /></button>
+            <button class="drawer-close-btn" @click="closeDrawer" aria-label="Đóng"><X :size="20" /></button>
+          </div>
         </header>
         
         <div class="drawer-body">
-          <ErumiChatPanel :is-drawer="true" />
+          <ErumiChatPanel v-if="activeView === 'chat'" :is-drawer="true" />
+          <AiActivityPanel v-else />
         </div>
       </div>
     </Transition>
@@ -122,7 +157,8 @@ function toggleDrawer() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  min-height: 58px;
+  padding: 10px 14px;
   border-bottom: 1px solid #f1f5f9;
   background: #ffffff;
 }
@@ -131,23 +167,38 @@ function toggleDrawer() {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.drawer-header-left :deep(.chatbot-avatar--small) {
+  width: 34px;
+  height: 34px;
 }
 
 .drawer-title-wrap {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .drawer-title {
   font-weight: 700;
   color: #0f172a;
   font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .drawer-subtitle {
   font-size: 11px;
   color: #64748b;
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .drawer-close-btn {
@@ -169,6 +220,35 @@ function toggleDrawer() {
   color: #0f172a;
 }
 
+.drawer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.drawer-icon-btn {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.drawer-icon-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.drawer-icon-btn.active {
+  border-color: #b9d8cc;
+  background: #eaf6f0;
+  color: #24735b;
+}
+
 .drawer-body {
   flex: 1;
   overflow: hidden;
@@ -184,5 +264,19 @@ function toggleDrawer() {
 .slide-drawer-enter-from,
 .slide-drawer-leave-to {
   transform: translateX(100%);
+}
+
+@media (max-width: 480px) {
+  .erumi-side-drawer {
+    width: 100vw;
+  }
+
+  .drawer-header {
+    padding-inline: 10px;
+  }
+
+  .drawer-header-left {
+    gap: 8px;
+  }
 }
 </style>

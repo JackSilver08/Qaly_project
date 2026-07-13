@@ -16,8 +16,33 @@ export class ApiError extends Error {
   }
 }
 
+let csrfTokenPromise: Promise<string> | null = null
+
+async function csrfToken() {
+  if (!csrfTokenPromise) {
+    csrfTokenPromise = fetch('/api/security/csrf', {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    })
+      .then(async response => {
+        if (!response.ok) throw new Error(`CSRF token request failed (${response.status}).`)
+        const payload = await response.json()
+        if (!payload?.token) throw new Error('CSRF token response is invalid.')
+        return payload.token as string
+      })
+      .catch(error => {
+        csrfTokenPromise = null
+        throw error
+      })
+  }
+
+  return csrfTokenPromise
+}
+
 export async function apiJson<T>(url: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers)
+  const method = (options.method ?? 'GET').toUpperCase()
 
   if (options.body && !(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json')
@@ -25,7 +50,11 @@ export async function apiJson<T>(url: string, options: RequestInit = {}): Promis
 
   headers.set('Accept', 'application/json')
 
-  if (!options.method || options.method.toUpperCase() === 'GET') {
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && !headers.has('X-CSRF-TOKEN')) {
+    headers.set('X-CSRF-TOKEN', await csrfToken())
+  }
+
+  if (method === 'GET') {
     options.cache = 'no-store'
   }
 
