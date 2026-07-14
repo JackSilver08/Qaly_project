@@ -31,6 +31,37 @@ public class SecurityCriticalTests
     }
 
     [Fact]
+    public async Task RedisTicketStore_RenewAsync_CompletesWithinBoundedTimeout_WhenRedisCacheHangs()
+    {
+        var cache = new Mock<IDistributedCache>();
+        cache.Setup(c => c.SetAsync(It.IsAny<string>(), It.IsAny<byte[]>(), It.IsAny<DistributedCacheEntryOptions>(), It.IsAny<CancellationToken>()))
+            .Returns(() => Task.Delay(Timeout.InfiniteTimeSpan));
+
+        var store = new RedisTicketStore(cache.Object, Mock.Of<ILogger<RedisTicketStore>>());
+        var ticket = new AuthenticationTicket(new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim(ClaimTypes.NameIdentifier, "user") }, "Test")), "TestScheme");
+
+        var task = store.RenewAsync("AuthTicket:test", ticket);
+        var completed = await Task.WhenAny(task, Task.Delay(1000));
+
+        completed.Should().Be(task);
+        await task;
+    }
+
+    [Fact]
+    public async Task RedisSessionService_RevokeAllUserSessionsAsync_ReturnsFalse_WhenRedisTimesOut()
+    {
+        var redis = new Mock<IConnectionMultiplexer>();
+        var config = new Mock<Microsoft.Extensions.Configuration.IConfiguration>();
+        redis.Setup(r => r.GetEndPoints(false)).Throws(new TimeoutException("Redis unavailable"));
+
+        var service = new RedisSessionService(redis.Object, config.Object, Mock.Of<ILogger<RedisSessionService>>());
+
+        var result = await service.RevokeAllUserSessionsAsync(Guid.NewGuid());
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task RedisSessionService_RevokeAllUserSessionsAsync_CallsRedisDelete()
     {
         var redis = new Mock<IConnectionMultiplexer>();
@@ -54,10 +85,11 @@ public class SecurityCriticalTests
             It.IsAny<CommandFlags>()))
             .Returns(keys);
 
-        var service = new RedisSessionService(redis.Object, config.Object);
+        var service = new RedisSessionService(redis.Object, config.Object, Mock.Of<ILogger<RedisSessionService>>());
 
-        await service.RevokeAllUserSessionsAsync(userId);
+        var result = await service.RevokeAllUserSessionsAsync(userId);
 
+        result.Should().BeTrue();
         db.Verify(d => d.KeyDeleteAsync(keys, CommandFlags.None), Times.Once);
     }
 }

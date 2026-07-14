@@ -200,3 +200,22 @@ public record CreateProjectFromGroupResult(
     int MembersAdded,
     IReadOnlyList<Guid> AddedUserIds,
     IReadOnlyList<string> Warnings);
+
+public record GroupLinkedProjectDto(
+    Guid ProjectId,
+    string Name,
+    string? Code,
+    string? Description,
+    string Status,
+    Guid? SourceGroupId,
+    bool IsAccessible,
+    bool RequiresAction,
+    string? ActionRequiredReason);
+
+public record GroupPrimaryGroupReconciliationItem(
+    Guid ProjectId,
+    string ProjectName,
+    Guid? SourceGroupId,
+    bool GroupExists,
+    bool RequiresAction,
+    string? Reason);

@@ -34,6 +34,8 @@ public partial class GroupsService : IGroupsService
     private readonly IRepository<Organization> _organizationRepo;
     private readonly IRepository<OrganizationMember> _organizationMemberRepo;
     private readonly IRepository<User> _userRepo;
+    private readonly IRepository<Project> _projectRepo;
+    private readonly IRepository<ProjectMember> _projectMemberRepo;
     private readonly IRepository<GroupMeetingSession> _meetingSessionRepo;
     private readonly IProjectService _projectService;
     private readonly INotificationService _notificationService;
@@ -59,6 +61,8 @@ public partial class GroupsService : IGroupsService
         IRepository<Organization> organizationRepo,
         IRepository<OrganizationMember> organizationMemberRepo,
         IRepository<User> userRepo,
+        IRepository<Project> projectRepo,
+        IRepository<ProjectMember> projectMemberRepo,
         IRepository<GroupMeetingSession> meetingSessionRepo,
         IProjectService projectService,
         INotificationService notificationService,
@@ -83,6 +87,8 @@ public partial class GroupsService : IGroupsService
         _organizationRepo = organizationRepo;
         _organizationMemberRepo = organizationMemberRepo;
         _userRepo = userRepo;
+        _projectRepo = projectRepo;
+        _projectMemberRepo = projectMemberRepo;
         _meetingSessionRepo = meetingSessionRepo;
         _projectService = projectService;
         _notificationService = notificationService;
@@ -1971,6 +1977,164 @@ public partial class GroupsService : IGroupsService
         return Result.Created(new CreateProjectFromGroupResult(project, addedUserIds.Count, addedUserIds, warnings));
     }
 
+    public async Task<Result<IReadOnlyList<GroupLinkedProjectDto>>> GetLinkedProjectsAsync(Guid groupId, CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<IReadOnlyList<GroupLinkedProjectDto>>();
+        }
+
+        if (!await CanAccessGroupAsync(groupId, ct))
+        {
+            return Result.Forbidden<IReadOnlyList<GroupLinkedProjectDto>>();
+        }
+
+        var group = await _groupRepo.GetQueryable()
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(item => item.Id == groupId, ct);
+
+        var linkedProjects = await _projectRepo.GetQueryable()
+            .Where(project => project.SourceGroupId == groupId)
+            .OrderBy(project => project.Name)
+            .ToListAsync(ct);
+
+        var items = new List<GroupLinkedProjectDto>();
+        foreach (var project in linkedProjects)
+        {
+            var isAccessible = await CanAccessProjectAsync(project.Id, project.OwnerId, ct);
+            var requiresAction = group == null || group.IsDeleted || string.Equals(group.Status, "Dissolved", StringComparison.OrdinalIgnoreCase);
+            items.Add(new GroupLinkedProjectDto(
+                project.Id,
+                project.Name,
+                project.Code,
+                project.Description,
+                project.Status,
+                project.SourceGroupId,
+                isAccessible,
+                requiresAction,
+                requiresAction ? "Primary group was dissolved and requires reassignment." : null));
+        }
+
+        return Result.Success<IReadOnlyList<GroupLinkedProjectDto>>(items);
+    }
+
+    public async Task<Result> LinkProjectAsync(Guid groupId, Guid projectId, CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden();
+        }
+
+        if (!await CanManageGroupAsync(groupId, ct))
+        {
+            return Result.Forbidden();
+        }
+
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null)
+        {
+            return Result.NotFound();
+        }
+
+        if (!await CanManageProjectAsync(project.Id, project.OwnerId, ct))
+        {
+            return Result.Forbidden();
+        }
+
+        if (project.SourceGroupId.HasValue && project.SourceGroupId.Value != groupId)
+        {
+            return Result.Failure("Project is already linked to another primary group.", 409);
+        }
+
+        if (project.SourceGroupId == groupId)
+        {
+            return Result.Success();
+        }
+
+        project.SourceGroupId = groupId;
+        await _projectRepo.UpdateAsync(project, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync("LinkProjectToGroup", nameof(Project), project.Id.ToString(), new { groupId }, ct);
+
+        return Result.Success();
+    }
+
+    public async Task<Result> UnlinkProjectAsync(Guid groupId, Guid projectId, CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden();
+        }
+
+        if (!await CanManageGroupAsync(groupId, ct))
+        {
+            return Result.Forbidden();
+        }
+
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null)
+        {
+            return Result.NotFound();
+        }
+
+        if (!await CanManageProjectAsync(project.Id, project.OwnerId, ct))
+        {
+            return Result.Forbidden();
+        }
+
+        if (project.SourceGroupId != groupId)
+        {
+            return Result.NotFound("Project is not linked to this group.");
+        }
+
+        project.SourceGroupId = null;
+        await _projectRepo.UpdateAsync(project, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync("UnlinkProjectFromGroup", nameof(Project), project.Id.ToString(), new { groupId }, ct);
+
+        return Result.Success();
+    }
+
+    public async Task<Result<IReadOnlyList<GroupPrimaryGroupReconciliationItem>>> GetPrimaryGroupReconciliationAsync(CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<IReadOnlyList<GroupPrimaryGroupReconciliationItem>>();
+        }
+
+        if (!IsSystemAdmin())
+        {
+            return Result.Forbidden<IReadOnlyList<GroupPrimaryGroupReconciliationItem>>();
+        }
+
+        var linkedProjects = await _projectRepo.GetQueryable()
+            .Where(project => project.SourceGroupId != null)
+            .OrderBy(project => project.Name)
+            .ToListAsync(ct);
+
+        var items = new List<GroupPrimaryGroupReconciliationItem>();
+        foreach (var project in linkedProjects)
+        {
+            var group = await _groupRepo.GetQueryable()
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(item => item.Id == project.SourceGroupId.Value, ct);
+            var requiresAction = group == null || group.IsDeleted || string.Equals(group.Status, "Dissolved", StringComparison.OrdinalIgnoreCase);
+            items.Add(new GroupPrimaryGroupReconciliationItem(
+                project.Id,
+                project.Name,
+                project.SourceGroupId,
+                group != null && !group.IsDeleted,
+                requiresAction,
+                requiresAction ? "Primary group is missing, dissolved, or soft-deleted." : null));
+        }
+
+        return Result.Success<IReadOnlyList<GroupPrimaryGroupReconciliationItem>>(items);
+    }
+
     public async Task<bool> CanAccessGroupAsync(Guid groupId, CancellationToken ct = default)
     {
         var currentUserId = _currentUserService.UserId;
@@ -1989,6 +2153,74 @@ public partial class GroupsService : IGroupsService
                 group.Id == groupId &&
                 (group.OwnerId == currentUserId ||
                  group.Members.Any(member => member.UserId == currentUserId)), ct);
+    }
+
+    private async Task<bool> CanAccessProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return false;
+        }
+
+        if (IsSystemAdmin() || ownerId == currentUserId)
+        {
+            return true;
+        }
+
+        var isProjectMember = await _projectMemberRepo.GetQueryable()
+            .AnyAsync(member => member.ProjectId == projectId && member.UserId == currentUserId.Value, ct);
+        if (isProjectMember)
+        {
+            return true;
+        }
+
+        var project = await _projectRepo.GetQueryable()
+            .Where(item => item.Id == projectId)
+            .Select(item => new { item.OrganizationId })
+            .FirstOrDefaultAsync(ct);
+        if (project?.OrganizationId == null)
+        {
+            return false;
+        }
+
+        return await _organizationMemberRepo.GetQueryable()
+            .AnyAsync(member => member.OrganizationId == project.OrganizationId && member.UserId == currentUserId.Value, ct);
+    }
+
+    private async Task<bool> CanManageProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return false;
+        }
+
+        if (IsSystemAdmin() || ownerId == currentUserId)
+        {
+            return true;
+        }
+
+        var role = await _projectMemberRepo.GetQueryable()
+            .Where(member => member.ProjectId == projectId && member.UserId == currentUserId.Value)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+        if (ProjectRoleRules.CanManageProject(role))
+        {
+            return true;
+        }
+
+        var project = await _projectRepo.GetQueryable()
+            .Where(item => item.Id == projectId)
+            .Select(item => new { item.OrganizationId })
+            .FirstOrDefaultAsync(ct);
+        if (project?.OrganizationId == null)
+        {
+            return false;
+        }
+
+        return await _organizationMemberRepo.GetQueryable()
+            .AnyAsync(member => member.OrganizationId == project.OrganizationId && member.UserId == currentUserId.Value && ProjectRoleRules.CanManageProject(member.Role), ct);
     }
 
     public async Task<bool> CanManageGroupAsync(Guid groupId, CancellationToken ct = default)

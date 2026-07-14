@@ -33,6 +33,8 @@ public class GroupsServiceTests : IDisposable
     private readonly GenericRepository<Organization> _organizationRepo;
     private readonly GenericRepository<OrganizationMember> _organizationMemberRepo;
     private readonly GenericRepository<User> _userRepo;
+    private readonly GenericRepository<Project> _projectRepo;
+    private readonly GenericRepository<ProjectMember> _projectMemberRepo;
     private readonly GenericRepository<GroupMeetingSession> _meetingSessionRepo;
     private readonly UnitOfWork _uow;
     private readonly Mock<IProjectService> _projectService = new();
@@ -64,6 +66,8 @@ public class GroupsServiceTests : IDisposable
         _organizationRepo = new GenericRepository<Organization>(_context);
         _organizationMemberRepo = new GenericRepository<OrganizationMember>(_context);
         _userRepo = new GenericRepository<User>(_context);
+        _projectRepo = new GenericRepository<Project>(_context);
+        _projectMemberRepo = new GenericRepository<ProjectMember>(_context);
         _meetingSessionRepo = new GenericRepository<GroupMeetingSession>(_context);
         _uow = new UnitOfWork(_context);
 
@@ -1855,6 +1859,66 @@ public class GroupsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetLinkedProjectsAsync_WhenProjectIsLinked_ReturnsAccessibleProject()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Launch Group");
+        var project = await AddProjectAsync(ownerId, "Launch Project", group.Id);
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+        _projectService
+            .Setup(service => service.GetByIdAsync(project.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new ProjectDto(project.Id, project.Name, project.Code, project.Description, project.LogoUrl, project.Status, project.StartDate, project.EndDate, project.OwnerId, "Owner", 1, 0, 0, [], project.CreatedAt, null, null, project.SourceGroupId)));
+
+        var result = await CreateService().GetLinkedProjectsAsync(group.Id);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data.Should().ContainSingle(item => item.ProjectId == project.Id);
+        result.Data!.Single().RequiresAction.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task LinkProjectAsync_WhenProjectAlreadyLinkedToAnotherGroup_ReturnsConflict()
+    {
+        var ownerId = Guid.NewGuid();
+        var otherGroupOwnerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        await AddUserAsync(otherGroupOwnerId, "Other Group Owner", "other@qaly.dev");
+        var originalGroup = await AddGroupAsync(ownerId, "Original Group");
+        var targetGroup = await AddGroupAsync(otherGroupOwnerId, "Target Group");
+        var project = await AddProjectAsync(otherGroupOwnerId, "Launch Project", originalGroup.Id);
+        _currentUser.SetupGet(user => user.UserId).Returns(otherGroupOwnerId);
+        _projectService
+            .Setup(service => service.GetByIdAsync(project.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new ProjectDto(project.Id, project.Name, project.Code, project.Description, project.LogoUrl, project.Status, project.StartDate, project.EndDate, project.OwnerId, "Owner", 1, 0, 0, [], project.CreatedAt, null, null, project.SourceGroupId)));
+
+        var result = await CreateService().LinkProjectAsync(targetGroup.Id, project.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(409);
+    }
+
+    [Fact]
+    public async Task GetPrimaryGroupReconciliationAsync_WhenGroupWasDissolved_ReturnsActionRequiredRow()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Launch Group");
+        var project = await AddProjectAsync(ownerId, "Launch Project", group.Id);
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+        _currentUser.SetupGet(user => user.Role).Returns(ProjectRoleRules.SystemAdmin);
+
+        await _groupRepo.DeleteAsync(group);
+        await _uow.SaveChangesAsync();
+
+        var result = await CreateService().GetPrimaryGroupReconciliationAsync();
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data.Should().ContainSingle(item => item.ProjectId == project.Id);
+        result.Data!.Single().RequiresAction.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task CreateProjectFromGroupAsync_MapsGroupRolesToProjectRoles()
     {
         var ownerId = Guid.NewGuid();
@@ -2336,6 +2400,8 @@ public class GroupsServiceTests : IDisposable
             _organizationRepo,
             _organizationMemberRepo,
             _userRepo,
+            _projectRepo,
+            _projectMemberRepo,
             _meetingSessionRepo,
             _projectService.Object,
             _notificationService.Object,
@@ -2379,6 +2445,21 @@ public class GroupsServiceTests : IDisposable
         });
         await _context.SaveChangesAsync();
         return group;
+    }
+
+    private async Task<Project> AddProjectAsync(Guid ownerId, string name, Guid? sourceGroupId = null)
+    {
+        var project = new Project
+        {
+            Id = Guid.NewGuid(),
+            Name = name,
+            Code = name.ToUpperInvariant().Replace(" ", "-"),
+            OwnerId = ownerId,
+            SourceGroupId = sourceGroupId
+        };
+        await _projectRepo.AddAsync(project);
+        await _context.SaveChangesAsync();
+        return project;
     }
 
     private async Task AddMemberAsync(Guid groupId, Guid userId, string role)

@@ -39,6 +39,10 @@ public interface IGroupsService
     Task<Result<GroupMessageDto>> ToggleMessageReactionAsync(Guid groupId, Guid messageId, ReactToGroupMessageRequest request, CancellationToken ct = default);
     Task<Result> HideMessageForCurrentUserAsync(Guid groupId, Guid messageId, CancellationToken ct = default);
     Task<Result<CreateProjectFromGroupResult>> CreateProjectFromGroupAsync(Guid groupId, CreateProjectFromGroupRequest request, CancellationToken ct = default);
+    Task<Result<IReadOnlyList<GroupLinkedProjectDto>>> GetLinkedProjectsAsync(Guid groupId, CancellationToken ct = default);
+    Task<Result> LinkProjectAsync(Guid groupId, Guid projectId, CancellationToken ct = default);
+    Task<Result> UnlinkProjectAsync(Guid groupId, Guid projectId, CancellationToken ct = default);
+    Task<Result<IReadOnlyList<GroupPrimaryGroupReconciliationItem>>> GetPrimaryGroupReconciliationAsync(CancellationToken ct = default);
     Task<Result<GroupMeetingSessionDto?>> GetActiveMeetingSessionAsync(Guid groupId, CancellationToken ct = default);
     Task<Result<GroupMeetingSessionDto>> StartMeetingSessionAsync(Guid groupId, CancellationToken ct = default);
     Task<Result<GroupMeetingSessionDto>> JoinMeetingSessionAsync(Guid groupId, Guid meetingId, CancellationToken ct = default);
