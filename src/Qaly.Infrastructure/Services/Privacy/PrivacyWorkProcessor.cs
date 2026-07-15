@@ -177,6 +177,18 @@ public sealed partial class PrivacyWorkProcessor : IPrivacyWorkProcessor
             }
         }
 
+        var meetingImportIdStr = meeting.Id.ToString();
+        var legacySourceId = $"meetily:{meeting.SourceId}";
+        var sessions = await _db.GroupMeetingSessions
+            .Where(session => session.TranscriptSourceId == meetingImportIdStr || session.TranscriptSourceId == legacySourceId)
+            .ToListAsync(ct);
+
+        foreach (var session in sessions)
+        {
+            session.Summary = null;
+            session.TranscriptSourceId = "[redacted]";
+        }
+
         var projectCaches = await _db.AiPromptCache
             .Where(cache => cache.ProjectId == meeting.ProjectId)
             .ToListAsync(ct);

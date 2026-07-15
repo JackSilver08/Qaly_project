@@ -1063,7 +1063,11 @@ public partial class MeetingImportService : IMeetingImportService
             x.Title,
             x.Description,
             NormalizePriority(x.Priority),
-            string.IsNullOrEmpty(x.DueDate) ? null : DateTimeOffset.Parse(x.DueDate, System.Globalization.CultureInfo.InvariantCulture),
+            string.IsNullOrEmpty(x.DueDate)
+                ? null
+                : DateTimeOffset.TryParse(x.DueDate, System.Globalization.CultureInfo.InvariantCulture, out var parsedDate)
+                    ? parsedDate
+                    : (DateTimeOffset?)null,
             x.Evidence,
             x.SuggestedOwner
         )).ToList();

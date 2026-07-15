@@ -173,7 +173,12 @@ const projects = computed(() => {
   return dashboardProjects.value || [];
 });
 
+const wasSpeechActiveBeforeMute = ref(false);
+
 const speechRec = useSpeechRecognition((text, isFinal) => {
+  if (micMuted.value) {
+    return;
+  }
   if (isFinal) {
     const now = Date.now();
     if (hubConnection && hubConnection.state === HubConnectionState.Connected && meetingId.value) {
@@ -199,9 +204,29 @@ const speechError = computed(() => speechRec.hasError.value);
 const liveCaptionText = ref("");
 let liveCaptionTimeoutId: number | undefined;
 
+watch(micMuted, (isMuted) => {
+  if (isMuted) {
+    if (speechRec.isListening.value) {
+      speechRec.stop();
+      wasSpeechActiveBeforeMute.value = true;
+    }
+  } else {
+    if (wasSpeechActiveBeforeMute.value) {
+      speechRec.start();
+      wasSpeechActiveBeforeMute.value = false;
+    }
+  }
+});
+
 async function toggleSpeech() {
   if (speechRec.isListening.value) {
     speechRec.stop();
+    wasSpeechActiveBeforeMute.value = false;
+    return;
+  }
+
+  if (micMuted.value) {
+    showError("Micro đang bị tắt. Hãy bật micro trước khi bật phụ đề.");
     return;
   }
 

@@ -18,6 +18,7 @@ public class GroupAiServiceTests : IDisposable
     private readonly QalyDbContext _context;
     private readonly GenericRepository<GroupMessage> _messageRepo;
     private readonly GenericRepository<GroupMeetingSession> _meetingSessionRepo;
+    private readonly GenericRepository<MeetingImport> _meetingImportRepo;
     private readonly Mock<IGroupsService> _groupsService = new();
     private readonly Mock<IAiGateway> _aiGateway = new();
     private readonly Mock<ICurrentUserService> _currentUserService = new();
@@ -33,6 +34,7 @@ public class GroupAiServiceTests : IDisposable
         _context = new QalyDbContext(options);
         _messageRepo = new GenericRepository<GroupMessage>(_context);
         _meetingSessionRepo = new GenericRepository<GroupMeetingSession>(_context);
+        _meetingImportRepo = new GenericRepository<MeetingImport>(_context);
     }
 
     [Fact]
@@ -261,6 +263,7 @@ public class GroupAiServiceTests : IDisposable
             _groupsService.Object,
             _messageRepo,
             _meetingSessionRepo,
+            _meetingImportRepo,
             _unitOfWork.Object,
             _auditLogService.Object,
             NullLogger<GroupAiService>.Instance,
