@@ -29,4 +29,11 @@ public class StorageController : BaseApiController
         var result = await _attachmentService.DeduplicateAsync(ct);
         return StatusCode(result.StatusCode, result);
     }
+
+    [HttpGet("stats")]
+    public async Task<IActionResult> GetStorageStats(CancellationToken ct)
+    {
+        var result = await _attachmentService.GetStorageStatsAsync(ct);
+        return StatusCode(result.StatusCode, result);
+    }
 }

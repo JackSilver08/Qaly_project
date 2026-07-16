@@ -21,6 +21,10 @@ export interface ProjectCardModel {
   overdueTaskCount: number
   progressPercentage: number
   memberInitials: string[]
+  code?: string
+  memberCount?: number
+  endDate?: string | null
+  archivedAt?: string | null
 }
 
 export interface TaskListItemModel {

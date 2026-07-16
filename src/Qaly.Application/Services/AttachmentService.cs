@@ -632,6 +632,35 @@ public class AttachmentService : IAttachmentService
         return Convert.ToHexStringLower(hashBytes);
     }
 
+    public async Task<Result<StorageStatsDto>> GetStorageStatsAsync(CancellationToken ct = default)
+    {
+        var files = await _physicalFileRepo.GetQueryable().AsNoTracking().ToListAsync(ct);
+        long totalBytes = files.Sum(f => f.FileSize);
+        int totalFileCount = files.Count;
+
+        // Find how many files belong to archived projects
+        // We'll join TaskAttachments with their Projects to filter by status
+        var archivedProjectFilesQuery = _attachmentRepo.GetQueryable()
+            .AsNoTracking()
+            .Include(a => a.Project)
+            .Include(a => a.TaskItem)
+            .ThenInclude(t => t.Project)
+            .Where(a => (a.Project != null && a.Project.Status == "Archived") || 
+                        (a.TaskItem != null && a.TaskItem.Project != null && a.TaskItem.Project.Status == "Archived"));
+
+        var archivedProjectAttachments = await archivedProjectFilesQuery.ToListAsync(ct);
+        var archivedPhysicalFileIds = archivedProjectAttachments.Select(a => a.PhysicalFileId).Distinct().ToList();
+        
+        long archivedBytes = files.Where(f => archivedPhysicalFileIds.Contains(f.Id)).Sum(f => f.FileSize);
+
+        return Result.Success(new StorageStatsDto(
+            totalBytes,
+            totalBytes, // For demo simplicity, we set AttachmentBytes to TotalBytes since attachments are the primary storage usage
+            totalFileCount,
+            archivedProjectAttachments.Count
+        ));
+    }
+
     private static string FormatFileSize(long size)
         => size < 1024 * 1024
             ? $"{(size / 1024.0):F1} KB"

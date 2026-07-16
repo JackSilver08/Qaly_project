@@ -12,4 +12,5 @@ public interface IAttachmentService
     Task<Result> DeleteAsync(Guid id, CancellationToken ct = default);
     Task<Result<IReadOnlyList<DuplicateFileDto>>> GetDuplicatesAsync(CancellationToken ct = default);
     Task<Result<DeduplicateResultDto>> DeduplicateAsync(CancellationToken ct = default);
+    Task<Result<StorageStatsDto>> GetStorageStatsAsync(CancellationToken ct = default);
 }

@@ -232,6 +232,10 @@ function toProjectCard(project: DashboardProject): ProjectCardModel {
     memberInitials: (project.members || [])
       .slice(0, 4)
       .map((m) => initials(m.fullName)),
+    code: project.code,
+    memberCount: project.memberCount,
+    endDate: project.endDate,
+    archivedAt: project.archivedAt,
   };
 }
 

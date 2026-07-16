@@ -11,6 +11,7 @@ public class Project : BaseEntity, ISoftDeleteEntity
     public DateTimeOffset? EndDate { get; set; }
     public bool IsDeleted { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
+    public DateTimeOffset? ArchivedAt { get; set; }
 
     public bool EnableOnHold { get; set; } = true;
     public bool EnableInReview { get; set; } = true;

@@ -40,6 +40,7 @@ export interface DashboardProject {
     enableInReview: boolean;
     requireEvidenceToDone: boolean;
     restrictTransitionsToAdmin: boolean;
+    archivedAt?: string | null;
 }
 
 export interface DashboardProjectMember {
@@ -154,6 +155,7 @@ export interface ProjectDto {
     progressPercentage: number;
     labels: ProjectLabelDto[];
     createdAt: string;
+    archivedAt?: string | null;
 }
 
 export interface TaskItemDto {

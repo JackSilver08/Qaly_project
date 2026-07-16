@@ -235,6 +235,16 @@ public class ProjectService : IProjectService
         project.Code = await GenerateUniqueCodeAsync(dto.Code, dto.Name, ct, id);
         project.LogoUrl = NormalizeOptional(dto.LogoUrl);
 
+        // Track archive timestamp
+        if (project.Status == "Archived" && project.ArchivedAt == null)
+        {
+            project.ArchivedAt = DateTimeOffset.UtcNow;
+        }
+        else if (project.Status != "Archived" && project.ArchivedAt != null)
+        {
+            project.ArchivedAt = null;
+        }
+
         if (dto.OrganizationId.HasValue)
         {
             var organization = await _organizationRepo.GetByIdAsync(dto.OrganizationId.Value, ct);
@@ -893,4 +903,50 @@ public class ProjectService : IProjectService
                 (attachment.TaskItem != null && attachment.TaskItem.ProjectId == projectId) ||
                 (attachment.Comment != null && attachment.Comment.TaskItem.ProjectId == projectId))
             .ToListAsync(ct);
+
+    public async Task<Result<PagedResult<ProjectDto>>> GetArchivedAsync(int page = 1, int pageSize = 10, string? search = null, CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<PagedResult<ProjectDto>>();
+        }
+
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var query = ProjectDetailsQuery()
+            .Where(project => project.Status == "Archived");
+
+        if (!IsAdmin())
+        {
+            query = query.Where(project =>
+                project.OwnerId == currentUserId ||
+                project.Members.Any(member => member.UserId == currentUserId) ||
+                (project.OrganizationId != null &&
+                 (project.Organization!.OwnerId == currentUserId ||
+                  project.Organization.Members.Any(member => member.UserId == currentUserId))));
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var normalized = search.Trim();
+            query = query.Where(p => p.Name.Contains(normalized) || (p.Description != null && p.Description.Contains(normalized)));
+        }
+
+        var totalCount = await query.CountAsync(ct);
+        var items = await query
+            .OrderByDescending(p => p.ArchivedAt ?? p.UpdatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        return Result.Success(new PagedResult<ProjectDto>
+        {
+            Items = items.Select(item => item.ToDto()).ToList(),
+            TotalCount = totalCount,
+            PageNumber = page,
+            PageSize = pageSize
+        });
+    }
 }
