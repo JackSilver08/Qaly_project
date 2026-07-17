@@ -618,6 +618,129 @@ public class ErumiChatServiceTests : IDisposable
             Times.Never);
     }
 
+    [Fact]
+    public async Task ChatFastAsync_InAgentMode_UsesAgentFrameworkOrchestrator()
+    {
+        var projectId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        SetupProjectAiContext(projectId, userId);
+
+        var orchestrator = new Mock<IAiAgentOrchestrator>();
+        orchestrator.SetupGet(x => x.IsEnabled).Returns(true);
+        orchestrator
+            .Setup(x => x.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiResponse
+            {
+                Content = "{\"reply\":\"Agent response\",\"metrics\":[],\"tables\":[],\"charts\":[],\"actions\":[],\"files\":[],\"confidence\":0.9}",
+                ProviderName = "MicrosoftAgentFramework",
+                ModelName = "test-agent"
+            });
+
+        var service = new ErumiChatService(
+            _analyticsServiceMock.Object,
+            _projectServiceMock.Object,
+            _taskServiceMock.Object,
+            _memberRepo,
+            _currentUserServiceMock.Object,
+            _aiGatewayMock.Object,
+            agentOrchestrator: orchestrator.Object);
+
+        var result = await service.ChatFastAsync(
+            new ErumiChatRequestDto("Hãy lập kế hoạch cải thiện dự án", projectId, Mode: "agent"));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Reply.Should().Be("Agent response");
+        result.Data.UsedAi.Should().BeTrue();
+        orchestrator.Verify(
+            x => x.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        _aiGatewayMock.Verify(
+            x => x.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ChatFastAsync_WhenAgentFrameworkFails_FallsBackToAiGateway()
+    {
+        var projectId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        SetupProjectAiContext(projectId, userId);
+
+        var orchestrator = new Mock<IAiAgentOrchestrator>();
+        orchestrator.SetupGet(x => x.IsEnabled).Returns(true);
+        orchestrator
+            .Setup(x => x.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("Agent provider unavailable"));
+
+        _aiGatewayMock
+            .Setup(x => x.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiResponse
+            {
+                Content = "{\"reply\":\"Gateway fallback\",\"metrics\":[],\"tables\":[],\"charts\":[],\"actions\":[],\"files\":[],\"confidence\":0.8}",
+                ProviderName = "Fallback",
+                ModelName = "fallback-model"
+            });
+
+        var service = new ErumiChatService(
+            _analyticsServiceMock.Object,
+            _projectServiceMock.Object,
+            _taskServiceMock.Object,
+            _memberRepo,
+            _currentUserServiceMock.Object,
+            _aiGatewayMock.Object,
+            agentOrchestrator: orchestrator.Object);
+
+        var result = await service.ChatFastAsync(
+            new ErumiChatRequestDto("Hãy lập kế hoạch cải thiện dự án", projectId, Mode: "agent"));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Reply.Should().Be("Gateway fallback");
+        _aiGatewayMock.Verify(
+            x => x.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ChatFastAsync_ForWritePrompt_CreatesApprovalGatedAutonomousDraft()
+    {
+        var projectId = Guid.NewGuid();
+        var jobId = Guid.NewGuid();
+        var draftId = Guid.NewGuid();
+        var workflow = new Mock<IAiWorkflowService>();
+        workflow
+            .Setup(x => x.CreateJobAsync(
+                It.Is<CreateAiJobDto>(dto =>
+                    dto.ProjectId == projectId &&
+                    dto.JobType == "erumi_autonomous_tasks" &&
+                    dto.SourceText == "Tao task kiem thu tinh nang thanh toan"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Created(new AiJobCreatedDto(jobId, "DraftReady", 0.001m, "cache", draftId)));
+
+        var service = new ErumiChatService(
+            _analyticsServiceMock.Object,
+            _projectServiceMock.Object,
+            _taskServiceMock.Object,
+            _memberRepo,
+            _currentUserServiceMock.Object,
+            _aiGatewayMock.Object,
+            aiWorkflowService: workflow.Object);
+
+        var result = await service.ChatFastAsync(
+            new ErumiChatRequestDto("Tao task kiem thu tinh nang thanh toan", projectId, Mode: "agent"));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Intent.Should().Be("autonomous_task_plan");
+        result.Data.UsedAi.Should().BeTrue();
+        result.Data.Actions.Should().ContainSingle(action =>
+            action.Type == "draft_change" && action.RequiresConfirmation);
+        var payloadJson = System.Text.Json.JsonSerializer.Serialize(result.Data.Actions[0].Payload);
+        payloadJson.Should().Contain(draftId.ToString());
+        workflow.VerifyAll();
+        _aiGatewayMock.Verify(
+            x => x.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     public void Dispose()
     {
         _context.Dispose();

@@ -803,10 +803,13 @@ async function handleDraftAction(action: ErumiAction, confirmAction: 'execute_ac
   action.processing = true
   action.confirmAction = confirmAction
   try {
-    const result = await apiJson<any>(`/api/ai/drafts/${action.payload.draftId}/confirm`, {
+    const approvalUrl = action.payload.runId
+      ? `/api/ai/agent-runs/${action.payload.runId}/approve`
+      : `/api/ai/drafts/${action.payload.draftId}/confirm`
+    const result = await apiJson<any>(approvalUrl, {
       method: 'POST',
       body: JSON.stringify({
-        confirmAction: confirmAction,
+        ...(action.payload.runId ? { action: confirmAction } : { confirmAction: confirmAction }),
         editedPayloadJson: null,
         confirmationNote: confirmAction === 'reject' ? 'Rejected from chat UI' : 'Confirmed from chat UI'
       })
@@ -868,6 +871,7 @@ async function submitChat(explicitText?: string, _action?: string) {
       body: JSON.stringify({
         message: userText,
         projectId: selectedTarget.value === 'workspace' ? null : selectedTarget.value,
+        mode: 'agent',
         history: historyToSend,
         files: attachedFileContexts
       })
@@ -1178,6 +1182,12 @@ onBeforeUnmount(() => {
                         <p class="erumi-draft-text">
                           {{ action.payload?.draftId && isDrawer ? 'Hành động ghi dữ liệu cần xác nhận của bạn để thực thi:' : 'Erumi đã chuẩn bị gợi ý hành động, nhưng pass này không thực thi hành động ghi dữ liệu trực tiếp trên /analytics.' }}
                         </p>
+                        <ol v-if="action.payload?.events?.length" class="erumi-run-progress" aria-label="Tiến trình agent">
+                          <li v-for="event in action.payload.events" :key="`${event.type}-${event.at}`">
+                            <span class="erumi-run-check" aria-hidden="true">✓</span>
+                            <span>{{ event.message }}</span>
+                          </li>
+                        </ol>
                         <div v-if="action.payload?.draftId && isDrawer" class="erumi-draft-buttons">
                           <button
                             type="button"
@@ -1240,7 +1250,7 @@ onBeforeUnmount(() => {
               </template>
 
               <template v-else>
-                <div class="msg-user">{{ msg.text }}</div>
+                <div class="msg-user-bubble">{{ msg.text }}</div>
                 <div v-if="msg.attachments?.length" class="msg-attach">
                   <span v-for="file in msg.attachments" :key="file.name" class="msg-attach-chip">
                     {{ file.name }} · {{ formatUploadSize(file.size) }}
@@ -1627,14 +1637,15 @@ onBeforeUnmount(() => {
 
 .msg-user .msg-content {
   align-items: flex-end;
+  max-width: min(62%, 680px);
 }
 
 .msg-user-row {
   justify-content: flex-end;
 }
 
-/* User bubble: single solid accent, no decorative gradient */
-.msg-user {
+/* User bubble: compact, content-sized, and visually distinct from its row */
+.msg-user-bubble {
   max-width: 100%;
   background: var(--primary);
   color: #ffffff;
@@ -1920,6 +1931,35 @@ onBeforeUnmount(() => {
   color: var(--muted);
   margin: 0 0 10px 0;
   font-weight: 500;
+}
+
+.erumi-run-progress {
+  display: grid;
+  gap: 7px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.erumi-run-progress li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.erumi-run-check {
+  display: inline-grid;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .erumi-draft-buttons {
@@ -2571,6 +2611,10 @@ onBeforeUnmount(() => {
   }
 
   .msg-content {
+    max-width: 84%;
+  }
+
+  .msg-user .msg-content {
     max-width: 84%;
   }
 

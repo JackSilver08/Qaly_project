@@ -10,15 +10,23 @@ using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 using Qaly.Application.DTOs.Project;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 
 namespace Qaly.Application.Services;
 
 public sealed class ErumiChatService : IErumiChatService
 {
+    private static readonly Action<ILogger, Exception?> AgentTimedOut =
+        LoggerMessage.Define(LogLevel.Warning, new EventId(4101, nameof(AgentTimedOut)),
+            "Microsoft Agent Framework timed out; falling back to AiGateway.");
+    private static readonly Action<ILogger, Exception?> AgentFailed =
+        LoggerMessage.Define(LogLevel.Warning, new EventId(4102, nameof(AgentFailed)),
+            "Microsoft Agent Framework failed; falling back to AiGateway.");
     private static readonly string[] WorkspaceSources = { "AnalyticsService", "Tasks", "TimeEntries", "ProjectMembers" };
     private static readonly string[] ProjectSources = { "AnalyticsService", "Projects", "Tasks", "TimeEntries", "ProjectMembers" };
     private static readonly string[] IntentRouterSources = { "Erumi intent router" };
     private static readonly string[] UploadedFileSources = { "UploadedFile", "ImportService" };
+    private static readonly string[] AutonomousTaskSources = { "Microsoft Agent Framework", "AI workflow", "Project context" };
     private static readonly string[] WorkspaceChartLabels = { "Task hoàn thành", "Giờ đã log" };
     private static readonly string[] StatusChartLabels = { "Hoàn thành", "Đang làm", "Khác/chưa bắt đầu" };
 
@@ -42,6 +50,10 @@ public sealed class ErumiChatService : IErumiChatService
     private readonly ICurrentUserService _currentUserService;
     private readonly IAiGateway _aiGateway;
     private readonly AiTools? _aiTools;
+    private readonly IAiAgentOrchestrator? _agentOrchestrator;
+    private readonly IAiWorkflowService? _aiWorkflowService;
+    private readonly IAgentRunService? _agentRunService;
+    private readonly ILogger<ErumiChatService>? _logger;
 
     public ErumiChatService(
         IAnalyticsService analyticsService,
@@ -50,7 +62,11 @@ public sealed class ErumiChatService : IErumiChatService
         IRepository<ProjectMember> memberRepo,
         ICurrentUserService currentUserService,
         IAiGateway aiGateway,
-        AiTools? aiTools = null)
+        AiTools? aiTools = null,
+        IAiAgentOrchestrator? agentOrchestrator = null,
+        ILogger<ErumiChatService>? logger = null,
+        IAiWorkflowService? aiWorkflowService = null,
+        IAgentRunService? agentRunService = null)
     {
         _analyticsService = analyticsService;
         _projectService = projectService;
@@ -59,6 +75,10 @@ public sealed class ErumiChatService : IErumiChatService
         _currentUserService = currentUserService;
         _aiGateway = aiGateway;
         _aiTools = aiTools;
+        _agentOrchestrator = agentOrchestrator;
+        _logger = logger;
+        _aiWorkflowService = aiWorkflowService;
+        _agentRunService = agentRunService;
     }
 
     public async Task<Result<ErumiChatResponseDto>> ChatFastAsync(ErumiChatRequestDto request, CancellationToken ct = default)
@@ -86,7 +106,7 @@ public sealed class ErumiChatService : IErumiChatService
 
         if (IsWriteIntent(normalized))
         {
-            return Result.Success(BuildWriteConfirmationResponse(message, request.ProjectId, sw));
+            return await BuildWriteConfirmationResponseAsync(message, request.ProjectId, sw, ct);
         }
 
         if (!request.ProjectId.HasValue)
@@ -110,6 +130,11 @@ public sealed class ErumiChatService : IErumiChatService
         }
 
         var data = result.Data;
+        if (IsAgentMode(request))
+        {
+            return await ExecuteWorkspaceAiChatAsync(request, data, sw, ct);
+        }
+
         if (IsExportQuestion(normalized))
         {
             return Result.Success(CreateResponse(
@@ -346,7 +371,7 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             Tools = _aiTools?.GetAvailableTools()
         };
 
-        var aiResponse = await _aiGateway.ExecuteAsync(aiRequest, ct);
+        var aiResponse = await ExecuteAiAsync(aiRequest, ct);
         return Result.Success(ParseStructuredAiResponse(aiResponse.Content, "workspace_analytics", sw, WorkspaceSources, aiResponse.IsMock));
     }
 
@@ -369,6 +394,11 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
         }
 
         var project = projectResult.Data;
+        if (IsAgentMode(request))
+        {
+            return await ExecuteProjectAiChatAsync(request, project, analyticsResult.Data, sw, ct);
+        }
+
         var normalized = Normalize(request.Message);
         if (IsExportQuestion(normalized))
         {
@@ -656,11 +686,42 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             Tools = tools
         };
 
-        var aiResponse = await _aiGateway.ExecuteAsync(aiRequest, ct);
+        var aiResponse = await ExecuteAiAsync(aiRequest, ct);
         var intent = ClassifyProjectIntent(Normalize(request.Message));
 
         return Result.Success(ParseStructuredAiResponse(aiResponse.Content, intent, sw, ProjectSources, aiResponse.IsMock));
     }
+
+    private async Task<AiResponse> ExecuteAiAsync(AiRequest request, CancellationToken ct)
+    {
+        if (_agentOrchestrator?.IsEnabled == true)
+        {
+            try
+            {
+                return await _agentOrchestrator.ExecuteAsync(request, ct);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                if (_logger != null)
+                {
+                    AgentTimedOut(_logger, null);
+                }
+            }
+            catch (Exception ex)
+            {
+                if (_logger != null)
+                {
+                    AgentFailed(_logger, ex);
+                }
+            }
+        }
+
+        return await _aiGateway.ExecuteAsync(request, ct);
+    }
+
+    private bool IsAgentMode(ErumiChatRequestDto request) =>
+        _agentOrchestrator?.IsEnabled == true
+        && string.Equals(request.Mode, "agent", StringComparison.OrdinalIgnoreCase);
 
     private async Task<System.Collections.Generic.IList<Microsoft.Extensions.AI.AITool>?> GetFilteredToolsForProjectAsync(
         Guid projectId,
@@ -741,7 +802,7 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
 
         return allTools
             .OfType<AIFunction>()
-            .Where(t => allowedToolNames.Contains(t.Metadata.Name))
+            .Where(t => allowedToolNames.Contains(t.Name))
             .Cast<AITool>()
             .ToList();
     }
@@ -1852,20 +1913,114 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
         return $"Mình đã phân tích tổng quan dự án **{projectName}** từ dữ liệu task, workload và time log. Hiện dự án hoàn thành **{data.DoneTasks}/{data.TotalTasks} task** (**{progress:0.#}%**), có **{data.InProgressTasks} task đang làm** và **{data.OverdueTasks} task quá hạn**. Các biểu đồ bên dưới thể hiện phân bổ trạng thái, workload thành viên và nhịp hoàn thành 14 ngày gần nhất.";
     }
 
-    private static ErumiChatResponseDto BuildWriteConfirmationResponse(string message, Guid? projectId, Stopwatch sw)
+    private async Task<Result<ErumiChatResponseDto>> BuildWriteConfirmationResponseAsync(
+        string message,
+        Guid? projectId,
+        Stopwatch sw,
+        CancellationToken ct)
     {
+        if (!projectId.HasValue)
+        {
+            return Result.Success(CreateResponse(
+                "Hãy chọn một dự án trước. Sau đó chỉ cần mô tả mục tiêu, Erumi sẽ tự lập kế hoạch task và chuẩn bị bản nháp để bạn duyệt.",
+                "write_requires_project",
+                sw,
+                sources: IntentRouterSources,
+                confidence: 1));
+        }
+
+        if (_agentRunService != null)
+        {
+            var runResult = await _agentRunService.StartAsync(
+                new StartAgentRunDto(projectId.Value, message), ct);
+            if (!runResult.IsSuccess || runResult.Data?.DraftId == null)
+            {
+                return Result.Failure<ErumiChatResponseDto>(
+                    runResult.Error ?? "Erumi không thể khởi tạo agent run.",
+                    runResult.StatusCode);
+            }
+
+            var runAction = new ErumiActionDto(
+                "draft_change",
+                "Xem và xác nhận kế hoạch task",
+                new
+                {
+                    runId = runResult.Data.Id,
+                    draftId = runResult.Data.DraftId,
+                    status = runResult.Data.Status,
+                    progress = runResult.Data.Progress,
+                    currentStep = runResult.Data.CurrentStep,
+                    events = runResult.Data.Events,
+                    projectId
+                },
+                RequiresConfirmation: true);
+
+            return Result.Success(CreateResponse(
+                "Erumi đã đọc dữ liệu dự án, lập kế hoạch và tạo một agent run có checkpoint. Run đang chờ xác nhận trước khi thực thi thay đổi.",
+                "autonomous_agent_run",
+                sw,
+                actions: new[] { runAction },
+                sources: AutonomousTaskSources,
+                confidence: 0.92,
+                usedAi: true,
+                confidenceReason: "Agent run có trạng thái bền vững, giới hạn quyền và cổng xác nhận."));
+        }
+
+        if (_aiWorkflowService != null)
+        {
+            var jobResult = await _aiWorkflowService.CreateJobAsync(
+                new CreateAiJobDto(
+                    JobType: "erumi_autonomous_tasks",
+                    ProjectId: projectId.Value,
+                    SourceType: "chat_prompt",
+                    SourceId: null,
+                    ProviderHint: "microsoft-agent-framework",
+                    Sensitive: false,
+                    SourceText: message),
+                ct);
+
+            if (!jobResult.IsSuccess || jobResult.Data?.DraftId == null)
+            {
+                return Result.Failure<ErumiChatResponseDto>(
+                    jobResult.Error ?? "Erumi không thể chuẩn bị kế hoạch task.",
+                    jobResult.StatusCode);
+            }
+
+            var plannedAction = new ErumiActionDto(
+                "draft_change",
+                "Xem và xác nhận kế hoạch task",
+                new
+                {
+                    draftId = jobResult.Data.DraftId,
+                    jobId = jobResult.Data.JobId,
+                    status = jobResult.Data.Status,
+                    projectId
+                },
+                RequiresConfirmation: true);
+
+            return Result.Success(CreateResponse(
+                "Erumi đã tự phân tích mục tiêu và chuẩn bị kế hoạch task có cấu trúc. Hãy xác nhận để thực thi; trước thời điểm đó dữ liệu dự án chưa bị thay đổi.",
+                "autonomous_task_plan",
+                sw,
+                actions: new[] { plannedAction },
+                sources: AutonomousTaskSources,
+                confidence: 0.9,
+                usedAi: true,
+                confidenceReason: "Kế hoạch do agent tạo và được đặt sau cổng xác nhận của người dùng."));
+        }
+
         var action = new ErumiActionDto(
             "draft_change",
             "Chuẩn bị thay đổi để bạn xác nhận",
             new { message, projectId },
             RequiresConfirmation: true);
 
-        return CreateResponse(
+        return Result.Success(CreateResponse(
             "Mình đã nhận ra đây là yêu cầu thay đổi dữ liệu. Để tránh cập nhật nhầm, Erumi sẽ chỉ tạo bản nháp hành động và cần bạn xác nhận trên UI trước khi ghi vào hệ thống.",
             "write_confirmation",
             sw,
             actions: new[] { action },
-            sources: IntentRouterSources);
+            sources: IntentRouterSources));
     }
 
     private static ErumiChatResponseDto CreateResponse(

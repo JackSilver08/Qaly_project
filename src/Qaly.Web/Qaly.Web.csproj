@@ -13,6 +13,9 @@
     <PackageReference Include="DotNetEnv" Version="3.2.0" />
     <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.1" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.7" />
+    <!-- Pin the patched 2.x line required by Microsoft.AspNetCore.OpenApi.
+         This avoids changing the OpenAPI integration surface while resolving NU1903. -->
+    <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.7">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>

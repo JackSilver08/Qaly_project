@@ -142,6 +142,8 @@ services:
       LiveKit__TokenTtlMinutes: "${LiveKit__TokenTtlMinutes:-120}"
       Ai__OllamaUrl: "http://qaly-ollama:11434"
       Ai__QdrantUrl: "http://qaly-qdrant:6333"
+      Ai__AgentFramework__Enabled: "${Ai__AgentFramework__Enabled:-false}"
+      Ai__AgentFramework__TimeoutSeconds: "${Ai__AgentFramework__TimeoutSeconds:-45}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
 

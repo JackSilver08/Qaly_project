@@ -35,6 +35,7 @@ public class AiWorkflowService : IAiWorkflowService
     private readonly ICommentService? _commentService;
     private readonly ITimeTrackingService? _timeTrackingService;
     private readonly IAiComplianceService? _complianceService;
+    private readonly IAiAgentOrchestrator? _agentOrchestrator;
 
     public AiWorkflowService(
         IRepository<Project> projectRepo,
@@ -53,7 +54,8 @@ public class AiWorkflowService : IAiWorkflowService
         ITaskService? taskService = null,
         ICommentService? commentService = null,
         ITimeTrackingService? timeTrackingService = null,
-        IAiComplianceService? complianceService = null)
+        IAiComplianceService? complianceService = null,
+        IAiAgentOrchestrator? agentOrchestrator = null)
     {
         _projectRepo = projectRepo;
         _projectMemberRepo = projectMemberRepo;
@@ -72,6 +74,7 @@ public class AiWorkflowService : IAiWorkflowService
         _commentService = commentService;
         _timeTrackingService = timeTrackingService;
         _complianceService = complianceService;
+        _agentOrchestrator = agentOrchestrator;
     }
 
     public async Task<Result<AiJobCreatedDto>> CreateJobAsync(CreateAiJobDto dto, CancellationToken ct = default)
@@ -125,7 +128,7 @@ public class AiWorkflowService : IAiWorkflowService
         await _aiJobRepo.AddAsync(job, ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
-        var draftPayload = BuildTaskDraftPayload(dto.SourceText);
+        var draftPayload = await BuildTaskDraftPayloadAsync(dto.SourceText, project, ct);
         var draft = new AiGeneratedDraft
         {
             AiJobId = job.Id,
@@ -662,6 +665,112 @@ public class AiWorkflowService : IAiWorkflowService
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
+
+    private async Task<AiTaskDraftPayload> BuildTaskDraftPayloadAsync(
+        string? sourceText,
+        Project project,
+        CancellationToken ct)
+    {
+        if (_agentOrchestrator?.IsEnabled == true && !string.IsNullOrWhiteSpace(sourceText))
+        {
+            try
+            {
+                var existingTasks = await _taskRepo.GetQueryable()
+                    .Where(task => task.ProjectId == project.Id)
+                    .OrderByDescending(task => task.CreatedAt)
+                    .Take(30)
+                    .Select(task => new { task.Title, task.Status, task.Priority, task.DueDate })
+                    .ToListAsync(ct);
+
+                var contextJson = JsonSerializer.Serialize(new
+                {
+                    project.Name,
+                    project.Description,
+                    ExistingTasks = existingTasks
+                });
+
+                var response = await _agentOrchestrator.ExecuteAsync(new AiRequest
+                {
+                    JobType = "erumi_task_planner",
+                    SystemPrompt = """
+You are Erumi's task planning engine for Qaly. Convert the user's goal into a small, executable project plan.
+Return JSON only with this exact shape:
+{"tasks":[{"title":"...","description":"...","priority":"Low|Medium|High|Critical","status":"Todo","dueDate":null,"assigneeId":null}]}
+Rules: create 1-8 non-duplicate tasks; use concise action titles; include acceptance criteria in descriptions; do not claim execution; do not invent member IDs; preserve the user's language.
+""",
+                    Prompt = $"Project context: {contextJson}\nUser goal: {sourceText}",
+                    ExpectedSchemaId = "TaskDraft.v1",
+                    ProjectId = project.Id,
+                    TenantId = project.OrganizationId,
+                    UserId = _currentUserService.UserId,
+                    IsSensitive = false,
+                    UseCache = false,
+                    Tools = Array.Empty<Microsoft.Extensions.AI.AITool>()
+                }, ct);
+
+                var parsed = TryParseAgentTaskDraft(response.Content);
+                if (parsed is { Tasks.Count: > 0 })
+                {
+                    return new AiTaskDraftPayload(parsed.Tasks.Take(8).ToList());
+                }
+            }
+            catch (Exception) when (!ct.IsCancellationRequested)
+            {
+                // Preserve availability: deterministic draft generation remains the fallback.
+            }
+        }
+
+        return BuildTaskDraftPayload(sourceText);
+    }
+
+    private static AiTaskDraftPayload? TryParseAgentTaskDraft(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return null;
+
+        var json = content.Trim();
+        if (json.StartsWith("```", StringComparison.Ordinal))
+        {
+            var firstNewLine = json.IndexOf('\n');
+            var lastFence = json.LastIndexOf("```", StringComparison.Ordinal);
+            if (firstNewLine >= 0 && lastFence > firstNewLine)
+            {
+                json = json[(firstNewLine + 1)..lastFence].Trim();
+            }
+        }
+
+        try
+        {
+            var payload = JsonSerializer.Deserialize<AiTaskDraftPayload>(json, JsonOptions);
+            if (payload == null) return null;
+
+            var validTasks = payload.Tasks
+                .Where(task => !string.IsNullOrWhiteSpace(task.Title))
+                .Select(task => task with
+                {
+                    Title = task.Title.Trim(),
+                    Description = string.IsNullOrWhiteSpace(task.Description) ? null : task.Description.Trim(),
+                    Priority = NormalizePriority(task.Priority),
+                    Status = "Todo",
+                    AssigneeId = null
+                })
+                .DistinctBy(task => task.Title, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            return new AiTaskDraftPayload(validTasks);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string NormalizePriority(string? priority)
+        => priority?.Trim().ToLowerInvariant() switch
+        {
+            "low" => "Low",
+            "high" => "High",
+            "critical" => "Critical",
+            _ => "Medium"
+        };
 
     private static AiTaskDraftPayload BuildTaskDraftPayload(string? sourceText)
     {

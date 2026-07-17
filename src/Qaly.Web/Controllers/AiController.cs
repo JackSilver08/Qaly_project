@@ -16,19 +16,22 @@ public class AiController : BaseApiController
     private readonly IAiWorkflowService _aiWorkflowService;
     private readonly IAiIngestionService _ingestionService;
     private readonly IAnalyticsService _analyticsService;
+    private readonly IAgentRunService _agentRunService;
 
     public AiController(
         IAiService aiService,
         IErumiChatService erumiChatService,
         IAiWorkflowService aiWorkflowService,
         IAiIngestionService ingestionService,
-        IAnalyticsService analyticsService)
+        IAnalyticsService analyticsService,
+        IAgentRunService agentRunService)
     {
         _aiService = aiService;
         _erumiChatService = erumiChatService;
         _aiWorkflowService = aiWorkflowService;
         _ingestionService = ingestionService;
         _analyticsService = analyticsService;
+        _agentRunService = agentRunService;
     }
 
     [HttpPost("sync")]
@@ -49,6 +52,27 @@ public class AiController : BaseApiController
     public async Task<IActionResult> ConfirmDraft(Guid draftId, ConfirmAiDraftDto dto, CancellationToken ct = default)
     {
         var result = await _aiWorkflowService.ConfirmDraftAsync(draftId, dto, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("agent-runs")]
+    public async Task<IActionResult> StartAgentRun(StartAgentRunDto request, CancellationToken ct = default)
+    {
+        var result = await _agentRunService.StartAsync(request, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("agent-runs/{runId:guid}")]
+    public async Task<IActionResult> GetAgentRun(Guid runId, CancellationToken ct = default)
+    {
+        var result = await _agentRunService.GetAsync(runId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("agent-runs/{runId:guid}/approve")]
+    public async Task<IActionResult> ApproveAgentRun(Guid runId, ApproveAgentRunDto request, CancellationToken ct = default)
+    {
+        var result = await _agentRunService.ApproveAsync(runId, request, ct);
         return StatusCode(result.StatusCode, result);
     }
 

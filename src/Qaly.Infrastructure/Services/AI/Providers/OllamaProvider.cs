@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Net.Http.Json;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.AI;
 using Qaly.Application.Common.Models;
 using Qaly.Application.Services;
 
@@ -26,36 +27,52 @@ public class OllamaProvider : IAiProvider
         var model = string.IsNullOrWhiteSpace(config.Model) ? "llama3.2:1b" : config.Model;
 
         var httpClient = _httpClientFactory.CreateClient("AiOllama");
-        var ollamaClient = new OllamaChatClient(new Uri(baseUrl), model, httpClient);
-        
-        var chatMessages = new List<ChatMessage>
+        var chatMessages = new List<object>
         {
-            new ChatMessage(ChatRole.System, request.SystemPrompt)
+            new { role = "system", content = request.SystemPrompt }
         };
 
         if (request.History != null)
         {
             foreach (var msg in request.History)
             {
-                var role = string.Equals(msg.Role, "assistant", StringComparison.OrdinalIgnoreCase) 
-                    ? ChatRole.Assistant : ChatRole.User;
-                chatMessages.Add(new ChatMessage(role, msg.Content));
+                var role = string.Equals(msg.Role, "assistant", StringComparison.OrdinalIgnoreCase)
+                    ? "assistant" : "user";
+                chatMessages.Add(new { role, content = msg.Content });
             }
         }
 
-        chatMessages.Add(new ChatMessage(ChatRole.User, request.Prompt));
+        chatMessages.Add(new { role = "user", content = request.Prompt });
 
-        var options = new ChatOptions
-        {
-            MaxOutputTokens = 1500,
-            Temperature = 0.3f
-        };
+        using var response = await httpClient.PostAsJsonAsync(
+            $"{baseUrl.TrimEnd('/')}/api/chat",
+            new
+            {
+                model,
+                messages = chatMessages,
+                stream = false,
+                options = new
+                {
+                    temperature = 0.3,
+                    num_predict = 1500
+                }
+            },
+            cancellationToken);
+        response.EnsureSuccessStatusCode();
 
-        var response = await ollamaClient.CompleteAsync(chatMessages, options, cancellationToken);
-        var content = response.Message.Text ?? string.Empty;
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
+        var root = payload.RootElement;
+        var content = root.TryGetProperty("message", out var message)
+            && message.TryGetProperty("content", out var contentElement)
+                ? contentElement.GetString() ?? string.Empty
+                : string.Empty;
 
-        int inputTokens = response.Usage?.InputTokenCount ?? (request.Prompt.Length + request.SystemPrompt.Length) / 4;
-        int outputTokens = response.Usage?.OutputTokenCount ?? content.Length / 4;
+        int inputTokens = root.TryGetProperty("prompt_eval_count", out var inputCount)
+            ? inputCount.GetInt32()
+            : (request.Prompt.Length + request.SystemPrompt.Length) / 4;
+        int outputTokens = root.TryGetProperty("eval_count", out var outputCount)
+            ? outputCount.GetInt32()
+            : content.Length / 4;
         
         decimal inputCost = (inputTokens / 1000000m) * config.InputTokenCostPerMillion;
         decimal outputCost = (outputTokens / 1000000m) * config.OutputTokenCostPerMillion;

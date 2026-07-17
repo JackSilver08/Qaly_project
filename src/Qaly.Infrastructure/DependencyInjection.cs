@@ -12,6 +12,7 @@ using Qaly.Infrastructure.Data.Repositories;
 using Qaly.Infrastructure.Services;
 using Qaly.Infrastructure.Services.AI;
 using Qaly.Infrastructure.Services.AI.Providers;
+using OllamaSharp;
 
 namespace Qaly.Infrastructure;
 
@@ -76,6 +77,7 @@ public static class DependencyInjection
         services.AddSingleton<AiOutputValidator>();
 
         services.AddScoped<IAiGateway, Qaly.Infrastructure.Services.AI.AiGateway>();
+        services.AddScoped<IAiAgentOrchestrator, MicrosoftAgentOrchestrator>();
         
         services.AddHttpClient("WebhookClient");
 
@@ -84,8 +86,9 @@ public static class DependencyInjection
         var chatModel = configuration["Ai:ChatModel"] ?? "llama3.2";
         var embeddingModel = configuration["Ai:EmbeddingModel"] ?? "nomic-embed-text";
 
-        services.AddChatClient(new OllamaChatClient(new Uri(ollamaUrl), chatModel));
-        services.AddEmbeddingGenerator(new OllamaEmbeddingGenerator(new Uri(ollamaUrl), embeddingModel));
+        services.AddChatClient((IChatClient)new OllamaApiClient(new Uri(ollamaUrl), chatModel));
+        services.AddEmbeddingGenerator((IEmbeddingGenerator<string, Embedding<float>>)
+            new OllamaApiClient(new Uri(ollamaUrl), embeddingModel));
         
         var semanticEnabled = configuration.GetValue<bool>("Ai:SemanticEnabled");
         if (semanticEnabled)

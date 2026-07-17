@@ -357,7 +357,7 @@ public class AiGateway : IAiGateway
                         // Execute Read Tool
                         var tool = request.Tools
                             .OfType<AIFunction>()
-                            .FirstOrDefault(t => string.Equals(t.Metadata.Name, toolName, System.StringComparison.OrdinalIgnoreCase));
+                            .FirstOrDefault(t => string.Equals(t.Name, toolName, System.StringComparison.OrdinalIgnoreCase));
                         if (tool != null)
                         {
                             try
@@ -374,7 +374,7 @@ public class AiGateway : IAiGateway
                                     }
                                 }
 
-                                var invokeResult = await tool.InvokeAsync(boundArgs, cancellationToken);
+                                var invokeResult = await tool.InvokeAsync(new AIFunctionArguments(boundArgs), cancellationToken);
                                 var resultText = invokeResult?.ToString() ?? "Success";
 
                                 if (_logger.IsEnabled(Microsoft.Extensions.Logging.LogLevel.Information))
@@ -527,13 +527,13 @@ public class AiGateway : IAiGateway
         {
             if (tool is AIFunction function)
             {
-                sb.AppendLine($"- Tên: {function.Metadata.Name}");
-                sb.AppendLine($"  Mô tả: {function.Metadata.Description}");
+                sb.AppendLine($"- Tên: {function.Name}");
+                sb.AppendLine($"  Mô tả: {function.Description}");
                 sb.AppendLine("  Tham số:");
-                foreach (var param in function.Metadata.Parameters)
+                foreach (var param in function.UnderlyingMethod?.GetParameters() ?? [])
                 {
-                    var req = param.IsRequired ? "(Bắt buộc)" : "(Tùy chọn)";
-                    sb.AppendLine($"    + {param.Name} ({param.ParameterType?.Name}): {param.Description} {req}");
+                    var req = !param.IsOptional ? "(Bắt buộc)" : "(Tùy chọn)";
+                    sb.AppendLine($"    + {param.Name} ({param.ParameterType.Name}) {req}");
                 }
             }
         }
@@ -608,13 +608,13 @@ public class AiGateway : IAiGateway
     private static Dictionary<string, object?> BindArguments(AIFunction function, Dictionary<string, object?> rawParams)
     {
         var bound = new Dictionary<string, object?>();
-        foreach (var param in function.Metadata.Parameters)
+        foreach (var param in function.UnderlyingMethod?.GetParameters() ?? [])
         {
-            if (rawParams.TryGetValue(param.Name, out var rawVal) && rawVal != null)
+            if (param.Name != null && rawParams.TryGetValue(param.Name, out var rawVal) && rawVal != null)
             {
                 bound[param.Name] = ConvertType(rawVal, param.ParameterType);
             }
-            else if (param.IsRequired)
+            else if (!param.IsOptional && param.Name != null)
             {
                 bound[param.Name] = null;
             }
