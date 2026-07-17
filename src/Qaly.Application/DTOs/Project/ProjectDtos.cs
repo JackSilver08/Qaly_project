@@ -23,7 +23,8 @@ public record ProjectDto(
     bool EnableInReview = true,
     bool RequireEvidenceToDone = false,
     bool RestrictTransitionsToAdmin = false,
-    DateTimeOffset? DeletedAt = null);
+    DateTimeOffset? DeletedAt = null,
+    DateTimeOffset? ArchivedAt = null);
 
 public record CreateProjectDto(
     string Name,

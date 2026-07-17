@@ -53,7 +53,8 @@ public sealed class AgentRunService : IAgentRunService
             false,
             goal), ct);
 
-        if (!workflowResult.IsSuccess || workflowResult.Data?.DraftId is not Guid draftId)
+        var draftId = workflowResult.Data?.DraftId;
+        if (!workflowResult.IsSuccess || draftId is null)
             return Result.Failure<AgentRunDto>(workflowResult.Error ?? "Agent could not create a plan.", workflowResult.StatusCode);
 
         events.Add(Event("plan.completed", "Đã tạo kế hoạch task có cấu trúc.", 70));
@@ -72,7 +73,7 @@ public sealed class AgentRunService : IAgentRunService
             ProviderHint = "microsoft-agent-framework",
             PayloadJson = JsonSerializer.Serialize(new { goal }, JsonOptions),
             ResultJson = JsonSerializer.Serialize(state, JsonOptions),
-            EstimatedCostUsd = workflowResult.Data.EstimatedCostUsd,
+            EstimatedCostUsd = workflowResult.Data!.EstimatedCostUsd,
             StartedAt = DateTimeOffset.UtcNow,
             MaxRetry = 1
         };

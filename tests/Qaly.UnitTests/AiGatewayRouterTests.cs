@@ -178,7 +178,82 @@ public class AiGatewayRouterTests : IDisposable
     }
 
     [Fact]
-    public async Task ExecuteAsync_WhenSchemaValidationFails_RetriesAndEventuallyFallsBack()
+    public async Task ExecuteAsync_WhenPreferredProviderFails_UsesNextConfiguredProvider()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["AiSettings:Provider"] = "OpenAI",
+            ["AiSettings:FallbackProviders:0"] = "Gemini",
+            ["AiSettings:OpenAI:ApiKey"] = "sk-test",
+            ["AiSettings:Gemini:ApiKey"] = "gemini-test"
+        }).Build();
+        var primary = new Mock<IAiProvider>();
+        primary.SetupGet(provider => provider.ProviderName).Returns("OpenAI");
+        primary.Setup(provider => provider.CompleteAsync(
+                It.IsAny<AiRequest>(), It.IsAny<AiProviderSetting>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("primary unavailable"));
+        var fallback = new Mock<IAiProvider>();
+        fallback.SetupGet(provider => provider.ProviderName).Returns("Gemini");
+        fallback.Setup(provider => provider.CompleteAsync(
+                It.IsAny<AiRequest>(), It.IsAny<AiProviderSetting>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiResponse
+            {
+                Content = "fallback response",
+                ProviderName = "Gemini",
+                ModelName = "gemini-test"
+            });
+
+        var gateway = CreateGateway(configuration, new AiProviderFactory([primary.Object, fallback.Object]));
+        var response = await gateway.ExecuteAsync(new AiRequest
+        {
+            JobType = "test",
+            SystemPrompt = "system",
+            Prompt = "prompt",
+            UseCache = false
+        });
+
+        response.IsSuccess.Should().BeTrue();
+        response.ProviderName.Should().Be("Gemini");
+        primary.Verify(provider => provider.CompleteAsync(
+            It.IsAny<AiRequest>(), It.IsAny<AiProviderSetting>(), It.IsAny<CancellationToken>()), Times.Once);
+        fallback.Verify(provider => provider.CompleteAsync(
+            It.IsAny<AiRequest>(), It.IsAny<AiProviderSetting>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WhenAllProvidersFailAndMockPolicyIsExplicit_ReturnsLabeledDegradedMock()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["AiSettings:Provider"] = "Ollama",
+            ["AiSettings:FallbackProviders:0"] = "Ollama",
+            ["AiSettings:AllowProviderDegradedMock"] = "true"
+        }).Build();
+        var provider = new Mock<IAiProvider>();
+        provider.SetupGet(candidate => candidate.ProviderName).Returns("Ollama");
+        provider.Setup(candidate => candidate.CompleteAsync(
+                It.IsAny<AiRequest>(), It.IsAny<AiProviderSetting>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("provider unavailable"));
+
+        var gateway = CreateGateway(configuration, new AiProviderFactory([provider.Object]));
+        var response = await gateway.ExecuteAsync(new AiRequest
+        {
+            JobType = "test",
+            SystemPrompt = "system",
+            Prompt = "prompt",
+            ExpectedSchemaId = "TextAnswer.v1",
+            UseCache = false,
+            AllowMockFallback = true
+        });
+
+        response.IsSuccess.Should().BeTrue();
+        response.IsMock.Should().BeTrue();
+        response.ProviderName.Should().Be("ProviderDegradedMock");
+        response.MockReason.Should().Be("provider_degraded");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WhenSchemaValidationFails_RetriesAndReturnsSchemaError()
     {
         var config = CreateConfiguration("Ollama");
         var mockProvider = new Mock<IAiProvider>();
@@ -209,10 +284,9 @@ public class AiGatewayRouterTests : IDisposable
 
         var response = await gateway.ExecuteAsync(request);
 
-        // Should fallback to Mock response
-        response.IsMock.Should().BeTrue();
-        response.ProviderName.Should().Be("FallbackMock");
-        response.Content.Should().Contain("tạm thời không phản hồi");
+        response.IsSuccess.Should().BeFalse();
+        response.IsMock.Should().BeFalse();
+        response.ErrorCode.Should().Be(AiErrorCodes.SchemaInvalid);
         
         // Verify CompleteAsync was called 3 times (1 initial + 2 retries)
         mockProvider.Verify(p => p.CompleteAsync(It.IsAny<AiRequest>(), It.IsAny<AiProviderSetting>(), It.IsAny<CancellationToken>()), Times.Exactly(3));

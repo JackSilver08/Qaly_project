@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using Qaly.Application.Common.Interfaces;
+using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Ai;
 using Qaly.Application.DTOs.Meeting;
 using Qaly.Application.Services;
@@ -33,6 +34,14 @@ public class MeetilyImportTests : IDisposable
         _context = new QalyDbContext(options);
         _currentUser.SetupGet(user => user.UserId).Returns(_userId);
         _currentUser.SetupGet(user => user.Role).Returns("Member");
+        _complianceServiceMock
+            .Setup(service => service.CanProcessInCloudAsync(
+                It.IsAny<Guid?>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
 
         _context.Users.Add(new User { Id = _userId, FullName = "PM", Email = "pm@qaly.dev", IsActive = true });
         _context.Projects.Add(new Project { Id = _projectId, Name = "Qaly MVP", Code = "qaly-mvp", OwnerId = _userId });
@@ -74,12 +83,19 @@ public class MeetilyImportTests : IDisposable
         importResult.IsSuccess.Should().BeTrue(importResult.Error);
         (await _context.TaskItems.CountAsync()).Should().Be(0);
 
-        var confirmResult = await CreateAiWorkflowService().ConfirmDraftAsync(
+        var workflow = CreateAiWorkflowService();
+        var confirmResult = await workflow.ConfirmDraftAsync(
             importResult.Data!.DraftId!.Value,
-            new ConfirmAiDraftDto(null, "create_tasks", "approved"));
+            new ConfirmAiDraftDto(null, "create_tasks", "approved", IdempotencyKey: "meetily-confirm-1"));
+        var replay = await workflow.ConfirmDraftAsync(
+            importResult.Data.DraftId.Value,
+            new ConfirmAiDraftDto(null, "create_tasks", "approved", IdempotencyKey: "meetily-confirm-1"));
 
         confirmResult.IsSuccess.Should().BeTrue(confirmResult.Error);
         confirmResult.Data!.CreatedTaskCount.Should().Be(1);
+        replay.IsSuccess.Should().BeTrue(replay.Error);
+        replay.Data!.CreatedTaskIds.Should().Equal(confirmResult.Data.CreatedTaskIds);
+        (await _context.TaskItems.CountAsync()).Should().Be(1);
         var task = await _context.TaskItems.SingleAsync();
         task.Title.Should().Be("Prepare demo script");
         task.ProjectId.Should().Be(_projectId);
@@ -112,6 +128,32 @@ public class MeetilyImportTests : IDisposable
     }
 
     [Fact]
+    public async Task ConfirmDraftAsync_WithStaleRowVersion_ReturnsConcurrencyConflictWithoutMutation()
+    {
+        var importResult = await CreateMeetingImportService().ImportMeetilyAsync(CreateRequest());
+        importResult.IsSuccess.Should().BeTrue(importResult.Error);
+        var draft = await _context.AiGeneratedDrafts.SingleAsync(item => item.Id == importResult.Data!.DraftId);
+        draft.RowVersion = [1, 2, 3, 4];
+        await _context.SaveChangesAsync();
+
+        var result = await CreateAiWorkflowService().ConfirmDraftAsync(
+            draft.Id,
+            new ConfirmAiDraftDto(
+                null,
+                "create_tasks",
+                "stale edit",
+                RowVersion: Convert.ToBase64String([9, 9, 9, 9]),
+                IdempotencyKey: "meetily-confirm-stale"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(409);
+        result.ErrorCode.Should().Be(AiErrorCodes.DraftConcurrencyConflict);
+        (await _context.TaskItems.CountAsync()).Should().Be(0);
+        (await _context.AiGeneratedDrafts.SingleAsync(item => item.Id == draft.Id))
+            .ConfirmationIdempotencyKey.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ConfirmDraftAsync_WithRejectAction_MarksDraftAsRejectedAndLogsAuditEvent()
     {
         var importResult = await CreateMeetingImportService().ImportMeetilyAsync(CreateRequest());
@@ -120,18 +162,18 @@ public class MeetilyImportTests : IDisposable
 
         var confirmResult = await CreateAiWorkflowService().ConfirmDraftAsync(
             draftId,
-            new ConfirmAiDraftDto(null, "reject", "not interested"));
+            new ConfirmAiDraftDto(null, "reject", "not interested", IdempotencyKey: "meetily-reject-1"));
 
         confirmResult.IsSuccess.Should().BeTrue(confirmResult.Error);
-        confirmResult.Data!.Status.Should().Be("Rejected");
+        confirmResult.Data!.Status.Should().Be(AiDraftStatuses.Rejected);
 
         var draftInDb = await _context.AiGeneratedDrafts
             .Include(d => d.AiJob)
             .FirstOrDefaultAsync(d => d.Id == draftId);
         
         draftInDb.Should().NotBeNull();
-        draftInDb!.Status.Should().Be("Rejected");
-        draftInDb.AiJob.Status.Should().Be("Rejected");
+        draftInDb!.Status.Should().Be(AiDraftStatuses.Rejected);
+        draftInDb.AiJob.Status.Should().Be(AiJobStatuses.Succeeded);
 
         _complianceServiceMock.Verify(c => c.LogAuditEventAsync(
             It.IsAny<Guid?>(),

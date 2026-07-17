@@ -19,6 +19,11 @@ public class MeetingImportConfiguration : IEntityTypeConfiguration<MeetingImport
         builder.Property(import => import.TranscriptText).IsRequired();
         builder.Property(import => import.ParticipantsJson).IsRequired();
         builder.Property(import => import.RawPayloadJson).IsRequired();
+        builder.Property(import => import.DataClassification).HasMaxLength(50).HasDefaultValue(PrivacyDataClasses.UnknownSensitive).IsRequired();
+        builder.Property(import => import.PrivacyState).HasMaxLength(40).HasDefaultValue(MeetingPrivacyStates.MigrationReview).IsRequired();
+        builder.Property(import => import.ProcessingPurpose).HasMaxLength(80).HasDefaultValue(PrivacyPurposes.MeetingActionExtraction).IsRequired();
+        builder.Property(import => import.ProviderClass).HasMaxLength(30).HasDefaultValue(PrivacyProviderClasses.Unknown).IsRequired();
+        builder.Property(import => import.PolicyVersion).HasMaxLength(80);
         builder.Property(import => import.CreatedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
 
         builder.HasOne(import => import.Project)
@@ -43,8 +48,23 @@ public class MeetingImportConfiguration : IEntityTypeConfiguration<MeetingImport
             .OnDelete(DeleteBehavior.NoAction)
             .IsRequired(false);
 
+        builder.HasOne(import => import.Consent)
+            .WithMany()
+            .HasForeignKey(import => import.ConsentId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .IsRequired(false);
+
+        builder.HasOne(import => import.RetentionPolicy)
+            .WithMany()
+            .HasForeignKey(import => import.RetentionPolicyId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .IsRequired(false);
+
         builder.HasIndex(import => new { import.ProjectId, import.SourceProvider, import.SourceHash }).IsUnique();
         builder.HasIndex(import => import.AiJobId);
         builder.HasIndex(import => import.AiDraftId);
+        builder.HasIndex(import => import.ConsentId);
+        builder.HasIndex(import => import.RetentionPolicyId);
+        builder.HasIndex(import => new { import.PrivacyState, import.RetentionExpiresAt });
     }
 }

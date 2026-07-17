@@ -4,6 +4,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Qaly.Application.Common.Interfaces;
+using Qaly.Application.Common.Models;
 using Qaly.Application.Services;
 using Qaly.Domain.Interfaces;
 using Qaly.Infrastructure.Data;
@@ -13,6 +14,7 @@ using Qaly.Infrastructure.Services;
 using Qaly.Infrastructure.Services.AI;
 using Qaly.Infrastructure.Services.AI.Providers;
 using OllamaSharp;
+using Qaly.Infrastructure.Services.Privacy;
 
 namespace Qaly.Infrastructure;
 
@@ -66,8 +68,29 @@ public static class DependencyInjection
         services.AddScoped<Qaly.Application.Common.Interfaces.IPushSender, WebPushSender>();
 
         // AI Core Services
+        services.Configure<AiJobPlatformOptions>(configuration.GetSection(AiJobPlatformOptions.SectionName));
+        services.PostConfigure<AiJobPlatformOptions>(options =>
+        {
+            if (bool.TryParse(configuration["AI_JOB_V4_ENABLED"], out var enabled)) options.Enabled = enabled;
+            if (bool.TryParse(configuration["AI_JOB_V4_WORKER_ENABLED"], out var workerEnabled)) options.WorkerEnabled = workerEnabled;
+        });
+        services.Configure<PrivacyV4Options>(configuration.GetSection(PrivacyV4Options.SectionName));
+        services.PostConfigure<PrivacyV4Options>(options =>
+        {
+            if (bool.TryParse(configuration["PRIVACY_V4_ENABLED"], out var enabled)) options.Enabled = enabled;
+            if (bool.TryParse(configuration["PRIVACY_V4_WORKER_ENABLED"], out var workerEnabled)) options.WorkerEnabled = workerEnabled;
+            if (bool.TryParse(configuration["PRIVACY_V4_ENFORCED"], out var enforced)) options.EnforceSensitiveIngestion = enforced;
+        });
         services.AddScoped<IAiCostService, Qaly.Infrastructure.Services.AI.AiCostService>();
         services.AddScoped<IAiComplianceService, Qaly.Infrastructure.Services.AI.AiComplianceService>();
+        services.AddSingleton<IPrivacyPayloadProtector, PrivacyPayloadProtector>();
+        services.AddScoped<IPrivacyService, PrivacyService>();
+        services.AddScoped<IPrivacyWorkStore, PrivacyWorkStore>();
+        services.AddScoped<IPrivacyWorkProcessor, PrivacyWorkProcessor>();
+        services.AddScoped<IPrivacyOperationsService, PrivacyOperationsService>();
+        services.AddScoped<IAiSourceGuard, AiSourceGuard>();
+        services.AddScoped<IAiJobDispatchStore, AiJobDispatchStore>();
+        services.AddScoped<IAiJobProcessor, AiJobProcessor>();
         
         // AI Providers & Routing Infrastructure
         services.AddTransient<IAiProvider, Qaly.Infrastructure.Services.AI.Providers.OllamaProvider>();
@@ -113,6 +136,8 @@ public static class DependencyInjection
         services.AddHostedService<EmailDigestWorker>();
         services.AddHostedService<TaskAttentionSignalWorker>();
         services.AddHostedService<ProjectTrashCleanupWorker>();
+        services.AddHostedService<AiJobWorker>();
+        services.AddHostedService<PrivacyWorker>();
 
         return services;
     }

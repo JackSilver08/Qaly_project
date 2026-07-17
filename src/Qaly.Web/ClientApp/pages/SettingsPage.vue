@@ -7,6 +7,7 @@ import {
 } from 'lucide-vue-next'
 import { useDashboardContext } from '../composables/dashboard-context'
 import ApiKeysTab from '../components/ApiKeysTab.vue'
+import PrivacySettingsTab from '../components/settings/PrivacySettingsTab.vue'
 import { showSuccess, showError } from '../composables/use-toast'
 
 const { currentUser, displayRole, loadDashboard, projects, selectedProject } = useDashboardContext()
@@ -391,6 +392,14 @@ const userInitials = computed(() => {
             </button>
             <button 
               class="settings-nav-item" 
+              :class="{ 'is-active': activeTab === 'privacy' }"
+              @click="handleTabChange('privacy')"
+            >
+              <Shield :size="18" />
+              <span>Quyền riêng tư & dữ liệu</span>
+            </button>
+            <button
+              class="settings-nav-item"
               :class="{ 'is-active': activeTab === 'logs' }" 
               @click="handleTabChange('logs')"
             >
@@ -749,6 +758,10 @@ const userInitials = computed(() => {
                   <span>Webhook cho phép các ứng dụng bên thứ ba (như Slack, Discord, hoặc máy chủ của bạn) đăng ký nhận các sự kiện thời gian thực khi có thay đổi trong QALY.</span>
                 </div>
               </div>
+            </section>
+
+            <section v-if="activeTab === 'privacy'" class="settings-panel glass-card reveal">
+              <PrivacySettingsTab />
             </section>
 
             <!-- Tab: Audit Logs -->

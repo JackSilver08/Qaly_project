@@ -43,7 +43,8 @@ public static class MappingExtensions
             project.EnableInReview,
             project.RequireEvidenceToDone,
             project.RestrictTransitionsToAdmin,
-            project.DeletedAt);
+            project.DeletedAt,
+            project.ArchivedAt);
 
     public static Project ToEntity(this CreateProjectDto dto)
         => new()

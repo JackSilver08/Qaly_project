@@ -30,7 +30,12 @@ public class IntegrationTestFactory : WebApplicationFactory<Program>
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["UseInMemoryDatabase"] = "true",
-                ["Redis:ConnectionString"] = "localhost:6379" // Just to satisfy Program.cs
+                ["Redis:ConnectionString"] = "localhost:6379", // Just to satisfy Program.cs
+                ["AiJobsV4:Enabled"] = "true",
+                ["AiJobsV4:WorkerEnabled"] = "false",
+                ["PrivacyV4:Enabled"] = "true",
+                ["PrivacyV4:WorkerEnabled"] = "false",
+                ["PrivacyV4:EnforceSensitiveIngestion"] = "false"
             });
         });
 

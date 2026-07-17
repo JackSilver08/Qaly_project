@@ -1,30 +1,106 @@
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Qaly.Application.Common.Interfaces;
 using StackExchange.Redis;
-using Microsoft.Extensions.Configuration;
 
 namespace Qaly.Infrastructure.Services;
 
 public class RedisSessionService : ISessionService
 {
+    private static readonly TimeSpan OperationTimeout = TimeSpan.FromMilliseconds(750);
+    private static readonly TimeSpan CircuitOpenDuration = TimeSpan.FromSeconds(15);
     private readonly IConnectionMultiplexer _redis;
     private readonly string _instanceName;
+    private readonly ILogger<RedisSessionService> _logger;
+    private readonly object _circuitLock = new();
+    private DateTimeOffset _circuitOpenUntil = DateTimeOffset.MinValue;
+    private int _failureCount;
 
-    public RedisSessionService(IConnectionMultiplexer redis, IConfiguration configuration)
+    public RedisSessionService(IConnectionMultiplexer redis, IConfiguration configuration, ILogger<RedisSessionService> logger)
     {
         _redis = redis;
         _instanceName = "Qaly_"; // Matching Program.cs
+        _logger = logger;
     }
 
-    public async Task RevokeAllUserSessionsAsync(Guid userId, CancellationToken ct = default)
+    public async Task<bool> RevokeAllUserSessionsAsync(Guid userId, CancellationToken ct = default)
     {
-        var server = _redis.GetServer(_redis.GetEndPoints().First());
-        var pattern = $"{_instanceName}AuthTicket:{userId}:*";
-        
-        var keys = server.Keys(pattern: pattern).ToArray();
-        if (keys.Length > 0)
+        if (IsCircuitOpen())
         {
-            var db = _redis.GetDatabase();
-            await db.KeyDeleteAsync(keys);
+            _logger.LogWarning("Redis session revocation skipped because the circuit is open for user {UserId}.", userId);
+            return false;
+        }
+
+        try
+        {
+            var endpoints = _redis.GetEndPoints();
+            if (endpoints.Length == 0)
+            {
+                throw new InvalidOperationException("No Redis endpoints available.");
+            }
+
+            var server = _redis.GetServer(endpoints[0]);
+            var pattern = $"{_instanceName}AuthTicket:{userId}:*";
+            var keys = await ExecuteWithTimeoutAsync(() => Task.FromResult(server.Keys(pattern: pattern).ToArray()), "keys", ct);
+
+            if (keys.Length > 0)
+            {
+                var db = _redis.GetDatabase();
+                await ExecuteWithTimeoutAsync(() => db.KeyDeleteAsync(keys), "delete", ct);
+            }
+
+            ResetCircuit();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            RecordFailure();
+            _logger.LogWarning(ex, "Redis session revocation failed for user {UserId}; falling back to a no-op result.", userId);
+            return false;
+        }
+    }
+
+    private async Task<T> ExecuteWithTimeoutAsync<T>(Func<Task<T>> operation, string operationName, CancellationToken ct)
+    {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(OperationTimeout);
+
+        var operationTask = operation();
+        var completedTask = await Task.WhenAny(operationTask, Task.Delay(Timeout.InfiniteTimeSpan, timeoutCts.Token));
+        if (completedTask != operationTask)
+        {
+            throw new TimeoutException($"Redis session operation {operationName} timed out.");
+        }
+
+        return await operationTask;
+    }
+
+    private bool IsCircuitOpen()
+    {
+        lock (_circuitLock)
+        {
+            return _circuitOpenUntil > DateTimeOffset.UtcNow;
+        }
+    }
+
+    private void RecordFailure()
+    {
+        lock (_circuitLock)
+        {
+            _failureCount += 1;
+            if (_failureCount >= 3)
+            {
+                _circuitOpenUntil = DateTimeOffset.UtcNow.Add(CircuitOpenDuration);
+            }
+        }
+    }
+
+    private void ResetCircuit()
+    {
+        lock (_circuitLock)
+        {
+            _failureCount = 0;
+            _circuitOpenUntil = DateTimeOffset.MinValue;
         }
     }
 }

@@ -482,6 +482,34 @@ public class GroupsController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpGet("{id:guid}/linked-projects")]
+    public async Task<IActionResult> GetLinkedProjects(Guid id, CancellationToken ct)
+    {
+        var result = await _groupsService.GetLinkedProjectsAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("{id:guid}/linked-projects/{projectId:guid}")]
+    public async Task<IActionResult> LinkProject(Guid id, Guid projectId, CancellationToken ct)
+    {
+        var result = await _groupsService.LinkProjectAsync(id, projectId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpDelete("{id:guid}/linked-projects/{projectId:guid}")]
+    public async Task<IActionResult> UnlinkProject(Guid id, Guid projectId, CancellationToken ct)
+    {
+        var result = await _groupsService.UnlinkProjectAsync(id, projectId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("primary-group-reconciliation")]
+    public async Task<IActionResult> GetPrimaryGroupReconciliation(CancellationToken ct)
+    {
+        var result = await _groupsService.GetPrimaryGroupReconciliationAsync(ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpPost("{id:guid}/meetings/start")]
     public async Task<IActionResult> StartMeeting(Guid id, CancellationToken ct)
     {

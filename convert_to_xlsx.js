@@ -1,6 +1,8 @@
 import fs from 'fs';
 import * as xlsx from 'xlsx';
 
+xlsx.set_fs(fs);
+
 // Convert TestResults.csv to TestResults.xlsx
 if (fs.existsSync('TestResults.csv')) {
     const csvData = fs.readFileSync('TestResults.csv', 'utf8');

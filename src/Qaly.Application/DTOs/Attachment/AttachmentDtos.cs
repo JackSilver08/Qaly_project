@@ -32,3 +32,9 @@ public record DeduplicateResultDto(
     int TotalProcessed,
     int TotalMerged,
     long BytesSaved);
+
+public record StorageStatsDto(
+    long TotalBytes,
+    long AttachmentBytes,
+    int TotalFileCount,
+    int ArchivedProjectFileCount);

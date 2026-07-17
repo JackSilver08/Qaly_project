@@ -58,6 +58,13 @@ public class ProjectsController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpGet("archived")]
+    public async Task<IActionResult> GetArchived([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null, CancellationToken ct = default)
+    {
+        var result = await _projectService.GetArchivedAsync(page, pageSize, search, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {

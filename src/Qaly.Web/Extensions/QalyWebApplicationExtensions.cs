@@ -27,6 +27,7 @@ public static class QalyWebApplicationExtensions
         app.UseRouting();
         app.UseAuthentication();
         app.UseAuthorization();
+        app.UseAntiforgery();
         app.UseSession();
     }
 

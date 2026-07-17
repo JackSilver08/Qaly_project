@@ -22,4 +22,11 @@ public class AiProviderFactory
         }
         return provider;
     }
+
+    public bool TryGetProvider(string providerName, out IAiProvider? provider)
+    {
+        provider = _providers.FirstOrDefault(candidate =>
+            string.Equals(candidate.ProviderName, providerName, StringComparison.OrdinalIgnoreCase));
+        return provider != null;
+    }
 }

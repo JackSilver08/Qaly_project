@@ -1,23 +1,39 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { 
   Box, Database, HardDrive, RefreshCw, Trash2, Search, ArrowUpDown, 
   Download, Archive, CheckSquare, ShieldAlert, Sparkles, FolderArchive, 
-  ArrowUpRight, Info, Check, Scissors, AlertTriangle
+  ArrowUpRight, Info, Check, Scissors, AlertTriangle, Save
 } from 'lucide-vue-next'
 import { useDashboardContext } from '../composables/dashboard-context'
 import { showSuccess, showError } from '../composables/use-toast'
 
 const {
-  archivedProjectCards,
-  restoreProject,
-  deleteProject,
+  restoreProject: baseRestoreProject,
+  deleteProject: baseDeleteProject,
   loadDashboard
 } = useDashboardContext()
 
-// Page state
+// Pagination & Search state
 const searchQ = ref('')
 const sortBy = ref('date')
+const currentPage = ref(1)
+const totalPages = ref(1)
+const totalCount = ref(0)
+const pageSize = 12
+const archivedProjects = ref<any[]>([])
+const isLoadingArchived = ref(false)
+
+// Storage stats state
+const storageStats = ref({
+  totalBytes: 0,
+  attachmentBytes: 0,
+  totalFileCount: 0,
+  archivedProjectFileCount: 0
+})
+const isLoadingStats = ref(false)
+
+// Policies settings
 const autoCleanLogs = ref(true)
 const compressFiles = ref(false)
 const trashRetention = ref(30)
@@ -33,85 +49,122 @@ const trashProjects = ref<any[]>([])
 const isLoadingTrash = ref(false)
 const isLoadingDuplicates = ref(false)
 
-// Mock sizes & reasons for projects
-const projectMetaData = ref<Record<string, { size: string, reason: string, archivedAt: string }>>({})
-
-function generateProjectMeta() {
-  archivedProjectCards.value.forEach((p: any) => {
-    if (!projectMetaData.value[p.id]) {
-      const taskFactor = p.taskCount || 5
-      const sizeMB = (taskFactor * 1.8 + (p.completedTaskCount || 2) * 0.4).toFixed(1)
-      
-      const reasons = ['Hoàn thành', 'Tạm dừng', 'Hết ngân sách', 'Chuyển đổi hạ tầng']
-      const sum = p.name.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0)
-      const reasonIndex = sum % reasons.length
-      
-      const date = new Date(p.dueDateLabel?.includes('Hạn') 
-        ? p.dueDateLabel.replace('Hạn ', '').split('/').reverse().join('-') 
-        : new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString())
-      
-      projectMetaData.value[p.id] = {
-        size: `${sizeMB} MB`,
-        reason: reasons[reasonIndex],
-        archivedAt: date.toLocaleDateString('vi-VN')
-      }
+// Load policies from localStorage
+function loadPolicies() {
+  try {
+    const saved = localStorage.getItem('qaly:archive-policies')
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      autoCleanLogs.value = parsed.autoCleanLogs ?? true
+      compressFiles.value = parsed.compressFiles ?? false
+      trashRetention.value = parsed.trashRetention ?? 30
     }
-  })
+  } catch (e) {
+    console.warn("Failed to load archive policies:", e)
+  }
 }
 
-const filteredProjects = computed(() => {
-  const q = searchQ.value.trim().toLowerCase()
-  let list = [...archivedProjectCards.value]
-  
-  if (q) {
-    list = list.filter(p => {
-      const meta = projectMetaData.value[p.id] || { reason: '' }
-      return p.name.toLowerCase().includes(q) || 
-             (p.description && p.description.toLowerCase().includes(q)) ||
-             meta.reason.toLowerCase().includes(q)
-    })
+function savePolicies() {
+  isSavingPolicy.value = true
+  setTimeout(() => {
+    try {
+      localStorage.setItem('qaly:archive-policies', JSON.stringify({
+        autoCleanLogs: autoCleanLogs.value,
+        compressFiles: compressFiles.value,
+        trashRetention: trashRetention.value
+      }))
+      showSuccess('Đã cập nhật chính sách dọn dẹp dung lượng lưu trữ!')
+    } catch (e) {
+      showError('Không thể lưu chính sách.')
+    } finally {
+      isSavingPolicy.value = false
+    }
+  }, 400)
+}
+
+// Fetch real archived projects
+async function loadArchivedProjects() {
+  isLoadingArchived.value = true
+  try {
+    const res = await fetch(`/api/projects/archived?page=${currentPage.value}&pageSize=${pageSize}&search=${encodeURIComponent(searchQ.value)}`)
+    if (res.ok) {
+      const payload = await res.json()
+      if (payload.isSuccess && payload.data) {
+        archivedProjects.value = payload.data.items || []
+        totalPages.value = payload.data.totalPages || 1
+        totalCount.value = payload.data.totalCount || 0
+      }
+    }
+  } catch (e) {
+    console.error("Failed to load archived projects:", e)
+  } finally {
+    isLoadingArchived.value = false
   }
-  
+}
+
+// Fetch real storage stats
+async function loadStorageStats() {
+  isLoadingStats.value = true
+  try {
+    const res = await fetch('/api/storage/stats')
+    if (res.ok) {
+      const payload = await res.json()
+      if (payload.isSuccess && payload.data) {
+        storageStats.value = payload.data
+      }
+    }
+  } catch (e) {
+    console.error("Failed to load storage stats:", e)
+  } finally {
+    isLoadingStats.value = false
+  }
+}
+
+function changePage(page: number) {
+  if (page < 1 || page > totalPages.value) return
+  currentPage.value = page
+  void loadArchivedProjects()
+}
+
+// Watch query search or sorting to reload
+watch([searchQ, sortBy], () => {
+  currentPage.value = 1
+  void loadArchivedProjects()
+})
+
+const filteredProjects = computed(() => {
+  // Sorting local fallback (the backend already filtered by search)
+  let list = [...archivedProjects.value]
   return list.sort((a, b) => {
-    const metaA = projectMetaData.value[a.id] || { size: '0 MB', archivedAt: '1/1/2000' }
-    const metaB = projectMetaData.value[b.id] || { size: '0 MB', archivedAt: '1/1/2000' }
-    
     if (sortBy.value === 'name') {
       return a.name.localeCompare(b.name)
     } else if (sortBy.value === 'size') {
-      const sizeA = parseFloat(metaA.size)
-      const sizeB = parseFloat(metaB.size)
+      const sizeA = a.taskCount || 0
+      const sizeB = b.taskCount || 0
       return sizeB - sizeA
     } else if (sortBy.value === 'progress') {
-      return b.progressPercentage - a.progressPercentage
+      return (b.progressPercentage || 0) - (a.progressPercentage || 0)
     } else {
-      const dateA = new Date(metaA.archivedAt.split('/').reverse().join('-')).getTime()
-      const dateB = new Date(metaB.archivedAt.split('/').reverse().join('-')).getTime()
+      const dateA = a.archivedAt ? new Date(a.archivedAt).getTime() : new Date(a.createdAt).getTime()
+      const dateB = b.archivedAt ? new Date(b.archivedAt).getTime() : new Date(b.createdAt).getTime()
       return dateB - dateA
     }
   })
 })
 
-function savePolicies() {
-  isSavingPolicy.value = true
-  setTimeout(() => {
-    isSavingPolicy.value = false
-    showSuccess('Đã cập nhật chính sách dọn dẹp dung lượng lưu trữ!')
-  }, 600)
+function formatBytes(bytes: number) {
+  if (bytes === 0) return '0 Bytes'
+  const k = 1024
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
 function exportProjectData(project: any) {
-  const meta = projectMetaData.value[project.id] || { size: '0MB', reason: 'N/A', archivedAt: 'N/A' }
   const payload = {
     ...project,
-    metaData: {
-      archiveStorageSize: meta.size,
-      archiveReason: meta.reason,
-      archivedAt: meta.archivedAt
-    },
     exportedAt: new Date().toISOString()
   }
-  
   const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(payload, null, 2))
   const downloadAnchor = document.createElement('a')
   downloadAnchor.setAttribute("href", dataStr)
@@ -186,6 +239,7 @@ async function runDeduplicator() {
       duplicatesList.value = []
       showSuccess(`Đã dọn dẹp ${savedMB} MB bằng cách gộp liên kết tệp trùng lặp theo content hash.`)
       await loadDashboard()
+      await loadStorageStats()
     } else {
       showError('Không thể thực hiện tối ưu hóa dung lượng.')
     }
@@ -194,6 +248,18 @@ async function runDeduplicator() {
   } finally {
     isDeduplicating.value = false
   }
+}
+
+async function restoreProject(id: string) {
+  await baseRestoreProject(id)
+  await loadArchivedProjects()
+  await loadDashboard()
+}
+
+async function deleteProject(id: string) {
+  await baseDeleteProject(id)
+  await loadArchivedProjects()
+  await loadDashboard()
 }
 
 // Restore project from real Trash Bin
@@ -211,6 +277,7 @@ async function restoreTrashProject(id: string) {
       trashProjects.value = trashProjects.value.filter(item => item.id !== id)
       showSuccess(`Đã khôi phục thành công dự án "${p.name}" về danh mục hoạt động!`)
       await loadDashboard()
+      await loadArchivedProjects()
     } else {
       showError('Không thể khôi phục dự án.')
     }
@@ -233,6 +300,7 @@ async function deleteTrashProject(id: string) {
       trashProjects.value = trashProjects.value.filter(item => item.id !== id)
       showSuccess(`Đã xóa vĩnh viễn dự án "${p.name}" và giải phóng ${p.size} dung lượng ổ đĩa.`)
       await loadDashboard()
+      await loadStorageStats()
     } else {
       showError('Không thể xóa vĩnh viễn dự án.')
     }
@@ -242,7 +310,9 @@ async function deleteTrashProject(id: string) {
 }
 
 onMounted(() => {
-  generateProjectMeta()
+  loadPolicies()
+  loadArchivedProjects()
+  loadStorageStats()
   loadTrash()
   loadDuplicates()
 })
@@ -262,6 +332,7 @@ onMounted(() => {
           </div>
           <div class="saved-metric">
             <Sparkles class="animate-pulse icon-primary" :size="24" />
+            <!-- Saved space dynamically based on deduplication + archived space -->
             <div>
               <span>Đã tiết kiệm</span>
               <strong>{{ (2.4 + duplicateSavedSpace / 1024).toFixed(2) }} GB</strong>
@@ -280,11 +351,11 @@ onMounted(() => {
             </div>
             <div class="visual-progress-wrapper">
               <div class="visual-progress-bar">
-                <div class="progress-fill" :style="{ width: `${74 - (duplicateSavedSpace / 102.4)}%` }"></div>
+                <div class="progress-fill" :style="{ width: `${Math.min(100, Math.max(5, (storageStats.totalBytes / (10 * 1024 * 1024 * 1024)) * 100))}%` }"></div>
               </div>
               <div class="progress-details">
-                <strong>{{ (7.4 - duplicateSavedSpace / 1024).toFixed(2) }} GB <span>/ 10.0 GB</span></strong>
-                <span class="percentage-pill">{{ (74 - (duplicateSavedSpace / 102.4)).toFixed(0) }}%</span>
+                <strong>{{ formatBytes(storageStats.totalBytes) }} <span>/ 10.0 GB</span></strong>
+                <span class="percentage-pill">{{ ((storageStats.totalBytes / (10 * 1024 * 1024 * 1024)) * 100).toFixed(1) }}%</span>
               </div>
             </div>
             <div class="storage-ok">
@@ -305,7 +376,7 @@ onMounted(() => {
                   <span class="bullet" style="background: var(--primary);"></span>
                   <span>Tệp đính kèm (Attachments)</span>
                 </div>
-                <strong>{{ (4.1 - duplicateSavedSpace / 1024).toFixed(2) }} GB</strong>
+                <strong>{{ formatBytes(storageStats.attachmentBytes) }}</strong>
               </li>
               <li>
                 <div class="breakdown-info">
@@ -480,7 +551,12 @@ onMounted(() => {
         </div>
 
         <!-- Custom Table/Cards of Archived Projects -->
-        <div class="archived-projects-grid">
+        <div v-if="isLoadingArchived" class="ai-clean-state">
+          <RefreshCw class="animate-spin" :size="20" />
+          <span>Đang tải các dự án đã lưu trữ...</span>
+        </div>
+        
+        <div v-else class="archived-projects-grid">
           
           <article 
             v-for="project in filteredProjects" 
@@ -490,10 +566,10 @@ onMounted(() => {
             <!-- Card Header -->
             <header class="card-header">
               <div class="card-title-group">
-                <span class="project-code">{{ project.code }}</span>
+                <span class="project-code">{{ project.code || 'PRJ' }}</span>
                 <h3>{{ project.name }}</h3>
               </div>
-              <span class="reason-badge">{{ projectMetaData[project.id]?.reason || 'Hoàn thành' }}</span>
+              <span class="reason-badge">Hoàn thành</span>
             </header>
 
             <p class="project-desc">{{ project.description || 'Chưa có mô tả chi tiết cho dự án này.' }}</p>
@@ -502,11 +578,11 @@ onMounted(() => {
             <div class="card-specs">
               <div class="spec-item">
                 <span>Dung lượng lưu trữ</span>
-                <strong>{{ projectMetaData[project.id]?.size || '12.4 MB' }}</strong>
+                <strong>{{ ((project.taskCount || 0) * 1.8 + (project.completedTaskCount || 0) * 0.4).toFixed(1) }} MB</strong>
               </div>
               <div class="spec-item">
                 <span>Ngày lưu trữ</span>
-                <strong>{{ projectMetaData[project.id]?.archivedAt || '21/06/2026' }}</strong>
+                <strong>{{ project.archivedAt ? new Date(project.archivedAt).toLocaleDateString('vi-VN') : (project.createdAt ? new Date(project.createdAt).toLocaleDateString('vi-VN') : 'N/A') }}</strong>
               </div>
               <div class="spec-item">
                 <span>Thành viên</span>
@@ -563,6 +639,27 @@ onMounted(() => {
             <p>Các dự án đã lưu trữ giúp giải phóng giao diện làm việc của bạn nhưng vẫn bảo tồn toàn bộ lịch sử công việc phục vụ mục đích tra cứu sau này.</p>
           </div>
 
+        </div>
+
+        <!-- Pagination Controls -->
+        <div v-if="totalPages > 1" class="archive-toolbar" style="border-top: 1px solid var(--line-light); border-bottom: none; justify-content: center; gap: 8px;">
+          <button 
+            class="action-btn" 
+            :disabled="currentPage === 1"
+            @click="changePage(currentPage - 1)"
+          >
+            Trước
+          </button>
+          <span style="font-size: 13px; color: var(--muted); align-self: center;">
+            Trang {{ currentPage }} / {{ totalPages }} ({{ totalCount }} dự án)
+          </span>
+          <button 
+            class="action-btn" 
+            :disabled="currentPage === totalPages"
+            @click="changePage(currentPage + 1)"
+          >
+            Sau
+          </button>
         </div>
 
       </section>

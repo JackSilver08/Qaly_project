@@ -34,6 +34,7 @@ public class GroupAiService : IGroupAiService
     private readonly IGroupsService _groupsService;
     private readonly IRepository<GroupMessage> _messageRepo;
     private readonly IRepository<GroupMeetingSession> _meetingSessionRepo;
+    private readonly IRepository<MeetingImport> _meetingImportRepo;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogService _auditLogService;
     private readonly ILogger<GroupAiService> _logger;
@@ -44,6 +45,7 @@ public class GroupAiService : IGroupAiService
         IGroupsService groupsService,
         IRepository<GroupMessage> messageRepo,
         IRepository<GroupMeetingSession> meetingSessionRepo,
+        IRepository<MeetingImport> meetingImportRepo,
         IUnitOfWork unitOfWork,
         IAuditLogService auditLogService,
         ILogger<GroupAiService> logger,
@@ -53,6 +55,7 @@ public class GroupAiService : IGroupAiService
         _groupsService = groupsService;
         _messageRepo = messageRepo;
         _meetingSessionRepo = meetingSessionRepo;
+        _meetingImportRepo = meetingImportRepo;
         _unitOfWork = unitOfWork;
         _auditLogService = auditLogService;
         _logger = logger;
@@ -170,7 +173,41 @@ public class GroupAiService : IGroupAiService
                     .AsNoTracking()
                     .FirstOrDefaultAsync(item => item.Id == request.MeetingSessionId.Value && item.WorkGroupId == groupId, ct);
 
-                if (!string.IsNullOrWhiteSpace(meeting?.Summary))
+                string? resolvedTranscriptText = null;
+                if (meeting != null && !string.IsNullOrWhiteSpace(meeting.TranscriptSourceId))
+                {
+                    if (Guid.TryParse(meeting.TranscriptSourceId, out var importId))
+                    {
+                        var import = await _meetingImportRepo.GetQueryable()
+                            .AsNoTracking()
+                            .FirstOrDefaultAsync(item => item.Id == importId, ct);
+                        resolvedTranscriptText = import?.TranscriptText;
+                    }
+                    else
+                    {
+                        var sourceId = meeting.TranscriptSourceId;
+                        string? provider = null;
+                        var colonIdx = meeting.TranscriptSourceId.IndexOf(':');
+                        if (colonIdx >= 0)
+                        {
+                            provider = meeting.TranscriptSourceId.Substring(0, colonIdx);
+                            sourceId = meeting.TranscriptSourceId.Substring(colonIdx + 1);
+                        }
+
+                        var import = await _meetingImportRepo.GetQueryable()
+                            .AsNoTracking()
+                            .FirstOrDefaultAsync(item => item.SourceId == sourceId && (provider == null || item.SourceProvider == provider), ct);
+                        resolvedTranscriptText = import?.TranscriptText;
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(resolvedTranscriptText))
+                {
+                    builder.AppendLine();
+                    builder.AppendLine("Meeting transcript:");
+                    builder.AppendLine(resolvedTranscriptText);
+                }
+                else if (!string.IsNullOrWhiteSpace(meeting?.Summary))
                 {
                     builder.AppendLine();
                     builder.AppendLine("Meeting summary:");

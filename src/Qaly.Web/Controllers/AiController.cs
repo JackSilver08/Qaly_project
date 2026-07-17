@@ -17,6 +17,7 @@ public class AiController : BaseApiController
     private readonly IAiIngestionService _ingestionService;
     private readonly IAnalyticsService _analyticsService;
     private readonly IAgentRunService _agentRunService;
+    private readonly IAiPlatformQueryService _aiPlatformQueryService;
 
     public AiController(
         IAiService aiService,
@@ -24,7 +25,8 @@ public class AiController : BaseApiController
         IAiWorkflowService aiWorkflowService,
         IAiIngestionService ingestionService,
         IAnalyticsService analyticsService,
-        IAgentRunService agentRunService)
+        IAgentRunService agentRunService,
+        IAiPlatformQueryService aiPlatformQueryService)
     {
         _aiService = aiService;
         _erumiChatService = erumiChatService;
@@ -32,6 +34,7 @@ public class AiController : BaseApiController
         _ingestionService = ingestionService;
         _analyticsService = analyticsService;
         _agentRunService = agentRunService;
+        _aiPlatformQueryService = aiPlatformQueryService;
     }
 
     [HttpPost("sync")]
@@ -42,15 +45,96 @@ public class AiController : BaseApiController
     }
 
     [HttpPost("jobs")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> CreateJob(CreateAiJobDto dto, CancellationToken ct = default)
     {
-        var result = await _aiWorkflowService.CreateJobAsync(dto, ct);
+        var idempotencyKey = Request.Headers["Idempotency-Key"].ToString();
+        var requestId = Request.Headers["X-Request-Id"].FirstOrDefault() ?? HttpContext.TraceIdentifier;
+        var result = await _aiWorkflowService.CreateJobAsync(dto, idempotencyKey, requestId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("jobs")]
+    public async Task<IActionResult> ListJobs(
+        [FromQuery] Guid? projectId,
+        [FromQuery] string? status,
+        CancellationToken ct = default)
+    {
+        var result = await _aiWorkflowService.ListJobsAsync(projectId, status, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("jobs/{jobId:guid}")]
+    public async Task<IActionResult> GetJob(Guid jobId, CancellationToken ct = default)
+    {
+        var result = await _aiWorkflowService.GetJobAsync(jobId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("jobs/{jobId:guid}/result")]
+    public async Task<IActionResult> GetJobResult(Guid jobId, CancellationToken ct = default)
+    {
+        var result = await _aiWorkflowService.GetJobResultAsync(jobId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("jobs/{jobId:guid}/retry")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RetryJob(Guid jobId, RetryAiJobDto dto, CancellationToken ct = default)
+    {
+        var result = await _aiWorkflowService.RetryJobAsync(jobId, dto, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("jobs/{jobId:guid}/cancel")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CancelJob(Guid jobId, CancelAiJobDto dto, CancellationToken ct = default)
+    {
+        var result = await _aiWorkflowService.CancelJobAsync(jobId, dto, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("drafts")]
+    public async Task<IActionResult> ListDrafts(
+        [FromQuery] Guid? projectId,
+        [FromQuery] string? type,
+        [FromQuery] string? status,
+        CancellationToken ct = default)
+    {
+        var result = await _aiWorkflowService.ListDraftsAsync(projectId, type, status, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("drafts/{draftId:guid}")]
+    public async Task<IActionResult> GetDraft(Guid draftId, CancellationToken ct = default)
+    {
+        var result = await _aiWorkflowService.GetDraftAsync(draftId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPatch("drafts/{draftId:guid}")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> PatchDraft(Guid draftId, PatchAiDraftDto dto, CancellationToken ct = default)
+    {
+        var result = await _aiWorkflowService.PatchDraftAsync(draftId, dto, ct);
         return StatusCode(result.StatusCode, result);
     }
 
     [HttpPost("drafts/{draftId:guid}/confirm")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ConfirmDraft(Guid draftId, ConfirmAiDraftDto dto, CancellationToken ct = default)
     {
+        var idempotencyKey = dto.IdempotencyKey ?? Request.Headers["Idempotency-Key"].ToString();
+        if (string.IsNullOrWhiteSpace(idempotencyKey) || string.IsNullOrWhiteSpace(dto.RowVersion))
+        {
+            return BadRequest(new
+            {
+                errorCode = Qaly.Application.Common.Models.AiErrorCodes.InvalidRequest,
+                error = "Idempotency-Key and rowVersion are required."
+            });
+        }
+
+        dto = dto with { IdempotencyKey = idempotencyKey };
         var result = await _aiWorkflowService.ConfirmDraftAsync(draftId, dto, ct);
         return StatusCode(result.StatusCode, result);
     }
@@ -75,6 +159,161 @@ public class AiController : BaseApiController
         var result = await _agentRunService.ApproveAsync(runId, request, ct);
         return StatusCode(result.StatusCode, result);
     }
+
+    [HttpPost("drafts/{draftId:guid}/reject")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RejectDraft(Guid draftId, RejectAiDraftDto dto, CancellationToken ct = default)
+    {
+        var idempotencyKey = dto.IdempotencyKey ?? Request.Headers["Idempotency-Key"].ToString();
+        dto = dto with { IdempotencyKey = idempotencyKey };
+        var result = await _aiWorkflowService.RejectDraftAsync(draftId, dto, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("usage")]
+    public async Task<IActionResult> GetUsage(
+        [FromQuery] Guid? projectId,
+        [FromQuery] DateTimeOffset? from,
+        [FromQuery] DateTimeOffset? to,
+        CancellationToken ct = default)
+    {
+        var result = await _aiPlatformQueryService.GetUsageAsync(projectId, from, to, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("budget")]
+    public async Task<IActionResult> GetBudget([FromQuery] Guid projectId, CancellationToken ct = default)
+    {
+        var result = await _aiPlatformQueryService.GetBudgetAsync(projectId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("health")]
+    public async Task<IActionResult> GetHealth(CancellationToken ct = default)
+    {
+        var result = await _aiPlatformQueryService.GetHealthAsync(ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("meetings/{meetingId:guid}/extract-actions")]
+    [ValidateAntiForgeryToken]
+    public Task<IActionResult> EnqueueMeetingActionExtraction(
+        Guid meetingId,
+        AiFunctionJobRequest request,
+        CancellationToken ct = default)
+        => EnqueueFunctionAsync(
+            "meeting_action_extract",
+            "meeting_action_extract.v4",
+            request.ProjectId,
+            "meeting",
+            meetingId,
+            request,
+            ct);
+
+    [HttpPost("groups/{groupId:guid}/summaries")]
+    [ValidateAntiForgeryToken]
+    public Task<IActionResult> EnqueueGroupSummary(
+        Guid groupId,
+        AiFunctionJobRequest request,
+        CancellationToken ct = default)
+        => EnqueueFunctionAsync(
+            "chat_summary",
+            "chat_summary.v4",
+            request.ProjectId,
+            "group",
+            groupId,
+            request,
+            ct);
+
+    [HttpPost("task-drafts/from-source")]
+    [ValidateAntiForgeryToken]
+    public Task<IActionResult> EnqueueTaskDraft(
+        AiFunctionJobRequest request,
+        CancellationToken ct = default)
+        => EnqueueFunctionAsync(
+            "task_draft",
+            "task_draft.v4",
+            request.ProjectId,
+            request.SourceType,
+            request.SourceEntityId,
+            request,
+            ct);
+
+    [HttpPost("tasks/{taskId:guid}/recommend-assignees")]
+    [ValidateAntiForgeryToken]
+    public Task<IActionResult> EnqueueAssigneeRecommendation(
+        Guid taskId,
+        AiFunctionJobRequest request,
+        CancellationToken ct = default)
+        => EnqueueFunctionAsync(
+            "assignee_recommendation",
+            "assignee_recommendation.v4",
+            request.ProjectId,
+            "task",
+            taskId,
+            request,
+            ct);
+
+    [HttpPost("tasks/{taskId:guid}/breakdown")]
+    [ValidateAntiForgeryToken]
+    public Task<IActionResult> EnqueueTaskBreakdown(
+        Guid taskId,
+        AiFunctionJobRequest request,
+        CancellationToken ct = default)
+        => EnqueueFunctionAsync(
+            "task_breakdown",
+            "task_breakdown.v4",
+            request.ProjectId,
+            "task",
+            taskId,
+            request,
+            ct);
+
+    [HttpPost("tasks/{taskId:guid}/acceptance-checklist")]
+    [ValidateAntiForgeryToken]
+    public Task<IActionResult> EnqueueAcceptanceChecklist(
+        Guid taskId,
+        AiFunctionJobRequest request,
+        CancellationToken ct = default)
+        => EnqueueFunctionAsync(
+            "acceptance_checklist",
+            "acceptance_checklist.v4",
+            request.ProjectId,
+            "task",
+            taskId,
+            request,
+            ct);
+
+    [HttpPost("projects/{projectId:guid}/progress-summary")]
+    [ValidateAntiForgeryToken]
+    public Task<IActionResult> EnqueueProjectProgressSummary(
+        Guid projectId,
+        AiFunctionJobRequest request,
+        CancellationToken ct = default)
+        => EnqueueFunctionAsync(
+            "progress_summary",
+            "progress_summary.v4",
+            projectId,
+            "project",
+            projectId,
+            request,
+            ct);
+
+    [HttpPost("projects/{projectId:guid}/sprints/{sprintId:guid}/progress-summary")]
+    [ValidateAntiForgeryToken]
+    public Task<IActionResult> EnqueueSprintProgressSummary(
+        Guid projectId,
+        Guid sprintId,
+        AiFunctionJobRequest request,
+        CancellationToken ct = default)
+        => EnqueueFunctionAsync(
+            "progress_summary",
+            "progress_summary.v4",
+            projectId,
+            "sprint",
+            sprintId,
+            request,
+            ct);
 
     [HttpPost("priority")]
     public async Task<IActionResult> SuggestPriority(AiPriorityRequest request)
@@ -164,6 +403,61 @@ public class AiController : BaseApiController
             : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
         return File(bytes, contentType, fileName);
+    }
+
+    private async Task<IActionResult> EnqueueFunctionAsync(
+        string jobType,
+        string schemaId,
+        Guid? projectId,
+        string? defaultSourceType,
+        Guid? defaultSourceEntityId,
+        AiFunctionJobRequest request,
+        CancellationToken ct)
+    {
+        IReadOnlyList<AiJobSourceInputDto>? sources = request.Sources;
+        if (defaultSourceEntityId.HasValue && !string.IsNullOrWhiteSpace(defaultSourceType))
+        {
+            var routeSource = new AiJobSourceInputDto(
+                defaultSourceType,
+                defaultSourceEntityId,
+                null,
+                request.SourceVersion,
+                request.SourceHash);
+            sources = new[] { routeSource }
+                .Concat(request.Sources?.Where(source =>
+                    source.SourceEntityId != defaultSourceEntityId ||
+                    !string.Equals(source.SourceType, defaultSourceType, StringComparison.OrdinalIgnoreCase)) ?? [])
+                .ToList();
+        }
+
+        var sourceType = string.IsNullOrWhiteSpace(defaultSourceType)
+            ? request.SourceType ?? (sources is { Count: > 0 } ? sources[0].SourceType : string.Empty)
+            : defaultSourceType;
+        var sourceEntityId = defaultSourceEntityId ?? request.SourceEntityId;
+        var sourceId = sourceEntityId?.ToString() ?? request.LegacySourceKey;
+        var dto = new CreateAiJobDto(
+            jobType,
+            projectId,
+            sourceType,
+            sourceId,
+            request.ProviderHint,
+            request.Sensitive,
+            request.SourceText,
+            sources,
+            schemaId,
+            "4.0",
+            request.SourceVersion,
+            request.SourceHash,
+            request.ConsentId,
+            request.RetentionPolicyId,
+            request.MaximumEstimatedCostUsd,
+            request.CacheMode,
+            request.Language,
+            request.Options);
+        var idempotencyKey = Request.Headers["Idempotency-Key"].ToString();
+        var requestId = Request.Headers["X-Request-Id"].FirstOrDefault() ?? HttpContext.TraceIdentifier;
+        var result = await _aiWorkflowService.CreateJobAsync(dto, idempotencyKey, requestId, ct);
+        return StatusCode(result.StatusCode, result);
     }
 }
 

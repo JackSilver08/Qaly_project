@@ -40,6 +40,14 @@ public static class QalyWebServiceExtensions
         services.AddQalyRazorPages();
         services.AddQalyAuthentication(cookieSecurePolicy);
         services.AddAuthorization(options => options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin")));
+        services.AddAntiforgery(options =>
+        {
+            options.HeaderName = "X-CSRF-TOKEN";
+            options.Cookie.Name = "Qaly.Csrf";
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SameSite = SameSiteMode.Strict;
+            options.Cookie.SecurePolicy = cookieSecurePolicy;
+        });
         services.AddControllers();
 
         services.AddSignalR();

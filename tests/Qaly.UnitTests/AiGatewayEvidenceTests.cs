@@ -31,7 +31,7 @@ public class AiGatewayEvidenceTests : IDisposable
     }
 
     [Fact]
-    public async Task ExecuteAsync_SensitiveRequestWithoutConsent_ReturnsComplianceMockAndAuditEvent()
+    public async Task ExecuteAsync_SensitiveRequestWithoutConsent_ReturnsExplicitComplianceErrorAndAuditEvent()
     {
         var tenantId = Guid.NewGuid();
         var projectId = Guid.NewGuid();
@@ -50,18 +50,21 @@ public class AiGatewayEvidenceTests : IDisposable
             IsSensitive = true
         });
 
-        response.IsMock.Should().BeTrue();
-        response.ProviderName.Should().Be("ComplianceMock");
+        response.IsSuccess.Should().BeFalse();
+        response.IsMock.Should().BeFalse();
+        response.ErrorCode.Should().Be(AiErrorCodes.SensitiveBlocked);
 
         var audit = await _context.AiAuditEvents.SingleAsync();
         audit.TenantId.Should().Be(tenantId);
         audit.ProjectId.Should().Be(projectId);
         audit.ActorUserId.Should().Be(userId);
-        audit.EventType.Should().Be("AI_BLOCKED");
+        audit.EventType.Should().Be("AI_PROCESSING_BLOCKED");
+        audit.Outcome.Should().Be("blocked");
+        audit.FailureCode.Should().Be(PrivacyErrorCodes.CloudBlocked);
     }
 
     [Fact]
-    public async Task ExecuteAsync_WhenDailyBudgetExceeded_ReturnsBudgetMock()
+    public async Task ExecuteAsync_WhenDailyBudgetExceeded_ReturnsExplicitBudgetError()
     {
         var tenantId = Guid.NewGuid();
         var projectId = Guid.NewGuid();
@@ -95,12 +98,13 @@ public class AiGatewayEvidenceTests : IDisposable
             IsSensitive = false
         });
 
-        response.IsMock.Should().BeTrue();
-        response.ProviderName.Should().Be("BudgetMock");
+        response.IsSuccess.Should().BeFalse();
+        response.IsMock.Should().BeFalse();
+        response.ErrorCode.Should().Be(AiErrorCodes.BudgetExceeded);
     }
 
     [Fact]
-    public async Task ExecuteAsync_WhenProviderFailsForTextAnswer_ReturnsUiSafeTextAnswerFallback()
+    public async Task ExecuteAsync_WhenProviderFailsWithoutDegradedMockPolicy_ReturnsProviderUnavailable()
     {
         var mockProvider = CreateMockProvider("Ollama");
         mockProvider.Setup(p => p.CompleteAsync(It.IsAny<AiRequest>(), It.IsAny<AiProviderSetting>(), It.IsAny<CancellationToken>()))
@@ -117,17 +121,10 @@ public class AiGatewayEvidenceTests : IDisposable
             IsSensitive = false
         });
 
-        response.IsMock.Should().BeTrue();
-        response.ProviderName.Should().Be("FallbackMock");
-
-        using var document = JsonDocument.Parse(response.Content);
-        var root = document.RootElement;
-        root.GetProperty("reply").GetString().Should().NotBeNullOrWhiteSpace();
-        root.GetProperty("metrics").ValueKind.Should().Be(JsonValueKind.Array);
-        root.GetProperty("tables").ValueKind.Should().Be(JsonValueKind.Array);
-        root.GetProperty("charts").ValueKind.Should().Be(JsonValueKind.Array);
-        root.GetProperty("actions").ValueKind.Should().Be(JsonValueKind.Array);
-        root.GetProperty("files").ValueKind.Should().Be(JsonValueKind.Array);
+        response.IsSuccess.Should().BeFalse();
+        response.IsMock.Should().BeFalse();
+        response.ErrorCode.Should().Be(AiErrorCodes.ProviderUnavailable);
+        response.Retryable.Should().BeTrue();
     }
 
     [Fact]
@@ -205,7 +202,7 @@ public class AiGatewayEvidenceTests : IDisposable
     }
 
     [Fact]
-    public async Task SaveChangesAsync_WhenConfidenceIsUnderPointSix_MarksStatusAsNeedsManualReview()
+    public async Task SaveChangesAsync_WhenConfidenceIsUnderPointSix_KeepsPendingReviewAndAddsWarning()
     {
         var draft = new AiGeneratedDraft
         {
@@ -219,7 +216,8 @@ public class AiGatewayEvidenceTests : IDisposable
         _context.AiGeneratedDrafts.Add(draft);
         await _context.SaveChangesAsync();
 
-        draft.Status.Should().Be("needs_manual_review");
+        draft.Status.Should().Be(AiDraftStatuses.PendingReview);
+        draft.WarningsJson.Should().Contain("low_confidence");
         draft.SchemaId.Should().Be("task_draft.v3.2");
         draft.Confidence.Should().Be(0.55m);
     }
@@ -234,21 +232,23 @@ public class AiGatewayEvidenceTests : IDisposable
         var gateway = CreateGatewayWithProvider(mockProvider, new Dictionary<string, string?>
         {
             {"AiSettings:TimeoutSeconds", "1"},
-            {"AiSettings:MaxRetries", "3"}
+            {"AiSettings:MaxRetries", "3"},
+            {"AiSettings:AllowProviderDegradedMock", "true"}
         });
 
         var request = new AiRequest
         {
             JobType = "test_timeout",
             Prompt = "test",
-            UseCache = false
+            UseCache = false,
+            AllowMockFallback = true
         };
 
         var response = await gateway.ExecuteAsync(request);
 
         mockProvider.Verify(p => p.CompleteAsync(It.IsAny<AiRequest>(), It.IsAny<AiProviderSetting>(), It.IsAny<CancellationToken>()), Times.Exactly(4));
         response.IsMock.Should().BeTrue();
-        response.ProviderName.Should().Be("FallbackMock");
+        response.ProviderName.Should().Be("ProviderDegradedMock");
     }
 
     [Fact]

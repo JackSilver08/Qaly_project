@@ -8,16 +8,23 @@ public class AiUsageLedger : BaseEntity
     public Guid? ProjectId { get; set; }
     public Guid? UserId { get; set; }
     public long? JobId { get; set; }
+    public Guid? AiJobId { get; set; }
+    public Guid? ProviderAttemptId { get; set; }
     public string JobType { get; set; } = null!;
     public string ProviderName { get; set; } = null!;
     public string ModelName { get; set; } = null!;
     public int InputTokens { get; set; }
     public int OutputTokens { get; set; }
     public decimal EstimatedCostUsd { get; set; }
+    public decimal? ActualCostUsd { get; set; }
+    public string? PricingVersion { get; set; }
     public int? LatencyMs { get; set; }
     public string Status { get; set; } = null!;
     public bool CacheHit { get; set; }
     public string? PromptHash { get; set; }
     public string? ResponseHash { get; set; }
     public string? ErrorCode { get; set; }
+
+    public AiJob? AiJob { get; set; }
+    public AiProviderAttempt? ProviderAttempt { get; set; }
 }
