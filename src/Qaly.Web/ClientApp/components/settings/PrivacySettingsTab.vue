@@ -145,7 +145,7 @@ function unwrapError(payload: unknown) {
 }
 
 async function loadPrivacy() {
-  if (!selectedProjectId.value || !tenantId.value) return
+  if (!selectedProjectId.value || !tenantId.value) return false
   isLoading.value = true
   loadError.value = ''
   try {
@@ -167,8 +167,10 @@ async function loadPrivacy() {
     dataRequests.value = requestResult.status === 'fulfilled' ? requestResult.value : []
     legalHolds.value = holdResult.status === 'fulfilled' ? holdResult.value : []
     health.value = healthResult.status === 'fulfilled' ? healthResult.value : null
+    return true
   } catch (error) {
     loadError.value = errorMessage(error, 'Không thể tải cấu hình quyền riêng tư.')
+    return false
   } finally {
     isLoading.value = false
   }
@@ -197,8 +199,12 @@ async function createPolicy() {
         effectiveUntil: null,
       }),
     })
-    showSuccess('Đã tạo retention policy mới.')
-    await loadPrivacy()
+    const refreshed = await loadPrivacy()
+    if (refreshed) {
+      showSuccess('Đã tạo retention policy mới.')
+    } else {
+      showError('Đã tạo policy nhưng không thể làm mới dữ liệu.')
+    }
   } catch (error) {
     showError(errorMessage(error, 'Không thể tạo retention policy.'))
   } finally {
@@ -212,8 +218,12 @@ async function disablePolicy(policy: RetentionPolicy) {
       method: 'POST',
       body: JSON.stringify({ reason: 'Disabled from privacy settings', rowVersion: policy.rowVersion }),
     })
-    showSuccess('Policy đã được ngừng áp dụng.')
-    await loadPrivacy()
+    const refreshed = await loadPrivacy()
+    if (refreshed) {
+      showSuccess('Policy đã được ngừng áp dụng.')
+    } else {
+      showError('Đã ngừng policy nhưng không thể làm mới dữ liệu.')
+    }
   } catch (error) {
     showError(errorMessage(error, 'Không thể ngừng policy.'))
   }
@@ -241,8 +251,12 @@ async function grantConsent() {
       }),
     })
     consentForm.value.accepted = false
-    showSuccess('Consent đã được ghi nhận.')
-    await loadPrivacy()
+    const refreshed = await loadPrivacy()
+    if (refreshed) {
+      showSuccess('Consent đã được ghi nhận.')
+    } else {
+      showError('Đã ghi nhận consent nhưng không thể làm mới dữ liệu.')
+    }
   } catch (error) {
     showError(errorMessage(error, 'Không thể ghi nhận consent.'))
   } finally {
@@ -256,8 +270,12 @@ async function revokeConsent(consent: PrivacyConsent) {
       method: 'POST',
       body: JSON.stringify({ reason: 'Revoked by data subject', rowVersion: consent.rowVersion }),
     })
-    showSuccess('Consent đã được thu hồi.')
-    await loadPrivacy()
+    const refreshed = await loadPrivacy()
+    if (refreshed) {
+      showSuccess('Consent đã được thu hồi.')
+    } else {
+      showError('Đã thu hồi consent nhưng không thể làm mới dữ liệu.')
+    }
   } catch (error) {
     showError(errorMessage(error, 'Không thể thu hồi consent.'))
   }
@@ -279,8 +297,12 @@ async function submitDataRequest() {
         idempotencyKey: crypto.randomUUID(),
       }),
     })
-    showSuccess('Yêu cầu dữ liệu đã được gửi.')
-    await loadPrivacy()
+    const refreshed = await loadPrivacy()
+    if (refreshed) {
+      showSuccess('Yêu cầu dữ liệu đã được gửi.')
+    } else {
+      showError('Đã gửi yêu cầu nhưng không thể làm mới dữ liệu.')
+    }
   } catch (error) {
     showError(errorMessage(error, 'Không thể gửi yêu cầu dữ liệu.'))
   } finally {
@@ -326,8 +348,12 @@ async function createLegalHold() {
       }),
     })
     holdForm.value = { subjectUserId: '', entityType: '', entityId: '', reason: '' }
-    showSuccess('Legal hold đã được tạo.')
-    await loadPrivacy()
+    const refreshed = await loadPrivacy()
+    if (refreshed) {
+      showSuccess('Legal hold đã được tạo.')
+    } else {
+      showError('Đã tạo legal hold nhưng không thể làm mới dữ liệu.')
+    }
   } catch (error) {
     showError(errorMessage(error, 'Không thể tạo legal hold.'))
   } finally {
@@ -341,8 +367,12 @@ async function releaseLegalHold(hold: LegalHold) {
       method: 'POST',
       body: JSON.stringify({ reason: 'Released from privacy settings', rowVersion: hold.rowVersion }),
     })
-    showSuccess('Legal hold đã được giải phóng.')
-    await loadPrivacy()
+    const refreshed = await loadPrivacy()
+    if (refreshed) {
+      showSuccess('Legal hold đã được giải phóng.')
+    } else {
+      showError('Đã giải phóng legal hold nhưng không thể làm mới dữ liệu.')
+    }
   } catch (error) {
     showError(errorMessage(error, 'Không thể giải phóng legal hold.'))
   }

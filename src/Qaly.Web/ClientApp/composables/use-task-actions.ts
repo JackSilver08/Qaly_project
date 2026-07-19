@@ -7,6 +7,8 @@ import { showError, showSuccess } from './use-toast'
 export function useTaskActions(
   selectedTaskId: Ref<string | null>,
   loadDashboard: () => Promise<void>,
+  getActiveProjectId: () => string | null,
+  openTaskRoute?: (projectId: string, taskId: string) => void,
 ) {
   const createTaskOpen = ref(false)
   const taskBeingEdited = ref<DashboardTask | null>(null)
@@ -126,7 +128,12 @@ export function useTaskActions(
       })
 
       await loadDashboard()
-      selectedTaskId.value = task.id
+      const projectId = getActiveProjectId()
+      if (projectId && openTaskRoute) {
+        openTaskRoute(projectId, task.id)
+      } else {
+        selectedTaskId.value = task.id
+      }
       showSuccess(`Đã chuyển nhiệm vụ sang ${displayStatus(status)}`)
     } catch (error) {
       showError(errorMessage(error, 'Không thể cập nhật trạng thái nhiệm vụ'))
@@ -154,7 +161,11 @@ export function useTaskActions(
       })
 
       await loadDashboard()
-      selectedTaskId.value = task.id
+      if (openTaskRoute) {
+        openTaskRoute(projectId, task.id)
+      } else {
+        selectedTaskId.value = task.id
+      }
       showSuccess(`Đã cập nhật vị trí nhiệm vụ trong ${displayStatus(status)}`)
       return result
     } catch (error) {

@@ -58,10 +58,12 @@ export function useDashboard() {
         dashboard.value = normalized
         usingFallback.value = false
       }
+      return true
     } catch (error) {
       console.warn('Using fallback dashboard data.', error)
       dashboard.value = fallbackDashboard
       usingFallback.value = true
+      return false
     } finally {
       isLoading.value = false
     }

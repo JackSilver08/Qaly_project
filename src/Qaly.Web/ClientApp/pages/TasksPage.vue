@@ -794,18 +794,17 @@ function resetTaskDrawer() {
   selectedTaskLoading.value = false
 }
 
-function openTaskDrawer(taskId: string) {
-  selectedTaskDetail.value = selectedTaskSummary.value as TaskItemDto | null
-  selectedTaskComments.value = []
-  selectedTaskAttachments.value = []
-  selectedTaskTimeEntries.value = []
-  selectedTaskMeetingSource.value = null
-  selectedTaskLoading.value = true
-  selectedTaskId.value = taskId
+function openTaskDrawer(task: TaskSummary) {
+  openTask(task.projectId, task.id)
 }
 
 function closeTaskDrawer() {
+  const projectId = selectedTaskSummary.value?.projectId
   selectedTaskId.value = null
+  resetTaskDrawer()
+  if (projectId) {
+    void router.replace(`/projects/${projectId}`)
+  }
 }
 
 function taskActionLabel(status: string) {
@@ -1195,7 +1194,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
             <button
               class="task-card__body"
               type="button"
-              @click="openTaskDrawer(task.id)"
+              @click="openTaskDrawer(task)"
               @mouseenter="prefetchTaskDetail(task.id)"
               @focus="prefetchTaskDetail(task.id)"
             >

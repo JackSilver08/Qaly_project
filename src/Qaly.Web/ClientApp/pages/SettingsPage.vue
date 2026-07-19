@@ -238,6 +238,7 @@ async function changePassword() {
 
 async function saveSettings() {
   isSaving.value = true
+  let hadFailure = false
   
   // Persist local preferences
   localStorage.setItem('qaly-lang', selectedLang.value)
@@ -257,8 +258,13 @@ async function saveSettings() {
       })
       if (res.ok) {
         currentUser.value.fullName = name.value.trim()
+      } else {
+        hadFailure = true
+        showError('Không thể cập nhật hồ sơ người dùng.')
       }
     } catch (e) {
+      hadFailure = true
+      showError('Không thể cập nhật hồ sơ người dùng.')
       console.warn("Không thể cập nhật hồ sơ trên máy chủ:", e)
     }
   }
@@ -282,9 +288,12 @@ async function saveSettings() {
           })
         })
         if (!res.ok) {
+          hadFailure = true
           showError('Không thể cập nhật cấu hình không gian làm việc.')
         }
       } catch (e) {
+        hadFailure = true
+        showError('Không thể cập nhật cấu hình không gian làm việc.')
         console.warn("Lỗi cập nhật cấu hình không gian làm việc:", e)
       }
     }
@@ -314,18 +323,32 @@ async function saveSettings() {
           })
         })
         if (!res.ok) {
+          hadFailure = true
           showError('Không thể cập nhật cấu hình bảng công việc.')
         }
       } catch (e) {
+        hadFailure = true
+        showError('Không thể cập nhật cấu hình bảng công việc.')
         console.warn("Lỗi cập nhật cấu hình bảng công việc:", e)
       }
     }
   }
   
-  await loadDashboard()
+  try {
+    const refreshed = await loadDashboard()
+    if (!refreshed) {
+      hadFailure = true
+      showError('KhÃ´ng thá»ƒ lÃ m má»›i dá»¯ liá»‡u sau khi lÆ°u.')
+    }
+  } catch (e) {
+    hadFailure = true
+    showError('Không thể làm mới dữ liệu sau khi lưu.')
+  }
   
   isSaving.value = false
-  showSuccess("Đã lưu tất cả cấu hình thành công!")
+  if (!hadFailure) {
+    showSuccess("Đã lưu tất cả cấu hình thành công!")
+  }
 }
 
 onMounted(async () => {

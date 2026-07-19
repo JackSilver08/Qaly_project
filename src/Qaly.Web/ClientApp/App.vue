@@ -113,7 +113,12 @@ const {
   beginEditTask,
   saveTaskEdit,
   deleteTask,
-} = useTaskActions(selectedTaskId, loadDashboard);
+} = useTaskActions(
+  selectedTaskId,
+  loadDashboard,
+  () => selectedProject.value?.id ?? null,
+  openTask,
+);
 
 const navigation: ShellNavItem[] = [
   { label: "Tổng quan", to: "/dashboard", icon: LayoutDashboard },
@@ -534,9 +539,7 @@ watch(
       return;
     }
 
-    if (["project-detail", "projects", "dashboard"].includes(String(route.name ?? ""))) {
-      selectedTaskId.value = null;
-    }
+    selectedTaskId.value = null;
   },
   { immediate: true },
 );
@@ -799,14 +802,22 @@ function closeProjectDetails() {
 }
 function selectTaskInProject(id: string) {
   selectedTaskId.value = id;
-  if (selectedProject.value?.id)
-    void router.push(`/projects/${selectedProject.value.id}`);
+  const projectId = selectedProject.value?.id;
+  if (!projectId) return;
+
+  void router.push({
+    name: "project-task",
+    params: { projectId, taskId: id },
+  });
 }
 
 function openTask(pId: string, tId: string) {
   activeProjectId.value = pId;
   selectedTaskId.value = tId;
-  void router.push(`/projects/${pId}`);
+  void router.push({
+    name: "project-task",
+    params: { projectId: pId, taskId: tId },
+  });
 }
 
 async function createTask() {
