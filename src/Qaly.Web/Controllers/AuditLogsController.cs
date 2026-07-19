@@ -18,6 +18,7 @@ public class AuditLogsController : BaseApiController
     }
 
     [HttpGet("entity/{entityType}/{entityId}")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetByEntity(string entityType, string entityId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
     {
         var result = await _auditLogService.GetByEntityAsync(entityType, entityId, page, pageSize, ct);

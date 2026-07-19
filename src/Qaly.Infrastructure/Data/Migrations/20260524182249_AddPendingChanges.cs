@@ -44,11 +44,12 @@ namespace Qaly.Infrastructure.Data.Migrations
                 maxLength: 200,
                 nullable: true);
 
-            migrationBuilder.AddColumn<Guid>(
-                name: "SprintId",
-                table: "TaskItems",
-                type: "uniqueidentifier",
-                nullable: true);
+            migrationBuilder.Sql("""
+                IF COL_LENGTH(N'[TaskItems]', N'SprintId') IS NULL
+                BEGIN
+                    ALTER TABLE [TaskItems] ADD [SprintId] uniqueidentifier NULL;
+                END
+                """);
 
             migrationBuilder.AddColumn<string>(
                 name: "IdempotencyKey",
@@ -99,15 +100,31 @@ namespace Qaly.Infrastructure.Data.Migrations
                 table: "WebhookDeliveryLogs",
                 columns: new[] { "WebhookId", "IdempotencyKey", "IsSuccess" });
 
-            migrationBuilder.CreateIndex(
-                name: "IX_TaskItems_ProjectId_SprintId_Status",
-                table: "TaskItems",
-                columns: new[] { "ProjectId", "SprintId", "Status" });
+            migrationBuilder.Sql("""
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_TaskItems_ProjectId_SprintId_Status'
+                      AND object_id = OBJECT_ID(N'[TaskItems]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_TaskItems_ProjectId_SprintId_Status]
+                    ON [TaskItems] ([ProjectId], [SprintId], [Status]);
+                END
+                """);
 
-            migrationBuilder.CreateIndex(
-                name: "IX_TaskItems_SprintId",
-                table: "TaskItems",
-                column: "SprintId");
+            migrationBuilder.Sql("""
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_TaskItems_SprintId'
+                      AND object_id = OBJECT_ID(N'[TaskItems]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_TaskItems_SprintId]
+                    ON [TaskItems] ([SprintId]);
+                END
+                """);
 
             migrationBuilder.CreateIndex(
                 name: "IX_Notifications_UserId_IdempotencyKey",
@@ -131,20 +148,35 @@ namespace Qaly.Infrastructure.Data.Migrations
                 table: "Sprint",
                 column: "Status");
 
-            migrationBuilder.AddForeignKey(
-                name: "FK_TaskItems_Sprint_SprintId",
-                table: "TaskItems",
-                column: "SprintId",
-                principalTable: "Sprint",
-                principalColumn: "Id");
+            migrationBuilder.Sql("""
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.foreign_keys
+                    WHERE name = N'FK_TaskItems_Sprint_SprintId'
+                      AND parent_object_id = OBJECT_ID(N'[TaskItems]')
+                )
+                BEGIN
+                    ALTER TABLE [TaskItems]
+                    ADD CONSTRAINT [FK_TaskItems_Sprint_SprintId]
+                    FOREIGN KEY ([SprintId]) REFERENCES [Sprint] ([Id]);
+                END
+                """);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropForeignKey(
-                name: "FK_TaskItems_Sprint_SprintId",
-                table: "TaskItems");
+            migrationBuilder.Sql("""
+                IF EXISTS (
+                    SELECT 1
+                    FROM sys.foreign_keys
+                    WHERE name = N'FK_TaskItems_Sprint_SprintId'
+                      AND parent_object_id = OBJECT_ID(N'[TaskItems]')
+                )
+                BEGIN
+                    ALTER TABLE [TaskItems] DROP CONSTRAINT [FK_TaskItems_Sprint_SprintId];
+                END
+                """);
 
             migrationBuilder.DropTable(
                 name: "Sprint");
@@ -157,13 +189,29 @@ namespace Qaly.Infrastructure.Data.Migrations
                 name: "IX_WebhookDeliveryLogs_WebhookId_IdempotencyKey_IsSuccess",
                 table: "WebhookDeliveryLogs");
 
-            migrationBuilder.DropIndex(
-                name: "IX_TaskItems_ProjectId_SprintId_Status",
-                table: "TaskItems");
+            migrationBuilder.Sql("""
+                IF EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_TaskItems_ProjectId_SprintId_Status'
+                      AND object_id = OBJECT_ID(N'[TaskItems]')
+                )
+                BEGIN
+                    DROP INDEX [IX_TaskItems_ProjectId_SprintId_Status] ON [TaskItems];
+                END
+                """);
 
-            migrationBuilder.DropIndex(
-                name: "IX_TaskItems_SprintId",
-                table: "TaskItems");
+            migrationBuilder.Sql("""
+                IF EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_TaskItems_SprintId'
+                      AND object_id = OBJECT_ID(N'[TaskItems]')
+                )
+                BEGIN
+                    DROP INDEX [IX_TaskItems_SprintId] ON [TaskItems];
+                END
+                """);
 
             migrationBuilder.DropIndex(
                 name: "IX_Notifications_UserId_IdempotencyKey",
@@ -185,9 +233,12 @@ namespace Qaly.Infrastructure.Data.Migrations
                 name: "IdempotencyKey",
                 table: "WebhookDeliveryLogs");
 
-            migrationBuilder.DropColumn(
-                name: "SprintId",
-                table: "TaskItems");
+            migrationBuilder.Sql("""
+                IF COL_LENGTH(N'[TaskItems]', N'SprintId') IS NOT NULL
+                BEGIN
+                    ALTER TABLE [TaskItems] DROP COLUMN [SprintId];
+                END
+                """);
 
             migrationBuilder.DropColumn(
                 name: "IdempotencyKey",

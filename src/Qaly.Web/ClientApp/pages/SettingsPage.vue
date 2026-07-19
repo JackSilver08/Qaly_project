@@ -13,6 +13,24 @@ import { showSuccess, showError } from '../composables/use-toast'
 const { currentUser, displayRole, loadDashboard, projects, selectedProject } = useDashboardContext()
 
 const activeTab = ref('profile')
+const currentUserRole = computed(() => String(currentUser.value?.role || '').toLowerCase())
+const isSystemAdmin = computed(() => currentUserRole.value === 'admin')
+const selectedProjectMemberRole = computed(() => {
+  const project = selectedProject.value
+  const userId = currentUser.value?.id
+
+  if (!project || !userId) return ''
+
+  return (
+    String(project.members?.find((member: any) => member.userId === userId)?.role || '')
+      .trim()
+      .toLowerCase()
+  )
+})
+const canManageWorkspaceSettings = computed(() => isSystemAdmin.value)
+const canManageProjectWorkflow = computed(() =>
+  isSystemAdmin.value || ['owner', 'manager'].includes(selectedProjectMemberRole.value),
+)
 
 // Theme state
 const themeStorageKey = 'qaly-theme'
@@ -63,6 +81,12 @@ const auditLogs = ref<any[]>([])
 const isLoadingLogs = ref(false)
 
 async function loadOrganizations() {
+  if (!canManageWorkspaceSettings.value) {
+    organizations.value = []
+    selectedOrgId.value = null
+    return
+  }
+
   try {
     const res = await fetch('/api/organizations')
     if (res.ok) {
@@ -91,6 +115,11 @@ function loadOrgSettings() {
 }
 
 function loadProjectSettings() {
+  if (!canManageProjectWorkflow.value) {
+    selectedProjectId.value = null
+    return
+  }
+
   const proj = projects.value.find((p: any) => p.id === selectedProjectId.value)
   if (proj) {
     enableOnHold.value = proj.enableOnHold !== false
@@ -235,7 +264,7 @@ async function saveSettings() {
   }
 
   // Update organization settings
-  if (selectedOrgId.value) {
+  if (canManageWorkspaceSettings.value && selectedOrgId.value) {
     const org = organizations.value.find((o: any) => o.id === selectedOrgId.value)
     if (org) {
       try {
@@ -262,7 +291,7 @@ async function saveSettings() {
   }
 
   // Update project settings
-  if (selectedProjectId.value) {
+  if (canManageProjectWorkflow.value && selectedProjectId.value) {
     const proj = projects.value.find((p: any) => p.id === selectedProjectId.value)
     if (proj) {
       try {
@@ -308,6 +337,9 @@ onMounted(async () => {
 })
 
 function handleTabChange(tab: string) {
+  if (tab === 'workflow' && !canManageProjectWorkflow.value) {
+    return
+  }
   activeTab.value = tab
   if (tab === 'logs') {
     fetchAuditLogs()
@@ -367,6 +399,7 @@ const userInitials = computed(() => {
               <span>Giao diện & Chủ đề</span>
             </button>
             <button 
+              v-if="canManageProjectWorkflow"
               class="settings-nav-item" 
               :class="{ 'is-active': activeTab === 'workflow' }" 
               @click="handleTabChange('workflow')"
@@ -447,7 +480,7 @@ const userInitials = computed(() => {
               </div>
 
               <!-- Breakthrough: Notion-Style Workspace Branding & Security -->
-              <div class="sub-section border-top">
+              <div v-if="canManageWorkspaceSettings" class="sub-section border-top">
                 <div class="panel-section-header">
                   <Globe :size="18" class="icon-success" />
                   <h3>Cấu hình Không gian làm việc (Notion Workspace style)</h3>
@@ -634,7 +667,7 @@ const userInitials = computed(() => {
             </section>
 
             <!-- Breakthrough: Tab: Jira-style Kanban Workflow Builder -->
-            <section v-if="activeTab === 'workflow'" class="settings-panel glass-card reveal">
+            <section v-if="activeTab === 'workflow' && canManageProjectWorkflow" class="settings-panel glass-card reveal">
               <div class="panel-section-header">
                 <Sliders :size="20" class="icon-primary" />
                 <h3>Cấu hình Bảng công việc & Workflow (Jira style)</h3>

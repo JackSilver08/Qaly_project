@@ -303,7 +303,7 @@ const isProjectAdmin = computed(() => {
   const user = currentUser.value;
   if (!project || !user) return false;
   const userRole = String(user.role || "").toLowerCase();
-  if (userRole === "admin" || user.email === "admin@qaly.dev") return true;
+  if (userRole === "admin") return true;
   const userId = String(user.id || "").toLowerCase();
   if (project.ownerId?.toLowerCase() === userId) return true;
   const member = project.members?.find(
