@@ -71,6 +71,10 @@ const {
   loadUsers,
 } = useDashboard();
 
+const refreshDashboard = async () => {
+  await loadDashboard();
+};
+
 const activeProjectId = ref<string | null>(null);
 const selectedTaskId = ref<string | null>(null);
 
@@ -90,7 +94,7 @@ const {
   selectProject: baseSelectProject,
   archiveProject,
   restoreProject,
-} = useProjectActions(projects, activeProjectId, loadDashboard);
+} = useProjectActions(projects, activeProjectId, refreshDashboard);
 
 const {
   createTaskOpen,
@@ -115,7 +119,7 @@ const {
   deleteTask,
 } = useTaskActions(
   selectedTaskId,
-  loadDashboard,
+  refreshDashboard,
   () => selectedProject.value?.id ?? null,
   openTask,
 );

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   ArrowRight,
   BadgeAlert,
@@ -85,6 +86,8 @@ const {
   openTask,
   projects,
 } = useDashboardContext()
+
+const router = useRouter()
 
 const taskScope = ref<TaskScope>('all')
 const searchQuery = ref('')
