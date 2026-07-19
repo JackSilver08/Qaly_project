@@ -9,6 +9,10 @@ const ProjectsPage = () => import("../pages/ProjectsPage.vue");
 const TasksPage = () => import("../pages/TasksPage.vue");
 const TeamsPage = () => import("../pages/TeamsPage.vue");
 const AnalyticsPage = () => import("../pages/AnalyticsPage.vue");
+const RouteErrorPage = () => import("../pages/RouteErrorPage.vue");
+
+const guidPattern =
+    "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
 
 export const router = createRouter({
     history: createWebHistory(),
@@ -23,19 +27,37 @@ export const router = createRouter({
             component: ArchivedProjectsPage,
         },
         {
-            path: "/projects/:projectId",
+            path: `/projects/:projectId(${guidPattern})`,
             name: "project-detail",
             component: ProjectDetailPage,
         },
         {
-            path: "/projects/:projectId/tasks/:taskId",
+            path: `/projects/:projectId(${guidPattern})/tasks/:taskId(${guidPattern})`,
             name: "project-task",
             component: ProjectDetailPage,
         },
         {
-            path: "/projects/:projectId/wiki/:wikiId",
+            path: `/projects/:projectId(${guidPattern})/wiki/:wikiId(${guidPattern})`,
             name: "project-wiki-detail",
             component: () => import("../pages/WikiDetailPage.vue"),
+        },
+        {
+            path: "/projects/:projectId/tasks/:taskId",
+            name: "project-task-format-error",
+            component: RouteErrorPage,
+            props: {
+                title: "URL nhiệm vụ không hợp lệ",
+                message: "Task URL sai định dạng hoặc đã bị thay đổi.",
+            },
+        },
+        {
+            path: "/projects/:projectId",
+            name: "project-format-error",
+            component: RouteErrorPage,
+            props: {
+                title: "URL dự án không hợp lệ",
+                message: "Project URL sai định dạng hoặc đã bị thay đổi.",
+            },
         },
         { path: "/tasks", name: "tasks", component: TasksPage },
         { path: "/teams", name: "teams", component: TeamsPage },
@@ -46,27 +68,44 @@ export const router = createRouter({
             component: () => import("../pages/TeamsPage.vue"),
         },
         {
-            path: "/groups/:groupId",
+            path: `/groups/:groupId(${guidPattern})`,
             name: "group-detail",
             component: () => import("../pages/TeamsPage.vue"),
         },
         {
-            path: "/groups/:groupId/meeting",
+            path: `/groups/:groupId(${guidPattern})/meeting`,
             name: "group-meeting",
             component: () => import("../pages/GroupMeetingPage.vue"),
         },
         {
-            path: "/groups/:groupId/polls",
+            path: `/groups/:groupId(${guidPattern})/polls`,
             name: "group-polls",
             component: () => import("../pages/GroupPollPage.vue"),
         },
         {
-            path: "/groups/:groupId/polls/:pollId",
+            path: `/groups/:groupId(${guidPattern})/polls/:pollId(${guidPattern})`,
             name: "group-poll-detail",
             component: () => import("../pages/GroupPollPage.vue"),
         },
+        {
+            path: "/groups/:groupId/:rest(.*)*",
+            name: "group-format-error",
+            component: RouteErrorPage,
+            props: {
+                title: "URL nhóm không hợp lệ",
+                message: "Group link sai định dạng hoặc đã hết hiệu lực.",
+            },
+        },
         { path: "/settings", name: "settings", component: SettingsPage },
-        { path: "/:pathMatch(.*)*", redirect: "/dashboard" },
+        {
+            path: "/:pathMatch(.*)*",
+            name: "route-not-found",
+            component: RouteErrorPage,
+            props: {
+                title: "Không tìm thấy trang",
+                message: "Đường dẫn không tồn tại hoặc đã bị thay đổi.",
+            },
+        },
     ],
     scrollBehavior() {
         return { top: 0 };

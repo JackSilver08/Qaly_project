@@ -37,8 +37,13 @@ public class AttachmentsController : BaseApiController
 
     [HttpPost("task/{taskItemId:guid}")]
     [RequestSizeLimit(25_000_000)]
-    public async Task<IActionResult> Upload(Guid taskItemId, IFormFile file, CancellationToken ct)
+    public async Task<IActionResult> Upload(Guid taskItemId, [FromForm] IFormFile? file, CancellationToken ct)
     {
+        if (file is null || file.Length <= 0)
+        {
+            return BadRequest(new { error = "A valid file is required." });
+        }
+
         await using var stream = file.OpenReadStream();
         var result = await _attachmentService.UploadAsync(taskItemId, file.FileName, file.ContentType, file.Length, stream, ct);
         return StatusCode(result.StatusCode, result);
