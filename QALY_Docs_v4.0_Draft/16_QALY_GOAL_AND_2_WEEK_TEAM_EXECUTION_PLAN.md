@@ -342,6 +342,7 @@ chạy full suite, preview smoke và sửa regression trong buffer.
 | T2-TR-04 Traceability/acceptance/release evidence closure | Trung | Long | 1.5 | D9.5-D10 | 031,032 | all committed PRs |
 | T2-KH-03 AI-06/AI-07 locked schema/selective confirm | Khang | Trung/Duy | 2.0 | D6-D7 | 013,014 | T1-KH-02 |
 | T2-KH-04 AI-08 SQL metric reconciliation/source refs | Khang | Trung | 2.0 | D8-D9 | 015 | T2-DH-04 contract |
+| T2-KH-05 Proactive Automation (Đề xuất xử lý) | Khang | Trung/Duy | 1.5 | D8-D9 | 039 | T2-KH-04 |
 | T2-DH-03 Soft-delete relationship integrity | Duy Hoàng | Trung | 2.0 | D8-D9 | 020 | none |
 | T2-DH-04 Canonical meeting/action/source resolver backend | Duy Hoàng | Minh/Khang | 2.0 | D6-D7 | 007,023 | T1-DH-01 |
 | T2-MN-03 Group↔Project UI và canonical meeting route | Minh | Long/Trung | 2.0 | D6-D7 | 005,007 | T1-DH-01 |
@@ -641,6 +642,21 @@ Mỗi pack dưới đây là context tối thiểu bắt buộc. Agent phải đ
 - **Rủi ro/rollback:** fallback to current read-only summary; no mutation.
 - **Out-of-scope:** portfolio forecast/scheduling.
 - **Branch/PR:** `codex/khang-t2-grounded-summary`; `feat(AI-08): reconcile project and sprint facts`.
+
+### T2-KH-05 — Proactive Automation & Human-in-the-loop Review (Đề xuất xử lý)
+
+- **Owner/reviewer/effort:** Khang; Trung/Duy; 1.5 ngày.
+- **Maps:** REQ-AI-09, GAP-039.
+- **Hiện trạng:** Hệ thống AI native có UI draft review, nhưng chưa hỗ trợ luồng proactive automation review để thực thi nhiều action.
+- **Kết quả:** Implement backend trigger và draft confirmation cho resolution của delayed projects. Bấm nút "Đề xuất xử lý" sẽ gọi AI tạo một list action (gửi email thông báo, điều chỉnh độ ưu tiên task), cho phép xem lại (review) trước khi đồng ý thực hiện (confirm/execute).
+- **Đọc trước:** `AiController`, `AiWorkflowService`, `ConfirmDraftAsync`, `IEmailService`, `INotificationService`.
+- **Được sửa:** `AiController`, `AiWorkflowService`, `AiJobProcessor`, `AiGateway` (GetFallbackResponse), và frontend `AiActivityPanel.vue`.
+- **Acceptance:**
+  - POST `/api/ai/projects/{projectId}/suggest-resolution` tạo job `project_delay_resolution` và trả về 202.
+  - Mock/real AI trả về schema `project_delay_resolution.v4` chứa các đề xuất `SendNotification` và `UpdateTask`.
+  - Review UI hiển thị thông tin bản nháp rõ ràng.
+  - Confirm draft với action `execute_action` sẽ duyệt qua các actions, gửi email, tạo thông báo và cập nhật trạng thái tasks.
+- **Branch/PR:** `codex/khang-t2-proactive-automation`; `feat(AI-automation): delayed project resolution flow`.
 
 ### T2-DH-03 — Soft-delete relationship integrity
 

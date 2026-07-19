@@ -17,6 +17,7 @@ import ProjectGrid from '../components/ProjectGrid.vue'
 import ProjectToolbar from '../components/ProjectToolbar.vue'
 import ImportModal from '../components/import/ImportModal.vue'
 import ImportUndoBanner from '../components/import/ImportUndoBanner.vue'
+import AiPlannerModal from '../components/AiPlannerModal.vue'
 import { useDashboardContext } from '../composables/dashboard-context'
 import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
 import { showError, showSuccess } from '../composables/use-toast'
@@ -47,11 +48,18 @@ const {
 
 const isGridView = ref(true)
 const showImportModal = ref(false)
+const showAiPlanner = ref(false)
 const undoBannerData = ref<{ importSessionId: string; importedCount: number; failedCount: number; duplicateSkippedCount: number; createdAt: string } | null>(null)
 const createSourceMode = ref<'members' | 'group'>('members')
 const selectedMemberIds = ref<string[]>([])
 const selectedGroupId = ref('')
 const availableGroups = ref<{ id: string; name: string; description: string | null; memberCount: number }[]>([])
+
+async function onPlannerCreated(newProjectId: string) {
+  await loadDashboard()
+  selectProject(newProjectId)
+}
+
 
 const activeProjectCount = computed(() => activeProjectCards.value.filter((p: any) => p.status === 'Active').length)
 const plannedProjectCount = computed(() => activeProjectCards.value.filter((p: any) => p.status === 'Planned').length)
@@ -261,6 +269,9 @@ async function handleUndoFromBanner() {
             <button class="btn-import" type="button" @click="showImportModal = true">
               <FileUp :size="15" /> Nhập
             </button>
+            <button class="btn-ai-plan" type="button" @click="showAiPlanner = true">
+              <Sparkles :size="15" /> Lên kế hoạch AI
+            </button>
           </template>
         </ProjectToolbar>
 
@@ -294,6 +305,13 @@ async function handleUndoFromBanner() {
       v-if="showImportModal"
       @close="showImportModal = false"
       @imported="onImported"
+    />
+
+    <AiPlannerModal
+      v-if="showAiPlanner"
+      :project-id="null"
+      @close="showAiPlanner = false"
+      @created="onPlannerCreated"
     />
 
     <ImportUndoBanner

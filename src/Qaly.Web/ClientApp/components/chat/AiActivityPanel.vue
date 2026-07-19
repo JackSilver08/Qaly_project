@@ -56,6 +56,60 @@ const draftPayloadChanged = computed(() => {
   }
 })
 
+const showRawJson = ref(false)
+const parsedActions = ref<any[]>([])
+
+function formatDateTimeLocal(value: string) {
+  if (!value) return ''
+  try {
+    const d = new Date(value)
+    if (isNaN(d.getTime())) return ''
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    const hours = String(d.getHours()).padStart(2, '0')
+    const minutes = String(d.getMinutes()).padStart(2, '0')
+    return `${year}-${month}-${day}T${hours}:${minutes}`
+  } catch {
+    return ''
+  }
+}
+
+watch(() => selectedDraft.value, (newDraft) => {
+  if (newDraft) {
+    showRawJson.value = false
+    try {
+      const parsed = JSON.parse(draftPayload.value)
+      if (parsed && Array.isArray(parsed.actions)) {
+        parsedActions.value = parsed.actions.map((act: any) => ({
+          ...act,
+          checked: true
+        }))
+      } else {
+        parsedActions.value = []
+      }
+    } catch {
+      parsedActions.value = []
+    }
+  } else {
+    parsedActions.value = []
+  }
+})
+
+watch(parsedActions, (newActions) => {
+  if (!selectedDraft.value) return
+  try {
+    const currentPayload = JSON.parse(draftPayload.value || '{}')
+    currentPayload.actions = newActions.filter((act: any) => act.checked).map((act: any) => {
+      const { checked, ...rest } = act
+      return rest
+    })
+    draftPayload.value = JSON.stringify(currentPayload, null, 2)
+  } catch {
+    // ignore
+  }
+}, { deep: true })
+
 function queryValue(value: unknown) {
   return typeof value === 'string' ? value : null
 }
@@ -235,6 +289,7 @@ function confirmAction(draftType: string) {
   if (value.includes('breakdown')) return 'create_subtasks'
   if (value.includes('checklist')) return 'save_checklist'
   if (value.includes('report')) return 'save_report'
+  if (value.includes('resolution') || value.includes('delay')) return 'execute_action'
   return 'create_tasks'
 }
 
@@ -289,7 +344,91 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
       <div class="draft-change-state" :class="{ changed: draftPayloadChanged }">
         {{ draftPayloadChanged ? 'Đã chỉnh sửa' : 'Chưa chỉnh sửa' }}
       </div>
-      <div class="draft-compare" aria-label="So sánh bản nháp AI">
+      <!-- Custom visual editor for ProjectDelayResolution -->
+      <div v-if="selectedDraft.draftType === 'ProjectDelayResolution' && !showRawJson" class="visual-draft-editor">
+        <div class="visual-editor-header">
+          <span>📋 Đề xuất xử lý tiến độ (AI)</span>
+          <button class="toggle-raw-btn" type="button" @click="showRawJson = true">
+            Xem JSON gốc
+          </button>
+        </div>
+
+        <div class="actions-list">
+          <div v-for="(act, idx) in parsedActions" :key="idx" class="action-card" :class="{ 'is-unchecked': !act.checked }">
+            <div class="action-card-header">
+              <label class="checkbox-container">
+                <input type="checkbox" v-model="act.checked" />
+                <span class="action-type-badge" :class="act.type.toLowerCase()">
+                  {{ act.type === 'SendNotification' ? '📧 Gửi thông báo' : '📝 Cập nhật Task' }}
+                </span>
+              </label>
+            </div>
+
+            <div v-if="act.checked" class="action-card-body">
+              <!-- SendNotification fields -->
+              <template v-if="act.type === 'SendNotification'">
+                <div class="form-group-row">
+                  <div class="form-group">
+                    <label>Người nhận</label>
+                    <input type="text" v-model="act.recipientName" placeholder="Tên thành viên" />
+                  </div>
+                  <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" v-model="act.recipientEmail" placeholder="email@example.com" />
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label>Tiêu đề email</label>
+                  <input type="text" v-model="act.subject" />
+                </div>
+                <div class="form-group">
+                  <label>Nội dung cảnh báo</label>
+                  <textarea v-model="act.message" rows="3"></textarea>
+                </div>
+              </template>
+
+              <!-- UpdateTask fields -->
+              <template v-if="act.type === 'UpdateTask'">
+                <div class="form-group">
+                  <label>Tên công việc</label>
+                  <input type="text" v-model="act.title" readonly class="readonly-input" />
+                </div>
+                <div class="form-group-row">
+                  <div class="form-group">
+                    <label>Trạng thái</label>
+                    <select v-model="act.status">
+                      <option value="Todo">Todo</option>
+                      <option value="In Progress">In Progress</option>
+                      <option value="In Review">In Review</option>
+                      <option value="Done">Done</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>Độ ưu tiên</label>
+                    <select v-model="act.priority">
+                      <option value="Low">Low</option>
+                      <option value="Medium">Medium</option>
+                      <option value="High">High</option>
+                      <option value="Critical">Critical</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label>Hạn chót đề xuất</label>
+                  <input type="datetime-local" :value="formatDateTimeLocal(act.dueDate)" @input="act.dueDate = $event.target.value" />
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="draft-compare" aria-label="So sánh bản nháp AI">
+        <header v-if="selectedDraft.draftType === 'ProjectDelayResolution'" style="display:flex; justify-content:flex-end; padding:0; margin:0; width:100%;">
+          <button class="toggle-raw-btn" type="button" @click="showRawJson = false" style="margin-bottom:8px;">
+            Quay lại xem trực quan
+          </button>
+        </header>
         <section>
           <strong>Bản AI gốc</strong>
           <pre>{{ originalPayloadText }}</pre>
@@ -327,4 +466,138 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
 <style scoped>
 .ai-activity{height:100%;display:flex;flex-direction:column;background:#fff;color:#17202a}.activity-toolbar{min-height:48px;padding:7px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e4e7eb}.activity-tabs{display:flex;gap:4px}.activity-tabs button{height:32px;padding:0 10px;border:0;border-bottom:2px solid transparent;background:transparent;color:#59636e;font:inherit;font-size:13px;cursor:pointer}.activity-tabs button.active{color:#17202a;border-bottom-color:#24735b;font-weight:700}.activity-tabs span{margin-left:4px;color:#7b8490;font-size:11px}.icon-button{width:32px;height:32px;display:inline-grid;place-items:center;border:1px solid transparent;background:transparent;color:#59636e;cursor:pointer}.icon-button:hover{border-color:#d7dce1;background:#f6f7f8}.health-strip{min-height:34px;padding:0 14px;display:flex;align-items:center;gap:8px;background:#eef7f2;color:#285c49;font-size:12px}.health-strip.degraded{background:#fff7e8;color:#7a4d0b}.health-dot{width:7px;height:7px;border-radius:50%;background:#31866a}.degraded .health-dot{background:#c47a10}.health-count{margin-left:auto}.activity-error{padding:10px 14px;display:flex;gap:8px;background:#fff0f0;color:#a33535;font-size:12px}.ai-activity-list{flex:1;min-height:0;overflow-y:auto}.activity-row{width:100%;min-height:62px;padding:10px 14px;display:grid;grid-template-columns:32px minmax(0,1fr) 18px;gap:10px;align-items:center;border:0;border-bottom:1px solid #edf0f2;background:#fff;color:inherit;text-align:left;cursor:pointer}.activity-row:hover{background:#f7f9f8}.row-icon{width:30px;height:30px;display:grid;place-items:center;border-radius:6px;background:#eef2f4;color:#53606c}.row-icon.running,.row-icon.retrying,.row-icon.queued{background:#edf3fa;color:#35638b}.row-icon.succeeded,.row-icon.pending_review{background:#eaf6f0;color:#24735b}.row-icon.failed{background:#fff0f0;color:#aa3c3c}.row-copy{min-width:0;display:flex;flex-direction:column;gap:4px}.row-copy strong,.row-copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row-copy strong{font-size:13px}.row-copy small{color:#737d87;font-size:11px}.activity-detail{flex:1;min-height:0;padding:12px 14px;display:flex;flex-direction:column;gap:12px;overflow-y:auto}.activity-detail header{display:grid;grid-template-columns:32px minmax(0,1fr);gap:8px;align-items:center}.activity-detail header div{min-width:0;display:flex;flex-direction:column;gap:3px}.activity-detail header strong{overflow-wrap:anywhere;font-size:14px}.activity-detail header span{color:#737d87;font-size:11px}.progress-track{height:5px;overflow:hidden;background:#e9edef}.progress-track span{display:block;height:100%;background:#31866a}.detail-warning{margin:0;padding:8px 10px;background:#fff7e8;color:#7a4d0b;font-size:12px;overflow-wrap:anywhere}.activity-detail pre{flex:1;min-height:180px;margin:0;padding:12px;overflow:auto;background:#f5f7f8;border:1px solid #e0e4e7;font:11px/1.5 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere}.draft-detail textarea{flex:1;min-height:260px;resize:vertical;padding:10px;border:1px solid #cfd5da;font:11px/1.5 ui-monospace,monospace}.draft-detail input{min-height:36px;padding:0 10px;border:1px solid #cfd5da;font:inherit;font-size:12px}.detail-actions{display:flex;justify-content:flex-end;gap:7px;flex-wrap:wrap}.detail-actions button{min-height:34px;padding:0 10px;display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;font:inherit;font-size:12px;cursor:pointer}.primary-action{background:#24735b;color:#fff}.secondary-action{background:#fff;border-color:#cfd5da!important;color:#39434d}.danger-action{background:#fff0f0;color:#a33535}.detail-actions button:disabled,.icon-button:disabled{opacity:.5;cursor:not-allowed}.empty-state{min-height:180px;display:grid;place-content:center;justify-items:center;gap:8px;color:#7a838d;font-size:12px}.spinning{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 .draft-change-state{align-self:flex-start;padding:3px 7px;background:#eef2f4;color:#59636e;font-size:11px;font-weight:700}.draft-change-state.changed{background:#fff7e8;color:#7a4d0b}.draft-compare{display:grid;gap:12px}.draft-compare section{display:grid;gap:6px;min-width:0}.draft-compare section>strong{font-size:12px}.draft-compare pre{flex:none;min-height:96px;max-height:160px;padding:10px}.draft-compare textarea{flex:none;min-height:210px;width:100%;box-sizing:border-box}.job-result{min-height:180px}
+
+/* Rich Visual Editor Styles */
+.visual-draft-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 12px;
+  max-height: 480px;
+  overflow-y: auto;
+  color: #334155;
+}
+.visual-editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 700;
+  font-size: 13px;
+  color: #0f172a;
+  border-bottom: 1px solid #cbd5e1;
+  padding-bottom: 8px;
+}
+.toggle-raw-btn {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+.toggle-raw-btn:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+.actions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.action-card {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  transition: all 0.2s ease;
+}
+.action-card.is-unchecked {
+  opacity: 0.5;
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+.action-card-header {
+  display: flex;
+  align-items: center;
+}
+.action-card.is-unchecked .action-card-body {
+  display: none;
+}
+.checkbox-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f172a;
+  cursor: pointer;
+}
+.action-type-badge {
+  padding: 3px 8px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+.action-type-badge.sendnotification {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+.action-type-badge.updatetask {
+  background: #fffbeb;
+  color: #d97706;
+  border: 1px solid #fde68a;
+}
+.action-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px dashed #cbd5e1;
+  padding-top: 10px;
+  margin-top: 10px;
+}
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.form-group label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #475569;
+}
+.form-group input, .form-group textarea, .form-group select {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #0f172a;
+  background: #ffffff;
+  width: 100%;
+  box-sizing: border-box;
+}
+.form-group input:focus, .form-group textarea:focus, .form-group select:focus {
+  border-color: #3b82f6;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+}
+.form-group-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.readonly-input {
+  background: #f1f5f9 !important;
+  color: #475569 !important;
+  cursor: not-allowed;
+}
 </style>

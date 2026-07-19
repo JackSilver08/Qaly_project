@@ -183,7 +183,7 @@ public class AiGateway : IAiGateway
         if (settings.OfflineMode)
         {
             _logger.LogWarning("AI Gateway is in OfflineMode/DemoMode. Returning offline fallback mock.");
-            return CreateMockResponse(GetFallbackResponse(request.ExpectedSchemaId), "OfflineMock", "offline_mode");
+            return CreateMockResponse(GetFallbackResponse(request), "OfflineMock", "offline_mode");
         }
 
         // Proactive RAG (Context Retrieval)
@@ -617,7 +617,7 @@ public class AiGateway : IAiGateway
 
         if (request.AllowMockFallback && settings.AllowProviderDegradedMock)
         {
-            return CreateMockResponse(GetFallbackResponse(request.ExpectedSchemaId), "ProviderDegradedMock", "provider_degraded");
+            return CreateMockResponse(GetFallbackResponse(request), "ProviderDegradedMock", "provider_degraded");
         }
 
         return CreateFailureResponse(
@@ -719,8 +719,41 @@ public class AiGateway : IAiGateway
             Retryable = retryable
         };
 
-    private static string GetFallbackResponse(string schemaId)
+    private string GetFallbackResponse(AiRequest request)
     {
+        string schemaId = request.ExpectedSchemaId;
+        if (schemaId.Contains("project_delay_resolution", StringComparison.OrdinalIgnoreCase))
+        {
+            var projectId = request.ProjectId ?? Guid.Empty;
+            var project = _context.Projects.FirstOrDefault(p => p.Id == projectId);
+            var overdueTask = _context.TaskItems.FirstOrDefault(t => t.ProjectId == projectId && t.Status != "Done");
+            var taskGuid = overdueTask?.Id ?? Guid.Empty;
+            var taskTitle = overdueTask?.Title ?? "Thiết lập AI Gateway";
+            
+            return $$"""
+                {
+                  "projectId": "{{projectId}}",
+                  "actions": [
+                    {
+                      "type": "SendNotification",
+                      "recipientEmail": "trungnguyendoan9@gmail.com",
+                      "recipientName": "Trung Nguyen",
+                      "subject": "[Qaly Cảnh Báo Trễ Hạn] Đề xuất xử lý tiến độ dự án '{{project?.Name ?? "Dự án Qaly"}}'",
+                      "message": "Xin chào Trung Nguyen, công việc '{{taskTitle}}' của dự án đang bị chậm tiến độ so với deadline. Vui lòng tập trung hoàn thành trước để mọi người tranh thủ hoàn thành trước."
+                    },
+                    {
+                      "type": "UpdateTask",
+                      "taskId": "{{taskGuid}}",
+                      "title": "{{taskTitle}}",
+                      "status": "In Progress",
+                      "priority": "Critical",
+                      "dueDate": "{{DateTimeOffset.UtcNow.AddDays(3):yyyy-MM-ddTHH:mm:sszzz}}"
+                    }
+                  ]
+                }
+                """;
+        }
+
         if (schemaId.Contains("MeetingActionItem", StringComparison.OrdinalIgnoreCase))
         {
             return "[\"Fix login issue (Fallback Warning: AI Offline)\", \"Update documentation (Fallback Warning: AI Offline)\"]";

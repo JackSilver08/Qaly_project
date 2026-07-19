@@ -45,4 +45,8 @@ public interface IAiService
 
     /// <summary>Tự động phân loại hàng loạt task (Status, Priority, Labels) dựa trên Title và Description</summary>
     Task<List<Qaly.Application.DTOs.Import.AiCategorizationResult>> CategorizeTasksBatchAsync(List<Qaly.Application.DTOs.Import.AiCategorizationRequest> tasks);
+
+    /// <summary>Lập kế hoạch dự án và công việc bằng AI từ ngôn ngữ tự nhiên</summary>
+    Task<Result<GeneratedPlanDto>> GeneratePlanAsync(string userPrompt, Guid? projectId, CancellationToken ct = default);
 }
+

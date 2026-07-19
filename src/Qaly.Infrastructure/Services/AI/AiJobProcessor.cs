@@ -369,7 +369,7 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
 
     private static bool RequiresDraft(string jobType)
         => NormalizeType(jobType) is "meetingactionextraction" or "meetingactionextract" or "taskdraft" or
-            "taskbreakdown" or "acceptancechecklist" or "draftchange";
+            "taskbreakdown" or "acceptancechecklist" or "draftchange" or "projectdelayresolution" or "project_delay_resolution";
 
     private static string ResolveDraftType(string jobType)
         => NormalizeType(jobType) switch
@@ -378,6 +378,7 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
             "taskbreakdown" => "TaskBreakdown",
             "acceptancechecklist" => "AcceptanceChecklist",
             "draftchange" => "DraftChange",
+            "projectdelayresolution" or "project_delay_resolution" => "ProjectDelayResolution",
             _ => "TaskDraft"
         };
 

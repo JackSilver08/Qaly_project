@@ -93,7 +93,7 @@ Mock fallback is not an error code substitute. A blocked request remains blocked
 
 ## 7. Core job endpoints
 
-### POST /api/ai/jobs
+### POST /api/ai/jobs (done)
 
 Required request fields:
 
@@ -109,42 +109,42 @@ Required request fields:
 
 Returns 202 with job_id, queued status, estimated cost, poll URL, result URL, and request ID.
 
-### GET /api/ai/jobs/{jobId}
+### GET /api/ai/jobs/{jobId} (done)
 
 Returns lifecycle status, progress, safe provider metadata, timestamps, retry count, warning metadata, and estimated or actual usage. It never returns hidden source content.
 
-### GET /api/ai/jobs/{jobId}/result
+### GET /api/ai/jobs/{jobId}/result (done)
 
 Available only after succeeded. Returns schema ID, validated result, draft IDs, usage ledger ID, cache status, source references, and policy metadata safe for the caller.
 
-### POST /api/ai/jobs/{jobId}/retry
+### POST /api/ai/jobs/{jobId}/retry (done)
 
 Allowed for failed or canceled jobs when policy, source, budget, and retry count remain valid. It preserves source and schema identity. Provider override requires delegated authority.
 
-### POST /api/ai/jobs/{jobId}/cancel
+### POST /api/ai/jobs/{jobId}/cancel (done)
 
 Allowed for queued or running jobs. Cancellation is best-effort for an in-flight provider call but must prevent domain confirmation from a canceled result.
 
 ## 8. Draft review endpoints
 
-| Method and route | Behavior |
-|---|---|
-| GET /api/ai/drafts | Filter visible drafts by project, type, status, source, and owner. |
-| GET /api/ai/drafts/{draftId} | Return original output, editable payload, diff, sources, confidence, and warnings. |
-| PATCH /api/ai/drafts/{draftId} | Validate and save an editable working payload with optimistic concurrency. |
-| POST /api/ai/drafts/{draftId}/confirm | Execute an authorized domain command using edited payload and idempotency key. |
-| POST /api/ai/drafts/{draftId}/reject | Record reason and close the draft without mutation. |
+| Method and route | Behavior | Status |
+|---|---|---|
+| GET /api/ai/drafts | Filter visible drafts by project, type, status, source, and owner. | (done) |
+| GET /api/ai/drafts/{draftId} | Return original output, editable payload, diff, sources, confidence, and warnings. | (done) |
+| PATCH /api/ai/drafts/{draftId} | Validate and save an editable working payload with optimistic concurrency. | (done) |
+| POST /api/ai/drafts/{draftId}/confirm | Execute an authorized domain command using edited payload and idempotency key. | (done) |
+| POST /api/ai/drafts/{draftId}/reject | Record reason and close the draft without mutation. | (done) |
 
 Confirmation actions are create_tasks, link_task, assign_task, create_subtasks, save_checklist, and save_report. Each action uses the normal domain permission and business rules.
 
 ## 9. Usage, budget, and health endpoints
 
-| Method and route | Required behavior |
-|---|---|
-| GET /api/ai/usage | Daily or monthly aggregation by tenant, project, function, provider, model, status, and cache. |
-| GET /api/ai/budget | Effective tenant and project policy with current usage and remaining amount. |
-| PUT /api/ai/budget | Update daily, monthly, warning, hard-stop, and sensitive-cloud policy with audit. |
-| GET /api/ai/health | Gateway and eligible-provider health, latency class, queue depth, oldest job age, and degraded reason. |
+| Method and route | Required behavior | Status |
+|---|---|---|
+| GET /api/ai/usage | Daily or monthly aggregation by tenant, project, function, provider, model, status, and cache. | (done) |
+| GET /api/ai/budget | Effective tenant and project policy with current usage and remaining amount. | (done) |
+| PUT /api/ai/budget | Update daily, monthly, warning, hard-stop, and sensitive-cloud policy with audit. | (partial backend/config done) |
+| GET /api/ai/health | Gateway and eligible-provider health, latency class, queue depth, oldest job age, and degraded reason. | (done) |
 
 Budget evaluation uses both daily and monthly limits. Warning does not stop processing. Hard stop returns AI_BUDGET_EXCEEDED and does not generate mock content.
 
@@ -152,16 +152,17 @@ Budget evaluation uses both daily and monthly limits. Warning does not stop proc
 
 Wrappers create the same canonical job rather than executing a parallel path.
 
-| AI ID | Route | Schema |
-|---|---|---|
-| AI-01 | POST /api/meetings/import/meetily | meetily_import.v4 |
-| AI-02 | POST /api/ai/meetings/{meetingId}/extract-actions | meeting_action_extract.v4 |
-| AI-03 | POST /api/ai/groups/{groupId}/summaries | chat_summary.v4 |
-| AI-04 | POST /api/ai/task-drafts/from-source | task_draft.v4 |
-| AI-05 | POST /api/ai/tasks/{taskId}/recommend-assignees | assignee_recommendation.v4 |
-| AI-06 | POST /api/ai/tasks/{taskId}/breakdown | task_breakdown.v4 |
-| AI-07 | POST /api/ai/tasks/{taskId}/acceptance-checklist | acceptance_checklist.v4 |
-| AI-08 | POST /api/ai/projects/{projectId}/progress-summary and sprint variant | progress_summary.v4 |
+| AI ID | Route | Schema | Status |
+|---|---|---|---|
+| AI-01 | POST /api/meetings/import/meetily | meetily_import.v4 | (done) |
+| AI-02 | POST /api/ai/meetings/{meetingId}/extract-actions | meeting_action_extract.v4 | (done) |
+| AI-03 | POST /api/ai/groups/{groupId}/summaries | chat_summary.v4 | (done) |
+| AI-04 | POST /api/ai/task-drafts/from-source | task_draft.v4 | (done) |
+| AI-05 | POST /api/ai/tasks/{taskId}/recommend-assignees | assignee_recommendation.v4 | (done) |
+| AI-06 | POST /api/ai/tasks/{taskId}/breakdown | task_breakdown.v4 | (done) |
+| AI-07 | POST /api/ai/tasks/{taskId}/acceptance-checklist | acceptance_checklist.v4 | (done) |
+| AI-08 | POST /api/ai/projects/{projectId}/progress-summary and sprint variant | progress_summary.v4 | (done) |
+| AI-09 | POST /api/ai/projects/{projectId}/suggest-resolution | project_delay_resolution.v4 | (done) |
 
 ## 11. Provider routing
 
@@ -201,3 +202,23 @@ Job, prompt, result, and draft retention follow data classification and tenant p
 ## 15. Blocking acceptance
 
 P0 requires worker restart, duplicate delivery, idempotency, cancel, retry, policy, budget, source permission, stale source, schema failure, cache, provider fallback, draft review, confirmation, audit, usage reconciliation, and privacy tests. No AI function is release-green solely because a provider returns text.
+
+## 16. Proactive Automation Workflows and Human-in-the-loop Review
+
+To enable repetitive automation and proactive workflow recommendations while avoiding untrusted autonomous mutations, the platform enforces the **Review-First (Human-in-the-loop) Automation Paradigm**:
+
+1. **Repetitive Automation Workflows**: Common scenarios (e.g., delayed projects, stale tasks, unassigned critical bugs) can be analyzed by the AI engine. Instead of modifying the database directly, the AI creates a draft containing proposed actions. (done)
+2. **Review UI Page (Trang Review AI)**: A dedicated review dashboard/panel (integrated in the Drafts review module `AiActivityPanel.vue`) displays the exact actions proposed by the AI: (done)
+   - Checkable/toggleable list of individual actions: users can check or uncheck individual actions. Unchecked actions will be excluded from the final execution. (done)
+   - Live editable parameters (recipient names, email body, target task status, priority, due date) directly in a user-friendly UI form instead of raw JSON. (done)
+   - Traceability links to the source project or overdue tasks. (done)
+3. **Trigger Endpoint**: Scenarios are triggered via specific endpoints or when background monitors detect critical milestones (e.g. deadline overrun). (done)
+4. **Delayed Project Resolution Flow (Đề xuất xử lý)**: (done)
+   - **Trigger Button**: A prominent pulse-glowing warning button "⚠️ Đề xuất xử lý (AI)" renders on the project header in `ProjectDetailPage.vue` if a project is delayed or has overdue tasks. (done)
+   - **Endpoint**: `POST /api/ai/projects/{projectId}/suggest-resolution` (done)
+   - **Schema**: `project_delay_resolution.v4` (done)
+   - **Behavior**: AI analyzes project delay metrics and outputs a structured draft payload. (done)
+   - **Actions proposed**:
+     - `SendNotification`: Pre-composed alert messages/emails to team members responsible for delayed tasks. (done)
+     - `UpdateTask`: Automatically updating statuses of blocking tasks to high/critical priority and shifting start/due dates. (done)
+   - **Execution**: On user click "Xác nhận" (Confirm) inside the AI companion drawer, the system processes only the checked actions synchronously using normal domain permissions and records the audit event `AI_TOOL_EXECUTED`. (done)

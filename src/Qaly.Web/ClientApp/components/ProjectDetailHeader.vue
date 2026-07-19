@@ -8,11 +8,13 @@ defineProps<{
   statusTone: string
   progressLabel: string
   progressPercentage: number
+  isDelayed?: boolean
 }>()
 
 defineEmits<{
   back: []
   assistant: []
+  'propose-resolution': []
 }>()
 </script>
 
@@ -27,6 +29,14 @@ defineEmits<{
       </button>
       
       <div class="project-detail-header__actions">
+        <button 
+          v-if="isDelayed" 
+          class="propose-resolution-btn animate-pulse" 
+          type="button" 
+          @click="$emit('propose-resolution')"
+        >
+          <span>⚠️ Đề xuất xử lý (AI)</span>
+        </button>
       </div>
     </div>
 
@@ -293,5 +303,43 @@ defineEmits<{
 @keyframes fade-in-up {
   0% { opacity: 0; transform: translateY(20px); }
   100% { opacity: 1; transform: translateY(0); }
+}
+
+.propose-resolution-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(245, 158, 11, 0.2) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  border-radius: var(--qaly-radius-lg);
+  font-weight: 800;
+  color: #ffedd5;
+  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.15);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+
+.propose-resolution-btn:hover {
+  transform: translateY(-2px);
+  border-color: #f59e0b;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(245, 158, 11, 0.35) 100%);
+  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.3);
+}
+
+@keyframes pulse-border {
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(245, 158, 11, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+}
+
+.animate-pulse {
+  animation: pulse-border 2s infinite;
 }
 </style>

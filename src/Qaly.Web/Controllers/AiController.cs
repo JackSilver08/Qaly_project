@@ -18,6 +18,8 @@ public class AiController : BaseApiController
     private readonly IAnalyticsService _analyticsService;
     private readonly IAgentRunService _agentRunService;
     private readonly IAiPlatformQueryService _aiPlatformQueryService;
+    private readonly IProjectService _projectService;
+    private readonly ITaskService _taskService;
 
     public AiController(
         IAiService aiService,
@@ -26,7 +28,9 @@ public class AiController : BaseApiController
         IAiIngestionService ingestionService,
         IAnalyticsService analyticsService,
         IAgentRunService agentRunService,
-        IAiPlatformQueryService aiPlatformQueryService)
+        IAiPlatformQueryService aiPlatformQueryService,
+        IProjectService projectService,
+        ITaskService taskService)
     {
         _aiService = aiService;
         _erumiChatService = erumiChatService;
@@ -35,6 +39,79 @@ public class AiController : BaseApiController
         _analyticsService = analyticsService;
         _agentRunService = agentRunService;
         _aiPlatformQueryService = aiPlatformQueryService;
+        _projectService = projectService;
+        _taskService = taskService;
+    }
+
+    [HttpPost("generate-plan")]
+    public async Task<IActionResult> GeneratePlan(GeneratePlanRequestDto request, CancellationToken ct)
+    {
+        var result = await _aiService.GeneratePlanAsync(request.UserPrompt, request.ProjectId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("create-plan")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreatePlan(ConfirmPlanRequestDto request, CancellationToken ct)
+    {
+        Guid projectId;
+        if (request.IsNewProject)
+        {
+            if (string.IsNullOrWhiteSpace(request.ProjectName))
+            {
+                return BadRequest(new { error = "Tên dự án là bắt buộc." });
+            }
+
+            var createProjectResult = await _projectService.CreateAsync(new Qaly.Application.DTOs.Project.CreateProjectDto(
+                request.ProjectName.Trim(),
+                null,
+                request.ProjectDescription?.Trim(),
+                null,
+                null,
+                null
+            ), ct);
+
+            if (!createProjectResult.IsSuccess || createProjectResult.Data == null)
+            {
+                return StatusCode(createProjectResult.StatusCode, createProjectResult.Error);
+            }
+
+            projectId = createProjectResult.Data.Id;
+        }
+        else
+        {
+            if (request.ProjectId == null || request.ProjectId == Guid.Empty)
+            {
+                return BadRequest(new { error = "ProjectId là bắt buộc đối với dự án hiện tại." });
+            }
+            projectId = request.ProjectId.Value;
+        }
+
+        var createdTasks = new List<Qaly.Application.DTOs.Task.TaskItemDto>();
+        if (request.Tasks != null)
+        {
+            foreach (var taskDto in request.Tasks)
+            {
+                if (string.IsNullOrWhiteSpace(taskDto.Title)) continue;
+
+                var createTaskResult = await _taskService.CreateAsync(new Qaly.Application.DTOs.Task.CreateTaskDto(
+                    taskDto.Title.Trim(),
+                    taskDto.Description?.Trim(),
+                    taskDto.Priority,
+                    taskDto.DueDate,
+                    null,
+                    projectId,
+                    null
+                ), ct);
+
+                if (createTaskResult.IsSuccess && createTaskResult.Data != null)
+                {
+                    createdTasks.Add(createTaskResult.Data);
+                }
+            }
+        }
+
+        return Ok(new { projectId, taskCount = createdTasks.Count });
     }
 
     [HttpPost("sync")]
@@ -293,6 +370,21 @@ public class AiController : BaseApiController
         => EnqueueFunctionAsync(
             "progress_summary",
             "progress_summary.v4",
+            projectId,
+            "project",
+            projectId,
+            request,
+            ct);
+
+    [HttpPost("projects/{projectId:guid}/suggest-resolution")]
+    [ValidateAntiForgeryToken]
+    public Task<IActionResult> EnqueueProjectDelayResolution(
+        Guid projectId,
+        AiFunctionJobRequest request,
+        CancellationToken ct = default)
+        => EnqueueFunctionAsync(
+            "project_delay_resolution",
+            "project_delay_resolution.v4",
             projectId,
             "project",
             projectId,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MessageSquare, MoreHorizontal, Plus, Send, Search, Clock, Play, Square, Calendar, X, ClipboardList, FileUp, File, Check, Ban, CheckCircle2, CheckSquare, LayoutGrid, List, Lock } from 'lucide-vue-next'
+import { MessageSquare, MoreHorizontal, Plus, Send, Search, Clock, Play, Square, Calendar, X, ClipboardList, FileUp, File, Check, Ban, CheckCircle2, CheckSquare, LayoutGrid, List, Lock, Sparkles } from 'lucide-vue-next'
 // @ts-ignore
 import { VueDraggable } from '../utils/vendor/vue-draggable-plus.js'
 import ProjectDetailHeader from '../components/ProjectDetailHeader.vue'
@@ -12,9 +12,10 @@ import ProjectGanttTab from '../components/ProjectGanttTab.vue'
 import WebhooksTab from '../components/WebhooksTab.vue'
 import ImportModal from '../components/import/ImportModal.vue'
 import ImportUndoBanner from '../components/import/ImportUndoBanner.vue'
+import AiPlannerModal from '../components/AiPlannerModal.vue'
 import { useDashboardContext } from '../composables/dashboard-context'
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { apiResult } from '../utils/api-client'
 import type { DashboardTask, KanbanMoveResultDto, TaskAssignmentInsightDto } from '../types'
 import { showError } from '../composables/use-toast'
@@ -85,7 +86,13 @@ const {
 } = useDashboardContext()
 
 const router = useRouter()
+const route = useRoute()
 const showImportModal = ref(false)
+const showAiPlanner = ref(false)
+
+async function onPlannerCreated() {
+  await loadDashboard()
+}
 const undoBannerData = ref<{ importSessionId: string; importedCount: number; failedCount: number; duplicateSkippedCount: number; createdAt: string } | null>(null)
 const assignmentInsight = ref<TaskAssignmentInsightDto | null>(null)
 const assignmentInsightLoading = ref(false)
@@ -153,6 +160,55 @@ const canShowGanttTab = computed(() => activeProjectTab.value === 'gantt' && !!s
 const canShowWebhooksTab = computed(() => activeProjectTab.value === 'webhooks' && !!selectedProject.value)
 const canShowImportModal = computed(() => showImportModal.value && !!selectedProject.value)
 const canShowTaskComments = computed(() => !!selectedTask.value && !selectedTask.value.isRestricted)
+
+const isProjectDelayed = computed(() => {
+  if (!selectedProject.value) return false
+  
+  if (selectedProject.value.endDate) {
+    const end = new Date(selectedProject.value.endDate)
+    if (end < new Date() && selectedProject.value.progressPercentage < 100) {
+      return true
+    }
+  }
+  
+  const overdueCount = selectedProject.value.tasks?.filter((t: any) => {
+    if (t.status === 'Done') return false
+    if (!t.dueDate) return false
+    return new Date(t.dueDate) < new Date()
+  }).length ?? 0
+  
+  return overdueCount > 0
+})
+
+async function triggerProposeResolution() {
+  if (!selectedProject.value) return
+  try {
+    const res = await apiResult<{ jobId: string }>(`/api/ai/projects/${selectedProject.value.id}/suggest-resolution`, {
+      method: 'POST',
+      body: JSON.stringify({
+        projectId: selectedProject.value.id,
+        sourceType: 'project',
+        sourceEntityId: selectedProject.value.id,
+        legacySourceKey: selectedProject.value.id.toString(),
+        sourceVersion: selectedProject.value.rowVersion || '',
+        sourceHash: ''
+      })
+    })
+    
+    if (res?.jobId) {
+      await router.replace({
+        query: {
+          ...route.query,
+          aiActivity: '1',
+          aiTab: 'jobs',
+          aiJob: res.jobId
+        }
+      })
+    }
+  } catch (err: any) {
+    showError(err.message || 'Không thể bắt đầu đề xuất xử lý trễ hạn.')
+  }
+}
 
 function canManageTask(task: DashboardTask) {
   return isProjectAdmin.value && !task.isRestricted
@@ -400,8 +456,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
         :status-tone="statusTone(selectedProject.status)"
         :progress-label="`${selectedProject.completedTaskCount}/${selectedProject.taskCount} task hoàn thành`"
         :progress-percentage="selectedProject.progressPercentage"
+        :is-delayed="isProjectDelayed"
         @back="closeProjectDetails"
         @assistant="openChatWithPrompt()"
+        @propose-resolution="triggerProposeResolution"
       />
 
       <nav class="project-tabs glass-card">
@@ -465,6 +523,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
               </button>
               <button class="import-btn-sm" type="button" @click="showImportModal = true">
                 <FileUp :size="14" /> Nhập file
+              </button>
+              <button class="btn-ai-plan" type="button" @click="showAiPlanner = true">
+                <Sparkles :size="14" /> Lập kế hoạch AI
               </button>
             </div>
           </div>
@@ -937,6 +998,13 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
         :project-members="selectedProject.members"
         @close="showImportModal = false"
         @imported="onImported"
+      />
+
+      <AiPlannerModal
+        v-if="showAiPlanner"
+        :project-id="selectedProject.id"
+        @close="showAiPlanner = false"
+        @created="onPlannerCreated"
       />
 
       <ImportUndoBanner

@@ -42,6 +42,8 @@ public class AiWorkflowService : IAiWorkflowService
     private readonly IRepository<AiJobSource>? _aiSourceRepo;
     private readonly IAiSourceGuard? _sourceGuard;
     private readonly IOptionsMonitor<AiJobPlatformOptions>? _platformOptions;
+    private readonly Qaly.Application.Common.Interfaces.IEmailService? _emailService;
+    private readonly Qaly.Application.Services.INotificationService? _notificationService;
 
     public AiWorkflowService(
         IRepository<Project> projectRepo,
@@ -66,7 +68,9 @@ public class AiWorkflowService : IAiWorkflowService
         IRepository<AiJobSource>? aiSourceRepo = null,
         IAiSourceGuard? sourceGuard = null,
         IOptionsMonitor<AiJobPlatformOptions>? platformOptions = null,
-        IAiAgentOrchestrator? agentOrchestrator = null)
+        IAiAgentOrchestrator? agentOrchestrator = null,
+        Qaly.Application.Common.Interfaces.IEmailService? emailService = null,
+        Qaly.Application.Services.INotificationService? notificationService = null)
     {
         _projectRepo = projectRepo;
         _projectMemberRepo = projectMemberRepo;
@@ -91,6 +95,8 @@ public class AiWorkflowService : IAiWorkflowService
         _aiSourceRepo = aiSourceRepo;
         _sourceGuard = sourceGuard;
         _platformOptions = platformOptions;
+        _emailService = emailService;
+        _notificationService = notificationService;
     }
 
     public Task<Result<AiJobCreatedDto>> CreateJobAsync(
@@ -1215,6 +1221,82 @@ public class AiWorkflowService : IAiWorkflowService
                     }
                 }
             }
+            else if (string.Equals(draft.DraftType, "ProjectDelayResolution", StringComparison.OrdinalIgnoreCase))
+            {
+                using var doc = JsonDocument.Parse(payloadJson);
+                var root = doc.RootElement;
+                if (root.TryGetProperty("actions", out var actionsProp) && actionsProp.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var actionEl in actionsProp.EnumerateArray())
+                    {
+                        var type = actionEl.TryGetProperty("type", out var tProp) ? tProp.GetString() : null;
+                        if (string.Equals(type, "SendNotification", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var email = actionEl.TryGetProperty("recipientEmail", out var emailProp) ? emailProp.GetString() : null;
+                            var subject = actionEl.TryGetProperty("subject", out var subProp) ? subProp.GetString() : "Qaly Alert";
+                            var message = actionEl.TryGetProperty("message", out var msgProp) ? msgProp.GetString() : string.Empty;
+                            
+                            if (!string.IsNullOrWhiteSpace(email) && _emailService != null)
+                            {
+                                await _emailService.SendAsync(email, subject, message, ct);
+                            }
+                            
+                            if (_notificationService != null)
+                            {
+                                var projectId = draft.ProjectId;
+                                await _notificationService.BroadcastToProjectAsync(projectId, message, "MilestoneDelay", null, ct);
+                            }
+                        }
+                        else if (string.Equals(type, "UpdateTask", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var taskIdStr = actionEl.TryGetProperty("taskId", out var idProp) ? idProp.GetString() : null;
+                            if (Guid.TryParse(taskIdStr, out var taskId) && taskId != Guid.Empty)
+                            {
+                                var status = actionEl.TryGetProperty("status", out var statProp) ? statProp.GetString() : null;
+                                var priority = actionEl.TryGetProperty("priority", out var prioProp) ? prioProp.GetString() : null;
+                                var dueDateStr = actionEl.TryGetProperty("dueDate", out var dueProp) ? dueProp.GetString() : null;
+                                DateTimeOffset? dueDate = DateTimeOffset.TryParse(dueDateStr, out var d) ? d : null;
+
+                                if (_taskService != null)
+                                {
+                                    var task = await _taskRepo.GetByIdAsync(taskId, ct);
+                                    if (task != null)
+                                    {
+                                        var targetStatus = status ?? task.Status;
+                                        var targetPriority = priority ?? task.Priority;
+                                        var targetDueDate = dueDate ?? task.DueDate;
+                                        
+                                        var taskDto = new Qaly.Application.DTOs.Task.UpdateTaskDto(
+                                            task.Title,
+                                            task.Description,
+                                            targetStatus,
+                                            targetPriority,
+                                            targetDueDate,
+                                            task.EstimatedHours,
+                                            task.ActualHours,
+                                            task.AssigneeId,
+                                            task.IsPrivate);
+                                        
+                                        await _taskService.UpdateAsync(taskId, taskDto, ct);
+                                    }
+                                }
+                                else
+                                {
+                                    var task = await _taskRepo.GetByIdAsync(taskId, ct);
+                                    if (task != null)
+                                    {
+                                        if (status != null) task.Status = status;
+                                        if (priority != null) task.Priority = priority;
+                                        if (dueDate != null) task.DueDate = dueDate;
+                                        await _taskRepo.UpdateAsync(task, ct);
+                                        await _unitOfWork.SaveChangesAsync(ct);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         else if (string.Equals(normalizedAction, "create_tasks", StringComparison.OrdinalIgnoreCase))
         {
@@ -1629,6 +1711,7 @@ public class AiWorkflowService : IAiWorkflowService
             "taskbreakdown" or "task_breakdown" => "task_breakdown.v4",
             "acceptancechecklist" or "acceptance_checklist" => "acceptance_checklist.v4",
             "progresssummary" or "progress_summary" => "progress_summary.v4",
+            "projectdelayresolution" or "project_delay_resolution" => "project_delay_resolution.v4",
             "draftchange" => "draft_change.v4",
             _ => string.Empty
         };

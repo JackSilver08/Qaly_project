@@ -7020,3 +7020,23 @@ textarea::placeholder {
 :root[data-theme='dark'] .priority-tag {
   color: #ffffff !important;
 }
+
+.btn-ai-plan {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(217, 70, 239, 0.15) 100%);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  color: #c084fc !important;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-ai-plan:hover {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.25) 0%, rgba(217, 70, 239, 0.25) 100%);
+  border-color: rgba(139, 92, 246, 0.5);
+  color: #d8b4fe !important;
+}

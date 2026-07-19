@@ -776,6 +776,101 @@ Chỉ xuất ra đúng mảng JSON, tuyệt đối không giải thích.";
 
         return new List<Qaly.Application.DTOs.Import.AiCategorizationResult>();
     }
+
+    public async Task<Result<GeneratedPlanDto>> GeneratePlanAsync(string userPrompt, Guid? projectId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(userPrompt))
+        {
+            return Result.Failure<GeneratedPlanDto>("Yêu cầu không được để trống.", 400);
+        }
+
+        Project? projectContext = null;
+        if (projectId.HasValue)
+        {
+            projectContext = await _projectRepo.GetByIdAsync(projectId.Value);
+            if (projectContext == null)
+            {
+                return Result.Failure<GeneratedPlanDto>("Không tìm thấy dự án được chỉ định.", 404);
+            }
+
+            if (!await CanAccessProjectAsync(projectId.Value))
+            {
+                return Result.Forbidden<GeneratedPlanDto>("Bạn không có quyền truy cập dự án này.");
+            }
+        }
+
+        var prompt = $@"Bạn là trợ lý AI chuyên về quản lý dự án Agile/Kanban.
+Nhiệm vụ của bạn là đọc yêu cầu sau của người dùng và lên kế hoạch tạo dự án mới hoặc các công việc (tasks) tương ứng.
+
+Yêu cầu người dùng: {userPrompt}
+
+{(projectContext != null ? $"Dự án hiện tại:\nTên dự án: {projectContext.Name}\nMô tả dự án: {projectContext.Description}" : "Đây là yêu cầu tạo một DỰ ÁN MỚI.")}
+
+Bạn PHẢI trả về KẾT QUẢ ĐẦU RA dưới dạng một đối tượng JSON HỢP LỆ, định dạng CHÍNH XÁC như mẫu sau (KHÔNG ĐƯỢC chứa thêm bất kỳ text nào khác ngoài JSON):
+{{
+  ""isNewProject"": {(projectContext != null ? "false" : "true")},
+  ""projectName"": ""{(projectContext != null ? JsonEncodedName(projectContext.Name) : "Tên dự án được gợi ý")}"",
+  ""projectDescription"": ""{(projectContext != null ? JsonEncodedName(projectContext.Description) : "Mô tả dự án được gợi ý")}"",
+  ""tasks"": [
+    {{
+      ""title"": ""Tiêu đề công việc 1"",
+      ""description"": ""Mô tả chi tiết công việc 1"",
+      ""priority"": ""Medium"",
+      ""dueDateOffsetDays"": 7
+    }},
+    {{
+      ""title"": ""Tiêu đề công việc 2"",
+      ""description"": ""Mô tả chi tiết công việc 2"",
+      ""priority"": ""High"",
+      ""dueDateOffsetDays"": 14
+    }}
+  ]
+}}
+
+Lưu ý quan trọng:
+1. Trường priority chỉ được chọn một trong các giá trị: Low, Medium, High, Critical.
+2. Trường dueDateOffsetDays là số ngày ước lượng từ hôm nay để hoàn thành công việc đó (ví dụ: 3, 5, 7, 14). Hãy chọn số ngày phù hợp với tính chất của công việc.
+3. Nội dung các công việc phải được viết bằng tiếng Việt chi tiết, rõ ràng, thực tế và phù hợp với yêu cầu của người dùng. Hãy lên kế hoạch khoảng 5-10 công việc nếu được yêu cầu chung chung.
+4. Chỉ xuất ra đúng đối tượng JSON bắt đầu bằng {{ và kết thúc bằng }}, tuyệt đối không được có thêm bất kỳ giải thích, tiêu đề hay markdown block nào khác ngoài chuỗi JSON.";
+
+        try
+        {
+            var response = await _aiGateway.ExecuteAsync(new AiRequest
+            {
+                JobType = "GenerateProjectPlan",
+                Prompt = prompt,
+                UserId = _currentUserService.UserId,
+                UseCache = false
+            }, ct);
+
+            var text = response.Content ?? "{}";
+            var startIdx = text.IndexOf('{');
+            var endIdx = text.LastIndexOf('}');
+            if (startIdx >= 0 && endIdx >= startIdx)
+            {
+                var jsonStr = text.Substring(startIdx, endIdx - startIdx + 1);
+                var result = JsonSerializer.Deserialize<GeneratedPlanDto>(jsonStr, CategorizationResponseJsonOptions);
+                if (result != null)
+                {
+                    return Result.Success(result);
+                }
+            }
+
+            return Result.Failure<GeneratedPlanDto>("Không thể phân tích kết quả trả về từ AI.", 500);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi khi lập kế hoạch dự án bằng AI.");
+            return Result.Failure<GeneratedPlanDto>($"Lỗi khi chạy AI: {ex.Message}", 500);
+        }
+    }
+
+    private static string JsonEncodedName(string? val)
+    {
+        if (string.IsNullOrEmpty(val)) return string.Empty;
+        return val.Replace("\"", "\\\"");
+    }
 }
+
 
 
