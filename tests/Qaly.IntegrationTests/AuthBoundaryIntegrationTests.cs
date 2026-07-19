@@ -95,6 +95,45 @@ public class AuthBoundaryIntegrationTests : IClassFixture<IntegrationTestFactory
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
+    [Fact]
+    public async Task MarkNotificationAsRead_WhenUserDoesNotOwnNotification_ReturnsForbidden()
+    {
+        var ownerId = Guid.NewGuid();
+        var attackerId = Guid.NewGuid();
+        var notificationId = Guid.NewGuid();
+
+        await EnsureUserExists(ownerId, "Owner User", $"owner-{Guid.NewGuid():N}@qaly.dev");
+        await EnsureUserExists(attackerId, "Attacker User", $"attacker-{Guid.NewGuid():N}@qaly.dev");
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+            db.Notifications.Add(new Notification
+            {
+                Id = notificationId,
+                UserId = ownerId,
+                Message = "Owner-only notification",
+                Type = "Info",
+                Tone = "info",
+                IsRead = false
+            });
+            await db.SaveChangesAsync();
+        }
+
+        using var client = _factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Patch, $"/api/notifications/{notificationId}/read");
+        request.Headers.Add("X-Test-UserId", attackerId.ToString());
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        var stored = await verifyDb.Notifications.SingleAsync(item => item.Id == notificationId);
+        stored.IsRead.Should().BeFalse();
+    }
+
     private async Task EnsureUserExists(Guid userId, string name, string email)
     {
         using var scope = _factory.Services.CreateScope();

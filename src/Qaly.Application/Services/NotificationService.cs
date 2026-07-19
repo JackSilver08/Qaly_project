@@ -62,12 +62,17 @@ public partial class NotificationService : INotificationService
         return Result.Success<IReadOnlyList<NotificationDto>>(notifications.Select(ToDto).ToList());
     }
 
-    public async Task<Result> MarkAsReadAsync(Guid id, CancellationToken ct = default)
+    public async Task<Result> MarkAsReadAsync(Guid userId, Guid id, CancellationToken ct = default)
     {
         var notification = await _notificationRepo.GetByIdAsync(id, ct);
         if (notification == null)
         {
             return Result.Failure("Notification was not found.", 404);
+        }
+
+        if (notification.UserId != userId)
+        {
+            return Result.Forbidden("Bạn không có quyền truy cập notification này.");
         }
 
         notification.IsRead = true;

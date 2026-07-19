@@ -5,7 +5,7 @@ namespace Qaly.Application.Services;
 public interface INotificationService
 {
     Task<Result<IReadOnlyList<NotificationDto>>> GetByUserAsync(Guid userId, bool unreadOnly = false, CancellationToken ct = default);
-    Task<Result> MarkAsReadAsync(Guid id, CancellationToken ct = default);
+    Task<Result> MarkAsReadAsync(Guid userId, Guid id, CancellationToken ct = default);
     Task<Result> MarkAllAsReadAsync(Guid userId, CancellationToken ct = default);
     Task<Result<int>> GetUnreadCountAsync(Guid userId, CancellationToken ct = default);
     Task CreateAsync(

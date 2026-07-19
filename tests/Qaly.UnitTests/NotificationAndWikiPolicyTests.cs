@@ -65,6 +65,41 @@ public sealed class NotificationAndWikiPolicyTests : IDisposable
     }
 
     [Fact]
+    public async Task NotificationService_MarkAsRead_RejectsOtherUsersNotification()
+    {
+        var ownerId = Guid.NewGuid();
+        var attackerId = Guid.NewGuid();
+        var notification = new Notification
+        {
+            Id = Guid.NewGuid(),
+            UserId = ownerId,
+            Message = "Private notification",
+            Type = "Info",
+            Tone = "info",
+            IsRead = false
+        };
+
+        _context.Notifications.Add(notification);
+        await _context.SaveChangesAsync();
+
+        var service = new NotificationService(
+            new GenericRepository<Notification>(_context),
+            new GenericRepository<PushSubscription>(_context),
+            new UnitOfWork(_context),
+            Mock.Of<INotificationPublisher>(),
+            Mock.Of<Qaly.Application.Common.Interfaces.IPushSender>(),
+            NullLogger<NotificationService>.Instance);
+
+        var result = await service.MarkAsReadAsync(attackerId, notification.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+
+        var reloaded = await _context.Notifications.SingleAsync(item => item.Id == notification.Id);
+        reloaded.IsRead.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task WikiService_CustomerRole_OnlyReturnsPublicPages()
     {
         var ownerId = Guid.NewGuid();

@@ -40,7 +40,10 @@ public class NotificationsController : BaseApiController
     [HttpPatch("{id:guid}/read")]
     public async Task<IActionResult> MarkAsRead(Guid id, CancellationToken ct)
     {
-        var result = await _notificationService.MarkAsReadAsync(id, ct);
+        var userId = User.GetUserId();
+        if (userId == null) return Unauthorized();
+
+        var result = await _notificationService.MarkAsReadAsync(userId.Value, id, ct);
         return StatusCode(result.StatusCode, result);
     }
 
