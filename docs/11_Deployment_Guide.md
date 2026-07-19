@@ -61,6 +61,19 @@ Smoke test Ollama local:
 .\scripts\smoke-ai-provider.ps1
 ```
 
+Clean restore evidence từ backup SQL Server:
+
+```powershell
+$env:SQLSERVER_SA_PASSWORD = "<local-or-secret-store-value>"
+.\scripts\restore-sqlserver-clean.ps1 `
+  -Server "localhost,1433" `
+  -BackupFile ".backups\QalyDb-YYYYMMDD-HHMMSS.bak" `
+  -User "sa" `
+  -Password $env:SQLSERVER_SA_PASSWORD
+```
+
+Script này restore vào database sạch riêng, chạy `RESTORE VERIFYONLY`, `DBCC CHECKDB`, smoke query và ghi evidence trong `docs/task/qa-evidence/recovery`. Xem chi tiết tại `docs/recovery-clean-restore-runbook.md`.
+
 Xác minh candidate image và rollback về image ổn định trước đó:
 
 ```powershell
