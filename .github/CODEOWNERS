@@ -1,0 +1,32 @@
+# Qaly ownership map
+
+# Default ownership for every change.
+* @JackSilver08
+
+# Application layers.
+/src/Qaly.Domain/ @JackSilver08
+/src/Qaly.Application/ @JackSilver08
+/src/Qaly.Infrastructure/ @JackSilver08
+/src/Qaly.Web/ @JackSilver08
+
+# High-risk areas requiring owner attention.
+/src/Qaly.Infrastructure/Data/Migrations/ @JackSilver08
+/src/Qaly.Infrastructure/Data/Configurations/ @JackSilver08
+/src/Qaly.Infrastructure/Auth/ @JackSilver08
+/src/Qaly.Infrastructure/Services/Privacy/ @JackSilver08
+/src/Qaly.Infrastructure/Services/AI/ @JackSilver08
+/src/Qaly.Application/Services/GitHub/ @JackSilver08
+/src/Qaly.Web/Controllers/SecurityController.cs @JackSilver08
+/src/Qaly.Web/Controllers/PrivacyController.cs @JackSilver08
+
+# Frontend and release surfaces.
+/src/Qaly.Web/ClientApp/ @JackSilver08
+/.github/workflows/ @JackSilver08
+/scripts/ @JackSilver08
+/Dockerfile @JackSilver08
+/docker-compose.yml @JackSilver08
+
+# Product, governance, and evidence docs.
+/docs/ @JackSilver08
+/QALY_Docs_v4.0_Draft/ @JackSilver08
+/README.md @JackSilver08

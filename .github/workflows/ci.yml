@@ -61,6 +61,10 @@ jobs:
         shell: pwsh
         run: ./scripts/check-configuration.ps1
 
+      - name: Validate configuration parity
+        shell: pwsh
+        run: ./scripts/check-config-parity.ps1
+
       - name: Validate Docker Compose
         run: docker compose config --quiet
 
