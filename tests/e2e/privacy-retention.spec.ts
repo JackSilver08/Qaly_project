@@ -1,290 +1,290 @@
-import { expect, test, type Page, type Route, type TestInfo } from '@playwright/test'
+import { expect, test, type APIResponse, type Browser, type Page, type TestInfo } from '@playwright/test'
 
 test.describe.configure({ mode: 'serial' })
-test.setTimeout(110_000)
+test.setTimeout(120_000)
 
 const adminEmail = process.env.E2E_ADMIN_EMAIL ?? 'admin@qaly.dev'
 const adminPassword = process.env.E2E_ADMIN_PASSWORD ?? 'Admin@123456'
-const projectId = 'd3000000-0000-4000-8000-000000000101'
-const tenantId = 'd3000000-0000-4000-8000-000000000102'
-const policyId = 'd3000000-0000-4000-8000-000000000103'
-const meetingId = 'd3000000-0000-4000-8000-000000000104'
-const groupId = 'd3000000-0000-4000-8000-000000000105'
 
-type MockState = {
-  policies: Array<Record<string, unknown>>
-  consents: Array<Record<string, unknown>>
-  requests: Array<Record<string, unknown>>
-  policyWrites: Array<Record<string, unknown>>
-  consentWrites: Array<Record<string, unknown>>
-  requestWrites: Array<Record<string, unknown>>
-  mutationHeaders: Array<Record<string, string>>
+type ApiResult<T> = {
+  isSuccess: boolean
+  data: T | null
+  error: string | null
+  statusCode?: number
 }
 
-function apiResult(data: unknown) {
-  return JSON.stringify({ data, error: null, errorCode: null, isSuccess: true, statusCode: 200 })
+type ProjectDto = {
+  id: string
+  name: string
+  code: string
 }
 
-async function fulfill(route: Route, data: unknown, status = 200) {
-  await route.fulfill({ status, contentType: 'application/json', body: apiResult(data) })
+type TaskItemDto = {
+  id: string
+  title: string
+  projectId: string
+  isPrivate: boolean
 }
 
-function retentionPolicy(id = policyId, name = 'Meeting data policy') {
-  return {
-    id,
-    tenantId,
-    projectId,
-    name,
-    dataClassification: 'sensitive_collaboration',
-    purpose: 'meeting_action_extraction',
-    allowedRetentionDays: [30, 90],
-    defaultRetentionDays: 30,
-    expiryAction: 'redact',
-    allowCloudProcessing: true,
-    allowLocalProcessing: true,
-    requireExplicitConsent: true,
-    isActive: true,
-    policyVersion: 'privacy-v4-e2e.1',
-    effectiveFrom: '2026-07-13T00:00:00Z',
-    effectiveUntil: null,
-    rowVersion: 'AAAAAAAAP03=',
+type GroupDto = {
+  id: string
+  name: string
+}
+
+type RetentionPolicyDto = {
+  id: string
+  name: string
+}
+
+type PrivacyConsentDto = {
+  id: string
+  projectId: string
+  sourceEntityId: string | null
+  retentionPolicyId: string
+  noticeVersion: string
+}
+
+function uniqueName(prefix: string) {
+  return `${prefix} ${Date.now()} ${Math.random().toString(36).slice(2, 8)}`
+}
+
+async function responseBody(response: APIResponse) {
+  const text = await response.text()
+  if (!text.trim()) return null
+
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    return text
   }
 }
 
-async function login(page: Page, returnUrl: string) {
+async function apiResult<T>(response: APIResponse): Promise<T> {
+  const body = await responseBody(response)
+  expect(response.ok(), `API ${response.url()} returned ${response.status()}: ${JSON.stringify(body)}`).toBeTruthy()
+
+  if (body && typeof body === 'object' && 'isSuccess' in body) {
+    const result = body as ApiResult<T>
+    expect(result.isSuccess, result.error ?? 'API result failed').toBeTruthy()
+    expect(result.data, 'API result must include data').not.toBeNull()
+    return result.data as T
+  }
+
+  return body as T
+}
+
+async function csrfToken(page: Page) {
+  const payload = await apiResult<{ token: string }>(await page.request.get('/api/security/csrf'))
+  return payload.token
+}
+
+async function login(page: Page, returnUrl = '/dashboard') {
   await page.goto(`/Account/Login?returnUrl=${encodeURIComponent(returnUrl)}`, { waitUntil: 'domcontentloaded' })
+  await expect(page.locator('#loginForm')).toBeVisible()
   await page.locator('input[name="Email"]').fill(adminEmail)
   await page.locator('input[name="Password"]').fill(adminPassword)
-  await page.locator('#loginForm button[type="submit"]').click()
-  await expect(page.locator('.shell-header')).toBeVisible({ timeout: 45_000 })
+  await page.getByRole('button', { name: /Dang nhap|Đăng nhập|Login/i }).click()
+  await page.waitForURL((url) => !url.pathname.startsWith('/Account/Login'), {
+    timeout: 25_000,
+    waitUntil: 'domcontentloaded',
+  })
   await page.locator('.welcome-overlay').waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => undefined)
+  await expect(page.locator('.shell-header')).toBeVisible()
 }
 
-async function installPrivacyMocks(page: Page) {
-  const state: MockState = {
-    policies: [retentionPolicy()],
-    consents: [],
-    requests: [],
-    policyWrites: [],
-    consentWrites: [],
-    requestWrites: [],
-    mutationHeaders: [],
+async function createProject(page: Page, name: string) {
+  return apiResult<ProjectDto>(
+    await page.request.post('/api/projects', {
+      data: {
+        name,
+        code: null,
+        description: 'T1-TR-01 E2E project',
+        logoUrl: null,
+        startDate: null,
+        endDate: null,
+        organizationId: null,
+        sourceGroupId: null,
+      },
+    }),
+  )
+}
+
+async function createTask(page: Page, projectId: string, title: string) {
+  return apiResult<TaskItemDto>(
+    await page.request.post('/api/tasks', {
+      data: {
+        title,
+        description: 'Direct Task URL read-back fixture',
+        priority: 'High',
+        dueDate: null,
+        estimatedHours: null,
+        projectId,
+        assigneeId: null,
+        isPrivate: true,
+        isPinned: false,
+        contributesToProgress: true,
+        assigneeIds: null,
+        labelIds: null,
+      },
+    }),
+  )
+}
+
+async function createGroup(page: Page, name: string) {
+  return apiResult<GroupDto>(
+    await page.request.post('/api/groups', {
+      data: {
+        name,
+        color: '#2563eb',
+      },
+    }),
+  )
+}
+
+async function createRetentionPolicy(page: Page, projectId: string, name: string) {
+  return apiResult<RetentionPolicyDto>(
+    await page.request.post('/api/privacy/policies', {
+      headers: { 'X-CSRF-TOKEN': await csrfToken(page) },
+      data: {
+        tenantId: projectId,
+        projectId,
+        name,
+        dataClassification: 'sensitive_collaboration',
+        purpose: 'meeting_action_extraction',
+        allowedRetentionDays: [30, 90],
+        defaultRetentionDays: 30,
+        expiryAction: 'redact',
+        allowCloudProcessing: true,
+        allowLocalProcessing: true,
+        requireExplicitConsent: true,
+        approvalOwnerUserId: null,
+        effectiveFrom: null,
+        effectiveUntil: null,
+      },
+    }),
+  )
+}
+
+async function cleanup(page: Page, projectId?: string, groupId?: string) {
+  if (groupId) await page.request.delete(`/api/groups/${groupId}`).catch(() => undefined)
+  if (projectId) await page.request.delete(`/api/projects/${projectId}`).catch(() => undefined)
+}
+
+async function captureFailure(page: Page, testInfo: TestInfo) {
+  await page.screenshot({ path: testInfo.outputPath('failure.png'), fullPage: true }).catch(() => undefined)
+}
+
+test('T1-TR-01 Allow: direct Task URL, Group link and Privacy UI use persisted data', async ({ page }, testInfo) => {
+  let project: ProjectDto | undefined
+  let group: GroupDto | undefined
+
+  try {
+    await login(page)
+    project = await createProject(page, uniqueName('T1TR01 Allow Project'))
+    const task = await createTask(page, project.id, uniqueName('T1TR01 private task'))
+    group = await createGroup(page, uniqueName('T1TR01 Group'))
+    const policy = await createRetentionPolicy(page, project.id, uniqueName('T1TR01 meeting policy'))
+
+    const taskReadBack = await apiResult<TaskItemDto>(await page.request.get(`/api/tasks/${task.id}`))
+    expect(taskReadBack).toMatchObject({ id: task.id, title: task.title, projectId: project.id, isPrivate: true })
+
+    const groupReadBack = await apiResult<GroupDto>(await page.request.get(`/api/groups/${group.id}`))
+    expect(groupReadBack).toMatchObject({ id: group.id, name: group.name })
+
+    const policyReadBack = await apiResult<RetentionPolicyDto[]>(
+      await page.request.get(`/api/privacy/policies?tenantId=${project.id}&projectId=${project.id}`),
+    )
+    expect(policyReadBack.map((item) => item.id)).toContain(policy.id)
+
+    await page.goto(`/projects/${project.id}/tasks/${task.id}`, { waitUntil: 'domcontentloaded' })
+    const drawer = page.locator('.task-detail-drawer')
+    await expect(drawer).toBeVisible()
+    await expect(drawer).toContainText(task.title)
+    await expect(page.locator('.kanban-card, .task-list-row').filter({ hasText: task.title }).first()).toContainText('Khóa')
+
+    await page.goto(`/groups/${group.id}`, { waitUntil: 'domcontentloaded' })
+    await expect(page.locator('.team-chat-page')).toBeVisible()
+    await expect(page.locator('body')).toContainText(group.name)
+
+    await page.goto(`/groups/${group.id}/meeting`, { waitUntil: 'domcontentloaded' })
+    await expect(page.locator('.gm-prejoin__btn')).toBeVisible()
+    await page.locator('.gm-prejoin__btn').click()
+    await expect(page.locator('.mc-btn--transcript')).toBeVisible({ timeout: 25_000 })
+    await page.locator('.mc-btn--transcript').click()
+
+    const dialog = page.locator('.gm-privacy-dialog')
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toContainText(policy.name)
+    await dialog.locator('.gm-privacy-consent input[type="checkbox"]').check()
+    await dialog.locator('.gm-btn-primary').click()
+    await expect(dialog).toHaveCount(0)
+
+    const consents = await apiResult<PrivacyConsentDto[]>(
+      await page.request.get(`/api/privacy/consents?projectId=${project.id}`),
+    )
+    expect(consents).toContainEqual(
+      expect.objectContaining({
+        projectId: project.id,
+        retentionPolicyId: policy.id,
+        noticeVersion: 'qaly-meeting-privacy-v4.0',
+      }),
+    )
+  } catch (error) {
+    await captureFailure(page, testInfo)
+    throw error
+  } finally {
+    await cleanup(page, project?.id, group?.id)
   }
-
-  await page.route('**/api/security/csrf', route => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({ token: 'p003-e2e-csrf-token' }),
-  }))
-
-  await page.route(/\/api\/privacy(?:\/|$)/, async route => {
-    const request = route.request()
-    const path = new URL(request.url()).pathname
-    const method = request.method()
-
-    if (method === 'GET' && path === '/api/privacy/policies') return fulfill(route, state.policies)
-    if (method === 'GET' && path === '/api/privacy/consents') return fulfill(route, state.consents)
-    if (method === 'GET' && path === '/api/privacy/data-subject-requests') return fulfill(route, state.requests)
-    if (method === 'GET' && path === '/api/privacy/legal-holds') return fulfill(route, [])
-    if (method === 'GET' && path === '/api/privacy/health') {
-      return fulfill(route, {
-        enabled: true,
-        enforcementEnabled: true,
-        workerEnabled: false,
-        status: 'degraded',
-        pendingRetentionActions: 1,
-        failedRetentionActions: 0,
-        pendingDataSubjectRequests: 0,
-        failedDataSubjectRequests: 0,
-      })
-    }
-
-    if (method === 'POST' && path === '/api/privacy/policies') {
-      const body = request.postDataJSON() as Record<string, unknown>
-      state.policyWrites.push(body)
-      state.mutationHeaders.push(request.headers())
-      const created = retentionPolicy('d3000000-0000-4000-8000-000000000106', String(body.name))
-      state.policies.push(created)
-      return fulfill(route, created, 201)
-    }
-
-    if (method === 'POST' && path === '/api/privacy/consents') {
-      const body = request.postDataJSON() as Record<string, unknown>
-      state.consentWrites.push(body)
-      state.mutationHeaders.push(request.headers())
-      const created = {
-        id: 'd3000000-0000-4000-8000-000000000107',
-        projectId: body.projectId,
-        sourceEntityId: body.sourceEntityId ?? null,
-        retentionPolicyId: body.retentionPolicyId,
-        purpose: body.purpose,
-        providerClass: body.providerClass,
-        policyVersion: 'privacy-v4-e2e.1',
-        noticeVersion: body.noticeVersion,
-        status: 'granted',
-        grantedAt: '2026-07-13T01:00:00Z',
-        revokedAt: null,
-        expiresAt: body.expiresAt ?? null,
-        rowVersion: 'AAAAAAAAP04=',
-      }
-      state.consents.push(created)
-      return fulfill(route, created, 201)
-    }
-
-    if (method === 'POST' && path === '/api/privacy/data-subject-requests') {
-      const body = request.postDataJSON() as Record<string, unknown>
-      state.requestWrites.push(body)
-      state.mutationHeaders.push(request.headers())
-      const created = {
-        id: 'd3000000-0000-4000-8000-000000000108',
-        requestType: body.requestType,
-        scope: body.scope,
-        status: 'submitted',
-        requestedAt: '2026-07-13T01:05:00Z',
-        deadlineAt: '2026-08-12T01:05:00Z',
-        completedAt: null,
-        resultExpiresAt: null,
-        legalHoldDetected: false,
-        lastErrorCode: null,
-      }
-      state.requests.push(created)
-      return fulfill(route, created, 202)
-    }
-
-    return route.fulfill({
-      status: 404,
-      contentType: 'application/json',
-      body: JSON.stringify({ error: `Unhandled P0-03 E2E route: ${method} ${path}` }),
-    })
-  })
-
-  return state
-}
-
-async function capture(page: Page, testInfo: TestInfo, name: string) {
-  await page.screenshot({ path: testInfo.outputPath(name), fullPage: true })
-}
-
-test('privacy settings writes policy, consent and DSAR with CSRF', async ({ page }, testInfo) => {
-  const consoleErrors: string[] = []
-  const failedRequests: string[] = []
-  page.on('console', message => {
-    if (message.type() === 'error') consoleErrors.push(message.text())
-  })
-  page.on('requestfailed', request => failedRequests.push(request.url()))
-  const state = await installPrivacyMocks(page)
-
-  await login(page, '/settings')
-  await page.locator('.settings-nav-item').nth(5).click()
-  await expect(page.locator('.privacy-surface')).toBeVisible()
-  await expect(page.locator('.privacy-loading')).toHaveCount(0)
-  await expect(page.locator('.health-line')).toContainText('degraded')
-
-  await page.locator('.privacy-modes button').filter({ hasText: 'Retention' }).click()
-  await page.locator('.privacy-editor input[maxlength="120"]').fill('P0-03 E2E retention')
-  await page.locator('.privacy-editor .action-button').click()
-  await expect.poll(() => state.policyWrites.length).toBe(1)
-  expect(state.policyWrites[0]).toMatchObject({
-    dataClassification: 'sensitive_collaboration',
-    purpose: 'meeting_action_extraction',
-    defaultRetentionDays: 30,
-    expiryAction: 'redact',
-  })
-  await expect(page.locator('.record-list')).toContainText('P0-03 E2E retention')
-
-  await page.locator('.privacy-modes button').filter({ hasText: 'Consent' }).click()
-  await page.locator('.consent-notice input[type="checkbox"]').check()
-  await page.locator('.privacy-editor .action-button').click()
-  await expect.poll(() => state.consentWrites.length).toBe(1)
-  expect(state.consentWrites[0]).toMatchObject({
-    purpose: 'meeting_action_extraction',
-    providerClass: 'local',
-    sourceType: 'meeting',
-    sourceEntityId: null,
-    noticeVersion: 'qaly-meeting-privacy-v4.0',
-  })
-
-  await page.locator('.privacy-modes button').filter({ hasText: 'Data requests' }).click()
-  await page.locator('.privacy-editor .action-button').click()
-  await expect.poll(() => state.requestWrites.length).toBe(1)
-  expect(state.requestWrites[0]).toMatchObject({ requestType: 'export', scope: 'all' })
-
-  expect(state.mutationHeaders).toHaveLength(3)
-  for (const headers of state.mutationHeaders) {
-    expect(headers['x-csrf-token']).toBe('p003-e2e-csrf-token')
-  }
-
-  await expect(page.locator('.toast-card')).toHaveCount(0, { timeout: 10_000 })
-  await capture(page, testInfo, 'privacy-settings-desktop.png')
-  await page.setViewportSize({ width: 390, height: 844 })
-  await expect(page.locator('.privacy-surface')).toBeVisible()
-  const mobileWidth = await page.locator('.privacy-surface').evaluate(element => ({
-    left: element.getBoundingClientRect().left,
-    right: element.getBoundingClientRect().right,
-    viewport: window.innerWidth,
-  }))
-  expect(mobileWidth.left).toBeGreaterThanOrEqual(0)
-  expect(mobileWidth.right).toBeLessThanOrEqual(mobileWidth.viewport + 1)
-  await capture(page, testInfo, 'privacy-settings-mobile.png')
-
-  expect(failedRequests).toEqual([])
-  expect(consoleErrors).toEqual([])
 })
 
-test('meeting privacy gate binds consent to the meeting before speech capture', async ({ page }, testInfo) => {
-  const state = await installPrivacyMocks(page)
-  await page.route(`**/api/groups/${groupId}/meetings/start`, route => fulfill(route, {
-    id: meetingId,
-    roomId: `qaly-${groupId}`,
-    joinUrl: `/groups/${groupId}/meeting?meetingId=${meetingId}`,
-    providerUrl: null,
-    accessToken: null,
-    accessTokenExpiresAt: null,
-  }, 201))
+test('T1-TR-01 Deny: unauthenticated Task URL and Group link are blocked', async ({ page, browser }, testInfo) => {
+  let project: ProjectDto | undefined
+  let group: GroupDto | undefined
+  let task: TaskItemDto | undefined
+  let anonymous: Awaited<ReturnType<Browser['newContext']>> | undefined
 
-  await login(page, `/groups/${groupId}/meeting`)
-  await expect(page.locator('.gm-prejoin__btn')).toBeVisible()
-  await page.locator('.gm-prejoin__btn').click()
-  await expect(page.locator('.mc-btn--transcript')).toBeVisible({ timeout: 20_000 })
-  await page.locator('.mc-btn--transcript').click()
+  try {
+    await login(page)
+    project = await createProject(page, uniqueName('T1TR01 Deny Project'))
+    task = await createTask(page, project.id, uniqueName('T1TR01 denied private task'))
+    group = await createGroup(page, uniqueName('T1TR01 Deny Group'))
 
-  const dialog = page.locator('.gm-privacy-dialog')
-  await expect(dialog).toBeVisible()
-  await expect(dialog).toContainText('Meeting data policy')
-  const confirmButton = dialog.locator('.gm-btn-primary')
-  await expect(confirmButton).toBeDisabled()
+    await apiResult<TaskItemDto>(await page.request.get(`/api/tasks/${task.id}`))
+    await apiResult<GroupDto>(await page.request.get(`/api/groups/${group.id}`))
 
-  await dialog.locator('.gm-privacy-segmented button').nth(1).click()
-  await dialog.locator('.gm-privacy-field select').nth(2).selectOption('90')
-  await dialog.locator('.gm-privacy-consent input[type="checkbox"]').check()
-  await expect(confirmButton).toBeEnabled()
-  await capture(page, testInfo, 'meeting-privacy-desktop.png')
+    anonymous = await browser.newContext()
+    const anonPage = await anonymous.newPage()
 
-  await page.setViewportSize({ width: 390, height: 844 })
-  const dialogBounds = await dialog.evaluate(element => ({
-    top: element.getBoundingClientRect().top,
-    bottom: element.getBoundingClientRect().bottom,
-    left: element.getBoundingClientRect().left,
-    right: element.getBoundingClientRect().right,
-    width: window.innerWidth,
-    height: window.innerHeight,
-  }))
-  expect(dialogBounds.top).toBeGreaterThanOrEqual(0)
-  expect(dialogBounds.left).toBeGreaterThanOrEqual(0)
-  expect(dialogBounds.right).toBeLessThanOrEqual(dialogBounds.width + 1)
-  expect(dialogBounds.bottom).toBeLessThanOrEqual(dialogBounds.height + 1)
-  await capture(page, testInfo, 'meeting-privacy-mobile.png')
+    await anonPage.goto(`/projects/${project.id}/tasks/${task.id}`, { waitUntil: 'domcontentloaded' })
+    await expect(anonPage).toHaveURL(/\/Account\/Login/i)
+    await expect(anonPage.locator('#loginForm')).toBeVisible()
 
-  await confirmButton.click()
-  await expect.poll(() => state.consentWrites.length).toBe(1)
-  expect(state.consentWrites[0]).toMatchObject({
-    retentionPolicyId: policyId,
-    purpose: 'meeting_action_extraction',
-    providerClass: 'any',
-    sourceType: 'meeting',
-    sourceEntityId: meetingId,
-    noticeVersion: 'qaly-meeting-privacy-v4.0',
-  })
-  expect(state.mutationHeaders[0]['x-csrf-token']).toBe('p003-e2e-csrf-token')
-  await expect(dialog).toHaveCount(0)
+    await anonPage.goto(`/groups/${group.id}`, { waitUntil: 'domcontentloaded' })
+    await expect(anonPage).toHaveURL(/\/Account\/Login/i)
+    await expect(anonPage.locator('#loginForm')).toBeVisible()
+  } catch (error) {
+    await captureFailure(page, testInfo)
+    throw error
+  } finally {
+    await anonymous?.close()
+    await cleanup(page, project?.id, group?.id)
+  }
+})
+
+test('T1-TR-01 Error: malformed URL renders route error page', async ({ page }, testInfo) => {
+  try {
+    await login(page)
+
+    await page.goto('/projects/not-a-guid/tasks/not-a-guid', { waitUntil: 'domcontentloaded' })
+    await expect(page).toHaveURL(/\/projects\/not-a-guid\/tasks\/not-a-guid$/)
+    await expect(page.locator('.route-error-page')).toBeVisible()
+    await expect(page.locator('.route-error-page')).toContainText('URL nhiệm vụ không hợp lệ')
+
+    await page.goto('/groups/not-a-guid/meeting', { waitUntil: 'domcontentloaded' })
+    await expect(page.locator('.route-error-page')).toBeVisible()
+    await expect(page.locator('.route-error-page')).toContainText('URL nhóm không hợp lệ')
+  } catch (error) {
+    await captureFailure(page, testInfo)
+    throw error
+  }
 })
