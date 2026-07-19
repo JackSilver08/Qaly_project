@@ -715,6 +715,31 @@ public partial class MeetingImportService : IMeetingImportService
 
     public async Task<Result<TaskMeetingSourceDto>> GetTaskMeetingSourceAsync(Guid taskId, CancellationToken ct = default)
     {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<TaskMeetingSourceDto>();
+        }
+
+        var task = await _taskRepo.GetQueryable()
+            .Include(item => item.Project)
+            .FirstOrDefaultAsync(item => item.Id == taskId, ct);
+
+        if (task == null)
+        {
+            return Result.NotFound<TaskMeetingSourceDto>("Task not found.");
+        }
+
+        if (task.Project == null)
+        {
+            return Result.NotFound<TaskMeetingSourceDto>("Task not found.");
+        }
+
+        if (!await CanAccessProjectAsync(task.Project, currentUserId.Value, ct))
+        {
+            return Result.Forbidden<TaskMeetingSourceDto>();
+        }
+
         var mapping = await _mappingRepo.GetQueryable()
             .Include(item => item.MeetingImport)
                 .ThenInclude(import => import.AiDraft)

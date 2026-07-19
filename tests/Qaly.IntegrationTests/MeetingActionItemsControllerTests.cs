@@ -171,6 +171,26 @@ public class MeetingActionItemsControllerTests : IClassFixture<IntegrationTestFa
     }
 
     [Fact]
+    public async Task GetTaskMeetingSource_WhenUserIsOutsideProject_ReturnsForbidden()
+    {
+        var seed = await SeedMeetingImportAsync();
+        var taskId = Guid.NewGuid();
+        var outsiderId = Guid.NewGuid();
+
+        await EnsureUserExists(outsiderId, "Outside User", $"outside-{Guid.NewGuid():N}@qaly.dev");
+        await SeedTaskAndMappingAsync(seed.ProjectId, seed.MeetingImportId, taskId, itemIndex: 0);
+
+        using var client = _factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/tasks/{taskId}/meeting-source");
+        request.Headers.Add("X-Test-UserId", outsiderId.ToString());
+        request.Headers.Add("X-Test-Role", "User");
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
     public async Task CreateTaskFromActionItem_CreatesTaskAndMappingTrace()
     {
         var seed = await SeedMeetingImportAsync();

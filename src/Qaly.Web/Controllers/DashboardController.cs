@@ -65,17 +65,19 @@ public partial class DashboardController : BaseApiController
                 .OrderByDescending(project => project.CreatedAt)
                 .ToListAsync(cancellationToken);
 
-            if (projects.Count == 0)
-            {
-                projects = await BuildProjectQuery(restrictToMembership: false)
-                    .OrderByDescending(project => project.CreatedAt)
-                    .ToListAsync(cancellationToken);
-            }
+            var accessibleUserIds = projects
+                .SelectMany(project => project.Members.Select(member => member.UserId))
+                .Concat(projects.Select(project => project.OwnerId))
+                .Append(currentUserId ?? Guid.Empty)
+                .Distinct()
+                .ToList();
 
-            var users = await _context.Users
+            var usersQuery = _context.Users
                 .AsNoTracking()
-                .OrderBy(user => user.FullName)
-                .ToListAsync(cancellationToken);
+                .Where(user => isAdmin || accessibleUserIds.Contains(user.Id))
+                .OrderBy(user => user.FullName);
+
+            var users = await usersQuery.ToListAsync(cancellationToken);
 
         var allTasks = projects
             .SelectMany(project => project.Tasks)
@@ -505,16 +507,34 @@ public partial class DashboardController : BaseApiController
         var startOfToday = now.Date;
         var startOfWeek = now.Date.AddDays(-7);
 
-        var query = _context.AuditLogs.AsNoTracking().Where(a => a.Timestamp >= startOfWeek);
+        var currentUserId = User.GetUserId();
+        var isAdmin = User.IsInRole("Admin");
+
+        var query = _context.AuditLogs
+            .AsNoTracking()
+            .Include(a => a.User)
+            .Where(a => a.Timestamp >= startOfWeek);
         var projectNames = await _context.Projects
             .AsNoTracking()
             .Select(project => new { project.Id, project.Name })
             .ToDictionaryAsync(project => project.Id, project => project.Name, cancellationToken);
 
-        var logs = await query.OrderByDescending(a => a.Timestamp).ToListAsync(cancellationToken);
+        var logs = await query
+            .OrderByDescending(a => a.Timestamp)
+            .Take(200)
+            .ToListAsync(cancellationToken);
 
-        var todayCount = logs.Count(l => l.Timestamp >= startOfToday);
-        var weekCount = logs.Count;
+        var visibleLogs = new List<AuditLog>();
+        foreach (var log in logs)
+        {
+            if (await CanSeeAuditLogAsync(log, currentUserId, isAdmin, cancellationToken))
+            {
+                visibleLogs.Add(log);
+            }
+        }
+
+        var todayCount = visibleLogs.Count(l => l.Timestamp >= startOfToday);
+        var weekCount = visibleLogs.Count;
 
         var activityByDay = Enumerable.Range(0, 7)
             .Select(i => 
@@ -522,12 +542,12 @@ public partial class DashboardController : BaseApiController
                 var d = startOfWeek.AddDays(i);
                 return new ActivityByDayDto(
                     d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                    logs.Count(l => l.Timestamp.Date == d.Date)
+                    visibleLogs.Count(l => l.Timestamp.Date == d.Date)
                 );
             })
             .ToList();
 
-        var latestActivities = logs.Take(3).Select(l => 
+        var latestActivities = visibleLogs.Take(3).Select(l => 
         {
             var projectId = InferProjectId(l);
             string? projectName = null;
@@ -634,6 +654,133 @@ public partial class DashboardController : BaseApiController
         }
 
         return property.ValueKind == JsonValueKind.String && Guid.TryParse(property.GetString(), out value);
+    }
+
+    private async Task<bool> CanSeeAuditLogAsync(
+        AuditLog log,
+        Guid? currentUserId,
+        bool isAdmin,
+        CancellationToken ct)
+    {
+        if (isAdmin)
+        {
+            return true;
+        }
+
+        if (!currentUserId.HasValue)
+        {
+            return false;
+        }
+
+        if (log.UserId == currentUserId.Value)
+        {
+            return true;
+        }
+
+        var projectId = await TryResolveProjectIdAsync(log, ct);
+        if (!projectId.HasValue)
+        {
+            return false;
+        }
+
+        return await CanAccessProjectAsync(projectId.Value, currentUserId.Value, ct);
+    }
+
+    private async Task<bool> CanAccessProjectAsync(Guid projectId, Guid currentUserId, CancellationToken ct)
+    {
+        var project = await _context.Projects
+            .AsNoTracking()
+            .Include(item => item.Organization)
+                .ThenInclude(item => item!.Members)
+            .Include(item => item.Members)
+            .FirstOrDefaultAsync(item => item.Id == projectId, ct);
+
+        if (project == null)
+        {
+            return false;
+        }
+
+        if (project.OwnerId == currentUserId)
+        {
+            return true;
+        }
+
+        if (project.Members.Any(member => member.UserId == currentUserId))
+        {
+            return true;
+        }
+
+        if (project.OrganizationId == null || project.Organization == null)
+        {
+            return false;
+        }
+
+        if (project.Organization.OwnerId == currentUserId)
+        {
+            return true;
+        }
+
+        return project.Organization.Members.Any(member => member.UserId == currentUserId);
+    }
+
+    private async Task<Guid?> TryResolveProjectIdAsync(AuditLog log, CancellationToken ct)
+    {
+        if (log.EntityType == nameof(Project) && Guid.TryParse(log.EntityId, out var projectId))
+        {
+            return projectId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(log.ChangesJson))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(log.ChangesJson);
+                var root = doc.RootElement;
+
+                if (TryReadGuid(root, "projectId", out var parsedProjectId) || TryReadGuid(root, "ProjectId", out parsedProjectId))
+                {
+                    return parsedProjectId;
+                }
+
+                if (log.EntityType == nameof(TaskComment) || log.EntityType == nameof(TaskAttachment))
+                {
+                    if (TryReadGuid(root, "taskItemId", out var taskItemId) || TryReadGuid(root, "TaskItemId", out taskItemId))
+                    {
+                        return await _context.TaskItems
+                            .AsNoTracking()
+                            .Where(task => task.Id == taskItemId)
+                            .Select(task => (Guid?)task.ProjectId)
+                            .FirstOrDefaultAsync(ct);
+                    }
+                }
+
+                if (log.EntityType == nameof(Sprint))
+                {
+                    if (TryReadGuid(root, "sprintId", out var sprintId) || TryReadGuid(root, "SprintId", out sprintId))
+                    {
+                        return await _context.TaskItems
+                            .AsNoTracking()
+                            .Where(task => task.SprintId == sprintId)
+                            .Select(task => (Guid?)task.ProjectId)
+                            .FirstOrDefaultAsync(ct);
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        if (log.EntityType == nameof(TaskItem) && Guid.TryParse(log.EntityId, out var taskId))
+        {
+            return await _context.TaskItems
+                .AsNoTracking()
+                .Where(task => task.Id == taskId)
+                .Select(task => (Guid?)task.ProjectId)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        return null;
     }
 
     [HttpGet("strategic-overview")]

@@ -83,6 +83,18 @@ public class AuthBoundaryIntegrationTests : IClassFixture<IntegrationTestFactory
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
+    [Fact]
+    public async Task GetAuditLogByEntity_WhenAuthenticatedAsMember_ReturnsForbidden()
+    {
+        await EnsureUserExists(_factory.TestUserId, "Member User", $"member-{Guid.NewGuid():N}@qaly.dev");
+        using var client = _factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/audit-logs/entity/Project/{Guid.NewGuid()}");
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
     private async Task EnsureUserExists(Guid userId, string name, string email)
     {
         using var scope = _factory.Services.CreateScope();
