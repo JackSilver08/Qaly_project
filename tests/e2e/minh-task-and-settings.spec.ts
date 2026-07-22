@@ -137,6 +137,7 @@ test('canonical task opens from project and tasks pages, refresh and back keep t
 
 test('privacy policy writes through API and Settings stays truthful on partial failure', async ({ page }) => {
   let projectId = ''
+  let projectUpdateWasIntercepted = false
   const projectName = uniqueName('E2E Privacy Project')
   const policyName = uniqueName('E2E Privacy Policy')
   const renamedUser = uniqueName('E2E Settings User')
@@ -149,8 +150,9 @@ test('privacy policy writes through API and Settings stays truthful on partial f
     await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' })
     await page.goto('/settings', { waitUntil: 'domcontentloaded' })
 
-    await page.route(new RegExp(`/api/projects/${projectId}$`), async route => {
+    await page.route('**/api/projects/*', async route => {
       if (route.request().method() === 'PUT') {
+        projectUpdateWasIntercepted = true
         await route.fulfill({
           status: 500,
           contentType: 'application/json',
@@ -178,6 +180,7 @@ test('privacy policy writes through API and Settings stays truthful on partial f
     await page.getByLabel('Họ và tên').fill(renamedUser + ' v2')
     await page.getByRole('button', { name: /Lưu cài đặt/i }).click()
 
+    await expect.poll(() => projectUpdateWasIntercepted).toBe(true)
     await expect(page.locator('.toast-card')).toContainText('Không thể cập nhật cấu hình bảng công việc.')
     await expect(page.locator('.toast-card')).not.toContainText('Đã lưu tất cả cấu hình thành công!')
   } finally {
