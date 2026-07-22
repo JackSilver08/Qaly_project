@@ -1274,8 +1274,8 @@ public class AiWorkflowService : IAiWorkflowService
                         if (string.Equals(type, "SendNotification", StringComparison.OrdinalIgnoreCase))
                         {
                             var email = actionEl.TryGetProperty("recipientEmail", out var emailProp) ? emailProp.GetString() : null;
-                            var subject = actionEl.TryGetProperty("subject", out var subProp) ? subProp.GetString() : "Qaly Alert";
-                            var message = actionEl.TryGetProperty("message", out var msgProp) ? msgProp.GetString() : string.Empty;
+                            var subject = actionEl.TryGetProperty("subject", out var subProp) ? subProp.GetString() ?? "Qaly Alert" : "Qaly Alert";
+                            var message = actionEl.TryGetProperty("message", out var msgProp) ? msgProp.GetString() ?? string.Empty : string.Empty;
                             
                             if (!string.IsNullOrWhiteSpace(email) && _emailService != null)
                             {

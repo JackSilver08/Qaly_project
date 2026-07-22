@@ -2135,9 +2135,14 @@ public partial class GroupsService : IGroupsService
         var items = new List<GroupPrimaryGroupReconciliationItem>();
         foreach (var project in linkedProjects)
         {
+            if (project.SourceGroupId is not Guid sourceGroupId)
+            {
+                continue;
+            }
+
             var group = await _groupRepo.GetQueryable()
                 .IgnoreQueryFilters()
-                .FirstOrDefaultAsync(item => item.Id == project.SourceGroupId.Value, ct);
+                .FirstOrDefaultAsync(item => item.Id == sourceGroupId, ct);
             var requiresAction = group == null || group.IsDeleted || string.Equals(group.Status, "Dissolved", StringComparison.OrdinalIgnoreCase);
             items.Add(new GroupPrimaryGroupReconciliationItem(
                 project.Id,

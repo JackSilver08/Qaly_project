@@ -7,6 +7,14 @@ namespace Qaly.Infrastructure.Services;
 
 public class RedisSessionService : ISessionService
 {
+    private static readonly Action<ILogger, Guid, Exception?> LogCircuitOpen = LoggerMessage.Define<Guid>(
+        LogLevel.Warning,
+        new EventId(1, nameof(LogCircuitOpen)),
+        "Redis session revocation skipped because the circuit is open for user {UserId}.");
+    private static readonly Action<ILogger, Guid, Exception?> LogRevocationFailed = LoggerMessage.Define<Guid>(
+        LogLevel.Warning,
+        new EventId(2, nameof(LogRevocationFailed)),
+        "Redis session revocation failed for user {UserId}; falling back to a no-op result.");
     private static readonly TimeSpan OperationTimeout = TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan CircuitOpenDuration = TimeSpan.FromSeconds(15);
     private readonly IConnectionMultiplexer _redis;
@@ -27,7 +35,7 @@ public class RedisSessionService : ISessionService
     {
         if (IsCircuitOpen())
         {
-            _logger.LogWarning("Redis session revocation skipped because the circuit is open for user {UserId}.", userId);
+            LogCircuitOpen(_logger, userId, null);
             return false;
         }
 
@@ -55,12 +63,12 @@ public class RedisSessionService : ISessionService
         catch (Exception ex)
         {
             RecordFailure();
-            _logger.LogWarning(ex, "Redis session revocation failed for user {UserId}; falling back to a no-op result.", userId);
+            LogRevocationFailed(_logger, userId, ex);
             return false;
         }
     }
 
-    private async Task<T> ExecuteWithTimeoutAsync<T>(Func<Task<T>> operation, string operationName, CancellationToken ct)
+    private static async Task<T> ExecuteWithTimeoutAsync<T>(Func<Task<T>> operation, string operationName, CancellationToken ct)
     {
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(OperationTimeout);

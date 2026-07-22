@@ -644,7 +644,7 @@ public class AttachmentService : IAttachmentService
             .AsNoTracking()
             .Include(a => a.Project)
             .Include(a => a.TaskItem)
-            .ThenInclude(t => t.Project)
+            .ThenInclude(t => t!.Project)
             .Where(a => (a.Project != null && a.Project.Status == "Archived") || 
                         (a.TaskItem != null && a.TaskItem.Project != null && a.TaskItem.Project.Status == "Archived"));
 

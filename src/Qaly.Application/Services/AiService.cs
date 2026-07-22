@@ -727,6 +727,9 @@ Yêu cầu:
     [LoggerMessage(EventId = 5, Level = LogLevel.Error, Message = "Error while executing AI categorization batch.")]
     private static partial void LogAiCategorizationBatchFailed(ILogger logger, Exception exception);
 
+    [LoggerMessage(EventId = 6, Level = LogLevel.Error, Message = "Error while generating an AI project plan.")]
+    private static partial void LogAiPlanGenerationFailed(ILogger logger, Exception exception);
+
     public async Task<List<Qaly.Application.DTOs.Import.AiCategorizationResult>> CategorizeTasksBatchAsync(List<Qaly.Application.DTOs.Import.AiCategorizationRequest> tasks)
     {
         if (tasks.Count == 0) return new List<Qaly.Application.DTOs.Import.AiCategorizationResult>();
@@ -787,7 +790,7 @@ Chỉ xuất ra đúng mảng JSON, tuyệt đối không giải thích.";
         Project? projectContext = null;
         if (projectId.HasValue)
         {
-            projectContext = await _projectRepo.GetByIdAsync(projectId.Value);
+            projectContext = await _projectRepo.GetByIdAsync(projectId.Value, ct);
             if (projectContext == null)
             {
                 return Result.Failure<GeneratedPlanDto>("Không tìm thấy dự án được chỉ định.", 404);
@@ -860,7 +863,7 @@ Lưu ý quan trọng:
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Lỗi khi lập kế hoạch dự án bằng AI.");
+            LogAiPlanGenerationFailed(_logger, ex);
             return Result.Failure<GeneratedPlanDto>($"Lỗi khi chạy AI: {ex.Message}", 500);
         }
     }
