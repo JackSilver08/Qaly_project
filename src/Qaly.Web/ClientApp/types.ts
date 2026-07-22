@@ -98,6 +98,7 @@ export interface DashboardNotification {
     message: string;
     tone: "critical" | "warning" | "info";
     createdAt: string;
+    targetUrl?: string | null;
 }
 
 export interface ApiResult<T> {
@@ -239,6 +240,7 @@ export interface NotificationDto {
     relatedEntityId: string | null;
     relatedEntityType: string | null;
     createdAt: string;
+    targetUrl: string | null;
 }
 
 export interface AttachmentDto {

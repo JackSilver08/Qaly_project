@@ -36,4 +36,5 @@ public record NotificationDto(
     bool IsRead,
     Guid? RelatedEntityId,
     string? RelatedEntityType,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? TargetUrl);

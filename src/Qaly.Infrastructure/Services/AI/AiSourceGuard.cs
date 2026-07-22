@@ -18,6 +18,54 @@ public sealed class AiSourceGuard : IAiSourceGuard
         _db = db;
     }
 
+    public async Task<AiSourceCaptureResult> CaptureAsync(
+        Guid projectId,
+        Guid userId,
+        IReadOnlyList<AiJobSourceInputDto> sources,
+        CancellationToken cancellationToken = default)
+    {
+        var project = await _db.Projects
+            .AsNoTracking()
+            .Include(item => item.Organization)
+            .FirstOrDefaultAsync(item => item.Id == projectId, cancellationToken);
+        if (project == null || !await CanAccessProjectAsync(project, userId, cancellationToken))
+        {
+            return new AiSourceCaptureResult(false, [], AiErrorCodes.PermissionDenied, "The source is absent or not visible to the requester.");
+        }
+
+        var captured = new List<AiJobSourceInputDto>(sources.Count);
+        foreach (var source in sources)
+        {
+            var sourceType = NormalizeType(source.SourceType);
+            if (!source.SourceEntityId.HasValue)
+            {
+                if (sourceType is not ("manual" or "manualtext" or "text" or "legacy") ||
+                    (string.IsNullOrWhiteSpace(source.SourceVersion) && string.IsNullOrWhiteSpace(source.SourceHash)))
+                {
+                    return new AiSourceCaptureResult(false, [], AiErrorCodes.PermissionDenied, "The source is absent or not visible to the requester.");
+                }
+
+                captured.Add(source);
+                continue;
+            }
+
+            var state = await GetSourceStateAsync(project, userId, sourceType, source.SourceEntityId.Value, cancellationToken);
+            if (state == null)
+            {
+                return new AiSourceCaptureResult(false, [], AiErrorCodes.PermissionDenied, "The source is absent or not visible to the requester.");
+            }
+
+            captured.Add(source with
+            {
+                SourceVersion = source.SourceVersion ?? state.Versions.FirstOrDefault(),
+                SourceHash = source.SourceHash ?? state.Hash,
+                SourceTimestamp = source.SourceTimestamp ?? state.Timestamp
+            });
+        }
+
+        return new AiSourceCaptureResult(true, captured);
+    }
+
     public async Task<AiSourceGuardResult> ValidateAsync(
         Guid projectId,
         Guid userId,
@@ -59,19 +107,7 @@ public sealed class AiSourceGuard : IAiSourceGuard
         }
 
         var sourceId = source.SourceEntityId.Value;
-        SourceState? state = sourceType switch
-        {
-            "project" => await GetProjectStateAsync(project, sourceId),
-            "group" or "workgroup" => await GetGroupStateAsync(project, userId, sourceId, ct),
-            "sprint" => await GetSprintStateAsync(project.Id, sourceId, ct),
-            "task" or "taskitem" => await GetTaskStateAsync(project.Id, userId, sourceId, ct),
-            "wiki" or "wikipage" => await GetWikiStateAsync(project, userId, sourceId, ct),
-            "meeting" or "meetingimport" => await GetMeetingImportStateAsync(project.Id, sourceId, ct),
-            "message" or "groupmessage" => await GetMessageStateAsync(project, userId, sourceId, ct),
-            "groupmeetingsession" or "meetingsession" => await GetMeetingSessionStateAsync(project, userId, sourceId, ct),
-            "actionitem" or "meetingactionitem" => await GetActionItemStateAsync(project.Id, sourceId, ct),
-            _ => null
-        };
+        var state = await GetSourceStateAsync(project, userId, sourceType, sourceId, ct);
 
         if (state == null) return Denied();
         if (!enforceFreshness || string.Equals(source.SourceVersion, "legacy", StringComparison.OrdinalIgnoreCase))
@@ -93,6 +129,26 @@ public sealed class AiSourceGuard : IAiSourceGuard
 
         return new AiSourceGuardResult(true);
     }
+
+    private Task<SourceState?> GetSourceStateAsync(
+        Project project,
+        Guid userId,
+        string sourceType,
+        Guid sourceId,
+        CancellationToken ct)
+        => sourceType switch
+        {
+            "project" => GetProjectStateAsync(project, sourceId),
+            "group" or "workgroup" => GetGroupStateAsync(project, userId, sourceId, ct),
+            "sprint" => GetSprintStateAsync(project.Id, sourceId, ct),
+            "task" or "taskitem" => GetTaskStateAsync(project.Id, userId, sourceId, ct),
+            "wiki" or "wikipage" => GetWikiStateAsync(project, userId, sourceId, ct),
+            "meeting" or "meetingimport" => GetMeetingImportStateAsync(project.Id, sourceId, ct),
+            "message" or "groupmessage" => GetMessageStateAsync(project, userId, sourceId, ct),
+            "groupmeetingsession" or "meetingsession" => GetMeetingSessionStateAsync(project, userId, sourceId, ct),
+            "actionitem" or "meetingactionitem" => GetActionItemStateAsync(project.Id, sourceId, ct),
+            _ => Task.FromResult<SourceState?>(null)
+        };
 
     private static Task<SourceState?> GetProjectStateAsync(Project project, Guid sourceId)
         => Task.FromResult(project.Id == sourceId
@@ -162,7 +218,7 @@ public sealed class AiSourceGuard : IAiSourceGuard
         if (!project.SourceGroupId.HasValue || !await CanAccessGroupAsync(project.SourceGroupId.Value, userId, ct)) return null;
         var message = await _db.GroupMessages.AsNoTracking()
             .FirstOrDefaultAsync(item => item.Id == sourceId && item.WorkGroupId == project.SourceGroupId.Value, ct);
-        return message == null
+        return message == null || message.IsDeleted
             ? null
             : CreateState(message.UpdatedAt, $"{message.Id}|{message.Content}|{message.EditedAt:O}|{message.IsDeleted}|{message.UpdatedAt:O}");
     }
@@ -226,7 +282,7 @@ public sealed class AiSourceGuard : IAiSourceGuard
             versions.Add(updatedAt.Value.ToUnixTimeMilliseconds().ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
         if (!string.IsNullOrWhiteSpace(additionalVersion)) versions.Add(additionalVersion);
-        return new SourceState(Hash(hashInput), versions);
+        return new SourceState(Hash(hashInput), versions, updatedAt);
     }
 
     private static string Hash(string value)
@@ -241,5 +297,5 @@ public sealed class AiSourceGuard : IAiSourceGuard
     private static AiSourceGuardResult Stale()
         => new(false, AiErrorCodes.SourceStale, "The source changed after the AI request was created.");
 
-    private sealed record SourceState(string Hash, IReadOnlyList<string> Versions);
+    private sealed record SourceState(string Hash, IReadOnlyList<string> Versions, DateTimeOffset? Timestamp);
 }

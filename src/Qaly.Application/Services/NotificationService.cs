@@ -17,6 +17,7 @@ public partial class NotificationService : INotificationService
     private readonly INotificationPublisher _notificationPublisher;
     private readonly Qaly.Application.Common.Interfaces.IPushSender _pushSender;
     private readonly ILogger<NotificationService> _logger;
+    private readonly INotificationTargetResolver _targetResolver;
 
     public NotificationService(
         IRepository<Notification> notificationRepo,
@@ -24,7 +25,8 @@ public partial class NotificationService : INotificationService
         IUnitOfWork unitOfWork,
         INotificationPublisher notificationPublisher,
         Qaly.Application.Common.Interfaces.IPushSender pushSender,
-        ILogger<NotificationService> logger)
+        ILogger<NotificationService> logger,
+        INotificationTargetResolver targetResolver)
     {
         _notificationRepo = notificationRepo;
         _pushRepo = pushRepo;
@@ -32,6 +34,7 @@ public partial class NotificationService : INotificationService
         _notificationPublisher = notificationPublisher;
         _pushSender = pushSender;
         _logger = logger;
+        _targetResolver = targetResolver;
     }
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Skipped duplicate notification {NotificationType} for user {UserId} with key {IdempotencyKey}.")]
@@ -54,12 +57,21 @@ public partial class NotificationService : INotificationService
             query = query.Where(notification => !notification.IsRead);
         }
 
-        var notifications = await query
+        var candidates = await query
             .OrderByDescending(notification => notification.CreatedAt)
-            .Take(50)
+            .Take(100)
             .ToListAsync(ct);
 
-        return Result.Success<IReadOnlyList<NotificationDto>>(notifications.Select(ToDto).ToList());
+        var notifications = new List<NotificationDto>();
+        foreach (var notification in candidates)
+        {
+            var target = await _targetResolver.ResolveAsync(notification, userId, ct);
+            if (!target.IsVisible) continue;
+            notifications.Add(ToDto(notification, target.TargetUrl));
+            if (notifications.Count == 50) break;
+        }
+
+        return Result.Success<IReadOnlyList<NotificationDto>>(notifications);
     }
 
     public async Task<Result> MarkAsReadAsync(Guid userId, Guid id, CancellationToken ct = default)
@@ -101,8 +113,15 @@ public partial class NotificationService : INotificationService
 
     public async Task<Result<int>> GetUnreadCountAsync(Guid userId, CancellationToken ct = default)
     {
-        var count = await _notificationRepo.GetQueryable()
-            .CountAsync(notification => notification.UserId == userId && !notification.IsRead, ct);
+        var candidates = await _notificationRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(notification => notification.UserId == userId && !notification.IsRead)
+            .ToListAsync(ct);
+        var count = 0;
+        foreach (var notification in candidates)
+        {
+            if ((await _targetResolver.ResolveAsync(notification, userId, ct)).IsVisible) count++;
+        }
 
         return Result.Success(count);
     }
@@ -174,7 +193,11 @@ public partial class NotificationService : INotificationService
             return;
         }
 
-        await _notificationPublisher.PublishAsync(userId, ToDto(notification), ct);
+        var target = await _targetResolver.ResolveAsync(notification, userId, ct);
+        if (target.IsVisible)
+        {
+            await _notificationPublisher.PublishAsync(userId, ToDto(notification, target.TargetUrl), ct);
+        }
         await SendPushNotificationAsync(userId, "New Notification", normalizedMessage);
     }
 
@@ -232,7 +255,7 @@ public partial class NotificationService : INotificationService
         }
     }
 
-    private static NotificationDto ToDto(Notification notification)
+    private static NotificationDto ToDto(Notification notification, string? targetUrl = null)
         => new(
             notification.Id,
             notification.Message,
@@ -241,7 +264,8 @@ public partial class NotificationService : INotificationService
             notification.IsRead,
             notification.RelatedEntityId,
             notification.RelatedEntityType,
-            notification.CreatedAt);
+            notification.CreatedAt,
+            targetUrl);
 
     private static string? NormalizeIdempotencyKey(string? idempotencyKey)
     {

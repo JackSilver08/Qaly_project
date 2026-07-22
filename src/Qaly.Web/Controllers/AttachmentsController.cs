@@ -20,19 +20,8 @@ public class AttachmentsController : BaseApiController
     [HttpGet("task/{taskItemId:guid}")]
     public async Task<IActionResult> GetByTask(Guid taskItemId, CancellationToken ct)
     {
-        try
-        {
-            var result = await _attachmentService.GetByTaskAsync(taskItemId, ct);
-            if (result.StatusCode == 404)
-            {
-                return Ok(Array.Empty<TaskAttachmentDto>());
-            }
-            return StatusCode(result.StatusCode, result);
-        }
-        catch
-        {
-            return Ok(Array.Empty<TaskAttachmentDto>());
-        }
+        var result = await _attachmentService.GetByTaskAsync(taskItemId, ct);
+        return StatusCode(result.StatusCode, result);
     }
 
     [HttpPost("task/{taskItemId:guid}")]

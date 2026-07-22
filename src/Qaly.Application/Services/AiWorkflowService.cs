@@ -146,12 +146,10 @@ public class AiWorkflowService : IAiWorkflowService
         }
 
         var sourceInputs = NormalizeSources(dto);
-        if (sourceInputs.Count == 0 || sourceInputs.Any(source =>
-                string.IsNullOrWhiteSpace(source.SourceType) ||
-                (string.IsNullOrWhiteSpace(source.SourceVersion) && string.IsNullOrWhiteSpace(source.SourceHash))))
+        if (sourceInputs.Count == 0 || sourceInputs.Any(source => string.IsNullOrWhiteSpace(source.SourceType)))
         {
             return Result.Failure<AiJobCreatedDto>(
-                "Every source requires a type and source_version or source_hash.",
+                "Every source requires a type.",
                 400,
                 AiErrorCodes.InvalidRequest);
         }
@@ -180,6 +178,16 @@ public class AiWorkflowService : IAiWorkflowService
 
         if (_sourceGuard != null)
         {
+            var capture = await _sourceGuard.CaptureAsync(project.Id, currentUserId.Value, sourceInputs, ct);
+            if (!capture.IsAllowed)
+            {
+                return Result.Failure<AiJobCreatedDto>(
+                    capture.ErrorMessage ?? "The AI source is not available.",
+                    403,
+                    capture.ErrorCode);
+            }
+
+            sourceInputs = capture.Sources.ToList();
             var sourceValidation = await _sourceGuard.ValidateAsync(
                 project.Id,
                 currentUserId.Value,
@@ -193,6 +201,14 @@ public class AiWorkflowService : IAiWorkflowService
                     sourceValidation.ErrorCode == AiErrorCodes.SourceStale ? 409 : 403,
                     sourceValidation.ErrorCode);
             }
+        }
+        else if (sourceInputs.Any(source =>
+                     string.IsNullOrWhiteSpace(source.SourceVersion) && string.IsNullOrWhiteSpace(source.SourceHash)))
+        {
+            return Result.Failure<AiJobCreatedDto>(
+                "Every source requires a source_version or source_hash when source capture is unavailable.",
+                400,
+                AiErrorCodes.InvalidRequest);
         }
 
         var tenantId = project.OrganizationId ?? project.Id;
@@ -278,7 +294,7 @@ public class AiWorkflowService : IAiWorkflowService
             return Result.Accepted(ToCreatedDto(existingJob, requestId));
         }
 
-        var cacheKey = GenerateCacheKey(dto.JobType, project.Id, dto.SourceType, dto.SourceId, dto.SourceText);
+        var cacheKey = GenerateCacheKey(dto.JobType, project.Id, sourceInputs, dto.SourceText);
         var now = DateTimeOffset.UtcNow;
 
         var job = new AiJob
@@ -946,7 +962,32 @@ public class AiWorkflowService : IAiWorkflowService
         }
 
         var createdTaskIds = new List<Guid>();
-        var normalizedAction = dto.ConfirmAction.Trim();
+        var normalizedAction = dto.ConfirmAction.Trim().ToLowerInvariant();
+
+        if (normalizedAction is not ("reject" or "execute_action" or "create_tasks"))
+        {
+            return Result.Failure<AiDraftConfirmResultDto>(
+                "Unsupported confirm_action.",
+                400,
+                AiErrorCodes.InvalidRequest);
+        }
+
+        if (string.Equals(normalizedAction, "execute_action", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!await CanManageProjectAsync(draft.Project, currentUserId.Value, ct))
+            {
+                return Result.Failure<AiDraftConfirmResultDto>("Access denied for execute_action confirm action.", 403);
+            }
+
+            var actionValidation = await ValidateExecuteActionAsync(draft, payloadJson, ct);
+            if (!actionValidation.IsSuccess)
+            {
+                return Result.Failure<AiDraftConfirmResultDto>(
+                    actionValidation.Error ?? "The draft action is invalid.",
+                    actionValidation.StatusCode,
+                    actionValidation.ErrorCode);
+            }
+        }
 
         draft.ConfirmationIdempotencyKey = confirmationKey;
         draft.ConfirmAction = normalizedAction;
@@ -1815,9 +1856,16 @@ public class AiWorkflowService : IAiWorkflowService
         return Math.Round((characters / 4000m) * 0.002m, 6, MidpointRounding.AwayFromZero);
     }
 
-    private static string GenerateCacheKey(string jobType, Guid projectId, string sourceType, string? sourceId, string? sourceText)
+    private static string GenerateCacheKey(
+        string jobType,
+        Guid projectId,
+        IReadOnlyList<AiJobSourceInputDto> sources,
+        string? sourceText)
     {
-        var raw = $"{jobType}|{projectId}|{sourceType}|{sourceId}|{sourceText}";
+        var sourceFingerprint = string.Join("|", sources.Select((source, index) =>
+            $"{index}:{NormalizeOptional(source.SourceType)}:{source.SourceEntityId}:{NormalizeOptional(source.LegacySourceKey)}:" +
+            $"{NormalizeOptional(source.SourceVersion)}:{NormalizeOptional(source.SourceHash)}:{source.SourceTimestamp:O}"));
+        var raw = $"{jobType}|{projectId}|{sourceFingerprint}|{sourceText}";
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
@@ -2045,6 +2093,70 @@ Rules: create 1-8 non-duplicate tasks; use concise action titles; include accept
             .FirstOrDefaultAsync(ct);
 
         return ProjectRoleRules.CanManageProject(organizationRole);
+    }
+
+    private async Task<Result> ValidateExecuteActionAsync(
+        AiGeneratedDraft draft,
+        string payloadJson,
+        CancellationToken ct)
+    {
+        if (string.Equals(draft.DraftType, "ProjectDelayResolution", StringComparison.OrdinalIgnoreCase))
+        {
+            return Result.Failure(
+                "ProjectDelayResolution execution is deferred; review the proposal without executing it.",
+                409,
+                AiErrorCodes.InvalidRequest);
+        }
+
+        var taskScopedDrafts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "UpdateTaskStatus",
+            "AssignTask",
+            "SetTaskPriority",
+            "AddDueDate",
+            "AddComment",
+            "StartTimeTracking"
+        };
+        if (string.Equals(draft.DraftType, "CreateTask", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(draft.DraftType, "StopTimeTracking", StringComparison.OrdinalIgnoreCase))
+        {
+            return Result.Success();
+        }
+
+        if (!taskScopedDrafts.Contains(draft.DraftType))
+        {
+            return Result.Failure(
+                $"Draft type '{draft.DraftType}' is not approved for execute_action.",
+                400,
+                AiErrorCodes.InvalidRequest);
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(payloadJson);
+            var taskIdText = document.RootElement.GetProperty("taskId").GetString();
+            if (!Guid.TryParse(taskIdText, out var taskId))
+            {
+                return Result.Failure("The draft taskId is invalid.", 400, AiErrorCodes.InvalidRequest);
+            }
+
+            var belongsToProject = await _taskRepo.GetQueryable()
+                .AnyAsync(task => task.Id == taskId && task.ProjectId == draft.ProjectId, ct);
+            return belongsToProject
+                ? Result.Success()
+                : Result.Failure(
+                    "The referenced task does not belong to the draft project.",
+                    403,
+                    AiErrorCodes.PermissionDenied);
+        }
+        catch (JsonException)
+        {
+            return Result.Failure("The draft payload is invalid JSON.", 400, AiErrorCodes.InvalidRequest);
+        }
+        catch (InvalidOperationException)
+        {
+            return Result.Failure("The draft payload does not contain a valid taskId.", 400, AiErrorCodes.InvalidRequest);
+        }
     }
 
     private async Task<bool> IsProjectUserAsync(Project project, Guid userId, CancellationToken ct)

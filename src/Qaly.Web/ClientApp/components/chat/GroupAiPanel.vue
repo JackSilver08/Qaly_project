@@ -71,9 +71,26 @@ interface GroupAiDraftProjectResponse {
   warnings: string[]
 }
 
+interface GroupLinkedProjectDto {
+  projectId: string
+  name: string
+  code: string | null
+}
+
+interface SelectedAiRequest {
+  action: 'summary' | 'task-draft'
+  messageIds: string[]
+  nonce: number
+}
+
+interface AiJobCreatedDto {
+  jobId: string
+}
+
 const props = defineProps<{
   groupId: string
   members?: GroupMemberDto[]
+  selectedRequest?: SelectedAiRequest | null
 }>()
 
 const router = useRouter()
@@ -160,6 +177,72 @@ const showActionItemsList = computed(() => hasGeneratedActions.value && actionIt
 const showEmptyActionPlaceholder = computed(() => hasGeneratedActions.value && actionItems.value.length === 0)
 
 const hasGroup = computed(() => Boolean(props.groupId))
+const linkedProjects = ref<GroupLinkedProjectDto[]>([])
+const selectedProjectId = ref('')
+const selectedMessageIds = ref<string[]>([])
+const selectedAction = ref<'summary' | 'task-draft'>('summary')
+const isSelectedRequestLoading = ref(false)
+
+async function loadLinkedProjects() {
+  linkedProjects.value = await apiResult<GroupLinkedProjectDto[]>(`/api/groups/${props.groupId}/linked-projects`)
+  if (!linkedProjects.value.some(project => project.projectId === selectedProjectId.value)) {
+    selectedProjectId.value = linkedProjects.value.length === 1 ? linkedProjects.value[0].projectId : ''
+  }
+}
+
+async function submitSelectedMessages() {
+  if (!selectedProjectId.value || !selectedMessageIds.value.length || isSelectedRequestLoading.value) return
+  isSelectedRequestLoading.value = true
+  try {
+    const sources = selectedMessageIds.value.map(sourceEntityId => ({
+      sourceType: 'message',
+      sourceEntityId,
+      legacySourceKey: null,
+      sourceVersion: null,
+      sourceHash: null
+    }))
+    const endpoint = selectedAction.value === 'summary'
+      ? `/api/ai/groups/${props.groupId}/summaries`
+      : '/api/ai/task-drafts/from-source'
+    const result = await apiResult<AiJobCreatedDto>(endpoint, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
+      body: JSON.stringify({
+        projectId: selectedProjectId.value,
+        sourceType: selectedAction.value === 'summary' ? 'group' : 'message',
+        sourceEntityId: selectedAction.value === 'summary' ? props.groupId : selectedMessageIds.value[0],
+        sources
+      })
+    })
+    showSuccess(selectedAction.value === 'summary'
+      ? 'Đã tạo job tóm tắt từ tin nhắn đã chọn.'
+      : 'Đã tạo task draft từ tin nhắn đã chọn.')
+    await router.replace({
+      query: { ...router.currentRoute.value.query, aiActivity: '1', aiTab: 'jobs', aiJob: result.jobId }
+    })
+  } catch (error) {
+    showError(errorMessage(error, 'Không thể gửi các tin nhắn đã chọn cho AI.'))
+  } finally {
+    isSelectedRequestLoading.value = false
+  }
+}
+
+watch(() => props.selectedRequest?.nonce, async nonce => {
+  if (!nonce || !props.selectedRequest) return
+  selectedAction.value = props.selectedRequest.action
+  selectedMessageIds.value = [...props.selectedRequest.messageIds]
+  subTab.value = props.selectedRequest.action === 'summary' ? 'summary' : 'draft'
+  try {
+    await loadLinkedProjects()
+    if (!linkedProjects.value.length) {
+      showError('Nhóm chưa liên kết với Project nào. Hãy liên kết Project trước khi dùng AI.')
+      return
+    }
+    if (linkedProjects.value.length === 1) await submitSelectedMessages()
+  } catch (error) {
+    showError(errorMessage(error, 'Không thể đọc Project liên kết của nhóm.'))
+  }
+})
 
 // Reset states when group changes
 watch(() => props.groupId, () => {
@@ -407,6 +490,27 @@ function confidenceLabel(value: number) {
         <h2>Trợ lý AI</h2>
       </div>
     </header>
+
+    <section v-if="selectedMessageIds.length" class="selected-ai-source">
+      <strong>{{ selectedMessageIds.length }} tin nhắn đã chọn</strong>
+      <select v-if="linkedProjects.length > 1" v-model="selectedProjectId" aria-label="Chọn Project đích">
+        <option value="" disabled>Chọn Project đích</option>
+        <option v-for="project in linkedProjects" :key="project.projectId" :value="project.projectId">
+          {{ project.code ? `${project.code} - ` : '' }}{{ project.name }}
+        </option>
+      </select>
+      <button
+        v-if="linkedProjects.length > 1"
+        class="primary-button"
+        type="button"
+        :disabled="!selectedProjectId || isSelectedRequestLoading"
+        @click="submitSelectedMessages"
+      >
+        <Loader2 v-if="isSelectedRequestLoading" :size="15" class="spin-icon" />
+        <Sparkles v-else :size="15" />
+        {{ selectedAction === 'summary' ? 'Tóm tắt tin đã chọn' : 'Tạo task draft' }}
+      </button>
+    </section>
 
     <!-- Sub Navigation Tabs -->
     <nav class="group-ai-tabs" aria-label="AI Tools Sub Navigation">
@@ -1295,6 +1399,27 @@ function confidenceLabel(value: number) {
 
 .spin-icon {
   animation: spin-kf 0.9s linear infinite;
+}
+
+.selected-ai-source {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(239, 246, 255, 0.9);
+}
+
+.selected-ai-source strong {
+  color: #1e3a8a;
+  font-size: 0.78rem;
+}
+
+.selected-ai-source select {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  background: #fff;
 }
 
 @keyframes spin-kf {

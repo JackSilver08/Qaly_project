@@ -160,6 +160,58 @@ public sealed class AiJobProcessorTests : IDisposable
         (await _db.AiGeneratedDrafts.CountAsync(draft => draft.AiJobId == job.Id)).Should().Be(0);
     }
 
+    [Fact]
+    public async Task ProcessAsync_SelectedMessages_GroundsPromptInExactAuthorizedContent()
+    {
+        var user = new User { FullName = "Release Owner", Email = "release-owner@qaly.test", PasswordHash = "test" };
+        var group = new WorkGroup { Name = "Release", OwnerId = user.Id };
+        var project = new Project { Name = "Release Project", Code = "REL", OwnerId = user.Id, SourceGroupId = group.Id };
+        var selected = new GroupMessage
+        {
+            WorkGroupId = group.Id,
+            UserId = user.Id,
+            User = user,
+            Content = "Selected: update the deployment checklist"
+        };
+        var unselected = new GroupMessage
+        {
+            WorkGroupId = group.Id,
+            UserId = user.Id,
+            User = user,
+            Content = "Unselected: cancel the release"
+        };
+        _db.AddRange(user, group, project, selected, unselected);
+        await _db.SaveChangesAsync();
+        var seeded = await SeedRunningJobAsync(
+            "chat_summary",
+            source: new AiJobSource
+            {
+                SourceType = "message",
+                SourceEntityId = selected.Id,
+                SourceHash = new string('b', 64),
+                SortOrder = 0
+            },
+            projectId: project.Id,
+            userId: user.Id);
+        AiRequest? captured = null;
+        _gateway.Setup(gateway => gateway.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<AiRequest, CancellationToken>((request, _) => captured = request)
+            .ReturnsAsync(new AiResponse
+            {
+                IsSuccess = true,
+                Content = "{\"summary\":\"grounded\"}",
+                ProviderName = "test",
+                ModelName = "test"
+            });
+
+        await CreateProcessor().ProcessAsync(seeded.Lease, seeded.WorkerId);
+
+        captured.Should().NotBeNull();
+        captured!.Prompt.Should().Contain(selected.Content);
+        captured.Prompt.Should().Contain($"/groups/{group.Id}?messageId={selected.Id}");
+        captured.Prompt.Should().NotContain(unselected.Content);
+    }
+
     public void Dispose()
     {
         _db.Dispose();
@@ -175,15 +227,20 @@ public sealed class AiJobProcessorTests : IDisposable
             _options.Object,
             NullLogger<AiJobProcessor>.Instance);
 
-    private async Task<SeededJob> SeedRunningJobAsync(string jobType, string status = AiJobStatuses.Running)
+    private async Task<SeededJob> SeedRunningJobAsync(
+        string jobType,
+        string status = AiJobStatuses.Running,
+        AiJobSource? source = null,
+        Guid? projectId = null,
+        Guid? userId = null)
     {
         var workerId = "worker-test";
-        var projectId = Guid.NewGuid();
-        var userId = Guid.NewGuid();
+        projectId ??= Guid.NewGuid();
+        userId ??= Guid.NewGuid();
         var job = new AiJob
         {
             JobType = jobType,
-            ProjectId = projectId,
+            ProjectId = projectId.Value,
             SourceType = "manual",
             SchemaId = jobType + ".v4",
             SchemaVersion = "4.0",
@@ -196,7 +253,7 @@ public sealed class AiJobProcessorTests : IDisposable
             AttemptCount = 1,
             MaxAttempts = 3,
             CacheKey = $"processor:{Guid.NewGuid():N}",
-            RequestedById = userId
+            RequestedById = userId.Value
         };
         var dispatch = new AiJobDispatch
         {
@@ -214,13 +271,14 @@ public sealed class AiJobProcessorTests : IDisposable
             ProviderName = "auto",
             ModelName = "pending"
         };
-        job.Sources.Add(new AiJobSource
+        source ??= new AiJobSource
         {
-            AiJobId = job.Id,
             SourceType = "manual",
             SourceHash = new string('b', 64),
             SortOrder = 0
-        });
+        };
+        source.AiJobId = job.Id;
+        job.Sources.Add(source);
         _db.AiJobs.Add(job);
         _db.AiJobDispatches.Add(dispatch);
         _db.AiProviderAttempts.Add(attempt);

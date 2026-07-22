@@ -1899,6 +1899,42 @@ public class GroupsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task LinkProjectAsync_WhenGroupAndProjectBelongToDifferentOrganizations_ReturnsConflict()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "cross-org-owner@qaly.dev");
+        var group = await AddGroupAsync(ownerId, "Organization A Group", Guid.NewGuid());
+        var project = await AddProjectAsync(ownerId, "Organization B Project", organizationId: Guid.NewGuid());
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+
+        var result = await CreateService().LinkProjectAsync(group.Id, project.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(409);
+        (await _projectRepo.GetByIdAsync(project.Id))!.SourceGroupId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetLinkedProjectsAsync_WhenLinkedProjectIsInaccessible_DoesNotLeakMetadata()
+    {
+        var groupOwnerId = Guid.NewGuid();
+        var projectOwnerId = Guid.NewGuid();
+        await AddUserAsync(groupOwnerId, "Group Owner", "group-owner@qaly.dev");
+        await AddUserAsync(projectOwnerId, "Project Owner", "project-owner@qaly.dev");
+        var group = await AddGroupAsync(groupOwnerId, "Visible Group");
+        var project = await AddProjectAsync(projectOwnerId, "Hidden Project", group.Id);
+        _currentUser.SetupGet(user => user.UserId).Returns(groupOwnerId);
+        _projectService
+            .Setup(service => service.GetByIdAsync(project.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Forbidden<ProjectDto>());
+
+        var result = await CreateService().GetLinkedProjectsAsync(group.Id);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task GetPrimaryGroupReconciliationAsync_WhenGroupWasDissolved_ReturnsActionRequiredRow()
     {
         var ownerId = Guid.NewGuid();
@@ -2428,13 +2464,14 @@ public class GroupsServiceTests : IDisposable
         await _context.SaveChangesAsync();
     }
 
-    private async Task<WorkGroup> AddGroupAsync(Guid ownerId, string name)
+    private async Task<WorkGroup> AddGroupAsync(Guid ownerId, string name, Guid? organizationId = null)
     {
         var group = new WorkGroup
         {
             Id = Guid.NewGuid(),
             Name = name,
-            OwnerId = ownerId
+            OwnerId = ownerId,
+            OrganizationId = organizationId
         };
         await _groupRepo.AddAsync(group);
         await _memberRepo.AddAsync(new WorkGroupMember
@@ -2447,7 +2484,11 @@ public class GroupsServiceTests : IDisposable
         return group;
     }
 
-    private async Task<Project> AddProjectAsync(Guid ownerId, string name, Guid? sourceGroupId = null)
+    private async Task<Project> AddProjectAsync(
+        Guid ownerId,
+        string name,
+        Guid? sourceGroupId = null,
+        Guid? organizationId = null)
     {
         var project = new Project
         {
@@ -2455,7 +2496,8 @@ public class GroupsServiceTests : IDisposable
             Name = name,
             Code = name.ToUpperInvariant().Replace(" ", "-"),
             OwnerId = ownerId,
-            SourceGroupId = sourceGroupId
+            SourceGroupId = sourceGroupId,
+            OrganizationId = organizationId
         };
         await _projectRepo.AddAsync(project);
         await _context.SaveChangesAsync();

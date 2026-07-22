@@ -60,6 +60,7 @@ public static class DependencyInjection
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<IAuditLogService, AuditLogService>();
+        services.AddScoped<INotificationTargetResolver, NotificationTargetResolver>();
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
         services.AddScoped<IEmailService, SmtpEmailService>();
         services.AddScoped<IAiExportService, AiExportService>();

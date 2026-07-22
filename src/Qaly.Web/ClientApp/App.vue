@@ -287,6 +287,14 @@ const assignedTaskCards = computed<TaskListItemModel[]>(() =>
 );
 
 const selectedProject = computed(() => {
+  const routeProjectId = route.params.projectId;
+  if (
+    ["project-detail", "project-task"].includes(String(route.name ?? "")) &&
+    typeof routeProjectId === "string"
+  ) {
+    return projects.value.find((project) => project.id === routeProjectId) ?? null;
+  }
+
   if (activeProjectId.value) {
     const active = projects.value.find(
       (project) => project.id === activeProjectId.value,
@@ -500,40 +508,6 @@ watch(
   { immediate: true },
 );
 
-watch(
-  [
-    () => route.name,
-    () => route.params.projectId,
-    () => selectedProject.value?.id,
-    () => projects.value.length,
-  ],
-  ([routeName, routeProjectId, selectedProjectId]) => {
-    const isProjectRoute = ["project-detail", "project-task"].includes(
-      String(routeName ?? ""),
-    );
-    if (!isProjectRoute || typeof routeProjectId !== "string") return;
-    if (!selectedProjectId || routeProjectId === selectedProjectId) return;
-    if (projects.value.some((project) => project.id === routeProjectId)) return;
-
-    activeProjectId.value = String(selectedProjectId);
-    const taskId = route.params.taskId;
-    if (routeName === "project-task" && typeof taskId === "string") {
-      void router.replace({
-        name: "project-task",
-        params: { projectId: selectedProjectId, taskId },
-        query: route.query,
-      });
-      return;
-    }
-
-    void router.replace({
-      name: "project-detail",
-      params: { projectId: String(selectedProjectId) },
-      query: route.query,
-    });
-  },
-  { immediate: true },
-);
 watch(
   () => route.params.taskId,
   (id) => {
@@ -1072,6 +1046,12 @@ async function dismissNotification(id: string) {
     }
 }
 
+async function openNotification(notification: DashboardNotification) {
+  await dismissNotification(notification.id);
+  notificationsOpen.value = false;
+  if (notification.targetUrl) await router.push(notification.targetUrl);
+}
+
 async function clearActionableNotifications() {
   notifications.value = [];
   dashboard.value.notifications = dashboard.value.notifications.filter(
@@ -1146,6 +1126,7 @@ function toDashboardNotification(n: NotificationDto): DashboardNotification {
     message: n.message,
     tone,
     createdAt: n.createdAt,
+    targetUrl: n.targetUrl,
   };
 }
 
@@ -1414,13 +1395,17 @@ provide(dashboardContextKey, {
         v-for="notification in notificationItems.slice(0, 6)"
         :key="notification.id"
         :class="`notice notice--${notification.tone}`"
+        :role="notification.targetUrl ? 'link' : undefined"
+        :tabindex="notification.targetUrl ? 0 : undefined"
+        @click="notification.targetUrl && openNotification(notification)"
+        @keydown.enter="notification.targetUrl && openNotification(notification)"
       >
         <div class="notice__top">
           <strong>{{ notification.title }}</strong>
           <button
             type="button"
             aria-label="Đóng thông báo"
-            @click="dismissNotification(notification.id)"
+            @click.stop="dismissNotification(notification.id)"
           >
             <X :size="14" />
           </button>

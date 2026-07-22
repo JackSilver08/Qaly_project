@@ -10,6 +10,7 @@ using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 using Qaly.Infrastructure.Data;
 using Qaly.Infrastructure.Data.Repositories;
+using Qaly.Infrastructure.Services;
 
 namespace Qaly.UnitTests;
 
@@ -33,13 +34,7 @@ public sealed class NotificationAndWikiPolicyTests : IDisposable
         var taskId = Guid.NewGuid();
         var publisher = new Mock<INotificationPublisher>();
         var pushSender = new Mock<Qaly.Application.Common.Interfaces.IPushSender>();
-        var service = new NotificationService(
-            new GenericRepository<Notification>(_context),
-            new GenericRepository<PushSubscription>(_context),
-            new UnitOfWork(_context),
-            publisher.Object,
-            pushSender.Object,
-            NullLogger<NotificationService>.Instance);
+        var service = CreateNotificationService(publisher.Object, pushSender.Object);
 
         await service.CreateAsync(
             userId,
@@ -82,13 +77,7 @@ public sealed class NotificationAndWikiPolicyTests : IDisposable
         _context.Notifications.Add(notification);
         await _context.SaveChangesAsync();
 
-        var service = new NotificationService(
-            new GenericRepository<Notification>(_context),
-            new GenericRepository<PushSubscription>(_context),
-            new UnitOfWork(_context),
-            Mock.Of<INotificationPublisher>(),
-            Mock.Of<Qaly.Application.Common.Interfaces.IPushSender>(),
-            NullLogger<NotificationService>.Instance);
+        var service = CreateNotificationService();
 
         var result = await service.MarkAsReadAsync(attackerId, notification.Id);
 
@@ -97,6 +86,46 @@ public sealed class NotificationAndWikiPolicyTests : IDisposable
 
         var reloaded = await _context.Notifications.SingleAsync(item => item.Id == notification.Id);
         reloaded.IsRead.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task NotificationService_PrivateTask_IsHiddenUntilRecipientHasAccess_AndReturnsCanonicalTarget()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var taskId = Guid.NewGuid();
+        SeedUser(ownerId, "Owner");
+        SeedUser(memberId, "Member");
+        _context.Projects.Add(new Project { Id = projectId, Name = "Private", Code = "PRI", OwnerId = ownerId });
+        _context.ProjectMembers.Add(new ProjectMember { ProjectId = projectId, UserId = memberId, Role = ProjectRoleRules.Member });
+        var task = new TaskItem
+        {
+            Id = taskId,
+            ProjectId = projectId,
+            ReporterId = ownerId,
+            Title = "Restricted evidence",
+            IsPrivate = true
+        };
+        _context.TaskItems.Add(task);
+        _context.Notifications.Add(new Notification
+        {
+            UserId = memberId,
+            Message = "Restricted task changed",
+            Type = "TaskStatusChanged",
+            RelatedEntityId = taskId,
+            RelatedEntityType = nameof(TaskItem)
+        });
+        await _context.SaveChangesAsync();
+        var service = CreateNotificationService();
+
+        (await service.GetByUserAsync(memberId)).Data.Should().BeEmpty();
+
+        task.AssigneeId = memberId;
+        await _context.SaveChangesAsync();
+        var visible = await service.GetByUserAsync(memberId);
+        visible.Data.Should().ContainSingle();
+        visible.Data!.Single().TargetUrl.Should().Be($"/projects/{projectId}/tasks/{taskId}");
     }
 
     [Fact]
@@ -232,6 +261,18 @@ public sealed class NotificationAndWikiPolicyTests : IDisposable
         _context.Dispose();
         GC.SuppressFinalize(this);
     }
+
+    private NotificationService CreateNotificationService(
+        INotificationPublisher? publisher = null,
+        Qaly.Application.Common.Interfaces.IPushSender? pushSender = null)
+        => new(
+            new GenericRepository<Notification>(_context),
+            new GenericRepository<PushSubscription>(_context),
+            new UnitOfWork(_context),
+            publisher ?? Mock.Of<INotificationPublisher>(),
+            pushSender ?? Mock.Of<Qaly.Application.Common.Interfaces.IPushSender>(),
+            NullLogger<NotificationService>.Instance,
+            new NotificationTargetResolver(_context));
 
     private WikiService CreateWikiService(Mock<ICurrentUserService> currentUser)
     {

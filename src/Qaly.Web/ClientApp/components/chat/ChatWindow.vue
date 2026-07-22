@@ -17,6 +17,8 @@ import {
   Send,
   SmilePlus,
   Trash2,
+  Sparkles,
+  ListTodo,
   X,
 } from "lucide-vue-next";
 import { showError, showSuccess } from "../../composables/use-toast";
@@ -60,6 +62,7 @@ const emit = defineEmits<{
   setBackgroundImage: [file: File | null];
   joinMeeting: [meetingId: string];
   forward: [messageId: string, targetGroupId: string];
+  analyzeSelection: [action: "summary" | "task-draft", messageIds: string[]];
 }>();
 
 const draft = ref("");
@@ -339,6 +342,15 @@ function hideSelected() {
   exitSelectionMode();
 }
 
+function analyzeSelected(action: "summary" | "task-draft") {
+  const ids = selectedMessages.value
+    .filter((message) => !message.isDeleted && Boolean(message.text))
+    .map((message) => message.id);
+  if (!ids.length) return;
+  emit("analyzeSelection", action, ids);
+  exitSelectionMode();
+}
+
 async function copyText(text: string) {
   try {
     await navigator.clipboard.writeText(text);
@@ -538,6 +550,12 @@ function uploadBackground(event: Event) {
     </div>
 
     <div v-if="selectionMode" class="team-selection-toolbar">
+      <button type="button" :disabled="!selectedIds.size" title="Summarize selected messages" @click="analyzeSelected('summary')">
+        <Sparkles :size="16" /> TĂ³m táº¯t
+      </button>
+      <button type="button" :disabled="!selectedIds.size" title="Create a task draft from selected messages" @click="analyzeSelected('task-draft')">
+        <ListTodo :size="16" /> Táº¡o task
+      </button>
       <button type="button" class="selection-close" @click="exitSelectionMode"><X :size="18" /></button>
       <strong>{{ selectedIds.size }} tin nhắn đã chọn</strong>
       <button type="button" :disabled="!selectedIds.size" @click="copySelected">Sao chép</button>

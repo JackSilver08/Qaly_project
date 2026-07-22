@@ -415,7 +415,7 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
                 </div>
                 <div class="form-group">
                   <label>Hạn chót đề xuất</label>
-                  <input type="datetime-local" :value="formatDateTimeLocal(act.dueDate)" @input="act.dueDate = $event.target.value" />
+                  <input type="datetime-local" :value="formatDateTimeLocal(act.dueDate)" @input="act.dueDate = ($event.target as HTMLInputElement).value" />
                 </div>
               </template>
             </div>
