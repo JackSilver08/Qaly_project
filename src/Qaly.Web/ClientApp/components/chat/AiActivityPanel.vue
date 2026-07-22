@@ -97,7 +97,7 @@ watch(() => selectedDraft.value, (newDraft) => {
 })
 
 watch(parsedActions, (newActions) => {
-  if (!selectedDraft.value) return
+  if (!selectedDraft.value || selectedDraft.value.draftType !== 'ProjectDelayResolution') return
   try {
     const currentPayload = JSON.parse(draftPayload.value || '{}')
     currentPayload.actions = newActions.filter((act: any) => act.checked).map((act: any) => {

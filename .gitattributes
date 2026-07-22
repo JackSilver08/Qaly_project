@@ -6,3 +6,8 @@
 *.zip binary
 *.docx binary
 *.xlsx binary
+
+# Keep frontend builds byte-for-byte reproducible across Windows and Linux.
+src/Qaly.Web/ClientApp/** text eol=lf
+vite.config.ts text eol=lf
+scripts/*.mjs text eol=lf

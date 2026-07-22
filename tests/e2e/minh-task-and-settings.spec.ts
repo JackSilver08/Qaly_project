@@ -108,7 +108,7 @@ test('canonical task opens from project and tasks pages, refresh and back keep t
     await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' })
     await expect(page.getByRole('heading', { name: projectName })).toBeVisible()
     await page.getByRole('button', { name: /Nhiệm vụ/i }).click()
-    await page.locator('.task-list-row').filter({ hasText: taskTitle }).first().click()
+    await page.locator('.kanban-card, .task-list-row').filter({ hasText: taskTitle }).first().click()
 
     await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/tasks/${taskId}$`))
     await expect(page.locator('.task-detail-drawer')).toContainText(taskTitle)

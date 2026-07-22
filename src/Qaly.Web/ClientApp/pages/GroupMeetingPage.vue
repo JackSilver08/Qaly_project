@@ -135,6 +135,11 @@ type MeetingConsent = {
   status: string;
   expiresAt: string | null;
 };
+type LinkedProject = {
+  projectId: string;
+  isAccessible: boolean;
+  requiresAction: boolean;
+};
 const showPrivacyGate = ref(false);
 const privacyAction = ref<PrivacyAction | null>(null);
 const privacyPolicies = ref<MeetingPrivacyPolicy[]>([]);
@@ -146,6 +151,7 @@ const privacyAccepted = ref(false);
 const privacyLoading = ref(false);
 const privacyError = ref("");
 const privacyContext = ref<MeetingPrivacyContext | null>(null);
+const linkedProjectIds = ref<Set<string> | null>(null);
 const privacyNoticeVersion = "qaly-meeting-privacy-v4.0";
 const showMeetingFrame = computed(() => active.value && !!roomName.value);
 const showChecknoteSetup = computed(() => !checknoteResult.value && !isGeneratingChecknote.value);
@@ -170,7 +176,9 @@ const currentUserName = computed(() => {
 });
 
 const projects = computed(() => {
-  return dashboardProjects.value || [];
+  const allProjects = dashboardProjects.value || [];
+  if (linkedProjectIds.value === null) return allProjects;
+  return allProjects.filter((project: any) => linkedProjectIds.value?.has(project.id));
 });
 
 const wasSpeechActiveBeforeMute = ref(false);
@@ -225,12 +233,13 @@ async function toggleSpeech() {
     return;
   }
 
+  if (!await ensureMeetingPrivacy("speech")) return;
   if (micMuted.value) {
     showError("Micro đang bị tắt. Hãy bật micro trước khi bật phụ đề.");
     return;
   }
 
-  if (await ensureMeetingPrivacy("speech")) speechRec.start();
+  speechRec.start();
 }
 
 async function ensureMeetingPrivacy(action: PrivacyAction) {
@@ -342,7 +351,13 @@ async function confirmMeetingPrivacy() {
     showPrivacyGate.value = false;
     privacyAction.value = null;
     privacyAccepted.value = false;
-    if (pendingAction === "speech") speechRec.start();
+    if (pendingAction === "speech") {
+      if (micMuted.value) {
+        showError("Đã ghi nhận consent, nhưng phụ đề chưa thể bật vì micro đang tắt.");
+      } else {
+        speechRec.start();
+      }
+    }
     if (pendingAction === "checknote") await runGenerateChecknote();
   } catch (error: any) {
     privacyError.value = error?.message || "Không thể ghi nhận consent.";
@@ -537,7 +552,22 @@ const meetingConnectionLabel = computed(() => {
   }
 });
 
+async function loadLinkedMeetingProjects() {
+  try {
+    const linked = await apiResult<LinkedProject[]>(`/api/groups/${groupId}/linked-projects`);
+    linkedProjectIds.value = new Set(
+      linked
+        .filter((project) => project.isAccessible && !project.requiresAction)
+        .map((project) => project.projectId),
+    );
+  } catch (error) {
+    console.warn("Could not load projects linked to this meeting group", error);
+    linkedProjectIds.value = null;
+  }
+}
+
 onMounted(async () => {
+  await loadLinkedMeetingProjects();
   if (meetingId.value) {
     await joinExistingMeeting(meetingId.value);
     // Load recovery transcript from IndexedDB
