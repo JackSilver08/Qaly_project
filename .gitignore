@@ -67,6 +67,7 @@ TestResults/
 .test-results/
 test-results/
 coverage/
+.backups/
 *.trx
 *.coveragexml
 

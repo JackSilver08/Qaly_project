@@ -21,17 +21,24 @@ public class AiCostService : IAiCostService
     public async Task<bool> EnsureBudgetAvailableAsync(Guid? tenantId, Guid? projectId, CancellationToken cancellationToken = default)
     {
         var policy = await _context.AiBudgetPolicies
-            .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.ProjectId == projectId, cancellationToken);
+            .Where(p => p.ProjectId == projectId || (p.ProjectId == null && p.TenantId == tenantId))
+            .OrderByDescending(p => p.ProjectId == projectId)
+            .FirstOrDefaultAsync(cancellationToken);
 
         if (policy == null) return true; // No limit set
 
-        // Calculate usage for today
-        var startOfDay = DateTimeOffset.UtcNow.Date;
-        var usageToday = await _context.AiUsageLedger
-            .Where(u => u.TenantId == tenantId && u.ProjectId == projectId && u.CreatedAt >= startOfDay)
-            .SumAsync(u => u.EstimatedCostUsd, cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        var startOfDay = new DateTimeOffset(now.Year, now.Month, now.Day, 0, 0, 0, TimeSpan.Zero);
+        var startOfMonth = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
+        var usage = await _context.AiUsageLedger
+            .Where(u => u.ProjectId == projectId && u.CreatedAt >= startOfMonth)
+            .Select(u => new { u.CreatedAt, Cost = u.ActualCostUsd ?? u.EstimatedCostUsd })
+            .ToListAsync(cancellationToken);
+        var usageToday = usage.Where(item => item.CreatedAt >= startOfDay).Sum(item => item.Cost);
+        var usageMonth = usage.Sum(item => item.Cost);
 
-        if (policy.HardStopEnabled && usageToday >= policy.DailyBudgetUsd)
+        if (policy.HardStopEnabled &&
+            (usageToday >= policy.DailyBudgetUsd || usageMonth >= policy.MonthlyBudgetUsd))
         {
             return false;
         }

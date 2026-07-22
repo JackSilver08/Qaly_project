@@ -154,11 +154,22 @@ const pollForm = ref({ question: "", options: ["", ""], allowMultiple: false });
 const isCreatingPoll = ref(false);
 const isDetailPanelCollapsed = ref(false);
 const isUploadingAvatar = ref(false);
+const selectedAiRequest = ref<{
+  action: "summary" | "task-draft";
+  messageIds: string[];
+  nonce: number;
+} | null>(null);
 const typingUsers = ref<Record<string, { name: string; timeoutId: number }>>({});
 
 let hubConnection: HubConnection | null = null;
 let localTypingTimer: number | undefined;
 let lastTypingState = false;
+
+function analyzeSelectedMessages(action: "summary" | "task-draft", messageIds: string[]) {
+  selectedAiRequest.value = { action, messageIds, nonce: Date.now() };
+  activeTab.value = "ai";
+  isDetailPanelCollapsed.value = false;
+}
 
 const currentUserId = computed(() => currentUser.value?.id ?? "me");
 const activeGroup = computed(
@@ -1385,6 +1396,7 @@ function formatMessageTime(value: string) {
           @set-background="setChatBackground"
           @set-background-image="setChatBackgroundImage"
           @join-meeting="joinMeeting"
+          @analyze-selection="analyzeSelectedMessages"
         />
 
         <aside class="group-detail-panel glass-card" :class="{ 'is-collapsed': isDetailPanelCollapsed }">
@@ -1707,7 +1719,11 @@ function formatMessageTime(value: string) {
           </div>
 
           <div v-else-if="activeTab === 'ai'" class="group-tool-body" style="padding: 0; min-height: 0;">
-            <GroupAiPanel :group-id="activeGroupId" :members="members" />
+            <GroupAiPanel
+              :group-id="activeGroupId"
+              :members="members"
+              :selected-request="selectedAiRequest"
+            />
           </div>
 
           <div v-else class="group-tool-body">

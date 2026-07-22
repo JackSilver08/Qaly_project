@@ -10,9 +10,9 @@ namespace Qaly.Infrastructure.Auth;
 public partial class RedisTicketStore : ITicketStore
 {
     private const string KeyPrefix = "AuthTicket:";
-    private static readonly TimeSpan CacheOperationTimeout = TimeSpan.FromMilliseconds(750);
+    private static readonly TimeSpan CacheOperationTimeout = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan CircuitOpenDuration = TimeSpan.FromSeconds(15);
-    private static readonly ConcurrentDictionary<string, byte[]> FallbackTickets = new();
+    private static readonly ConcurrentDictionary<string, FallbackTicket> FallbackTickets = new();
     private static readonly ConcurrentDictionary<string, CircuitBreakerState> CircuitBreakers = new();
     private readonly IDistributedCache _cache;
     private readonly ILogger<RedisTicketStore> _logger;
@@ -57,7 +57,9 @@ public partial class RedisTicketStore : ITicketStore
         {
             RecordFailure(key);
             LogTicketStoreWriteFailed(_logger, ex, key);
-            FallbackTickets[key] = val;
+            FallbackTickets[key] = new FallbackTicket(
+                val,
+                expiresUtc ?? DateTimeOffset.UtcNow.AddHours(8));
         }
     }
 
@@ -78,12 +80,18 @@ public partial class RedisTicketStore : ITicketStore
             LogTicketStoreReadFailed(_logger, ex, key);
         }
 
-        if (!FallbackTickets.TryGetValue(key, out var fallbackVal))
+        if (!FallbackTickets.TryGetValue(key, out var fallback))
         {
             return null;
         }
 
-        return Deserialize(fallbackVal);
+        if (fallback.ExpiresAt <= DateTimeOffset.UtcNow)
+        {
+            FallbackTickets.TryRemove(key, out _);
+            return null;
+        }
+
+        return Deserialize(fallback.Value);
     }
 
     public async Task RemoveAsync(string key)
@@ -197,4 +205,6 @@ public partial class RedisTicketStore : ITicketStore
             _openUntil = DateTimeOffset.MinValue;
         }
     }
+
+    private sealed record FallbackTicket(byte[] Value, DateTimeOffset ExpiresAt);
 }

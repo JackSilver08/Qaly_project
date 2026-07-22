@@ -8,7 +8,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 export default defineConfig({
   base: '/dist/',
   publicDir: resolve(__dirname, 'src/Qaly.Web/ClientApp/public'),
-  plugins: [vue()],
+  plugins: [vue({
+    features: {
+      componentIdGenerator: 'filepath',
+    },
+  })],
   define: {
     'process.env.NODE_ENV': JSON.stringify('production'),
   },

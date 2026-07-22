@@ -188,6 +188,55 @@ public class MeetilyImportTests : IDisposable
     }
 
     [Fact]
+    public async Task ConfirmDraftAsync_ExecuteActionReferencingAnotherProject_DoesNotClaimOrMutateDraft()
+    {
+        var otherProject = new Project { Name = "Other", Code = "OTHER", OwnerId = _userId };
+        var otherTask = new TaskItem
+        {
+            ProjectId = otherProject.Id,
+            ReporterId = _userId,
+            Title = "Do not mutate",
+            Status = "Todo"
+        };
+        var job = new AiJob
+        {
+            ProjectId = _projectId,
+            RequestedById = _userId,
+            JobType = "agent_action",
+            SourceType = "manual",
+            SchemaId = "agent_action.v4",
+            RequestHash = new string('a', 64),
+            IdempotencyKey = Guid.NewGuid().ToString("N"),
+            CacheKey = Guid.NewGuid().ToString("N"),
+            Status = AiJobStatuses.Succeeded
+        };
+        var payload = JsonSerializer.Serialize(new { taskId = otherTask.Id, status = "Done" });
+        var draft = new AiGeneratedDraft
+        {
+            AiJobId = job.Id,
+            ProjectId = _projectId,
+            DraftType = "UpdateTaskStatus",
+            PayloadJson = payload,
+            OriginalPayloadJson = payload,
+            WorkingPayloadJson = payload,
+            Status = AiDraftStatuses.PendingReview
+        };
+        _context.AddRange(otherProject, otherTask, job, draft);
+        await _context.SaveChangesAsync();
+
+        var result = await CreateAiWorkflowService().ConfirmDraftAsync(
+            draft.Id,
+            new ConfirmAiDraftDto(null, "execute_action", "approve", IdempotencyKey: "cross-project-action"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+        (await _context.TaskItems.SingleAsync(task => task.Id == otherTask.Id)).Status.Should().Be("Todo");
+        var reloadedDraft = await _context.AiGeneratedDrafts.SingleAsync(item => item.Id == draft.Id);
+        reloadedDraft.Status.Should().Be(AiDraftStatuses.PendingReview);
+        reloadedDraft.ConfirmationIdempotencyKey.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ImportMeetilyAsync_RejectsInvalidRawPayload()
     {
         var service = CreateMeetingImportService();

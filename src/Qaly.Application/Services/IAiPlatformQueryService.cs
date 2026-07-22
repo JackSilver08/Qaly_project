@@ -12,4 +12,8 @@ public interface IAiPlatformQueryService
         DateTimeOffset? rangeEnd,
         CancellationToken cancellationToken = default);
     Task<Result<AiBudgetSnapshotDto>> GetBudgetAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task<Result<AiBudgetSnapshotDto>> UpdateBudgetAsync(
+        Guid projectId,
+        UpdateAiBudgetPolicyDto dto,
+        CancellationToken cancellationToken = default);
 }

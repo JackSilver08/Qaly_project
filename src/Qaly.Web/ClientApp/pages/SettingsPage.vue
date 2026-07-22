@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import {
   User, Settings, Bell, Palette, Key, Database, Shield, Lock, Check,
   Activity, Cloud, Save, RefreshCw, Terminal, Globe, UserCheck, ShieldAlert,
@@ -10,7 +10,7 @@ import ApiKeysTab from '../components/ApiKeysTab.vue'
 import PrivacySettingsTab from '../components/settings/PrivacySettingsTab.vue'
 import { showSuccess, showError } from '../composables/use-toast'
 
-const { currentUser, displayRole, loadDashboard, projects, selectedProject } = useDashboardContext()
+const { currentUser, displayRole, isLoading, loadDashboard, projects, selectedProject } = useDashboardContext()
 
 const activeTab = ref('profile')
 const currentUserRole = computed(() => String(currentUser.value?.role || '').toLowerCase())
@@ -31,6 +31,7 @@ const canManageWorkspaceSettings = computed(() => isSystemAdmin.value)
 const canManageProjectWorkflow = computed(() =>
   isSystemAdmin.value || ['owner', 'manager'].includes(selectedProjectMemberRole.value),
 )
+const isSettingsReady = computed(() => Boolean(currentUser.value) && !isLoading.value)
 
 // Theme state
 const themeStorageKey = 'qaly-theme'
@@ -129,6 +130,27 @@ function loadProjectSettings() {
   }
 }
 
+function syncProjectSelection() {
+  if (!canManageProjectWorkflow.value) {
+    selectedProjectId.value = null
+    return
+  }
+
+  const selectedStillExists = projects.value.some((project: any) => project.id === selectedProjectId.value)
+  if (!selectedStillExists) {
+    const routeSelection = projects.value.find((project: any) => project.id === selectedProject.value?.id)
+    selectedProjectId.value = routeSelection?.id || projects.value[0]?.id || null
+  }
+
+  loadProjectSettings()
+}
+
+watch(
+  [canManageProjectWorkflow, projects, selectedProject],
+  syncProjectSelection,
+  { immediate: true },
+)
+
 async function loadSettings() {
   currentTheme.value = localStorage.getItem(themeStorageKey) || 'light'
   accentColor.value = localStorage.getItem('qaly-accent') || 'sapphire'
@@ -145,10 +167,7 @@ async function loadSettings() {
   notifSoundMeeting.value = localStorage.getItem('qaly-notif-sound-meeting') !== 'false'
   notifWeeklyReport.value = localStorage.getItem('qaly-notif-weekly-report') === 'true'
   
-  if (projects.value.length > 0) {
-    selectedProjectId.value = selectedProject.value?.id || projects.value[0].id
-    loadProjectSettings()
-  }
+  syncProjectSelection()
   
   await loadOrganizations()
 }
@@ -237,6 +256,12 @@ async function changePassword() {
 }
 
 async function saveSettings() {
+  if (!isSettingsReady.value) {
+    showError('Dữ liệu cấu hình chưa tải xong. Vui lòng thử lại.')
+    return
+  }
+
+  syncProjectSelection()
   isSaving.value = true
   let hadFailure = false
   
@@ -395,9 +420,9 @@ const userInitials = computed(() => {
               <p>{{ currentUser?.fullName || currentUser?.email || 'Qaly User' }} &mdash; <strong class="role-badge">{{ displayRole(currentUser?.role) }}</strong></p>
             </div>
           </div>
-          <button class="primary-button" @click="saveSettings" :disabled="isSaving">
+          <button class="primary-button" @click="saveSettings" :disabled="isSaving || !isSettingsReady">
             <Save :size="16" />
-            <span>{{ isSaving ? 'Đang lưu...' : 'Lưu cài đặt' }}</span>
+            <span>{{ isSaving ? 'Đang lưu...' : !isSettingsReady ? 'Đang tải...' : 'Lưu cài đặt' }}</span>
           </button>
         </header>
 

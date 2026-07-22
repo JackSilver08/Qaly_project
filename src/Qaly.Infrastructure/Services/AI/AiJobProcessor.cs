@@ -89,7 +89,23 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
             return;
         }
 
-        var request = BuildGatewayRequest(job, lease.ProviderAttemptId, _options.CurrentValue.AllowProviderDegradedMock);
+        var request = await BuildGatewayRequestAsync(
+            job,
+            lease.ProviderAttemptId,
+            _options.CurrentValue.AllowProviderDegradedMock,
+            cancellationToken);
+        if (request == null)
+        {
+            await CompleteFailureAsync(
+                job,
+                attempt,
+                AiErrorCodes.SourceStale,
+                "One or more selected chat messages are no longer available.",
+                retryable: false,
+                cancellationToken);
+            return;
+        }
+
         var stopwatch = Stopwatch.StartNew();
         var response = await _gateway.ExecuteAsync(request, cancellationToken);
         stopwatch.Stop();
@@ -316,7 +332,11 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
             cancellationToken: ct);
     }
 
-    private static AiRequest BuildGatewayRequest(AiJob job, Guid attemptId, bool allowMockFallback)
+    private async Task<AiRequest?> BuildGatewayRequestAsync(
+        AiJob job,
+        Guid attemptId,
+        bool allowMockFallback,
+        CancellationToken ct)
     {
         using var document = JsonDocument.Parse(job.RequestJson);
         var root = document.RootElement;
@@ -332,6 +352,36 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
         var systemPrompt = options.ValueKind == JsonValueKind.Object && options.TryGetProperty("systemPrompt", out var systemElement)
             ? systemElement.GetString()
             : null;
+
+        var messageSources = job.Sources
+            .Where(source => NormalizeType(source.SourceType) is "message" or "groupmessage")
+            .OrderBy(source => source.SortOrder)
+            .ToList();
+        if (messageSources.Count > 0)
+        {
+            var messageIds = messageSources
+                .Where(source => source.SourceEntityId.HasValue)
+                .Select(source => source.SourceEntityId!.Value)
+                .ToList();
+            var messages = await _db.GroupMessages
+                .AsNoTracking()
+                .Include(message => message.User)
+                .Where(message => messageIds.Contains(message.Id) && !message.IsDeleted)
+                .ToDictionaryAsync(message => message.Id, ct);
+            if (messageIds.Count != messageSources.Count || messages.Count != messageIds.Distinct().Count())
+            {
+                return null;
+            }
+
+            var groundedMessages = messageSources.Select(source =>
+            {
+                var message = messages[source.SourceEntityId!.Value];
+                return $"[{message.CreatedAt:O}] {message.User.FullName}: {message.Content}\n" +
+                       $"Source: /groups/{message.WorkGroupId}?messageId={message.Id}";
+            });
+            var sourceContext = string.Join("\n\n", groundedMessages);
+            prompt = $"{prompt ?? "Analyze only the selected messages."}\n\nAuthorized selected messages:\n{sourceContext}";
+        }
 
         return new AiRequest
         {
@@ -367,6 +417,9 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
     private static AiJobSourceInputDto ToSourceInput(AiJobSource source)
         => new(source.SourceType, source.SourceEntityId, source.LegacySourceKey, source.SourceVersion, source.SourceHash, source.SourceTimestamp);
 
+    private static string NormalizeType(string value)
+        => new(value.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
+
     private static bool RequiresDraft(string jobType)
         => NormalizeType(jobType) is "meetingactionextraction" or "meetingactionextract" or "taskdraft" or
             "taskbreakdown" or "acceptancechecklist" or "draftchange" or "projectdelayresolution" or "project_delay_resolution";
@@ -381,9 +434,6 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
             "projectdelayresolution" or "project_delay_resolution" => "ProjectDelayResolution",
             _ => "TaskDraft"
         };
-
-    private static string NormalizeType(string value)
-        => new(value.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
 
     private static bool TryNormalizeJson(string value, out string normalized)
     {

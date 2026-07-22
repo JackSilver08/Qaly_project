@@ -109,6 +109,111 @@ public sealed class AiSourceGuardTests
         result.ErrorCode.Should().Be(AiErrorCodes.PermissionDenied);
     }
 
+    [Fact]
+    public async Task CaptureAsync_WhenMessageIsAuthorized_CapturesCanonicalVersionAndHash()
+    {
+        await using var db = CreateContext();
+        var owner = new User { FullName = "Owner", Email = $"owner-{Guid.NewGuid():N}@qaly.test", PasswordHash = "test" };
+        var group = new WorkGroup { Name = "Delivery", OwnerId = owner.Id };
+        var project = new Project { Name = "Delivery Project", Code = "DEL", OwnerId = owner.Id, SourceGroupId = group.Id };
+        var message = new GroupMessage
+        {
+            WorkGroupId = group.Id,
+            UserId = owner.Id,
+            Content = "Prepare the release checklist",
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+        db.AddRange(owner, group, project, message);
+        await db.SaveChangesAsync();
+
+        var result = await new AiSourceGuard(db).CaptureAsync(
+            project.Id,
+            owner.Id,
+            [new AiJobSourceInputDto("message", message.Id, null, null, null)],
+            CancellationToken.None);
+
+        result.IsAllowed.Should().BeTrue(result.ErrorMessage);
+        result.Sources.Should().ContainSingle();
+        result.Sources[0].SourceHash.Should().HaveLength(64);
+        result.Sources[0].SourceVersion.Should().NotBeNullOrWhiteSpace();
+        result.Sources[0].SourceTimestamp.Should().Be(message.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task CaptureAsync_WhenAdminCanSeeLinkedGroupMessage_AllowsCanonicalCapture()
+    {
+        await using var db = CreateContext();
+        var admin = new User
+        {
+            FullName = "Admin",
+            Email = $"admin-{Guid.NewGuid():N}@qaly.test",
+            PasswordHash = "test",
+            Role = "Admin"
+        };
+        var owner = new User
+        {
+            FullName = "Owner",
+            Email = $"owner-{Guid.NewGuid():N}@qaly.test",
+            PasswordHash = "test",
+            Role = "User"
+        };
+        var group = new WorkGroup { Name = "Linked group", OwnerId = owner.Id };
+        var project = new Project
+        {
+            Name = "Linked project",
+            Code = "ADMIN-SOURCE",
+            OwnerId = owner.Id,
+            SourceGroupId = group.Id
+        };
+        var message = new GroupMessage
+        {
+            WorkGroupId = group.Id,
+            UserId = owner.Id,
+            Content = "Visible to an administrator",
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+        db.AddRange(admin, owner, group, project, message);
+        await db.SaveChangesAsync();
+
+        var result = await new AiSourceGuard(db).CaptureAsync(
+            project.Id,
+            admin.Id,
+            [new AiJobSourceInputDto("message", message.Id, null, null, null)],
+            CancellationToken.None);
+
+        result.IsAllowed.Should().BeTrue(result.ErrorMessage);
+        result.Sources.Should().ContainSingle();
+        result.Sources[0].SourceHash.Should().HaveLength(64);
+    }
+
+    [Fact]
+    public async Task CaptureAsync_WhenMessageWasDeleted_ReturnsPermissionDenied()
+    {
+        await using var db = CreateContext();
+        var owner = new User { FullName = "Owner", Email = $"owner-{Guid.NewGuid():N}@qaly.test", PasswordHash = "test" };
+        var group = new WorkGroup { Name = "Delivery", OwnerId = owner.Id };
+        var project = new Project { Name = "Delivery Project", Code = "DEL", OwnerId = owner.Id, SourceGroupId = group.Id };
+        var message = new GroupMessage
+        {
+            WorkGroupId = group.Id,
+            UserId = owner.Id,
+            Content = "Deleted source",
+            IsDeleted = true,
+            DeletedAt = DateTimeOffset.UtcNow
+        };
+        db.AddRange(owner, group, project, message);
+        await db.SaveChangesAsync();
+
+        var result = await new AiSourceGuard(db).CaptureAsync(
+            project.Id,
+            owner.Id,
+            [new AiJobSourceInputDto("message", message.Id, null, null, null)],
+            CancellationToken.None);
+
+        result.IsAllowed.Should().BeFalse();
+        result.ErrorCode.Should().Be(AiErrorCodes.PermissionDenied);
+    }
+
     private static QalyDbContext CreateContext()
         => new(new DbContextOptionsBuilder<QalyDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())

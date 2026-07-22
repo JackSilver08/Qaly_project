@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Moq;
 using Qaly.Application.Common.Models;
+using Qaly.Application.DTOs.Ai;
 using Qaly.Application.Services;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
@@ -16,6 +17,8 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
     private readonly QalyDbContext _db;
     private readonly Mock<ICurrentUserService> _currentUser = new();
     private readonly Mock<IOptionsMonitor<AiJobPlatformOptions>> _options = new();
+    private readonly Mock<IUnitOfWork> _unitOfWork = new();
+    private readonly Mock<IAuditLogService> _auditLog = new();
     private readonly Guid _userId = Guid.NewGuid();
     private readonly Guid _projectId = Guid.NewGuid();
     private readonly Guid _tenantId = Guid.NewGuid();
@@ -32,6 +35,8 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
             Enabled = true,
             WorkerEnabled = true
         });
+        _unitOfWork.Setup(unit => unit.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .Returns((CancellationToken ct) => _db.SaveChangesAsync(ct));
     }
 
     [Fact]
@@ -104,6 +109,34 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
         budgetSnapshot.MonthlyUsageUsd.Should().Be(4m);
         budgetSnapshot.WarningActive.Should().BeTrue();
         budgetSnapshot.HardStopActive.Should().BeTrue();
+
+        var originalVersion = budgetSnapshot.Version;
+        var updated = await service.UpdateBudgetAsync(_projectId, new UpdateAiBudgetPolicyDto(
+            5m,
+            50m,
+            75,
+            true,
+            false,
+            originalVersion));
+        updated.IsSuccess.Should().BeTrue(updated.Error);
+        updated.Data!.DailyBudgetUsd.Should().Be(5m);
+        updated.Data.MonthlyBudgetUsd.Should().Be(50m);
+        updated.Data.Version.Should().NotBe(originalVersion);
+        _auditLog.Verify(audit => audit.LogAsync(
+            "UpdateAiBudgetPolicy",
+            nameof(AiBudgetPolicy),
+            It.IsAny<string>(),
+            It.IsAny<object>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        var stale = await service.UpdateBudgetAsync(_projectId, new UpdateAiBudgetPolicyDto(
+            6m,
+            60m,
+            80,
+            true,
+            false,
+            originalVersion));
+        stale.StatusCode.Should().Be(409);
     }
 
     [Fact]
@@ -142,7 +175,9 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
             new GenericRepository<ProjectMember>(_db),
             new GenericRepository<OrganizationMember>(_db),
             _currentUser.Object,
-            _options.Object);
+            _options.Object,
+            _unitOfWork.Object,
+            _auditLog.Object);
 
     private AiJob Job(Project project, string status, DateTimeOffset now)
         => new()

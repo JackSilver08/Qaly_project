@@ -92,7 +92,7 @@ async function login(page: Page, returnUrl = '/dashboard') {
   await expect(page.locator('.shell-header')).toBeVisible()
 }
 
-async function createProject(page: Page, name: string) {
+async function createProject(page: Page, name: string, sourceGroupId: string | null = null) {
   return apiResult<ProjectDto>(
     await page.request.post('/api/projects', {
       data: {
@@ -103,7 +103,7 @@ async function createProject(page: Page, name: string) {
         startDate: null,
         endDate: null,
         organizationId: null,
-        sourceGroupId: null,
+        sourceGroupId,
       },
     }),
   )
@@ -180,9 +180,9 @@ test('T1-TR-01 Allow: direct Task URL, Group link and Privacy UI use persisted d
 
   try {
     await login(page)
-    project = await createProject(page, uniqueName('T1TR01 Allow Project'))
-    const task = await createTask(page, project.id, uniqueName('T1TR01 private task'))
     group = await createGroup(page, uniqueName('T1TR01 Group'))
+    project = await createProject(page, uniqueName('T1TR01 Allow Project'), group.id)
+    const task = await createTask(page, project.id, uniqueName('T1TR01 private task'))
     const policy = await createRetentionPolicy(page, project.id, uniqueName('T1TR01 meeting policy'))
 
     const taskReadBack = await apiResult<TaskItemDto>(await page.request.get(`/api/tasks/${task.id}`))

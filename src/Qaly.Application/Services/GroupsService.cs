@@ -2003,6 +2003,11 @@ public partial class GroupsService : IGroupsService
         foreach (var project in linkedProjects)
         {
             var isAccessible = await CanAccessProjectAsync(project.Id, project.OwnerId, ct);
+            if (!isAccessible)
+            {
+                continue;
+            }
+
             var requiresAction = group == null || group.IsDeleted || string.Equals(group.Status, "Dissolved", StringComparison.OrdinalIgnoreCase);
             items.Add(new GroupLinkedProjectDto(
                 project.Id,
@@ -2032,6 +2037,12 @@ public partial class GroupsService : IGroupsService
             return Result.Forbidden();
         }
 
+        var group = await _groupRepo.GetByIdAsync(groupId, ct);
+        if (group == null)
+        {
+            return Result.NotFound("Group was not found.");
+        }
+
         var project = await _projectRepo.GetByIdAsync(projectId, ct);
         if (project == null)
         {
@@ -2041,6 +2052,11 @@ public partial class GroupsService : IGroupsService
         if (!await CanManageProjectAsync(project.Id, project.OwnerId, ct))
         {
             return Result.Forbidden();
+        }
+
+        if (group.OrganizationId != project.OrganizationId)
+        {
+            return Result.Failure("Project and primary group must belong to the same organization.", 409);
         }
 
         if (project.SourceGroupId.HasValue && project.SourceGroupId.Value != groupId)

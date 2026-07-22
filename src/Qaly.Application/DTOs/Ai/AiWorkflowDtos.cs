@@ -216,7 +216,17 @@ public record AiBudgetSnapshotDto(
     decimal DailyRemainingUsd,
     decimal MonthlyRemainingUsd,
     bool WarningActive,
-    bool HardStopActive);
+    bool HardStopActive,
+    bool AllowCloudForSensitive,
+    string? Version);
+
+public record UpdateAiBudgetPolicyDto(
+    decimal DailyBudgetUsd,
+    decimal MonthlyBudgetUsd,
+    int WarningAtPercent,
+    bool HardStopEnabled,
+    bool AllowCloudForSensitive,
+    string? Version = null);
 
 public record AiTaskDraftPayload(IReadOnlyList<AiTaskDraftItem> Tasks);
 

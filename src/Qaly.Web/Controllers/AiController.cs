@@ -265,6 +265,17 @@ public class AiController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpPut("budget")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateBudget(
+        [FromQuery] Guid projectId,
+        UpdateAiBudgetPolicyDto dto,
+        CancellationToken ct = default)
+    {
+        var result = await _aiPlatformQueryService.UpdateBudgetAsync(projectId, dto, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpGet("health")]
     public async Task<IActionResult> GetHealth(CancellationToken ct = default)
     {

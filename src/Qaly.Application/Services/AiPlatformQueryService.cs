@@ -18,6 +18,8 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
     private readonly IRepository<OrganizationMember> _organizationMembers;
     private readonly ICurrentUserService _currentUser;
     private readonly IOptionsMonitor<AiJobPlatformOptions> _options;
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly IAuditLogService _auditLog;
 
     public AiPlatformQueryService(
         IRepository<AiJob> jobs,
@@ -28,7 +30,9 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
         IRepository<ProjectMember> projectMembers,
         IRepository<OrganizationMember> organizationMembers,
         ICurrentUserService currentUser,
-        IOptionsMonitor<AiJobPlatformOptions> options)
+        IOptionsMonitor<AiJobPlatformOptions> options,
+        IUnitOfWork unitOfWork,
+        IAuditLogService auditLog)
     {
         _jobs = jobs;
         _dispatches = dispatches;
@@ -39,6 +43,8 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
         _organizationMembers = organizationMembers;
         _currentUser = currentUser;
         _options = options;
+        _unitOfWork = unitOfWork;
+        _auditLog = auditLog;
     }
 
     public async Task<Result<AiPlatformHealthDto>> GetHealthAsync(CancellationToken cancellationToken = default)
@@ -163,7 +169,99 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
             dailyLimit == decimal.MaxValue ? 0 : Math.Max(0, dailyLimit - dailyUsage),
             monthlyLimit == decimal.MaxValue ? 0 : Math.Max(0, monthlyLimit - monthlyUsage),
             warningActive,
-            hardStop));
+            hardStop,
+            policy?.AllowCloudForSensitive ?? false,
+            PolicyVersion(policy)));
+    }
+
+    public async Task<Result<AiBudgetSnapshotDto>> UpdateBudgetAsync(
+        Guid projectId,
+        UpdateAiBudgetPolicyDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_currentUser.UserId.HasValue) return Result.Forbidden<AiBudgetSnapshotDto>();
+        var project = await _projects.GetQueryable()
+            .FirstOrDefaultAsync(item => item.Id == projectId, cancellationToken);
+        if (project == null || !await CanManageProjectAsync(project, cancellationToken))
+        {
+            return Result.Failure<AiBudgetSnapshotDto>("Project was not found or cannot be managed.", 403, AiErrorCodes.PermissionDenied);
+        }
+
+        if (dto.DailyBudgetUsd <= 0 || dto.MonthlyBudgetUsd <= 0 || dto.WarningAtPercent is < 1 or > 100)
+        {
+            return Result.Failure<AiBudgetSnapshotDto>(
+                "Budgets must be positive and warningAtPercent must be between 1 and 100.",
+                400,
+                AiErrorCodes.InvalidRequest);
+        }
+
+        var policy = await _budgets.GetQueryable()
+            .FirstOrDefaultAsync(item => item.ProjectId == projectId, cancellationToken);
+        var previous = policy == null ? null : new
+        {
+            policy.DailyBudgetUsd,
+            policy.MonthlyBudgetUsd,
+            policy.WarnAtPercent,
+            policy.HardStopEnabled,
+            policy.AllowCloudForSensitive,
+            Version = PolicyVersion(policy)
+        };
+
+        if (policy != null && !string.Equals(dto.Version, PolicyVersion(policy), StringComparison.Ordinal))
+        {
+            return Result.Failure<AiBudgetSnapshotDto>(
+                "The AI budget policy was modified by another request.",
+                409,
+                AiErrorCodes.DraftConcurrencyConflict);
+        }
+
+        if (policy == null)
+        {
+            if (!string.IsNullOrWhiteSpace(dto.Version))
+            {
+                return Result.Failure<AiBudgetSnapshotDto>(
+                    "The AI budget policy no longer matches the requested version.",
+                    409,
+                    AiErrorCodes.DraftConcurrencyConflict);
+            }
+
+            policy = new AiBudgetPolicy
+            {
+                TenantId = project.OrganizationId,
+                ProjectId = project.Id,
+                CreatedBy = _currentUser.UserId
+            };
+            await _budgets.AddAsync(policy, cancellationToken);
+        }
+
+        policy.DailyBudgetUsd = dto.DailyBudgetUsd;
+        policy.MonthlyBudgetUsd = dto.MonthlyBudgetUsd;
+        policy.WarnAtPercent = dto.WarningAtPercent;
+        policy.HardStopEnabled = dto.HardStopEnabled;
+        policy.AllowCloudForSensitive = dto.AllowCloudForSensitive;
+        await _budgets.UpdateAsync(policy, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _auditLog.LogAsync(
+            "UpdateAiBudgetPolicy",
+            nameof(AiBudgetPolicy),
+            policy.Id.ToString(),
+            new
+            {
+                projectId,
+                Previous = previous,
+                Current = new
+                {
+                    policy.DailyBudgetUsd,
+                    policy.MonthlyBudgetUsd,
+                    policy.WarnAtPercent,
+                    policy.HardStopEnabled,
+                    policy.AllowCloudForSensitive,
+                    Version = PolicyVersion(policy)
+                }
+            },
+            cancellationToken);
+
+        return await GetBudgetAsync(projectId, cancellationToken);
     }
 
     private IQueryable<AiJob> VisibleJobs()
@@ -191,6 +289,26 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
             member => member.OrganizationId == project.OrganizationId.Value && member.UserId == userId,
             ct);
     }
+
+    private async Task<bool> CanManageProjectAsync(Project project, CancellationToken ct)
+    {
+        var userId = _currentUser.UserId!.Value;
+        if (ProjectRoleRules.IsSystemAdmin(_currentUser.Role) || project.OwnerId == userId) return true;
+        var projectRole = await _projectMembers.GetQueryable()
+            .Where(member => member.ProjectId == project.Id && member.UserId == userId)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+        if (ProjectRoleRules.CanManageProject(projectRole)) return true;
+        if (!project.OrganizationId.HasValue) return false;
+        var organizationRole = await _organizationMembers.GetQueryable()
+            .Where(member => member.OrganizationId == project.OrganizationId.Value && member.UserId == userId)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+        return ProjectRoleRules.CanManageProject(organizationRole);
+    }
+
+    private static string? PolicyVersion(AiBudgetPolicy? policy)
+        => policy == null ? null : (policy.UpdatedAt ?? policy.CreatedAt).ToString("O");
 
     private static bool IsThresholdReached(decimal usage, decimal limit, int warningPercent)
         => limit != decimal.MaxValue && limit > 0 && usage / limit * 100 >= warningPercent;

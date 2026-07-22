@@ -97,7 +97,7 @@ watch(() => selectedDraft.value, (newDraft) => {
 })
 
 watch(parsedActions, (newActions) => {
-  if (!selectedDraft.value) return
+  if (!selectedDraft.value || selectedDraft.value.draftType !== 'ProjectDelayResolution') return
   try {
     const currentPayload = JSON.parse(draftPayload.value || '{}')
     currentPayload.actions = newActions.filter((act: any) => act.checked).map((act: any) => {
@@ -415,7 +415,7 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
                 </div>
                 <div class="form-group">
                   <label>Hạn chót đề xuất</label>
-                  <input type="datetime-local" :value="formatDateTimeLocal(act.dueDate)" @input="act.dueDate = $event.target.value" />
+                  <input type="datetime-local" :value="formatDateTimeLocal(act.dueDate)" @input="act.dueDate = ($event.target as HTMLInputElement).value" />
                 </div>
               </template>
             </div>

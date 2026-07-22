@@ -42,6 +42,7 @@ const {
   formatFileSize,
   formatTime,
   isProjectAdmin,
+  isLoading,
   isTaskOverdue,
   moveTaskOnKanban,
   newComment,
@@ -448,6 +449,13 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 <template>
   <div class="dashboard-scroll dashboard-scroll--embedded no-scrollbar">
     <div class="dashboard-main project-home-main no-scrollbar">
+      <section v-if="!isLoading && !selectedProject" class="route-entity-error" role="alert">
+        <strong>Không thể mở dự án hoặc nhiệm vụ này</strong>
+        <p>Liên kết không tồn tại, đã bị xóa hoặc bạn không còn quyền truy cập.</p>
+        <button type="button" class="primary-button" @click="router.push('/projects')">Về danh sách dự án</button>
+      </section>
+
+      <template v-else>
       <ProjectDetailHeader
         v-if="selectedProject"
         :project-name="selectedProject.name"
@@ -1017,6 +1025,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
         @undo="handleUndoFromBanner"
         @dismiss="undoBannerData = null"
       />
+      </template>
     </div>
   </div>
 </template>
@@ -1026,6 +1035,26 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .project-home-main {
   gap: 24px;
   padding: 24px;
+}
+
+.route-entity-error {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  max-width: 640px;
+  padding: 24px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+}
+
+.route-entity-error strong {
+  font-size: 1.1rem;
+}
+
+.route-entity-error p {
+  margin: 0;
+  color: var(--text-muted);
 }
 
 .project-tabs {
