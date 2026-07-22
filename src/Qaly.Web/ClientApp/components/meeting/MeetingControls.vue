@@ -9,6 +9,7 @@ import {
   VideoOff,
   Captions,
 } from "lucide-vue-next";
+import { confirmDialog } from "../../composables/use-confirm-dialog";
 
 defineProps<{
   active: boolean;
@@ -30,8 +31,8 @@ function start() {
   emit("start");
 }
 
-function end() {
-  if (!confirm("Kết thúc cuộc họp?")) return;
+async function end() {
+  if (!await confirmDialog({ tone:"warning", title:"Kết thúc cuộc họp?", message:"Cuộc họp sẽ kết thúc với tất cả người tham gia.", confirmLabel:"Kết thúc" })) return;
   emit("end");
 }
 </script>

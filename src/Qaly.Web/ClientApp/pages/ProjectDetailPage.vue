@@ -19,6 +19,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { apiResult } from '../utils/api-client'
 import type { DashboardTask, KanbanMoveResultDto, TaskAssignmentInsightDto } from '../types'
 import { showError } from '../composables/use-toast'
+import { promptDialog } from '../composables/use-confirm-dialog'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 
@@ -132,8 +133,8 @@ async function handleUndoFromBanner() {
   } catch { /* ignore */ }
 }
 
-function rejectEvidence(attachmentId: string) {
-  const note = window.prompt('Lý do từ chối?')
+async function rejectEvidence(attachmentId: string) {
+  const note = await promptDialog({ tone:'warning', title:'Từ chối minh chứng?', message:'Lý do sẽ được lưu cùng kết quả đánh giá.', inputLabel:'Lý do từ chối', placeholder:'Mô tả ngắn gọn nội dung cần bổ sung...', required:true, maxLength:500, confirmLabel:'Từ chối' })
   if (note !== null) {
     reviewEvidence(attachmentId, false, note)
   }

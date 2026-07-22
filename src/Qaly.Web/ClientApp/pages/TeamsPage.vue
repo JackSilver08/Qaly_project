@@ -48,6 +48,7 @@ import type {
 } from "../components/chat/chat-types";
 import { useDashboardContext } from "../composables/dashboard-context";
 import { showError, showSuccess } from "../composables/use-toast";
+import { confirmDialog } from "../composables/use-confirm-dialog";
 import type { PagedResult, UserDto } from "../types";
 import { apiCommand, apiResult, errorMessage } from "../utils/api-client";
 
@@ -586,7 +587,7 @@ async function updateMemberRole(member: GroupMemberDto, role: string) {
 
 async function removeMember(member: GroupMemberDto) {
   if (!activeGroupId.value || member.role === "Owner") return;
-  if (!window.confirm(`Kick ${member.fullName} khỏi nhóm này?`)) return;
+  if (!await confirmDialog({ tone:"danger", title:"Xóa thành viên khỏi nhóm?", subject:member.fullName, message:"Thành viên sẽ mất quyền truy cập nhóm và nội dung mới.", confirmLabel:"Xóa thành viên" })) return;
 
   try {
     await apiCommand(`/api/groups/${activeGroupId.value}/members/${member.userId}`, {
@@ -606,7 +607,7 @@ async function leaveGroup() {
     return;
   }
   const groupName = activeGroup.value?.name ?? "nhóm này";
-  if (!window.confirm(`Rời khỏi "${groupName}"? Bạn sẽ không còn xem được tin nhắn trong nhóm.`)) return;
+  if (!await confirmDialog({ tone:"warning", title:"Rời khỏi nhóm?", subject:groupName, message:"Bạn sẽ không còn xem được tin nhắn và nội dung trong nhóm.", confirmLabel:"Rời nhóm" })) return;
 
   const leavingGroupId = activeGroupId.value;
   try {
@@ -629,9 +630,7 @@ async function leaveGroup() {
 async function dissolveGroup() {
   if (!activeGroupId.value || !isGroupOwner.value) return;
   const groupName = activeGroup.value?.name ?? "nhóm này";
-  const confirmed = window.confirm(
-    `Giải tán "${groupName}"? Tất cả thành viên sẽ bị đưa ra khỏi nhóm và nhóm sẽ biến mất khỏi danh sách.`,
-  );
+  const confirmed = await confirmDialog({ tone:"critical", title:"Giải tán nhóm?", subject:groupName, message:"Tất cả thành viên sẽ bị đưa ra khỏi nhóm và nhóm sẽ biến mất khỏi danh sách.", confirmLabel:"Giải tán nhóm", requireText:groupName });
   if (!confirmed) return;
 
   const dissolvedGroupId = activeGroupId.value;
@@ -1005,8 +1004,8 @@ async function hideMessages(messageIds: string[]) {
   }
 }
 
-function hideSharedAttachment(messageId: string) {
-  if (!window.confirm("Xóa tin nhắn chứa file này chỉ ở phía bạn?")) return;
+async function hideSharedAttachment(messageId: string) {
+  if (!await confirmDialog({ tone:"danger", title:"Ẩn tin nhắn chứa tệp?", message:"Tin nhắn chỉ bị ẩn ở phía bạn.", confirmLabel:"Ẩn tin nhắn" })) return;
   void hideMessages([messageId]);
 }
 

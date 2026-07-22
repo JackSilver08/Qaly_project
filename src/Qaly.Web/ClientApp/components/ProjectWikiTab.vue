@@ -13,6 +13,7 @@ import {
   Edit3
 } from "lucide-vue-next";
 import { useDashboardContext } from "../composables/dashboard-context";
+import { confirmDialog } from "../composables/use-confirm-dialog";
 import type { WikiPageDto } from "../types";
 import { MdEditor } from 'md-editor-v3';
 import 'md-editor-v3/lib/style.css';
@@ -107,7 +108,7 @@ function toggleAddForm() {
 }
 
 async function handleDelete(id: string) {
-  if (!confirm("Bạn có chắc chắn muốn xóa trang Wiki này?")) return;
+  if (!await confirmDialog({ tone:"danger", title:"Xóa trang Wiki?", message:"Nội dung trang Wiki này sẽ bị xóa khỏi dự án.", confirmLabel:"Xóa trang" })) return;
   await deleteWikiPage(id);
 }
 

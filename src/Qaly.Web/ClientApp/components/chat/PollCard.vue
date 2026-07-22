@@ -7,6 +7,7 @@ import {
 } from "@microsoft/signalr";
 import { ApiError, apiResult, apiCommand } from "../../utils/api-client";
 import { showError, showSuccess } from "../../composables/use-toast";
+import { confirmDialog } from "../../composables/use-confirm-dialog";
 import type { TeamChatPoll } from "./chat-types";
 import { Check, CheckCircle2, Trash2, Edit2, Plus, Users, Vote, X } from "lucide-vue-next";
 
@@ -147,11 +148,11 @@ async function savePoll() {
   if (!props.poll?.id) return;
   const validOpts = editOptions.value.filter(o => o.text.trim());
   if (validOpts.length < 2) {
-    alert("Cần ít nhất 2 lựa chọn");
+    showError("Cần ít nhất 2 lựa chọn.");
     return;
   }
   if (!editQuestion.value.trim()) {
-    alert("Câu hỏi không được để trống");
+    showError("Câu hỏi không được để trống.");
     return;
   }
 
@@ -181,7 +182,7 @@ async function savePoll() {
 
 async function deletePoll() {
   if (!props.poll?.id) return;
-  if (!confirm("Bạn có chắc muốn xóa bình chọn này?")) return;
+  if (!await confirmDialog({ tone:"danger", title:"Xóa bình chọn?", subject:editQuestion.value || results.value?.question || props.poll.question, message:"Kết quả bình chọn hiện tại cũng sẽ bị xóa.", confirmLabel:"Xóa bình chọn" })) return;
   loading.value = true;
   try {
     await apiCommand(`/api/groups/${props.groupId}/polls/${props.poll.id}`, {

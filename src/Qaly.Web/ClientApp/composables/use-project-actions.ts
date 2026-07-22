@@ -3,6 +3,7 @@ import { useRouter } from 'vue-router'
 import type { DashboardProject, ProjectDto, DashboardResponse } from '../types'
 import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
 import { showError, showSuccess } from './use-toast'
+import { confirmDialog } from './use-confirm-dialog'
 
 export function useProjectActions(
   projects: Ref<DashboardProject[]>,
@@ -97,7 +98,7 @@ export function useProjectActions(
   async function deleteProject(projectId: string) {
     const project = projects.value.find((item) => item.id === projectId)
     if (!project) return
-    if (!confirm(`Bạn có chắc muốn xóa dự án "${project.name}"?`)) return
+    if (!await confirmDialog({ tone:'danger', title:'Xóa dự án?', subject:project.name, message:'Dự án sẽ được chuyển vào thùng rác.', confirmLabel:'Xóa dự án' })) return
 
     try {
       await apiCommand(`/api/projects/${projectId}`, { method: 'DELETE' })
@@ -116,7 +117,7 @@ export function useProjectActions(
   async function archiveProject(projectId: string) {
     const project = projects.value.find((item) => item.id === projectId)
     if (!project) return
-    if (!confirm(`Bạn có chắc muốn lưu trữ dự án "${project.name}"? Dự án sẽ chuyển sang chế độ chỉ đọc.`)) return
+    if (!await confirmDialog({ tone:'warning', title:'Lưu trữ dự án?', subject:project.name, message:'Dự án sẽ chuyển sang chế độ chỉ đọc và có thể khôi phục sau.', confirmLabel:'Lưu trữ' })) return
 
     try {
       await apiResult<ProjectDto>(`/api/projects/${projectId}`, {
@@ -139,7 +140,7 @@ export function useProjectActions(
   async function restoreProject(projectId: string) {
     const project = projects.value.find((item) => item.id === projectId)
     if (!project) return
-    if (!confirm(`Khôi phục dự án "${project.name}" về trạng thái hoạt động?`)) return
+    if (!await confirmDialog({ title:'Khôi phục dự án?', subject:project.name, message:'Dự án sẽ hoạt động trở lại.', confirmLabel:'Khôi phục' })) return
 
     try {
       await apiResult<ProjectDto>(`/api/projects/${projectId}`, {

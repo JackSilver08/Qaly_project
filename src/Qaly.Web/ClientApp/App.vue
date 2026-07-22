@@ -15,12 +15,14 @@ import {
   ShieldCheck,
 } from "lucide-vue-next";
 import AppShell from "./components/AppShell.vue";
+import ConfirmDialogHost from "./components/ConfirmDialogHost.vue";
 import ProjectActivityTab from "./components/ProjectActivityTab.vue";
 import ProjectWorkloadTab from "./components/ProjectWorkloadTab.vue";
 import WelcomeOverlay from "./components/WelcomeOverlay.vue";
 import FloatingChatbot from "./components/chat/FloatingChatbot.vue";
 import { dashboardContextKey } from "./composables/dashboard-context";
 import { showError, showInfo, showSuccess } from "./composables/use-toast";
+import { confirmDialog } from "./composables/use-confirm-dialog";
 import { useDashboard } from "./composables/use-dashboard-state";
 import { useProjectActions } from "./composables/use-project-actions";
 import { useTaskActions } from "./composables/use-task-actions";
@@ -848,7 +850,7 @@ async function submitComment() {
 }
 
 async function deleteComment(id: string) {
-  if (!confirm("Xóa?")) return;
+  if (!await confirmDialog({ tone: "danger", title: "Xóa bình luận?", message: "Bình luận sẽ bị xóa khỏi nhiệm vụ.", confirmLabel: "Xóa bình luận" })) return;
   try {
     await apiCommand(`/api/comments/${id}`, { method: "DELETE" });
     if (selectedTask.value) await loadComments(selectedTask.value.id);
@@ -874,7 +876,7 @@ async function addMember(uId: string) {
 }
 
 async function removeMember(uId: string) {
-  if (!selectedProject.value || !confirm("Xóa?")) return;
+  if (!selectedProject.value || !await confirmDialog({ tone: "danger", title: "Xóa thành viên khỏi dự án?", message: "Thành viên sẽ mất quyền truy cập dự án này.", confirmLabel: "Xóa thành viên" })) return;
   try {
     await apiCommand(
       `/api/projects/${selectedProject.value.id}/members/${uId}`,
@@ -1273,6 +1275,7 @@ provide(dashboardContextKey, {
     @search="openGlobalSearch"
     @logout="logout"
   >
+    <ConfirmDialogHost />
     <RouterView />
 
     <Teleport to="body">

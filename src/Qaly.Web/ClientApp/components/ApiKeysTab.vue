@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { Key, Trash2, Copy, Check, ShieldAlert } from 'lucide-vue-next'
+import { confirmDialog } from '../composables/use-confirm-dialog'
 
 const apiKeys = ref<any[]>([])
 const newKeyName = ref('')
@@ -34,7 +35,8 @@ async function createKey() {
 }
 
 async function revokeKey(id: string) {
-  if (!confirm('Bạn có chắc chắn muốn thu hồi API Key này?')) return
+  const key = apiKeys.value.find(item => item.id === id)
+  if (!await confirmDialog({ tone:'critical', title:'Thu hồi API key?', subject:key?.name, message:'Ứng dụng đang dùng key này sẽ mất quyền truy cập ngay lập tức.', confirmLabel:'Thu hồi key' })) return
   const res = await fetch(`/api/auth/api-keys/${id}`, { method: 'DELETE' })
   if (res.ok) await fetchKeys()
 }

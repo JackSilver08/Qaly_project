@@ -3,6 +3,7 @@ import type { DashboardTask, KanbanMoveResultDto, TaskItemDto } from '../types'
 import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
 import { displayStatus } from '../utils/formatters'
 import { showError, showSuccess } from './use-toast'
+import { confirmDialog } from './use-confirm-dialog'
 
 export function useTaskActions(
   selectedTaskId: Ref<string | null>,
@@ -43,7 +44,7 @@ export function useTaskActions(
 
   async function batchDeleteTasks() {
     if (selectedTaskIds.value.size === 0) return
-    if (!confirm(`Xóa ${selectedTaskIds.value.size} nhiệm vụ đã chọn?`)) return
+    if (!await confirmDialog({ tone:'danger', title:`Xóa ${selectedTaskIds.value.size} nhiệm vụ?`, message:'Các nhiệm vụ đã chọn sẽ bị xóa khỏi dự án.', confirmLabel:'Xóa nhiệm vụ' })) return
     try {
       await apiCommand('/api/tasks/batch-delete', {
         method: 'POST',
@@ -220,7 +221,7 @@ export function useTaskActions(
   }
 
   async function deleteTask(taskId: string) {
-    if (!confirm('Bạn có chắc chắn muốn xóa task này?')) return
+    if (!await confirmDialog({ tone:'danger', title:'Xóa nhiệm vụ?', message:'Nhiệm vụ này sẽ bị xóa khỏi dự án.', confirmLabel:'Xóa nhiệm vụ' })) return
 
     try {
       await apiCommand(`/api/tasks/${taskId}`, { method: 'DELETE' })

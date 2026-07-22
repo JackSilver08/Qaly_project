@@ -5,6 +5,7 @@ import ImportUploadStep from './ImportUploadStep.vue'
 import ImportMappingStep from './ImportMappingStep.vue'
 import ImportConfirmStep from './ImportConfirmStep.vue'
 import { showSuccess, showError } from '../../composables/use-toast'
+import { confirmDialog } from '../../composables/use-confirm-dialog'
 
 const props = defineProps<{
   projectId?: string
@@ -295,7 +296,7 @@ async function executeImport() {
 
 async function undoImport() {
   if (!importResult.value?.importSessionId) return
-  if (!confirm('Bạn có chắc chắn muốn hoàn tác? Tất cả nhiệm vụ đã nhập sẽ bị xóa.')) return
+  if (!await confirmDialog({ tone:'danger', title:'Hoàn tác lần nhập?', message:'Tất cả nhiệm vụ vừa được nhập sẽ bị xóa.', confirmLabel:'Hoàn tác' })) return
 
   isLoading.value = true
   try {
