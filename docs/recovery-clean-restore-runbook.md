@@ -4,7 +4,7 @@
 
 This runbook proves that a SQL Server backup can be restored into a clean, isolated database and verified with recovery evidence. It supports task `T1-LG-01`.
 
-The restore target is a new database by default. It does not overwrite `QalyDb` unless an operator explicitly passes a target name and `-ReplaceExisting`.
+The restore target is always a new database. The script fails before `RESTORE` if the target already exists and has no overwrite mode.
 
 ## Prerequisites
 
@@ -39,6 +39,13 @@ $env:SQLSERVER_SA_PASSWORD = "<local-secret>"
 For LocalDB or Windows authentication:
 
 ```powershell
+.\scripts\backup-sqlserver.ps1 `
+  -Server "(localdb)\MSSQLLocalDB" `
+  -Database "QalyDb" `
+  -UseIntegratedSecurity `
+  -DisableCompression `
+  -OutputDirectory ".backups"
+
 .\scripts\restore-sqlserver-clean.ps1 `
   -Server "(localdb)\MSSQLLocalDB" `
   -BackupFile ".backups\QalyDb-YYYYMMDD-HHMMSS.bak" `
@@ -84,6 +91,7 @@ The restore is accepted only when all checks pass:
 
 ## Recovery Notes
 
+- Never restore over an existing database. Use the generated `QalyRestoreSmoke_*` target or another new, isolated name.
 - Redis is not authoritative and does not need backup restore for business data.
 - Uploaded objects need a separate storage restore plan if production object storage is used.
 - Secrets are not restored from database backup; they must come from the deployment secret store.

@@ -31,7 +31,6 @@ public sealed class NotificationAndWikiPolicyTests : IDisposable
     public async Task NotificationService_WithSameIdempotencyKey_CreatesOneNotification()
     {
         var userId = Guid.NewGuid();
-        var taskId = Guid.NewGuid();
         var publisher = new Mock<INotificationPublisher>();
         var pushSender = new Mock<Qaly.Application.Common.Interfaces.IPushSender>();
         var service = CreateNotificationService(publisher.Object, pushSender.Object);
@@ -41,16 +40,16 @@ public sealed class NotificationAndWikiPolicyTests : IDisposable
             "Bạn đã được giao nhiệm vụ \"API\".",
             "TaskAssigned",
             "info",
-            taskId,
-            nameof(TaskItem),
+            null,
+            null,
             "task-assigned-key");
         await service.CreateAsync(
             userId,
             "Bạn đã được giao nhiệm vụ \"API\".",
             "TaskAssigned",
             "info",
-            taskId,
-            nameof(TaskItem),
+            null,
+            null,
             "task-assigned-key");
 
         _context.Notifications.Should().ContainSingle();

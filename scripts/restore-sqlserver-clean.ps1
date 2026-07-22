@@ -7,7 +7,6 @@ param(
     [string]$User = "sa",
     [string]$Password = $env:SQLSERVER_SA_PASSWORD,
     [switch]$UseIntegratedSecurity,
-    [switch]$ReplaceExisting,
     [switch]$DropRestoredDatabase,
     [string]$EvidenceDirectory = "docs/task/qa-evidence/recovery",
     [string]$Operator = $env:USERNAME
@@ -25,6 +24,10 @@ $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 
 if ([string]::IsNullOrWhiteSpace($TargetDatabase)) {
     $TargetDatabase = "QalyRestoreSmoke_$($stamp.Replace('-', ''))"
+}
+
+if ($TargetDatabase.Length -gt 128 -or $TargetDatabase -notmatch '^[A-Za-z0-9_]+$') {
+    throw "TargetDatabase must contain only letters, numbers, and underscores and be at most 128 characters."
 }
 
 if (-not $UseIntegratedSecurity -and [string]::IsNullOrWhiteSpace($Password)) {
@@ -101,8 +104,8 @@ try {
     $existsQuery = "SET NOCOUNT ON; SELECT COUNT(*) FROM sys.databases WHERE name = N'$(Escape-SqlLiteral $TargetDatabase)';"
     $existsOutput = Invoke-QalySql -Query $existsQuery
     $exists = (($existsOutput | Where-Object { $_ -match '^\s*\d+\s*$' } | Select-Object -First 1) -as [int])
-    if ($exists -gt 0 -and -not $ReplaceExisting) {
-        throw "Target database '$TargetDatabase' already exists. Pass -ReplaceExisting to overwrite it."
+    if ($exists -gt 0) {
+        throw "Target database '$TargetDatabase' already exists. Clean restore never overwrites an existing database."
     }
 
     Write-Host "Verifying backup checksum..."
@@ -171,12 +174,7 @@ SELECT CONVERT(nvarchar(4000), SERVERPROPERTY('InstanceDefaultDataPath')) + N'|'
 
     $targetMdf = Join-Path $dataPath "$TargetDatabase.mdf"
     $targetLdf = Join-Path $logPath "$TargetDatabase.ldf"
-    $replaceClause = if ($ReplaceExisting) { ", REPLACE" } else { "" }
     $restoreQuery = @"
-IF DB_ID(N'$(Escape-SqlLiteral $TargetDatabase)') IS NOT NULL
-BEGIN
-    ALTER DATABASE [$escapedTarget] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
-END;
 RESTORE DATABASE [$escapedTarget]
 FROM DISK = N'$escapedBackup'
 WITH
@@ -184,7 +182,7 @@ WITH
     MOVE N'$(Escape-SqlLiteral $logLogical)' TO N'$(Escape-SqlLiteral $targetLdf)',
     RECOVERY,
     CHECKSUM,
-    STATS = 10$replaceClause;
+    STATS = 10;
 ALTER DATABASE [$escapedTarget] SET MULTI_USER;
 "@
 

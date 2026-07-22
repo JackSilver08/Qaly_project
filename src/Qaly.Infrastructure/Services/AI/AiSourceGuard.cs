@@ -57,7 +57,7 @@ public sealed class AiSourceGuard : IAiSourceGuard
 
             captured.Add(source with
             {
-                SourceVersion = source.SourceVersion ?? state.Versions.FirstOrDefault(),
+                SourceVersion = source.SourceVersion ?? (state.Versions.Count > 0 ? state.Versions[0] : null),
                 SourceHash = source.SourceHash ?? state.Hash,
                 SourceTimestamp = source.SourceTimestamp ?? state.Timestamp
             });

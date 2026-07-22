@@ -39,8 +39,13 @@ public sealed class PrivacyMigrationSqlServerTests
                 OwnerId = user.Id
             };
             legacyContext.Users.Add(user);
-            legacyContext.Projects.Add(project);
             await legacyContext.SaveChangesAsync();
+            // The current model includes ArchivedAt, but this fixture intentionally
+            // stops before the later AddArchivedAtToProject migration.
+            await legacyContext.Database.ExecuteSqlInterpolatedAsync($$"""
+                INSERT INTO [Projects] ([Id], [Name], [Code], [Status], [OwnerId], [CreatedAt])
+                VALUES ({{project.Id}}, {{project.Name}}, {{project.Code}}, N'Active', {{user.Id}}, {{DateTimeOffset.UtcNow}});
+                """);
             userId = user.Id;
             projectId = project.Id;
             meetingId = Guid.NewGuid();
