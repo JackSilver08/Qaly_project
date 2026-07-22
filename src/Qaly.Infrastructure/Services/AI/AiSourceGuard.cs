@@ -267,7 +267,8 @@ public sealed class AiSourceGuard : IAiSourceGuard
     }
 
     private async Task<bool> CanAccessGroupAsync(Guid groupId, Guid userId, CancellationToken ct)
-        => await _db.WorkGroups.AnyAsync(group => group.Id == groupId && group.OwnerId == userId, ct) ||
+        => await IsAdminAsync(userId, ct) ||
+           await _db.WorkGroups.AnyAsync(group => group.Id == groupId && group.OwnerId == userId, ct) ||
            await _db.WorkGroupMembers.AnyAsync(member => member.WorkGroupId == groupId && member.UserId == userId, ct);
 
     private async Task<bool> IsAdminAsync(Guid userId, CancellationToken ct)

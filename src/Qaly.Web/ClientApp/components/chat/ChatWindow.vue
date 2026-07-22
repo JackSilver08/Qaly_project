@@ -551,10 +551,10 @@ function uploadBackground(event: Event) {
 
     <div v-if="selectionMode" class="team-selection-toolbar">
       <button type="button" :disabled="!selectedIds.size" title="Summarize selected messages" @click="analyzeSelected('summary')">
-        <Sparkles :size="16" /> TĂ³m táº¯t
+        <Sparkles :size="16" /> Tóm tắt
       </button>
       <button type="button" :disabled="!selectedIds.size" title="Create a task draft from selected messages" @click="analyzeSelected('task-draft')">
-        <ListTodo :size="16" /> Táº¡o task
+        <ListTodo :size="16" /> Tạo task
       </button>
       <button type="button" class="selection-close" @click="exitSelectionMode"><X :size="18" /></button>
       <strong>{{ selectedIds.size }} tin nhắn đã chọn</strong>

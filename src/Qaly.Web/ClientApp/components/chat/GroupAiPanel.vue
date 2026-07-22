@@ -227,25 +227,31 @@ async function submitSelectedMessages() {
   }
 }
 
-watch(() => props.selectedRequest?.nonce, async nonce => {
-  if (!nonce || !props.selectedRequest) return
-  selectedAction.value = props.selectedRequest.action
-  selectedMessageIds.value = [...props.selectedRequest.messageIds]
-  subTab.value = props.selectedRequest.action === 'summary' ? 'summary' : 'draft'
-  try {
-    await loadLinkedProjects()
-    if (!linkedProjects.value.length) {
-      showError('Nhóm chưa liên kết với Project nào. Hãy liên kết Project trước khi dùng AI.')
-      return
+watch(
+  () => props.selectedRequest?.nonce,
+  async nonce => {
+    if (!nonce || !props.selectedRequest) return
+    selectedAction.value = props.selectedRequest.action
+    selectedMessageIds.value = [...props.selectedRequest.messageIds]
+    subTab.value = props.selectedRequest.action === 'summary' ? 'summary' : 'draft'
+    try {
+      await loadLinkedProjects()
+      if (!linkedProjects.value.length) {
+        showError('Nhóm chưa liên kết với Project nào. Hãy liên kết Project trước khi dùng AI.')
+        return
+      }
+      if (linkedProjects.value.length === 1) await submitSelectedMessages()
+    } catch (error) {
+      showError(errorMessage(error, 'Không thể đọc Project liên kết của nhóm.'))
     }
-    if (linkedProjects.value.length === 1) await submitSelectedMessages()
-  } catch (error) {
-    showError(errorMessage(error, 'Không thể đọc Project liên kết của nhóm.'))
-  }
-})
+  },
+  { immediate: true },
+)
 
 // Reset states when group changes
 watch(() => props.groupId, () => {
+  selectedMessageIds.value = []
+  selectedProjectId.value = ''
   summaryText.value = ''
   keyDecisions.value = []
   unresolvedQuestions.value = []
