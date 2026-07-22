@@ -11,6 +11,8 @@ const TeamsPage = () => import("../pages/TeamsPage.vue");
 const AnalyticsPage = () => import("../pages/AnalyticsPage.vue");
 const RouteErrorPage = () => import("../pages/RouteErrorPage.vue");
 const AdminUsersPage = () => import("../pages/AdminUsersPage.vue");
+const OrganizationUsersPage = () => import("../pages/OrganizationUsersPage.vue");
+const ModeratorAssignmentsPage = () => import("../pages/ModeratorAssignmentsPage.vue");
 
 const guidPattern =
     "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
@@ -64,6 +66,8 @@ export const router = createRouter({
         { path: "/teams", name: "teams", component: TeamsPage },
         { path: "/analytics", name: "analytics", component: AnalyticsPage },
         { path: "/admin/users", name: "admin-users", component: AdminUsersPage },
+        { path: "/organizations/users", name: "organization-users", component: OrganizationUsersPage },
+        { path: "/admin/moderators", name: "admin-moderators", component: ModeratorAssignmentsPage },
         {
             path: "/groups",
             name: "groups",

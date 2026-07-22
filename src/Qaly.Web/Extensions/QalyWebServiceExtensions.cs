@@ -46,7 +46,7 @@ public static class QalyWebServiceExtensions
         services.AddAuthorization(options =>
         {
             options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
-            options.AddPolicy("UserManagementAccess", policy => policy.RequireRole("Admin", "Moderator"));
+            options.AddPolicy("UserManagementAccess", policy => policy.RequireRole("Admin"));
         });
         services.AddAntiforgery(options =>
         {

@@ -13,7 +13,7 @@ public static class SystemRoleRules
         => string.Equals(role, Moderator, StringComparison.OrdinalIgnoreCase);
 
     public static bool CanManageUsers(string? role)
-        => IsAdmin(role) || IsModerator(role);
+        => IsAdmin(role);
 
     public static bool TryNormalizeAssignableRole(string? role, out string normalized)
     {

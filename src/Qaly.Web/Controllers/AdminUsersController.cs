@@ -18,12 +18,14 @@ public class AdminUsersController : BaseApiController
     private readonly QalyDbContext _context;
     private readonly IAuditLogService _auditLogService;
     private readonly ISessionService _sessionService;
+    private readonly IProjectService _projectService;
 
-    public AdminUsersController(QalyDbContext context, IAuditLogService auditLogService, ISessionService sessionService)
+    public AdminUsersController(QalyDbContext context, IAuditLogService auditLogService, ISessionService sessionService, IProjectService projectService)
     {
         _context = context;
         _auditLogService = auditLogService;
         _sessionService = sessionService;
+        _projectService = projectService;
     }
 
     [HttpGet]
@@ -182,6 +184,11 @@ public class AdminUsersController : BaseApiController
     [HttpPatch("{id:guid}/projects/{projectId:guid}")]
     public async Task<IActionResult> UpdateProjectMembership(Guid id, Guid projectId, UpdateUserProjectRequest request, CancellationToken ct)
     {
+        if (!IsSupportedProjectRole(request.Role)) return BadRequest("Invalid project role.");
+        var serviceResult = await _projectService.AddMemberAsync(projectId, id, request.Role, ct);
+        if (!serviceResult.IsSuccess) return StatusCode(serviceResult.StatusCode, serviceResult.Error);
+        return Ok(new { role = ProjectRoleRules.NormalizeProjectRole(request.Role) });
+        /*
         if (!IsSupportedProjectRole(request.Role))
             return BadRequest("Vai trò dự án không hợp lệ.");
         var project = await _context.Projects.IgnoreQueryFilters().Include(project => project.Members)
@@ -199,11 +206,16 @@ public class AdminUsersController : BaseApiController
         await _context.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("AdminUpdateProjectMembership", nameof(ProjectMember), membership.Id.ToString(), new { projectId, userId = id, role = normalized }, ct);
         return Ok(new { membership.Id, membership.Role });
+        */
     }
 
     [HttpDelete("{id:guid}/projects/{projectId:guid}")]
     public async Task<IActionResult> RemoveProjectMembership(Guid id, Guid projectId, CancellationToken ct)
     {
+        var serviceResult = await _projectService.RemoveMemberAsync(projectId, id, ct);
+        if (!serviceResult.IsSuccess) return StatusCode(serviceResult.StatusCode, serviceResult.Error);
+        return NoContent();
+        /*
         var project = await _context.Projects.IgnoreQueryFilters().SingleOrDefaultAsync(candidate => candidate.Id == projectId, ct);
         if (project == null) return NotFound();
         if (project.OwnerId == id) return BadRequest("Hãy chuyển quyền sở hữu trước khi xóa user khỏi dự án.");
@@ -213,6 +225,7 @@ public class AdminUsersController : BaseApiController
         await _context.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("AdminRemoveProjectMembership", nameof(ProjectMember), membership.Id.ToString(), new { projectId, userId = id }, ct);
         return NoContent();
+        */
     }
 
     [HttpPost("transfer-admin")]

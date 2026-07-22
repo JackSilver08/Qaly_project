@@ -10,7 +10,7 @@ public class SystemRoleRulesTests
 {
     [Theory]
     [InlineData("Admin", true)]
-    [InlineData("Moderator", true)]
+    [InlineData("Moderator", false)]
     [InlineData("Member", false)]
     [InlineData(null, false)]
     public void CanManageUsers_ShouldOnlyAllowElevatedSystemRoles(string? role, bool expected)

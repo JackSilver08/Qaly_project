@@ -30,7 +30,7 @@ public static class QalyWebApplicationExtensions
         {
             if (context.Request.Path.StartsWithSegments("/admin") &&
                 context.User.Identity?.IsAuthenticated == true &&
-                !context.User.IsInRole("Admin") && !context.User.IsInRole("Moderator"))
+                !context.User.IsInRole("Admin"))
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 return;

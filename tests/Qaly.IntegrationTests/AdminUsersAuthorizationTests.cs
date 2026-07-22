@@ -9,17 +9,26 @@ public class AdminUsersAuthorizationTests : IClassFixture<IntegrationTestFactory
 
     public AdminUsersAuthorizationTests(IntegrationTestFactory factory) => _factory = factory;
 
-    [Theory]
-    [InlineData("Admin")]
-    [InlineData("Moderator")]
-    public async Task UserManagementApi_AllowsElevatedSystemRoles(string role)
+    [Fact]
+    public async Task UserManagementApi_AllowsRootAdmin()
     {
         using var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Add("X-Test-Role", role);
+        client.DefaultRequestHeaders.Add("X-Test-Role", "Admin");
 
         var response = await client.GetAsync("/api/admin/users?page=1&pageSize=5");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task UserManagementApi_RejectsModeratorWithoutDelegatedScope()
+    {
+        using var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Test-Role", "Moderator");
+
+        var response = await client.GetAsync("/api/admin/users");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     [Fact]

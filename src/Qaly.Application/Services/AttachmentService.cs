@@ -389,7 +389,7 @@ public class AttachmentService : IAttachmentService
             .Select(member => member.Role)
             .FirstOrDefaultAsync(ct);
 
-        return ProjectRoleRules.CanManageProject(organizationRole);
+        return OrganizationRoleRules.CanManageOrganization(organizationRole);
     }
 
     private async Task<bool> CanReviewEvidenceAsync(TaskItem task, Guid currentUserId, CancellationToken ct)
@@ -424,7 +424,7 @@ public class AttachmentService : IAttachmentService
             .Select(member => member.Role)
             .FirstOrDefaultAsync(ct);
 
-        return ProjectRoleRules.CanManageProject(organizationRole);
+        return OrganizationRoleRules.CanManageOrganization(organizationRole);
     }
 
     private bool IsAdmin()

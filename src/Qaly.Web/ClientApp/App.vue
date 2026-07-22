@@ -13,6 +13,7 @@ import {
   BarChart3,
   Settings,
   ShieldCheck,
+  Building2,
 } from "lucide-vue-next";
 import AppShell from "./components/AppShell.vue";
 import ConfirmDialogHost from "./components/ConfirmDialogHost.vue";
@@ -129,6 +130,7 @@ const {
 
 const navigation = computed<ShellNavItem[]>(() => {
   const items: ShellNavItem[] = [
+    { label: "Thành viên tổ chức", to: "/organizations/users", icon: Building2 },
     { label: "Tổng quan", to: "/dashboard", icon: LayoutDashboard },
     { label: "Dự án", to: "/projects", icon: FolderKanban },
     { label: "Nhiệm vụ", to: "/tasks", icon: ClipboardList },
@@ -136,7 +138,8 @@ const navigation = computed<ShellNavItem[]>(() => {
     { label: "Phân tích", to: "/analytics", icon: BarChart3 },
   ];
   const role = String(currentUser.value?.role || "").toLowerCase();
-  if (role === "admin" || role === "moderator") {
+  if (role === "admin") {
+    items.push({ label: "Ủy quyền Moderator", to: "/admin/moderators", icon: ShieldCheck });
     items.push({ label: "Quản lý người dùng", to: "/admin/users", icon: ShieldCheck });
   }
   return items;

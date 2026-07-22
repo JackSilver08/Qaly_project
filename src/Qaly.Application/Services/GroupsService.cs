@@ -2241,7 +2241,7 @@ public partial class GroupsService : IGroupsService
         }
 
         return await _organizationMemberRepo.GetQueryable()
-            .AnyAsync(member => member.OrganizationId == project.OrganizationId && member.UserId == currentUserId.Value && ProjectRoleRules.CanManageProject(member.Role), ct);
+            .AnyAsync(member => member.OrganizationId == project.OrganizationId && member.UserId == currentUserId.Value && OrganizationRoleRules.CanManageOrganization(member.Role), ct);
     }
 
     public async Task<bool> CanManageGroupAsync(Guid groupId, CancellationToken ct = default)

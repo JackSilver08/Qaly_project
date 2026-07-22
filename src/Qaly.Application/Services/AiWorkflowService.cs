@@ -2092,7 +2092,7 @@ Rules: create 1-8 non-duplicate tasks; use concise action titles; include accept
             .Select(member => member.Role)
             .FirstOrDefaultAsync(ct);
 
-        return ProjectRoleRules.CanManageProject(organizationRole);
+        return OrganizationRoleRules.CanManageOrganization(organizationRole);
     }
 
     private async Task<Result> ValidateExecuteActionAsync(

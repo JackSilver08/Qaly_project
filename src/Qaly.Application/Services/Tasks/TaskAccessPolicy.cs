@@ -375,7 +375,7 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
             .Select(member => member.Role)
             .FirstOrDefaultAsync(ct);
 
-        return ProjectRoleRules.CanManageProject(organizationRole);
+        return OrganizationRoleRules.CanManageOrganization(organizationRole);
     }
 
     private static bool IsElevatedProjectRole(string? role)

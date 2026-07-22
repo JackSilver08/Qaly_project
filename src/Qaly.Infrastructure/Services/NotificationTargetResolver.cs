@@ -107,7 +107,7 @@ public sealed class NotificationTargetResolver : INotificationTargetResolver
             .Where(member => member.OrganizationId == project.OrganizationId.Value && member.UserId == userId)
             .Select(member => member.Role)
             .FirstOrDefaultAsync(ct);
-        return ProjectRoleRules.CanManageProject(organizationRole);
+        return OrganizationRoleRules.CanManageOrganization(organizationRole);
     }
 
     private async Task<bool> CanAccessGroupAsync(Guid groupId, Guid userId, CancellationToken ct)
