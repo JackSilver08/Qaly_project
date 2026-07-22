@@ -12,6 +12,7 @@ import {
   X,
   BarChart3,
   Settings,
+  ShieldCheck,
 } from "lucide-vue-next";
 import AppShell from "./components/AppShell.vue";
 import ProjectActivityTab from "./components/ProjectActivityTab.vue";
@@ -124,13 +125,20 @@ const {
   openTask,
 );
 
-const navigation: ShellNavItem[] = [
-  { label: "Tổng quan", to: "/dashboard", icon: LayoutDashboard },
-  { label: "Dự án", to: "/projects", icon: FolderKanban },
-  { label: "Nhiệm vụ", to: "/tasks", icon: ClipboardList },
-  { label: "Nhóm", to: "/teams", icon: Users },
-  { label: "Phân tích", to: "/analytics", icon: BarChart3 },
-];
+const navigation = computed<ShellNavItem[]>(() => {
+  const items: ShellNavItem[] = [
+    { label: "Tổng quan", to: "/dashboard", icon: LayoutDashboard },
+    { label: "Dự án", to: "/projects", icon: FolderKanban },
+    { label: "Nhiệm vụ", to: "/tasks", icon: ClipboardList },
+    { label: "Nhóm", to: "/teams", icon: Users },
+    { label: "Phân tích", to: "/analytics", icon: BarChart3 },
+  ];
+  const role = String(currentUser.value?.role || "").toLowerCase();
+  if (role === "admin" || role === "moderator") {
+    items.push({ label: "Quản lý người dùng", to: "/admin/users", icon: ShieldCheck });
+  }
+  return items;
+});
 
 const statusColumns = computed(() => {
   const cols = ["Todo", "InProgress"];

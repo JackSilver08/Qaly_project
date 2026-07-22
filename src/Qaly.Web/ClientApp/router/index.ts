@@ -10,6 +10,7 @@ const TasksPage = () => import("../pages/TasksPage.vue");
 const TeamsPage = () => import("../pages/TeamsPage.vue");
 const AnalyticsPage = () => import("../pages/AnalyticsPage.vue");
 const RouteErrorPage = () => import("../pages/RouteErrorPage.vue");
+const AdminUsersPage = () => import("../pages/AdminUsersPage.vue");
 
 const guidPattern =
     "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
@@ -62,6 +63,7 @@ export const router = createRouter({
         { path: "/tasks", name: "tasks", component: TasksPage },
         { path: "/teams", name: "teams", component: TeamsPage },
         { path: "/analytics", name: "analytics", component: AnalyticsPage },
+        { path: "/admin/users", name: "admin-users", component: AdminUsersPage },
         {
             path: "/groups",
             name: "groups",

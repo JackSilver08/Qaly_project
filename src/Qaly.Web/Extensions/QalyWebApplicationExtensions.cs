@@ -26,6 +26,17 @@ public static class QalyWebApplicationExtensions
         app.UseStaticFiles();
         app.UseRouting();
         app.UseAuthentication();
+        app.Use(async (context, next) =>
+        {
+            if (context.Request.Path.StartsWithSegments("/admin") &&
+                context.User.Identity?.IsAuthenticated == true &&
+                !context.User.IsInRole("Admin") && !context.User.IsInRole("Moderator"))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+            await next();
+        });
         app.UseAuthorization();
         app.UseAntiforgery();
         app.UseSession();

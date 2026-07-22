@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 using Qaly.Application;
 using Qaly.Application.Common.Models;
@@ -10,6 +11,9 @@ using Qaly.Web.Auth;
 using Qaly.Web.Hubs;
 using Qaly.Web.Middleware;
 using StackExchange.Redis;
+using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
+using Qaly.Infrastructure.Data;
 
 namespace Qaly.Web.Extensions;
 
@@ -39,7 +43,11 @@ public static class QalyWebServiceExtensions
 
         services.AddQalyRazorPages();
         services.AddQalyAuthentication(cookieSecurePolicy);
-        services.AddAuthorization(options => options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin")));
+        services.AddAuthorization(options =>
+        {
+            options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
+            options.AddPolicy("UserManagementAccess", policy => policy.RequireRole("Admin", "Moderator"));
+        });
         services.AddAntiforgery(options =>
         {
             options.HeaderName = "X-CSRF-TOKEN";
@@ -116,6 +124,7 @@ public static class QalyWebServiceExtensions
             options.Conventions.AddPageRoute("/Index", "teams");
             options.Conventions.AddPageRoute("/Index", "analytics");
             options.Conventions.AddPageRoute("/Index", "settings");
+            options.Conventions.AddPageRoute("/Index", "admin/users");
             options.Conventions.AddPageRoute("/Index", "groups");
             options.Conventions.AddPageRoute("/Index", "groups/{groupId}");
             options.Conventions.AddPageRoute("/Index", "groups/{groupId}/meeting");
@@ -163,6 +172,27 @@ public static class QalyWebServiceExtensions
 
                     context.Response.Redirect(context.RedirectUri);
                     return Task.CompletedTask;
+                };
+                options.Events.OnValidatePrincipal = async context =>
+                {
+                    var userIdText = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
+                    var issuedRole = context.Principal?.FindFirstValue(ClaimTypes.Role);
+                    if (!Guid.TryParse(userIdText, out var userId))
+                    {
+                        context.RejectPrincipal();
+                        return;
+                    }
+
+                    var db = context.HttpContext.RequestServices.GetRequiredService<QalyDbContext>();
+                    var current = await db.Users.AsNoTracking()
+                        .Where(user => user.Id == userId)
+                        .Select(user => new { user.IsActive, user.Role })
+                        .SingleOrDefaultAsync(context.HttpContext.RequestAborted);
+                    if (current == null || !current.IsActive || !string.Equals(current.Role, issuedRole, StringComparison.Ordinal))
+                    {
+                        context.RejectPrincipal();
+                        await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                    }
                 };
             });
 

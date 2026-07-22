@@ -19,5 +19,9 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.CreatedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
 
         builder.HasIndex(u => u.Email).IsUnique();
+        builder.HasIndex(u => u.Role)
+            .HasDatabaseName("UX_Users_SingleAdmin")
+            .HasFilter("[Role] = 'Admin'")
+            .IsUnique();
     }
 }
