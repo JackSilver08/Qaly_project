@@ -10,6 +10,9 @@ defineProps<{
   notificationCount: number
   userName: string
   userInitials: string
+  userRole: string | null
+  userAvatarUrl: string | null
+  userLoading: boolean
 }>()
 
 const emit = defineEmits<{
@@ -48,6 +51,10 @@ function handleNavigate() {
     <SidebarNav
       :class="{ 'is-open': sidebarOpen }"
       :items="navItems"
+      :user-avatar-url="userAvatarUrl"
+      :user-loading="userLoading"
+      :user-name="userName"
+      :user-role="userRole"
       @navigate="handleNavigate"
     />
 

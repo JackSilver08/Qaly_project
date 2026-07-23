@@ -8,6 +8,7 @@ import type { SummaryCardModel } from '../components/dashboard-models'
 export function useDashboard() {
   const dashboard = ref<DashboardResponse>(fallbackDashboard)
   const currentUser = ref<UserDto | null>(null)
+  const currentUserLoaded = ref(false)
   const users = ref<UserDto[]>([])
   const isLoading = ref(true)
   const usingFallback = ref(true)
@@ -74,6 +75,8 @@ export function useDashboard() {
       currentUser.value = await apiResult<UserDto>('/api/auth/me')
     } catch (error) {
       console.warn('Could not load current user.', error)
+    } finally {
+      currentUserLoaded.value = true
     }
   }
 
@@ -88,6 +91,7 @@ export function useDashboard() {
   return {
     dashboard,
     currentUser,
+    currentUserLoaded,
     users,
     isLoading,
     usingFallback,

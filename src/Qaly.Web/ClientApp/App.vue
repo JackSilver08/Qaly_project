@@ -64,6 +64,7 @@ import type {
 const {
   dashboard,
   currentUser,
+  currentUserLoaded,
   users,
   isLoading,
   usingFallback,
@@ -1273,6 +1274,9 @@ provide(dashboardContextKey, {
     :user-initials="
       initials(currentUser?.fullName || currentUser?.email || 'QU')
     "
+    :user-role="currentUser?.role ?? null"
+    :user-avatar-url="currentUser?.avatarUrl ?? null"
+    :user-loading="!currentUserLoaded"
     @notifications="notificationsOpen = !notificationsOpen"
     @assistant="openChatWithPrompt()"
     @search="openGlobalSearch"
