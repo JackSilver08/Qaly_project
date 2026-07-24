@@ -88,18 +88,23 @@ public class AiController : BaseApiController
         }
 
         var createdTasks = new List<Qaly.Application.DTOs.Task.TaskItemDto>();
+        var failedTasks = new List<CreatePlanTaskFailureDto>();
         if (request.Tasks != null)
         {
             foreach (var taskDto in request.Tasks)
             {
-                if (string.IsNullOrWhiteSpace(taskDto.Title)) continue;
+                if (string.IsNullOrWhiteSpace(taskDto.Title))
+                {
+                    failedTasks.Add(new CreatePlanTaskFailureDto(taskDto.Title, "Task title is required."));
+                    continue;
+                }
 
                 var createTaskResult = await _taskService.CreateAsync(new Qaly.Application.DTOs.Task.CreateTaskDto(
                     taskDto.Title.Trim(),
                     taskDto.Description?.Trim(),
                     taskDto.Priority,
                     taskDto.DueDate,
-                    null,
+                    taskDto.EstimatedHours,
                     projectId,
                     null
                 ), ct);
@@ -108,10 +113,25 @@ public class AiController : BaseApiController
                 {
                     createdTasks.Add(createTaskResult.Data);
                 }
+                else
+                {
+                    failedTasks.Add(new CreatePlanTaskFailureDto(taskDto.Title.Trim(), createTaskResult.Error ?? "Task could not be created."));
+                }
             }
         }
 
-        return Ok(new { projectId, taskCount = createdTasks.Count });
+        if (createdTasks.Count == 0 && failedTasks.Count > 0)
+        {
+            return BadRequest(new
+            {
+                error = "Không thể tạo công việc nào từ kế hoạch AI.",
+                projectId,
+                taskCount = 0,
+                failedTasks
+            });
+        }
+
+        return Ok(new { projectId, taskCount = createdTasks.Count, failedTasks });
     }
 
     [HttpPost("sync")]

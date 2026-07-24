@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Qaly Project Journey Map - Demo Preview</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --bg-base: #090d16;
+            --bg-surface: #0f172a;
+            --bg-card: #1e293b;
+            --bg-card-hover: #26334d;
+            --border-color: #334155;
+            --border-highlight: #475569;
+            
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+
+            --primary: #3b82f6;
+            --primary-glow: rgba(59, 130, 246, 0.25);
+            --accent-purple: #8b5cf6;
+            --success: #10b981;
+            --success-glow: rgba(16, 185, 129, 0.2);
+            --warning: #f59e0b;
+            --danger: #ef4444;
+
+            --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+            --font-mono: 'Space Grotesk', monospace;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            font-family: var(--font-sans);
+            min-height: 100vh;
+            padding-bottom: 60px;
+        }
+
+        /* Glassmorphism Panel */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        }
+
+        /* Header Style */
+        .project-header {
+            padding: 24px 32px;
+            margin-top: 24px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .project-header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6, #10b981);
+        }
+
+        .nav-pills .nav-link {
+            color: var(--text-secondary);
+            font-weight: 500;
+            border-radius: 8px;
+            padding: 8px 16px;
+            transition: all 0.2s ease;
+        }
+
+        .nav-pills .nav-link.active {
+            background-color: var(--primary);
+            color: #ffffff;
+            box-shadow: 0 4px 12px var(--primary-glow);
+        }
+
+        .nav-pills .nav-link:hover:not(.active) {
+            background-color: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+        }
+
+        /* Journey Map Roadmap Section */
+        .journey-section {
+            padding: 32px;
+            margin-top: 24px;
+        }
+
+        .journey-title-box {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 32px;
+        }
+
+        /* Milestone Track Visual */
+        .roadmap-container {
+            position: relative;
+            padding: 40px 10px 20px 10px;
+            overflow-x: auto;
+        }
+
+        /* Connecting Rail Line */
+        .roadmap-track {
+            position: absolute;
+            top: 92px;
+            left: 80px;
+            right: 80px;
+            height: 6px;
+            background: #1e293b;
+            border-radius: 4px;
+            z-index: 1;
+        }
+
+        .roadmap-track-fill {
+            height: 100%;
+            width: 52%; /* Current progress along the road */
+            background: linear-gradient(90deg, #10b981 0%, #3b82f6 70%, #8b5cf6 100%);
+            border-radius: 4px;
+            box-shadow: 0 0 12px var(--primary-glow);
+            transition: width 0.5s ease;
+        }
+
+        /* Milestone Grid Nodes */
+        .milestones-wrapper {
+            display: flex;
+            justify-content: space-between;
+            position: relative;
+            z-index: 2;
+            min-width: 900px;
+        }
+
+        .milestone-node {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 180px;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        .milestone-node:hover {
+            transform: translateY(-6px);
+        }
+
+        /* Node Circle Icon */
+        .node-circle {
+            width: 54px;
+            height: 54px;
+            border-radius: 50%;
+            background: var(--bg-card);
+            border: 3px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 18px;
+            margin-bottom: 16px;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        /* Node Status States */
+        .milestone-node.completed .node-circle {
+            background: #064e3b;
+            border-color: #10b981;
+            color: #10b981;
+            box-shadow: 0 0 16px var(--success-glow);
+        }
+
+        .milestone-node.current .node-circle {
+            background: #1e3a8a;
+            border-color: #3b82f6;
+            color: #ffffff;
+            box-shadow: 0 0 24px var(--primary-glow);
+            animation: pulseGlow 2s infinite alternate;
+        }
+
+        @keyframes pulseGlow {
+            0% { box-shadow: 0 0 10px rgba(59, 130, 246, 0.4); transform: scale(1); }
+            100% { box-shadow: 0 0 25px rgba(59, 130, 246, 0.9); transform: scale(1.08); }
+        }
+
+        .milestone-node.upcoming .node-circle {
+            background: #0f172a;
+            border-color: #334155;
+            color: #64748b;
+        }
+
+        /* Location Flag Marker for Current Position */
+        .current-flag-badge {
+            position: absolute;
+            top: -34px;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            color: #ffffff;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 12px;
+            white-space: nowrap;
+            box-shadow: 0 4px 10px rgba(59, 130, 246, 0.4);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .current-flag-badge::after {
+            content: '';
+            position: absolute;
+            bottom: -5px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 5px 5px 0;
+            border-style: solid;
+            border-color: #8b5cf6 transparent;
+            display: block;
+            width: 0;
+        }
+
+        /* Milestone Card */
+        .milestone-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            width: 100%;
+            text-align: center;
+            transition: all 0.25s ease;
+        }
+
+        .milestone-node.current .milestone-card {
+            border-color: rgba(59, 130, 246, 0.6);
+            background: rgba(30, 41, 59, 0.95);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .milestone-node:hover .milestone-card {
+            border-color: var(--primary);
+            background: var(--bg-card-hover);
+        }
+
+        .milestone-title {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: var(--text-primary);
+        }
+
+        .milestone-dates {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+        }
+
+        /* Progress Bar inside Card */
+        .milestone-progress {
+            height: 6px;
+            background: #0f172a;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .milestone-progress-bar {
+            height: 100%;
+            border-radius: 3px;
+        }
+
+        .status-badge {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 6px;
+            display: inline-block;
+        }
+
+        .badge-done { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+        .badge-active { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+        .badge-upcoming { background: rgba(100, 116, 139, 0.15); color: #94a3b8; }
+
+        /* Detail Sidebar / Modal preview */
+        .detail-panel {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            margin-top: 24px;
+        }
+
+        /* Modal style for Project Creation with Timeline */
+        .modal-content {
+            background-color: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            border-radius: 16px;
+        }
+
+        .modal-header {
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .modal-footer {
+            border-top: 1px solid var(--border-color);
+        }
+
+        .form-control, .form-select {
+            background-color: #090d16;
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            border-radius: 8px;
+        }
+
+        .form-control:focus, .form-select:focus {
+            background-color: #090d16;
+            border-color: var(--primary);
+            color: var(--text-primary);
+            box-shadow: 0 0 0 2px var(--primary-glow);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container-fluid px-4 max-w-7xl">
+    
+    <!-- Top Header -->
+    <header class="glass-panel project-header d-flex align-items-center justify-content-between">
+        <div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1">PROJ-2026</span>
+                <span class="badge bg-success-subtle text-success px-2 py-1">🟢 Đang hoạt động</span>
+            </div>
+            <h2 class="fw-bold mb-1">Qaly AI-Driven Workspace Portal</h2>
+            <p class="text-secondary mb-0">Hệ thống quản lý công việc thế hệ mới kết hợp trí tuệ nhân tạo và tự động hóa.</p>
+        </div>
+        
+        <div class="d-flex align-items-center gap-3">
+            <button class="btn btn-outline-light d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#createProjectModal">
+                <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                <span>Tạo dự án kèm mốc</span>
+            </button>
+            <button class="btn btn-primary d-flex align-items-center gap-2">
+                <i data-lucide="sparkles" class="w-4 h-4"></i>
+                <span>AI Phân tích tiến độ</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <div class="glass-panel p-2 mt-3">
+        <ul class="nav nav-pills gap-2">
+            <li class="nav-item">
+                <a class="nav-link" href="#"><i data-lucide="bar-chart-3" class="d-inline w-4 h-4 me-1"></i>Thống kê</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link active" href="#"><i data-lucide="map" class="d-inline w-4 h-4 me-1"></i>Journey Map (Hành trình)</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#"><i data-lucide="kanban" class="d-inline w-4 h-4 me-1"></i>Nhiệm vụ (Kanban)</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#"><i data-lucide="activity" class="d-inline w-4 h-4 me-1"></i>Hoạt động</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#"><i data-lucide="users" class="d-inline w-4 h-4 me-1"></i>Thành viên</a>
+            </li>
+        </ul>
+    </div>
+
+    <!-- MAIN JOURNEY MAP SECTION -->
+    <section class="glass-panel journey-section">
+        
+        <!-- Section Title & Summary Metrics -->
+        <div class="journey-title-box">
+            <div>
+                <span class="text-primary font-monospace fw-bold text-uppercase" style="font-size: 12px; letter-spacing: 1px;">Roadmap Progress</span>
+                <h3 class="fw-bold mb-1 d-flex align-items-center gap-2">
+                    <i data-lucide="compass" class="text-primary"></i>
+                    Bản Đồ Hành Trình Dự Án
+                </h3>
+                <p class="text-secondary mb-0">Cái nhìn tổng quan về lộ trình mốc thực hiện của dự án mà không bị rối bởi từng task chi tiết.</p>
+            </div>
+
+            <!-- Summary Badges -->
+            <div class="d-flex gap-3">
+                <div class="bg-dark p-3 rounded-3 border border-secondary border-opacity-25 text-center px-4">
+                    <div class="text-muted small">Vị trí hiện tại</div>
+                    <div class="fw-bold text-primary">Mốc 3: Core Modules</div>
+                </div>
+                <div class="bg-dark p-3 rounded-3 border border-secondary border-opacity-25 text-center px-4">
+                    <div class="text-muted small">Tiến độ tổng thể</div>
+                    <div class="fw-bold text-success">62% (18/29 Tasks)</div>
+                </div>
+                <div class="bg-dark p-3 rounded-3 border border-secondary border-opacity-25 text-center px-4">
+                    <div class="text-muted small">Thời gian còn lại</div>
+                    <div class="fw-bold text-warning">14 Ngày</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- VISUAL ROADMAP TIMELINE PATH -->
+        <div class="roadmap-container">
+            <!-- Background Rail -->
+            <div class="roadmap-track">
+                <div class="roadmap-track-fill"></div>
+            </div>
+
+            <!-- Milestone Nodes -->
+            <div class="milestones-wrapper">
+                
+                <!-- NODE 1: Completed -->
+                <div class="milestone-node completed" onclick="selectMilestone('m1')">
+                    <div class="node-circle">
+                        <i data-lucide="check" class="w-6 h-6"></i>
+                    </div>
+                    <div class="milestone-card">
+                        <div class="status-badge badge-done mb-2">Đã hoàn thành</div>
+                        <div class="milestone-title">1. Khởi tạo & Requirement</div>
+                        <div class="milestone-dates">
+                            <i data-lucide="calendar" class="w-3 h-3"></i> 01/06 - 15/06
+                        </div>
+                        <div class="milestone-progress">
+                            <div class="milestone-progress-bar bg-success" style="width: 100%;"></div>
+                        </div>
+                        <div class="small text-secondary">5/5 Tasks done (100%)</div>
+                    </div>
+                </div>
+
+                <!-- NODE 2: Completed -->
+                <div class="milestone-node completed" onclick="selectMilestone('m2')">
+                    <div class="node-circle">
+                        <i data-lucide="check" class="w-6 h-6"></i>
+                    </div>
+                    <div class="milestone-card">
+                        <div class="status-badge badge-done mb-2">Đã hoàn thành</div>
+                        <div class="milestone-title">2. UI/UX & Architecture</div>
+                        <div class="milestone-dates">
+                            <i data-lucide="calendar" class="w-3 h-3"></i> 16/06 - 30/06
+                        </div>
+                        <div class="milestone-progress">
+                            <div class="milestone-progress-bar bg-success" style="width: 100%;"></div>
+                        </div>
+                        <div class="small text-secondary">6/6 Tasks done (100%)</div>
+                    </div>
+                </div>
+
+                <!-- NODE 3: Current Position (ACTIVE) -->
+                <div class="milestone-node current" onclick="selectMilestone('m3')">
+                    <div class="node-circle">
+                        <div class="current-flag-badge">
+                            <i data-lucide="navigation" class="w-3 h-3"></i> VỊ TRÍ HIỆN TẠI
+                        </div>
+                        3
+                    </div>
+                    <div class="milestone-card">
+                        <div class="status-badge badge-active mb-2">⚡ Đang thực hiện</div>
+                        <div class="milestone-title text-primary">3. Backend & Core Module</div>
+                        <div class="milestone-dates">
+                            <i data-lucide="calendar" class="w-3 h-3"></i> 01/07 - 25/07
+                        </div>
+                        <div class="milestone-progress">
+                            <div class="milestone-progress-bar bg-primary" style="width: 68%;"></div>
+                        </div>
+                        <div class="small text-primary fw-semibold">7/10 Tasks done (68%)</div>
+                    </div>
+                </div>
+
+                <!-- NODE 4: Upcoming -->
+                <div class="milestone-node upcoming" onclick="selectMilestone('m4')">
+                    <div class="node-circle">4</div>
+                    <div class="milestone-card">
+                        <div class="status-badge badge-upcoming mb-2">Chưa tới</div>
+                        <div class="milestone-title">4. Tích hợp AI & GitHub</div>
+                        <div class="milestone-dates">
+                            <i data-lucide="calendar" class="w-3 h-3"></i> 26/07 - 10/08
+                        </div>
+                        <div class="milestone-progress">
+                            <div class="milestone-progress-bar bg-secondary" style="width: 0%;"></div>
+                        </div>
+                        <div class="small text-muted">0/5 Tasks done (0%)</div>
+                    </div>
+                </div>
+
+                <!-- NODE 5: Upcoming -->
+                <div class="milestone-node upcoming" onclick="selectMilestone('m5')">
+                    <div class="node-circle">5</div>
+                    <div class="milestone-card">
+                        <div class="status-badge badge-upcoming mb-2">Chưa tới</div>
+                        <div class="milestone-title">5. Testing & Release</div>
+                        <div class="milestone-dates">
+                            <i data-lucide="calendar" class="w-3 h-3"></i> 11/08 - 25/08
+                        </div>
+                        <div class="milestone-progress">
+                            <div class="milestone-progress-bar bg-secondary" style="width: 0%;"></div>
+                        </div>
+                        <div class="small text-muted">0/3 Tasks done (0%)</div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- DRILL-DOWN MILESTONE DETAIL PANEL -->
+        <div class="detail-panel mt-4" id="milestoneDetailBox">
+            <div class="d-flex align-items-center justify-content-between pb-3 mb-3 border-bottom border-secondary border-opacity-25">
+                <div>
+                    <span class="badge bg-primary mb-1">Mốc Đang Chọn</span>
+                    <h4 class="fw-bold mb-0">Mốc 3: Backend & Core Module</h4>
+                    <p class="text-secondary small mb-0">Thời gian dự kiến: 01/07/2026 - 25/07/2026 | Mục tiêu: Hoàn thiện RESTful API và SignalR Hub</p>
+                </div>
+                <div>
+                    <button class="btn btn-outline-primary me-2">
+                        <i data-lucide="edit-3" class="d-inline w-4 h-4 me-1"></i>Sửa mốc
+                    </button>
+                    <button class="btn btn-primary">
+                        <i data-lucide="kanban" class="d-inline w-4 h-4 me-1"></i>Xem Chi Tiết Mốc Trên Kanban Board ➔
+                    </button>
+                </div>
+            </div>
+
+            <!-- Task List inside Milestone -->
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="p-3 rounded-3 bg-dark border border-secondary border-opacity-25">
+                        <div class="fw-semibold text-success mb-2"><i data-lucide="check-circle2" class="d-inline w-4 h-4 me-1"></i>Đã xong (7)</div>
+                        <ul class="list-unstyled small mb-0 text-secondary">
+                            <li class="py-1 border-bottom border-dark">✔ QALY-101: Thiết kế EF Core Entities</li>
+                            <li class="py-1 border-bottom border-dark">✔ QALY-102: Setup JWT Authentication</li>
+                            <li class="py-1">✔ QALY-104: Tích hợp SignalR Chat Service</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="p-3 rounded-3 bg-dark border border-secondary border-opacity-25">
+                        <div class="fw-semibold text-primary mb-2"><i data-lucide="clock" class="d-inline w-4 h-4 me-1"></i>Đang làm (2)</div>
+                        <ul class="list-unstyled small mb-0 text-primary">
+                            <li class="py-1 border-bottom border-dark">⏳ QALY-108: Hoàn thiện Journey Map Service API</li>
+                            <li class="py-1">⏳ QALY-109: Phân quyền Moderator theo tenant</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="p-3 rounded-3 bg-dark border border-secondary border-opacity-25">
+                        <div class="fw-semibold text-muted mb-2"><i data-lucide="circle" class="d-inline w-4 h-4 me-1"></i>Chưa làm (1)</div>
+                        <ul class="list-unstyled small mb-0 text-muted">
+                            <li class="py-1">⚪ QALY-110: Benchmark performance API</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </section>
+</div>
+
+<!-- MODAL INTEGRATION PREVIEW: Create Project with Milestones -->
+<div class="modal fade" id="createProjectModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-header-title fw-bold d-flex align-items-center gap-2">
+                    <i data-lucide="folder-plus" class="text-primary"></i>
+                    Tạo Dự Án Mới & Khai Báo Mốc Tiến Độ
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-8">
+                            <label class="form-label text-secondary small fw-semibold">Tên dự án *</label>
+                            <input type="text" class="form-control" placeholder="Nhập tên dự án..." value="Hệ thống e-Commerce Microservices">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label text-secondary small fw-semibold">Mã dự án (Code)</label>
+                            <input type="text" class="form-control" value="ECOM2026">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label text-secondary small fw-semibold">Mô tả dự án</label>
+                            <textarea class="form-control" rows="2" placeholder="Mô tả mục tiêu chính..."></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Milestone Declaration Section -->
+                    <div class="border-top border-secondary border-opacity-25 pt-3 mt-4">
+                        <div class="d-flex align-items-center justify-content-between mb-3">
+                            <div>
+                                <h6 class="fw-bold text-primary mb-0">🚩 Khai báo các Mốc Hành Trình (Milestones / Sprints)</h6>
+                                <span class="text-muted small">Khai báo lộ trình chính của dự án để hiển thị trên Journey Map (tùy chọn)</span>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-primary d-flex align-items-center gap-1">
+                                <i data-lucide="plus" class="w-4 h-4"></i> Thêm mốc
+                            </button>
+                        </div>
+
+                        <!-- Milestone Row items -->
+                        <div class="vstack gap-2">
+                            <div class="p-2 rounded bg-dark border border-secondary border-opacity-25 d-flex align-items-center gap-2">
+                                <span class="badge bg-secondary">Mốc 1</span>
+                                <input type="text" class="form-control form-control-sm" value="Phase 1: Phân tích & Thiết kế Architecture" style="flex: 2;">
+                                <input type="date" class="form-control form-control-sm" value="2026-08-01" style="flex: 1;">
+                                <input type="date" class="form-control form-control-sm" value="2026-08-15" style="flex: 1;">
+                                <button type="button" class="btn btn-sm text-danger"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                            </div>
+                            <div class="p-2 rounded bg-dark border border-secondary border-opacity-25 d-flex align-items-center gap-2">
+                                <span class="badge bg-secondary">Mốc 2</span>
+                                <input type="text" class="form-control form-control-sm" value="Phase 2: Phát triển Module Core & Payment" style="flex: 2;">
+                                <input type="date" class="form-control form-control-sm" value="2026-08-16" style="flex: 1;">
+                                <input type="date" class="form-control form-control-sm" value="2026-08-30" style="flex: 1;">
+                                <button type="button" class="btn btn-sm text-danger"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-primary d-flex align-items-center gap-2">
+                    <i data-lucide="check" class="w-4 h-4"></i> Tạo dự án & Khởi tạo lộ trình
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bootstrap 5 JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    // Initialize Lucide Icons
+    lucide.createIcons();
+
+    function selectMilestone(id) {
+        console.log("Selected milestone:", id);
+    }
+</script>
+</body>
+</html>

@@ -19,7 +19,8 @@ public record GeneratedPlanTaskDto(
     string Title,
     string? Description,
     string Priority = "Medium",
-    int DueDateOffsetDays = 7
+    int DueDateOffsetDays = 7,
+    int? EstimatedHours = null
 );
 
 public record ConfirmPlanRequestDto(
@@ -34,5 +35,11 @@ public record ConfirmPlanTaskDto(
     string Title,
     string? Description,
     string Priority,
-    DateTimeOffset? DueDate
+    DateTimeOffset? DueDate,
+    int? EstimatedHours = null
+);
+
+public record CreatePlanTaskFailureDto(
+    string? Title,
+    string Error
 );

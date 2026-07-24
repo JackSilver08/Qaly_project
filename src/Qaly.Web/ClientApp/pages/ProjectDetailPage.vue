@@ -6,6 +6,7 @@ import ProjectDetailHeader from '../components/ProjectDetailHeader.vue'
 import ProjectActivityTab from '../components/ProjectActivityTab.vue'
 import ProjectMembersTab from '../components/ProjectMembersTab.vue'
 import ProjectStatsTab from '../components/ProjectStatsTab.vue'
+import ProjectDemoMapTab from '../components/ProjectDemoMapTab.vue'
 import ProjectWorkloadTab from '../components/ProjectWorkloadTab.vue'
 import ProjectWikiTab from '../components/ProjectWikiTab.vue'
 import ProjectGanttTab from '../components/ProjectGanttTab.vue'
@@ -486,6 +487,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
       <div v-if="activeProjectTab === 'stats'" class="tab-pane reveal">
         <ProjectStatsTab :stats="selectedProjectStats" />
+      </div>
+
+      <div v-if="activeProjectTab === 'demo-map'" class="tab-pane reveal">
+        <ProjectDemoMapTab :project-id="selectedProject.id" :project-name="selectedProject.name" />
       </div>
 
       <div v-if="canShowCapacityTab" class="tab-pane reveal">
