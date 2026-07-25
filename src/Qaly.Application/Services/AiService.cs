@@ -788,6 +788,8 @@ Chỉ xuất ra đúng mảng JSON, tuyệt đối không giải thích.";
         }
 
         Project? projectContext = null;
+        string projectInfoSection = "Đây là yêu cầu tạo một DỰ ÁN MỚI hoàn toàn.";
+
         if (projectId.HasValue)
         {
             projectContext = await _projectRepo.GetByIdAsync(projectId.Value, ct);
@@ -800,41 +802,82 @@ Chỉ xuất ra đúng mảng JSON, tuyệt đối không giải thích.";
             {
                 return Result.Forbidden<GeneratedPlanDto>("Bạn không có quyền truy cập dự án này.");
             }
+
+            var existingTasks = await _taskRepo.GetQueryable()
+                .AsNoTracking()
+                .Where(t => t.ProjectId == projectId.Value && !t.IsDeleted)
+                .OrderByDescending(t => t.CreatedAt)
+                .Take(15)
+                .Select(t => new { t.Title, t.Status, t.Priority })
+                .ToListAsync(ct);
+
+            var members = await _memberRepo.GetQueryable()
+                .AsNoTracking()
+                .Where(m => m.ProjectId == projectId.Value)
+                .Include(m => m.User)
+                .Select(m => new { m.User.FullName, m.Role })
+                .ToListAsync(ct);
+
+            var existingTasksText = existingTasks.Count > 0
+                ? string.Join("\n", existingTasks.Select(t => $"- {t.Title} [{t.Status} / {t.Priority}]"))
+                : "Chưa có công việc nào.";
+
+            var membersText = members.Count > 0
+                ? string.Join(", ", members.Select(m => $"{m.FullName} ({m.Role})"))
+                : "Chưa có thông tin thành viên.";
+
+            projectInfoSection = $@"Dự án hiện tại (BỔ SUNG TASK VÀO DỰ ÁN NÀY):
+- Tên dự án: {projectContext.Name}
+- Mô tả: {projectContext.Description ?? "Không có"}
+- Thành viên dự án: {membersText}
+- Các công việc đã có gần đây (TRÁNH TẠO TRÙNG):
+{existingTasksText}";
         }
 
-        var prompt = $@"Bạn là trợ lý AI chuyên về quản lý dự án Agile/Kanban.
-Nhiệm vụ của bạn là đọc yêu cầu sau của người dùng và lên kế hoạch tạo dự án mới hoặc các công việc (tasks) tương ứng.
+        var isNewProjectStr = projectContext == null ? "true" : "false";
+        var defaultProjectNameStr = projectContext != null ? JsonSerializer.Serialize(projectContext.Name) : "\"Tên dự án được gợi ý\"";
+        var defaultProjectDescStr = projectContext != null ? JsonSerializer.Serialize(projectContext.Description ?? "") : "\"Mô tả dự án được gợi ý\"";
+
+        var prompt = $@"Bạn là trợ lý AI chuyên về quản lý dự án phần mềm Agile/Kanban chuyên nghiệp.
+Nhiệm vụ của bạn là đọc yêu cầu của người dùng và lên kế hoạch tạo dự án mới hoặc tạo danh sách công việc (tasks) tương ứng.
 
 Yêu cầu người dùng: {userPrompt}
 
-{(projectContext != null ? $"Dự án hiện tại:\nTên dự án: {projectContext.Name}\nMô tả dự án: {projectContext.Description}" : "Đây là yêu cầu tạo một DỰ ÁN MỚI.")}
+{projectInfoSection}
 
 Bạn PHẢI trả về KẾT QUẢ ĐẦU RA dưới dạng một đối tượng JSON HỢP LỆ, định dạng CHÍNH XÁC như mẫu sau (KHÔNG ĐƯỢC chứa thêm bất kỳ text nào khác ngoài JSON):
 {{
-  ""isNewProject"": {(projectContext != null ? "false" : "true")},
-  ""projectName"": ""{(projectContext != null ? JsonEncodedName(projectContext.Name) : "Tên dự án được gợi ý")}"",
-  ""projectDescription"": ""{(projectContext != null ? JsonEncodedName(projectContext.Description) : "Mô tả dự án được gợi ý")}"",
+  ""isNewProject"": {isNewProjectStr},
+  ""projectName"": {defaultProjectNameStr},
+  ""projectDescription"": {defaultProjectDescStr},
   ""tasks"": [
     {{
       ""title"": ""Tiêu đề công việc 1"",
       ""description"": ""Mô tả chi tiết công việc 1"",
-      ""priority"": ""Medium"",
-      ""dueDateOffsetDays"": 7
+      ""priority"": ""High"",
+      ""dueDateOffsetDays"": 5,
+      ""estimatedHours"": 8,
+      ""suggestedRole"": ""Backend Developer"",
+      ""category"": ""API""
     }},
     {{
       ""title"": ""Tiêu đề công việc 2"",
       ""description"": ""Mô tả chi tiết công việc 2"",
-      ""priority"": ""High"",
-      ""dueDateOffsetDays"": 14
+      ""priority"": ""Medium"",
+      ""dueDateOffsetDays"": 10,
+      ""estimatedHours"": 16,
+      ""suggestedRole"": ""Frontend Developer"",
+      ""category"": ""UI/UX""
     }}
   ]
 }}
 
 Lưu ý quan trọng:
 1. Trường priority chỉ được chọn một trong các giá trị: Low, Medium, High, Critical.
-2. Trường dueDateOffsetDays là số ngày ước lượng từ hôm nay để hoàn thành công việc đó (ví dụ: 3, 5, 7, 14). Hãy chọn số ngày phù hợp với tính chất của công việc.
-3. Nội dung các công việc phải được viết bằng tiếng Việt chi tiết, rõ ràng, thực tế và phù hợp với yêu cầu của người dùng. Hãy lên kế hoạch khoảng 5-10 công việc nếu được yêu cầu chung chung.
-4. Chỉ xuất ra đúng đối tượng JSON bắt đầu bằng {{ và kết thúc bằng }}, tuyệt đối không được có thêm bất kỳ giải thích, tiêu đề hay markdown block nào khác ngoài chuỗi JSON.";
+2. Trường dueDateOffsetDays là số ngày ước lượng từ hôm nay để hoàn thành công việc đó (ví dụ: 3, 5, 7, 14). Hãy chọn số ngày phù hợp với độ phức tạp.
+3. Trường estimatedHours là số giờ làm việc ước tính (ví dụ: 4, 8, 12, 16, 24).
+4. Nội dung các công việc phải được viết bằng tiếng Việt chi tiết, rõ ràng, thực tế, đúng chuyên môn công nghệ/quản lý dự án. Hãy đề xuất từ 4-8 công việc chất lượng cao.
+5. Chỉ xuất ra đúng đối tượng JSON hợp lệ bắt đầu bằng {{ và kết thúc bằng }}, tuyệt đối không thêm markdown wrapper hay bất kỳ ký tự nào bên ngoài JSON.";
 
         try
         {
@@ -847,19 +890,13 @@ Lưu ý quan trọng:
             }, ct);
 
             var text = response.Content ?? "{}";
-            var startIdx = text.IndexOf('{');
-            var endIdx = text.LastIndexOf('}');
-            if (startIdx >= 0 && endIdx >= startIdx)
+            var result = CleanAndExtractJson<GeneratedPlanDto>(text);
+            if (result != null && result.Tasks != null && result.Tasks.Count > 0)
             {
-                var jsonStr = text.Substring(startIdx, endIdx - startIdx + 1);
-                var result = JsonSerializer.Deserialize<GeneratedPlanDto>(jsonStr, CategorizationResponseJsonOptions);
-                if (result != null)
-                {
-                    return Result.Success(result);
-                }
+                return Result.Success(result);
             }
 
-            return Result.Failure<GeneratedPlanDto>("Không thể phân tích kết quả trả về từ AI.", 500);
+            return Result.Failure<GeneratedPlanDto>("Không thể phân tích hoặc JSON kế hoạch trả về từ AI bị rỗng.", 500);
         }
         catch (Exception ex)
         {
@@ -868,10 +905,41 @@ Lưu ý quan trọng:
         }
     }
 
-    private static string JsonEncodedName(string? val)
+    private static T? CleanAndExtractJson<T>(string rawContent) where T : class
     {
-        if (string.IsNullOrEmpty(val)) return string.Empty;
-        return val.Replace("\"", "\\\"");
+        if (string.IsNullOrWhiteSpace(rawContent)) return null;
+
+        var text = rawContent.Trim();
+
+        if (text.StartsWith("```", StringComparison.Ordinal))
+        {
+            var firstLineEnd = text.IndexOf('\n');
+            if (firstLineEnd >= 0)
+            {
+                text = text.Substring(firstLineEnd + 1);
+            }
+            if (text.EndsWith("```", StringComparison.Ordinal))
+            {
+                text = text.Substring(0, text.Length - 3).Trim();
+            }
+        }
+
+        var startIdx = text.IndexOf('{');
+        var endIdx = text.LastIndexOf('}');
+        if (startIdx >= 0 && endIdx >= startIdx)
+        {
+            var jsonStr = text.Substring(startIdx, endIdx - startIdx + 1);
+            try
+            {
+                return JsonSerializer.Deserialize<T>(jsonStr, CategorizationResponseJsonOptions);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        return null;
     }
 }
 

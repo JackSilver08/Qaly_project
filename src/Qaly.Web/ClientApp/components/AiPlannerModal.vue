@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import {
   Sparkles,
   X,
@@ -7,6 +7,10 @@ import {
   Trash2,
   Calendar,
   CheckCircle2,
+  Clock,
+  User as UserIcon,
+  Layers,
+  Zap
 } from 'lucide-vue-next'
 import { apiResult } from '../utils/api-client'
 import { showError, showSuccess } from '../composables/use-toast'
@@ -16,6 +20,10 @@ interface TaskPlanItem {
   description: string
   priority: string
   dueDate: string
+  estimatedHours: number | null
+  assigneeId: string | null
+  category: string | null
+  suggestedRole: string | null
 }
 
 interface GeneratedPlan {
@@ -27,11 +35,22 @@ interface GeneratedPlan {
     description: string | null
     priority: string
     dueDateOffsetDays: number
+    estimatedHours: number | null
+    suggestedRole?: string | null
+    category?: string | null
   }[]
+}
+
+interface ProjectMemberOption {
+  userId: string
+  fullName: string
+  role?: string
+  email?: string
 }
 
 const props = defineProps<{
   projectId: string | null
+  projectMembers?: ProjectMemberOption[]
 }>()
 
 const emit = defineEmits<{
@@ -48,16 +67,54 @@ const isNewProject = ref(true)
 const projectName = ref('')
 const projectDescription = ref('')
 const tasks = ref<TaskPlanItem[]>([])
+const memberOptions = ref<ProjectMemberOption[]>([])
 
 const suggestions = [
-  'Tạo dự án Xây dựng Web bán hàng quần áo, đầy đủ các task frontend, backend và UI/UX',
-  'Lập kế hoạch phát triển tính năng đăng ký/đăng nhập bằng Google/Facebook',
-  'Lên danh sách công việc kiểm thử (test cases) cho chức năng giỏ hàng và thanh toán',
-  'Thiết lập quy trình CI/CD cho dự án và deploy lên AWS/Azure'
+  {
+    tag: 'Web App',
+    prompt: 'Tạo dự án Xây dựng Web bán hàng quần áo thương mại điện tử, đầy đủ các task Frontend (Vue 3), Backend (.NET 9), Database SQL Server, UI/UX Figma và DevOps.'
+  },
+  {
+    tag: 'Authentication',
+    prompt: 'Lên kế hoạch phát triển module Đăng ký/Đăng nhập (Google OAuth2, JWT Authentication, Mail OTP xác thực và 2FA) cho ứng dụng.'
+  },
+  {
+    tag: 'CI/CD & Cloud',
+    prompt: 'Thiết lập quy trình CI/CD tự động với GitHub Actions, Dockerize ứng dụng, deploy lên AWS/Azure Server và cài đặt Nginx SSL.'
+  },
+  {
+    tag: 'QA & Testing',
+    prompt: 'Lập danh sách công việc kiểm thử toàn diện: Unit Test API, kiểm thử E2E tự động với Playwright, Security Vulnerability Scan và Stress Test.'
+  }
 ]
 
-function useSuggestion(s: string) {
-  promptText.value = s
+// Metrics computed
+const totalTasks = computed(() => tasks.value.length)
+const totalEstimatedHours = computed(() =>
+  tasks.value.reduce((sum, t) => sum + (t.estimatedHours || 0), 0)
+)
+
+onMounted(async () => {
+  if (props.projectMembers && props.projectMembers.length > 0) {
+    memberOptions.value = props.projectMembers
+  } else if (props.projectId) {
+    try {
+      const res = await apiResult<any[]>(`/api/projects/${props.projectId}/members`)
+      if (Array.isArray(res)) {
+        memberOptions.value = res.map(m => ({
+          userId: m.userId || m.id,
+          fullName: m.user?.fullName || m.fullName || 'Thành viên',
+          role: m.role || 'Member'
+        }))
+      }
+    } catch {
+      memberOptions.value = []
+    }
+  }
+})
+
+function useSuggestion(prompt: string) {
+  promptText.value = prompt
 }
 
 async function handleGeneratePlan() {
@@ -88,7 +145,11 @@ async function handleGeneratePlan() {
         title: t.title,
         description: t.description || '',
         priority: t.priority || 'Medium',
-        dueDate: dateStr
+        dueDate: dateStr,
+        estimatedHours: t.estimatedHours || 8,
+        assigneeId: null,
+        category: t.category || null,
+        suggestedRole: t.suggestedRole || null
       }
     })
 
@@ -107,7 +168,11 @@ function addTask() {
     title: 'Công việc mới',
     description: '',
     priority: 'Medium',
-    dueDate: date.toISOString().split('T')[0]
+    dueDate: date.toISOString().split('T')[0],
+    estimatedHours: 8,
+    assigneeId: null,
+    category: 'General',
+    suggestedRole: null
   })
 }
 
@@ -125,13 +190,21 @@ async function handleCreatePlan() {
     return
   }
 
+  const invalidTask = tasks.value.find(t => !t.title.trim())
+  if (invalidTask) {
+    showError('Tiêu đề của công việc không được để trống.')
+    return
+  }
+
   isLoading.value = true
   try {
     const formattedTasks = tasks.value.map(t => ({
       title: t.title.trim(),
       description: t.description.trim() || null,
       priority: t.priority,
-      dueDate: t.dueDate ? new Date(t.dueDate).toISOString() : null
+      dueDate: t.dueDate ? new Date(t.dueDate).toISOString() : null,
+      estimatedHours: t.estimatedHours ? Number(t.estimatedHours) : null,
+      assigneeId: t.assigneeId || null
     }))
 
     const result = await apiResult<{ projectId: string; taskCount: number }>('/api/ai/create-plan', {
@@ -173,8 +246,8 @@ async function handleCreatePlan() {
           </div>
           <div>
             <h2>Lập kế hoạch thông minh bằng AI</h2>
-            <p v-if="props.projectId">Lập kế hoạch công việc cho dự án hiện tại</p>
-            <p v-else>Khởi tạo dự án mới và sơ đồ công việc tự động</p>
+            <p v-if="props.projectId">Tự động phân tích và tạo công việc cho dự án hiện tại</p>
+            <p v-else>Khởi tạo dự án mới và sơ đồ công việc tự động từ yêu cầu tự nhiên</p>
           </div>
         </div>
         <button class="icon-button" @click="emit('close')">
@@ -188,14 +261,17 @@ async function handleCreatePlan() {
           <div class="ai-pulse-glow"></div>
           <Sparkles class="ai-spinning-sparkle" :size="32" />
         </div>
-        <h3>AI đang tính toán và xây dựng kế hoạch...</h3>
-        <p>Quá trình này có thể mất từ 5-10 giây</p>
+        <h3>AI đang suy luận & thiết lập kiến trúc công việc...</h3>
+        <p>Phân tích yêu cầu, tính toán timeline và phân bổ giờ làm việc...</p>
       </div>
 
       <!-- Step 1: Input Prompts -->
       <div v-else-if="step === 'input'" class="ai-planner-body">
         <div class="form-group">
-          <label class="input-section-label">Mô tả mục tiêu của bạn bằng ngôn ngữ tự nhiên</label>
+          <label class="input-section-label">
+            <Zap :size="14" class="label-icon" />
+            Mô tả mục tiêu của bạn bằng ngôn ngữ tự nhiên
+          </label>
           <textarea
             v-model="promptText"
             placeholder="Ví dụ: Lên kế hoạch xây dựng module đăng nhập, đăng ký sử dụng mạng xã hội Google và Facebook cho dự án hiện tại, bao gồm cả tài liệu hướng dẫn và test cases..."
@@ -206,16 +282,17 @@ async function handleCreatePlan() {
         </div>
 
         <div class="suggestions-container">
-          <label class="suggestions-label">Gợi ý nhanh:</label>
-          <div class="suggestions-list">
+          <label class="suggestions-label">Kịch bản gợi ý nhanh:</label>
+          <div class="suggestions-grid">
             <button
               v-for="(s, index) in suggestions"
               :key="index"
               type="button"
               class="suggestion-item"
-              @click="useSuggestion(s)"
+              @click="useSuggestion(s.prompt)"
             >
-              {{ s }}
+              <span class="suggestion-tag">{{ s.tag }}</span>
+              <span class="suggestion-text">{{ s.prompt }}</span>
             </button>
           </div>
         </div>
@@ -238,19 +315,37 @@ async function handleCreatePlan() {
       <div v-else-if="step === 'review'" class="ai-planner-body has-scroll">
         <div class="review-intro">
           <CheckCircle2 class="success-icon" :size="18" />
-          <span>AI đã lập xong kế hoạch! Bạn có thể chỉnh sửa các thông tin bên dưới trước khi tạo chính thức.</span>
+          <span>AI đã lập xong kế hoạch! Bạn có thể xem lại và chỉnh sửa trước khi chấp nhận.</span>
+        </div>
+
+        <!-- Summary Metrics Bar -->
+        <div class="plan-metrics-bar">
+          <div class="metric-item">
+            <Layers :size="16" class="metric-icon" />
+            <div>
+              <span class="metric-value">{{ totalTasks }}</span>
+              <span class="metric-label">Công việc</span>
+            </div>
+          </div>
+          <div class="metric-item">
+            <Clock :size="16" class="metric-icon" />
+            <div>
+              <span class="metric-value">{{ totalEstimatedHours }}h</span>
+              <span class="metric-label">Khối lượng (Workload)</span>
+            </div>
+          </div>
         </div>
 
         <!-- Project info (if new project) -->
         <div v-if="isNewProject" class="project-info-review">
-          <h3 class="section-title">Thông tin Dự án</h3>
+          <h3 class="section-title">Thông tin Dự án Mới</h3>
           <div class="form-group">
-            <label>Tên dự án</label>
-            <input v-model="projectName" type="text" class="modal-input" required />
+            <label>Tên dự án <span class="required-star">*</span></label>
+            <input v-model="projectName" type="text" class="modal-input" required placeholder="Nhập tên dự án..." />
           </div>
           <div class="form-group">
             <label>Mô tả dự án</label>
-            <textarea v-model="projectDescription" class="modal-input" rows="2"></textarea>
+            <textarea v-model="projectDescription" class="modal-input" rows="2" placeholder="Mô tả dự án..."></textarea>
           </div>
         </div>
 
@@ -266,13 +361,16 @@ async function handleCreatePlan() {
           <div class="tasks-review-list">
             <div v-for="(task, index) in tasks" :key="index" class="task-review-card">
               <div class="task-review-card-header">
-                <input
-                  v-model="task.title"
-                  type="text"
-                  class="task-title-input"
-                  placeholder="Tên công việc..."
-                  required
-                />
+                <div class="task-title-row">
+                  <span v-if="task.category" class="task-category-badge">{{ task.category }}</span>
+                  <input
+                    v-model="task.title"
+                    type="text"
+                    class="task-title-input"
+                    placeholder="Tên công việc..."
+                    required
+                  />
+                </div>
                 <button
                   type="button"
                   class="task-delete-btn"
@@ -287,7 +385,7 @@ async function handleCreatePlan() {
                 <textarea
                   v-model="task.description"
                   class="task-desc-input"
-                  placeholder="Mô tả công việc (không bắt buộc)..."
+                  placeholder="Mô tả chi tiết công việc..."
                   rows="2"
                 ></textarea>
                 
@@ -295,17 +393,39 @@ async function handleCreatePlan() {
                   <div class="meta-item">
                     <label>Độ ưu tiên</label>
                     <select v-model="task.priority" class="meta-select">
-                      <option value="Low">Low</option>
-                      <option value="Medium">Medium</option>
-                      <option value="High">High</option>
-                      <option value="Critical">Critical</option>
+                      <option value="Low">Low (Thấp)</option>
+                      <option value="Medium">Medium (Trung bình)</option>
+                      <option value="High">High (Cao)</option>
+                      <option value="Critical">Critical (Khẩn cấp)</option>
                     </select>
                   </div>
+
                   <div class="meta-item">
                     <label>Hạn chót</label>
                     <div class="date-input-container">
                       <Calendar :size="13" />
                       <input v-model="task.dueDate" type="date" class="meta-date-input" />
+                    </div>
+                  </div>
+
+                  <div class="meta-item">
+                    <label>Giờ ước tính</label>
+                    <div class="date-input-container">
+                      <Clock :size="13" />
+                      <input v-model.number="task.estimatedHours" type="number" min="1" class="meta-date-input" placeholder="8" />
+                    </div>
+                  </div>
+
+                  <div class="meta-item">
+                    <label>Người phụ trách</label>
+                    <div class="date-input-container">
+                      <UserIcon :size="13" />
+                      <select v-model="task.assigneeId" class="meta-select-inner">
+                        <option :value="null">Chưa phân công</option>
+                        <option v-for="m in memberOptions" :key="m.userId" :value="m.userId">
+                          {{ m.fullName }} {{ m.role ? `(${m.role})` : '' }}
+                        </option>
+                      </select>
                     </div>
                   </div>
                 </div>
@@ -345,14 +465,14 @@ async function handleCreatePlan() {
 
 .ai-planner-modal {
   width: 100%;
-  max-width: 680px;
-  background: rgba(18, 18, 30, 0.85);
+  max-width: 720px;
+  background: rgba(18, 18, 30, 0.88);
   border: 1px solid rgba(139, 92, 246, 0.25);
   border-radius: 16px;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   display: flex;
   flex-direction: column;
-  max-height: 85vh;
+  max-height: 88vh;
   overflow: hidden;
   color: #e2e8f0;
 }
@@ -444,11 +564,17 @@ async function handleCreatePlan() {
 }
 
 .input-section-label {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   font-size: 0.9rem;
   font-weight: 500;
   margin-bottom: 0.5rem;
   color: #cbd5e1;
+}
+
+.label-icon {
+  color: #a78bfa;
 }
 
 .prompt-textarea {
@@ -456,15 +582,17 @@ async function handleCreatePlan() {
   font-size: 0.95rem;
   line-height: 1.5;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.25);
   border-radius: 10px;
   color: #f1f5f9;
   transition: all 0.2s ease;
+  padding: 0.75rem;
+  width: 100%;
 }
 
 .prompt-textarea:focus {
   border-color: rgba(139, 92, 246, 0.6);
-  box-shadow: 0 0 10px rgba(139, 92, 246, 0.15);
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.2);
   outline: none;
 }
 
@@ -480,28 +608,48 @@ async function handleCreatePlan() {
   font-weight: 500;
 }
 
-.suggestions-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
+.suggestions-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
 }
 
 .suggestion-item {
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 8px;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.8rem;
+  padding: 0.6rem 0.75rem;
   text-align: left;
   color: #cbd5e1;
   cursor: pointer;
   transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
 }
 
 .suggestion-item:hover {
   background: rgba(139, 92, 246, 0.08);
-  border-color: rgba(139, 92, 246, 0.2);
+  border-color: rgba(139, 92, 246, 0.3);
+  transform: translateY(-1px);
+}
+
+.suggestion-tag {
+  font-size: 0.7rem;
+  font-weight: 600;
   color: #c084fc;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.suggestion-text {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .ai-planner-actions {
@@ -613,19 +761,9 @@ async function handleCreatePlan() {
 }
 
 @keyframes ai-pulse {
-  0% {
-    transform: scale(0.8);
-    opacity: 0.2;
-  }
-  50% {
-    transform: scale(1.2);
-    opacity: 0.6;
-    box-shadow: 0 0 30px rgba(139, 92, 246, 0.4);
-  }
-  100% {
-    transform: scale(0.8);
-    opacity: 0.2;
-  }
+  0% { transform: scale(0.8); opacity: 0.2; }
+  50% { transform: scale(1.2); opacity: 0.6; box-shadow: 0 0 30px rgba(139, 92, 246, 0.4); }
+  100% { transform: scale(0.8); opacity: 0.2; }
 }
 
 @keyframes ai-spin {
@@ -646,6 +784,39 @@ async function handleCreatePlan() {
   color: #34d399;
 }
 
+.plan-metrics-bar {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  padding: 0.75rem 1.25rem;
+}
+
+.metric-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.metric-icon {
+  color: #a78bfa;
+}
+
+.metric-value {
+  display: block;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  line-height: 1;
+}
+
+.metric-label {
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
 .success-icon {
   flex-shrink: 0;
 }
@@ -657,6 +828,10 @@ async function handleCreatePlan() {
   margin: 0;
   border-left: 3px solid #8b5cf6;
   padding-left: 0.5rem;
+}
+
+.required-star {
+  color: #ef4444;
 }
 
 .project-info-review {
@@ -705,7 +880,7 @@ async function handleCreatePlan() {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  max-height: 40vh;
+  max-height: 42vh;
   overflow-y: auto;
   padding-right: 0.25rem;
 }
@@ -713,16 +888,16 @@ async function handleCreatePlan() {
 .task-review-card {
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 8px;
-  padding: 0.85rem;
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.6rem;
   transition: border-color 0.2s ease;
 }
 
 .task-review-card:hover {
-  border-color: rgba(139, 92, 246, 0.2);
+  border-color: rgba(139, 92, 246, 0.25);
 }
 
 .task-review-card-header {
@@ -730,6 +905,25 @@ async function handleCreatePlan() {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+.task-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.task-category-badge {
+  background: rgba(139, 92, 246, 0.2);
+  color: #c084fc;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
 }
 
 .task-title-input {
@@ -769,8 +963,8 @@ async function handleCreatePlan() {
 }
 
 .task-desc-input {
-  background: rgba(0, 0, 0, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 6px;
   padding: 0.4rem 0.6rem;
   color: #cbd5e1;
@@ -786,8 +980,8 @@ async function handleCreatePlan() {
 
 .task-meta-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 0.5rem;
 }
 
 .meta-item {
@@ -797,24 +991,36 @@ async function handleCreatePlan() {
 }
 
 .meta-item label {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: #94a3b8;
 }
 
 .meta-select {
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 6px;
   padding: 0.3rem 0.5rem;
   color: #cbd5e1;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
+}
+
+.meta-select-inner {
+  background: transparent;
+  border: none;
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  width: 100%;
+}
+
+.meta-select-inner:focus {
+  outline: none;
 }
 
 .date-input-container {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 6px;
   padding: 0.3rem 0.5rem;
@@ -825,11 +1031,20 @@ async function handleCreatePlan() {
   background: transparent;
   border: none;
   color: #cbd5e1;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   width: 100%;
 }
 
 .meta-date-input:focus {
   outline: none;
+}
+
+@media (max-width: 640px) {
+  .task-meta-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .suggestions-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

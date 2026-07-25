@@ -106,7 +106,7 @@ public class AiController : BaseApiController
                     taskDto.DueDate,
                     taskDto.EstimatedHours,
                     projectId,
-                    null
+                    taskDto.AssigneeId
                 ), ct);
 
                 if (createTaskResult.IsSuccess && createTaskResult.Data != null)
