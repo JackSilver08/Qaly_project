@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
-import { BrainCircuit, Activity, Target, AlertCircle, PlayCircle, BarChart3 } from 'lucide-vue-next'
-import { apiJson } from '../../utils/api-client'
+import { BrainCircuit, Activity, Target, AlertCircle, PlayCircle, BarChart3, RefreshCw, Server } from 'lucide-vue-next'
+import { apiJson, errorMessage } from '../../utils/api-client'
 import type { StrategicOverviewDto, AiStrategyResponseDto } from '../../types'
 
 const isLoadingStats = ref(true)
@@ -9,7 +9,8 @@ const isLoadingAi = ref(false)
 
 const statsData = ref<StrategicOverviewDto | null>(null)
 const aiData = ref<AiStrategyResponseDto | null>(null)
-const canGenerateAiInsight = computed(() => !aiData.value && !isLoadingAi.value)
+const aiError = ref('')
+const canGenerateAiInsight = computed(() => !isLoadingAi.value)
 
 const loadStats = async () => {
   try {
@@ -24,8 +25,9 @@ const loadStats = async () => {
 
 const generateAiInsight = async () => {
   if (!statsData.value) return
-  
+
   isLoadingAi.value = true
+  aiError.value = ''
   try {
     const res = await apiJson<AiStrategyResponseDto>('/api/dashboard/ai-strategy', {
       method: 'POST',
@@ -33,7 +35,8 @@ const generateAiInsight = async () => {
     })
     aiData.value = res
   } catch (error) {
-    console.error(error)
+    aiData.value = null
+    aiError.value = errorMessage(error, 'Model AI local chưa sẵn sàng. Hãy kiểm tra Ollama rồi thử lại.')
   } finally {
     isLoadingAi.value = false
   }
@@ -52,19 +55,14 @@ onMounted(() => {
         <p>AI phân tích dữ liệu dự án, nhiệm vụ và hiệu suất đội nhóm để đề xuất hướng triển khai tiếp theo.</p>
       </div>
       <div class="header-actions">
-        <button 
-          v-if="canGenerateAiInsight" 
+        <button
+          v-if="canGenerateAiInsight"
           @click="generateAiInsight" 
           class="ai-button"
         >
-          <BrainCircuit :size="18" />
-          Tạo phân tích AI
-        </button>
-        <button 
-          v-if="aiData" 
-          class="secondary-button"
-        >
-          Xem báo cáo chi tiết
+          <RefreshCw v-if="aiData" :size="18" />
+          <BrainCircuit v-else :size="18" />
+          {{ aiData ? 'Phân tích lại' : 'Tạo phân tích AI' }}
         </button>
       </div>
     </div>
@@ -120,6 +118,12 @@ onMounted(() => {
           <p>AI đang tổng hợp và phân tích dữ liệu không gian làm việc...</p>
         </div>
 
+        <div v-else-if="aiError" class="ai-error" role="alert">
+          <AlertCircle :size="28" />
+          <strong>Chưa có kết quả AI thật</strong>
+          <p>{{ aiError }}</p>
+        </div>
+
         <div v-else-if="!aiData" class="ai-empty">
           <div class="ai-empty-icon">
             <BrainCircuit :size="48" style="color: rgba(15, 82, 186, 0.3);" />
@@ -128,6 +132,10 @@ onMounted(() => {
         </div>
 
         <div v-else class="ai-results">
+          <div class="ai-provider-badge">
+            <Server :size="14" />
+            Kết quả thật từ {{ aiData.provider }} · {{ aiData.model }}
+          </div>
           <div class="ai-summary">
             <strong>Nhận định:</strong> {{ aiData.summary }}
           </div>
@@ -308,6 +316,37 @@ onMounted(() => {
   min-height: 200px;
   color: #64748b;
   text-align: center;
+}
+
+.ai-error {
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #b91c1c;
+  text-align: center;
+}
+
+.ai-error p {
+  max-width: 520px;
+  margin: 0;
+  color: #64748b;
+}
+
+.ai-provider-badge {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(5, 150, 105, 0.24);
+  border-radius: 6px;
+  padding: 6px 9px;
+  color: #047857;
+  background: rgba(16, 185, 129, 0.08);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .spin-icon {

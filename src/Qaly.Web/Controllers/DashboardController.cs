@@ -5,6 +5,8 @@ using Qaly.Domain.Entities;
 using Microsoft.Extensions.Logging;
 using Qaly.Infrastructure.Data;
 using Qaly.Web.Auth;
+using Qaly.Application.Common.Models;
+using Qaly.Application.Services;
 using System.Globalization;
 using System.Text.Json;
 
@@ -17,11 +19,16 @@ public partial class DashboardController : BaseApiController
 {
     private readonly QalyDbContext _context;
     private readonly ILogger<DashboardController> _logger;
+    private readonly IAiGateway _aiGateway;
 
-    public DashboardController(QalyDbContext context, ILogger<DashboardController> logger)
+    public DashboardController(
+        QalyDbContext context,
+        ILogger<DashboardController> logger,
+        IAiGateway aiGateway)
     {
         _context = context;
         _logger = logger;
+        _aiGateway = aiGateway;
     }
 
     [HttpGet("overview")]
@@ -157,6 +164,7 @@ public partial class DashboardController : BaseApiController
                         project.Description,
                         project.LogoUrl,
                         project.Status,
+                        project.OrganizationId,
                         project.OwnerId,
                         project.Owner?.FullName ?? "Unknown owner",
                         projectMembers.Count,
@@ -869,62 +877,106 @@ public partial class DashboardController : BaseApiController
     }
 
     [HttpPost("ai-strategy")]
-    public ActionResult<AiStrategyResponseDto> GenerateAiStrategy([FromBody] StrategicOverviewDto data)
+    public async Task<ActionResult<AiStrategyResponseDto>> GenerateAiStrategy(
+        [FromBody] StrategicOverviewDto data,
+        CancellationToken cancellationToken)
     {
-        // Rule-based fallback implementation
-        var riskAnalysis = new List<string>();
-        var recommendations = new List<string>();
-        var priorityPlan = new List<string>();
-        string summary = "Workspace đang vận hành ổn định nhưng cần duy trì nhịp độ triển khai.";
+        var response = await _aiGateway.ExecuteAsync(new AiRequest
+        {
+            JobType = "WorkspaceStrategicOverview",
+            ProviderHint = "auto",
+            UserId = User.GetUserId(),
+            Prompt = $"""
+                Phân tích các chỉ số hiện tại của không gian làm việc Qaly và đưa ra hướng xử lý cụ thể:
+                - Điểm sức khỏe: {data.WorkspaceHealthScore}%
+                - Tiến độ dự án trung bình: {data.AverageProjectProgress}%
+                - Tỷ lệ hoàn thành nhiệm vụ: {data.TaskCompletionRate}%
+                - Số dự án đang hoạt động: {data.ActiveProjectCount}
+                - Số dự án có rủi ro: {data.RiskProjectCount}
+                - Số nhiệm vụ quá hạn: {data.OverdueTaskCount}
+                - Số nhiệm vụ sắp đến hạn: {data.DueSoonTaskCount}
+                - Mức tải đội ngũ: {data.TeamWorkloadLevel}
+                - Mức rủi ro chung: {data.RiskLevel}
+                - Nhiệm vụ ưu tiên: {string.Join("; ", data.TopPriorityTasks.Select(task => task.Title))}
 
-        if (data.OverdueTaskCount > 0)
+                Toàn bộ nội dung phải viết bằng tiếng Việt tự nhiên và dẫn ít nhất hai số liệu ở trên.
+                Riêng summary phải nhắc rõ {data.ActiveProjectCount} dự án đang hoạt động và {data.OverdueTaskCount} nhiệm vụ quá hạn.
+                Các giá trị dự án và nhiệm vụ là số lượng, không phải phần trăm.
+                Hãy nêu rõ người dùng cần kiểm tra hoặc thực hiện việc gì tiếp theo.
+                Không lặp câu mẫu của schema và không bịa tên người, chi phí hoặc thời hạn.
+                """,
+            SystemPrompt = """
+                Bạn là trợ lý vận hành dự án. Chỉ phân tích dữ liệu JSON được cung cấp, không bịa thêm dữ kiện.
+                Trả về duy nhất một JSON object theo đúng cấu trúc:
+                {
+                  "summary": "nhận định ngắn",
+                  "riskAnalysis": ["rủi ro có căn cứ từ dữ liệu"],
+                  "recommendations": ["hành động cụ thể người dùng có thể làm"],
+                  "priorityPlan": ["tối đa 3 ưu tiên có thể thực hiện"]
+                }
+                Mỗi mảng phải có ít nhất một mục. Dùng tiếng Việt rõ ràng, không dùng markdown.
+                """,
+            ExpectedSchemaId = "WorkspaceStrategy.v1",
+            IsSensitive = false,
+            UseCache = false,
+            AllowMockFallback = false
+        }, cancellationToken);
+
+        if (!response.IsSuccess || response.IsMock)
         {
-            riskAnalysis.Add($"Có {data.OverdueTaskCount} task đã trễ hạn.");
-            recommendations.Add("Ưu tiên xử lý ngay các task đang trễ hạn.");
-        }
-        
-        if (data.DueSoonTaskCount > 0)
-        {
-            riskAnalysis.Add($"Có {data.DueSoonTaskCount} task sắp đến hạn trong 48h tới.");
-            recommendations.Add("Hoàn thành các task sắp đến hạn để tránh tồn đọng.");
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+            {
+                errorCode = response.ErrorCode ?? AiErrorCodes.ProviderUnavailable,
+                error = response.IsMock
+                    ? "AI provider chỉ trả dữ liệu mô phỏng; Qaly đã từ chối hiển thị như kết quả thật."
+                    : response.ErrorMessage ?? "AI provider chưa sẵn sàng."
+            });
         }
 
-        if (data.RiskProjectCount > 0)
+        if (!TryReadAiStrategy(response.Content, out var strategy))
         {
-            riskAnalysis.Add($"{data.RiskProjectCount} dự án có tiến độ thấp hơn mức kỳ vọng hoặc có nhiều task quá hạn.");
-            summary = "Workspace đang có dấu hiệu rủi ro do một số dự án và nhiệm vụ chậm tiến độ.";
-            recommendations.Add("Cần họp review lại timeline cho các dự án rủi ro và điều chỉnh scope.");
-        }
-
-        if (data.TeamWorkloadLevel == "High")
-        {
-            riskAnalysis.Add("Một số thành viên có workload khá cao.");
-            recommendations.Add("Điều phối lại workload cho các thành viên đang quá tải, tạm dừng các task priority thấp.");
-        }
-
-        if (riskAnalysis.Count == 0)
-        {
-            riskAnalysis.Add("Tất cả dự án đang đúng tiến độ.");
-            recommendations.Add("Tiếp tục duy trì hiệu suất làm việc hiện tại.");
-        }
-
-        foreach (var task in data.TopPriorityTasks.Take(3))
-        {
-            priorityPlan.Add($"Tập trung: {task.Title} ({task.ProjectName})");
-        }
-        
-        if (priorityPlan.Count == 0)
-        {
-            priorityPlan.Add("Rà soát backlog");
-            priorityPlan.Add("Lập kế hoạch cho Sprint tiếp theo");
+            _logger.LogWarning(
+                "AI provider {Provider} returned an invalid workspace strategy payload.",
+                response.ProviderName);
+            return StatusCode(StatusCodes.Status502BadGateway, new
+            {
+                errorCode = AiErrorCodes.SchemaInvalid,
+                error = "Model đã phản hồi nhưng nội dung không đúng cấu trúc yêu cầu."
+            });
         }
 
         return Ok(new AiStrategyResponseDto(
-            summary,
-            riskAnalysis,
-            recommendations,
-            priorityPlan
-        ));
+            strategy!.Summary,
+            strategy.RiskAnalysis,
+            strategy.Recommendations,
+            strategy.PriorityPlan,
+            response.ProviderName,
+            response.ModelName,
+            response.CacheHit));
+    }
+
+    private static bool TryReadAiStrategy(string content, out AiStrategyPayload? payload)
+    {
+        payload = null;
+        var firstBrace = content.IndexOf('{');
+        var lastBrace = content.LastIndexOf('}');
+        if (firstBrace < 0 || lastBrace <= firstBrace) return false;
+
+        try
+        {
+            payload = JsonSerializer.Deserialize<AiStrategyPayload>(
+                content[firstBrace..(lastBrace + 1)],
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            return payload != null
+                && !string.IsNullOrWhiteSpace(payload.Summary)
+                && payload.RiskAnalysis.Count > 0
+                && payload.Recommendations.Count > 0
+                && payload.PriorityPlan.Count > 0;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 }
 
@@ -953,6 +1005,7 @@ public sealed record DashboardProjectResponse(
     string? Description,
     string? LogoUrl,
     string Status,
+    Guid? OrganizationId,
     Guid OwnerId,
     string OwnerName,
     int MemberCount,
@@ -1059,6 +1112,15 @@ public sealed record StrategicOverviewDto(
     IReadOnlyList<DashboardTaskResponse> TopPriorityTasks);
 
 public sealed record AiStrategyResponseDto(
+    string Summary,
+    IReadOnlyList<string> RiskAnalysis,
+    IReadOnlyList<string> Recommendations,
+    IReadOnlyList<string> PriorityPlan,
+    string Provider,
+    string Model,
+    bool CacheHit);
+
+public sealed record AiStrategyPayload(
     string Summary,
     IReadOnlyList<string> RiskAnalysis,
     IReadOnlyList<string> Recommendations,

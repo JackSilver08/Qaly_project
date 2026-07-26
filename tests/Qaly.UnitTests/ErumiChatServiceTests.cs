@@ -660,6 +660,40 @@ public class ErumiChatServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ChatFastAsync_WithExplicitDeepSeek_UsesGatewayAndReturnsActualModel()
+    {
+        var projectId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        SetupProjectAiContext(projectId, userId);
+
+        _aiGatewayMock
+            .Setup(gateway => gateway.ExecuteAsync(
+                It.Is<AiRequest>(request =>
+                    request.ProviderHint == "deepseek" && request.StrictProvider),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiResponse
+            {
+                Content = "{\"reply\":\"DeepSeek response\",\"metrics\":[],\"tables\":[],\"charts\":[],\"actions\":[],\"files\":[]}",
+                ProviderName = "DeepSeek",
+                ModelName = "deepseek-v4-pro"
+            });
+
+        var result = await _service.ChatFastAsync(new ErumiChatRequestDto(
+            "Analyze this project with DeepSeek",
+            projectId,
+            Mode: "agent",
+            ProviderHint: "deepseek"));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Reply.Should().Be("DeepSeek response");
+        result.Data.UsedAi.Should().BeTrue();
+        result.Data.Model.Should().NotBeNull();
+        result.Data.Model!.Provider.Should().Be("DeepSeek");
+        result.Data.Model.Status.Should().Be("live");
+        _aiGatewayMock.VerifyAll();
+    }
+
+    [Fact]
     public async Task ChatFastAsync_WhenAgentFrameworkFails_FallsBackToAiGateway()
     {
         var projectId = Guid.NewGuid();

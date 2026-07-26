@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
@@ -39,7 +38,10 @@ public class AuthController : BaseApiController
 
         if (result.StatusCode == StatusCodes.Status404NotFound)
         {
-            return Ok(Result.Success(BuildFallbackCurrentUser(userId.Value)));
+            await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            return Unauthorized(Result.Failure<UserDto>(
+                "Your session no longer matches an active Qaly user. Please sign in again.",
+                StatusCodes.Status401Unauthorized));
         }
 
         return StatusCode(result.StatusCode, result);
@@ -160,23 +162,4 @@ public class AuthController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
-    private UserDto BuildFallbackCurrentUser(Guid userId)
-    {
-        var fullName =
-            User.FindFirstValue(ClaimTypes.Name) ??
-            User.FindFirstValue(ClaimTypes.Email) ??
-            "Qaly user";
-
-        var email = User.FindFirstValue(ClaimTypes.Email) ?? string.Empty;
-        var role = User.FindFirstValue(ClaimTypes.Role) ?? "Member";
-
-        return new UserDto(
-            userId,
-            fullName,
-            email,
-            role,
-            true,
-            null,
-            DateTimeOffset.UtcNow);
-    }
 }

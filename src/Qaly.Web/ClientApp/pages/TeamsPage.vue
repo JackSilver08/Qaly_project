@@ -8,11 +8,14 @@ import {
   CalendarDays,
   Camera,
   Check,
+  ChevronRight,
   Crown,
   Download,
   FileText,
   FileVideo,
+  FolderKanban,
   Image as ImageIcon,
+  Loader2,
   Mail,
   LogOut,
   Plus,
@@ -128,7 +131,7 @@ interface GroupAttachmentDto {
 
 const route = useRoute();
 const router = useRouter();
-const { currentUser } = useDashboardContext();
+const { currentUser, loadDashboard, selectProject } = useDashboardContext();
 
 const groups = ref<ChatGroupModel[]>([]);
 const groupDetails = ref<Record<string, GroupDto>>({});
@@ -150,6 +153,8 @@ const addUserSearch = ref("");
 const showAddUserSuggestions = ref(false);
 const addRole = ref("Member");
 const projectForm = ref({ name: "", code: "", description: "" });
+const isCreatingProject = ref(false);
+const lastCreatedProject = ref<{ id: string; name: string } | null>(null);
 const pollForm = ref({ question: "", options: ["", ""], allowMultiple: false });
 const isCreatingPoll = ref(false);
 const isDetailPanelCollapsed = ref(false);
@@ -472,6 +477,9 @@ async function connectRealtime() {
     const groupId = payload?.groupId;
     if (groupId && groupId === activeGroupId.value) await loadMessages(groupId);
   });
+  hubConnection.on("groupProjectCreated", async (payload: { groupId?: string }) => {
+    if (payload?.groupId === activeGroupId.value) await loadDashboard();
+  });
 
   try {
     await hubConnection.start();
@@ -694,8 +702,9 @@ async function startMeeting() {
 }
 
 async function createProjectFromGroup() {
-  if (!activeGroupId.value || !projectForm.value.name.trim()) return;
+  if (!activeGroupId.value || !projectForm.value.name.trim() || isCreatingProject.value) return;
 
+  isCreatingProject.value = true;
   try {
     const result = await apiResult<any>(`/api/groups/${activeGroupId.value}/create-project`, {
       method: "POST",
@@ -705,11 +714,26 @@ async function createProjectFromGroup() {
         description: projectForm.value.description.trim() || null,
       }),
     });
+    const project = result.project ?? result.Project;
+    const refreshed = await loadDashboard();
     projectForm.value = { name: "", code: "", description: "" };
-    showSuccess(`Đã tạo project từ nhóm (${result.membersAdded ?? 0} thành viên)`);
+    lastCreatedProject.value = project?.id
+      ? { id: project.id, name: project.name || "Dự án mới" }
+      : null;
+    if (refreshed) {
+      showSuccess(`Đã tạo project từ nhóm (${result.membersAdded ?? 0} thành viên) và cập nhật toàn ứng dụng.`);
+    } else {
+      showError("Project đã được tạo, nhưng danh sách chung chưa tải lại được. Hãy thử mở dự án bằng liên kết bên dưới.");
+    }
   } catch (error) {
     showError(errorMessage(error, "Không thể tạo project từ nhóm."));
+  } finally {
+    isCreatingProject.value = false;
   }
+}
+
+function openLastCreatedProject() {
+  if (lastCreatedProject.value) selectProject(lastCreatedProject.value.id);
 }
 
 async function createPanelPoll() {
@@ -1731,10 +1755,22 @@ function formatMessageTime(value: string) {
               <input v-model="projectForm.name" type="text" placeholder="Tên project" />
               <input v-model="projectForm.code" type="text" placeholder="Mã project" />
               <textarea v-model="projectForm.description" rows="3" placeholder="Mô tả"></textarea>
-              <button class="primary-button" type="submit">
-                <Check :size="15" /> Tạo project từ nhóm
+              <button class="primary-button" type="submit" :disabled="isCreatingProject">
+                <Loader2 v-if="isCreatingProject" :size="15" class="spin" />
+                <Check v-else :size="15" />
+                {{ isCreatingProject ? 'Đang tạo...' : 'Tạo project từ nhóm' }}
               </button>
             </form>
+            <button
+              v-if="lastCreatedProject"
+              class="group-created-project-link"
+              type="button"
+              @click="openLastCreatedProject"
+            >
+              <FolderKanban :size="15" />
+              Mở {{ lastCreatedProject.name }}
+              <ChevronRight :size="15" />
+            </button>
           </div>
 
           <section v-if="sharedAttachments.length" class="group-shared-section">
@@ -2399,6 +2435,36 @@ function formatMessageTime(value: string) {
 .group-stack-form {
   display: grid;
   gap: 8px;
+}
+
+.group-created-project-link {
+  width: 100%;
+  min-height: 40px;
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid #bfdbfe;
+  border-radius: var(--qaly-radius-lg);
+  padding: 9px 11px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.group-created-project-link:hover {
+  border-color: #60a5fa;
+  background: #dbeafe;
+}
+
+.spin {
+  animation: group-tool-spin 900ms linear infinite;
+}
+
+@keyframes group-tool-spin {
+  to { transform: rotate(360deg); }
 }
 
 .group-inline-form {

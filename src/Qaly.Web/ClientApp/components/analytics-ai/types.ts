@@ -79,45 +79,45 @@ export type ConversationHistoryItem = {
 
 export const AI_MODEL_OPTIONS: AiModelOption[] = [
   {
-    id: 'fast-current',
-    label: 'Nhanh hiện tại',
-    shortLabel: 'Fast',
-    providerLabel: 'QALY hiện tại',
-    description: 'Dùng endpoint phân tích hiện có của QALY. Không kích hoạt provider mới.',
+    id: 'auto',
+    label: 'Tự động',
+    shortLabel: 'Auto',
+    providerLabel: 'Qaly AI Router',
+    description: 'Qaly chọn provider đang khả dụng và hiển thị model thực tế đã trả lời.',
     status: 'live',
     badge: 'Live',
-    latencyHint: 'Ưu tiên phản hồi nhanh'
+    latencyHint: 'Có fallback minh bạch khi provider chính lỗi'
   },
   {
-    id: 'mock',
-    label: 'Mock an toàn',
-    shortLabel: 'Mock',
-    providerLabel: 'Fallback cục bộ',
-    description: 'Dùng phản hồi hệ thống hoặc dữ liệu mô phỏng khi AI bên ngoài chưa sẵn sàng.',
-    status: 'mock',
-    badge: 'Mock'
+    id: 'ollama-local',
+    label: 'Qwen 2.5 3B',
+    shortLabel: 'Local',
+    providerLabel: 'Ollama local',
+    description: 'Chạy trên máy hiện tại, không gửi nội dung lên cloud.',
+    status: 'live',
+    badge: 'Local',
+    privacyNote: 'Phù hợp dữ liệu cần xử lý cục bộ.'
   },
   {
-    id: 'deep-planned',
-    label: 'DeepSeek planned',
-    shortLabel: 'Deep',
-    providerLabel: 'Provider planned',
-    description: 'Chỉ là tuỳ chọn dự kiến trong registry, chưa có backend live ở pass này.',
-    status: 'planned',
-    badge: 'Planned',
-    disabled: true,
-    tooltip: 'Chưa kích hoạt provider DeepSeek trong backend.'
+    id: 'deepseek-v4-pro',
+    label: 'DeepSeek V4 Pro',
+    shortLabel: 'V4 Pro',
+    providerLabel: 'DeepSeek Cloud',
+    description: 'Phân tích chuyên sâu bằng DeepSeek V4 Pro qua API cloud.',
+    status: 'live',
+    badge: 'Cloud',
+    privacyNote: 'Dữ liệu nhạy cảm cần policy và consent cho cloud.'
   },
   {
     id: 'provider-planned',
     label: 'Provider registry',
     shortLabel: 'Provider',
-    providerLabel: 'OpenAI/Gemini planned',
-    description: 'Khung lựa chọn provider tương lai. Pass này không gọi API provider mới.',
+    providerLabel: 'OpenAI/Gemini',
+    description: 'Các provider khác chưa được mở cho người dùng chọn trực tiếp.',
     status: 'planned',
     badge: 'Planned',
     disabled: true,
-    tooltip: 'Đang là placeholder cho registry provider sau này.'
+    tooltip: 'Chưa có cấu hình live cho provider này.'
   }
 ]
 

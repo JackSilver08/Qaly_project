@@ -22,6 +22,7 @@ export const fallbackDashboard = {
       description:
         'Không gian quản lý công việc nội bộ cho triển khai chu kỳ làm việc, lập kế hoạch đội ngũ và hỗ trợ quyết định bằng AI.',
       status: 'Active',
+      organizationId: null,
       ownerId: '9f8e7d6c-1a2b-4f3c-9c8b-7a6d5e4f3001',
       ownerName: 'Quản trị viên',
       memberCount: 3,
@@ -111,6 +112,7 @@ export const fallbackDashboard = {
       name: 'Gia cố định danh',
       description: 'Phân quyền theo vai trò, an toàn phiên đăng nhập và trải nghiệm đăng nhập/đăng ký.',
       status: 'InProgress',
+      organizationId: null,
       ownerId: '9f8e7d6c-1a2b-4f3c-9c8b-7a6d5e4f3002',
       ownerName: 'Nguyễn Văn A',
       memberCount: 2,
@@ -169,6 +171,7 @@ export const fallbackDashboard = {
       description:
         'Hoàn thiện hệ thống hình ảnh, kiểu chữ và các mẫu giao diện tái sử dụng cho quy trình quản trị.',
       status: 'Planned',
+      organizationId: null,
       ownerId: '9f8e7d6c-1a2b-4f3c-9c8b-7a6d5e4f3003',
       ownerName: 'Trần Thị B',
       memberCount: 2,

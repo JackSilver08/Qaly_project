@@ -1,7 +1,10 @@
 #pragma warning disable CA1822 // Mark members as static
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Qaly.Infrastructure.Services.AI;
 
@@ -21,7 +24,59 @@ public class AiOutputValidator
             using var document = JsonDocument.Parse(content);
             var root = document.RootElement;
 
-            if (string.Equals(schemaId, "TextAnswer.v1", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(schemaId, "WorkspaceStrategy.v1", StringComparison.OrdinalIgnoreCase))
+            {
+                if (root.ValueKind != JsonValueKind.Object)
+                {
+                    errorMessage = "WorkspaceStrategy.v1 root must be a JSON object.";
+                    return false;
+                }
+
+                if (!TryReadNonEmptyString(root, "summary", out var summary) ||
+                    !TryReadStringArray(root, "riskAnalysis", out var risks) ||
+                    !TryReadStringArray(root, "recommendations", out var recommendations) ||
+                    !TryReadStringArray(root, "priorityPlan", out var priorities))
+                {
+                    errorMessage = "WorkspaceStrategy.v1 requires a summary and non-empty string arrays for riskAnalysis, recommendations, and priorityPlan.";
+                    return false;
+                }
+
+                var combined = string.Join(' ', new[] { summary }
+                    .Concat(risks)
+                    .Concat(recommendations)
+                    .Concat(priorities));
+                var placeholders = new[]
+                {
+                    "nhận định ngắn",
+                    "rủi ro có căn cứ từ dữ liệu",
+                    "hành động cụ thể người dùng có thể làm",
+                    "tối đa 3 ưu tiên có thể thực hiện"
+                };
+
+                if (placeholders.Any(item => combined.Contains(item, StringComparison.OrdinalIgnoreCase)))
+                {
+                    errorMessage = "WorkspaceStrategy.v1 copied a schema placeholder instead of analysing the supplied metrics.";
+                    return false;
+                }
+
+                var citedMetrics = Regex.Matches(combined, @"\d+(?:[.,]\d+)?")
+                    .Select(match => match.Value)
+                    .Distinct(StringComparer.Ordinal)
+                    .Count();
+                if (citedMetrics < 2)
+                {
+                    errorMessage = "WorkspaceStrategy.v1 must cite at least two supplied numeric metrics.";
+                    return false;
+                }
+
+                var vietnameseSignals = new[] { "dự án", "nhiệm vụ", "tiến độ", "cần ", "người dùng" };
+                if (!vietnameseSignals.Any(item => combined.Contains(item, StringComparison.OrdinalIgnoreCase)))
+                {
+                    errorMessage = "WorkspaceStrategy.v1 must be written in Vietnamese.";
+                    return false;
+                }
+            }
+            else if (string.Equals(schemaId, "TextAnswer.v1", StringComparison.OrdinalIgnoreCase))
             {
                 if (root.ValueKind != JsonValueKind.Object)
                 {
@@ -274,5 +329,42 @@ public class AiOutputValidator
             errorMessage = $"Invalid JSON format: {ex.Message}";
             return false;
         }
+    }
+
+    private static bool TryReadNonEmptyString(JsonElement root, string propertyName, out string value)
+    {
+        value = string.Empty;
+        if (!root.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        value = property.GetString()?.Trim() ?? string.Empty;
+        return value.Length >= 12;
+    }
+
+    private static bool TryReadStringArray(JsonElement root, string propertyName, out IReadOnlyList<string> values)
+    {
+        values = [];
+        if (!root.TryGetProperty(propertyName, out var property) ||
+            property.ValueKind != JsonValueKind.Array ||
+            property.GetArrayLength() == 0)
+        {
+            return false;
+        }
+
+        var parsed = new List<string>();
+        foreach (var item in property.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(item.GetString()))
+            {
+                return false;
+            }
+
+            parsed.Add(item.GetString()!.Trim());
+        }
+
+        values = parsed;
+        return true;
     }
 }

@@ -44,19 +44,25 @@ public class OllamaProvider : IAiProvider
 
         chatMessages.Add(new { role = "user", content = request.Prompt });
 
+        var requestPayload = new Dictionary<string, object?>
+        {
+            ["model"] = model,
+            ["messages"] = chatMessages,
+            ["stream"] = false,
+            ["options"] = new
+            {
+                temperature = 0.2,
+                num_predict = 1500
+            }
+        };
+        if (!string.IsNullOrWhiteSpace(request.ExpectedSchemaId))
+        {
+            requestPayload["format"] = "json";
+        }
+
         using var response = await httpClient.PostAsJsonAsync(
             $"{baseUrl.TrimEnd('/')}/api/chat",
-            new
-            {
-                model,
-                messages = chatMessages,
-                stream = false,
-                options = new
-                {
-                    temperature = 0.3,
-                    num_predict = 1500
-                }
-            },
+            requestPayload,
             cancellationToken);
         response.EnsureSuccessStatusCode();
 

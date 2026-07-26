@@ -164,6 +164,14 @@ public class ProjectService : IProjectService
             return Result.Failure<ProjectDto>("Project name is required.");
         }
 
+        var owner = await _userRepo.GetByIdAsync(currentUserId.Value, ct);
+        if (owner == null || !owner.IsActive)
+        {
+            return Result.Failure<ProjectDto>(
+                "Your session no longer matches an active Qaly user. Please sign in again.",
+                401);
+        }
+
         var project = dto.ToEntity();
         project.Name = dto.Name.Trim();
         project.Code = await GenerateUniqueCodeAsync(dto.Code, dto.Name, ct);

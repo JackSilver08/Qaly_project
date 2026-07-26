@@ -95,6 +95,7 @@ public static class DependencyInjection
         
         // AI Providers & Routing Infrastructure
         services.AddTransient<IAiProvider, Qaly.Infrastructure.Services.AI.Providers.OllamaProvider>();
+        services.AddTransient<IAiProvider, Qaly.Infrastructure.Services.AI.Providers.DeepSeekProvider>();
         services.AddTransient<IAiProvider, Qaly.Infrastructure.Services.AI.Providers.OpenAIProvider>();
         services.AddTransient<IAiProvider, Qaly.Infrastructure.Services.AI.Providers.GeminiProvider>();
         services.AddScoped<AiProviderFactory>();

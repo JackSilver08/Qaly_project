@@ -54,6 +54,63 @@ public class AiGatewayRouterTests : IDisposable
     }
 
     [Fact]
+    public void AiOutputValidator_WithConcreteWorkspaceStrategy_ReturnsTrue()
+    {
+        var validator = new AiOutputValidator();
+        var json = """
+            {
+              "summary": "Có 14 nhiệm vụ quá hạn trong 6 dự án đang hoạt động.",
+              "riskAnalysis": ["5 dự án cần được kiểm tra nguyên nhân chậm tiến độ."],
+              "recommendations": ["Mở danh sách nhiệm vụ quá hạn và xác nhận người phụ trách."],
+              "priorityPlan": ["Xử lý nhóm 14 nhiệm vụ quá hạn trước khi nhận thêm việc mới."]
+            }
+            """;
+
+        var result = validator.Validate(json, "WorkspaceStrategy.v1", out var error);
+
+        result.Should().BeTrue();
+        error.Should().BeNull();
+    }
+
+    [Fact]
+    public void AiOutputValidator_WithWorkspacePlaceholder_ReturnsFalse()
+    {
+        var validator = new AiOutputValidator();
+        var json = """
+            {
+              "summary": "nhận định ngắn",
+              "riskAnalysis": ["rủi ro có căn cứ từ dữ liệu"],
+              "recommendations": ["hành động cụ thể người dùng có thể làm"],
+              "priorityPlan": ["tối đa 3 ưu tiên có thể thực hiện"]
+            }
+            """;
+
+        var result = validator.Validate(json, "WorkspaceStrategy.v1", out var error);
+
+        result.Should().BeFalse();
+        error.Should().Contain("placeholder");
+    }
+
+    [Fact]
+    public void AiOutputValidator_WithOnlyOneWorkspaceMetric_ReturnsFalse()
+    {
+        var validator = new AiOutputValidator();
+        var json = """
+            {
+              "summary": "Có 14 nhiệm vụ đang cần xử lý.",
+              "riskAnalysis": ["Nhiệm vụ quá hạn có thể làm chậm tiến độ dự án."],
+              "recommendations": ["Người dùng cần kiểm tra người phụ trách."],
+              "priorityPlan": ["Ưu tiên xử lý nhiệm vụ quá hạn trước."]
+            }
+            """;
+
+        var result = validator.Validate(json, "WorkspaceStrategy.v1", out var error);
+
+        result.Should().BeFalse();
+        error.Should().Contain("two supplied numeric metrics");
+    }
+
+    [Fact]
     public void AiOutputValidator_WithValidChatSummary_ReturnsTrue()
     {
         var validator = new AiOutputValidator();
@@ -175,6 +232,71 @@ public class AiGatewayRouterTests : IDisposable
         // Verify it routed correctly to OpenAI
         response.Content.Should().Be("OpenAI response");
         response.ProviderName.Should().Be("OpenAI");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithDeepSeekHint_SelectsDeepSeekProvider()
+    {
+        var config = CreateConfiguration("Ollama");
+        var deepSeek = new Mock<IAiProvider>();
+        deepSeek.SetupGet(provider => provider.ProviderName).Returns("DeepSeek");
+        deepSeek.Setup(provider => provider.CompleteAsync(
+                It.IsAny<AiRequest>(),
+                It.IsAny<AiProviderSetting>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiResponse
+            {
+                Content = "DeepSeek response",
+                ProviderName = "DeepSeek",
+                ModelName = "deepseek-v4-pro"
+            });
+
+        var gateway = CreateGateway(config, new AiProviderFactory([deepSeek.Object]));
+        var response = await gateway.ExecuteAsync(new AiRequest
+        {
+            JobType = "test",
+            ProviderHint = "deepseek",
+            SystemPrompt = "system",
+            Prompt = "prompt",
+            UseCache = false
+        });
+
+        response.IsSuccess.Should().BeTrue();
+        response.ProviderName.Should().Be("DeepSeek");
+        response.ModelName.Should().Be("deepseek-v4-pro");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithStrictDeepSeekFailure_DoesNotUseFallbackProvider()
+    {
+        var config = CreateConfiguration("Ollama");
+        var deepSeek = new Mock<IAiProvider>();
+        deepSeek.SetupGet(provider => provider.ProviderName).Returns("DeepSeek");
+        deepSeek.Setup(provider => provider.CompleteAsync(
+                It.IsAny<AiRequest>(),
+                It.IsAny<AiProviderSetting>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("Insufficient Balance"));
+        var ollama = new Mock<IAiProvider>();
+        ollama.SetupGet(provider => provider.ProviderName).Returns("Ollama");
+
+        var gateway = CreateGateway(config, new AiProviderFactory([deepSeek.Object, ollama.Object]));
+        var response = await gateway.ExecuteAsync(new AiRequest
+        {
+            JobType = "test",
+            ProviderHint = "deepseek",
+            StrictProvider = true,
+            SystemPrompt = "system",
+            Prompt = "prompt",
+            UseCache = false
+        });
+
+        response.IsSuccess.Should().BeFalse();
+        response.ErrorMessage.Should().Contain("Insufficient Balance");
+        ollama.Verify(provider => provider.CompleteAsync(
+            It.IsAny<AiRequest>(),
+            It.IsAny<AiProviderSetting>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -356,6 +478,19 @@ public class AiGatewayRouterTests : IDisposable
     }
 
     [Fact]
+    public async Task CompleteAsync_DeepSeekProvider_WithDummyKey_ThrowsInvalidOperationException()
+    {
+        var provider = new DeepSeekProvider(Mock.Of<IHttpClientFactory>());
+        var request = new AiRequest { Prompt = "hi" };
+        var config = new AiProviderSetting { ApiKey = "YOUR_DEEPSEEK_KEY" };
+
+        var act = () => provider.CompleteAsync(request, config);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*not configured*");
+    }
+
+    [Fact]
     public async Task CompleteAsync_GeminiProvider_WithDummyKey_ThrowsInvalidOperationException()
     {
         var provider = new GeminiProvider(Mock.Of<IHttpClientFactory>());
@@ -380,6 +515,8 @@ public class AiGatewayRouterTests : IDisposable
         {
             { "AiSettings:Provider", providerName },
             { "AiSettings:Ollama:Model", "llama3" },
+            { "AiSettings:DeepSeek:ApiKey", "sk-deepseek-test" },
+            { "AiSettings:DeepSeek:Model", "deepseek-v4-pro" },
             { "AiSettings:OpenAI:ApiKey", "sk-test" },
             { "AiSettings:Gemini:ApiKey", "gemini-test" }
         };

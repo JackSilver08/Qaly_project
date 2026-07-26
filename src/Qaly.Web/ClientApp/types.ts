@@ -25,6 +25,7 @@ export interface DashboardProject {
     description: string | null;
     logoUrl: string | null;
     status: string;
+    organizationId: string | null;
     ownerId: string;
     ownerName: string;
     memberCount: number;
@@ -499,4 +500,7 @@ export interface AiStrategyResponseDto {
     riskAnalysis: string[];
     recommendations: string[];
     priorityPlan: string[];
+    provider: string;
+    model: string;
+    cacheHit: boolean;
 }

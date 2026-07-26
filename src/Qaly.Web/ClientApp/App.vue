@@ -1067,7 +1067,13 @@ async function clearActionableNotifications() {
 }
 
 function openChatWithPrompt(prompt?: string) {
-  void router.push('/analytics')
+  const normalizedPrompt = prompt?.trim()
+  void router.push({
+    path: '/analytics',
+    query: normalizedPrompt
+      ? { prompt: normalizedPrompt, scope: 'workspace' }
+      : undefined,
+  })
 }
 
 async function logout() {
