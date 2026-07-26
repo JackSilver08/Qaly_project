@@ -17,6 +17,9 @@ namespace Qaly.Web.Controllers;
 [Route("api/dashboard")]
 public partial class DashboardController : BaseApiController
 {
+    private static readonly JsonSerializerOptions WebJsonSerializerOptions =
+        new(JsonSerializerDefaults.Web);
+
     private readonly QalyDbContext _context;
     private readonly ILogger<DashboardController> _logger;
     private readonly IAiGateway _aiGateway;
@@ -453,6 +456,9 @@ public partial class DashboardController : BaseApiController
 
     [LoggerMessage(EventId = 2001, Level = LogLevel.Error, Message = "Failed to build dashboard overview. Returning safe fallback response.")]
     private static partial void LogFailedToBuildDashboardOverview(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 2002, Level = LogLevel.Warning, Message = "AI provider {Provider} returned an invalid workspace strategy payload.")]
+    private static partial void LogInvalidWorkspaceStrategyPayload(ILogger logger, string? provider);
 
     [HttpGet("attention-summary")]
     public async Task<ActionResult<AttentionSummaryDto>> GetAttentionSummary(CancellationToken cancellationToken)
@@ -937,9 +943,7 @@ public partial class DashboardController : BaseApiController
 
         if (!TryReadAiStrategy(response.Content, out var strategy))
         {
-            _logger.LogWarning(
-                "AI provider {Provider} returned an invalid workspace strategy payload.",
-                response.ProviderName);
+            LogInvalidWorkspaceStrategyPayload(_logger, response.ProviderName);
             return StatusCode(StatusCodes.Status502BadGateway, new
             {
                 errorCode = AiErrorCodes.SchemaInvalid,
@@ -968,7 +972,7 @@ public partial class DashboardController : BaseApiController
         {
             payload = JsonSerializer.Deserialize<AiStrategyPayload>(
                 content[firstBrace..(lastBrace + 1)],
-                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                WebJsonSerializerOptions);
             return payload != null
                 && !string.IsNullOrWhiteSpace(payload.Summary)
                 && payload.RiskAnalysis.Count > 0

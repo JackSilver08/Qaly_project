@@ -85,3 +85,13 @@ test("main authenticated routes have no browser errors", async ({ page }) => {
         await routePage.close();
     }
 });
+
+test("group detail route renders without a blank screen", async ({ page }) => {
+    await login(page);
+    const groupId =
+        process.env.E2E_GROUP_ID ?? "d9a15354-b812-4431-93bd-8424770aad2e";
+
+    await page.goto(`/groups/${groupId}`, { waitUntil: "domcontentloaded" });
+    await expect(page.locator(".shell-header")).toBeVisible();
+    await expect(page.locator(".groups-workspace")).toBeVisible();
+});

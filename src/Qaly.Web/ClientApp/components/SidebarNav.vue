@@ -268,7 +268,7 @@ function formatRoleLabel(role: string | null | undefined) {
   }
 }
 
-:global(.app-shell.is-chat-shell) .sidebar-profile {
+:global(.app-shell.is-chat-shell .sidebar-profile) {
   width: 100%;
   grid-template-columns: 1fr;
   justify-items: center;
@@ -276,11 +276,11 @@ function formatRoleLabel(role: string | null | undefined) {
   padding: 12px 8px;
 }
 
-:global(.app-shell.is-chat-shell) .sidebar-profile__content {
+:global(.app-shell.is-chat-shell .sidebar-profile__content) {
   display: none;
 }
 
-:global(.app-shell.is-chat-shell) .sidebar-divider {
+:global(.app-shell.is-chat-shell .sidebar-divider) {
   width: calc(100% - 8px);
 }
 </style>
