@@ -74,7 +74,9 @@ public sealed partial class WebSurfaceContractTests : IDisposable
         var response = await _client.SendAsync(request);
         var body = await response.Content.ReadAsStringAsync();
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK, $"{route} must be handled by the SPA fallback");
+        response.StatusCode.Should().Be(
+            HttpStatusCode.OK,
+            $"{route} must be handled by the SPA fallback; response body: {body}");
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/html");
         body.Should().Contain("<div id=\"qaly-dashboard-app\">");
         body.Should().Contain("/dist/assets/main.js");
@@ -98,6 +100,17 @@ public sealed partial class WebSurfaceContractTests : IDisposable
             response.StatusCode.Should().Be(HttpStatusCode.OK, $"{assetPath} is referenced by the application shell");
             (await response.Content.ReadAsByteArrayAsync()).Should().NotBeEmpty();
         }
+    }
+
+    [TestCase("/api/route-that-does-not-exist")]
+    [TestCase("/hubs/route-that-does-not-exist")]
+    [TestCase("/Account/route-that-does-not-exist")]
+    public async Task Backend_and_auth_routes_are_not_swallowed_by_the_spa_fallback(string route)
+    {
+        var response = await _client.GetAsync(route);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Content.Headers.ContentType?.MediaType.Should().NotBe("text/html");
     }
 
     [Test]

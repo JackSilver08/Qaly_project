@@ -113,6 +113,7 @@ public static class QalyWebServiceExtensions
         services.AddRazorPages(options =>
         {
             options.Conventions.AuthorizePage("/Index");
+            options.Conventions.AuthorizePage("/SpaFallback");
             options.Conventions.AddPageRoute("/Index", "dashboard");
             options.Conventions.AddPageRoute("/Index", "profile");
             options.Conventions.AddPageRoute("/Index", "projects");
@@ -125,6 +126,8 @@ public static class QalyWebServiceExtensions
             options.Conventions.AddPageRoute("/Index", "analytics");
             options.Conventions.AddPageRoute("/Index", "settings");
             options.Conventions.AddPageRoute("/Index", "admin/users");
+            options.Conventions.AddPageRoute("/Index", "admin/moderators");
+            options.Conventions.AddPageRoute("/Index", "organizations/users");
             options.Conventions.AddPageRoute("/Index", "groups");
             options.Conventions.AddPageRoute("/Index", "groups/{groupId}");
             options.Conventions.AddPageRoute("/Index", "groups/{groupId}/meeting");
