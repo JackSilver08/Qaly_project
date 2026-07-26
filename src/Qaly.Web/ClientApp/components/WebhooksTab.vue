@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { Webhook, Trash2, Plus, Activity, ShieldCheck } from 'lucide-vue-next'
 import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
 import { showError, showSuccess } from '../composables/use-toast'
+import { confirmDialog } from '../composables/use-confirm-dialog'
 
 const props = defineProps<{
   projectId: string
@@ -58,7 +59,8 @@ async function createWebhook() {
 }
 
 async function deleteWebhook(id: string) {
-  if (!confirm('Xóa webhook này?')) return
+  const webhook = webhooks.value.find(item => item.id === id)
+  if (!await confirmDialog({ tone:'danger', title:'Xóa webhook?', subject:webhook?.payloadUrl, message:'Các sự kiện mới sẽ không còn được gửi đến endpoint này.', confirmLabel:'Xóa webhook' })) return
 
   try {
     await apiCommand(`/api/projects/${props.projectId}/webhooks/${id}`, { method: 'DELETE' })

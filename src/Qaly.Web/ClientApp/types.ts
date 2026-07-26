@@ -61,6 +61,7 @@ export interface DashboardTask {
     status: string;
     priority: string;
     dueDate: string | null;
+    sprintId: string | null;
     assigneeId: string | null;
     assigneeName: string | null;
     reporterName: string;
@@ -77,6 +78,19 @@ export interface DashboardTask {
     attachmentCount: number;
     number?: number;
     key?: string | null;
+}
+
+export interface SprintDto {
+    id: string;
+    projectId: string;
+    name: string;
+    startDate: string;
+    endDate: string;
+    status: string;
+    goal: string | null;
+    taskCount: number;
+    completedTaskCount: number;
+    progress: number;
 }
 
 export interface DashboardMember {

@@ -53,7 +53,7 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
 
         // Lookup by prefix + hash for fast, exact match
         var candidate = await _apiKeyRepo.GetQueryable()
-            .Where(k => k.Prefix == prefix && k.KeyHash == keyHash && !k.IsRevoked)
+            .Where(k => k.Prefix == prefix && k.KeyHash == keyHash && !k.IsRevoked && k.User.IsActive)
             .Include(k => k.User)
             .FirstOrDefaultAsync();
 

@@ -6,6 +6,7 @@ import ProjectDetailHeader from '../components/ProjectDetailHeader.vue'
 import ProjectActivityTab from '../components/ProjectActivityTab.vue'
 import ProjectMembersTab from '../components/ProjectMembersTab.vue'
 import ProjectStatsTab from '../components/ProjectStatsTab.vue'
+import ProjectDemoMapTab from '../components/ProjectDemoMapTab.vue'
 import ProjectWorkloadTab from '../components/ProjectWorkloadTab.vue'
 import ProjectWikiTab from '../components/ProjectWikiTab.vue'
 import ProjectGanttTab from '../components/ProjectGanttTab.vue'
@@ -19,6 +20,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { apiResult } from '../utils/api-client'
 import type { DashboardTask, KanbanMoveResultDto, TaskAssignmentInsightDto } from '../types'
 import { showError } from '../composables/use-toast'
+import { promptDialog } from '../composables/use-confirm-dialog'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 
@@ -132,8 +134,8 @@ async function handleUndoFromBanner() {
   } catch { /* ignore */ }
 }
 
-function rejectEvidence(attachmentId: string) {
-  const note = window.prompt('Lý do từ chối?')
+async function rejectEvidence(attachmentId: string) {
+  const note = await promptDialog({ tone:'warning', title:'Từ chối minh chứng?', message:'Lý do sẽ được lưu cùng kết quả đánh giá.', inputLabel:'Lý do từ chối', placeholder:'Mô tả ngắn gọn nội dung cần bổ sung...', required:true, maxLength:500, confirmLabel:'Từ chối' })
   if (note !== null) {
     reviewEvidence(attachmentId, false, note)
   }
@@ -485,6 +487,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
       <div v-if="activeProjectTab === 'stats'" class="tab-pane reveal">
         <ProjectStatsTab :stats="selectedProjectStats" />
+      </div>
+
+      <div v-if="activeProjectTab === 'demo-map'" class="tab-pane reveal">
+        <ProjectDemoMapTab :project-id="selectedProject.id" :project-name="selectedProject.name" />
       </div>
 
       <div v-if="canShowCapacityTab" class="tab-pane reveal">

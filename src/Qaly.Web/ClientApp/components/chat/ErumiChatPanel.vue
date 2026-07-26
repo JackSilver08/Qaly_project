@@ -852,7 +852,7 @@ async function handleDraftAction(action: ErumiAction, confirmAction: 'execute_ac
     }
   } catch (err: any) {
     console.error(err)
-    alert(`Lỗi thực hiện hành động: ${err.message || err}`)
+    showError(`Lỗi thực hiện hành động: ${err.message || err}`)
   } finally {
     action.processing = false
   }

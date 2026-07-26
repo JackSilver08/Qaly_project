@@ -195,7 +195,8 @@ public partial class DashboardController : BaseApiController
                             task.UpvoteCount,
                             task.DownvoteCount,
                             isRestricted ? 0 : task.Comments.Count,
-                            isRestricted ? 0 : task.Attachments.Count);
+                            isRestricted ? 0 : task.Attachments.Count,
+                            task.SprintId);
                     }).ToList(),
                     project.CreatedAt,
                     project.EndDate,
@@ -858,7 +859,8 @@ public partial class DashboardController : BaseApiController
                 t.UpvoteCount,
                 t.DownvoteCount,
                 0,
-                0
+                0,
+                t.SprintId
             ))
             .ToList();
 
@@ -1051,7 +1053,8 @@ public sealed record DashboardTaskResponse(
     int UpvoteCount,
     int DownvoteCount,
     int CommentCount,
-    int AttachmentCount);
+    int AttachmentCount,
+    Guid? SprintId);
 
 public sealed record DashboardMemberResponse(
     Guid Id,

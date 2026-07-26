@@ -708,7 +708,7 @@ public sealed partial class PrivacyService : IPrivacyService
             .Where(member => member.OrganizationId == tenantId && member.UserId == userId)
             .Select(member => member.Role)
             .FirstOrDefaultAsync(ct);
-        return ProjectRoleRules.CanManageProject(organizationRole) ||
+        return OrganizationRoleRules.CanManageOrganization(organizationRole) ||
             await _db.Projects.AnyAsync(project => project.Id == tenantId && project.OwnerId == userId, ct);
     }
 

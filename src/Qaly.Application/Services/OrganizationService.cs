@@ -13,6 +13,7 @@ public class OrganizationService : IOrganizationService
     private readonly IRepository<Organization> _organizationRepo;
     private readonly IRepository<OrganizationMember> _organizationMemberRepo;
     private readonly IRepository<User> _userRepo;
+    private readonly IRepository<ModeratorAssignment> _moderatorAssignmentRepo;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditLogService _auditLogService;
@@ -21,6 +22,7 @@ public class OrganizationService : IOrganizationService
         IRepository<Organization> organizationRepo,
         IRepository<OrganizationMember> organizationMemberRepo,
         IRepository<User> userRepo,
+        IRepository<ModeratorAssignment> moderatorAssignmentRepo,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
         IAuditLogService auditLogService)
@@ -28,6 +30,7 @@ public class OrganizationService : IOrganizationService
         _organizationRepo = organizationRepo;
         _organizationMemberRepo = organizationMemberRepo;
         _userRepo = userRepo;
+        _moderatorAssignmentRepo = moderatorAssignmentRepo;
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
         _auditLogService = auditLogService;
@@ -65,9 +68,22 @@ public class OrganizationService : IOrganizationService
         var query = OrganizationDetailsQuery();
         if (!IsSystemAdmin())
         {
-            query = query.Where(item =>
-                item.OwnerId == currentUserId ||
-                item.Members.Any(member => member.UserId == currentUserId));
+            if (SystemRoleRules.IsModerator(_currentUserService.Role))
+            {
+                var now = DateTimeOffset.UtcNow;
+                var assignedOrganizationIds = _moderatorAssignmentRepo.GetQueryable()
+                    .Where(item => item.ModeratorUserId == currentUserId && item.IsActive && item.RevokedAt == null
+                        && (item.ExpiresAt == null || item.ExpiresAt > now))
+                    .Select(item => item.OrganizationId);
+                query = query.Where(item => item.OwnerId == currentUserId
+                    || item.Members.Any(member => member.UserId == currentUserId)
+                    || assignedOrganizationIds.Contains(item.Id));
+            }
+            else
+            {
+                query = query.Where(item => item.OwnerId == currentUserId
+                    || item.Members.Any(member => member.UserId == currentUserId));
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -124,7 +140,7 @@ public class OrganizationService : IOrganizationService
         {
             OrganizationId = organization.Id,
             UserId = currentUserId.Value,
-            Role = ProjectRoleRules.Owner
+            Role = OrganizationRoleRules.Owner
         }, ct);
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("Create", nameof(Organization), organization.Id.ToString(), new { organization.Name, organization.Code }, ct);
@@ -194,7 +210,8 @@ public class OrganizationService : IOrganizationService
             return Result.NotFound<IReadOnlyList<OrganizationMemberDto>>();
         }
 
-        if (!await CanAccessOrganizationAsync(organization.Id, organization.OwnerId, ct))
+        if (!await CanAccessOrganizationAsync(organization.Id, organization.OwnerId, ct)
+            && !await HasModeratorCapabilityAsync(organization.Id, ModeratorCapabilities.UsersView, ct))
         {
             return Result.Forbidden<IReadOnlyList<OrganizationMemberDto>>();
         }
@@ -226,12 +243,18 @@ public class OrganizationService : IOrganizationService
             return Result.Failure("Organization was not found.", 404);
         }
 
-        if (!await CanManageOrganizationAsync(organization.Id, organization.OwnerId, ct))
+        var membershipExists = await _organizationMemberRepo.GetQueryable()
+            .AnyAsync(item => item.OrganizationId == organizationId && item.UserId == userId, ct);
+        var requiredCapability = membershipExists
+            ? ModeratorCapabilities.UsersUpdateRole
+            : ModeratorCapabilities.UsersInvite;
+        if (!await CanManageOrganizationAsync(organization.Id, organization.OwnerId, ct)
+            && !await HasModeratorCapabilityAsync(organization.Id, requiredCapability, ct))
         {
             return Result.Failure("Access denied.", 403);
         }
 
-        if (organization.OwnerId == userId && !string.Equals(role, ProjectRoleRules.Owner, StringComparison.OrdinalIgnoreCase))
+        if (organization.OwnerId == userId && !string.Equals(role, OrganizationRoleRules.Owner, StringComparison.OrdinalIgnoreCase))
         {
             return Result.Failure("Organization owner role cannot be downgraded by this action.", 400);
         }
@@ -243,7 +266,10 @@ public class OrganizationService : IOrganizationService
             return Result.Failure("User was not found.", 404);
         }
 
-        var normalizedRole = ProjectRoleRules.NormalizeProjectRole(role);
+        if (!OrganizationRoleRules.TryNormalizeAssignableRole(role, out var normalizedRole))
+        {
+            return Result.Failure("Organization role is invalid.", 400);
+        }
         var existing = await _organizationMemberRepo.GetQueryable()
             .FirstOrDefaultAsync(item => item.OrganizationId == organizationId && item.UserId == userId, ct);
 
@@ -268,6 +294,39 @@ public class OrganizationService : IOrganizationService
         return Result.Success();
     }
 
+    public async Task<Result> AddMemberByEmailAsync(Guid organizationId, string email, string role, CancellationToken ct = default)
+    {
+        var organization = await _organizationRepo.GetByIdAsync(organizationId, ct);
+        if (organization == null)
+        {
+            return Result.Failure("Organization was not found.", 404);
+        }
+
+        if (!await CanManageOrganizationAsync(organization.Id, organization.OwnerId, ct)
+            && !await HasModeratorCapabilityAsync(organization.Id, ModeratorCapabilities.UsersInvite, ct))
+        {
+            return Result.Failure("Access denied.", 403);
+        }
+
+        var normalizedEmail = email?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(normalizedEmail))
+        {
+            return Result.Failure("Email is required.", 400);
+        }
+
+        var userId = await _userRepo.GetQueryable()
+            .Where(user => user.IsActive && user.Email == normalizedEmail)
+            .Select(user => (Guid?)user.Id)
+            .FirstOrDefaultAsync(ct);
+
+        if (userId == null)
+        {
+            return Result.Failure("No active account matches this email.", 404);
+        }
+
+        return await AddMemberAsync(organizationId, userId.Value, role, ct);
+    }
+
     public async Task<Result> RemoveMemberAsync(Guid organizationId, Guid userId, CancellationToken ct = default)
     {
         var organization = await _organizationRepo.GetByIdAsync(organizationId, ct);
@@ -276,7 +335,8 @@ public class OrganizationService : IOrganizationService
             return Result.Failure("Organization was not found.", 404);
         }
 
-        if (!await CanManageOrganizationAsync(organization.Id, organization.OwnerId, ct))
+        if (!await CanManageOrganizationAsync(organization.Id, organization.OwnerId, ct)
+            && !await HasModeratorCapabilityAsync(organization.Id, ModeratorCapabilities.UsersRemove, ct))
         {
             return Result.Failure("Access denied.", 403);
         }
@@ -297,6 +357,25 @@ public class OrganizationService : IOrganizationService
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("RemoveMember", nameof(Organization), organizationId.ToString(), new { userId }, ct);
         return Result.Success();
+    }
+
+    public async Task<Result<IReadOnlyList<string>>> GetCurrentModeratorCapabilitiesAsync(Guid organizationId, CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null || !SystemRoleRules.IsModerator(_currentUserService.Role))
+        {
+            return Result.Success<IReadOnlyList<string>>(Array.Empty<string>());
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var capabilities = await _moderatorAssignmentRepo.GetQueryable().AsNoTracking()
+            .Where(item => item.ModeratorUserId == currentUserId.Value && item.OrganizationId == organizationId
+                && item.IsActive && item.RevokedAt == null && (item.ExpiresAt == null || item.ExpiresAt > now))
+            .Select(item => item.Capability)
+            .Distinct()
+            .OrderBy(item => item)
+            .ToListAsync(ct);
+        return Result.Success<IReadOnlyList<string>>(capabilities);
     }
 
     private IQueryable<Organization> OrganizationDetailsQuery()
@@ -340,11 +419,29 @@ public class OrganizationService : IOrganizationService
             .Select(item => item.Role)
             .FirstOrDefaultAsync(ct);
 
-        return ProjectRoleRules.CanManageProject(role);
+        return OrganizationRoleRules.CanManageOrganization(role);
     }
 
     private bool IsSystemAdmin()
         => ProjectRoleRules.IsSystemAdmin(_currentUserService.Role);
+
+    private async Task<bool> HasModeratorCapabilityAsync(Guid organizationId, string capability, CancellationToken ct)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null || !SystemRoleRules.IsModerator(_currentUserService.Role))
+        {
+            return false;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        return await _moderatorAssignmentRepo.GetQueryable().AsNoTracking().AnyAsync(item =>
+            item.ModeratorUserId == currentUserId.Value
+            && item.OrganizationId == organizationId
+            && item.Capability == capability
+            && item.IsActive
+            && item.RevokedAt == null
+            && (item.ExpiresAt == null || item.ExpiresAt > now), ct);
+    }
 
     private async Task<string> GenerateUniqueCodeAsync(string? requestedCode, string name, CancellationToken ct, Guid? currentOrganizationId = null)
     {

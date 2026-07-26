@@ -2454,6 +2454,56 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.ToTable("MeetingImports");
                 });
 
+            modelBuilder.Entity("Qaly.Domain.Entities.ModeratorAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<string>("Capability")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("GrantedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<Guid>("ModeratorUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GrantedByUserId");
+
+                    b.HasIndex("ModeratorUserId", "OrganizationId", "Capability")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "IsActive", "ExpiresAt");
+
+                    b.ToTable("ModeratorAssignments");
+                });
+
             modelBuilder.Entity("Qaly.Domain.Entities.Notification", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3909,6 +3959,11 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.HasIndex("Email")
                         .IsUnique();
 
+                    b.HasIndex("Role")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Users_SingleAdmin")
+                        .HasFilter("[Role] = 'Admin'");
+
                     b.ToTable("Users");
                 });
 
@@ -4726,6 +4781,33 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Navigation("Project");
 
                     b.Navigation("RetentionPolicy");
+                });
+
+            modelBuilder.Entity("Qaly.Domain.Entities.ModeratorAssignment", b =>
+                {
+                    b.HasOne("Qaly.Domain.Entities.User", "GrantedByUser")
+                        .WithMany()
+                        .HasForeignKey("GrantedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Qaly.Domain.Entities.User", "ModeratorUser")
+                        .WithMany()
+                        .HasForeignKey("ModeratorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Qaly.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("GrantedByUser");
+
+                    b.Navigation("ModeratorUser");
+
+                    b.Navigation("Organization");
                 });
 
             modelBuilder.Entity("Qaly.Domain.Entities.Notification", b =>

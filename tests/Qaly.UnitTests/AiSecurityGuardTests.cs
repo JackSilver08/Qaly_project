@@ -57,9 +57,27 @@ public class AiSecurityGuardTests
         result.Should().ContainEquivalentOf("select a project");
     }
 
-    private static AiService CreateAiService()
+    [Fact]
+    public async Task GeneratePlanFallsBackWhenAiReturnsInvalidJson()
     {
         var aiGateway = new Mock<IAiGateway>();
+        aiGateway
+            .Setup(gateway => gateway.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiResponse { Content = "not-json" });
+        var service = CreateAiService(aiGateway);
+
+        var result = await service.GeneratePlanAsync("Create a payment checkout project", null);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Data.Should().NotBeNull();
+        result.Data!.IsNewProject.Should().BeTrue();
+        result.Data.Tasks.Should().HaveCountGreaterThanOrEqualTo(5);
+        result.Data.Tasks.Should().OnlyContain(task => task.EstimatedHours.HasValue && task.EstimatedHours.Value > 0);
+    }
+
+    private static AiService CreateAiService(Mock<IAiGateway>? aiGateway = null)
+    {
+        aiGateway ??= new Mock<IAiGateway>();
         var embeddingGenerator = new Mock<IEmbeddingGenerator<string, Embedding<float>>>();
         var vectorStorage = new Mock<IVectorStorageService>();
         var projectRepo = new Mock<IRepository<Project>>();

@@ -304,7 +304,7 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
             .Where(member => member.OrganizationId == project.OrganizationId.Value && member.UserId == userId)
             .Select(member => member.Role)
             .FirstOrDefaultAsync(ct);
-        return ProjectRoleRules.CanManageProject(organizationRole);
+        return OrganizationRoleRules.CanManageOrganization(organizationRole);
     }
 
     private static string? PolicyVersion(AiBudgetPolicy? policy)

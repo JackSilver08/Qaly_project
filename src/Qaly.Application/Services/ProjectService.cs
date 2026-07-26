@@ -708,7 +708,7 @@ public class ProjectService : IProjectService
             .Select(member => member.Role)
             .FirstOrDefaultAsync(ct);
 
-        return ProjectRoleRules.CanManageProject(role);
+        return OrganizationRoleRules.CanManageOrganization(role);
     }
 
     private async Task<string> GenerateUniqueCodeAsync(string? requestedCode, string name, CancellationToken ct, Guid? currentProjectId = null)

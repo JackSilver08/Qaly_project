@@ -17,6 +17,7 @@ public class QalyDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<OrganizationMember> OrganizationMembers => Set<OrganizationMember>();
+    public DbSet<ModeratorAssignment> ModeratorAssignments => Set<ModeratorAssignment>();
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
     public DbSet<WorkGroup> WorkGroups => Set<WorkGroup>();

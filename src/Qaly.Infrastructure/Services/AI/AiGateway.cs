@@ -221,6 +221,10 @@ public class AiGateway : IAiGateway
         }
 
         // 3. Cache Check
+        var legacyHashInput = new StringBuilder()
+            .Append(request.SystemPrompt).Append('|')
+            .Append(request.Prompt).Append('|')
+            .Append(request.ExpectedSchemaId);
         var hashInput = new StringBuilder();
         hashInput
             .Append(request.SystemPrompt).Append('|')
@@ -237,15 +241,22 @@ public class AiGateway : IAiGateway
         {
             foreach (var msg in request.History)
             {
+                legacyHashInput.Append('|').Append(msg.Role).Append(':').Append(msg.Content);
                 hashInput.Append('|').Append(msg.Role).Append(':').Append(msg.Content);
             }
         }
         string requestHash = ComputeSha256Hash(hashInput.ToString());
+        string legacyRequestHash = ComputeSha256Hash(legacyHashInput.ToString());
         
         if (request.UseCache)
         {
             var cachedPrompt = await _context.AiPromptCache
                 .FirstOrDefaultAsync(c => c.RequestHash == requestHash, cancellationToken);
+            if (cachedPrompt == null && legacyRequestHash != requestHash)
+            {
+                cachedPrompt = await _context.AiPromptCache
+                    .FirstOrDefaultAsync(c => c.RequestHash == legacyRequestHash, cancellationToken);
+            }
 
             if (cachedPrompt != null && (cachedPrompt.ExpiresAt == null || cachedPrompt.ExpiresAt > DateTimeOffset.UtcNow))
             {
@@ -313,6 +324,7 @@ public class AiGateway : IAiGateway
                 continue;
             }
 
+            var hasFallbackProvider = providerIndex < availableProviderOrder.Count - 1;
             lastProviderName = providerName;
             request.Prompt = originalPrompt;
             finalResponse = null;
@@ -562,7 +574,10 @@ public class AiGateway : IAiGateway
                     _errorCallingAiProviderLogger(_logger, ex);
                     validationError = ex.Message;
                     await LogProviderRouteEventAsync(request, providerName, "AI_PROVIDER_FAILED", ex.Message, cancellationToken);
-                    break;
+                    if (hasFallbackProvider)
+                    {
+                        break;
+                    }
                 }
 
                 attempt++;

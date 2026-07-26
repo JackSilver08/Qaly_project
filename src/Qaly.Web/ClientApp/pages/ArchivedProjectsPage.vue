@@ -7,6 +7,7 @@ import {
 } from 'lucide-vue-next'
 import { useDashboardContext } from '../composables/dashboard-context'
 import { showSuccess, showError } from '../composables/use-toast'
+import { confirmDialog } from '../composables/use-confirm-dialog'
 
 const {
   restoreProject: baseRestoreProject,
@@ -288,7 +289,7 @@ async function restoreTrashProject(id: string) {
 
 async function deleteTrashProject(id: string) {
   const p = trashProjects.value.find(item => item.id === id)
-  if (!p || !confirm(`Bạn có chắc chắn muốn xóa VĨNH VIỄN "${p.name}"? Thao tác này không thể hoàn tác.`)) return
+  if (!p || !await confirmDialog({ tone:'critical', title:'Xóa vĩnh viễn dự án?', subject:p.name, message:'Toàn bộ dữ liệu dự án sẽ bị xóa và không thể khôi phục.', confirmLabel:'Xóa vĩnh viễn', requireText:p.name })) return
   
   try {
     const res = await fetch(`/api/projects/${id}/hard`, {

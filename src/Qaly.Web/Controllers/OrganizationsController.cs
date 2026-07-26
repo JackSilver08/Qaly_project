@@ -66,12 +66,43 @@ public class OrganizationsController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpPost("{id:guid}/users")]
+    public async Task<IActionResult> AddUser(Guid id, AddOrganizationUserRequest request, CancellationToken ct = default)
+    {
+        var result = await _organizationService.AddMemberByEmailAsync(id, request.Email, request.Role, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPatch("{id:guid}/users/{userId:guid}")]
+    public async Task<IActionResult> UpdateUserRole(Guid id, Guid userId, UpdateOrganizationUserRoleRequest request, CancellationToken ct = default)
+    {
+        var result = await _organizationService.AddMemberAsync(id, userId, request.Role, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("{id:guid}/users")]
+    public Task<IActionResult> GetUsers(Guid id, CancellationToken ct = default)
+        => GetMembers(id, ct);
+
+    [HttpGet("{id:guid}/moderator-capabilities")]
+    public async Task<IActionResult> GetModeratorCapabilities(Guid id, CancellationToken ct = default)
+    {
+        var result = await _organizationService.GetCurrentModeratorCapabilitiesAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpDelete("{id:guid}/members/{userId:guid}")]
     public async Task<IActionResult> RemoveMember(Guid id, Guid userId, CancellationToken ct = default)
     {
         var result = await _organizationService.RemoveMemberAsync(id, userId, ct);
         return StatusCode(result.StatusCode, result);
     }
+
+    [HttpDelete("{id:guid}/users/{userId:guid}")]
+    public Task<IActionResult> RemoveUser(Guid id, Guid userId, CancellationToken ct = default)
+        => RemoveMember(id, userId, ct);
 }
 
 public sealed record AddOrganizationMemberRequest(Guid UserId, string Role);
+public sealed record AddOrganizationUserRequest(string Email, string Role);
+public sealed record UpdateOrganizationUserRoleRequest(string Role);

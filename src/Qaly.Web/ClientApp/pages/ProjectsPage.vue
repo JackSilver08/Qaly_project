@@ -53,6 +53,7 @@ const undoBannerData = ref<{ importSessionId: string; importedCount: number; fai
 const createSourceMode = ref<'members' | 'group'>('members')
 const selectedMemberIds = ref<string[]>([])
 const selectedGroupId = ref('')
+const autoCreateOutsourceMap = ref(false)
 const availableGroups = ref<{ id: string; name: string; description: string | null; memberCount: number }[]>([])
 
 async function onPlannerCreated(newProjectId: string) {
@@ -150,14 +151,48 @@ async function createProjectWithSelection() {
       })
     }
 
+    if (autoCreateOutsourceMap.value && project.id) {
+      try {
+        const now = new Date()
+        const end = projectEndDate.value ? new Date(projectEndDate.value) : new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000)
+        const totalDays = Math.max(30, Math.ceil((end.getTime() - now.getTime()) / (1000 * 3600 * 24)))
+        const stepDays = Math.floor(totalDays / 5)
+
+        const addDays = (d: Date, days: number) => {
+          const res = new Date(d)
+          res.setDate(res.getDate() + days)
+          return res.toISOString()
+        }
+
+        const outsourcePhases = [
+          { name: 'Mốc 1: Khảo sát & Khởi tạo Yêu cầu (Scope Alignment)', start: now.toISOString(), end: addDays(now, stepDays), goal: 'Thống nhất yêu cầu chi tiết của khách hàng & chốt Scope dự án.' },
+          { name: 'Mốc 2: Thiết kế Prototype UI/UX & Architecture', start: addDays(now, stepDays + 1), end: addDays(now, stepDays * 2), goal: 'Chốt Wireframe Figma & Thiết kế Database API.' },
+          { name: 'Mốc 3: Phát triển Core Modules & Backend Services', start: addDays(now, stepDays * 2 + 1), end: addDays(now, stepDays * 3), goal: 'Lập trình các tính năng cốt lõi backend.' },
+          { name: 'Mốc 4: Tích hợp Giao diện & AI Services', start: addDays(now, stepDays * 3 + 1), end: addDays(now, stepDays * 4), goal: 'Hoàn thiện Frontend & các dịch vụ bên ngoài.' },
+          { name: 'Mốc 5: Kiểm thử UAT & Demo Khách hàng', start: addDays(now, stepDays * 4 + 1), end: addDays(now, totalDays - 5), goal: 'UAT với khách hàng & nghiệm thu tính năng.' },
+          { name: 'Mốc 6: Bàn giao, Deploy Go-Live & Đào tạo', start: addDays(now, totalDays - 4), end: end.toISOString(), goal: 'Triển khai Server Production & bàn giao hoàn tất.' }
+        ]
+
+        for (const phase of outsourcePhases) {
+          await apiCommand(`/api/projects/${project.id}/sprints`, {
+            method: 'POST',
+            body: JSON.stringify({ name: phase.name, startDate: phase.start, endDate: phase.end, goal: phase.goal })
+          })
+        }
+      } catch {
+        // ignore sprint creation errors
+      }
+    }
+
     createProjectOpen.value = false
     selectedMemberIds.value = []
     projectName.value = ''
     projectDescription.value = ''
     projectEndDate.value = ''
+    autoCreateOutsourceMap.value = false
     await loadDashboard()
     selectProject(project.id)
-    showSuccess(`Tạo dự án "${project.name}" thành công`)
+    showSuccess(`Tạo dự án "${project.name}" thành công${autoCreateOutsourceMap.value ? ' kèm Sơ đồ demo Outsource 6 Mốc' : ''}`)
   } catch (error) {
     showError(errorMessage(error, 'Không thể tạo dự án'))
   }
@@ -378,6 +413,15 @@ async function handleUndoFromBanner() {
                   {{ group.name }} · {{ group.memberCount }} thành viên
                 </option>
               </select>
+            </div>
+            <div class="form-group border-t border-line pt-3 mt-3">
+              <label class="d-flex align-items-center gap-2 cursor-pointer" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input v-model="autoCreateOutsourceMap" type="checkbox" />
+                <span>🚩 Khởi tạo Sơ đồ Mốc Outsource chuẩn 6 bước (Tùy chọn)</span>
+              </label>
+              <p v-if="autoCreateOutsourceMap" class="text-xs text-muted mt-1" style="font-size: 12px; color: var(--muted); margin-top: 4px;">
+                Tự động sinh 6 mốc tiến độ Outsource (Requirement ➔ UI/UX ➔ Core Backend ➔ Frontend/AI ➔ Client UAT ➔ Go-Live).
+              </p>
             </div>
 
             <div class="project-modal-actions">

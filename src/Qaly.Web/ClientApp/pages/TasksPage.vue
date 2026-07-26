@@ -22,6 +22,7 @@ import {
 import { useDashboardContext } from '../composables/dashboard-context'
 import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
 import { showError, showSuccess } from '../composables/use-toast'
+import { confirmDialog } from '../composables/use-confirm-dialog'
 import type {
   AttachmentDto,
   CommentDto,
@@ -845,7 +846,7 @@ async function bulkUpdateStatus(status: string) {
 
 async function bulkDeleteTasks() {
   if (selectedTaskIds.value.length === 0) return
-  if (!confirm(`Xóa ${selectedTaskIds.value.length} task đã chọn?`)) return
+  if (!await confirmDialog({ tone:'danger', title:`Xóa ${selectedTaskIds.value.length} nhiệm vụ?`, message:'Các nhiệm vụ đã chọn sẽ bị xóa khỏi dự án.', confirmLabel:'Xóa nhiệm vụ' })) return
   try {
     await apiCommand('/api/tasks/batch-delete', {
       method: 'POST',

@@ -389,7 +389,7 @@ public class AttachmentService : IAttachmentService
             .Select(member => member.Role)
             .FirstOrDefaultAsync(ct);
 
-        return ProjectRoleRules.CanManageProject(organizationRole);
+        return OrganizationRoleRules.CanManageOrganization(organizationRole);
     }
 
     private async Task<bool> CanReviewEvidenceAsync(TaskItem task, Guid currentUserId, CancellationToken ct)
@@ -424,7 +424,7 @@ public class AttachmentService : IAttachmentService
             .Select(member => member.Role)
             .FirstOrDefaultAsync(ct);
 
-        return ProjectRoleRules.CanManageProject(organizationRole);
+        return OrganizationRoleRules.CanManageOrganization(organizationRole);
     }
 
     private bool IsAdmin()
@@ -644,7 +644,7 @@ public class AttachmentService : IAttachmentService
             .AsNoTracking()
             .Include(a => a.Project)
             .Include(a => a.TaskItem)
-            .ThenInclude(t => t.Project)
+            .ThenInclude(t => t!.Project)
             .Where(a => (a.Project != null && a.Project.Status == "Archived") || 
                         (a.TaskItem != null && a.TaskItem.Project != null && a.TaskItem.Project.Status == "Archived"));
 

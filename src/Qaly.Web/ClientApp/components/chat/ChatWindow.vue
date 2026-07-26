@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-vue-next";
 import { showError, showSuccess } from "../../composables/use-toast";
+import { confirmDialog } from "../../composables/use-confirm-dialog";
 import MessageItem from "./MessageItem.vue";
 import type {
   ChatGroupModel,
@@ -305,12 +306,12 @@ async function handleMessageAction(
     return;
   }
   if (action === "recall") {
-    if (window.confirm("Thu hồi tin nhắn này với mọi thành viên?")) {
+    if (await confirmDialog({ tone:"warning", title:"Thu hồi tin nhắn?", message:"Tin nhắn sẽ bị thu hồi với mọi thành viên trong nhóm.", confirmLabel:"Thu hồi" })) {
       emit("recall", message.id);
     }
     return;
   }
-  if (action === "hide" && window.confirm("Xóa tin nhắn này chỉ ở phía bạn?")) {
+  if (action === "hide" && await confirmDialog({ tone:"danger", title:"Ẩn tin nhắn?", message:"Tin nhắn chỉ bị ẩn ở phía bạn.", confirmLabel:"Ẩn tin nhắn" })) {
     emit("hide", [message.id]);
   }
 }
@@ -335,9 +336,9 @@ async function copySelected() {
   if (text) await copyText(text);
 }
 
-function hideSelected() {
+async function hideSelected() {
   const ids = [...selectedIds.value];
-  if (!ids.length || !window.confirm(`Xóa ${ids.length} tin nhắn chỉ ở phía bạn?`)) return;
+  if (!ids.length || !await confirmDialog({ tone:"danger", title:`Ẩn ${ids.length} tin nhắn?`, message:"Các tin nhắn chỉ bị ẩn ở phía bạn.", confirmLabel:"Ẩn tin nhắn" })) return;
   emit("hide", ids);
   exitSelectionMode();
 }
