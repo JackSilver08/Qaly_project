@@ -11,38 +11,45 @@ namespace Qaly.Infrastructure.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropIndex(
-                name: "IX_WikiPages_ProjectId",
-                table: "WikiPages");
+            migrationBuilder.Sql("""
+                IF EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_WikiPages_ProjectId'
+                      AND object_id = OBJECT_ID(N'[WikiPages]')
+                )
+                BEGIN
+                    DROP INDEX [IX_WikiPages_ProjectId] ON [WikiPages];
+                END
+                """);
 
-            migrationBuilder.AddColumn<bool>(
-                name: "IsPublic",
-                table: "WikiPages",
-                type: "bit",
-                nullable: false,
-                defaultValue: false);
+            migrationBuilder.Sql("""
+                IF COL_LENGTH(N'[WikiPages]', N'IsPublic') IS NULL
+                BEGIN
+                    ALTER TABLE [WikiPages] ADD [IsPublic] bit NOT NULL CONSTRAINT [DF_WikiPages_IsPublic] DEFAULT 0;
+                END
+                """);
 
-            migrationBuilder.AddColumn<string>(
-                name: "Visibility",
-                table: "WikiPages",
-                type: "nvarchar(50)",
-                maxLength: 50,
-                nullable: false,
-                defaultValue: "internal");
+            migrationBuilder.Sql("""
+                IF COL_LENGTH(N'[WikiPages]', N'Visibility') IS NULL
+                BEGIN
+                    ALTER TABLE [WikiPages] ADD [Visibility] nvarchar(50) NOT NULL CONSTRAINT [DF_WikiPages_Visibility] DEFAULT N'internal';
+                END
+                """);
 
-            migrationBuilder.AddColumn<int>(
-                name: "AttemptCount",
-                table: "WebhookDeliveryLogs",
-                type: "int",
-                nullable: false,
-                defaultValue: 1);
+            migrationBuilder.Sql("""
+                IF COL_LENGTH(N'[WebhookDeliveryLogs]', N'AttemptCount') IS NULL
+                BEGIN
+                    ALTER TABLE [WebhookDeliveryLogs] ADD [AttemptCount] int NOT NULL CONSTRAINT [DF_WebhookDeliveryLogs_AttemptCount] DEFAULT 1;
+                END
+                """);
 
-            migrationBuilder.AddColumn<string>(
-                name: "IdempotencyKey",
-                table: "WebhookDeliveryLogs",
-                type: "nvarchar(200)",
-                maxLength: 200,
-                nullable: true);
+            migrationBuilder.Sql("""
+                IF COL_LENGTH(N'[WebhookDeliveryLogs]', N'IdempotencyKey') IS NULL
+                BEGIN
+                    ALTER TABLE [WebhookDeliveryLogs] ADD [IdempotencyKey] nvarchar(200) NULL;
+                END
+                """);
 
             migrationBuilder.Sql("""
                 IF COL_LENGTH(N'[TaskItems]', N'SprintId') IS NULL
@@ -51,54 +58,64 @@ namespace Qaly.Infrastructure.Data.Migrations
                 END
                 """);
 
-            migrationBuilder.AddColumn<string>(
-                name: "IdempotencyKey",
-                table: "Notifications",
-                type: "nvarchar(200)",
-                maxLength: 200,
-                nullable: true);
+            migrationBuilder.Sql("""
+                IF COL_LENGTH(N'[Notifications]', N'IdempotencyKey') IS NULL
+                BEGIN
+                    ALTER TABLE [Notifications] ADD [IdempotencyKey] nvarchar(200) NULL;
+                END
+                """);
 
-            migrationBuilder.AddColumn<string>(
-                name: "Tone",
-                table: "Notifications",
-                type: "nvarchar(max)",
-                nullable: false,
-                defaultValue: "");
+            migrationBuilder.Sql("""
+                IF COL_LENGTH(N'[Notifications]', N'Tone') IS NULL
+                BEGIN
+                    ALTER TABLE [Notifications] ADD [Tone] nvarchar(max) NOT NULL CONSTRAINT [DF_Notifications_Tone] DEFAULT N'';
+                END
+                """);
 
-            migrationBuilder.CreateTable(
-                name: "Sprint",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false, defaultValueSql: "NEWID()"),
-                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    StartDate = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
-                    EndDate = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
-                    Status = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false, defaultValue: "Planning"),
-                    Goal = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
-                    ProjectId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false, defaultValueSql: "SYSDATETIMEOFFSET()"),
-                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Sprint", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Sprint_Projects_ProjectId",
-                        column: x => x.ProjectId,
-                        principalTable: "Projects",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
+            migrationBuilder.Sql("""
+                IF OBJECT_ID(N'[Sprint]', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [Sprint] (
+                        [Id] uniqueidentifier NOT NULL CONSTRAINT [DF_Sprint_Id] DEFAULT NEWID(),
+                        [Name] nvarchar(200) NOT NULL,
+                        [StartDate] datetimeoffset NOT NULL,
+                        [EndDate] datetimeoffset NOT NULL,
+                        [Status] nvarchar(20) NOT NULL CONSTRAINT [DF_Sprint_Status] DEFAULT N'Planning',
+                        [Goal] nvarchar(1000) NULL,
+                        [ProjectId] uniqueidentifier NOT NULL,
+                        [CreatedAt] datetimeoffset NOT NULL CONSTRAINT [DF_Sprint_CreatedAt] DEFAULT SYSDATETIMEOFFSET(),
+                        [UpdatedAt] datetimeoffset NULL,
+                        CONSTRAINT [PK_Sprint] PRIMARY KEY ([Id]),
+                        CONSTRAINT [FK_Sprint_Projects_ProjectId] FOREIGN KEY ([ProjectId]) REFERENCES [Projects] ([Id]) ON DELETE CASCADE
+                    );
+                END
+                """);
 
-            migrationBuilder.CreateIndex(
-                name: "IX_WikiPages_ProjectId_Visibility",
-                table: "WikiPages",
-                columns: new[] { "ProjectId", "Visibility" });
+            migrationBuilder.Sql("""
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_WikiPages_ProjectId_Visibility'
+                      AND object_id = OBJECT_ID(N'[WikiPages]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_WikiPages_ProjectId_Visibility]
+                    ON [WikiPages] ([ProjectId], [Visibility]);
+                END
+                """);
 
-            migrationBuilder.CreateIndex(
-                name: "IX_WebhookDeliveryLogs_WebhookId_IdempotencyKey_IsSuccess",
-                table: "WebhookDeliveryLogs",
-                columns: new[] { "WebhookId", "IdempotencyKey", "IsSuccess" });
+            migrationBuilder.Sql("""
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_WebhookDeliveryLogs_WebhookId_IdempotencyKey_IsSuccess'
+                      AND object_id = OBJECT_ID(N'[WebhookDeliveryLogs]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_WebhookDeliveryLogs_WebhookId_IdempotencyKey_IsSuccess]
+                    ON [WebhookDeliveryLogs] ([WebhookId], [IdempotencyKey], [IsSuccess]);
+                END
+                """);
 
             migrationBuilder.Sql("""
                 IF NOT EXISTS (
@@ -126,27 +143,58 @@ namespace Qaly.Infrastructure.Data.Migrations
                 END
                 """);
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Notifications_UserId_IdempotencyKey",
-                table: "Notifications",
-                columns: new[] { "UserId", "IdempotencyKey" },
-                unique: true,
-                filter: "[IdempotencyKey] IS NOT NULL");
+            migrationBuilder.Sql("""
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_Notifications_UserId_IdempotencyKey'
+                      AND object_id = OBJECT_ID(N'[Notifications]')
+                )
+                BEGIN
+                    CREATE UNIQUE INDEX [IX_Notifications_UserId_IdempotencyKey]
+                    ON [Notifications] ([UserId], [IdempotencyKey])
+                    WHERE [IdempotencyKey] IS NOT NULL;
+                END
+                """);
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Sprint_ProjectId",
-                table: "Sprint",
-                column: "ProjectId");
+            migrationBuilder.Sql("""
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_Sprint_ProjectId'
+                      AND object_id = OBJECT_ID(N'[Sprint]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_Sprint_ProjectId]
+                    ON [Sprint] ([ProjectId]);
+                END
+                """);
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Sprint_ProjectId_Status",
-                table: "Sprint",
-                columns: new[] { "ProjectId", "Status" });
+            migrationBuilder.Sql("""
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_Sprint_ProjectId_Status'
+                      AND object_id = OBJECT_ID(N'[Sprint]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_Sprint_ProjectId_Status]
+                    ON [Sprint] ([ProjectId], [Status]);
+                END
+                """);
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Sprint_Status",
-                table: "Sprint",
-                column: "Status");
+            migrationBuilder.Sql("""
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_Sprint_Status'
+                      AND object_id = OBJECT_ID(N'[Sprint]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_Sprint_Status]
+                    ON [Sprint] ([Status]);
+                END
+                """);
 
             migrationBuilder.Sql("""
                 IF NOT EXISTS (
@@ -178,16 +226,36 @@ namespace Qaly.Infrastructure.Data.Migrations
                 END
                 """);
 
-            migrationBuilder.DropTable(
-                name: "Sprint");
+            migrationBuilder.Sql("""
+                IF OBJECT_ID(N'[Sprint]', N'U') IS NOT NULL
+                BEGIN
+                    DROP TABLE [Sprint];
+                END
+                """);
 
-            migrationBuilder.DropIndex(
-                name: "IX_WikiPages_ProjectId_Visibility",
-                table: "WikiPages");
+            migrationBuilder.Sql("""
+                IF EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_WikiPages_ProjectId_Visibility'
+                      AND object_id = OBJECT_ID(N'[WikiPages]')
+                )
+                BEGIN
+                    DROP INDEX [IX_WikiPages_ProjectId_Visibility] ON [WikiPages];
+                END
+                """);
 
-            migrationBuilder.DropIndex(
-                name: "IX_WebhookDeliveryLogs_WebhookId_IdempotencyKey_IsSuccess",
-                table: "WebhookDeliveryLogs");
+            migrationBuilder.Sql("""
+                IF EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_WebhookDeliveryLogs_WebhookId_IdempotencyKey_IsSuccess'
+                      AND object_id = OBJECT_ID(N'[WebhookDeliveryLogs]')
+                )
+                BEGIN
+                    DROP INDEX [IX_WebhookDeliveryLogs_WebhookId_IdempotencyKey_IsSuccess] ON [WebhookDeliveryLogs];
+                END
+                """);
 
             migrationBuilder.Sql("""
                 IF EXISTS (
@@ -213,25 +281,45 @@ namespace Qaly.Infrastructure.Data.Migrations
                 END
                 """);
 
-            migrationBuilder.DropIndex(
-                name: "IX_Notifications_UserId_IdempotencyKey",
-                table: "Notifications");
+            migrationBuilder.Sql("""
+                IF EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_Notifications_UserId_IdempotencyKey'
+                      AND object_id = OBJECT_ID(N'[Notifications]')
+                )
+                BEGIN
+                    DROP INDEX [IX_Notifications_UserId_IdempotencyKey] ON [Notifications];
+                END
+                """);
 
-            migrationBuilder.DropColumn(
-                name: "IsPublic",
-                table: "WikiPages");
+            migrationBuilder.Sql("""
+                IF COL_LENGTH(N'[WikiPages]', N'IsPublic') IS NOT NULL
+                BEGIN
+                    ALTER TABLE [WikiPages] DROP COLUMN [IsPublic];
+                END
+                """);
 
-            migrationBuilder.DropColumn(
-                name: "Visibility",
-                table: "WikiPages");
+            migrationBuilder.Sql("""
+                IF COL_LENGTH(N'[WikiPages]', N'Visibility') IS NOT NULL
+                BEGIN
+                    ALTER TABLE [WikiPages] DROP COLUMN [Visibility];
+                END
+                """);
 
-            migrationBuilder.DropColumn(
-                name: "AttemptCount",
-                table: "WebhookDeliveryLogs");
+            migrationBuilder.Sql("""
+                IF COL_LENGTH(N'[WebhookDeliveryLogs]', N'AttemptCount') IS NOT NULL
+                BEGIN
+                    ALTER TABLE [WebhookDeliveryLogs] DROP COLUMN [AttemptCount];
+                END
+                """);
 
-            migrationBuilder.DropColumn(
-                name: "IdempotencyKey",
-                table: "WebhookDeliveryLogs");
+            migrationBuilder.Sql("""
+                IF COL_LENGTH(N'[WebhookDeliveryLogs]', N'IdempotencyKey') IS NOT NULL
+                BEGIN
+                    ALTER TABLE [WebhookDeliveryLogs] DROP COLUMN [IdempotencyKey];
+                END
+                """);
 
             migrationBuilder.Sql("""
                 IF COL_LENGTH(N'[TaskItems]', N'SprintId') IS NOT NULL
@@ -240,18 +328,32 @@ namespace Qaly.Infrastructure.Data.Migrations
                 END
                 """);
 
-            migrationBuilder.DropColumn(
-                name: "IdempotencyKey",
-                table: "Notifications");
+            migrationBuilder.Sql("""
+                IF COL_LENGTH(N'[Notifications]', N'IdempotencyKey') IS NOT NULL
+                BEGIN
+                    ALTER TABLE [Notifications] DROP COLUMN [IdempotencyKey];
+                END
+                """);
 
-            migrationBuilder.DropColumn(
-                name: "Tone",
-                table: "Notifications");
+            migrationBuilder.Sql("""
+                IF COL_LENGTH(N'[Notifications]', N'Tone') IS NOT NULL
+                BEGIN
+                    ALTER TABLE [Notifications] DROP COLUMN [Tone];
+                END
+                """);
 
-            migrationBuilder.CreateIndex(
-                name: "IX_WikiPages_ProjectId",
-                table: "WikiPages",
-                column: "ProjectId");
+            migrationBuilder.Sql("""
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = N'IX_WikiPages_ProjectId'
+                      AND object_id = OBJECT_ID(N'[WikiPages]')
+                )
+                BEGIN
+                    CREATE INDEX [IX_WikiPages_ProjectId]
+                    ON [WikiPages] ([ProjectId]);
+                END
+                """);
         }
     }
 }

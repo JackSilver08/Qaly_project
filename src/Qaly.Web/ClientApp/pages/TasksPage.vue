@@ -4175,3 +4175,175 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   }
 }
 </style>
+
+<style scoped>
+.tasks-page {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(31, 128, 255, 0.06), transparent 22%),
+    radial-gradient(circle at 86% 4%, rgba(16, 185, 129, 0.035), transparent 18%),
+    linear-gradient(180deg, #f8fbff 0%, #ffffff 54%, #f8fafc 100%) !important;
+}
+
+.tasks-hero,
+.panel-card,
+.task-detail-drawer,
+.stat-card,
+.task-card {
+  border-radius: 14px !important;
+}
+
+.tasks-hero {
+  border-color: rgba(191, 219, 254, 0.7) !important;
+  background:
+    radial-gradient(circle at 84% 12%, rgba(31, 128, 255, 0.06), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(246, 249, 255, 0.97)) !important;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.05) !important;
+}
+
+.tasks-hero::before {
+  background: linear-gradient(90deg, #2563eb, #38bdf8, #16a34a) !important;
+}
+
+.tasks-hero__copy h2,
+.panel-head h3,
+.task-detail__header h2 {
+  color: var(--text-strong) !important;
+}
+
+.tasks-hero__copy p,
+.panel-head__title p,
+.task-detail__header p,
+.tasks-hero__summary small,
+.stat-card small,
+.field input::placeholder {
+  color: var(--muted) !important;
+}
+
+.tasks-hero__segmented {
+  border-color: rgba(191, 219, 254, 0.68) !important;
+  background: rgba(239, 246, 255, 0.72) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88) !important;
+}
+
+.tasks-hero__summary {
+  border-color: rgba(191, 219, 254, 0.68) !important;
+  background:
+    radial-gradient(circle at top right, rgba(31, 128, 255, 0.05), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 255, 0.94)) !important;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05) !important;
+}
+
+.pill-button {
+  border-color: rgba(193, 211, 232, 0.9) !important;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(243, 248, 255, 0.98)) !important;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06) !important;
+}
+
+.pill-button.is-active {
+  color: #ffffff !important;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+  box-shadow: 0 12px 22px rgba(37, 99, 235, 0.18) !important;
+}
+
+.stat-card {
+  border-color: rgba(223, 231, 242, 0.86) !important;
+  background:
+    radial-gradient(circle at top right, rgba(31, 128, 255, 0.05), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(247, 250, 255, 0.95)) !important;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05) !important;
+}
+
+.panel-card {
+  border-color: rgba(223, 231, 242, 0.86) !important;
+  background:
+    radial-gradient(circle at top right, rgba(31, 128, 255, 0.035), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(247, 250, 255, 0.95)) !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05) !important;
+}
+
+.panel-head .link-button {
+  border-color: rgba(223, 231, 242, 0.86) !important;
+  background: rgba(255, 255, 255, 0.98) !important;
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.04) !important;
+}
+
+.saved-view-chip {
+  background: rgba(248, 250, 252, 0.96) !important;
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.04) !important;
+}
+
+.field {
+  border-color: rgba(217, 226, 236, 0.96) !important;
+  background: rgba(255, 255, 255, 0.98) !important;
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.04) !important;
+}
+
+.field:hover,
+.field:focus-within {
+  border-color: rgba(96, 165, 250, 0.72) !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important;
+}
+
+.task-card {
+  border-color: rgba(223, 231, 242, 0.86) !important;
+  background:
+    radial-gradient(circle at 14% 0%, rgba(31, 128, 255, 0.04), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(247, 250, 255, 0.95)) !important;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05) !important;
+}
+
+.task-card::before {
+  background: var(--task-accent) !important;
+}
+
+.task-card:hover {
+  border-color: rgba(147, 197, 253, 0.86) !important;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(31, 128, 255, 0.06), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(249, 252, 255, 0.98)) !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06) !important;
+}
+
+.task-card__titleWrap strong {
+  color: var(--text-strong) !important;
+}
+
+.task-card__priority.is-high,
+.task-card__priority.is-critical {
+  color: #b45309 !important;
+  background: #fef3c7 !important;
+}
+
+.task-card__priority.is-medium {
+  color: #1d4ed8 !important;
+  background: #dbeafe !important;
+}
+
+.task-card__priority.is-low {
+  color: #0f766e !important;
+  background: #ccfbf1 !important;
+}
+
+.task-card__progress {
+  background: #e2e8f0 !important;
+}
+
+.task-card__progressFill {
+  background: linear-gradient(90deg, #2563eb, #38bdf8) !important;
+}
+
+.task-card__peek {
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.05) !important;
+}
+
+@media (max-width: 767px) {
+  .tasks-page {
+    padding: 12px 12px 24px !important;
+  }
+
+  .tasks-hero,
+  .panel-card {
+    padding: 16px !important;
+  }
+}
+</style>
