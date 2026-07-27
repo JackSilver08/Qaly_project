@@ -115,7 +115,12 @@ defineEmits<{
   display: flex;
   align-items: center;
   gap: 12px;
-  justify-content: space-between;
+}
+
+.project-toolbar__top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
 }
 
 .project-toolbar__bottom {
@@ -123,8 +128,8 @@ defineEmits<{
 }
 
 .project-search {
-  flex: 1 1 380px;
   min-width: 0;
+  width: 100%;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
@@ -167,6 +172,7 @@ defineEmits<{
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  justify-self: end;
 }
 
 .project-toolbar__count {
@@ -180,6 +186,7 @@ defineEmits<{
   background: #eff6ff;
   font-size: 12px;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .project-toolbar__filters,
@@ -242,6 +249,7 @@ defineEmits<{
 
   .project-toolbar__meta {
     justify-content: flex-start;
+    justify-self: start;
   }
 
   .project-toolbar__filters,

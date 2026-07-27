@@ -315,15 +315,104 @@ async function handleUndoFromBanner() {
 
     <div class="dashboard-scroll dashboard-scroll--embedded no-scrollbar projects-page-shell__content">
       <div class="dashboard-main project-home-main no-scrollbar projects-page-main">
-        <section class="projects-hero glass-card">
-          <div class="projects-hero__content">
+        <section class="projects-overview glass-card projects-overview--enterprise">
+          <div class="projects-overview__header">
+            <div class="projects-overview__copy">
+              <div class="projects-overview__eyebrow">
+                <FolderKanban :size="15" />
+                <span>Vận hành / Dự án</span>
+              </div>
+
+              <div class="projects-overview__title">
+                <h1>Bảng điều khiển dự án</h1>
+                <p>{{ projects.length }} dự án · {{ activeProjectCount }} đang chạy · {{ activeUsers.length }} thành viên hoạt động</p>
+              </div>
+            </div>
+
+            <button class="btn-hero btn-hero--primary projects-overview__cta" type="button" @click="openCreateProject">
+              <FolderKanban :size="16" />
+              Tạo dự án mới
+            </button>
+          </div>
+
+          <div class="projects-overview__body">
+            <div class="projects-overview__stats">
+              <article class="projects-overview__stat-card">
+                <div class="projects-overview__stat-icon">
+                  <FolderKanban :size="14" />
+                </div>
+                <strong>{{ projects.length }}</strong>
+                <span>Tổng dự án</span>
+              </article>
+              <article class="projects-overview__stat-card">
+                <div class="projects-overview__stat-icon">
+                  <TrendingUp :size="14" />
+                </div>
+                <strong>{{ activeProjectCount }}</strong>
+                <span>Đang chạy</span>
+              </article>
+              <article class="projects-overview__stat-card">
+                <div class="projects-overview__stat-icon">
+                  <Sparkles :size="14" />
+                </div>
+                <strong>{{ plannedProjectCount }}</strong>
+                <span>Lên kế hoạch</span>
+              </article>
+              <article class="projects-overview__stat-card">
+                <div class="projects-overview__stat-icon">
+                  <CheckCircle2 :size="14" />
+                </div>
+                <strong>{{ archivedProjectCount }}</strong>
+                <span>Lưu trữ</span>
+              </article>
+              <article class="projects-overview__stat-card">
+                <div class="projects-overview__stat-icon">
+                  <Users :size="14" />
+                </div>
+                <strong>{{ activeUsers.length }}</strong>
+                <span>Thành viên</span>
+              </article>
+            </div>
+
+            <article class="projects-overview__feature">
+              <div class="projects-overview__feature-header">
+                <span>Dự án nổi bật</span>
+                <ArrowUpRight :size="16" />
+              </div>
+
+              <template v-if="featuredProject">
+                <strong>{{ featuredProject.name }}</strong>
+                <p>{{ featuredProject.progressPercentage }}% hoàn thành · {{ featuredProject.memberInitials.length }} thành viên · {{ featuredProject.completedTaskCount }}/{{ featuredProject.taskCount }} nhiệm vụ</p>
+
+                <div class="projects-overview__feature-meta">
+                  <span>
+                    <TrendingUp :size="14" />
+                    Sprint đang chạy
+                  </span>
+                  <span v-if="featuredProject.overdueTaskCount > 0" class="projects-overview__feature-risk">
+                    <AlertTriangle :size="14" />
+                    {{ featuredProject.overdueTaskCount }} task quá hạn
+                  </span>
+                </div>
+              </template>
+
+              <template v-else>
+                <strong>Chưa có dự án nổi bật</strong>
+                <p>Hệ thống sẽ tự gắn dự án có tiến độ tốt nhất ngay khi có dữ liệu.</p>
+              </template>
+            </article>
+          </div>
+        </section>
+
+        <section class="projects-hero glass-card projects-hero--spotlight">
+          <div class="projects-hero__left">
             <div class="projects-hero__eyebrow">
               <Sparkles :size="15" />
               <span>Workspace projects</span>
             </div>
 
             <div class="projects-hero__title">
-              <h1>Không gian dự án rõ ràng hơn, chuyên nghiệp hơn</h1>
+              <h1>Không gian dự án rõ ràng hơn, nổi bật hơn</h1>
               <p>{{ heroSubtitle }}</p>
             </div>
 
@@ -343,8 +432,40 @@ async function handleUndoFromBanner() {
             </div>
           </div>
 
-          <aside class="projects-hero__sidebar">
-            <article class="projects-spotlight">
+          <div class="projects-hero__center" aria-hidden="true">
+            <div class="project-orbit">
+              <div class="project-orbit__ring project-orbit__ring--outer" />
+              <div class="project-orbit__ring project-orbit__ring--inner" />
+              <div class="project-orbit__shine" />
+
+              <div class="project-orbit__core">
+                <div class="project-orbit__core-icon">
+                  <FolderKanban :size="36" stroke-width="2.2" />
+                </div>
+                <div class="project-orbit__core-caption">
+                  <strong>{{ featuredProject?.name ?? 'Project Hub' }}</strong>
+                </div>
+              </div>
+
+              <div class="project-orbit__chip project-orbit__chip--top">
+                <CheckCircle2 :size="14" />
+                <span>
+                  {{ featuredProject ? `${featuredProject.progressPercentage}% sẵn sàng` : 'Sẵn sàng để khởi tạo' }}
+                </span>
+              </div>
+              <div class="project-orbit__chip project-orbit__chip--bottom-left">
+                <Users :size="14" />
+                <span>{{ activeUsers.length }} thành viên</span>
+              </div>
+              <div class="project-orbit__chip project-orbit__chip--bottom-right">
+                <TrendingUp :size="14" />
+                <span>{{ featuredProject ? 'Sprint đang chạy' : 'Roadmap sắp mở' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <aside class="projects-hero__right">
+            <article class="projects-spotlight projects-spotlight--project">
               <div class="projects-spotlight__header">
                 <span>Dự án nổi bật</span>
                 <ArrowUpRight :size="16" />
@@ -362,6 +483,10 @@ async function handleUndoFromBanner() {
                   <span>
                     <Users :size="14" />
                     {{ featuredProject.memberInitials.length }} thành viên
+                  </span>
+                  <span>
+                    <CheckCircle2 :size="14" />
+                    {{ featuredProject.completedTaskCount }}/{{ featuredProject.taskCount }} nhiệm vụ
                   </span>
                   <span
                     v-if="featuredProject.overdueTaskCount > 0"
@@ -382,10 +507,22 @@ async function handleUndoFromBanner() {
             </article>
 
             <div class="projects-hero__summary">
-              <span><strong>{{ activeProjectCount }}</strong> đang chạy</span>
-              <span><strong>{{ plannedProjectCount }}</strong> lên kế hoạch</span>
-              <span><strong>{{ archivedProjectCount }}</strong> lưu trữ</span>
-              <span><strong>{{ activeUsers.length }}</strong> thành viên</span>
+              <article class="projects-hero__summary-card">
+                <strong>{{ activeProjectCount }}</strong>
+                <span>Đang chạy</span>
+              </article>
+              <article class="projects-hero__summary-card">
+                <strong>{{ plannedProjectCount }}</strong>
+                <span>Lên kế hoạch</span>
+              </article>
+              <article class="projects-hero__summary-card">
+                <strong>{{ archivedProjectCount }}</strong>
+                <span>Lưu trữ</span>
+              </article>
+              <article class="projects-hero__summary-card">
+                <strong>{{ activeUsers.length }}</strong>
+                <span>Thành viên</span>
+              </article>
             </div>
           </aside>
         </section>
@@ -1376,9 +1513,9 @@ textarea.modal-input {
 <style scoped>
 .projects-page-shell {
   background:
-    radial-gradient(circle at 18% 0%, rgba(251, 191, 36, 0.16), transparent 26%),
-    radial-gradient(circle at 88% 10%, rgba(45, 212, 191, 0.1), transparent 24%),
-    linear-gradient(180deg, #08111f 0 392px, #f5f7fb 392px 100%);
+    radial-gradient(circle at 10% 0%, rgba(31, 128, 255, 0.08), transparent 24%),
+    radial-gradient(circle at 88% 8%, rgba(45, 212, 191, 0.06), transparent 22%),
+    linear-gradient(180deg, #f8fbff 0%, #ffffff 52%, #f5f7fb 100%);
 }
 
 .projects-page-shell__content {
@@ -1387,240 +1524,670 @@ textarea.modal-input {
 
 .projects-page-shell__glow {
   filter: blur(22px);
-  opacity: 0.55;
+  opacity: 0.4;
 }
 
 .projects-page-shell__glow--one {
-  top: -78px;
+  top: -72px;
   left: -48px;
   width: 260px;
   height: 260px;
-  background: radial-gradient(circle, rgba(251, 191, 36, 0.26), transparent 70%);
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.18), transparent 68%);
 }
 
 .projects-page-shell__glow--two {
-  top: 72px;
+  top: 76px;
   right: 12px;
   width: 220px;
   height: 220px;
-  background: radial-gradient(circle, rgba(45, 212, 191, 0.16), transparent 70%);
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.12), transparent 70%);
 }
 
 .projects-page-main {
   gap: 20px;
 }
 
-.projects-hero {
+.projects-hero--spotlight {
   position: relative;
   overflow: hidden;
-  gap: 24px;
-  padding: 28px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 28px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.72fr) minmax(320px, 0.96fr);
+  align-items: center;
+  gap: 18px;
+  padding: 24px;
+  border: 1px solid rgba(191, 219, 254, 0.8);
+  border-radius: 30px;
   background:
-    linear-gradient(135deg, rgba(8, 15, 29, 0.98), rgba(15, 23, 42, 0.92)),
-    radial-gradient(circle at top right, rgba(251, 191, 36, 0.12), transparent 32%);
+    radial-gradient(circle at 10% 18%, rgba(59, 130, 246, 0.08), transparent 22%),
+    radial-gradient(circle at 84% 20%, rgba(45, 212, 191, 0.06), transparent 18%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(247, 250, 255, 0.96));
   box-shadow:
-    0 28px 70px rgba(2, 6, 23, 0.24),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    0 26px 64px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
 }
 
-.projects-hero::after {
+.projects-hero--spotlight::before {
   content: '';
   position: absolute;
-  inset: auto -12% -58% auto;
-  width: 280px;
-  height: 280px;
-  border-radius: 999px;
-  background: radial-gradient(circle, rgba(45, 212, 191, 0.12), transparent 68%);
-  pointer-events: none;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 4px;
+  background: linear-gradient(90deg, #2563eb, #38bdf8, #22c55e);
 }
 
-.projects-hero__content,
-.projects-hero__sidebar {
+.projects-hero__left,
+.projects-hero__center,
+.projects-hero__right {
   position: relative;
   z-index: 1;
 }
 
-.projects-hero__content {
+.projects-hero__left {
+  display: grid;
   gap: 20px;
-  padding: 8px 0;
-}
-
-.projects-hero__eyebrow {
-  border-color: rgba(251, 191, 36, 0.26);
-  color: #fbbf24;
-  background: rgba(251, 191, 36, 0.08);
+  align-self: start;
 }
 
 .projects-hero__title h1 {
-  max-width: 12ch;
-  color: #f8fafc;
-  font-size: clamp(32px, 4.4vw, 58px);
-  line-height: 0.98;
+  max-width: 11ch;
+  color: #0f172a;
+  font-size: clamp(32px, 4vw, 56px);
+  line-height: 0.96;
   letter-spacing: -0.05em;
 }
 
 .projects-hero__title p {
-  color: rgba(226, 232, 240, 0.82);
-  line-height: 1.7;
+  color: #64748b;
+  line-height: 1.72;
+  font-size: 16px;
+}
+
+.projects-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .btn-hero,
 .btn-toolbar {
-  border-color: rgba(148, 163, 184, 0.22);
-  color: #cbd5e1;
-  background: rgba(15, 23, 42, 0.54);
-  backdrop-filter: blur(12px);
+  min-height: 42px;
+  gap: 8px;
+  padding: 0 14px;
+  border: 1px solid rgba(191, 219, 254, 0.9);
+  border-radius: 12px;
+  color: #1d4ed8;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(243, 248, 255, 0.98));
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow:
+    0 10px 24px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .btn-hero:hover,
 .btn-toolbar:hover {
+  transform: translateY(-1px);
+  border-color: rgba(96, 165, 250, 0.72);
+  background: #dbeafe;
+}
+
+.btn-hero--primary,
+.btn-toolbar--accent {
   color: #ffffff;
-  border-color: rgba(251, 191, 36, 0.24);
-  box-shadow: 0 16px 30px rgba(2, 6, 23, 0.22);
+  border-color: rgba(37, 99, 235, 0.82);
+  background: linear-gradient(135deg, #2563eb, #1e40af);
+  box-shadow: 0 12px 20px rgba(37, 99, 235, 0.18);
 }
 
-.btn-hero--primary {
-  border-color: rgba(251, 191, 36, 0.36);
-  color: #111827;
-  background: linear-gradient(135deg, #fbbf24, #f59e0b);
-  box-shadow: 0 18px 36px rgba(245, 158, 11, 0.28);
+.btn-hero--primary:hover,
+.btn-toolbar--accent:hover {
+  color: #ffffff;
+  background: linear-gradient(135deg, #1d4ed8, #1e3a8a);
 }
 
-.btn-hero--primary:hover {
-  color: #111827;
+.projects-hero__center {
+  display: grid;
+  place-items: center;
+  min-height: 320px;
 }
 
-.projects-spotlight {
+.project-orbit {
   position: relative;
-  border-color: rgba(148, 163, 184, 0.18);
-  border-radius: 22px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.95));
-  box-shadow:
-    0 18px 40px rgba(15, 23, 42, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  width: min(100%, 360px);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
 }
 
-.projects-spotlight::before {
+.project-orbit__ring {
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  border: 1px solid rgba(37, 99, 235, 0.14);
+  box-shadow: inset 0 0 0 10px rgba(59, 130, 246, 0.022);
+}
+
+.project-orbit__ring--inner {
+  inset: 24%;
+  border-color: rgba(59, 130, 246, 0.1);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.92), transparent 72%);
+}
+
+.project-orbit__shine {
+  content: '';
+  position: absolute;
+  inset: 16% 18% 16% 18%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 30%, rgba(59, 130, 246, 0.1), transparent 24%),
+    radial-gradient(circle at 68% 72%, rgba(34, 197, 94, 0.08), transparent 22%);
+  pointer-events: none;
+}
+
+.project-orbit__core {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  width: 180px;
+  height: 180px;
+  padding: 18px;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.99), rgba(239, 246, 255, 0.98) 62%, rgba(219, 234, 254, 0.92));
+  box-shadow:
+    0 26px 52px rgba(37, 99, 235, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  transform: translateY(4px);
+}
+
+.project-orbit__core::before {
+  content: '';
+  position: absolute;
+  inset: 12px;
+  border-radius: inherit;
+  border: 1px solid rgba(191, 219, 254, 0.68);
+}
+
+.project-orbit__core-icon {
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 26px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #2563eb, #38bdf8);
+  box-shadow:
+    0 20px 38px rgba(37, 99, 235, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+
+.project-orbit__core-caption {
+  z-index: 1;
+  display: grid;
+  gap: 0;
+  justify-items: center;
+  text-align: center;
+}
+
+.project-orbit__core-caption strong {
+  color: #0f172a;
+  font-size: 16px;
+  line-height: 1.12;
+  font-weight: 900;
+}
+
+.project-orbit__chip {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid rgba(191, 219, 254, 0.9);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(14px);
+  box-shadow:
+    0 14px 28px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.project-orbit__chip--top {
+  top: 5%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.project-orbit__chip--bottom-left {
+  left: 10px;
+  bottom: 12px;
+  transform: none;
+}
+
+.project-orbit__chip--bottom-right {
+  right: 10px;
+  bottom: 12px;
+  transform: none;
+}
+
+.projects-hero__right {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.projects-spotlight--project {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 22px;
+  border: 1px solid rgba(223, 231, 242, 0.92);
+  background:
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.06), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 255, 0.95));
+  box-shadow:
+    0 18px 40px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.projects-spotlight--project::before {
   content: '';
   position: absolute;
   inset: 0 auto auto 0;
   width: 100%;
   height: 5px;
-  background: linear-gradient(90deg, #fbbf24, #2dd4bf);
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #38bdf8);
 }
 
 .projects-spotlight__header {
-  color: #b45309;
+  color: #1d4ed8;
   letter-spacing: 0.08em;
 }
 
 .projects-spotlight strong {
-  font-size: 20px;
+  font-size: 18px;
   line-height: 1.2;
 }
 
-.projects-hero__summary span {
-  border-color: rgba(148, 163, 184, 0.16);
+.projects-spotlight p {
+  color: #475569;
+  line-height: 1.65;
+}
+
+.projects-spotlight__metrics {
+  display: grid;
+  gap: 8px;
+}
+
+.projects-spotlight__metrics span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.projects-spotlight__risk {
+  color: #b91c1c !important;
+}
+
+.projects-hero__summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.projects-hero__summary-card {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid rgba(223, 231, 242, 0.92);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.96);
   box-shadow:
-    0 10px 24px rgba(15, 23, 42, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    0 10px 24px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+.projects-hero__summary-card strong {
+  color: #0f172a;
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.projects-hero__summary-card span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .project-workspace--modern {
-  padding: 22px;
-  border: 1px solid rgba(226, 232, 240, 0.95);
-  border-radius: 26px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 249, 252, 0.98));
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-color: rgba(226, 232, 240, 0.92);
   box-shadow:
-    0 26px 56px rgba(15, 23, 42, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+    0 8px 18px rgba(15, 23, 42, 0.03),
+    0 0 0 1px rgba(255, 255, 255, 0.86) inset;
+}
+
+.project-workspace {
+  position: relative;
+  overflow: hidden;
+}
+
+.project-workspace::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 4px;
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.94), rgba(56, 189, 248, 0.9), rgba(99, 102, 241, 0.94));
+}
+
+.project-workspace__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 12px;
+  padding-top: 0;
 }
 
 .project-workspace__header span {
-  color: #b45309;
+  display: inline-block;
+  margin-bottom: 6px;
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 900;
   letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.project-workspace__header h2 {
+  color: #0f172a;
+  letter-spacing: -0.03em;
+}
+
+.project-workspace__header p {
+  color: #64748b;
+  font-weight: 700;
 }
 
 .project-workspace__hint {
-  background: rgba(241, 245, 249, 0.95);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
-.btn-toolbar--accent {
-  border-color: rgba(251, 191, 36, 0.22);
-  color: #92400e;
-  background: rgba(254, 243, 199, 0.88);
-}
-
-.btn-toolbar--accent:hover {
-  color: #78350f;
-  border-color: rgba(245, 158, 11, 0.28);
-  background: rgba(253, 230, 138, 0.95);
+.project-workspace__hint span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .project-modal-backdrop {
-  background: rgba(8, 15, 29, 0.58);
-  backdrop-filter: blur(12px);
+  background: rgba(15, 23, 42, 0.38) !important;
+  backdrop-filter: blur(10px) !important;
+}
+
+.project-modal,
+.project-workspace--modern,
+.projects-spotlight--project {
+  border-radius: 22px;
 }
 
 .project-source-toggle button.is-active {
-  border-color: rgba(251, 191, 36, 0.34);
-  color: #92400e;
-  background: #fef3c7;
-}
-
-.project-option-card:hover {
-  border-color: rgba(251, 191, 36, 0.26);
-  box-shadow: 0 14px 26px rgba(15, 23, 42, 0.08);
-}
-
-.project-option-card.is-selected {
-  border-color: rgba(245, 158, 11, 0.45);
-  box-shadow: 0 16px 28px rgba(245, 158, 11, 0.12);
-}
-
-.project-option-card__meta {
-  color: #b45309;
+  border-color: rgba(37, 99, 235, 0.34);
+  color: #1d4ed8;
+  background: #eff6ff;
 }
 
 .modal-input:focus {
-  border-color: rgba(245, 158, 11, 0.5);
-  box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.14);
+  border-color: rgba(59, 130, 246, 0.85);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
 }
 
 .icon-button:hover {
-  color: #b45309;
-  border-color: rgba(251, 191, 36, 0.28);
-  background: #fff7ed;
+  color: #1d4ed8;
+  border-color: rgba(191, 219, 254, 0.95);
+  background: #eff6ff;
 }
 
-.create-source-grid__card:hover {
-  border-color: rgba(251, 191, 36, 0.26);
-  box-shadow: 0 14px 26px rgba(15, 23, 42, 0.08);
+.project-option-card:hover {
+  border-color: rgba(96, 165, 250, 0.82);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.07);
 }
 
-.create-source-grid__card.is-selected {
-  border-color: rgba(245, 158, 11, 0.42);
-  box-shadow: 0 16px 28px rgba(245, 158, 11, 0.12);
+.projects-hero {
+  display: none !important;
 }
 
-.form-primary {
-  color: #111827;
-  background: linear-gradient(135deg, #fbbf24, #f59e0b);
-  box-shadow: 0 14px 26px rgba(245, 158, 11, 0.24);
+.projects-overview--enterprise {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 18px;
+  padding: 22px 24px 24px;
+  border: 1px solid rgba(191, 219, 254, 0.72);
+  background:
+    radial-gradient(circle at top left, rgba(59, 130, 246, 0.05), transparent 28%),
+    radial-gradient(circle at top right, rgba(34, 197, 94, 0.04), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 251, 255, 0.96));
+  box-shadow:
+    0 24px 60px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
 }
 
-.form-primary:hover {
-  color: #111827;
-  box-shadow: 0 18px 30px rgba(245, 158, 11, 0.3);
+.projects-overview--enterprise::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, #2563eb, #38bdf8, #22c55e);
+}
+
+.projects-overview__header {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.projects-overview__copy {
+  display: grid;
+  gap: 14px;
+}
+
+.projects-overview__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  padding: 8px 14px;
+  border: 1px solid rgba(191, 219, 254, 0.86);
+  border-radius: 999px;
+  background: rgba(239, 246, 255, 0.82);
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.projects-overview__title {
+  display: grid;
+  gap: 8px;
+}
+
+.projects-overview__title h1 {
+  color: #0f172a;
+  font-size: clamp(2rem, 2.6vw, 3rem);
+  line-height: 0.98;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+
+.projects-overview__title p {
+  max-width: 70ch;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.6;
+  font-weight: 600;
+}
+
+.projects-overview__cta {
+  flex: none;
+  box-shadow: 0 16px 28px rgba(37, 99, 235, 0.18);
+}
+
+.projects-overview__body {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(260px, 0.7fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.projects-overview__stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.projects-overview__stat-card {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  min-height: 122px;
+  padding: 14px;
+  border: 1px solid rgba(223, 231, 242, 0.92);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow:
+    0 12px 28px rgba(15, 23, 42, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94);
+}
+
+.projects-overview__stat-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.projects-overview__stat-card strong {
+  color: #0f172a;
+  font-size: 28px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+
+.projects-overview__stat-card span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.projects-overview__feature {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 16px;
+  border: 1px solid rgba(223, 231, 242, 0.92);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.06), transparent 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 255, 0.95));
+  box-shadow:
+    0 14px 34px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.projects-overview__feature-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.projects-overview__feature strong {
+  color: #0f172a;
+  font-size: 18px;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.projects-overview__feature p {
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.55;
+  font-weight: 600;
+}
+
+.projects-overview__feature-meta {
+  display: grid;
+  gap: 8px;
+}
+
+.projects-overview__feature-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.projects-overview__feature-risk {
+  color: #b91c1c !important;
 }
 
 @media (max-width: 1180px) {
-  .projects-hero {
+  .projects-hero--spotlight {
+    grid-template-columns: 1fr;
+  }
+
+  .projects-hero__center {
+    min-height: 280px;
+  }
+}
+
+@media (max-width: 840px) {
+  .projects-hero__summary {
     grid-template-columns: 1fr;
   }
 }
@@ -1630,14 +2197,10 @@ textarea.modal-input {
     padding: 14px;
   }
 
-  .projects-hero,
+  .projects-hero--spotlight,
   .project-workspace--modern {
-    padding: 18px;
+    padding: 16px;
     border-radius: 22px;
-  }
-
-  .projects-hero__summary {
-    grid-template-columns: 1fr;
   }
 
   .projects-hero__actions {
@@ -1648,6 +2211,11 @@ textarea.modal-input {
   .btn-hero,
   .btn-toolbar {
     width: 100%;
+    justify-content: center;
+  }
+
+  .projects-hero__center {
+    min-height: 240px;
   }
 }
 </style>

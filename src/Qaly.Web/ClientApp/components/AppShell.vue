@@ -2,7 +2,6 @@
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import SidebarNav from './SidebarNav.vue'
-import TopHeader from './TopHeader.vue'
 import type { ShellNavItem } from './shell-models'
 
 defineProps<{
@@ -36,18 +35,6 @@ function handleNavigate() {
 <template>
   <!-- Shared shell adapts the old UI structure: full top header, left nav, single scrolling content panel. -->
   <div class="app-shell" :class="{ 'is-chat-shell': isChatShell }">
-    <TopHeader
-      brand-name="QALY"
-      :notification-count="notificationCount"
-      :user-name="userName"
-      :user-initials="userInitials"
-      @toggle-sidebar="sidebarOpen = true"
-      @notifications="$emit('notifications')"
-      @assistant="$emit('assistant')"
-      @search="$emit('search')"
-      @logout="$emit('logout')"
-    />
-
     <SidebarNav
       :class="{ 'is-open': sidebarOpen }"
       :items="navItems"
