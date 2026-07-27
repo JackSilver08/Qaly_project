@@ -2037,6 +2037,108 @@ public class TaskService : ITaskService
             blockedItems));
     }
 
+    public async Task<Result<IEnumerable<SprintDto>>> CreateSprintPresetsAsync(Guid projectId, string presetType, CancellationToken ct = default)
+    {
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null) return Result.NotFound<IEnumerable<SprintDto>>();
+
+        if (!await _taskAccessPolicy.CanManageProjectAsync(projectId, project.OwnerId, ct))
+            return Result.Forbidden<IEnumerable<SprintDto>>();
+
+        var now = DateTimeOffset.UtcNow;
+        var endDate = project.EndDate ?? now.AddDays(60);
+        var totalDays = Math.Max(30, (int)(endDate - now).TotalDays);
+
+        var presets = new List<(string Name, DateTimeOffset Start, DateTimeOffset End, string Goal)>();
+
+        switch ((presetType ?? "outsource").ToLowerInvariant())
+        {
+            case "scrum":
+                var sprintLengthDays = 14;
+                var sprintCount = Math.Max(4, totalDays / sprintLengthDays);
+                for (int i = 0; i < sprintCount; i++)
+                {
+                    var sStart = now.AddDays(i * sprintLengthDays);
+                    var sEnd = sStart.AddDays(sprintLengthDays - 1);
+                    presets.Add((
+                        $"Sprint {i + 1}: Phân đoạn {i + 1}",
+                        sStart,
+                        sEnd,
+                        i == 0 ? "Phân tích Yêu cầu, Kiến trúc & Backlog Khởi tạo" :
+                        i == 1 ? "Phát triển Tính năng Cốt lõi & Giao diện Chính" :
+                        i == 2 ? "Tích hợp AI, Tối ưu & Sửa lỗi System" :
+                        $"Hoàn thiện UAT, Hardening & Bàn giao Sản phẩm (Sprint {i + 1})"
+                    ));
+                }
+                break;
+
+            case "waterfall":
+                var phaseDays = totalDays / 4;
+                presets.Add(("Giai đoạn 1: Khảo sát & Yêu cầu Chi tiết", now, now.AddDays(phaseDays), "Chốt Scope, Wireframe & Tài liệu Yêu cầu Phần mềm (SRS)"));
+                presets.Add(("Giai đoạn 2: Thiết kế Kiến trúc & UI/UX", now.AddDays(phaseDays + 1), now.AddDays(phaseDays * 2), "Thiết kế Figma Prototype & Cơ sở Dữ liệu System"));
+                presets.Add(("Giai đoạn 3: Lập trình & Kiểm thử QA", now.AddDays(phaseDays * 2 + 1), now.AddDays(phaseDays * 3), "Lập trình Backend APIs, Frontend & Đảm bảo Chất lượng QA"));
+                presets.Add(("Giai đoạn 4: Nghiệm thu UAT & Go-Live", now.AddDays(phaseDays * 3 + 1), endDate, "Nghiệm thu Khách hàng, Triển khai Production & Bàn giao"));
+                break;
+
+            case "outsource":
+            default:
+                var stepDays = Math.Max(5, totalDays / 6);
+                presets.Add(("Mốc 1: Khảo sát & Khởi tạo Yêu cầu (Scope Alignment)", now, now.AddDays(stepDays), "Thống nhất yêu cầu chi tiết của khách hàng, chốt Scope & Ký biên bản khởi tạo dự án."));
+                presets.Add(("Mốc 2: Thiết kế Prototype UI/UX & Architecture", now.AddDays(stepDays + 1), now.AddDays(stepDays * 2), "Chốt Wireframe, UI/UX prototype Figma & Thiết kế Kiến trúc Database/API."));
+                presets.Add(("Mốc 3: Phát triển Core Modules & Backend Services", now.AddDays(stepDays * 2 + 1), now.AddDays(stepDays * 3), "Lập trình các tính năng cốt lõi (Authentication, Core Domain, Integration APIs)."));
+                presets.Add(("Mốc 4: Tích hợp Giao diện & AI Services", now.AddDays(stepDays * 3 + 1), now.AddDays(stepDays * 4), "Hoàn thiện giao diện Frontend, tích hợp SignalR, AI Assistant & các dịch vụ bên ngoài."));
+                presets.Add(("Mốc 5: Kiểm thử UAT, Sửa lỗi & Demo Khách hàng", now.AddDays(stepDays * 4 + 1), now.AddDays(stepDays * 5), "Tiến hành UAT với khách hàng, sửa lỗi phát sinh và chốt chấp thuận nghiệm thu."));
+                presets.Add(("Mốc 6: Bàn giao, Deploy Go-Live & Đào tạo", now.AddDays(stepDays * 5 + 1), endDate, "Triển khai Docker/Kubernetes lên Server Production, bàn giao tài liệu và nghiệm thu hoàn tất."));
+                break;
+        }
+
+        foreach (var p in presets)
+        {
+            var sprint = new Sprint
+            {
+                ProjectId = projectId,
+                Name = p.Name,
+                StartDate = p.Start,
+                EndDate = p.End,
+                Goal = p.Goal,
+                Status = "Planning"
+            };
+            await _sprintRepo.AddAsync(sprint, ct);
+        }
+
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync("CreateSprintPreset", nameof(Sprint), projectId.ToString(), new { PresetType = presetType }, ct);
+
+        return await GetSprintsAsync(projectId, ct);
+    }
+
+    public async Task<Result> AssignTasksToSprintAsync(Guid sprintId, IEnumerable<Guid> taskIds, CancellationToken ct = default)
+    {
+        var sprint = await _sprintRepo.GetQueryable()
+            .Include(s => s.Project)
+            .FirstOrDefaultAsync(s => s.Id == sprintId, ct);
+
+        if (sprint == null) return Result.NotFound();
+
+        if (!await _taskAccessPolicy.CanManageProjectAsync(sprint.ProjectId, sprint.Project.OwnerId, ct))
+            return Result.Forbidden();
+
+        var taskIdList = taskIds.Distinct().ToList();
+        var tasks = await _taskRepo.GetQueryable()
+            .Where(t => t.ProjectId == sprint.ProjectId && taskIdList.Contains(t.Id))
+            .ToListAsync(ct);
+
+        foreach (var task in tasks)
+        {
+            task.SprintId = sprintId;
+        }
+
+        await _unitOfWork.SaveChangesAsync(ct);
+        await _auditLogService.LogAsync("AssignTasksToSprint", nameof(Sprint), sprintId.ToString(), new { Count = tasks.Count }, ct);
+
+        return Result.Success();
+    }
+
     public async Task<Result<ProjectWorkloadDto>> GetWorkloadAsync(Guid projectId, CancellationToken ct = default)
     {
         var project = await _projectRepo.GetQueryable()

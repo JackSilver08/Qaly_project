@@ -37,6 +37,8 @@ public interface ITaskService
     Task<Result<SprintDto>> UpdateSprintAsync(Guid sprintId, UpdateSprintRequest request, CancellationToken ct = default);
     Task<Result> DeleteSprintAsync(Guid sprintId, CancellationToken ct = default);
     Task<Result<ProjectTimelineDto>> GetSprintTimelineAsync(Guid projectId, Guid sprintId, CancellationToken ct = default);
+    Task<Result<IEnumerable<SprintDto>>> CreateSprintPresetsAsync(Guid projectId, string presetType, CancellationToken ct = default);
+    Task<Result> AssignTasksToSprintAsync(Guid sprintId, IEnumerable<Guid> taskIds, CancellationToken ct = default);
 
     // Workload
     Task<Result<ProjectWorkloadDto>> GetWorkloadAsync(Guid projectId, CancellationToken ct = default);

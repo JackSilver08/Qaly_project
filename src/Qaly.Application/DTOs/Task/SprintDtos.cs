@@ -24,3 +24,10 @@ public record UpdateSprintRequest(
     DateTimeOffset EndDate,
     string Status,
     string? Goal);
+
+public record AssignSprintTasksRequest(
+    IReadOnlyList<Guid> TaskIds);
+
+public record CreateSprintPresetRequest(
+    string PresetType);
+

@@ -44,7 +44,8 @@ public record CreateTaskDto(
     bool IsPinned = false,
     bool ContributesToProgress = true,
     IReadOnlyList<Guid>? AssigneeIds = null,
-    IReadOnlyList<Guid>? LabelIds = null);
+    IReadOnlyList<Guid>? LabelIds = null,
+    Guid? SprintId = null);
 
 public record UpdateTaskDto(
     string Title,
@@ -60,7 +61,8 @@ public record UpdateTaskDto(
     bool ContributesToProgress = true,
     IReadOnlyList<Guid>? AssigneeIds = null,
     IReadOnlyList<Guid>? LabelIds = null,
-    string? RowVersion = null);
+    string? RowVersion = null,
+    Guid? SprintId = null);
 
 public record TaskAssigneeDto(
     Guid UserId,
