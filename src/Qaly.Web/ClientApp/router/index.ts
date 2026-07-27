@@ -13,6 +13,7 @@ const RouteErrorPage = () => import("../pages/RouteErrorPage.vue");
 const AdminUsersPage = () => import("../pages/AdminUsersPage.vue");
 const OrganizationUsersPage = () => import("../pages/OrganizationUsersPage.vue");
 const ModeratorAssignmentsPage = () => import("../pages/ModeratorAssignmentsPage.vue");
+const OrganizationsPage = () => import("../pages/OrganizationsPage.vue");
 
 const guidPattern =
     "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
@@ -67,6 +68,7 @@ export const router = createRouter({
         { path: "/analytics", name: "analytics", component: AnalyticsPage },
         { path: "/admin/users", name: "admin-users", component: AdminUsersPage },
         { path: "/organizations/users", name: "organization-users", component: OrganizationUsersPage },
+        { path: "/organizations", name: "organizations", component: OrganizationsPage },
         { path: "/admin/moderators", name: "admin-moderators", component: ModeratorAssignmentsPage },
         {
             path: "/groups",

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { Building2, MailPlus, RefreshCw, Search, ShieldCheck, Trash2, Users } from 'lucide-vue-next'
 import type { UserDto } from '../types'
 import { confirmDialog } from '../composables/use-confirm-dialog'
@@ -11,6 +12,7 @@ interface OrganizationPage { items:Organization[]; totalCount:number }
 interface OrganizationMember { userId:string; fullName:string; email:string; role:string; joinedAt:string }
 
 const roles=['OrganizationAdmin','PrivacyOperator','BillingAdmin','Member'] as const
+const route=useRoute()
 const me=ref<UserDto|null>(null), organizations=ref<Organization[]>([]), members=ref<OrganizationMember[]>([])
 const selectedId=ref(''), search=ref(''), loading=ref(true), saving=ref<string|null>(null), inviteOpen=ref(false)
 const invite=ref({email:'',role:'Member'})
@@ -20,7 +22,7 @@ const visibleMembers=computed(()=>{const term=search.value.trim().toLowerCase();
 const myMembership=computed(()=>members.value.find(item=>item.userId===me.value?.id))
 const canManage=computed(()=>me.value?.role==='Admin'||selectedOrganization.value?.ownerId===me.value?.id||['Owner','OrganizationAdmin','Admin','Manager'].includes(myMembership.value?.role??'')||moderatorCapabilities.value.some(item=>item!=='organization.users.view'))
 
-async function loadOrganizations(){loading.value=true;try{const page=await apiResult<OrganizationPage>('/api/organizations?pageSize=100');organizations.value=page.items.filter(item=>item.isActive);if(!selectedId.value&&organizations.value.length)selectedId.value=organizations.value[0].id;if(selectedId.value)await loadMembers()}catch(e){showError(errorMessage(e,'Không thể tải danh sách tổ chức.'))}finally{loading.value=false}}
+async function loadOrganizations(){loading.value=true;try{const page=await apiResult<OrganizationPage>('/api/organizations?pageSize=100');organizations.value=page.items.filter(item=>item.isActive);const requestedId=typeof route.query.organization==='string'?route.query.organization:'';if(requestedId&&organizations.value.some(item=>item.id===requestedId))selectedId.value=requestedId;else if(!selectedId.value&&organizations.value.length)selectedId.value=organizations.value[0].id;if(selectedId.value)await loadMembers()}catch(e){showError(errorMessage(e,'Không thể tải danh sách tổ chức.'))}finally{loading.value=false}}
 async function loadMembers(){if(!selectedId.value)return;loading.value=true;try{const [loadedMembers,capabilities]=await Promise.all([apiResult<OrganizationMember[]>(`/api/organizations/${selectedId.value}/users`),apiResult<string[]>(`/api/organizations/${selectedId.value}/moderator-capabilities`)]);members.value=loadedMembers;moderatorCapabilities.value=capabilities}catch(e){members.value=[];moderatorCapabilities.value=[];showError(errorMessage(e,'Không thể tải thành viên tổ chức.'))}finally{loading.value=false}}
 async function addMember(){if(!selectedId.value||!invite.value.email.trim())return;saving.value='invite';try{await apiCommand(`/api/organizations/${selectedId.value}/users`,{method:'POST',body:JSON.stringify(invite.value)});invite.value={email:'',role:'Member'};inviteOpen.value=false;showSuccess('Đã thêm thành viên vào tổ chức.');await loadMembers()}catch(e){showError(errorMessage(e,'Không thể thêm thành viên.'))}finally{saving.value=null}}
 async function changeRole(member:OrganizationMember,nextRole:string){if(member.role==='Owner')return;saving.value=member.userId;const previous=member.role;member.role=nextRole;try{await apiCommand(`/api/organizations/${selectedId.value}/users/${member.userId}`,{method:'PATCH',body:JSON.stringify({role:nextRole})});showSuccess('Đã cập nhật vai trò tổ chức.')}catch(e){member.role=previous;showError(errorMessage(e,'Không thể cập nhật vai trò.'))}finally{saving.value=null}}

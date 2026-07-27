@@ -140,6 +140,7 @@ const navigation = computed<ShellNavItem[]>(() => {
   ];
   const role = String(currentUser.value?.role || "").toLowerCase();
   if (role === "admin") {
+    items.push({ label: "Quản lý tổ chức", to: "/organizations", icon: Building2 });
     items.push({ label: "Ủy quyền Moderator", to: "/admin/moderators", icon: ShieldCheck });
     items.push({ label: "Quản lý người dùng", to: "/admin/users", icon: ShieldCheck });
   }

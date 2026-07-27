@@ -124,12 +124,30 @@ public class OrganizationService : IOrganizationService
             return Result.Failure<OrganizationDto>("Organization name is required.");
         }
 
+        var ownerId = currentUserId.Value;
+        if (dto.OwnerId.HasValue && dto.OwnerId.Value != currentUserId.Value)
+        {
+            if (!IsSystemAdmin())
+            {
+                return Result.Forbidden<OrganizationDto>();
+            }
+
+            var ownerExists = await _userRepo.GetQueryable()
+                .AnyAsync(user => user.Id == dto.OwnerId.Value && user.IsActive, ct);
+            if (!ownerExists)
+            {
+                return Result.Failure<OrganizationDto>("Organization owner was not found.", 404);
+            }
+
+            ownerId = dto.OwnerId.Value;
+        }
+
         var organization = new Organization
         {
             Name = dto.Name.Trim(),
             Code = await GenerateUniqueCodeAsync(dto.Code, dto.Name, ct),
             Description = NormalizeOptional(dto.Description),
-            OwnerId = currentUserId.Value,
+            OwnerId = ownerId,
             IsActive = true
         };
 
@@ -139,7 +157,7 @@ public class OrganizationService : IOrganizationService
         await _organizationMemberRepo.AddAsync(new OrganizationMember
         {
             OrganizationId = organization.Id,
-            UserId = currentUserId.Value,
+            UserId = ownerId,
             Role = OrganizationRoleRules.Owner
         }, ct);
         await _unitOfWork.SaveChangesAsync(ct);
@@ -173,6 +191,48 @@ public class OrganizationService : IOrganizationService
         organization.AllowedEmailDomains = dto.AllowedEmailDomains;
         organization.WorkspaceIcon = dto.WorkspaceIcon;
         organization.WorkspaceCover = dto.WorkspaceCover;
+
+        if (dto.OwnerId.HasValue && dto.OwnerId.Value != organization.OwnerId)
+        {
+            if (!IsSystemAdmin())
+            {
+                return Result.Forbidden<OrganizationDto>();
+            }
+
+            var newOwnerExists = await _userRepo.GetQueryable()
+                .AnyAsync(user => user.Id == dto.OwnerId.Value && user.IsActive, ct);
+            if (!newOwnerExists)
+            {
+                return Result.Failure<OrganizationDto>("Organization owner was not found.", 404);
+            }
+
+            var previousOwnerMembership = await _organizationMemberRepo.GetQueryable()
+                .FirstOrDefaultAsync(item => item.OrganizationId == id && item.UserId == organization.OwnerId, ct);
+            if (previousOwnerMembership != null)
+            {
+                previousOwnerMembership.Role = OrganizationRoleRules.OrganizationAdmin;
+                await _organizationMemberRepo.UpdateAsync(previousOwnerMembership, ct);
+            }
+
+            var newOwnerMembership = await _organizationMemberRepo.GetQueryable()
+                .FirstOrDefaultAsync(item => item.OrganizationId == id && item.UserId == dto.OwnerId.Value, ct);
+            if (newOwnerMembership == null)
+            {
+                await _organizationMemberRepo.AddAsync(new OrganizationMember
+                {
+                    OrganizationId = id,
+                    UserId = dto.OwnerId.Value,
+                    Role = OrganizationRoleRules.Owner
+                }, ct);
+            }
+            else
+            {
+                newOwnerMembership.Role = OrganizationRoleRules.Owner;
+                await _organizationMemberRepo.UpdateAsync(newOwnerMembership, ct);
+            }
+
+            organization.OwnerId = dto.OwnerId.Value;
+        }
 
         await _organizationRepo.UpdateAsync(organization, ct);
         await _unitOfWork.SaveChangesAsync(ct);
