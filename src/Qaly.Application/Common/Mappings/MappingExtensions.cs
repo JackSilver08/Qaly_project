@@ -268,7 +268,8 @@ public static class MappingExtensions
             AssigneeId = dto.AssigneeId,
             IsPrivate = dto.IsPrivate,
             IsPinned = dto.IsPinned,
-            ContributesToProgress = dto.ContributesToProgress
+            ContributesToProgress = dto.ContributesToProgress,
+            SprintId = dto.SprintId
         };
 
     public static void ApplyTo(this UpdateTaskDto dto, TaskItem task)
@@ -284,6 +285,10 @@ public static class MappingExtensions
         task.IsPrivate = dto.IsPrivate;
         task.IsPinned = dto.IsPinned;
         task.ContributesToProgress = dto.ContributesToProgress;
+        if (dto.SprintId.HasValue || dto.SprintId == null)
+        {
+            task.SprintId = dto.SprintId;
+        }
     }
 
     public static string EncodeRowVersion(byte[]? rowVersion)

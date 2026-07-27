@@ -93,6 +93,35 @@ export interface SprintDto {
     progress: number;
 }
 
+export interface CreateTaskDto {
+    title: string;
+    description?: string | null;
+    priority: string;
+    dueDate?: string | null;
+    estimatedHours?: number | null;
+    projectId: string;
+    assigneeId?: string | null;
+    isPrivate?: boolean;
+    isPinned?: boolean;
+    contributesToProgress?: boolean;
+    sprintId?: string | null;
+}
+
+export interface UpdateTaskDto {
+    title: string;
+    description?: string | null;
+    status: string;
+    priority: string;
+    dueDate?: string | null;
+    estimatedHours?: number | null;
+    actualHours?: number | null;
+    assigneeId?: string | null;
+    isPrivate?: boolean;
+    isPinned?: boolean;
+    contributesToProgress?: boolean;
+    sprintId?: string | null;
+}
+
 export interface DashboardMember {
     id: string;
     fullName: string;

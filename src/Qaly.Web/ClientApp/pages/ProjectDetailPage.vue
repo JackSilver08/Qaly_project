@@ -1048,6 +1048,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
       <AiPlannerModal
         v-if="showAiPlanner"
         :project-id="selectedProject.id"
+        :project-members="selectedProject.members"
         @close="showAiPlanner = false"
         @created="onPlannerCreated"
       />

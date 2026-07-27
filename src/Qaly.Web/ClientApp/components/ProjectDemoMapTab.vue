@@ -16,11 +16,27 @@ import {
   Flag,
   X,
   Check,
+  Eye,
+  Link as LinkIcon,
+  UserCheck,
+  ShieldCheck,
+  User,
+  Shield,
+  RefreshCw,
+  ChevronRight,
+  PlayCircle,
+  Lock,
+  ListTodo,
+  CheckSquare,
+  Users,
+  Award,
+  Zap,
+  LayoutGrid
 } from 'lucide-vue-next'
 import { apiResult, apiCommand } from '../utils/api-client'
 import { showError, showSuccess } from '../composables/use-toast'
 import { useDashboardContext } from '../composables/dashboard-context'
-import type { SprintDto, DashboardTask } from '../types'
+import type { SprintDto, DashboardTask, DashboardProjectMember } from '../types'
 import ProjectProgressAiCard from './ProjectProgressAiCard.vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -30,25 +46,47 @@ const props = defineProps<{
   canGenerateAi: boolean
 }>()
 
-const { selectedProject, activeProjectTab, taskSearchQuery } = useDashboardContext()
+const { selectedProject, activeProjectTab, isProjectAdmin, loadDashboard } = useDashboardContext()
 const route = useRoute()
 const router = useRouter()
 
+// Sprint list & loading state
 const sprints = ref<SprintDto[]>([])
 const isLoading = ref(false)
 const selectedSprintId = ref<string | null>(null)
+
+// View modes: Executive Client View vs Management View
+const isClientViewMode = ref(false)
+
+// Modals state
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
+const showPresetModal = ref(false)
+const showTaskAssignModal = ref(false)
+const showQuickCreateTaskModal = ref(false)
 
 // Form states for milestone creation/editing
 const milestoneName = ref('')
 const milestoneStartDate = ref('')
 const milestoneEndDate = ref('')
 const milestoneGoal = ref('')
+const milestoneStatus = ref('Planning')
 const editingSprintId = ref<string | null>(null)
 
-// Outsource Presets generator
-const isGeneratingOutsource = ref(false)
+// Form states for Quick Task Creation in milestone
+const quickTaskTitle = ref('')
+const quickTaskPriority = ref('Medium')
+const quickTaskAssigneeId = ref('')
+const quickTaskDueDate = ref('')
+
+// Selected tasks IDs for Task Assignment Modal
+const selectedTaskIdsForSprint = ref<string[]>([])
+const isSavingTaskAssignment = ref(false)
+const isGeneratingPreset = ref(false)
+
+// Task status filter inside milestone detail
+const milestoneTaskSearch = ref('')
+const milestoneTaskStatusFilter = ref<string>('all')
 
 onMounted(() => {
   loadSprints()
@@ -71,13 +109,13 @@ async function loadSprints() {
     const result = await apiResult<SprintDto[]>(`/api/projects/${props.projectId}/sprints`)
     // Sort sprints chronologically by StartDate
     sprints.value = (result || []).sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
+    
     const requestedSprintId = route.hash.startsWith('#milestone-')
       ? route.hash.slice('#milestone-'.length)
       : null
     if (sprints.value.length > 0 &&
-        (!selectedSprintId.value || !sprints.value.some(sprint => sprint.id === selectedSprintId.value))) {
-      // Auto select current active or first sprint
-      const current = sprints.value.find(sprint => sprint.id === requestedSprintId) ||
+        (!selectedSprintId.value || !sprints.value.some(s => s.id === selectedSprintId.value))) {
+      const current = sprints.value.find(s => s.id === requestedSprintId) ||
         sprints.value.find(s => isCurrentMilestone(s)) ||
         sprints.value[0]
       selectedSprintId.value = current.id
@@ -89,7 +127,7 @@ async function loadSprints() {
   }
 }
 
-// Compute Milestone States
+// Milestone state calculation helpers
 function isCompletedMilestone(sprint: SprintDto): boolean {
   if (sprint.status === 'Completed') return true
   if (sprint.taskCount > 0 && sprint.completedTaskCount === sprint.taskCount) return true
@@ -107,7 +145,6 @@ function isCurrentMilestone(sprint: SprintDto): boolean {
   
   if (now >= start && now <= end) return true
 
-  // Fallback: First uncompleted milestone in sequence
   const uncompleted = sprints.value.filter(s => !isCompletedMilestone(s))
   return uncompleted.length > 0 && uncompleted[0].id === sprint.id
 }
@@ -127,8 +164,9 @@ const currentPositionMilestone = computed(() => {
   return sprints.value.find(s => isCurrentMilestone(s)) || null
 })
 
+// Overall project health summary
 const overallProgress = computed(() => {
-  if (sprints.value.length === 0) return 0
+  if (sprints.value.length === 0) return selectedProject.value?.progressPercentage || 0
   const totalTasks = sprints.value.reduce((sum, s) => sum + s.taskCount, 0)
   const completedTasks = sprints.value.reduce((sum, s) => sum + s.completedTaskCount, 0)
   if (totalTasks > 0) return Math.round((completedTasks / totalTasks) * 100)
@@ -137,10 +175,51 @@ const overallProgress = computed(() => {
   return Math.round((completedMilestones / sprints.value.length) * 100)
 })
 
-// Tasks belonging to selected milestone
+const projectHealthStatus = computed(() => {
+  if (sprints.value.length === 0) return { label: 'Chưa có mốc', tone: 'muted' }
+  const overdueCount = sprints.value.filter(s => isOverdueMilestone(s)).length
+  if (overdueCount > 0) return { label: `Có ${overdueCount} mốc trễ hạn`, tone: 'danger' }
+  const allCompleted = sprints.value.every(s => isCompletedMilestone(s))
+  if (allCompleted) return { label: 'Đã hoàn thành toàn bộ mốc', tone: 'success' }
+  return { label: 'Đang theo đúng tiến độ', tone: 'primary' }
+})
+
+// Milestone tasks
+const allProjectTasks = computed<DashboardTask[]>(() => {
+  return selectedProject.value?.tasks || []
+})
+
 const milestoneTasks = computed<DashboardTask[]>(() => {
   if (!selectedSprintId.value || !selectedProject.value?.tasks) return []
   return selectedProject.value.tasks.filter((t: DashboardTask) => t.sprintId === selectedSprintId.value)
+})
+
+const filteredMilestoneTasks = computed<DashboardTask[]>(() => {
+  let list = milestoneTasks.value
+  if (milestoneTaskStatusFilter.value !== 'all') {
+    list = list.filter(t => t.status.toLowerCase() === milestoneTaskStatusFilter.value.toLowerCase())
+  }
+  if (milestoneTaskSearch.value.trim()) {
+    const q = milestoneTaskSearch.value.trim().toLowerCase()
+    list = list.filter(t => t.title.toLowerCase().includes(q) || (t.key && t.key.toLowerCase().includes(q)))
+  }
+  return list
+})
+
+// Assigned members breakdown in active milestone
+const milestoneAssignedMembers = computed(() => {
+  if (!activeMilestone.value || milestoneTasks.value.length === 0) return []
+  const memberMap = new Map<string, { userId: string; name: string; taskCount: number; completedCount: number }>()
+  
+  for (const t of milestoneTasks.value) {
+    if (t.assigneeId && t.assigneeName) {
+      const existing = memberMap.get(t.assigneeId) || { userId: t.assigneeId, name: t.assigneeName, taskCount: 0, completedCount: 0 }
+      existing.taskCount++
+      if (t.status === 'Done') existing.completedCount++
+      memberMap.set(t.assigneeId, existing)
+    }
+  }
+  return Array.from(memberMap.values())
 })
 
 const trackFillPercentage = computed(() => {
@@ -160,82 +239,25 @@ function jumpToKanban(sprintId?: string) {
   activeProjectTab.value = 'tasks'
 }
 
-// Action: Auto-generate standard Outsource Roadmap Presets
-async function generateOutsourceRoadmap() {
-  isGeneratingOutsource.value = true
+// Action: Generate Roadmap Preset (Scrum, Outsource, Waterfall)
+async function handleGeneratePreset(presetType: 'scrum' | 'outsource' | 'waterfall') {
+  isGeneratingPreset.value = true
   try {
-    const now = new Date()
-    const endDate = selectedProject.value?.endDate ? new Date(selectedProject.value.endDate) : new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000)
-    const totalDays = Math.max(30, Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 3600 * 24)))
-    const stepDays = Math.floor(totalDays / 5)
-
-    const addDays = (d: Date, days: number) => {
-      const res = new Date(d)
-      res.setDate(res.getDate() + days)
-      return res.toISOString()
-    }
-
-    const outsourcePhases = [
-      {
-        name: 'Mốc 1: Khảo sát & Khởi tạo Yêu cầu (Scope Alignment)',
-        start: now.toISOString(),
-        end: addDays(now, stepDays),
-        goal: 'Thống nhất yêu cầu chi tiết của khách hàng, chốt Scope & Ký biên bản khởi tạo dự án.'
-      },
-      {
-        name: 'Mốc 2: Thiết kế Prototype UI/UX & Architecture',
-        start: addDays(now, stepDays + 1),
-        end: addDays(now, stepDays * 2),
-        goal: 'Chốt Wireframe, UI/UX prototype Figma & Thiết kế Kiến trúc Database/API.'
-      },
-      {
-        name: 'Mốc 3: Phát triển Core Modules & Backend Services',
-        start: addDays(now, stepDays * 2 + 1),
-        end: addDays(now, stepDays * 3),
-        goal: 'Lập trình các tính năng cốt lõi (Authentication, Core Domain, Integration APIs).'
-      },
-      {
-        name: 'Mốc 4: Tích hợp Giao diện & AI Services',
-        start: addDays(now, stepDays * 3 + 1),
-        end: addDays(now, stepDays * 4),
-        goal: 'Hoàn thiện giao diện Frontend, tích hợp SignalR, AI Assistant & các dịch vụ bên ngoài.'
-      },
-      {
-        name: 'Mốc 5: Kiểm thử UAT, Sửa lỗi & Demo Khách hàng',
-        start: addDays(now, stepDays * 4 + 1),
-        end: addDays(now, totalDays - 5),
-        goal: 'Tiến hành UAT với khách hàng, sửa lỗi phát sinh và chốt chấp thuận nghiệm thu.'
-      },
-      {
-        name: 'Mốc 6: Bàn giao, Deploy Go-Live & Đào tạo',
-        start: addDays(now, totalDays - 4),
-        end: endDate.toISOString(),
-        goal: 'Triển khai Docker/Kubernetes lên Server Production, bàn giao tài liệu và nghiệm thu hoàn tất.'
-      }
-    ]
-
-    for (const phase of outsourcePhases) {
-      await apiCommand(`/api/projects/${props.projectId}/sprints`, {
-        method: 'POST',
-        body: JSON.stringify({
-          name: phase.name,
-          startDate: phase.start,
-          endDate: phase.end,
-          goal: phase.goal
-        })
-      })
-    }
-
+    await apiCommand(`/api/projects/${props.projectId}/sprints/presets`, {
+      method: 'POST',
+      body: JSON.stringify({ presetType })
+    })
+    showPresetModal.value = false
     await loadSprints()
-    showSuccess('Đã tự động khởi tạo Sơ đồ quy trình Outsource chuẩn 6 Mốc!')
+    showSuccess(`Đã tự động khởi tạo Mẫu Lộ trình (${presetType.toUpperCase()}) thành công!`)
   } catch (error) {
-    showError('Không thể khởi tạo sơ đồ Outsource tự động.')
+    showError('Không thể khởi tạo mẫu mốc tiến độ.')
   } finally {
-    isGeneratingOutsource.value = false
+    isGeneratingPreset.value = false
   }
 }
 
-// Create new manual milestone
+// Action: Create manual milestone
 async function handleCreateMilestone() {
   if (!milestoneName.value.trim() || !milestoneStartDate.value || !milestoneEndDate.value) {
     showError('Vui lòng nhập đầy đủ Tên mốc, Ngày bắt đầu và Ngày kết thúc.')
@@ -254,10 +276,7 @@ async function handleCreateMilestone() {
     })
 
     showCreateModal.value = false
-    milestoneName.value = ''
-    milestoneStartDate.value = ''
-    milestoneEndDate.value = ''
-    milestoneGoal.value = ''
+    resetMilestoneForm()
     await loadSprints()
     showSuccess('Đã thêm mốc tiến độ mới.')
   } catch (error) {
@@ -265,13 +284,14 @@ async function handleCreateMilestone() {
   }
 }
 
-// Edit existing milestone
+// Action: Edit milestone
 function openEdit(sprint: SprintDto) {
   editingSprintId.value = sprint.id
   milestoneName.value = sprint.name
   milestoneStartDate.value = sprint.startDate.slice(0, 10)
   milestoneEndDate.value = sprint.endDate.slice(0, 10)
   milestoneGoal.value = sprint.goal || ''
+  milestoneStatus.value = sprint.status || 'Planning'
   showEditModal.value = true
 }
 
@@ -284,21 +304,22 @@ async function handleUpdateMilestone() {
         name: milestoneName.value.trim(),
         startDate: new Date(milestoneStartDate.value).toISOString(),
         endDate: new Date(milestoneEndDate.value).toISOString(),
-        status: activeMilestone.value?.status || 'Planning',
+        status: milestoneStatus.value,
         goal: milestoneGoal.value.trim() || null
       })
     })
 
     showEditModal.value = false
     editingSprintId.value = null
+    resetMilestoneForm()
     await loadSprints()
-    showSuccess('Đã cập nhật mốc tiến độ.')
+    showSuccess('Đã cập nhật thông tin mốc tiến độ.')
   } catch (error) {
     showError('Không thể cập nhật mốc tiến độ.')
   }
 }
 
-// Delete milestone
+// Action: Delete milestone
 async function handleDeleteMilestone(sprintId: string) {
   if (!confirm('Bạn có chắc chắn muốn xóa mốc này? Các task liên kết sẽ không bị xóa.')) return
   try {
@@ -309,6 +330,103 @@ async function handleDeleteMilestone(sprintId: string) {
   } catch (error) {
     showError('Không thể xóa mốc tiến độ.')
   }
+}
+
+// Action: Open Task Assignment Modal
+function openTaskAssignModal() {
+  if (!selectedSprintId.value) return
+  selectedTaskIdsForSprint.value = milestoneTasks.value.map(t => t.id)
+  showTaskAssignModal.value = true
+}
+
+function toggleTaskSelection(taskId: string) {
+  const index = selectedTaskIdsForSprint.value.indexOf(taskId)
+  if (index >= 0) {
+    selectedTaskIdsForSprint.value.splice(index, 1)
+  } else {
+    selectedTaskIdsForSprint.value.push(taskId)
+  }
+}
+
+async function handleSaveTaskAssignments() {
+  if (!selectedSprintId.value) return
+  isSavingTaskAssignment.value = true
+  try {
+    await apiCommand(`/api/sprints/${selectedSprintId.value}/tasks`, {
+      method: 'PUT',
+      body: JSON.stringify({ taskIds: selectedTaskIdsForSprint.value })
+    })
+    showTaskAssignModal.value = false
+    await loadDashboard()
+    await loadSprints()
+    showSuccess('Đã cập nhật danh sách công việc thuộc mốc.')
+  } catch (error) {
+    showError('Không thể cập nhật phân công công việc vào mốc.')
+  } finally {
+    isSavingTaskAssignment.value = false
+  }
+}
+
+// Action: Quick Create Task inside selected milestone
+async function handleQuickCreateTask() {
+  if (!selectedSprintId.value || !quickTaskTitle.value.trim()) {
+    showError('Vui lòng nhập tiêu đề nhiệm vụ.')
+    return
+  }
+
+  try {
+    await apiCommand('/api/tasks', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: quickTaskTitle.value.trim(),
+        priority: quickTaskPriority.value,
+        projectId: props.projectId,
+        assigneeId: quickTaskAssigneeId.value || null,
+        dueDate: quickTaskDueDate.value ? new Date(quickTaskDueDate.value).toISOString() : null,
+        sprintId: selectedSprintId.value
+      })
+    })
+
+    showQuickCreateTaskModal.value = false
+    quickTaskTitle.value = ''
+    quickTaskPriority.value = 'Medium'
+    quickTaskAssigneeId.value = ''
+    quickTaskDueDate.value = ''
+
+    await loadDashboard()
+    await loadSprints()
+    showSuccess('Đã tạo nhiệm vụ mới trực tiếp trong mốc này.')
+  } catch (error) {
+    showError('Không thể tạo nhiệm vụ.')
+  }
+}
+
+// Action: Inline Update Task Status (For members)
+async function updateTaskStatusInline(task: DashboardTask, newStatus: string) {
+  if (task.status === newStatus) return
+  try {
+    await apiCommand(`/api/tasks/${task.id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        status: newStatus,
+        rowVersion: task.rowVersion
+      })
+    })
+    await loadDashboard()
+    await loadSprints()
+    showSuccess(`Đã chuyển trạng thái task sang "${newStatus}".`)
+  } catch (error) {
+    showError('Không thể cập nhật trạng thái nhiệm vụ.')
+  }
+}
+
+function resetMilestoneForm() {
+  milestoneName.value = ''
+  milestoneStartDate.value = ''
+  milestoneEndDate.value = ''
+  milestoneGoal.value = ''
+  milestoneStatus.value = 'Planning'
+  editingSprintId.value = null
 }
 
 function formatDateRange(start: string, end: string) {
@@ -322,17 +440,53 @@ function formatDateRange(start: string, end: string) {
 <template>
   <div class="project-demo-map-shell">
     
-    <!-- Top Overview Header -->
-    <div class="demo-map-header glass-card mb-4">
+    <!-- Role & Mode Indicator Banner -->
+    <div class="role-mode-bar glass-card">
+      <div class="role-badge-box">
+        <span v-if="isProjectAdmin" class="role-chip chip-admin">
+          <ShieldCheck :size="15" /> Quyền Quản Lý (Project Leader)
+        </span>
+        <span v-else class="role-chip chip-member">
+          <UserCheck :size="15" /> Giao diện Theo dõi Tiến độ (Thành viên & Khách hàng)
+        </span>
+        <span class="mode-text ms-2">
+          {{ isClientViewMode ? '👀 Đang ở chế độ xem Khách hàng (Tối giản)' : '⚙️ Đang ở chế độ xem Quản trị (Đầy đủ cấu hình)' }}
+        </span>
+      </div>
+
+      <div class="view-mode-toggle">
+        <button
+          type="button"
+          class="toggle-btn"
+          :class="{ 'is-active': !isClientViewMode }"
+          @click="isClientViewMode = false"
+        >
+          <LayoutGrid :size="14" />
+          <span>Quản trị</span>
+        </button>
+        <button
+          type="button"
+          class="toggle-btn"
+          :class="{ 'is-active': isClientViewMode }"
+          @click="isClientViewMode = true"
+        >
+          <Eye :size="14" />
+          <span>Khách hàng</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Top Executive Overview Header -->
+    <div class="demo-map-header glass-card">
       <div class="demo-map-header__title">
         <div class="title-with-icon">
           <div class="icon-glow-box">
-            <Compass :size="24" class="text-primary" />
+            <Compass :size="26" class="text-primary" />
           </div>
           <div>
-            <h3>Sơ Đồ Demo — Hành Trình Tiến Độ Dự Án</h3>
+            <h3>Sơ Đồ Hành Trình Tiến Độ Dự Án</h3>
             <p class="text-muted text-sm">
-              Theo dõi lộ trình các mốc lớn (Milestone/Outsource Stage) của dự án theo dạng con đường hành trình thực tế.
+              Theo dõi trực quan các mốc lộ trình (Milestones / Sprints / Delivery Phases) và mức độ sẵn sàng nghiệm thu.
             </p>
           </div>
         </div>
@@ -340,17 +494,21 @@ function formatDateRange(start: string, end: string) {
 
       <div class="demo-map-header__actions">
         <button
-          v-if="sprints.length === 0"
+          v-if="isProjectAdmin && !isClientViewMode"
           type="button"
           class="primary-button btn-outsource-preset"
-          :disabled="isGeneratingOutsource"
-          @click="generateOutsourceRoadmap"
+          @click="showPresetModal = true"
         >
           <Sparkles :size="16" />
-          <span>{{ isGeneratingOutsource ? 'Đang tạo mẫu...' : 'Tạo Mẫu Outsource Chuẩn' }}</span>
+          <span>Khởi Tạo Mẫu Lộ Trình</span>
         </button>
 
-        <button type="button" class="secondary-button" @click="showCreateModal = true">
+        <button
+          v-if="isProjectAdmin && !isClientViewMode"
+          type="button"
+          class="secondary-button"
+          @click="showCreateModal = true"
+        >
           <Plus :size="16" />
           <span>Thêm mốc mới</span>
         </button>
@@ -360,22 +518,21 @@ function formatDateRange(start: string, end: string) {
     <!-- Empty State if no milestones exist -->
     <div v-if="sprints.length === 0 && !isLoading" class="empty-map-card glass-card">
       <div class="empty-map-content">
-        <Layers :size="48" class="text-primary opacity-60 mb-3" />
-        <h4>Chưa có mốc tiến độ nào được khai báo</h4>
+        <Layers :size="52" class="text-primary opacity-60 mb-3" />
+        <h4>Chưa có mốc tiến độ nào được thiết lập</h4>
         <p>
-          Dự án này chưa có sơ đồ mốc hành trình. Bạn có thể sử dụng <strong>Mẫu Quy trình Outsource Chuẩn (6 mốc)</strong>
+          Dự án này chưa khai báo sơ đồ mốc hành trình. Bạn có thể sử dụng các <strong>Mẫu Quy trình Chuẩn (Scrum, Outsource, Waterfall)</strong>
           hoặc tự thêm các mốc quan trọng để theo dõi tiến độ cấp cao.
         </p>
 
-        <div class="empty-actions mt-4">
+        <div class="empty-actions mt-4" v-if="isProjectAdmin">
           <button
             type="button"
             class="primary-button primary-button--lg"
-            :disabled="isGeneratingOutsource"
-            @click="generateOutsourceRoadmap"
+            @click="showPresetModal = true"
           >
             <Sparkles :size="18" />
-            <span>Tạo Sơ Đồ Outsource Chuẩn (Tự động)</span>
+            <span>Chọn Bộ Mẫu Lộ Trình (Scrum / Outsource / Waterfall)</span>
           </button>
 
           <button type="button" class="secondary-button secondary-button--lg ms-3" @click="showCreateModal = true">
@@ -383,30 +540,48 @@ function formatDateRange(start: string, end: string) {
             <span>Tự nhập mốc thủ công</span>
           </button>
         </div>
+        <p v-else class="text-muted text-sm mt-3">
+          Vui lòng liên hệ Người quản lý dự án (Project Leader) để thiết lập sơ đồ mốc tiến độ.
+        </p>
       </div>
     </div>
 
     <!-- MAIN ROADMAP TIMELINE TRACK -->
     <template v-else>
-      <div class="roadmap-track-card glass-card mb-4">
+      <div class="roadmap-track-card glass-card">
+        <!-- Client Executive Executive Bar -->
         <div class="roadmap-metrics-bar">
           <div class="metric-pill">
-            <span class="metric-label">Vị trí hiện tại</span>
+            <span class="metric-label">Trạng thái Sức khỏe Dự án</span>
+            <span :class="`badge-tag tag-${projectHealthStatus.tone}`" class="health-tag">
+              <Zap :size="13" /> {{ projectHealthStatus.label }}
+            </span>
+          </div>
+
+          <div class="metric-pill">
+            <span class="metric-label">Mốc Tập trung Hiện tại</span>
             <strong class="metric-value text-primary">
-              {{ currentPositionMilestone ? currentPositionMilestone.name : 'Đã hoàn thành tất cả' }}
+              {{ currentPositionMilestone ? currentPositionMilestone.name : 'Đã hoàn thành tất cả mốc' }}
             </strong>
           </div>
+
           <div class="metric-pill">
-            <span class="metric-label">Tiến độ tổng thể</span>
-            <strong class="metric-value text-success">{{ overallProgress }}% hoàn thành</strong>
+            <span class="metric-label">Tiến độ Nghiệm thu Tổng thể</span>
+            <div class="metric-progress-wrap">
+              <div class="mini-progress-rail">
+                <div class="mini-progress-fill" :style="{ width: `${overallProgress}%` }"></div>
+              </div>
+              <strong class="metric-value text-success ms-2">{{ overallProgress }}%</strong>
+            </div>
           </div>
+
           <div class="metric-pill">
-            <span class="metric-label">Tổng số mốc</span>
-            <strong class="metric-value">{{ sprints.length }} Mốc</strong>
+            <span class="metric-label">Tổng quy mô Mốc</span>
+            <strong class="metric-value">{{ sprints.length }} Giai đoạn</strong>
           </div>
         </div>
 
-        <!-- Horizontal Connected Milestone Track -->
+        <!-- Horizontal Connected Milestone Journey Track -->
         <div class="roadmap-scroll-wrapper no-scrollbar">
           <div class="roadmap-visual-container">
             <!-- Connecting Line -->
@@ -471,40 +646,68 @@ function formatDateRange(start: string, end: string) {
         </div>
       </div>
 
-      <!-- SELECTED MILESTONE DETAIL DRAWER / PANEL -->
+      <!-- SELECTED MILESTONE DETAIL CONTROL PANEL -->
       <div
         v-if="activeMilestone"
         :id="`milestone-${activeMilestone.id}`"
         class="milestone-detail-panel glass-card"
       >
+        <!-- Detail Header -->
         <div class="detail-header">
           <div class="detail-header-left">
-            <span class="badge-tag tag-primary mb-1">Mốc Đang Chọn</span>
+            <div class="d-flex align-items-center gap-2 mb-1">
+              <span class="badge-tag tag-primary">Mốc Đang Chọn</span>
+              <span v-if="isCompletedMilestone(activeMilestone)" class="badge-tag tag-success">Hoàn thành</span>
+              <span v-else-if="isOverdueMilestone(activeMilestone)" class="badge-tag tag-danger">Trễ hạn</span>
+            </div>
+
             <h4>{{ activeMilestone.name }}</h4>
             <p v-if="activeMilestone.goal" class="detail-goal">
-              🎯 <strong>Mục tiêu:</strong> {{ activeMilestone.goal }}
+              🎯 <strong>Mục tiêu nghiệm thu:</strong> {{ activeMilestone.goal }}
             </p>
+
             <div class="detail-dates-info">
               <Clock :size="14" />
-              <span>Thời gian: {{ formatDateRange(activeMilestone.startDate, activeMilestone.endDate) }}</span>
+              <span>Thời gian thực hiện: <strong>{{ formatDateRange(activeMilestone.startDate, activeMilestone.endDate) }}</strong></span>
             </div>
           </div>
 
           <div class="detail-header-actions">
-            <button type="button" class="btn btn-outline" @click="openEdit(activeMilestone)">
-              <Edit3 :size="15" />
-              <span>Sửa mốc</span>
+            <!-- Manager actions -->
+            <template v-if="isProjectAdmin && !isClientViewMode">
+              <button type="button" class="btn btn-outline" @click="openEdit(activeMilestone)" title="Chỉnh sửa tên, deadline, goal">
+                <Edit3 :size="15" />
+                <span>Sửa mốc</span>
+              </button>
+              <button type="button" class="btn btn-outline-primary" @click="openTaskAssignModal" title="Gán hoặc bỏ gán task vào mốc này">
+                <LinkIcon :size="15" />
+                <span>Gán Nhiệm Vụ ({{ milestoneTasks.length }})</span>
+              </button>
+              <button type="button" class="btn btn-danger-ghost" @click="handleDeleteMilestone(activeMilestone.id)" title="Xóa mốc">
+                <Trash2 :size="15" />
+              </button>
+            </template>
+
+            <!-- Quick Add Task -->
+            <button
+              v-if="!isClientViewMode"
+              type="button"
+              class="btn btn-secondary-compact"
+              @click="showQuickCreateTaskModal = true"
+            >
+              <Plus :size="15" />
+              <span>Tạo Task Mốc Này</span>
             </button>
-            <button type="button" class="btn btn-danger-ghost" @click="handleDeleteMilestone(activeMilestone.id)">
-              <Trash2 :size="15" />
-            </button>
+
+            <!-- Jump to Kanban -->
             <button type="button" class="primary-button" @click="jumpToKanban(activeMilestone.id)">
               <FolderKanban :size="16" />
-              <span>Xem Nhiệm Vụ Mốc Này Trên Kanban ➔</span>
+              <span>Xem Trên Bảng Kanban ➔</span>
             </button>
           </div>
         </div>
 
+        <!-- AI Milestone Summary & Risk Card -->
         <ProjectProgressAiCard
           class="sprint-ai-summary"
           :project-id="projectId"
@@ -513,34 +716,151 @@ function formatDateRange(start: string, end: string) {
           :can-generate="canGenerateAi"
         />
 
-        <!-- Task List Preview inside Milestone -->
-        <div class="detail-body mt-4">
-          <h5 class="section-subheading mb-3">Danh sách công việc thuộc mốc này ({{ milestoneTasks.length }})</h5>
+        <!-- Team Workload Distribution in Milestone -->
+        <div v-if="milestoneAssignedMembers.length > 0" class="milestone-members-bar mt-4">
+          <span class="section-label mb-2"><Users :size="14" /> Nhân sự phụ trách mốc này:</span>
+          <div class="members-chips-row">
+            <div v-for="m in milestoneAssignedMembers" :key="m.userId" class="member-chip">
+              <User :size="13" />
+              <span class="member-name">{{ m.name }}</span>
+              <span class="member-task-badge">{{ m.completedCount }}/{{ m.taskCount }} tasks</span>
+            </div>
+          </div>
+        </div>
 
-          <div v-if="milestoneTasks.length === 0" class="empty-tasks-box">
-            <p>Chưa có task nào được gán vào mốc này. Bạn có thể gán task từ Kanban board hoặc tạo task mới.</p>
+        <!-- Milestone Task List Section -->
+        <div class="detail-body mt-4">
+          <div class="tasks-section-header mb-3">
+            <h5>
+              <ListTodo :size="18" class="text-primary me-1" />
+              Danh sách công việc mốc này ({{ milestoneTasks.length }})
+            </h5>
+
+            <div class="tasks-filter-tools">
+              <input
+                v-model="milestoneTaskSearch"
+                type="text"
+                placeholder="Lọc task mốc..."
+                class="task-search-input"
+              />
+              <select v-model="milestoneTaskStatusFilter" class="task-status-filter">
+                <option value="all">Tất cả trạng thái</option>
+                <option value="todo">Cần làm (Todo)</option>
+                <option value="inprogress">Đang làm (InProgress)</option>
+                <option value="inreview">Đánh giá (InReview)</option>
+                <option value="done">Hoàn thành (Done)</option>
+              </select>
+            </div>
           </div>
 
+          <!-- Empty Tasks Box -->
+          <div v-if="filteredMilestoneTasks.length === 0" class="empty-tasks-box">
+            <p v-if="milestoneTasks.length === 0">
+              Chưa có task nào được gán vào mốc này. 
+              <span v-if="isProjectAdmin">Bạn có thể bấm <strong>"Gán Nhiệm Vụ"</strong> hoặc <strong>"+ Tạo Task Mốc Này"</strong> để bắt đầu.</span>
+            </p>
+            <p v-else>Không tìm thấy nhiệm vụ phù hợp với bộ lọc.</p>
+          </div>
+
+          <!-- Milestone Task Grid -->
           <div v-else class="milestone-tasks-grid">
             <div
-              v-for="task in milestoneTasks"
+              v-for="task in filteredMilestoneTasks"
               :key="task.id"
               class="milestone-task-item"
               :class="`status-${task.status.toLowerCase()}`"
             >
               <div class="task-item-header">
                 <span class="task-number">{{ task.key || `#${task.number}` }}</span>
-                <span class="task-status-pill">{{ task.status }}</span>
+                <span :class="`priority priority--${task.priority.toLowerCase()}`">{{ task.priority }}</span>
               </div>
+
               <div class="task-item-title">{{ task.title }}</div>
-              <div v-if="task.assigneeName" class="task-item-assignee">
-                👤 {{ task.assigneeName }}
+
+              <div class="task-item-footer">
+                <span v-if="task.assigneeName" class="task-item-assignee">
+                  👤 {{ task.assigneeName }}
+                </span>
+                <span v-else class="task-item-assignee text-muted">
+                  👤 Chưa giao
+                </span>
+
+                <!-- Inline Status Selector (Allows Members to Update Task Status) -->
+                <select
+                  class="task-inline-status-select"
+                  :value="task.status"
+                  @change="updateTaskStatusInline(task, ($event.target as HTMLSelectElement).value)"
+                >
+                  <option value="Todo">Todo</option>
+                  <option value="InProgress">InProgress</option>
+                  <option value="InReview">InReview</option>
+                  <option value="Done">Done</option>
+                </select>
               </div>
             </div>
           </div>
         </div>
       </div>
     </template>
+
+    <!-- MODAL: Select Preset Template (Scrum, Outsource, Waterfall) -->
+    <Teleport to="body">
+      <div v-if="showPresetModal" class="modal-backdrop" @click.self="showPresetModal = false">
+        <div class="preset-modal glass-card">
+          <div class="modal-header">
+            <h4><Sparkles :size="18" class="text-primary me-2" /> Khởi Tạo Mẫu Sơ Đồ Lộ Trình Dự Án</h4>
+            <button type="button" class="icon-button" @click="showPresetModal = false"><X :size="18" /></button>
+          </div>
+
+          <div class="preset-modal-body">
+            <p class="text-muted text-sm mb-4">
+              Chọn phương pháp quản trị dự án phù hợp để hệ thống tự động khởi tạo sơ đồ mốc hành trình tối ưu:
+            </p>
+
+            <div class="preset-options-grid">
+              <div class="preset-option-card" @click="handleGeneratePreset('outsource')">
+                <div class="preset-card-header">
+                  <Award :size="24" class="text-primary" />
+                  <h5>Mẫu Quy Trình Outsource (6 Mốc)</h5>
+                </div>
+                <p class="preset-desc">
+                  Phù hợp dự án phần mềm cho khách hàng. Chia rõ mốc Scope ➔ Prototype ➔ Core Dev ➔ AI Integration ➔ UAT ➔ Go-Live.
+                </p>
+                <button type="button" class="btn btn-outline-primary w-100" :disabled="isGeneratingPreset">
+                  Tạo Mẫu Outsource
+                </button>
+              </div>
+
+              <div class="preset-option-card" @click="handleGeneratePreset('scrum')">
+                <div class="preset-card-header">
+                  <RefreshCw :size="24" class="text-success" />
+                  <h5>Mẫu Scrum / Agile (Sprint 1...4)</h5>
+                </div>
+                <p class="preset-desc">
+                  Phù hợp quản trị Agile. Chia lộ trình thành các Sprint 2 tuần song song với tiêu chí bàn giao liên tục.
+                </p>
+                <button type="button" class="btn btn-outline-success w-100" :disabled="isGeneratingPreset">
+                  Tạo Mẫu Scrum (4 Sprints)
+                </button>
+              </div>
+
+              <div class="preset-option-card" @click="handleGeneratePreset('waterfall')">
+                <div class="preset-card-header">
+                  <Layers :size="24" class="text-warning" />
+                  <h5>Mẫu Waterfall / Truyền thổng (4 Pha)</h5>
+                </div>
+                <p class="preset-desc">
+                  Phù hợp dự án yêu cầu quy trình tuyến tính: Khảo sát ➔ Thiết kế ➔ Phát triển ➔ Bàn giao.
+                </p>
+                <button type="button" class="btn btn-outline-warning w-100" :disabled="isGeneratingPreset">
+                  Tạo Mẫu Waterfall
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- MODAL: Create / Edit Milestone -->
     <Teleport to="body">
@@ -554,7 +874,7 @@ function formatDateRange(start: string, end: string) {
           <form class="modal-body" @submit.prevent="showEditModal ? handleUpdateMilestone() : handleCreateMilestone()">
             <div class="form-group">
               <label>Tên mốc / Giai đoạn *</label>
-              <input v-model="milestoneName" type="text" placeholder="Ví dụ: Mốc 1: Khảo sát & Prototype UI/UX..." required class="modal-input" />
+              <input v-model="milestoneName" type="text" placeholder="Ví dụ: Mốc 1: Scope Alignment & Prototype UI..." required class="modal-input" />
             </div>
 
             <div class="form-row">
@@ -568,15 +888,131 @@ function formatDateRange(start: string, end: string) {
               </div>
             </div>
 
+            <div v-if="showEditModal" class="form-group">
+              <label>Trạng thái mốc</label>
+              <select v-model="milestoneStatus" class="modal-input">
+                <option value="Planning">Planning (Lên kế hoạch)</option>
+                <option value="Active">Active (Đang thực hiện)</option>
+                <option value="Completed">Completed (Hoàn thành)</option>
+                <option value="Paused">Paused (Tạm dừng)</option>
+              </select>
+            </div>
+
             <div class="form-group">
-              <label>Mục tiêu mốc (Goal)</label>
-              <textarea v-model="milestoneGoal" rows="3" placeholder="Mô tả mục tiêu nghiệm thu của mốc này..." class="modal-input"></textarea>
+              <label>Mục tiêu nghiệm thu của mốc (Goal Statement)</label>
+              <textarea v-model="milestoneGoal" rows="3" placeholder="Mô tả cụ thể tiêu chí để nghiệm thu hoàn thành mốc này..." class="modal-input"></textarea>
             </div>
 
             <div class="modal-actions mt-4">
               <button type="button" class="btn btn--ghost" @click="showCreateModal = showEditModal = false">Hủy</button>
               <button type="submit" class="btn btn--primary">
                 {{ showEditModal ? 'Cập nhật Mốc' : 'Tạo Mốc Mới' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- MODAL: Assign / Unassign Tasks to Milestone -->
+    <Teleport to="body">
+      <div v-if="showTaskAssignModal" class="modal-backdrop" @click.self="showTaskAssignModal = false">
+        <div class="task-assign-modal glass-card">
+          <div class="modal-header">
+            <h4><LinkIcon :size="18" class="text-primary me-2" /> Gán Công Việc Vào Mốc: {{ activeMilestone?.name }}</h4>
+            <button type="button" class="icon-button" @click="showTaskAssignModal = false"><X :size="18" /></button>
+          </div>
+
+          <div class="modal-body">
+            <p class="text-muted text-sm mb-3">
+              Tích chọn các công việc trong dự án thuộc về mốc tiến độ này. Tiến độ mốc sẽ tự động tính dựa trên các task được gán.
+            </p>
+
+            <div v-if="allProjectTasks.length === 0" class="empty-tasks-box">
+              <p>Dự án chưa có task nào. Hãy tạo task trước trên bảng Kanban.</p>
+            </div>
+
+            <div v-else class="assign-tasks-list no-scrollbar">
+              <label
+                v-for="task in allProjectTasks"
+                :key="task.id"
+                class="assign-task-row"
+                :class="{ 'is-selected': selectedTaskIdsForSprint.includes(task.id) }"
+              >
+                <input
+                  type="checkbox"
+                  :checked="selectedTaskIdsForSprint.includes(task.id)"
+                  @change="toggleTaskSelection(task.id)"
+                />
+                <div class="task-info">
+                  <strong>{{ task.key || `#${task.number}` }} — {{ task.title }}</strong>
+                  <small class="text-muted ms-2">({{ task.status }} • {{ task.assigneeName || 'Chưa giao' }})</small>
+                </div>
+              </label>
+            </div>
+
+            <div class="modal-actions mt-4">
+              <button type="button" class="btn btn--ghost" @click="showTaskAssignModal = false">Hủy</button>
+              <button
+                type="button"
+                class="btn btn--primary"
+                :disabled="isSavingTaskAssignment"
+                @click="handleSaveTaskAssignments"
+              >
+                {{ isSavingTaskAssignment ? 'Đang lưu...' : 'Lưu Phân Công Mốc' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- MODAL: Quick Create Task inside Milestone -->
+    <Teleport to="body">
+      <div v-if="showQuickCreateTaskModal" class="modal-backdrop" @click.self="showQuickCreateTaskModal = false">
+        <div class="milestone-modal glass-card">
+          <div class="modal-header">
+            <h4><Plus :size="18" class="text-primary me-2" /> Tạo Nhiệm Vụ Mới Thuộc Mốc: {{ activeMilestone?.name }}</h4>
+            <button type="button" class="icon-button" @click="showQuickCreateTaskModal = false"><X :size="18" /></button>
+          </div>
+
+          <form class="modal-body" @submit.prevent="handleQuickCreateTask">
+            <div class="form-group">
+              <label>Tiêu đề nhiệm vụ *</label>
+              <input v-model="quickTaskTitle" type="text" placeholder="Nhập tiêu đề nhiệm vụ mới..." required class="modal-input" />
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Mức độ ưu tiên</label>
+                <select v-model="quickTaskPriority" class="modal-input">
+                  <option value="Low">Low</option>
+                  <option value="Medium">Medium</option>
+                  <option value="High">High</option>
+                  <option value="Critical">Critical</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label>Hạn chót</label>
+                <input v-model="quickTaskDueDate" type="date" class="modal-input" />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Người phụ trách</label>
+              <select v-model="quickTaskAssigneeId" class="modal-input">
+                <option value="">Chưa giao</option>
+                <option v-for="user in (selectedProject?.members || [])" :key="user.userId" :value="user.userId">
+                  {{ user.fullName }}
+                </option>
+              </select>
+            </div>
+
+            <div class="modal-actions mt-4">
+              <button type="button" class="btn btn--ghost" @click="showQuickCreateTaskModal = false">Hủy</button>
+              <button type="submit" class="btn btn--primary">
+                Tạo Task Mốc Này
               </button>
             </div>
           </form>
@@ -594,6 +1030,80 @@ function formatDateRange(start: string, end: string) {
   gap: 20px;
 }
 
+/* Role & Mode Banner */
+.role-mode-bar {
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: var(--radius-shell);
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+.role-badge-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.role-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+
+.chip-admin {
+  background: rgba(37, 99, 235, 0.15);
+  color: var(--qaly-primary);
+  border: 1px solid rgba(37, 99, 235, 0.3);
+}
+
+.chip-member {
+  background: rgba(22, 163, 74, 0.15);
+  color: var(--qaly-success);
+  border: 1px solid rgba(22, 163, 74, 0.3);
+}
+
+.mode-text {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.view-mode-toggle {
+  display: flex;
+  background: var(--bg);
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+.toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.toggle-btn.is-active {
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Header */
 .demo-map-header {
   padding: 24px 32px;
   display: flex;
@@ -642,7 +1152,7 @@ function formatDateRange(start: string, end: string) {
 }
 
 .empty-map-content {
-  max-width: 560px;
+  max-width: 580px;
   margin: 0 auto;
 }
 
@@ -656,10 +1166,13 @@ function formatDateRange(start: string, end: string) {
 
 .roadmap-metrics-bar {
   display: flex;
-  gap: 24px;
-  margin-bottom: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 32px;
   padding-bottom: 20px;
   border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
 }
 
 .metric-pill {
@@ -676,6 +1189,32 @@ function formatDateRange(start: string, end: string) {
 .metric-value {
   font-size: 15px;
   font-weight: 700;
+}
+
+.health-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.metric-progress-wrap {
+  display: flex;
+  align-items: center;
+}
+
+.mini-progress-rail {
+  width: 100px;
+  height: 8px;
+  background: var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.mini-progress-fill {
+  height: 100%;
+  background: var(--qaly-success);
+  border-radius: 4px;
 }
 
 /* Scroll Container for Node Path */
@@ -718,7 +1257,7 @@ function formatDateRange(start: string, end: string) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 170px;
+  width: 175px;
   cursor: pointer;
   transition: transform 0.2s ease;
 }
@@ -849,7 +1388,7 @@ function formatDateRange(start: string, end: string) {
 .tag-danger { background: rgba(220, 38, 38, 0.15); color: var(--qaly-danger); }
 .tag-muted { background: rgba(148, 163, 184, 0.15); color: var(--muted); }
 
-/* Detail Panel */
+/* Detail Control Panel */
 .milestone-detail-panel {
   padding: 24px;
   background: var(--panel);
@@ -867,6 +1406,8 @@ function formatDateRange(start: string, end: string) {
   align-items: flex-start;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+  gap: 16px;
 }
 
 .detail-header h4 {
@@ -892,26 +1433,110 @@ function formatDateRange(start: string, end: string) {
 .detail-header-actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.milestone-members-bar {
+  padding: 12px 16px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.section-label {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.members-chips-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.member-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  font-size: 12px;
+}
+
+.member-task-badge {
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(37, 99, 235, 0.15);
+  color: var(--qaly-primary);
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+/* Tasks Filter & Grid */
+.tasks-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.tasks-filter-tools {
+  display: flex;
+  gap: 8px;
+}
+
+.task-search-input {
+  padding: 6px 10px;
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+}
+
+.task-status-filter {
+  padding: 6px 10px;
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
 }
 
 .milestone-tasks-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
 }
 
 .milestone-task-item {
-  padding: 12px;
+  padding: 14px;
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  transition: all 0.2s ease;
+}
+
+.milestone-task-item:hover {
+  border-color: var(--qaly-primary);
 }
 
 .task-item-header {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   font-size: 11px;
-  margin-bottom: 6px;
 }
 
 .task-number {
@@ -923,15 +1548,39 @@ function formatDateRange(start: string, end: string) {
 .task-item-title {
   font-size: 13px;
   font-weight: 600;
-  margin-bottom: 6px;
+  line-height: 1.4;
 }
 
-.task-item-assignee {
+.task-item-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   font-size: 11px;
-  color: var(--muted);
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
 }
 
-/* Modal styles */
+.task-inline-status-select {
+  padding: 3px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
+.empty-tasks-box {
+  padding: 24px;
+  text-align: center;
+  background: var(--panel-soft);
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Modals */
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -941,6 +1590,60 @@ function formatDateRange(start: string, end: string) {
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  padding: 16px;
+}
+
+.preset-modal {
+  width: 100%;
+  max-width: 820px;
+  padding: 24px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-shell);
+}
+
+.preset-options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 16px;
+}
+
+.preset-option-card {
+  padding: 20px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.preset-option-card:hover {
+  border-color: var(--qaly-primary);
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+
+.preset-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.preset-card-header h5 {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.preset-desc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+  margin: 0;
 }
 
 .milestone-modal {
@@ -950,6 +1653,45 @@ function formatDateRange(start: string, end: string) {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-shell);
+}
+
+.task-assign-modal {
+  width: 100%;
+  max-width: 600px;
+  padding: 24px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-shell);
+}
+
+.assign-tasks-list {
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.assign-task-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.15s ease;
+}
+
+.assign-task-row:hover {
+  background: var(--bg);
+}
+
+.assign-task-row.is-selected {
+  border-color: var(--qaly-primary);
+  background: rgba(37, 99, 235, 0.08);
 }
 
 .modal-header {
@@ -962,6 +1704,9 @@ function formatDateRange(start: string, end: string) {
 .modal-header h4 {
   font-size: 16px;
   font-weight: 700;
+  margin: 0;
+  display: flex;
+  align-items: center;
 }
 
 .form-group {
@@ -990,5 +1735,23 @@ function formatDateRange(start: string, end: string) {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.btn-secondary-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-secondary-compact:hover {
+  background: var(--bg);
 }
 </style>

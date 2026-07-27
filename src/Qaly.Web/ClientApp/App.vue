@@ -185,7 +185,7 @@ const activeProjectTab = ref("stats");
 
 const tabs = [
   { id: "stats", label: "Thống kê" },
-  { id: "demo-map", label: "Sơ đồ demo" },
+  { id: "demo-map", label: "Journey Map (Hành trình)" },
   { id: "tasks", label: "Nhiệm vụ" },
   { id: "activity", label: "Hoạt động" },
   { id: "members", label: "Thành viên" },

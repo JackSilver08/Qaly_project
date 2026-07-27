@@ -51,4 +51,18 @@ public class SprintsController : BaseApiController
         var result = await _taskService.GetSprintTimelineAsync(projectId, sprintId, ct);
         return StatusCode(result.StatusCode, result);
     }
+
+    [HttpPost("projects/{projectId:guid}/sprints/presets")]
+    public async Task<IActionResult> CreatePresets(Guid projectId, CreateSprintPresetRequest request, CancellationToken ct)
+    {
+        var result = await _taskService.CreateSprintPresetsAsync(projectId, request.PresetType, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPut("sprints/{sprintId:guid}/tasks")]
+    public async Task<IActionResult> AssignTasks(Guid sprintId, AssignSprintTasksRequest request, CancellationToken ct)
+    {
+        var result = await _taskService.AssignTasksToSprintAsync(sprintId, request.TaskIds, ct);
+        return StatusCode(result.StatusCode, result);
+    }
 }
