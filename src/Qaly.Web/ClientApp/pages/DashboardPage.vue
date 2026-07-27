@@ -1,22 +1,29 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, type Ref } from 'vue'
-import { Plus, AlertTriangle, TrendingUp, CheckCircle2, Activity, ChevronRight, LayoutDashboard, FolderKanban, ClipboardList, Users } from 'lucide-vue-next'
+import { Plus, AlertTriangle, TrendingUp, CheckCircle2, Activity, ChevronRight, LayoutDashboard, FolderKanban, ClipboardList, Users, BrainCircuit } from 'lucide-vue-next'
+import { useRouter } from 'vue-router'
 import { useDashboardContext } from '../composables/dashboard-context'
 import { apiJson } from '../utils/api-client'
 import { formatTimeAgo } from '../utils/formatters'
 import AttentionRiskCard from '../components/dashboard/AttentionRiskCard.vue'
 import RecentActivityWidget from '../components/dashboard/RecentActivityWidget.vue'
 import StrategicOverviewAI from '../components/dashboard/StrategicOverviewAI.vue'
-import type { DashboardProject } from '../types'
+import type { DashboardMember, DashboardProject, DashboardTask } from '../types'
+
+const router = useRouter()
 
 const {
   projects,
+  team,
   openCreateProject,
-  selectProject
+  selectProject,
+  openChatWithPrompt,
 } = useDashboardContext() as {
   projects: Ref<DashboardProject[]>
+  team: Ref<DashboardMember[]>
   openCreateProject: () => void
   selectProject: (projectId: string) => void
+  openChatWithPrompt: (prompt?: string) => void
 }
 
 // Time period for chart
@@ -47,6 +54,41 @@ const activeProjectsCount = computed(() => {
 const totalTasksCount = computed(() => {
   return projects.value.reduce((sum, p) => sum + (p.taskCount || 0), 0)
 })
+
+const allTasks = computed<DashboardTask[]>(() => projects.value.flatMap(project => project.tasks || []))
+const openTasksCount = computed(() => allTasks.value.filter(task => !['done', 'cancelled'].includes(task.status.toLowerCase())).length)
+const overdueTasksCount = computed(() => allTasks.value.filter(task => {
+  if (!task.dueDate || ['done', 'cancelled'].includes(task.status.toLowerCase())) return false
+  return new Date(task.dueDate).getTime() < Date.now()
+}).length)
+const newProjectsThisMonth = computed(() => {
+  const now = new Date()
+  return projects.value.filter(project => {
+    const createdAt = new Date(project.createdAt)
+    return createdAt.getFullYear() === now.getFullYear() && createdAt.getMonth() === now.getMonth()
+  }).length
+})
+const nextDueTask = computed(() => allTasks.value
+  .filter(task => task.dueDate && !['done', 'cancelled'].includes(task.status.toLowerCase()))
+  .sort((left, right) => new Date(left.dueDate!).getTime() - new Date(right.dueDate!).getTime())[0] ?? null)
+const nextTaskDetail = computed(() => {
+  if (!nextDueTask.value?.dueDate) return 'Chưa có nhiệm vụ mở nào có hạn'
+  return `Gần nhất: ${new Date(nextDueTask.value.dueDate).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+})
+const averageTeamCapacity = computed(() => {
+  if (!team.value.length) return 0
+  return Math.round(team.value.reduce((sum, member) => sum + member.capacityPercent, 0) / team.value.length)
+})
+const overloadedTeamCount = computed(() => team.value.filter(member => member.capacityPercent >= 90).length)
+
+function askDashboardAi(area: 'projects' | 'tasks' | 'team') {
+  const prompts = {
+    projects: `Phân tích ${activeProjectsCount.value} dự án đang hoạt động: ${delayedCount.value} dự án chậm và ${atRiskCount.value} dự án có rủi ro. Hãy đề xuất thứ tự kiểm tra và giải thích lý do.`,
+    tasks: `Phân tích ${openTasksCount.value} nhiệm vụ đang mở, trong đó ${overdueTasksCount.value} nhiệm vụ quá hạn. Hãy đề xuất thứ tự xử lý có thể thực hiện ngay.`,
+    team: `Phân tích công suất trung bình ${averageTeamCapacity.value}% của đội, có ${overloadedTeamCount.value} thành viên từ 90% công suất. Chỉ đề xuất cách cân bằng dựa trên dữ liệu dự án hiện có.`,
+  }
+  openChatWithPrompt(prompts[area])
+}
 
 const hoveredIndex = ref<number | null>(null)
 const tooltipX = ref(0)
@@ -144,7 +186,7 @@ const hoveredProject = computed(() => {
         <!-- Summary Cards Grid -->
         <section class="summary-card-grid" aria-label="Tổng quan dự án">
           <!-- Card 1: Active Projects -->
-          <article class="summary-card glass-card summary-card--primary">
+          <article class="summary-card glass-card summary-card--primary" tabindex="0">
             <div class="summary-card__header">
               <span class="summary-card__label">DỰ ÁN ĐANG HOẠT ĐỘNG</span>
               <div class="summary-card__icon-box">
@@ -153,12 +195,20 @@ const hoveredProject = computed(() => {
             </div>
             <div class="summary-card__value-row">
               <strong>{{ activeProjectsCount }}</strong>
-              <p class="summary-card__detail">↗ 2 dự án mới tháng này</p>
+              <p class="summary-card__detail">{{ newProjectsThisMonth }} dự án mới tháng này</p>
+            </div>
+            <div class="summary-card__context">
+              <strong>{{ delayedCount }} chậm · {{ atRiskCount }} có rủi ro</strong>
+              <span>{{ delayedCount ? 'Gợi ý: kiểm tra dự án chậm trước.' : 'Các dự án chưa có dấu hiệu chậm theo task quá hạn.' }}</span>
+              <div class="summary-card__actions">
+                <button type="button" @click="router.push('/projects')">Mở dự án <ChevronRight :size="14" /></button>
+                <button type="button" @click="askDashboardAi('projects')"><BrainCircuit :size="14" /> Hỏi AI</button>
+              </div>
             </div>
           </article>
 
           <!-- Card 2: Tasks Due Today -->
-          <article class="summary-card glass-card summary-card--warning">
+          <article class="summary-card glass-card summary-card--warning" tabindex="0">
             <div class="summary-card__header">
               <span class="summary-card__label">NHIỆM VỤ CẦN LÀM</span>
               <div class="summary-card__icon-box">
@@ -166,13 +216,21 @@ const hoveredProject = computed(() => {
               </div>
             </div>
             <div class="summary-card__value-row">
-              <strong>{{ totalTasksCount }}</strong>
-              <p class="summary-card__detail">Nhiệm vụ tiếp theo sau 2 giờ</p>
+              <strong>{{ openTasksCount }}</strong>
+              <p class="summary-card__detail">{{ nextTaskDetail }}</p>
+            </div>
+            <div class="summary-card__context">
+              <strong>{{ overdueTasksCount }} nhiệm vụ quá hạn</strong>
+              <span>{{ nextDueTask ? `Gần nhất: ${nextDueTask.title}` : 'Chưa có hạn xử lý tiếp theo.' }}</span>
+              <div class="summary-card__actions">
+                <button type="button" @click="router.push('/tasks')">Xử lý task <ChevronRight :size="14" /></button>
+                <button type="button" @click="askDashboardAi('tasks')"><BrainCircuit :size="14" /> Hỏi AI</button>
+              </div>
             </div>
           </article>
 
           <!-- Card 3: Team Bandwidth -->
-          <article class="summary-card glass-card summary-card--success">
+          <article class="summary-card glass-card summary-card--success" tabindex="0">
             <div class="summary-card__header">
               <span class="summary-card__label">CÔNG SUẤT ĐỘI NGŨ</span>
               <div class="summary-card__icon-box">
@@ -181,10 +239,18 @@ const hoveredProject = computed(() => {
             </div>
             <div class="summary-card__value-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
               <div style="display: flex; justify-content: space-between; width: 100%;">
-                <strong style="font-size: 28px; line-height: 1;">84%</strong>
+                <strong style="font-size: 28px; line-height: 1;">{{ averageTeamCapacity }}%</strong>
               </div>
               <div style="width: 100%; height: 6px; background: rgba(0,0,0,0.06); border-radius: 3px; overflow: hidden;">
-                <div style="width: 84%; height: 100%; background: var(--primary); border-radius: 3px;"></div>
+                <div :style="{ width: `${averageTeamCapacity}%`, height: '100%', background: 'var(--primary)', borderRadius: '3px' }"></div>
+              </div>
+            </div>
+            <div class="summary-card__context">
+              <strong>{{ overloadedTeamCount }} thành viên từ 90% công suất</strong>
+              <span>{{ overloadedTeamCount ? 'Gợi ý: cân bằng lại người phụ trách trước khi giao thêm task.' : 'Đội chưa có thành viên vượt ngưỡng 90%.' }}</span>
+              <div class="summary-card__actions">
+                <button type="button" @click="router.push('/analytics')">Xem tải đội <ChevronRight :size="14" /></button>
+                <button type="button" @click="askDashboardAi('team')"><BrainCircuit :size="14" /> Hỏi AI</button>
               </div>
             </div>
           </article>
@@ -569,3 +635,78 @@ const hoveredProject = computed(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.summary-card {
+  position: relative;
+  outline: none;
+}
+
+.summary-card:focus-visible {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+.summary-card__context {
+  position: absolute;
+  z-index: 20;
+  inset: calc(100% + 7px) 0 auto 0;
+  display: none;
+  min-width: 240px;
+  gap: 7px;
+  border: 1px solid #dbe3ef;
+  border-radius: 6px;
+  padding: 12px;
+  color: #0f172a;
+  background: #ffffff;
+  box-shadow: var(--qaly-shadow-md);
+}
+
+.summary-card:hover .summary-card__context,
+.summary-card:focus-within .summary-card__context {
+  display: grid;
+}
+
+.summary-card__context > strong {
+  font-size: 0.82rem;
+}
+
+.summary-card__context > span {
+  color: #64748b;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.summary-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding-top: 3px;
+}
+
+.summary-card__actions button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  padding: 6px 9px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  font-size: 0.73rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.summary-card__actions button:hover {
+  background: #dbeafe;
+}
+
+@media (max-width: 760px) {
+  .summary-card__context {
+    position: static;
+    min-width: 0;
+    margin-top: 12px;
+  }
+}
+</style>

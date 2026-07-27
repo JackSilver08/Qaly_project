@@ -91,5 +91,12 @@ public static class QalyWebApplicationExtensions
         app.MapHub<NotificationHub>("/hubs/notification");
         app.MapHub<AiHub>("/hubs/ai");
         app.MapHub<GroupHub>("/hubs/groups");
+
+        // Preserve backend/auth 404 contracts while allowing Vue Router to
+        // render its own not-found page for unknown browser routes.
+        app.MapFallback("/api/{**path}", () => Results.NotFound());
+        app.MapFallback("/hubs/{**path}", () => Results.NotFound());
+        app.MapFallback("/Account/{**path}", () => Results.NotFound());
+        app.MapFallbackToPage("/SpaFallback");
     }
 }

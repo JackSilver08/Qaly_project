@@ -296,6 +296,7 @@ public class MeetilyImportTests : IDisposable
             new GenericRepository<MeetingImport>(_context),
             new GenericRepository<MeetingActionItemMapping>(_context),
             new GenericRepository<TaskItem>(_context),
+            new GenericRepository<Sprint>(_context),
             new GenericRepository<TaskAssignment>(_context),
             new GenericRepository<User>(_context),
             new UnitOfWork(_context),

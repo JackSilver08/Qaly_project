@@ -269,30 +269,42 @@ public class AiController : BaseApiController
 
     [HttpGet("usage")]
     public async Task<IActionResult> GetUsage(
+        [FromQuery] Guid? organizationId,
         [FromQuery] Guid? projectId,
         [FromQuery] DateTimeOffset? from,
         [FromQuery] DateTimeOffset? to,
         CancellationToken ct = default)
     {
-        var result = await _aiPlatformQueryService.GetUsageAsync(projectId, from, to, ct);
+        var result = await _aiPlatformQueryService.GetUsageAsync(organizationId, projectId, from, to, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("budget/scopes")]
+    public async Task<IActionResult> GetBudgetScopes(CancellationToken ct = default)
+    {
+        var result = await _aiPlatformQueryService.GetBudgetScopesAsync(ct);
         return StatusCode(result.StatusCode, result);
     }
 
     [HttpGet("budget")]
-    public async Task<IActionResult> GetBudget([FromQuery] Guid projectId, CancellationToken ct = default)
+    public async Task<IActionResult> GetBudget(
+        [FromQuery] Guid? organizationId,
+        [FromQuery] Guid? projectId,
+        CancellationToken ct = default)
     {
-        var result = await _aiPlatformQueryService.GetBudgetAsync(projectId, ct);
+        var result = await _aiPlatformQueryService.GetBudgetAsync(organizationId, projectId, ct);
         return StatusCode(result.StatusCode, result);
     }
 
     [HttpPut("budget")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateBudget(
-        [FromQuery] Guid projectId,
+        [FromQuery] Guid? organizationId,
+        [FromQuery] Guid? projectId,
         UpdateAiBudgetPolicyDto dto,
         CancellationToken ct = default)
     {
-        var result = await _aiPlatformQueryService.UpdateBudgetAsync(projectId, dto, ct);
+        var result = await _aiPlatformQueryService.UpdateBudgetAsync(organizationId, projectId, dto, ct);
         return StatusCode(result.StatusCode, result);
     }
 
@@ -362,6 +374,24 @@ public class AiController : BaseApiController
             request,
             ct);
 
+    [HttpPost("tasks/{taskId:guid}/skill-suggestions")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> EnqueueTaskSkillSuggestion(
+        Guid taskId,
+        TaskSkillSuggestionRequestDto request,
+        CancellationToken ct = default)
+    {
+        var idempotencyKey = Request.Headers["Idempotency-Key"].ToString();
+        var requestId = Request.Headers["X-Request-Id"].FirstOrDefault() ?? HttpContext.TraceIdentifier;
+        var result = await _aiWorkflowService.CreateTaskSkillSuggestionAsync(
+            taskId,
+            request,
+            idempotencyKey,
+            requestId,
+            ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpPost("tasks/{taskId:guid}/breakdown")]
     [ValidateAntiForgeryToken]
     public Task<IActionResult> EnqueueTaskBreakdown(
@@ -394,18 +424,21 @@ public class AiController : BaseApiController
 
     [HttpPost("projects/{projectId:guid}/progress-summary")]
     [ValidateAntiForgeryToken]
-    public Task<IActionResult> EnqueueProjectProgressSummary(
+    public async Task<IActionResult> EnqueueProjectProgressSummary(
         Guid projectId,
-        AiFunctionJobRequest request,
+        ProjectProgressSummaryRequestDto request,
         CancellationToken ct = default)
-        => EnqueueFunctionAsync(
-            "progress_summary",
-            "progress_summary.v4",
-            projectId,
-            "project",
+    {
+        var idempotencyKey = Request.Headers["Idempotency-Key"].ToString();
+        var requestId = Request.Headers["X-Request-Id"].FirstOrDefault() ?? HttpContext.TraceIdentifier;
+        var result = await _aiWorkflowService.CreateProjectProgressSummaryAsync(
             projectId,
             request,
+            idempotencyKey,
+            requestId,
             ct);
+        return StatusCode(result.StatusCode, result);
+    }
 
     [HttpPost("projects/{projectId:guid}/suggest-resolution")]
     [ValidateAntiForgeryToken]
@@ -427,16 +460,37 @@ public class AiController : BaseApiController
     public Task<IActionResult> EnqueueSprintProgressSummary(
         Guid projectId,
         Guid sprintId,
-        AiFunctionJobRequest request,
+        ProjectProgressSummaryRequestDto request,
         CancellationToken ct = default)
-        => EnqueueFunctionAsync(
-            "progress_summary",
-            "progress_summary.v4",
+    {
+        var idempotencyKey = Request.Headers["Idempotency-Key"].ToString();
+        var requestId = Request.Headers["X-Request-Id"].FirstOrDefault() ?? HttpContext.TraceIdentifier;
+        return EnqueueSprintProgressSummaryCoreAsync(
             projectId,
-            "sprint",
             sprintId,
             request,
+            idempotencyKey,
+            requestId,
             ct);
+    }
+
+    private async Task<IActionResult> EnqueueSprintProgressSummaryCoreAsync(
+        Guid projectId,
+        Guid sprintId,
+        ProjectProgressSummaryRequestDto request,
+        string idempotencyKey,
+        string? requestId,
+        CancellationToken ct)
+    {
+        var result = await _aiWorkflowService.CreateSprintProgressSummaryAsync(
+            projectId,
+            sprintId,
+            request,
+            idempotencyKey,
+            requestId,
+            ct);
+        return StatusCode(result.StatusCode, result);
+    }
 
     [HttpPost("priority")]
     public async Task<IActionResult> SuggestPriority(AiPriorityRequest request)

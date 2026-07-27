@@ -101,7 +101,20 @@ const editingTranscriptText = ref("");
 const transcriptEditInputRef = ref<HTMLInputElement | null>(null);
 const selectedProjectId = ref("");
 const isGeneratingChecknote = ref(false);
-const checknoteResult = ref<any>(null);
+type ChecknoteActionItem = {
+  title: string;
+  description: string;
+  priority: string;
+  dueDateFormatted: string;
+  assigneeId: string;
+  mappingStatus: string | null;
+};
+type ChecknoteResult = {
+  meetingImportId: string;
+  summary: string;
+  actionItems: ChecknoteActionItem[];
+};
+const checknoteResult = ref<ChecknoteResult | null>(null);
 const projectMembers = ref<any[]>([]);
 const isCreatingTask = ref<number | null>(null);
 type PrivacyAction = "speech" | "checknote";
@@ -149,6 +162,7 @@ const privacyProcessingMode = ref<"local_only" | "cloud_allowed">("local_only");
 const privacyRetentionDays = ref(30);
 const privacyAccepted = ref(false);
 const privacyLoading = ref(false);
+const privacyCreatingPolicy = ref(false);
 const privacyError = ref("");
 const privacyContext = ref<MeetingPrivacyContext | null>(null);
 const linkedProjectIds = ref<Set<string> | null>(null);
@@ -179,6 +193,14 @@ const projects = computed(() => {
   const allProjects = dashboardProjects.value || [];
   if (linkedProjectIds.value === null) return allProjects;
   return allProjects.filter((project: any) => linkedProjectIds.value?.has(project.id));
+});
+const selectedPrivacyProject = computed(() =>
+  projects.value.find((project: any) => project.id === selectedProjectId.value) ?? null,
+);
+const canCreateMeetingPolicy = computed(() => {
+  const role = String(currentUser.value?.role || "").toLowerCase();
+  return ["admin", "owner", "manager", "projectmanager"].includes(role)
+    || selectedPrivacyProject.value?.ownerId === currentUser.value?.id;
 });
 
 const wasSpeechActiveBeforeMute = ref(false);
@@ -291,13 +313,46 @@ async function loadMeetingPrivacyOptions() {
     );
     privacyPolicyId.value = privacyPolicies.value[0]?.id || "";
     privacyRetentionDays.value = privacyPolicies.value[0]?.defaultRetentionDays || 30;
-    if (!privacyPolicies.value.length) {
-      privacyError.value = "Dự án chưa có retention policy đang hoạt động.";
-    }
   } catch (error: any) {
     privacyError.value = error?.message || "Không thể tải policy và consent.";
   } finally {
     privacyLoading.value = false;
+  }
+}
+
+async function createDefaultMeetingPolicy() {
+  const project = selectedPrivacyProject.value;
+  const tenantId = project?.organizationId || project?.id;
+  if (!tenantId || !selectedProjectId.value || privacyCreatingPolicy.value) return;
+
+  privacyCreatingPolicy.value = true;
+  privacyError.value = "";
+  try {
+    await apiResult<MeetingPrivacyPolicy>("/api/privacy/policies", {
+      method: "POST",
+      body: JSON.stringify({
+        tenantId,
+        projectId: selectedProjectId.value,
+        name: "Meeting data policy",
+        dataClassification: "sensitive_collaboration",
+        purpose: "meeting_action_extraction",
+        allowedRetentionDays: [30, 90],
+        defaultRetentionDays: 30,
+        expiryAction: "redact",
+        allowCloudProcessing: false,
+        allowLocalProcessing: true,
+        requireExplicitConsent: true,
+        approvalOwnerUserId: currentUser.value?.id || null,
+        effectiveFrom: null,
+        effectiveUntil: null,
+      }),
+    });
+    await loadMeetingPrivacyOptions();
+    showSuccess("Đã tạo policy local 30 ngày. Bạn có thể xác nhận để tiếp tục.");
+  } catch (error: any) {
+    privacyError.value = error?.message || "Không thể tạo retention policy cho dự án.";
+  } finally {
+    privacyCreatingPolicy.value = false;
   }
 }
 
@@ -451,14 +506,22 @@ async function runGenerateChecknote() {
       }),
     });
 
-    if (result && result.actionItems) {
+    if (
+      result &&
+      typeof result.meetingImportId === "string" &&
+      typeof result.summary === "string" &&
+      Array.isArray(result.actionItems)
+    ) {
       checknoteResult.value = {
         meetingImportId: result.meetingImportId,
         summary: result.summary,
         actionItems: result.actionItems.map((item: any) => ({
-          ...item,
+          title: typeof item?.title === "string" ? item.title : "",
+          description: typeof item?.description === "string" ? item.description : "",
+          priority: typeof item?.priority === "string" ? item.priority : "Medium",
           dueDateFormatted: formatDateForInput(item.dueDate),
           assigneeId: "",
+          mappingStatus: typeof item?.mappingStatus === "string" ? item.mappingStatus : null,
         })),
       };
       showSuccess("Đã tạo biên bản AI thành công.");
@@ -1190,6 +1253,26 @@ function disconnectLiveKit() {
             </select>
           </label>
 
+          <div v-if="!privacyLoading && privacyPolicies.length === 0" class="gm-privacy-setup">
+            <ShieldCheck :size="18" />
+            <div>
+              <strong>Chưa có quy tắc lưu dữ liệu cuộc họp</strong>
+              <span>Policy mặc định chỉ xử lý local, lưu 30 ngày và xóa nội dung nhạy cảm khi hết hạn.</span>
+            </div>
+            <button
+              v-if="canCreateMeetingPolicy"
+              class="gm-btn-secondary"
+              type="button"
+              :disabled="privacyCreatingPolicy"
+              @click="createDefaultMeetingPolicy"
+            >
+              <Loader2 v-if="privacyCreatingPolicy" :size="15" class="gm-spin" />
+              <ShieldCheck v-else :size="15" />
+              {{ privacyCreatingPolicy ? 'Đang tạo...' : 'Tạo policy mặc định' }}
+            </button>
+            <span v-else class="gm-privacy-setup__permission">Quản lý dự án cần tạo policy trước khi cuộc họp được xử lý.</span>
+          </div>
+
           <div class="gm-privacy-field">
             <span>Provider</span>
             <div class="gm-privacy-segmented">
@@ -1548,7 +1631,7 @@ function disconnectLiveKit() {
           </div>
 
           <!-- Results -->
-          <div v-else class="gm-checknote-results">
+          <div v-else-if="checknoteResult" class="gm-checknote-results">
             <div class="gm-cn-section">
               <h4><Sparkles :size="14" /> Tóm tắt cuộc họp</h4>
               <div class="gm-cn-summary">{{ checknoteResult.summary }}</div>
@@ -1676,6 +1759,12 @@ function disconnectLiveKit() {
 .gm-privacy-summary,
 .gm-privacy-consent,
 .gm-privacy-error { grid-column: 1 / -1; display: flex; align-items: flex-start; gap: 9px; padding: 11px 12px; border: 1px solid var(--gm-surface-border); border-radius: 6px; font-size: 0.76rem; line-height: 1.5; }
+.gm-privacy-setup { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 12px; border: 1px solid rgba(59, 130, 246, 0.42); border-radius: 6px; color: var(--gm-text-secondary); background: rgba(37, 99, 235, 0.08); }
+.gm-privacy-setup > svg { color: var(--gm-accent); }
+.gm-privacy-setup > div { display: grid; gap: 3px; }
+.gm-privacy-setup strong { color: var(--gm-text-primary); font-size: 0.78rem; }
+.gm-privacy-setup span { font-size: 0.72rem; line-height: 1.45; }
+.gm-privacy-setup__permission { grid-column: 2 / -1; color: #fbbf24; }
 .gm-privacy-summary { color: var(--gm-text-secondary); }
 .gm-privacy-summary svg { flex: 0 0 auto; color: var(--gm-accent); margin-top: 1px; }
 .gm-privacy-consent { cursor: pointer; color: var(--gm-text-primary); }
@@ -1692,7 +1781,9 @@ function disconnectLiveKit() {
 
 @media (max-width: 560px) {
   .gm-privacy-dialog__body { grid-template-columns: 1fr; }
-  .gm-privacy-summary, .gm-privacy-consent, .gm-privacy-error { grid-column: 1; }
+  .gm-privacy-summary, .gm-privacy-consent, .gm-privacy-error, .gm-privacy-setup { grid-column: 1; }
+  .gm-privacy-setup { grid-template-columns: auto minmax(0, 1fr); }
+  .gm-privacy-setup .gm-btn-secondary { grid-column: 1 / -1; }
   .gm-privacy-dialog__footer .gm-btn-primary, .gm-privacy-dialog__footer .gm-btn-secondary { flex: 1; }
 }
 

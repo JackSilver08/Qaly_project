@@ -18,6 +18,15 @@ public class OrganizationRoleRulesTests
         => OrganizationRoleRules.CanManageOrganization(role).Should().Be(expected);
 
     [Theory]
+    [InlineData("Owner", true)]
+    [InlineData("OrganizationAdmin", true)]
+    [InlineData("BillingAdmin", true)]
+    [InlineData("PrivacyOperator", false)]
+    [InlineData("Member", false)]
+    public void CanManageAiBudget_IncludesBillingRoleOnly(string role, bool expected)
+        => OrganizationRoleRules.CanManageAiBudget(role).Should().Be(expected);
+
+    [Theory]
     [InlineData("Admin", "OrganizationAdmin")]
     [InlineData("Manager", "OrganizationAdmin")]
     [InlineData("PrivacyOperator", "PrivacyOperator")]

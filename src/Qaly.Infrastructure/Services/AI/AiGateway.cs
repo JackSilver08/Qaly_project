@@ -187,7 +187,11 @@ public class AiGateway : IAiGateway
         }
 
         // Proactive RAG (Context Retrieval)
-        if (request.ProjectId.HasValue && request.UserId.HasValue && _vectorStorage != null && _embeddingGenerator != null)
+        if (request.UseRetrievalAugmentation &&
+            request.ProjectId.HasValue &&
+            request.UserId.HasValue &&
+            _vectorStorage != null &&
+            _embeddingGenerator != null)
         {
             try
             {
@@ -221,45 +225,82 @@ public class AiGateway : IAiGateway
         }
 
         // 3. Cache Check
+        var legacyHashInput = new StringBuilder()
+            .Append(request.SystemPrompt).Append('|')
+            .Append(request.Prompt).Append('|')
+            .Append(request.ExpectedSchemaId);
         var hashInput = new StringBuilder();
-        hashInput.Append(request.SystemPrompt).Append('|').Append(request.Prompt).Append('|').Append(request.ExpectedSchemaId);
+        hashInput
+            .Append(request.SystemPrompt).Append('|')
+            .Append(request.Prompt).Append('|')
+            .Append(request.ExpectedSchemaId).Append('|')
+            .Append(request.ProviderHint).Append('|')
+            .Append(request.StrictProvider).Append('|')
+            .Append(settings.Provider).Append('|')
+            .Append(settings.Ollama.Model).Append('|')
+            .Append(settings.DeepSeek.Model).Append('|')
+            .Append(settings.OpenAI.Model).Append('|')
+            .Append(settings.Gemini.Model);
         if (request.History != null)
         {
             foreach (var msg in request.History)
             {
+                legacyHashInput.Append('|').Append(msg.Role).Append(':').Append(msg.Content);
                 hashInput.Append('|').Append(msg.Role).Append(':').Append(msg.Content);
             }
         }
         string requestHash = ComputeSha256Hash(hashInput.ToString());
+        string legacyRequestHash = ComputeSha256Hash(legacyHashInput.ToString());
         
-        if (request.UseCache)
+        if (request.UseCache && !request.BypassCacheRead)
         {
             var cachedPrompt = await _context.AiPromptCache
                 .FirstOrDefaultAsync(c => c.RequestHash == requestHash, cancellationToken);
+            if (cachedPrompt == null && legacyRequestHash != requestHash)
+            {
+                cachedPrompt = await _context.AiPromptCache
+                    .FirstOrDefaultAsync(c => c.RequestHash == legacyRequestHash, cancellationToken);
+            }
 
             if (cachedPrompt != null && (cachedPrompt.ExpiresAt == null || cachedPrompt.ExpiresAt > DateTimeOffset.UtcNow))
             {
-                cachedPrompt.HitCount++;
-                await _context.SaveChangesAsync(cancellationToken);
-
-                await _costService.RecordJobUsageAsync(
-                    request.TenantId ?? Guid.Empty, request.ProjectId ?? Guid.Empty, request.UserId ?? Guid.Empty, request.JobType,
-                    cachedPrompt.ProviderName ?? "Cache", cachedPrompt.ModelName ?? "Cache",
-                    0, 0, 0m, (int)sw.ElapsedMilliseconds, "success", true,
-                    request.JobId, request.ProviderAttemptId,
-                    cancellationToken: cancellationToken);
-
-                return new AiResponse
+                if (string.IsNullOrWhiteSpace(request.ExpectedSchemaId) ||
+                    _outputValidator.Validate(
+                        cachedPrompt.ResponseJson,
+                        request.ExpectedSchemaId,
+                        request.ValidationContextJson,
+                        out var cacheValidationError))
                 {
-                    Content = cachedPrompt.ResponseJson,
-                    ProviderName = cachedPrompt.ProviderName ?? "Cache",
-                    ModelName = cachedPrompt.ModelName ?? "Cache",
-                    InputTokens = 0,
-                    OutputTokens = 0,
-                    EstimatedCostUsd = 0m,
-                    IsMock = false,
-                    CacheHit = true
-                };
+                    cachedPrompt.HitCount++;
+                    await _context.SaveChangesAsync(cancellationToken);
+
+                    await _costService.RecordJobUsageAsync(
+                        request.TenantId ?? Guid.Empty, request.ProjectId ?? Guid.Empty, request.UserId ?? Guid.Empty, request.JobType,
+                        cachedPrompt.ProviderName ?? "Cache", cachedPrompt.ModelName ?? "Cache",
+                        0, 0, 0m, (int)sw.ElapsedMilliseconds, "success", true,
+                        request.JobId, request.ProviderAttemptId,
+                        cancellationToken: cancellationToken);
+
+                    return new AiResponse
+                    {
+                        Content = cachedPrompt.ResponseJson,
+                        ProviderName = cachedPrompt.ProviderName ?? "Cache",
+                        ModelName = cachedPrompt.ModelName ?? "Cache",
+                        InputTokens = 0,
+                        OutputTokens = 0,
+                        EstimatedCostUsd = 0m,
+                        IsMock = false,
+                        CacheHit = true
+                    };
+                }
+
+                _logger.LogWarning(
+                    "Ignoring invalid AI cache entry {CacheId} for schema {SchemaId}: {ValidationError}",
+                    cachedPrompt.Id,
+                    request.ExpectedSchemaId,
+                    cacheValidationError);
+                cachedPrompt.ExpiresAt = DateTimeOffset.UtcNow;
+                await _context.SaveChangesAsync(cancellationToken);
             }
         }
 
@@ -278,6 +319,7 @@ public class AiGateway : IAiGateway
         var providerOrder = ResolveProviderOrder(
             settings,
             request.ProviderHint,
+            request.StrictProvider,
             canProcessInCloud || !request.IsSensitive,
             canUseLocalSensitiveProvider || !request.IsSensitive);
 
@@ -534,7 +576,12 @@ public class AiGateway : IAiGateway
                 }
 
                 // Validate output schema if requested
-                if (string.IsNullOrWhiteSpace(request.ExpectedSchemaId) || _outputValidator.Validate(finalResponse.Content, request.ExpectedSchemaId, out validationError))
+                if (string.IsNullOrWhiteSpace(request.ExpectedSchemaId) ||
+                    _outputValidator.Validate(
+                        finalResponse.Content,
+                        request.ExpectedSchemaId,
+                        request.ValidationContextJson,
+                        out validationError))
                 {
                     // Validation success or schema validation not required
                     break;
@@ -623,8 +670,8 @@ public class AiGateway : IAiGateway
         return CreateFailureResponse(
             anyProviderResponse ? AiErrorCodes.SchemaInvalid : AiErrorCodes.ProviderUnavailable,
             anyProviderResponse
-                ? "AI output failed schema validation after the permitted repair attempts."
-                : "No eligible AI provider completed the request.",
+                ? $"AI output failed schema validation after the permitted repair attempts. {validationError}"
+                : validationError ?? "No eligible AI provider completed the request.",
             retryable: !anyProviderResponse);
     }
 
@@ -656,10 +703,19 @@ public class AiGateway : IAiGateway
     private static List<string> ResolveProviderOrder(
         AiGatewaySettings settings,
         string? providerHint,
+        bool strictProvider,
         bool canProcessInCloud,
         bool canProcessLocally)
     {
         var requestedProvider = NormalizeProviderName(providerHint);
+        if (strictProvider && !string.IsNullOrWhiteSpace(requestedProvider))
+        {
+            var eligible = IsLocalProvider(requestedProvider)
+                ? canProcessLocally
+                : canProcessInCloud;
+            return eligible ? [requestedProvider] : [];
+        }
+
         var candidates = new[] { requestedProvider, settings.Provider }
             .Concat(settings.FallbackProviders ?? [])
             .Where(provider => !string.IsNullOrWhiteSpace(provider))
@@ -676,6 +732,7 @@ public class AiGateway : IAiGateway
         {
             null or "" or "auto" => null,
             "local" => "Ollama",
+            "deepseek" or "deepseek-v4-pro" => "DeepSeek",
             "openai" => "OpenAI",
             "gemini" => "Gemini",
             "ollama" => "Ollama",
@@ -688,6 +745,7 @@ public class AiGateway : IAiGateway
     private static AiProviderSetting GetProviderSetting(AiGatewaySettings settings, string providerName)
         => providerName.Trim().ToLowerInvariant() switch
         {
+            "deepseek" => settings.DeepSeek,
             "openai" => settings.OpenAI,
             "gemini" => settings.Gemini,
             _ => settings.Ollama

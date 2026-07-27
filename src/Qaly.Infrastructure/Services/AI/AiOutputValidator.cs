@@ -1,13 +1,24 @@
 #pragma warning disable CA1822 // Mark members as static
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using Qaly.Application.DTOs.Ai;
 
 namespace Qaly.Infrastructure.Services.AI;
 
 public class AiOutputValidator
 {
     public bool Validate(string content, string schemaId, out string? errorMessage)
+        => Validate(content, schemaId, validationContextJson: null, out errorMessage);
+
+    public bool Validate(
+        string content,
+        string schemaId,
+        string? validationContextJson,
+        out string? errorMessage)
     {
         errorMessage = null;
         if (string.IsNullOrWhiteSpace(content))
@@ -21,7 +32,59 @@ public class AiOutputValidator
             using var document = JsonDocument.Parse(content);
             var root = document.RootElement;
 
-            if (string.Equals(schemaId, "TextAnswer.v1", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(schemaId, "WorkspaceStrategy.v1", StringComparison.OrdinalIgnoreCase))
+            {
+                if (root.ValueKind != JsonValueKind.Object)
+                {
+                    errorMessage = "WorkspaceStrategy.v1 root must be a JSON object.";
+                    return false;
+                }
+
+                if (!TryReadNonEmptyString(root, "summary", out var summary) ||
+                    !TryReadStringArray(root, "riskAnalysis", out var risks) ||
+                    !TryReadStringArray(root, "recommendations", out var recommendations) ||
+                    !TryReadStringArray(root, "priorityPlan", out var priorities))
+                {
+                    errorMessage = "WorkspaceStrategy.v1 requires a summary and non-empty string arrays for riskAnalysis, recommendations, and priorityPlan.";
+                    return false;
+                }
+
+                var combined = string.Join(' ', new[] { summary }
+                    .Concat(risks)
+                    .Concat(recommendations)
+                    .Concat(priorities));
+                var placeholders = new[]
+                {
+                    "nhận định ngắn",
+                    "rủi ro có căn cứ từ dữ liệu",
+                    "hành động cụ thể người dùng có thể làm",
+                    "tối đa 3 ưu tiên có thể thực hiện"
+                };
+
+                if (placeholders.Any(item => combined.Contains(item, StringComparison.OrdinalIgnoreCase)))
+                {
+                    errorMessage = "WorkspaceStrategy.v1 copied a schema placeholder instead of analysing the supplied metrics.";
+                    return false;
+                }
+
+                var citedMetrics = Regex.Matches(combined, @"\d+(?:[.,]\d+)?")
+                    .Select(match => match.Value)
+                    .Distinct(StringComparer.Ordinal)
+                    .Count();
+                if (citedMetrics < 2)
+                {
+                    errorMessage = "WorkspaceStrategy.v1 must cite at least two supplied numeric metrics.";
+                    return false;
+                }
+
+                var vietnameseSignals = new[] { "dự án", "nhiệm vụ", "tiến độ", "cần ", "người dùng" };
+                if (!vietnameseSignals.Any(item => combined.Contains(item, StringComparison.OrdinalIgnoreCase)))
+                {
+                    errorMessage = "WorkspaceStrategy.v1 must be written in Vietnamese.";
+                    return false;
+                }
+            }
+            else if (string.Equals(schemaId, "TextAnswer.v1", StringComparison.OrdinalIgnoreCase))
             {
                 if (root.ValueKind != JsonValueKind.Object)
                 {
@@ -82,6 +145,19 @@ public class AiOutputValidator
                         return false;
                     }
                 }
+            }
+            else if (string.Equals(schemaId, TaskSkillAiContract.SchemaId, StringComparison.Ordinal))
+            {
+                if (!string.IsNullOrWhiteSpace(validationContextJson))
+                {
+                    return TaskSkillSuggestionContract.TryBuildResult(
+                        content,
+                        validationContextJson,
+                        out _,
+                        out errorMessage);
+                }
+
+                return TaskSkillSuggestionContract.TryValidateFinal(content, out errorMessage);
             }
             else if (schemaId.Contains("assignee_recommendation", StringComparison.OrdinalIgnoreCase))
             {
@@ -208,20 +284,56 @@ public class AiOutputValidator
             }
             else if (schemaId.Contains("progress_summary", StringComparison.OrdinalIgnoreCase))
             {
-                if (root.ValueKind != JsonValueKind.Object)
+                if (!string.Equals(schemaId, ProgressSummaryContract.SchemaId, StringComparison.Ordinal))
                 {
-                    errorMessage = "progress_summary response must be a JSON object.";
-                    return false;
+                    if (root.ValueKind != JsonValueKind.Object)
+                    {
+                        errorMessage = "progress_summary response must be a JSON object.";
+                        return false;
+                    }
+                    if (!root.TryGetProperty("project_id", out _) || !root.TryGetProperty("period", out _) || !root.TryGetProperty("summary", out _) || !root.TryGetProperty("metrics", out var metrics) || !root.TryGetProperty("risks", out _) || !root.TryGetProperty("next_actions", out _))
+                    {
+                        errorMessage = "Missing required fields project_id, period, summary, metrics, risks, or next_actions.";
+                        return false;
+                    }
+                    if (metrics.ValueKind != JsonValueKind.Object || !metrics.TryGetProperty("done", out _) || !metrics.TryGetProperty("in_progress", out _) || !metrics.TryGetProperty("todo", out _) || !metrics.TryGetProperty("overdue", out _))
+                    {
+                        errorMessage = "Metrics object is missing done, in_progress, todo, or overdue count.";
+                        return false;
+                    }
                 }
-                if (!root.TryGetProperty("project_id", out _) || !root.TryGetProperty("period", out _) || !root.TryGetProperty("summary", out _) || !root.TryGetProperty("metrics", out var metrics) || !root.TryGetProperty("risks", out _) || !root.TryGetProperty("next_actions", out _))
+                else if (!string.IsNullOrWhiteSpace(validationContextJson))
                 {
-                    errorMessage = "Missing required fields project_id, period, summary, metrics, risks, or next_actions.";
-                    return false;
+                    return ProgressSummaryContract.TryBuildResult(
+                        content,
+                        validationContextJson,
+                        out _,
+                        out errorMessage);
                 }
-                if (metrics.ValueKind != JsonValueKind.Object || !metrics.TryGetProperty("done", out _) || !metrics.TryGetProperty("in_progress", out _) || !metrics.TryGetProperty("todo", out _) || !metrics.TryGetProperty("overdue", out _))
+                else if (ProgressSummaryContract.TryValidateFinal(content, out errorMessage))
                 {
-                    errorMessage = "Metrics object is missing done, in_progress, todo, or overdue count.";
-                    return false;
+                    return true;
+                }
+                else
+                {
+                    // Compatibility path for legacy generic progress jobs. Native project and
+                    // sprint routes always supply a validation context and cannot enter here.
+                    if (root.ValueKind != JsonValueKind.Object ||
+                        !root.TryGetProperty("project_id", out _) ||
+                        !root.TryGetProperty("period", out _) ||
+                        !root.TryGetProperty("summary", out _) ||
+                        !root.TryGetProperty("metrics", out var metrics) ||
+                        !root.TryGetProperty("risks", out _) ||
+                        !root.TryGetProperty("next_actions", out _) ||
+                        metrics.ValueKind != JsonValueKind.Object ||
+                        !metrics.TryGetProperty("done", out _) ||
+                        !metrics.TryGetProperty("in_progress", out _) ||
+                        !metrics.TryGetProperty("todo", out _) ||
+                        !metrics.TryGetProperty("overdue", out _))
+                    {
+                        errorMessage = "Output matches neither progress_summary.v4 nor the legacy sprint summary shape.";
+                        return false;
+                    }
                 }
             }
             else if (schemaId.Contains("task_breakdown", StringComparison.OrdinalIgnoreCase))
@@ -274,5 +386,42 @@ public class AiOutputValidator
             errorMessage = $"Invalid JSON format: {ex.Message}";
             return false;
         }
+    }
+
+    private static bool TryReadNonEmptyString(JsonElement root, string propertyName, out string value)
+    {
+        value = string.Empty;
+        if (!root.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        value = property.GetString()?.Trim() ?? string.Empty;
+        return value.Length >= 12;
+    }
+
+    private static bool TryReadStringArray(JsonElement root, string propertyName, out IReadOnlyList<string> values)
+    {
+        values = [];
+        if (!root.TryGetProperty(propertyName, out var property) ||
+            property.ValueKind != JsonValueKind.Array ||
+            property.GetArrayLength() == 0)
+        {
+            return false;
+        }
+
+        var parsed = new List<string>();
+        foreach (var item in property.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(item.GetString()))
+            {
+                return false;
+            }
+
+            parsed.Add(item.GetString()!.Trim());
+        }
+
+        values = parsed;
+        return true;
     }
 }

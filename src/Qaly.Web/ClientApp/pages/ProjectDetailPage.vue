@@ -14,6 +14,7 @@ import WebhooksTab from '../components/WebhooksTab.vue'
 import ImportModal from '../components/import/ImportModal.vue'
 import ImportUndoBanner from '../components/import/ImportUndoBanner.vue'
 import AiPlannerModal from '../components/AiPlannerModal.vue'
+import TaskSkillsAiCard from '../components/TaskSkillsAiCard.vue'
 import { useDashboardContext } from '../composables/dashboard-context'
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
@@ -90,6 +91,20 @@ const {
 
 const router = useRouter()
 const route = useRoute()
+
+watch(
+  () => route.hash,
+  hash => {
+    if (hash.startsWith('#milestone-')) activeProjectTab.value = 'demo-map'
+  },
+  { immediate: true },
+)
+
+watch(activeProjectTab, tab => {
+  if (tab !== 'demo-map' && route.hash.startsWith('#milestone-')) {
+    void router.replace({ hash: '' })
+  }
+})
 const showImportModal = ref(false)
 const showAiPlanner = ref(false)
 
@@ -486,11 +501,19 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
       </nav>
 
       <div v-if="activeProjectTab === 'stats'" class="tab-pane reveal">
-        <ProjectStatsTab :stats="selectedProjectStats" />
+        <ProjectStatsTab
+          :project-id="selectedProject.id"
+          :can-generate-ai="isProjectAdmin"
+          :stats="selectedProjectStats"
+        />
       </div>
 
       <div v-if="activeProjectTab === 'demo-map'" class="tab-pane reveal">
-        <ProjectDemoMapTab :project-id="selectedProject.id" :project-name="selectedProject.name" />
+        <ProjectDemoMapTab
+          :project-id="selectedProject.id"
+          :project-name="selectedProject.name"
+          :can-generate-ai="isProjectAdmin"
+        />
       </div>
 
       <div v-if="canShowCapacityTab" class="tab-pane reveal">
@@ -780,6 +803,14 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
           </div>
 
           <div v-if="canShowTaskComments" class="comment-list">
+            <TaskSkillsAiCard
+              v-if="selectedProject && selectedTask"
+              :key="selectedTask.id"
+              :task-id="selectedTask.id"
+              :project-id="selectedProject.id"
+              :organization-id="selectedProject.organizationId"
+            />
+
             <div class="assignment-insight glass-card">
               <div class="section-header section-header--space">
                 <strong>Gợi ý assignee AI</strong>

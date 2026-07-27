@@ -5,7 +5,8 @@ public sealed record ErumiChatRequestDto(
     Guid? ProjectId,
     string Mode = "erumi",
     IList<AiChatMessageDto>? History = null,
-    IReadOnlyList<ErumiUploadedFileDto>? Files = null);
+    IReadOnlyList<ErumiUploadedFileDto>? Files = null,
+    string ProviderHint = "auto");
 
 public sealed record ErumiChatResponseDto(
     string Reply,
@@ -19,7 +20,14 @@ public sealed record ErumiChatResponseDto(
     bool UsedAi,
     string Intent,
     int LatencyMs,
-    string? ConfidenceReason = null);
+    string? ConfidenceReason = null,
+    AiModelMetadataDto? Model = null);
+
+public sealed record AiModelMetadataDto(
+    string Id,
+    string Label,
+    string Provider,
+    string Status);
 
 public sealed record ErumiMetricDto(
     string Label,

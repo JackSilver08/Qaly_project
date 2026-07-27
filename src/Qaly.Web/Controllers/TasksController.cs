@@ -13,11 +13,16 @@ public class TasksController : BaseApiController
 {
     private readonly ITaskService _taskService;
     private readonly IMeetingImportService _meetingImportService;
+    private readonly ITaskSkillService _taskSkillService;
 
-    public TasksController(ITaskService taskService, IMeetingImportService meetingImportService)
+    public TasksController(
+        ITaskService taskService,
+        IMeetingImportService meetingImportService,
+        ITaskSkillService taskSkillService)
     {
         _taskService = taskService;
         _meetingImportService = meetingImportService;
+        _taskSkillService = taskSkillService;
     }
 
     [HttpGet("project/{projectId}")]
@@ -92,6 +97,24 @@ public class TasksController : BaseApiController
         {
             return Ok(null);
         }
+    }
+
+    [HttpGet("{id:guid}/skills")]
+    public async Task<IActionResult> GetSkills(Guid id, CancellationToken ct = default)
+    {
+        var result = await _taskSkillService.GetTaskSkillsAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPut("{id:guid}/skills")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ReplaceSkills(
+        Guid id,
+        ReplaceTaskSkillsDto dto,
+        CancellationToken ct = default)
+    {
+        var result = await _taskSkillService.ReplaceTaskSkillsAsync(id, dto, ct);
+        return StatusCode(result.StatusCode, result);
     }
 
     [HttpPost]

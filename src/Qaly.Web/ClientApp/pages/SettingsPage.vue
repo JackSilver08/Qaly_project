@@ -8,6 +8,7 @@ import {
 import { useDashboardContext } from '../composables/dashboard-context'
 import ApiKeysTab from '../components/ApiKeysTab.vue'
 import PrivacySettingsTab from '../components/settings/PrivacySettingsTab.vue'
+import AiUsageBudgetSettingsTab from '../components/settings/AiUsageBudgetSettingsTab.vue'
 import { showSuccess, showError } from '../composables/use-toast'
 
 const { currentUser, displayRole, isLoading, loadDashboard, projects, selectedProject } = useDashboardContext()
@@ -481,6 +482,14 @@ const userInitials = computed(() => {
             </button>
             <button
               class="settings-nav-item"
+              :class="{ 'is-active': activeTab === 'ai-budget' }"
+              @click="handleTabChange('ai-budget')"
+            >
+              <Database :size="18" />
+              <span>AI Usage & Budget</span>
+            </button>
+            <button
+              class="settings-nav-item"
               :class="{ 'is-active': activeTab === 'logs' }" 
               @click="handleTabChange('logs')"
             >
@@ -843,6 +852,10 @@ const userInitials = computed(() => {
 
             <section v-if="activeTab === 'privacy'" class="settings-panel glass-card reveal">
               <PrivacySettingsTab />
+            </section>
+
+            <section v-if="activeTab === 'ai-budget'" class="settings-panel glass-card reveal">
+              <AiUsageBudgetSettingsTab />
             </section>
 
             <!-- Tab: Audit Logs -->

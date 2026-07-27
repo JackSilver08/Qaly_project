@@ -6,6 +6,8 @@ public sealed class AiJobPlatformOptions
 
     public bool Enabled { get; set; }
     public bool WorkerEnabled { get; set; }
+    public bool BudgetUiEnabled { get; set; }
+    public bool TaskSkillSuggestionEnabled { get; set; }
     public int PollIntervalMilliseconds { get; set; } = 1000;
     public int LeaseSeconds { get; set; } = 120;
     public int HeartbeatSeconds { get; set; } = 30;

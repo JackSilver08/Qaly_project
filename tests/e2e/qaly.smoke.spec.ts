@@ -5,6 +5,7 @@ import {
     type BrowserContext,
     type Page,
 } from "@playwright/test";
+import { browserApiRequest } from "./support/browser-api";
 
 test.describe.configure({ mode: "serial" });
 
@@ -106,7 +107,7 @@ async function apiResult<T>(response: ApiResponseLike): Promise<T> {
     if (body && typeof body === "object" && "isSuccess" in body) {
         const result = body as ApiResult<T>;
         expect(result.isSuccess, result.error ?? "API result failed").toBeTruthy();
-        expect(body.data, "API result must include data").not.toBeNull();
+        expect(result.data, "API result must include data").not.toBeNull();
         return result.data as T;
     }
 
@@ -129,7 +130,7 @@ async function apiCommand(response: ApiResponseLike) {
 
 async function createGroupViaApi(page: Page, name: string) {
     return apiResult<GroupDto>(
-        await page.request.post("/api/groups", {
+        await browserApiRequest(page, "POST", "/api/groups", {
             data: {
                 name,
                 color: "#2563eb",
@@ -140,7 +141,7 @@ async function createGroupViaApi(page: Page, name: string) {
 
 async function createProjectViaApi(page: Page, name: string) {
     return apiResult<ProjectDto>(
-        await page.request.post("/api/projects", {
+        await browserApiRequest(page, "POST", "/api/projects", {
             data: {
                 name,
                 code: null,
@@ -157,18 +158,18 @@ async function createProjectViaApi(page: Page, name: string) {
 
 async function cleanupGroup(page: Page, groupId?: string) {
     if (!groupId) return;
-    await page.request.delete(`/api/groups/${groupId}`).catch(() => undefined);
+    await browserApiRequest(page, "DELETE", `/api/groups/${groupId}`).catch(() => undefined);
 }
 
 async function cleanupProject(page: Page, projectId?: string) {
     if (!projectId) return;
-    await page.request.delete(`/api/projects/${projectId}`).catch(() => undefined);
+    await browserApiRequest(page, "DELETE", `/api/projects/${projectId}`).catch(() => undefined);
 }
 
 async function addSecondaryUserToGroupIfNeeded(page: Page, groupId: string) {
     if (secondaryEmail.toLowerCase() === adminEmail.toLowerCase()) return;
 
-    const users = await apiResult<UserDto[]>(await page.request.get("/api/users"));
+    const users = await apiResult<UserDto[]>(await browserApiRequest(page, "GET", "/api/users"));
     const secondaryUser = users.find(
         (user) => user.email.toLowerCase() === secondaryEmail.toLowerCase(),
     );
@@ -179,7 +180,7 @@ async function addSecondaryUserToGroupIfNeeded(page: Page, groupId: string) {
     ).toBeTruthy();
 
     await apiCommand(
-        await page.request.post(`/api/groups/${groupId}/members`, {
+        await browserApiRequest(page, "POST", `/api/groups/${groupId}/members`, {
             data: {
                 userId: secondaryUser!.id,
                 role: "Member",
@@ -373,8 +374,7 @@ test("should render meeting page in two authenticated contexts", async ({
         await expect(secondarySession.page.locator(".gm-tile--local")).toContainText("Bạn");
     } finally {
         if (group?.id && meetingId) {
-            await page.request
-                .post(`/api/groups/${group.id}/meetings/${meetingId}/end`)
+            await browserApiRequest(page, "POST", `/api/groups/${group.id}/meetings/${meetingId}/end`)
                 .catch(() => undefined);
         }
         await secondary.context?.close();

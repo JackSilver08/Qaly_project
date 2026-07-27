@@ -1,62 +1,142 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "progress_summary.v3.2",
+  "$id": "progress_summary.v4",
   "type": "object",
   "required": [
-    "project_id",
+    "scope",
     "period",
-    "summary",
+    "coverage",
     "metrics",
+    "summaryPoints",
     "risks",
-    "next_actions"
+    "nextActions",
+    "sourceRefs",
+    "warnings"
   ],
   "properties": {
-    "project_id": {
-      "type": [
-        "integer",
-        "string"
+    "scope": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["projectId", "projectName", "projectCode"],
+          "properties": {
+            "projectId": { "type": "string", "format": "uuid" },
+            "projectName": { "type": "string", "minLength": 1 },
+            "projectCode": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "projectId", "projectName", "projectCode", "sprintId", "sprintName"],
+          "properties": {
+            "type": { "const": "sprint" },
+            "projectId": { "type": "string", "format": "uuid" },
+            "projectName": { "type": "string", "minLength": 1 },
+            "projectCode": { "type": "string" },
+            "sprintId": { "type": "string", "format": "uuid" },
+            "sprintName": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        }
       ]
     },
     "period": {
-      "type": "string"
+      "type": "object",
+      "required": ["kind", "snapshotAt"],
+      "properties": {
+        "kind": { "const": "current_snapshot" },
+        "snapshotAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
     },
-    "summary": {
-      "type": "string"
+    "coverage": {
+      "type": "object",
+      "required": ["dataState", "visibility", "includedTaskCount", "excludedTaskCount"],
+      "properties": {
+        "dataState": { "enum": ["empty", "sufficient"] },
+        "visibility": { "const": "manager_full_project" },
+        "includedTaskCount": { "type": "integer", "minimum": 0 },
+        "excludedTaskCount": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
     },
     "metrics": {
       "type": "object",
-      "required": [
-        "done",
-        "in_progress",
-        "todo",
-        "overdue"
-      ],
+      "required": ["total", "done", "inProgress", "todo", "overdue", "dueSoon", "completionRate"],
       "properties": {
-        "done": {
-          "type": "integer"
+        "total": { "type": "integer", "minimum": 0 },
+        "done": { "type": "integer", "minimum": 0 },
+        "inProgress": { "type": "integer", "minimum": 0 },
+        "todo": { "type": "integer", "minimum": 0 },
+        "overdue": { "type": "integer", "minimum": 0 },
+        "dueSoon": { "type": "integer", "minimum": 0 },
+        "completionRate": { "type": "number", "minimum": 0, "maximum": 100 }
+      },
+      "additionalProperties": false
+    },
+    "summaryPoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["text", "metricRefs", "sourceRefs"],
+        "properties": {
+          "text": { "type": "string", "minLength": 1 },
+          "metricRefs": { "type": "array", "items": { "type": "string" } },
+          "sourceRefs": { "type": "array", "items": { "type": "string" } }
         },
-        "in_progress": {
-          "type": "integer"
-        },
-        "todo": {
-          "type": "integer"
-        },
-        "overdue": {
-          "type": "integer"
-        }
+        "additionalProperties": false
       }
     },
     "risks": {
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "object",
+        "required": ["code", "severity", "title", "metricRefs", "sourceRefs"],
+        "properties": {
+          "code": { "type": "string", "minLength": 1 },
+          "severity": { "enum": ["low", "medium", "high"] },
+          "title": { "type": "string", "minLength": 1 },
+          "metricRefs": { "type": "array", "items": { "type": "string" } },
+          "sourceRefs": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
       }
     },
-    "next_actions": {
+    "nextActions": {
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "object",
+        "required": ["title", "rationale", "metricRefs", "sourceRefs"],
+        "properties": {
+          "title": { "type": "string", "minLength": 1 },
+          "rationale": { "type": "string", "minLength": 1 },
+          "metricRefs": { "type": "array", "items": { "type": "string" } },
+          "sourceRefs": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
       }
+    },
+    "sourceRefs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["key", "type", "entityId", "label", "url", "version"],
+        "properties": {
+          "key": { "type": "string", "minLength": 1 },
+          "type": { "enum": ["project", "sprint", "task"] },
+          "entityId": { "type": "string", "format": "uuid" },
+          "label": { "type": "string", "minLength": 1 },
+          "url": { "type": "string", "minLength": 1 },
+          "version": { "type": ["string", "null"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" }
     }
   },
   "additionalProperties": false

@@ -74,6 +74,8 @@ public static class DependencyInjection
         {
             if (bool.TryParse(configuration["AI_JOB_V4_ENABLED"], out var enabled)) options.Enabled = enabled;
             if (bool.TryParse(configuration["AI_JOB_V4_WORKER_ENABLED"], out var workerEnabled)) options.WorkerEnabled = workerEnabled;
+            if (bool.TryParse(configuration["AI_BUDGET_UI_ENABLED"], out var budgetUiEnabled)) options.BudgetUiEnabled = budgetUiEnabled;
+            if (bool.TryParse(configuration["AI_TASK_SKILL_SUGGESTION_ENABLED"], out var taskSkillSuggestionEnabled)) options.TaskSkillSuggestionEnabled = taskSkillSuggestionEnabled;
         });
         services.Configure<PrivacyV4Options>(configuration.GetSection(PrivacyV4Options.SectionName));
         services.PostConfigure<PrivacyV4Options>(options =>
@@ -95,6 +97,7 @@ public static class DependencyInjection
         
         // AI Providers & Routing Infrastructure
         services.AddTransient<IAiProvider, Qaly.Infrastructure.Services.AI.Providers.OllamaProvider>();
+        services.AddTransient<IAiProvider, Qaly.Infrastructure.Services.AI.Providers.DeepSeekProvider>();
         services.AddTransient<IAiProvider, Qaly.Infrastructure.Services.AI.Providers.OpenAIProvider>();
         services.AddTransient<IAiProvider, Qaly.Infrastructure.Services.AI.Providers.GeminiProvider>();
         services.AddScoped<AiProviderFactory>();

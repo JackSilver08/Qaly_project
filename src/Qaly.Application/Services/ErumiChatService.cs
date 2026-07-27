@@ -359,6 +359,8 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
         var aiRequest = new AiRequest
         {
             JobType = "workspace_analytics_chat",
+            ProviderHint = request.ProviderHint,
+            StrictProvider = !string.Equals(request.ProviderHint, "auto", StringComparison.OrdinalIgnoreCase),
             SystemPrompt = systemPrompt,
             Prompt = request.Message,
             ExpectedSchemaId = "TextAnswer.v1",
@@ -372,7 +374,19 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
         };
 
         var aiResponse = await ExecuteAiAsync(aiRequest, ct);
-        return Result.Success(ParseStructuredAiResponse(aiResponse.Content, "workspace_analytics", sw, WorkspaceSources, aiResponse.IsMock));
+        if (!aiResponse.IsSuccess || aiResponse.IsMock)
+        {
+            return Result.Failure<ErumiChatResponseDto>(
+                aiResponse.ErrorMessage ?? "AI provider is unavailable.",
+                503);
+        }
+
+        return Result.Success(ParseStructuredAiResponse(
+            aiResponse,
+            "workspace_analytics",
+            sw,
+            WorkspaceSources,
+            request.ProviderHint));
     }
 
     private async Task<Result<ErumiChatResponseDto>> BuildProjectResponseAsync(
@@ -674,6 +688,8 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
         var aiRequest = new AiRequest
         {
             JobType = "project_analytics_chat",
+            ProviderHint = request.ProviderHint,
+            StrictProvider = !string.Equals(request.ProviderHint, "auto", StringComparison.OrdinalIgnoreCase),
             SystemPrompt = systemPrompt,
             Prompt = request.Message,
             ExpectedSchemaId = "TextAnswer.v1",
@@ -687,14 +703,28 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
         };
 
         var aiResponse = await ExecuteAiAsync(aiRequest, ct);
+        if (!aiResponse.IsSuccess || aiResponse.IsMock)
+        {
+            return Result.Failure<ErumiChatResponseDto>(
+                aiResponse.ErrorMessage ?? "AI provider is unavailable.",
+                503);
+        }
+
         var intent = ClassifyProjectIntent(Normalize(request.Message));
 
-        return Result.Success(ParseStructuredAiResponse(aiResponse.Content, intent, sw, ProjectSources, aiResponse.IsMock));
+        return Result.Success(ParseStructuredAiResponse(
+            aiResponse,
+            intent,
+            sw,
+            ProjectSources,
+            request.ProviderHint));
     }
 
     private async Task<AiResponse> ExecuteAiAsync(AiRequest request, CancellationToken ct)
     {
-        if (_agentOrchestrator?.IsEnabled == true)
+        var hasExplicitProvider = !string.IsNullOrWhiteSpace(request.ProviderHint)
+            && !string.Equals(request.ProviderHint, "auto", StringComparison.OrdinalIgnoreCase);
+        if (!hasExplicitProvider && _agentOrchestrator?.IsEnabled == true)
         {
             try
             {
@@ -719,9 +749,8 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
         return await _aiGateway.ExecuteAsync(request, ct);
     }
 
-    private bool IsAgentMode(ErumiChatRequestDto request) =>
-        _agentOrchestrator?.IsEnabled == true
-        && string.Equals(request.Mode, "agent", StringComparison.OrdinalIgnoreCase);
+    private static bool IsAgentMode(ErumiChatRequestDto request) =>
+        string.Equals(request.Mode, "agent", StringComparison.OrdinalIgnoreCase);
 
     private async Task<System.Collections.Generic.IList<Microsoft.Extensions.AI.AITool>?> GetFilteredToolsForProjectAsync(
         Guid projectId,
@@ -808,12 +837,14 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
     }
 
     private static ErumiChatResponseDto ParseStructuredAiResponse(
-        string rawContent,
+        AiResponse aiResponse,
         string intent,
         Stopwatch sw,
         IReadOnlyList<string> sources,
-        bool isMock)
+        string? requestedProvider)
     {
+        var rawContent = aiResponse.Content;
+        var isMock = aiResponse.IsMock;
         sw.Stop();
         
         string reply = rawContent;
@@ -1022,7 +1053,39 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             UsedAi: !isMock,
             intent,
             LatencyMs: (int)sw.ElapsedMilliseconds,
-            ConfidenceReason: confidenceReason);
+            ConfidenceReason: confidenceReason,
+            Model: BuildModelMetadata(aiResponse, requestedProvider));
+    }
+
+    private static AiModelMetadataDto BuildModelMetadata(AiResponse response, string? requestedProvider)
+    {
+        var requested = requestedProvider?.Trim() ?? "auto";
+        var expectedProvider = requested.ToLowerInvariant() switch
+        {
+            "local" or "ollama" => "Ollama",
+            "deepseek" or "deepseek-v4-pro" => "DeepSeek",
+            "openai" => "OpenAI",
+            "gemini" => "Gemini",
+            _ => string.Empty
+        };
+        var status = response.IsMock
+            ? "mock"
+            : !string.IsNullOrWhiteSpace(expectedProvider)
+              && !string.Equals(expectedProvider, response.ProviderName, StringComparison.OrdinalIgnoreCase)
+                ? "fallback"
+                : "live";
+        var id = response.ProviderName.ToLowerInvariant() switch
+        {
+            "deepseek" => "deepseek-v4-pro",
+            "ollama" => "ollama-local",
+            _ => response.ModelName
+        };
+
+        return new AiModelMetadataDto(
+            id,
+            $"{response.ProviderName} / {response.ModelName}",
+            response.ProviderName,
+            status);
     }
 
     private static ErumiChatResponseDto BuildUploadedFileResponse(

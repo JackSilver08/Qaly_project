@@ -210,6 +210,19 @@ public class AuthSessionResilienceTests : IClassFixture<IntegrationTestFactory>
         }
     }
 
+    [Fact]
+    public async Task Me_WhenSessionUserNoLongerExists_ReturnsUnauthorized()
+    {
+        using var client = _factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/auth/me");
+        request.Headers.Add("X-Test-UserId", Guid.NewGuid().ToString());
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+            "a restored database must not leave an orphaned session looking authenticated");
+    }
+
     // ──────────────────────────────────────────────
     // Helpers
     // ──────────────────────────────────────────────

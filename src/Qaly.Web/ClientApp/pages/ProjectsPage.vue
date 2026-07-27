@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
-  ArrowUpRight,
   AlertTriangle,
+  ArrowUpRight,
   CheckCircle2,
   Edit3,
   FileUp,
@@ -49,23 +49,38 @@ const {
 const isGridView = ref(true)
 const showImportModal = ref(false)
 const showAiPlanner = ref(false)
-const undoBannerData = ref<{ importSessionId: string; importedCount: number; failedCount: number; duplicateSkippedCount: number; createdAt: string } | null>(null)
+const undoBannerData = ref<{
+  importSessionId: string
+  importedCount: number
+  failedCount: number
+  duplicateSkippedCount: number
+  createdAt: string
+} | null>(null)
 const createSourceMode = ref<'members' | 'group'>('members')
 const selectedMemberIds = ref<string[]>([])
 const selectedGroupId = ref('')
 const autoCreateOutsourceMap = ref(false)
-const availableGroups = ref<{ id: string; name: string; description: string | null; memberCount: number }[]>([])
+const availableGroups = ref<
+  { id: string; name: string; description: string | null; memberCount: number }[]
+>([])
 
 async function onPlannerCreated(newProjectId: string) {
   await loadDashboard()
   selectProject(newProjectId)
 }
 
-
-const activeProjectCount = computed(() => activeProjectCards.value.filter((p: any) => p.status === 'Active').length)
-const plannedProjectCount = computed(() => activeProjectCards.value.filter((p: any) => p.status === 'Planned').length)
-const archivedProjectCount = computed(() => projects.value.filter((p: any) => p.status === 'Archived').length)
-const activeUsers = computed<UserDto[]>(() => (users.value ?? []).filter((user: UserDto) => user.isActive))
+const activeProjectCount = computed(
+  () => activeProjectCards.value.filter((p: any) => p.status === 'Active').length,
+)
+const plannedProjectCount = computed(
+  () => activeProjectCards.value.filter((p: any) => p.status === 'Planned').length,
+)
+const archivedProjectCount = computed(
+  () => projects.value.filter((p: any) => p.status === 'Archived').length,
+)
+const activeUsers = computed<UserDto[]>(() =>
+  (users.value ?? []).filter((user: UserDto) => user.isActive),
+)
 
 const featuredProject = computed(() => {
   const ranked = [...activeProjectCards.value].sort((a: any, b: any) => {
@@ -83,10 +98,10 @@ const featuredProject = computed(() => {
 
 const heroSubtitle = computed(() => {
   if (featuredProject.value) {
-    return `${featuredProject.value.name} đang dẫn đầu bảng theo dõi với tiến độ nổi bật và khả năng điều hướng nhanh hơn.`
+    return `${featuredProject.value.name} đang dẫn đầu theo tiến độ và đã sẵn sàng để bạn drill-down theo nhiệm vụ, thành viên và rủi ro.`
   }
 
-  return 'Tạo, lọc, sắp xếp và theo dõi dự án trong một giao diện dashboard sáng hơn, rõ hơn và chuyên nghiệp hơn.'
+  return 'Tạo, lọc, sắp xếp và theo dõi dự án trong một giao diện rõ ràng hơn, sang hơn và có cấu trúc tốt hơn.'
 })
 
 onMounted(() => {
@@ -95,7 +110,14 @@ onMounted(() => {
 
 async function loadGroups() {
   try {
-    const result = await apiResult<PagedResult<{ id: string; name: string; description: string | null; memberCount: number }>>('/api/groups?pageSize=100')
+    const result = await apiResult<
+      PagedResult<{
+        id: string
+        name: string
+        description: string | null
+        memberCount: number
+      }>
+    >('/api/groups?pageSize=100')
     availableGroups.value = result.items
   } catch {
     availableGroups.value = []
@@ -107,17 +129,24 @@ async function createProjectWithSelection() {
   if (!name) return
 
   try {
+    const createdOutsourceMap = autoCreateOutsourceMap.value
+
     if (createSourceMode.value === 'group' && selectedGroupId.value) {
-      const result = await apiResult<any>(`/api/groups/${selectedGroupId.value}/create-project`, {
-        method: 'POST',
-        body: JSON.stringify({
-          name,
-          code: null,
-          description: projectDescription.value.trim() || null,
-          startDate: null,
-          endDate: projectEndDate.value ? new Date(projectEndDate.value).toISOString() : null,
-        }),
-      })
+      const result = await apiResult<any>(
+        `/api/groups/${selectedGroupId.value}/create-project`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            name,
+            code: null,
+            description: projectDescription.value.trim() || null,
+            startDate: null,
+            endDate: projectEndDate.value
+              ? new Date(projectEndDate.value).toISOString()
+              : null,
+          }),
+        },
+      )
 
       createProjectOpen.value = false
       selectedGroupId.value = ''
@@ -130,7 +159,9 @@ async function createProjectWithSelection() {
       const projectId = result.project?.id ?? result.project?.Id
       if (projectId) selectProject(projectId)
 
-      showSuccess(`Tạo project từ nhóm thành công (${result.membersAdded ?? 0} thành viên)`)
+      showSuccess(
+        `Tạo project từ nhóm thành công (${result.membersAdded ?? 0} thành viên)`,
+      )
       return
     }
 
@@ -140,7 +171,9 @@ async function createProjectWithSelection() {
         name,
         description: projectDescription.value.trim() || null,
         startDate: null,
-        endDate: projectEndDate.value ? new Date(projectEndDate.value).toISOString() : null,
+        endDate: projectEndDate.value
+          ? new Date(projectEndDate.value).toISOString()
+          : null,
       }),
     })
 
@@ -151,11 +184,16 @@ async function createProjectWithSelection() {
       })
     }
 
-    if (autoCreateOutsourceMap.value && project.id) {
+    if (createdOutsourceMap && project.id) {
       try {
         const now = new Date()
-        const end = projectEndDate.value ? new Date(projectEndDate.value) : new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000)
-        const totalDays = Math.max(30, Math.ceil((end.getTime() - now.getTime()) / (1000 * 3600 * 24)))
+        const end = projectEndDate.value
+          ? new Date(projectEndDate.value)
+          : new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000)
+        const totalDays = Math.max(
+          30,
+          Math.ceil((end.getTime() - now.getTime()) / (1000 * 3600 * 24)),
+        )
         const stepDays = Math.floor(totalDays / 5)
 
         const addDays = (d: Date, days: number) => {
@@ -165,18 +203,53 @@ async function createProjectWithSelection() {
         }
 
         const outsourcePhases = [
-          { name: 'Mốc 1: Khảo sát & Khởi tạo Yêu cầu (Scope Alignment)', start: now.toISOString(), end: addDays(now, stepDays), goal: 'Thống nhất yêu cầu chi tiết của khách hàng & chốt Scope dự án.' },
-          { name: 'Mốc 2: Thiết kế Prototype UI/UX & Architecture', start: addDays(now, stepDays + 1), end: addDays(now, stepDays * 2), goal: 'Chốt Wireframe Figma & Thiết kế Database API.' },
-          { name: 'Mốc 3: Phát triển Core Modules & Backend Services', start: addDays(now, stepDays * 2 + 1), end: addDays(now, stepDays * 3), goal: 'Lập trình các tính năng cốt lõi backend.' },
-          { name: 'Mốc 4: Tích hợp Giao diện & AI Services', start: addDays(now, stepDays * 3 + 1), end: addDays(now, stepDays * 4), goal: 'Hoàn thiện Frontend & các dịch vụ bên ngoài.' },
-          { name: 'Mốc 5: Kiểm thử UAT & Demo Khách hàng', start: addDays(now, stepDays * 4 + 1), end: addDays(now, totalDays - 5), goal: 'UAT với khách hàng & nghiệm thu tính năng.' },
-          { name: 'Mốc 6: Bàn giao, Deploy Go-Live & Đào tạo', start: addDays(now, totalDays - 4), end: end.toISOString(), goal: 'Triển khai Server Production & bàn giao hoàn tất.' }
+          {
+            name: 'Mốc 1: Khảo sát & Khởi tạo yêu cầu',
+            start: now.toISOString(),
+            end: addDays(now, stepDays),
+            goal: 'Thống nhất yêu cầu chi tiết của khách hàng và chốt phạm vi dự án.',
+          },
+          {
+            name: 'Mốc 2: Thiết kế Prototype UI/UX & Architecture',
+            start: addDays(now, stepDays + 1),
+            end: addDays(now, stepDays * 2),
+            goal: 'Chốt wireframe Figma và thiết kế database API.',
+          },
+          {
+            name: 'Mốc 3: Phát triển Core Modules & Backend Services',
+            start: addDays(now, stepDays * 2 + 1),
+            end: addDays(now, stepDays * 3),
+            goal: 'Lập trình các tính năng cốt lõi phía backend.',
+          },
+          {
+            name: 'Mốc 4: Tích hợp Giao diện & AI Services',
+            start: addDays(now, stepDays * 3 + 1),
+            end: addDays(now, stepDays * 4),
+            goal: 'Hoàn thiện frontend và các dịch vụ bên ngoài.',
+          },
+          {
+            name: 'Mốc 5: Kiểm thử UAT & Demo Khách hàng',
+            start: addDays(now, stepDays * 4 + 1),
+            end: addDays(now, totalDays - 5),
+            goal: 'UAT với khách hàng và nghiệm thu tính năng.',
+          },
+          {
+            name: 'Mốc 6: Bàn giao, Deploy Go-Live & Đào tạo',
+            start: addDays(now, totalDays - 4),
+            end: end.toISOString(),
+            goal: 'Triển khai production và bàn giao hoàn tất.',
+          },
         ]
 
         for (const phase of outsourcePhases) {
           await apiCommand(`/api/projects/${project.id}/sprints`, {
             method: 'POST',
-            body: JSON.stringify({ name: phase.name, startDate: phase.start, endDate: phase.end, goal: phase.goal })
+            body: JSON.stringify({
+              name: phase.name,
+              startDate: phase.start,
+              endDate: phase.end,
+              goal: phase.goal,
+            }),
           })
         }
       } catch {
@@ -192,7 +265,11 @@ async function createProjectWithSelection() {
     autoCreateOutsourceMap.value = false
     await loadDashboard()
     selectProject(project.id)
-    showSuccess(`Tạo dự án "${project.name}" thành công${autoCreateOutsourceMap.value ? ' kèm Sơ đồ demo Outsource 6 Mốc' : ''}`)
+    showSuccess(
+      `Tạo dự án "${project.name}" thành công${
+        createdOutsourceMap ? ' kèm sơ đồ mốc Outsource 6 bước' : ''
+      }`,
+    )
   } catch (error) {
     showError(errorMessage(error, 'Không thể tạo dự án'))
   }
@@ -216,7 +293,10 @@ async function handleUndoFromBanner() {
   if (!undoBannerData.value) return
 
   try {
-    const res = await fetch(`/api/import/sessions/${undoBannerData.value.importSessionId}`, { method: 'DELETE' })
+    const res = await fetch(
+      `/api/import/sessions/${undoBannerData.value.importSessionId}`,
+      { method: 'DELETE' },
+    )
     const data = await res.json()
     if (data.isSuccess) {
       undoBannerData.value = null
@@ -229,111 +309,141 @@ async function handleUndoFromBanner() {
 </script>
 
 <template>
-  <div class="dashboard-scroll dashboard-scroll--embedded no-scrollbar projects-page-shell">
-    <div class="dashboard-main project-home-main no-scrollbar projects-page-main">
-      <section class="projects-hero glass-card">
-        <div class="projects-hero__content">
-          <div class="projects-hero__eyebrow">
-            <Sparkles :size="15" />
-            <span>Workspace projects</span>
-          </div>
+  <div class="projects-page-shell">
+    <div class="projects-page-shell__glow projects-page-shell__glow--one" />
+    <div class="projects-page-shell__glow projects-page-shell__glow--two" />
 
-          <h1>Không gian dự án hiện đại, gọn và dễ điều hướng</h1>
-          <p>{{ heroSubtitle }}</p>
-        </div>
-
-        <div class="projects-hero__sidebar">
-          <article class="projects-spotlight">
-            <div class="projects-spotlight__header">
-              <span>Dự án nổi bật</span>
-              <ArrowUpRight :size="16" />
+    <div class="dashboard-scroll dashboard-scroll--embedded no-scrollbar projects-page-shell__content">
+      <div class="dashboard-main project-home-main no-scrollbar projects-page-main">
+        <section class="projects-hero glass-card">
+          <div class="projects-hero__content">
+            <div class="projects-hero__eyebrow">
+              <Sparkles :size="15" />
+              <span>Workspace projects</span>
             </div>
 
-            <template v-if="featuredProject">
-              <strong>{{ featuredProject.name }}</strong>
-              <p>{{ featuredProject.description }}</p>
+            <div class="projects-hero__title">
+              <h1>Không gian dự án rõ ràng hơn, chuyên nghiệp hơn</h1>
+              <p>{{ heroSubtitle }}</p>
+            </div>
 
-              <div class="projects-spotlight__metrics">
-                <span>
-                  <TrendingUp :size="14" />
-                  {{ featuredProject.progressPercentage }}% hoàn thành
-                </span>
-                <span>
-                  <Users :size="14" />
-                  {{ featuredProject.memberInitials.length }} thành viên
-                </span>
-                <span v-if="featuredProject.overdueTaskCount > 0" class="projects-spotlight__risk">
-                  <AlertTriangle :size="14" />
-                  {{ featuredProject.overdueTaskCount }} task trễ hạn
-                </span>
+            <div class="projects-hero__actions">
+              <button class="btn-hero btn-hero--primary" type="button" @click="openCreateProject">
+                <FolderKanban :size="16" />
+                Tạo dự án mới
+              </button>
+              <button class="btn-hero" type="button" @click="showAiPlanner = true">
+                <Sparkles :size="16" />
+                Lên kế hoạch AI
+              </button>
+              <button class="btn-hero" type="button" @click="showImportModal = true">
+                <FileUp :size="16" />
+                Nhập dữ liệu
+              </button>
+            </div>
+          </div>
+
+          <aside class="projects-hero__sidebar">
+            <article class="projects-spotlight">
+              <div class="projects-spotlight__header">
+                <span>Dự án nổi bật</span>
+                <ArrowUpRight :size="16" />
               </div>
-            </template>
 
-            <template v-else>
-              <strong>Chưa có dự án nào</strong>
-              <p>Tạo dự án đầu tiên để bắt đầu theo dõi tiến độ, nhiệm vụ và thành viên.</p>
-            </template>
-          </article>
-          <div class="projects-hero__summary projects-hero__summary--compact">
-            <span><strong>{{ activeProjectCount }}</strong> đang chạy</span>
-            <span><strong>{{ plannedProjectCount }}</strong> lên kế hoạch</span>
-            <span><strong>{{ archivedProjectCount }}</strong> lưu trữ</span>
-            <span><strong>{{ activeUsers.length }}</strong> thành viên</span>
+              <template v-if="featuredProject">
+                <strong>{{ featuredProject.name }}</strong>
+                <p>{{ featuredProject.description }}</p>
+
+                <div class="projects-spotlight__metrics">
+                  <span>
+                    <TrendingUp :size="14" />
+                    {{ featuredProject.progressPercentage }}% hoàn thành
+                  </span>
+                  <span>
+                    <Users :size="14" />
+                    {{ featuredProject.memberInitials.length }} thành viên
+                  </span>
+                  <span
+                    v-if="featuredProject.overdueTaskCount > 0"
+                    class="projects-spotlight__risk"
+                  >
+                    <AlertTriangle :size="14" />
+                    {{ featuredProject.overdueTaskCount }} task quá hạn
+                  </span>
+                </div>
+              </template>
+
+              <template v-else>
+                <strong>Chưa có dự án nào</strong>
+                <p>
+                  Tạo dự án đầu tiên để bắt đầu theo dõi tiến độ, nhiệm vụ và thành viên.
+                </p>
+              </template>
+            </article>
+
+            <div class="projects-hero__summary">
+              <span><strong>{{ activeProjectCount }}</strong> đang chạy</span>
+              <span><strong>{{ plannedProjectCount }}</strong> lên kế hoạch</span>
+              <span><strong>{{ archivedProjectCount }}</strong> lưu trữ</span>
+              <span><strong>{{ activeUsers.length }}</strong> thành viên</span>
+            </div>
+          </aside>
+        </section>
+
+        <section class="project-workspace glass-card project-workspace--modern">
+          <div class="project-workspace__header">
+            <div>
+              <span>Dự án</span>
+              <h2>Danh sách làm việc</h2>
+            </div>
+            <p>{{ activeProjectCards.length }} dự án đang hiển thị</p>
           </div>
-        </div>
-      </section>
 
-      <section class="project-workspace glass-card project-workspace--modern">
-        <div class="project-workspace__header">
-          <div>
-            <span>Dự án</span>
-            <h2>Danh sách làm việc</h2>
+          <ProjectToolbar
+            v-model:search="searchQuery"
+            v-model:sort="projectSort"
+            v-model:filter="projectFilter"
+            v-model:is-grid-view="isGridView"
+            :project-count="activeProjectCards.length"
+            @create="openCreateProject"
+          >
+            <template #actions>
+              <button class="btn-toolbar" type="button" @click="showImportModal = true">
+                <FileUp :size="15" />
+                Nhập
+              </button>
+              <button class="btn-toolbar btn-toolbar--accent" type="button" @click="showAiPlanner = true">
+                <Sparkles :size="15" />
+                Lên kế hoạch AI
+              </button>
+            </template>
+          </ProjectToolbar>
+
+          <div class="project-workspace__hint">
+            <span><CheckCircle2 :size="14" /> Lưới cho quét nhanh, danh sách cho rà soát kỹ hơn.</span>
           </div>
-          <p>{{ activeProjectCards.length }} dự án đang hiển thị</p>
-        </div>
 
-        <ProjectToolbar
-          v-model:search="searchQuery"
-          v-model:sort="projectSort"
-          v-model:filter="projectFilter"
-          v-model:is-grid-view="isGridView"
-          :project-count="activeProjectCards.length"
-          @create="openCreateProject"
-        >
-          <template #actions>
-            <button class="btn-import" type="button" @click="showImportModal = true">
-              <FileUp :size="15" /> Nhập
-            </button>
-            <button class="btn-ai-plan" type="button" @click="showAiPlanner = true">
-              <Sparkles :size="15" /> Lên kế hoạch AI
-            </button>
-          </template>
-        </ProjectToolbar>
+          <ProjectGrid
+            v-if="isGridView"
+            :projects="activeProjectCards"
+            :active-project-id="selectedProject?.id ?? null"
+            @view="selectProject"
+            @edit="beginEditProject"
+            @delete="deleteProject"
+            @create="openCreateProject"
+          />
 
-        <div class="project-workspace__hint">
-          <span><CheckCircle2 :size="14" /> Lưới cho thao tác nhanh, danh sách cho rà soát kỹ hơn.</span>
-        </div>
-
-        <ProjectGrid
-          v-if="isGridView"
-          :projects="activeProjectCards"
-          :active-project-id="selectedProject?.id ?? null"
-          @view="selectProject"
-          @edit="beginEditProject"
-          @delete="deleteProject"
-          @create="openCreateProject"
-        />
-
-        <ProjectList
-          v-else
-          :projects="activeProjectCards"
-          :active-project-id="selectedProject?.id ?? null"
-          @view="selectProject"
-          @edit="beginEditProject"
-          @delete="deleteProject"
-          @create="openCreateProject"
-        />
-      </section>
+          <ProjectList
+            v-else
+            :projects="activeProjectCards"
+            :active-project-id="selectedProject?.id ?? null"
+            @view="selectProject"
+            @edit="beginEditProject"
+            @delete="deleteProject"
+            @create="openCreateProject"
+          />
+        </section>
+      </div>
     </div>
 
     <ImportModal
@@ -361,25 +471,42 @@ async function handleUndoFromBanner() {
     />
 
     <Teleport to="body">
-      <div v-if="createProjectOpen" class="project-modal-backdrop" @click.self="createProjectOpen = false">
+      <div
+        v-if="createProjectOpen"
+        class="project-modal-backdrop"
+        @click.self="createProjectOpen = false"
+      >
         <div class="project-modal glass-card">
           <div class="project-modal-header">
             <div class="project-modal-title">
               <FolderKanban :size="20" />
               <h2>Tạo dự án mới</h2>
             </div>
-            <button class="icon-button" @click="createProjectOpen = false"><X :size="18" /></button>
+            <button class="icon-button" @click="createProjectOpen = false">
+              <X :size="18" />
+            </button>
           </div>
 
           <form class="project-modal-body" @submit.prevent="createProjectWithSelection">
             <div class="form-group">
               <label>Tên dự án</label>
-              <input v-model="projectName" type="text" placeholder="Nhập tên dự án..." required class="modal-input" />
+              <input
+                v-model="projectName"
+                type="text"
+                placeholder="Nhập tên dự án..."
+                required
+                class="modal-input"
+              />
             </div>
 
             <div class="form-group">
               <label>Mô tả ngắn</label>
-              <textarea v-model="projectDescription" placeholder="Nhập mô tả dự án (không bắt buộc)..." rows="3" class="modal-input"></textarea>
+                <textarea
+                  v-model="projectDescription"
+                  placeholder="Nhập mô tả dự án (không bắt buộc)..."
+                  rows="3"
+                  class="modal-input"
+                ></textarea>
             </div>
 
             <div class="form-group">
@@ -390,8 +517,20 @@ async function handleUndoFromBanner() {
             <div class="form-group">
               <label>Thêm thành viên</label>
               <div class="project-source-toggle">
-                <button type="button" :class="{ active: createSourceMode === 'members' }" @click="createSourceMode = 'members'">Chọn từng người</button>
-                <button type="button" :class="{ active: createSourceMode === 'group' }" @click="createSourceMode = 'group'">Chọn nhóm</button>
+                <button
+                  type="button"
+                  :class="{ active: createSourceMode === 'members' }"
+                  @click="createSourceMode = 'members'"
+                >
+                  Chọn từng người
+                </button>
+                <button
+                  type="button"
+                  :class="{ active: createSourceMode === 'group' }"
+                  @click="createSourceMode = 'group'"
+                >
+                  Chọn nhóm
+                </button>
               </div>
             </div>
 
@@ -414,19 +553,24 @@ async function handleUndoFromBanner() {
                 </option>
               </select>
             </div>
-            <div class="form-group border-t border-line pt-3 mt-3">
-              <label class="d-flex align-items-center gap-2 cursor-pointer" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+
+            <div class="form-group project-modal__option">
+              <label class="project-modal__checkbox">
                 <input v-model="autoCreateOutsourceMap" type="checkbox" />
-                <span>🚩 Khởi tạo Sơ đồ Mốc Outsource chuẩn 6 bước (Tùy chọn)</span>
+                <span>Khởi tạo sơ đồ mốc Outsource 6 bước</span>
               </label>
-              <p v-if="autoCreateOutsourceMap" class="text-xs text-muted mt-1" style="font-size: 12px; color: var(--muted); margin-top: 4px;">
-                Tự động sinh 6 mốc tiến độ Outsource (Requirement ➔ UI/UX ➔ Core Backend ➔ Frontend/AI ➔ Client UAT ➔ Go-Live).
+              <p v-if="autoCreateOutsourceMap" class="project-modal__help">
+                Tự động sinh 6 mốc tiến độ Outsource từ khảo sát đến go-live.
               </p>
             </div>
 
             <div class="project-modal-actions">
-              <button class="btn btn--ghost" type="button" @click="createProjectOpen = false">Hủy</button>
-              <button class="btn btn--primary" type="submit" :disabled="!projectName.trim()">Tạo dự án</button>
+              <button class="btn btn--ghost" type="button" @click="createProjectOpen = false">
+                Hủy
+              </button>
+              <button class="btn btn--primary" type="submit" :disabled="!projectName.trim()">
+                Tạo dự án
+              </button>
             </div>
           </form>
         </div>
@@ -434,30 +578,51 @@ async function handleUndoFromBanner() {
     </Teleport>
 
     <Teleport to="body">
-      <div v-if="projectBeingEditedId" class="project-modal-backdrop" @click.self="projectBeingEditedId = null">
+      <div
+        v-if="projectBeingEditedId"
+        class="project-modal-backdrop"
+        @click.self="projectBeingEditedId = null"
+      >
         <div class="project-modal glass-card">
           <div class="project-modal-header">
             <div class="project-modal-title">
               <Edit3 :size="20" />
               <h2>Chỉnh sửa dự án</h2>
             </div>
-            <button class="icon-button" @click="projectBeingEditedId = null"><X :size="18" /></button>
+            <button class="icon-button" @click="projectBeingEditedId = null">
+              <X :size="18" />
+            </button>
           </div>
 
           <form class="project-modal-body" @submit.prevent="saveProjectEdit">
             <div class="form-group">
               <label>Tên dự án</label>
-              <input v-model="editProjectName" type="text" placeholder="Nhập tên dự án..." required class="modal-input" />
+              <input
+                v-model="editProjectName"
+                type="text"
+                placeholder="Nhập tên dự án..."
+                required
+                class="modal-input"
+              />
             </div>
 
             <div class="form-group">
               <label>Mô tả ngắn</label>
-              <textarea v-model="editProjectDescription" placeholder="Nhập mô tả dự án (không bắt buộc)..." rows="3" class="modal-input"></textarea>
+                <textarea
+                  v-model="editProjectDescription"
+                  placeholder="Nhập mô tả dự án (không bắt buộc)..."
+                  rows="3"
+                  class="modal-input"
+                ></textarea>
             </div>
 
             <div class="project-modal-actions">
-              <button class="btn btn--ghost" type="button" @click="projectBeingEditedId = null">Hủy</button>
-              <button class="btn btn--primary" type="submit" :disabled="!editProjectName.trim()">Lưu thay đổi</button>
+              <button class="btn btn--ghost" type="button" @click="projectBeingEditedId = null">
+                Hủy
+              </button>
+              <button class="btn btn--primary" type="submit" :disabled="!editProjectName.trim()">
+                Lưu thay đổi
+              </button>
             </div>
           </form>
         </div>
@@ -472,68 +637,59 @@ async function handleUndoFromBanner() {
   isolation: isolate;
 }
 
-.projects-page-shell::before,
-.projects-page-shell::after {
-  content: '';
-  position: fixed;
-  pointer-events: none;
-  z-index: -1;
-  filter: blur(18px);
-}
-
-.projects-page-shell::before {
-  top: 32px;
-  right: 42px;
-  width: 180px;
-  height: 180px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(37, 99, 235, 0.025) 0%, rgba(37, 99, 235, 0) 74%);
-}
-
-.projects-page-shell::after {
-  bottom: 24px;
-  left: 44%;
-  width: 220px;
-  height: 220px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(16, 185, 129, 0.02) 0%, rgba(16, 185, 129, 0) 76%);
-}
-
-.projects-page-main {
-  gap: 8px;
-}
-
-.projects-hero {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1.48fr) minmax(260px, 0.88fr);
-  gap: 12px;
-  padding: 16px;
-  overflow: hidden;
-  border-color: rgba(226, 232, 240, 0.96);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.995), rgba(249, 251, 255, 0.98));
-  box-shadow:
-    0 12px 26px rgba(15, 23, 42, 0.04),
-    inset 0 1px 0 rgba(255, 255, 255, 0.94);
-}
-
-.projects-hero::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, rgba(239, 246, 255, 0.22), transparent 30%, transparent 70%, rgba(239, 246, 255, 0.16));
-  pointer-events: none;
-}
-
-.projects-hero__content,
-.projects-hero__sidebar {
+.projects-page-shell__content {
   position: relative;
   z-index: 1;
 }
 
+.projects-page-shell__glow {
+  position: fixed;
+  z-index: 0;
+  border-radius: 999px;
+  pointer-events: none;
+  filter: blur(24px);
+}
+
+.projects-page-shell__glow--one {
+  top: 32px;
+  right: 42px;
+  width: 180px;
+  height: 180px;
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.07) 0%, rgba(37, 99, 235, 0) 72%);
+}
+
+.projects-page-shell__glow--two {
+  bottom: 24px;
+  left: 38%;
+  width: 240px;
+  height: 240px;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.05) 0%, rgba(16, 185, 129, 0) 76%);
+}
+
+.projects-page-main {
+  gap: 12px;
+  padding: 14px 16px 16px;
+}
+
+.projects-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(290px, 0.85fr);
+  gap: 14px;
+  padding: 18px;
+  overflow: hidden;
+  border-color: rgba(226, 232, 240, 0.96);
+  background:
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.06), transparent 36%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.995), rgba(249, 251, 255, 0.98));
+  box-shadow:
+    0 12px 28px rgba(15, 23, 42, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
 .projects-hero__content {
   display: grid;
-  gap: 10px;
+  align-content: start;
+  gap: 14px;
 }
 
 .projects-hero__eyebrow {
@@ -542,7 +698,7 @@ async function handleUndoFromBanner() {
   align-items: center;
   gap: 8px;
   padding: 7px 12px;
-  border: 1px solid rgba(191, 219, 254, 0.66);
+  border: 1px solid rgba(191, 219, 254, 0.68);
   border-radius: 999px;
   background: rgba(248, 250, 252, 0.98);
   color: #1d4ed8;
@@ -552,84 +708,87 @@ async function handleUndoFromBanner() {
   text-transform: uppercase;
 }
 
+.projects-hero__title {
+  display: grid;
+  gap: 10px;
+}
+
 .projects-hero h1 {
-  max-width: 640px;
-  font-size: clamp(24px, 2.9vw, 36px);
+  max-width: 680px;
+  font-size: clamp(28px, 3.2vw, 42px);
   line-height: 1.02;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.045em;
   color: #0f172a;
 }
 
 .projects-hero p {
-  max-width: 610px;
+  max-width: 640px;
   color: #64748b;
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
-.projects-hero__summary {
+.projects-hero__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 10px;
 }
 
-.projects-hero__summary span {
+.btn-hero,
+.btn-toolbar {
+  min-height: 40px;
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
-  min-height: 32px;
-  padding: 0;
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 700;
+  border: 1px solid rgba(191, 219, 254, 0.82);
+  border-radius: 12px;
+  padding: 0 14px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  font-size: 13px;
+  font-weight: 800;
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
 }
 
-.projects-hero__summary strong {
-  color: #0f172a;
-  font-size: 17px;
-  line-height: 1;
-  font-weight: 900;
+.btn-hero:hover,
+.btn-toolbar:hover {
+  transform: translateY(-1px);
+  border-color: rgba(96, 165, 250, 0.72);
+  background: #dbeafe;
 }
 
-.projects-hero__summary--compact {
-  gap: 10px 14px;
+.btn-hero--primary,
+.btn-toolbar--accent {
+  color: #ffffff;
+  border-color: rgba(37, 99, 235, 0.82);
+  background: linear-gradient(135deg, #2563eb, #1e40af);
+  box-shadow: 0 12px 20px rgba(37, 99, 235, 0.18);
 }
 
-.projects-hero__summary--compact span {
-  padding: 6px 0;
-}
-
-.projects-hero__summary--compact span + span {
-  position: relative;
-  padding-left: 14px;
-}
-
-.projects-hero__summary--compact span + span::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  width: 1px;
-  height: 16px;
-  background: rgba(148, 163, 184, 0.24);
-  transform: translateY(-50%);
+.btn-hero--primary:hover,
+.btn-toolbar--accent:hover {
+  background: linear-gradient(135deg, #1d4ed8, #1e3a8a);
 }
 
 .projects-hero__sidebar {
   display: grid;
-  gap: 6px;
   align-content: start;
+  gap: 10px;
 }
 
 .projects-spotlight {
   display: grid;
-  gap: 7px;
-  padding: 12px;
-  border-radius: 16px;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 18px;
   border: 1px solid rgba(226, 232, 240, 0.95);
   background: linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(250, 252, 255, 0.98));
   box-shadow:
-    0 8px 18px rgba(15, 23, 42, 0.035),
+    0 8px 18px rgba(15, 23, 42, 0.04),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
@@ -646,19 +805,19 @@ async function handleUndoFromBanner() {
 
 .projects-spotlight strong {
   color: var(--text-strong);
-  font-size: 15px;
-  line-height: 1.12;
+  font-size: 16px;
+  line-height: 1.15;
 }
 
 .projects-spotlight p {
   color: var(--muted);
-  line-height: 1.5;
+  line-height: 1.55;
   font-size: 12px;
 }
 
 .projects-spotlight__metrics {
   display: grid;
-  gap: 3px;
+  gap: 4px;
 }
 
 .projects-spotlight__metrics span {
@@ -666,7 +825,7 @@ async function handleUndoFromBanner() {
   align-items: center;
   gap: 8px;
   color: var(--text);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -674,58 +833,39 @@ async function handleUndoFromBanner() {
   color: #b91c1c !important;
 }
 
-.projects-hero__mini-strip {
-  display: none;
+.projects-hero__summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.projects-hero__summary span {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.projects-hero__summary strong {
+  color: #0f172a;
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 900;
 }
 
 .project-workspace--modern {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   padding: 14px;
   border-color: rgba(226, 232, 240, 0.92);
   box-shadow:
     0 8px 18px rgba(15, 23, 42, 0.03),
     0 0 0 1px rgba(255, 255, 255, 0.86) inset;
-}
-
-.project-workspace__hint {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  padding: 0;
-}
-
-.project-workspace__hint span {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0;
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.btn-import {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
-  border: 1px solid rgba(191, 219, 254, 0.82);
-  border-radius: 11px;
-  background: linear-gradient(135deg, #2563eb, #1e40af);
-  color: #ffffff;
-  font-size: 0.78rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: transform 220ms ease, border-color 220ms ease, background 220ms ease, box-shadow 220ms ease, color 220ms ease;
-  box-shadow: 0 12px 20px rgba(37, 99, 235, 0.18);
-}
-
-.btn-import:hover {
-  transform: translateY(-1px);
-  border-color: rgba(96, 165, 250, 0.7);
-  background: linear-gradient(135deg, #1d4ed8, #1e3a8a);
-  box-shadow: 0 18px 32px rgba(37, 99, 235, 0.18);
 }
 
 .project-workspace {
@@ -743,82 +883,62 @@ async function handleUndoFromBanner() {
 }
 
 .project-workspace__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 12px;
   padding-top: 0;
 }
 
+.project-workspace__header span {
+  display: inline-block;
+  margin-bottom: 6px;
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .project-workspace__header h2 {
+  color: #0f172a;
   letter-spacing: -0.03em;
 }
 
 .project-workspace__header p {
+  color: #64748b;
   font-weight: 700;
 }
 
-.projects-hero__stat,
-.projects-hero__metric,
-.projects-hero__mini-strip span,
-.projects-spotlight {
-  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+.project-workspace__hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
-.projects-hero__metric:hover,
-.projects-hero__mini-strip span:hover,
-.projects-spotlight:hover {
-  transform: translateY(-2px);
-}
-
-@media (max-width: 1180px) {
-  .projects-hero {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 840px) {
-  .projects-hero__summary--compact {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 640px) {
-  .projects-page-main {
-    padding: 14px;
-  }
-
-  .projects-hero,
-  .project-workspace--modern {
-    padding: 14px;
-  }
-
-  .projects-hero__stats,
-  .projects-hero__mini-strip {
-    width: 100%;
-  }
-
-  .projects-hero__mini-strip {
-    grid-template-columns: 1fr;
-  }
+.project-workspace__hint span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .project-modal-backdrop {
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: rgba(15, 23, 42, 0.4);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .project-modal {
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
-  --text-main: #0f172a;
-  --text-muted: #64748b;
-  --border-color: #e2e8f0;
   width: min(480px, 94vw);
   max-height: 88vh;
   overflow-y: auto;
@@ -826,100 +946,91 @@ async function handleUndoFromBanner() {
   padding: 0;
   background: #ffffff;
   box-shadow:
-    0 10px 40px -10px rgba(0, 0, 0, 0.1),
-    0 0 0 1px rgba(0, 0, 0, 0.05);
-  transform-origin: center;
-  animation: modalScaleIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    0 18px 50px rgba(15, 23, 42, 0.18),
+    0 0 0 1px rgba(15, 23, 42, 0.04);
 }
 
 .project-modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 24px 28px 20px;
-  border-bottom: 1px solid var(--border-color);
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.95);
 }
 
 .project-modal-title {
   display: flex;
   align-items: center;
   gap: 12px;
-  color: var(--text-main);
+  color: #0f172a;
 }
 
 .project-modal-title h2 {
-  font-size: 1.25rem;
-  font-weight: 700;
-  margin: 0;
-  letter-spacing: -0.01em;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 
 .icon-button {
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 8px;
-  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 999px;
+  color: #64748b;
+  background: #f8fafc;
+  transition: transform 160ms ease, background 160ms ease, color 160ms ease;
 }
 
 .icon-button:hover {
-  background: #f1f5f9;
-  color: var(--text-main);
+  transform: translateY(-1px);
+  color: #0f172a;
+  background: #eef2ff;
 }
 
 .project-modal-body {
-  padding: 24px 28px 28px;
+  padding: 22px 24px 24px;
 }
 
 .form-group {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .form-group label {
   display: block;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--text-main);
   margin-bottom: 8px;
+  color: #0f172a;
+  font-size: 0.875rem;
+  font-weight: 700;
 }
 
 .modal-input {
   width: 100%;
-  padding: 12px 16px;
+  padding: 12px 14px;
+  border: 1px solid rgba(203, 213, 225, 0.95);
   border-radius: 12px;
-  font-size: 0.95rem;
+  color: #0f172a;
   background: #f8fafc;
-  border: 1px solid var(--border-color);
-  color: var(--text-main);
   outline: none;
-  transition: all 0.2s ease;
-  box-sizing: border-box;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
 }
 
 .modal-input:hover {
   background: #ffffff;
-  border-color: #cbd5e1;
+  border-color: rgba(148, 163, 184, 0.85);
 }
 
 .modal-input:focus {
   background: #ffffff;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
-}
-
-.modal-input::placeholder {
-  color: #94a3b8;
+  border-color: rgba(37, 99, 235, 0.9);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
 }
 
 textarea.modal-input {
   resize: vertical;
   min-height: 90px;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 .project-source-toggle {
@@ -929,41 +1040,40 @@ textarea.modal-input {
 }
 
 .project-source-toggle button {
-  min-height: 38px;
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
+  min-height: 40px;
+  border: 1px solid rgba(203, 213, 225, 0.95);
+  border-radius: 12px;
+  color: #64748b;
   background: #f8fafc;
-  color: var(--text-muted);
   font-weight: 700;
-  cursor: pointer;
 }
 
 .project-source-toggle button.active {
-  border-color: var(--accent);
+  border-color: rgba(37, 99, 235, 0.72);
+  color: #1d4ed8;
   background: #eff6ff;
-  color: var(--accent);
 }
 
 .project-member-picker {
-  max-height: 180px;
-  overflow: auto;
   display: grid;
   gap: 8px;
+  max-height: 200px;
+  overflow: auto;
   padding: 8px;
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border: 1px solid rgba(203, 213, 225, 0.95);
+  border-radius: 14px;
   background: #f8fafc;
 }
 
 .project-member-picker label {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   margin: 0;
-  padding: 8px;
-  border-radius: 8px;
+  padding: 9px 10px;
+  border-radius: 10px;
   background: #ffffff;
-  color: var(--text-main);
+  color: #0f172a;
 }
 
 .project-member-picker span {
@@ -972,68 +1082,572 @@ textarea.modal-input {
   white-space: nowrap;
 }
 
+.project-modal__option {
+  margin-top: 8px;
+}
+
+.project-modal__checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.project-modal__help {
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .project-modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  padding-top: 12px;
+  padding-top: 4px;
 }
 
 .btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 10px 24px;
-  border-radius: 10px;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 12px;
   font-size: 0.95rem;
-  font-weight: 600;
-  border: none;
-  cursor: pointer;
-  transition: all 0.2s;
+  font-weight: 700;
+  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
 
 .btn--primary {
-  background: var(--accent);
   color: #ffffff;
-  box-shadow: 0 2px 8px -2px rgba(37, 99, 235, 0.4);
+  border: 1px solid rgba(37, 99, 235, 0.82);
+  background: linear-gradient(135deg, #2563eb, #1e40af);
+  box-shadow: 0 12px 20px rgba(37, 99, 235, 0.18);
 }
 
 .btn--primary:hover:not(:disabled) {
-  background: var(--accent-hover);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px -2px rgba(37, 99, 235, 0.5);
-}
-
-.btn--primary:active:not(:disabled) {
-  transform: translateY(0);
+  background: linear-gradient(135deg, #1d4ed8, #1e3a8a);
 }
 
 .btn--primary:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-  background: #94a3b8;
   box-shadow: none;
 }
 
 .btn--ghost {
-  background: transparent;
-  color: var(--text-muted);
-  border: 1px solid var(--border-color);
+  color: #475569;
+  border: 1px solid rgba(203, 213, 225, 0.95);
+  background: #ffffff;
 }
 
 .btn--ghost:hover {
+  transform: translateY(-1px);
+  color: #0f172a;
   background: #f8fafc;
-  color: var(--text-main);
-  border-color: #cbd5e1;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; backdrop-filter: blur(0px); }
-  to { opacity: 1; backdrop-filter: blur(8px); }
+@media (max-width: 1180px) {
+  .projects-hero {
+    grid-template-columns: 1fr;
+  }
 }
 
-@keyframes modalScaleIn {
-  from { opacity: 0; transform: scale(0.96) translateY(10px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
+@media (max-width: 840px) {
+  .projects-hero__summary {
+    grid-template-columns: 1fr;
+  }
+
+  .project-workspace__header {
+    align-items: start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .projects-page-main {
+    padding: 12px;
+  }
+
+  .projects-hero,
+  .project-workspace--modern {
+    padding: 14px;
+  }
+
+  .projects-hero__actions {
+    flex-direction: column;
+  }
+
+  .btn-hero,
+  .btn-toolbar {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .project-modal-body,
+  .project-modal-header {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+</style>
+
+<style scoped>
+.projects-page-shell {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(31, 128, 255, 0.06), transparent 22%),
+    radial-gradient(circle at 86% 4%, rgba(16, 185, 129, 0.035), transparent 18%),
+    linear-gradient(180deg, #f8fbff 0%, #ffffff 54%, #f8fafc 100%) !important;
+}
+
+.projects-hero {
+  border-color: rgba(191, 219, 254, 0.7) !important;
+  background:
+    radial-gradient(circle at 84% 12%, rgba(31, 128, 255, 0.06), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(246, 249, 255, 0.97)) !important;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.05) !important;
+}
+
+.projects-hero::before {
+  background: linear-gradient(90deg, #2563eb, #38bdf8, #16a34a) !important;
+}
+
+.projects-hero__eyebrow {
+  color: var(--primary) !important;
+  border-color: rgba(191, 219, 254, 0.72) !important;
+  background: rgba(239, 246, 255, 0.86) !important;
+}
+
+.projects-hero__title h1,
+.projects-spotlight strong,
+.project-workspace__header h2,
+.project-modal-title h2 {
+  color: var(--text-strong) !important;
+}
+
+.projects-hero__title p,
+.projects-spotlight p,
+.project-workspace__header p,
+.projects-hero__summary span,
+.project-workspace__hint {
+  color: var(--muted) !important;
+}
+
+.btn-hero,
+.btn-toolbar {
+  color: #475569 !important;
+  border-color: rgba(193, 211, 232, 0.9) !important;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(243, 248, 255, 0.98)) !important;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06) !important;
+}
+
+.btn-hero:hover,
+.btn-toolbar:hover {
+  color: #1d4ed8 !important;
+  border-color: rgba(96, 165, 250, 0.72) !important;
+  background: #dbeafe !important;
+}
+
+.btn-hero--primary {
+  color: #ffffff !important;
+  border-color: rgba(37, 99, 235, 0.82) !important;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+  box-shadow: 0 12px 20px rgba(37, 99, 235, 0.18) !important;
+}
+
+.btn-hero--primary:hover {
+  color: #ffffff !important;
+  background: linear-gradient(135deg, #1d4ed8, #1e40af) !important;
+}
+
+.projects-spotlight,
+.project-workspace--modern,
+.project-modal {
+  border-color: rgba(223, 231, 242, 0.86) !important;
+  background:
+    radial-gradient(circle at top right, rgba(31, 128, 255, 0.05), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(247, 250, 255, 0.95)) !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05) !important;
+}
+
+.projects-spotlight::before {
+  background: linear-gradient(90deg, #2563eb, #38bdf8) !important;
+}
+
+.projects-spotlight__header,
+.project-workspace__header span,
+.project-option-card__meta {
+  color: var(--primary) !important;
+}
+
+.projects-hero__summary span,
+.project-workspace__hint,
+.project-source-toggle button,
+.project-option-card,
+.create-source-grid__card {
+  border-color: rgba(223, 231, 242, 0.9) !important;
+  background: rgba(255, 255, 255, 0.98) !important;
+}
+
+.project-source-toggle button.is-active {
+  color: #1d4ed8 !important;
+  border-color: rgba(37, 99, 235, 0.34) !important;
+  background: #eff6ff !important;
+}
+
+.project-option-card.is-selected,
+.create-source-grid__card.is-selected {
+  border-color: rgba(37, 99, 235, 0.34) !important;
+  box-shadow: 0 14px 26px rgba(37, 99, 235, 0.1) !important;
+}
+
+.project-option-card:hover,
+.create-source-grid__card:hover {
+  border-color: rgba(96, 165, 250, 0.82) !important;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.07) !important;
+}
+
+.modal-input:focus {
+  border-color: rgba(59, 130, 246, 0.85) !important;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12) !important;
+}
+
+.icon-button:hover {
+  color: #1d4ed8 !important;
+  border-color: rgba(191, 219, 254, 0.95) !important;
+  background: #eff6ff !important;
+}
+
+.form-primary {
+  color: #ffffff !important;
+  border: 0 !important;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+  box-shadow: 0 12px 22px rgba(37, 99, 235, 0.18) !important;
+}
+
+.form-primary:hover {
+  color: #ffffff !important;
+  background: linear-gradient(135deg, #1d4ed8, #1e40af) !important;
+  box-shadow: 0 16px 28px rgba(37, 99, 235, 0.22) !important;
+}
+
+.project-modal-backdrop {
+  background: rgba(15, 23, 42, 0.38) !important;
+  backdrop-filter: blur(10px) !important;
+}
+
+@media (max-width: 1180px) {
+  .projects-hero {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .projects-page-shell__content {
+    padding: 14px;
+  }
+
+  .projects-hero,
+  .project-workspace--modern {
+    padding: 18px;
+    border-radius: 20px;
+  }
+
+  .projects-hero__summary {
+    grid-template-columns: 1fr;
+  }
+
+  .projects-hero__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .btn-hero,
+  .btn-toolbar {
+    width: 100%;
+  }
+}
+</style>
+
+<style scoped>
+.projects-page-shell {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(251, 191, 36, 0.16), transparent 26%),
+    radial-gradient(circle at 88% 10%, rgba(45, 212, 191, 0.1), transparent 24%),
+    linear-gradient(180deg, #08111f 0 392px, #f5f7fb 392px 100%);
+}
+
+.projects-page-shell__content {
+  padding: 28px;
+}
+
+.projects-page-shell__glow {
+  filter: blur(22px);
+  opacity: 0.55;
+}
+
+.projects-page-shell__glow--one {
+  top: -78px;
+  left: -48px;
+  width: 260px;
+  height: 260px;
+  background: radial-gradient(circle, rgba(251, 191, 36, 0.26), transparent 70%);
+}
+
+.projects-page-shell__glow--two {
+  top: 72px;
+  right: 12px;
+  width: 220px;
+  height: 220px;
+  background: radial-gradient(circle, rgba(45, 212, 191, 0.16), transparent 70%);
+}
+
+.projects-page-main {
+  gap: 20px;
+}
+
+.projects-hero {
+  position: relative;
+  overflow: hidden;
+  gap: 24px;
+  padding: 28px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 28px;
+  background:
+    linear-gradient(135deg, rgba(8, 15, 29, 0.98), rgba(15, 23, 42, 0.92)),
+    radial-gradient(circle at top right, rgba(251, 191, 36, 0.12), transparent 32%);
+  box-shadow:
+    0 28px 70px rgba(2, 6, 23, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.projects-hero::after {
+  content: '';
+  position: absolute;
+  inset: auto -12% -58% auto;
+  width: 280px;
+  height: 280px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(45, 212, 191, 0.12), transparent 68%);
+  pointer-events: none;
+}
+
+.projects-hero__content,
+.projects-hero__sidebar {
+  position: relative;
+  z-index: 1;
+}
+
+.projects-hero__content {
+  gap: 20px;
+  padding: 8px 0;
+}
+
+.projects-hero__eyebrow {
+  border-color: rgba(251, 191, 36, 0.26);
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.projects-hero__title h1 {
+  max-width: 12ch;
+  color: #f8fafc;
+  font-size: clamp(32px, 4.4vw, 58px);
+  line-height: 0.98;
+  letter-spacing: -0.05em;
+}
+
+.projects-hero__title p {
+  color: rgba(226, 232, 240, 0.82);
+  line-height: 1.7;
+}
+
+.btn-hero,
+.btn-toolbar {
+  border-color: rgba(148, 163, 184, 0.22);
+  color: #cbd5e1;
+  background: rgba(15, 23, 42, 0.54);
+  backdrop-filter: blur(12px);
+}
+
+.btn-hero:hover,
+.btn-toolbar:hover {
+  color: #ffffff;
+  border-color: rgba(251, 191, 36, 0.24);
+  box-shadow: 0 16px 30px rgba(2, 6, 23, 0.22);
+}
+
+.btn-hero--primary {
+  border-color: rgba(251, 191, 36, 0.36);
+  color: #111827;
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  box-shadow: 0 18px 36px rgba(245, 158, 11, 0.28);
+}
+
+.btn-hero--primary:hover {
+  color: #111827;
+}
+
+.projects-spotlight {
+  position: relative;
+  border-color: rgba(148, 163, 184, 0.18);
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.95));
+  box-shadow:
+    0 18px 40px rgba(15, 23, 42, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+.projects-spotlight::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 5px;
+  background: linear-gradient(90deg, #fbbf24, #2dd4bf);
+}
+
+.projects-spotlight__header {
+  color: #b45309;
+  letter-spacing: 0.08em;
+}
+
+.projects-spotlight strong {
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.projects-hero__summary span {
+  border-color: rgba(148, 163, 184, 0.16);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow:
+    0 10px 24px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.project-workspace--modern {
+  padding: 22px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 26px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 249, 252, 0.98));
+  box-shadow:
+    0 26px 56px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+}
+
+.project-workspace__header span {
+  color: #b45309;
+  letter-spacing: 0.08em;
+}
+
+.project-workspace__hint {
+  background: rgba(241, 245, 249, 0.95);
+}
+
+.btn-toolbar--accent {
+  border-color: rgba(251, 191, 36, 0.22);
+  color: #92400e;
+  background: rgba(254, 243, 199, 0.88);
+}
+
+.btn-toolbar--accent:hover {
+  color: #78350f;
+  border-color: rgba(245, 158, 11, 0.28);
+  background: rgba(253, 230, 138, 0.95);
+}
+
+.project-modal-backdrop {
+  background: rgba(8, 15, 29, 0.58);
+  backdrop-filter: blur(12px);
+}
+
+.project-source-toggle button.is-active {
+  border-color: rgba(251, 191, 36, 0.34);
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.project-option-card:hover {
+  border-color: rgba(251, 191, 36, 0.26);
+  box-shadow: 0 14px 26px rgba(15, 23, 42, 0.08);
+}
+
+.project-option-card.is-selected {
+  border-color: rgba(245, 158, 11, 0.45);
+  box-shadow: 0 16px 28px rgba(245, 158, 11, 0.12);
+}
+
+.project-option-card__meta {
+  color: #b45309;
+}
+
+.modal-input:focus {
+  border-color: rgba(245, 158, 11, 0.5);
+  box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.14);
+}
+
+.icon-button:hover {
+  color: #b45309;
+  border-color: rgba(251, 191, 36, 0.28);
+  background: #fff7ed;
+}
+
+.create-source-grid__card:hover {
+  border-color: rgba(251, 191, 36, 0.26);
+  box-shadow: 0 14px 26px rgba(15, 23, 42, 0.08);
+}
+
+.create-source-grid__card.is-selected {
+  border-color: rgba(245, 158, 11, 0.42);
+  box-shadow: 0 16px 28px rgba(245, 158, 11, 0.12);
+}
+
+.form-primary {
+  color: #111827;
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  box-shadow: 0 14px 26px rgba(245, 158, 11, 0.24);
+}
+
+.form-primary:hover {
+  color: #111827;
+  box-shadow: 0 18px 30px rgba(245, 158, 11, 0.3);
+}
+
+@media (max-width: 1180px) {
+  .projects-hero {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .projects-page-shell__content {
+    padding: 14px;
+  }
+
+  .projects-hero,
+  .project-workspace--modern {
+    padding: 18px;
+    border-radius: 22px;
+  }
+
+  .projects-hero__summary {
+    grid-template-columns: 1fr;
+  }
+
+  .projects-hero__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .btn-hero,
+  .btn-toolbar {
+    width: 100%;
+  }
 }
 </style>

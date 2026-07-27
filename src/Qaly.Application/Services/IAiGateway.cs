@@ -11,6 +11,7 @@ public class AiRequest
     public Guid? ProviderAttemptId { get; set; }
     public string JobType { get; set; } = string.Empty;
     public string ProviderHint { get; set; } = "auto";
+    public bool StrictProvider { get; set; }
     public string Prompt { get; set; } = string.Empty;
     public string SystemPrompt { get; set; } = string.Empty;
     public string ExpectedSchemaId { get; set; } = string.Empty;
@@ -27,7 +28,10 @@ public class AiRequest
     public string SourceType { get; set; } = string.Empty;
     public Guid? SourceEntityId { get; set; }
     public bool UseCache { get; set; } = true;
+    public bool BypassCacheRead { get; set; }
+    public bool UseRetrievalAugmentation { get; set; } = true;
     public bool AllowMockFallback { get; set; }
+    public string? ValidationContextJson { get; set; }
     public System.Collections.Generic.IList<Qaly.Application.DTOs.Ai.AiChatMessageDto>? History { get; set; }
     public System.Collections.Generic.IList<AITool>? Tools { get; set; }
 }

@@ -34,6 +34,7 @@ public static class ProjectRoleRules
            || string.Equals(projectRole, SystemAdmin, StringComparison.OrdinalIgnoreCase)
            || string.Equals(projectRole, "PM", StringComparison.OrdinalIgnoreCase)
            || string.Equals(projectRole, "ProjectOwner", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(projectRole, "ProjectManager", StringComparison.OrdinalIgnoreCase)
            || string.Equals(projectRole, ScrumMaster, StringComparison.OrdinalIgnoreCase)
            || string.Equals(projectRole, "Admin", StringComparison.OrdinalIgnoreCase);
 
@@ -49,6 +50,7 @@ public static class ProjectRoleRules
             || string.Equals(normalized, "PM", StringComparison.OrdinalIgnoreCase)
             || string.Equals(normalized, SystemAdmin, StringComparison.OrdinalIgnoreCase)
             || string.Equals(normalized, "Admin", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "ProjectManager", StringComparison.OrdinalIgnoreCase)
             || string.Equals(normalized, "Project Manager", StringComparison.OrdinalIgnoreCase))
             return Manager;
 

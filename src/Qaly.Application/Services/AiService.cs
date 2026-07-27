@@ -730,6 +730,9 @@ Yêu cầu:
     [LoggerMessage(EventId = 6, Level = LogLevel.Error, Message = "Error while generating an AI project plan.")]
     private static partial void LogAiPlanGenerationFailed(ILogger logger, Exception exception);
 
+    [LoggerMessage(EventId = 7, Level = LogLevel.Warning, Message = "AI project plan output was unusable; returning a deterministic fallback plan.")]
+    private static partial void LogAiPlanFallback(ILogger logger);
+
     public async Task<List<Qaly.Application.DTOs.Import.AiCategorizationResult>> CategorizeTasksBatchAsync(List<Qaly.Application.DTOs.Import.AiCategorizationRequest> tasks)
     {
         if (tasks.Count == 0) return new List<Qaly.Application.DTOs.Import.AiCategorizationResult>();
@@ -893,19 +896,64 @@ Lưu ý quan trọng:
             var result = CleanAndExtractJson<GeneratedPlanDto>(text);
             if (result != null && result.Tasks != null && result.Tasks.Count > 0)
             {
+<<<<<<< HEAD
                 return Result.Success(result);
             }
 
             return Result.Failure<GeneratedPlanDto>("Không thể phân tích hoặc JSON kế hoạch trả về từ AI bị rỗng.", 500);
+=======
+                var jsonStr = text.Substring(startIdx, endIdx - startIdx + 1);
+                var result = JsonSerializer.Deserialize<GeneratedPlanDto>(jsonStr, CategorizationResponseJsonOptions);
+                if (result is { Tasks.Count: > 0 })
+                {
+                    return Result.Success(result);
+                }
+            }
+
+            LogAiPlanFallback(_logger);
+            return Result.Success(BuildFallbackPlan(userPrompt, projectContext));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+>>>>>>> 3d9d1ef360ff98853bc89778d67750a90e85d3a3
         }
         catch (Exception ex)
         {
             LogAiPlanGenerationFailed(_logger, ex);
-            return Result.Failure<GeneratedPlanDto>($"Lỗi khi chạy AI: {ex.Message}", 500);
+            return Result.Success(BuildFallbackPlan(userPrompt, projectContext));
         }
     }
 
+<<<<<<< HEAD
     private static T? CleanAndExtractJson<T>(string rawContent) where T : class
+=======
+    private static GeneratedPlanDto BuildFallbackPlan(string userPrompt, Project? projectContext)
+    {
+        var normalizedPrompt = userPrompt.Trim();
+        var fallbackProjectName = normalizedPrompt.Length <= 80
+            ? normalizedPrompt
+            : normalizedPrompt[..80].TrimEnd();
+        var scope = string.IsNullOrWhiteSpace(normalizedPrompt)
+            ? "yêu cầu dự án"
+            : normalizedPrompt;
+
+        return new GeneratedPlanDto(
+            projectContext == null,
+            projectContext?.Name ?? fallbackProjectName,
+            projectContext?.Description ?? $"Kế hoạch dự phòng được tạo từ yêu cầu: {scope}",
+            [
+                new("Làm rõ phạm vi và tiêu chí hoàn thành", $"Xác nhận mục tiêu, đối tượng sử dụng và tiêu chí nghiệm thu cho: {scope}.", "High", 2, 4),
+                new("Thiết kế giải pháp và luồng chính", "Phác thảo kiến trúc, dữ liệu và các luồng người dùng quan trọng trước khi triển khai.", "High", 5, 6),
+                new("Chuẩn bị nền tảng triển khai", "Thiết lập cấu trúc dự án, cấu hình môi trường và các phụ thuộc cần thiết.", "Medium", 7, 6),
+                new("Phát triển chức năng cốt lõi", "Hiện thực các chức năng có giá trị cao nhất theo phạm vi đã thống nhất.", "High", 12, 12),
+                new("Kiểm thử và xử lý trường hợp biên", "Bổ sung kiểm thử tự động, kiểm tra phân quyền, dữ liệu lỗi và các luồng phục hồi.", "High", 16, 8),
+                new("Nghiệm thu và bàn giao", "Rà soát tiêu chí hoàn thành, hoàn thiện tài liệu và chuẩn bị phát hành.", "Medium", 20, 4)
+            ]);
+    }
+
+    private static string JsonEncodedName(string? val)
+>>>>>>> 3d9d1ef360ff98853bc89778d67750a90e85d3a3
     {
         if (string.IsNullOrWhiteSpace(rawContent)) return null;
 

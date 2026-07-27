@@ -30,12 +30,15 @@ defineEmits<{
       @delete="$emit('delete', $event)"
     />
 
-    <div v-if="projects.length === 0" class="empty-state-container" style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 56px 24px; text-align: center; background: rgba(255, 255, 255, 0.45); border: 1px dashed rgba(148, 163, 184, 0.4); border-radius: var(--qaly-radius-lg); margin-top: 12px; box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);">
-      <div style="background: rgba(37, 99, 235, 0.08); width: 76px; height: 76px; border-radius: 50%; display: grid; place-items: center; margin-bottom: 16px; color: var(--primary);">
+    <div v-if="projects.length === 0" class="project-empty">
+      <div class="project-empty__icon">
         <FolderKanban :size="36" stroke-width="1.5" />
       </div>
-      <h3 style="font-size: 16px; font-weight: 800; color: var(--text); margin: 0 0 6px 0;">Không tìm thấy dự án nào</h3>
-      <p style="font-size: 13px; color: var(--muted); max-width: 320px; margin: 0 0 20px 0; line-height: 1.5;">Bắt đầu quản lý công việc và cộng tác với đội ngũ của bạn bằng cách tạo dự án mới hoặc thay đổi bộ lọc.</p>
+      <h3>Không tìm thấy dự án nào</h3>
+      <p>
+        Bắt đầu bằng dự án đầu tiên để theo dõi tiến độ, nhiệm vụ và thành viên ở một
+        nơi rõ ràng hơn.
+      </p>
       <button v-if="!readOnly" class="primary-button" type="button" @click="$emit('create')">
         <Plus :size="16" />
         Tạo dự án mới
@@ -43,3 +46,63 @@ defineEmits<{
     </div>
   </div>
 </template>
+
+<style scoped>
+.project-list-shell {
+  display: grid;
+  gap: 12px;
+}
+
+.project-empty {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 54px 24px;
+  border: 1px dashed rgba(148, 163, 184, 0.45);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.7);
+  text-align: center;
+}
+
+.project-empty__icon {
+  width: 76px;
+  height: 76px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.project-empty h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.project-empty p {
+  max-width: 340px;
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.55;
+}
+</style>
+
+<style scoped>
+.project-empty {
+  border-color: rgba(226, 232, 240, 0.95);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.95));
+  box-shadow:
+    0 14px 32px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.project-empty__icon {
+  color: #0f766e;
+  background: rgba(45, 212, 191, 0.12);
+}
+</style>

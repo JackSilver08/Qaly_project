@@ -8,7 +8,7 @@ public class AiGatewaySettings
     public const string SectionName = "AiSettings";
 
     public string Provider { get; set; } = "Ollama";
-    public string[] FallbackProviders { get; set; } = ["Ollama", "OpenAI", "Gemini"];
+    public string[] FallbackProviders { get; set; } = ["Ollama", "DeepSeek", "OpenAI", "Gemini"];
     public bool OfflineMode { get; set; }
     public bool AllowProviderDegradedMock { get; set; }
     public bool AllowLocalSensitiveProcessing { get; set; }
@@ -38,6 +38,7 @@ public class AiGatewaySettings
     }
 
     public AiProviderSetting Ollama { get; set; } = new();
+    public AiProviderSetting DeepSeek { get; set; } = new();
     public AiProviderSetting OpenAI { get; set; } = new();
     public AiProviderSetting Gemini { get; set; } = new();
 }

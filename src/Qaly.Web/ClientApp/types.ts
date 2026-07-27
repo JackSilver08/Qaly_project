@@ -25,6 +25,7 @@ export interface DashboardProject {
     description: string | null;
     logoUrl: string | null;
     status: string;
+    organizationId: string | null;
     ownerId: string;
     ownerName: string;
     memberCount: number;
@@ -60,6 +61,7 @@ export interface DashboardTask {
     status: string;
     priority: string;
     dueDate: string | null;
+    sprintId: string | null;
     assigneeId: string | null;
     assigneeName: string | null;
     reporterName: string;
@@ -76,6 +78,19 @@ export interface DashboardTask {
     attachmentCount: number;
     number?: number;
     key?: string | null;
+}
+
+export interface SprintDto {
+    id: string;
+    projectId: string;
+    name: string;
+    startDate: string;
+    endDate: string;
+    status: string;
+    goal: string | null;
+    taskCount: number;
+    completedTaskCount: number;
+    progress: number;
 }
 
 export interface DashboardMember {
@@ -499,4 +514,7 @@ export interface AiStrategyResponseDto {
     riskAnalysis: string[];
     recommendations: string[];
     priorityPlan: string[];
+    provider: string;
+    model: string;
+    cacheHit: boolean;
 }

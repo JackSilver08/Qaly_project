@@ -61,7 +61,9 @@ public record AiJobSummaryDto(
     DateTimeOffset? FinishedAt,
     string? LastErrorCode,
     bool IsMock,
-    IReadOnlyList<Guid> DraftIds);
+    IReadOnlyList<Guid> DraftIds,
+    string? ScopeSourceType = null,
+    Guid? ScopeSourceEntityId = null);
 
 public record AiJobDetailDto(
     Guid JobId,
@@ -107,7 +109,8 @@ public record AiJobResultDto(
     Guid? UsageLedgerId,
     bool CacheHit,
     bool IsMock,
-    string? MockReason);
+    string? MockReason,
+    bool SourceStale = false);
 
 public record RetryAiJobDto(string? ProviderOverride = null);
 
@@ -130,6 +133,19 @@ public record AiFunctionJobRequest(
     string CacheMode = "use",
     string Language = "vi",
     JsonElement? Options = null);
+
+public record ProjectProgressSummaryRequestDto(
+    string Period = "current_snapshot",
+    string Language = "vi",
+    string ProviderHint = "auto",
+    decimal? MaximumEstimatedCostUsd = null,
+    string CacheMode = "use");
+
+public record TaskSkillSuggestionRequestDto(
+    string Language = "vi",
+    string ProviderHint = "auto",
+    decimal? MaximumEstimatedCostUsd = null,
+    string CacheMode = "use");
 
 public record ConfirmAiDraftDto(
     string? EditedPayloadJson,
@@ -176,7 +192,8 @@ public record AiDraftConfirmResultDto(
     string Status,
     string ConfirmAction,
     int CreatedTaskCount,
-    IReadOnlyList<Guid> CreatedTaskIds);
+    IReadOnlyList<Guid> CreatedTaskIds,
+    int AppliedSkillCount = 0);
 
 public record AiPlatformHealthDto(
     string Status,
@@ -191,8 +208,30 @@ public record AiPlatformHealthDto(
     string? DegradedReason,
     DateTimeOffset CheckedAt);
 
-public record AiUsageSnapshotDto(
+public record AiBudgetScopeDto(
+    string ScopeType,
+    Guid ScopeId,
+    Guid? OrganizationId,
     Guid? ProjectId,
+    string Name);
+
+public record AiUsageBreakdownDto(
+    string Key,
+    int AttemptCount,
+    int SucceededCount,
+    int FailedCount,
+    int InputTokens,
+    int OutputTokens,
+    decimal EstimatedCostUsd,
+    decimal EffectiveCostUsd,
+    int CacheHitCount);
+
+public record AiUsageSnapshotDto(
+    string ScopeType,
+    Guid ScopeId,
+    Guid? OrganizationId,
+    Guid? ProjectId,
+    string ScopeName,
     DateTimeOffset From,
     DateTimeOffset To,
     int AttemptCount,
@@ -201,12 +240,30 @@ public record AiUsageSnapshotDto(
     int InputTokens,
     int OutputTokens,
     decimal EstimatedCostUsd,
-    decimal ActualCostUsd,
-    int CacheHitCount);
+    decimal EffectiveCostUsd,
+    int ActualCostCount,
+    int EstimatedOnlyCount,
+    int CacheHitCount,
+    IReadOnlyList<AiUsageBreakdownDto> Daily,
+    IReadOnlyList<AiUsageBreakdownDto> ByProvider,
+    IReadOnlyList<AiUsageBreakdownDto> ByFunction,
+    IReadOnlyList<AiUsageBreakdownDto> ByStatus,
+    IReadOnlyList<AiUsageBreakdownDto> ByCache,
+    DateTimeOffset CalculatedAt);
 
 public record AiBudgetSnapshotDto(
-    Guid ProjectId,
+    string ScopeType,
+    Guid ScopeId,
+    Guid? OrganizationId,
+    Guid? ProjectId,
+    string ScopeName,
     Guid? PolicyId,
+    Guid? EffectivePolicyId,
+    string PolicySource,
+    bool IsInherited,
+    bool HasEffectivePolicy,
+    bool CanEdit,
+    bool EditingEnabled,
     decimal DailyBudgetUsd,
     decimal MonthlyBudgetUsd,
     int WarningAtPercent,
@@ -218,7 +275,9 @@ public record AiBudgetSnapshotDto(
     bool WarningActive,
     bool HardStopActive,
     bool AllowCloudForSensitive,
-    string? Version);
+    string? Version,
+    string? EffectiveVersion,
+    DateTimeOffset CalculatedAt);
 
 public record UpdateAiBudgetPolicyDto(
     decimal DailyBudgetUsd,
@@ -226,7 +285,8 @@ public record UpdateAiBudgetPolicyDto(
     int WarningAtPercent,
     bool HardStopEnabled,
     bool AllowCloudForSensitive,
-    string? Version = null);
+    string? Version = null,
+    bool Confirmed = false);
 
 public record AiTaskDraftPayload(IReadOnlyList<AiTaskDraftItem> Tasks);
 

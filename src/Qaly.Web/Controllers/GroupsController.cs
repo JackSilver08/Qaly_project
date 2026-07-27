@@ -479,6 +479,18 @@ public class GroupsController : BaseApiController
     public async Task<IActionResult> CreateProjectFromGroup(Guid id, CreateProjectFromGroupRequest request, CancellationToken ct)
     {
         var result = await _groupsService.CreateProjectFromGroupAsync(id, request, ct);
+        if (result.IsSuccess && result.Data != null)
+        {
+            await _groupHub.Clients.Group(GroupHub.WorkGroup(id)).SendAsync(
+                "groupProjectCreated",
+                new
+                {
+                    groupId = id,
+                    projectId = result.Data.Project.Id,
+                    projectName = result.Data.Project.Name
+                },
+                ct);
+        }
         return StatusCode(result.StatusCode, result);
     }
 

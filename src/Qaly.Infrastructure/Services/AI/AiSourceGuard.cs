@@ -138,10 +138,11 @@ public sealed class AiSourceGuard : IAiSourceGuard
         CancellationToken ct)
         => sourceType switch
         {
-            "project" => GetProjectStateAsync(project, sourceId),
+            "project" => GetProjectStateAsync(project, sourceId, ct),
             "group" or "workgroup" => GetGroupStateAsync(project, userId, sourceId, ct),
-            "sprint" => GetSprintStateAsync(project.Id, sourceId, ct),
+            "sprint" => GetSprintStateAsync(project, sourceId, ct),
             "task" or "taskitem" => GetTaskStateAsync(project.Id, userId, sourceId, ct),
+            "skillcatalog" or "organizationskillcatalog" => GetSkillCatalogStateAsync(project, sourceId, ct),
             "wiki" or "wikipage" => GetWikiStateAsync(project, userId, sourceId, ct),
             "meeting" or "meetingimport" => GetMeetingImportStateAsync(project.Id, sourceId, ct),
             "message" or "groupmessage" => GetMessageStateAsync(project, userId, sourceId, ct),
@@ -150,10 +151,38 @@ public sealed class AiSourceGuard : IAiSourceGuard
             _ => Task.FromResult<SourceState?>(null)
         };
 
-    private static Task<SourceState?> GetProjectStateAsync(Project project, Guid sourceId)
-        => Task.FromResult(project.Id == sourceId
-            ? CreateState(project.UpdatedAt, $"{project.Id}|{project.Name}|{project.Description}|{project.Status}|{project.UpdatedAt:O}")
-            : null);
+    private async Task<SourceState?> GetProjectStateAsync(Project project, Guid sourceId, CancellationToken ct)
+    {
+        if (project.Id != sourceId) return null;
+
+        var tasks = await _db.TaskItems
+            .AsNoTracking()
+            .Where(item =>
+                item.ProjectId == project.Id &&
+                !item.IsDeleted &&
+                item.ContributesToProgress)
+            .OrderBy(item => item.Id)
+            .ToListAsync(ct);
+        tasks = tasks
+            .Where(item => !string.Equals(item.Status, "Cancelled", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var timestamp = tasks
+            .Select(item => item.UpdatedAt)
+            .Append(project.UpdatedAt)
+            .Where(value => value.HasValue)
+            .Max();
+        var versions = timestamp.HasValue
+            ? new[]
+            {
+                timestamp.Value.ToString("O"),
+                timestamp.Value.ToUnixTimeMilliseconds().ToString(System.Globalization.CultureInfo.InvariantCulture)
+            }
+            : [];
+        return new SourceState(
+            AiProgressSummaryFingerprint.Compute(project, tasks),
+            versions,
+            timestamp);
+    }
 
     private async Task<SourceState?> GetGroupStateAsync(Project project, Guid userId, Guid sourceId, CancellationToken ct)
     {
@@ -164,13 +193,41 @@ public sealed class AiSourceGuard : IAiSourceGuard
             : CreateState(group.UpdatedAt, $"{group.Id}|{group.Name}|{group.Status}|{group.UpdatedAt:O}");
     }
 
-    private async Task<SourceState?> GetSprintStateAsync(Guid projectId, Guid sourceId, CancellationToken ct)
+    private async Task<SourceState?> GetSprintStateAsync(Project project, Guid sourceId, CancellationToken ct)
     {
         var sprint = await _db.Set<Sprint>().AsNoTracking()
-            .FirstOrDefaultAsync(item => item.Id == sourceId && item.ProjectId == projectId, ct);
-        return sprint == null
-            ? null
-            : CreateState(sprint.UpdatedAt, $"{sprint.Id}|{sprint.Name}|{sprint.Status}|{sprint.Goal}|{sprint.StartDate:O}|{sprint.EndDate:O}|{sprint.UpdatedAt:O}");
+            .FirstOrDefaultAsync(item => item.Id == sourceId && item.ProjectId == project.Id, ct);
+        if (sprint == null) return null;
+
+        var tasks = await _db.TaskItems
+            .AsNoTracking()
+            .Where(item =>
+                item.ProjectId == project.Id &&
+                item.SprintId == sprint.Id &&
+                !item.IsDeleted &&
+                item.ContributesToProgress)
+            .OrderBy(item => item.Id)
+            .ToListAsync(ct);
+        tasks = tasks
+            .Where(item => !string.Equals(item.Status, "Cancelled", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var timestamp = tasks
+            .Select(item => item.UpdatedAt)
+            .Append(project.UpdatedAt)
+            .Append(sprint.UpdatedAt)
+            .Where(value => value.HasValue)
+            .Max();
+        var versions = timestamp.HasValue
+            ? new[]
+            {
+                timestamp.Value.ToString("O"),
+                timestamp.Value.ToUnixTimeMilliseconds().ToString(System.Globalization.CultureInfo.InvariantCulture)
+            }
+            : [];
+        return new SourceState(
+            AiProgressSummaryFingerprint.Compute(project, sprint, tasks),
+            versions,
+            timestamp);
     }
 
     private async Task<SourceState?> GetTaskStateAsync(Guid projectId, Guid userId, Guid sourceId, CancellationToken ct)
@@ -188,6 +245,41 @@ public sealed class AiSourceGuard : IAiSourceGuard
 
         var rowVersion = task.RowVersion.Length == 0 ? null : Convert.ToBase64String(task.RowVersion);
         return CreateState(task.UpdatedAt, $"{task.Id}|{task.Title}|{task.Description}|{task.Status}|{task.Priority}|{task.DueDate:O}|{task.UpdatedAt:O}", rowVersion);
+    }
+
+    private async Task<SourceState?> GetSkillCatalogStateAsync(Project project, Guid sourceId, CancellationToken ct)
+    {
+        if (!project.OrganizationId.HasValue ||
+            project.OrganizationId.Value != sourceId ||
+            project.Organization == null)
+        {
+            return null;
+        }
+
+        var skills = await _db.OrganizationSkills
+            .AsNoTracking()
+            .Where(skill => skill.OrganizationId == sourceId && skill.IsActive)
+            .OrderBy(skill => skill.Id)
+            .Select(skill => new
+            {
+                skill.Id,
+                skill.Name,
+                skill.Description,
+                skill.CreatedAt,
+                skill.UpdatedAt
+            })
+            .ToListAsync(ct);
+        var timestamp = skills
+            .Select(skill => skill.UpdatedAt ?? skill.CreatedAt)
+            .Append(project.Organization.UpdatedAt ?? project.Organization.CreatedAt)
+            .Max();
+        var hashInput = string.Join(
+            "\n",
+            skills.Select(skill =>
+                $"{skill.Id:D}|{skill.Name}|{skill.Description}|{skill.CreatedAt:O}|{skill.UpdatedAt:O}"));
+        return CreateState(
+            timestamp,
+            $"{project.Organization.Id:D}|{project.Organization.UpdatedAt:O}|{hashInput}");
     }
 
     private async Task<SourceState?> GetWikiStateAsync(Project project, Guid userId, Guid sourceId, CancellationToken ct)

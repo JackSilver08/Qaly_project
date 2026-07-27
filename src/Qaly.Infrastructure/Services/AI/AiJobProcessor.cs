@@ -26,6 +26,7 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
     private readonly IAiComplianceService _compliance;
     private readonly IOptionsMonitor<AiJobPlatformOptions> _options;
     private readonly ILogger<AiJobProcessor> _logger;
+    private readonly IAiCostService? _costService;
 
     public AiJobProcessor(
         QalyDbContext db,
@@ -33,7 +34,8 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
         IAiSourceGuard sourceGuard,
         IAiComplianceService compliance,
         IOptionsMonitor<AiJobPlatformOptions> options,
-        ILogger<AiJobProcessor> logger)
+        ILogger<AiJobProcessor> logger,
+        IAiCostService? costService = null)
     {
         _db = db;
         _gateway = gateway;
@@ -41,6 +43,7 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
         _compliance = compliance;
         _options = options;
         _logger = logger;
+        _costService = costService;
     }
 
     public async Task ProcessAsync(
@@ -107,7 +110,106 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
         }
 
         var stopwatch = Stopwatch.StartNew();
-        var response = await _gateway.ExecuteAsync(request, cancellationToken);
+        AiResponse response;
+        var progressSnapshotJson = IsNativeProgressSummary(job.JobType)
+            ? request.ValidationContextJson
+            : null;
+        var taskSkillSnapshotJson = IsNativeTaskSkillSuggestion(job.JobType)
+            ? request.ValidationContextJson
+            : null;
+        if (progressSnapshotJson != null && ProgressSummaryContract.SnapshotIsEmpty(progressSnapshotJson))
+        {
+            if (!ProgressSummaryContract.TryBuildEmptyResult(
+                    progressSnapshotJson,
+                    out var emptyResult,
+                    out var emptyError))
+            {
+                await CompleteFailureAsync(
+                    job,
+                    attempt,
+                    AiErrorCodes.SchemaInvalid,
+                    emptyError ?? "The deterministic empty progress result is invalid.",
+                    retryable: false,
+                    cancellationToken);
+                return;
+            }
+
+            response = new AiResponse
+            {
+                Content = emptyResult,
+                ProviderName = "deterministic",
+                ModelName = "server-owned-empty-v1",
+                IsMock = false
+            };
+            if (_costService != null)
+            {
+                await _costService.RecordJobUsageAsync(
+                    job.TenantId,
+                    job.ProjectId,
+                    job.RequestedById,
+                    job.JobType,
+                    response.ProviderName,
+                    response.ModelName,
+                    0,
+                    0,
+                    0m,
+                    0,
+                    "success",
+                    false,
+                    job.Id,
+                    attempt.Id,
+                    cancellationToken: cancellationToken);
+            }
+        }
+        else if (taskSkillSnapshotJson != null &&
+                 TaskSkillSuggestionContract.SnapshotIsEmpty(taskSkillSnapshotJson))
+        {
+            if (!TaskSkillSuggestionContract.TryBuildEmptyResult(
+                    taskSkillSnapshotJson,
+                    out var emptyResult,
+                    out var emptyError))
+            {
+                await CompleteFailureAsync(
+                    job,
+                    attempt,
+                    AiErrorCodes.SchemaInvalid,
+                    emptyError ?? "The deterministic empty task-skill result is invalid.",
+                    retryable: false,
+                    cancellationToken);
+                return;
+            }
+
+            response = new AiResponse
+            {
+                Content = emptyResult,
+                ProviderName = "deterministic",
+                ModelName = "server-owned-empty-v1",
+                IsMock = false
+            };
+            if (_costService != null)
+            {
+                await _costService.RecordJobUsageAsync(
+                    job.TenantId,
+                    job.ProjectId,
+                    job.RequestedById,
+                    job.JobType,
+                    response.ProviderName,
+                    response.ModelName,
+                    0,
+                    0,
+                    0m,
+                    0,
+                    "success",
+                    false,
+                    job.Id,
+                    attempt.Id,
+                    cancellationToken: cancellationToken);
+            }
+        }
+        else
+        {
+            response = await _gateway.ExecuteAsync(request, cancellationToken);
+        }
         stopwatch.Stop();
 
         await _db.Entry(job).ReloadAsync(cancellationToken);
@@ -149,13 +251,63 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
             return;
         }
 
-        if (!TryNormalizeJson(response.Content, out var resultJson))
+        if ((IsNativeProgressSummary(job.JobType) || IsNativeTaskSkillSuggestion(job.JobType)) && response.IsMock)
+        {
+            await CompleteFailureAsync(
+                job,
+                attempt,
+                AiErrorCodes.ProviderUnavailable,
+                "A mock or offline fallback cannot be persisted as a native grounded result.",
+                retryable: true,
+                cancellationToken);
+            return;
+        }
+
+        var resultJson = response.Content;
+        string? resultError = null;
+        bool resultIsValid;
+        if (IsNativeProgressSummary(job.JobType))
+        {
+            resultIsValid = ProgressSummaryContract.SnapshotIsEmpty(progressSnapshotJson ?? string.Empty)
+                ? ProgressSummaryContract.TryValidateFinal(response.Content, out resultError)
+                : ProgressSummaryContract.TryBuildResult(
+                    response.Content,
+                    progressSnapshotJson ?? string.Empty,
+                    out resultJson,
+                    out resultError);
+        }
+        else if (IsNativeTaskSkillSuggestion(job.JobType))
+        {
+            resultIsValid = TaskSkillSuggestionContract.SnapshotIsEmpty(taskSkillSnapshotJson ?? string.Empty)
+                ? TaskSkillSuggestionContract.TryValidateFinal(response.Content, out resultError)
+                : TaskSkillSuggestionContract.TryBuildResult(
+                    response.Content,
+                    taskSkillSnapshotJson ?? string.Empty,
+                    out resultJson,
+                    out resultError);
+        }
+        else
+        {
+            resultIsValid = TryNormalizeJson(response.Content, out resultJson);
+        }
+        if (IsNativeProgressSummary(job.JobType) &&
+            ProgressSummaryContract.SnapshotIsEmpty(progressSnapshotJson ?? string.Empty))
+        {
+            resultJson = response.Content;
+        }
+        if (IsNativeTaskSkillSuggestion(job.JobType) &&
+            TaskSkillSuggestionContract.SnapshotIsEmpty(taskSkillSnapshotJson ?? string.Empty))
+        {
+            resultJson = response.Content;
+        }
+
+        if (!resultIsValid)
         {
             await CompleteFailureAsync(
                 job,
                 attempt,
                 AiErrorCodes.SchemaInvalid,
-                "AI output is not valid JSON.",
+                resultError ?? "AI output is not valid JSON.",
                 retryable: false,
                 cancellationToken);
             return;
@@ -352,6 +504,21 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
         var systemPrompt = options.ValueKind == JsonValueKind.Object && options.TryGetProperty("systemPrompt", out var systemElement)
             ? systemElement.GetString()
             : null;
+        var cacheMode = root.TryGetProperty("cacheMode", out var cacheModeElement) &&
+            cacheModeElement.ValueKind == JsonValueKind.String
+                ? cacheModeElement.GetString()
+                : "use";
+        var isNativeProgressSummary = IsNativeProgressSummary(job.JobType);
+        var isNativeTaskSkillSuggestion = IsNativeTaskSkillSuggestion(job.JobType);
+        var isNativeGrounded = isNativeProgressSummary || isNativeTaskSkillSuggestion;
+        if (isNativeProgressSummary)
+        {
+            prompt = $"{prompt}\n\nAuthorized server snapshot:\n{sourceText}";
+        }
+        else if (isNativeTaskSkillSuggestion)
+        {
+            prompt = $"{prompt}\n\nAuthorized server-owned task and skill catalog snapshot:\n{sourceText}";
+        }
 
         var messageSources = job.Sources
             .Where(source => NormalizeType(source.SourceType) is "message" or "groupmessage")
@@ -409,8 +576,11 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
                 : PrivacyProviderClasses.Any,
             SourceType = job.SourceType ?? job.Sources.OrderBy(source => source.SortOrder).FirstOrDefault()?.SourceType ?? "ai_job",
             SourceEntityId = job.Sources.OrderBy(source => source.SortOrder).FirstOrDefault()?.SourceEntityId,
-            UseCache = true,
-            AllowMockFallback = allowMockFallback
+            UseCache = !string.Equals(cacheMode, "bypass", StringComparison.OrdinalIgnoreCase),
+            BypassCacheRead = string.Equals(cacheMode, "refresh", StringComparison.OrdinalIgnoreCase),
+            UseRetrievalAugmentation = !isNativeGrounded,
+            AllowMockFallback = allowMockFallback && !isNativeGrounded,
+            ValidationContextJson = isNativeGrounded ? sourceText : null
         };
     }
 
@@ -422,7 +592,14 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
 
     private static bool RequiresDraft(string jobType)
         => NormalizeType(jobType) is "meetingactionextraction" or "meetingactionextract" or "taskdraft" or
-            "taskbreakdown" or "acceptancechecklist" or "draftchange" or "projectdelayresolution" or "project_delay_resolution";
+            "taskbreakdown" or "acceptancechecklist" or "draftchange" or "projectdelayresolution" or
+            "project_delay_resolution" or "taskskillsuggestion";
+
+    private static bool IsNativeProgressSummary(string jobType)
+        => NormalizeType(jobType) is "projectprogresssummary" or "sprintprogresssummary";
+
+    private static bool IsNativeTaskSkillSuggestion(string jobType)
+        => NormalizeType(jobType) is "taskskillsuggestion";
 
     private static string ResolveDraftType(string jobType)
         => NormalizeType(jobType) switch
@@ -432,6 +609,7 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
             "acceptancechecklist" => "AcceptanceChecklist",
             "draftchange" => "DraftChange",
             "projectdelayresolution" or "project_delay_resolution" => "ProjectDelayResolution",
+            "taskskillsuggestion" => TaskSkillAiContract.DraftType,
             _ => "TaskDraft"
         };
 

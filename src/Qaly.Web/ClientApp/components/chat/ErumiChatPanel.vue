@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   Send,
   Square,
@@ -57,6 +58,7 @@ const props = withDefaults(defineProps<{
 
 const { projects, selectedProject, currentUser, loadDashboard } = useDashboardContext()
 const erumiContext = useErumiContext()
+const route = useRoute()
 
 const markdown = new (MarkdownIt as any)({
   html: false,
@@ -194,7 +196,28 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 let refreshTimer: number | undefined
 
-const selectedAiModel = ref(AI_MODEL_OPTIONS[0]?.id ?? 'fast-current')
+function applyRoutePrompt() {
+  const rawPrompt = Array.isArray(route.query.prompt) ? route.query.prompt[0] : route.query.prompt
+  if (typeof rawPrompt === 'string' && rawPrompt.trim()) {
+    chatInput.value = rawPrompt.trim()
+  }
+  if (route.query.scope === 'workspace') {
+    selectedTarget.value = 'workspace'
+  }
+  nextTick(() => textareaRef.value?.focus())
+}
+
+const selectedAiModel = ref(AI_MODEL_OPTIONS[0]?.id ?? 'auto')
+const selectedProviderHint = computed(() => {
+  switch (selectedAiModel.value) {
+    case 'deepseek-v4-pro':
+      return 'deepseek'
+    case 'ollama-local':
+      return 'local'
+    default:
+      return 'auto'
+  }
+})
 const activeDrawerTab = ref<AnalyticsMiniTab>('sources')
 const cockpitDrawerOpen = ref(false)
 const selectedDrawerMessage = ref<ChatEntry | null>(null)
@@ -872,6 +895,7 @@ async function submitChat(explicitText?: string, _action?: string) {
         message: userText,
         projectId: selectedTarget.value === 'workspace' ? null : selectedTarget.value,
         mode: 'agent',
+        providerHint: selectedProviderHint.value,
         history: historyToSend,
         files: attachedFileContexts
       })
@@ -918,14 +942,16 @@ async function submitChat(explicitText?: string, _action?: string) {
     updateLatestConversationSnippet(fastReply.reply)
   } catch (e) {
     const lastIdx = chatHistory.value.length - 1
-    const fallbackText = getFallbackChatAnswer(userText)
+    const detail = e instanceof Error ? e.message : 'Nhà cung cấp AI không phản hồi.'
+    const errorText = `Không thể hoàn tất phân tích bằng model đã chọn. ${detail}`
     isChatting.value = false
     chatHistory.value[lastIdx] = {
       role: 'assistant',
-      text: fallbackText,
+      text: errorText,
       usedAi: false
     }
-    updateLatestConversationSnippet(fallbackText)
+    updateLatestConversationSnippet(errorText)
+    showError('Model AI đã chọn chưa sẵn sàng.')
   } finally {
     isChatting.value = false
     await scrollToBottom()
@@ -959,12 +985,15 @@ onMounted(() => {
   if (selectedProject.value) {
     selectedTarget.value = selectedProject.value.id
   }
+  applyRoutePrompt()
   refreshAnalyticsContext()
   refreshTimer = window.setInterval(refreshAnalyticsContext, 30000)
   window.addEventListener('resize', syncViewportFlag)
   window.addEventListener('focus', refreshAnalyticsContext)
   scrollToBottom()
 })
+
+watch(() => [route.query.prompt, route.query.scope], applyRoutePrompt)
 
 onBeforeUnmount(() => {
   if (refreshTimer) window.clearInterval(refreshTimer)
@@ -1064,6 +1093,12 @@ onBeforeUnmount(() => {
                   <span class="ctx-x" aria-label="Bỏ chọn dự án"><X :size="13" aria-hidden="true" /></span>
                 </button>
                 <span v-else class="ctx-label">{{ selectedTargetLabel }}</span>
+                <AiModelSelector
+                  v-model="selectedAiModel"
+                  :options="AI_MODEL_OPTIONS"
+                  :compact="isCompactViewport"
+                  @open-settings="openCockpitDrawer('model')"
+                />
               </div>
 
               <button
@@ -1235,6 +1270,14 @@ onBeforeUnmount(() => {
                   <span class="assistant-mode" :class="msg.usedAi ? 'is-ai' : 'is-rule'">
                     {{ msg.usedAi ? 'Erumi AI' : 'Dữ liệu hệ thống' }}
                   </span>
+                  <span
+                    v-if="msg.model"
+                    class="assistant-model"
+                    :class="`status-${msg.model.status || 'live'}`"
+                  >
+                    {{ msg.model.label || msg.model.id }}
+                    <em v-if="msg.model.status === 'fallback'">Fallback</em>
+                  </span>
                   <span v-if="typeof msg.confidence === 'number'" class="assistant-conf" :title="msg.confidenceReason || undefined">
                     Độ tin cậy {{ Math.round(msg.confidence * 100) }}%
                   </span>
@@ -1345,6 +1388,12 @@ onBeforeUnmount(() => {
                   <span class="ctx-x" aria-label="Bỏ chọn dự án"><X :size="13" aria-hidden="true" /></span>
                 </button>
                 <span v-else class="ctx-label">{{ selectedTargetLabel }}</span>
+                <AiModelSelector
+                  v-model="selectedAiModel"
+                  :options="AI_MODEL_OPTIONS"
+                  :compact="isCompactViewport"
+                  @open-settings="openCockpitDrawer('model')"
+                />
               </div>
 
               <button
@@ -1406,7 +1455,7 @@ onBeforeUnmount(() => {
         </section>
 
         <section v-else-if="activeDrawerTab === 'model' || activeDrawerTab === 'settings'" class="analytics-drawer-section">
-          <p class="analytics-drawer-muted">Registry này chỉ điều khiển UI. Provider planned chưa được kích hoạt live.</p>
+          <p class="analytics-drawer-muted">Model bạn chọn được gửi cùng request. Kết quả hiển thị provider và model thực sự đã trả lời.</p>
           <AiModelSelector
             v-model="selectedAiModel"
             :options="AI_MODEL_OPTIONS"
@@ -1703,6 +1752,33 @@ onBeforeUnmount(() => {
   font-size: 11px;
   font-weight: 500;
   color: var(--muted);
+}
+
+.assistant-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.assistant-model.status-live {
+  color: #047857;
+}
+
+.assistant-model.status-fallback {
+  color: #b45309;
+}
+
+.assistant-model em {
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  padding: 1px 5px;
+  font-size: 9px;
+  font-style: normal;
+  text-transform: uppercase;
 }
 
 .assistant-actions {

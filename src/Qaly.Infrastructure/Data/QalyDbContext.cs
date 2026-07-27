@@ -17,6 +17,7 @@ public class QalyDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<OrganizationMember> OrganizationMembers => Set<OrganizationMember>();
+    public DbSet<OrganizationSkill> OrganizationSkills => Set<OrganizationSkill>();
     public DbSet<ModeratorAssignment> ModeratorAssignments => Set<ModeratorAssignment>();
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
@@ -39,6 +40,7 @@ public class QalyDbContext : DbContext
     public DbSet<TaskAttentionSignal> TaskAttentionSignals => Set<TaskAttentionSignal>();
     public DbSet<ProjectLabel> ProjectLabels => Set<ProjectLabel>();
     public DbSet<TaskLabel> TaskLabels => Set<TaskLabel>();
+    public DbSet<TaskSkillRequirement> TaskSkillRequirements => Set<TaskSkillRequirement>();
     public DbSet<Vote> Votes => Set<Vote>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<WikiPage> WikiPages => Set<WikiPage>();

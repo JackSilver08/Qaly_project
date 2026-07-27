@@ -140,6 +140,7 @@ const navigation = computed<ShellNavItem[]>(() => {
   ];
   const role = String(currentUser.value?.role || "").toLowerCase();
   if (role === "admin") {
+    items.push({ label: "Quản lý tổ chức", to: "/organizations", icon: Building2 });
     items.push({ label: "Ủy quyền Moderator", to: "/admin/moderators", icon: ShieldCheck });
     items.push({ label: "Quản lý người dùng", to: "/admin/users", icon: ShieldCheck });
   }
@@ -342,7 +343,9 @@ const isProjectAdmin = computed(() => {
     (m) => String(m.userId || "").toLowerCase() === userId,
   );
   return member
-    ? ["owner", "manager"].includes(String(member.role || "").toLowerCase())
+    ? ["owner", "manager", "admin", "pm", "projectowner", "projectmanager", "scrummaster"].includes(
+        String(member.role || "").replace(/\s+/g, "").toLowerCase(),
+      )
     : false;
 });
 
@@ -467,7 +470,11 @@ const selectedProjectStats = computed(() => {
       overdue: 0,
       completionRate: 0,
     };
-  const tasks = project.tasks;
+  const tasks = project.tasks.filter(
+    (task) =>
+      task.contributesToProgress &&
+      String(task.status || "").toLowerCase() !== "cancelled",
+  );
   const total = tasks.length;
   const done = tasks.filter((t) => t.status === "Done").length;
   return {
@@ -1082,7 +1089,13 @@ async function clearActionableNotifications() {
 }
 
 function openChatWithPrompt(prompt?: string) {
-  void router.push('/analytics')
+  const normalizedPrompt = prompt?.trim()
+  void router.push({
+    path: '/analytics',
+    query: normalizedPrompt
+      ? { prompt: normalizedPrompt, scope: 'workspace' }
+      : undefined,
+  })
 }
 
 async function logout() {

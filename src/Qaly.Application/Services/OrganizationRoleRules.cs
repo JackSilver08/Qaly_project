@@ -15,6 +15,10 @@ public static class OrganizationRoleRules
            || string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase)
            || string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase);
 
+    public static bool CanManageAiBudget(string? role)
+        => CanManageOrganization(role)
+           || string.Equals(role, BillingAdmin, StringComparison.OrdinalIgnoreCase);
+
     public static bool TryNormalizeAssignableRole(string? role, out string normalized)
     {
         normalized = Normalize(role);

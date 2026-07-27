@@ -93,6 +93,15 @@ public class GroupAiService : IGroupAiService
                 ExpectedSchemaId = "ActionItem",
                 UseCache = true
             }, ct);
+            if (!response.IsSuccess || response.IsMock)
+            {
+                return Result.Failure<GroupAiActionItemsResponseDto>(
+                    response.IsMock
+                        ? "AI provider chỉ trả dữ liệu mô phỏng; Qaly không hiển thị như kết quả thật."
+                        : response.ErrorMessage ?? "AI provider chưa sẵn sàng.",
+                    503,
+                    response.ErrorCode);
+            }
             var text = response.Content;
             var items = ParseActionItems(text);
             var warnings = context.Warnings.ToList();
@@ -479,6 +488,15 @@ Source:
                 ExpectedSchemaId = "DiscussionSummary",
                 UseCache = true
             }, ct);
+            if (!response.IsSuccess || response.IsMock)
+            {
+                return Result.Failure<GroupAiSummaryResponseDto>(
+                    response.IsMock
+                        ? "AI provider chỉ trả dữ liệu mô phỏng; Qaly không hiển thị như kết quả thật."
+                        : response.ErrorMessage ?? "AI provider chưa sẵn sàng.",
+                    503,
+                    response.ErrorCode);
+            }
             var text = response.Content;
             var json = ExtractJson(text);
 
@@ -554,6 +572,15 @@ Source:
                 ExpectedSchemaId = "DraftProject",
                 UseCache = true
             }, ct);
+            if (!response.IsSuccess || response.IsMock)
+            {
+                return Result.Failure<GroupAiDraftProjectResponseDto>(
+                    response.IsMock
+                        ? "AI provider chỉ trả dữ liệu mô phỏng; Qaly không hiển thị như kết quả thật."
+                        : response.ErrorMessage ?? "AI provider chưa sẵn sàng.",
+                    503,
+                    response.ErrorCode);
+            }
             var text = response.Content;
             var json = ExtractJson(text);
 
