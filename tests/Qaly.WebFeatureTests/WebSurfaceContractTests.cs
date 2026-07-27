@@ -55,6 +55,7 @@ public sealed partial class WebSurfaceContractTests : IDisposable
     [TestCase("/analytics")]
     [TestCase("/admin/users")]
     [TestCase("/organizations/users")]
+    [TestCase("/organizations")]
     [TestCase("/admin/moderators")]
     [TestCase("/groups")]
     [TestCase("/groups/11111111-1111-1111-1111-111111111111")]

@@ -88,7 +88,8 @@ public record OrganizationDto(
 public record CreateOrganizationDto(
     string Name,
     string? Code,
-    string? Description);
+    string? Description,
+    Guid? OwnerId = null);
 
 public record UpdateOrganizationDto(
     string Name,
@@ -97,7 +98,8 @@ public record UpdateOrganizationDto(
     bool IsActive = true,
     string? AllowedEmailDomains = null,
     string? WorkspaceIcon = null,
-    string? WorkspaceCover = null);
+    string? WorkspaceCover = null,
+    Guid? OwnerId = null);
 
 public record OrganizationMemberDto(
     Guid UserId,
