@@ -187,7 +187,11 @@ public class AiGateway : IAiGateway
         }
 
         // Proactive RAG (Context Retrieval)
-        if (request.ProjectId.HasValue && request.UserId.HasValue && _vectorStorage != null && _embeddingGenerator != null)
+        if (request.UseRetrievalAugmentation &&
+            request.ProjectId.HasValue &&
+            request.UserId.HasValue &&
+            _vectorStorage != null &&
+            _embeddingGenerator != null)
         {
             try
             {
@@ -248,7 +252,7 @@ public class AiGateway : IAiGateway
         string requestHash = ComputeSha256Hash(hashInput.ToString());
         string legacyRequestHash = ComputeSha256Hash(legacyHashInput.ToString());
         
-        if (request.UseCache)
+        if (request.UseCache && !request.BypassCacheRead)
         {
             var cachedPrompt = await _context.AiPromptCache
                 .FirstOrDefaultAsync(c => c.RequestHash == requestHash, cancellationToken);
@@ -260,27 +264,43 @@ public class AiGateway : IAiGateway
 
             if (cachedPrompt != null && (cachedPrompt.ExpiresAt == null || cachedPrompt.ExpiresAt > DateTimeOffset.UtcNow))
             {
-                cachedPrompt.HitCount++;
-                await _context.SaveChangesAsync(cancellationToken);
-
-                await _costService.RecordJobUsageAsync(
-                    request.TenantId ?? Guid.Empty, request.ProjectId ?? Guid.Empty, request.UserId ?? Guid.Empty, request.JobType,
-                    cachedPrompt.ProviderName ?? "Cache", cachedPrompt.ModelName ?? "Cache",
-                    0, 0, 0m, (int)sw.ElapsedMilliseconds, "success", true,
-                    request.JobId, request.ProviderAttemptId,
-                    cancellationToken: cancellationToken);
-
-                return new AiResponse
+                if (string.IsNullOrWhiteSpace(request.ExpectedSchemaId) ||
+                    _outputValidator.Validate(
+                        cachedPrompt.ResponseJson,
+                        request.ExpectedSchemaId,
+                        request.ValidationContextJson,
+                        out var cacheValidationError))
                 {
-                    Content = cachedPrompt.ResponseJson,
-                    ProviderName = cachedPrompt.ProviderName ?? "Cache",
-                    ModelName = cachedPrompt.ModelName ?? "Cache",
-                    InputTokens = 0,
-                    OutputTokens = 0,
-                    EstimatedCostUsd = 0m,
-                    IsMock = false,
-                    CacheHit = true
-                };
+                    cachedPrompt.HitCount++;
+                    await _context.SaveChangesAsync(cancellationToken);
+
+                    await _costService.RecordJobUsageAsync(
+                        request.TenantId ?? Guid.Empty, request.ProjectId ?? Guid.Empty, request.UserId ?? Guid.Empty, request.JobType,
+                        cachedPrompt.ProviderName ?? "Cache", cachedPrompt.ModelName ?? "Cache",
+                        0, 0, 0m, (int)sw.ElapsedMilliseconds, "success", true,
+                        request.JobId, request.ProviderAttemptId,
+                        cancellationToken: cancellationToken);
+
+                    return new AiResponse
+                    {
+                        Content = cachedPrompt.ResponseJson,
+                        ProviderName = cachedPrompt.ProviderName ?? "Cache",
+                        ModelName = cachedPrompt.ModelName ?? "Cache",
+                        InputTokens = 0,
+                        OutputTokens = 0,
+                        EstimatedCostUsd = 0m,
+                        IsMock = false,
+                        CacheHit = true
+                    };
+                }
+
+                _logger.LogWarning(
+                    "Ignoring invalid AI cache entry {CacheId} for schema {SchemaId}: {ValidationError}",
+                    cachedPrompt.Id,
+                    request.ExpectedSchemaId,
+                    cacheValidationError);
+                cachedPrompt.ExpiresAt = DateTimeOffset.UtcNow;
+                await _context.SaveChangesAsync(cancellationToken);
             }
         }
 
@@ -556,7 +576,12 @@ public class AiGateway : IAiGateway
                 }
 
                 // Validate output schema if requested
-                if (string.IsNullOrWhiteSpace(request.ExpectedSchemaId) || _outputValidator.Validate(finalResponse.Content, request.ExpectedSchemaId, out validationError))
+                if (string.IsNullOrWhiteSpace(request.ExpectedSchemaId) ||
+                    _outputValidator.Validate(
+                        finalResponse.Content,
+                        request.ExpectedSchemaId,
+                        request.ValidationContextJson,
+                        out validationError))
                 {
                     // Validation success or schema validation not required
                     break;

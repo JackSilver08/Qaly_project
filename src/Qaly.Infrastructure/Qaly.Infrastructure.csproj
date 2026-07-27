@@ -22,6 +22,15 @@
     <PackageReference Include="WebPush" Version="1.0.13" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="..\..\docs\schemas\ai\progress_summary.schema.json"
+             Link="Schemas\ai\progress_summary.schema.json"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\docs\schemas\ai\task_skill_suggestion.schema.json"
+             Link="Schemas\ai\task_skill_suggestion.schema.json"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

@@ -343,7 +343,9 @@ const isProjectAdmin = computed(() => {
     (m) => String(m.userId || "").toLowerCase() === userId,
   );
   return member
-    ? ["owner", "manager"].includes(String(member.role || "").toLowerCase())
+    ? ["owner", "manager", "admin", "pm", "projectowner", "projectmanager", "scrummaster"].includes(
+        String(member.role || "").replace(/\s+/g, "").toLowerCase(),
+      )
     : false;
 });
 
@@ -468,7 +470,11 @@ const selectedProjectStats = computed(() => {
       overdue: 0,
       completionRate: 0,
     };
-  const tasks = project.tasks;
+  const tasks = project.tasks.filter(
+    (task) =>
+      task.contributesToProgress &&
+      String(task.status || "").toLowerCase() !== "cancelled",
+  );
   const total = tasks.length;
   const done = tasks.filter((t) => t.status === "Done").length;
   return {

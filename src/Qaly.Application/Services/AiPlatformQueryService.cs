@@ -4,6 +4,7 @@ using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Ai;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
+using System.Globalization;
 
 namespace Qaly.Application.Services;
 
@@ -13,6 +14,7 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
     private readonly IRepository<AiJobDispatch> _dispatches;
     private readonly IRepository<AiUsageLedger> _usage;
     private readonly IRepository<AiBudgetPolicy> _budgets;
+    private readonly IRepository<Organization> _organizations;
     private readonly IRepository<Project> _projects;
     private readonly IRepository<ProjectMember> _projectMembers;
     private readonly IRepository<OrganizationMember> _organizationMembers;
@@ -26,6 +28,7 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
         IRepository<AiJobDispatch> dispatches,
         IRepository<AiUsageLedger> usage,
         IRepository<AiBudgetPolicy> budgets,
+        IRepository<Organization> organizations,
         IRepository<Project> projects,
         IRepository<ProjectMember> projectMembers,
         IRepository<OrganizationMember> organizationMembers,
@@ -38,6 +41,7 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
         _dispatches = dispatches;
         _usage = usage;
         _budgets = budgets;
+        _organizations = organizations;
         _projects = projects;
         _projectMembers = projectMembers;
         _organizationMembers = organizationMembers;
@@ -88,147 +92,193 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
             now));
     }
 
+    public async Task<Result<IReadOnlyList<AiBudgetScopeDto>>> GetBudgetScopesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (!_currentUser.UserId.HasValue) return Result.Forbidden<IReadOnlyList<AiBudgetScopeDto>>();
+
+        var userId = _currentUser.UserId.Value;
+        var isSystemAdmin = ProjectRoleRules.IsSystemAdmin(_currentUser.Role);
+        var manageableOrganizationIds = isSystemAdmin
+            ? _organizations.GetQueryable().Select(item => item.Id)
+            : _organizations.GetQueryable()
+                .Where(item => item.OwnerId == userId || item.Members.Any(member =>
+                    member.UserId == userId &&
+                    (member.Role == OrganizationRoleRules.Owner ||
+                     member.Role == OrganizationRoleRules.OrganizationAdmin ||
+                     member.Role == OrganizationRoleRules.BillingAdmin ||
+                     member.Role == "Admin" ||
+                     member.Role == "Manager")))
+                .Select(item => item.Id);
+
+        var organizations = await _organizations.GetQueryable().AsNoTracking()
+            .Where(item => item.IsActive && manageableOrganizationIds.Contains(item.Id))
+            .OrderBy(item => item.Name)
+            .Select(item => new AiBudgetScopeDto("organization", item.Id, item.Id, null, item.Name))
+            .ToListAsync(cancellationToken);
+
+        var manageableProjectIds = isSystemAdmin
+            ? _projects.GetQueryable().Select(item => item.Id)
+            : _projects.GetQueryable()
+                .Where(item =>
+                    item.OwnerId == userId ||
+                    item.Members.Any(member => member.UserId == userId &&
+                        (member.Role == ProjectRoleRules.Owner ||
+                         member.Role == ProjectRoleRules.Manager ||
+                         member.Role == ProjectRoleRules.ScrumMaster ||
+                         member.Role == "PM" ||
+                         member.Role == "ProjectOwner" ||
+                         member.Role == "ProjectManager" ||
+                         member.Role == "Admin")) ||
+                    (item.OrganizationId.HasValue && manageableOrganizationIds.Contains(item.OrganizationId.Value)))
+                .Select(item => item.Id);
+
+        var projects = await _projects.GetQueryable().AsNoTracking()
+            .Where(item => !item.IsDeleted && manageableProjectIds.Contains(item.Id))
+            .OrderBy(item => item.Name)
+            .Select(item => new AiBudgetScopeDto("project", item.Id, item.OrganizationId, item.Id, item.Name))
+            .ToListAsync(cancellationToken);
+
+        return Result.Success<IReadOnlyList<AiBudgetScopeDto>>([.. organizations, .. projects]);
+    }
+
     public async Task<Result<AiUsageSnapshotDto>> GetUsageAsync(
+        Guid? organizationId,
         Guid? projectId,
         DateTimeOffset? rangeStart,
         DateTimeOffset? rangeEnd,
         CancellationToken cancellationToken = default)
     {
-        if (!_currentUser.UserId.HasValue) return Result.Forbidden<AiUsageSnapshotDto>();
-        if (projectId.HasValue && !await CanAccessProjectAsync(projectId.Value, cancellationToken))
+        var scopeResult = await ResolveScopeAsync(organizationId, projectId, cancellationToken);
+        if (!scopeResult.IsSuccess || scopeResult.Data == null)
         {
-            return Result.Failure<AiUsageSnapshotDto>("Project was not found.", 404, AiErrorCodes.PermissionDenied);
+            return Result.Failure<AiUsageSnapshotDto>(
+                scopeResult.Error ?? "AI budget scope was not found.",
+                scopeResult.StatusCode,
+                scopeResult.ErrorCode);
         }
 
+        var scope = scopeResult.Data;
         var rangeTo = rangeEnd ?? DateTimeOffset.UtcNow;
         var rangeFrom = rangeStart ?? rangeTo.AddDays(-30);
-        if (rangeFrom >= rangeTo)
+        if (rangeFrom >= rangeTo || rangeTo - rangeFrom > TimeSpan.FromDays(366))
         {
-            return Result.Failure<AiUsageSnapshotDto>("from must be before to.", 400, AiErrorCodes.InvalidRequest);
-        }
-
-        var visibleJobIds = VisibleJobs().Select(job => job.Id);
-        var query = _usage.GetQueryable().AsNoTracking()
-            .Where(entry => entry.CreatedAt >= rangeFrom && entry.CreatedAt < rangeTo &&
-                entry.AiJobId.HasValue && visibleJobIds.Contains(entry.AiJobId.Value));
-        if (projectId.HasValue) query = query.Where(entry => entry.ProjectId == projectId.Value);
-
-        var rows = await query.ToListAsync(cancellationToken);
-        return Result.Success(new AiUsageSnapshotDto(
-            projectId,
-            rangeFrom,
-            rangeTo,
-            rows.Count,
-            rows.Count(entry => string.Equals(entry.Status, "success", StringComparison.OrdinalIgnoreCase)),
-            rows.Count(entry => string.Equals(entry.Status, "failed", StringComparison.OrdinalIgnoreCase)),
-            rows.Sum(entry => entry.InputTokens),
-            rows.Sum(entry => entry.OutputTokens),
-            rows.Sum(entry => entry.EstimatedCostUsd),
-            rows.Sum(entry => entry.ActualCostUsd ?? entry.EstimatedCostUsd),
-            rows.Count(entry => entry.CacheHit)));
-    }
-
-    public async Task<Result<AiBudgetSnapshotDto>> GetBudgetAsync(Guid projectId, CancellationToken cancellationToken = default)
-    {
-        if (!_currentUser.UserId.HasValue) return Result.Forbidden<AiBudgetSnapshotDto>();
-        var project = await _projects.GetQueryable().AsNoTracking().FirstOrDefaultAsync(item => item.Id == projectId, cancellationToken);
-        if (project == null || !await CanAccessProjectAsync(projectId, cancellationToken))
-        {
-            return Result.Failure<AiBudgetSnapshotDto>("Project was not found.", 404, AiErrorCodes.PermissionDenied);
-        }
-
-        var policy = await _budgets.GetQueryable().AsNoTracking()
-            .Where(item => item.ProjectId == projectId || (item.ProjectId == null && item.TenantId == project.OrganizationId))
-            .OrderByDescending(item => item.ProjectId == projectId)
-            .FirstOrDefaultAsync(cancellationToken);
-        var dailyLimit = policy?.DailyBudgetUsd ?? decimal.MaxValue;
-        var monthlyLimit = policy?.MonthlyBudgetUsd ?? decimal.MaxValue;
-        var now = DateTimeOffset.UtcNow;
-        var startOfDay = new DateTimeOffset(now.Year, now.Month, now.Day, 0, 0, 0, TimeSpan.Zero);
-        var startOfMonth = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
-        var costs = await _usage.GetQueryable().AsNoTracking()
-            .Where(entry => entry.ProjectId == projectId && entry.CreatedAt >= startOfMonth)
-            .Select(entry => new { entry.CreatedAt, Cost = entry.ActualCostUsd ?? entry.EstimatedCostUsd })
-            .ToListAsync(cancellationToken);
-        var dailyUsage = costs.Where(entry => entry.CreatedAt >= startOfDay).Sum(entry => entry.Cost);
-        var monthlyUsage = costs.Sum(entry => entry.Cost);
-        var warningPercent = policy?.WarnAtPercent ?? 80;
-        var warningActive = IsThresholdReached(dailyUsage, dailyLimit, warningPercent) ||
-                            IsThresholdReached(monthlyUsage, monthlyLimit, warningPercent);
-        var hardStop = policy?.HardStopEnabled == true && (dailyUsage >= dailyLimit || monthlyUsage >= monthlyLimit);
-
-        return Result.Success(new AiBudgetSnapshotDto(
-            projectId,
-            policy?.Id,
-            dailyLimit == decimal.MaxValue ? 0 : dailyLimit,
-            monthlyLimit == decimal.MaxValue ? 0 : monthlyLimit,
-            warningPercent,
-            policy?.HardStopEnabled ?? false,
-            dailyUsage,
-            monthlyUsage,
-            dailyLimit == decimal.MaxValue ? 0 : Math.Max(0, dailyLimit - dailyUsage),
-            monthlyLimit == decimal.MaxValue ? 0 : Math.Max(0, monthlyLimit - monthlyUsage),
-            warningActive,
-            hardStop,
-            policy?.AllowCloudForSensitive ?? false,
-            PolicyVersion(policy)));
-    }
-
-    public async Task<Result<AiBudgetSnapshotDto>> UpdateBudgetAsync(
-        Guid projectId,
-        UpdateAiBudgetPolicyDto dto,
-        CancellationToken cancellationToken = default)
-    {
-        if (!_currentUser.UserId.HasValue) return Result.Forbidden<AiBudgetSnapshotDto>();
-        var project = await _projects.GetQueryable()
-            .FirstOrDefaultAsync(item => item.Id == projectId, cancellationToken);
-        if (project == null || !await CanManageProjectAsync(project, cancellationToken))
-        {
-            return Result.Failure<AiBudgetSnapshotDto>("Project was not found or cannot be managed.", 403, AiErrorCodes.PermissionDenied);
-        }
-
-        if (dto.DailyBudgetUsd <= 0 || dto.MonthlyBudgetUsd <= 0 || dto.WarningAtPercent is < 1 or > 100)
-        {
-            return Result.Failure<AiBudgetSnapshotDto>(
-                "Budgets must be positive and warningAtPercent must be between 1 and 100.",
+            return Result.Failure<AiUsageSnapshotDto>(
+                "from must be before to and the range cannot exceed 366 days.",
                 400,
                 AiErrorCodes.InvalidRequest);
         }
 
-        var policy = await _budgets.GetQueryable()
-            .FirstOrDefaultAsync(item => item.ProjectId == projectId, cancellationToken);
-        var previous = policy == null ? null : new
-        {
-            policy.DailyBudgetUsd,
-            policy.MonthlyBudgetUsd,
-            policy.WarnAtPercent,
-            policy.HardStopEnabled,
-            policy.AllowCloudForSensitive,
-            Version = PolicyVersion(policy)
-        };
+        var query = _usage.GetQueryable().AsNoTracking()
+            .Where(entry => entry.CreatedAt >= rangeFrom && entry.CreatedAt < rangeTo);
+        query = scope.ProjectId.HasValue
+            ? query.Where(entry => entry.ProjectId == scope.ProjectId.Value)
+            : query.Where(entry => entry.TenantId == scope.OrganizationId);
 
-        if (policy != null && !string.Equals(dto.Version, PolicyVersion(policy), StringComparison.Ordinal))
+        var rows = await query.ToListAsync(cancellationToken);
+        return Result.Success(new AiUsageSnapshotDto(
+            scope.ScopeType,
+            scope.ScopeId,
+            scope.OrganizationId,
+            scope.ProjectId,
+            scope.Name,
+            rangeFrom,
+            rangeTo,
+            rows.Count,
+            rows.Count(IsSuccessful),
+            rows.Count(IsFailed),
+            rows.Sum(entry => entry.InputTokens),
+            rows.Sum(entry => entry.OutputTokens),
+            rows.Sum(entry => entry.EstimatedCostUsd),
+            rows.Sum(EffectiveCost),
+            rows.Count(entry => entry.ActualCostUsd.HasValue),
+            rows.Count(entry => !entry.ActualCostUsd.HasValue),
+            rows.Count(entry => entry.CacheHit),
+            BuildBreakdown(rows, entry => entry.CreatedAt.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+            BuildBreakdown(rows, entry => EmptyAsUnknown(entry.ProviderName)),
+            BuildBreakdown(rows, entry => EmptyAsUnknown(entry.JobType)),
+            BuildBreakdown(rows, entry => EmptyAsUnknown(entry.Status)),
+            BuildBreakdown(rows, entry => entry.CacheHit ? "hit" : "miss"),
+            DateTimeOffset.UtcNow));
+    }
+
+    public async Task<Result<AiBudgetSnapshotDto>> GetBudgetAsync(
+        Guid? organizationId,
+        Guid? projectId,
+        CancellationToken cancellationToken = default)
+    {
+        var scopeResult = await ResolveScopeAsync(organizationId, projectId, cancellationToken);
+        if (!scopeResult.IsSuccess || scopeResult.Data == null)
         {
             return Result.Failure<AiBudgetSnapshotDto>(
-                "The AI budget policy was modified by another request.",
-                409,
-                AiErrorCodes.DraftConcurrencyConflict);
+                scopeResult.Error ?? "AI budget scope was not found.",
+                scopeResult.StatusCode,
+                scopeResult.ErrorCode);
         }
 
+        return await BuildBudgetSnapshotAsync(scopeResult.Data, cancellationToken);
+    }
+
+    public async Task<Result<AiBudgetSnapshotDto>> UpdateBudgetAsync(
+        Guid? organizationId,
+        Guid? projectId,
+        UpdateAiBudgetPolicyDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        var scopeResult = await ResolveScopeAsync(organizationId, projectId, cancellationToken);
+        if (!scopeResult.IsSuccess || scopeResult.Data == null)
+        {
+            return Result.Failure<AiBudgetSnapshotDto>(
+                scopeResult.Error ?? "AI budget scope was not found.",
+                scopeResult.StatusCode,
+                scopeResult.ErrorCode);
+        }
+
+        var scope = scopeResult.Data;
+        if (!_options.CurrentValue.BudgetUiEnabled)
+        {
+            return Result.Failure<AiBudgetSnapshotDto>(
+                "AI budget policy editing is disabled.",
+                503,
+                AiErrorCodes.PlatformDisabled);
+        }
+
+        if (!dto.Confirmed)
+        {
+            return Result.Failure<AiBudgetSnapshotDto>(
+                "Explicit confirmation is required before changing an AI budget policy.",
+                400,
+                AiErrorCodes.BudgetConfirmationRequired);
+        }
+
+        if (dto.DailyBudgetUsd <= 0 ||
+            dto.MonthlyBudgetUsd <= 0 ||
+            dto.DailyBudgetUsd > dto.MonthlyBudgetUsd ||
+            dto.MonthlyBudgetUsd > 1_000_000m ||
+            dto.WarningAtPercent is < 1 or > 100)
+        {
+            return Result.Failure<AiBudgetSnapshotDto>(
+                "Budgets must be positive, daily cannot exceed monthly, monthly cannot exceed 1,000,000 USD, and warningAtPercent must be between 1 and 100.",
+                400,
+                AiErrorCodes.InvalidRequest);
+        }
+
+        var policy = await DirectPolicyQuery(scope).FirstOrDefaultAsync(cancellationToken);
+        var previous = policy == null ? null : PolicyAuditSnapshot(policy);
+        if (policy != null && !string.Equals(dto.Version, PolicyVersion(policy), StringComparison.Ordinal))
+        {
+            return BudgetConflict();
+        }
+
+        var isNewPolicy = false;
         if (policy == null)
         {
-            if (!string.IsNullOrWhiteSpace(dto.Version))
-            {
-                return Result.Failure<AiBudgetSnapshotDto>(
-                    "The AI budget policy no longer matches the requested version.",
-                    409,
-                    AiErrorCodes.DraftConcurrencyConflict);
-            }
-
+            if (!string.IsNullOrWhiteSpace(dto.Version)) return BudgetConflict();
+            isNewPolicy = true;
             policy = new AiBudgetPolicy
             {
-                TenantId = project.OrganizationId,
-                ProjectId = project.Id,
+                TenantId = scope.OrganizationId,
+                ProjectId = scope.ProjectId,
                 CreatedBy = _currentUser.UserId
             };
             await _budgets.AddAsync(policy, cancellationToken);
@@ -239,29 +289,40 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
         policy.WarnAtPercent = dto.WarningAtPercent;
         policy.HardStopEnabled = dto.HardStopEnabled;
         policy.AllowCloudForSensitive = dto.AllowCloudForSensitive;
-        await _budgets.UpdateAsync(policy, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        if (!isNewPolicy)
+        {
+            await _budgets.UpdateAsync(policy, cancellationToken);
+        }
+
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return BudgetConflict();
+        }
+        catch (DbUpdateException)
+        {
+            return BudgetConflict();
+        }
+
         await _auditLog.LogAsync(
             "UpdateAiBudgetPolicy",
             nameof(AiBudgetPolicy),
             policy.Id.ToString(),
             new
             {
-                projectId,
+                scope.ScopeType,
+                scope.ScopeId,
+                scope.OrganizationId,
+                scope.ProjectId,
                 Previous = previous,
-                Current = new
-                {
-                    policy.DailyBudgetUsd,
-                    policy.MonthlyBudgetUsd,
-                    policy.WarnAtPercent,
-                    policy.HardStopEnabled,
-                    policy.AllowCloudForSensitive,
-                    Version = PolicyVersion(policy)
-                }
+                Current = PolicyAuditSnapshot(policy)
             },
             cancellationToken);
 
-        return await GetBudgetAsync(projectId, cancellationToken);
+        return await BuildBudgetSnapshotAsync(scope, cancellationToken);
     }
 
     private IQueryable<AiJob> VisibleJobs()
@@ -277,17 +338,72 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
             (job.Project != null && job.Project.OwnerId == userId));
     }
 
-    private async Task<bool> CanAccessProjectAsync(Guid projectId, CancellationToken ct)
+    private async Task<Result<ResolvedBudgetScope>> ResolveScopeAsync(
+        Guid? organizationId,
+        Guid? projectId,
+        CancellationToken ct)
     {
-        var userId = _currentUser.UserId!.Value;
-        if (ProjectRoleRules.IsSystemAdmin(_currentUser.Role)) return true;
-        var project = await _projects.GetQueryable().AsNoTracking().FirstOrDefaultAsync(item => item.Id == projectId, ct);
-        if (project == null) return false;
-        if (project.OwnerId == userId) return true;
-        if (await _projectMembers.GetQueryable().AnyAsync(member => member.ProjectId == projectId && member.UserId == userId, ct)) return true;
-        return project.OrganizationId.HasValue && await _organizationMembers.GetQueryable().AnyAsync(
-            member => member.OrganizationId == project.OrganizationId.Value && member.UserId == userId,
-            ct);
+        if (!_currentUser.UserId.HasValue)
+        {
+            return Result.Failure<ResolvedBudgetScope>(
+                "Authentication is required.",
+                403,
+                AiErrorCodes.PermissionDenied);
+        }
+
+        if (!organizationId.HasValue && !projectId.HasValue)
+        {
+            return Result.Failure<ResolvedBudgetScope>(
+                "organizationId or projectId is required.",
+                400,
+                AiErrorCodes.InvalidRequest);
+        }
+
+        if (projectId.HasValue)
+        {
+            var project = await _projects.GetQueryable().AsNoTracking()
+                .FirstOrDefaultAsync(item => item.Id == projectId.Value && !item.IsDeleted, ct);
+            if (project == null ||
+                (organizationId.HasValue && project.OrganizationId != organizationId))
+            {
+                return Result.Failure<ResolvedBudgetScope>(
+                    "AI budget scope was not found.",
+                    404,
+                    AiErrorCodes.PermissionDenied);
+            }
+
+            if (!await CanManageProjectAsync(project, ct))
+            {
+                return Result.Failure<ResolvedBudgetScope>(
+                    "AI budget scope was not found.",
+                    404,
+                    AiErrorCodes.PermissionDenied);
+            }
+
+            return Result.Success(new ResolvedBudgetScope(
+                "project",
+                project.Id,
+                project.OrganizationId,
+                project.Id,
+                project.Name));
+        }
+
+        var organization = await _organizations.GetQueryable().AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == organizationId!.Value && item.IsActive, ct);
+        if (organization == null || !await CanManageOrganizationBudgetAsync(organization, ct))
+        {
+            return Result.Failure<ResolvedBudgetScope>(
+                "AI budget scope was not found.",
+                404,
+                AiErrorCodes.PermissionDenied);
+        }
+
+        return Result.Success(new ResolvedBudgetScope(
+            "organization",
+            organization.Id,
+            organization.Id,
+            null,
+            organization.Name));
     }
 
     private async Task<bool> CanManageProjectAsync(Project project, CancellationToken ct)
@@ -304,8 +420,154 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
             .Where(member => member.OrganizationId == project.OrganizationId.Value && member.UserId == userId)
             .Select(member => member.Role)
             .FirstOrDefaultAsync(ct);
-        return OrganizationRoleRules.CanManageOrganization(organizationRole);
+        return OrganizationRoleRules.CanManageAiBudget(organizationRole);
     }
+
+    private async Task<bool> CanManageOrganizationBudgetAsync(Organization organization, CancellationToken ct)
+    {
+        var userId = _currentUser.UserId!.Value;
+        if (ProjectRoleRules.IsSystemAdmin(_currentUser.Role) || organization.OwnerId == userId) return true;
+        var role = await _organizationMembers.GetQueryable()
+            .Where(member => member.OrganizationId == organization.Id && member.UserId == userId)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+        return OrganizationRoleRules.CanManageAiBudget(role);
+    }
+
+    private async Task<Result<AiBudgetSnapshotDto>> BuildBudgetSnapshotAsync(
+        ResolvedBudgetScope scope,
+        CancellationToken ct)
+    {
+        var directPolicy = await DirectPolicyQuery(scope).AsNoTracking().FirstOrDefaultAsync(ct);
+        AiBudgetPolicy? effectivePolicy = directPolicy;
+        if (effectivePolicy == null && scope.ProjectId.HasValue && scope.OrganizationId.HasValue)
+        {
+            effectivePolicy = await _budgets.GetQueryable().AsNoTracking()
+                .FirstOrDefaultAsync(
+                    item => item.ProjectId == null && item.TenantId == scope.OrganizationId.Value,
+                    ct);
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var startOfDay = new DateTimeOffset(now.Year, now.Month, now.Day, 0, 0, 0, TimeSpan.Zero);
+        var startOfMonth = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
+        var costsQuery = _usage.GetQueryable().AsNoTracking().Where(entry => entry.CreatedAt >= startOfMonth);
+        if (effectivePolicy?.ProjectId.HasValue == true ||
+            (effectivePolicy == null && scope.ProjectId.HasValue))
+        {
+            costsQuery = costsQuery.Where(entry => entry.ProjectId == scope.ProjectId);
+        }
+        else
+        {
+            costsQuery = costsQuery.Where(entry => entry.TenantId == scope.OrganizationId);
+        }
+
+        var costs = await costsQuery
+            .Select(entry => new { entry.CreatedAt, Cost = entry.ActualCostUsd ?? entry.EstimatedCostUsd })
+            .ToListAsync(ct);
+        var dailyUsage = costs.Where(entry => entry.CreatedAt >= startOfDay).Sum(entry => entry.Cost);
+        var monthlyUsage = costs.Sum(entry => entry.Cost);
+        var dailyLimit = effectivePolicy?.DailyBudgetUsd ?? decimal.MaxValue;
+        var monthlyLimit = effectivePolicy?.MonthlyBudgetUsd ?? decimal.MaxValue;
+        var warningPercent = effectivePolicy?.WarnAtPercent ?? 80;
+        var warningActive = IsThresholdReached(dailyUsage, dailyLimit, warningPercent) ||
+                            IsThresholdReached(monthlyUsage, monthlyLimit, warningPercent);
+        var hardStop = effectivePolicy?.HardStopEnabled == true &&
+                       (dailyUsage >= dailyLimit || monthlyUsage >= monthlyLimit);
+        var policySource = effectivePolicy == null
+            ? "none"
+            : effectivePolicy.ProjectId.HasValue ? "project" : "organization";
+
+        return Result.Success(new AiBudgetSnapshotDto(
+            scope.ScopeType,
+            scope.ScopeId,
+            scope.OrganizationId,
+            scope.ProjectId,
+            scope.Name,
+            directPolicy?.Id,
+            effectivePolicy?.Id,
+            policySource,
+            directPolicy == null && effectivePolicy != null,
+            effectivePolicy != null,
+            true,
+            _options.CurrentValue.BudgetUiEnabled,
+            effectivePolicy?.DailyBudgetUsd ?? 0,
+            effectivePolicy?.MonthlyBudgetUsd ?? 0,
+            warningPercent,
+            effectivePolicy?.HardStopEnabled ?? false,
+            dailyUsage,
+            monthlyUsage,
+            dailyLimit == decimal.MaxValue ? 0 : Math.Max(0, dailyLimit - dailyUsage),
+            monthlyLimit == decimal.MaxValue ? 0 : Math.Max(0, monthlyLimit - monthlyUsage),
+            warningActive,
+            hardStop,
+            effectivePolicy?.AllowCloudForSensitive ?? false,
+            PolicyVersion(directPolicy),
+            PolicyVersion(effectivePolicy),
+            now));
+    }
+
+    private IQueryable<AiBudgetPolicy> DirectPolicyQuery(ResolvedBudgetScope scope)
+        => scope.ProjectId.HasValue
+            ? _budgets.GetQueryable().Where(item => item.ProjectId == scope.ProjectId.Value)
+            : _budgets.GetQueryable().Where(item =>
+                item.ProjectId == null && item.TenantId == scope.OrganizationId);
+
+    private static List<AiUsageBreakdownDto> BuildBreakdown(
+        IReadOnlyList<AiUsageLedger> rows,
+        Func<AiUsageLedger, string> keySelector)
+        => rows
+            .GroupBy(keySelector, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new AiUsageBreakdownDto(
+                group.Key,
+                group.Count(),
+                group.Count(IsSuccessful),
+                group.Count(IsFailed),
+                group.Sum(entry => entry.InputTokens),
+                group.Sum(entry => entry.OutputTokens),
+                group.Sum(entry => entry.EstimatedCostUsd),
+                group.Sum(EffectiveCost),
+                group.Count(entry => entry.CacheHit)))
+            .OrderByDescending(item => item.EffectiveCostUsd)
+            .ThenBy(item => item.Key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private static bool IsSuccessful(AiUsageLedger entry)
+        => string.Equals(entry.Status, "success", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(entry.Status, "succeeded", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsFailed(AiUsageLedger entry)
+        => string.Equals(entry.Status, "failed", StringComparison.OrdinalIgnoreCase);
+
+    private static decimal EffectiveCost(AiUsageLedger entry)
+        => entry.ActualCostUsd ?? entry.EstimatedCostUsd;
+
+    private static string EmptyAsUnknown(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "unknown" : value.Trim();
+
+    private static object PolicyAuditSnapshot(AiBudgetPolicy policy)
+        => new
+        {
+            policy.DailyBudgetUsd,
+            policy.MonthlyBudgetUsd,
+            policy.WarnAtPercent,
+            policy.HardStopEnabled,
+            policy.AllowCloudForSensitive,
+            Version = PolicyVersion(policy)
+        };
+
+    private static Result<AiBudgetSnapshotDto> BudgetConflict()
+        => Result.Failure<AiBudgetSnapshotDto>(
+            "The AI budget policy was modified by another request. Reload before confirming again.",
+            409,
+            AiErrorCodes.BudgetPolicyConflict);
+
+    private sealed record ResolvedBudgetScope(
+        string ScopeType,
+        Guid ScopeId,
+        Guid? OrganizationId,
+        Guid? ProjectId,
+        string Name);
 
     private static string? PolicyVersion(AiBudgetPolicy? policy)
         => policy == null ? null : (policy.UpdatedAt ?? policy.CreatedAt).ToString("O");

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { browserApiRequest } from './support/browser-api'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -59,7 +60,7 @@ async function login(page: Page) {
 }
 
 async function createProject(page: Page, name: string) {
-  return apiResult<{ id: string; name: string }>(await page.request.post('/api/projects', {
+  return apiResult<{ id: string; name: string }>(await browserApiRequest(page, 'POST', '/api/projects', {
     data: {
       name,
       code: null,
@@ -74,7 +75,7 @@ async function createProject(page: Page, name: string) {
 }
 
 async function createTask(page: Page, projectId: string, title: string) {
-  return apiResult<{ id: string; title: string }>(await page.request.post('/api/tasks', {
+  return apiResult<{ id: string; title: string }>(await browserApiRequest(page, 'POST', '/api/tasks', {
     data: {
       title,
       description: 'E2E task for canonical navigation',
@@ -127,10 +128,10 @@ test('canonical task opens from project and tasks pages, refresh and back keep t
     await expect(page.locator('.task-detail-drawer')).toContainText(taskTitle)
   } finally {
     if (taskId) {
-      await page.request.delete(`/api/tasks/${taskId}`).catch(() => undefined)
+      await browserApiRequest(page, 'DELETE', `/api/tasks/${taskId}`).catch(() => undefined)
     }
     if (projectId) {
-      await page.request.delete(`/api/projects/${projectId}`).catch(() => undefined)
+      await browserApiRequest(page, 'DELETE', `/api/projects/${projectId}`).catch(() => undefined)
     }
   }
 })
@@ -138,12 +139,16 @@ test('canonical task opens from project and tasks pages, refresh and back keep t
 test('privacy policy writes through API and Settings stays truthful on partial failure', async ({ page }) => {
   let projectId = ''
   let projectUpdateWasIntercepted = false
+  let originalProfile: { fullName: string; avatarUrl: string | null } | null = null
   const projectName = uniqueName('E2E Privacy Project')
   const policyName = uniqueName('E2E Privacy Policy')
   const renamedUser = uniqueName('E2E Settings User')
 
   try {
     await login(page)
+    originalProfile = await apiResult<{ fullName: string; avatarUrl: string | null }>(
+      await browserApiRequest(page, 'GET', '/api/auth/me'),
+    )
     const project = await createProject(page, projectName)
     projectId = project.id
 
@@ -184,8 +189,13 @@ test('privacy policy writes through API and Settings stays truthful on partial f
     await expect(page.locator('.toast-card')).toContainText('Không thể cập nhật cấu hình bảng công việc.')
     await expect(page.locator('.toast-card')).not.toContainText('Đã lưu tất cả cấu hình thành công!')
   } finally {
+    if (originalProfile) {
+      await browserApiRequest(page, 'PUT', '/api/auth/profile', {
+        data: originalProfile,
+      }).catch(() => undefined)
+    }
     if (projectId) {
-      await page.request.delete(`/api/projects/${projectId}`).catch(() => undefined)
+      await browserApiRequest(page, 'DELETE', `/api/projects/${projectId}`).catch(() => undefined)
     }
   }
 })

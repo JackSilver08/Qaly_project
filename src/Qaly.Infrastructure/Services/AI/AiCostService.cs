@@ -30,8 +30,11 @@ public class AiCostService : IAiCostService
         var now = DateTimeOffset.UtcNow;
         var startOfDay = new DateTimeOffset(now.Year, now.Month, now.Day, 0, 0, 0, TimeSpan.Zero);
         var startOfMonth = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
-        var usage = await _context.AiUsageLedger
-            .Where(u => u.ProjectId == projectId && u.CreatedAt >= startOfMonth)
+        var usageQuery = _context.AiUsageLedger.Where(u => u.CreatedAt >= startOfMonth);
+        usageQuery = policy.ProjectId.HasValue
+            ? usageQuery.Where(u => u.ProjectId == policy.ProjectId)
+            : usageQuery.Where(u => u.TenantId == policy.TenantId);
+        var usage = await usageQuery
             .Select(u => new { u.CreatedAt, Cost = u.ActualCostUsd ?? u.EstimatedCostUsd })
             .ToListAsync(cancellationToken);
         var usageToday = usage.Where(item => item.CreatedAt >= startOfDay).Sum(item => item.Cost);

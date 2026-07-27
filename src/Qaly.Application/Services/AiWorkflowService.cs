@@ -27,6 +27,7 @@ public class AiWorkflowService : IAiWorkflowService
     private readonly IRepository<MeetingImport> _meetingImportRepo;
     private readonly IRepository<MeetingActionItemMapping> _meetingActionItemMappingRepo;
     private readonly IRepository<TaskItem> _taskRepo;
+    private readonly IRepository<Sprint> _sprintRepo;
     private readonly IRepository<TaskAssignment> _taskAssignmentRepo;
     private readonly IRepository<User> _userRepo;
     private readonly IUnitOfWork _unitOfWork;
@@ -44,6 +45,9 @@ public class AiWorkflowService : IAiWorkflowService
     private readonly IOptionsMonitor<AiJobPlatformOptions>? _platformOptions;
     private readonly Qaly.Application.Common.Interfaces.IEmailService? _emailService;
     private readonly Qaly.Application.Services.INotificationService? _notificationService;
+    private readonly ITaskAccessPolicy? _taskAccessPolicy;
+    private readonly IRepository<OrganizationSkill>? _organizationSkillRepo;
+    private readonly IRepository<TaskSkillRequirement>? _taskSkillRequirementRepo;
 
     public AiWorkflowService(
         IRepository<Project> projectRepo,
@@ -54,6 +58,7 @@ public class AiWorkflowService : IAiWorkflowService
         IRepository<MeetingImport> meetingImportRepo,
         IRepository<MeetingActionItemMapping> meetingActionItemMappingRepo,
         IRepository<TaskItem> taskRepo,
+        IRepository<Sprint> sprintRepo,
         IRepository<TaskAssignment> taskAssignmentRepo,
         IRepository<User> userRepo,
         IUnitOfWork unitOfWork,
@@ -70,7 +75,10 @@ public class AiWorkflowService : IAiWorkflowService
         IOptionsMonitor<AiJobPlatformOptions>? platformOptions = null,
         IAiAgentOrchestrator? agentOrchestrator = null,
         Qaly.Application.Common.Interfaces.IEmailService? emailService = null,
-        Qaly.Application.Services.INotificationService? notificationService = null)
+        Qaly.Application.Services.INotificationService? notificationService = null,
+        ITaskAccessPolicy? taskAccessPolicy = null,
+        IRepository<OrganizationSkill>? organizationSkillRepo = null,
+        IRepository<TaskSkillRequirement>? taskSkillRequirementRepo = null)
     {
         _projectRepo = projectRepo;
         _projectMemberRepo = projectMemberRepo;
@@ -80,6 +88,7 @@ public class AiWorkflowService : IAiWorkflowService
         _meetingImportRepo = meetingImportRepo;
         _meetingActionItemMappingRepo = meetingActionItemMappingRepo;
         _taskRepo = taskRepo;
+        _sprintRepo = sprintRepo;
         _taskAssignmentRepo = taskAssignmentRepo;
         _userRepo = userRepo;
         _unitOfWork = unitOfWork;
@@ -97,12 +106,420 @@ public class AiWorkflowService : IAiWorkflowService
         _platformOptions = platformOptions;
         _emailService = emailService;
         _notificationService = notificationService;
+        _taskAccessPolicy = taskAccessPolicy;
+        _organizationSkillRepo = organizationSkillRepo;
+        _taskSkillRequirementRepo = taskSkillRequirementRepo;
     }
 
     public Task<Result<AiJobCreatedDto>> CreateJobAsync(
         CreateAiJobDto dto,
         CancellationToken ct = default)
         => CreateJobAsync(dto, $"legacy:{Guid.NewGuid():N}", ct: ct);
+
+    public Task<Result<AiJobCreatedDto>> CreateProjectProgressSummaryAsync(
+        Guid projectId,
+        ProjectProgressSummaryRequestDto dto,
+        string idempotencyKey,
+        string? requestId = null,
+        CancellationToken ct = default)
+        => CreateProgressSummaryAsync(projectId, null, dto, idempotencyKey, requestId, ct);
+
+    public Task<Result<AiJobCreatedDto>> CreateSprintProgressSummaryAsync(
+        Guid projectId,
+        Guid sprintId,
+        ProjectProgressSummaryRequestDto dto,
+        string idempotencyKey,
+        string? requestId = null,
+        CancellationToken ct = default)
+        => CreateProgressSummaryAsync(projectId, sprintId, dto, idempotencyKey, requestId, ct);
+
+    public async Task<Result<AiJobCreatedDto>> CreateTaskSkillSuggestionAsync(
+        Guid taskId,
+        TaskSkillSuggestionRequestDto dto,
+        string idempotencyKey,
+        string? requestId = null,
+        CancellationToken ct = default)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (!currentUserId.HasValue)
+        {
+            return Result.NotFound<AiJobCreatedDto>();
+        }
+        if (_platformOptions != null && !_platformOptions.CurrentValue.TaskSkillSuggestionEnabled)
+        {
+            return Result.Failure<AiJobCreatedDto>(
+                "Task skill suggestions are disabled. Manual skill tagging remains available.",
+                503,
+                AiErrorCodes.PlatformDisabled);
+        }
+
+        var cacheMode = string.IsNullOrWhiteSpace(dto.CacheMode)
+            ? "use"
+            : dto.CacheMode.Trim().ToLowerInvariant();
+        if (cacheMode is not ("use" or "bypass" or "refresh"))
+        {
+            return Result.Failure<AiJobCreatedDto>(
+                "cache_mode must be use, bypass, or refresh.",
+                400,
+                AiErrorCodes.InvalidRequest);
+        }
+        var language = string.IsNullOrWhiteSpace(dto.Language)
+            ? "vi"
+            : dto.Language.Trim().ToLowerInvariant();
+        if (language is not ("vi" or "en"))
+        {
+            return Result.Failure<AiJobCreatedDto>(
+                "language must be vi or en.",
+                400,
+                AiErrorCodes.InvalidRequest);
+        }
+
+        var task = await _taskRepo.GetQueryable()
+            .AsNoTracking()
+            .Include(item => item.Project)
+                .ThenInclude(project => project.Organization)
+            .Include(item => item.Assignees)
+            .FirstOrDefaultAsync(item => item.Id == taskId && !item.IsDeleted, ct);
+        if (task?.Project?.OrganizationId == null || task.Project.Organization == null)
+        {
+            return Result.Failure<AiJobCreatedDto>(
+                "The task was not found or its project is not attached to an organization.",
+                404,
+                AiErrorCodes.SkillOrganizationRequired);
+        }
+
+        var canManage = _taskAccessPolicy != null
+            ? await _taskAccessPolicy.CanManageTaskAsync(task, ct)
+            : await CanManageProjectAsync(task.Project, currentUserId.Value, ct);
+        if (!canManage)
+        {
+            return Result.NotFound<AiJobCreatedDto>();
+        }
+
+        var catalog = await RequireOrganizationSkillRepository().GetQueryable()
+            .AsNoTracking()
+            .Where(skill =>
+                skill.OrganizationId == task.Project.OrganizationId.Value &&
+                skill.IsActive)
+            .OrderBy(skill => skill.Id)
+            .Select(skill => new TaskSkillCatalogItemDto(skill.Id, skill.Name, skill.Description))
+            .ToListAsync(ct);
+        var catalogVersion = ComputeHash(JsonSerializer.Serialize(catalog, JsonOptions));
+        var taskRowVersion = task.RowVersion.Length == 0
+            ? (task.UpdatedAt ?? task.CreatedAt).ToUnixTimeMilliseconds().ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : Convert.ToBase64String(task.RowVersion);
+        var sourceVersion = ComputeHash(
+            $"{task.Id:D}|{taskRowVersion}|{task.Title}|{task.Description}|{catalogVersion}");
+        var snapshot = new TaskSkillSuggestionSnapshotDto(
+            TaskSkillAiContract.SnapshotSchemaId,
+            new TaskSkillSuggestionTaskContextDto(
+                task.Id,
+                task.ProjectId,
+                task.Project.OrganizationId.Value,
+                taskRowVersion,
+                task.Title,
+                task.Description,
+                task.Priority,
+                task.IsPrivate,
+                $"task:{task.Id:D}"),
+            sourceVersion,
+            catalogVersion,
+            language,
+            catalog);
+        var snapshotJson = JsonSerializer.Serialize(snapshot, JsonOptions);
+        var options = JsonSerializer.SerializeToElement(new
+        {
+            prompt = language == "vi"
+                ? "Chỉ chọn các kỹ năng thực sự cần cho task từ catalog được cấp. Không tạo skill hoặc ID mới. Trả JSON có schemaId, taskId, sourceVersion, dataState, suggestions, unmappedTerms và generatedAt. Mỗi suggestion phải có skillId, canonicalName, requiredLevel, confidence, rationale và sourceRefs."
+                : "Select only skills genuinely required by the task from the supplied catalog. Never invent a skill or ID. Return JSON with schemaId, taskId, sourceVersion, dataState, suggestions, unmappedTerms, and generatedAt. Every suggestion requires skillId, canonicalName, requiredLevel, confidence, rationale, and sourceRefs.",
+            systemPrompt = $"Return only valid JSON matching {TaskSkillAiContract.SchemaId}. Use only authorized catalog IDs. Do not mutate the task or create taxonomy entries."
+        }, JsonOptions);
+
+        return await CreateJobAsync(
+            new CreateAiJobDto(
+                TaskSkillAiContract.JobType,
+                task.ProjectId,
+                "task",
+                task.Id.ToString("D"),
+                dto.ProviderHint,
+                task.IsPrivate,
+                snapshotJson,
+                [
+                    new AiJobSourceInputDto("task", task.Id, null, null, null),
+                    new AiJobSourceInputDto("skillcatalog", task.Project.OrganizationId.Value, null, null, null)
+                ],
+                TaskSkillAiContract.SchemaId,
+                "1.0",
+                null,
+                null,
+                null,
+                null,
+                dto.MaximumEstimatedCostUsd,
+                cacheMode,
+                language,
+                options),
+            idempotencyKey,
+            requestId,
+            ct);
+    }
+
+    private async Task<Result<AiJobCreatedDto>> CreateProgressSummaryAsync(
+        Guid projectId,
+        Guid? sprintId,
+        ProjectProgressSummaryRequestDto dto,
+        string idempotencyKey,
+        string? requestId,
+        CancellationToken ct)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (!currentUserId.HasValue)
+        {
+            return Result.Forbidden<AiJobCreatedDto>();
+        }
+
+        if (!string.Equals(dto.Period, "current_snapshot", StringComparison.OrdinalIgnoreCase))
+        {
+            return Result.Failure<AiJobCreatedDto>(
+                "Only period=current_snapshot is supported.",
+                400,
+                AiErrorCodes.InvalidRequest);
+        }
+
+        var cacheMode = string.IsNullOrWhiteSpace(dto.CacheMode)
+            ? "use"
+            : dto.CacheMode.Trim().ToLowerInvariant();
+        if (cacheMode is not ("use" or "bypass" or "refresh"))
+        {
+            return Result.Failure<AiJobCreatedDto>(
+                "cache_mode must be use, bypass, or refresh.",
+                400,
+                AiErrorCodes.InvalidRequest);
+        }
+        var language = string.IsNullOrWhiteSpace(dto.Language)
+            ? "vi"
+            : dto.Language.Trim().ToLowerInvariant();
+        if (language is not ("vi" or "en"))
+        {
+            return Result.Failure<AiJobCreatedDto>(
+                "language must be vi or en.",
+                400,
+                AiErrorCodes.InvalidRequest);
+        }
+        var narrativeLanguage = language == "vi" ? "Vietnamese" : "English";
+
+        var project = await _projectRepo.GetQueryable()
+            .AsNoTracking()
+            .Include(item => item.Organization)
+            .FirstOrDefaultAsync(item => item.Id == projectId && !item.IsDeleted, ct);
+        if (project == null)
+        {
+            return Result.Failure<AiJobCreatedDto>("Project was not found.", 404);
+        }
+
+        if (!await CanManageProjectAsync(project, currentUserId.Value, ct))
+        {
+            return Result.Forbidden<AiJobCreatedDto>();
+        }
+
+        Sprint? sprint = null;
+        if (sprintId.HasValue)
+        {
+            sprint = await _sprintRepo.GetQueryable()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(
+                    item => item.Id == sprintId.Value && item.ProjectId == project.Id,
+                    ct);
+            if (sprint == null)
+            {
+                return Result.Failure<AiJobCreatedDto>("Sprint was not found.", 404);
+            }
+        }
+
+        var taskQuery = _taskRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(item => item.ProjectId == projectId && !item.IsDeleted);
+        if (sprint != null)
+        {
+            taskQuery = taskQuery.Where(item => item.SprintId == sprint.Id);
+        }
+        var activeTasks = await taskQuery.ToListAsync(ct);
+        var includedTasks = activeTasks
+            .Where(item => item.ContributesToProgress &&
+                !string.Equals(item.Status, "Cancelled", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(item => item.Id)
+            .ToList();
+
+        var now = DateTimeOffset.UtcNow;
+        var snapshotAt = new DateTimeOffset(
+            now.Year,
+            now.Month,
+            now.Day,
+            now.Hour,
+            now.Minute - now.Minute % 5,
+            0,
+            TimeSpan.Zero);
+        var dueSoonBoundary = snapshotAt.AddHours(48);
+        var isDone = (TaskItem item) => string.Equals(item.Status, "Done", StringComparison.OrdinalIgnoreCase);
+        var done = includedTasks.Count(isDone);
+        var todo = includedTasks.Count(item => string.Equals(item.Status, "Todo", StringComparison.OrdinalIgnoreCase));
+        var inProgress = includedTasks.Count - done - todo;
+        var overdue = includedTasks.Count(item =>
+            !isDone(item) && item.DueDate.HasValue && item.DueDate.Value < snapshotAt);
+        var dueSoon = includedTasks.Count(item =>
+            !isDone(item) &&
+            item.DueDate.HasValue &&
+            item.DueDate.Value >= snapshotAt &&
+            item.DueDate.Value <= dueSoonBoundary);
+        var completionRate = includedTasks.Count == 0
+            ? 0m
+            : Math.Round(done * 100m / includedTasks.Count, 2, MidpointRounding.AwayFromZero);
+        var sourceHash = sprint == null
+            ? AiProgressSummaryFingerprint.Compute(project, includedTasks)
+            : AiProgressSummaryFingerprint.Compute(project, sprint, includedTasks);
+        var scopeSourceKey = sprint == null
+            ? $"project:{project.Id:D}"
+            : $"sprint:{sprint.Id:D}";
+
+        var riskTasks = includedTasks
+            .Where(item => !isDone(item) && item.DueDate.HasValue)
+            .OrderBy(item => item.DueDate.GetValueOrDefault() < snapshotAt ? 0 : 1)
+            .ThenBy(item => item.DueDate)
+            .ThenByDescending(item => item.Priority)
+            .Take(12)
+            .ToList();
+        var sourceRefs = new List<object>
+        {
+            new
+            {
+                key = scopeSourceKey,
+                type = sprint == null ? "project" : "sprint",
+                entityId = sprint?.Id ?? project.Id,
+                label = sprint?.Name ?? project.Name,
+                url = sprint == null
+                    ? $"/projects/{project.Id:D}"
+                    : $"/projects/{project.Id:D}#milestone-{sprint.Id:D}",
+                version = sourceHash
+            }
+        };
+        sourceRefs.AddRange(riskTasks.Select(item => (object)new
+        {
+            key = $"task:{item.Id:D}",
+            type = "task",
+            entityId = item.Id,
+            label = item.Title,
+            url = $"/projects/{project.Id:D}/tasks/{item.Id:D}",
+            version = item.RowVersion.Length > 0
+                ? Convert.ToBase64String(item.RowVersion)
+                : item.UpdatedAt?.ToString("O")
+        }));
+
+        object summaryScope = sprint == null
+            ? new
+            {
+                projectId = project.Id,
+                projectName = project.Name,
+                projectCode = project.Code
+            }
+            : new
+            {
+                type = "sprint",
+                projectId = project.Id,
+                projectName = project.Name,
+                projectCode = project.Code,
+                sprintId = sprint.Id,
+                sprintName = sprint.Name
+            };
+        var snapshot = new
+        {
+            snapshotVersion = sprint == null
+                ? "project_progress_snapshot.v1"
+                : "sprint_progress_snapshot.v1",
+            scope = summaryScope,
+            period = new
+            {
+                kind = "current_snapshot",
+                snapshotAt
+            },
+            coverage = new
+            {
+                dataState = includedTasks.Count == 0 ? "empty" : "sufficient",
+                visibility = "manager_full_project",
+                includedTaskCount = includedTasks.Count,
+                excludedTaskCount = activeTasks.Count - includedTasks.Count
+            },
+            metrics = new
+            {
+                total = includedTasks.Count,
+                done,
+                inProgress,
+                todo,
+                overdue,
+                dueSoon,
+                completionRate
+            },
+            sourceRefs,
+            taskFacts = riskTasks.Select(item => new
+            {
+                sourceRef = $"task:{item.Id:D}",
+                status = item.Status,
+                priority = item.Priority,
+                dueDate = item.DueDate,
+                isPrivate = item.IsPrivate
+            })
+        };
+        var snapshotJson = JsonSerializer.Serialize(snapshot, JsonOptions);
+        var options = JsonSerializer.SerializeToElement(new
+        {
+            prompt = $$"""
+                Produce only a JSON object with exactly summaryPoints, risks, and nextActions.
+                Write all human-readable text in {{narrativeLanguage}}.
+                Every item must cite at least one allowed metricRefs or sourceRefs value from the authorized snapshot.
+                Do not invent counts, dates, entities, links, or mutations. Do not repeat the server-owned metrics object.
+                summaryPoints items: { text, metricRefs: string[], sourceRefs: string[] }.
+                risks items: { code, severity: low|medium|high, title, metricRefs: string[], sourceRefs: string[] }.
+                nextActions items: { title, rationale, metricRefs: string[], sourceRefs: string[] }.
+                """,
+            systemPrompt = """
+                You are Qaly's grounded progress analyst. Use only the authorized server snapshot appended to the prompt.
+                Return valid JSON only, with no markdown and no action/tool call.
+                """
+        }, JsonOptions);
+        var timestamps = includedTasks
+            .Select(item => item.UpdatedAt)
+            .Append(project.UpdatedAt)
+            .ToList();
+        if (sprint != null) timestamps.Add(sprint.UpdatedAt);
+        var sourceTimestamp = timestamps.Where(value => value.HasValue).Max();
+        var jobType = sprint == null
+            ? "project_progress_summary"
+            : "sprint_progress_summary";
+        var sourceType = sprint == null ? "project" : "sprint";
+        var sourceId = sprint?.Id ?? project.Id;
+
+        return await CreateJobAsync(
+            new CreateAiJobDto(
+                jobType,
+                project.Id,
+                sourceType,
+                sourceId.ToString("D"),
+                dto.ProviderHint,
+                includedTasks.Any(item => item.IsPrivate),
+                snapshotJson,
+                [new AiJobSourceInputDto(sourceType, sourceId, null, null, sourceHash, sourceTimestamp)],
+                "progress_summary.v4",
+                "4.0",
+                null,
+                sourceHash,
+                null,
+                null,
+                dto.MaximumEstimatedCostUsd,
+                cacheMode,
+                language,
+                options),
+            idempotencyKey,
+            requestId,
+            ct);
+    }
 
     public async Task<Result<AiJobCreatedDto>> CreateJobAsync(
         CreateAiJobDto dto,
@@ -127,6 +544,16 @@ public class AiWorkflowService : IAiWorkflowService
         if (string.IsNullOrWhiteSpace(dto.JobType))
         {
             return Result.Failure<AiJobCreatedDto>("job_type is required.", 400);
+        }
+
+        var enabledJobTypes = _platformOptions?.CurrentValue.EnabledJobTypes ?? [];
+        if (enabledJobTypes.Length > 0 &&
+            !enabledJobTypes.Contains(dto.JobType.Trim(), StringComparer.OrdinalIgnoreCase))
+        {
+            return Result.Failure<AiJobCreatedDto>(
+                "This AI capability is disabled.",
+                503,
+                AiErrorCodes.PlatformDisabled);
         }
 
         if (string.IsNullOrWhiteSpace(idempotencyKey))
@@ -408,6 +835,7 @@ public class AiWorkflowService : IAiWorkflowService
             .Include(job => job.Project)
                 .ThenInclude(project => project!.Organization)
             .Include(job => job.Drafts)
+            .Include(job => job.Sources)
             .AsQueryable();
 
         if (projectId.HasValue)
@@ -445,7 +873,16 @@ public class AiWorkflowService : IAiWorkflowService
             .Take(200)
             .ToListAsync(ct);
 
-        return Result.Success<IReadOnlyList<AiJobSummaryDto>>(jobs.Select(ToJobSummaryDto).ToList());
+        var visibleJobs = new List<AiJobSummaryDto>(jobs.Count);
+        foreach (var job in jobs)
+        {
+            if (await CanAccessJobAsync(job, currentUserId.Value, ct))
+            {
+                visibleJobs.Add(ToJobSummaryDto(job));
+            }
+        }
+
+        return Result.Success<IReadOnlyList<AiJobSummaryDto>>(visibleJobs);
     }
 
     public async Task<Result<AiJobDetailDto>> GetJobAsync(Guid jobId, CancellationToken ct = default)
@@ -498,6 +935,18 @@ public class AiWorkflowService : IAiWorkflowService
             .OrderByDescending(entry => entry.CreatedAt)
             .Select(entry => (Guid?)entry.Id)
             .FirstOrDefault();
+        var sourceStale = false;
+        if (_sourceGuard != null && job.ProjectId.HasValue)
+        {
+            var validation = await _sourceGuard.ValidateAsync(
+                job.ProjectId.Value,
+                _currentUserService.UserId ?? job.RequestedById,
+                job.Sources.OrderBy(source => source.SortOrder).Select(ToSourceInputDto).ToList(),
+                enforceFreshness: true,
+                ct);
+            sourceStale = !validation.IsAllowed &&
+                string.Equals(validation.ErrorCode, AiErrorCodes.SourceStale, StringComparison.Ordinal);
+        }
 
         return Result.Success(new AiJobResultDto(
             job.Id,
@@ -510,7 +959,8 @@ public class AiWorkflowService : IAiWorkflowService
             usageId,
             job.CacheHit,
             job.IsMock,
-            job.MockReason));
+            job.MockReason,
+            sourceStale));
     }
 
     public async Task<Result<AiJobDetailDto>> RetryJobAsync(
@@ -692,6 +1142,8 @@ public class AiWorkflowService : IAiWorkflowService
             .AsNoTracking()
             .Include(draft => draft.Project)
                 .ThenInclude(project => project.Organization)
+            .Include(draft => draft.AiJob)
+                .ThenInclude(job => job.Sources)
             .AsQueryable();
 
         if (projectId.HasValue) query = query.Where(draft => draft.ProjectId == projectId.Value);
@@ -706,7 +1158,9 @@ public class AiWorkflowService : IAiWorkflowService
         var visible = new List<AiDraftSummaryDto>();
         foreach (var draft in candidates)
         {
-            if (await CanAccessProjectAsync(draft.Project, currentUserId.Value, ct))
+            if (await CanAccessProjectAsync(draft.Project, currentUserId.Value, ct) &&
+                (!string.Equals(draft.DraftType, TaskSkillAiContract.DraftType, StringComparison.Ordinal) ||
+                 await CanManageTaskSkillJobAsync(draft.AiJob, currentUserId.Value, ct)))
             {
                 visible.Add(ToDraftSummaryDto(draft));
             }
@@ -718,9 +1172,19 @@ public class AiWorkflowService : IAiWorkflowService
     public async Task<Result<AiDraftDetailDto>> GetDraftAsync(Guid draftId, CancellationToken ct = default)
     {
         var access = await GetVisibleDraftAsync(draftId, tracking: false, ct);
-        return access.IsSuccess
-            ? Result.Success(ToDraftDetailDto(access.Data!))
-            : Result.Failure<AiDraftDetailDto>(access.Error!, access.StatusCode, access.ErrorCode);
+        if (!access.IsSuccess)
+        {
+            return Result.Failure<AiDraftDetailDto>(access.Error!, access.StatusCode, access.ErrorCode);
+        }
+        if (string.Equals(access.Data!.DraftType, TaskSkillAiContract.DraftType, StringComparison.Ordinal) &&
+            !await CanManageTaskSkillJobAsync(access.Data.AiJob, _currentUserService.UserId!.Value, ct))
+        {
+            return Result.Failure<AiDraftDetailDto>(
+                "AI draft was not found.",
+                404,
+                AiErrorCodes.JobNotFound);
+        }
+        return Result.Success(ToDraftDetailDto(access.Data));
     }
 
     public async Task<Result<AiDraftDetailDto>> PatchDraftAsync(
@@ -735,6 +1199,14 @@ public class AiWorkflowService : IAiWorkflowService
         }
 
         var draft = access.Data!;
+        if (string.Equals(draft.DraftType, TaskSkillAiContract.DraftType, StringComparison.Ordinal) &&
+            !await CanManageTaskSkillJobAsync(draft.AiJob, _currentUserService.UserId!.Value, ct))
+        {
+            return Result.Failure<AiDraftDetailDto>(
+                "AI draft was not found.",
+                404,
+                AiErrorCodes.JobNotFound);
+        }
         if (!string.Equals(draft.Status, AiDraftStatuses.PendingReview, StringComparison.Ordinal))
         {
             return Result.Failure<AiDraftDetailDto>(
@@ -757,6 +1229,10 @@ public class AiWorkflowService : IAiWorkflowService
             if (IsTaskDraft(draft.DraftType))
             {
                 _ = DeserializeTaskDraftPayload(dto.WorkingPayloadJson, draft.DraftType);
+            }
+            if (string.Equals(draft.DraftType, TaskSkillAiContract.DraftType, StringComparison.Ordinal))
+            {
+                _ = DeserializeTaskSkillSuggestionPayload(dto.WorkingPayloadJson);
             }
         }
         catch (JsonException)
@@ -786,6 +1262,14 @@ public class AiWorkflowService : IAiWorkflowService
         }
 
         var draft = access.Data!;
+        if (string.Equals(draft.DraftType, TaskSkillAiContract.DraftType, StringComparison.Ordinal) &&
+            !await CanManageTaskSkillJobAsync(draft.AiJob, _currentUserService.UserId!.Value, ct))
+        {
+            return Result.Failure<AiDraftDetailDto>(
+                "AI draft was not found.",
+                404,
+                AiErrorCodes.JobNotFound);
+        }
         if (string.Equals(draft.Status, AiDraftStatuses.Rejected, StringComparison.Ordinal) &&
             string.Equals(draft.ConfirmationIdempotencyKey, dto.IdempotencyKey, StringComparison.Ordinal))
         {
@@ -836,6 +1320,7 @@ public class AiWorkflowService : IAiWorkflowService
             .Include(item => item.Project)
                 .ThenInclude(project => project.Organization)
             .Include(item => item.AiJob)
+                .ThenInclude(job => job.Sources)
             .FirstOrDefaultAsync(item => item.Id == draftId, ct);
         if (draft == null)
         {
@@ -948,6 +1433,7 @@ public class AiWorkflowService : IAiWorkflowService
             ? draft.WorkingPayloadJson
             : dto.EditedPayloadJson.Trim();
         AiTaskDraftPayload? payload = null;
+        TaskSkillSuggestionOutputDto? taskSkillPayload = null;
         if (string.Equals(draft.DraftType, "MeetingActionItems", StringComparison.OrdinalIgnoreCase) || 
             string.Equals(draft.DraftType, "TaskDraft", StringComparison.OrdinalIgnoreCase))
         {
@@ -960,16 +1446,57 @@ public class AiWorkflowService : IAiWorkflowService
                 return Result.Failure<AiDraftConfirmResultDto>("edited_payload is invalid JSON.", 400);
             }
         }
+        else if (string.Equals(draft.DraftType, TaskSkillAiContract.DraftType, StringComparison.Ordinal))
+        {
+            try
+            {
+                taskSkillPayload = DeserializeTaskSkillSuggestionPayload(payloadJson);
+            }
+            catch (JsonException)
+            {
+                return Result.Failure<AiDraftConfirmResultDto>(
+                    "edited_payload is invalid for task_skill_suggestion.v1.",
+                    422,
+                    AiErrorCodes.SchemaInvalid);
+            }
+        }
 
         var createdTaskIds = new List<Guid>();
         var normalizedAction = dto.ConfirmAction.Trim().ToLowerInvariant();
 
-        if (normalizedAction is not ("reject" or "execute_action" or "create_tasks"))
+        if (normalizedAction is not ("reject" or "execute_action" or "create_tasks" or TaskSkillAiContract.ConfirmAction))
         {
             return Result.Failure<AiDraftConfirmResultDto>(
                 "Unsupported confirm_action.",
                 400,
                 AiErrorCodes.InvalidRequest);
+        }
+
+        TaskSkillConfirmationPlan? taskSkillPlan = null;
+        if (string.Equals(normalizedAction, TaskSkillAiContract.ConfirmAction, StringComparison.Ordinal))
+        {
+            if (!string.Equals(draft.DraftType, TaskSkillAiContract.DraftType, StringComparison.Ordinal) ||
+                taskSkillPayload == null)
+            {
+                return Result.Failure<AiDraftConfirmResultDto>(
+                    "apply_task_skills is only valid for a TaskSkillSuggestion draft.",
+                    400,
+                    AiErrorCodes.InvalidRequest);
+            }
+
+            var planResult = await PrepareTaskSkillConfirmationAsync(
+                draft,
+                taskSkillPayload,
+                currentUserId.Value,
+                ct);
+            if (!planResult.IsSuccess || planResult.Data == null)
+            {
+                return Result.Failure<AiDraftConfirmResultDto>(
+                    planResult.Error ?? "The task skill draft is invalid.",
+                    planResult.StatusCode,
+                    planResult.ErrorCode);
+            }
+            taskSkillPlan = planResult.Data;
         }
 
         if (string.Equals(normalizedAction, "execute_action", StringComparison.OrdinalIgnoreCase))
@@ -994,7 +1521,10 @@ public class AiWorkflowService : IAiWorkflowService
         draft.ConfirmationNote = NormalizeOptional(dto.ConfirmationNote);
         try
         {
-            await _unitOfWork.SaveChangesAsync(ct);
+            if (!string.Equals(normalizedAction, TaskSkillAiContract.ConfirmAction, StringComparison.Ordinal))
+            {
+                await _unitOfWork.SaveChangesAsync(ct);
+            }
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -1339,6 +1869,38 @@ public class AiWorkflowService : IAiWorkflowService
                 }
             }
         }
+        else if (string.Equals(normalizedAction, TaskSkillAiContract.ConfirmAction, StringComparison.Ordinal))
+        {
+            var plan = taskSkillPlan!;
+            var now = DateTimeOffset.UtcNow;
+            foreach (var selection in plan.Selections)
+            {
+                var existing = plan.Task.SkillRequirements.FirstOrDefault(
+                    requirement => requirement.OrganizationSkillId == selection.Skill.Id);
+                if (existing == null)
+                {
+                    await RequireTaskSkillRequirementRepository().AddAsync(new TaskSkillRequirement
+                    {
+                        TaskItemId = plan.Task.Id,
+                        OrganizationSkillId = selection.Skill.Id,
+                        RequiredLevel = selection.RequiredLevel,
+                        Provenance = TaskSkillService.ProvenanceAiConfirmed,
+                        ConfirmedByUserId = currentUserId.Value,
+                        ConfirmedAt = now
+                    }, ct);
+                }
+                else
+                {
+                    existing.RequiredLevel = selection.RequiredLevel;
+                    existing.Provenance = TaskSkillService.ProvenanceAiConfirmed;
+                    existing.ConfirmedByUserId = currentUserId.Value;
+                    existing.ConfirmedAt = now;
+                    existing.UpdatedAt = now;
+                }
+            }
+
+            plan.Task.UpdatedAt = now;
+        }
         else if (string.Equals(normalizedAction, "create_tasks", StringComparison.OrdinalIgnoreCase))
         {
             if (!await CanManageProjectAsync(draft.Project, currentUserId.Value, ct))
@@ -1481,11 +2043,31 @@ public class AiWorkflowService : IAiWorkflowService
             draft.Status,
             normalizedAction,
             createdTaskIds.Count,
-            createdTaskIds);
+            createdTaskIds,
+            taskSkillPlan?.Selections.Count ?? 0);
         draft.ConfirmationResultJson = JsonSerializer.Serialize(confirmationResult, JsonOptions);
 
         await _aiDraftRepo.UpdateAsync(draft, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Result.Failure<AiDraftConfirmResultDto>(
+                "The task or draft changed while the skill selection was being confirmed.",
+                409,
+                taskSkillPlan == null
+                    ? AiErrorCodes.DraftConcurrencyConflict
+                    : AiErrorCodes.TaskSkillConcurrencyConflict);
+        }
+        catch (DbUpdateException) when (taskSkillPlan != null)
+        {
+            return Result.Failure<AiDraftConfirmResultDto>(
+                "The task skill selection conflicts with the current organization catalog.",
+                409,
+                AiErrorCodes.SkillCatalogConflict);
+        }
 
         if (_complianceService != null)
         {
@@ -1528,7 +2110,8 @@ public class AiWorkflowService : IAiWorkflowService
             {
                 draft.ProjectId,
                 draft.ConfirmAction,
-                createdTaskIds.Count
+                createdTaskIds.Count,
+                appliedSkillCount = taskSkillPlan?.Selections.Count ?? 0
             },
             ct);
 
@@ -1596,7 +2179,20 @@ public class AiWorkflowService : IAiWorkflowService
 
     private async Task<bool> CanAccessJobAsync(AiJob job, Guid currentUserId, CancellationToken ct)
     {
-        if (IsAdmin() || job.RequestedById == currentUserId) return true;
+        if (IsAdmin()) return true;
+        if (IsNativeProgressSummary(job.JobType))
+        {
+            return job.Project != null && await CanManageProjectAsync(job.Project, currentUserId, ct);
+        }
+        if (IsNativeTaskSkillSuggestion(job.JobType))
+        {
+            return await CanManageTaskSkillJobAsync(job, currentUserId, ct);
+        }
+        if (job.RequestedById == currentUserId) return true;
+        if (job.Sensitive)
+        {
+            return job.Project != null && await CanManageProjectAsync(job.Project, currentUserId, ct);
+        }
         if (job.Project != null && await CanAccessProjectAsync(job.Project, currentUserId, ct)) return true;
         if (!job.TenantId.HasValue) return false;
 
@@ -1616,7 +2212,9 @@ public class AiWorkflowService : IAiWorkflowService
             requestId);
 
     private static AiJobSummaryDto ToJobSummaryDto(AiJob job)
-        => new(
+    {
+        var scopeSource = job.Sources.OrderBy(source => source.SortOrder).FirstOrDefault();
+        return new(
             job.Id,
             job.JobType,
             job.ProjectId,
@@ -1629,7 +2227,10 @@ public class AiWorkflowService : IAiWorkflowService
             job.FinishedAt,
             job.LastErrorCode,
             job.IsMock,
-            job.Drafts.Select(draft => draft.Id).ToList());
+            job.Drafts.Select(draft => draft.Id).ToList(),
+            scopeSource?.SourceType,
+            scopeSource?.SourceEntityId);
+    }
 
     private static AiJobDetailDto ToJobDetailDto(AiJob job)
         => new(
@@ -1749,9 +2350,12 @@ public class AiWorkflowService : IAiWorkflowService
             "chatsummary" or "chat_summary" => "chat_summary.v4",
             "taskdraft" or "task_draft" => "task_draft.v4",
             "assigneerecommendation" or "assignee_recommendation" => "assignee_recommendation.v4",
+            "taskskillsuggestion" or "task_skill_suggestion" => TaskSkillAiContract.SchemaId,
             "taskbreakdown" or "task_breakdown" => "task_breakdown.v4",
             "acceptancechecklist" or "acceptance_checklist" => "acceptance_checklist.v4",
-            "progresssummary" or "progress_summary" => "progress_summary.v4",
+            "progresssummary" or "progress_summary" or
+                "projectprogresssummary" or "project_progress_summary" or
+                "sprintprogresssummary" or "sprint_progress_summary" => "progress_summary.v4",
             "projectdelayresolution" or "project_delay_resolution" => "project_delay_resolution.v4",
             "draftchange" => "draft_change.v4",
             _ => string.Empty
@@ -1760,6 +2364,17 @@ public class AiWorkflowService : IAiWorkflowService
 
     private static bool IsManualSource(string sourceType)
         => sourceType.Trim().ToLowerInvariant() is "manual" or "manualtext" or "text" or "legacy";
+
+    private static bool IsNativeProgressSummary(string jobType)
+        => jobType.Trim().ToLowerInvariant() is
+            "project_progress_summary" or "projectprogresssummary" or
+            "sprint_progress_summary" or "sprintprogresssummary";
+
+    private static bool IsNativeTaskSkillSuggestion(string jobType)
+        => string.Equals(
+            new string(jobType.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray()),
+            "taskskillsuggestion",
+            StringComparison.Ordinal);
 
     private static string NormalizeProviderHint(string? providerHint)
         => string.IsNullOrWhiteSpace(providerHint) ? "auto" : providerHint.Trim();
@@ -1817,6 +2432,12 @@ public class AiWorkflowService : IAiWorkflowService
 
     private IRepository<AiJobSource> RequireSourceRepository()
         => _aiSourceRepo ?? throw new InvalidOperationException("AI source repository is not registered.");
+
+    private IRepository<OrganizationSkill> RequireOrganizationSkillRepository()
+        => _organizationSkillRepo ?? throw new InvalidOperationException("Organization skill repository is not registered.");
+
+    private IRepository<TaskSkillRequirement> RequireTaskSkillRequirementRepository()
+        => _taskSkillRequirementRepo ?? throw new InvalidOperationException("Task skill requirement repository is not registered.");
 
     private static string ComputeHash(string value)
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
@@ -2021,6 +2642,164 @@ Rules: create 1-8 non-duplicate tasks; use concise action titles; include accept
         return JsonSerializer.Deserialize<AiTaskDraftPayload>(payloadJson, JsonOptions) ?? new AiTaskDraftPayload([]);
     }
 
+    private static TaskSkillSuggestionOutputDto DeserializeTaskSkillSuggestionPayload(string payloadJson)
+    {
+        var payload = JsonSerializer.Deserialize<TaskSkillSuggestionOutputDto>(payloadJson, JsonOptions);
+        if (payload == null ||
+            !string.Equals(payload.SchemaId, TaskSkillAiContract.SchemaId, StringComparison.Ordinal) ||
+            payload.TaskId == Guid.Empty ||
+            string.IsNullOrWhiteSpace(payload.SourceVersion) ||
+            payload.DataState is not ("ready" or "empty") ||
+            payload.Suggestions == null ||
+            payload.UnmappedTerms == null ||
+            payload.Suggestions.Count > 10 ||
+            payload.Suggestions.Select(item => item.SkillId).Distinct().Count() != payload.Suggestions.Count)
+        {
+            throw new JsonException("Task skill payload does not match task_skill_suggestion.v1.");
+        }
+
+        return payload;
+    }
+
+    private async Task<Result<TaskSkillConfirmationPlan>> PrepareTaskSkillConfirmationAsync(
+        AiGeneratedDraft draft,
+        TaskSkillSuggestionOutputDto payload,
+        Guid currentUserId,
+        CancellationToken ct)
+    {
+        TaskSkillSuggestionOutputDto original;
+        TaskSkillSuggestionSnapshotDto snapshot;
+        try
+        {
+            original = DeserializeTaskSkillSuggestionPayload(draft.OriginalPayloadJson);
+            using var requestDocument = JsonDocument.Parse(draft.AiJob.RequestJson);
+            var sourceText = requestDocument.RootElement.GetProperty("sourceText").GetString();
+            snapshot = JsonSerializer.Deserialize<TaskSkillSuggestionSnapshotDto>(sourceText!, JsonOptions)
+                ?? throw new JsonException("Task skill snapshot is absent.");
+        }
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException or KeyNotFoundException or ArgumentException)
+        {
+            return Result.Failure<TaskSkillConfirmationPlan>(
+                "The persisted task skill draft context is invalid.",
+                422,
+                AiErrorCodes.SchemaInvalid);
+        }
+
+        if (payload.TaskId != original.TaskId ||
+            payload.TaskId != snapshot.Task.Id ||
+            !string.Equals(payload.SourceVersion, original.SourceVersion, StringComparison.Ordinal) ||
+            !string.Equals(payload.SourceVersion, snapshot.SourceVersion, StringComparison.Ordinal))
+        {
+            return Result.Failure<TaskSkillConfirmationPlan>(
+                "The edited draft changed its authorized task or source version.",
+                409,
+                AiErrorCodes.SourceStale);
+        }
+        if (payload.Suggestions.Count == 0)
+        {
+            return Result.Failure<TaskSkillConfirmationPlan>(
+                "Select at least one suggested skill or reject the draft.",
+                400,
+                AiErrorCodes.InvalidRequest);
+        }
+        var originalSkillIds = original.Suggestions
+            .Select(suggestion => suggestion.SkillId)
+            .ToHashSet();
+        if (payload.Suggestions.Any(suggestion => !originalSkillIds.Contains(suggestion.SkillId)))
+        {
+            return Result.Failure<TaskSkillConfirmationPlan>(
+                "The edited draft can only confirm skills present in the original AI suggestion. Add other catalog skills through the manual tagging flow.",
+                422,
+                AiErrorCodes.SkillSemanticInvalid);
+        }
+
+        var task = await _taskRepo.GetQueryable()
+            .Include(item => item.Project)
+                .ThenInclude(project => project.Organization)
+            .Include(item => item.Assignees)
+            .Include(item => item.SkillRequirements)
+                .ThenInclude(requirement => requirement.OrganizationSkill)
+            .FirstOrDefaultAsync(
+                item => item.Id == payload.TaskId && item.ProjectId == draft.ProjectId && !item.IsDeleted,
+                ct);
+        if (task?.Project?.OrganizationId == null ||
+            task.Project.OrganizationId.Value != snapshot.Task.OrganizationId)
+        {
+            return Result.NotFound<TaskSkillConfirmationPlan>();
+        }
+
+        var canManage = _taskAccessPolicy != null
+            ? await _taskAccessPolicy.CanManageTaskAsync(task, ct)
+            : await CanManageProjectAsync(task.Project, currentUserId, ct);
+        if (!canManage)
+        {
+            return Result.NotFound<TaskSkillConfirmationPlan>();
+        }
+
+        var currentTaskVersion = task.RowVersion.Length == 0
+            ? (task.UpdatedAt ?? task.CreatedAt).ToUnixTimeMilliseconds().ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : Convert.ToBase64String(task.RowVersion);
+        if (!string.Equals(currentTaskVersion, snapshot.Task.TaskRowVersion, StringComparison.Ordinal))
+        {
+            return Result.Failure<TaskSkillConfirmationPlan>(
+                "The task changed after the AI draft was generated.",
+                409,
+                AiErrorCodes.TaskSkillConcurrencyConflict);
+        }
+
+        var skillIds = payload.Suggestions.Select(item => item.SkillId).ToList();
+        var skills = await RequireOrganizationSkillRepository().GetQueryable()
+            .Where(skill =>
+                skill.OrganizationId == task.Project.OrganizationId.Value &&
+                skill.IsActive)
+            .OrderBy(skill => skill.Id)
+            .ToListAsync(ct);
+        var currentCatalog = skills
+            .Select(skill => new TaskSkillCatalogItemDto(skill.Id, skill.Name, skill.Description))
+            .ToList();
+        var currentCatalogVersion = ComputeHash(JsonSerializer.Serialize(currentCatalog, JsonOptions));
+        if (!string.Equals(currentCatalogVersion, snapshot.CatalogVersion, StringComparison.Ordinal))
+        {
+            return Result.Failure<TaskSkillConfirmationPlan>(
+                "The organization skill catalog changed after the AI draft was generated.",
+                409,
+                AiErrorCodes.SourceStale);
+        }
+
+        var skillsById = skills.ToDictionary(skill => skill.Id);
+        if (skillIds.Any(skillId => !skillsById.ContainsKey(skillId)))
+        {
+            return Result.Failure<TaskSkillConfirmationPlan>(
+                "A selected skill is inactive, absent, or outside the organization.",
+                422,
+                AiErrorCodes.SkillSemanticInvalid);
+        }
+
+        var sourceRef = $"task:{task.Id:D}";
+        var selections = new List<TaskSkillConfirmationSelection>(payload.Suggestions.Count);
+        foreach (var suggestion in payload.Suggestions)
+        {
+            var skill = skillsById[suggestion.SkillId];
+            if (!TaskSkillService.TryNormalizeLevel(suggestion.RequiredLevel, out var level) ||
+                suggestion.Confidence is < 0m or > 1m ||
+                string.IsNullOrWhiteSpace(suggestion.Rationale) ||
+                suggestion.Rationale.Length > 500 ||
+                !string.Equals(suggestion.CanonicalName, skill.Name, StringComparison.Ordinal) ||
+                suggestion.SourceRefs == null ||
+                suggestion.SourceRefs.Count == 0 ||
+                suggestion.SourceRefs.Any(reference => !string.Equals(reference, sourceRef, StringComparison.Ordinal)))
+            {
+                return Result.Failure<TaskSkillConfirmationPlan>(
+                    "A selected skill failed semantic or source validation.",
+                    422,
+                    AiErrorCodes.SkillSemanticInvalid);
+            }
+            selections.Add(new TaskSkillConfirmationSelection(skill, level));
+        }
+
+        return Result.Success(new TaskSkillConfirmationPlan(task, selections));
+    }
+
     private static MeetingExtractionPayload? TryDeserializeMeetingExtractionPayload(string payloadJson)
     {
         try
@@ -2159,6 +2938,45 @@ Rules: create 1-8 non-duplicate tasks; use concise action titles; include accept
         }
     }
 
+    private async Task<bool> CanManageTaskSkillJobAsync(
+        AiJob job,
+        Guid currentUserId,
+        CancellationToken ct)
+    {
+        var taskId = job.Sources
+            .OrderBy(source => source.SortOrder)
+            .Where(source => string.Equals(source.SourceType, "task", StringComparison.OrdinalIgnoreCase))
+            .Select(source => source.SourceEntityId)
+            .FirstOrDefault();
+        if (!taskId.HasValue && Guid.TryParse(job.SourceId, out var parsedTaskId))
+        {
+            taskId = parsedTaskId;
+        }
+        if (!taskId.HasValue)
+        {
+            return false;
+        }
+
+        var task = await _taskRepo.GetQueryable()
+            .AsNoTracking()
+            .Include(item => item.Project)
+                .ThenInclude(project => project.Organization)
+            .Include(item => item.Assignees)
+            .FirstOrDefaultAsync(
+                item => item.Id == taskId.Value &&
+                        item.ProjectId == job.ProjectId &&
+                        !item.IsDeleted,
+                ct);
+        if (task == null)
+        {
+            return false;
+        }
+
+        return _taskAccessPolicy != null && _currentUserService.UserId == currentUserId
+            ? await _taskAccessPolicy.CanManageTaskAsync(task, ct)
+            : await CanManageProjectAsync(task.Project, currentUserId, ct);
+    }
+
     private async Task<bool> IsProjectUserAsync(Project project, Guid userId, CancellationToken ct)
     {
         if (project.OwnerId == userId)
@@ -2188,4 +3006,12 @@ Rules: create 1-8 non-duplicate tasks; use concise action titles; include accept
 
     private bool IsAdmin()
         => ProjectRoleRules.IsSystemAdmin(_currentUserService.Role);
+
+    private sealed record TaskSkillConfirmationSelection(
+        OrganizationSkill Skill,
+        string RequiredLevel);
+
+    private sealed record TaskSkillConfirmationPlan(
+        TaskItem Task,
+        IReadOnlyList<TaskSkillConfirmationSelection> Selections);
 }

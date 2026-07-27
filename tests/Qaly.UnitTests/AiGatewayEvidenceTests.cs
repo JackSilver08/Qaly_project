@@ -174,6 +174,75 @@ public class AiGatewayEvidenceTests : IDisposable
     }
 
     [Fact]
+    public async Task ExecuteAsync_ProjectProgressCacheWithWrongGrounding_IsIgnoredAndProviderReplacesIt()
+    {
+        var projectId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var request = new AiRequest
+        {
+            TenantId = projectId,
+            ProjectId = projectId,
+            UserId = Guid.NewGuid(),
+            JobType = "project_progress_summary",
+            SystemPrompt = "Return grounded JSON.",
+            Prompt = "Analyze the authorized snapshot.",
+            ExpectedSchemaId = ProgressSummaryContract.SchemaId,
+            ValidationContextJson = ProgressSnapshot(projectId),
+            UseCache = true,
+            UseRetrievalAugmentation = false
+        };
+        _context.AiPromptCache.Add(new AiPromptCache
+        {
+            TenantId = projectId,
+            ProjectId = projectId,
+            CacheKey = "invalid-progress-cache",
+            JobType = request.JobType,
+            SchemaId = request.ExpectedSchemaId,
+            ProviderName = "stale-cache",
+            ModelName = "stale-model",
+            RequestHash = ComputeHash(request),
+            ResponseJson = """
+                {
+                  "summaryPoints":[{"text":"Invented velocity.","metricRefs":["velocity"],"sourceRefs":[]}],
+                  "risks":[],
+                  "nextActions":[]
+                }
+                """,
+            ExpiresAt = DateTimeOffset.UtcNow.AddDays(1)
+        });
+        await _context.SaveChangesAsync();
+        var provider = CreateMockProvider("Ollama");
+        provider.Setup(item => item.CompleteAsync(
+                It.IsAny<AiRequest>(),
+                It.IsAny<AiProviderSetting>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiResponse
+            {
+                Content = $$"""
+                    {
+                      "summaryPoints":[{"text":"One task remains active.","metricRefs":["inProgress"],"sourceRefs":["project:{{projectId:D}}"]}],
+                      "risks":[],
+                      "nextActions":[]
+                    }
+                    """,
+                ProviderName = "Ollama",
+                ModelName = "grounded-test"
+            });
+
+        var response = await CreateGatewayWithProvider(provider).ExecuteAsync(request);
+
+        response.IsSuccess.Should().BeTrue(response.ErrorMessage);
+        response.CacheHit.Should().BeFalse();
+        response.ProviderName.Should().Be("Ollama");
+        response.Content.Should().Contain("One task remains active");
+        (await _context.AiPromptCache.SingleAsync(item => item.CacheKey == "invalid-progress-cache"))
+            .ExpiresAt.Should().BeOnOrBefore(DateTimeOffset.UtcNow);
+        provider.Verify(item => item.CompleteAsync(
+            It.IsAny<AiRequest>(),
+            It.IsAny<AiProviderSetting>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task QdrantSearchAsync_WithoutProjectFilter_ThrowsBeforeProviderCall()
     {
         using var service = CreateQdrantService();
@@ -386,6 +455,44 @@ public class AiGatewayEvidenceTests : IDisposable
 
         return builder.ToString();
     }
+
+    private static string ProgressSnapshot(Guid projectId)
+        => JsonSerializer.Serialize(new
+        {
+            snapshotVersion = "project_progress_snapshot.v1",
+            scope = new { projectId, projectName = "Cache Project", projectCode = "CACHE" },
+            period = new { kind = "current_snapshot", snapshotAt = DateTimeOffset.UtcNow },
+            coverage = new
+            {
+                dataState = "sufficient",
+                visibility = "manager_full_project",
+                includedTaskCount = 1,
+                excludedTaskCount = 0
+            },
+            metrics = new
+            {
+                total = 1,
+                done = 0,
+                inProgress = 1,
+                todo = 0,
+                overdue = 0,
+                dueSoon = 0,
+                completionRate = 0m
+            },
+            sourceRefs = new[]
+            {
+                new
+                {
+                    key = $"project:{projectId:D}",
+                    type = "project",
+                    entityId = projectId,
+                    label = "Cache Project",
+                    url = $"/projects/{projectId:D}",
+                    version = "source-v1"
+                }
+            },
+            taskFacts = Array.Empty<object>()
+        });
 
     private sealed record GoldenDataset(
         string Id,

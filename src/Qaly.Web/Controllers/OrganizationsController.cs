@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Qaly.Application.DTOs.Project;
+using Qaly.Application.DTOs.Task;
 using Qaly.Application.Services;
 
 namespace Qaly.Web.Controllers;
@@ -11,10 +12,14 @@ namespace Qaly.Web.Controllers;
 public class OrganizationsController : BaseApiController
 {
     private readonly IOrganizationService _organizationService;
+    private readonly ITaskSkillService _taskSkillService;
 
-    public OrganizationsController(IOrganizationService organizationService)
+    public OrganizationsController(
+        IOrganizationService organizationService,
+        ITaskSkillService taskSkillService)
     {
         _organizationService = organizationService;
+        _taskSkillService = taskSkillService;
     }
 
     [HttpGet]
@@ -101,6 +106,40 @@ public class OrganizationsController : BaseApiController
     [HttpDelete("{id:guid}/users/{userId:guid}")]
     public Task<IActionResult> RemoveUser(Guid id, Guid userId, CancellationToken ct = default)
         => RemoveMember(id, userId, ct);
+
+    [HttpGet("{id:guid}/skills")]
+    public async Task<IActionResult> GetSkills(
+        Guid id,
+        [FromQuery] string? search = null,
+        [FromQuery] bool includeInactive = false,
+        CancellationToken ct = default)
+    {
+        var result = await _taskSkillService.GetOrganizationSkillsAsync(id, search, includeInactive, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("{id:guid}/skills")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateSkill(
+        Guid id,
+        CreateOrganizationSkillDto dto,
+        CancellationToken ct = default)
+    {
+        var result = await _taskSkillService.CreateOrganizationSkillAsync(id, dto, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPut("{id:guid}/skills/{skillId:guid}")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateSkill(
+        Guid id,
+        Guid skillId,
+        UpdateOrganizationSkillDto dto,
+        CancellationToken ct = default)
+    {
+        var result = await _taskSkillService.UpdateOrganizationSkillAsync(id, skillId, dto, ct);
+        return StatusCode(result.StatusCode, result);
+    }
 }
 
 public sealed record AddOrganizationMemberRequest(Guid UserId, string Role);

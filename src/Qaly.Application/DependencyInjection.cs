@@ -31,6 +31,7 @@ public static class DependencyInjection
         services.AddScoped<IGroupInvitationEmailBuilder, GroupInvitationEmailBuilder>();
         services.AddScoped<ILiveKitTokenService, LiveKitTokenService>();
         services.AddScoped<ITaskService, TaskService>();
+        services.AddScoped<ITaskSkillService, TaskSkillService>();
         services.AddScoped<ITaskAccessPolicy, TaskAccessPolicy>();
         services.AddScoped<ICommentService, CommentService>();
         services.AddScoped<IAttachmentService, AttachmentService>();

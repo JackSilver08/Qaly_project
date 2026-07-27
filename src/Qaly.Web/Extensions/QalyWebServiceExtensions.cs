@@ -27,9 +27,11 @@ public static class QalyWebServiceExtensions
             ? CookieSecurePolicy.SameAsRequest
             : CookieSecurePolicy.Always;
         var redisConnection = NormalizeRedisConnection(configuration.GetValue<string>("Redis:ConnectionString"));
+        var useInMemoryDistributedCache =
+            configuration.GetValue<bool>("UseInMemoryDatabase");
 
         services.AddQalyDataProtection(builder.Environment);
-        services.AddQalyRedis(redisConnection);
+        services.AddQalyRedis(redisConnection, useInMemoryDistributedCache);
         services.AddQalySession(cookieSecurePolicy);
         services.Configure<InvitationLinkOptions>(configuration.GetSection(InvitationLinkOptions.SectionName));
         services.Configure<LiveKitOptions>(configuration.GetSection(LiveKitOptions.SectionName));
@@ -86,9 +88,19 @@ public static class QalyWebServiceExtensions
             .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));
     }
 
-    private static void AddQalyRedis(this IServiceCollection services, string redisConnection)
+    private static void AddQalyRedis(
+        this IServiceCollection services,
+        string redisConnection,
+        bool useInMemoryDistributedCache)
     {
         services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(redisConnection));
+
+        if (useInMemoryDistributedCache)
+        {
+            services.AddDistributedMemoryCache();
+            return;
+        }
+
         services.AddStackExchangeRedisCache(options =>
         {
             options.Configuration = redisConnection;
