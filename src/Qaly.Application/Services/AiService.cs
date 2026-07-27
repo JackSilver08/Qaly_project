@@ -896,18 +896,7 @@ Lưu ý quan trọng:
             var result = CleanAndExtractJson<GeneratedPlanDto>(text);
             if (result != null && result.Tasks != null && result.Tasks.Count > 0)
             {
-<<<<<<< HEAD
                 return Result.Success(result);
-            }
-
-            return Result.Failure<GeneratedPlanDto>("Không thể phân tích hoặc JSON kế hoạch trả về từ AI bị rỗng.", 500);
-=======
-                var jsonStr = text.Substring(startIdx, endIdx - startIdx + 1);
-                var result = JsonSerializer.Deserialize<GeneratedPlanDto>(jsonStr, CategorizationResponseJsonOptions);
-                if (result is { Tasks.Count: > 0 })
-                {
-                    return Result.Success(result);
-                }
             }
 
             LogAiPlanFallback(_logger);
@@ -916,7 +905,6 @@ Lưu ý quan trọng:
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
->>>>>>> 3d9d1ef360ff98853bc89778d67750a90e85d3a3
         }
         catch (Exception ex)
         {
@@ -925,9 +913,6 @@ Lưu ý quan trọng:
         }
     }
 
-<<<<<<< HEAD
-    private static T? CleanAndExtractJson<T>(string rawContent) where T : class
-=======
     private static GeneratedPlanDto BuildFallbackPlan(string userPrompt, Project? projectContext)
     {
         var normalizedPrompt = userPrompt.Trim();
@@ -942,18 +927,18 @@ Lưu ý quan trọng:
             projectContext == null,
             projectContext?.Name ?? fallbackProjectName,
             projectContext?.Description ?? $"Kế hoạch dự phòng được tạo từ yêu cầu: {scope}",
-            [
-                new("Làm rõ phạm vi và tiêu chí hoàn thành", $"Xác nhận mục tiêu, đối tượng sử dụng và tiêu chí nghiệm thu cho: {scope}.", "High", 2, 4),
-                new("Thiết kế giải pháp và luồng chính", "Phác thảo kiến trúc, dữ liệu và các luồng người dùng quan trọng trước khi triển khai.", "High", 5, 6),
-                new("Chuẩn bị nền tảng triển khai", "Thiết lập cấu trúc dự án, cấu hình môi trường và các phụ thuộc cần thiết.", "Medium", 7, 6),
-                new("Phát triển chức năng cốt lõi", "Hiện thực các chức năng có giá trị cao nhất theo phạm vi đã thống nhất.", "High", 12, 12),
-                new("Kiểm thử và xử lý trường hợp biên", "Bổ sung kiểm thử tự động, kiểm tra phân quyền, dữ liệu lỗi và các luồng phục hồi.", "High", 16, 8),
-                new("Nghiệm thu và bàn giao", "Rà soát tiêu chí hoàn thành, hoàn thiện tài liệu và chuẩn bị phát hành.", "Medium", 20, 4)
-            ]);
+            new List<GeneratedPlanTaskDto>
+            {
+                new("Làm rõ phạm vi và tiêu chí hoàn thành", $"Xác nhận mục tiêu, đối tượng sử dụng và tiêu chí nghiệm thu cho: {scope}.", "High", 2, 4, "Manager", "Planning"),
+                new("Thiết kế giải pháp và luồng chính", "Phác thảo kiến trúc, dữ liệu và các luồng người dùng quan trọng trước khi triển khai.", "High", 5, 6, "Architect", "Design"),
+                new("Chuẩn bị nền tảng triển khai", "Thiết lập cấu trúc dự án, cấu hình môi trường và các phụ thuộc cần thiết.", "Medium", 7, 6, "DevOps", "Infra"),
+                new("Phát triển chức năng cốt lõi", "Hiện thực các chức năng có giá trị cao nhất theo phạm vi đã thống nhất.", "High", 12, 12, "Developer", "Feature"),
+                new("Kiểm thử và xử lý trường hợp biên", "Bổ sung kiểm thử tự động, kiểm tra phân quyền, dữ liệu lỗi và các luồng phục hồi.", "High", 16, 8, "QA", "Testing"),
+                new("Nghiệm thu và bàn giao", "Rà soát tiêu chí hoàn thành, hoàn thiện tài liệu và chuẩn bị phát hành.", "Medium", 20, 4, "Manager", "Deployment")
+            });
     }
 
-    private static string JsonEncodedName(string? val)
->>>>>>> 3d9d1ef360ff98853bc89778d67750a90e85d3a3
+    private static T? CleanAndExtractJson<T>(string rawContent) where T : class
     {
         if (string.IsNullOrWhiteSpace(rawContent)) return null;
 
