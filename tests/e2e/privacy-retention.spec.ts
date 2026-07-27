@@ -1,4 +1,5 @@
-import { expect, test, type APIResponse, type Browser, type Page, type TestInfo } from '@playwright/test'
+import { expect, test, type Browser, type Page, type TestInfo } from '@playwright/test'
+import { browserApiRequest, type BrowserApiResponse } from './support/browser-api'
 
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(120_000)
@@ -48,7 +49,7 @@ function uniqueName(prefix: string) {
   return `${prefix} ${Date.now()} ${Math.random().toString(36).slice(2, 8)}`
 }
 
-async function responseBody(response: APIResponse) {
+async function responseBody(response: BrowserApiResponse) {
   const text = await response.text()
   if (!text.trim()) return null
 
@@ -59,7 +60,7 @@ async function responseBody(response: APIResponse) {
   }
 }
 
-async function apiResult<T>(response: APIResponse): Promise<T> {
+async function apiResult<T>(response: BrowserApiResponse): Promise<T> {
   const body = await responseBody(response)
   expect(response.ok(), `API ${response.url()} returned ${response.status()}: ${JSON.stringify(body)}`).toBeTruthy()
 
@@ -74,7 +75,7 @@ async function apiResult<T>(response: APIResponse): Promise<T> {
 }
 
 async function csrfToken(page: Page) {
-  const payload = await apiResult<{ token: string }>(await page.request.get('/api/security/csrf'))
+  const payload = await apiResult<{ token: string }>(await browserApiRequest(page, 'GET', '/api/security/csrf'))
   return payload.token
 }
 
@@ -94,7 +95,7 @@ async function login(page: Page, returnUrl = '/dashboard') {
 
 async function createProject(page: Page, name: string, sourceGroupId: string | null = null) {
   return apiResult<ProjectDto>(
-    await page.request.post('/api/projects', {
+    await browserApiRequest(page, 'POST', '/api/projects', {
       data: {
         name,
         code: null,
@@ -111,7 +112,7 @@ async function createProject(page: Page, name: string, sourceGroupId: string | n
 
 async function createTask(page: Page, projectId: string, title: string) {
   return apiResult<TaskItemDto>(
-    await page.request.post('/api/tasks', {
+    await browserApiRequest(page, 'POST', '/api/tasks', {
       data: {
         title,
         description: 'Direct Task URL read-back fixture',
@@ -132,7 +133,7 @@ async function createTask(page: Page, projectId: string, title: string) {
 
 async function createGroup(page: Page, name: string) {
   return apiResult<GroupDto>(
-    await page.request.post('/api/groups', {
+    await browserApiRequest(page, 'POST', '/api/groups', {
       data: {
         name,
         color: '#2563eb',
@@ -143,7 +144,7 @@ async function createGroup(page: Page, name: string) {
 
 async function createRetentionPolicy(page: Page, projectId: string, name: string) {
   return apiResult<RetentionPolicyDto>(
-    await page.request.post('/api/privacy/policies', {
+    await browserApiRequest(page, 'POST', '/api/privacy/policies', {
       headers: { 'X-CSRF-TOKEN': await csrfToken(page) },
       data: {
         tenantId: projectId,
@@ -166,8 +167,8 @@ async function createRetentionPolicy(page: Page, projectId: string, name: string
 }
 
 async function cleanup(page: Page, projectId?: string, groupId?: string) {
-  if (groupId) await page.request.delete(`/api/groups/${groupId}`).catch(() => undefined)
-  if (projectId) await page.request.delete(`/api/projects/${projectId}`).catch(() => undefined)
+  if (groupId) await browserApiRequest(page, 'DELETE', `/api/groups/${groupId}`).catch(() => undefined)
+  if (projectId) await browserApiRequest(page, 'DELETE', `/api/projects/${projectId}`).catch(() => undefined)
 }
 
 async function captureFailure(page: Page, testInfo: TestInfo) {
@@ -185,14 +186,14 @@ test('T1-TR-01 Allow: direct Task URL, Group link and Privacy UI use persisted d
     const task = await createTask(page, project.id, uniqueName('T1TR01 private task'))
     const policy = await createRetentionPolicy(page, project.id, uniqueName('T1TR01 meeting policy'))
 
-    const taskReadBack = await apiResult<TaskItemDto>(await page.request.get(`/api/tasks/${task.id}`))
+    const taskReadBack = await apiResult<TaskItemDto>(await browserApiRequest(page, 'GET', `/api/tasks/${task.id}`))
     expect(taskReadBack).toMatchObject({ id: task.id, title: task.title, projectId: project.id, isPrivate: true })
 
-    const groupReadBack = await apiResult<GroupDto>(await page.request.get(`/api/groups/${group.id}`))
+    const groupReadBack = await apiResult<GroupDto>(await browserApiRequest(page, 'GET', `/api/groups/${group.id}`))
     expect(groupReadBack).toMatchObject({ id: group.id, name: group.name })
 
     const policyReadBack = await apiResult<RetentionPolicyDto[]>(
-      await page.request.get(`/api/privacy/policies?tenantId=${project.id}&projectId=${project.id}`),
+      await browserApiRequest(page, 'GET', `/api/privacy/policies?tenantId=${project.id}&projectId=${project.id}`),
     )
     expect(policyReadBack.map((item) => item.id)).toContain(policy.id)
 
@@ -220,7 +221,7 @@ test('T1-TR-01 Allow: direct Task URL, Group link and Privacy UI use persisted d
     await expect(dialog).toHaveCount(0)
 
     const consents = await apiResult<PrivacyConsentDto[]>(
-      await page.request.get(`/api/privacy/consents?projectId=${project.id}`),
+      await browserApiRequest(page, 'GET', `/api/privacy/consents?projectId=${project.id}`),
     )
     expect(consents).toContainEqual(
       expect.objectContaining({
@@ -249,8 +250,8 @@ test('T1-TR-01 Deny: unauthenticated Task URL and Group link are blocked', async
     task = await createTask(page, project.id, uniqueName('T1TR01 denied private task'))
     group = await createGroup(page, uniqueName('T1TR01 Deny Group'))
 
-    await apiResult<TaskItemDto>(await page.request.get(`/api/tasks/${task.id}`))
-    await apiResult<GroupDto>(await page.request.get(`/api/groups/${group.id}`))
+    await apiResult<TaskItemDto>(await browserApiRequest(page, 'GET', `/api/tasks/${task.id}`))
+    await apiResult<GroupDto>(await browserApiRequest(page, 'GET', `/api/groups/${group.id}`))
 
     anonymous = await browser.newContext()
     const anonPage = await anonymous.newPage()

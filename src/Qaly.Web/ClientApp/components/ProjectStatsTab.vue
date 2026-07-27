@@ -10,8 +10,11 @@ import {
   ListChecks,
   ScanLine,
 } from 'lucide-vue-next'
+import ProjectProgressAiCard from './ProjectProgressAiCard.vue'
 
 const props = defineProps<{
+  projectId: string
+  canGenerateAi: boolean
   stats: {
     total: number
     todo: number
@@ -145,6 +148,8 @@ function percent(value: number) {
         </div>
       </div>
     </section>
+
+    <ProjectProgressAiCard :project-id="projectId" :can-generate="canGenerateAi" />
 
     <section class="analytics-grid">
       <article class="analytics-card distribution-card">

@@ -13,6 +13,25 @@ public interface IAiWorkflowService
         string idempotencyKey,
         string? requestId = null,
         CancellationToken ct = default);
+    Task<Result<AiJobCreatedDto>> CreateProjectProgressSummaryAsync(
+        Guid projectId,
+        ProjectProgressSummaryRequestDto dto,
+        string idempotencyKey,
+        string? requestId = null,
+        CancellationToken ct = default);
+    Task<Result<AiJobCreatedDto>> CreateSprintProgressSummaryAsync(
+        Guid projectId,
+        Guid sprintId,
+        ProjectProgressSummaryRequestDto dto,
+        string idempotencyKey,
+        string? requestId = null,
+        CancellationToken ct = default);
+    Task<Result<AiJobCreatedDto>> CreateTaskSkillSuggestionAsync(
+        Guid taskId,
+        TaskSkillSuggestionRequestDto dto,
+        string idempotencyKey,
+        string? requestId = null,
+        CancellationToken ct = default);
     Task<Result<IReadOnlyList<AiJobSummaryDto>>> ListJobsAsync(Guid? projectId, string? status, CancellationToken ct = default);
     Task<Result<AiJobDetailDto>> GetJobAsync(Guid jobId, CancellationToken ct = default);
     Task<Result<AiJobResultDto>> GetJobResultAsync(Guid jobId, CancellationToken ct = default);

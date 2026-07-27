@@ -49,6 +49,7 @@ public class TaskItem : BaseEntity, ISoftDeleteEntity
     public ICollection<TaskAttachment> Attachments { get; set; } = new List<TaskAttachment>();
     public ICollection<TaskAssignment> Assignees { get; set; } = new List<TaskAssignment>();
     public ICollection<TaskLabel> Labels { get; set; } = new List<TaskLabel>();
+    public ICollection<TaskSkillRequirement> SkillRequirements { get; set; } = new List<TaskSkillRequirement>();
     public ICollection<TaskDependency> PredecessorDependencies { get; set; } = new List<TaskDependency>();
     public ICollection<TaskDependency> SuccessorDependencies { get; set; } = new List<TaskDependency>();
     public ICollection<TaskViewEvent> ViewEvents { get; set; } = new List<TaskViewEvent>();

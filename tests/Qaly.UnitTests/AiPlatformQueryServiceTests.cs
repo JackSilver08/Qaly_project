@@ -33,7 +33,8 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
         _options.SetupGet(monitor => monitor.CurrentValue).Returns(new AiJobPlatformOptions
         {
             Enabled = true,
-            WorkerEnabled = true
+            WorkerEnabled = true,
+            BudgetUiEnabled = true
         });
         _unitOfWork.Setup(unit => unit.SaveChangesAsync(It.IsAny<CancellationToken>()))
             .Returns((CancellationToken ct) => _db.SaveChangesAsync(ct));
@@ -95,15 +96,18 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
         healthSnapshot.RetryCount.Should().Be(1);
         healthSnapshot.FailedLast24Hours.Should().Be(1);
 
-        var usage = await service.GetUsageAsync(_projectId, now.AddDays(-7), now.AddMinutes(1));
+        var usage = await service.GetUsageAsync(_tenantId, _projectId, now.AddDays(-7), now.AddMinutes(1));
         var usageSnapshot = usage.Data!;
         usageSnapshot.AttemptCount.Should().Be(2);
         usageSnapshot.SucceededCount.Should().Be(1);
         usageSnapshot.FailedCount.Should().Be(1);
         usageSnapshot.EstimatedCostUsd.Should().Be(4m);
         usageSnapshot.CacheHitCount.Should().Be(1);
+        usageSnapshot.ByProvider.Should().ContainSingle(item => item.Key == "test");
+        usageSnapshot.ByFunction.Should().ContainSingle(item => item.Key == "analysis");
+        usageSnapshot.ByCache.Should().HaveCount(2);
 
-        var budget = await service.GetBudgetAsync(_projectId);
+        var budget = await service.GetBudgetAsync(_tenantId, _projectId);
         var budgetSnapshot = budget.Data!;
         budgetSnapshot.DailyUsageUsd.Should().Be(1.25m);
         budgetSnapshot.MonthlyUsageUsd.Should().Be(4m);
@@ -111,13 +115,14 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
         budgetSnapshot.HardStopActive.Should().BeTrue();
 
         var originalVersion = budgetSnapshot.Version;
-        var updated = await service.UpdateBudgetAsync(_projectId, new UpdateAiBudgetPolicyDto(
+        var updated = await service.UpdateBudgetAsync(_tenantId, _projectId, new UpdateAiBudgetPolicyDto(
             5m,
             50m,
             75,
             true,
             false,
-            originalVersion));
+            originalVersion,
+            Confirmed: true));
         updated.IsSuccess.Should().BeTrue(updated.Error);
         updated.Data!.DailyBudgetUsd.Should().Be(5m);
         updated.Data.MonthlyBudgetUsd.Should().Be(50m);
@@ -129,34 +134,214 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
             It.IsAny<object>(),
             It.IsAny<CancellationToken>()), Times.Once);
 
-        var stale = await service.UpdateBudgetAsync(_projectId, new UpdateAiBudgetPolicyDto(
+        var stale = await service.UpdateBudgetAsync(_tenantId, _projectId, new UpdateAiBudgetPolicyDto(
             6m,
             60m,
             80,
             true,
             false,
-            originalVersion));
+            originalVersion,
+            Confirmed: true));
         stale.StatusCode.Should().Be(409);
+        stale.ErrorCode.Should().Be(AiErrorCodes.BudgetPolicyConflict);
     }
 
     [Fact]
     public async Task InvalidRangeMissingProjectAndAnonymousUser_ReturnStructuredFailures()
     {
+        _db.Projects.Add(new Project
+        {
+            Id = _projectId,
+            OrganizationId = _tenantId,
+            OwnerId = _userId,
+            Name = "Range Project",
+            Code = "RANGE"
+        });
+        await _db.SaveChangesAsync();
         var service = CreateService();
         var now = DateTimeOffset.UtcNow;
 
-        var range = await service.GetUsageAsync(null, now, now.AddMinutes(-1));
+        var range = await service.GetUsageAsync(_tenantId, _projectId, now, now.AddMinutes(-1));
         range.StatusCode.Should().Be(400);
         range.ErrorCode.Should().Be(AiErrorCodes.InvalidRequest);
 
-        var missing = await service.GetBudgetAsync(Guid.NewGuid());
+        var missing = await service.GetBudgetAsync(null, Guid.NewGuid());
         missing.StatusCode.Should().Be(404);
         missing.ErrorCode.Should().Be(AiErrorCodes.PermissionDenied);
 
         _currentUser.SetupGet(current => current.UserId).Returns((Guid?)null);
         (await service.GetHealthAsync()).StatusCode.Should().Be(403);
-        (await service.GetUsageAsync(null, null, null)).StatusCode.Should().Be(403);
-        (await service.GetBudgetAsync(Guid.NewGuid())).StatusCode.Should().Be(403);
+        (await service.GetUsageAsync(null, null, null, null)).StatusCode.Should().Be(403);
+        (await service.GetBudgetAsync(null, Guid.NewGuid())).StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task BillingAdmin_SeesTenantAggregationAndMustExplicitlyConfirmPolicyChange()
+    {
+        _currentUser.SetupGet(current => current.Role).Returns("User");
+        var ownerId = Guid.NewGuid();
+        var secondProjectId = Guid.NewGuid();
+        var currentUser = new User
+        {
+            Id = _userId,
+            FullName = "Billing Admin",
+            Email = "billing@qaly.test",
+            PasswordHash = "test"
+        };
+        var owner = new User
+        {
+            Id = ownerId,
+            FullName = "Organization Owner",
+            Email = "owner@qaly.test",
+            PasswordHash = "test"
+        };
+        var organization = new Organization
+        {
+            Id = _tenantId,
+            Name = "Billing Organization",
+            Code = "BILL",
+            OwnerId = ownerId,
+            Owner = owner
+        };
+        var firstProject = new Project
+        {
+            Id = _projectId,
+            OrganizationId = _tenantId,
+            OwnerId = ownerId,
+            Owner = owner,
+            Name = "First Project",
+            Code = "BILL-1"
+        };
+        var secondProject = new Project
+        {
+            Id = secondProjectId,
+            OrganizationId = _tenantId,
+            OwnerId = ownerId,
+            Owner = owner,
+            Name = "Second Project",
+            Code = "BILL-2"
+        };
+        _db.AddRange(currentUser, owner, organization, firstProject, secondProject);
+        _db.OrganizationMembers.Add(new OrganizationMember
+        {
+            OrganizationId = _tenantId,
+            Organization = organization,
+            UserId = _userId,
+            User = currentUser,
+            Role = OrganizationRoleRules.BillingAdmin
+        });
+        _db.AiBudgetPolicies.Add(new AiBudgetPolicy
+        {
+            TenantId = _tenantId,
+            DailyBudgetUsd = 10m,
+            MonthlyBudgetUsd = 20m,
+            WarnAtPercent = 60,
+            HardStopEnabled = true
+        });
+        _db.AiUsageLedger.AddRange(
+            Usage(Guid.NewGuid(), DateTimeOffset.UtcNow, "succeeded", 3m, cacheHit: false),
+            new AiUsageLedger
+            {
+                TenantId = _tenantId,
+                ProjectId = secondProjectId,
+                UserId = _userId,
+                JobType = "sprint_progress_summary",
+                ProviderName = "secondary",
+                ModelName = "model",
+                EstimatedCostUsd = 4m,
+                Status = "succeeded",
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+        await _db.SaveChangesAsync();
+
+        var service = CreateService();
+        var scopes = await service.GetBudgetScopesAsync();
+        scopes.Data.Should().Contain(item => item.ScopeType == "organization" && item.ScopeId == _tenantId);
+        scopes.Data.Should().Contain(item => item.ScopeType == "project" && item.ScopeId == secondProjectId);
+
+        var usage = await service.GetUsageAsync(_tenantId, null, null, null);
+        usage.Data!.AttemptCount.Should().Be(2);
+        usage.Data.EffectiveCostUsd.Should().Be(7m);
+
+        var inherited = await service.GetBudgetAsync(_tenantId, _projectId);
+        inherited.Data!.IsInherited.Should().BeTrue();
+        inherited.Data.PolicySource.Should().Be("organization");
+        inherited.Data.DailyUsageUsd.Should().Be(7m);
+
+        var withoutConfirmation = await service.UpdateBudgetAsync(
+            _tenantId,
+            null,
+            new UpdateAiBudgetPolicyDto(12m, 24m, 70, true, false, inherited.Data.EffectiveVersion));
+        withoutConfirmation.ErrorCode.Should().Be(AiErrorCodes.BudgetConfirmationRequired);
+
+        var organizationBudget = await service.GetBudgetAsync(_tenantId, null);
+        var updated = await service.UpdateBudgetAsync(
+            _tenantId,
+            null,
+            new UpdateAiBudgetPolicyDto(
+                12m,
+                24m,
+                70,
+                true,
+                false,
+                organizationBudget.Data!.Version,
+                Confirmed: true));
+        updated.IsSuccess.Should().BeTrue(updated.Error);
+        updated.Data!.DailyBudgetUsd.Should().Be(12m);
+        updated.Data.MonthlyUsageUsd.Should().Be(7m);
+    }
+
+    [Fact]
+    public async Task BudgetEditingFeatureDisabled_PreservesReadOnlySnapshotAndRejectsMutation()
+    {
+        _options.SetupGet(monitor => monitor.CurrentValue).Returns(new AiJobPlatformOptions
+        {
+            Enabled = true,
+            WorkerEnabled = true,
+            BudgetUiEnabled = false
+        });
+        _db.Projects.Add(new Project
+        {
+            Id = _projectId,
+            OrganizationId = _tenantId,
+            OwnerId = _userId,
+            Name = "Read-only Budget",
+            Code = "READONLY"
+        });
+        _db.AiBudgetPolicies.Add(new AiBudgetPolicy
+        {
+            TenantId = _tenantId,
+            ProjectId = _projectId,
+            DailyBudgetUsd = 2m,
+            MonthlyBudgetUsd = 20m
+        });
+        await _db.SaveChangesAsync();
+
+        var service = CreateService();
+        var snapshot = await service.GetBudgetAsync(_tenantId, _projectId);
+        snapshot.Data!.EditingEnabled.Should().BeFalse();
+
+        var update = await service.UpdateBudgetAsync(
+            _tenantId,
+            _projectId,
+            new UpdateAiBudgetPolicyDto(
+                3m,
+                30m,
+                80,
+                true,
+                false,
+                snapshot.Data.Version,
+                Confirmed: true));
+        update.StatusCode.Should().Be(503);
+        update.ErrorCode.Should().Be(AiErrorCodes.PlatformDisabled);
+        (await _db.AiBudgetPolicies.SingleAsync(item => item.ProjectId == _projectId))
+            .DailyBudgetUsd.Should().Be(2m);
+        _auditLog.Verify(audit => audit.LogAsync(
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<object>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     public void Dispose()
@@ -171,6 +356,7 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
             new GenericRepository<AiJobDispatch>(_db),
             new GenericRepository<AiUsageLedger>(_db),
             new GenericRepository<AiBudgetPolicy>(_db),
+            new GenericRepository<Organization>(_db),
             new GenericRepository<Project>(_db),
             new GenericRepository<ProjectMember>(_db),
             new GenericRepository<OrganizationMember>(_db),

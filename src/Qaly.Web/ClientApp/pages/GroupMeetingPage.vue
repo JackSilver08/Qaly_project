@@ -101,7 +101,20 @@ const editingTranscriptText = ref("");
 const transcriptEditInputRef = ref<HTMLInputElement | null>(null);
 const selectedProjectId = ref("");
 const isGeneratingChecknote = ref(false);
-const checknoteResult = ref<any>(null);
+type ChecknoteActionItem = {
+  title: string;
+  description: string;
+  priority: string;
+  dueDateFormatted: string;
+  assigneeId: string;
+  mappingStatus: string | null;
+};
+type ChecknoteResult = {
+  meetingImportId: string;
+  summary: string;
+  actionItems: ChecknoteActionItem[];
+};
+const checknoteResult = ref<ChecknoteResult | null>(null);
 const projectMembers = ref<any[]>([]);
 const isCreatingTask = ref<number | null>(null);
 type PrivacyAction = "speech" | "checknote";
@@ -493,14 +506,22 @@ async function runGenerateChecknote() {
       }),
     });
 
-    if (result && result.actionItems) {
+    if (
+      result &&
+      typeof result.meetingImportId === "string" &&
+      typeof result.summary === "string" &&
+      Array.isArray(result.actionItems)
+    ) {
       checknoteResult.value = {
         meetingImportId: result.meetingImportId,
         summary: result.summary,
         actionItems: result.actionItems.map((item: any) => ({
-          ...item,
+          title: typeof item?.title === "string" ? item.title : "",
+          description: typeof item?.description === "string" ? item.description : "",
+          priority: typeof item?.priority === "string" ? item.priority : "Medium",
           dueDateFormatted: formatDateForInput(item.dueDate),
           assigneeId: "",
+          mappingStatus: typeof item?.mappingStatus === "string" ? item.mappingStatus : null,
         })),
       };
       showSuccess("Đã tạo biên bản AI thành công.");
@@ -1610,7 +1631,7 @@ function disconnectLiveKit() {
           </div>
 
           <!-- Results -->
-          <div v-else class="gm-checknote-results">
+          <div v-else-if="checknoteResult" class="gm-checknote-results">
             <div class="gm-cn-section">
               <h4><Sparkles :size="14" /> Tóm tắt cuộc họp</h4>
               <div class="gm-cn-summary">{{ checknoteResult.summary }}</div>

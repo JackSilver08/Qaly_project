@@ -5,12 +5,20 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Qaly.Application.DTOs.Ai;
 
 namespace Qaly.Infrastructure.Services.AI;
 
 public class AiOutputValidator
 {
     public bool Validate(string content, string schemaId, out string? errorMessage)
+        => Validate(content, schemaId, validationContextJson: null, out errorMessage);
+
+    public bool Validate(
+        string content,
+        string schemaId,
+        string? validationContextJson,
+        out string? errorMessage)
     {
         errorMessage = null;
         if (string.IsNullOrWhiteSpace(content))
@@ -138,6 +146,19 @@ public class AiOutputValidator
                     }
                 }
             }
+            else if (string.Equals(schemaId, TaskSkillAiContract.SchemaId, StringComparison.Ordinal))
+            {
+                if (!string.IsNullOrWhiteSpace(validationContextJson))
+                {
+                    return TaskSkillSuggestionContract.TryBuildResult(
+                        content,
+                        validationContextJson,
+                        out _,
+                        out errorMessage);
+                }
+
+                return TaskSkillSuggestionContract.TryValidateFinal(content, out errorMessage);
+            }
             else if (schemaId.Contains("assignee_recommendation", StringComparison.OrdinalIgnoreCase))
             {
                 if (root.ValueKind != JsonValueKind.Object)
@@ -263,20 +284,56 @@ public class AiOutputValidator
             }
             else if (schemaId.Contains("progress_summary", StringComparison.OrdinalIgnoreCase))
             {
-                if (root.ValueKind != JsonValueKind.Object)
+                if (!string.Equals(schemaId, ProgressSummaryContract.SchemaId, StringComparison.Ordinal))
                 {
-                    errorMessage = "progress_summary response must be a JSON object.";
-                    return false;
+                    if (root.ValueKind != JsonValueKind.Object)
+                    {
+                        errorMessage = "progress_summary response must be a JSON object.";
+                        return false;
+                    }
+                    if (!root.TryGetProperty("project_id", out _) || !root.TryGetProperty("period", out _) || !root.TryGetProperty("summary", out _) || !root.TryGetProperty("metrics", out var metrics) || !root.TryGetProperty("risks", out _) || !root.TryGetProperty("next_actions", out _))
+                    {
+                        errorMessage = "Missing required fields project_id, period, summary, metrics, risks, or next_actions.";
+                        return false;
+                    }
+                    if (metrics.ValueKind != JsonValueKind.Object || !metrics.TryGetProperty("done", out _) || !metrics.TryGetProperty("in_progress", out _) || !metrics.TryGetProperty("todo", out _) || !metrics.TryGetProperty("overdue", out _))
+                    {
+                        errorMessage = "Metrics object is missing done, in_progress, todo, or overdue count.";
+                        return false;
+                    }
                 }
-                if (!root.TryGetProperty("project_id", out _) || !root.TryGetProperty("period", out _) || !root.TryGetProperty("summary", out _) || !root.TryGetProperty("metrics", out var metrics) || !root.TryGetProperty("risks", out _) || !root.TryGetProperty("next_actions", out _))
+                else if (!string.IsNullOrWhiteSpace(validationContextJson))
                 {
-                    errorMessage = "Missing required fields project_id, period, summary, metrics, risks, or next_actions.";
-                    return false;
+                    return ProgressSummaryContract.TryBuildResult(
+                        content,
+                        validationContextJson,
+                        out _,
+                        out errorMessage);
                 }
-                if (metrics.ValueKind != JsonValueKind.Object || !metrics.TryGetProperty("done", out _) || !metrics.TryGetProperty("in_progress", out _) || !metrics.TryGetProperty("todo", out _) || !metrics.TryGetProperty("overdue", out _))
+                else if (ProgressSummaryContract.TryValidateFinal(content, out errorMessage))
                 {
-                    errorMessage = "Metrics object is missing done, in_progress, todo, or overdue count.";
-                    return false;
+                    return true;
+                }
+                else
+                {
+                    // Compatibility path for legacy generic progress jobs. Native project and
+                    // sprint routes always supply a validation context and cannot enter here.
+                    if (root.ValueKind != JsonValueKind.Object ||
+                        !root.TryGetProperty("project_id", out _) ||
+                        !root.TryGetProperty("period", out _) ||
+                        !root.TryGetProperty("summary", out _) ||
+                        !root.TryGetProperty("metrics", out var metrics) ||
+                        !root.TryGetProperty("risks", out _) ||
+                        !root.TryGetProperty("next_actions", out _) ||
+                        metrics.ValueKind != JsonValueKind.Object ||
+                        !metrics.TryGetProperty("done", out _) ||
+                        !metrics.TryGetProperty("in_progress", out _) ||
+                        !metrics.TryGetProperty("todo", out _) ||
+                        !metrics.TryGetProperty("overdue", out _))
+                    {
+                        errorMessage = "Output matches neither progress_summary.v4 nor the legacy sprint summary shape.";
+                        return false;
+                    }
                 }
             }
             else if (schemaId.Contains("task_breakdown", StringComparison.OrdinalIgnoreCase))

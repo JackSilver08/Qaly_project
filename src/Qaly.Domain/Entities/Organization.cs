@@ -15,5 +15,6 @@ public class Organization : BaseEntity
     public User Owner { get; set; } = null!;
     public ICollection<OrganizationMember> Members { get; set; } = new List<OrganizationMember>();
     public ICollection<Project> Projects { get; set; } = new List<Project>();
+    public ICollection<OrganizationSkill> Skills { get; set; } = new List<OrganizationSkill>();
     public ICollection<WorkGroup> WorkGroups { get; set; } = new List<WorkGroup>();
 }

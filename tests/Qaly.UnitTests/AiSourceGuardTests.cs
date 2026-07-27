@@ -12,6 +12,121 @@ namespace Qaly.UnitTests;
 public sealed class AiSourceGuardTests
 {
     [Fact]
+    public async Task ValidateAsync_WhenProgressTaskChanges_ProjectSnapshotBecomesStale()
+    {
+        await using var db = CreateContext();
+        var owner = new User
+        {
+            FullName = "Progress Owner",
+            Email = $"progress-owner-{Guid.NewGuid():N}@qaly.test",
+            PasswordHash = "not-used",
+            Role = "User"
+        };
+        var project = new Project
+        {
+            Name = "Progress Project",
+            Code = "PROG",
+            OwnerId = owner.Id
+        };
+        var task = new TaskItem
+        {
+            ProjectId = project.Id,
+            ReporterId = owner.Id,
+            Title = "Grounded task",
+            Status = "InProgress",
+            ContributesToProgress = true,
+            UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-1)
+        };
+        db.AddRange(owner, project, task);
+        await db.SaveChangesAsync();
+        var guard = new AiSourceGuard(db);
+        var captured = await guard.CaptureAsync(
+            project.Id,
+            owner.Id,
+            [new AiJobSourceInputDto("project", project.Id, null, null, null)],
+            CancellationToken.None);
+
+        task.Status = "Done";
+        task.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync();
+        var validation = await guard.ValidateAsync(
+            project.Id,
+            owner.Id,
+            captured.Sources,
+            enforceFreshness: true);
+
+        validation.IsAllowed.Should().BeFalse();
+        validation.ErrorCode.Should().Be(AiErrorCodes.SourceStale);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenSprintTaskChanges_SprintSnapshotBecomesStale()
+    {
+        await using var db = CreateContext();
+        var owner = new User
+        {
+            FullName = "Sprint Owner",
+            Email = $"sprint-owner-{Guid.NewGuid():N}@qaly.test",
+            PasswordHash = "not-used",
+            Role = "User"
+        };
+        var project = new Project { Name = "Sprint Project", Code = "SPR", OwnerId = owner.Id };
+        var sprint = new Sprint
+        {
+            ProjectId = project.Id,
+            Name = "Release milestone",
+            StartDate = DateTimeOffset.UtcNow.AddDays(-3),
+            EndDate = DateTimeOffset.UtcNow.AddDays(4),
+            UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-2)
+        };
+        var sprintTask = new TaskItem
+        {
+            ProjectId = project.Id,
+            SprintId = sprint.Id,
+            ReporterId = owner.Id,
+            Title = "Sprint task",
+            Status = "InProgress",
+            ContributesToProgress = true,
+            UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-1)
+        };
+        var outsideTask = new TaskItem
+        {
+            ProjectId = project.Id,
+            ReporterId = owner.Id,
+            Title = "Outside sprint",
+            Status = "InProgress",
+            ContributesToProgress = true,
+            UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-1)
+        };
+        db.AddRange(owner, project, sprint, sprintTask, outsideTask);
+        await db.SaveChangesAsync();
+        var guard = new AiSourceGuard(db);
+        var captured = await guard.CaptureAsync(
+            project.Id,
+            owner.Id,
+            [new AiJobSourceInputDto("sprint", sprint.Id, null, null, null)],
+            CancellationToken.None);
+
+        outsideTask.Status = "Done";
+        outsideTask.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync();
+        (await guard.ValidateAsync(project.Id, owner.Id, captured.Sources, enforceFreshness: true))
+            .IsAllowed.Should().BeTrue();
+
+        sprintTask.Status = "Done";
+        sprintTask.UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(1);
+        await db.SaveChangesAsync();
+        var stale = await guard.ValidateAsync(
+            project.Id,
+            owner.Id,
+            captured.Sources,
+            enforceFreshness: true);
+
+        stale.IsAllowed.Should().BeFalse();
+        stale.ErrorCode.Should().Be(AiErrorCodes.SourceStale);
+    }
+
+    [Fact]
     public async Task ValidateAsync_WhenTaskHashChanged_ReturnsSourceStale()
     {
         await using var db = CreateContext();

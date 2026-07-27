@@ -21,13 +21,18 @@ import { apiResult, apiCommand } from '../utils/api-client'
 import { showError, showSuccess } from '../composables/use-toast'
 import { useDashboardContext } from '../composables/dashboard-context'
 import type { SprintDto, DashboardTask } from '../types'
+import ProjectProgressAiCard from './ProjectProgressAiCard.vue'
+import { useRoute, useRouter } from 'vue-router'
 
 const props = defineProps<{
   projectId: string
   projectName?: string
+  canGenerateAi: boolean
 }>()
 
 const { selectedProject, activeProjectTab, taskSearchQuery } = useDashboardContext()
+const route = useRoute()
+const router = useRouter()
 
 const sprints = ref<SprintDto[]>([])
 const isLoading = ref(false)
@@ -50,7 +55,14 @@ onMounted(() => {
 })
 
 watch(() => props.projectId, () => {
+  selectedSprintId.value = null
   loadSprints()
+})
+
+watch(selectedSprintId, sprintId => {
+  if (!sprintId) return
+  const hash = `#milestone-${sprintId}`
+  if (route.hash !== hash) void router.replace({ hash })
 })
 
 async function loadSprints() {
@@ -59,9 +71,15 @@ async function loadSprints() {
     const result = await apiResult<SprintDto[]>(`/api/projects/${props.projectId}/sprints`)
     // Sort sprints chronologically by StartDate
     sprints.value = (result || []).sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
-    if (sprints.value.length > 0 && !selectedSprintId.value) {
+    const requestedSprintId = route.hash.startsWith('#milestone-')
+      ? route.hash.slice('#milestone-'.length)
+      : null
+    if (sprints.value.length > 0 &&
+        (!selectedSprintId.value || !sprints.value.some(sprint => sprint.id === selectedSprintId.value))) {
       // Auto select current active or first sprint
-      const current = sprints.value.find(s => isCurrentMilestone(s)) || sprints.value[0]
+      const current = sprints.value.find(sprint => sprint.id === requestedSprintId) ||
+        sprints.value.find(s => isCurrentMilestone(s)) ||
+        sprints.value[0]
       selectedSprintId.value = current.id
     }
   } catch (error) {
@@ -454,7 +472,11 @@ function formatDateRange(start: string, end: string) {
       </div>
 
       <!-- SELECTED MILESTONE DETAIL DRAWER / PANEL -->
-      <div v-if="activeMilestone" class="milestone-detail-panel glass-card">
+      <div
+        v-if="activeMilestone"
+        :id="`milestone-${activeMilestone.id}`"
+        class="milestone-detail-panel glass-card"
+      >
         <div class="detail-header">
           <div class="detail-header-left">
             <span class="badge-tag tag-primary mb-1">Mốc Đang Chọn</span>
@@ -482,6 +504,14 @@ function formatDateRange(start: string, end: string) {
             </button>
           </div>
         </div>
+
+        <ProjectProgressAiCard
+          class="sprint-ai-summary"
+          :project-id="projectId"
+          :sprint-id="activeMilestone.id"
+          :sprint-name="activeMilestone.name"
+          :can-generate="canGenerateAi"
+        />
 
         <!-- Task List Preview inside Milestone -->
         <div class="detail-body mt-4">
@@ -825,6 +855,10 @@ function formatDateRange(start: string, end: string) {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-shell);
+}
+
+.sprint-ai-summary {
+  margin-top: 20px;
 }
 
 .detail-header {

@@ -166,12 +166,21 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTimeOffset?>("UpdatedAt")
+                        .IsConcurrencyToken()
                         .HasColumnType("datetimeoffset");
 
                     b.Property<int>("WarnAtPercent")
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ProjectId")
+                        .IsUnique()
+                        .HasFilter("[ProjectId] IS NOT NULL");
+
+                    b.HasIndex("TenantId")
+                        .IsUnique()
+                        .HasFilter("[ProjectId] IS NULL AND [TenantId] IS NOT NULL");
 
                     b.ToTable("AiBudgetPolicies");
                 });
@@ -2661,6 +2670,59 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.ToTable("OrganizationMembers");
                 });
 
+            modelBuilder.Entity("Qaly.Domain.Entities.OrganizationSkill", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetimeoffset")
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET()");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "IsActive");
+
+                    b.HasIndex("OrganizationId", "NormalizedName")
+                        .IsUnique();
+
+                    b.ToTable("OrganizationSkills");
+                });
+
             modelBuilder.Entity("Qaly.Domain.Entities.PhysicalFile", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3829,6 +3891,61 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.ToTable("TaskLabels");
                 });
 
+            modelBuilder.Entity("Qaly.Domain.Entities.TaskSkillRequirement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<DateTimeOffset>("ConfirmedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("ConfirmedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetimeoffset")
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET()");
+
+                    b.Property<Guid>("OrganizationSkillId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Provenance")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("RequiredLevel")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TaskItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConfirmedByUserId");
+
+                    b.HasIndex("OrganizationSkillId");
+
+                    b.HasIndex("TaskItemId", "OrganizationSkillId")
+                        .IsUnique();
+
+                    b.ToTable("TaskSkillRequirements");
+                });
+
             modelBuilder.Entity("Qaly.Domain.Entities.TaskViewEvent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4851,6 +4968,17 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Qaly.Domain.Entities.OrganizationSkill", b =>
+                {
+                    b.HasOne("Qaly.Domain.Entities.Organization", "Organization")
+                        .WithMany("Skills")
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+                });
+
             modelBuilder.Entity("Qaly.Domain.Entities.PrivacyConsent", b =>
                 {
                     b.HasOne("Qaly.Domain.Entities.RetentionPolicy", "RetentionPolicy")
@@ -5154,6 +5282,33 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Navigation("TaskItem");
                 });
 
+            modelBuilder.Entity("Qaly.Domain.Entities.TaskSkillRequirement", b =>
+                {
+                    b.HasOne("Qaly.Domain.Entities.User", "ConfirmedByUser")
+                        .WithMany()
+                        .HasForeignKey("ConfirmedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Qaly.Domain.Entities.OrganizationSkill", "OrganizationSkill")
+                        .WithMany("TaskRequirements")
+                        .HasForeignKey("OrganizationSkillId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Qaly.Domain.Entities.TaskItem", "TaskItem")
+                        .WithMany("SkillRequirements")
+                        .HasForeignKey("TaskItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ConfirmedByUser");
+
+                    b.Navigation("OrganizationSkill");
+
+                    b.Navigation("TaskItem");
+                });
+
             modelBuilder.Entity("Qaly.Domain.Entities.TaskViewEvent", b =>
                 {
                     b.HasOne("Qaly.Domain.Entities.TaskItem", "TaskItem")
@@ -5351,7 +5506,14 @@ namespace Qaly.Infrastructure.Data.Migrations
 
                     b.Navigation("Projects");
 
+                    b.Navigation("Skills");
+
                     b.Navigation("WorkGroups");
+                });
+
+            modelBuilder.Entity("Qaly.Domain.Entities.OrganizationSkill", b =>
+                {
+                    b.Navigation("TaskRequirements");
                 });
 
             modelBuilder.Entity("Qaly.Domain.Entities.Project", b =>
@@ -5406,6 +5568,8 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Navigation("Labels");
 
                     b.Navigation("PredecessorDependencies");
+
+                    b.Navigation("SkillRequirements");
 
                     b.Navigation("SuccessorDependencies");
 
