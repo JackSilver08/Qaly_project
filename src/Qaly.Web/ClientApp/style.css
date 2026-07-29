@@ -319,13 +319,28 @@ p {
   height: 100dvh;
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: 56px minmax(0, 1fr);
   overflow: hidden;
   background: var(--bg);
 }
 
+.shell-header {
+  grid-column: 1 / -1;
+  min-width: 0;
+  height: 56px;
+  display: grid;
+  grid-template-columns: minmax(200px, 240px) minmax(320px, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 20px 0 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--qaly-surface);
+  z-index: 20;
+}
+
 .shell-brand,
 .shell-brand-link,
+.shell-header-actions,
 .shell-nav-item,
 .shell-archive-button,
 .shell-user-menu,
@@ -380,6 +395,12 @@ p {
   border-radius: var(--qaly-radius-lg);
   color: var(--text);
   background: rgba(255, 255, 255, 0.82);
+}
+
+.shell-header-actions {
+  min-width: 0;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .shell-icon-button,
@@ -642,7 +663,7 @@ p {
 
 .shell-main {
   grid-column: 2;
-  grid-row: 1;
+  grid-row: 2;
   min-width: 0;
   min-height: 0;
   overflow-x: hidden;
@@ -5827,7 +5848,7 @@ textarea::placeholder {
 /* Shell Layout Modifications - Sidebar spans full height */
 @media (min-width: 1024px) {
   .app-shell {
-    grid-template-rows: minmax(0, 1fr) !important;
+    grid-template-rows: 72px minmax(0, 1fr) !important;
   }
 
   .app-shell.is-chat-shell {
@@ -5838,6 +5859,20 @@ textarea::placeholder {
     grid-row: 1 / -1 !important;
     border-right: 1px solid var(--line) !important;
     background: #ffffff !important;
+  }
+
+  .shell-header {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    padding: 0 32px !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+  }
+
+  .shell-brand,
+  .shell-brand-link {
+    display: none !important;
   }
   
   .app-shell.is-chat-shell .shell-sidebar {
@@ -5916,7 +5951,24 @@ textarea::placeholder {
   }
 }
 
+@media (min-width: 768px) and (max-width: 1023px) {
+  .header-search {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .shell-header-actions {
+    min-width: 0;
+  }
+}
+
 @media (max-width: 767px) {
+  .shell-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
   .header-search {
     display: none;
   }
