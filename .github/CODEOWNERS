@@ -15,7 +15,21 @@
 /src/Qaly.Infrastructure/Auth/ @JackSilver08
 /src/Qaly.Infrastructure/Services/Privacy/ @JackSilver08
 /src/Qaly.Infrastructure/Services/AI/ @JackSilver08
+/src/Qaly.Application/Services/AuthService.cs @JackSilver08
+/src/Qaly.Application/Services/SystemRoleRules.cs @JackSilver08
+/src/Qaly.Application/Services/OrganizationRoleRules.cs @JackSilver08
+/src/Qaly.Application/Services/ProjectRoleRules.cs @JackSilver08
+/src/Qaly.Application/Services/OrganizationService.cs @JackSilver08
+/src/Qaly.Application/Services/ModeratorCapabilities.cs @JackSilver08
+/src/Qaly.Application/Services/TaskAccessPolicy.cs @JackSilver08
+/src/Qaly.Application/Services/AiPlatformQueryService.cs @JackSilver08
+/src/Qaly.Application/Services/AiWorkflowService.cs @JackSilver08
 /src/Qaly.Application/Services/GitHub/ @JackSilver08
+/src/Qaly.Web/Auth/ @JackSilver08
+/src/Qaly.Web/Controllers/AdminUsersController.cs @JackSilver08
+/src/Qaly.Web/Controllers/OrganizationsController.cs @JackSilver08
+/src/Qaly.Web/Controllers/ModeratorAssignmentsController.cs @JackSilver08
+/src/Qaly.Web/Controllers/AiController.cs @JackSilver08
 /src/Qaly.Web/Controllers/SecurityController.cs @JackSilver08
 /src/Qaly.Web/Controllers/PrivacyController.cs @JackSilver08
 

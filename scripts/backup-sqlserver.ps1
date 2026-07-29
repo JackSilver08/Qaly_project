@@ -5,7 +5,8 @@ param(
     [string]$Password = $env:SQLSERVER_SA_PASSWORD,
     [switch]$UseIntegratedSecurity,
     [switch]$DisableCompression,
-    [string]$OutputDirectory = ".backups"
+    [string]$OutputDirectory = ".backups",
+    [string]$SqlServerBackupPath
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,7 +29,13 @@ New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $resolvedOutputDirectory = (Resolve-Path $OutputDirectory).Path
 $backupFile = Join-Path $resolvedOutputDirectory "$Database-$stamp.bak"
-$escapedBackupFile = $backupFile.Replace("'", "''")
+$databaseVisibleBackupFile = if ([string]::IsNullOrWhiteSpace($SqlServerBackupPath)) {
+    $backupFile
+}
+else {
+    $SqlServerBackupPath
+}
+$escapedBackupFile = $databaseVisibleBackupFile.Replace("'", "''")
 $compressionClause = if ($DisableCompression) { "" } else { ", COMPRESSION" }
 $query = "BACKUP DATABASE [$Database] TO DISK = N'$escapedBackupFile' WITH INIT$compressionClause, CHECKSUM;"
 
@@ -46,4 +53,10 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-Write-Host "Backup completed: $backupFile"
+Write-Host "Backup completed on SQL Server: $databaseVisibleBackupFile"
+if ($databaseVisibleBackupFile -ne $backupFile) {
+    Write-Host "Copy the backup to the requested host evidence directory: $backupFile"
+}
+else {
+    Write-Host "Backup file: $backupFile"
+}

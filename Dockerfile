@@ -26,8 +26,10 @@ RUN dotnet restore src/Qaly.Web/Qaly.Web.csproj
 # Copy toàn bộ source
 COPY . .
 
-# Dev mode: chạy với hot reload
-ENTRYPOINT ["dotnet", "watch", "run", "--project", "src/Qaly.Web"]
+# Dev mode: use the container URL from ASPNETCORE_URLS. Launch profiles are
+# workstation-only and may require a developer HTTPS certificate that does not
+# exist inside the container.
+ENTRYPOINT ["dotnet", "watch", "run", "--project", "src/Qaly.Web", "--no-launch-profile"]
 
 # ---- Stage 3: Build for production ----
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build

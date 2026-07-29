@@ -1,6 +1,8 @@
 using System.Net;
+using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Qaly.Application.Services;
 using Qaly.Domain.Entities;
 using Qaly.Infrastructure.Data;
 
@@ -87,6 +89,154 @@ public class OrganizationUsersAuthorizationTests : IClassFixture<IntegrationTest
         otherResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
+    [Theory]
+    [InlineData(ModeratorCapabilities.UsersInvite, "invite")]
+    [InlineData(ModeratorCapabilities.UsersUpdateRole, "update")]
+    [InlineData(ModeratorCapabilities.UsersRemove, "remove")]
+    public async Task OrganizationUsers_AllowsOnlyTheDelegatedMutation(string capability, string operation)
+    {
+        var setup = await SeedModeratorScenarioAsync(
+            capability,
+            addTargetAsMember: !string.Equals(operation, "invite", StringComparison.Ordinal));
+        using var client = CreateModeratorClient(setup.ModeratorId);
+
+        HttpResponseMessage response = operation switch
+        {
+            "invite" => await client.PostAsJsonAsync(
+                $"/api/organizations/{setup.OrganizationId}/users",
+                new { email = setup.TargetEmail, role = OrganizationRoleRules.Member }),
+            "update" => await client.PatchAsJsonAsync(
+                $"/api/organizations/{setup.OrganizationId}/users/{setup.TargetId}",
+                new { role = OrganizationRoleRules.BillingAdmin }),
+            "remove" => await client.DeleteAsync(
+                $"/api/organizations/{setup.OrganizationId}/users/{setup.TargetId}"),
+            _ => throw new InvalidOperationException($"Unknown operation {operation}.")
+        };
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, responseBody);
+    }
+
+    [Fact]
+    public async Task OrganizationUsers_DoesNotInferInviteFromViewCapability()
+    {
+        var setup = await SeedModeratorScenarioAsync(ModeratorCapabilities.UsersView, addTargetAsMember: false);
+        using var client = CreateModeratorClient(setup.ModeratorId);
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/organizations/{setup.OrganizationId}/users",
+            new { email = setup.TargetEmail, role = OrganizationRoleRules.Member });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task OrganizationUsers_RejectsExpiredOrRevokedCapability(bool expired, bool revoked)
+    {
+        var setup = await SeedModeratorScenarioAsync(
+            ModeratorCapabilities.UsersView,
+            expiresAt: expired ? DateTimeOffset.UtcNow.AddMinutes(-1) : DateTimeOffset.UtcNow.AddHours(1),
+            revokedAt: revoked ? DateTimeOffset.UtcNow.AddMinutes(-1) : null);
+        using var client = CreateModeratorClient(setup.ModeratorId);
+
+        var response = await client.GetAsync($"/api/organizations/{setup.OrganizationId}/users");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task OrganizationUsers_RejectsMutationInAnotherOrganization()
+    {
+        var setup = await SeedModeratorScenarioAsync(ModeratorCapabilities.UsersInvite, addTargetAsMember: false);
+        var otherOrganizationId = Guid.NewGuid();
+        var otherOwnerId = Guid.NewGuid();
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+            db.Users.Add(NewUser(otherOwnerId, $"other-owner-{Guid.NewGuid():N}@example.test"));
+            db.Organizations.Add(new Organization
+            {
+                Id = otherOrganizationId,
+                Name = "Unassigned tenant",
+                Code = $"unassigned-{Guid.NewGuid():N}",
+                OwnerId = otherOwnerId
+            });
+            await db.SaveChangesAsync();
+        }
+
+        using var client = CreateModeratorClient(setup.ModeratorId);
+        var response = await client.PostAsJsonAsync(
+            $"/api/organizations/{otherOrganizationId}/users",
+            new { email = setup.TargetEmail, role = OrganizationRoleRules.Member });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    private async Task<ModeratorScenario> SeedModeratorScenarioAsync(
+        string capability,
+        bool addTargetAsMember = true,
+        DateTimeOffset? expiresAt = null,
+        DateTimeOffset? revokedAt = null)
+    {
+        var moderatorId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        var ownerId = Guid.NewGuid();
+        var targetId = Guid.NewGuid();
+        var targetEmail = $"target-{Guid.NewGuid():N}@example.test";
+        var organization = new Organization
+        {
+            Name = "Delegated tenant",
+            Code = $"delegated-{Guid.NewGuid():N}",
+            OwnerId = ownerId
+        };
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        var moderator = NewUser(moderatorId, $"moderator-{Guid.NewGuid():N}@example.test");
+        moderator.Role = SystemRoleRules.Moderator;
+        var admin = NewUser(adminId, $"admin-{Guid.NewGuid():N}@example.test");
+        admin.Role = SystemRoleRules.Admin;
+        db.Users.AddRange(
+            moderator,
+            admin,
+            NewUser(ownerId, $"owner-{Guid.NewGuid():N}@example.test"),
+            NewUser(targetId, targetEmail));
+        db.Organizations.Add(organization);
+        if (addTargetAsMember)
+        {
+            db.OrganizationMembers.Add(new OrganizationMember
+            {
+                OrganizationId = organization.Id,
+                UserId = targetId,
+                Role = OrganizationRoleRules.Member
+            });
+        }
+
+        db.ModeratorAssignments.Add(new ModeratorAssignment
+        {
+            ModeratorUserId = moderatorId,
+            OrganizationId = organization.Id,
+            GrantedByUserId = adminId,
+            Capability = capability,
+            ExpiresAt = expiresAt ?? DateTimeOffset.UtcNow.AddHours(1),
+            IsActive = !revokedAt.HasValue,
+            RevokedAt = revokedAt
+        });
+        await db.SaveChangesAsync();
+        return new ModeratorScenario(moderatorId, organization.Id, targetId, targetEmail);
+    }
+
+    private HttpClient CreateModeratorClient(Guid moderatorId)
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Test-UserId", moderatorId.ToString());
+        client.DefaultRequestHeaders.Add("X-Test-Role", SystemRoleRules.Moderator);
+        return client;
+    }
+
     private static User NewUser(Guid id, string email) => new()
     {
         Id = id,
@@ -96,4 +246,10 @@ public class OrganizationUsersAuthorizationTests : IClassFixture<IntegrationTest
         Role = "Member",
         IsActive = true
     };
+
+    private sealed record ModeratorScenario(
+        Guid ModeratorId,
+        Guid OrganizationId,
+        Guid TargetId,
+        string TargetEmail);
 }

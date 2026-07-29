@@ -1,0 +1,22 @@
+﻿{
+    "task":  "T1-LG-01",
+    "scenario":  "Clean SQL Server restore from backup",
+    "startedAt":  "2026-07-29T16:12:31.4276760+07:00",
+    "finishedAt":  "2026-07-29T16:12:32.1504562+07:00",
+    "operator":  "tuant",
+    "server":  "localhost,1434",
+    "backupFile":  "C:\\Qaly_project\\.artifacts\\rc-20260729\\recovery\\QalyDb-RC-20260729.bak",
+    "sqlServerBackupPath":  "/var/opt/mssql/data/QalyDb-RC-20260729.bak",
+    "backupSha256":  "7CD3A00393F61761F1465BE6B233D256927FAC665BA67CE3E547443342C32979",
+    "targetDatabase":  "QalyRestoreSmoke_RC20260729",
+    "verifyOnly":  "passed",
+    "restore":  "not-run",
+    "checkDb":  "not-run",
+    "smoke":  "not-run",
+    "cleanup":  "not-requested",
+    "rtoSeconds":  0.72,
+    "success":  false,
+    "errors":  [
+                   "Msg 5105, Level 16, State 2, Server qaly-sqlserver, Line 1\r\nA file activation error occurred. The physical file name \u0027\\var\\opt\\mssql\\data\\QalyRestoreSmoke_RC20260729.mdf\u0027 may be incorrect. Diagnose and correct additional errors, and retry the operation.\r\nMsg 3156, Level 16, State 3, Server qaly-sqlserver, Line 1\r\nFile \u0027QalyDb\u0027 cannot be restored to \u0027\\var\\opt\\mssql\\data\\QalyRestoreSmoke_RC20260729.mdf\u0027. Use WITH MOVE to identify a valid location for the file.\r\nMsg 5105, Level 16, State 2, Server qaly-sqlserver, Line 1\r\nA file activation error occurred. The physical file name \u0027\\var\\opt\\mssql\\data\\QalyRestoreSmoke_RC20260729.ldf\u0027 may be incorrect. Diagnose and correct additional errors, and retry the operation.\r\nMsg 3156, Level 16, State 3, Server qaly-sqlserver, Line 1\r\nFile \u0027QalyDb_log\u0027 cannot be restored to \u0027\\var\\opt\\mssql\\data\\QalyRestoreSmoke_RC20260729.ldf\u0027. Use WITH MOVE to identify a valid location for the file.\r\nMsg 3119, Level 16, State 1, Server qaly-sqlserver, Line 1\r\nProblems were identified while planning for the RESTORE statement. Previous messages provide details.\r\nMsg 3013, Level 16, State 1, Server qaly-sqlserver, Line 1\r\nRESTORE DATABASE is terminating abnormally.\r\nMsg 5011, Level 14, State 5, Server qaly-sqlserver, Line 9\r\nUser does not have permission to alter database \u0027QalyRestoreSmoke_RC20260729\u0027, the database does not exist, or the database is not in a state that allows access checks.\r\nMsg 5069, Level 16, State 1, Server qaly-sqlserver, Line 9\r\nALTER DATABASE statement failed."
+               ]
+}

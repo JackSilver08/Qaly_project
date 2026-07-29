@@ -8,6 +8,7 @@ param(
     [string]$Password = $env:SQLSERVER_SA_PASSWORD,
     [switch]$UseIntegratedSecurity,
     [switch]$DropRestoredDatabase,
+    [string]$SqlServerBackupPath,
     [string]$EvidenceDirectory = "docs/task/qa-evidence/recovery",
     [string]$Operator = $env:USERNAME
 )
@@ -20,6 +21,12 @@ if (-not (Get-Command sqlcmd -ErrorAction SilentlyContinue)) {
 
 $resolvedBackup = Resolve-Path -LiteralPath $BackupFile -ErrorAction Stop
 $backupPath = $resolvedBackup.Path
+$databaseVisibleBackupPath = if ([string]::IsNullOrWhiteSpace($SqlServerBackupPath)) {
+    $backupPath
+}
+else {
+    $SqlServerBackupPath
+}
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 
 if ([string]::IsNullOrWhiteSpace($TargetDatabase)) {
@@ -74,6 +81,16 @@ function Escape-SqlIdentifier {
     return $Value.Replace("]", "]]")
 }
 
+function Join-SqlServerPath {
+    param([string]$Directory, [string]$FileName)
+
+    if ($Directory.Contains("/")) {
+        return "$($Directory.TrimEnd('/'))/$FileName"
+    }
+
+    return Join-Path $Directory $FileName
+}
+
 $startedAt = Get-Date
 $evidence = [ordered]@{
     task = "T1-LG-01"
@@ -83,6 +100,7 @@ $evidence = [ordered]@{
     operator = $Operator
     server = $Server
     backupFile = $backupPath
+    sqlServerBackupPath = $databaseVisibleBackupPath
     backupSha256 = $null
     targetDatabase = $TargetDatabase
     verifyOnly = "not-run"
@@ -98,7 +116,7 @@ $evidence = [ordered]@{
 try {
     $evidence.backupSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $backupPath).Hash
 
-    $escapedBackup = Escape-SqlLiteral $backupPath
+    $escapedBackup = Escape-SqlLiteral $databaseVisibleBackupPath
     $escapedTarget = Escape-SqlIdentifier $TargetDatabase
 
     $existsQuery = "SET NOCOUNT ON; SELECT COUNT(*) FROM sys.databases WHERE name = N'$(Escape-SqlLiteral $TargetDatabase)';"
@@ -172,8 +190,8 @@ SELECT CONVERT(nvarchar(4000), SERVERPROPERTY('InstanceDefaultDataPath')) + N'|'
         $logPath = $dataPath
     }
 
-    $targetMdf = Join-Path $dataPath "$TargetDatabase.mdf"
-    $targetLdf = Join-Path $logPath "$TargetDatabase.ldf"
+    $targetMdf = Join-SqlServerPath -Directory $dataPath -FileName "$TargetDatabase.mdf"
+    $targetLdf = Join-SqlServerPath -Directory $logPath -FileName "$TargetDatabase.ldf"
     $restoreQuery = @"
 RESTORE DATABASE [$escapedTarget]
 FROM DISK = N'$escapedBackup'

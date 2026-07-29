@@ -338,7 +338,7 @@ async function installMocks(page: Page, initialMode: Mode) {
 }
 
 async function openDemoMap(page: Page) {
-  await page.getByRole('button', { name: 'Sơ đồ demo' }).click()
+  await page.getByRole('button', { name: 'Journey Map (Hành trình)' }).click()
   await expect(page.getByTestId('sprint-progress-ai-card')).toBeVisible()
 }
 

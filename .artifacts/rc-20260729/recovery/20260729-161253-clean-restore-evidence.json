@@ -1,0 +1,23 @@
+﻿{
+    "task":  "T1-LG-01",
+    "scenario":  "Clean SQL Server restore from backup",
+    "startedAt":  "2026-07-29T16:12:53.2274191+07:00",
+    "finishedAt":  "2026-07-29T16:12:55.8568929+07:00",
+    "operator":  "tuant",
+    "server":  "localhost,1434",
+    "backupFile":  "C:\\Qaly_project\\.artifacts\\rc-20260729\\recovery\\QalyDb-RC-20260729.bak",
+    "sqlServerBackupPath":  "/var/opt/mssql/data/QalyDb-RC-20260729.bak",
+    "backupSha256":  "7CD3A00393F61761F1465BE6B233D256927FAC665BA67CE3E547443342C32979",
+    "targetDatabase":  "QalyRestoreSmoke_RC20260729B",
+    "verifyOnly":  "passed",
+    "restore":  "passed",
+    "checkDb":  "passed",
+    "smoke":  "passed",
+    "cleanup":  "dropped-restored-database",
+    "rtoSeconds":  2.63,
+    "success":  true,
+    "errors":  [
+
+               ],
+    "smokeOutput":  "TableCount  AppliedMigrations\r\n----------- -----------------\r\n         68                37"
+}

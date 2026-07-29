@@ -24,8 +24,13 @@
 docker-compose*.yml
 .dockerignore
 
-# Documentation (không cần trong image)
-docs/
+# Documentation is excluded except for runtime AI contract schemas referenced by
+# Qaly.Infrastructure.csproj during publish.
+docs/**
+!docs/schemas/
+!docs/schemas/ai/
+!docs/schemas/ai/progress_summary.schema.json
+!docs/schemas/ai/task_skill_suggestion.schema.json
 *.md
 
 # OS
