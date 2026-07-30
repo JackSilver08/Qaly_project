@@ -409,7 +409,25 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
     private async Task<bool> CanManageProjectAsync(Project project, CancellationToken ct)
     {
         var userId = _currentUser.UserId!.Value;
-        if (ProjectRoleRules.IsSystemAdmin(_currentUser.Role) || project.OwnerId == userId) return true;
+        if (ProjectRoleRules.IsSystemAdmin(_currentUser.Role)) return true;
+
+        var projectInfo = await _projects.GetQueryable()
+            .AsNoTracking()
+            .Where(item => item.Id == project.Id)
+            .Select(item => new
+            {
+                item.OrganizationId,
+                OrganizationIsActive = item.Organization != null && item.Organization.IsActive,
+                OrganizationOwnerId = item.Organization != null ? (Guid?)item.Organization.OwnerId : null
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (projectInfo?.OrganizationId == null || projectInfo.OrganizationOwnerId == null || !projectInfo.OrganizationIsActive)
+        {
+            return false;
+        }
+
+        if (project.OwnerId == userId || projectInfo.OrganizationOwnerId == userId) return true;
         var projectRole = await _projectMembers.GetQueryable()
             .Where(member => member.ProjectId == project.Id && member.UserId == userId)
             .Select(member => member.Role)

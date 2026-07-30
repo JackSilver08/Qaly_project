@@ -330,6 +330,11 @@ public class AttachmentService : IAttachmentService
             return false;
         }
 
+        if (task.Project.Organization != null && !task.Project.Organization.IsActive)
+        {
+            return false;
+        }
+
         if (IsAdmin() ||
             task.ReporterId == currentUserId ||
             task.AssigneeId == currentUserId ||
@@ -396,6 +401,11 @@ public class AttachmentService : IAttachmentService
     {
         var project = task.Project;
         if (project == null)
+        {
+            return false;
+        }
+
+        if (project.Organization != null && !project.Organization.IsActive)
         {
             return false;
         }

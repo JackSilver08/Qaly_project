@@ -13,6 +13,7 @@ public interface IOrganizationService
     Task<Result<IReadOnlyList<OrganizationMemberDto>>> GetMembersAsync(Guid organizationId, CancellationToken ct = default);
     Task<Result> AddMemberAsync(Guid organizationId, Guid userId, string role, CancellationToken ct = default);
     Task<Result> AddMemberByEmailAsync(Guid organizationId, string email, string role, CancellationToken ct = default);
+    Task<Result> UpdateMemberRoleAsync(Guid organizationId, Guid userId, string role, CancellationToken ct = default);
     Task<Result> RemoveMemberAsync(Guid organizationId, Guid userId, CancellationToken ct = default);
     Task<Result<IReadOnlyList<string>>> GetCurrentModeratorCapabilitiesAsync(Guid organizationId, CancellationToken ct = default);
 }

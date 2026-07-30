@@ -316,7 +316,7 @@ public class OrganizationService : IOrganizationService
 
         if (organization.OwnerId == userId && !string.Equals(role, OrganizationRoleRules.Owner, StringComparison.OrdinalIgnoreCase))
         {
-            return Result.Failure("Organization owner role cannot be downgraded by this action.", 400);
+            return Result.Failure("Organization owner role cannot be downgraded by this action.", 409);
         }
 
         var userExists = await _userRepo.GetQueryable()
@@ -335,23 +335,26 @@ public class OrganizationService : IOrganizationService
 
         if (existing != null)
         {
-            existing.Role = normalizedRole;
-            await _organizationMemberRepo.UpdateAsync(existing, ct);
-            await _unitOfWork.SaveChangesAsync(ct);
-            await _auditLogService.LogAsync("UpdateMemberRole", nameof(Organization), organizationId.ToString(), new { userId, role = normalizedRole }, ct);
-            return Result.Success();
+            return Result.Failure("User is already a member of this organization.", 409);
         }
 
-        await _organizationMemberRepo.AddAsync(new OrganizationMember
+        try
         {
-            OrganizationId = organizationId,
-            UserId = userId,
-            Role = normalizedRole
-        }, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("AddMember", nameof(Organization), organizationId.ToString(), new { userId, role = normalizedRole }, ct);
+            await _organizationMemberRepo.AddAsync(new OrganizationMember
+            {
+                OrganizationId = organizationId,
+                UserId = userId,
+                Role = normalizedRole
+            }, ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+            await _auditLogService.LogAsync("AddMember", nameof(Organization), organizationId.ToString(), new { userId, role = normalizedRole }, ct);
 
-        return Result.Success();
+            return Result.Success();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Result.Failure("Organization was modified by another request.", 409);
+        }
     }
 
     public async Task<Result> AddMemberByEmailAsync(Guid organizationId, string email, string role, CancellationToken ct = default)
@@ -387,6 +390,64 @@ public class OrganizationService : IOrganizationService
         return await AddMemberAsync(organizationId, userId.Value, role, ct);
     }
 
+    public async Task<Result> UpdateMemberRoleAsync(Guid organizationId, Guid userId, string role, CancellationToken ct = default)
+    {
+        var organization = await _organizationRepo.GetByIdAsync(organizationId, ct);
+        if (organization == null)
+        {
+            return Result.Failure("Organization was not found.", 404);
+        }
+
+        if (!await CanManageOrganizationAsync(organization.Id, organization.OwnerId, ct)
+            && !await HasModeratorCapabilityAsync(organization.Id, ModeratorCapabilities.UsersUpdateRole, ct))
+        {
+            return Result.Failure("Access denied.", 403);
+        }
+
+        if (!OrganizationRoleRules.TryNormalizeAssignableRole(role, out var normalizedRole))
+        {
+            return Result.Failure("Organization role is invalid.", 400);
+        }
+
+        var membership = await _organizationMemberRepo.GetQueryable()
+            .FirstOrDefaultAsync(item => item.OrganizationId == organizationId && item.UserId == userId, ct);
+
+        if (membership == null)
+        {
+            return Result.Failure("Organization member was not found.", 404);
+        }
+
+        if (organization.OwnerId == userId && !string.Equals(normalizedRole, OrganizationRoleRules.Owner, StringComparison.OrdinalIgnoreCase))
+        {
+            return Result.Failure("Ownership transfer is required before changing the owner role.", 409);
+        }
+
+        if (string.Equals(membership.Role, normalizedRole, StringComparison.OrdinalIgnoreCase))
+        {
+            return Result.Success();
+        }
+
+        try
+        {
+            var oldRole = membership.Role;
+            membership.Role = normalizedRole;
+            await _organizationMemberRepo.UpdateAsync(membership, ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+            await _auditLogService.LogAsync("UpdateMemberRole", nameof(Organization), organizationId.ToString(), new
+            {
+                userId,
+                OldRole = oldRole,
+                NewRole = normalizedRole
+            }, ct);
+
+            return Result.Success();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Result.Failure("Organization was modified by another request.", 409);
+        }
+    }
+
     public async Task<Result> RemoveMemberAsync(Guid organizationId, Guid userId, CancellationToken ct = default)
     {
         var organization = await _organizationRepo.GetByIdAsync(organizationId, ct);
@@ -403,7 +464,7 @@ public class OrganizationService : IOrganizationService
 
         if (organization.OwnerId == userId)
         {
-            return Result.Failure("Organization owner cannot be removed.", 400);
+            return Result.Failure("Organization owner cannot be removed.", 409);
         }
 
         var membership = await _organizationMemberRepo.GetQueryable()
@@ -413,10 +474,17 @@ public class OrganizationService : IOrganizationService
             return Result.Failure("Organization member was not found.", 404);
         }
 
-        await _organizationMemberRepo.DeleteAsync(membership, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("RemoveMember", nameof(Organization), organizationId.ToString(), new { userId }, ct);
-        return Result.Success();
+        try
+        {
+            await _organizationMemberRepo.DeleteAsync(membership, ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+            await _auditLogService.LogAsync("RemoveMember", nameof(Organization), organizationId.ToString(), new { userId }, ct);
+            return Result.Success();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Result.Failure("Organization was modified by another request.", 409);
+        }
     }
 
     public async Task<Result<IReadOnlyList<string>>> GetCurrentModeratorCapabilitiesAsync(Guid organizationId, CancellationToken ct = default)
@@ -452,7 +520,22 @@ public class OrganizationService : IOrganizationService
             return false;
         }
 
-        if (IsSystemAdmin() || ownerId == currentUserId)
+        if (IsSystemAdmin())
+        {
+            return true;
+        }
+
+        var organization = await _organizationRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(item => item.Id == organizationId)
+            .Select(item => new { item.IsActive })
+            .FirstOrDefaultAsync(ct);
+        if (organization == null || !organization.IsActive)
+        {
+            return false;
+        }
+
+        if (ownerId == currentUserId)
         {
             return true;
         }
@@ -469,7 +552,22 @@ public class OrganizationService : IOrganizationService
             return false;
         }
 
-        if (IsSystemAdmin() || ownerId == currentUserId)
+        if (IsSystemAdmin())
+        {
+            return true;
+        }
+
+        var organization = await _organizationRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(item => item.Id == organizationId)
+            .Select(item => new { item.IsActive })
+            .FirstOrDefaultAsync(ct);
+        if (organization == null || !organization.IsActive)
+        {
+            return false;
+        }
+
+        if (ownerId == currentUserId)
         {
             return true;
         }

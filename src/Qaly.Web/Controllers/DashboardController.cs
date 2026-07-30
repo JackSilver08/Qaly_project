@@ -64,8 +64,10 @@ public partial class DashboardController : BaseApiController
                 if (restrictToMembership && !isAdmin && currentUserId.HasValue)
                 {
                     query = query.Where(project =>
-                        project.OwnerId == currentUserId ||
-                        project.Members.Any(member => member.UserId == currentUserId));
+                        project.Organization != null &&
+                        project.Organization.IsActive &&
+                        (project.OwnerId == currentUserId ||
+                         project.Members.Any(member => member.UserId == currentUserId)));
                 }
 
                 return query;
@@ -472,8 +474,10 @@ public partial class DashboardController : BaseApiController
         if (!isAdmin && currentUserId.HasValue)
         {
             projectQuery = projectQuery.Where(p =>
-                p.OwnerId == currentUserId ||
-                p.Members.Any(m => m.UserId == currentUserId));
+                p.Organization != null &&
+                p.Organization.IsActive &&
+                (p.OwnerId == currentUserId ||
+                 p.Members.Any(m => m.UserId == currentUserId)));
         }
 
         var projects = await projectQuery.ToListAsync(cancellationToken);
@@ -529,10 +533,6 @@ public partial class DashboardController : BaseApiController
             .AsNoTracking()
             .Include(a => a.User)
             .Where(a => a.Timestamp >= startOfWeek);
-        var projectNames = await _context.Projects
-            .AsNoTracking()
-            .Select(project => new { project.Id, project.Name })
-            .ToDictionaryAsync(project => project.Id, project => project.Name, cancellationToken);
 
         var logs = await query
             .OrderByDescending(a => a.Timestamp)
@@ -561,6 +561,21 @@ public partial class DashboardController : BaseApiController
                 );
             })
             .ToList();
+
+        // P0-fix: Build projectNames only from projects referenced in the VISIBLE (tenant-scoped) logs.
+        // Loading all project names would leak project identity across tenant boundaries.
+        var visibleProjectIds = visibleLogs
+            .Select(l => InferProjectId(l))
+            .Where(id => id.HasValue)
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToList();
+
+        var projectNames = await _context.Projects
+            .AsNoTracking()
+            .Where(project => visibleProjectIds.Contains(project.Id))
+            .Select(project => new { project.Id, project.Name })
+            .ToDictionaryAsync(project => project.Id, project => project.Name, cancellationToken);
 
         var latestActivities = visibleLogs.Take(3).Select(l => 
         {
@@ -810,8 +825,10 @@ public partial class DashboardController : BaseApiController
         if (!isAdmin && currentUserId.HasValue)
         {
             projectQuery = projectQuery.Where(p =>
-                p.OwnerId == currentUserId ||
-                p.Members.Any(m => m.UserId == currentUserId));
+                p.Organization != null &&
+                p.Organization.IsActive &&
+                (p.OwnerId == currentUserId ||
+                 p.Members.Any(m => m.UserId == currentUserId)));
         }
 
         var projects = await projectQuery.ToListAsync(cancellationToken);
@@ -839,7 +856,14 @@ public partial class DashboardController : BaseApiController
             return prog < 40 || pTasks.Count(t => IsOverdue(t, now)) > 2;
         });
 
-        var teamWorkloadLevel = (allTasks.Count(t => !IsDone(t)) / (double)Math.Max(1, _context.Users.Count())) > 5 ? "High" : "Medium";
+        // P0-fix: Count only users who participate in accessible projects (project members + owners),
+        // not all users in the database, which would leak cross-tenant user counts.
+        var accessibleUserCount = projects
+            .SelectMany(p => p.Members.Select(m => m.UserId))
+            .Concat(projects.Select(p => p.OwnerId))
+            .Distinct()
+            .Count();
+        var teamWorkloadLevel = (allTasks.Count(t => !IsDone(t)) / (double)Math.Max(1, accessibleUserCount)) > 5 ? "High" : "Medium";
         var riskLevel = overdueTasks > 5 || riskProjectCount > 1 ? "High" : (overdueTasks > 0 ? "Moderate" : "Low");
 
         var topPriorityTasks = allTasks

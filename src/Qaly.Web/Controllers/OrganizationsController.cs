@@ -81,7 +81,7 @@ public class OrganizationsController : BaseApiController
     [HttpPatch("{id:guid}/users/{userId:guid}")]
     public async Task<IActionResult> UpdateUserRole(Guid id, Guid userId, UpdateOrganizationUserRoleRequest request, CancellationToken ct = default)
     {
-        var result = await _organizationService.AddMemberAsync(id, userId, request.Role, ct);
+        var result = await _organizationService.UpdateMemberRoleAsync(id, userId, request.Role, ct);
         return StatusCode(result.StatusCode, result);
     }
 

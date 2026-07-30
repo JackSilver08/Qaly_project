@@ -164,6 +164,7 @@ public class CommentService : ICommentService
     private async Task<TaskItem?> LoadTaskAsync(Guid taskItemId, CancellationToken ct)
         => await _taskRepo.GetQueryable()
             .Include(task => task.Project)
+                .ThenInclude(project => project.Organization)
             .Include(task => task.Assignees)
             .FirstOrDefaultAsync(task => task.Id == taskItemId, ct);
 
@@ -176,6 +177,11 @@ public class CommentService : ICommentService
         }
 
         if (task.Project == null)
+        {
+            return false;
+        }
+
+        if (task.Project.Organization != null && !task.Project.Organization.IsActive)
         {
             return false;
         }

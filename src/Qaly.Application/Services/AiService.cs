@@ -678,7 +678,21 @@ Yêu cầu:
         var project = await _projectRepo.GetByIdAsync(projectId);
         if (project == null) return false;
 
-        if (project.OwnerId == currentUserId) return true;
+        var projectInfo = await _projectRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(item => item.Id == projectId)
+            .Select(item => new
+            {
+                item.OrganizationId,
+                OrganizationIsActive = item.Organization != null && item.Organization.IsActive,
+                OrganizationOwnerId = item.Organization != null ? (Guid?)item.Organization.OwnerId : null
+            })
+            .FirstOrDefaultAsync();
+
+        if (projectInfo?.OrganizationId == null || projectInfo.OrganizationOwnerId == null || !projectInfo.OrganizationIsActive)
+            return false;
+
+        if (project.OwnerId == currentUserId || projectInfo.OrganizationOwnerId == currentUserId) return true;
 
         return await _memberRepo.GetQueryable()
             .AnyAsync(m => m.ProjectId == projectId && m.UserId == currentUserId);

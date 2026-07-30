@@ -48,8 +48,10 @@ public class SearchController : BaseApiController
         if (!isAdmin)
         {
             projectQuery = projectQuery.Where(project =>
-                project.OwnerId == userId.Value ||
-                project.Members.Any(member => member.UserId == userId.Value));
+                project.Organization != null &&
+                project.Organization.IsActive &&
+                (project.OwnerId == userId.Value ||
+                 project.Members.Any(member => member.UserId == userId.Value)));
         }
 
         var accessibleProjects = await projectQuery

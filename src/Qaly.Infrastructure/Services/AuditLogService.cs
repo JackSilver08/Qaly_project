@@ -12,6 +12,7 @@ namespace Qaly.Infrastructure.Services;
 public class AuditLogService : IAuditLogService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private const int RecentWorkspaceActivityScanLimit = 500;
 
     private readonly QalyDbContext _context;
     private readonly ICurrentUserService _currentUserService;
@@ -70,8 +71,45 @@ public class AuditLogService : IAuditLogService
     public async Task<Result<PagedResult<AuditLogDto>>> GetRecentWorkspaceActivityAsync(int limit = 10, CancellationToken ct = default)
     {
         limit = Math.Clamp(limit, 1, 100);
-        var query = AuditLogQuery();
-        return await PageAsync(query, 1, limit, ct);
+
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<PagedResult<AuditLogDto>>();
+        }
+
+        var isAdmin = string.Equals(_currentUserService.Role, "Admin", StringComparison.OrdinalIgnoreCase);
+        var recentLogs = await AuditLogQuery()
+            .OrderByDescending(log => log.Timestamp)
+            .Take(isAdmin ? limit : RecentWorkspaceActivityScanLimit)
+            .ToListAsync(ct);
+
+        if (!isAdmin)
+        {
+            var accessibleLogs = new List<AuditLog>(limit);
+            foreach (var log in recentLogs)
+            {
+                if (await CanSeeRecentLogAsync(log, currentUserId.Value, ct))
+                {
+                    accessibleLogs.Add(log);
+                }
+
+                if (accessibleLogs.Count == limit)
+                {
+                    break;
+                }
+            }
+
+            return Result.Success(new PagedResult<AuditLogDto>
+            {
+                Items = accessibleLogs.Select(ToDto).ToList(),
+                TotalCount = accessibleLogs.Count,
+                PageNumber = 1,
+                PageSize = limit
+            });
+        }
+
+        return await PageAsync(recentLogs.AsQueryable(), 1, limit, ct);
     }
 
     private IQueryable<AuditLog> AuditLogQuery()
@@ -128,6 +166,64 @@ public class AuditLogService : IAuditLogService
         }
 
         return null;
+    }
+
+    private async Task<bool> CanSeeRecentLogAsync(AuditLog log, Guid currentUserId, CancellationToken ct)
+    {
+        if (log.UserId == currentUserId)
+        {
+            return true;
+        }
+
+        var projectId = await InferProjectIdAsync(log.EntityType, log.EntityId, log.ChangesJson is null ? null : JsonNode.Parse(log.ChangesJson), ct);
+        if (!projectId.HasValue)
+        {
+            return false;
+        }
+
+        return await CanAccessProjectAsync(projectId.Value, currentUserId, ct);
+    }
+
+    private async Task<bool> CanAccessProjectAsync(Guid projectId, Guid currentUserId, CancellationToken ct)
+    {
+        var project = await _context.Projects
+            .AsNoTracking()
+            .Include(item => item.Organization)
+                .ThenInclude(item => item!.Members)
+            .Include(item => item.Members)
+            .FirstOrDefaultAsync(item => item.Id == projectId, ct);
+
+        if (project == null)
+        {
+            return false;
+        }
+
+        if (project.OwnerId == currentUserId)
+        {
+            return true;
+        }
+
+        if (project.Members.Any(member => member.UserId == currentUserId))
+        {
+            return true;
+        }
+
+        if (project.OrganizationId == null || project.Organization == null)
+        {
+            return false;
+        }
+
+        if (!project.Organization.IsActive)
+        {
+            return false;
+        }
+
+        if (project.Organization.OwnerId == currentUserId)
+        {
+            return true;
+        }
+
+        return project.Organization.Members.Any(member => member.UserId == currentUserId);
     }
 
     private static bool TryReadGuid(JsonObject obj, string propertyName, out Guid value)

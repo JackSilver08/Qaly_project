@@ -435,6 +435,7 @@ public sealed class TaskSkillService : ITaskSkillService
                 organization => organization.Id == organizationId && organization.IsActive,
                 ct);
         }
+
         return await _organizationRepo.GetQueryable().AnyAsync(
             organization =>
                 organization.Id == organizationId &&

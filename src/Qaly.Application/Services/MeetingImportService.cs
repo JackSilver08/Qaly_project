@@ -920,7 +920,28 @@ public partial class MeetingImportService : IMeetingImportService
 
     private async Task<bool> CanAccessProjectAsync(Project project, Guid currentUserId, CancellationToken ct)
     {
-        if (IsAdmin() || project.OwnerId == currentUserId)
+        if (IsAdmin())
+        {
+            return true;
+        }
+
+        var projectInfo = await _projectRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(item => item.Id == project.Id)
+            .Select(item => new
+            {
+                item.OrganizationId,
+                OrganizationIsActive = item.Organization == null || item.Organization.IsActive,
+                OrganizationOwnerId = item.Organization != null ? (Guid?)item.Organization.OwnerId : null
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (projectInfo != null && projectInfo.OrganizationId.HasValue && !projectInfo.OrganizationIsActive)
+        {
+            return false;
+        }
+
+        if (project.OwnerId == currentUserId)
         {
             return true;
         }
@@ -930,18 +951,18 @@ public partial class MeetingImportService : IMeetingImportService
             return true;
         }
 
-        if (project.OrganizationId == null)
+        if (projectInfo != null && projectInfo.OrganizationId.HasValue)
         {
-            return false;
+            if (projectInfo.OrganizationOwnerId.HasValue && projectInfo.OrganizationOwnerId.Value == currentUserId)
+            {
+                return true;
+            }
+
+            return await _organizationMemberRepo.GetQueryable()
+                .AnyAsync(member => member.OrganizationId == projectInfo.OrganizationId.Value && member.UserId == currentUserId, ct);
         }
 
-        if (project.Organization?.OwnerId == currentUserId)
-        {
-            return true;
-        }
-
-        return await _organizationMemberRepo.GetQueryable()
-            .AnyAsync(member => member.OrganizationId == project.OrganizationId.Value && member.UserId == currentUserId, ct);
+        return false;
     }
 
     private bool IsAdmin()
