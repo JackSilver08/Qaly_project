@@ -201,4 +201,24 @@ public sealed class GoldenDatasetAiEvaluationTests
         output.Suggestions[0].RequiredLevel.Should().Be("Proficient");
         output.Suggestions[0].Confidence.Should().Be(0.92m);
     }
+
+    [Fact]
+    public void Evaluate_GoldenDataset_PredictiveRiskSchema_ValidatesCorrectly()
+    {
+        var validator = new AiOutputValidator();
+        const string validJson = """
+            {
+              "riskScore": 45,
+              "healthStatus": "AtRisk",
+              "delayProbabilityPercent": 65,
+              "bottlenecks": ["Tải công việc dồn vào Backend", "Code review bị hoãn"],
+              "actionableRemediations": ["Phân bổ 2 task cho Dev B", "Tăng ưu tiên Code Review"],
+              "summary": "Dự án có nguy cơ trễ 3 ngày nếu không điều chỉnh nhân sự phụ trách Backend."
+            }
+            """;
+
+        bool isValid = validator.Validate(validJson, "PredictiveRisk.v1", out var error);
+        isValid.Should().BeTrue(error);
+        error.Should().BeNull();
+    }
 }

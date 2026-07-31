@@ -130,7 +130,7 @@ async function loadSprints() {
       selectedSprintId.value = current.id
     }
   } catch (error) {
-    showError('Không thể tải sơ đồ mốc hành trình dự án.')
+    showError('Không thể tải lộ trình dự án.')
   } finally {
     isLoading.value = false
   }
@@ -501,7 +501,7 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
 </script>
 
 <template>
-  <div class="project-demo-map-shell">
+  <div class="project-roadmap-shell">
     
     <!-- Role & Mode Indicator Banner -->
     <div class="role-mode-bar glass-card">
@@ -540,22 +540,22 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
     </div>
 
     <!-- Top Executive Overview Header -->
-    <div class="demo-map-header glass-card">
-      <div class="demo-map-header__title">
+    <div class="roadmap-header glass-card">
+      <div class="roadmap-header__title">
         <div class="title-with-icon">
           <div class="icon-glow-box">
             <Compass :size="26" class="text-primary" />
           </div>
           <div>
-            <h3>Lộ Trình Bàn Giao & Sơ Đồ Mốc Tiến Độ (Delivery Roadmap & Milestones)</h3>
+            <h3>Lộ Trình Dự Án & Mốc Tiến Độ</h3>
             <p class="text-muted text-sm">
-              Theo dõi trực quan mốc nghiệm thu giai đoạn, tiến độ tổng thể và kiểm soát rủi ro cho dự án Qaly.
+              Theo dõi tiến độ nghiệm thu giai đoạn, quản lý mốc bàn giao và kiểm soát rủi ro dự án.
             </p>
           </div>
         </div>
       </div>
 
-      <div class="demo-map-header__actions">
+      <div class="roadmap-header__actions">
         <button
           v-if="isProjectAdmin && !isClientViewMode"
           type="button"
@@ -579,13 +579,13 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
     </div>
 
     <!-- Empty State if no milestones exist -->
-    <div v-if="sprints.length === 0 && !isLoading" class="empty-map-card glass-card">
-      <div class="empty-map-content">
+    <div v-if="sprints.length === 0 && !isLoading" class="empty-roadmap-card glass-card">
+      <div class="empty-roadmap-content">
         <Layers :size="52" class="text-primary opacity-60 mb-3" />
         <h4>Chưa có mốc tiến độ nào được thiết lập</h4>
         <p>
-          Dự án này chưa khai báo sơ đồ mốc hành trình. Bạn có thể sử dụng các <strong>Mẫu Quy trình Chuẩn (Scrum, Outsource, Waterfall)</strong>
-          hoặc tự thêm các mốc quan trọng để theo dõi tiến độ cấp cao.
+          Dự án này chưa có mốc tiến độ nào. Bạn có thể sử dụng các <strong>Mẫu Quy trình Chuẩn (Scrum, Outsource, Waterfall)</strong>
+          hoặc tự thêm các mốc quan trọng để theo dõi tiến độ bàn giao.
         </p>
 
         <div class="empty-actions mt-4" v-if="isProjectAdmin">
@@ -604,7 +604,7 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
           </button>
         </div>
         <p v-else class="text-muted text-sm mt-3">
-          Vui lòng liên hệ Người quản lý dự án (Project Leader) để thiết lập sơ đồ mốc tiến độ.
+          Vui lòng liên hệ Người quản lý dự án (Project Leader) để thiết lập lộ trình dự án.
         </p>
       </div>
     </div>
@@ -987,13 +987,13 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
       <div v-if="showPresetModal" class="modal-backdrop" @click.self="showPresetModal = false">
         <div class="preset-modal glass-card">
           <div class="modal-header">
-            <h4><Sparkles :size="18" class="text-primary me-2" /> Khởi Tạo Mẫu Sơ Đồ Lộ Trình Dự Án</h4>
+            <h4><Sparkles :size="18" class="text-primary me-2" /> Khởi Tạo Mẫu Lộ Trình Dự Án</h4>
             <button type="button" class="icon-button" @click="showPresetModal = false"><X :size="18" /></button>
           </div>
 
           <div class="preset-modal-body">
             <p class="text-muted text-sm mb-4">
-              Chọn phương pháp quản trị dự án phù hợp để hệ thống tự động khởi tạo sơ đồ mốc hành trình tối ưu:
+              Chọn phương pháp quản trị dự án phù hợp để hệ thống tự động khởi tạo lộ trình mốc tiến độ tối ưu:
             </p>
 
             <div class="preset-options-grid">
@@ -1203,7 +1203,7 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
 </template>
 
 <style scoped>
-.project-demo-map-shell {
+.project-roadmap-shell {
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -1283,7 +1283,7 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
 }
 
 /* Header */
-.demo-map-header {
+.roadmap-header {
   padding: 24px 32px;
   display: flex;
   align-items: center;
@@ -1310,19 +1310,19 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   border: 1px solid rgba(37, 99, 235, 0.2);
 }
 
-.demo-map-header h3 {
+.roadmap-header h3 {
   font-size: 18px;
   font-weight: 700;
   margin-bottom: 4px;
 }
 
-.demo-map-header__actions {
+.roadmap-header__actions {
   display: flex;
   gap: 12px;
 }
 
 /* Empty Map */
-.empty-map-card {
+.empty-roadmap-card {
   padding: 48px 32px;
   text-align: center;
   background: var(--panel);
@@ -1330,7 +1330,7 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   border-radius: var(--radius-shell);
 }
 
-.empty-map-content {
+.empty-roadmap-content {
   max-width: 580px;
   margin: 0 auto;
 }

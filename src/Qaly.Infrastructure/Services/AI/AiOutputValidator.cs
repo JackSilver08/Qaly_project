@@ -362,6 +362,25 @@ public class AiOutputValidator
                     }
                 }
             }
+            else if (string.Equals(schemaId, "PredictiveRisk.v1", StringComparison.OrdinalIgnoreCase))
+            {
+                if (root.ValueKind != JsonValueKind.Object)
+                {
+                    errorMessage = "PredictiveRisk.v1 root must be a JSON object.";
+                    return false;
+                }
+
+                if (!root.TryGetProperty("riskScore", out var riskScore) || riskScore.ValueKind != JsonValueKind.Number ||
+                    !root.TryGetProperty("healthStatus", out var healthStatus) || healthStatus.ValueKind != JsonValueKind.String ||
+                    !root.TryGetProperty("delayProbabilityPercent", out var delayProb) || delayProb.ValueKind != JsonValueKind.Number ||
+                    !TryReadStringArray(root, "bottlenecks", out _) ||
+                    !TryReadStringArray(root, "actionableRemediations", out _) ||
+                    !TryReadNonEmptyString(root, "summary", out _))
+                {
+                    errorMessage = "PredictiveRisk.v1 requires riskScore (0-100), healthStatus, delayProbabilityPercent, bottlenecks array, actionableRemediations array, and summary.";
+                    return false;
+                }
+            }
             else if (schemaId.Contains("task_draft", StringComparison.OrdinalIgnoreCase) || schemaId.Contains("ProjectDraft", StringComparison.OrdinalIgnoreCase) || schemaId.Contains("DraftProject", StringComparison.OrdinalIgnoreCase))
             {
                 if (root.ValueKind != JsonValueKind.Object)

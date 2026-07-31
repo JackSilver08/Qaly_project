@@ -6,7 +6,7 @@ import ProjectDetailHeader from '../components/ProjectDetailHeader.vue'
 import ProjectActivityTab from '../components/ProjectActivityTab.vue'
 import ProjectMembersTab from '../components/ProjectMembersTab.vue'
 import ProjectStatsTab from '../components/ProjectStatsTab.vue'
-import ProjectDemoMapTab from '../components/ProjectDemoMapTab.vue'
+import ProjectRoadmapTab from '../components/ProjectRoadmapTab.vue'
 import ProjectWorkloadTab from '../components/ProjectWorkloadTab.vue'
 import ProjectWikiTab from '../components/ProjectWikiTab.vue'
 import ProjectGanttTab from '../components/ProjectGanttTab.vue'
@@ -95,13 +95,13 @@ const route = useRoute()
 watch(
   () => route.hash,
   hash => {
-    if (hash.startsWith('#milestone-')) activeProjectTab.value = 'demo-map'
+    if (hash.startsWith('#milestone-')) activeProjectTab.value = 'roadmap'
   },
   { immediate: true },
 )
 
 watch(activeProjectTab, tab => {
-  if (tab !== 'demo-map' && route.hash.startsWith('#milestone-')) {
+  if (tab !== 'roadmap' && route.hash.startsWith('#milestone-')) {
     void router.replace({ hash: '' })
   }
 })
@@ -508,8 +508,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
         />
       </div>
 
-      <div v-if="activeProjectTab === 'demo-map'" class="tab-pane reveal">
-        <ProjectDemoMapTab
+      <div v-if="activeProjectTab === 'roadmap'" class="tab-pane reveal">
+        <ProjectRoadmapTab
           :project-id="selectedProject.id"
           :project-name="selectedProject.name"
           :can-generate-ai="isProjectAdmin"
