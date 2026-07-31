@@ -31,12 +31,17 @@ import {
   Users,
   Award,
   Zap,
-  LayoutGrid
+  LayoutGrid,
+  Search,
+  Filter,
+  ArrowRight,
+  TrendingUp,
+  Target
 } from 'lucide-vue-next'
 import { apiResult, apiCommand } from '../utils/api-client'
 import { showError, showSuccess } from '../composables/use-toast'
 import { useDashboardContext } from '../composables/dashboard-context'
-import type { SprintDto, DashboardTask, DashboardProjectMember } from '../types'
+import type { SprintDto, DashboardTask } from '../types'
 import ProjectProgressAiCard from './ProjectProgressAiCard.vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -57,6 +62,10 @@ const selectedSprintId = ref<string | null>(null)
 
 // View modes: Executive Client View vs Management View
 const isClientViewMode = ref(false)
+
+// Node Filter & Search
+const milestoneFilter = ref<'all' | 'active' | 'completed' | 'overdue'>('all')
+const milestoneSearchQuery = ref('')
 
 // Modals state
 const showCreateModal = ref(false)
@@ -164,6 +173,24 @@ const currentPositionMilestone = computed(() => {
   return sprints.value.find(s => isCurrentMilestone(s)) || null
 })
 
+// Filtered milestones list
+const filteredSprints = computed(() => {
+  let list = sprints.value
+  if (milestoneFilter.value === 'active') {
+    list = list.filter(s => isCurrentMilestone(s))
+  } else if (milestoneFilter.value === 'completed') {
+    list = list.filter(s => isCompletedMilestone(s))
+  } else if (milestoneFilter.value === 'overdue') {
+    list = list.filter(s => isOverdueMilestone(s))
+  }
+
+  if (milestoneSearchQuery.value.trim()) {
+    const q = milestoneSearchQuery.value.trim().toLowerCase()
+    list = list.filter(s => s.name.toLowerCase().includes(q) || (s.goal && s.goal.toLowerCase().includes(q)))
+  }
+  return list
+})
+
 // Overall project health summary
 const overallProgress = computed(() => {
   if (sprints.value.length === 0) return selectedProject.value?.progressPercentage || 0
@@ -237,6 +264,32 @@ function jumpToKanban(sprintId?: string) {
   const targetId = sprintId || selectedSprintId.value
   if (!targetId) return
   activeProjectTab.value = 'tasks'
+}
+
+// Action: Quick change milestone status
+async function quickChangeMilestoneStatus(sprint: SprintDto, newStatus: string) {
+  try {
+    await apiCommand(`/api/sprints/${sprint.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        name: sprint.name,
+        startDate: sprint.startDate,
+        endDate: sprint.endDate,
+        status: newStatus,
+        goal: sprint.goal
+      })
+    })
+    await loadSprints()
+    showSuccess(`Đã chuyển mốc "${sprint.name}" sang trạng thái "${newStatus}".`)
+  } catch (error) {
+    showError('Không thể cập nhật trạng thái mốc.')
+  }
+}
+
+// Action: Sign-off / Complete Milestone
+async function markMilestoneCompleted(sprint: SprintDto) {
+  if (!confirm(`Bạn có chắc chắn muốn Nghiệm thu Hoàn thành mốc "${sprint.name}"?`)) return
+  await quickChangeMilestoneStatus(sprint, 'Completed')
 }
 
 // Action: Generate Roadmap Preset (Scrum, Outsource, Waterfall)
@@ -435,6 +488,16 @@ function formatDateRange(start: string, end: string) {
   const d2 = new Date(end)
   return `${d1.getDate()}/${d1.getMonth() + 1} - ${d2.getDate()}/${d2.getMonth() + 1}/${d2.getFullYear()}`
 }
+
+function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolean } {
+  if (!endDateStr) return { text: '', isOverdue: false }
+  const now = new Date().getTime()
+  const end = new Date(endDateStr).getTime()
+  const diffDays = Math.ceil((end - now) / (1000 * 60 * 60 * 24))
+  if (diffDays < 0) return { text: `Trễ ${Math.abs(diffDays)} ngày`, isOverdue: true }
+  if (diffDays === 0) return { text: 'Hạn chót hôm nay', isOverdue: false }
+  return { text: `Còn ${diffDays} ngày`, isOverdue: false }
+}
 </script>
 
 <template>
@@ -447,10 +510,10 @@ function formatDateRange(start: string, end: string) {
           <ShieldCheck :size="15" /> Quyền Quản Lý (Project Leader)
         </span>
         <span v-else class="role-chip chip-member">
-          <UserCheck :size="15" /> Giao diện Theo dõi Tiến độ (Thành viên & Khách hàng)
+          <UserCheck :size="15" /> Giao diện Theo dõi Tiến độ (Thành viên & Stakeholders)
         </span>
         <span class="mode-text ms-2">
-          {{ isClientViewMode ? '👀 Đang ở chế độ xem Khách hàng (Tối giản)' : '⚙️ Đang ở chế độ xem Quản trị (Đầy đủ cấu hình)' }}
+          {{ isClientViewMode ? '👀 Đang ở chế độ xem Khách hàng / Stakeholder' : '⚙️ Đang ở chế độ xem Quản trị (Đầy đủ cấu hình & thao tác)' }}
         </span>
       </div>
 
@@ -484,9 +547,9 @@ function formatDateRange(start: string, end: string) {
             <Compass :size="26" class="text-primary" />
           </div>
           <div>
-            <h3>Sơ Đồ Hành Trình Tiến Độ Dự Án</h3>
+            <h3>Lộ Trình Bàn Giao & Sơ Đồ Mốc Tiến Độ (Delivery Roadmap & Milestones)</h3>
             <p class="text-muted text-sm">
-              Theo dõi trực quan các mốc lộ trình (Milestones / Sprints / Delivery Phases) và mức độ sẵn sàng nghiệm thu.
+              Theo dõi trực quan mốc nghiệm thu giai đoạn, tiến độ tổng thể và kiểm soát rủi ro cho dự án Qaly.
             </p>
           </div>
         </div>
@@ -549,7 +612,7 @@ function formatDateRange(start: string, end: string) {
     <!-- MAIN ROADMAP TIMELINE TRACK -->
     <template v-else>
       <div class="roadmap-track-card glass-card">
-        <!-- Client Executive Executive Bar -->
+        <!-- Client Executive Executive Bar & Filters -->
         <div class="roadmap-metrics-bar">
           <div class="metric-pill">
             <span class="metric-label">Trạng thái Sức khỏe Dự án</span>
@@ -579,6 +642,42 @@ function formatDateRange(start: string, end: string) {
             <span class="metric-label">Tổng quy mô Mốc</span>
             <strong class="metric-value">{{ sprints.length }} Giai đoạn</strong>
           </div>
+
+          <!-- Filter Pills -->
+          <div class="milestone-filter-group">
+            <button
+              type="button"
+              class="filter-pill"
+              :class="{ 'active': milestoneFilter === 'all' }"
+              @click="milestoneFilter = 'all'"
+            >
+              Tất cả ({{ sprints.length }})
+            </button>
+            <button
+              type="button"
+              class="filter-pill"
+              :class="{ 'active': milestoneFilter === 'active' }"
+              @click="milestoneFilter = 'active'"
+            >
+              ⚡ Đang chạy
+            </button>
+            <button
+              type="button"
+              class="filter-pill"
+              :class="{ 'active': milestoneFilter === 'overdue' }"
+              @click="milestoneFilter = 'overdue'"
+            >
+              ⚠️ Trễ hạn
+            </button>
+            <button
+              type="button"
+              class="filter-pill"
+              :class="{ 'active': milestoneFilter === 'completed' }"
+              @click="milestoneFilter = 'completed'"
+            >
+              ✓ Đã xong
+            </button>
+          </div>
         </div>
 
         <!-- Horizontal Connected Milestone Journey Track -->
@@ -592,7 +691,7 @@ function formatDateRange(start: string, end: string) {
             <!-- Milestone Nodes -->
             <div class="milestones-nodes-row">
               <div
-                v-for="(sprint, index) in sprints"
+                v-for="(sprint, index) in filteredSprints"
                 :key="sprint.id"
                 class="milestone-node"
                 :class="{
@@ -617,16 +716,21 @@ function formatDateRange(start: string, end: string) {
                 <!-- Milestone Summary Card -->
                 <div class="milestone-node-card">
                   <div class="node-status-badge">
-                    <span v-if="isCompletedMilestone(sprint)" class="badge-tag tag-success">Đã xong</span>
+                    <span v-if="isCompletedMilestone(sprint)" class="badge-tag tag-success">✓ Đã nghiệm thu</span>
                     <span v-else-if="isCurrentMilestone(sprint)" class="badge-tag tag-primary">⚡ Đang làm</span>
                     <span v-else-if="isOverdueMilestone(sprint)" class="badge-tag tag-danger">⚠️ Trễ hạn</span>
-                    <span v-else class="badge-tag tag-muted">Chưa tới</span>
+                    <span v-else class="badge-tag tag-muted">📅 Chưa tới</span>
                   </div>
 
                   <h5 class="node-title">{{ sprint.name }}</h5>
                   <div class="node-dates">
-                    <Calendar :size="13" />
+                    <Calendar :size="12" />
                     <span>{{ formatDateRange(sprint.startDate, sprint.endDate) }}</span>
+                  </div>
+
+                  <div class="node-days-info" :class="{ 'is-overdue': getDaysRemaining(sprint.endDate).isOverdue }">
+                    <Clock :size="11" />
+                    <span>{{ getDaysRemaining(sprint.endDate).text }}</span>
                   </div>
 
                   <div class="node-progress-rail">
@@ -637,7 +741,7 @@ function formatDateRange(start: string, end: string) {
                     ></div>
                   </div>
                   <div class="node-task-count">
-                    {{ sprint.completedTaskCount }}/{{ sprint.taskCount }} tasks ({{ sprint.progress }}%)
+                    <strong>{{ sprint.completedTaskCount }}/{{ sprint.taskCount }}</strong> tasks ({{ sprint.progress }}%)
                   </div>
                 </div>
               </div>
@@ -652,23 +756,88 @@ function formatDateRange(start: string, end: string) {
         :id="`milestone-${activeMilestone.id}`"
         class="milestone-detail-panel glass-card"
       >
+        <!-- Fast Access Command Toolbar -->
+        <div class="fast-access-toolbar mb-4">
+          <div class="toolbar-left">
+            <span class="toolbar-title">⚡ Thao Tác Nhanh Cho Mốc "{{ activeMilestone.name }}"</span>
+          </div>
+
+          <div class="toolbar-right">
+            <!-- Quick Add Task -->
+            <button
+              v-if="!isClientViewMode"
+              type="button"
+              class="toolbar-btn btn-primary-gradient"
+              @click="showQuickCreateTaskModal = true"
+            >
+              <Plus :size="14" />
+              <span>+ Tạo Task Mốc Này</span>
+            </button>
+
+            <!-- One-click Sign-off / Complete Milestone -->
+            <button
+              v-if="isProjectAdmin && !isClientViewMode && !isCompletedMilestone(activeMilestone)"
+              type="button"
+              class="toolbar-btn btn-success-light"
+              @click="markMilestoneCompleted(activeMilestone)"
+              title="Đánh dấu nghiệm thu hoàn thành mốc này"
+            >
+              <CheckCircle2 :size="14" />
+              <span>Nghiệm Thu Mốc</span>
+            </button>
+
+            <!-- Quick Status Change dropdown -->
+            <div v-if="isProjectAdmin && !isClientViewMode" class="quick-status-dropdown-wrap">
+              <select
+                class="quick-status-select"
+                :value="activeMilestone.status || 'Planning'"
+                @change="quickChangeMilestoneStatus(activeMilestone, ($event.target as HTMLSelectElement).value)"
+              >
+                <option value="Planning">Trạng thái: Planning</option>
+                <option value="Active">Trạng thái: Active (⚡)</option>
+                <option value="Completed">Trạng thái: Completed (✓)</option>
+                <option value="Paused">Trạng thái: Paused</option>
+              </select>
+            </div>
+
+            <!-- Task Assignment -->
+            <button
+              v-if="isProjectAdmin && !isClientViewMode"
+              type="button"
+              class="toolbar-btn btn-outline"
+              @click="openTaskAssignModal"
+            >
+              <LinkIcon :size="14" />
+              <span>Gán/Gỡ Task ({{ milestoneTasks.length }})</span>
+            </button>
+
+            <!-- Kanban Jump -->
+            <button type="button" class="toolbar-btn btn-kanban" @click="jumpToKanban(activeMilestone.id)">
+              <FolderKanban :size="14" />
+              <span>Mở Bảng Kanban ➔</span>
+            </button>
+          </div>
+        </div>
+
         <!-- Detail Header -->
         <div class="detail-header">
           <div class="detail-header-left">
             <div class="d-flex align-items-center gap-2 mb-1">
               <span class="badge-tag tag-primary">Mốc Đang Chọn</span>
-              <span v-if="isCompletedMilestone(activeMilestone)" class="badge-tag tag-success">Hoàn thành</span>
-              <span v-else-if="isOverdueMilestone(activeMilestone)" class="badge-tag tag-danger">Trễ hạn</span>
+              <span v-if="isCompletedMilestone(activeMilestone)" class="badge-tag tag-success">✓ Nghiệm thu xong</span>
+              <span v-else-if="isOverdueMilestone(activeMilestone)" class="badge-tag tag-danger">⚠️ Trễ hạn</span>
+              <span v-else class="badge-tag tag-primary">⚡ Đang triển khai</span>
             </div>
 
             <h4>{{ activeMilestone.name }}</h4>
             <p v-if="activeMilestone.goal" class="detail-goal">
-              🎯 <strong>Mục tiêu nghiệm thu:</strong> {{ activeMilestone.goal }}
+              🎯 <strong>Mục tiêu & Hạng mục nghiệm thu:</strong> {{ activeMilestone.goal }}
             </p>
 
             <div class="detail-dates-info">
               <Clock :size="14" />
               <span>Thời gian thực hiện: <strong>{{ formatDateRange(activeMilestone.startDate, activeMilestone.endDate) }}</strong></span>
+              <span class="ms-3 badge-tag tag-muted">{{ getDaysRemaining(activeMilestone.endDate).text }}</span>
             </div>
           </div>
 
@@ -679,31 +848,38 @@ function formatDateRange(start: string, end: string) {
                 <Edit3 :size="15" />
                 <span>Sửa mốc</span>
               </button>
-              <button type="button" class="btn btn-outline-primary" @click="openTaskAssignModal" title="Gán hoặc bỏ gán task vào mốc này">
-                <LinkIcon :size="15" />
-                <span>Gán Nhiệm Vụ ({{ milestoneTasks.length }})</span>
-              </button>
               <button type="button" class="btn btn-danger-ghost" @click="handleDeleteMilestone(activeMilestone.id)" title="Xóa mốc">
                 <Trash2 :size="15" />
               </button>
             </template>
+          </div>
+        </div>
 
-            <!-- Quick Add Task -->
-            <button
-              v-if="!isClientViewMode"
-              type="button"
-              class="btn btn-secondary-compact"
-              @click="showQuickCreateTaskModal = true"
-            >
-              <Plus :size="15" />
-              <span>Tạo Task Mốc Này</span>
-            </button>
+        <!-- Milestone Key Deliverables Checklist (Calculated from Goal & Tasks) -->
+        <div class="milestone-deliverables-box mt-3">
+          <div class="deliverables-header">
+            <Target :size="16" class="text-primary" />
+            <strong>Tiêu Chí & Hạng Mục Nghiệm Thu (Key Deliverables)</strong>
+            <span class="deliverable-badge">{{ activeMilestone.completedTaskCount }}/{{ activeMilestone.taskCount }} Đã Đạt</span>
+          </div>
 
-            <!-- Jump to Kanban -->
-            <button type="button" class="primary-button" @click="jumpToKanban(activeMilestone.id)">
-              <FolderKanban :size="16" />
-              <span>Xem Trên Bảng Kanban ➔</span>
-            </button>
+          <div class="deliverables-grid">
+            <div class="deliverable-item" :class="{ 'is-done': activeMilestone.progress >= 100 }">
+              <CheckSquare v-if="activeMilestone.progress >= 100" :size="16" class="text-success" />
+              <Clock v-else :size="16" class="text-muted" />
+              <span>Hoàn thành 100% nhiệm vụ trong mốc ({{ activeMilestone.completedTaskCount }}/{{ activeMilestone.taskCount }} tasks)</span>
+            </div>
+
+            <div class="deliverable-item" :class="{ 'is-done': !isOverdueMilestone(activeMilestone) }">
+              <CheckSquare v-if="!isOverdueMilestone(activeMilestone)" :size="16" class="text-success" />
+              <AlertTriangle v-else :size="16" class="text-danger" />
+              <span>Đảm bảo đúng mốc thời hạn deadline: {{ formatDateRange(activeMilestone.startDate, activeMilestone.endDate) }}</span>
+            </div>
+
+            <div v-if="activeMilestone.goal" class="deliverable-item is-done">
+              <CheckSquare :size="16" class="text-primary" />
+              <span>Mục tiêu cam kết: {{ activeMilestone.goal }}</span>
+            </div>
           </div>
         </div>
 
@@ -718,7 +894,7 @@ function formatDateRange(start: string, end: string) {
 
         <!-- Team Workload Distribution in Milestone -->
         <div v-if="milestoneAssignedMembers.length > 0" class="milestone-members-bar mt-4">
-          <span class="section-label mb-2"><Users :size="14" /> Nhân sự phụ trách mốc này:</span>
+          <span class="section-label mb-2"><Users :size="14" /> Nhân sự phụ trách mốc này ({{ milestoneAssignedMembers.length }} thành viên):</span>
           <div class="members-chips-row">
             <div v-for="m in milestoneAssignedMembers" :key="m.userId" class="member-chip">
               <User :size="13" />
@@ -733,16 +909,19 @@ function formatDateRange(start: string, end: string) {
           <div class="tasks-section-header mb-3">
             <h5>
               <ListTodo :size="18" class="text-primary me-1" />
-              Danh sách công việc mốc này ({{ milestoneTasks.length }})
+              Danh sách công việc thuộc mốc này ({{ milestoneTasks.length }})
             </h5>
 
             <div class="tasks-filter-tools">
-              <input
-                v-model="milestoneTaskSearch"
-                type="text"
-                placeholder="Lọc task mốc..."
-                class="task-search-input"
-              />
+              <div class="search-box-wrap">
+                <Search :size="14" class="search-icon" />
+                <input
+                  v-model="milestoneTaskSearch"
+                  type="text"
+                  placeholder="Lọc task mốc..."
+                  class="task-search-input"
+                />
+              </div>
               <select v-model="milestoneTaskStatusFilter" class="task-status-filter">
                 <option value="all">Tất cả trạng thái</option>
                 <option value="todo">Cần làm (Todo)</option>
@@ -757,7 +936,7 @@ function formatDateRange(start: string, end: string) {
           <div v-if="filteredMilestoneTasks.length === 0" class="empty-tasks-box">
             <p v-if="milestoneTasks.length === 0">
               Chưa có task nào được gán vào mốc này. 
-              <span v-if="isProjectAdmin">Bạn có thể bấm <strong>"Gán Nhiệm Vụ"</strong> hoặc <strong>"+ Tạo Task Mốc Này"</strong> để bắt đầu.</span>
+              <span v-if="isProjectAdmin">Bạn có thể bấm <strong>"+ Tạo Task Mốc Này"</strong> hoặc <strong>"Gán Nhiệm Vụ"</strong> trên thanh công cụ để bắt đầu.</span>
             </p>
             <p v-else>Không tìm thấy nhiệm vụ phù hợp với bộ lọc.</p>
           </div>
@@ -847,7 +1026,7 @@ function formatDateRange(start: string, end: string) {
               <div class="preset-option-card" @click="handleGeneratePreset('waterfall')">
                 <div class="preset-card-header">
                   <Layers :size="24" class="text-warning" />
-                  <h5>Mẫu Waterfall / Truyền thổng (4 Pha)</h5>
+                  <h5>Mẫu Waterfall / Truyền thống (4 Pha)</h5>
                 </div>
                 <p class="preset-desc">
                   Phù hợp dự án yêu cầu quy trình tuyến tính: Khảo sát ➔ Thiết kế ➔ Phát triển ➔ Bàn giao.
@@ -1168,9 +1347,9 @@ function formatDateRange(start: string, end: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 32px;
-  padding-bottom: 20px;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
   border-bottom: 1px solid var(--line);
   flex-wrap: wrap;
 }
@@ -1217,10 +1396,37 @@ function formatDateRange(start: string, end: string) {
   border-radius: 4px;
 }
 
+.milestone-filter-group {
+  display: flex;
+  gap: 6px;
+  background: var(--bg);
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+.filter-pill {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.filter-pill.active {
+  background: var(--panel);
+  color: var(--text-strong);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+}
+
 /* Scroll Container for Node Path */
 .roadmap-scroll-wrapper {
   overflow-x: auto;
-  padding: 40px 10px 20px 10px;
+  padding: 30px 10px 20px 10px;
 }
 
 .roadmap-visual-container {
@@ -1257,7 +1463,7 @@ function formatDateRange(start: string, end: string) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 175px;
+  width: 185px;
   cursor: pointer;
   transition: transform 0.2s ease;
 }
@@ -1354,7 +1560,22 @@ function formatDateRange(start: string, end: string) {
   align-items: center;
   justify-content: center;
   gap: 4px;
+  margin-bottom: 4px;
+}
+
+.node-days-info {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--qaly-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
   margin-bottom: 8px;
+}
+
+.node-days-info.is-overdue {
+  color: var(--qaly-danger);
 }
 
 .node-progress-rail {
@@ -1387,6 +1608,79 @@ function formatDateRange(start: string, end: string) {
 .tag-primary { background: rgba(37, 99, 235, 0.15); color: var(--qaly-primary); }
 .tag-danger { background: rgba(220, 38, 38, 0.15); color: var(--qaly-danger); }
 .tag-muted { background: rgba(148, 163, 184, 0.15); color: var(--muted); }
+
+/* Fast Access Toolbar */
+.fast-access-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.08), rgba(99, 102, 241, 0.04));
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  border-radius: 12px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.toolbar-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--qaly-primary);
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.toolbar-btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn-primary-gradient {
+  background: linear-gradient(135deg, var(--qaly-primary), var(--qaly-ai));
+  color: #fff;
+  border: none;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+}
+
+.btn-success-light {
+  background: rgba(22, 163, 74, 0.15);
+  color: var(--qaly-success);
+  border-color: rgba(22, 163, 74, 0.3);
+}
+
+.btn-kanban {
+  background: var(--bg);
+  border-color: var(--line);
+}
+
+.quick-status-select {
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+}
 
 /* Detail Control Panel */
 .milestone-detail-panel {
@@ -1434,6 +1728,56 @@ function formatDateRange(start: string, end: string) {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* Deliverables Box */
+.milestone-deliverables-box {
+  padding: 14px 18px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.deliverables-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.deliverable-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--qaly-primary);
+  margin-left: auto;
+}
+
+.deliverables-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.deliverable-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 6px 10px;
+  background: var(--bg);
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+
+.deliverable-item.is-done {
+  color: var(--text-strong);
+  font-weight: 500;
+  border-color: rgba(22, 163, 74, 0.3);
 }
 
 .milestone-members-bar {
@@ -1492,8 +1836,20 @@ function formatDateRange(start: string, end: string) {
   gap: 8px;
 }
 
+.search-box-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: 8px;
+  color: var(--muted);
+}
+
 .task-search-input {
-  padding: 6px 10px;
+  padding: 6px 10px 6px 28px;
   font-size: 12px;
   background: var(--bg);
   border: 1px solid var(--line);
@@ -1598,14 +1954,33 @@ function formatDateRange(start: string, end: string) {
   max-width: 820px;
   padding: 24px;
   background: var(--panel);
-  border: 1px solid var(--line);
   border-radius: var(--radius-shell);
+  border: 1px solid var(--line);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.modal-header h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
 }
 
 .preset-options-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
+}
+
+@media (max-width: 768px) {
+  .preset-options-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .preset-option-card {
@@ -1616,52 +1991,80 @@ function formatDateRange(start: string, end: string) {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 12px;
+  gap: 14px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .preset-option-card:hover {
   border-color: var(--qaly-primary);
-  transform: translateY(-3px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
 }
 
 .preset-card-header {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 10px;
 }
 
 .preset-card-header h5 {
+  margin: 0;
   font-size: 14px;
   font-weight: 700;
-  margin: 0;
 }
 
 .preset-desc {
   font-size: 12px;
   color: var(--muted);
-  line-height: 1.4;
+  line-height: 1.5;
   margin: 0;
 }
 
-.milestone-modal {
+.milestone-modal, .task-assign-modal {
   width: 100%;
-  max-width: 520px;
+  max-width: 540px;
   padding: 24px;
   background: var(--panel);
-  border: 1px solid var(--line);
   border-radius: var(--radius-shell);
+  border: 1px solid var(--line);
 }
 
-.task-assign-modal {
-  width: 100%;
-  max-width: 600px;
-  padding: 24px;
-  background: var(--panel);
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-group label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.modal-input {
+  padding: 8px 12px;
+  font-size: 13px;
+  background: var(--bg);
   border: 1px solid var(--line);
-  border-radius: var(--radius-shell);
+  border-radius: 6px;
+  color: var(--text);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .assign-tasks-list {
@@ -1670,6 +2073,7 @@ function formatDateRange(start: string, end: string) {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding-right: 4px;
 }
 
 .assign-task-row {
@@ -1682,76 +2086,11 @@ function formatDateRange(start: string, end: string) {
   border-radius: 8px;
   cursor: pointer;
   font-size: 13px;
-  transition: background 0.15s ease;
-}
-
-.assign-task-row:hover {
-  background: var(--bg);
+  transition: all 0.2s ease;
 }
 
 .assign-task-row.is-selected {
   border-color: var(--qaly-primary);
   background: rgba(37, 99, 235, 0.08);
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.modal-header h4 {
-  font-size: 16px;
-  font-weight: 700;
-  margin: 0;
-  display: flex;
-  align-items: center;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 14px;
-}
-
-.form-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
-.modal-input {
-  padding: 8px 12px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  color: var(--text);
-  font-size: 13px;
-}
-
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-.btn-secondary-compact {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: var(--panel-soft);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.btn-secondary-compact:hover {
-  background: var(--bg);
 }
 </style>
