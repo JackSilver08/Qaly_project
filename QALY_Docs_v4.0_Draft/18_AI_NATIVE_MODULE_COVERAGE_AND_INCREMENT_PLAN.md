@@ -5,6 +5,8 @@
 **Remote relation:** `HEAD == origin/main` tại thời điểm chụp baseline; working tree sạch trước audit.
 **Change boundary:** lượt này chỉ tạo file này. Không merge, reset, rebase, push, migration, build frontend, source edit, test edit hoặc sửa tài liệu v4 hiện hữu.
 
+**Current plan amendment baseline (2026-08-01, Asia/Saigon):** branch `main`; HEAD `8ec2e926d23f022da76d35f4a95db3fc024fe9aa`. Working tree trước amendment có sẵn 5 ảnh modified dưới `src/Qaly.Web/ClientApp`; đây là thay đổi của người dùng và không thuộc amendment. Lượt amendment chỉ sửa file plan này, không chạy build/test và không thay đổi source/generated bundle.
+
 ## 1. Goal statement và định nghĩa coverage 100%
 
 Goal đang hoạt động:
@@ -163,6 +165,21 @@ Page-file closure: `AdminUsersPage`, `AnalyticsPage`, `ArchivedProjectsPage`, `D
 
 State audit rule: mỗi surface có loading/empty/error/permission/degraded state được tính trong chính `SURF-ID`. Các surface deterministic nhìn chung có loading/empty/error; các AI partial thiếu ít nhất một trong queued/running/cancel/retry/degraded/read-back/source-open. Những thiếu này được ghi trong Gap Register.
 
+### 3.3 Current-source delta — 2026-08-01
+
+Các row sau mở rộng inventory lịch sử lên **110 surface records**. `SURF-105/106` là surface runtime xuất hiện sau baseline; `SURF-107..110` là surface của Action Composer và đã được reconciled lại sau implementation closure tại §20.
+
+| SURF-ID | Route / module / card | Role; entity context; primary action / source | Status và rationale |
+|---|---|---|---|
+| SURF-105 | `/organizations` — `OrganizationsPage.vue` | System Admin; organization collection; create/select organization | `NO_AI_JUSTIFIED` — organization CRUD và ownership là deterministic, explicit security operation. |
+| SURF-106 | Project Task Detail — “Kỹ năng cần thiết” / `TaskSkillsAiCard.vue` | Task manager; task + organization skill catalog; manual tag hoặc AI suggestion/review/confirm | `NATIVE_COMPLETE` theo source/test artifacts của CAND-015; release run vẫn phải rerun verification gates. |
+| SURF-107 | AppShell compact model control + global `AI Hành động` trigger | Authenticated user; current route and optional project; open action composer | `NATIVE_COMPLETE` cho Task-create v1 — AppShell có shared trigger; chip ghi rõ DeepSeek V4 Pro là model **ưu tiên**, sau khi route thì drawer/receipt hiển thị provider/model thực tế. Runtime model registry/preference selector vẫn là backlog platform, không được giả là đã có. |
+| SURF-108 | Contextual `Thực hiện với AI` entrypoint trong Task/Project/Group/Meeting | Authorized module user; current entity/selection; compose module-native action | `PRESENT_PARTIAL` — Project Task context dùng shared context envelope/caller và manager permission; Group/Meeting/Schedule adapters được defer có chủ ý sau Task-create Primary. |
+| SURF-109 | AI Action Composer drawer: intent, assumptions, 1–3 options, editable commands, confirm và receipt | Authorized actor; persisted job/draft/action receipt | `NATIVE_COMPLETE` cho `task.create.v1` — structured options, editable/selective task rows, explicit confirmation, atomic idempotent execution và receipt/deep links/read-back. |
+| SURF-110 | AI Process Activity chip + expandable operational timeline trong Composer/AppShell | Authorized actor; current/persisted AI job, stage events, elapsed time, retry/cancel/read-back | `NATIVE_COMPLETE` — persisted ordered safe activity events drive elapsed chip/timeline; reload restores stage history; raw reasoning/private payload is not rendered. |
+
+Current route/page delta: router có **25/25** records và page folder có **17/17** SFC sau khi thêm `/organizations`/`OrganizationsPage.vue`. Các route/page còn lại giữ disposition lịch sử; current inventory closure được cập nhật ở §16.1.
+
 ## 4. Existing AI Capability Universe
 
 ### 4.1 Controller route reconciliation — 58/58
@@ -240,6 +257,15 @@ Canonical wrapper job types = `meeting_action_extract`, `chat_summary`, `task_dr
 
 Draft families = `MeetingActionItems`, `TaskDraft`, `TaskBreakdown`, `AcceptanceChecklist`, `DraftChange`, `ProjectDelayResolution`, dynamic agent tool draft = **7/7**. Backend confirmation supports only `reject`, `execute_action`, `create_tasks`; frontend additionally emits unsupported `create_subtasks`, `save_checklist`, `save_report`.
 
+### 4.3 Current-source capability delta — 2026-08-01
+
+| AI-CAP-ID | Endpoint/job/schema/caller | Runtime evidence và disposition |
+|---|---|---|
+| AI-CAP-036 | `POST /api/ai/tasks/{taskId}/skill-suggestions`; canonical `task_skill_suggestion`; `task_skill_suggestion.v1`; `TaskSkillsAiCard.vue` | `NATIVE_COMPLETE` theo implementation closure CAND-015: authorized task/catalog context, schema + semantic reconciliation, persisted draft, `apply_task_skills`, source/privacy/budget/usage/audit/read-back và native review. |
+| AI-CAP-037 | `POST /api/ai/actions/compose`; `GET /api/ai/jobs/{jobId}/activity`; `action_intent_compose`; `ai_action_intent_envelope.v1`; `AiActionPlan`; `execute_action_set`; AppShell/Project Task callers | `NATIVE_COMPLETE` cho bounded Task-create v1 — authorized server snapshot, versioned `task.create.v1`, canonical job/draft/activity, semantic validation, edit/selective confirm, atomic/idempotent mutation, receipt/audit/usage/read-back và repeatable unit/integration/E2E evidence. Project/Group/Meeting/Schedule tool adapters không được tính vào capability này. |
+
+Current controller-route reconciliation sau closure: `AiController` 46 + `GroupAiController` 5 + `MeetingsController` 6 + `DashboardController` 5 = **62/62 runtime routes**. Hai route mới của CAND-018 là compose và authorized incremental activity read-back. Current schema folder có **10/10 runtime schema files**, gồm `ai_action_intent_envelope.v1` của AI-CAP-037.
+
 ## 5. Bidirectional UI ↔ API/job/schema/test matrix
 
 | Flow | UI → backend reconciliation | Backend → UI reconciliation | Verdict |
@@ -263,6 +289,8 @@ Draft families = `MeetingActionItems`, `TaskDraft`, `TaskBreakdown`, `Acceptance
 | Semantic search | Global search uses loaded deterministic arrays | `/api/ai/search` has no caller | Explicit defer: exact search remains `NO_AI_JUSTIFIED`; backend route is `BACKEND_ONLY`. |
 | Project Activity | Component passes projectId but ignores it in API call | Dashboard recent activity serves global authorized feed | GAP-015; deterministic integration fix, not AI candidate. |
 | Workload/Gantt | Components implemented | Backend endpoints have UI code, but no reachable tab id | GAP-016; navigation fix, not AI candidate. |
+| Conversational write/action intent | Legacy Erumi still has a keyword/`erumi_autonomous_tasks` path, while the new shared caller uses explicit `action_intent_compose` | Native Task-create v1 now has schema/job/draft/confirm/receipt evidence; legacy path is `LEGACY_OR_DUPLICATE`, and missing Project/Group/Meeting/Schedule catalog is explicit deferred breadth | GAP-026/027 closed for bounded path; AI-CAP-037 / CAND-018 `NATIVE_COMPLETE` for `task.create.v1`. |
+| Global/contextual AI Action UX + process visibility | AppShell and Project Task now use the shared composer; other contextual adapters are deferred | Persisted safe stage events drive elapsed timeline; truthful strong-profile/actual model is shown. Shared runtime model registry/preference API remains partial platform work | GAP-028/030 closed for bounded path; GAP-029 `PRESENT_PARTIAL`; SURF-107/109/110 complete, SURF-108 partial. |
 
 Orphan reconciliation result: mọi caller-less backend route đã nhận `BACKEND_ONLY`, `LEGACY_OR_DUPLICATE`, `NO_AI_JUSTIFIED` hoặc explicit defer; mọi UI-only promise đã nhận `FRONTEND_ONLY`; **undispositioned orphan = 0**.
 
@@ -310,11 +338,16 @@ Orphan reconciliation result: mọi caller-less backend route đã nhận `BACKE
 | GAP-020 | P1 Architecture | Legacy/canonical endpoint pairs coexist for planner, group summary, meeting, assignment, progress-like reads. | Strangler backlog by capability; no big-bang removal. |
 | GAP-021 | P0 Evidence | Current E2E AI Activity uses mocked APIs; no real capability E2E for AI-06/07/08 or provider failure/read-back. | CAND-001 test matrix; others backlog. |
 | GAP-022 | P1 Lifecycle | Most partial AI cards omit at least one of queued/running/cancel/retry/degraded/source-open/reload states. | CAND-001 establishes reusable card state pattern; reuse in backlog. |
-| GAP-023 | P0 Product/Data | Task labels hiện là project-local labels dùng chung cho risk/domain/category; chưa có organization skill taxonomy, proficiency requirement, provenance hoặc AI-review draft. Vì vậy không thể coi label `Frontend`/`Backend` là skill evidence đáng tin cậy. | CAND-015 — ưu tiên làm next Primary. |
+| GAP-023 | P0 Product/Data | Task labels hiện là project-local labels dùng chung cho risk/domain/category; chưa có organization skill taxonomy, proficiency requirement, provenance hoặc AI-review draft. Vì vậy không thể coi label `Frontend`/`Backend` là skill evidence đáng tin cậy. | CAND-015 — implementation closure đã được ghi nhận tại §17.8; release evidence vẫn phải rerun. |
 | GAP-024 | P0 Evidence/Fairness | Assignment hiện tại chỉ biết người được giao; `TaskItem` không có completion attribution. Không thể kết luận ai “mạnh” chỉ vì họ từng nằm trong assignee list, đặc biệt với task nhiều assignee. Thiếu confidence, source evidence, recency, self-declared/manager-endorsed signal và correction/appeal path. | CAND-016; blocked until CAND-015 and completion-attribution policy/persistence are approved. |
 | GAP-025 | P0 Product/Safety | Workload chỉ aggregate trong một project; chưa có working capacity, availability, leave/calendar hoặc portfolio permission contract. Chưa thể đề xuất assignee/deadline xuyên nhiều project mà không gây overload hoặc rò rỉ task riêng tư. | CAND-017; depends on CAND-015/016 plus deterministic capacity/availability foundation. |
+| GAP-026 | P0 Runtime/Product | Legacy Erumi write-intent gọi một job type không có schema mapping và đòi draft trước khi worker tạo xong. | **CLOSED cho native Task-create path** — shared UI không gọi legacy flow; explicit `action_intent_compose` dùng canonical async job → result → draft. Legacy path còn lại mang disposition `LEGACY_OR_DUPLICATE` và không được tính native. |
+| GAP-027 | P0 Contract/Safety | Generic XML/regex/ad-hoc tool path thiếu typed registry, selective confirmation và receipt. | **CLOSED cho Task-create v1** — fixed schema/tool/version allowlist, semantic reconciliation, editable selection, atomic/idempotent `execute_action_set` và read-back receipt; generic legacy executor không được mở rộng. |
+| GAP-028 | P0 UX/Integration | Thiếu global/contextual trigger, option/review/receipt surface. | **CLOSED cho AppShell + Project Task scope** — shared composer và contextual Project Task caller đã có. Group/Meeting/Schedule breadth vẫn explicit defer, không phải orphan. |
+| GAP-029 | P0 Model/Truthfulness | Static model labels có thể nói “live” khi runtime chưa xác nhận; thiếu registry/preference API. | **PRESENT_PARTIAL / platform backlog** — Action Composer dùng server-owned strong profile ưu tiên DeepSeek V4 Pro, chip trước-run ghi “Ưu tiên”, sau-run/receipt ghi actual provider/model và không giả fallback. Runtime model registry + user preference API dùng chung toàn hệ thống chưa được implement trong slice này. |
+| GAP-030 | P0 UX/Observability | Thiếu persisted ordered operational steps; spinner/client timer không đủ và raw chain-of-thought không được lộ. | **CLOSED** — additive `AiJobActivityEvent`, authorized incremental feed, backend-derived stage labels, elapsed chip, retry/cancel states và reload/read-back timeline. |
 
-Gap closure accounting: 25/25 gaps have a candidate, explicit deterministic/no-AI disposition, or explicit defer.
+Gap closure accounting after current amendment: **30/30** gaps have a candidate, explicit deterministic/no-AI disposition, or explicit defer.
 
 ## 8. Candidate catalog và scoring
 
@@ -325,8 +358,9 @@ Score = outcome 25 + requirement closure 20 + AI-native fit 15 + canonical reuse
 | CAND-ID | Candidate | Outcome | Gap | Fit | Reuse | Test | Quota | Total | Risk veto / decision |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | CAND-001 | Grounded Project Progress Summary card | 24 | 20 | 15 | 15 | 10 | 15 | **99** | None; **PRIMARY**. |
+| CAND-018 | Conversational Intent-to-Action / AI Action Composer | 25 | 20 | 15 | 15 | 9 | 12 | **96** | **IMPLEMENTED for Task-create v1**; full Project/Group/Meeting/Schedule adapters remain separately gated backlog. |
 | CAND-002 | Grounded Sprint Progress Summary card | 22 | 20 | 15 | 15 | 9 | 12 | **93** | None if Primary green; **STRETCH**. |
-| CAND-015 | Task Skill Taxonomy + AI Skill Tag Draft | 25 | 20 | 15 | 14 | 9 | 12 | **95** | Bounded additive migration; **NEXT PRIMARY by product priority**. |
+| CAND-015 | Task Skill Taxonomy + AI Skill Tag Draft | 25 | 20 | 15 | 14 | 9 | 12 | **95** | **IMPLEMENTED**; bounded additive migration, release evidence vẫn phải rerun. |
 | CAND-008 | AI-04 native source-linked task-draft review | 23 | 18 | 15 | 15 | 8 | 8 | 87 | No migration, but larger cross-module editor/source work. |
 | CAND-005 | AI usage/budget Settings card | 23 | 20 | 8 | 15 | 10 | 10 | 86 | Platform control, not a module AI decision; defer behind locked AI-08. |
 | CAND-007 | AI-03 selected-range group summary closure | 20 | 18 | 15 | 15 | 8 | 9 | 85 | Source-range/editor breadth exceeds Primary. |
@@ -377,6 +411,8 @@ Score = outcome 25 + requirement closure 20 + AI-native fit 15 + canonical reuse
 **CAND-016 — Evidence-backed Member Skill Profile.** User job: member và authorized manager hiểu member đã có bằng chứng thực hành kỹ năng nào để hỗ trợ phát triển và staffing; đây không phải performance score. Deterministic inputs: confirmed task skill requirements, explicit completion contributors, completion timestamp, task complexity/required level, outcome state và optional self-declared/manager-endorsed signals. Missing evidence means “chưa đủ dữ liệu”, không có nghĩa là “không có kỹ năng”. Output: per-skill evidence band (`emerging`/`practiced`/`experienced`), confidence, recency, verified task count, source links user is allowed to open and explanation; no opaque global ranking. UI: member skill profile with evidence drawer, correction/appeal and visibility controls. AI may summarize evidence but cannot fabricate or promote a band; band calculation is versioned deterministic logic. Privacy: no private task title/source leakage across project boundaries; aggregate only when viewer lacks source permission; no protected attributes, peer sentiment or message surveillance. Dependency: CAND-015 plus explicit `TaskCompletionAttribution` semantics for multi-assignee work. Effort: 3–5 days. Rollback: disable AI narrative, preserve deterministic evidence ledger/profile.
 
 **CAND-017 — Cross-project Assignment & Schedule Copilot.** User job: portfolio/org manager cân bằng task, assignee, start/due date khi một member tham gia nhiều project. Authorized inputs: open task requirements, task dependencies, estimates, current assignments, CAND-016 evidence bands, working capacity/availability/leave windows and only projects within an authorized organization scope. Hard constraints and overload math are deterministic; AI proposes and explains trade-offs. Output `assignment_schedule_proposal.v1` gồm per-task candidate, proposed assignee/start/due, skill coverage, load before/after, dependency conflicts, deadline risk, alternatives and metric/source refs. UI: Workload/portfolio review board with before/after timeline; manager can edit, select, reject and explicitly confirm each change. AI never auto-assigns or silently changes deadlines. Confirmation requires per-project permission, source row versions, idempotency, transaction/audit and partial-selection rules. Tests: cross-tenant/project deny, private aggregate redaction, no availability, infeasible deadline, overload, stale/concurrent change, selective confirm/rollback/read-back. Dependency: CAND-015 → CAND-016 → CAND-006, organization portfolio permission and deterministic availability/capacity model. Effort: 5–8 days minimum; must be split before implementation. Rollback: disable proposal generation, keep deterministic workload/calendar and manual assignment.
+
+**CAND-018 — Conversational Intent-to-Action / AI Action Composer.** User job: nói điều muốn đạt được thay vì tự tìm module và điền nhiều form; Qaly hiểu intent, tự hoàn thiện một structured draft, đưa 1–3 option có trade-off thật, cho sửa/chọn từng command và chỉ thực thi sau explicit confirmation. Global trigger nằm tại AppShell; contextual trigger truyền route/module/entity/selection nhưng server phải re-resolve authorization. Primary chỉ hỗ trợ tạo một hoặc nhiều Task trong một Project đã resolve; input là message + context identifiers, authorized project/task/member/workload/skill/deadline sources. Output là `ai_action_intent_envelope.v1` với intent/confidence/assumptions/missing fields/grounded action sets và registered `task.create.v1` commands. Assignee suggestion chỉ được ghi là `workload_only` khi CAND-016/006 chưa tồn tại; không được tuyên bố skill-fit. UI là shared composer drawer với honest lifecycle, editable task rows, option selection, selective confirm, execution receipt/deep links và compact process chip mở được timeline operational theo backend event; timeline không lộ chain-of-thought. Backend dùng canonical job/draft/source/privacy/budget/usage/audit/read-back, persisted `ai_action_activity_event.v1`, strong-model profile ưu tiên DeepSeek V4 Pro khi runtime registry xác nhận eligible, schema + semantic reconciliation và `execute_action_set` idempotent. Full project/group/meeting/schedule scope là phased backlog dùng cùng framework; không gộp vào Primary. Dependency Primary: existing TaskService, CAND-015 skill catalog, canonical job/draft và một bounded additive `AiJobActivityEvent` migration vì `AiJob` hiện không có ordered event collection. Effort: 1.75–2 person-days với task-only bounds. Rollback: disable `AiActionComposer:Enabled`, giữ manual forms/chat/read-only AI và persisted receipts/activity.
 
 ## 9. Primary Slice được chọn và lý do
 
@@ -663,7 +699,11 @@ Protected regression scope: current AI chat, AI Activity deep link, task/project
 
 | Priority | Candidate / module | Dependency | Backlog outcome |
 |---|---|---|---|
-| **P0 NEXT** | **CAND-015 Task Skill Taxonomy + AI Skill Tag Draft** | Bounded additive taxonomy/task-skill migration; existing canonical job/draft platform | Manual or AI-assisted, human-confirmed required-skill tags on task; foundation for evidence-based staffing. |
+| **IMPLEMENTED** | **CAND-018 AI Action Composer v1 — Task create action set** | Canonical job/draft, Task domain, CAND-015; typed action schema/tool registry; additive activity-event migration | Global/contextual natural-language request → backend-derived process → grounded editable task options → explicit/selective confirm → idempotent create + receipt/read-back. |
+| **P0 selection gate next** | CAND-018 Project setup bundle | Primary green + multi-entity atomic/compensation policy | Candidate kế tiếp trong Action Composer network, nhưng phải decision-complete lại atomicity/rollback và quota fit trước khi implementation. |
+| P1 | CAND-018 Group/team action adapter | Primary green + group-admin permission/tool contracts | Draft group and membership options; no invite/role mutation without explicit per-command confirmation. |
+| P1 | CAND-018 Meeting/schedule action adapter | Primary green + scheduling/timezone/conflict source contract | Draft meeting/schedule and kickoff options; external calendar is blocked until a real integration exists. |
+| IMPLEMENTED | CAND-015 Task Skill Taxonomy + AI Skill Tag Draft | Bounded additive taxonomy/task-skill migration; existing canonical job/draft platform | Manual or AI-assisted, human-confirmed required-skill tags on task; foundation for evidence-based staffing. |
 | P0 | CAND-016 Evidence-backed Member Skill Profile | CAND-015 + completion attribution/fairness policy | Grounded skill evidence bands with confidence, recency, source visibility and correction path; not a performance score. |
 | P0 | CAND-006 Skill/evidence-aware assignee recommendation | CAND-015/016 + assignment confirm action | Recommend the right member for one task using skill coverage and workload, with explanation and explicit confirmation. |
 | P0 | CAND-017 Cross-project Assignment & Schedule Copilot | CAND-015/016/006 + capacity/availability + portfolio permission | Editable assignment/deadline plan across authorized projects; deterministic constraints and human-confirmed mutation. |
@@ -711,6 +751,28 @@ Protected regression scope: current AI chat, AI Activity deep link, task/project
 
 **Coverage gate PASSED.** Mẫu số đã xác định; orphan count bằng 0 sau disposition; Primary đủ decision-complete để giao agent khác mà không cần hỏi lại.
 
+### 16.1 Current amendment closure — 2026-08-01
+
+Phần này supersede **các con số tổng hiện hành** nhưng không xóa baseline lịch sử ở trên.
+
+| Current closure condition | Numerator / denominator | Result |
+|---|---:|---|
+| Router records inventoried | 25/25 | PASS |
+| Page `.vue` inventoried | 17/17 | PASS |
+| Historical + post-baseline surface records dispositioned | 110/110 | PASS |
+| Runtime AI/dashboard/group/meeting controller routes inventoried | 62/62 | PASS |
+| Runtime logical AI capabilities including Task Skill and Task Action Composer | 37/37 | PASS |
+| Required-but-missing Action Composer capability | 0; AI-CAP-037 Task-create v1 implemented | PASS |
+| Current JSON schema files inventoried | 10/10 | PASS |
+| Runtime Action Composer schema inventoried | 1/1 | PASS |
+| New gaps without candidate/defer | 0/5 | PASS |
+| Total gaps without candidate/defer/no-AI disposition | 0/30 | PASS |
+| Current backend or frontend orphan without disposition | 0 | PASS |
+| CAND-018 Primary acceptance item without verification method | 0 | PASS |
+| Implementation files/evidence without disposition | 0 | PASS; see §20 |
+
+**Current coverage gate: PASS. Product completeness: NOT PASS.** Coverage có nghĩa là mọi runtime/post-baseline/planned required surface và capability đã có disposition. AI-CAP-037 is complete only for bounded Task-create v1; Group/Meeting/Schedule adapters and runtime model registry remain dispositioned backlog.
+
 ## 17. Priority amendment — Skill-aware task assignment and cross-project scheduling
 
 **Amendment date:** 2026-07-27 (Asia/Saigon)
@@ -725,7 +787,7 @@ Plan trước amendment **mới tính một phần** qua CAND-006/AI-CAP-010/018
 - `ProjectMember` không có capacity/availability/working-hours; workload endpoint chỉ nhìn một project.
 - Chưa có evidence profile, confidence/recency, correction path, portfolio permission, cross-project privacy aggregation hoặc assignment/deadline draft confirmation.
 
-Sau amendment, catalog có **17 candidate tổng cộng**. CAND-001, CAND-002, CAND-005 và CAND-015 đã được triển khai end-to-end trong working tree hiện tại; còn **13 candidate deferred**. CAND-016/CAND-006/CAND-017 là chuỗi ưu tiên tiếp theo, nhưng phải qua một selection gate mới và không được gộp vào cùng một implementation run.
+Tại thời điểm skill-assignment amendment, catalog có **17 candidate**. §18 bổ sung CAND-018, nên catalog hiện tại có **18 candidate tổng cộng**: CAND-001, CAND-002, CAND-005, CAND-015 và bounded CAND-018 Task-create v1 đã được triển khai; **13 candidate còn lại deferred**. CAND-016/CAND-006/CAND-017 vẫn là chuỗi staffing/scheduling ưu tiên sau Action Composer, phải qua selection gate mới và không được gộp vào cùng implementation run.
 
 ### 17.2 Sau mỗi capability, người dùng làm được gì?
 
@@ -896,6 +958,1442 @@ CAND-015 hiện có đủ persistence, manual organization/task APIs, canonical 
 
 Release gate phải xác minh migration P004/P005, full .NET suite, frontend typecheck/build, full Playwright suite, secret/artifact scan và remote-main reconciliation trước khi commit/push.
 
-## 18. NEXT_IMPLEMENTATION_GOAL
+## 18. Priority amendment — Conversational Intent-to-Action / AI Action Composer
 
-> Audit and make decision-complete the next quota-fit Primary carved only from `CAND-016 — Evidence-backed Member Skill Profile`. Preserve shipped CAND-001/002/005/015 and Week 1 flows. The slice must establish explicit completion-contributor attribution before deriving any skill evidence; missing attribution means “insufficient evidence”, never an inferred weakness. Define deterministic evidence bands, authorized/redacted source links, correction/revoke behavior, tenant/privacy boundaries, schema/API/native member-card lifecycle, reload/read-back, audit and unit/integration/E2E evidence. Keep it to at most three implementation tasks and 1–2 person-days; choose no Stretch. If explicit attribution plus one honest end-to-end member evidence surface cannot fit that gate, update this plan with the smaller prerequisite and stop without source implementation. Do not rank employees, infer performance from labels/messages, recommend assignees, or schedule across projects in this run.
+**Amendment date:** 2026-08-01 (Asia/Saigon)
+**Normative priority:** phần này supersede next-primary selection ở §17.8/old NEXT_IMPLEMENTATION_GOAL. CAND-016 vẫn ở backlog và không bị xóa; product owner đã đặt CAND-018 thành capability chưa triển khai có ưu tiên cao nhất. §20 records the later implementation closure.
+
+### 18.1 Executive verdict và runtime evidence
+
+Tại planning baseline trước §20, Qaly đã có các primitive đáng tái sử dụng: canonical `AiJob`/dispatch/retry/cancel, `AiGeneratedDraft`, source guard, privacy/budget/cache/usage/audit, draft edit/reject/confirm, `ToolParameterGuard`, task domain service, task skill taxonomy và selected-provider/model receipt. Khi đó chúng **chưa tạo thành Action Composer**:
+
+1. `TopHeader.vue`/`AppShell.vue` chưa có global `AI Hành động` hoặc global runtime model control. `AiModelSelector` chỉ nằm trong `ErumiChatPanel`.
+2. `AI_MODEL_OPTIONS` là static frontend list; nó không chứng minh API key/provider health/model availability. DeepSeek V4 Pro được ghi `live` dù checked-in config chỉ chứa placeholder key.
+3. `ErumiChatService.IsWriteIntent` là keyword router cho `tạo/cập nhật/phân công task`; không hiểu project/group/meeting/schedule intent và không có confidence/missing-field contract.
+4. Write path gọi `erumi_autonomous_tasks`, nhưng `AiWorkflowService.ResolveSchemaId` không map job type này. Canonical request vì vậy không thể enqueue hợp lệ nếu không có explicit schema.
+5. `AgentRunService.StartAsync` yêu cầu `DraftId` ngay từ create response, trong khi canonical job chỉ tạo draft sau worker success. Unit test mock `DraftReady`/`DraftId`; không có runtime integration proof.
+6. Generic `AiGateway` tool calling parse XML/regex/ad-hoc JSON, hardcode một write tool, wrap một draft và bypass schema validation cho wrapper response. Nó không hỗ trợ 1–3 option, multi-command preconditions, selective confirm hoặc action-set receipt.
+7. Existing `AiTools` có task read/write tools nhưng không có project/group/meeting/schedule action catalog; write tools không được version như domain contract.
+8. Client fallback tự tạo quick-action label từ keyword trong câu trả lời; đó không phải callable native action và không được tính capability.
+
+Kết luận tại planning baseline: không sửa flow cũ bằng cách chỉ gắn thêm button. CAND-018 phải tạo một typed orchestration layer mới. §20 confirms that bounded Task-create v1 now uses this new layer; the generic legacy path remains isolated rather than silently counted as native.
+
+### 18.2 Người dùng làm được gì và rollout theo module
+
+| Phase | Module/surface | Ví dụ người dùng nói | AI soạn và đưa option | Mutation gate / dependency |
+|---|---|---|---|---|
+| **Primary** | Global/AppShell hoặc Project Task context | “Tạo các task để hoàn thiện đăng nhập trước thứ Sáu; chia frontend/backend.” | 1–3 task action sets: title, description/acceptance, priority, estimate, due date, authorized assignee mode, required skill tags và trade-off | `execute_action_set` sau edit/selective confirm; reuse TaskService + CAND-015. |
+| Next | Projects | “Tạo dự án landing page trong hai tuần và chia task.” | Project draft + initial task tree + milestones/options | Requires atomic multi-entity create/compensation; không thuộc Primary. |
+| Next | Groups/Teams | “Tạo group mobile và đề xuất thành viên.” | Group metadata + proposed membership options | Group-admin policy; invitation/role actions confirm riêng. |
+| Next | Meeting/Schedule | “Tạo lịch kickoff tuần sau khi mọi người rảnh.” | Meeting/schedule options, timezone, conflicts, agenda | Requires persisted scheduling/availability source; external calendar không được giả định. |
+| Later | Cross-project assignment | “Sắp lại việc tuần này cho Minh trên ba dự án.” | Assignment/deadline action sets with before/after load | Depends on CAND-016 → CAND-006 → CAND-017 and portfolio permission/capacity model. |
+
+“Tự động hoàn thành” trong mọi phase có nghĩa: AI tự hoàn thiện **draft có cấu trúc**, ghi assumption và đưa option; không có nghĩa AI tự ghi dữ liệu.
+
+### 18.3 Unified UI contract
+
+#### Global entrypoint — SURF-107
+
+- AppShell có một cụm nhỏ ở góc phải: runtime model pill + button `AI Hành động`.
+- Default label đơn giản: `AI Hành động`; tooltip: “Mô tả mục tiêu, Qaly sẽ soạn phương án để bạn duyệt.”
+- Mở shared `AiActionComposerDrawer`; không mở một chatbot thứ hai.
+- Current route được prefill. Nếu không resolve được đúng một project, hiển thị authorized project picker hoặc `needs_input`; không gửi toàn workspace cho model chỉ để đoán project.
+- Model pill đọc registry server-side. Nó hiển thị requested profile và actual provider/model sau execution; không dùng static `Live` claim.
+
+#### Contextual entrypoint — SURF-108
+
+- Label thống nhất: `Thực hiện với AI`.
+- Primary placements: Project Task board/list toolbar và Task Detail drawer/card; cả hai mở cùng drawer.
+- Context envelope từ client chỉ là hint: `route`, `module`, `projectId`, `entityType`, `entityId`, `selectedEntityIds`. Server re-resolve toàn bộ entity và quyền.
+- Các module Project/Group/Meeting được phép render disabled/feature-planned state chỉ trong dev/admin discovery; production không hiện stub button trước khi adapter tương ứng hoàn chỉnh.
+
+#### Composer/review surface — SURF-109
+
+Default view chỉ cần bốn khối dễ hiểu:
+
+1. Ô “Bạn muốn Qaly làm gì?”.
+2. “AI đã hiểu” — intent, target, confidence, assumption và field còn thiếu.
+3. “Chọn phương án” — 1–3 option khác nhau thực sự.
+4. “Kiểm tra và xác nhận” — editable rows, per-command checkbox, warnings và CTA `Xác nhận thực hiện`.
+
+Advanced detail (sources, permissions, model, usage, request/job ID) nằm trong expandable section, không làm flow chính phức tạp.
+
+#### AI Process Activity — SURF-110
+
+- Khi job bắt đầu, drawer và AppShell hiển thị compact chip dạng `Đang thực hiện · 16 giây ›`; khi kết thúc đổi thành `Hoàn thành trong 1 phút 42 giây ›`, `Cần bạn bổ sung ›`, `Đã hủy ›` hoặc `Không thành công · Thử lại ›` theo trạng thái thật.
+- Bấm chip mở timeline theo thứ tự thời gian. Mỗi row có icon/status, nhãn dễ hiểu, thời điểm hoặc duration và safe detail: `Đang hiểu yêu cầu`, `Đang xác định dự án và quyền`, `Đang thu thập dữ liệu được phép`, `Đang soạn phương án bằng DeepSeek V4 Pro`, `Đang kiểm tra schema và ràng buộc`, `Đang chờ bạn xác nhận`, `Đang tạo task 2/4`, `Đã ghi nhận kết quả`.
+- Chip chỉ đếm elapsed time từ `startedAt` backend. Stage/status/command count phải đến từ persisted backend event; frontend không tự suy ra bước từ timer, text streaming hoặc animation.
+- Khi tổng command xác định được, hiển thị tiến độ định lượng như `2/4 task`; khi không xác định được, chỉ hiển thị stage và elapsed time, không tạo phần trăm giả.
+- Timeline phân biệt `queued`, `running`, `waiting_user`, `succeeded`, `warning`, `failed`, `cancelled`, `skipped`; stage retry tạo attempt row mới, không rewrite lịch sử như chưa từng lỗi.
+- Chỉ hiển thị **operational trace** đã sanitize: tool/stage công khai, nguồn ở mức label/count được phép, model thực tế, warning và receipt link. Không hiển thị chain-of-thought, hidden reasoning, system/developer prompt, raw provider payload, secret, token, stack trace hoặc nội dung private mà viewer không được xem.
+- Active job có CTA `Hủy` chỉ khi backend báo cancellable. Failed/retryable có `Thử lại`; `waiting_user` đưa focus tới field/confirmation đang chờ. Completed activity có thể collapse nhưng vẫn đọc lại được sau reload và từ AI Activity.
+- Nhiều job đồng thời: chip hiển thị job đang active gần nhất và badge số lượng; menu liệt kê job theo status, không trộn event giữa tenant/project/job.
+- Accessibility: `aria-live=polite` chỉ announce stage transition, không announce timer mỗi giây; keyboard mở/đóng timeline, icon luôn kèm text, duration dùng định dạng locale và không phụ thuộc màu.
+
+### 18.4 Khung tiêu chuẩn bắt buộc cho mọi AI Action
+
+| Stage | Contract và gate bắt buộc |
+|---|---|
+| 1. Understand | Natural-language request → allowlisted `intentType`, target module/entities, confidence, assumptions, missing required fields. Confidence thấp/target mơ hồ chuyển `needs_input`; không đoán entity ID. |
+| 2. Resolve Authorized Context | Derive user/tenant/project server-side; capture versioned authorized sources; classify privacy; entity content là untrusted data, không phải instruction. |
+| 3. Compose Draft | Strong-profile model nhận bounded context và registered tool definitions; output structured intent envelope. Deterministic schema + semantic/domain validator chạy sau model. |
+| 4. Generate Options | Tạo 1–3 action sets có trade-off thật. Nếu chỉ có một phương án hợp lệ thì trả một; không nhân bản wording để đủ ba. |
+| 5. Review | Persist `AiActionPlan` draft; render native fields; cho edit/remove/select/reject. Source/version đổi làm draft stale. Chưa mutation. |
+| 6. Confirm and Execute | Recheck permission/privacy/source/concurrency/budget-independent domain rules; execute only selected registered commands with idempotency. LLM không chạy trong transaction và không chạm repository/DbContext. |
+| 7. Receipt and Read-back | Persist truthful success/partial/failed receipt, created/updated entity links, audit/usage/model receipt; reload restores job/draft/receipt. |
+
+Khung này là Definition of AI Action. Capability/module adapter nào thiếu một stage không được gọi `NATIVE_COMPLETE`.
+
+Mỗi stage phải phát ít nhất một activity event khi bắt đầu và một terminal event khi kết thúc, bỏ qua hoặc thất bại. Activity là telemetry nghiệp vụ có thể kiểm chứng, không phải bản ghi suy nghĩ của model. Event được append-only theo sequence; nhãn public do server map từ allowlist stage code để provider/user content không thể tự chèn HTML hoặc giả trạng thái hệ thống.
+
+### 18.5 API, job, draft và I/O contract
+
+#### Compose endpoint
+
+`POST /api/ai/actions/compose`
+
+Headers: `X-CSRF-TOKEN`, `Idempotency-Key`; optional `X-Request-Id`.
+
+Primary request:
+
+```json
+{
+  "message": "Tạo task sửa màn hình đăng nhập trước thứ Sáu",
+  "context": {
+    "route": "/projects/{projectId}",
+    "module": "tasks",
+    "projectId": "guid",
+    "entityType": "project",
+    "entityId": "guid",
+    "selectedEntityIds": []
+  },
+  "language": "vi",
+  "modelProfile": "action_composer_strong",
+  "maximumOptions": 3,
+  "maximumEstimatedCostUsd": 0.08
+}
+```
+
+Rules:
+
+- `message` 1–4,000 characters after normalization; control-character and abuse/rate limits apply.
+- Client cannot send `tenantId`, `userId`, raw authorized context, permissions, tool definitions, source versions or system prompt.
+- `projectId/entityId` are selectors only. Unknown/cross-tenant/unviewable IDs return nondisclosing 404/403.
+- Primary requires exactly one authorized current Project before AI dispatch. Ambiguous global project returns structured `needs_input` choices without provider call when possible.
+- Accepted response reuses `AiJobCreatedDto`: `jobId`, queued status, poll/result URLs and request ID.
+
+Canonical identities:
+
+- Job type: `action_intent_compose`.
+- Schema: `ai_action_intent_envelope.v1`.
+- Draft type: `AiActionPlan`.
+- Confirm action: `execute_action_set`.
+- Receipt schema: `ai_action_execution_receipt.v1`; persisted in draft confirmation result/read-back without a new table in Primary.
+- Activity schema: `ai_action_activity_event.v1`; persisted/readable theo job, không phụ thuộc kết nối browser còn mở. Source audit khóa một bounded additive `AiJobActivityEvent` entity/table vì `AiJob.ProgressPercent` và audit rows hiện tại không bảo đảm ordered per-stage sequence/read-back contract.
+- Feature flag: `AiActionComposer:Enabled`; capability flag for Primary: `AiActionComposer:TaskCreateEnabled`.
+
+#### Activity/read-back endpoint và event contract
+
+Primary có thể enrich canonical job read DTO hoặc dùng endpoint tương đương:
+
+`GET /api/ai/jobs/{jobId}/activity?afterSequence={n}`
+
+SSE/WebSocket là tối ưu tùy chọn; polling incremental vẫn là baseline bắt buộc. Cả hai phải đọc cùng persisted event source và tuân thủ cùng job authorization.
+
+```json
+{
+  "jobId": "guid",
+  "status": "Running",
+  "startedAt": "2026-08-01T09:00:00Z",
+  "lastSequence": 6,
+  "cancellable": true,
+  "events": [
+    {
+      "eventId": "guid",
+      "sequence": 6,
+      "stage": "compose_options",
+      "status": "running",
+      "publicLabel": "Đang soạn phương án",
+      "safeDetail": "Model: DeepSeek V4 Pro",
+      "current": null,
+      "total": null,
+      "attempt": 1,
+      "startedAt": "2026-08-01T09:00:09Z",
+      "completedAt": null,
+      "durationMs": null,
+      "retryable": false,
+      "receiptLink": null
+    }
+  ]
+}
+```
+
+Contract rules:
+
+- `stage` là enum allowlist: `understand_intent`, `resolve_context`, `collect_sources`, `route_model`, `compose_options`, `validate_output`, `await_confirmation`, `execute_commands`, `persist_receipt`, `read_back`.
+- `status` là enum allowlist: `queued`, `running`, `waiting_user`, `succeeded`, `warning`, `failed`, `cancelled`, `skipped`.
+- `(jobId, sequence)` unique và tăng đơn điệu; client deduplicate theo `eventId/sequence`. Out-of-order delivery được sort, sequence gap được refetch.
+- `publicLabel/safeDetail` là server-generated localization key/render data; không nhận HTML và không chứa raw model reasoning. `current/total` chỉ dùng cho bounded command execution.
+- Authorization giống job detail: owner/admin theo policy hiện có, tenant/project recheck ở mỗi read; expired/unauthorized job không leak existence.
+- Retention theo canonical AI audit policy. Usage/activity có correlation ID nhưng activity endpoint không expose token cost/private audit payload nếu role không đủ quyền.
+
+#### Intent envelope
+
+```json
+{
+  "schemaVersion": "1.0",
+  "requestId": "opaque-request-id",
+  "conversationId": "opaque-conversation-id",
+  "userIntent": "Tạo task sửa màn hình đăng nhập trước thứ Sáu",
+  "intentType": "task.create",
+  "confidence": 0.94,
+  "targetModule": "tasks",
+  "targetEntities": [
+    { "type": "project", "id": "guid", "label": "Qaly Web" }
+  ],
+  "authorizedContextReferences": ["project:guid", "project-members:guid", "skill-catalog:guid"],
+  "assumptions": [
+    { "field": "priority", "value": "High", "reason": "Deadline gần", "editable": true }
+  ],
+  "missingRequiredFields": [],
+  "proposedActionSets": [
+    {
+      "optionId": "balanced",
+      "label": "Cân bằng tiến độ",
+      "rationale": "Tách frontend và backend để có thể làm song song.",
+      "tradeOffs": ["Cần hai lượt review trước khi merge"],
+      "commands": [
+        {
+          "commandId": "cmd-1",
+          "toolName": "task.create.v1",
+          "arguments": {
+            "projectId": "guid",
+            "title": "Hoàn thiện UI đăng nhập",
+            "description": "...\n\nAcceptance criteria:\n- ...",
+            "priority": "High",
+            "dueDate": "2026-08-07T10:00:00+07:00",
+            "estimatedHours": 8,
+            "assigneeMode": "workload_only_suggestion",
+            "assigneeIds": ["guid"],
+            "skillRequirements": [
+              { "skillId": "guid", "requiredLevel": "Proficient" }
+            ]
+          },
+          "preconditions": [
+            { "type": "project.version", "value": "opaque" },
+            { "type": "member.active", "value": "guid" }
+          ],
+          "sourceRefs": ["project:guid", "workload:guid", "skill-catalog:guid"],
+          "requiredPermission": "task.create",
+          "requiresConfirmation": true
+        }
+      ],
+      "expectedOutcome": "Hai task có acceptance rõ và deadline trong phạm vi dự án.",
+      "affectedEntities": [{ "type": "task", "state": "new", "count": 2 }],
+      "conflicts": [],
+      "requiredPermissions": ["task.create"],
+      "estimatedImpact": { "taskCreates": 2, "memberLoadDeltaHours": 16 }
+    }
+  ],
+  "warnings": [
+    {
+      "code": "ASSIGNEE_SKILL_EVIDENCE_UNAVAILABLE",
+      "message": "Phân công chỉ dựa trên workload hiện tại; chưa có member skill evidence.",
+      "blocking": false
+    }
+  ],
+  "sourceGrounding": [
+    {
+      "key": "workload:guid",
+      "type": "project_workload",
+      "entityId": "guid",
+      "label": "Workload hiện tại",
+      "url": "/projects/guid?tab=capacity",
+      "version": "opaque-server-version",
+      "observedAt": "2026-08-01T09:00:00Z"
+    }
+  ],
+  "confirmationRequirement": {
+    "required": true,
+    "mode": "selective",
+    "confirmAction": "execute_action_set"
+  }
+}
+```
+
+Schema/semantic rules:
+
+- `intentType`, `toolName`, permission, warning/precondition types và enums là closed allowlists.
+- Server owns/reconciles target labels, permissions, source grounding, member/skill identity and versions. Model cannot introduce IDs absent from authorized context.
+- Every factual rationale/conflict/assignee/deadline claim has source refs or deterministic metric refs.
+- `maximumOptions` is 1–3; output with zero valid option becomes `needs_input`/empty, not success.
+- Task titles are unique within action set after normalized comparison; 1–5 tasks per Primary request.
+- Project deadline, task date, priority, estimated hours, assignee membership, skill tenant and privacy constraints are revalidated deterministically.
+- Until CAND-016/006 is complete, `assigneeMode` may be `unassigned`, `user_selected` or `workload_only_suggestion`; `skill_fit` is rejected.
+- Prompt/model text never becomes direct HTML; UI renders escaped structured fields.
+
+### 18.6 Versioned AI Action Tool Contract và catalog
+
+Mỗi tool registration bắt buộc có:
+
+- `toolName`, semantic version, description.
+- `inputSchema` và `outputSchema` authority.
+- `readOnly` hoặc `mutation`; mutation luôn `planOnlyDuringComposition=true`.
+- `tenantScope` và entity-scope resolver.
+- `requiredPermission` và authorization handler.
+- `privacyClassification` và allowed provider classes.
+- `requiresConfirmation`.
+- `idempotencyPolicy`.
+- `concurrency/versionPolicy`.
+- `auditEvent`.
+- `readBackMethod` và deep-link builder.
+- rollback/compensation behavior.
+- registered application command handler; không có handler thì tool không được expose cho model.
+
+Primary read catalog:
+
+| Tool | Purpose | Primary status |
+|---|---|---|
+| `project.context.read.v1` | Project identity, lifecycle, dates and authorized summary | Required; server may prehydrate. |
+| `project.members.read.v1` | Active project members and allowed assignment identities | Required; no protected attributes. |
+| `project.workload.read.v1` | Deterministic active-task/hour load within current project | Required for workload-only option. |
+| `organization.skills.read.v1` | Active CAND-015 catalog identities/levels | Required when organization exists; honest empty otherwise. |
+| `project.deadline_constraints.read.v1` | Project/sprint/dependency date boundaries | Required for proposed due dates. |
+
+Primary mutation catalog:
+
+| Tool | Input/output | Execution rule |
+|---|---|---|
+| `task.create.v1` | Input maps to validated `CreateTaskDto` plus confirmed skill requirements; output contains task ID/key/row version/deep link | During compose: only create command draft. During confirm: application handler rechecks context and creates selected tasks; no direct `AiTools.CreateTask` invocation. |
+
+Deferred adapters, not exposed until complete:
+
+- `project.create.v1` and `project.bootstrap_tasks.v1`.
+- `group.create.v1` and `group.membership.propose.v1`.
+- `meeting.create.v1` and `schedule.propose.v1`.
+- `task.assign.v1` and `task.reschedule.v1` after CAND-016/006/017.
+
+Provider-native function calling may be used, but all providers must normalize to the same registry contract. Provider without reliable function calling may return schema-constrained JSON; XML/regex parser is not authority for AI-CAP-037.
+
+### 18.7 Execution, receipt, idempotency và read-back
+
+Confirm request uses existing draft endpoint:
+
+`POST /api/ai/drafts/{draftId}/confirm`
+
+```json
+{
+  "confirmAction": "execute_action_set",
+  "rowVersion": "draft-row-version",
+  "idempotencyKey": "action-confirm-opaque",
+  "confirmationNote": "Chọn phương án cân bằng",
+  "editedPayloadJson": "{ selectedOptionId, selectedCommandIds, editedCommands, expectedSourceVersions }"
+}
+```
+
+Execution rules:
+
+1. Draft phải `PendingReview`, không expired/stale; confirmation key claim dùng optimistic concurrency.
+2. Recheck current user permission, tenant/project, privacy policy, current member/skill state và every precondition.
+3. Revalidate edited commands with registered input schema; user không thể đổi `toolName`, project, permission hoặc source identity qua payload edit.
+4. Execute only selected `task.create.v1` commands through a bounded application action handler. Primary aims all-or-nothing for database writes; if infrastructure side effect cannot join transaction, persist a truthful compensation/pending-side-effect receipt and never retry-create tasks blindly.
+5. Same confirmation key + same payload returns the same receipt. Same key + different payload returns 409. A second key on confirmed draft returns the original receipt/409 without mutation.
+6. Persist original option, user edits, selected command IDs, before/after audit, created entity IDs and actual model/provider.
+
+`ai_action_execution_receipt.v1` minimum:
+
+```json
+{
+  "schemaVersion": "1.0",
+  "executionId": "draft-or-confirmation-id",
+  "selectedOptionId": "balanced",
+  "confirmedCommands": ["cmd-1", "cmd-2"],
+  "commandResults": [
+    {
+      "commandId": "cmd-1",
+      "toolName": "task.create.v1",
+      "status": "succeeded",
+      "entity": {
+        "type": "task",
+        "id": "guid",
+        "label": "QALY-151 — Hoàn thiện UI đăng nhập",
+        "url": "/projects/guid/tasks/guid",
+        "rowVersion": "opaque"
+      }
+    }
+  ],
+  "createdOrUpdatedEntities": ["task:guid"],
+  "partialFailures": [],
+  "auditId": "guid",
+  "provider": "DeepSeek",
+  "model": "deepseek-v4-pro",
+  "usage": { "ledgerId": "guid" },
+  "executedAt": "2026-08-01T09:05:00Z",
+  "readBackLinks": ["/projects/guid/tasks/guid"]
+}
+```
+
+Draft detail/read-back DTO phải expose confirmation receipt cho confirmed Action Plan; reload drawer bằng route query `aiAction=1&aiJob=&aiDraft=` hoặc equivalent stable state.
+
+### 18.8 Data flow
+
+```mermaid
+flowchart LR
+  A["Global/contextual AI Hành động"] --> B["Compose API + idempotency"]
+  B --> C["Resolve user, project, permission"]
+  C --> D["Capture authorized versioned context"]
+  D --> E["Privacy, budget, strong-model routing"]
+  E --> F["Function/schema constrained composition"]
+  F --> G["Schema + semantic + domain reconciliation"]
+  G --> H["Persist AiActionPlan draft + 1–3 options"]
+  H --> I["Editable review/select/reject"]
+  I -->|"explicit confirm"| J["Recheck permission/source/concurrency"]
+  J --> K["Registered application command handler"]
+  K --> L["Receipt + audit + read-back links"]
+```
+
+No edge lets the model call a mutation handler directly. Read tool results are bounded, authorized and recorded as sources.
+
+### 18.9 Honest lifecycle
+
+`idle → understanding → resolving_context → needs_input | queued → drafting → options_ready → awaiting_confirmation → executing → success | partial_success | failed → read_back`
+
+| State/error | Required UI behavior |
+|---|---|
+| Idle | Show examples and current context; manual forms remain available. |
+| Understanding/resolving | Step label and cancel; no fabricated progress percentage. |
+| Needs input | Ask only blocking field; project ambiguity offers authorized choices. |
+| Queued/running/drafting | Poll canonical job; show retry/cancel only when backend allows. |
+| Options ready | Show 1–3 meaningful options, assumptions, sources, warnings and editable commands. |
+| Awaiting confirmation | Persist draft; no mutation; show stale/source state. |
+| Executing | Disable duplicate confirm; show exact selected command count. |
+| Success | Receipt, created task links, actual provider/model, audit/usage metadata. |
+| Partial success | Exact succeeded/failed commands and safe next action; never generic success toast. |
+| Empty | “Chưa đủ thông tin để tạo phương án”; no fake default task. |
+| Permission/privacy deny | Explain safe reason without leaking entity existence/private source. |
+| Provider unavailable/timeout | Retryable state or approved fallback; manual form remains. |
+| Invalid schema/repair exhaustion/tool hallucination | Terminal validation error; nothing confirmable is rendered. |
+| Stale source/concurrent edit | Block confirm, reload latest context and require regenerated/re-reviewed draft. |
+| Degraded/offline | Label requested vs actual model; no write-plan generation with unqualified weak fallback. |
+
+### 18.10 Model routing và truthfulness
+
+- Add server-owned model/feature registry or extend health API so UI receives model ID, provider, capability (`structured_output`, `function_calling`), availability, privacy class, budget state and disabled reason.
+- Primary model profile `action_composer_strong` prefers configured DeepSeek V4 Pro. The literal UI ID `deepseek-v4-pro` maps server-side to `DeepSeek`; UI never sends API key/base URL.
+- Explicit DeepSeek selection is strict only when user intentionally locks it. Default profile may fallback to another policy-approved **strong** model and must display actual provider/model.
+- Erumi/Ollama small model is not allowed to make mutation plans merely to keep the feature “working”. It may classify a low-risk route only if evaluation evidence meets threshold; otherwise capability returns degraded/manual-only.
+- Sensitive/private context cannot silently fall back to cloud. If DeepSeek is privacy-ineligible and no qualified local model exists, block generation and keep manual task creation.
+- Static `AI_MODEL_OPTIONS` must be replaced/overlaid by registry response. `Live`, `Fallback`, `Privacy`, `Budget`, `Unavailable` labels derive from runtime state.
+- Usage ledger records every attempt and actual model; action receipt references the winning attempt.
+
+### 18.11 Permissions, privacy, prompt injection và compatibility
+
+- Primary compose/review/confirm is limited to project Owner/Manager/ScrumMaster/system admin until a documented member task-create policy is intentionally opened. Manual task CRUD behavior remains unchanged.
+- Tenant/project derives from authorized project. Cross-tenant or foreign member/skill/source IDs are rejected without disclosure.
+- Private/restricted task/wiki/chat/file content is excluded unless explicitly selected and policy permits. Sensitive flag is server-forced and cannot be downgraded.
+- Every entity field, chat message, wiki text, task description, attachment parse and tool result is delimited/tagged as **untrusted data**. Instructions inside source data cannot change system rules, tool registry or confirmation policy.
+- Tool least privilege: Primary request exposes only task-create-related read/plan tools. Project/group/meeting mutation tools do not exist in Primary registry.
+- Output is schema validated, reconciled against authorized IDs and HTML escaped. Unknown tool/version or parameter is rejected; no fuzzy matching to a similarly named mutation.
+- Preserve CAND-001/002/005/015, AI Activity, Erumi read-only chat, Week 1 auth/task/project/group flows. Legacy generic write-intent path remains feature-disabled or routed to Action Composer only after Primary integration evidence; no big-bang deletion.
+- Primary reuse `AiJob`, `AiGeneratedDraft`, task, task assignment và task skill tables, nhưng thêm đúng một bounded additive `AiJobActivityEvent` migration với FK job, unique `(AiJobId, Sequence)`, stage/status allowlist fields, safe detail JSON, attempt/timestamps và retention-compatible indexes. Không sửa/destructive existing rows. Nếu receipt không thể biểu diễn an toàn trong `ConfirmationResultJson`, hoặc activity cần platform redesign ngoài table này, dừng và cập nhật plan trước khi mở rộng persistence.
+
+### 18.12 PRIMARY SLICE — CAND-018 Task Action Composer v1
+
+Maps: `SURF-054`, `SURF-057`, `SURF-071`, `SURF-107..110`; `AI-CAP-003`, `AI-CAP-004`, `AI-CAP-036`, `AI-CAP-037`; `GAP-026..030`; `CAND-018`; `TEST-ACTION-01..19`.
+
+Primary boundaries:
+
+- One resolved current Project.
+- Intent allowlist: `task.create` only.
+- 1–5 new task commands; 1–3 option sets.
+- Editable title, description/acceptance, priority, due date, estimate, assignee and confirmed CAND-015 skill rows.
+- No project/group/meeting creation, no update/delete, no cross-project reassign/reschedule, no external calendar.
+- No autonomous follow-up loop after execution.
+
+Selection rationale:
+
+1. Highest product outcome: turns chat from answer surface into safe completion surface.
+2. Closes a proven broken/illusory write path rather than adding another UI-only button.
+3. Reuses shipped canonical platform and task-skill capability; persistence mới chỉ là một ordered activity-event table additive, không đổi task/job semantics.
+4. Task-only slice can complete end-to-end in 1.5–2 person-days with at most three implementation tasks.
+5. Establishes the shared tool/schema/review/receipt standard for every later module.
+
+Definition of Done:
+
+1. Global and contextual native entrypoints use one shared drawer.
+2. Request/response/schema/tool versions are fixed and validated.
+3. Project/tenant authorization is server-owned.
+4. Canonical asynchronous job, draft and read-back are used.
+5. Every ID/tool/source is semantically reconciled.
+6. Factual/assignment/deadline claims are grounded.
+7. Full honest lifecycle is visible through backend-derived elapsed-time chip and persisted operational timeline; no fake percentage or exposed chain-of-thought.
+8. User can edit/reject/selectively confirm; no pre-confirm mutation.
+9. Confirmation is idempotent/concurrency-safe and audited.
+10. Execution receipt links every created task.
+11. Provider timeout/unavailable, invalid schema/repair exhaustion, unknown tool, policy/budget deny and stale source are truthful.
+12. Reload restores job/draft/receipt.
+13. Actual provider/model is shown; strong-model fallback is truthful.
+14. Unit + integration + web-feature + E2E evidence passes.
+15. CAND-001/002/005/015, AI chat/Activity and Week 1 flows do not regress.
+16. Feature flags disable compose/execute without disabling manual task creation.
+
+### 18.13 Stretch decision
+
+**Không chọn Stretch trong NEXT_IMPLEMENTATION_GOAL.** Project setup bundle shares the framework but adds project authorization, multi-entity dependency ordering, atomic creation/compensation and rollback. It is only eligible after Primary is fully green, runtime evidence is recorded and a new selection gate confirms it still fits one independent quota run. Group/Meeting/Schedule adapters are further backlog, not hidden Stretch work.
+
+### 18.14 Implementation breakdown — tối đa ba task
+
+| Task | Scope | Traceability | Done gate |
+|---|---|---|---|
+| TASK-ACTION-1 | Add `ai_action_intent_envelope.v1`, execution receipt + `ai_action_activity_event.v1` contracts, bounded additive `AiJobActivityEvent` entity/config/migration, typed tool registry, server-owned project/task/member/workload/skill/deadline context builder, `action_intent_compose` job, persisted stage event/read-back, strong-model registry routing and schema/semantic validator. | SURF-107..110; AI-CAP-003/037; GAP-026/027/029/030; CAND-018; TEST-ACTION-01..10, TEST-ACTION-19 | Runtime no longer uses unmapped `erumi_autonomous_tasks`; no XML/regex authority; foreign/unknown tool/ID/source cannot become reviewable draft; activity state comes from authorized append-only backend events. |
+| TASK-ACTION-2 | Add `AiActionPlan` draft + `execute_action_set`, editable/selective payload validation, task-create application handler, CAND-015 skill application, idempotency/concurrency/stale checks, receipt/audit/read-back. | SURF-054/057/071/109; AI-CAP-004/036/037; GAP-027; CAND-018; TEST-ACTION-03..15 | No mutation before confirm; same confirmation replays same receipt; created tasks/skills/read-back are correct; partial/failed execution is truthful. |
+| TASK-ACTION-3 | Add AppShell model/action control, contextual Task entrypoints, shared composer/options/review/receipt UI, compact elapsed-time activity chip + expandable safe timeline, complete lifecycle/error states, feature flags and unit/integration/web-feature/Playwright regression evidence. | SURF-107..110; all selected IDs; GAP-028/029/030; TEST-ACTION-01..19 | No stub/fake quick action/progress; responsive/light/dark/a11y UI; actual model and backend stage shown; reload restores activity/job/draft/receipt; all selected and regression gates green. |
+
+### 18.15 Test/evidence matrix
+
+| TEST-ID | Required scenario and repeatable evidence |
+|---|---|
+| TEST-ACTION-01 | Authorized contextual happy path: manager opens Project Task context, asks for tasks, receives valid options and no mutation before confirm. |
+| TEST-ACTION-02 | Authorized global path: project picker/resolution selects exactly one visible project; ambiguous name returns `needs_input` without leakage. |
+| TEST-ACTION-03 | Minimal input: “Tạo task sửa màn hình đăng nhập” produces editable title/description/acceptance/skill draft and only asks truly blocking fields. |
+| TEST-ACTION-04 | Multi-task/options: 1–3 options differ by deadline/workload trade-off; duplicate wording/options rejected; max 5 task commands enforced. |
+| TEST-ACTION-05 | Cross-tenant/project/foreign member/foreign skill IDs denied nondisclosing at compose, draft edit and confirm. |
+| TEST-ACTION-06 | Private/restricted source deny and sensitive routing; source content/prompt injection cannot add tool or override confirmation. |
+| TEST-ACTION-07 | Provider unavailable/timeout: correct retryability; manual task form remains; no fake option or success. |
+| TEST-ACTION-08 | Invalid JSON/schema and repair exhaustion: no draft/options rendered as valid. |
+| TEST-ACTION-09 | Unknown/unregistered/version-mismatched tool and invalid parameters rejected; no fuzzy fallback or generic execute. |
+| TEST-ACTION-10 | Cancel/retry/idempotency/cache: same compose key/hash one job; changed payload conflict; cancel terminal; stale source invalidates cache. |
+| TEST-ACTION-11 | Draft edit/remove/reject/selective confirm: only selected validated commands execute; edited tool/project/permission fields cannot escalate. |
+| TEST-ACTION-12 | Assignee evidence honesty: before CAND-016/006 only `unassigned`, user-selected or workload-only labels; skill-fit claim is rejected. |
+| TEST-ACTION-13 | Stale/concurrent confirmation: project/member/catalog/task source changes block old draft; double click/second key does not duplicate tasks. |
+| TEST-ACTION-14 | Execution failure/compensation: exact command receipt, no blind retry-created duplicates, truthful partial/failed UI. |
+| TEST-ACTION-15 | Receipt/audit/usage: created IDs/deep links, actual provider/model, ledger/audit correlation and before/after payload are queryable. |
+| TEST-ACTION-16 | Reload/read-back: queued job, pending edited draft, confirmed receipt and stale status restore after page reload/deep link. |
+| TEST-ACTION-17 | Model truth: DeepSeek eligible route, privacy block, budget block, strong fallback and unqualified local fallback all display actual state/model. |
+| TEST-ACTION-18 | Regression: CAND-001/002/005/015, AI Activity/Erumi read chat, task CRUD/skills/assignment, project/group/meeting navigation and Week 1 authorization remain green. |
+| TEST-ACTION-19 | Process Activity: ordered backend events render the correct compact label/duration and expanded timeline; unknown duration shows no fake percent; command execution shows `n/total`; retry/sequence gap/duplicate/out-of-order/reload/multiple jobs/cancel/a11y are correct; unauthorized viewer, raw chain-of-thought/private payload and provider HTML never render. |
+
+Planned test locations:
+
+- `tests/Qaly.UnitTests/AiActionComposerServiceTests.cs`
+- `tests/Qaly.UnitTests/AiActionToolRegistryTests.cs`
+- `tests/Qaly.UnitTests/AiActionOutputValidatorTests.cs`
+- `tests/Qaly.IntegrationTests/AiActionComposerApiTests.cs`
+- `tests/Qaly.IntegrationTests/AiActionComposerActivityMigrationSqlServerTests.cs`
+- `tests/Qaly.WebFeatureTests/AiActionComposerControllerTests.cs`
+- `tests/e2e/ai-action-composer.spec.ts`
+
+Planned verification commands, **không chạy trong amendment plan-only này**:
+
+```powershell
+dotnet build Qaly_project.slnx --no-restore
+dotnet test tests/Qaly.UnitTests/Qaly.UnitTests.csproj --no-restore --filter "FullyQualifiedName~AiAction"
+dotnet test tests/Qaly.IntegrationTests/Qaly.IntegrationTests.csproj --no-restore --filter "FullyQualifiedName~AiActionComposer"
+dotnet test tests/Qaly.WebFeatureTests/Qaly.WebFeatureTests.csproj --no-restore --filter "FullyQualifiedName~AiActionComposer"
+dotnet test Qaly_project.slnx --no-build
+Push-Location src/Qaly.Web/ClientApp
+npm run typecheck
+npm run build
+npx playwright test tests/e2e/ai-action-composer.spec.ts tests/e2e/task-skills-ai.spec.ts tests/e2e/project-progress-ai.spec.ts tests/e2e/sprint-progress-ai.spec.ts tests/e2e/ai-usage-budget.spec.ts tests/e2e/ai-activity.spec.ts tests/e2e/minh-task-and-settings.spec.ts
+Pop-Location
+git diff --check
+git status --short
+```
+
+### 18.16 File overlap, merge order và rollback
+
+Likely implementation hotspots:
+
+| Area | Likely files | Merge/compatibility risk |
+|---|---|---|
+| Contracts/schema | New AI action DTOs and `docs/schemas/ai/ai_action_intent_envelope.schema.json`; receipt/activity schemas/validators | Do not weaken existing schema validators or reuse `draft_change.v4` as untyped catch-all. |
+| Activity persistence | New `AiJobActivityEvent` entity/configuration/additive migration/repository-read contract | Unique ordered sequence per job; safe public payload only; retention/tenant/job authorization; no reuse of unrestricted audit JSON as user-facing text. |
+| Workflow/API | `AiController.cs`, `IAiWorkflowService`, `AiWorkflowService`, `AiJobProcessor`, source guard/context builder | Shared hotspots with every AI capability; preserve canonical idempotency/privacy/budget/cache/audit semantics. |
+| Tool broker | New typed registry/handlers; limited interaction with `AiTools`, `ToolParameterGuard`, `AiGateway` | Do not add more hardcoded switches/regex parsing; legacy path remains isolated until strangled. |
+| Domain execution | Task application service/action handler and CAND-015 task skill service | Preserve manual task policy, row versions, notifications/webhooks and AI-confirmed provenance. |
+| Model registry | Gateway settings/health/provider availability DTO/API and frontend model client | Checked-in placeholder keys must never be interpreted as live provider evidence. |
+| UI | `AppShell.vue`, `TopHeader.vue`, Task Project/Detail entrypoints, new shared `AiActionComposerDrawer.vue` | Avoid header/sidebar overlap regression; one drawer shared across entrypoints; responsive/dark mode. |
+| Tests | New unit/integration/web-feature/E2E plus existing AI/task/Week 1 suites | Replace mocked DraftReady-only proof with runtime create→worker→draft→confirm→receipt evidence. |
+
+Merge order:
+
+1. TASK-ACTION-1 contracts/context/registry/job + unit/integration validation.
+2. TASK-ACTION-2 draft/confirmation/execution/receipt + mutation/read-back evidence.
+3. TASK-ACTION-3 global/contextual UI + browser/full regressions.
+4. Do not merge Project/Group/Meeting/Schedule adapters before Primary closure and a new plan selection gate.
+
+Rollback:
+
+- `AiActionComposer:Enabled=false` hides global/contextual trigger and rejects new compose requests with truthful platform-disabled state.
+- `TaskCreateEnabled=false` can disable mutation while leaving previously created job/draft/receipt readable.
+- Manual task forms, AI read capabilities and CAND-015 manual skills remain operational.
+- Activity migration is additive and retained on rollback; code/flag rollback stops new event writes and hides the chip without deleting receipt/activity/audit/usage history.
+
+## 19. NEXT_IMPLEMENTATION_GOAL
+
+> Implement only `CAND-018 — AI Action Composer v1: Task create action set` as specified in §18 on branch `main` after reconciling the latest remote without overwriting user changes. Preserve CAND-001/002/005/015 and Week 1 flows. Complete at most TASK-ACTION-1..3 end-to-end: typed `ai_action_intent_envelope.v1` and tool registry; canonical `action_intent_compose` job with authorized Project context and strong-model profile preferring runtime-eligible DeepSeek V4 Pro; persisted `AiActionPlan` with 1–3 meaningful editable task options; `execute_action_set` selective/idempotent confirmation through application services; truthful receipt/read-back/audit/usage; global AppShell `AI Hành động` plus contextual Task entrypoints; and bounded additive `AiJobActivityEvent` persistence with `ai_action_activity_event.v1`, rendered as a compact elapsed-time process chip plus expandable, accessible, backend-derived operational timeline that survives reload and never exposes chain-of-thought/private payload. Do not implement Project/Group/Meeting/Schedule adapters, CAND-016/006/017, autonomous mutation, generic XML/regex execution, fake client progress or UI-only stubs. Run TEST-ACTION-01..19 and the exact regression commands in §18.15. Choose no Stretch; stop and update this plan if safe multi-task confirmation/activity persistence requires persistence or platform redesign beyond the one planned additive activity-event table.
+
+**Status:** executed and closed by §20; do not reuse this prompt for a new implementation run.
+
+## 20. CAND-018 Task-create v1 implementation closure — 2026-08-01
+
+### 20.1 Outcome
+
+`CAND-018` Primary is implemented for the bounded `task.create` action set. User can open **AI hành động** globally or from Project Task context, describe desired work in Vietnamese, watch persisted operational steps, review one to three structured options, edit/select task commands and explicitly confirm. Only confirmed commands create tasks; the result contains deep links and can be restored after reload.
+
+DeepSeek V4 Pro is the preferred strong profile, not a fake availability claim. Before routing, UI says **Ưu tiên DeepSeek V4 Pro**. After routing, job/draft/receipt show the actual provider/model returned by the backend. Erumi/local weak fallback cannot be persisted as a grounded native action result.
+
+### 20.2 Traceability and status
+
+| Item | Closure |
+|---|---|
+| TASK-ACTION-1 | `IMPLEMENTED` — `ai_action_intent_envelope.v1`, authorized Project/member/workload/skill snapshot, `action_intent_compose`, semantic validator, `task.create.v1` allowlist, additive ordered activity persistence/read API and DeepSeek strong-profile hint. |
+| TASK-ACTION-2 | `IMPLEMENTED` — persisted `AiActionPlan`, edit/selective `execute_action_set`, protected-field/source/member/skill reconciliation, atomic task/assignment/skill persistence, idempotency/stale guard, audit and execution receipt/read-back. |
+| TASK-ACTION-3 | `IMPLEMENTED` — AppShell + Project Task entrypoints, shared responsive drawer, honest elapsed activity timeline, options/editor/confirm/receipt UI, session restore, feature flags and generated production bundle. |
+| SURF-107/109/110 | `NATIVE_COMPLETE` for Task-create v1. |
+| SURF-108 | `PRESENT_PARTIAL` by design: Project Task complete; Group/Meeting/Schedule adapters deferred. |
+| AI-CAP-037 | `NATIVE_COMPLETE` for `task.create.v1`; no credit for unimplemented tool adapters. |
+| GAP-026/027/028/030 | Closed for the bounded native path; legacy generic write flow remains isolated/duplicate. |
+| GAP-029 | Partial platform gap: truthful strong-profile/actual receipt complete; shared runtime model registry/preference API deferred. |
+
+### 20.3 Security and mutation boundary
+
+- Project/organization and caller permission are resolved server-side; only manager-class roles can compose/confirm in v1.
+- Cross-project member/skill/source IDs and protected edits to project/source/intent/tool/version fail closed.
+- Provider sees a bounded server snapshot; task private content is not injected. Sensitive source state cannot be downgraded by client input.
+- AI only creates a structured draft. Domain rows are written once, atomically, after editable/selective human confirmation.
+- Same confirmation idempotency key replays the same receipt; stale source blocks mutation.
+- Activity public labels/details are server allowlisted; no chain-of-thought, raw prompt, private source body or provider HTML is exposed.
+
+### 20.4 Evidence executed
+
+| Evidence | Result | TEST-ACTION coverage |
+|---|---|---|
+| `dotnet test tests/Qaly.UnitTests/Qaly.UnitTests.csproj --no-restore --filter FullyQualifiedName~AiActionComposerContractTests` | **7/7 PASS** | Authorized structured plan; hallucinated tool; foreign member/skill/source; user-selected assignment; protected project/source/intent edits. |
+| Related unit regression filter: Action contract + `AiJobProcessorTests` + task-skill contract | **26/26 PASS** | Provider retry/cancel/no fake result, schema/semantic failure, source grounding and CAND-015 compatibility. |
+| `dotnet test tests/Qaly.IntegrationTests/Qaly.IntegrationTests.csproj --no-restore --filter FullyQualifiedName~AiActionComposerApiTests` | **3/3 PASS** | Compose/activity→draft→editable confirm→task/assignment/AI-confirmed skill→receipt/audit/read-back; viewer/foreign project deny; stale-source deny; idempotent replay. |
+| Related integration filter: Action Composer + Task Skill APIs | **10/10 PASS** | Tenant/private/catalog/cancel/cache/idempotency/feature-disable regression. |
+| `AiActionComposerMigrationTests` | **1/1 PASS** | Idempotent SQL contains additive event table, FK, unique `(AiJobId, Sequence)`, read index and no drop table/column. |
+| `npm run typecheck` | **PASS** | Vue/TypeScript contracts compile. `vue-tsc` moved from broken published 3.3.8 package to 3.3.9. |
+| `npm run build` | **PASS** | Production bundle generated; only relevant `main` and Project Detail tracked artifacts retained. |
+| `npx playwright test tests/e2e/ai-action-composer.spec.ts --project=chromium --reporter=list` | **1/1 PASS** | Real login + native header button; mocked AI transport; backend stage timeline/elapsed chip; editable review; confirm payload; receipt/deep link; page reload and receipt restoration; actual model display. |
+| `dotnet build Qaly_project.slnx --no-restore` | **PASS, 0 warnings / 0 errors** | Compile/regression gate. |
+| `git diff --check` | **PASS** | No whitespace error; only repository line-ending notices. |
+
+### 20.5 Coverage closure for this implementation slice
+
+| Gate | Result |
+|---|---|
+| Selected tasks mapped to SURF + AI-CAP + GAP + TEST | 3/3 — PASS |
+| Selected API/job/schema/caller/renderer without disposition | 0 — PASS |
+| Selected acceptance item without repeatable verification | 0 — PASS |
+| Pre-confirm or autonomous mutation path added | 0 — PASS |
+| Untruthful fake success/progress/model label | 0 — PASS |
+| Unbounded Project/Group/Meeting/Schedule adapter hidden in Primary | 0 — PASS |
+| Existing user image modifications overwritten | 0 — PASS |
+
+**Implementation coverage gate: PASS.** This means 100% of the bounded Task-create inventory has a disposition and verification method; it does not claim that every deferred Action Composer adapter is implemented.
+
+### 20.6 Rollback and next priority
+
+- `AiJobPlatform:ActionComposerEnabled=false` disables compose/entrypoint while leaving manual Task CRUD and prior read-back intact.
+- `AiJobPlatform:ActionComposerTaskCreateEnabled=false` blocks execution without deleting job/draft/activity/audit history.
+- Migration is additive and retained on rollback.
+- No Stretch was selected or implemented.
+
+`NEXT_IMPLEMENTATION_GOAL` is intentionally not auto-set to another mutation adapter. The next plan gate must compare the **CAND-018 Project setup bundle** against **CAND-008 native task-draft closure** and **CAND-005 AI usage/budget control**, and choose exactly one decision-complete Primary. Project setup wins only if atomic Project + initial Task creation, compensation/read-back and rollback fit one quota run without weakening CAND-018 Task-create v1.
+
+## 21. Priority amendment — Unified Trợ lý AI Workspace, conversational artifact UX và CSRF preview gate
+
+**Amendment date:** 2026-08-02 (Asia/Saigon)
+**Request interpretation:** product owner không muốn thêm một form AI riêng cạnh chatbot. Qaly phải có một **Trợ lý AI duy nhất**: người dùng nói mục tiêu, hệ thống hiểu intent trong context hiện tại, chỉ hỏi phần thực sự thiếu, tạo artifact có cấu trúc để xem/sửa/chọn, và chỉ mutation sau explicit confirmation. Ảnh Mentimeter/Typeform được dùng để học interaction pattern `conversation → clarification → suggested artifact → preview → create`, không copy thương hiệu hoặc ép Qaly thành công cụ presentation/form.
+
+Phần này supersede `NEXT_IMPLEMENTATION_GOAL` ở cuối §20. Nó chỉ đặc tả/audit/selection; tại thời điểm amendment này **chưa sửa source** cho Unified Assistant.
+
+### 21.1 Baseline và bằng chứng runtime
+
+- Branch `main`, HEAD `8ec2e926d23f022da76d35f4a95db3fc024fe9aa`, bằng `origin/main` trước các thay đổi đang nằm trong working tree.
+- Working tree đã dirty bởi CAND-018 và các ảnh người dùng; amendment này chỉ sửa file plan hiện tại, không overwrite ảnh hoặc source.
+- Preview đang được mở tại `http://127.0.0.1:5010`.
+- Reproduction thật với login `admin@qaly.dev`:
+  - cùng binary, `Production` + HTTP tại cổng 5012: `GET /api/security/csrf` trả **500**;
+  - cùng binary, `Development` + HTTP tại cổng 5011: endpoint trả **200** và request token hợp lệ.
+- `QalyWebServiceExtensions` đặt antiforgery/auth cookie `SecurePolicy.Always` ngoài Development. Repo không có `launchSettings.json`, nên `dotnet run` local mặc định Production. ASP.NET không thể phát secure antiforgery cookie trên HTTP và controller trở thành 500.
+- Data Protection hiện bị đăng ký hai lần, ghi cả `.keys` và `dp-keys`. Đây là config ambiguity cần dọn, nhưng reproduction environment chứng minh trigger trực tiếp của lỗi hiện tại là local preview chạy Production qua HTTP.
+- Production vẫn phải giữ secure cookie. Không sửa bằng cách đổi Production sang `SameAsRequest`, bỏ CSRF, tạo token giả hoặc catch exception rồi cho mutation chạy.
+
+### 21.2 Current UX verdict
+
+Hiện có ba đường trải nghiệm không tạo thành một hệ thống thống nhất:
+
+1. `FloatingChatbot.vue` mở drawer 380 px tên **Trợ lý Erumi**, có tab chat và Activity.
+2. `/analytics` chứa một Erumi cockpit lớn; header event cũ điều hướng tới route này.
+3. `TopHeader.vue` có nút **AI hành động**, mở một `AiActionComposerDrawer` độc lập 680 px với form Project + textarea.
+
+Runtime gap cụ thể:
+
+- Erumi gửi `/api/ai/chat/fast`; write intent vẫn đi qua `AgentRunService`/`erumi_autonomous_tasks`, job không có schema mapping và service đòi `DraftId` ngay khi job vừa enqueue.
+- CAND-018 Task Action Composer đã có canonical job/schema/draft/confirm, nhưng Erumi không route vào capability này.
+- Frontend tự suy keyword trong reply rồi bịa quick action như “Giao việc cho tôi”, “Gia hạn thêm 3 ngày”; những nút đó không chứng minh callable contract và không được tính AI native.
+- Generic chat confirmation gửi `execute_action`, không gửi đầy đủ row version/idempotency/edit payload của CAND-018; không phải native review flow.
+- Action Composer là form-first: không có conversational clarification, không giữ assistant response cạnh artifact preview và không cho người dùng thấy “AI hiểu gì / còn thiếu gì” theo turn.
+- Chat history chủ yếu ở local browser; không có canonical assistant session/turn read-back.
+- Model selector/static labels phân tán giữa analytics/chat/header. Actual model chỉ đáng tin sau job/receipt.
+- Poll domain hiện chỉ có một `GroupPoll.Question`, `Options`, `AllowMultiple`, `ExpiredAt`; không có multi-question form, correct answer, score, branching, anonymous mode hoặc presentation deck.
+
+### 21.3 Pattern học từ Mentimeter và Typeform screenshots
+
+| Pattern quan sát | Cách áp dụng đúng cho Qaly | Không được copy/hiểu sai |
+|---|---|---|
+| AI hỏi một câu làm rõ ngắn trước khi tạo | Hỏi đúng blocking field: Project nào, deadline nào, muốn task hay poll; cung cấp option chip + free text. | Không hỏi lại dữ liệu đã có từ route/entity/permission. |
+| Conversation ở cạnh artifact/editor | Desktop split view: transcript bên trái, Task/Poll preview bên phải; mobile chuyển theo step. | Không trả raw JSON hoặc bắt người dùng rời assistant sang modal khác. |
+| “Suggested changes” khác “applied result” | Badge rõ `Bản nháp — chưa thay đổi dữ liệu`; edit/select rồi mới `Xác nhận và tạo`. | Không render seed/mock như kết quả vừa chạy. |
+| Preview trước CTA cuối | Task cards/poll question/options hiển thị gần giống kết quả domain thật và có validation inline. | Preview không được tự gọi mutation khi mở/chọn option. |
+| Một CTA rõ ràng | `Tạo N task`, `Tạo poll` hoặc `Áp dụng thay đổi đã chọn` với confirmation summary. | Không dùng “Yes” mơ hồ cho destructive/multi-command action. |
+| Feedback/disclaimer/history | Thumbs feedback gắn job/model/schema; disclaimer ngắn; job/draft/receipt đọc lại được. | Feedback không thay cho test, source grounding hoặc audit. |
+
+### 21.4 Target information architecture
+
+Chỉ còn một global product surface mang tên **Trợ lý AI**:
+
+- Floating launcher hiện tại được đổi accessible name, tooltip và visible compact label thành `Trợ lý AI`.
+- Nút `AI hành động` độc lập trên header bị loại bỏ. Nếu giữ shortcut ở header/mobile thì nó chỉ mở **cùng một singleton workspace**, không tạo overlay/state khác.
+- `FloatingChatbot` được thay bằng `AiAssistantWorkspace`; tên Erumi có thể giữ như avatar/persona nhỏ (`Powered by Erumi`) nhưng không phải tên capability hoặc model.
+- Analytics full page trở thành chế độ `Expand` của cùng workspace; conversation/job/draft không bị reset khi chuyển route.
+- Model/privacy/budget control nằm trong assistant header menu. Trước-run chỉ ghi profile ưu tiên; sau-run hiển thị actual provider/model từ job/receipt.
+- Activity không còn là silo. Mỗi assistant turn/job có compact process row; tab Activity vẫn dùng cho lịch sử cross-job và deep link.
+
+Desktop layout:
+
+```text
+┌ Trợ lý AI ─ context ─ model/profile ─ history ─ close ┐
+│ Conversation 38%       │ Artifact / Preview 62%       │
+│ user + assistant turns │ Task plan / Poll draft       │
+│ clarification cards    │ option tabs + editable rows  │
+│ process activity       │ sources + warnings           │
+│                        │ review summary + confirm CTA  │
+├────────────────────────┴───────────────────────────────┤
+│ attachment · prompt composer · send                   │
+└────────────────────────────────────────────────────────┘
+```
+
+- Khi chưa có artifact, conversation dùng toàn width hợp lý (không để pane trắng).
+- Khi artifact xuất hiện, workspace mở rộng tối đa khoảng 1040–1120 px nhưng không che navigation thiết yếu; ở viewport hẹp dùng tabs `Trao đổi` / `Bản nháp`.
+- Focus trap, Escape, restore focus, aria-live chỉ announce safe status; không announce mỗi token hoặc raw reasoning.
+
+### 21.5 End-to-end assistant state machine
+
+| Step | Backend truth | UI behavior |
+|---:|---|---|
+| 1. Open | Route/module/entity IDs từ client chỉ là hint; server chưa tin. | Hiện context chip như `Project · Qaly Native AI`; user có thể đổi entity được phép. |
+| 2. User goal | Bounded message, attachments metadata, language, mode=`auto`. | Thêm user bubble; chưa nói “đang tạo task” trước khi route xong. |
+| 3. Resolve + authorize | Re-resolve user/tenant/entity/permission và allowed capability adapters. | Process: `Đang kiểm tra context và quyền`. Deny nondisclosing. |
+| 4. Intent route | Structured `assistant_turn.v1`: `answer`, `clarify`, `artifact_job`, `unsupported`, `blocked`. | Không dùng client keyword quick action làm authority. |
+| 5. Clarify when needed | Trả `questionId`, blocking field, 2–5 allowed choices, free-text policy và max turn. | Hỏi một câu ngắn; chips chỉ điền answer, không mutation. Tối đa 3 clarification turns rồi yêu cầu manual scope. |
+| 6. Compose | Adapter Task v1 gọi canonical CAND-018 job; future adapters dùng schema/tool riêng. | Hiện backend-derived activity + elapsed time, cancel/retry/degraded. |
+| 7. Suggested artifact | Schema + semantic + source validation thành công, draft persisted. | Split preview; badge `Bản nháp`; show assumptions/missing/warnings/sources và 1–3 meaningful options. |
+| 8. Edit/select | Patch chỉ editable fields; protected project/tool/schema/source stay server-owned. | Inline validation; preview cập nhật; remove/select command rõ ràng. |
+| 9. Confirm | Re-authorize, stale/concurrency/idempotency check; atomic domain handler. | Confirmation summary nêu chính xác N action, project, assignees, deadline; explicit CTA. |
+| 10. Receipt | Persist actual outcome, IDs/links, model/usage/audit; read-back domain entities. | Success/partial/failed truthful; mỗi entity có deep link; reload restores job/draft/receipt. |
+
+### 21.6 Unified assistant contracts
+
+#### `assistant_turn.v1`
+
+Proposed endpoint: `POST /api/ai/assistant/turns` with CSRF, auth, rate/budget/privacy enforcement.
+
+Request:
+
+```json
+{
+  "previousTurnJobId": null,
+  "message": "Tạo các task frontend/backend để hoàn tất đăng nhập trước thứ Sáu",
+  "context": {
+    "route": "/projects/{id}",
+    "module": "project_tasks",
+    "entityType": "project",
+    "entityId": "{id}",
+    "selectionIds": []
+  },
+  "mode": "auto",
+  "language": "vi",
+  "modelProfile": "assistant_strong",
+  "maximumEstimatedCostUsd": 0.08
+}
+```
+
+Structured result:
+
+```json
+{
+  "schemaId": "assistant_turn.v1",
+  "disposition": "artifact_job",
+  "intent": "task.create",
+  "confidence": 0.94,
+  "assistantMessage": "Mình sẽ soạn các task để bạn duyệt.",
+  "clarification": null,
+  "artifact": {
+    "kind": "task_action_plan",
+    "jobId": "...",
+    "schemaId": "ai_action_intent_envelope.v1"
+  },
+  "sourceRefs": ["/projects/{id}"],
+  "actualProvider": null,
+  "actualModel": null
+}
+```
+
+Rules:
+
+- `previousTurnJobId` phải thuộc caller và cùng authorized scope; server đọc previous request/result/draft thay vì tin transcript client gửi lại.
+- `clarify` không được kèm domain command. `artifact_job` phải tham chiếu registered adapter/schema/job.
+- Model output không được tự chọn tool ID, tenant, project permission hoặc confirmation policy ngoài registry.
+- `answer` factual phải có verified source refs/metric grounding; nếu không có thì confidence/degraded state phải trung thực.
+- Unknown disposition/intent/artifact/schema fails closed; không fallback sang regex/XML executor.
+- Prompt template/version/evaluation case được version-control; no raw chain-of-thought in turn/activity/audit payload.
+
+#### Adapter registry v1
+
+| Adapter | Status in Primary | Job/schema/draft/confirm |
+|---|---|---|
+| `task.create.v1` | Enabled; reuse CAND-018 | `action_intent_compose` / `ai_action_intent_envelope.v1` / `AiActionPlan` / `execute_action_set` |
+| `read.answer.v1` | Reuse existing grounded chat paths only when source contract is satisfied | capability-specific result, no mutation |
+| `group.poll.create.v1` | Deferred CAND-020 | `group_poll_compose` / `group_poll_draft.v1` / `AiGroupPollDraft` / `create_group_poll` |
+| Project/Group/Meeting/Schedule mutation | Disabled in Primary | no advertised quick action until adapter is complete |
+
+### 21.7 New surface/capability inventory
+
+| SURF-ID | Surface | Disposition |
+|---|---|---|
+| SURF-111 | Global floating `Trợ lý AI` launcher / optional same-state header shortcut | `MISSING_HIGH_VALUE`; current launcher is Erumi-only and header action is duplicate. |
+| SURF-112 | Unified conversation + structured clarification turns | `MISSING_HIGH_VALUE`; current write route is broken legacy and client keywords are not authority. |
+| SURF-113 | Split artifact preview/review workspace | `FRONTEND_ONLY/PRESENT_PARTIAL`; Task editor exists in separate composer, not unified with conversation. |
+| SURF-114 | Per-turn safe process activity + elapsed time | `PRESENT_PARTIAL`; CAND-018 activity exists but not inside unified assistant turn. |
+| SURF-115 | Unified job/draft/receipt history/read-back | `PRESENT_PARTIAL`; Activity panel exists but session/turn linkage and artifact reopen are incomplete. |
+| SURF-116 | Group Poll native AI draft preview | `MISSING_HIGH_VALUE`; manual single-poll form only. |
+| SURF-117 | Multi-question Form/Quiz/interactive deck builder | `BLOCKED_BY_PLATFORM_OR_POLICY`; domain/storage/results model does not exist. |
+
+| AI-CAP-ID | Contract | Disposition |
+|---|---|---|
+| AI-CAP-038 | Planned `assistant_turn.v1` router + unified shell, reusing CAND-018 Task adapter | `MISSING_HIGH_VALUE`; Primary candidate CAND-019. |
+| AI-CAP-039 | Planned `group_poll_draft.v1` + `create_group_poll` native review | `MISSING_HIGH_VALUE`; CAND-020, after Primary. Multi-question quiz is explicitly not included. |
+
+### 21.8 Gap register
+
+| GAP-ID | Severity | Finding | Resolution disposition |
+|---|---|---|---|
+| GAP-031 | P0 Blocking | Local `dotnet run` defaults Production+HTTP; CSRF token endpoint returns 500. Data Protection has duplicate key repositories. | Deterministic preflight in CAND-019: explicit Development launch profile, one Data Protection registration, HTTPS/proxy-safe production behavior and real-login CSRF tests. |
+| GAP-032 | P0 UX | Separate Erumi floating chat, Analytics chat and header Action Composer create conflicting state/mental models. | CAND-019 singleton `Trợ lý AI` workspace; remove independent header action overlay. |
+| GAP-033 | P0 Runtime | Erumi write intent uses broken legacy agent job instead of AI-CAP-037. | CAND-019 route registered `task.create.v1` to CAND-018; legacy write executor disabled/isolated. |
+| GAP-034 | P0 Contract | No structured intent/clarification turn; form requires user to know Project/action fields upfront. | `assistant_turn.v1`, server route and max-three blocking clarification turns. |
+| GAP-035 | P1 UX | Conversation and artifact cannot be compared/edited side-by-side. | Shared split preview with mobile step fallback and honest draft/apply distinction. |
+| GAP-036 | P0 Truthfulness | Frontend fabricates quick actions from reply keywords. | Delete heuristic mutation-like actions; only backend registered adapter action renders. |
+| GAP-037 | P1 Lifecycle | Conversation snippets are local; no canonical turn chain/read-back. | Reuse canonical jobs: each turn/result references authorized `previousTurnJobId`; latest job/draft/receipt stored for reload. A dedicated session migration is deferred unless this chain cannot meet retention/query needs. |
+| GAP-038 | P1 Product | Group Poll has no AI-native draft/preview/confirm. | CAND-020 single-poll adapter; question/options/multi-select/expiry only. |
+| GAP-039 | P0 Product/Data | Mentimeter/Typeform-like multi-question quiz/form cannot be represented. | New later candidate only after `Form/Question/Response` domain, scoring/anonymity/branching policy and migration are approved; no fake bundle of unrelated polls. |
+| GAP-040 | P1 Model/QA | Model/profile controls and evidence are fragmented; no end-to-end assistant route evaluation. | CAND-019 server registry truth, actual model receipt, prompt version/eval fixtures and browser matrix. |
+
+### 21.9 Candidate scoring and selection
+
+| CAND-ID | Candidate | Outcome | Gap | Fit | Reuse | Test | Quota | Total | Decision |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| CAND-019 | Unified Trợ lý AI Workspace v1 — Task intent/clarification/artifact | 25 | 20 | 15 | 15 | 10 | 13 | **98** | **PRIMARY**; bounded to read answer + `task.create.v1`, one shared shell. |
+| CAND-020 | Native Group Poll Draft v1 | 20 | 16 | 14 | 15 | 9 | 12 | **86** | Backlog after Primary; no Stretch because different group permission/schema/domain UI. |
+
+Catalog after amendment: **20 candidates total**. Five bounded capabilities are implemented, CAND-019 is selected Primary, and 14 candidates remain deferred/dispositioned. CAND-020 does not imply multi-question Form/Quiz support.
+
+### 21.10 PRIMARY SLICE — CAND-019 Unified Trợ lý AI Workspace v1
+
+Boundaries:
+
+- One singleton global assistant workspace named `Trợ lý AI`.
+- Intent allowlist: grounded read answer, `task.create`, clarify, unsupported/blocked.
+- Task action reuses CAND-018 without weakening schema/permission/source/confirm/receipt behavior.
+- At most three clarification turns; one blocking question per turn.
+- No Project/Group/Meeting/Schedule mutation adapter, no Poll adapter, no multi-question Form/Quiz, no autonomous execution.
+- No new persistence migration unless canonical previous-job chain demonstrably cannot restore/retain turns. If migration becomes necessary, stop and re-gate scope before implementation.
+
+Definition of Done:
+
+1. Local preview CSRF works after real login without weakening Production secure cookie.
+2. One shared `Trợ lý AI` state; no independent `AI hành động` overlay.
+3. Header/floating/context triggers open the same workspace with same current job/draft.
+4. Server-owned structured turn route; no client keyword authority.
+5. Ambiguous task request yields persisted/reloadable clarification, not guessed mutation.
+6. Complete task intent enqueues CAND-018 and shows safe process timeline.
+7. Conversation and editable artifact appear in one responsive workspace.
+8. No mutation before explicit, precise confirmation summary.
+9. Task receipt/deep links/model/usage/audit/read-back survive reload.
+10. Legacy Erumi write path and fabricated quick actions cannot execute/render as native.
+11. Provider unavailable/timeout/schema-invalid/policy-budget deny/cancel/retry states are truthful.
+12. Read-only chat, CAND-001/002/005/015/018, Group chat/AI Activity and Week 1 flows do not regress.
+13. Light/dark, keyboard/focus, 1280/1024/768/390 px verification passes.
+14. Feature flags can restore current manual/read-only experience without losing history.
+
+### 21.11 Implementation breakdown — maximum three tasks
+
+| Task | Scope | Traceability | Done gate |
+|---|---|---|---|
+| TASK-UA-1 | Fix local CSRF/runtime config: explicit Development launch profile for HTTP preview, single Data Protection application/key repository, production HTTPS/forwarded-header guard design; add real-auth endpoint tests. Add `assistant_turn.v1` schema/DTO/router contract and registered disposition/adapter validation. | GAP-031/034/036/040; AI-CAP-038; TEST-UA-01..08 | CSRF 200 in supported local profile; Production security not weakened; unknown route/tool/previous job fails closed; no client heuristic authority. |
+| TASK-UA-2 | Replace duplicate entrypoints with singleton `AiAssistantWorkspace`; rename UI to `Trợ lý AI`; integrate conversation, clarification, CAND-018 Task preview, process activity, Activity/history and model truth in responsive split/step layout. | SURF-111..115; GAP-032/035/037/040; CAND-019; TEST-UA-09..16 | Same state from every trigger; conversation→clarify/compose→review stays in one surface; no blank pane/overlay collision/header-sidebar regression. |
+| TASK-UA-3 | Route `task.create` turns to canonical CAND-018, remove/disable legacy write and fake quick actions, complete confirmation/receipt/reload wiring plus unit/integration/Playwright/regression evidence. | AI-CAP-037/038; GAP-033/036/037; CAND-018/019; TEST-UA-17..26 | No mutation from generic chat; only registered task plan is confirmable; reload/read-back and all safety/failure gates green. |
+
+**Stretch decision:** không chọn Stretch. AI Poll Draft dùng group permission/schema/preview khác; multi-question Form/Quiz cần domain migration độc lập. Gộp chúng sẽ làm Unified Assistant Primary nông.
+
+### 21.12 Test/evidence matrix
+
+| TEST-ID | Required verification |
+|---|---|
+| TEST-UA-01 | Real login on supported local preview → `/api/security/csrf` 200 + non-empty token; POST with token succeeds. |
+| TEST-UA-02 | Production secure-cookie configuration is unchanged; HTTPS request succeeds; untrusted forwarded headers cannot spoof HTTPS. |
+| TEST-UA-03 | Data Protection restart/key persistence: auth + CSRF token remains decryptable across normal app restart; one configured repository/application name. |
+| TEST-UA-04 | `assistant_turn.v1` valid read/task/clarify/unsupported dispositions pass JSON + semantic validation. |
+| TEST-UA-05 | Unknown intent/disposition/schema/tool/adapter and malformed JSON/repair exhaustion fail without renderable artifact. |
+| TEST-UA-06 | Previous turn belongs to caller/same tenant/entity; foreign/cross-project ID is nondisclosing deny. |
+| TEST-UA-07 | Prompt/source injection cannot change adapter registry, project, permission, confirmation or expose system prompt/raw reasoning. |
+| TEST-UA-08 | Budget/privacy/model/provider unavailable/timeout returns honest blocked/degraded/retryable behavior and actual model truth. |
+| TEST-UA-09 | Floating launcher is named `Trợ lý AI`; independent `AI hành động` overlay is absent. |
+| TEST-UA-10 | Header/context/floating triggers open same singleton state and restore focus on close. |
+| TEST-UA-11 | Ambiguous request asks one blocking question with allowed choices; known route fields are not re-asked; max 3 turns. |
+| TEST-UA-12 | Clear task request routes to CAND-018 with no legacy `erumi_autonomous_tasks` call. |
+| TEST-UA-13 | Split preview shows exact option/task fields, assumptions, warnings and source links; mobile step layout retains edits. |
+| TEST-UA-14 | Client reply keyword cannot create mutation-like quick action; backend unregistered action never renders. |
+| TEST-UA-15 | Cancel/retry/network loss/sequence duplicate/out-of-order activity remains truthful and accessible. |
+| TEST-UA-16 | Light/dark and 1280/1024/768/390 layouts; no sidebar/header overlap or hidden confirm CTA. |
+| TEST-UA-17 | No task/assignment/skill row exists before confirmation. |
+| TEST-UA-18 | Edit/remove/selective confirm applies only selected validated commands. |
+| TEST-UA-19 | Double-click/same idempotency key replays same receipt; stale source/concurrent row version blocks. |
+| TEST-UA-20 | Page reload/reopen restores latest turn/job/activity/draft/receipt and actual provider/model. |
+| TEST-UA-21 | Reject draft leaves domain unchanged and remains auditable. |
+| TEST-UA-22 | Read-only factual answer includes authorized sources; unsupported request offers safe manual route, not fake success. |
+| TEST-UA-23 | Viewer/private/foreign project/member/skill source deny remains nondisclosing. |
+| TEST-UA-24 | Usage/audit correlation maps assistant turn → action job → draft → execution receipt. |
+| TEST-UA-25 | Regression: CAND-001/002/005/015/018, AI Activity, manual Task CRUD, Project/Group/Meeting navigation and Week 1 auth. |
+| TEST-UA-26 | Feature-off hides create adapter but keeps manual Task flow, grounded read chat and historical read-back available. |
+
+Planned test locations and commands:
+
+```powershell
+dotnet test tests/Qaly.UnitTests/Qaly.UnitTests.csproj --no-restore --filter "FullyQualifiedName~AiAssistant|FullyQualifiedName~AiActionComposer"
+dotnet test tests/Qaly.IntegrationTests/Qaly.IntegrationTests.csproj --no-restore --filter "FullyQualifiedName~Csrf|FullyQualifiedName~AiAssistant|FullyQualifiedName~AiActionComposer"
+dotnet test tests/Qaly.WebFeatureTests/Qaly.WebFeatureTests.csproj --no-restore --filter "FullyQualifiedName~Security|FullyQualifiedName~AiAssistant"
+dotnet build Qaly_project.slnx --no-restore
+Push-Location src/Qaly.Web/ClientApp
+npm ci
+npm run typecheck
+npm run build
+Pop-Location
+$env:E2E_BASE_URL='http://127.0.0.1:5010'
+npx playwright test tests/e2e/ai-assistant-workspace.spec.ts tests/e2e/ai-action-composer.spec.ts --project=chromium
+git diff --check
+git status --short
+```
+
+### 21.13 CAND-020 deferred contract — Native Group Poll Draft v1
+
+Supported without domain migration:
+
+- Group Owner/Admin says: “Tạo poll chọn lịch retro tuần sau”.
+- AI may ask topic/audience/expiry/multi-select clarification.
+- Authorized input: group identity, caller role, optional selected non-private message refs.
+- Output `group_poll_draft.v1`: one question ≤500 chars, 2–10 unique options ≤300 chars, `allowMultiple`, optional `expiredAt`, rationale/source refs/warnings.
+- Unified assistant renders exact Poll preview; user edits and confirms `create_group_poll`; application service revalidates permission/idempotency/stale source and returns poll/result deep link.
+
+Explicitly unsupported until a separate domain slice:
+
+- multiple questions in one form/deck;
+- correct answer, score, leaderboard, timer per question;
+- anonymous response, branching/logic jumps, free-text/scale/ranking question types;
+- presentation mode or importing Mentimeter/Typeform content.
+
+### 21.14 File overlap, merge order and rollback
+
+Likely hotspots:
+
+- CSRF/config: `QalyWebServiceExtensions.cs`, `QalyWebApplicationExtensions.cs`, new local launch profile, Security integration tests.
+- Server turn route: `AiController.cs` or a focused `AiAssistantController.cs`, application DTO/service, schema/validator, workflow processor/DI.
+- Shared UI: `App.vue`, `AppShell.vue`, `TopHeader.vue`, `FloatingChatbot.vue`, `ErumiChatPanel.vue`, `AiActionComposerDrawer.vue` and generated `main` assets.
+- Tests: new assistant unit/integration/web-feature/E2E plus existing action/chat/activity suites.
+
+Merge order:
+
+1. TASK-UA-1 config + contracts + tests.
+2. TASK-UA-2 singleton shell/preview with feature flag, while current paths remain available behind flag.
+3. TASK-UA-3 canonical Task route, remove legacy/fake path only after end-to-end evidence passes.
+
+Rollback:
+
+- `AiAssistantWorkspaceEnabled=false` restores current read-only Erumi/Activity surface and direct CAND-018 entrypoint during rollout.
+- `AiAssistantTaskAdapterEnabled=false` keeps unified read/clarify UI but removes Task mutation affordance.
+- Manual Task/Group Poll forms remain available.
+- Never rollback by disabling antiforgery or accepting mutation without confirmation.
+
+### 21.15 Coverage closure
+
+| Gate | Result |
+|---|---|
+| Historical + new surfaces dispositioned | 117/117 — PASS |
+| Runtime AI capabilities inventoried | 37/37 — PASS |
+| New planned capabilities dispositioned | 2/2 — PASS |
+| Runtime JSON schemas falsely counted | 0 — PASS |
+| Total gaps with candidate/defer/block disposition | 40/40 — PASS |
+| UI/backend orphan without disposition | 0 — PASS |
+| Selected Primary acceptance without verification | 0 — PASS |
+| Poll/Form feature claimed beyond domain | 0 — PASS |
+
+**Coverage gate: PASS. Product completeness: NOT PASS.** CAND-019 and CAND-020 remain unimplemented at this amendment point; multi-question Form/Quiz remains blocked rather than hidden as a fake capability.
+
+### 21.16 NEXT_IMPLEMENTATION_GOAL
+
+> Implement only `CAND-019 — Unified Trợ lý AI Workspace v1` from §21 on current `main` without overwriting existing CAND-018 or user image changes. Complete TASK-UA-1..3 and no Stretch: fix supported local preview CSRF through explicit Development launch/runtime configuration while retaining secure Production cookies and one Data Protection key ring; add schema-validated server-owned `assistant_turn.v1` routing for grounded read, clarification, registered `task.create.v1`, unsupported and policy-blocked dispositions; replace separate Erumi/AI Action entrypoints with one singleton `Trợ lý AI` workspace using conversational clarification plus responsive artifact preview; route task creation only through canonical CAND-018 job/draft/activity/edit/selective-confirm/receipt; remove legacy `erumi_autonomous_tasks` write routing and client-fabricated mutation-like quick actions after evidence is green. Do not implement Group Poll, multi-question Form/Quiz, Project/Group/Meeting/Schedule mutation adapters, autonomous execution or a new persistence migration unless the previous-job chain fails the reload/retention gate and the plan is re-approved. Run TEST-UA-01..26 and the exact commands in §21.12; keep manual flows and CAND-001/002/005/015/018 green.
+
+### 21.17 Implementation checkpoint — first deep increment
+
+**Checkpoint date:** 2026-08-02 (Asia/Saigon)
+
+Implemented and verified in this increment:
+
+- Local preview now has an explicit `Qaly.LocalPreview` Development profile on `http://127.0.0.1:5010`; Production still requires secure cookies. Data Protection uses one durable `Qaly` key ring. Authenticated `/api/security/csrf` returned HTTP 200 in runtime verification.
+- The header and floating control now expose one product name and one singleton entrypoint: `Trợ lý AI`. The standalone header `AI hành động` overlay was removed.
+- Clear task-create/assignment language is routed on the server to a structured `compose_task_plan` function-call payload with `schemaId=assistant_turn.v1`, `intent=task.create.v1`, `disposition=registered_action` and `executionPolicy=draft_then_confirm`.
+- Natural phrases containing quantities, for example “Tạo 3 task frontend, backend và QA”, are recognized without requiring the exact adjacent phrase “tạo task”.
+- The unified workspace follows the Mentimeter/Typeform interaction pattern without copying their unsupported domain: conversation remains on the left and the structured Task artifact appears on the right. The existing canonical CAND-018 job/draft/activity/edit/selective-confirm/receipt pipeline remains the only write path.
+- Client-fabricated mutation-like quick actions and direct confirmation of legacy chat drafts were removed. Legacy cards are read-only and explain why they cannot be confirmed under the current contract.
+- The narrow assistant drawer no longer allows the model badge to cover the Send button.
+- A formal JSON schema exists at `docs/schemas/ai/assistant_turn.schema.json`; the registered Task action is also guarded by the existing `ai_action_intent_envelope.v1` validation before draft/confirmation.
+
+Evidence completed:
+
+| Evidence | Result |
+|---|---|
+| Vue/TypeScript typecheck | PASS |
+| Solution build | PASS |
+| Erumi + Action Composer unit regression | 20/20 PASS |
+| Action Composer integration tests | 3/3 PASS |
+| Unified assistant manual + chat function-call Chromium E2E | 2/2 PASS |
+| Authenticated runtime CSRF request | HTTP 200 PASS |
+| `git diff --check` | PASS at checkpoint |
+
+Honest disposition after this increment:
+
+- `task.create.v1` through the unified assistant: `NATIVE_COMPLETE` for the registered Task action path, subject to a configured provider for generation.
+- CAND-019 as a whole: `PRESENT_PARTIAL`. Grounded-read responses still use the existing Erumi response contract rather than emitting `assistant_turn.v1` for every disposition; multi-turn structured clarification, explicit `unsupported`/`policy_blocked` envelopes and server-persisted assistant sessions remain for the next CAND-019 closure increment.
+- Provider/model runtime: `BLOCKED_BY_PLATFORM_OR_POLICY` in the current local preview until DeepSeek credentials or a reachable approved provider are configured. The UI shows a truthful failed/degraded state; it does not claim generation succeeded.
+- CAND-020 Group Poll Draft: still deferred. Multi-question quiz/form, scoring, leaderboard, branching and presentation mode remain blocked by missing domain support and are not claimed.
+
+**Next priority order:** close the remaining CAND-019 routing/clarification/persistence contract first; then implement CAND-020 single Group Poll Draft only; schedule a separate domain slice before any Mentimeter/Typeform-style multi-question Form/Quiz capability.
+
+### 21.18 Implementation checkpoint — chat-first contract closure increment
+
+**Checkpoint date:** 2026-08-02 (Asia/Saigon)
+
+This increment removes the intermediate “chat beside a blank manual AI form” behavior. The unified assistant now starts as one conversation surface; the artifact pane is created and opened only after the server returns a registered action.
+
+Implemented behavior:
+
+- `POST /api/ai/assistant/turns` is the canonical drawer turn endpoint. Every successful turn is represented by `assistant_turn.v1` with one explicit disposition: `grounded_answer`, `registered_action`, `clarification_required`, `unsupported` or `policy_blocked`.
+- The server, not a client quick-action heuristic, decides whether a request is the registered `task.create.v1` action. The response carries a structured Task artifact and `draft_then_confirm`; it does not perform a domain mutation.
+- When the Task request has no authorized Project context, the server returns at most five authorized Project choices. Selecting one keeps the original user intent, adds the selection to the conversation and resubmits it with the selected Project context.
+- A registered Task artifact automatically expands the responsive workspace and starts the existing CAND-018 canonical job. Before an artifact exists there is no blank right pane, no duplicate Project selector and no separate “Bạn muốn Qaly chuẩn bị việc gì?” form.
+- Existing-task assignment/status/update requests and unregistered Project, Group, Meeting/Schedule, Poll and Form/Quiz mutations return an honest unsupported response with no artifact, job or mutation. Grounded read requests remain read-only and are wrapped in the same turn contract.
+- The artifact pane remains review-first: visible activity stages, provider/degraded failure, structured options, editable fields, selective command confirmation, stale-source/idempotency checks, execution receipt and reload/read-back.
+- `assistant_turn.schema.json` is copied into the runtime schema output alongside the Action Composer schema. Endpoint integration tests verify authorized action, authorized clarification and unsupported/no-job behavior.
+
+Evidence for this increment:
+
+| Evidence | Result |
+|---|---|
+| `npm run typecheck` | PASS |
+| `dotnet build Qaly_project.slnx --no-restore` | PASS, 0 warnings / 0 errors |
+| Targeted Erumi/router/gateway/composer unit tests | 44/44 PASS |
+| Assistant Turn + Action Composer integration tests | 6/6 PASS |
+| Unified assistant + canonical composer Chromium E2E | 2/2 PASS |
+| `assistant_turn.schema.json` JSON parse and runtime copy declaration | PASS |
+| Old blank composer copy in application source/runtime bundle | 0 occurrences — PASS |
+
+Updated disposition:
+
+- `task.create.v1` native entry → server route → clarification → artifact → canonical job/review/confirm/read-back: `NATIVE_COMPLETE` for the currently registered adapter.
+- CAND-019 chat-first UI and single-turn disposition contract: `NATIVE_COMPLETE` for the current registered/read/deny capability set.
+- CAND-019 durable multi-turn session chain: `PRESENT_PARTIAL`; conversation state is still browser-held and `previousTurnJobId`/server-persisted assistant session reload is not implemented in this increment.
+- Project/Group/Meeting/Schedule/Poll/Form mutation adapters: `MISSING_HIGH_VALUE` or deferred exactly as catalogued; the assistant reports them as unsupported rather than fabricating success.
+
+**Next priority order after this checkpoint:** implement the server-persisted assistant turn/session chain as the next CAND-019 depth slice; only after it is green, evaluate CAND-020 single Group Poll Draft. Do not add multiple mutation adapters in one quota slice.
+
+## 22. Amendment — Qaly Agent Workspace and Open Assistant Foundation
+
+**Decision date:** 2026-08-02 (Asia/Saigon)
+
+**Baseline:** branch `main`, commit `8ec2e926d23f022da76d35f4a95db3fc024fe9aa`, equal to `origin/main` before this plan checkpoint.
+**Workspace note:** the working tree already contains uncommitted AI-native source, test, configuration, image and generated-bundle changes from prior increments. This amendment does not classify those files as new plan work and must be committed by staging this plan file only.
+
+### 22.1 Product decision and normative priority
+
+The intended product is not a Task form wrapped in chat. Qaly must become an agent workspace where a user can state a short outcome, let the assistant inspect authorized context, receive grounded findings and options, and then convert selected options into typed drafts. The assistant may reason broadly, but execution remains closed to registered capabilities:
+
+> **Open-world understanding, closed-world execution.** Read and analysis tools may run after authorization. Every mutation must resolve to a versioned capability, validated draft, explicit human confirmation, domain permission, idempotency, audit and read-back.
+
+This section supersedes the next-priority sentence at the end of §21.18. The new order is:
+
+1. `CAND-021A` — Resizable Agent Workspace Shell v1.
+2. `CAND-021B` — Durable Assistant Session/Turn Chain.
+3. `CAND-021C` — Context Source Registry + Capability Registry.
+4. `CAND-021D` — Grounded Research Plan + Action Graph.
+5. Only then select one additional mutation adapter such as CAND-020 Poll or the staffing/scheduling chain.
+
+The sequence is deliberate: do not add breadth through more ad-hoc intent branches or legacy tools before the common workspace, session, context and capability contracts exist.
+
+### 22.2 User outcome
+
+The target interaction accepts requests such as:
+
+- “Phân tích project Alpha và đề xuất những việc quan trọng cần làm tuần tới.”
+- “Đọc Wiki, task và PR gần đây, tìm gap trước release.”
+- “Đề xuất ba phương án phân công nhưng chưa áp dụng.”
+- “Từ phương án 2, soạn task, cuộc họp và lịch dự kiến để tôi duyệt.”
+
+The assistant must determine what it can inspect, show useful progress, ask only blocking questions, cite sources for factual claims, distinguish fact/inference/assumption, and present editable options. It must never imply that unsupported work was executed.
+
+### 22.3 Assistant UI surface inventory
+
+| SURF-ID | Surface | Current disposition | Required disposition |
+|---|---|---|---|
+| SURF-118 | Floating `Trợ lý AI` launcher | `NATIVE_COMPLETE` as singleton entrypoint | Preserve route-independent singleton and focus restoration. |
+| SURF-119 | Agent workspace window | `PRESENT_PARTIAL`; fixed 380 px drawer or fixed 1080 px artifact workspace | User-resizable desktop workspace with bounded size, reset and persisted preference. |
+| SURF-120 | Workspace header | `PRESENT_PARTIAL` | Fixed header with title, context/model truth, layout controls, activity and close; never overlap content. |
+| SURF-121 | Empty conversation state | `PRESENT_PARTIAL`; composer is vertically centered | Lightweight welcome/suggestions in scroll area; the same composer remains docked at the bottom from the first turn onward. |
+| SURF-122 | Active conversation thread | `PRESENT_PARTIAL` | Independently scrollable transcript, follow-latest behavior only when user is already near the bottom, accessible jump-to-latest. |
+| SURF-123 | Chat composer | `PRESENT_PARTIAL` | Sticky bottom composer, auto-growing input, attachments/context/model controls, submit/cancel, safe-area padding and no duplicate composer DOM. |
+| SURF-124 | Context/source disclosure | `PRESENT_PARTIAL` | Show selected scope, sources read, skipped/denied sources and freshness without exposing private titles. |
+| SURF-125 | Agent process/activity | `PRESENT_PARTIAL`; job activity is a separate tab and Task artifact timeline | Contextual collapsible process strip inside the conversation plus full Activity history; expose stages and tool/result summaries, never hidden chain-of-thought. |
+| SURF-126 | Artifact/review rail | `PRESENT_PARTIAL`; Task-specific and appears only for `task.create.v1` | Optional resizable/collapsible artifact rail with typed renderers and conversation remaining usable. |
+| SURF-127 | Conversation/artifact splitter | `MISSING_HIGH_VALUE` | Keyboard and pointer accessible splitter with min widths and double-click reset. |
+| SURF-128 | Mobile/tablet assistant | `PRESENT_PARTIAL` | Full-screen single-column workspace; conversation/artifact/activity are navigable views, composer is never hidden by virtual keyboard. |
+| SURF-129 | Resize/error/degraded accessibility states | `VERIFICATION_GAP` | Honest labels, focus containment/restoration, Escape policy, zoom/reduced-motion/high-contrast verification. |
+
+Assistant UI delta coverage: **12/12 surfaces inventoried and dispositioned**.
+
+### 22.4 Detailed UI contract — CAND-021A
+
+#### Desktop geometry
+
+- The assistant remains anchored to the right/bottom application viewport but behaves as an agent workspace, not a permanent full-height navigation drawer.
+- Default chat size: `440 × min(760, viewport height − 32)` CSS pixels.
+- Default artifact workspace: `min(1120, viewport width − 32) × min(820, viewport height − 32)`.
+- Minimum size: `380 × 520`; maximum size: `calc(100vw − 24px) × calc(100vh − 24px)`.
+- The user may resize from the left edge, top edge and top-left corner. Width and height are clamped after viewport/zoom changes so the close button and composer always remain reachable.
+- Store only presentation preferences—width, height, artifact ratio and collapsed state—in versioned local storage. Do not put entity data, prompts, source text, jobs or drafts in the layout record.
+- Provide “Đặt lại kích thước” in the header overflow menu. A corrupt/out-of-range saved value falls back to defaults.
+
+#### Layout
+
+- Root uses three fixed/scroll regions: fixed header, `min-height: 0` content, fixed bottom composer.
+- Empty and active states share one composer instance. Welcome copy and suggestions live in the transcript/empty content region above it.
+- The transcript scrolls independently. The artifact rail never causes the composer to scroll off-screen.
+- When an artifact exists, a splitter controls conversation/artifact width. Default ratio is 40/60; conversation minimum 360 px and artifact minimum 480 px. If the available width cannot satisfy both, switch to a single-view tab layout.
+- Activity appears first as a compact stage card in the relevant assistant turn. The full Activity view remains available from the header.
+- No raw model chain-of-thought is rendered. Allowed process data: stage name, status, elapsed time, authorized source/tool label, item count, retry/cancel state and safe error code.
+
+#### Input behavior
+
+- `Enter` submits and `Shift+Enter` inserts a line break; IME composition must not submit early.
+- Input grows to a bounded height, then scrolls internally.
+- Submit changes to Stop/Cancel only when the server operation is actually cancellable.
+- Attachments show upload/scan/index status before being eligible as sources.
+- The model control is compact. It displays the actual selected model after execution; “Auto” describes routing policy, not a model identity.
+- The composer remains usable for follow-up/refinement while an artifact is open, unless a blocking confirmation transaction is in progress.
+
+#### Responsive behavior
+
+- At widths below 800 px, assistant is full-screen and resizing is disabled.
+- Conversation, Artifact and Activity become explicit views with preserved scroll positions.
+- The composer uses `env(safe-area-inset-bottom)` and viewport/keyboard-safe height.
+- At 200% browser zoom, all controls remain reachable without horizontal document scrolling.
+
+### 22.5 Open-assistant implementation audit and gap register
+
+| GAP-ID | Priority | Finding | Closure requirement |
+|---|---|---|---|
+| GAP-041 | P0 UX | Workspace width is fixed to 380 px and jumps to a fixed 1080 px only for Task artifacts. | CAND-021A bounded user resize and responsive fallback. |
+| GAP-042 | P0 UX | Empty-state composer is centered; active-state composer is separately rendered at the bottom. | One persistent bottom composer for zero-to-many turns. |
+| GAP-043 | P1 UX | Spacious workspace is coupled to `activeView=create`, so broad analysis remains narrow. | Workspace size independent from Task artifact existence. |
+| GAP-044 | P1 UX | Conversation/artifact ratio is fixed; there is no collapse/split interaction. | Accessible splitter, collapse and reset. |
+| GAP-045 | P1 UX | Layout preference is not persisted or validated. | Versioned presentation-only storage with clamps. |
+| GAP-046 | P0 Accessibility | Resize keyboard behavior, focus trap/restore, zoom, mobile keyboard and reduced motion lack evidence. | TEST-AW-01..12 coverage. |
+| GAP-047 | P1 Trust | Process is split between a generic Activity tab and Task-only activity timeline. | Turn-linked safe progress model; no chain-of-thought. |
+| GAP-048 | P0 Platform | Conversation history is browser-held; reopen/reload cannot restore a canonical session. | CAND-021B server-owned session and ordered turns. |
+| GAP-049 | P0 Platform | `previousTurnJobId` is not a durable conversation chain or optimistic-concurrency contract. | Session version, sequence, idempotency and nondisclosing ownership validation. |
+| GAP-050 | P0 Product | Server routing is centered on Task-create keyword classification. | General planner disposition and registered capability resolution. |
+| GAP-051 | P0 Platform | There is no single typed capability registry describing read/artifact/mutation tools. | CAND-021C registry with schemas, scopes, risk, renderer and tests. |
+| GAP-052 | P0 Safety | Legacy tools exist but are not equivalent to canonical AI-native adapters. | Keep unavailable to general execution until individually adapterized; XML/regex parsing is never authority. |
+| GAP-053 | P0 Retrieval | Project/task/workload, Wiki, meeting, group/chat, attachments and GitHub are assembled through fragmented paths. | Authorized Context Source Registry with common references and freshness. |
+| GAP-054 | P0 Runtime | Semantic retrieval is disabled in current configuration. | Explicit feature/config readiness, ingestion health and honest lexical-only degradation. |
+| GAP-055 | P1 Retrieval | GitHub integration exposes connection/development metadata but is not an assistant source; raw repository content is absent. | Metadata adapter first; code reader is a separate read-only security slice. |
+| GAP-056 | P0 Security | Retrieved content has no unified trust class, injection handling, token budget or source-priority policy. | Sanitize, delimit, classify, rank, cap and record retrieved chunks. |
+| GAP-057 | P0 Trust | Broad answers do not yet guarantee claim-level verified source references. | Structured finding → source refs; unsupported facts become assumptions/unknowns. |
+| GAP-058 | P0 Product | No general research-plan/action-graph artifact exists. | CAND-021D `assistant_research_plan.v1`. |
+| GAP-059 | P0 Model | Task composition targets DeepSeek strong while general agent chat may use the configured local `IChatClient`; actual routing is fragmented. | Server-owned model profiles and actual provider/model truth per turn/job. |
+| GAP-060 | P1 UX/Runtime | Chat and job activity primarily wait/poll; no unified reconnectable event stream. | Ordered event contract with polling baseline and optional SSE/SignalR transport. |
+| GAP-061 | P1 Quality | General planner prompts and behavioral evaluations are not versioned as a complete product contract. | Prompt IDs/versions, golden cases, adversarial and regression evaluation. |
+| GAP-062 | P0 Audit | Session → turn → retrieval → provider attempt → job → draft → receipt is not one correlation chain. | Correlation IDs and read-back audit across every stage. |
+| GAP-063 | P0 Privacy | Per-source privacy/retention/cloud-processing rules are not normalized for an open assistant. | Source policy evaluated server-side before retrieval/provider routing. |
+| GAP-064 | P0 Authorization | Cross-project analysis/assignment lacks portfolio authorization and deterministic capacity/availability. | Preserve CAND-017 veto until foundation exists. |
+| GAP-065 | P1 Reliability | Turn-level cancel, retry, duplicate submit, reconnect and stale-context behavior are incomplete. | Idempotent turn creation, resumable status and source-version checks. |
+| GAP-066 | P1 Source | Attachment upload does not itself prove parse/index/authorization readiness. | Explicit upload → scan → parse → index → eligible lifecycle. |
+| GAP-067 | P0 Security | A future repository-code reader needs path/size/type allowlists, commit-SHA grounding, secret redaction and indirect-prompt-injection defense. | Separate read-only connector gate; no repository write tool. |
+| GAP-068 | P1 UX | Users cannot inspect what the assistant can read/do versus what is unsupported. | Capability/source disclosure and safe manual route. |
+| GAP-069 | P1 Operations | No end-to-end targets for first progress, first answer, retrieval quality, completion and user cancellation. | Telemetry and service-level indicators per model profile/capability. |
+| GAP-070 | P0 Trust | Offline fallback code contains plausible fixed metrics that can look like fresh analysis. | Remove or label demo fixtures; degraded production output must not present invented operational facts. |
+| GAP-071 | P1 Extensibility | Artifact rendering is Task-specific. | Renderer registry keyed by schema ID with unknown-schema safe fallback. |
+| GAP-072 | P1 Rollout | Common foundation flags and compatibility order are not explicit. | Independent UI/session/context/planner flags and reversible merge order. |
+
+All 32 newly identified gaps have one owner candidate or explicit prerequisite/defer disposition. None is treated as closed merely because a similarly named service or button exists.
+
+### 22.6 Target foundation architecture
+
+```text
+Agent Workspace UI
+  ├─ Session/Turn client
+  ├─ Process event renderer
+  ├─ Source/grounding drawer
+  └─ Artifact renderer registry
+          │
+Assistant Turn API + Session Store
+          │
+Intent/Research Planner (DeepSeek strong profile for complex work)
+  ├─ Context Source Registry
+  │    ├─ Project / Task / Workload
+  │    ├─ Wiki / Meeting / Group / Attachment
+  │    └─ GitHub metadata; repository code only after separate gate
+  └─ Capability Registry
+       ├─ read.*       → authorized, auditable, no mutation
+       ├─ artifact.*   → structured proposal/review
+       └─ mutation.*   → typed draft → confirm → domain service
+          │
+Canonical AI Job / Provider Router / Validator
+  ├─ privacy + budget + cache + retries
+  ├─ source guard + schema validation
+  └─ audit + usage + read-back
+```
+
+The model never chooses an arbitrary backend method. It proposes a capability ID and arguments; the server resolves that ID against the caller-specific registry and revalidates every argument.
+
+### 22.7 Capability Registry contract
+
+Every registered capability descriptor must contain:
+
+```json
+{
+  "capabilityId": "task.create.v1",
+  "kind": "mutation_draft",
+  "inputSchemaId": "task_create_request.v1",
+  "outputSchemaId": "ai_action_intent_envelope.v1",
+  "requiredScopes": ["project.read", "task.create"],
+  "contextSources": ["project.summary", "project.members", "project.skills"],
+  "riskClass": "project_mutation",
+  "confirmationPolicy": "explicit_selective_confirm",
+  "modelProfile": "reasoning_strong",
+  "rendererId": "task-plan-review.v1",
+  "featureFlag": "AiAssistantTaskAdapterEnabled"
+}
+```
+
+Registry rules:
+
+- The server filters descriptors before the model sees them.
+- Read capabilities may return structured evidence automatically after authorization.
+- Artifact capabilities create proposals but no domain mutation.
+- Mutation capabilities can create editable drafts only; domain services execute after confirmation.
+- Unknown capability/schema/renderer IDs fail closed and display an honest unsupported state.
+- Provider-native function calling or schema JSON may be used, but both normalize to this registry. XML/regex text extraction is not execution authority.
+
+### 22.8 Context Source Registry contract
+
+Each source adapter returns a common envelope:
+
+```json
+{
+  "sourceRef": "qaly://project/{projectId}/tasks/{taskId}@{rowVersion}",
+  "sourceType": "task",
+  "title": "Authorized display title",
+  "freshnessAt": "2026-08-02T00:00:00Z",
+  "trustClass": "qaly_domain_record",
+  "privacyClass": "project_private",
+  "contentHash": "sha256:...",
+  "facts": {},
+  "redactions": [],
+  "retrievalMethod": "deterministic"
+}
+```
+
+Required source behavior:
+
+- Authorize tenant, organization, project, entity and private visibility before content is materialized.
+- Prefer deterministic domain queries for metrics; use hybrid retrieval only for unstructured text.
+- Preserve row version/content hash so stale proposals and confirmations can be rejected.
+- Reserve output tokens before selecting context; rank and cap chunks rather than stuffing all content.
+- Treat user files, Wiki, chat and repository text as untrusted data, not system instructions.
+- Record which sources were read, skipped, redacted, stale or denied using nondisclosing labels.
+
+### 22.9 Durable session and turn contract
+
+`CAND-021B` must introduce a server-owned session without storing raw chain-of-thought:
+
+- `AssistantSession`: tenant/user owner, optional organization/project scope, title, status, version, created/updated/archived times.
+- `AssistantTurn`: monotonic sequence, user request, normalized disposition, safe assistant response, artifact refs, source refs, model profile/actual provider, correlation ID and status.
+- `AssistantProcessEvent`: safe stage/status/tool/source summary, sequence, timestamps and retry/cancel metadata.
+- `AssistantArtifactRef`: schema ID/version, job/draft/receipt IDs and renderer ID.
+
+The client submits `sessionId`, `expectedVersion`, `clientTurnId` and an idempotency key. Duplicate requests replay the same turn. Foreign session/project IDs return a nondisclosing deny. Reload reads ordered turns and reconnects to running work.
+
+### 22.10 Research-plan artifact
+
+`CAND-021D` output schema `assistant_research_plan.v1`:
+
+- `objective` and resolved scope;
+- `findings[]`: statement, severity, confidence, source refs;
+- `unknowns[]` and blocking/non-blocking clarifications;
+- `assumptions[]`, visibly separated from facts;
+- `options[]`: outcome, trade-offs, cost/time/risk;
+- `recommendedOptionId` with rationale;
+- `proposedActions[]`: abstract capability ID, dependency IDs, draft input, source refs and execution eligibility;
+- `warnings[]`, `privacyNotes[]`, freshness and actual provider/model.
+
+Actions whose adapter is not registered remain proposals with “Chưa thể áp dụng tự động”; they must not render a confirm button.
+
+### 22.11 Model, retrieval and degraded policy
+
+- `reasoning_strong`: DeepSeek V4 Pro alias/profile for multi-source research, planning and complex draft composition.
+- `fast_local`: small local model for cheap classification/summarization only when privacy and quality policy allow.
+- `auto`: a server routing policy, never a promise that a specific model ran.
+- Every answer/artifact records the actual provider/model or “not reached”.
+- Provider unavailable: preserve the session and user request; offer retry/model fallback/manual inspection. Do not generate fake findings.
+- Semantic unavailable: deterministic and keyword sources may continue with a visible “semantic search unavailable” limitation.
+- Budget hard-stop/policy deny: no provider request; explain the available manual or narrower route.
+
+### 22.12 Security and mutation boundaries
+
+- No autonomous destructive mutation, bulk confirm-by-default or client-supplied permissions.
+- Tool results and retrieved text are data; they cannot register capabilities, alter scopes, suppress confirmation or reveal hidden prompts.
+- Private source titles/content are excluded before the model request, not merely hidden after generation.
+- Confirmation rechecks permission, tenant/project membership, source versions and domain invariants.
+- Repository analysis is read-only and commit-SHA grounded; repository write, shell or deployment capabilities are outside this candidate.
+- Logs/audit must avoid raw secrets, tokens, attachment contents and unnecessary prompt bodies.
+
+### 22.13 Candidate score and selection
+
+| Candidate | Outcome 25 | Gap closure 20 | AI-native fit 15 | Platform reuse 15 | Testability 10 | Quota fit 15 | Total | Gate |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| CAND-021A Resizable Agent Workspace Shell v1 | 20 | 17 | 11 | 15 | 10 | 15 | **88** | **PRIMARY; no migration, works with current canonical Task path.** |
+| CAND-021B Durable Session/Turn Chain | 23 | 20 | 15 | 14 | 9 | 8 | 89 | Next slice; migration and concurrency contract make it ineligible as Stretch. |
+| CAND-021C Context + Capability Registry | 25 | 20 | 15 | 15 | 9 | 5 | 89 | Next foundation slice; must not be reduced to placeholder interfaces. |
+| CAND-021D Grounded Research Plan | 25 | 20 | 15 | 14 | 9 | 6 | 89 | Depends on B/C and retrieval readiness. |
+
+**Selected Primary:** CAND-021A. It closes the immediately visible UX problem and establishes the stable shell used by every later native capability without changing domain behavior.
+
+**Stretch:** none. Session persistence requires a migration and concurrency/security work; combining it with UI resizing would weaken both verification sets.
+
+Catalog after this amendment: **21 top-level candidates**. CAND-021 is a foundation candidate with independently gated A–D increments; its phases are not counted as four unrelated product capabilities.
+
+### 22.14 CAND-021A implementation tasks — maximum three
+
+1. **TASK-AW-1 — Resizable shell state and controls.** Add bounded left/top/top-left resizing, pointer capture cleanup, viewport clamp, versioned presentation-only persistence, reset action and mobile disable behavior to the singleton assistant shell.
+2. **TASK-AW-2 — Bottom composer and adaptive workspace.** Render one composer at the bottom in both empty and active states; keep welcome/suggestions in the scroll region; decouple spacious workspace from Task artifact; add collapsible artifact rail and accessible splitter only when an artifact exists.
+3. **TASK-AW-3 — Verification and compatibility.** Add focused component/E2E coverage for resize, persistence, reset, empty/active composer, artifact transition, mobile/zoom/keyboard/focus; run typecheck and existing CAND-019/CAND-018 regression suites. Do not introduce a backend migration in this task.
+
+### 22.15 CAND-021A Definition of Done
+
+1. User can resize width and height on desktop and reset them.
+2. Saved geometry is presentation-only, versioned, bounded and survives reopen/reload.
+3. Composer is at the bottom before the first message and remains the same functional surface afterward.
+4. Chat-only analysis can use the expanded workspace; width is not gated by a Task artifact.
+5. Opening an artifact preserves conversation and composer; splitter/collapse cannot hide both panes.
+6. Mobile is full-screen single-column and does not expose unusable resize handles.
+7. Header, close control, model control, transcript and composer never overlap the application sidebar/header or each other.
+8. Keyboard resize/reset and focus restoration work; pointer listeners are removed on end/unmount.
+9. Current `assistant_turn.v1`, `task.create.v1`, activity, draft review, selective confirmation and receipt behavior remain unchanged.
+10. No generated bundle is hand-edited; any bundle update comes only from the standard frontend build after source verification.
+11. Feature disable/rollback is possible by reverting the shell source change without data migration.
+12. No claim is made that session, context registry, source-code analysis or new mutation adapters are complete.
+
+### 22.16 Test and evidence matrix
+
+| TEST-ID | Required scenario / evidence |
+|---|---|
+| TEST-AW-01 | Default desktop opens within viewport; header and bottom composer visible. |
+| TEST-AW-02 | Drag left/top/top-left resizes, respects min/max and releases pointer/listeners. |
+| TEST-AW-03 | Resize preference survives close/reopen and reload; corrupt/old storage falls back safely. |
+| TEST-AW-04 | Reset returns to responsive defaults. |
+| TEST-AW-05 | Empty state shows welcome content above one bottom composer; no centered duplicate input. |
+| TEST-AW-06 | First send transitions to active thread without composer remount/data loss/focus jump. |
+| TEST-AW-07 | Task artifact opens review rail; conversation remains available; split/collapse/reset work. |
+| TEST-AW-08 | 1280/1024/800/768/390 widths and 200% zoom have no hidden close/submit/confirm control. |
+| TEST-AW-09 | Mobile virtual-keyboard-safe layout and safe-area padding; resizing disabled. |
+| TEST-AW-10 | Keyboard-only operation, focus containment/restoration, Escape behavior and reduced motion. |
+| TEST-AW-11 | DeepSeek/provider unavailable and semantic-off labels remain honest; layout still usable. |
+| TEST-AW-12 | Regression: chat grounded answer, clarification, unsupported, Task compose, activity, edit/selective confirm, reload/read-back. |
+
+Commands for the implementation increment:
+
+```powershell
+Push-Location src/Qaly.Web/ClientApp
+npm run typecheck
+Pop-Location
+npx playwright test tests/e2e/ai-assistant-workspace.spec.ts tests/e2e/ai-action-composer.spec.ts --project=chromium
+dotnet test tests/Qaly.UnitTests/Qaly.UnitTests.csproj --no-restore --filter "FullyQualifiedName~AiAssistant|FullyQualifiedName~AiActionComposer|FullyQualifiedName~Erumi"
+dotnet test tests/Qaly.IntegrationTests/Qaly.IntegrationTests.csproj --no-restore --filter "FullyQualifiedName~AiAssistant|FullyQualifiedName~AiActionComposer"
+dotnet build Qaly_project.slnx --no-restore
+git diff --check
+```
+
+The frontend production build is run only after source/type/E2E verification and only if the generated `wwwroot/dist` update is intentionally included; never use a build as an audit step.
+
+### 22.17 File overlap and merge order
+
+Likely CAND-021A files:
+
+- `src/Qaly.Web/ClientApp/components/chat/FloatingChatbot.vue` — shell geometry, resize controls, persistence, artifact splitter.
+- `src/Qaly.Web/ClientApp/components/chat/ErumiChatPanel.vue` — one persistent bottom composer and empty-state layout.
+- `tests/e2e/ai-assistant-workspace.spec.ts` — primary browser contract.
+- Existing `tests/e2e/ai-action-composer.spec.ts` — regression only unless a selector must be stabilized.
+
+Merge order:
+
+1. Commit this plan amendment alone as the remote checkpoint.
+2. Implement TASK-AW-1 and verify pointer/viewport/storage behavior.
+3. Implement TASK-AW-2 and verify empty/active/artifact layouts.
+4. Implement TASK-AW-3 tests; build generated assets only after source gates pass.
+5. Do not mix CAND-021B migration/session files into the UI commit.
+
+### 22.18 Deferred foundation backlog
+
+| Priority | Increment | Dependency | Exit outcome |
+|---|---|---|---|
+| P0 next | CAND-021B Durable Session/Turn Chain | CAND-021A stable shell | Reloadable server-owned conversation with ordered, idempotent turns and activity. |
+| P0 next | CAND-021C Context + Capability Registry | B plus privacy/authorization review | One safe discovery/execution contract; legacy tools cannot bypass adapters. |
+| P0 next | CAND-021D Grounded Research Plan | B/C + source readiness | Short prompt → authorized research → sourced options/action graph, no mutation. |
+| P0 | Remove misleading offline fixed metrics | Can be paired only with a read-answer trust slice | No operational-looking fake facts in degraded mode. |
+| P1 | GitHub metadata context adapter | C + repository permission mapping | Commits/PR/release evidence in plans. |
+| P1 gated | Read-only repository code analysis | Separate security design | Commit-SHA-grounded code findings with secrets/injection defenses. |
+| P0 gated | Staffing/scheduling adapters | CAND-015/016/006 + capacity/portfolio permission | Editable, confirmed assignment/schedule proposals. |
+| P1 | CAND-020 Poll draft | C registry + Group permission/schema | One native Group Poll draft; no fake Form/Quiz domain. |
+
+### 22.19 Coverage closure
+
+| Gate | Result |
+|---|---|
+| Previous global surface inventory | 117/117 dispositioned — retained PASS |
+| New/re-audited assistant UI surfaces | 12/12 dispositioned — PASS |
+| Runtime AI capability inventory | 37/37 retained with caller/orphan disposition — PASS |
+| New foundation contracts A–D | 4/4 selected or dependency-deferred — PASS |
+| Previous gaps | 40/40 retained — PASS |
+| New gaps GAP-041..GAP-072 | 32/32 candidate/prerequisite/defer disposition — PASS |
+| UI orphan without disposition | 0 — PASS |
+| Backend/tool/source orphan without disposition | 0; legacy tools explicitly GAP-052 — PASS |
+| Primary acceptance item without verification | 0 — PASS |
+
+**Coverage gate: PASS. Product completeness: NOT PASS.** Coverage means every discovered assistant surface and foundation gap has a disposition. It does not mean durable sessions, broad context research, repository-code analysis or additional mutations have been implemented.
+
+### 22.20 NEXT_IMPLEMENTATION_GOAL
+
+> Implement only `CAND-021A — Resizable Agent Workspace Shell v1` on the current checkpointed `main`. Preserve the existing `assistant_turn.v1` and canonical `task.create.v1` job/draft/activity/edit/selective-confirm/read-back behavior. Make the singleton `Trợ lý AI` desktop workspace user-resizable from its left/top/top-left boundaries with bounded, versioned presentation-only persistence and a reset action; decouple spacious chat from Task artifact existence; render one chat composer docked at the bottom for both empty and active conversation states; keep welcome/suggestions in the independently scrolling transcript area; when a Task artifact exists, keep chat available and provide an accessible collapsible/resizable artifact rail. Use full-screen single-view behavior below 800 px, maintain focus/zoom/reduced-motion/mobile-keyboard accessibility, and expose safe process status without chain-of-thought. Complete TASK-AW-1..3 and TEST-AW-01..12. Do not add migrations, session persistence, context/capability registry, repository scanning, new mutation adapters or autonomous execution in this increment. Run the exact commands in §22.16 and report generated-bundle handling explicitly.
