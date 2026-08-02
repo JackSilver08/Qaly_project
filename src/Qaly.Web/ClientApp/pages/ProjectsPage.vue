@@ -15,6 +15,7 @@ import {
 import ProjectList from '../components/ProjectList.vue'
 import ProjectGrid from '../components/ProjectGrid.vue'
 import ProjectToolbar from '../components/ProjectToolbar.vue'
+import PageStatePanel from '../components/PageStatePanel.vue'
 import ImportModal from '../components/import/ImportModal.vue'
 import ImportUndoBanner from '../components/import/ImportUndoBanner.vue'
 import AiPlannerModal from '../components/AiPlannerModal.vue'
@@ -560,25 +561,42 @@ async function handleUndoFromBanner() {
             <span><CheckCircle2 :size="14" /> Lưới cho quét nhanh, danh sách cho rà soát kỹ hơn.</span>
           </div>
 
-          <ProjectGrid
-            v-if="isGridView"
-            :projects="activeProjectCards"
-            :active-project-id="selectedProject?.id ?? null"
-            @view="selectProject"
-            @edit="beginEditProject"
-            @delete="deleteProject"
-            @create="openCreateProject"
-          />
+          <PageStatePanel
+            v-if="activeProjectCards.length === 0"
+            variant="empty"
+            title="Chưa có dự án đang hoạt động"
+            message="Hãy tạo dự án đầu tiên hoặc nhập dữ liệu để bắt đầu theo dõi tiến độ, nhiệm vụ và thành viên."
+            :skeleton-rows="3"
+          >
+            <template #actions>
+              <button class="btn-hero btn-hero--primary" type="button" @click="openCreateProject">
+                <FolderKanban :size="16" />
+                Tạo dự án mới
+              </button>
+            </template>
+          </PageStatePanel>
 
-          <ProjectList
-            v-else
-            :projects="activeProjectCards"
-            :active-project-id="selectedProject?.id ?? null"
-            @view="selectProject"
-            @edit="beginEditProject"
-            @delete="deleteProject"
-            @create="openCreateProject"
-          />
+          <template v-else>
+            <ProjectGrid
+              v-if="isGridView"
+              :projects="activeProjectCards"
+              :active-project-id="selectedProject?.id ?? null"
+              @view="selectProject"
+              @edit="beginEditProject"
+              @delete="deleteProject"
+              @create="openCreateProject"
+            />
+
+            <ProjectList
+              v-else
+              :projects="activeProjectCards"
+              :active-project-id="selectedProject?.id ?? null"
+              @view="selectProject"
+              @edit="beginEditProject"
+              @delete="deleteProject"
+              @create="openCreateProject"
+            />
+          </template>
         </section>
       </div>
     </div>

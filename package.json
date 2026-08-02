@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@microsoft/signalr": "^10.0.0",
+    "@vue/language-core": "^3.3.8",
     "chart.js": "^4.5.1",
     "dompurify": "^3.4.11",
     "entities": "^7.0.1",

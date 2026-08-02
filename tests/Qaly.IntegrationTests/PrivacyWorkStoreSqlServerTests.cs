@@ -14,6 +14,11 @@ public sealed class PrivacyWorkStoreSqlServerTests
     [Fact]
     public async Task ClaimNextAsync_WithTwoWorkers_GrantsOneExclusiveRetentionLease()
     {
+        if (!SqlServerTestEnvironment.IsAvailable())
+        {
+            return;
+        }
+
         await using var database = await SqlTestDatabase.CreateAsync();
         var actionId = await database.SeedRetentionActionAsync();
 
@@ -35,6 +40,11 @@ public sealed class PrivacyWorkStoreSqlServerTests
     [Fact]
     public async Task ClaimNextAsync_AfterDsarLeaseExpiry_RecoversAndReclaimsRequest()
     {
+        if (!SqlServerTestEnvironment.IsAvailable())
+        {
+            return;
+        }
+
         await using var database = await SqlTestDatabase.CreateAsync();
         var requestId = await database.SeedDataSubjectRequestAsync();
 
@@ -72,6 +82,11 @@ public sealed class PrivacyWorkStoreSqlServerTests
     [Fact]
     public async Task AbandonLeaseAsync_SchedulesBackoffAndBlocksEarlyReclaim()
     {
+        if (!SqlServerTestEnvironment.IsAvailable())
+        {
+            return;
+        }
+
         await using var database = await SqlTestDatabase.CreateAsync();
         var requestId = await database.SeedDataSubjectRequestAsync();
         PrivacyWorkLease lease;

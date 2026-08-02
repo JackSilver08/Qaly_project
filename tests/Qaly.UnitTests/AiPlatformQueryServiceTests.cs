@@ -43,7 +43,7 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
     [Fact]
     public async Task HealthUsageAndBudget_ReturnVisibleOperationalSnapshots()
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = new DateTimeOffset(2026, 8, 2, 12, 0, 0, TimeSpan.Zero);
         var user = new User
         {
             Id = _userId,
@@ -74,7 +74,7 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
         });
         _db.AiUsageLedger.AddRange(
             Usage(running.Id, now, "success", 1.25m, cacheHit: true),
-            Usage(retrying.Id, now.AddDays(-2), "failed", 2.75m, cacheHit: false));
+            Usage(retrying.Id, now.AddDays(-1), "failed", 2.75m, cacheHit: false));
         _db.AiBudgetPolicies.Add(new AiBudgetPolicy
         {
             TenantId = _tenantId,
