@@ -61,6 +61,11 @@ public class ProjectService : IProjectService
 
     public async Task<Result<ProjectDto>> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
+        if (!await HasActiveCurrentUserAsync(ct))
+        {
+            return Result.Forbidden<ProjectDto>();
+        }
+
         var project = await ProjectDetailsQuery()
             .FirstOrDefaultAsync(p => p.Id == id, ct);
 
@@ -79,6 +84,11 @@ public class ProjectService : IProjectService
 
     public async Task<Result<PagedResult<ProjectDto>>> GetAllAsync(int page = 1, int pageSize = 10, string? search = null, CancellationToken ct = default)
     {
+        if (!await HasActiveCurrentUserAsync(ct))
+        {
+            return Result.Forbidden<PagedResult<ProjectDto>>();
+        }
+
         var currentUserId = _currentUserService.UserId;
         if (currentUserId == null)
         {
@@ -124,6 +134,11 @@ public class ProjectService : IProjectService
 
     public async Task<Result<PagedResult<ProjectDto>>> GetByUserAsync(Guid userId, int page = 1, int pageSize = 10, CancellationToken ct = default)
     {
+        if (!await HasActiveCurrentUserAsync(ct))
+        {
+            return Result.Forbidden<PagedResult<ProjectDto>>();
+        }
+
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
@@ -587,6 +602,11 @@ public class ProjectService : IProjectService
 
     private async Task<bool> CanAccessProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
     {
+        if (!await HasActiveCurrentUserAsync(ct))
+        {
+            return false;
+        }
+
         var currentUserId = _currentUserService.UserId;
         if (currentUserId == null)
         {
@@ -606,6 +626,22 @@ public class ProjectService : IProjectService
         if (ownerId == currentUserId)
         {
             return true;
+        }
+
+        var projectInfo = await _projectRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(project => project.Id == projectId)
+            .Select(project => new
+            {
+                project.OrganizationId,
+                OrganizationIsActive = project.Organization != null && project.Organization.IsActive,
+                OrganizationOwnerId = project.Organization != null ? (Guid?)project.Organization.OwnerId : null
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (projectInfo?.OrganizationId != null && !projectInfo.OrganizationIsActive)
+        {
+            return false;
         }
 
         var isProjectMember = await _memberRepo.GetQueryable()
@@ -615,28 +651,16 @@ public class ProjectService : IProjectService
             return true;
         }
 
-        var organizationProjection = await _projectRepo.GetQueryable()
-            .Where(project => project.Id == projectId)
-            .Select(project => new
-            {
-                project.OrganizationId,
-                OrganizationOwnerId = project.Organization != null ? (Guid?)project.Organization.OwnerId : null
-            })
-            .FirstOrDefaultAsync(ct);
-
-        if (organizationProjection?.OrganizationId == null || organizationProjection.OrganizationOwnerId == null)
-        {
-            return false;
-        }
-
-        return await CanAccessOrganizationAsync(
-            organizationProjection.OrganizationId.Value,
-            organizationProjection.OrganizationOwnerId.Value,
-            ct);
+        return false;
     }
 
     private async Task<bool> CanManageProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
     {
+        if (!await HasActiveCurrentUserAsync(ct))
+        {
+            return false;
+        }
+
         var currentUserId = _currentUserService.UserId;
         if (currentUserId == null)
         {
@@ -658,29 +682,36 @@ public class ProjectService : IProjectService
             return true;
         }
 
+        var projectInfo = await _projectRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(project => project.Id == projectId)
+            .Select(project => new
+            {
+                project.OrganizationId,
+                OrganizationIsActive = project.Organization != null && project.Organization.IsActive,
+                OrganizationOwnerId = project.Organization != null ? (Guid?)project.Organization.OwnerId : null
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (projectInfo?.OrganizationId != null && !projectInfo.OrganizationIsActive)
+        {
+            return false;
+        }
+
         var role = await GetProjectRoleAsync(projectId, currentUserId.Value, ct);
         if (ProjectRoleRules.CanManageProject(role))
         {
             return true;
         }
 
-        var organizationProjection = await _projectRepo.GetQueryable()
-            .Where(project => project.Id == projectId)
-            .Select(project => new
-            {
-                project.OrganizationId,
-                OrganizationOwnerId = project.Organization != null ? (Guid?)project.Organization.OwnerId : null
-            })
-            .FirstOrDefaultAsync(ct);
-
-        if (organizationProjection?.OrganizationId == null || organizationProjection.OrganizationOwnerId == null)
+        if (projectInfo?.OrganizationId == null || projectInfo.OrganizationOwnerId == null)
         {
             return false;
         }
 
         return await CanManageOrganizationAsync(
-            organizationProjection.OrganizationId.Value,
-            organizationProjection.OrganizationOwnerId.Value,
+            projectInfo.OrganizationId.Value,
+            projectInfo.OrganizationOwnerId.Value,
             ct);
     }
 
@@ -696,6 +727,18 @@ public class ProjectService : IProjectService
             .Select(project => project.OrganizationId == null ||
                 (project.Organization != null && project.Organization.IsActive))
             .FirstOrDefaultAsync(ct);
+
+    private async Task<bool> HasActiveCurrentUserAsync(CancellationToken ct)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return false;
+        }
+
+        return await _userRepo.GetQueryable()
+            .AnyAsync(user => user.Id == currentUserId.Value && user.IsActive, ct);
+    }
 
     private bool IsAdmin()
         => ProjectRoleRules.IsSystemAdmin(_currentUserService.Role);

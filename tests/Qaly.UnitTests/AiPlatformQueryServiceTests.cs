@@ -43,7 +43,7 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
     [Fact]
     public async Task HealthUsageAndBudget_ReturnVisibleOperationalSnapshots()
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = new DateTimeOffset(2026, 8, 2, 12, 0, 0, TimeSpan.Zero);
         var user = new User
         {
             Id = _userId,

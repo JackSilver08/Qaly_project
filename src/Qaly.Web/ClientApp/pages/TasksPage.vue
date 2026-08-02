@@ -23,6 +23,7 @@ import { useDashboardContext } from '../composables/dashboard-context'
 import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
 import { showError, showSuccess } from '../composables/use-toast'
 import { confirmDialog } from '../composables/use-confirm-dialog'
+import PageStatePanel from '../components/PageStatePanel.vue'
 import type {
   AttachmentDto,
   CommentDto,
@@ -691,11 +692,7 @@ function deleteSavedTaskView(viewId: string) {
 }
 
 async function refreshDashboard() {
-  try {
-    await loadDashboard()
-  } catch (error) {
-    console.warn(error)
-  }
+  await loadDashboard()
 }
 
 async function refreshAttentionInbox() {
@@ -749,7 +746,6 @@ async function loadTaskDetail(taskId: string) {
     selectedTaskAttachments.value = []
     selectedTaskTimeEntries.value = []
     selectedTaskMeetingSource.value = null
-    console.warn(error)
   } finally {
     selectedTaskLoading.value = false
   }
@@ -772,7 +768,6 @@ async function loadTaskDetailExtras(taskId: string) {
     selectedTaskMeetingSource.value = meetingSourceResult.status === 'fulfilled' ? meetingSourceResult.value : null
   } catch (error) {
     if (selectedTaskId.value !== taskId) return
-    console.warn(error)
   }
 }
 
@@ -1177,11 +1172,20 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
           </div>
         </div>
 
-        <div v-if="filteredTasks.length === 0" class="empty-state">
-          <ListFilter :size="24" />
-          <strong>Không có task phù hợp</strong>
-          <p>Thử xóa bớt bộ lọc hoặc đổi sang phạm vi khác.</p>
-        </div>
+        <PageStatePanel
+          v-if="filteredTasks.length === 0"
+          variant="empty"
+          title="Không có nhiệm vụ phù hợp"
+          message="Thử xoá bớt bộ lọc, đổi phạm vi hiển thị hoặc quay lại khi có dữ liệu mới."
+          :skeleton-rows="3"
+        >
+          <template #actions>
+            <button class="pill-button pill-button--soft" type="button" @click="clearFilters">
+              <ListFilter :size="15" />
+              Xoá bộ lọc
+            </button>
+          </template>
+        </PageStatePanel>
 
         <div v-else class="task-cards">
           <article

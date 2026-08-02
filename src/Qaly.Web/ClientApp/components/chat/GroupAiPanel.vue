@@ -17,6 +17,7 @@ import {
   AlertTriangle
 } from 'lucide-vue-next'
 import { showError, showSuccess } from '../../composables/use-toast'
+import { confirmDialog } from '../../composables/use-confirm-dialog'
 import { apiResult, errorMessage } from '../../utils/api-client'
 
 interface GroupMemberDto {
@@ -837,6 +838,14 @@ async function confirmAndCreateRealProject() {
   if (!draftProjectName.value.trim() || isCreatingProject.value) return
 
   const selectedTasks = draftTasks.value.filter(t => t.checked)
+  const confirmed = await confirmDialog({
+    tone: 'warning',
+    title: 'Tạo project chính thức?',
+    subject: draftProjectName.value.trim(),
+    message: `Hệ thống sẽ tạo project mới và ${selectedTasks.length} task đã chọn từ bản nháp AI này.`,
+    confirmLabel: 'Tạo project',
+  })
+  if (!confirmed) return
   
   isCreatingProject.value = true
 
