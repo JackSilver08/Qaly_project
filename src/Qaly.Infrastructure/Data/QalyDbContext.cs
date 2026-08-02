@@ -17,6 +17,8 @@ public class QalyDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<OrganizationMember> OrganizationMembers => Set<OrganizationMember>();
+    public DbSet<OrganizationMemberCapacityProfile> OrganizationMemberCapacityProfiles => Set<OrganizationMemberCapacityProfile>();
+    public DbSet<MemberAvailabilityWindow> MemberAvailabilityWindows => Set<MemberAvailabilityWindow>();
     public DbSet<OrganizationSkill> OrganizationSkills => Set<OrganizationSkill>();
     public DbSet<ModeratorAssignment> ModeratorAssignments => Set<ModeratorAssignment>();
     public DbSet<Project> Projects => Set<Project>();
@@ -41,6 +43,7 @@ public class QalyDbContext : DbContext
     public DbSet<ProjectLabel> ProjectLabels => Set<ProjectLabel>();
     public DbSet<TaskLabel> TaskLabels => Set<TaskLabel>();
     public DbSet<TaskSkillRequirement> TaskSkillRequirements => Set<TaskSkillRequirement>();
+    public DbSet<TaskCompletionAttribution> TaskCompletionAttributions => Set<TaskCompletionAttribution>();
     public DbSet<Vote> Votes => Set<Vote>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<WikiPage> WikiPages => Set<WikiPage>();
@@ -49,6 +52,11 @@ public class QalyDbContext : DbContext
     public DbSet<AiJobSource> AiJobSources => Set<AiJobSource>();
     public DbSet<AiJobDispatch> AiJobDispatches => Set<AiJobDispatch>();
     public DbSet<AiProviderAttempt> AiProviderAttempts => Set<AiProviderAttempt>();
+    public DbSet<AiJobActivityEvent> AiJobActivityEvents => Set<AiJobActivityEvent>();
+    public DbSet<AssistantSession> AssistantSessions => Set<AssistantSession>();
+    public DbSet<AssistantTurn> AssistantTurns => Set<AssistantTurn>();
+    public DbSet<AssistantProcessEvent> AssistantProcessEvents => Set<AssistantProcessEvent>();
+    public DbSet<AssistantArtifactRef> AssistantArtifactRefs => Set<AssistantArtifactRef>();
     public DbSet<AiJobMigrationRecord> AiJobMigrationRecords => Set<AiJobMigrationRecord>();
     public DbSet<AiGeneratedDraft> AiGeneratedDrafts => Set<AiGeneratedDraft>();
     public DbSet<MeetingImport> MeetingImports => Set<MeetingImport>();

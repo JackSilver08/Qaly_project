@@ -2397,3 +2397,847 @@ Merge order:
 ### 22.20 NEXT_IMPLEMENTATION_GOAL
 
 > Implement only `CAND-021A — Resizable Agent Workspace Shell v1` on the current checkpointed `main`. Preserve the existing `assistant_turn.v1` and canonical `task.create.v1` job/draft/activity/edit/selective-confirm/read-back behavior. Make the singleton `Trợ lý AI` desktop workspace user-resizable from its left/top/top-left boundaries with bounded, versioned presentation-only persistence and a reset action; decouple spacious chat from Task artifact existence; render one chat composer docked at the bottom for both empty and active conversation states; keep welcome/suggestions in the independently scrolling transcript area; when a Task artifact exists, keep chat available and provide an accessible collapsible/resizable artifact rail. Use full-screen single-view behavior below 800 px, maintain focus/zoom/reduced-motion/mobile-keyboard accessibility, and expose safe process status without chain-of-thought. Complete TASK-AW-1..3 and TEST-AW-01..12. Do not add migrations, session persistence, context/capability registry, repository scanning, new mutation adapters or autonomous execution in this increment. Run the exact commands in §22.16 and report generated-bundle handling explicitly.
+
+## 23. Implementation checkpoint — CAND-021A + CAND-021B
+
+**Checkpoint date:** 2026-08-02 (Asia/Saigon)
+**Baseline:** `main` at `60f2cd4e9ae9f21a25855b6fd4cdb781b0beaf46`, equal to `origin/main` before this local implementation increment.
+**Workspace note:** this checkpoint is implemented and verified in the existing dirty working tree; it is not a commit/push statement and does not reclassify earlier AI-native changes as newly authored here.
+
+### 23.1 Completed user outcome
+
+- `CAND-021A` is now implemented in source: the singleton Trợ lý AI workspace can resize from the left/top/corner on desktop, persist bounded presentation geometry, reset layout, keep one composer at the bottom, and retain chat while the Task artifact rail opens/collapses/resizes. Mobile remains full-screen without unusable resize controls.
+- `CAND-021B` is now implemented end-to-end: the server owns an authorized assistant session; each turn has a monotonic sequence, session version, client turn ID, idempotency key, correlation ID, safe process events, model routing truth, source/artifact references and reloadable response.
+- Reload/reopen reads the latest session and ordered turns from the server. The browser no longer supplies conversational history as execution authority; the server rebuilds the bounded history from completed owned turns.
+- Duplicate `clientTurnId`/idempotency key with the same request replays the same completed turn. A changed payload or stale `expectedVersion` fails closed with `409` and creates no extra turn.
+- A foreign user receives nondisclosing `404` for another user's session. Optional project scope is checked before use; the existing capability-specific Project authorization remains authoritative.
+- Process UI displays only safe stages such as accepted/routing/answer/artifact, status and elapsed time. Raw chain-of-thought is not stored or rendered.
+- The existing `task.create.v1` path remains draft-first and confirmation-gated. Session persistence does not create a Task, Project, Group, Meeting, Poll or Schedule mutation adapter.
+
+### 23.2 Runtime contract and persistence
+
+New/extended API:
+
+- `POST /api/ai/assistant/sessions` — CSRF-protected creation of an owned active session.
+- `GET /api/ai/assistant/sessions/recent` — latest active owned session or `null`.
+- `GET /api/ai/assistant/sessions/{sessionId}` — ordered turn/process/artifact read-back with nondisclosing ownership guard.
+- `POST /api/ai/assistant/turns` — now requires `sessionId`, `expectedVersion`, `clientTurnId` and `Idempotency-Key`; successful responses return turn/session/version/correlation/process/model metadata.
+
+Migration `20260802063926_P007AssistantSessionTurnChain` adds only:
+
+- `AssistantSessions`;
+- `AssistantTurns`;
+- `AssistantProcessEvents`;
+- `AssistantArtifactRefs`.
+
+Unique constraints close sequence and duplicate-submit races per session. `AssistantSession.Version` is an optimistic concurrency token. P007 is additive; its forward migration contains no drop table/column behavior. The feature can be disabled through `AiJobsV4:AssistantSessionEnabled` / `AI_ASSISTANT_SESSION_ENABLED`.
+
+### 23.3 Security, privacy and failure behavior
+
+- Session queries always include the authenticated owner ID; caller-supplied identity, tenant and permissions are never accepted.
+- Stored process records contain public labels and safe error codes, not hidden reasoning, prompts from other sessions, secrets or raw attachment bodies.
+- Request hashing includes normalized intent/context and attachment metadata without persisting attachment preview contents in the session record.
+- Provider/model is recorded as the actual model when reached, otherwise explicitly `not_reached`; `Auto` remains a routing profile.
+- Accepted requests are persisted before provider/intent execution. A failed provider turn remains reloadable with safe failed state and retryability metadata instead of fabricated success.
+- Session and turn accepted/completed/failed lifecycle writes `AiAuditEvent` correlation entries without raw prompt bodies.
+
+### 23.4 Verification evidence
+
+| Gate | Result |
+|---|---|
+| Frontend `npm run typecheck` | PASS |
+| Frontend production build from source | PASS; generated `wwwroot/dist` refreshed by Vite, not hand-edited |
+| `dotnet build Qaly_project.slnx --no-restore` | PASS, 0 errors |
+| Erumi / gateway / Action Composer unit regression | **44/44 PASS** |
+| Assistant session/turn + Action Composer integration and migration tests | **12/12 PASS**; targeted session suite **8/8 PASS** |
+| CAND-021A workspace + CAND-021B reload + CAND-018/019 composer Chromium E2E | **5/5 PASS** |
+| Preview health at `http://127.0.0.1:5010/Account/Login` | HTTP 200 |
+
+Covered scenarios include authorized create/read-back, structured clarification, unsupported no-mutation response, idempotent replay, stale-version conflict, foreign-session deny, additive migration constraints, desktop resize/persistence/reset, mobile layout, reload restoration, safe process rendering and Task draft/confirm receipt regression.
+
+### 23.5 Updated disposition and remaining gaps
+
+- `CAND-019` current registered/read/deny v1 plus durable session closure: `NATIVE_COMPLETE` for its bounded contract.
+- `CAND-021A`: `NATIVE_COMPLETE`.
+- `CAND-021B`: `NATIVE_COMPLETE` using polling/read-back baseline; reconnectable SSE/SignalR remains GAP-060 and is not falsely claimed.
+- `CAND-021` top-level foundation remains `PRESENT_PARTIAL` because CAND-021C Context + Capability Registry and CAND-021D Grounded Research Plan are not implemented.
+- Catalog remains **21 top-level candidates**. Six top-level candidates are now closed for their bounded contract, CAND-021 remains partial, and 14 candidates remain deferred/not started. Therefore **15 top-level candidates still contain implementation work**.
+
+### 23.6 Superseding NEXT_IMPLEMENTATION_GOAL
+
+> Implement only `CAND-021C — Authorized Context Source Registry + Capability Registry` on top of the verified CAND-021A/B foundation. Introduce typed, server-owned descriptors for the existing grounded read and `task.create.v1` capabilities; include input/output schema IDs, required scopes, context sources, risk class, confirmation policy, model profile, renderer ID and feature flag. Add authorized source envelopes for the currently supported Project/Task/Workload deterministic data, with source ref, freshness, trust/privacy class, content hash, redactions and retrieval method. Filter sources and capabilities before model routing, fail closed for unknown IDs, and expose read/skipped/denied nondisclosing disclosure in the existing assistant session/turn read-back. Do not add repository-code reading, new mutation adapters, Poll/Form, staffing/scheduling or autonomous execution. Preserve session version/idempotency/audit, Task draft-confirm behavior and all CAND-021A/B tests; add unit, integration and Chromium evidence for authorization, cross-tenant deny, private-source exclusion, unknown-capability deny, source freshness and reload.
+
+## 24. Implementation checkpoint — CAND-021C Authorized Context + Capability Registry
+
+**Checkpoint date:** 2026-08-02 (Asia/Saigon)
+**Baseline:** `main` at `60f2cd4e9ae9f21a25855b6fd4cdb781b0beaf46`, equal to `origin/main` before this local increment.
+**Scope guard:** this increment implements only the registry foundation. It adds no repository scanner, broad research planner, new mutation adapter, autonomous execution or migration.
+
+### 24.1 Completed user outcome
+
+- Every durable assistant turn now passes through a server-owned authorization/context gate before intent execution or provider routing.
+- The registry exposes typed descriptors for only the two existing bounded capabilities: `grounded.read.v1` and `task.create.v1`. Each descriptor includes input/output schema IDs, scopes, source IDs, risk class, confirmation policy, model profile, renderer ID and feature flag.
+- `task.create.v1` is available only when the current user can manage the selected Project and both Action Composer flags are enabled. A read-only member receives a structured policy block; the provider is not reached and no artifact/job/task is created.
+- Deterministic adapters materialize capped Project, Task, selected Task detail, Workload, Project member, organization skill and authorized workspace Project envelopes. Every envelope has `sourceRef`, freshness, trust/privacy class, SHA-256 content hash, facts, redaction labels and retrieval method.
+- Private tasks are excluded before prompt construction unless the authenticated user is entitled to see them. Selected restricted tasks produce a nondisclosing `denied` disclosure without title, facts or source reference.
+- Provider-backed assistant reads receive only the filtered envelope JSON as untrusted data and receive no tool list. Unknown capability/source IDs and capability-intent mismatch fail closed before a turn is persisted.
+- Completed turn responses persist the filtered capability descriptors and `read`/`skipped`/`denied` disclosures. Reload renders them in an expandable “Ngữ cảnh đã kiểm tra” panel.
+
+### 24.2 Decision-complete runtime contract
+
+Request additions on `POST /api/ai/assistant/turns`:
+
+- optional `requestedCapabilityId`; if supplied it must be registered and match the deterministic intent classifier;
+- optional `requestedSourceIds`; unknown IDs are rejected and known but inapplicable IDs are disclosed as `skipped`.
+
+Response/read-back additions on `assistant_turn.v1`:
+
+- `capabilities[]`: authorized descriptors only;
+- `sourceDisclosures[]`: safe source ID, `read|skipped|denied`, label, optional authorized source ref and safe reason code;
+- `sourceRefs[]`: canonical `qaly://...@version/hash` refs from materialized envelopes, replacing generic service-name grounding for this assistant path.
+
+Execution order is now:
+
+1. validate owned session/version/idempotency/context scope;
+2. infer or validate the requested capability;
+3. authorize Project/tenant/user and filter registered capabilities;
+4. materialize/cap/redact deterministic sources;
+5. persist the accepted turn plus safe context event/audit record;
+6. route the capability or provider using only authorized envelopes;
+7. persist structured response, actual provider/model, process events and disclosures for read-back.
+
+Feature disable path: `AiJobsV4:AssistantContextRegistryEnabled` / `AI_ASSISTANT_CONTEXT_REGISTRY_ENABLED`. Defaults remain off in base/production example and on only in Development/integration evidence configuration.
+
+### 24.3 Security and compatibility closure
+
+- No client-supplied permission, tenant, descriptor, schema, renderer, facts or source reference is trusted.
+- Unknown capability/source IDs return safe `400`; foreign Project context returns nondisclosing `404`; neither path creates an AssistantTurn.
+- Project Task aggregation uses the same private-task visibility boundary as the task domain path; hidden titles/content are absent before serialization and model routing.
+- Context is size-capped at 25 workspace projects, 50 tasks, 100 members and 100 skills with visible `context_limit_applied` disclosure.
+- Context payload is explicitly marked untrusted data in the system prompt. The authorized assistant provider request has `Tools = null`; retrieved data cannot register tools, alter scopes or bypass confirmation.
+- `task.create.v1` remains `mutation_draft` with `explicit_selective_confirm`; this registry does not mutate Tasks or weaken CAND-019 draft/edit/selective-confirm/read-back behavior.
+- CAND-021A resizing/composer and CAND-021B session/version/idempotency contracts remain compatible. No database migration is required because disclosure is stored inside the versioned turn response JSON.
+
+### 24.4 Verification evidence
+
+| Gate | Result |
+|---|---|
+| Registry + Erumi unit slice | **22/22 PASS**; includes five focused registry authorization/privacy tests |
+| Assistant API integration slice | **11/11 PASS**; includes unknown capability, read-only member policy block, foreign Project deny and reload disclosure |
+| Full selected AI unit regression | **49/49 PASS** |
+| Assistant + Action Composer integration regression | **15/15 PASS** |
+| Frontend TypeScript/Vue typecheck | PASS |
+| Frontend production build | PASS; generated `wwwroot/dist` refreshed only by Vite |
+| Workspace/Action Composer Chromium E2E | **5/5 PASS**; includes reload and disclosure UI |
+| Full .NET build, schema JSON and diff hygiene | PASS after final gate |
+| Preview `http://127.0.0.1:5010/Account/Login` | HTTP 200 |
+
+### 24.5 Updated disposition
+
+- `CAND-021A`: `NATIVE_COMPLETE`.
+- `CAND-021B`: `NATIVE_COMPLETE` for polling/read-back baseline.
+- `CAND-021C`: `NATIVE_COMPLETE` for the registered Project/Task/Workload context and the existing read/Task-draft capabilities.
+- `CAND-021` top-level remains `PRESENT_PARTIAL`: CAND-021D Grounded Research Plan and broader capability adapters are not implemented.
+- Catalog remains 21 top-level candidates; 15 top-level candidates still contain implementation work because the CAND-021 umbrella is not complete.
+
+### 24.6 Superseding NEXT_IMPLEMENTATION_GOAL
+
+> Implement only `CAND-021D — Grounded Research Plan v1` on top of the verified CAND-021A/B/C foundation. Accept a short natural-language objective, resolve only authorized registry capabilities/sources, and produce validated `assistant_research_plan.v1` with facts linked to source refs, unknowns, assumptions separated from facts, options/trade-offs, recommendation, and proposed abstract actions. Unregistered actions must remain non-executable proposals; only the existing `task.create.v1` adapter may open its canonical editable draft/explicit selective-confirm flow. Add clarification bounds, provider/schema-invalid/timeout/budget/policy degraded states, reload/read-back and unit/integration/Chromium evidence. Do not add repository scanning, Project/Group/Meeting/Poll/Form/staffing/scheduling mutation adapters or autonomous execution.
+
+## 25. Implementation checkpoint — CAND-021D Grounded Research Plan v1
+
+**Checkpoint date:** 2026-08-02 (Asia/Saigon)
+**Baseline:** `main` at `60f2cd4e9ae9f21a25855b6fd4cdb781b0beaf46`, equal to `origin/main` before this local increment.
+**Scope guard:** no migration, repository scanner, new domain mutation adapter or autonomous execution was added. Existing dirty-worktree changes remain outside this checkpoint unless listed by the CAND-021D diff.
+
+### 25.1 Completed user outcome
+
+- A short request such as “Phân tích rủi ro và đề xuất phương án xử lý” now resolves to registered capability `research.plan.v1`, not generic chat or Task-create keyword routing.
+- The server materializes only CAND-021C authorized source envelopes, calls the canonical AI gateway with `Tools = null`, and returns structured `assistant_research_plan.v1` rather than unbounded prose.
+- The native card separates grounded facts, blocking/non-blocking unknowns, assumptions, 1–3 options with trade-offs/effort/risk, one recommendation, an action dependency graph, warnings, privacy notes, freshness and actual provider/model.
+- Every factual finding must cite only an allowed versioned `qaly://...` source ref. A foreign/hallucinated ref, invalid severity/confidence, duplicate ID, missing recommendation, oversized draft input or cyclic action graph fails validation and enters the gateway repair/failure path; no fake plan is rendered.
+- Execution is closed-world: only an authorized, registered `task.create.v1` proposed action receives “Mở bản nháp task”. It hands off to the existing editable Task Action Composer and explicit/selective confirmation path. Unknown or unauthorized Project/Group/Meeting/Poll/Schedule actions remain proposals labelled “Chưa thể áp dụng tự động” without a confirm button.
+- Research Plan survives session reload inside the canonical turn response. A typed artifact ref records schema `assistant_research_plan.v1` and renderer `research-plan-review.v1`; the safe process timeline records artifact completion without chain-of-thought.
+- Provider/model truth, privacy/freshness notes and objective/scope are reconciled server-side. The model cannot promote an action, replace the user's objective, rewrite authorization scope or claim a provider/model.
+
+### 25.2 Decision-complete contract
+
+| Field | Value |
+|---|---|
+| capability | `research.plan.v1` |
+| kind | `artifact` / read-only proposal |
+| request schema | `assistant_research_request.v1` |
+| output schema | `assistant_research_plan.v1` |
+| renderer | `research-plan-review.v1` |
+| model profile | `reasoning_strong`; routing may prefer eligible DeepSeek strong profile; response always reports actual provider/model |
+| confirmation | `explicit_adapter_handoff`; Research Plan itself cannot mutate |
+| feature disable | `AiJobsV4:AssistantResearchPlanEnabled` / `AI_ASSISTANT_RESEARCH_PLAN_ENABLED` |
+
+Canonical synchronous flow is retained for this bounded single-turn artifact because durable AssistantTurn already persists accepted/failed/completed state, request cancellation propagates to the provider, gateway timeout/repair/fallback policy is canonical, and reload reads the stored result. A future multi-minute or repository-scale run must use a background job and is outside this contract.
+
+Execution order:
+
+1. classify direct Task-create vs analysis/option-plan intent;
+2. authorize user/project and remove private sources before provider routing;
+3. build validation context with objective, server scope, freshness/privacy, allowed source refs and authorized capability IDs;
+4. call canonical gateway for provider routing, privacy/budget policy, usage ledger, cache and bounded repair;
+5. validate schema, IDs/counts, confidence/severity, source membership, action DAG and draft size;
+6. overwrite server-owned objective/scope/freshness/privacy/provider/model and recalculate `executionEligible`;
+7. persist response, artifact ref, process events and audit for read-back;
+8. render proposals and expose only the registered Task draft handoff.
+
+### 25.3 Security, failure and compatibility closure
+
+- Cross-project/foreign context keeps the CAND-021C nondisclosing `404`; restricted Task facts are removed before prompt creation.
+- Permission/sensitive policy, consent/stale source, budget/rate limit, payload size, schema-invalid and provider-unavailable errors map to honest `403/409/429/413/422/503` behavior. Accepted failed turns remain durable; no offline findings are synthesized.
+- Prompt `assistant-research-plan@1.0.0` treats retrieved content as untrusted data, forbids tool calls/mutation and requires exact JSON.
+- Strong model output cannot register capabilities. Client-supplied `executionEligible`, scope, provider/model and source claims are ignored or revalidated.
+- No Task is created by Research Plan. Clicking the eligible handoff still opens CAND-018/019 draft; mutation requires existing permission, edit/selective confirm, idempotency, concurrency, audit and receipt.
+- `AssistantResearchPlanEnabled=false` removes this capability while leaving grounded read, manual modules, Task Action Composer and historical response JSON readable.
+
+### 25.4 Verification evidence
+
+| Gate | Result |
+|---|---|
+| Research contract + Erumi/context unit slice | **29/29 PASS**; strict schema dispatch, hallucinated source deny, cyclic graph deny, server action reconciliation, provider-unavailable and schema-invalid behavior |
+| Assistant API integration slice | **11/11 PASS**; authorized plan, no mutation, action eligibility, artifact ref, audit, reload/read-back and existing foreign/private/idempotency/stale regression |
+| Frontend Vue/TypeScript typecheck | PASS |
+| Frontend production build | PASS; generated `wwwroot/dist` refreshed by Vite only |
+| Research Plan Chromium E2E | **1/1 PASS**; card facts/unknowns/model/source render, one eligible Task draft button and one unavailable action gate |
+| JSON schema/config parse + full .NET build | PASS after final checkpoint gate |
+| Preview `http://127.0.0.1:5010/dashboard` | HTTP 200 after restart on final binary |
+
+### 25.5 Updated disposition and coverage closure
+
+- `CAND-021A/B/C/D`: `NATIVE_COMPLETE` for their bounded contracts.
+- Top-level `CAND-021 — Open Assistant Foundation`: `NATIVE_COMPLETE` for shell + durable turn + authorized registry + grounded research plan. Streaming transport, repository reading and each additional mutation adapter remain separately dispositioned backlog.
+- GAP-050, GAP-051, GAP-057 and GAP-058 are closed for the current registered source/capability universe. GAP-053/054/055/056/059/060/063/066/067 remain explicit breadth/platform backlog.
+- Catalog remains **21 top-level candidates**: seven are closed for their bounded contracts and **14 still contain implementation work**.
+- Inventory denominators remain 117/117 surfaces and 37/37 previously audited capabilities dispositioned. New `research.plan.v1` has caller, renderer, schema, source mapping and verification; UI orphan = 0, backend capability orphan = 0, selected acceptance item without verification = 0.
+
+**Coverage gate: PASS. Product completeness: NOT PASS.** The assistant can now research and propose safely over registered Qaly sources, but it cannot execute unregistered domain actions or infer cross-project staffing without the deferred evidence/capacity prerequisites.
+
+### 25.6 Superseding NEXT_IMPLEMENTATION_GOAL
+
+> Implement only the next safe staffing prerequisite under `CAND-016 — Evidence-backed Member Skill Profile`, starting with explicit completion-contributor attribution and tenant/private-source-safe deterministic evidence aggregation on top of completed CAND-015. Keep this bounded to one deep Project/Member workflow and at most three tasks: decision-complete attribution semantics and additive persistence; permission-aware evidence band/read model with recency/confidence/source visibility; native member evidence card with correction path and unit/integration/Chromium evidence. Do not implement opaque performance scoring, protected-attribute/message sentiment, cross-project auto-assignment, scheduling, CAND-006 ranking or CAND-017 mutation until this prerequisite is complete. If completion attribution policy cannot be made decision-complete without a product-owner choice, stop after updating this plan rather than inventing attribution.
+
+## 26. Implementation checkpoint — CAND-016 Member Skill Evidence + CAND-006 Grounded Assignee Recommendation
+
+**Checkpoint date:** 2026-08-02 (Asia/Saigon)
+**Baseline:** `main` at `60f2cd4e9ae9f21a25855b6fd4cdb781b0beaf46`, equal to `origin/main` before this local increment.
+**Workspace note:** implemented and verified in the existing dirty working tree; this section is not a commit/push statement and does not claim unrelated working-tree files as part of these two candidates.
+
+### 26.1 Completed user outcome
+
+- `CAND-016` is closed for the bounded evidence-profile contract. After a Task is `Done` and has confirmed CAND-015 skill requirements, a Project manager can explicitly select which assigned contributors actually completed the work. Assignment history, labels, chat sentiment and model inference never create evidence by themselves.
+- The Task Detail native card shows honest loading/error/ineligible/read-only/confirmed/correction-pending states. A contributor may request correction for their own record; a Project manager may resolve the request by reconfirming or revoking it. A correction-pending/revoked record is immediately excluded from skill evidence.
+- The Organization Member evidence drawer aggregates only manager-confirmed completion records into deterministic `emerging|practiced|experienced` bands, confidence, verified-task count, recency/staleness and source links. Missing evidence is explicitly not interpreted as low skill or poor performance.
+- Private/restricted source Tasks still contribute to an authorized aggregate, but their title and deep link are redacted for a profile viewer who cannot access the Task. Cross-organization/member access returns nondisclosing `404`.
+- `CAND-006` is closed for Project-local, evidence-aware decision support. At a Task, a Project manager receives candidates ranked from confirmed required-skill coverage plus workload visible in the current Project. The response shows coverage, confidence, missing skills, workload, scoring version and authorized Task source links.
+- No LLM is used for hard skill/workload scoring. This is intentional: deterministic, versioned matching is more testable and fair than asking DeepSeek or another model to invent a score. A future strong model may explain already-grounded trade-offs, but cannot add evidence, alter bands or override the ranking inputs.
+- When Task skills or visible confirmed evidence are missing, the UI says `task_skills_missing` or `insufficient_evidence`; it does not claim skill-fit. Private evidence outside the viewer's Task scope is excluded before scoring.
+- “Mở form giao việc” only opens the existing editable Task form with a proposed assignee. The original Task title/description/status/options are preserved, the form is labelled as edit mode, and no mutation occurs until the manager presses “Lưu thay đổi”. Cancel clears the draft. There is no auto-assignment.
+- Legacy `GET /api/ai/tasks/{taskId}/assignment` remains only as a compatibility wrapper and delegates to the same grounded result; it no longer calls a free-text LLM assignment prompt. The native caller uses `/assignment-insight`.
+
+### 26.2 Decision-complete contracts
+
+#### CAND-016 evidence ledger
+
+| Contract | Decision |
+|---|---|
+| persistence | additive `TaskCompletionAttributions`; unique `(TaskItemId, ContributorUserId)`, SQL row-version, status `Confirmed|CorrectionRequested|Revoked`, confirmer, timestamps and policy version |
+| eligible input | Task is `Done`; Task has confirmed organization skills; contributor is an explicit primary/multi-assignee; caller explicitly confirms current Task row-version |
+| confirmation authority | system admin, Project owner/manager/scrum master or authorized organization manager through canonical `CanManageProjectAsync`; an assignee/reporter alone cannot self-confirm |
+| correction authority | attributed contributor for their own record, or Project manager; current attribution row-version and non-empty reason required |
+| profile authority | member self or organization manager only; tenant/member existence and Task source visibility are re-resolved server-side |
+| calculation | `member-skill-evidence.v1`; deterministic evidence band/confidence, capped at 95%, 180-day stale label; no global performance score |
+| source behavior | visible source returns `/projects/{projectId}/tasks/{taskId}`; restricted source returns neither title nor URL |
+| rollback | rollback UI/API via deployment/feature release; P008 is additive and can remain dormant without deleting evidence |
+
+API/read-back:
+
+- `GET /api/tasks/{taskId}/completion-contributors`;
+- `PUT /api/tasks/{taskId}/completion-contributors` — CSRF + explicit confirmation + Task row-version;
+- `POST /api/tasks/{taskId}/completion-contributors/{attributionId}/correction` — CSRF + attribution row-version;
+- `GET /api/organizations/{organizationId}/members/{memberId}/skill-evidence`.
+
+Migration `20260802114055_P008MemberSkillEvidence` creates only `TaskCompletionAttributions` plus its foreign keys/indexes. The generated forward migration contains no drop table/column behavior.
+
+#### CAND-006 recommendation
+
+| Contract | Decision |
+|---|---|
+| API | `GET /api/ai/tasks/{taskId}/assignment-insight?projectId={projectId}` |
+| output | typed `TaskAssignmentInsightDto` / `TaskAssignmentCandidateDto`, scoring `assignee-evidence-score.v1`, evidence state, required/missing skills, source links, authorized workload scope and Task row-version |
+| inputs | current Task confirmed skill requirements; `Done` Tasks with `Confirmed` completion attribution; Project members/owner; open workload returned by `ApplyVisibilityFilter` |
+| forbidden inputs | Task labels/keywords, generic assignee history without attribution, private chat/sentiment, protected attributes, foreign/private Tasks not visible to caller |
+| ranking | candidates with at least one confirmed skill match precede workload-only candidates; within that set use deterministic skill coverage, conservative evidence band/confidence, recent verified evidence and visible workload |
+| empty/degraded | no required skills or no visible evidence returns no recommendation; no provider timeout/schema-invalid state is applicable because this bounded scorer does not call a provider |
+| mutation | none in the insight API; UI opens an editable existing Task form and requires standard domain permission plus explicit save |
+| compatibility | old assignment endpoint delegates to the grounded service result; no parallel hallucination-prone runtime path remains |
+
+### 26.3 Security, fairness and failure closure
+
+- Confirmation uses Project-management permission, not the broader Task-management permission; a normal assignee cannot certify their own evidence.
+- All Task/profile/recommendation lookups are caller-filtered. Hidden source titles/URLs and cross-tenant identities are not disclosed through counts, recommendation prose or source lists.
+- Task and attribution row-versions fail stale writes with `409`. Contributor/task eligibility and the maximum contributor count are revalidated on every write. Every confirm/correction writes an audit record.
+- Empty evidence produces no negative member label. The implementation has no protected-attribute, message sentiment, activity surveillance or opaque “performance score”.
+- Provider/budget/model routing is not invoked for these deterministic calculations, so a missing DeepSeek key cannot fabricate or block evidence/read-only scoring. This also avoids unnecessary token cost.
+- The recommendation never auto-mutates. Existing manual Task authorization remains the final boundary for assignment.
+
+### 26.4 Verification evidence
+
+| Gate | Result |
+|---|---|
+| CAND-016/006 focused API + deterministic + migration tests | **6/6 PASS** |
+| AI/Task Skill/Assistant/Action Composer integration regression | **27/27 PASS** |
+| full unit suite | **402/402 PASS** after fixing the calendar-boundary budget fixture discovered by this audit |
+| Chromium native staffing flow | **1/1 PASS**; Task evidence card, grounded source, editable assignee form preserving description, cancel behavior and Member evidence drawer |
+| Vue/TypeScript typecheck | PASS |
+| Vite production build | PASS; generated `wwwroot/dist` refreshed only by Vite |
+| full `.NET` solution build | PASS, 0 errors; existing analyzer/performance warnings remain outside the runtime closure and are recorded rather than hidden |
+| preview | `http://127.0.0.1:5010/dashboard` running on the final binary |
+
+Covered deny/failure scenarios: manager-only confirmation, assignee write deny, outsider/cross-tenant nondisclosing deny, private-source redaction, explicit confirmation, stale Task/attribution row-version, correction exclusion/read-back, empty evidence honesty, label/description non-evidence, private source excluded from recommendation, source deep-link grounding, no auto-assignment and existing assistant/Task Skill/Action Composer regression.
+
+### 26.5 Updated disposition and coverage closure
+
+- `CAND-016`: `NATIVE_COMPLETE` for explicit completion attribution + deterministic Member skill evidence profile.
+- `CAND-006`: `NATIVE_COMPLETE` for bounded Project-local evidence/workload recommendation + human-controlled assignment draft.
+- The CAND catalog remains **21 top-level candidates**: **9 are closed** for their bounded contracts and **12 still contain implementation work**.
+- Previous inventory denominators remain 117/117 surfaces and 37/37 previously audited capabilities dispositioned. All new endpoints have native callers or an explicit compatibility disposition; new UI orphan = 0, new backend orphan = 0, selected acceptance item without verification = 0.
+
+**Coverage gate: PASS. Product completeness: NOT PASS.** Cross-project capacity/calendar constraints and automatic schedule proposals remain CAND-017; these two candidates do not claim portfolio scheduling or autonomous assignment.
+
+### 26.6 Superseding NEXT_IMPLEMENTATION_GOAL
+
+> Implement only the next safe prerequisite of `CAND-017 — Portfolio Capacity + Schedule Proposal`, bounded to a read-only, deterministic member availability/capacity model before any rescheduling mutation. Reconcile authorized open assignments across Projects that the manager and member may both access; define working capacity, date window, estimated-hours fallback, deadline collisions, source visibility, freshness and unknown-capacity states; render a native member/project capacity card with source links and no protected-attribute/activity-surveillance inference. Add typed API/read-back, tenant/private-source guards, tests for partial portfolio visibility and conflicting deadlines, and Chromium evidence. Do not auto-assign, auto-change dates, introduce a scheduling LLM, or add `task.assign.v1`/`task.reschedule.v1` until the capacity model is complete and review/confirmation semantics pass a later selection gate.
+
+## 27. Implementation checkpoint — CAND-017 Portfolio Schedule Copilot + CAND-008 source-linked Task Draft
+
+**Checkpoint date:** 2026-08-02 (Asia/Saigon)
+**Baseline:** `main` at `60f2cd4e9ae9f21a25855b6fd4cdb781b0beaf46`, equal to `origin/main` before this local increment.
+**Workspace note:** implemented and verified in the existing dirty working tree; no commit or push is claimed by this checkpoint.
+
+### 27.1 Completed user outcomes
+
+#### CAND-017 — Cross-project Assignment & Schedule Copilot
+
+- Project managers now have a real **Phân công & Capacity** tab in Project Detail. It reads organization-wide capacity and open assignments for the selected window, then shows workload by Project, missing estimates, deadline collisions and privacy-restricted aggregate load.
+- A manager or member can maintain explicit weekly capacity, time zone and non-overlapping leave/reduced-capacity windows. The system never infers availability from activity, protected attributes, messages or sentiment.
+- The manager selects current-Project open Tasks and requests an `assignment_schedule_proposal.v1`. Deterministic `portfolio-capacity-scheduler.v1` uses confirmed CAND-015/016 skill evidence, cross-project workload, availability, deadlines and dependencies. Missing estimates use a visible 8-hour fallback.
+- The proposal shows before/after load, skill coverage, evidence confidence, risks, alternatives and authorized source refs. Private Tasks from another Project affect aggregate load only; identity, title and link are not exposed.
+- No Task changes when a proposal is generated. The manager edits rows, selects desired changes and explicitly confirms. Confirmation rechecks permission, Task row version and source version, applies assignment/start/due changes, writes audit/usage/receipt records and is idempotent. Reject keeps Tasks unchanged.
+- Reload restores pending or confirmed proposal and receipt from the canonical draft/job; this is not a client-only success state.
+
+#### CAND-008 — AI-04 native selected-message Task Draft review
+
+- In a Group, a user selects authorized messages and chooses **Tạo task draft**. Qaly creates canonical job `task_draft_native`, prefers the eligible strong `deepseek-v4-pro` profile and requires exact schema `task_draft.v5`.
+- The model receives only server-authorized Group message snapshots and allowed Project members. Output is limited to 1–20 structured Task drafts, or honest `insufficient_evidence`. Every factual draft carries allowed message source refs and confidence.
+- The **Dự thảo** tab renders native editable fields instead of raw JSON: title, description/acceptance, priority, due date, assignee, selection, confidence and source links. Provider/model shown are actual runtime values.
+- Users can save, reject or selectively confirm. No Task is created before `create_tasks`. Duplicate confirmation replays the same receipt; stale/deleted/foreign/private sources, stale row versions and unauthorized assignees are rejected without partial mutation.
+- Queued/running/retrying/succeeded/failed/canceled states are honest. Provider timeout/unavailable, invalid schema/repair exhaustion, policy/budget deny and empty evidence never render fabricated success. Reload now reopens the native Draft tab and reads back the current job/draft/receipt.
+- This closes locked AI-04 for the Group selected-message path. Meeting transcript and Wiki-section adapters remain separately dispositioned under CAND-010 and CAND-012.
+
+### 27.2 Decision-complete contracts
+
+| Candidate | Contract |
+|---|---|
+| CAND-017 capacity read | `GET /api/projects/{projectId}/portfolio-capacity?from&to`; typed `PortfolioCapacityDto`; 1–90 day window; organization/project-management authorization; active-organization boundary; partial-private aggregate label. |
+| CAND-017 capacity write | `PUT /api/organizations/{organizationId}/members/{userId}/capacity`; explicit confirmation, row-version concurrency, 1–168 weekly hours, time-zone string and non-overlapping availability windows. |
+| CAND-017 proposal | `POST/GET/PATCH /api/projects/{projectId}/schedule-proposals...`; schema `assignment_schedule_proposal.v1`; local canonical model `portfolio-capacity-scheduler.v1`; draft `AssignmentScheduleProposal`; source/version snapshot, audit and zero-token local usage ledger. |
+| CAND-017 mutation | `POST .../{draftId}/confirm` or `/reject`; selected rows only, permission + Task/source concurrency recheck, idempotency key and receipt/read-back links. |
+| CAND-008 generation | `POST /api/ai/groups/{groupId}/task-drafts`; job `task_draft_native`; schema `task_draft.v5`; snapshot `task_draft_source_snapshot.v1`; strong-model hint `deepseek-v4-pro`, canonical privacy/budget/provider routing and strict semantic validation. |
+| CAND-008 review | Canonical `/api/ai/drafts/{draftId}` GET/PATCH/reject plus confirm action `create_tasks`; Group source refs and Project member IDs are server allowlists; Project-management permission is required. |
+| Persistence | P009 additively creates `OrganizationMemberCapacityProfiles` and `MemberAvailabilityWindows`; CAND-008 reuses canonical AI job/draft/source/usage/audit storage and needs no migration. |
+| Rollback | Hide/disable Capacity/Schedule while retaining manual Task editing and dormant additive P009 data; disable Group native Task Draft generation while retaining Group messages and manual Task creation. Historical drafts/receipts remain readable. |
+
+### 27.3 Security, privacy and compatibility closure
+
+- Both paths derive tenant, Project, member and source scopes server-side. Cross-tenant IDs return nondisclosing deny results and never create a job/draft.
+- CAND-017 uses deterministic logic for capacity, deadlines, dependencies and evidence scoring. A model cannot override hard constraints, manufacture capacity or infer performance. The local canonical job is intentional and has no provider-failure state; persistence, sources, usage, audit and lifecycle still apply.
+- CAND-008 rejects hallucinated source refs, unsupported fields/statuses, duplicate client IDs, unauthorized assignees and non-reviewable provider output. No offline/mock fallback is presented as a newly generated draft.
+- Both mutation paths require editable draft, explicit selective confirmation, current domain permission, row/source concurrency and idempotency. Neither performs autonomous mutation.
+- Browser closure found and fixed a first-open watcher race where Group reset could erase the selected message IDs before the native request was submitted. The captured request is now reapplied only when its Group and nonce still match.
+- A regression gate discovered that a deactivated Organization member could still read a Project. `ProjectService` now checks the active-Organization boundary before non-admin Project access/manage decisions; the existing security test is retained as evidence.
+- Existing CAND-001/002/005/006/015/016/018/020/021, AI chat/Activity, Task/Project/Group and Week 1 authorization flows remain compatibility requirements.
+
+### 27.4 Verification evidence
+
+| Gate | Result |
+|---|---|
+| Full unit suite | **407/407 PASS**, including strict `task_draft.v5` contract tests. |
+| Focused CAND-017/CAND-008 integration | **5/5 PASS**: happy/edit/selective confirm/read-back/idempotency, private aggregate, cross-tenant and stale source. |
+| P009 migration evidence | PASS: `Up` contains only additive capacity/profile tables, indexes and foreign keys; normal rollback drops only those newly added tables. |
+| Full WebFeature suite | **37/37 PASS**. |
+| Chromium native E2E | **2/2 PASS** after closure: portfolio proposal stays non-mutating until confirm; real Group message selection opens the native draft on first click, reload restores the Draft tab, and edit/selective confirm returns a receipt. |
+| Vue/TypeScript typecheck | PASS. |
+| Vite production build | PASS; generated `wwwroot/dist` refreshed only by Vite. |
+| Full `.NET` solution build | PASS, 0 errors; existing analyzer/performance warnings remain recorded rather than hidden. |
+| Full integration regression | **134/134 PASS** after the active-Organization security closure. |
+| Preview | `http://127.0.0.1:5010/dashboard` running from the final rebuilt binary with AI worker enabled; login endpoint HTTP 200. |
+
+Named evidence: `TEST-PORTFOLIO-SCHEDULE-E2E`, `TEST-TASK-DRAFT-E2E`, `PortfolioScheduleApiTests`, `PortfolioScheduleMigrationTests`, `SourceLinkedTaskDraftApiTests` and `TaskDraftAiContractTests`.
+
+### 27.5 Updated disposition and coverage closure
+
+- `CAND-017`: `NATIVE_COMPLETE` for declared capacity/availability, authorized cross-project workload, deterministic assignment/date proposal, native edit/selective confirm/reject and durable receipt. External Google/Outlook calendar sync remains optional future integration, not an undispositioned gap in this bounded Qaly contract.
+- `CAND-008`: `NATIVE_COMPLETE` for locked AI-04 Group selected-message → structured Task draft → native review/selective confirm/read-back. Meeting/Wiki source adapters retain explicit CAND-010/CAND-012 dispositions.
+- GAP-008 and GAP-025 are closed for these bounded contracts. New frontend orphan = 0; new backend route/job/schema orphan = 0; selected acceptance item without verification method = 0.
+- The catalog remains **21 top-level candidates**: **11 are closed** for bounded contracts and **10 still contain implementation work**.
+- Inventory denominators remain 117/117 previously audited surfaces and 37/37 previously audited capabilities dispositioned. New Capacity and native Task Draft route/schema/caller/renderer/test chains have explicit dispositions.
+
+**Coverage gate: PASS. Product completeness: NOT PASS.** All discovered items remain dispositioned, but 10 candidate areas are intentionally still backlog.
+
+### 27.6 Superseding NEXT_IMPLEMENTATION_GOAL
+
+> Implement only `CAND-007 — AI-03 selected-range Group Summary closure` on the current main baseline while preserving all completed candidates and Week 1 flows. Bind the request to an exact ordered 1–50 message selection from one authorized Group; persist range identity/version/hash and canonical sources; return structured summary, decisions, unresolved questions and action candidates with per-item message source links; render a native Group review card with queued/running/cancel/retry/success/empty/degraded/error, cache/freshness and reload/read-back. Reject deleted, foreign, mixed-group, private or stale sources without fabricated fallback. Add strict schema/semantic validation plus unit, integration and Chromium evidence. Do not add Meeting/Wiki adapters, autonomous actions or another candidate until CAND-007 is green end-to-end.
+
+## 28. Implementation checkpoint — CAND-007 Group Summary + CAND-009 Dashboard Strategic Brief + CAND-010 Meeting Checknote
+
+**Checkpoint date:** 2026-08-02 (Asia/Saigon)
+**Baseline:** `main` at `60f2cd4e9ae9f21a25855b6fd4cdb781b0beaf46`, equal to `origin/main` before this local increment.
+**Workspace note:** implemented and verified inside the existing dirty working tree. This checkpoint does not claim a commit/push and does not reclassify unrelated local changes.
+
+### 28.1 Completed user outcomes
+
+#### CAND-007 — Selected-message Group Summary
+
+- A Group member selects the exact messages to analyze and opens the native AI Summary action. Qaly sends only those ordered, authorized message IDs; it does not silently summarize the entire conversation.
+- The result is a structured `group_selected_summary.v1`: bounded range identity, summary points, decisions, unresolved questions, action candidates and message-level source references. Every factual item can open its originating Group message.
+- The Group panel reports honest queued/running/retrying/succeeded/empty/failed/canceled states, provider/model truth, cache/freshness and reload/read-back. It never renders a seed/mock result as a fresh model response.
+- This is read-only decision support. An action candidate is not a Task mutation; the existing source-linked Task Draft capability remains the explicit review/confirm path.
+
+#### CAND-009 — Dashboard Strategic Brief
+
+- A workspace manager can generate a native strategic brief from the selected authorized organization/project scope instead of sending client-supplied metrics to a generic prompt.
+- The server builds the snapshot, computes authoritative project/task metrics and excludes private Tasks before provider routing. The result returns structured summary points, risks and priorities grounded by metric keys and authorized Project/Task source links.
+- The Dashboard card now owns generation, polling, cancel/retry, success/empty/degraded/error, provider/model truth, stale indication and reload/read-back. The deterministic dashboard remains available when AI is disabled or fails.
+- The legacy `/api/dashboard/ai-strategy` parallel path is explicitly retired with HTTP `410`; it cannot bypass the canonical job/source/privacy/usage path.
+
+#### CAND-010 — Canonical Meeting Checknote
+
+- An authorized Meeting participant can submit an allowed transcript/import and receive a native checknote containing a grounded summary, decisions, risks and editable action-item drafts with transcript evidence offsets/quotes.
+- The canonical `meeting_checknote` AI job is persisted before provider invocation. Success stores the strict provider output and the compatible editable Meeting draft; provider unavailable, timeout, schema-invalid/repair exhaustion or request cancellation persists an honest terminal job rather than fabricating a checknote.
+- Reload uses `GET /api/meetings/{meetingId}/auto-checknote?projectId=...` to restore the durable checknote, draft ID, source evidence and actual provider/model. No Task is created automatically; action items remain reviewable Meeting data and any domain mutation still needs the existing explicit flow.
+- The orphan generic `/api/ai/meetings/{meetingId}/extract-actions` path is retired with HTTP `410`, so Meeting AI has one canonical behavior rather than two inconsistent transports.
+
+### 28.2 Decision-complete contracts
+
+| Candidate | API / job / schema | Authorized input and grounding | Native output / UI | Mutation and rollback |
+|---|---|---|---|---|
+| CAND-007 | `POST /api/ai/groups/{groupId}/summaries`; canonical job `group_selected_summary`; schema `group_selected_summary.v1`; standard job detail/result/cancel/retry/read-back | Project ID plus 1–50 exact ordered message IDs from one accessible Group; server snapshot/version/hash and `group_message` job sources; deleted/foreign/mixed Group IDs fail closed | Group AI panel renders range, summary, decisions, questions, actions, message source links, provider/model, freshness and lifecycle | No mutation. Disable native Summary action to roll back; Group chat and manual workflows remain available. |
+| CAND-009 | `POST /api/ai/dashboard/strategic-brief`; canonical job `dashboard_strategic_brief`; schema `dashboard_strategic_brief.v1` | Server-resolved organization/project visibility and server-calculated metrics; private Tasks excluded before prompt; metric/source allowlist validated | Existing Strategic Overview card renders typed coverage, metrics, summary, risks, priorities, source links, lifecycle and reload | No mutation. Hide/disable brief while preserving deterministic Dashboard metrics. Legacy route remains `410`. |
+| CAND-010 | `POST` and `GET /api/meetings/{meetingId}/auto-checknote`; canonical job `meeting_checknote`; schema `meeting_checknote.v1`; compatible editable draft `meeting_action_extract.v4` | Authorized Meeting/Project, privacy-eligible transcript/import, participant list and transcript snapshot; evidence ranges must be within the submitted transcript | Meeting checknote surface renders safe progress stages, summary evidence, decisions, risks, action drafts, actual provider/model, retry/cancel/failure and durable read-back | No autonomous Task mutation. Disable AI checknote while retaining transcript/manual notes. Orphan generic extraction route remains `410`. |
+
+All three schemas have strict JSON Schema plus semantic validation. Unknown source references, invalid IDs/ranges, malformed structures and unsupported enum values fail before a result is exposed.
+
+### 28.3 Security, privacy, lifecycle and compatibility closure
+
+- Tenant, Project, Group, Meeting and source scope are resolved server-side; client IDs never widen visibility. Cross-tenant/foreign sources return nondisclosing failures and do not create a usable artifact.
+- Group Summary read-back is requester-bound for non-admin users. A user who can access the linked Project but is not the requester cannot read summarized Group messages; this closes the project-membership-to-chat leakage found during final reconciliation.
+- Dashboard Strategic Brief read-back is requester-bound and its prompt snapshot excludes private Tasks. Metric values shown in the response are reconciled against the server snapshot rather than trusted from model prose.
+- Meeting Checknote persists Running before gateway execution and persists Succeeded, Failed or Canceled terminal truth. Its gateway receives the canonical AI job ID, allowing provider routing, usage and audit correlation rather than an unlinked synchronous call.
+- Provider unavailable/timeout, invalid schema/repair exhaustion, budget/policy deny and cancellation never become fake success. Actual provider/model and `IsMock` are carried to the native surfaces.
+- Existing AI Assistant/Action Composer, Project/Task/Group workflows, staffing/scheduling candidates and Week 1 permission rules remain regression requirements. These candidates add no migration and no autonomous destructive behavior.
+
+### 28.4 Verification evidence
+
+| Gate | Result |
+|---|---|
+| Strict contract unit tests for Group/Dashboard/Meeting | **3/3 PASS** within the full unit suite |
+| Focused native API/lifecycle/security tests | **5/5 PASS**: Group grounded read-back plus outsider/project-only deny; Dashboard private exclusion plus legacy `410`; Meeting success/read-back plus provider/schema failure terminal jobs and legacy `410` |
+| Full unit suite | **410/410 PASS** |
+| Full integration suite | **139/139 PASS** |
+| Full WebFeature suite | **37/37 PASS** |
+| Chromium native journeys | **3/3 PASS**: Dashboard generate/reload; exact Group message selection/generate/reload; Meeting durable checknote read-back |
+| Vue/TypeScript typecheck | PASS |
+| Vite production build | PASS; generated `wwwroot/dist` refreshed by the standard build |
+| Full `.NET` solution build | PASS, **0 warnings / 0 errors** on the final build |
+| Diff hygiene | `git diff --check` PASS; only existing line-ending notices were emitted |
+| Preview | `http://127.0.0.1:5010/dashboard` running from the final rebuilt binary with canonical AI and privacy workers enabled |
+
+Named evidence: `TEST-CAND-007-GROUP-SUMMARY`, `TEST-CAND-009-DASHBOARD-BRIEF`, `TEST-CAND-010-MEETING-CHECKNOTE`, `TEST-CAND-010-MEETING-FAILURE-LIFECYCLE`, `TEST-CAND-007-E2E`, `TEST-CAND-009-E2E` and `TEST-CAND-010-E2E`.
+
+### 28.5 Updated disposition and coverage closure
+
+- `CAND-007`: `NATIVE_COMPLETE` for exact selected-message Group summary, canonical lifecycle, source-open and durable read-back.
+- `CAND-009`: `NATIVE_COMPLETE` for a server-snapshot Dashboard Strategic Brief with private-data exclusion, metric grounding and canonical lifecycle.
+- `CAND-010`: `NATIVE_COMPLETE` for the bounded privacy-gated Meeting transcript → strict checknote/draft → durable read-back contract. Selective Task creation remains a separate explicit capability and is not falsely claimed here.
+- GAP-007, GAP-009 and GAP-011 are closed for these bounded contracts. The two displaced legacy endpoints have explicit `LEGACY_OR_DUPLICATE`/HTTP `410` disposition rather than remaining backend orphans.
+- The catalog remains **21 top-level candidates**: **14 are closed** for their bounded contracts and **7 still contain implementation work**.
+- Inventory denominators remain 117/117 audited surfaces and 37/37 previously audited capabilities dispositioned. Each new route/job/schema has a native caller, renderer and verification; new UI orphan = 0, new backend orphan = 0, selected acceptance item without verification = 0.
+
+**Coverage gate: PASS. Product completeness: NOT PASS.** All discovered surfaces/capabilities retain a disposition; the seven remaining candidate areas are intentional backlog, not hidden coverage gaps.
+
+### 28.6 Superseding NEXT_IMPLEMENTATION_GOAL
+
+> Implement only `CAND-020 — Native Group Poll Draft v1` on top of the completed Assistant Foundation and Group permission/source contracts. From the singleton `Trợ lý AI` and the native Group Poll surface, accept a short poll intent, clarify only missing required fields, and create a structured editable `group_poll_draft.v1` containing one question, 2–10 options, multi-select flag and optional expiry. Route through the registered capability/context registry, canonical AI job, strict schema/semantic validation, actual model/provider receipt, privacy/budget/usage/audit and durable session/draft read-back. Require Group-management permission, explicit confirm, idempotency and concurrency before creating the poll; support edit/reject/retry/cancel and honest provider/timeout/schema-invalid/policy-deny states. Add unit, integration and Chromium evidence for cross-Group/tenant deny, stale Group/source, duplicate confirm and reload. Do not implement multi-question Form/Quiz, scoring, leaderboard, branching, presentation mode, Project creation or another mutation adapter in this slice.
+
+## 29. Plan amendment — CAND-022 Adaptive Skill-Aware AI Work Orchestrator
+
+**Amendment date:** 2026-08-03 (Asia/Saigon)
+**Baseline inspected:** `main` at `60f2cd4e9ae9f21a25855b6fd4cdb781b0beaf46`; existing local implementation remains uncommitted at this amendment point.
+**Change boundary:** planning only. No source, schema file, migration, component, test, generated bundle, commit or push is created by this amendment.
+
+### 29.1 Product intent
+
+Qaly Assistant must stop behaving like a narrow keyword dispatcher and become a bounded native work orchestrator:
+
+1. understand the user's outcome, not only match a noun/verb;
+2. identify entity scope, constraints, unknowns and risk;
+3. discover and rank the authorized AI skills/capabilities that could help;
+4. build a visible, structured work plan;
+5. retrieve only authorized sources and execute only registered tools;
+6. verify schema, sources and domain results after every step;
+7. answer with what was learned, what was executed, what remains unknown and what needs confirmation;
+8. preserve/reload the plan and safe activity timeline without exposing chain-of-thought.
+
+“AI skill” in this section means an assistant reasoning/retrieval/action capability such as `research.plan.v1` or `task.create.v1`. It is distinct from the member programming-skill taxonomy delivered by CAND-015/016, though an authorized staffing skill may consume that evidence later.
+
+This does not mean autonomous unrestricted execution. A model may propose a skill or plan step, but the server-owned registry decides whether it exists, whether the caller is authorized and whether it is read-only, draft-only or executable after confirmation.
+
+### 29.2 Verified current-state gaps
+
+| GAP-ID | Runtime evidence | Consequence | Required disposition |
+|---|---|---|---|
+| GAP-073 | `AiAssistantCapabilityIntentClassifier.Infer` uses deterministic Vietnamese/English phrase matching. | Broad or compound goals are reduced to one of three intents; wording outside the phrase list is misrouted. | Replace as authority with structured goal analysis plus deterministic server reconciliation. Keep rules only as a low-cost hint/fallback. |
+| GAP-074 | `AiAssistantCapabilityCatalog` is a static dictionary containing grounded read, Research Plan and Task create only. | The assistant cannot discover the 14 completed native workflows or explain which skill/surface can complete a request. | Add versioned discovery descriptors; only eligible workflows receive executable adapters, while other surfaces remain navigation/manual guidance. Native workflows remain the execution authority. |
+| GAP-075 | Context registry infers one capability before materializing sources. | The model cannot decompose one request into retrieve → compare → recommend → draft → verify steps. | Introduce a bounded `assistant_work_plan.v1` DAG and step reconciler. |
+| GAP-076 | `AssistantTurnAsync` returns unsupported mutation before general analysis. | Unsupported requests become dead ends instead of an analysis, safe manual path or implementation-gap proposal. | Add `unsupported_but_analyzed` with understood goal, missing skill, safe alternatives and no fabricated execution. |
+| GAP-077 | Research Plan explicitly runs with `Tools = null`; only `task.create.v1` can hand off from its action graph. | Research is grounded but cannot iteratively retrieve missing authorized evidence or verify a proposed step. | Add a read-only executor loop after the plan contract is stable. |
+| GAP-078 | Legacy `AiTools` exposes multiple reads/writes outside the canonical capability catalog. | Opening those tools directly would bypass native draft/confirmation contracts and create duplicate mutation paths. | Quarantine legacy write tools; wrap each allowed operation in a canonical skill adapter or retire it. |
+| GAP-079 | No repository/source-code or test-manifest context adapter exists in the product assistant. | “Run tests for all CAND” cannot be fulfilled or even mapped to repeatable evidence. | Add a separate developer/demo-only allowlisted Test Orchestrator after the read-only loop. Never expose free-form shell. |
+| GAP-080 | Current UI exposes operational activity but not a decision-complete goal/scope/selected-skill/work-plan artifact. | The user sees routing failure without knowing what AI understood or what capability is missing. | Add a native Work Plan card and safe step timeline to the existing singleton workspace. |
+| GAP-081 | There is no evaluated prompt corpus for compound intent, skill ranking, plan convergence or unsupported-goal usefulness. | A more agentic router could look flexible while becoming nondeterministic and unsafe. | Version prompts and add offline/live-contract evals, tool traces and regression thresholds. |
+
+The desired behavior is therefore not “let DeepSeek call every method”. It is “let a strong model propose a structured goal and plan, then let deterministic policy narrow it to safe registered skills”.
+
+### 29.3 Candidate definition and score
+
+**CAND-022 — Adaptive Skill-Aware AI Work Orchestrator.**
+
+- User job: describe an outcome naturally, even when it spans several Qaly modules, and receive either a grounded answer, a safe executable plan or a precise explanation of the missing capability.
+- Why AI: goal decomposition, ambiguous-language interpretation, option generation and skill ranking benefit from a strong reasoning model; permission checks, hard constraints, calculations, execution and verification remain deterministic.
+- Trigger: the existing singleton `Trợ lý AI` composer from any route; native page/card buttons may prefill context but do not create a separate assistant.
+- Model routing: `reasoning_strong`/preferred `deepseek-v4-pro` for ambiguous or multi-step goal analysis and plan synthesis; deterministic/small routing for greeting, exact commands and already-known navigation. The actual provider/model must be shown; user model choice cannot bypass policy.
+- Rollback: feature-disable adaptive planning and fall back to the current registered single-capability paths. Existing native cards and manual workflows remain intact.
+
+Score: outcome **25/25** + gap closure **20/20** + AI-native fit **15/15** + canonical reuse **15/15** + testability **10/10** + quota fit **13/15** = **98/100** for Phase A. Full A–D delivery has a quota veto and must not be attempted in one run.
+
+Risk vetoes for the whole candidate:
+
+- unrestricted shell, dynamic code execution or model-authored SQL;
+- tool/capability use before server authorization;
+- autonomous Project/Group/Meeting/Poll/Task mutation;
+- model-selected cross-tenant sources;
+- hidden recursion, unlimited steps or unbounded token/cost consumption;
+- storing or displaying private chain-of-thought;
+- self-installing/self-modifying skills without reviewed code and contracts;
+- production test execution against real tenant data.
+
+### 29.4 Target architecture
+
+```text
+User message + current route + durable session
+                  |
+                  v
+       Goal Interpreter (strong model)
+       assistant_goal_analysis.v1
+                  |
+                  v
+ Server Skill Discovery + Policy Filter
+  permission / tenant / feature / budget
+                  |
+                  v
+       Work Planner + Reconciler
+         assistant_work_plan.v1
+                  |
+          +-------+-------+
+          |               |
+   Read/research steps   Mutation proposal
+          |               |
+ authorized adapters    editable draft only
+          |               |
+          +-------+-------+
+                  v
+ Schema/source/domain verifier
+                  |
+                  v
+ Answer + sources + safe activity + read-back
+```
+
+The model never receives an unrestricted tool list. Discovery follows this order:
+
+1. server filters skill descriptors by authenticated user, tenant, route/entity, feature flag, privacy and budget;
+2. model ranks only the filtered descriptor metadata and explains the fit;
+3. server validates selected skill IDs, input schemas, dependencies, maximum steps and confirmation policy;
+4. context sources are materialized after the selected plan is authorized;
+5. executor invokes adapters; every result is schema/source/domain validated;
+6. mutation steps stop at an editable draft and require explicit domain confirmation.
+
+### 29.5 Skill descriptor standard
+
+Every assistant skill must declare:
+
+| Field | Required meaning |
+|---|---|
+| `skillId`, `version`, `status` | Stable identity, semantic version and enabled/degraded/disabled state. |
+| `title`, `description`, `userJobs` | What decision/outcome it supports; not generic “AI insights”. |
+| `positiveExamples`, `negativeExamples` | Routing evidence and explicit non-goals. |
+| `inputSchemaId`, `outputSchemaId`, `rendererId` | Machine-valid contract and native UI renderer. |
+| `requiredScopes`, `entityTypes`, `contextSourceIds` | Authorization and data boundaries. |
+| `riskClass`, `confirmationPolicy` | `read_only`, `artifact`, `mutation_draft`; none/handoff/explicit confirm. |
+| `executorKind`, `adapterId` | Deterministic read, canonical AI job, native draft action or demo manifest. |
+| `modelProfile`, `maxTokens`, `maxCost`, `timeout`, `maxAttempts` | Budget and latency envelope. |
+| `verificationPolicy` | Schema, source, domain invariant, read-back and evidence requirements. |
+| `featureFlag`, `rollbackPath`, `owner` | Operational ownership and safe disable path. |
+
+Unknown or disabled skill IDs fail closed. A model-proposed skill that is absent from the registry becomes a visible capability-gap proposal, never an invented successful action.
+
+### 29.6 Goal-analysis and work-plan contracts
+
+`assistant_goal_analysis.v1` must return:
+
+- normalized objective and user job;
+- read/analysis/artifact/mutation/demo intent facets rather than one flat keyword label;
+- candidate entity scopes with confidence and why each scope applies;
+- explicit constraints, unknowns and assumptions;
+- required data classes and capability traits;
+- ranked candidate skill IDs with fit reason;
+- risk level and whether confirmation is required;
+- disposition: `answerable`, `clarification_required`, `plannable`, `unsupported_but_analyzed` or `policy_blocked`.
+
+`assistant_work_plan.v1` must return a bounded DAG:
+
+```json
+{
+  "schemaId": "assistant_work_plan.v1",
+  "objective": "...",
+  "scope": { "type": "workspace|project|task|group|meeting", "entityIds": [] },
+  "selectedSkills": [{ "skillId": "research.plan.v1", "version": "1", "reason": "..." }],
+  "steps": [{
+    "stepId": "S1",
+    "kind": "retrieve|analyze|call_skill|verify|present",
+    "skillId": null,
+    "sourceIds": [],
+    "dependencyIds": [],
+    "expectedOutputSchemaId": "...",
+    "verificationIds": [],
+    "mutationClass": "none|draft|confirm",
+    "state": "planned"
+  }],
+  "blockingUnknowns": [],
+  "maxSteps": 8,
+  "maxAttemptsPerStep": 2,
+  "stopConditions": ["objective_satisfied", "blocking_unknown", "policy_denied", "budget_exhausted"],
+  "requiresPlanApproval": false
+}
+```
+
+Phase A does not execute an arbitrary multi-step loop. It analyzes/reconciles the plan, then hands off to exactly one already-registered bounded capability (`grounded.read`, `research.plan.v1` or `task.create.v1`) or returns `unsupported_but_analyzed`. Phase B introduces bounded read-only iteration only after Phase A is green.
+
+### 29.7 Native workspace interaction
+
+After the user sends a prompt, the existing Assistant workspace shows:
+
+1. **Đã hiểu mục tiêu** — one-sentence objective, detected scope and confidence;
+2. **Kỹ năng được chọn** — skill name, why selected, permission/risk badge and actual model profile;
+3. **Kế hoạch thực hiện** — expandable ordered/DAG steps with queued/running/verified/skipped/blocked/failed states;
+4. **Nguồn đã dùng** — read/redacted/skipped/denied disclosures and freshness;
+5. **Kết quả** — grounded answer or existing native artifact renderer;
+6. **Chưa thể làm tự động** — missing skill plus manual path and optional “Đưa vào backlog”, never a generic failure;
+7. **Xác nhận** — only for a canonical editable mutation draft.
+
+The activity timeline may expose safe operational facts such as “đang xác định phạm vi” or “đã kiểm quyền 3 nguồn”. It must not show hidden chain-of-thought, system prompts, secrets or raw private payloads.
+
+Example behavior for the screenshot request:
+
+- before CAND-022C: understand “demo all implemented CAND”, identify `demo.test.run.v1` as missing, list the 14 completed CAND from the plan/evidence source if authorized, provide current repeatable commands/manual demo paths and offer the capability-gap plan;
+- after CAND-022C in Development/Test only: select the allowlisted manifest, display the proposed suites and cost/time, require confirmation, run in isolated test data, stream safe stages and produce a durable PASS/FAIL evidence report;
+- in Production: return `policy_blocked` with no test process started.
+
+### 29.8 Phased execution plan
+
+| Phase | Outcome | Scope guard | Status |
+|---|---|---|---|
+| CAND-022A — Goal Understanding + Skill Discovery | Free-form prompt becomes validated goal analysis, ranked authorized skills and visible work plan; handoff to one existing capability or useful unsupported analysis. | No migration, recursive loop, new mutation or shell. | **PRIMARY** |
+| CAND-022B — Bounded Read-only Agent Loop | Execute up to eight dependency-ordered retrieval/analysis/verification steps with retry/cancel/resume/read-back. | Read-only skills first; no write tool. | Deferred behind A |
+| CAND-022C — Safe Demo/Test Orchestrator | Development/Test-only allowlisted manifests can run selected CAND test/demo evidence with progress and report. | No arbitrary command, production deny, isolated data. | Deferred behind B |
+| CAND-022D — Native Skill Packs | Register eligible completed CAND as discoverable read/artifact/mutation-draft adapters; register non-executable native surfaces as navigation/manual guidance only. | One adapter per reviewed slice; mutation draft/confirm rules unchanged. | Incremental backlog |
+
+### 29.9 PRIMARY SLICE — CAND-022A
+
+Selection rationale: it closes the architectural cause of the screenshot failure while reusing CAND-021 session/context/capability/research infrastructure. It is implementable in 1–2 person-days, needs no migration and makes unsupported requests useful without pretending to execute them. No Stretch is selected because the recursive executor and test runner introduce independent security/operational gates.
+
+Maximum three implementation tasks:
+
+1. **TASK-SO-1 — Contracts and reconciler.** Add strict `assistant_goal_analysis.v1`, `assistant_work_plan.v1` and versioned skill descriptors for only the three existing canonical assistant capabilities. Use a strong-model planner with prompt versioning, schema repair limit and deterministic permission/source/risk reconciliation.
+2. **TASK-SO-2 — Router and native Work Plan UI.** Replace keyword-first authority with analyze → reconcile → one-capability handoff; preserve deterministic fast hints/fallback. Render goal/scope/selected skills/plan/disclosures and `unsupported_but_analyzed` inside the existing durable session and bottom-composer workspace.
+3. **TASK-SO-3 — Evaluation and regression closure.** Add prompt fixtures, unit/integration/Chromium evidence, provider/schema/budget/policy failure behavior and regression for Task draft, Research Plan, context registry, reload and Week 1 authorization.
+
+### 29.10 CAND-022A Definition of Done
+
+- A natural-language request may express multiple intent facets; it is not forced through a keyword rule before analysis.
+- Only server-authorized descriptor metadata is offered for selection; model-proposed unknown skills fail closed.
+- The selected skill and why it fits are visible without revealing chain-of-thought.
+- Work plan is schema-valid, acyclic, capped and persisted in the current Assistant turn/session read-back.
+- Phase A invokes at most one existing bounded capability and never calls a legacy write tool.
+- Unsupported requests return understood goal, missing capability, safe alternatives and no fabricated result.
+- Grounded factual answers retain source refs/freshness/redaction disclosure.
+- Task mutation retains editable draft, selective confirm, idempotency, concurrency, audit and usage behavior.
+- Provider unavailable/timeout, schema repair exhaustion, budget deny and context-policy deny have distinct honest states.
+- Actual provider/model, prompt version, selected skill IDs, cost/usage and correlation IDs are auditable.
+- Reload restores goal, selected skill, plan state, disclosures and resulting artifact/answer.
+- Feature disable restores current single-capability router without breaking existing native pages/cards.
+
+### 29.11 Required verification
+
+Minimum prompt/evidence matrix:
+
+- simple grounded question selects `grounded.read.v1`;
+- ambiguous risk/option prompt selects `research.plan.v1`;
+- Task creation prompt selects `task.create.v1`, clarifies missing Project and stops at draft;
+- compound “analyze risk then create tasks” produces a bounded plan and Phase-A single handoff instead of autonomous two-step mutation;
+- “run all 14 CAND tests” returns `unsupported_but_analyzed` and identifies missing `demo.test.run.v1` before CAND-022C;
+- create Project/Group/Meeting/Poll produces a useful gap/manual-path response, not fake completion;
+- unknown skill, forged requested capability and forged source ID fail closed;
+- cross-tenant/private source is excluded before model routing;
+- prompt injection inside retrieved source cannot alter the work plan or tools;
+- provider unavailable/timeout, invalid goal schema and invalid work-plan DAG;
+- step/budget/token/repair limit exhaustion;
+- cancel, duplicate client turn, stale session version and reload/read-back;
+- Vietnamese, English, typo, short prompt and compound prompt corpus;
+- existing Assistant Task draft, Research Plan, Dashboard/Group/Meeting native cards and Week 1 permission regression.
+
+Evaluation release gates:
+
+- known-intent top-3 skill recall ≥ 95% on the versioned fixture set;
+- unauthorized skill selection accepted by reconciler = 0;
+- unsupported prompt with useful goal/gap/manual-path response ≥ 90%;
+- factual claims without an authorized source ref = 0 for grounded modes;
+- autonomous mutation before explicit confirmation = 0;
+- plan cycle, step overflow or unknown schema accepted = 0.
+
+### 29.12 Coverage and priority update
+
+- Runtime status remains unchanged: the 14 previously closed candidates stay `NATIVE_COMPLETE` for their bounded contracts.
+- `CAND-022` is newly dispositioned `MISSING_HIGH_VALUE`; this amendment does not claim implementation.
+- The catalog is now **22 top-level candidates**: **14 closed** and **8 containing implementation work**.
+- Existing runtime inventory denominators remain 117/117 audited surfaces and 37/37 previously audited capabilities dispositioned. Planned CAND-022 surfaces/contracts are not counted as runtime implementations.
+- CAND-022A becomes the next Primary because it is a platform prerequisite for broad natural-language use of CAND-020 and every later skill adapter. CAND-020 remains the highest-priority domain mutation adapter after the orchestrator foundation is green.
+- New discovered planning gaps GAP-073..081 all map to CAND-022 phases; unowned new gap = 0.
+
+**Coverage gate: PASS. Product completeness: NOT PASS.** This is 100% disposition coverage, not an implementation claim.
+
+### 29.13 Superseding NEXT_IMPLEMENTATION_GOAL
+
+> Implement only `CAND-022A — Goal Understanding + Skill Discovery` from §29 on the current verified workspace. Add strict versioned `assistant_goal_analysis.v1`, `assistant_work_plan.v1` and skill descriptors for only `grounded.read.v1`, `research.plan.v1` and `task.create.v1`; use the preferred strong reasoning profile for ambiguous/compound goals, then deterministically reconcile selected skills against authenticated tenant/entity permission, feature, source, privacy, risk and budget policy. Replace keyword-first authority with analyze → reconcile → exactly one existing bounded capability handoff or `unsupported_but_analyzed`; retain rules only as a cheap hint/fallback. Render and persist goal, scope, selected skills, bounded acyclic plan, source disclosures, safe activity and actual provider/model in the existing singleton Assistant session/workspace. Preserve canonical Task editable/selective-confirm behavior and all existing native cards. Complete TASK-SO-1..3 and the §29.11 matrix. Do not add a recursive executor, free-form shell, repository scanner, test runner, new domain mutation, migration or CAND-020 in this slice.
+
+## 30. Implementation checkpoint — CAND-022A Goal Understanding + Skill Discovery
+
+**Implementation date:** 2026-08-03 (Asia/Saigon)
+**Baseline:** `main` at `60f2cd4e9ae9f21a25855b6fd4cdb781b0beaf46`; this checkpoint is still an uncommitted local workspace and has not been pushed.
+
+### 30.1 Delivered behavior
+
+- A free-form Assistant turn now enters `assistant_goal_analysis.v1` before context materialization and capability execution when `AiJobsV4:AssistantGoalPlannerEnabled` is on.
+- The preferred provider hint for this strong reasoning step is `deepseek-v4-pro`. Actual provider/model remain runtime receipts; unavailable, mock or schema-invalid output becomes an explicitly labelled deterministic fallback rather than fake model success.
+- The server exposes descriptor metadata for exactly `grounded.read.v1`, `research.plan.v1` and `task.create.v1`. Each descriptor now carries version, product job, entity scope, schemas, risk, confirmation, renderer, verification, rollback and owner metadata.
+- The model may rank only discovered descriptors. The server then replaces model-authored entity IDs with the authorized client scope, rejects unknown/unauthorized skill IDs, caps selection at one skill and rebuilds an acyclic `assistant_work_plan.v1` with at most eight steps and two attempts per step.
+- The selected skill is handed to one existing bounded path without keyword-first authority. Task remains draft/selective-confirm; Research remains read-only proposal; grounded read retains authorized sources. Legacy `AiTools`, shell, SQL, recursive execution and new mutation adapters are not exposed.
+- Unsupported goals such as Project creation or “run every CAND demo/test” return `unsupported_but_analyzed`, a concrete missing skill (`project.create.v1` or `demo.test.run.v1`), a safe implementation/manual path and zero mutation.
+- Goal analysis, selected/missing skill, Work Plan, source disclosures, five safe activity stages and actual provider/model are stored in the existing durable turn JSON and restored after reload without a migration.
+- The singleton Assistant renders a native `assistant-work-plan` card above the answer/artifact. It shows objective, user job, authorized scope, disposition, selected or missing skill, verification-labelled steps and honest fallback warnings without chain-of-thought.
+- A dedicated feature flag and environment override (`AI_ASSISTANT_GOAL_PLANNER_ENABLED`) provide rollback to the previous single-capability flow.
+
+### 30.2 Contract and security closure
+
+| Control | Implemented evidence |
+|---|---|
+| Model contract | Strict schema/prompt/version identity, bounded fields and enums for `assistant_goal_analysis.v1`. |
+| Work-plan safety | Unique known step IDs, known dependencies, cycle rejection, one selected skill maximum, allowed step/state/mutation enums, 8-step/2-attempt caps. |
+| Authorization | Discovery returns descriptor metadata only; source facts are materialized after selection. Project/tenant access remains server-owned and nondisclosing. |
+| Model distrust | Model scope IDs and provider/model claims are not trusted; selected descriptor and plan are reconstructed from server registry/context. |
+| Mutation safety | Phase A invokes no new write path. `task.create.v1` still stops at the existing editable draft and explicit selective confirmation. |
+| Provider/schema failure | No mock is accepted. Failures produce `UsedFallback=true`, `not_reached` receipts and a warning containing the safe failure/schema reason. |
+| Unsupported request | Missing capability is visible and no legacy tool, shell or guessed endpoint is called. |
+| Durability/audit | Goal/plan survive session read-back; `assistant_goal.planned` is written beside accepted/context/completed audit events. |
+| Rollback | Disable `AiJobsV4:AssistantGoalPlannerEnabled`; existing native cards and legacy bounded Assistant router remain available. |
+
+### 30.3 Verification evidence
+
+| Gate | Result |
+|---|---|
+| Goal/reconciler unit plus Assistant/context regression | **29/29 PASS** focused; includes authorized selection, model scope replacement, invented skill rejection, demo missing-skill fallback and cyclic plan rejection. |
+| Assistant integration | **12/12 PASS**; includes task/research/grounded handoff, read-only deny, unknown capability/source, unsupported Project/demo goal, five-stage activity, audit and reload. |
+| Full unit suite | **414/414 PASS** |
+| Full integration suite | **140/140 PASS** |
+| Full WebFeature suite | **37/37 PASS** |
+| Chromium evidence | **7/7 PASS** across new Goal/Skill/Work Plan reload, Assistant workspace/read-back, Research Plan and Action Composer/Task handoff. A parallel login run temporarily locked the in-memory test account; the affected Action Composer specs passed 2/2 after restarting the clean preview and running serially. |
+| Vue/TypeScript typecheck | PASS |
+| Vite production build | PASS; generated `wwwroot/dist` refreshed. |
+| Release `.NET` build | PASS, **0 errors**. There are **29 non-blocking analyzer warnings** in the accumulated workspace, chiefly existing performance/style findings and test fixture arrays; this checkpoint does not claim a zero-warning baseline. |
+| Diff hygiene | `git diff --check` PASS; only line-ending notices. |
+| Preview | `http://127.0.0.1:5010/dashboard` running from the rebuilt Development binary. |
+
+Named new evidence: `TEST-GS-01`, `TEST-GS-E2E` and `AiAssistantGoalPlanningContractTests`.
+
+### 30.4 Updated disposition and remaining gaps
+
+- `CAND-022A`: `NATIVE_COMPLETE` for goal understanding, three-skill discovery/reconciliation, exactly-one-capability handoff, useful unsupported analysis, durable Work Plan UI and feature rollback.
+- Top-level `CAND-022`: `PRESENT_PARTIAL`, because the read-only multi-step executor (B), safe demo/test orchestrator (C) and remaining native skill packs (D) are intentionally not implemented.
+- GAP-073, GAP-076 and GAP-080 are closed for Phase A. GAP-074 and GAP-075 are partial by design: the descriptor/reconciler base is live for three skills, while broader packs and multi-step execution are deferred. GAP-077, GAP-078, GAP-079 and the full evaluation corpus in GAP-081 remain explicit backlog.
+- Catalog count remains **22 top-level CAND**: **14 top-level candidates closed**, **CAND-022A closed inside a partial CAND-022**, and **8 top-level candidate areas still containing work**. No new UI/backend orphan was introduced.
+
+**Coverage gate: PASS. Product completeness: NOT PASS.** CAND-022A is decision-complete and verified; remaining breadth is explicit, not hidden.
+
+### 30.5 Superseding NEXT_IMPLEMENTATION_GOAL
+
+> Implement only `CAND-022B — Bounded Read-only Agent Loop` on top of the completed CAND-022A contracts. Add a server-owned executor for a maximum of eight dependency-ordered `retrieve`, `analyze`, `verify` and `present` steps using only registered read-only adapters and the sources authorized after planning. Persist step queued/running/verified/skipped/blocked/failed state, attempts, safe error codes, provider/model, usage and source receipts in the existing durable Assistant session; support cancel, retry, resume and reload without exposing chain-of-thought. Enforce tenant/entity/privacy/budget checks before every adapter call, reject cycles/unknown skills/stale or private sources, and stop on policy deny, blocking unknown, budget exhaustion or schema repair exhaustion. Render live safe progress in the existing Work Plan card and preserve the current grounded read, Research Plan, Task draft/selective-confirm and Week 1 flows. Add unit, integration and Chromium evidence for bounded convergence, source grounding, provider timeout, invalid schema, retry exhaustion, cancellation, stale read-back and prompt injection in source content. Do not expose write tools, shell, SQL, repository scanning, production test execution, a new mutation adapter, CAND-022C, CAND-022D or CAND-020 in this slice.
+
+### 30.6 Routing correction for natural demo/test wording
+
+The live preview exposed a phrase-shape gap after the original checkpoint. The request `chạy tự động để test các CAND đã implement` did not contain the older contiguous hints `chạy test` or `test CAND`. A provider-produced plan could therefore rank `grounded.read.v1`, causing an unrelated grounded-answer call and a failed `capability_handoff` event instead of the required missing-skill analysis.
+
+The closure has two server-owned layers:
+
+1. known CAND test-execution wording is resolved before provider routing to `unsupported_but_analyzed` with missing `demo.test.run.v1`; neither provider nor executor is called;
+2. the output reconciler independently vetoes any model-selected read/research/task skill for the same controlled missing intent, so provider variance cannot reopen the handoff.
+
+The resulting Work Plan has no `call_skill` step, the final process event is completed rather than failed, the user receives the safe adapter/sandbox path, and production behavior still exposes no arbitrary shell or unrestricted test runner.
+
+Verification evidence:
+
+| Gate | Result |
+|---|---|
+| Exact-phrase contract/provider-bypass unit evidence | **6/6 PASS** in `AiAssistantGoalPlanningContractTests`; the strict gateway mock confirms zero provider calls. |
+| Exact-phrase API/session evidence | **2/2 PASS** for `TEST-GS-01` and new `TEST-GS-02`; no failed process event and no selected/called skill. |
+| Related Assistant regression | **35/35 unit PASS**, **13/13 integration PASS**. |
+| Debug build | PASS, **0 errors**; existing analyzer warnings remain non-blocking. |
+| Live preview | Exact phrase returned in **167 ms** with `unsupported_but_analyzed`, `demo.test.run.v1`, `capability_handoff=completed`, `failed events=0`; preview restarted at `http://127.0.0.1:5010/dashboard`. |
+
+`CAND-022A` remains `NATIVE_COMPLETE`; this is a correctness closure, not a new candidate or a claim that `CAND-022C` is implemented.
+
+### 30.7 Real relational demo source packs for five AI-native scenarios
+
+The canonical rich seed now supplies decision-grade relational source data instead of frontend mocks or pre-baked AI answers. It runs for both the InMemory preview and SQL databases after migration, and it idempotently enriches an existing `qaly-demo-2026` database without overwriting user-edited records.
+
+| Demo scenario | Real seeded source | Native behavior enabled |
+|---|---|---|
+| Dashboard / grounded research | Five active projects with tasks, risks, comments, meetings, groups and operational history already present in the rich seed | Strategic brief, grounded answer and Research Plan can cite current project facts. |
+| Group and meeting intelligence | Two populated work groups plus poll, messages, meeting session, transcript import and action mappings already present | Group selected-summary and Meeting Checknote have native context rather than placeholder cards. |
+| Member Skill Evidence | Nine organization skills, ten confirmed skill requirements on five completed tasks and five manager-confirmed completion attributions | A member profile can show evidence-backed skills and source tasks across all five active projects. |
+| Assignee Recommendation | The same confirmed evidence plus ten skill requirements on five open target tasks | Recommendation can compare required skills with demonstrated delivery evidence instead of guessing from role/title. |
+| Portfolio Schedule / Capacity | Twelve organization-member capacity profiles and five future reduced/unavailable windows | Portfolio scheduling can detect cross-project load and availability conflicts with a durable read-back source. |
+
+Data integrity rules:
+
+- the five completed evidence tasks cover `qaly-workos-demo`, `erumi-local-analytics`, `nova-retail-pilot`, `field-ops-mobile` and `ops-compliance-readiness`;
+- Nova receives one additional realistic completed task, `Xác nhận dữ liệu POS Wave 1`, because that project previously had no completed evidence source;
+- skill evidence is created only from a Done task, a confirmed skill requirement and a named eligible contributor;
+- capacity and availability are stored in the canonical P008/P009 entities and therefore work in SQL as well as the local InMemory preview;
+- the extension adds only missing records. A second seed produces no duplicate task, skill, requirement, attribution, profile or window;
+- no provider result, AI success state or recent model output is seeded. DeepSeek and other configured providers must still generate runtime results from these sources with normal permission, grounding, usage and failure controls.
+
+Verification evidence: `RichDemoSeedTests` **2/2 PASS**, including exact counts (5 active projects, 9 skills, 20 requirements, 5 confirmed attributions, 12 profiles and 5 availability windows), project-by-project evidence closure and second-run idempotency. Infrastructure Debug build PASS with 0 errors; accumulated analyzer warnings remain pre-existing and non-blocking.

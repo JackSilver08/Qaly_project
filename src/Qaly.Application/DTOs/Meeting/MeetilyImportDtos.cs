@@ -39,7 +39,10 @@ public record MeetingExtractionPayload(
     MeetingSummaryDto Meeting,
     IReadOnlyList<MeetingActionDraftDto> ActionItems,
     IReadOnlyList<string> Keywords,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    IReadOnlyList<MeetingSourceEvidenceDto>? SummaryEvidence = null,
+    IReadOnlyList<MeetingDecisionDto>? Decisions = null,
+    IReadOnlyList<MeetingRiskDto>? Risks = null);
 
 public record MeetingSummaryDto(
     string Title,
@@ -53,7 +56,28 @@ public record MeetingActionDraftDto(
     string Priority,
     DateTimeOffset? DueDate,
     string? SourceEvidence,
-    string? SuggestedOwnerName);
+    string? SuggestedOwnerName,
+    int? SourceStart = null,
+    int? SourceEnd = null);
+
+public record MeetingSourceEvidenceDto(
+    string Quote,
+    int SourceStart,
+    int SourceEnd);
+
+public record MeetingDecisionDto(
+    string Text,
+    string? Reason,
+    string SourceEvidence,
+    int SourceStart,
+    int SourceEnd);
+
+public record MeetingRiskDto(
+    string Text,
+    string Severity,
+    string SourceEvidence,
+    int SourceStart,
+    int SourceEnd);
 
 public record MeetingActionItemCreateRequest(
     Guid? AssigneeId,
@@ -75,7 +99,10 @@ public record MeetingActionItemDto(
     string Priority,
     DateTimeOffset? DueDate,
     string MappingStatus,
-    Guid? TaskId);
+    Guid? TaskId,
+    string? SourceEvidence = null,
+    int? SourceStart = null,
+    int? SourceEnd = null);
 
 public record LinkMeetingActionItemTaskRequest(
     Guid TaskId);

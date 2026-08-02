@@ -1,16 +1,98 @@
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, watch, onBeforeUnmount } from 'vue'
 import { BrainCircuit, Activity, Target, AlertCircle, PlayCircle, BarChart3, RefreshCw, Server } from 'lucide-vue-next'
-import { apiJson, errorMessage } from '../../utils/api-client'
-import type { StrategicOverviewDto, AiStrategyResponseDto } from '../../types'
+import { apiJson, apiResult, errorMessage } from '../../utils/api-client'
+import type { StrategicOverviewDto } from '../../types'
+
+type OrganizationScope = { id: string; name: string }
+type AiJob = {
+  jobId: string
+  status: string
+  progressPercent: number
+  selectedProvider: string | null
+  selectedModel: string | null
+  lastErrorCode: string | null
+  lastErrorMessage: string | null
+  lastErrorRetryable: boolean
+  isMock: boolean
+}
+type GroundedSummary = { text: string; metricRefs: string[]; sourceRefs: string[] }
+type GroundedRisk = { severity: 'low' | 'medium' | 'high'; title: string; metricRefs: string[]; sourceRefs: string[] }
+type GroundedPriority = { title: string; rationale: string; metricRefs: string[]; sourceRefs: string[] }
+type StrategicSource = { key: string; type: 'project' | 'task'; entityId: string; projectId: string; label: string; url: string; version: string | null }
+type StrategicBrief = {
+  schemaId: 'dashboard_strategic_brief.v1'
+  organizationId: string
+  requestedById: string
+  snapshotAt: string
+  coverage: { visibleProjectCount: number; includedTaskCount: number; excludedPrivateTaskCount: number; visibility: string }
+  metrics: Record<string, number>
+  summaryPoints: GroundedSummary[]
+  risks: GroundedRisk[]
+  priorities: GroundedPriority[]
+  sourceRefs: StrategicSource[]
+  warnings: string[]
+}
+type JobResult = { schemaId: string; result: StrategicBrief; cacheHit: boolean; isMock: boolean; sourceStale: boolean }
+
+const props = withDefaults(defineProps<{ organizationScopes?: OrganizationScope[] }>(), { organizationScopes: () => [] })
 
 const isLoadingStats = ref(true)
 const isLoadingAi = ref(false)
 
 const statsData = ref<StrategicOverviewDto | null>(null)
-const aiData = ref<AiStrategyResponseDto | null>(null)
+const selectedOrganizationId = ref('')
+const aiJob = ref<AiJob | null>(null)
+const aiData = ref<JobResult | null>(null)
 const aiError = ref('')
-const canGenerateAiInsight = computed(() => !isLoadingAi.value)
+let pollToken = 0
+const canGenerateAiInsight = computed(() => !isLoadingAi.value && !!selectedOrganizationId.value && !!statsData.value)
+const jobRunning = computed(() => ['queued', 'running', 'retrying'].includes(aiJob.value?.status.toLowerCase() ?? ''))
+
+function storageKey() { return `qaly:dashboard-strategic-brief:${selectedOrganizationId.value}` }
+
+function statusLabel(status?: string) {
+  const value = status?.toLowerCase()
+  if (value === 'queued') return 'Đang xếp hàng'
+  if (value === 'running') return 'AI đang phân tích snapshot máy chủ'
+  if (value === 'retrying') return 'Đang chờ retry'
+  if (value === 'succeeded') return 'Đã có strategic brief kiểm chứng được'
+  if (value === 'failed') return 'Không thể tạo kết quả hợp lệ'
+  if (value === 'canceled' || value === 'cancelled') return 'Đã hủy'
+  return status || 'Chưa chạy'
+}
+
+function sourceFor(key: string) { return aiData.value?.result.sourceRefs.find(source => source.key === key) ?? null }
+
+async function monitorJob(jobId: string) {
+  const token = ++pollToken
+  for (let attempt = 0; attempt < 80 && token === pollToken; attempt++) {
+    const detail = await apiResult<AiJob>(`/api/ai/jobs/${jobId}`)
+    aiJob.value = detail
+    const status = detail.status.toLowerCase()
+    if (status === 'succeeded') {
+      const result = await apiResult<JobResult>(`/api/ai/jobs/${jobId}/result`)
+      if (result.schemaId !== 'dashboard_strategic_brief.v1' || result.isMock) {
+        throw new Error('Kết quả không đạt contract native hoặc là dữ liệu mock.')
+      }
+      aiData.value = result
+      return
+    }
+    if (['failed', 'canceled', 'cancelled'].includes(status)) {
+      aiError.value = detail.lastErrorMessage || 'AI không tạo được strategic brief hợp lệ.'
+      return
+    }
+    await new Promise(resolve => window.setTimeout(resolve, 750))
+  }
+  if (token === pollToken) aiError.value = 'Job vẫn đang chạy; đóng/mở lại trang để tiếp tục đọc kết quả.'
+}
+
+async function restoreJob() {
+  if (!selectedOrganizationId.value) return
+  const jobId = localStorage.getItem(storageKey())
+  if (!jobId) return
+  try { await monitorJob(jobId) } catch { localStorage.removeItem(storageKey()) }
+}
 
 const loadStats = async () => {
   try {
@@ -24,41 +106,92 @@ const loadStats = async () => {
 }
 
 const generateAiInsight = async () => {
-  if (!statsData.value) return
+  if (!canGenerateAiInsight.value) return
 
   isLoadingAi.value = true
   aiError.value = ''
   try {
-    const res = await apiJson<AiStrategyResponseDto>('/api/dashboard/ai-strategy', {
+    aiData.value = null
+    const created = await apiResult<{ jobId: string }>('/api/ai/dashboard/strategic-brief', {
       method: 'POST',
-      body: JSON.stringify(statsData.value)
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
+      body: JSON.stringify({
+        organizationId: selectedOrganizationId.value,
+        language: 'vi',
+        providerHint: 'deepseek-v4-pro',
+        cacheMode: 'use',
+      })
     })
-    aiData.value = res
+    localStorage.setItem(storageKey(), created.jobId)
+    await monitorJob(created.jobId)
   } catch (error) {
     aiData.value = null
-    aiError.value = errorMessage(error, 'Model AI local chưa sẵn sàng. Hãy kiểm tra Ollama rồi thử lại.')
+    aiError.value = errorMessage(error, 'Không thể tạo strategic brief từ snapshot máy chủ.')
   } finally {
     isLoadingAi.value = false
   }
 }
 
-onMounted(() => {
-  loadStats()
+async function cancelJob() {
+  if (!aiJob.value) return
+  try {
+    aiJob.value = await apiResult<AiJob>(`/api/ai/jobs/${aiJob.value.jobId}/cancel`, {
+      method: 'POST', body: JSON.stringify({ reason: 'Người dùng hủy Dashboard Strategic Brief.' })
+    })
+    pollToken++
+    isLoadingAi.value = false
+    aiError.value = 'Đã hủy job; không có kết quả giả được hiển thị.'
+  } catch (error) { aiError.value = errorMessage(error, 'Không thể hủy job.') }
+}
+
+async function retryJob() {
+  if (!aiJob.value) return
+  isLoadingAi.value = true
+  aiError.value = ''
+  try {
+    aiJob.value = await apiResult<AiJob>(`/api/ai/jobs/${aiJob.value.jobId}/retry`, {
+      method: 'POST', body: JSON.stringify({ providerOverride: null })
+    })
+    await monitorJob(aiJob.value.jobId)
+  } catch (error) { aiError.value = errorMessage(error, 'Không thể retry job.') }
+  finally { isLoadingAi.value = false }
+}
+
+watch(() => props.organizationScopes, scopes => {
+  if (!scopes.some(scope => scope.id === selectedOrganizationId.value)) selectedOrganizationId.value = scopes[0]?.id ?? ''
+}, { immediate: true, deep: true })
+
+watch(selectedOrganizationId, async () => {
+  pollToken++
+  aiJob.value = null
+  aiData.value = null
+  aiError.value = ''
+  await restoreJob()
 })
+
+onMounted(async () => {
+  await loadStats()
+  await restoreJob()
+})
+
+onBeforeUnmount(() => { pollToken++ })
 </script>
 
 <template>
-  <section class="strategy-section glass-panel">
+  <section class="strategy-section glass-panel" data-testid="dashboard-strategic-brief">
     <div class="strategy-header">
       <div class="header-titles">
         <h2>Tổng quan chiến lược</h2>
         <p>AI phân tích dữ liệu dự án, nhiệm vụ và hiệu suất đội nhóm để đề xuất hướng triển khai tiếp theo.</p>
       </div>
       <div class="header-actions">
+        <select v-if="organizationScopes.length > 1" v-model="selectedOrganizationId" class="scope-select" aria-label="Chọn tổ chức cho Strategic Brief">
+          <option v-for="scope in organizationScopes" :key="scope.id" :value="scope.id">{{ scope.name }}</option>
+        </select>
         <button
-          v-if="canGenerateAiInsight"
           @click="generateAiInsight" 
           class="ai-button"
+          :disabled="!canGenerateAiInsight"
         >
           <RefreshCw v-if="aiData" :size="18" />
           <BrainCircuit v-else :size="18" />
@@ -115,51 +248,70 @@ onMounted(() => {
         
         <div v-if="isLoadingAi" class="ai-loading">
           <BrainCircuit class="spin-icon" :size="32" />
-          <p>AI đang tổng hợp và phân tích dữ liệu không gian làm việc...</p>
+          <strong>{{ statusLabel(aiJob?.status) }}</strong>
+          <p>Kiểm tenant/quyền → dựng snapshot server → gọi model → kiểm schema/nguồn → lưu read-back</p>
+          <button v-if="jobRunning" type="button" class="secondary-button" @click="cancelJob">Hủy job</button>
         </div>
 
         <div v-else-if="aiError" class="ai-error" role="alert">
           <AlertCircle :size="28" />
           <strong>Chưa có kết quả AI thật</strong>
           <p>{{ aiError }}</p>
+          <button v-if="aiJob?.lastErrorRetryable" type="button" class="secondary-button" @click="retryJob">Retry</button>
         </div>
 
         <div v-else-if="!aiData" class="ai-empty">
           <div class="ai-empty-icon">
             <BrainCircuit :size="48" style="color: rgba(15, 82, 186, 0.3);" />
           </div>
-          <p>Nhấn <strong>Tạo phân tích AI</strong> để nhận nhận định chiến lược và đề xuất hành động cho tuần này.</p>
+          <p v-if="selectedOrganizationId">Nhấn <strong>Tạo phân tích AI</strong> để nhận nhận định có metric/source grounding và có thể đọc lại sau reload.</p>
+          <p v-else>Chưa có phạm vi tổ chức/dự án hợp lệ để tạo strategic brief.</p>
         </div>
 
         <div v-else class="ai-results">
           <div class="ai-provider-badge">
             <Server :size="14" />
-            Kết quả thật từ {{ aiData.provider }} · {{ aiData.model }}
+            {{ statusLabel(aiJob?.status) }} · {{ aiJob?.selectedProvider || 'provider chưa xác định' }} · {{ aiJob?.selectedModel || 'model chưa xác định' }}
           </div>
-          <div class="ai-summary">
-            <strong>Nhận định:</strong> {{ aiData.summary }}
+          <div v-if="aiData.sourceStale" class="ai-error compact-error">Nguồn đã thay đổi sau lúc tạo. Hãy phân tích lại.</div>
+          <div class="ai-summary" v-for="(item, index) in aiData.result.summaryPoints" :key="`${index}-${item.text}`">
+            <strong>Nhận định:</strong> {{ item.text }}
+            <div class="grounding-links">
+              <span v-for="metric in item.metricRefs" :key="metric">{{ metric }}={{ aiData.result.metrics[metric] }}</span>
+              <a v-for="sourceKey in item.sourceRefs" :key="sourceKey" :href="sourceFor(sourceKey)?.url">{{ sourceFor(sourceKey)?.label || sourceKey }}</a>
+            </div>
           </div>
           
           <div class="ai-grid">
             <div class="ai-box warning-box">
               <h4>Rủi ro chính</h4>
-              <ul>
-                <li v-for="(risk, i) in aiData.riskAnalysis" :key="i">{{ risk }}</li>
+              <ul v-if="aiData.result.risks.length">
+                <li v-for="risk in aiData.result.risks" :key="`${risk.severity}-${risk.title}`">
+                  <strong>[{{ risk.severity }}]</strong> {{ risk.title }}
+                  <div class="grounding-links"><span v-for="metric in risk.metricRefs" :key="metric">{{ metric }}={{ aiData.result.metrics[metric] }}</span><a v-for="sourceKey in risk.sourceRefs" :key="sourceKey" :href="sourceFor(sourceKey)?.url">{{ sourceFor(sourceKey)?.label || sourceKey }}</a></div>
+                </li>
               </ul>
+              <p v-else>Không có rủi ro nào đủ căn cứ trong snapshot.</p>
             </div>
             
             <div class="ai-box success-box">
-              <h4>Đề xuất hành động</h4>
-              <ul>
-                <li v-for="(rec, i) in aiData.recommendations" :key="i">{{ rec }}</li>
+              <h4>Ưu tiên đề xuất</h4>
+              <ul v-if="aiData.result.priorities.length">
+                <li v-for="priority in aiData.result.priorities" :key="priority.title">
+                  <strong>{{ priority.title }}</strong> — {{ priority.rationale }}
+                  <div class="grounding-links"><span v-for="metric in priority.metricRefs" :key="metric">{{ metric }}={{ aiData.result.metrics[metric] }}</span><a v-for="sourceKey in priority.sourceRefs" :key="sourceKey" :href="sourceFor(sourceKey)?.url">{{ sourceFor(sourceKey)?.label || sourceKey }}</a></div>
+                </li>
               </ul>
+              <p v-else>Chưa có ưu tiên AI đủ căn cứ.</p>
             </div>
           </div>
           
           <div class="ai-priority">
-            <h4><PlayCircle :size="16" style="margin-right: 6px;"/> Ưu tiên xử lý</h4>
+            <h4><PlayCircle :size="16" style="margin-right: 6px;"/> Phạm vi đã kiểm</h4>
             <div class="priority-tags">
-              <span v-for="(plan, i) in aiData.priorityPlan" :key="i" class="priority-tag">{{ plan }}</span>
+              <span class="priority-tag">{{ aiData.result.coverage.visibleProjectCount }} dự án</span>
+              <span class="priority-tag">{{ aiData.result.coverage.includedTaskCount }} task non-private</span>
+              <span class="priority-tag">Loại {{ aiData.result.coverage.excludedPrivateTaskCount }} task private khỏi model</span>
             </div>
           </div>
 
@@ -204,6 +356,21 @@ onMounted(() => {
   max-width: 500px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.scope-select {
+  min-width: 180px;
+  padding: 9px 12px;
+  border: 1px solid rgba(15, 82, 186, 0.18);
+  border-radius: var(--qaly-radius-lg);
+  background: rgba(255, 255, 255, 0.9);
+  color: #1e293b;
+}
+
 .ai-button {
   display: flex;
   align-items: center;
@@ -223,6 +390,12 @@ onMounted(() => {
 .ai-button:hover {
   transform: translateY(-2px);
   box-shadow: var(--qaly-shadow-md);
+}
+
+.ai-button:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .secondary-button {
@@ -333,6 +506,26 @@ onMounted(() => {
   max-width: 520px;
   margin: 0;
   color: #64748b;
+}
+
+.compact-error { min-height: 0; padding: 10px; }
+
+.grounding-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.grounding-links span,
+.grounding-links a {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(31, 128, 255, 0.1);
+  color: #0f52ba;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
 }
 
 .ai-provider-badge {

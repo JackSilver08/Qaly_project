@@ -56,6 +56,10 @@ const props = withDefaults(defineProps<{
   isDrawer: false
 })
 
+const emit = defineEmits<{
+  composeAction: [payload: { message: string; projectId: string }]
+}>()
+
 const { projects, selectedProject, currentUser, loadDashboard } = useDashboardContext()
 const erumiContext = useErumiContext()
 const route = useRoute()
@@ -125,6 +129,80 @@ type AiModelMetadata = {
   status?: string | null
 }
 
+type AiAssistantProcessEvent = {
+  sequence: number
+  stage: string
+  status: 'queued' | 'running' | 'completed' | 'failed' | string
+  publicLabel: string
+  startedAt: string
+  completedAt?: string | null
+  durationMs?: number | null
+  retryable?: boolean
+  safeErrorCode?: string | null
+}
+
+type AiAssistantCapabilityDescriptor = {
+  capabilityId: string
+  kind: string
+  inputSchemaId: string
+  outputSchemaId: string
+  requiredScopes: string[]
+  contextSources: string[]
+  riskClass: string
+  confirmationPolicy: string
+  modelProfile: string
+  rendererId: string
+  featureFlag: string
+  version?: string
+  title?: string
+  description?: string
+  userJobs?: string[] | null
+  entityTypes?: string[] | null
+}
+
+type AiAssistantGoalScope = {
+  scopeType: string
+  projectId?: string | null
+  entityType?: string | null
+  entityId?: string | null
+  label: string
+  confidence: number
+  reason: string
+}
+
+type AiAssistantGoalAnalysis = {
+  schemaId: 'assistant_goal_analysis.v1'
+  objective: string
+  userJob: string
+  intentFacets: string[]
+  scopes: AiAssistantGoalScope[]
+  selectedSkills: Array<{ skillId: string; title: string; fitReason: string; confidence: number; riskClass: string; confirmationPolicy: string }>
+  missingSkills: Array<{ skillId: string; title: string; reason: string; suggestedPath: string }>
+  disposition: 'answerable' | 'plannable' | 'clarification_required' | 'unsupported_but_analyzed' | 'policy_blocked'
+  confidence: number
+  warnings: string[]
+  actualProvider: string
+  actualModel: string
+  usedFallback: boolean
+}
+
+type AiAssistantWorkPlan = {
+  schemaId: 'assistant_work_plan.v1'
+  objective: string
+  scope: AiAssistantGoalScope
+  selectedSkillIds: string[]
+  steps: Array<{ stepId: string; kind: string; publicLabel: string; skillId?: string | null; dependencyIds: string[]; verificationIds: string[]; mutationClass: string; state: string }>
+  requiresPlanApproval: boolean
+}
+
+type AiAssistantSourceDisclosure = {
+  sourceId: string
+  status: 'read' | 'skipped' | 'denied' | string
+  label: string
+  sourceRef?: string | null
+  reasonCode?: string | null
+}
+
 type ErumiChatResponse = {
   reply: string
   metrics: ErumiMetric[]
@@ -141,6 +219,144 @@ type ErumiChatResponse = {
   intent: string
   latencyMs: number
   model?: AiModelMetadata | null
+  processEvents?: AiAssistantProcessEvent[] | null
+  capabilities?: AiAssistantCapabilityDescriptor[] | null
+  sourceDisclosures?: AiAssistantSourceDisclosure[] | null
+  researchPlan?: AiAssistantResearchPlan | null
+  goalAnalysis?: AiAssistantGoalAnalysis | null
+  workPlan?: AiAssistantWorkPlan | null
+}
+
+type AiAssistantChoice = {
+  id: string
+  label: string
+  description?: string | null
+}
+
+type AiAssistantClarification = {
+  questionId: string
+  field: string
+  prompt: string
+  choices: AiAssistantChoice[]
+  allowFreeText: boolean
+  turn: number
+  maxTurns: number
+}
+
+type AiAssistantArtifact = {
+  kind: 'task_action_plan'
+  schemaId: string
+  message: string
+  projectId: string
+}
+
+type AiAssistantResearchFinding = {
+  findingId: string
+  statement: string
+  severity: 'info' | 'low' | 'medium' | 'high' | 'critical'
+  confidence: number
+  sourceRefs: string[]
+}
+
+type AiAssistantResearchUnknown = {
+  unknownId: string
+  question: string
+  blocking: boolean
+}
+
+type AiAssistantResearchOption = {
+  optionId: string
+  title: string
+  outcome: string
+  tradeOffs: string[]
+  estimatedEffort: string
+  risk: string
+}
+
+type AiAssistantResearchAction = {
+  actionId: string
+  capabilityId: string
+  title: string
+  dependencyIds: string[]
+  draftInput: Record<string, unknown>
+  sourceRefs: string[]
+  executionEligible: boolean
+  eligibilityReason: string
+}
+
+type AiAssistantResearchPlan = {
+  schemaId: 'assistant_research_plan.v1'
+  promptId: string
+  promptVersion: string
+  objective: string
+  scope: { scopeType: string; projectId?: string | null; label: string; sourceRefs: string[] }
+  findings: AiAssistantResearchFinding[]
+  unknowns: AiAssistantResearchUnknown[]
+  assumptions: string[]
+  options: AiAssistantResearchOption[]
+  recommendedOptionId: string
+  recommendationRationale: string
+  proposedActions: AiAssistantResearchAction[]
+  warnings: string[]
+  privacyNotes: string[]
+  freshnessAt: string
+  generatedAt: string
+  actualProvider: string
+  actualModel: string
+}
+
+type AiAssistantTurnResponse = {
+  schemaId: 'assistant_turn.v1'
+  disposition: 'grounded_answer' | 'research_plan' | 'registered_action' | 'clarification_required' | 'unsupported' | 'unsupported_but_analyzed' | 'policy_blocked'
+  intent: string
+  executionPolicy: 'read_only' | 'read_only_proposal' | 'draft_then_confirm' | 'analyze_only' | 'none'
+  assistantMessage: string
+  confidence: number
+  clarification?: AiAssistantClarification | null
+  artifact?: AiAssistantArtifact | null
+  sourceRefs: string[]
+  answer?: ErumiChatResponse | null
+  sessionId?: string | null
+  turnId?: string | null
+  sequence?: number | null
+  sessionVersion?: number | null
+  clientTurnId?: string | null
+  turnStatus?: string
+  correlationId?: string | null
+  replayed?: boolean
+  modelProfile?: string
+  actualProvider?: string
+  actualModel?: string
+  processEvents?: AiAssistantProcessEvent[] | null
+  capabilities?: AiAssistantCapabilityDescriptor[] | null
+  sourceDisclosures?: AiAssistantSourceDisclosure[] | null
+  researchPlan?: AiAssistantResearchPlan | null
+  goalAnalysis?: AiAssistantGoalAnalysis | null
+  workPlan?: AiAssistantWorkPlan | null
+}
+
+type AiAssistantStoredTurn = {
+  turnId: string
+  sequence: number
+  clientTurnId: string
+  userMessage: string
+  status: string
+  correlationId: string
+  createdAt: string
+  completedAt?: string | null
+  response?: AiAssistantTurnResponse | null
+  processEvents: AiAssistantProcessEvent[]
+}
+
+type AiAssistantSession = {
+  sessionId: string
+  title: string
+  status: string
+  version: number
+  projectId?: string | null
+  createdAt: string
+  updatedAt?: string | null
+  turns: AiAssistantStoredTurn[]
 }
 
 type ChatEntry = {
@@ -160,6 +376,12 @@ type ChatEntry = {
   latencyMs?: number
   usedAi?: boolean
   model?: AiModelMetadata | null
+  processEvents?: AiAssistantProcessEvent[] | null
+  capabilities?: AiAssistantCapabilityDescriptor[] | null
+  sourceDisclosures?: AiAssistantSourceDisclosure[] | null
+  researchPlan?: AiAssistantResearchPlan | null
+  goalAnalysis?: AiAssistantGoalAnalysis | null
+  workPlan?: AiAssistantWorkPlan | null
 }
 
 type ErumiUploadedFile = {
@@ -195,6 +417,7 @@ const chatContainerRef = ref<HTMLElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 let refreshTimer: number | undefined
+let keepConversationForNextTargetChange = false
 
 function applyRoutePrompt() {
   const rawPrompt = Array.isArray(route.query.prompt) ? route.query.prompt[0] : route.query.prompt
@@ -223,6 +446,10 @@ const cockpitDrawerOpen = ref(false)
 const selectedDrawerMessage = ref<ChatEntry | null>(null)
 const isCompactViewport = ref(false)
 const conversationHistory = ref<ConversationHistoryItem[]>([])
+const assistantSessionId = ref<string | null>(null)
+const assistantSessionVersion = ref(0)
+const assistantSessionLoading = ref(false)
+const assistantSessionLoadAttempted = ref(false)
 const ANALYTICS_HISTORY_KEY = 'qaly.analytics.erumi.history.v1'
 const MAX_ANALYTICS_HISTORY_ITEMS = 20
 
@@ -369,7 +596,9 @@ const drawerMetrics = computed(() => drawerMessage.value?.metrics ?? [])
 const drawerTables = computed(() => drawerMessage.value?.tables ?? [])
 const drawerActions = computed(() => drawerMessage.value?.actions ?? [])
 const composerPlaceholder = computed(() => {
-  return isCompactViewport.value ? 'Hỏi Erumi...' : 'Hỏi bất kỳ điều gì về dự án... (gõ / để xem lệnh nhanh)'
+  return isCompactViewport.value
+    ? 'Bạn muốn Qaly giúp gì?'
+    : 'Mô tả điều bạn muốn phân tích hoặc thực hiện... (gõ / để xem lệnh nhanh)'
 })
 const freshnessLabel = computed(() => {
   if (backgroundRefreshing.value) return 'Đang cập nhật dữ liệu...'
@@ -446,10 +675,20 @@ function handleMessageMenu(key: string, msg: ChatEntry) {
   }
 }
 
-function startNewConversation() {
+async function startNewConversation() {
   chatHistory.value = [buildWelcomeMessage()]
   selectedDrawerMessage.value = null
   closeCockpitDrawer()
+  if (props.isDrawer) {
+    assistantSessionId.value = null
+    assistantSessionVersion.value = 0
+    assistantSessionLoadAttempted.value = true
+    try {
+      await createAssistantSession()
+    } catch (error) {
+      showError(error instanceof Error ? error.message : 'Không thể tạo cuộc trò chuyện mới.')
+    }
+  }
   focusComposer()
 }
 
@@ -462,13 +701,186 @@ function exportLatestReport() {
   exportAsMarkdown(selectedTargetLabel.value, message.text)
 }
 
-function isExecutingDraftAction(action: any) {
-  return action.processing && action.confirmAction === 'execute_action'
+function openComposerAction(action: ErumiAction) {
+  const message = String(action.payload?.message || '').trim()
+  const projectId = String(action.payload?.projectId || '').trim()
+  if (!message || !projectId) return
+  emit('composeAction', { message, projectId })
 }
 
-function isRejectingDraftAction(action: any) {
-  return action.processing && action.confirmAction === 'reject'
+function openResearchAction(action: AiAssistantResearchAction) {
+  if (!action.executionEligible || action.capabilityId !== 'task.create.v1') return
+  const message = String(action.draftInput?.message || '').trim()
+  const projectId = String(action.draftInput?.projectId || '').trim()
+  if (!message || !projectId) {
+    showError('Action này thiếu project hoặc nội dung bản nháp nên chưa thể mở Task Composer.')
+    return
+  }
+  emit('composeAction', { message, projectId })
 }
+
+function compactSourceRef(sourceRef: string) {
+  const clean = String(sourceRef || '')
+  return clean.length > 54 ? `${clean.slice(0, 28)}…${clean.slice(-20)}` : clean
+}
+
+async function answerProjectClarification(choice: AiAssistantChoice, action: ErumiAction) {
+  const originalMessage = String(action.payload?.originalMessage || '').trim()
+  if (!originalMessage || !choice.id) return
+  keepConversationForNextTargetChange = true
+  selectedTarget.value = choice.id
+  await nextTick()
+  await submitChat(originalMessage, undefined, choice.label)
+}
+
+function mapAssistantTurn(turn: AiAssistantTurnResponse): ErumiChatResponse {
+  const answer = turn.answer
+  const actions = [...(answer?.actions ?? [])]
+
+  if (turn.disposition === 'registered_action' && turn.artifact) {
+    actions.push({
+      type: 'compose_task_plan',
+      label: 'Đang soạn phương án task',
+      requiresConfirmation: false,
+      payload: {
+        message: turn.artifact.message,
+        projectId: turn.artifact.projectId,
+        schemaId: turn.schemaId,
+        intent: turn.intent,
+        disposition: turn.disposition,
+        executionPolicy: turn.executionPolicy,
+      },
+    })
+  } else if (turn.disposition === 'clarification_required' && turn.clarification) {
+    actions.push({
+      type: 'assistant_clarification',
+      label: turn.clarification.prompt,
+      requiresConfirmation: false,
+      payload: {
+        ...turn.clarification,
+        originalMessage: chatHistory.value.slice().reverse().find(item => item.role === 'user')?.text ?? '',
+      },
+    })
+  }
+
+  return {
+    reply: turn.assistantMessage,
+    metrics: answer?.metrics ?? [],
+    tables: answer?.tables ?? [],
+    charts: answer?.charts ?? [],
+    actions,
+    files: answer?.files ?? [],
+    sources: turn.sourceRefs?.length ? turn.sourceRefs : (answer?.sources ?? []),
+    sourceRefs: answer?.sourceRefs ?? null,
+    confidence: turn.confidence,
+    confidenceReason: answer?.confidenceReason ?? null,
+    freshness: answer?.freshness ?? null,
+    usedAi: answer?.usedAi ?? false,
+    intent: turn.intent,
+    latencyMs: answer?.latencyMs ?? 0,
+    model: answer?.model ?? null,
+    processEvents: turn.processEvents ?? null,
+    capabilities: turn.capabilities ?? null,
+    sourceDisclosures: turn.sourceDisclosures ?? null,
+    researchPlan: turn.researchPlan ?? null,
+    goalAnalysis: turn.goalAnalysis ?? null,
+    workPlan: turn.workPlan ?? null,
+  }
+}
+
+function mapStoredAssistantTurn(turn: AiAssistantStoredTurn): ChatEntry[] {
+  const entries: ChatEntry[] = [{ role: 'user', text: turn.userMessage }]
+  if (turn.response) {
+    const response = mapAssistantTurn({
+      ...turn.response,
+      processEvents: turn.processEvents?.length ? turn.processEvents : turn.response.processEvents
+    })
+    entries.push({
+      role: 'assistant',
+      text: response.reply,
+      metrics: response.metrics,
+      tables: response.tables,
+      charts: response.charts,
+      actions: response.actions,
+      files: response.files,
+      sources: response.sources,
+      sourceRefs: response.sourceRefs,
+      confidence: response.confidence,
+      confidenceReason: response.confidenceReason,
+      latencyMs: response.latencyMs,
+      usedAi: response.usedAi,
+      model: response.model,
+      processEvents: response.processEvents,
+      capabilities: response.capabilities,
+      sourceDisclosures: response.sourceDisclosures,
+      researchPlan: response.researchPlan,
+      goalAnalysis: response.goalAnalysis,
+      workPlan: response.workPlan
+    })
+  } else {
+    entries.push({
+      role: 'assistant',
+      text: turn.status === 'failed'
+        ? 'Lượt này chưa hoàn tất. Yêu cầu đã được lưu trên máy chủ; bạn có thể kiểm tra và thử lại.'
+        : 'Yêu cầu đang được xử lý trên máy chủ. Tải lại cuộc trò chuyện để cập nhật trạng thái.',
+      processEvents: turn.processEvents
+    })
+  }
+  return entries
+}
+
+function applyAssistantSession(session: AiAssistantSession) {
+  assistantSessionId.value = session.sessionId
+  assistantSessionVersion.value = session.version
+  const restored = (session.turns ?? [])
+    .slice()
+    .sort((left, right) => left.sequence - right.sequence)
+    .flatMap(mapStoredAssistantTurn)
+  chatHistory.value = restored.length ? [buildWelcomeMessage(), ...restored] : [buildWelcomeMessage()]
+}
+
+async function createAssistantSession() {
+  const session = await apiJson<AiAssistantSession>('/api/ai/assistant/sessions', {
+    method: 'POST',
+    body: JSON.stringify({
+      context: {
+        route: window.location.pathname,
+        module: 'workspace',
+        projectId: null,
+        entityType: null,
+        entityId: null,
+        selectionIds: []
+      },
+      title: 'Cuộc trò chuyện Trợ lý AI'
+    })
+  })
+  applyAssistantSession(session)
+  return session
+}
+
+async function restoreAssistantSession() {
+  if (!props.isDrawer || assistantSessionLoading.value) return
+  assistantSessionLoading.value = true
+  try {
+    const session = await apiJson<AiAssistantSession | null>('/api/ai/assistant/sessions/recent')
+    if (session) applyAssistantSession(session)
+    else await createAssistantSession()
+  } catch (error) {
+    showError(error instanceof Error
+      ? `Không thể khôi phục cuộc trò chuyện: ${error.message}`
+      : 'Không thể khôi phục cuộc trò chuyện từ máy chủ.')
+  } finally {
+    assistantSessionLoadAttempted.value = true
+    assistantSessionLoading.value = false
+  }
+}
+
+async function ensureAssistantSession() {
+  if (assistantSessionId.value) return
+  if (!assistantSessionLoadAttempted.value) await restoreAssistantSession()
+  if (!assistantSessionId.value) await createAssistantSession()
+}
+
 function chartComponent(type: string) {
   if (type === 'line') return Line
   if (type === 'bar') return Bar
@@ -744,6 +1156,10 @@ async function scrollToBottom() {
 }
 
 watch(selectedTarget, () => {
+  if (keepConversationForNextTargetChange) {
+    keepConversationForNextTargetChange = false
+    return
+  }
   chatHistory.value = [buildWelcomeMessage()]
   selectedDrawerMessage.value = null
   scrollToBottom()
@@ -821,49 +1237,12 @@ function getFallbackChatAnswer(prompt: string) {
   return `Chào bạn! Mình là Erumi. Hiện tại mô hình AI cục bộ đang ở trạng thái ngoại tuyến.\n\nTuy nhiên, bạn có thể chọn các dự án cụ thể trong menu ngữ cảnh và dùng nút **+** để mở các câu hỏi gợi ý hay công cụ phân tích để mình trích xuất báo cáo thông minh trực tiếp từ dữ liệu hệ thống nhé!`
 }
 
-async function handleDraftAction(action: ErumiAction, confirmAction: 'execute_action' | 'reject') {
-  if (!action.payload?.draftId) return
-  action.processing = true
-  action.confirmAction = confirmAction
-  try {
-    const approvalUrl = action.payload.runId
-      ? `/api/ai/agent-runs/${action.payload.runId}/approve`
-      : `/api/ai/drafts/${action.payload.draftId}/confirm`
-    const result = await apiJson<any>(approvalUrl, {
-      method: 'POST',
-      body: JSON.stringify({
-        ...(action.payload.runId ? { action: confirmAction } : { confirmAction: confirmAction }),
-        editedPayloadJson: null,
-        confirmationNote: confirmAction === 'reject' ? 'Rejected from chat UI' : 'Confirmed from chat UI'
-      })
-    })
-    if (confirmAction === 'execute_action') {
-      action.confirmed = true
-      chatHistory.value.push({
-        role: 'assistant',
-        text: `✅ Đã thực thi thành công hành động nháp. Số lượng công việc tạo mới: ${result.createdTaskCount || 0}.`
-      })
-    } else {
-      action.rejected = true
-      chatHistory.value.push({
-        role: 'assistant',
-        text: `❌ Đã hủy bỏ hành động nháp thành công.`
-      })
-    }
-  } catch (err: any) {
-    console.error(err)
-    showError(`Lỗi thực hiện hành động: ${err.message || err}`)
-  } finally {
-    action.processing = false
-  }
-}
-
-async function submitChat(explicitText?: string, _action?: string) {
+async function submitChat(explicitText?: string, _action?: string, displayText?: string) {
   const prompt = (explicitText ?? chatInput.value).trim()
   const filesToSend = selectedFiles.value.slice()
   if ((!prompt && filesToSend.length === 0) || isChatting.value) return
 
-  const userText = prompt || 'Phân tích file đã đính kèm'
+  const userText = displayText || prompt || 'Phân tích file đã đính kèm'
   rememberConversationPrompt(userText, filesToSend.length)
   chatHistory.value.push({
     role: 'user',
@@ -881,6 +1260,7 @@ async function submitChat(explicitText?: string, _action?: string) {
   await scrollToBottom()
 
   try {
+    if (props.isDrawer) await ensureAssistantSession()
     chatHistory.value.push({ role: 'assistant', text: '' })
     const lastIdx = chatHistory.value.length - 1
     const attachedFileContexts = filesToSend.length ? await parseAttachedFiles(filesToSend) : []
@@ -889,38 +1269,52 @@ async function submitChat(explicitText?: string, _action?: string) {
       .slice(-6)
       .map(h => ({ role: h.role, content: h.text }))
 
-    const fastReply = await apiJson<ErumiChatResponse>('/api/ai/chat/fast', {
-      method: 'POST',
-      body: JSON.stringify({
-        message: userText,
-        projectId: selectedTarget.value === 'workspace' ? null : selectedTarget.value,
-        mode: 'agent',
-        providerHint: selectedProviderHint.value,
-        history: historyToSend,
-        files: attachedFileContexts
-      })
-    })
-
-    let replyActions = fastReply.actions || []
-    if (replyActions.length === 0 && fastReply.reply) {
-      const lowerReply = fastReply.reply.toLowerCase()
-      if (lowerReply.includes('trễ hạn') || lowerReply.includes('quá hạn') || lowerReply.includes('chậm tiến độ')) {
-        replyActions = [
-          { type: 'quick_action', label: 'Giao việc cho tôi' },
-          { type: 'quick_action', label: 'Gia hạn thêm 3 ngày' }
-        ]
-      } else if (lowerReply.includes('chấm công') || lowerReply.includes('timesheet') || lowerReply.includes('worklog')) {
-        replyActions = [
-          { type: 'quick_action', label: 'Đăng ký chấm công' },
-          { type: 'quick_action', label: 'Báo cáo hiệu suất' }
-        ]
-      } else if (lowerReply.includes('công việc') || lowerReply.includes('nhiệm vụ') || lowerReply.includes('task')) {
-        replyActions = [
-          { type: 'quick_action', label: 'Tạo công việc mới' },
-          { type: 'quick_action', label: 'Xem danh sách công việc' }
-        ]
-      }
+    const projectId = selectedTarget.value === 'workspace' ? null : selectedTarget.value
+    let fastReply: ErumiChatResponse
+    if (props.isDrawer) {
+      const clientTurnId = crypto.randomUUID()
+      const turn = await apiJson<AiAssistantTurnResponse>('/api/ai/assistant/turns', {
+          method: 'POST',
+          headers: {
+            'Idempotency-Key': `assistant:${assistantSessionId.value}:${clientTurnId}`,
+            'X-Request-Id': clientTurnId
+          },
+          body: JSON.stringify({
+            message: prompt || userText,
+            context: {
+              route: window.location.pathname,
+              module: projectId ? 'project' : 'workspace',
+              projectId,
+              entityType: projectId ? 'project' : null,
+              entityId: projectId,
+              selectionIds: [],
+            },
+            mode: 'agent',
+            language: 'vi',
+            providerHint: selectedProviderHint.value,
+            files: attachedFileContexts,
+            sessionId: assistantSessionId.value,
+            expectedVersion: assistantSessionVersion.value,
+            clientTurnId,
+          })
+        })
+      assistantSessionVersion.value = turn.sessionVersion ?? assistantSessionVersion.value
+      fastReply = mapAssistantTurn(turn)
+    } else {
+      fastReply = await apiJson<ErumiChatResponse>('/api/ai/chat/fast', {
+          method: 'POST',
+          body: JSON.stringify({
+            message: prompt || userText,
+            projectId,
+            mode: 'agent',
+            providerHint: selectedProviderHint.value,
+            history: historyToSend,
+            files: attachedFileContexts
+          })
+        })
     }
+
+    const replyActions = fastReply.actions || []
 
     chatHistory.value[lastIdx] = {
       role: 'assistant',
@@ -937,9 +1331,14 @@ async function submitChat(explicitText?: string, _action?: string) {
       freshness: fastReply.freshness,
       latencyMs: fastReply.latencyMs,
       usedAi: fastReply.usedAi,
-      model: fastReply.model
+      model: fastReply.model,
+      processEvents: fastReply.processEvents,
+      researchPlan: fastReply.researchPlan
     }
     updateLatestConversationSnippet(fastReply.reply)
+
+    const composerAction = replyActions.find(action => action.type === 'compose_task_plan')
+    if (composerAction) openComposerAction(composerAction)
   } catch (e) {
     const lastIdx = chatHistory.value.length - 1
     const detail = e instanceof Error ? e.message : 'Nhà cung cấp AI không phản hồi.'
@@ -952,6 +1351,7 @@ async function submitChat(explicitText?: string, _action?: string) {
     }
     updateLatestConversationSnippet(errorText)
     showError('Model AI đã chọn chưa sẵn sàng.')
+    if (props.isDrawer) await restoreAssistantSession()
   } finally {
     isChatting.value = false
     await scrollToBottom()
@@ -979,9 +1379,10 @@ function exportAsMarkdown(projectName: string, text: string) {
   showSuccess('Đã xuất báo cáo thành công!')
 }
 
-onMounted(() => {
+onMounted(async () => {
   syncViewportFlag()
   loadConversationHistory()
+  await restoreAssistantSession()
   if (selectedProject.value) {
     selectedTarget.value = selectedProject.value.id
   }
@@ -1019,7 +1420,7 @@ onBeforeUnmount(() => {
         <div class="empty-avatar">
           <ChatbotAvatar size="medium" />
         </div>
-        <h1 class="empty-heading">Bạn muốn phân tích điều gì?</h1>
+        <h1 class="empty-heading">Bạn muốn Qaly giúp gì?</h1>
 
         <!-- Composer -->
         <div class="composer">
@@ -1043,7 +1444,7 @@ onBeforeUnmount(() => {
               class="composer-input"
               :placeholder="composerPlaceholder"
               :disabled="isChatting"
-              aria-label="Nhập câu hỏi cho Erumi"
+              aria-label="Nhập yêu cầu cho Trợ lý AI"
               rows="1"
               @input="autoResize"
               @keydown="handleKeydown"
@@ -1096,7 +1497,7 @@ onBeforeUnmount(() => {
                 <AiModelSelector
                   v-model="selectedAiModel"
                   :options="AI_MODEL_OPTIONS"
-                  :compact="isCompactViewport"
+                  :compact="isCompactViewport || isDrawer"
                   @open-settings="openCockpitDrawer('model')"
                 />
               </div>
@@ -1151,7 +1552,211 @@ onBeforeUnmount(() => {
             <div class="msg-content">
               <template v-if="msg.role === 'assistant'">
                 <div class="assistant-body">
+                  <ol v-if="msg.processEvents?.length" class="assistant-process" aria-label="Các bước Trợ lý AI đã thực hiện">
+                    <li
+                      v-for="event in msg.processEvents"
+                      :key="`${event.sequence}-${event.stage}`"
+                      :class="`status-${event.status}`"
+                    >
+                      <span class="assistant-process-dot" aria-hidden="true"></span>
+                      <span>{{ event.publicLabel }}</span>
+                      <small v-if="typeof event.durationMs === 'number' && event.durationMs > 0">
+                        {{ Math.max(1, Math.round(event.durationMs / 1000)) }}s
+                      </small>
+                    </li>
+                  </ol>
+                  <details
+                    v-if="msg.capabilities?.length || msg.sourceDisclosures?.length"
+                    class="assistant-context-disclosure"
+                  >
+                    <summary>
+                      Ngữ cảnh đã kiểm tra · {{ msg.sourceDisclosures?.filter(source => source.status === 'read').length || 0 }} nguồn
+                    </summary>
+                    <div v-if="msg.capabilities?.length" class="assistant-capability-list" aria-label="Khả năng AI được cấp quyền">
+                      <span v-for="capability in msg.capabilities" :key="capability.capabilityId">
+                        {{ capability.capabilityId }}
+                      </span>
+                    </div>
+                    <ul v-if="msg.sourceDisclosures?.length" class="assistant-source-list">
+                      <li
+                        v-for="source in msg.sourceDisclosures"
+                        :key="`${source.sourceId}-${source.status}`"
+                        :class="`source-${source.status}`"
+                      >
+                        <strong>{{ source.sourceId }}</strong>
+                        <span>{{ source.label }}</span>
+                      </li>
+                    </ul>
+                  </details>
+                  <article
+                    v-if="msg.goalAnalysis && msg.workPlan"
+                    class="assistant-work-plan-card"
+                    data-testid="assistant-work-plan"
+                  >
+                    <header class="assistant-work-plan-header">
+                      <div>
+                        <span>AI hiểu yêu cầu</span>
+                        <h3>{{ msg.goalAnalysis.objective }}</h3>
+                        <p>{{ msg.goalAnalysis.userJob }}</p>
+                      </div>
+                      <strong>{{ Math.round(msg.goalAnalysis.confidence * 100) }}%</strong>
+                    </header>
+                    <div class="assistant-work-plan-meta">
+                      <span>Phạm vi: {{ msg.workPlan.scope.label }}</span>
+                      <span :class="`disposition-${msg.goalAnalysis.disposition}`">{{ msg.goalAnalysis.disposition }}</span>
+                      <span v-if="msg.goalAnalysis.usedFallback">Fallback giới hạn</span>
+                      <span v-else>{{ msg.goalAnalysis.actualProvider }} / {{ msg.goalAnalysis.actualModel }}</span>
+                    </div>
+                    <section v-if="msg.goalAnalysis.selectedSkills.length" class="assistant-selected-skill">
+                      <span>Skill được chọn</span>
+                      <strong>{{ msg.goalAnalysis.selectedSkills[0].title }}</strong>
+                      <code>{{ msg.goalAnalysis.selectedSkills[0].skillId }}</code>
+                      <p>{{ msg.goalAnalysis.selectedSkills[0].fitReason }}</p>
+                    </section>
+                    <section v-else-if="msg.goalAnalysis.missingSkills.length" class="assistant-missing-skill">
+                      <span>Skill còn thiếu</span>
+                      <strong>{{ msg.goalAnalysis.missingSkills[0].title }}</strong>
+                      <code>{{ msg.goalAnalysis.missingSkills[0].skillId }}</code>
+                      <p>{{ msg.goalAnalysis.missingSkills[0].reason }}</p>
+                    </section>
+                    <ol class="assistant-work-plan-steps" aria-label="Kế hoạch thực hiện của Trợ lý AI">
+                      <li v-for="step in msg.workPlan.steps" :key="step.stepId" :class="`step-${step.state}`">
+                        <span>{{ step.stepId }}</span>
+                        <div>
+                          <strong>{{ step.publicLabel }}</strong>
+                          <small v-if="step.verificationIds.length">Kiểm tra: {{ step.verificationIds.join(', ') }}</small>
+                        </div>
+                        <em>{{ step.state }}</em>
+                      </li>
+                    </ol>
+                    <details v-if="msg.goalAnalysis.warnings.length" class="assistant-work-plan-warnings">
+                      <summary>Giới hạn và cảnh báo ({{ msg.goalAnalysis.warnings.length }})</summary>
+                      <ul><li v-for="warning in msg.goalAnalysis.warnings" :key="warning">{{ warning }}</li></ul>
+                    </details>
+                  </article>
                   <div v-if="msg.text" class="markdown-body" v-html="renderMarkdown(msg.text)"></div>
+
+                  <article
+                    v-if="msg.researchPlan"
+                    class="research-plan-card"
+                    data-testid="assistant-research-plan"
+                  >
+                    <header class="research-plan-header">
+                      <div>
+                        <span class="research-plan-kicker">Research Plan · có kiểm chứng</span>
+                        <h3>{{ msg.researchPlan.objective }}</h3>
+                        <p>{{ msg.researchPlan.scope.label }}</p>
+                      </div>
+                      <span class="research-plan-model">
+                        {{ msg.researchPlan.actualProvider }} / {{ msg.researchPlan.actualModel }}
+                      </span>
+                    </header>
+
+                    <section class="research-plan-section">
+                      <h4>Facts từ dữ liệu được cấp quyền</h4>
+                      <p v-if="!msg.researchPlan.findings.length" class="research-plan-empty">
+                        Chưa đủ dữ liệu để khẳng định fact; xem mục Unknowns bên dưới.
+                      </p>
+                      <ol v-else class="research-finding-list">
+                        <li v-for="finding in msg.researchPlan.findings" :key="finding.findingId">
+                          <div class="research-row-title">
+                            <span :class="`research-severity severity-${finding.severity}`">{{ finding.severity }}</span>
+                            <strong>{{ Math.round(finding.confidence * 100) }}%</strong>
+                          </div>
+                          <p>{{ finding.statement }}</p>
+                          <div class="research-source-list">
+                            <code
+                              v-for="sourceRef in finding.sourceRefs"
+                              :key="sourceRef"
+                              :title="sourceRef"
+                            >{{ compactSourceRef(sourceRef) }}</code>
+                          </div>
+                        </li>
+                      </ol>
+                    </section>
+
+                    <div class="research-plan-columns">
+                      <section class="research-plan-section">
+                        <h4>Unknowns cần làm rõ</h4>
+                        <p v-if="!msg.researchPlan.unknowns.length" class="research-plan-empty">Không có unknown được ghi nhận.</p>
+                        <ul v-else class="research-plain-list">
+                          <li v-for="unknown in msg.researchPlan.unknowns" :key="unknown.unknownId">
+                            <span v-if="unknown.blocking" class="research-blocking">Chặn</span>
+                            {{ unknown.question }}
+                          </li>
+                        </ul>
+                      </section>
+                      <section class="research-plan-section">
+                        <h4>Assumptions — không phải fact</h4>
+                        <p v-if="!msg.researchPlan.assumptions.length" class="research-plan-empty">Không dùng giả định bổ sung.</p>
+                        <ul v-else class="research-plain-list">
+                          <li v-for="assumption in msg.researchPlan.assumptions" :key="assumption">{{ assumption }}</li>
+                        </ul>
+                      </section>
+                    </div>
+
+                    <section class="research-plan-section">
+                      <h4>Phương án và trade-off</h4>
+                      <div class="research-option-grid">
+                        <article
+                          v-for="option in msg.researchPlan.options"
+                          :key="option.optionId"
+                          class="research-option"
+                          :class="{ recommended: option.optionId === msg.researchPlan.recommendedOptionId }"
+                        >
+                          <span v-if="option.optionId === msg.researchPlan.recommendedOptionId">Khuyến nghị</span>
+                          <strong>{{ option.title }}</strong>
+                          <p>{{ option.outcome }}</p>
+                          <ul>
+                            <li v-for="tradeOff in option.tradeOffs" :key="tradeOff">{{ tradeOff }}</li>
+                          </ul>
+                          <small>Effort: {{ option.estimatedEffort }} · Risk: {{ option.risk }}</small>
+                        </article>
+                      </div>
+                      <p class="research-rationale">{{ msg.researchPlan.recommendationRationale }}</p>
+                    </section>
+
+                    <section v-if="msg.researchPlan.proposedActions.length" class="research-plan-section">
+                      <h4>Action graph — chưa tự động thực thi</h4>
+                      <div class="research-action-list">
+                        <article
+                          v-for="action in msg.researchPlan.proposedActions"
+                          :key="action.actionId"
+                          class="research-action"
+                          :data-testid="`research-action-${action.actionId}`"
+                        >
+                          <div>
+                            <strong>{{ action.title }}</strong>
+                            <code>{{ action.capabilityId }}</code>
+                            <small v-if="action.dependencyIds.length">Sau: {{ action.dependencyIds.join(', ') }}</small>
+                          </div>
+                          <button
+                            v-if="action.executionEligible && action.capabilityId === 'task.create.v1'"
+                            type="button"
+                            class="erumi-draft-btn-confirm"
+                            data-testid="research-action-open-draft"
+                            @click="openResearchAction(action)"
+                          >
+                            Mở bản nháp task
+                          </button>
+                          <span v-else class="research-action-unavailable">Chưa thể áp dụng tự động</span>
+                        </article>
+                      </div>
+                    </section>
+
+                    <details v-if="msg.researchPlan.warnings.length" class="research-warnings">
+                      <summary>Cảnh báo và giới hạn ({{ msg.researchPlan.warnings.length }})</summary>
+                      <ul>
+                        <li v-for="warning in msg.researchPlan.warnings" :key="warning">{{ warning }}</li>
+                      </ul>
+                    </details>
+                    <details v-if="msg.researchPlan.privacyNotes.length" class="research-warnings">
+                      <summary>Privacy & freshness · {{ new Date(msg.researchPlan.freshnessAt).toLocaleString('vi-VN') }}</summary>
+                      <ul>
+                        <li v-for="note in msg.researchPlan.privacyNotes" :key="note">{{ note }}</li>
+                      </ul>
+                    </details>
+                  </article>
 
                   <div v-if="msg.metrics?.length" class="erumi-metrics-grid">
                     <article v-for="metric in msg.metrics" :key="metric.label" class="erumi-metric" :class="`tone-${metric.tone || 'neutral'}`">
@@ -1213,9 +1818,33 @@ onBeforeUnmount(() => {
 
                   <div v-if="msg.actions?.length" class="erumi-action-list">
                     <template v-for="action in msg.actions" :key="action.type">
-                      <div v-if="action.type === 'draft_change'" class="erumi-draft-card">
+                      <div v-if="action.type === 'assistant_clarification'" class="erumi-draft-card clarification-card">
+                        <strong>{{ action.payload?.prompt || action.label }}</strong>
+                        <p class="erumi-draft-text">Chọn một dự án để Trợ lý AI tiếp tục. Việc chọn này chưa thay đổi dữ liệu.</p>
+                        <div class="clarification-choices">
+                          <button
+                            v-for="choice in action.payload?.choices || []"
+                            :key="choice.id"
+                            type="button"
+                            class="clarification-choice"
+                            @click="answerProjectClarification(choice, action)"
+                          >
+                            <span>{{ choice.label }}</span>
+                            <small v-if="choice.description">{{ choice.description }}</small>
+                          </button>
+                        </div>
+                      </div>
+                      <div v-else-if="action.type === 'compose_task_plan'" class="erumi-draft-card">
+                        <p class="erumi-draft-text">Yêu cầu đã được định tuyến sang Task Action Composer. AI chỉ soạn option; bạn vẫn kiểm tra và xác nhận trước khi tạo task.</p>
+                        <div class="erumi-draft-buttons">
+                          <button type="button" class="erumi-draft-btn-confirm" @click="openComposerAction(action)">
+                            Mở phương án task
+                          </button>
+                        </div>
+                      </div>
+                      <div v-else-if="action.type === 'draft_change'" class="erumi-draft-card">
                         <p class="erumi-draft-text">
-                          {{ action.payload?.draftId && isDrawer ? 'Hành động ghi dữ liệu cần xác nhận của bạn để thực thi:' : 'Erumi đã chuẩn bị gợi ý hành động, nhưng pass này không thực thi hành động ghi dữ liệu trực tiếp trên /analytics.' }}
+                          Luồng nháp legacy chỉ được giữ để đọc lịch sử. Hãy tạo yêu cầu mới để dùng preview, chỉnh sửa và xác nhận theo contract hiện tại.
                         </p>
                         <ol v-if="action.payload?.events?.length" class="erumi-run-progress" aria-label="Tiến trình agent">
                           <li v-for="event in action.payload.events" :key="`${event.type}-${event.at}`">
@@ -1223,29 +1852,7 @@ onBeforeUnmount(() => {
                             <span>{{ event.message }}</span>
                           </li>
                         </ol>
-                        <div v-if="action.payload?.draftId && isDrawer" class="erumi-draft-buttons">
-                          <button
-                            type="button"
-                            class="erumi-draft-btn-confirm"
-                            :disabled="action.processing || action.confirmed || action.rejected"
-                            @click="handleDraftAction(action, 'execute_action')"
-                          >
-                            <span v-if="isExecutingDraftAction(action)">Đang xử lý...</span>
-                            <span v-else-if="action.confirmed">Đã xác nhận</span>
-                            <span v-else>Xác nhận</span>
-                          </button>
-                          <button
-                            type="button"
-                            class="erumi-draft-btn-reject"
-                            :disabled="action.processing || action.confirmed || action.rejected"
-                            @click="handleDraftAction(action, 'reject')"
-                          >
-                            <span v-if="isRejectingDraftAction(action)">Đang hủy...</span>
-                            <span v-else-if="action.rejected">Đã hủy</span>
-                            <span v-else>Hủy</span>
-                          </button>
-                        </div>
-                        <p v-else class="erumi-draft-note">Bạn có thể hỏi Erumi tạo lại bản nháp chi tiết hơn hoặc copy nội dung này để xử lý thủ công.</p>
+                        <p class="erumi-draft-note">Không thể xác nhận trực tiếp từ card cũ vì thiếu row version, editable payload và execution receipt.</p>
                       </div>
                       <button
                         v-else
@@ -1338,7 +1945,7 @@ onBeforeUnmount(() => {
               class="composer-input"
               :placeholder="composerPlaceholder"
               :disabled="isChatting"
-              aria-label="Nhập câu hỏi tiếp theo"
+              aria-label="Nhập yêu cầu tiếp theo cho Trợ lý AI"
               rows="1"
               @input="autoResize"
               @keydown="handleKeydown"
@@ -1391,7 +1998,7 @@ onBeforeUnmount(() => {
                 <AiModelSelector
                   v-model="selectedAiModel"
                   :options="AI_MODEL_OPTIONS"
-                  :compact="isCompactViewport"
+                  :compact="isCompactViewport || isDrawer"
                   @open-settings="openCockpitDrawer('model')"
                 />
               </div>
@@ -1531,22 +2138,27 @@ onBeforeUnmount(() => {
 .chat-empty {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   display: flex;
 }
 
 .empty-inner {
-  margin: auto;
+  flex: 1 1 auto;
+  margin: 0 auto;
   width: 100%;
+  height: 100%;
   max-width: 680px;
+  min-height: 0;
   padding: 32px 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 20px;
+  overflow-y: auto;
 }
 
 .empty-avatar {
+  margin-top: auto;
   width: 64px;
   height: 64px;
   display: grid;
@@ -1569,13 +2181,23 @@ onBeforeUnmount(() => {
 }
 
 .empty-heading {
-  margin: 0;
+  margin: 0 0 auto;
   font-size: 26px;
   font-weight: 700;
   color: var(--text-strong);
   letter-spacing: -0.4px;
   line-height: 1.25;
   text-align: center;
+}
+
+.chat-empty .composer {
+  position: sticky;
+  z-index: 5;
+  bottom: 0;
+  flex: 0 0 auto;
+  margin-top: 24px;
+  padding-top: 12px;
+  background: linear-gradient(to bottom, transparent, var(--bg) 18px);
 }
 
 /* ============ ACTIVE STATE ============ */
@@ -1714,6 +2336,102 @@ onBeforeUnmount(() => {
   color: var(--text);
   font-size: 14px;
   line-height: 1.7;
+}
+
+.assistant-process {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 12px;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 88%, var(--primary) 12%);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.assistant-process li {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.assistant-process li.status-completed {
+  color: var(--text);
+}
+
+.assistant-process li.status-failed {
+  color: var(--danger, #dc2626);
+}
+
+.assistant-process-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.7;
+}
+
+.assistant-process li.status-running .assistant-process-dot {
+  animation: assistant-process-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes assistant-process-pulse {
+  50% { transform: scale(1.5); opacity: 0.35; }
+}
+
+.assistant-context-disclosure {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.assistant-context-disclosure summary {
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.assistant-capability-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.assistant-capability-list span {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.assistant-source-list {
+  display: grid;
+  gap: 7px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.assistant-source-list li {
+  display: grid;
+  grid-template-columns: minmax(110px, auto) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.assistant-source-list li.source-denied {
+  color: var(--danger, #dc2626);
+}
+
+.assistant-source-list li.source-skipped {
+  opacity: 0.78;
 }
 
 .assistant-meta {
@@ -2000,6 +2718,44 @@ onBeforeUnmount(() => {
   padding: 12px 16px;
   border-radius: 10px;
   width: 100%;
+}
+
+.clarification-card {
+  display: grid;
+  gap: 10px;
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--primary) 32%, var(--line));
+}
+
+.clarification-choices {
+  display: grid;
+  gap: 8px;
+}
+
+.clarification-choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  background: var(--panel);
+  text-align: left;
+  cursor: pointer;
+}
+
+.clarification-choice:hover,
+.clarification-choice:focus-visible {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 7%, var(--panel));
+  outline: none;
+}
+
+.clarification-choice small {
+  color: var(--muted);
 }
 
 .erumi-draft-text {
@@ -2613,6 +3369,252 @@ onBeforeUnmount(() => {
 
 .is-drawer-mode .msg-assistant .msg-content {
   max-width: calc(100% - 42px);
+}
+
+.assistant-work-plan-card {
+  margin: 12px 0 16px;
+  padding: 16px;
+  border: 1px solid #b8c8e8;
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(239, 246, 255, 0.96), rgba(248, 250, 252, 0.98));
+  color: #17233d;
+}
+
+.assistant-work-plan-header,
+.assistant-work-plan-meta,
+.assistant-selected-skill,
+.assistant-missing-skill,
+.assistant-work-plan-steps li {
+  display: flex;
+  gap: 10px;
+}
+
+.assistant-work-plan-header { justify-content: space-between; align-items: flex-start; }
+.assistant-work-plan-header span,
+.assistant-selected-skill > span,
+.assistant-missing-skill > span { color: #2563eb; font-size: 12px; font-weight: 800; text-transform: uppercase; }
+.assistant-work-plan-header h3 { margin: 3px 0; font-size: 16px; }
+.assistant-work-plan-header p,
+.assistant-selected-skill p,
+.assistant-missing-skill p { margin: 0; color: #596780; font-size: 13px; }
+.assistant-work-plan-meta { flex-wrap: wrap; margin: 12px 0; }
+.assistant-work-plan-meta span { padding: 4px 8px; border-radius: 999px; background: #dfeafe; font-size: 11px; }
+.assistant-selected-skill,
+.assistant-missing-skill { flex-wrap: wrap; align-items: center; padding: 10px; border-radius: 10px; background: rgba(255,255,255,.72); }
+.assistant-selected-skill p,
+.assistant-missing-skill p { flex-basis: 100%; }
+.assistant-missing-skill { border-left: 3px solid #f59e0b; }
+.assistant-work-plan-steps { margin: 12px 0 0; padding: 0; list-style: none; display: grid; gap: 7px; }
+.assistant-work-plan-steps li { align-items: center; padding: 8px; border-radius: 9px; background: rgba(255,255,255,.72); }
+.assistant-work-plan-steps li > span { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; background: #2563eb; color: white; font-size: 11px; }
+.assistant-work-plan-steps li > div { display: grid; flex: 1; }
+.assistant-work-plan-steps small { color: #6b7890; }
+.assistant-work-plan-steps em { font-size: 11px; font-style: normal; color: #50617d; }
+.assistant-work-plan-warnings { margin-top: 10px; font-size: 12px; color: #7c4a03; }
+
+.research-plan-card {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--line));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--panel) 94%, var(--primary) 6%);
+}
+
+.research-plan-header,
+.research-row-title,
+.research-action {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.research-plan-header h3,
+.research-plan-section h4 {
+  margin: 0;
+  color: var(--text-strong);
+}
+
+.research-plan-header h3 {
+  margin-top: 4px;
+  font-size: 17px;
+}
+
+.research-plan-header p,
+.research-plan-section p,
+.research-option p {
+  margin: 5px 0 0;
+}
+
+.research-plan-kicker,
+.research-plan-model,
+.research-severity,
+.research-blocking,
+.research-action-unavailable {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.research-plan-kicker {
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.research-plan-model {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  background: var(--panel-soft);
+  color: var(--muted);
+}
+
+.research-plan-columns,
+.research-option-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.research-plan-section {
+  display: grid;
+  gap: 9px;
+}
+
+.research-plan-section h4 {
+  font-size: 13px;
+}
+
+.research-finding-list,
+.research-plain-list,
+.research-option ul,
+.research-warnings ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.research-finding-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+}
+
+.research-finding-list > li,
+.research-plan-columns > section,
+.research-option,
+.research-action {
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.research-severity {
+  padding: 3px 7px;
+  text-transform: uppercase;
+  background: var(--panel-soft);
+  color: var(--muted);
+}
+
+.research-severity.severity-high,
+.research-severity.severity-critical {
+  background: color-mix(in srgb, var(--danger, #dc2626) 12%, transparent);
+  color: var(--danger, #dc2626);
+}
+
+.research-severity.severity-medium {
+  background: color-mix(in srgb, var(--warning, #d97706) 14%, transparent);
+  color: var(--warning-dark, #92400e);
+}
+
+.research-source-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.research-source-list code,
+.research-action code {
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.research-blocking {
+  margin-right: 4px;
+  padding: 2px 6px;
+  background: color-mix(in srgb, var(--danger, #dc2626) 12%, transparent);
+  color: var(--danger, #dc2626);
+}
+
+.research-option {
+  display: grid;
+  gap: 6px;
+}
+
+.research-option.recommended {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--line));
+  box-shadow: inset 3px 0 var(--primary);
+}
+
+.research-option > span {
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.research-option small,
+.research-action small,
+.research-plan-empty {
+  color: var(--muted);
+}
+
+.research-rationale {
+  padding: 10px;
+  border-left: 3px solid var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.research-action-list {
+  display: grid;
+  gap: 8px;
+}
+
+.research-action > div {
+  display: grid;
+  gap: 5px;
+}
+
+.research-action-unavailable {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  background: var(--panel-soft);
+  color: var(--muted);
+}
+
+.research-warnings {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 820px) {
+  .research-plan-columns,
+  .research-option-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .research-plan-header,
+  .research-action {
+    flex-direction: column;
+  }
 }
 
 /* Dark-mode metric tone tweaks */

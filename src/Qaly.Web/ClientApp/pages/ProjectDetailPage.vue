@@ -13,8 +13,8 @@ import ProjectGanttTab from '../components/ProjectGanttTab.vue'
 import WebhooksTab from '../components/WebhooksTab.vue'
 import ImportModal from '../components/import/ImportModal.vue'
 import ImportUndoBanner from '../components/import/ImportUndoBanner.vue'
-import AiPlannerModal from '../components/AiPlannerModal.vue'
 import TaskSkillsAiCard from '../components/TaskSkillsAiCard.vue'
+import TaskCompletionContributorsCard from '../components/TaskCompletionContributorsCard.vue'
 import { useDashboardContext } from '../composables/dashboard-context'
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
@@ -32,10 +32,12 @@ const {
   addMember,
   attachments,
   beginEditTask,
+  cancelTaskForm,
   closeProjectDetails,
   comments,
   createTask,
   createTaskOpen,
+  taskBeingEdited,
   currentUser,
   deleteAttachment,
   deleteComment,
@@ -106,10 +108,12 @@ watch(activeProjectTab, tab => {
   }
 })
 const showImportModal = ref(false)
-const showAiPlanner = ref(false)
 
-async function onPlannerCreated() {
-  await loadDashboard()
+function openAiActionComposer() {
+  if (!selectedProject.value) return
+  window.dispatchEvent(new CustomEvent('qaly:open-ai-action', {
+    detail: { projectId: selectedProject.value.id },
+  }))
 }
 const undoBannerData = ref<{ importSessionId: string; importedCount: number; failedCount: number; duplicateSkippedCount: number; createdAt: string } | null>(null)
 const assignmentInsight = ref<TaskAssignmentInsightDto | null>(null)
@@ -289,6 +293,12 @@ async function loadAssignmentInsight() {
   } finally {
     assignmentInsightLoading.value = false
   }
+}
+
+function prepareAssignmentDraft(userId: string) {
+  if (!selectedTask.value) return
+  beginEditTask(selectedTask.value)
+  newTaskAssigneeId.value = userId
 }
 
 function kanbanStatusFromElement(element: HTMLElement | null | undefined) {
@@ -517,7 +527,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
       </div>
 
       <div v-if="canShowCapacityTab" class="tab-pane reveal">
-        <ProjectWorkloadTab :project-id="selectedProject.id" />
+        <ProjectWorkloadTab :project-id="selectedProject.id" :tasks="filteredTaskList" />
       </div>
 
       <div v-if="activeProjectTab === 'tasks'">
@@ -554,28 +564,28 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                   <span>List</span>
                 </button>
               </div>
-              <button class="primary-button primary-button--compact" type="button" @click="createTaskOpen = !createTaskOpen">
+              <button class="primary-button primary-button--compact" type="button" @click="createTaskOpen ? cancelTaskForm() : (createTaskOpen = true)">
                 <Plus :size="16" />
                 <span>Nhiệm vụ</span>
               </button>
               <button class="import-btn-sm" type="button" @click="showImportModal = true">
                 <FileUp :size="14" /> Nhập file
               </button>
-              <button class="btn-ai-plan" type="button" @click="showAiPlanner = true">
-                <Sparkles :size="14" /> Lập kế hoạch AI
+              <button v-if="isProjectAdmin" class="btn-ai-plan" type="button" @click="openAiActionComposer">
+                <Sparkles :size="14" /> Soạn task với AI
               </button>
             </div>
           </div>
 
           <Teleport to="body">
-            <div v-if="createTaskOpen" class="task-modal-backdrop" @click.self="createTaskOpen = false">
+            <div v-if="createTaskOpen" class="task-modal-backdrop" @click.self="cancelTaskForm">
               <div class="task-modal">
                 <div class="task-modal-header">
                   <div class="task-modal-title">
                     <CheckSquare :size="20" />
-                    <h2>Tạo nhiệm vụ mới</h2>
+                    <h2>{{ taskBeingEdited ? 'Chỉnh sửa nhiệm vụ' : 'Tạo nhiệm vụ mới' }}</h2>
                   </div>
-                  <button type="button" class="icon-button" @click="createTaskOpen = false">
+                  <button type="button" class="icon-button" @click="cancelTaskForm">
                     <X :size="18" />
                   </button>
                 </div>
@@ -628,8 +638,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                   </div>
                   
                   <div class="task-modal-actions">
-                    <button class="btn btn--ghost" type="button" @click="createTaskOpen = false">Hủy</button>
-                    <button class="btn btn--primary" type="submit" :disabled="!newTaskTitle.trim()">Tạo nhiệm vụ</button>
+                    <button class="btn btn--ghost" type="button" @click="cancelTaskForm">Hủy</button>
+                    <button class="btn btn--primary" type="submit" :disabled="!newTaskTitle.trim()">{{ taskBeingEdited ? 'Lưu thay đổi' : 'Tạo nhiệm vụ' }}</button>
                   </div>
                 </form>
               </div>
@@ -810,19 +820,27 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
               :project-id="selectedProject.id"
               :organization-id="selectedProject.organizationId"
             />
+            <TaskCompletionContributorsCard
+              v-if="selectedTask"
+              :key="`contributors-${selectedTask.id}`"
+              :task-id="selectedTask.id"
+            />
 
-            <div class="assignment-insight glass-card">
+            <div class="assignment-insight glass-card" data-testid="evidence-assignee-recommendation">
               <div class="section-header section-header--space">
-                <strong>Gợi ý assignee AI</strong>
+                <strong>Gợi ý giao việc theo bằng chứng</strong>
                 <button class="ghost-pill" type="button" @click="loadAssignmentInsight">Tải gợi ý</button>
               </div>
-              <p v-if="assignmentInsightLoading" class="assignment-note">Đang phân tích workload, skill và lịch sử gán việc...</p>
+              <p v-if="assignmentInsightLoading" class="assignment-note">Đang đối soát kỹ năng đã xác nhận và workload được phép xem...</p>
               <p v-else-if="assignmentInsightError" class="assignment-note assignment-note--error">{{ assignmentInsightError }}</p>
               <template v-else-if="assignmentInsight">
                 <p class="assignment-note">{{ assignmentInsight.recommendationSummary }}</p>
                 <div class="assignment-recommendation">
                   <strong>{{ assignmentInsight.recommendedUserName || 'Chưa có đề xuất' }}</strong>
-                  <span>{{ assignmentInsight.recommendedUserId ? 'Người phù hợp nhất hiện tại' : 'Không đủ dữ liệu' }}</span>
+                  <span>{{ assignmentInsight.recommendedUserId ? `Scoring ${assignmentInsight.scoringVersion}` : 'Không đủ bằng chứng để tuyên bố skill-fit' }}</span>
+                </div>
+                <div v-if="assignmentInsight.requiredSkills?.length" class="assignment-required-skills">
+                  <span v-for="skill in assignmentInsight.requiredSkills" :key="skill">{{ skill }}</span>
                 </div>
                 <div class="assignment-candidates">
                   <article v-for="candidate in assignmentInsight.candidates.slice(0, 3)" :key="candidate.userId" class="assignment-candidate">
@@ -831,14 +849,31 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                       <span>{{ candidate.role }}</span>
                     </div>
                     <div class="assignment-candidate__stats">
-                      <span>Điểm: {{ candidate.totalScore }}</span>
+                      <span>Phủ skill: {{ candidate.skillCoveragePercent }}%</span>
+                      <span>Confidence: {{ Math.round(candidate.evidenceConfidence * 100) }}%</span>
                       <span>Đang mở: {{ candidate.activeTaskCount }}</span>
                       <span>Quá hạn: {{ candidate.overdueTaskCount }}</span>
                     </div>
+                    <p v-if="candidate.skillSignals.length" class="assignment-sources">Có bằng chứng: {{ candidate.skillSignals.join(', ') }} · {{ candidate.evidenceSourceCount }} task nguồn</p>
+                    <p v-else class="assignment-sources">Chưa có bằng chứng phù hợp; chỉ hiển thị workload.</p>
+                    <div v-if="candidate.evidenceSources?.length" class="assignment-source-links">
+                      <a v-for="source in candidate.evidenceSources.slice(0, 3)" :key="source.taskId" :href="source.taskUrl">
+                        {{ source.taskTitle }} · {{ source.matchedSkills.join(', ') }}
+                      </a>
+                    </div>
+                    <button
+                      v-if="assignmentInsight.evidenceState === 'ready' && candidate.skillCoveragePercent > 0"
+                      class="assignment-draft-button"
+                      type="button"
+                      @click="prepareAssignmentDraft(candidate.userId)"
+                    >
+                      Mở form giao việc
+                    </button>
                   </article>
                 </div>
+                <p class="assignment-note">Qaly không tự giao task. Nút trên chỉ điền assignee vào form hiện có để bạn sửa và xác nhận lưu.</p>
               </template>
-              <p v-else class="assignment-note">Nhấn "Tải gợi ý" để xem đề xuất dựa trên workload và lịch sử.</p>
+              <p v-else class="assignment-note">Nhấn “Tải gợi ý” để so khớp task skill với completion attribution đã xác nhận. Label và tin nhắn riêng không được dùng làm bằng chứng.</p>
             </div>
 
             <div class="time-tracking-section">
@@ -1043,14 +1078,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
         :project-members="selectedProject.members"
         @close="showImportModal = false"
         @imported="onImported"
-      />
-
-      <AiPlannerModal
-        v-if="showAiPlanner"
-        :project-id="selectedProject.id"
-        :project-members="selectedProject.members"
-        @close="showAiPlanner = false"
-        @created="onPlannerCreated"
       />
 
       <ImportUndoBanner
@@ -2066,6 +2093,54 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .assignment-candidate__stats {
   color: var(--muted);
   font-size: 12px;
+}
+
+.assignment-required-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+
+.assignment-required-skills span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(31, 128, 255, 0.12);
+  color: #60a5fa;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.assignment-sources {
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.assignment-source-links {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 10px;
+}
+
+.assignment-source-links a {
+  color: #38bdf8;
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.assignment-source-links a:hover {
+  text-decoration: underline;
+}
+
+.assignment-draft-button {
+  border: 1px solid rgba(16, 185, 129, 0.42);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+  font-weight: 750;
+  cursor: pointer;
 }
 
 .quick-edit-input {

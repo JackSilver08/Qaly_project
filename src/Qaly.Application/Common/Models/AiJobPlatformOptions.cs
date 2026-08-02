@@ -8,6 +8,12 @@ public sealed class AiJobPlatformOptions
     public bool WorkerEnabled { get; set; }
     public bool BudgetUiEnabled { get; set; }
     public bool TaskSkillSuggestionEnabled { get; set; }
+    public bool ActionComposerEnabled { get; set; }
+    public bool ActionComposerTaskCreateEnabled { get; set; }
+    public bool AssistantSessionEnabled { get; set; }
+    public bool AssistantContextRegistryEnabled { get; set; }
+    public bool AssistantResearchPlanEnabled { get; set; }
+    public bool AssistantGoalPlannerEnabled { get; set; }
     public int PollIntervalMilliseconds { get; set; } = 1000;
     public int LeaseSeconds { get; set; } = 120;
     public int HeartbeatSeconds { get; set; } = 30;

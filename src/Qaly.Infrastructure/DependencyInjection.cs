@@ -76,6 +76,12 @@ public static class DependencyInjection
             if (bool.TryParse(configuration["AI_JOB_V4_WORKER_ENABLED"], out var workerEnabled)) options.WorkerEnabled = workerEnabled;
             if (bool.TryParse(configuration["AI_BUDGET_UI_ENABLED"], out var budgetUiEnabled)) options.BudgetUiEnabled = budgetUiEnabled;
             if (bool.TryParse(configuration["AI_TASK_SKILL_SUGGESTION_ENABLED"], out var taskSkillSuggestionEnabled)) options.TaskSkillSuggestionEnabled = taskSkillSuggestionEnabled;
+            if (bool.TryParse(configuration["AI_ACTION_COMPOSER_ENABLED"], out var actionComposerEnabled)) options.ActionComposerEnabled = actionComposerEnabled;
+            if (bool.TryParse(configuration["AI_ACTION_COMPOSER_TASK_CREATE_ENABLED"], out var actionComposerTaskCreateEnabled)) options.ActionComposerTaskCreateEnabled = actionComposerTaskCreateEnabled;
+            if (bool.TryParse(configuration["AI_ASSISTANT_SESSION_ENABLED"], out var assistantSessionEnabled)) options.AssistantSessionEnabled = assistantSessionEnabled;
+            if (bool.TryParse(configuration["AI_ASSISTANT_CONTEXT_REGISTRY_ENABLED"], out var assistantContextRegistryEnabled)) options.AssistantContextRegistryEnabled = assistantContextRegistryEnabled;
+            if (bool.TryParse(configuration["AI_ASSISTANT_RESEARCH_PLAN_ENABLED"], out var assistantResearchPlanEnabled)) options.AssistantResearchPlanEnabled = assistantResearchPlanEnabled;
+            if (bool.TryParse(configuration["AI_ASSISTANT_GOAL_PLANNER_ENABLED"], out var assistantGoalPlannerEnabled)) options.AssistantGoalPlannerEnabled = assistantGoalPlannerEnabled;
         });
         services.Configure<PrivacyV4Options>(configuration.GetSection(PrivacyV4Options.SectionName));
         services.PostConfigure<PrivacyV4Options>(options =>
@@ -92,6 +98,10 @@ public static class DependencyInjection
         services.AddScoped<IPrivacyWorkProcessor, PrivacyWorkProcessor>();
         services.AddScoped<IPrivacyOperationsService, PrivacyOperationsService>();
         services.AddScoped<IAiSourceGuard, AiSourceGuard>();
+        services.AddScoped<IAiJobActivityService, AiJobActivityService>();
+        services.AddScoped<IAiActionPlanValidator, AiActionPlanValidator>();
+        services.AddScoped<IAiAssistantSessionService, AiAssistantSessionService>();
+        services.AddScoped<IAiAssistantContextRegistry, AiAssistantContextRegistry>();
         services.AddScoped<IAiJobDispatchStore, AiJobDispatchStore>();
         services.AddScoped<IAiJobProcessor, AiJobProcessor>();
         

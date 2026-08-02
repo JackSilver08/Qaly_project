@@ -80,6 +80,16 @@ const averageTeamCapacity = computed(() => {
   return Math.round(team.value.reduce((sum, member) => sum + member.capacityPercent, 0) / team.value.length)
 })
 const overloadedTeamCount = computed(() => team.value.filter(member => member.capacityPercent >= 90).length)
+const strategicOrganizationScopes = computed(() => {
+  const scopes = new Map<string, string>()
+  for (const project of projects.value) {
+    const id = project.organizationId || project.id
+    if (!scopes.has(id)) {
+      scopes.set(id, project.organizationId ? `Tổ chức ${id.slice(0, 8)}` : `Dự án ${project.name}`)
+    }
+  }
+  return Array.from(scopes, ([id, name]) => ({ id, name }))
+})
 
 function askDashboardAi(area: 'projects' | 'tasks' | 'team') {
   const prompts = {
@@ -617,7 +627,7 @@ const hoveredProject = computed(() => {
         </section>
 
         <!-- Strategic Performance Banner -->
-        <StrategicOverviewAI />
+        <StrategicOverviewAI :organization-scopes="strategicOrganizationScopes" />
 
       </div>
 

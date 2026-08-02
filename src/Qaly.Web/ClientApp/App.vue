@@ -104,6 +104,7 @@ const {
 const {
   createTaskOpen,
   taskBeingEdited,
+  cancelTaskForm,
   newTaskTitle,
   newTaskDescription,
   newTaskPriority,
@@ -187,6 +188,7 @@ const tabs = [
   { id: "stats", label: "Thống kê" },
   { id: "roadmap", label: "Lộ Trình Dự Án" },
   { id: "tasks", label: "Nhiệm vụ" },
+  { id: "capacity", label: "Phân công & Capacity" },
   { id: "activity", label: "Hoạt động" },
   { id: "members", label: "Thành viên" },
   { id: "wiki", label: "Wiki" },
@@ -319,6 +321,19 @@ const selectedProject = computed(() => {
   }
   return filteredProjects.value[0] ?? projects.value[0] ?? null;
 });
+
+const aiActionProjectOptions = computed(() =>
+  projects.value.map((project) => ({
+    id: project.id,
+    name: project.name,
+    code: project.code,
+    status: project.status,
+    members: (project.members || []).map((member) => ({
+      userId: member.userId,
+      fullName: member.fullName,
+    })),
+  })),
+);
 
 const selectedProjectTasks = computed(() => selectedProject.value?.tasks ?? []);
 const selectedTask = computed(() => {
@@ -576,6 +591,13 @@ watch(
   },
   { immediate: true },
 );
+
+async function handleAiActionCompleted(projectId: string) {
+  await loadDashboard();
+  if (route.params.projectId === projectId) {
+    activeProjectId.value = projectId;
+  }
+}
 
 onMounted(async () => {
   document.addEventListener("keydown", handleDocumentSearchShortcut);
@@ -1090,12 +1112,14 @@ async function clearActionableNotifications() {
 
 function openChatWithPrompt(prompt?: string) {
   const normalizedPrompt = prompt?.trim()
-  void router.push({
-    path: '/analytics',
-    query: normalizedPrompt
-      ? { prompt: normalizedPrompt, scope: 'workspace' }
-      : undefined,
-  })
+  const routeProjectId = typeof route.params.projectId === 'string' ? route.params.projectId : null
+  window.dispatchEvent(new CustomEvent('qaly:open-ai-assistant', {
+    detail: {
+      view: 'chat',
+      prompt: normalizedPrompt || '',
+      projectId: routeProjectId,
+    },
+  }))
 }
 
 async function logout() {
@@ -1198,6 +1222,8 @@ provide(dashboardContextKey, {
   createProjectOpen,
   createTask,
   createTaskOpen,
+  taskBeingEdited,
+  cancelTaskForm,
   currentUser,
   deleteAttachment,
   deleteComment,
@@ -1449,7 +1475,11 @@ provide(dashboardContextKey, {
 
     <WelcomeOverlay />
     <template #overlays>
-      <FloatingChatbot />
+      <FloatingChatbot
+        :project-id="typeof route.params.projectId === 'string' ? route.params.projectId : null"
+        :projects="aiActionProjectOptions"
+        @completed="handleAiActionCompleted"
+      />
     </template>
   </AppShell>
 </template>

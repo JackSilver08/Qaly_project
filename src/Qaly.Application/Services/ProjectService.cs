@@ -593,7 +593,17 @@ public class ProjectService : IProjectService
             return false;
         }
 
-        if (IsAdmin() || ownerId == currentUserId)
+        if (IsAdmin())
+        {
+            return true;
+        }
+
+        if (!await IsProjectOrganizationActiveAsync(projectId, ct))
+        {
+            return false;
+        }
+
+        if (ownerId == currentUserId)
         {
             return true;
         }
@@ -633,7 +643,17 @@ public class ProjectService : IProjectService
             return false;
         }
 
-        if (IsAdmin() || ownerId == currentUserId)
+        if (IsAdmin())
+        {
+            return true;
+        }
+
+        if (!await IsProjectOrganizationActiveAsync(projectId, ct))
+        {
+            return false;
+        }
+
+        if (ownerId == currentUserId)
         {
             return true;
         }
@@ -668,6 +688,13 @@ public class ProjectService : IProjectService
         => await _memberRepo.GetQueryable()
             .Where(member => member.ProjectId == projectId && member.UserId == userId)
             .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+
+    private async Task<bool> IsProjectOrganizationActiveAsync(Guid projectId, CancellationToken ct)
+        => await _projectRepo.GetQueryable()
+            .Where(project => project.Id == projectId)
+            .Select(project => project.OrganizationId == null ||
+                (project.Organization != null && project.Organization.IsActive))
             .FirstOrDefaultAsync(ct);
 
     private bool IsAdmin()

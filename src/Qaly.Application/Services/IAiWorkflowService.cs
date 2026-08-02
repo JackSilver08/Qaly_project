@@ -32,6 +32,23 @@ public interface IAiWorkflowService
         string idempotencyKey,
         string? requestId = null,
         CancellationToken ct = default);
+    Task<Result<AiJobCreatedDto>> CreateSourceLinkedTaskDraftAsync(
+        Guid groupId,
+        AiFunctionJobRequest dto,
+        string idempotencyKey,
+        string? requestId = null,
+        CancellationToken ct = default);
+    Task<Result<AiJobCreatedDto>> CreateGroupSelectedSummaryAsync(
+        Guid groupId,
+        GroupSummaryRequestDto dto,
+        string idempotencyKey,
+        string? requestId = null,
+        CancellationToken ct = default);
+    Task<Result<AiJobCreatedDto>> CreateDashboardStrategicBriefAsync(
+        DashboardStrategicBriefRequestDto dto,
+        string idempotencyKey,
+        string? requestId = null,
+        CancellationToken ct = default);
     Task<Result<IReadOnlyList<AiJobSummaryDto>>> ListJobsAsync(Guid? projectId, string? status, CancellationToken ct = default);
     Task<Result<AiJobDetailDto>> GetJobAsync(Guid jobId, CancellationToken ct = default);
     Task<Result<AiJobResultDto>> GetJobResultAsync(Guid jobId, CancellationToken ct = default);

@@ -20,4 +20,11 @@ public record AutoChecknoteResponseDto(
     Guid AiJobId,
     Guid DraftId,
     string Summary,
-    IReadOnlyList<MeetingActionItemDto> ActionItems);
+    IReadOnlyList<MeetingActionItemDto> ActionItems,
+    IReadOnlyList<MeetingSourceEvidenceDto>? SummaryEvidence = null,
+    IReadOnlyList<MeetingDecisionDto>? Decisions = null,
+    IReadOnlyList<MeetingRiskDto>? Risks = null,
+    string? Provider = null,
+    string? Model = null,
+    bool CacheHit = false,
+    bool IsMock = false);

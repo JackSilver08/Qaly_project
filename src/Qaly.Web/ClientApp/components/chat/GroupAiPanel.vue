@@ -85,6 +85,103 @@ interface SelectedAiRequest {
 
 interface AiJobCreatedDto {
   jobId: string
+  status: string
+  draftId?: string | null
+}
+
+interface NativeTaskDraftItem {
+  clientId: string
+  title: string
+  description: string | null
+  priority: 'Low' | 'Medium' | 'High' | 'Critical'
+  status: 'Todo'
+  dueDate: string | null
+  assigneeId: string | null
+  selected: boolean
+  confidence: number
+  sourceRefs: string[]
+}
+
+interface NativeTaskDraftPayload {
+  schemaId: 'task_draft.v5'
+  dataState: 'ready' | 'insufficient_evidence'
+  tasks: NativeTaskDraftItem[]
+}
+
+interface NativeAiJobDetail {
+  jobId: string
+  status: string
+  progressPercent: number
+  draftIds: string[]
+  selectedProvider: string | null
+  selectedModel: string | null
+  lastErrorCode: string | null
+  lastErrorMessage: string | null
+  lastErrorRetryable: boolean
+  isMock: boolean
+}
+
+interface NativeSummaryTextItem {
+  text: string
+  sourceRefs: string[]
+}
+
+interface NativeSummaryActionItem {
+  title: string
+  details: string
+  sourceRefs: string[]
+}
+
+interface NativeSummarySource {
+  key: string
+  messageId: string
+  url: string
+}
+
+interface NativeGroupSummaryPayload {
+  schemaId: 'group_selected_summary.v1'
+  groupId: string
+  projectId: string
+  messageRange: {
+    messageIds: string[]
+    fromMessageId: string
+    toMessageId: string
+  }
+  summary: string
+  summarySourceRefs: string[]
+  keyDecisions: NativeSummaryTextItem[]
+  openQuestions: NativeSummaryTextItem[]
+  actionCandidates: NativeSummaryActionItem[]
+  sourceRefs: NativeSummarySource[]
+  warnings: string[]
+}
+
+interface NativeAiJobResult<T> {
+  jobId: string
+  schemaId: string
+  result: T
+  cacheHit: boolean
+  isMock: boolean
+  sourceStale: boolean
+}
+
+interface NativeAiDraftDetail {
+  draftId: string
+  aiJobId: string
+  projectId: string
+  status: string
+  schemaId: string | null
+  workingPayload: NativeTaskDraftPayload
+  rowVersion: string
+  confirmAction?: string | null
+  confirmationResult?: { createdTaskIds?: string[] } | null
+}
+
+interface NativeDraftConfirmResult {
+  draftId: string
+  status: string
+  createdTaskCount: number
+  createdTaskIds: string[]
 }
 
 const props = defineProps<{
@@ -151,6 +248,8 @@ onBeforeUnmount(() => {
   if (summaryInterval) clearInterval(summaryInterval)
   if (draftInterval) clearInterval(draftInterval)
   if (actionInterval) clearInterval(actionInterval)
+  nativeDraftPollToken++
+  nativeSummaryPollToken++
 })
 
 // Summary States
@@ -182,11 +281,130 @@ const selectedProjectId = ref('')
 const selectedMessageIds = ref<string[]>([])
 const selectedAction = ref<'summary' | 'task-draft'>('summary')
 const isSelectedRequestLoading = ref(false)
+const nativeJob = ref<NativeAiJobDetail | null>(null)
+const nativeDraft = ref<NativeAiDraftDetail | null>(null)
+const nativeDraftPayload = ref<NativeTaskDraftPayload | null>(null)
+const nativeDraftError = ref('')
+const nativeDraftBusy = ref(false)
+const nativeCreatedTaskIds = ref<string[]>([])
+let nativeDraftPollToken = 0
+const nativeSummaryJob = ref<NativeAiJobDetail | null>(null)
+const nativeSummaryResult = ref<NativeAiJobResult<NativeGroupSummaryPayload> | null>(null)
+const nativeSummaryError = ref('')
+const nativeSummaryBusy = ref(false)
+let nativeSummaryPollToken = 0
 
 async function loadLinkedProjects() {
   linkedProjects.value = await apiResult<GroupLinkedProjectDto[]>(`/api/groups/${props.groupId}/linked-projects`)
   if (!linkedProjects.value.some(project => project.projectId === selectedProjectId.value)) {
     selectedProjectId.value = linkedProjects.value.length === 1 ? linkedProjects.value[0].projectId : ''
+  }
+}
+
+function nativeDraftStorageKey() {
+  return `qaly:group-task-draft:${props.groupId}`
+}
+
+function nativeSummaryStorageKey() {
+  return `qaly:group-selected-summary:${props.groupId}`
+}
+
+function rememberNativeSummary(projectId: string, jobId: string) {
+  localStorage.setItem(nativeSummaryStorageKey(), JSON.stringify({ projectId, jobId }))
+}
+
+async function monitorNativeSummary(jobId: string) {
+  const token = ++nativeSummaryPollToken
+  nativeSummaryError.value = ''
+  nativeSummaryResult.value = null
+  for (let attempt = 0; attempt < 80 && token === nativeSummaryPollToken; attempt++) {
+    const detail = await apiResult<NativeAiJobDetail>(`/api/ai/jobs/${jobId}`)
+    nativeSummaryJob.value = detail
+    const status = detail.status.toLowerCase()
+    if (status === 'succeeded') {
+      const result = await apiResult<NativeAiJobResult<NativeGroupSummaryPayload>>(`/api/ai/jobs/${jobId}/result`)
+      if (result.schemaId !== 'group_selected_summary.v1' || result.isMock) {
+        nativeSummaryError.value = 'Kết quả không đạt contract native hoặc là mock; Qaly không hiển thị như dữ liệu thật.'
+        return
+      }
+      nativeSummaryResult.value = result
+      return
+    }
+    if (['failed', 'canceled', 'cancelled'].includes(status)) {
+      nativeSummaryError.value = detail.lastErrorMessage || 'AI không tạo được bản tóm tắt có nguồn.'
+      return
+    }
+    await new Promise(resolve => window.setTimeout(resolve, 750))
+  }
+  if (token === nativeSummaryPollToken) {
+    nativeSummaryError.value = 'Job vẫn đang chạy. Bạn có thể đóng panel và mở lại để đọc tiếp kết quả.'
+  }
+}
+
+async function restoreNativeSummary() {
+  const raw = localStorage.getItem(nativeSummaryStorageKey())
+  if (!raw) return
+  try {
+    const saved = JSON.parse(raw) as { projectId?: string; jobId?: string }
+    if (!saved.projectId || !saved.jobId) return
+    selectedProjectId.value ||= saved.projectId
+    subTab.value = 'summary'
+    await monitorNativeSummary(saved.jobId)
+  } catch {
+    localStorage.removeItem(nativeSummaryStorageKey())
+  }
+}
+
+function rememberNativeJob(projectId: string, jobId: string) {
+  localStorage.setItem(nativeDraftStorageKey(), JSON.stringify({ projectId, jobId }))
+}
+
+async function fetchNativeDraft(draftId: string) {
+  const detail = await apiResult<NativeAiDraftDetail>(`/api/ai/drafts/${draftId}`)
+  nativeDraft.value = detail
+  nativeDraftPayload.value = JSON.parse(JSON.stringify(detail.workingPayload))
+  nativeCreatedTaskIds.value = detail.confirmationResult?.createdTaskIds ?? nativeCreatedTaskIds.value
+}
+
+async function monitorNativeJob(jobId: string) {
+  const token = ++nativeDraftPollToken
+  nativeDraftError.value = ''
+  for (let attempt = 0; attempt < 80 && token === nativeDraftPollToken; attempt++) {
+    const detail = await apiResult<NativeAiJobDetail>(`/api/ai/jobs/${jobId}`)
+    nativeJob.value = detail
+    const status = detail.status.toLowerCase()
+    if (status === 'succeeded') {
+      const draftId = detail.draftIds[0]
+      if (!draftId) {
+        nativeDraftError.value = 'Job đã hoàn tất nhưng chưa có draft để review.'
+        return
+      }
+      await fetchNativeDraft(draftId)
+      return
+    }
+    if (['failed', 'canceled', 'cancelled'].includes(status)) {
+      nativeDraftError.value = detail.lastErrorMessage || 'AI không tạo được draft. Không có task nào bị tạo.'
+      return
+    }
+    await new Promise(resolve => window.setTimeout(resolve, 750))
+  }
+  if (token === nativeDraftPollToken) {
+    nativeDraftError.value = 'Job vẫn đang chạy. Bạn có thể đóng panel và mở lại để đọc tiếp kết quả.'
+  }
+}
+
+async function restoreNativeDraft() {
+  const raw = localStorage.getItem(nativeDraftStorageKey())
+  if (!raw) return
+  try {
+    const saved = JSON.parse(raw) as { projectId?: string; jobId?: string }
+    if (!saved.projectId || !saved.jobId) return
+    selectedProjectId.value ||= saved.projectId
+    selectedAction.value = 'task-draft'
+    subTab.value = 'draft'
+    await monitorNativeJob(saved.jobId)
+  } catch {
+    localStorage.removeItem(nativeDraftStorageKey())
   }
 }
 
@@ -203,23 +421,37 @@ async function submitSelectedMessages() {
     }))
     const endpoint = selectedAction.value === 'summary'
       ? `/api/ai/groups/${props.groupId}/summaries`
-      : '/api/ai/task-drafts/from-source'
+      : `/api/ai/groups/${props.groupId}/task-drafts`
     const result = await apiResult<AiJobCreatedDto>(endpoint, {
       method: 'POST',
       headers: { 'Idempotency-Key': crypto.randomUUID() },
       body: JSON.stringify({
         projectId: selectedProjectId.value,
-        sourceType: selectedAction.value === 'summary' ? 'group' : 'message',
-        sourceEntityId: selectedAction.value === 'summary' ? props.groupId : selectedMessageIds.value[0],
-        sources
+        ...(selectedAction.value === 'summary'
+          ? { messageIds: selectedMessageIds.value, language: 'vi', cacheMode: 'use' }
+          : {
+              sourceType: 'message',
+              sourceEntityId: selectedMessageIds.value[0],
+              sources,
+            }),
+        providerHint: 'deepseek-v4-pro',
       })
     })
     showSuccess(selectedAction.value === 'summary'
       ? 'Đã tạo job tóm tắt từ tin nhắn đã chọn.'
-      : 'Đã tạo task draft từ tin nhắn đã chọn.')
-    await router.replace({
-      query: { ...router.currentRoute.value.query, aiActivity: '1', aiTab: 'jobs', aiJob: result.jobId }
-    })
+      : 'AI đang lập task draft có nguồn. Chưa có task nào được tạo.')
+    if (selectedAction.value === 'task-draft') {
+      nativeDraft.value = null
+      nativeDraftPayload.value = null
+      nativeCreatedTaskIds.value = []
+      rememberNativeJob(selectedProjectId.value, result.jobId)
+      await monitorNativeJob(result.jobId)
+    } else {
+      nativeSummaryJob.value = null
+      nativeSummaryResult.value = null
+      rememberNativeSummary(selectedProjectId.value, result.jobId)
+      await monitorNativeSummary(result.jobId)
+    }
   } catch (error) {
     showError(errorMessage(error, 'Không thể gửi các tin nhắn đã chọn cho AI.'))
   } finally {
@@ -227,15 +459,195 @@ async function submitSelectedMessages() {
   }
 }
 
+async function saveNativeDraft() {
+  if (!nativeDraft.value || !nativeDraftPayload.value || nativeDraftBusy.value) return
+  nativeDraftBusy.value = true
+  try {
+    const detail = await apiResult<NativeAiDraftDetail>(`/api/ai/drafts/${nativeDraft.value.draftId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        workingPayloadJson: JSON.stringify(nativeDraftPayload.value),
+        rowVersion: nativeDraft.value.rowVersion,
+      }),
+    })
+    nativeDraft.value = detail
+    nativeDraftPayload.value = JSON.parse(JSON.stringify(detail.workingPayload))
+    showSuccess('Đã lưu task draft. Reload vẫn tiếp tục review được.')
+  } catch (error) {
+    showError(errorMessage(error, 'Không thể lưu draft; hãy tải lại để tránh ghi đè phiên bản mới hơn.'))
+  } finally {
+    nativeDraftBusy.value = false
+  }
+}
+
+async function confirmNativeDraft() {
+  if (!nativeDraft.value || !nativeDraftPayload.value || nativeDraftBusy.value) return
+  if (!nativeDraftPayload.value.tasks.some(task => task.selected)) {
+    showError('Hãy chọn ít nhất một task để tạo.')
+    return
+  }
+  nativeDraftBusy.value = true
+  try {
+    const key = crypto.randomUUID()
+    const result = await apiResult<NativeDraftConfirmResult>(`/api/ai/drafts/${nativeDraft.value.draftId}/confirm`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': key },
+      body: JSON.stringify({
+        editedPayloadJson: JSON.stringify(nativeDraftPayload.value),
+        confirmAction: 'create_tasks',
+        confirmationNote: 'Người quản lý đã review và xác nhận các task được chọn.',
+        rowVersion: nativeDraft.value.rowVersion,
+        idempotencyKey: key,
+      }),
+    })
+    nativeCreatedTaskIds.value = result.createdTaskIds
+    await fetchNativeDraft(nativeDraft.value.draftId)
+    showSuccess(`Đã tạo ${result.createdTaskCount} task được chọn.`)
+  } catch (error) {
+    showError(errorMessage(error, 'Không thể xác nhận. Nguồn hoặc draft có thể đã thay đổi; chưa tạo task dở dang.'))
+  } finally {
+    nativeDraftBusy.value = false
+  }
+}
+
+async function rejectNativeDraft() {
+  if (!nativeDraft.value || nativeDraftBusy.value) return
+  nativeDraftBusy.value = true
+  try {
+    const key = crypto.randomUUID()
+    const detail = await apiResult<NativeAiDraftDetail>(`/api/ai/drafts/${nativeDraft.value.draftId}/reject`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': key },
+      body: JSON.stringify({
+        reason: 'Người quản lý từ chối task draft.',
+        rowVersion: nativeDraft.value.rowVersion,
+        idempotencyKey: key,
+      }),
+    })
+    nativeDraft.value = detail
+    showSuccess('Đã từ chối draft. Không có task nào được tạo.')
+  } catch (error) {
+    showError(errorMessage(error, 'Không thể từ chối draft.'))
+  } finally {
+    nativeDraftBusy.value = false
+  }
+}
+
+async function retryNativeJob() {
+  if (!nativeJob.value || nativeDraftBusy.value) return
+  nativeDraftBusy.value = true
+  try {
+    nativeJob.value = await apiResult<NativeAiJobDetail>(`/api/ai/jobs/${nativeJob.value.jobId}/retry`, {
+      method: 'POST',
+      body: JSON.stringify({ providerOverride: null }),
+    })
+    nativeDraftError.value = ''
+    await monitorNativeJob(nativeJob.value.jobId)
+  } catch (error) {
+    showError(errorMessage(error, 'Job này không thể retry.'))
+  } finally {
+    nativeDraftBusy.value = false
+  }
+}
+
+async function cancelNativeJob() {
+  if (!nativeJob.value || nativeDraftBusy.value) return
+  nativeDraftBusy.value = true
+  try {
+    nativeJob.value = await apiResult<NativeAiJobDetail>(`/api/ai/jobs/${nativeJob.value.jobId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: 'Người dùng hủy từ native task draft review.' }),
+    })
+    nativeDraftPollToken++
+    nativeDraftError.value = 'Đã hủy job. Không có task nào được tạo.'
+  } catch (error) {
+    showError(errorMessage(error, 'Không thể hủy job.'))
+  } finally {
+    nativeDraftBusy.value = false
+  }
+}
+
+function nativeSourceHref(sourceRef: string) {
+  const messageId = sourceRef.startsWith('message:') ? sourceRef.slice('message:'.length) : ''
+  return messageId ? `/groups/${props.groupId}?messageId=${messageId}` : null
+}
+
+function nativeJobStatusLabel(status?: string) {
+  const value = status?.toLowerCase()
+  if (value === 'queued') return 'Đang xếp hàng'
+  if (value === 'running') return 'AI đang đọc nguồn và soạn task'
+  if (value === 'retrying') return 'Đang chờ retry'
+  if (value === 'succeeded') return 'Đã tạo draft để review'
+  if (value === 'failed') return 'Thất bại trung thực'
+  if (value === 'canceled' || value === 'cancelled') return 'Đã hủy'
+  return status || 'Chưa chạy'
+}
+
+function nativeSummaryStatusLabel(status?: string) {
+  const value = status?.toLowerCase()
+  if (value === 'queued') return 'Đang xếp hàng'
+  if (value === 'running') return 'AI đang đọc đúng các tin đã chọn'
+  if (value === 'retrying') return 'Đang chờ retry'
+  if (value === 'succeeded') return 'Đã có bản tóm tắt kiểm chứng được'
+  if (value === 'failed') return 'Không thể tạo kết quả hợp lệ'
+  if (value === 'canceled' || value === 'cancelled') return 'Đã hủy'
+  return status || 'Chưa chạy'
+}
+
+const nativeSummaryRunning = computed(() => ['queued', 'running', 'retrying'].includes(nativeSummaryJob.value?.status.toLowerCase() ?? ''))
+
+async function retryNativeSummary() {
+  if (!nativeSummaryJob.value || nativeSummaryBusy.value) return
+  nativeSummaryBusy.value = true
+  try {
+    nativeSummaryJob.value = await apiResult<NativeAiJobDetail>(`/api/ai/jobs/${nativeSummaryJob.value.jobId}/retry`, {
+      method: 'POST',
+      body: JSON.stringify({ providerOverride: null }),
+    })
+    await monitorNativeSummary(nativeSummaryJob.value.jobId)
+  } catch (error) {
+    showError(errorMessage(error, 'Không thể retry bản tóm tắt này.'))
+  } finally {
+    nativeSummaryBusy.value = false
+  }
+}
+
+async function cancelNativeSummary() {
+  if (!nativeSummaryJob.value || nativeSummaryBusy.value) return
+  nativeSummaryBusy.value = true
+  try {
+    nativeSummaryJob.value = await apiResult<NativeAiJobDetail>(`/api/ai/jobs/${nativeSummaryJob.value.jobId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: 'Người dùng hủy Group selected-range summary.' }),
+    })
+    nativeSummaryPollToken++
+    nativeSummaryError.value = 'Đã hủy job; không có kết quả giả được tạo.'
+  } catch (error) {
+    showError(errorMessage(error, 'Không thể hủy job.'))
+  } finally {
+    nativeSummaryBusy.value = false
+  }
+}
+
+const nativeJobRunning = computed(() => ['queued', 'running', 'retrying'].includes(nativeJob.value?.status.toLowerCase() ?? ''))
+
 watch(
   () => props.selectedRequest?.nonce,
   async nonce => {
     if (!nonce || !props.selectedRequest) return
-    selectedAction.value = props.selectedRequest.action
-    selectedMessageIds.value = [...props.selectedRequest.messageIds]
-    subTab.value = props.selectedRequest.action === 'summary' ? 'summary' : 'draft'
+    const request = props.selectedRequest
+    const requestGroupId = props.groupId
+    selectedAction.value = request.action
+    selectedMessageIds.value = [...request.messageIds]
+    subTab.value = request.action === 'summary' ? 'summary' : 'draft'
     try {
       await loadLinkedProjects()
+      if (props.groupId !== requestGroupId || props.selectedRequest?.nonce !== nonce) return
+      // The group watcher also runs immediately when this panel is first mounted.
+      // Reapply the captured request after its reset so the first contextual action is not lost.
+      selectedAction.value = request.action
+      selectedMessageIds.value = [...request.messageIds]
+      subTab.value = request.action === 'summary' ? 'summary' : 'draft'
       if (!linkedProjects.value.length) {
         showError('Nhóm chưa liên kết với Project nào. Hãy liên kết Project trước khi dùng AI.')
         return
@@ -249,7 +661,9 @@ watch(
 )
 
 // Reset states when group changes
-watch(() => props.groupId, () => {
+watch(() => props.groupId, async () => {
+  nativeDraftPollToken++
+  nativeSummaryPollToken++
   selectedMessageIds.value = []
   selectedProjectId.value = ''
   summaryText.value = ''
@@ -269,7 +683,16 @@ watch(() => props.groupId, () => {
   actionItems.value = []
   actionWarnings.value = []
   hasGeneratedActions.value = false
-})
+  nativeJob.value = null
+  nativeDraft.value = null
+  nativeDraftPayload.value = null
+  nativeDraftError.value = ''
+  nativeCreatedTaskIds.value = []
+  nativeSummaryJob.value = null
+  nativeSummaryResult.value = null
+  nativeSummaryError.value = ''
+  await Promise.all([restoreNativeDraft(), restoreNativeSummary()])
+}, { immediate: true })
 
 // Matching function to map a suggested assignee string to actual user UUID
 function findAssigneeId(suggestedName: string | null): string | null {
@@ -551,6 +974,89 @@ function confidenceLabel(value: number) {
       
       <!-- SUB-TAB 1: TÓM TẮT THẢO LUẬN -->
       <div v-if="subTab === 'summary'" class="tab-view-container">
+        <section v-if="nativeSummaryJob" class="native-task-review native-summary-review" data-testid="group-selected-summary-review">
+          <header class="native-task-review__header">
+            <div>
+              <span class="native-eyebrow">Đúng đoạn chat đã chọn · group_selected_summary.v1</span>
+              <h3>{{ nativeSummaryStatusLabel(nativeSummaryJob.status) }}</h3>
+              <p>AI chỉ được dùng các tin nhắn trong danh sách nguồn bên dưới; mỗi nhận định phải trỏ lại nguồn.</p>
+            </div>
+            <span class="native-progress">{{ nativeSummaryJob.progressPercent }}%</span>
+          </header>
+
+          <div v-if="nativeSummaryRunning" class="native-process" aria-live="polite">
+            <Loader2 :size="17" class="spin-icon" />
+            <div>
+              <strong>{{ nativeSummaryStatusLabel(nativeSummaryJob.status) }}</strong>
+              <span>Kiểm quyền từng tin → giữ đúng thứ tự → gọi model → kiểm schema/nguồn → lưu read-back</span>
+            </div>
+            <button type="button" class="text-button text-button--danger" :disabled="nativeSummaryBusy" @click="cancelNativeSummary">Hủy job</button>
+          </div>
+
+          <div v-if="nativeSummaryError" class="warnings-box native-error">
+            <AlertTriangle :size="15" />
+            <div>
+              <strong>{{ nativeSummaryError }}</strong>
+              <small v-if="nativeSummaryJob.lastErrorCode">Mã lỗi: {{ nativeSummaryJob.lastErrorCode }}</small>
+            </div>
+            <button v-if="nativeSummaryJob.lastErrorRetryable" type="button" class="text-button" :disabled="nativeSummaryBusy" @click="retryNativeSummary">Retry</button>
+          </div>
+
+          <div v-if="nativeSummaryJob.status.toLowerCase() === 'succeeded'" class="native-truth-strip">
+            <span>Provider: <strong>{{ nativeSummaryJob.selectedProvider || 'không xác định' }}</strong></span>
+            <span>Model: <strong>{{ nativeSummaryJob.selectedModel || 'không xác định' }}</strong></span>
+            <span v-if="nativeSummaryResult?.cacheHit">Cache hit hợp lệ</span>
+            <span v-if="nativeSummaryResult?.sourceStale" class="native-danger">Nguồn đã thay đổi · hãy chạy lại</span>
+          </div>
+
+          <template v-if="nativeSummaryResult?.result">
+            <section class="result-section">
+              <h3 class="section-title"><FileText :size="15" /> Tóm tắt đúng {{ nativeSummaryResult.result.messageRange.messageIds.length }} tin</h3>
+              <div class="summary-body-text">{{ nativeSummaryResult.result.summary }}</div>
+              <div class="native-sources">
+                <strong>Nguồn tóm tắt:</strong>
+                <a v-for="sourceRef in nativeSummaryResult.result.summarySourceRefs" :key="sourceRef" :href="nativeSourceHref(sourceRef) || undefined">
+                  {{ sourceRef.replace('message:', 'Tin ') }}
+                </a>
+              </div>
+            </section>
+
+            <section class="result-section">
+              <h3 class="section-title success-color"><CheckCircle2 :size="15" /> Quyết định</h3>
+              <ul v-if="nativeSummaryResult.result.keyDecisions.length" class="grounded-list">
+                <li v-for="item in nativeSummaryResult.result.keyDecisions" :key="`${item.text}-${item.sourceRefs.join('-')}`">
+                  <span>{{ item.text }}</span>
+                  <a v-for="sourceRef in item.sourceRefs" :key="sourceRef" :href="nativeSourceHref(sourceRef) || undefined">{{ sourceRef.replace('message:', 'Tin ') }}</a>
+                </li>
+              </ul>
+              <div v-else class="empty-bullet-text">Không có quyết định đủ bằng chứng trong đoạn đã chọn.</div>
+            </section>
+
+            <section class="result-section">
+              <h3 class="section-title warning-color"><HelpCircle :size="15" /> Câu hỏi mở</h3>
+              <ul v-if="nativeSummaryResult.result.openQuestions.length" class="grounded-list">
+                <li v-for="item in nativeSummaryResult.result.openQuestions" :key="`${item.text}-${item.sourceRefs.join('-')}`">
+                  <span>{{ item.text }}</span>
+                  <a v-for="sourceRef in item.sourceRefs" :key="sourceRef" :href="nativeSourceHref(sourceRef) || undefined">{{ sourceRef.replace('message:', 'Tin ') }}</a>
+                </li>
+              </ul>
+              <div v-else class="empty-bullet-text">Không có câu hỏi mở đủ bằng chứng.</div>
+            </section>
+
+            <section class="result-section">
+              <h3 class="section-title"><ListChecks :size="15" /> Hành động đề xuất</h3>
+              <ul v-if="nativeSummaryResult.result.actionCandidates.length" class="grounded-list">
+                <li v-for="item in nativeSummaryResult.result.actionCandidates" :key="`${item.title}-${item.sourceRefs.join('-')}`">
+                  <strong>{{ item.title }}</strong>
+                  <span>{{ item.details }}</span>
+                  <a v-for="sourceRef in item.sourceRefs" :key="sourceRef" :href="nativeSourceHref(sourceRef) || undefined">{{ sourceRef.replace('message:', 'Tin ') }}</a>
+                </li>
+              </ul>
+              <div v-else class="empty-bullet-text">Không có hành động nào được suy diễn khi chưa đủ bằng chứng.</div>
+            </section>
+          </template>
+        </section>
+
         <div class="action-trigger-box">
           <p class="helper-text">Tổng hợp nội dung thảo luận gần đây trong cuộc trò chuyện nhóm, rút ra các quyết định then chốt.</p>
           <button
@@ -626,8 +1132,150 @@ function confidenceLabel(value: number) {
 
       <!-- SUB-TAB 2: DỰ THẢO PROJECT & TASKS -->
       <div v-if="subTab === 'draft'" class="tab-view-container">
+
+        <section
+          v-if="nativeJob || nativeDraft || nativeDraftError"
+          class="native-task-review"
+          data-testid="source-linked-task-draft-review"
+        >
+          <header class="native-task-review__header">
+            <div>
+              <span class="native-eyebrow">Task draft có nguồn · task_draft.v5</span>
+              <h3>{{ nativeJobStatusLabel(nativeJob?.status) }}</h3>
+              <p>AI chỉ soạn bản nháp từ các tin nhắn đã chọn. Task chỉ được tạo sau khi bạn chọn và xác nhận.</p>
+            </div>
+            <span class="native-progress">{{ nativeJob?.progressPercent ?? 0 }}%</span>
+          </header>
+
+          <div v-if="nativeJobRunning" class="native-process" aria-live="polite">
+            <Loader2 :size="17" class="spin-icon" />
+            <div>
+              <strong>{{ nativeJobStatusLabel(nativeJob?.status) }}</strong>
+              <span>Kiểm quyền nguồn → đọc tin đã chọn → gọi model → kiểm schema → chờ review</span>
+            </div>
+            <button type="button" class="text-button text-button--danger" :disabled="nativeDraftBusy" @click="cancelNativeJob">Hủy job</button>
+          </div>
+
+          <div v-if="nativeDraftError" class="warnings-box native-error">
+            <AlertTriangle :size="15" />
+            <div>
+              <strong>{{ nativeDraftError }}</strong>
+              <small v-if="nativeJob?.lastErrorCode">Mã lỗi: {{ nativeJob.lastErrorCode }}</small>
+            </div>
+            <button
+              v-if="nativeJob?.lastErrorRetryable"
+              type="button"
+              class="text-button"
+              :disabled="nativeDraftBusy"
+              @click="retryNativeJob"
+            >
+              Retry
+            </button>
+          </div>
+
+          <div v-if="nativeJob?.status.toLowerCase() === 'succeeded'" class="native-truth-strip">
+            <span>Provider: <strong>{{ nativeJob.selectedProvider || 'không xác định' }}</strong></span>
+            <span>Model thực tế: <strong>{{ nativeJob.selectedModel || 'không xác định' }}</strong></span>
+            <span v-if="nativeJob.isMock" class="native-danger">Mock không được phép dùng làm kết quả native</span>
+          </div>
+
+          <div v-if="nativeDraftPayload?.dataState === 'insufficient_evidence'" class="panel-empty-placeholder native-empty">
+            <FileText :size="22" />
+            <strong>Các tin nhắn đã chọn chưa đủ để tạo task có thể kiểm chứng.</strong>
+            <span>Hãy chọn thêm tin nhắn có hành động, đầu ra hoặc deadline rõ ràng.</span>
+          </div>
+
+          <div v-else-if="nativeDraftPayload" class="native-task-list">
+            <article
+              v-for="task in nativeDraftPayload.tasks"
+              :key="task.clientId"
+              class="native-task-card"
+              :class="{ 'native-task-card--unchecked': !task.selected }"
+            >
+              <div class="native-task-card__top">
+                <label class="custom-checkbox">
+                  <input v-model="task.selected" type="checkbox" :disabled="nativeDraft?.status !== 'pending_review'" />
+                  <span class="checkmark"></span>
+                </label>
+                <input
+                  v-model="task.title"
+                  class="task-title-input"
+                  maxlength="200"
+                  aria-label="Tiêu đề task draft"
+                  :disabled="nativeDraft?.status !== 'pending_review'"
+                />
+                <span class="confidence-tag">{{ confidenceLabel(task.confidence) }}</span>
+              </div>
+              <textarea
+                v-model="task.description"
+                rows="3"
+                maxlength="4000"
+                class="task-desc-textarea"
+                aria-label="Mô tả task draft"
+                :disabled="nativeDraft?.status !== 'pending_review'"
+              ></textarea>
+              <div class="native-task-fields">
+                <label>
+                  Ưu tiên
+                  <select v-model="task.priority" class="metadata-select" :disabled="nativeDraft?.status !== 'pending_review'">
+                    <option value="Low">Thấp</option>
+                    <option value="Medium">Trung bình</option>
+                    <option value="High">Cao</option>
+                    <option value="Critical">Khẩn cấp</option>
+                  </select>
+                </label>
+                <label>
+                  Deadline
+                  <input
+                    type="date"
+                    :value="task.dueDate?.slice(0, 10) || ''"
+                    :disabled="nativeDraft?.status !== 'pending_review'"
+                    @input="task.dueDate = ($event.target as HTMLInputElement).value ? new Date(`${($event.target as HTMLInputElement).value}T23:59:59`).toISOString() : null"
+                  />
+                </label>
+                <label>
+                  Người thực hiện
+                  <select v-model="task.assigneeId" class="metadata-select" :disabled="nativeDraft?.status !== 'pending_review'">
+                    <option :value="null">Chưa phân công</option>
+                    <option v-for="member in members" :key="member.userId" :value="member.userId">{{ member.fullName }}</option>
+                  </select>
+                </label>
+              </div>
+              <div class="native-sources">
+                <strong>Nguồn:</strong>
+                <a
+                  v-for="sourceRef in task.sourceRefs"
+                  :key="sourceRef"
+                  :href="nativeSourceHref(sourceRef) || undefined"
+                >
+                  {{ sourceRef.replace('message:', 'Tin nhắn ') }}
+                </a>
+              </div>
+            </article>
+          </div>
+
+          <footer v-if="nativeDraft" class="native-review-actions">
+            <template v-if="nativeDraft.status === 'pending_review'">
+              <button type="button" class="text-button" :disabled="nativeDraftBusy" @click="saveNativeDraft">Lưu draft</button>
+              <button type="button" class="text-button text-button--danger" :disabled="nativeDraftBusy" @click="rejectNativeDraft">Từ chối</button>
+              <button type="button" class="primary-button" :disabled="nativeDraftBusy || !nativeDraftPayload?.tasks.some(task => task.selected)" @click="confirmNativeDraft">
+                <Loader2 v-if="nativeDraftBusy" :size="15" class="spin-icon" />
+                <Check v-else :size="15" />
+                Tạo các task đã chọn
+              </button>
+            </template>
+            <strong v-else-if="nativeDraft.status === 'rejected'">Draft đã bị từ chối · không có task nào được tạo.</strong>
+            <div v-else-if="nativeDraft.status === 'confirmed'" class="native-receipt">
+              <CheckCircle2 :size="17" />
+              <div>
+                <strong>Đã xác nhận và có thể đọc lại</strong>
+                <a v-for="taskId in nativeCreatedTaskIds" :key="taskId" :href="`/projects/${nativeDraft.projectId}/tasks/${taskId}`">Mở task {{ taskId.slice(0, 8) }}</a>
+              </div>
+            </div>
+          </footer>
+        </section>
         
-        <div v-if="!hasGeneratedDraft" class="action-trigger-box">
+        <div v-if="!nativeJob && !nativeDraft && !hasGeneratedDraft" class="action-trigger-box">
           <p class="helper-text">Tự động đề xuất cấu trúc dự án và lập danh sách công việc cụ thể dựa trên trao đổi của nhóm.</p>
           
           <div class="instructions-input-group">
@@ -776,7 +1424,7 @@ function confidenceLabel(value: number) {
           </div>
         </div>
 
-        <div v-else-if="!isDraftLoading" class="panel-empty-placeholder">
+        <div v-else-if="!isDraftLoading && !nativeJob && !nativeDraft" class="panel-empty-placeholder">
           <FolderKanban :size="24" class="muted-icon" />
           <span>Bấm nút phía trên để lập dự án nháp</span>
         </div>
@@ -948,6 +1596,41 @@ function confidenceLabel(value: number) {
   color: var(--muted);
   line-height: 1.45;
   margin: 0;
+}
+
+.native-summary-review {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.grounded-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.grounded-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: var(--qaly-radius-md);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.grounded-list li > span,
+.grounded-list li > strong {
+  flex-basis: 100%;
+}
+
+.grounded-list a {
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
 .ai-action-btn {
@@ -1426,6 +2109,202 @@ function confidenceLabel(value: number) {
   border: 1px solid #bfdbfe;
   border-radius: 6px;
   background: #fff;
+}
+
+.native-task-review {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--line));
+  border-radius: var(--qaly-radius-lg);
+  background: var(--panel);
+}
+
+.native-task-review__header,
+.native-task-review__header > div,
+.native-process > div,
+.native-receipt > div {
+  display: grid;
+  gap: 4px;
+}
+
+.native-task-review__header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.native-task-review__header h3,
+.native-task-review__header p {
+  margin: 0;
+}
+
+.native-task-review__header h3 {
+  color: var(--text-strong);
+  font-size: 1rem;
+}
+
+.native-task-review__header p {
+  color: var(--muted);
+  font-size: .72rem;
+  line-height: 1.45;
+}
+
+.native-eyebrow {
+  color: var(--primary);
+  font-size: .64rem;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.native-progress {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  font-size: .7rem;
+  font-weight: 900;
+}
+
+.native-process,
+.native-truth-strip,
+.native-review-actions,
+.native-receipt {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.native-process {
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--bg-soft);
+  color: var(--text-strong);
+}
+
+.native-process > div {
+  flex: 1;
+}
+
+.native-process span,
+.native-error small {
+  color: var(--muted);
+  font-size: .66rem;
+}
+
+.native-error > div {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.native-truth-strip {
+  flex-wrap: wrap;
+  padding: 7px 9px;
+  border-radius: 9px;
+  background: var(--bg-soft);
+  color: var(--muted);
+  font-size: .66rem;
+}
+
+.native-danger {
+  color: #dc2626;
+  font-weight: 900;
+}
+
+.native-empty {
+  min-height: 150px;
+}
+
+.native-task-list {
+  display: grid;
+  gap: 9px;
+}
+
+.native-task-card {
+  display: grid;
+  gap: 9px;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--panel);
+}
+
+.native-task-card--unchecked {
+  opacity: .56;
+}
+
+.native-task-card__top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.native-task-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.native-task-fields label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: .65rem;
+  font-weight: 800;
+}
+
+.native-task-fields input,
+.native-task-fields select {
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--text-strong);
+  padding: 6px;
+}
+
+.native-sources {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: .65rem;
+}
+
+.native-sources a {
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.native-review-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.native-receipt {
+  width: 100%;
+  justify-content: flex-start;
+  color: #047857;
+}
+
+.native-receipt a {
+  color: #047857;
+  font-size: .68rem;
+}
+
+@media (max-width: 720px) {
+  .native-task-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 @keyframes spin-kf {

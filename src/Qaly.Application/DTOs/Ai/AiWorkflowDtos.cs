@@ -185,7 +185,11 @@ public record AiDraftDetailDto(
     string? SchemaId,
     decimal? Confidence,
     IReadOnlyList<AiJobSourceDto> Sources,
-    string RowVersion);
+    string RowVersion,
+    string? ConfirmAction = null,
+    JsonElement? ConfirmationResult = null,
+    DateTimeOffset? ConfirmedAt = null,
+    DateTimeOffset? RejectedAt = null);
 
 public record AiDraftConfirmResultDto(
     Guid DraftId,
@@ -193,7 +197,8 @@ public record AiDraftConfirmResultDto(
     string ConfirmAction,
     int CreatedTaskCount,
     IReadOnlyList<Guid> CreatedTaskIds,
-    int AppliedSkillCount = 0);
+    int AppliedSkillCount = 0,
+    AiActionExecutionReceiptDto? ActionReceipt = null);
 
 public record AiPlatformHealthDto(
     string Status,
@@ -288,7 +293,10 @@ public record UpdateAiBudgetPolicyDto(
     string? Version = null,
     bool Confirmed = false);
 
-public record AiTaskDraftPayload(IReadOnlyList<AiTaskDraftItem> Tasks);
+public record AiTaskDraftPayload(
+    IReadOnlyList<AiTaskDraftItem> Tasks,
+    string? SchemaId = null,
+    string DataState = "ready");
 
 public record AiTaskDraftItem(
     string Title,
@@ -296,4 +304,25 @@ public record AiTaskDraftItem(
     string Priority = "Medium",
     string Status = "Todo",
     DateTimeOffset? DueDate = null,
-    Guid? AssigneeId = null);
+    Guid? AssigneeId = null,
+    string? ClientId = null,
+    bool Selected = true,
+    decimal Confidence = 0.5m,
+    IReadOnlyList<string>? SourceRefs = null);
+
+public record TaskDraftSourceSnapshotDto(
+    string SchemaId,
+    Guid ProjectId,
+    Guid GroupId,
+    string DataState,
+    IReadOnlyList<TaskDraftAuthorizedSourceDto> Sources,
+    IReadOnlyList<TaskDraftAuthorizedMemberDto> Members);
+
+public record TaskDraftAuthorizedSourceDto(
+    string Ref,
+    Guid MessageId,
+    string Url,
+    string? SourceVersion,
+    string? SourceHash);
+
+public record TaskDraftAuthorizedMemberDto(Guid UserId, string FullName);

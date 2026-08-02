@@ -328,7 +328,7 @@ test("should open analytics page", async ({ page }) => {
 
     await page.locator('a[href="/analytics"]').click();
     await expect(page).toHaveURL(/\/analytics$/);
-    await expect(page.getByRole("heading", { name: /Bạn muốn phân tích điều gì/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Bạn muốn Qaly giúp gì/i })).toBeVisible();
     await expect(page.getByRole("textbox", { name: /Erumi/i })).toBeVisible();
 });
 

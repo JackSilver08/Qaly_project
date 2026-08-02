@@ -34,6 +34,12 @@ export function useTaskActions(
     newTaskContributesToProgress.value = true
   }
 
+  function cancelTaskForm() {
+    clearTaskForm()
+    taskBeingEdited.value = null
+    createTaskOpen.value = false
+  }
+
   function toggleTaskSelection(taskId: string) {
     if (selectedTaskIds.value.has(taskId)) {
       selectedTaskIds.value.delete(taskId)
@@ -178,7 +184,7 @@ export function useTaskActions(
   function beginEditTask(task: DashboardTask) {
     taskBeingEdited.value = task
     newTaskTitle.value = task.title
-    newTaskDescription.value = ''
+    newTaskDescription.value = task.description ?? ''
     newTaskPriority.value = task.priority
     newTaskAssigneeId.value = task.assigneeId ?? ''
     newTaskDueDate.value = task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : ''
@@ -207,6 +213,7 @@ export function useTaskActions(
           isPrivate: newTaskIsPrivate.value,
           isPinned: newTaskIsPinned.value,
           contributesToProgress: newTaskContributesToProgress.value,
+          rowVersion: taskBeingEdited.value.rowVersion || null,
         }),
       })
 
@@ -235,6 +242,7 @@ export function useTaskActions(
   return {
     createTaskOpen,
     taskBeingEdited,
+    cancelTaskForm,
     newTaskTitle,
     newTaskDescription,
     newTaskPriority,
