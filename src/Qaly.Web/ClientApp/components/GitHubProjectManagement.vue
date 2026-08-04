@@ -1,0 +1,43 @@
+<script setup lang="ts">
+import { computed, onMounted, ref, watch } from 'vue'
+import { AlertCircle, CheckCircle2, ExternalLink, GitPullRequest, Loader2, Package, RefreshCw, Workflow } from 'lucide-vue-next'
+import { githubApi, type GitHubProjectManagement } from '../utils/github-api'
+import { errorMessage } from '../utils/api-client'
+import { showError, showSuccess } from '../composables/use-toast'
+
+const props = defineProps<{ projectId: string; canManage: boolean }>()
+const data = ref<GitHubProjectManagement | null>(null)
+const loading = ref(true), syncing = ref(false)
+const tab = ref<'pulls' | 'workflows' | 'releases'>('pulls')
+const filter = ref('all'), loadError = ref('')
+const pulls = computed(() => data.value?.pullRequests.filter(x => filter.value === 'all' || x.state.toLowerCase() === filter.value) ?? [])
+const workflows = computed(() => data.value?.workflows.filter(x => filter.value === 'all' || (x.conclusion ?? x.status) === filter.value) ?? [])
+
+onMounted(load)
+watch(() => props.projectId, load)
+async function load() { loading.value = true; loadError.value = ''; try { data.value = await githubApi.management(props.projectId) } catch (e) { loadError.value = errorMessage(e, 'Không thể tải dữ liệu quản lý GitHub.') } finally { loading.value = false } }
+async function sync() { syncing.value = true; try { data.value = await githubApi.syncManagement(props.projectId); showSuccess('Đã đồng bộ dữ liệu mới nhất từ GitHub') } catch (e) { showError(errorMessage(e, 'Không thể đồng bộ GitHub. Hãy kiểm tra quyền của GitHub App.')) } finally { syncing.value = false } }
+function switchTab(value: typeof tab.value) { tab.value = value; filter.value = 'all' }
+function date(value: string | null) { return value ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : 'Chưa có' }
+function tone(value: string | null) { return value === 'success' ? 'success' : ['failure', 'timed_out', 'cancelled'].includes(value ?? '') ? 'danger' : 'pending' }
+</script>
+
+<template>
+  <section class="management">
+    <header><div><span>Trung tâm vận hành</span><h3>Quản lý phát triển</h3><p>PR, review, CI và release của toàn bộ repository trong dự án.</p></div><button v-if="canManage" :disabled="syncing" @click="sync"><Loader2 v-if="syncing" class="spin" :size="16" /><RefreshCw v-else :size="16" />{{ syncing ? 'Đang đồng bộ...' : 'Đồng bộ ngay' }}</button></header>
+    <div v-if="loading" class="state"><Loader2 class="spin" :size="20" /> Đang tải dữ liệu...</div>
+    <div v-else-if="loadError" class="state error"><AlertCircle :size="20" />{{ loadError }} <button @click="load">Thử lại</button></div>
+    <template v-else-if="data">
+      <div class="metrics"><article><GitPullRequest /><span>PR đang mở</span><strong>{{ data.openPullRequests }}</strong></article><article><AlertCircle /><span>Chờ review</span><strong>{{ data.waitingForReview }}</strong></article><article :class="{ alert: data.failedWorkflows }"><Workflow /><span>CI cần xử lý</span><strong>{{ data.failedWorkflows }}</strong></article><article><Package /><span>Repository</span><strong>{{ data.repositoryCount }}</strong></article></div>
+      <div class="toolbar"><nav><button :class="{ active: tab === 'pulls' }" @click="switchTab('pulls')">Pull requests <b>{{ data.pullRequests.length }}</b></button><button :class="{ active: tab === 'workflows' }" @click="switchTab('workflows')">CI/CD <b>{{ data.workflows.length }}</b></button><button :class="{ active: tab === 'releases' }" @click="switchTab('releases')">Releases <b>{{ data.releases.length }}</b></button></nav><select v-if="tab === 'pulls'" v-model="filter"><option value="all">Tất cả trạng thái</option><option value="open">Đang mở</option><option value="merged">Đã merge</option><option value="closed">Đã đóng</option></select><select v-else-if="tab === 'workflows'" v-model="filter"><option value="all">Tất cả kết quả</option><option value="success">Thành công</option><option value="failure">Thất bại</option><option value="in_progress">Đang chạy</option></select></div>
+      <div v-if="tab === 'pulls'" class="items"><a v-for="item in pulls" :key="item.id" :href="item.url" target="_blank" rel="noopener"><i><GitPullRequest :size="17" /></i><span><strong>#{{ item.number }} {{ item.title }}</strong><small>{{ item.repository }} · {{ item.headBranch }} → {{ item.baseBranch }} · {{ item.authorLogin || 'GitHub user' }}</small></span><em :class="{ approved: item.approvalCount }"><CheckCircle2 :size="14" />{{ item.approvalCount ? `${item.approvalCount} duyệt` : item.isDraft ? 'Bản nháp' : 'Chờ duyệt' }}</em><ExternalLink :size="14" /></a><p v-if="!pulls.length">Chưa có pull request phù hợp.</p></div>
+      <div v-else-if="tab === 'workflows'" class="items"><a v-for="item in workflows" :key="item.runId" :href="item.url" target="_blank" rel="noopener"><i :class="tone(item.conclusion)"><Workflow :size="17" /></i><span><strong>{{ item.title || item.name }}</strong><small>{{ item.repository }} · {{ item.branch }} · {{ date(item.startedAt) }}</small></span><em :class="tone(item.conclusion)">{{ item.conclusion || item.status }}</em><ExternalLink :size="14" /></a><p v-if="!workflows.length">Chưa có workflow run.</p></div>
+      <div v-else class="items"><a v-for="item in data.releases" :key="item.repository + item.tagName" :href="item.url" target="_blank" rel="noopener"><i><Package :size="17" /></i><span><strong>{{ item.name || item.tagName }}</strong><small>{{ item.repository }} · {{ item.tagName }} · {{ date(item.publishedAt) }}</small></span><em v-if="item.isPrerelease" class="pending">Pre-release</em><ExternalLink :size="14" /></a><p v-if="!data.releases.length">Chưa có release.</p></div>
+      <footer>Đồng bộ gần nhất: {{ date(data.lastSyncedAt) }}</footer>
+    </template>
+  </section>
+</template>
+
+<style scoped>
+.management{margin:0 24px 24px;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--panel-soft)}header{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:20px;border-bottom:1px solid var(--line)}header span{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#2563eb}h3{margin:3px 0;font-size:20px}header p{margin:0;color:var(--muted);font-size:13px}header button{display:flex;align-items:center;gap:7px;border:0;border-radius:10px;padding:10px 14px;background:#2563eb;color:white;font-weight:700}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:16px}.metrics article{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;padding:13px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}.metrics svg{width:17px;color:#2563eb}.metrics span{font-size:12px;color:var(--muted)}.metrics strong{font-size:21px}.metrics .alert svg,.metrics .alert strong{color:#d92d20}.toolbar{display:flex;justify-content:space-between;gap:12px;padding:0 16px 12px}.toolbar nav{display:flex;gap:5px}.toolbar button{border:0;background:transparent;color:var(--muted);padding:8px 10px;border-radius:8px}.toolbar button.active{background:var(--panel);color:var(--text);box-shadow:0 1px 4px #0002}.toolbar select{border:1px solid var(--line);border-radius:9px;background:var(--panel);color:inherit;padding:7px}.items{display:grid;gap:1px;border-top:1px solid var(--line);background:var(--line)}.items a{display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:11px;padding:12px 16px;background:var(--panel);color:inherit;text-decoration:none}.items a:hover{background:#2563eb0a}.items i{width:32px;height:32px;display:grid;place-items:center;border-radius:9px;background:#2563eb17;color:#2563eb;font-style:normal}.items a>span{display:flex;flex-direction:column;min-width:0}.items small{color:var(--muted);margin-top:3px}.items em{display:flex;align-items:center;gap:4px;font-size:11px;font-style:normal;padding:5px 8px;border-radius:999px;background:#f2f4f7;color:#667085}.items .approved,.items .success{background:#ecfdf3;color:#067647}.items .danger{background:#fef3f2;color:#b42318}.items .pending{background:#fffaeb;color:#b54708}.items p,.state{padding:28px;text-align:center;color:var(--muted)}.state{display:flex;justify-content:center;gap:8px}.error{color:#b42318}footer{padding:10px 16px;text-align:right;color:var(--muted);font-size:11px;border-top:1px solid var(--line)}.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media(max-width:800px){.metrics{grid-template-columns:repeat(2,1fr)}header,.toolbar{align-items:stretch;flex-direction:column}.toolbar nav{overflow:auto}.management{margin:0 12px 12px}}@media(max-width:480px){.metrics{grid-template-columns:1fr}}
+</style>

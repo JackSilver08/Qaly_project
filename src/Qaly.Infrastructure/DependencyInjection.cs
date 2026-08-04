@@ -73,6 +73,7 @@ public static class DependencyInjection
         services.AddScoped<IGitHubWebhookProcessor, GitHubWebhookProcessor>();
         services.AddHttpClient<IGitHubAppClient, GitHubAppClient>();
         services.AddScoped<IGitHubInstallationService, GitHubInstallationService>();
+        services.AddScoped<IGitHubProjectManagementService, GitHubProjectManagementService>();
         services.AddScoped<Qaly.Application.Services.GitHub.IGitHubRepositoryProvider, GitHubRepositoryProvider>();
 
         // AI Core Services

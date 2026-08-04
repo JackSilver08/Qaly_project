@@ -8,6 +8,13 @@ namespace Qaly.Infrastructure.Integrations.GitHub;
 
 public sealed record GitHubInstallationInfo(long InstallationId, long AccountId, string AccountLogin, string AccountType);
 public sealed record GitHubRepositoryInfo(long Id, string Owner, string Name, string FullName, string DefaultBranch, bool IsPrivate);
+public sealed record GitHubPullRequestInfo(int Number, string Title, string State, bool IsDraft, string? AuthorLogin,
+    string HeadBranch, string BaseBranch, DateTimeOffset OpenedAt, DateTimeOffset? UpdatedAt,
+    DateTimeOffset? MergedAt, string? MergedByLogin, string Url);
+public sealed record GitHubWorkflowRunInfo(long Id, string Name, string? Title, string Branch, string Sha,
+    string Status, string? Conclusion, DateTimeOffset StartedAt, DateTimeOffset? CompletedAt, string Url);
+public sealed record GitHubReleaseInfo(long Id, string TagName, string? Name, bool IsDraft, bool IsPrerelease,
+    DateTimeOffset? PublishedAt, string Url);
 
 public interface IGitHubAppClient
 {
@@ -15,6 +22,9 @@ public interface IGitHubAppClient
     Task<GitHubInstallationInfo> GetInstallationAsync(long installationId, CancellationToken ct = default);
     Task<IReadOnlyList<GitHubRepositoryInfo>> GetRepositoriesAsync(long installationId, CancellationToken ct = default);
     Task<GitHubRepositoryInfo?> GetRepositoryAsync(long installationId, long repositoryId, CancellationToken ct = default);
+    Task<IReadOnlyList<GitHubPullRequestInfo>> GetPullRequestsAsync(long installationId, string owner, string repository, CancellationToken ct = default);
+    Task<IReadOnlyList<GitHubWorkflowRunInfo>> GetWorkflowRunsAsync(long installationId, string owner, string repository, CancellationToken ct = default);
+    Task<IReadOnlyList<GitHubReleaseInfo>> GetReleasesAsync(long installationId, string owner, string repository, CancellationToken ct = default);
 }
 
 public sealed class GitHubAppClient : IGitHubAppClient
@@ -88,6 +98,64 @@ public sealed class GitHubAppClient : IGitHubAppClient
             repository.GetProperty("default_branch").GetString() ?? "main",
             repository.GetProperty("private").GetBoolean());
     }
+
+    public async Task<IReadOnlyList<GitHubPullRequestInfo>> GetPullRequestsAsync(long installationId, string owner, string repository, CancellationToken ct = default)
+    {
+        using var json = await GetAsInstallationAsync(installationId,
+            $"/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(repository)}/pulls?state=all&sort=updated&direction=desc&per_page=50", ct);
+        return json.RootElement.EnumerateArray().Select(item => new GitHubPullRequestInfo(
+            item.GetProperty("number").GetInt32(), item.GetProperty("title").GetString() ?? string.Empty,
+            item.GetProperty("state").GetString() ?? "open", item.GetProperty("draft").GetBoolean(),
+            item.GetProperty("user").GetProperty("login").GetString(),
+            item.GetProperty("head").GetProperty("ref").GetString() ?? string.Empty,
+            item.GetProperty("base").GetProperty("ref").GetString() ?? string.Empty,
+            item.GetProperty("created_at").GetDateTimeOffset(), ReadNullableDate(item, "updated_at"),
+            ReadNullableDate(item, "merged_at"), ReadNestedString(item, "merged_by", "login"),
+            item.GetProperty("html_url").GetString() ?? string.Empty)).ToList();
+    }
+
+    public async Task<IReadOnlyList<GitHubWorkflowRunInfo>> GetWorkflowRunsAsync(long installationId, string owner, string repository, CancellationToken ct = default)
+    {
+        using var json = await GetAsInstallationAsync(installationId,
+            $"/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(repository)}/actions/runs?per_page=50", ct);
+        return json.RootElement.GetProperty("workflow_runs").EnumerateArray().Select(item => new GitHubWorkflowRunInfo(
+            item.GetProperty("id").GetInt64(), item.GetProperty("name").GetString() ?? "Workflow",
+            item.TryGetProperty("display_title", out var title) ? title.GetString() : null,
+            item.GetProperty("head_branch").GetString() ?? string.Empty,
+            item.GetProperty("head_sha").GetString() ?? string.Empty,
+            item.GetProperty("status").GetString() ?? string.Empty,
+            item.GetProperty("conclusion").ValueKind == JsonValueKind.Null ? null : item.GetProperty("conclusion").GetString(),
+            item.GetProperty("created_at").GetDateTimeOffset(), ReadNullableDate(item, "updated_at"),
+            item.GetProperty("html_url").GetString() ?? string.Empty)).ToList();
+    }
+
+    public async Task<IReadOnlyList<GitHubReleaseInfo>> GetReleasesAsync(long installationId, string owner, string repository, CancellationToken ct = default)
+    {
+        using var json = await GetAsInstallationAsync(installationId,
+            $"/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(repository)}/releases?per_page=30", ct);
+        return json.RootElement.EnumerateArray().Select(item => new GitHubReleaseInfo(
+            item.GetProperty("id").GetInt64(), item.GetProperty("tag_name").GetString() ?? string.Empty,
+            item.GetProperty("name").ValueKind == JsonValueKind.Null ? null : item.GetProperty("name").GetString(),
+            item.GetProperty("draft").GetBoolean(), item.GetProperty("prerelease").GetBoolean(),
+            ReadNullableDate(item, "published_at"), item.GetProperty("html_url").GetString() ?? string.Empty)).ToList();
+    }
+
+    private async Task<JsonDocument> GetAsInstallationAsync(long installationId, string path, CancellationToken ct)
+    {
+        var token = await CreateInstallationTokenAsync(installationId, ct);
+        using var request = Request(HttpMethod.Get, path, token);
+        using var response = await _http.SendAsync(request, ct);
+        await EnsureSuccessAsync(response, ct);
+        return JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+    }
+
+    private static DateTimeOffset? ReadNullableDate(JsonElement item, string property)
+        => item.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetDateTimeOffset() : null;
+
+    private static string? ReadNestedString(JsonElement item, string parent, string property)
+        => item.TryGetProperty(parent, out var value) && value.ValueKind == JsonValueKind.Object
+            ? value.GetProperty(property).GetString() : null;
 
     private async Task<string> CreateInstallationTokenAsync(long installationId, CancellationToken ct)
     {

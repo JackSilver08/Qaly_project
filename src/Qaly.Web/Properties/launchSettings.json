@@ -5,10 +5,10 @@
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": false,
-      "applicationUrl": "http://127.0.0.1:5010",
+      "applicationUrl": "https://localhost:5005",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development",
-        "UseInMemoryDatabase": "true",
+        "UseInMemoryDatabase": "false",
         "AiJobsV4__WorkerEnabled": "false"
       }
     }

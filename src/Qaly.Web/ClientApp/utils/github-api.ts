@@ -39,6 +39,17 @@ export interface TaskDevelopment {
   links: Array<{ entityType: string; externalEntityId: string; linkSource: string; createdAt: string }>
 }
 
+export interface GitHubProjectManagement {
+  repositoryCount: number
+  openPullRequests: number
+  waitingForReview: number
+  failedWorkflows: number
+  lastSyncedAt: string | null
+  pullRequests: Array<{ id: string; number: number; title: string; state: string; isDraft: boolean; authorLogin: string | null; headBranch: string; baseBranch: string; reviewCount: number; approvalCount: number; updatedAt: string | null; url: string; repository: string }>
+  workflows: Array<{ runId: number; name: string; title: string | null; branch: string; status: string; conclusion: string | null; startedAt: string; completedAt: string | null; url: string; repository: string }>
+  releases: Array<{ tagName: string; name: string | null; isPrerelease: boolean; publishedAt: string | null; url: string; repository: string }>
+}
+
 export const githubApi = {
   installations: (projectId: string) => apiResult<GitHubInstallation[]>(`/api/projects/${projectId}/github/installations`),
   installUrl: (projectId: string) => apiResult<string>(`/api/projects/${projectId}/github/install-url`),
@@ -60,4 +71,6 @@ export const githubApi = {
   disconnectRepository: (projectId: string, connectionId: string) =>
     apiCommand(`/api/projects/${projectId}/github/repositories/${connectionId}`, { method: 'DELETE' }),
   development: (taskId: string) => apiResult<TaskDevelopment>(`/api/tasks/${taskId}/development`),
+  management: (projectId: string) => apiResult<GitHubProjectManagement>(`/api/projects/${projectId}/github/management`),
+  syncManagement: (projectId: string) => apiResult<GitHubProjectManagement>(`/api/projects/${projectId}/github/management/sync`, { method: 'POST' }),
 }

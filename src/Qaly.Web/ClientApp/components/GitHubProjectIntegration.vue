@@ -5,6 +5,7 @@ import { githubApi, type GitHubInstallation, type GitHubRepository, type GitHubR
 import { errorMessage } from '../utils/api-client'
 import { showError, showSuccess } from '../composables/use-toast'
 import { confirmDialog } from '../composables/use-confirm-dialog'
+import GitHubProjectManagement from './GitHubProjectManagement.vue'
 
 const props = defineProps<{ projectId: string; canManage: boolean }>()
 const loading = ref(true)
@@ -162,6 +163,8 @@ function formatSync(value: string | null) {
         </article>
         <div v-if="activeConnections.length === 0" class="repo-empty">GitHub App đã cài đặt. Hãy chọn repository bên dưới.</div>
       </div>
+
+      <GitHubProjectManagement v-if="activeConnections.length > 0" :project-id="projectId" :can-manage="canManage" />
 
       <button v-if="canManage && !pickerOpen" class="add-repository" type="button" @click="pickerOpen = true"><Plus :size="16" /><span><strong>Thêm repository</strong><small>Chỉ chọn những repository thuộc project này</small></span><ChevronDown :size="16" /></button>
       <section v-if="canManage && pickerOpen" class="repo-picker">
