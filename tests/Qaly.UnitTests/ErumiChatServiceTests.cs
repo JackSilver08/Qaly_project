@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
@@ -735,20 +736,10 @@ public class ErumiChatServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ChatFastAsync_ForWritePrompt_CreatesApprovalGatedAutonomousDraft()
+    public async Task ChatFastAsync_ForNaturalTaskWritePrompt_RoutesToCanonicalActionComposer()
     {
         var projectId = Guid.NewGuid();
-        var jobId = Guid.NewGuid();
-        var draftId = Guid.NewGuid();
         var workflow = new Mock<IAiWorkflowService>();
-        workflow
-            .Setup(x => x.CreateJobAsync(
-                It.Is<CreateAiJobDto>(dto =>
-                    dto.ProjectId == projectId &&
-                    dto.JobType == "erumi_autonomous_tasks" &&
-                    dto.SourceText == "Tao task kiem thu tinh nang thanh toan"),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Created(new AiJobCreatedDto(jobId, "DraftReady", 0.001m, "cache", draftId)));
 
         var service = new ErumiChatService(
             _analyticsServiceMock.Object,
@@ -760,20 +751,278 @@ public class ErumiChatServiceTests : IDisposable
             aiWorkflowService: workflow.Object);
 
         var result = await service.ChatFastAsync(
-            new ErumiChatRequestDto("Tao task kiem thu tinh nang thanh toan", projectId, Mode: "agent"));
+            new ErumiChatRequestDto("Tạo 3 task kiểm thử tính năng thanh toán", projectId, Mode: "agent"));
 
         result.IsSuccess.Should().BeTrue(result.Error);
-        result.Data!.Intent.Should().Be("autonomous_task_plan");
-        result.Data.UsedAi.Should().BeTrue();
+        result.Data!.Intent.Should().Be("task_action_composer");
+        result.Data.UsedAi.Should().BeFalse();
         result.Data.Actions.Should().ContainSingle(action =>
-            action.Type == "draft_change" && action.RequiresConfirmation);
+            action.Type == "compose_task_plan" && !action.RequiresConfirmation);
         var payloadJson = System.Text.Json.JsonSerializer.Serialize(result.Data.Actions[0].Payload);
-        payloadJson.Should().Contain(draftId.ToString());
-        workflow.VerifyAll();
+        payloadJson.Should().Contain("assistant_turn.v1");
+        payloadJson.Should().Contain("task.create.v1");
+        payloadJson.Should().Contain(projectId.ToString());
+        workflow.Verify(
+            x => x.CreateJobAsync(It.IsAny<CreateAiJobDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
         _aiGatewayMock.Verify(
             x => x.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
+
+    [Fact]
+    public async Task AssistantTurnAsync_WithCompleteTaskIntent_ReturnsRegisteredArtifact()
+    {
+        var projectId = Guid.NewGuid();
+        _projectServiceMock
+            .Setup(service => service.GetByIdAsync(projectId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(CreateProject(projectId, "Qaly Native AI")));
+
+        var result = await _service.AssistantTurnAsync(new AiAssistantTurnRequestDto(
+            "Tạo 3 task frontend, backend và QA cho đăng nhập",
+            new AiAssistantClientContextDto(ProjectId: projectId)),
+            FullAssistantContext());
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.SchemaId.Should().Be(AiAssistantTurnContract.SchemaId);
+        result.Data.Disposition.Should().Be("registered_action");
+        result.Data.Intent.Should().Be(AiAssistantTurnContract.TaskCreateIntent);
+        result.Data.ExecutionPolicy.Should().Be("draft_then_confirm");
+        result.Data.Artifact.Should().NotBeNull();
+        result.Data.Artifact!.ProjectId.Should().Be(projectId);
+        result.Data.Clarification.Should().BeNull();
+        _aiGatewayMock.Verify(
+            gateway => gateway.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task AssistantTurnAsync_WithoutProject_ReturnsOneStructuredClarification()
+    {
+        var firstProjectId = Guid.NewGuid();
+        var secondProjectId = Guid.NewGuid();
+        _projectServiceMock
+            .Setup(service => service.GetAllAsync(1, 100, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new PagedResult<ProjectDto>
+            {
+                Items = new[]
+                {
+                    CreateProject(firstProjectId, "Alpha"),
+                    CreateProject(secondProjectId, "Beta"),
+                },
+                TotalCount = 2,
+                PageNumber = 1,
+                PageSize = 100,
+            }));
+
+        var result = await _service.AssistantTurnAsync(new AiAssistantTurnRequestDto(
+            "Tạo task frontend và backend cho đăng nhập"),
+            FullAssistantContext());
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Disposition.Should().Be("clarification_required");
+        result.Data.Intent.Should().Be(AiAssistantTurnContract.ClarificationIntent);
+        result.Data.Clarification.Should().NotBeNull();
+        result.Data.Clarification!.Field.Should().Be("projectId");
+        result.Data.Clarification.Choices.Should().HaveCount(2);
+        result.Data.Clarification.MaxTurns.Should().Be(3);
+        result.Data.Artifact.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task AssistantTurnAsync_ForUnregisteredMutation_ReturnsUnsupportedWithoutArtifact()
+    {
+        var result = await _service.AssistantTurnAsync(new AiAssistantTurnRequestDto(
+            "Tạo dự án landing page và tự triển khai luôn"),
+            FullAssistantContext());
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Disposition.Should().Be("unsupported");
+        result.Data.Intent.Should().Be(AiAssistantTurnContract.UnsupportedIntent);
+        result.Data.ExecutionPolicy.Should().Be("none");
+        result.Data.Artifact.Should().BeNull();
+        result.Data.Clarification.Should().BeNull();
+        _projectServiceMock.VerifyNoOtherCalls();
+        _aiGatewayMock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task AssistantTurnAsync_ForExistingTaskAssignment_DoesNotMisrouteToTaskCreate()
+    {
+        var result = await _service.AssistantTurnAsync(new AiAssistantTurnRequestDto(
+            "Giao task đăng nhập hiện có cho Minh"),
+            FullAssistantContext());
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Disposition.Should().Be("unsupported");
+        result.Data.Artifact.Should().BeNull();
+        result.Data.AssistantMessage.Should().Contain("task hiện có");
+        _projectServiceMock.VerifyNoOtherCalls();
+        _aiGatewayMock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task AssistantTurnAsync_ForResearchIntent_ReturnsGroundedPlanAndModelTruth()
+    {
+        var projectId = Guid.NewGuid();
+        var sourceRef = $"qaly://project/{projectId:D}/project/summary@abc123";
+        _aiGatewayMock
+            .Setup(gateway => gateway.ExecuteAsync(
+                It.Is<AiRequest>(request =>
+                    request.ExpectedSchemaId == AiAssistantResearchPlanContract.SchemaId &&
+                    request.Tools == null &&
+                    request.ValidationContextJson != null &&
+                    request.ValidationContextJson.Contains(sourceRef, StringComparison.Ordinal)),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiResponse
+            {
+                Content = ResearchPlanJson(projectId, sourceRef),
+                ProviderName = "DeepSeek",
+                ModelName = "deepseek-reasoner"
+            });
+
+        var result = await _service.AssistantTurnAsync(new AiAssistantTurnRequestDto(
+            "Phân tích rủi ro và đề xuất phương án xử lý",
+            new AiAssistantClientContextDto(ProjectId: projectId),
+            ProviderHint: "deepseek"),
+            ResearchAssistantContext(projectId, sourceRef));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Disposition.Should().Be("research_plan");
+        result.Data.Intent.Should().Be(AiAssistantTurnContract.ResearchPlanIntent);
+        result.Data.ExecutionPolicy.Should().Be("read_only_proposal");
+        result.Data.ResearchPlan.Should().NotBeNull();
+        result.Data.ResearchPlan!.Findings.Should().OnlyContain(finding => finding.SourceRefs.Contains(sourceRef));
+        result.Data.ResearchPlan.ActualProvider.Should().Be("DeepSeek");
+        result.Data.ResearchPlan.ProposedActions.Should().ContainSingle(action =>
+            action.CapabilityId == "project.create.v1" && !action.ExecutionEligible);
+        result.Data.Answer!.Model!.Provider.Should().Be("DeepSeek");
+    }
+
+    [Fact]
+    public async Task AssistantTurnAsync_ForResearchIntent_RejectsSchemaInvalidProviderPayload()
+    {
+        var projectId = Guid.NewGuid();
+        var sourceRef = $"qaly://project/{projectId:D}/project/summary@abc123";
+        _aiGatewayMock
+            .Setup(gateway => gateway.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiResponse
+            {
+                Content = "{\"schemaId\":\"assistant_research_plan.v1\"}",
+                ProviderName = "DeepSeek",
+                ModelName = "deepseek-reasoner"
+            });
+
+        var result = await _service.AssistantTurnAsync(new AiAssistantTurnRequestDto(
+            "Đánh giá tiến độ và đề xuất kế hoạch",
+            new AiAssistantClientContextDto(ProjectId: projectId)),
+            ResearchAssistantContext(projectId, sourceRef));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(422);
+        result.ErrorCode.Should().Be("assistant_research_schema_invalid");
+    }
+
+    [Fact]
+    public async Task AssistantTurnAsync_ForResearchIntent_PreservesProviderUnavailableFailure()
+    {
+        var projectId = Guid.NewGuid();
+        var sourceRef = $"qaly://project/{projectId:D}/project/summary@abc123";
+        _aiGatewayMock
+            .Setup(gateway => gateway.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiResponse
+            {
+                IsSuccess = false,
+                ErrorCode = AiErrorCodes.ProviderUnavailable,
+                ErrorMessage = "Provider unavailable",
+                Retryable = true
+            });
+
+        var result = await _service.AssistantTurnAsync(new AiAssistantTurnRequestDto(
+            "Phân tích tiến độ và đề xuất phương án",
+            new AiAssistantClientContextDto(ProjectId: projectId)),
+            ResearchAssistantContext(projectId, sourceRef));
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(503);
+        result.ErrorCode.Should().Be(AiErrorCodes.ProviderUnavailable);
+    }
+
+    private static AiAssistantExecutionContextDto FullAssistantContext()
+        => new(AiAssistantCapabilityCatalog.All.ToList(), [], []);
+
+    private static AiAssistantExecutionContextDto ResearchAssistantContext(Guid projectId, string sourceRef)
+        => new(
+            AiAssistantCapabilityCatalog.All.ToList(),
+            [new AiAssistantContextSourceEnvelopeDto(
+                AiAssistantContextContract.ProjectSummarySource,
+                sourceRef,
+                "project",
+                "Qaly Native AI",
+                DateTimeOffset.UtcNow,
+                "qaly_domain_record",
+                "project_private",
+                "sha256:abc123",
+                new Dictionary<string, object?> { ["projectId"] = projectId, ["name"] = "Qaly Native AI" },
+                [],
+                "deterministic")],
+            [new AiAssistantSourceDisclosureDto(
+                AiAssistantContextContract.ProjectSummarySource,
+                "read",
+                "Authorized",
+                sourceRef)]);
+
+    private static string ResearchPlanJson(Guid projectId, string sourceRef)
+        => JsonSerializer.Serialize(new
+        {
+            schemaId = AiAssistantResearchPlanContract.SchemaId,
+            promptId = AiAssistantResearchPlanContract.PromptId,
+            promptVersion = AiAssistantResearchPlanContract.PromptVersion,
+            objective = "Phân tích rủi ro và đề xuất phương án xử lý",
+            scope = new { scopeType = "project", projectId, label = "Qaly Native AI", sourceRefs = new[] { sourceRef } },
+            findings = new[]
+            {
+                new { findingId = "F1", statement = "Dự án cần ưu tiên xử lý rủi ro.", severity = "high", confidence = 0.9, sourceRefs = new[] { sourceRef } }
+            },
+            unknowns = new[] { new { unknownId = "U1", question = "Capacity sắp tới là bao nhiêu?", blocking = false } },
+            assumptions = new[] { "Capacity chưa được xác minh." },
+            options = new[]
+            {
+                new { optionId = "O1", title = "Ưu tiên rủi ro", outcome = "Giảm rủi ro chính.", tradeOffs = new[] { "Lùi việc phụ." }, estimatedEffort = "1 ngày", risk = "Chậm hạng mục phụ." }
+            },
+            recommendedOptionId = "O1",
+            recommendationRationale = "Phương án dùng fact có nguồn.",
+            proposedActions = new[]
+            {
+                new { actionId = "A1", capabilityId = "project.create.v1", title = "Tạo project khác", dependencyIds = Array.Empty<string>(), draftInput = new { name = "Draft" }, sourceRefs = new[] { sourceRef }, executionEligible = true, eligibilityReason = "model_claim" }
+            },
+            warnings = new[] { "Cần human review." },
+            privacyNotes = new[] { "model_claim" },
+            freshnessAt = DateTimeOffset.UnixEpoch,
+            generatedAt = DateTimeOffset.UnixEpoch,
+            actualProvider = "model_claim",
+            actualModel = "model_claim"
+        });
+
+    private static ProjectDto CreateProject(Guid id, string name)
+        => new(
+            id,
+            name,
+            name.ToUpperInvariant().Replace(' ', '-'),
+            null,
+            null,
+            "Active",
+            null,
+            null,
+            Guid.NewGuid(),
+            "Project owner",
+            1,
+            0,
+            0,
+            Array.Empty<ProjectLabelDto>(),
+            DateTimeOffset.UtcNow,
+            null,
+            null);
 
     public void Dispose()
     {

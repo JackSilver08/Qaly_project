@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qaly.local/schemas/ai/assistant_turn.v1.json",
+  "title": "Qaly AI assistant turn",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaId",
+    "disposition",
+    "intent",
+    "executionPolicy",
+    "assistantMessage",
+    "confidence",
+    "clarification",
+    "artifact",
+    "sourceRefs"
+  ],
+  "properties": {
+    "schemaId": { "const": "assistant_turn.v1" },
+    "disposition": {
+      "enum": [
+        "grounded_answer",
+        "research_plan",
+        "registered_action",
+        "clarification_required",
+        "unsupported",
+        "policy_blocked"
+      ]
+    },
+    "intent": {
+      "enum": [
+        "grounded.read.v1",
+        "research.plan.v1",
+        "task.create.v1",
+        "clarification.v1",
+        "unsupported.v1",
+        "policy_blocked.v1"
+      ]
+    },
+    "executionPolicy": {
+      "enum": ["read_only", "read_only_proposal", "draft_then_confirm", "none"]
+    },
+    "assistantMessage": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "clarification": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["questionId", "field", "prompt", "choices", "allowFreeText", "turn", "maxTurns"],
+          "properties": {
+            "questionId": { "type": "string", "minLength": 1, "maxLength": 80 },
+            "field": { "enum": ["projectId"] },
+            "prompt": { "type": "string", "minLength": 1, "maxLength": 500 },
+            "choices": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 5,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "label"],
+                "properties": {
+                  "id": { "type": "string", "format": "uuid" },
+                  "label": { "type": "string", "minLength": 1, "maxLength": 240 },
+                  "description": { "type": ["string", "null"], "maxLength": 240 }
+                }
+              }
+            },
+            "allowFreeText": { "const": false },
+            "turn": { "type": "integer", "minimum": 1, "maximum": 3 },
+            "maxTurns": { "const": 3 }
+          }
+        }
+      ]
+    },
+    "artifact": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "schemaId", "message", "projectId"],
+          "properties": {
+            "kind": { "const": "task_action_plan" },
+            "schemaId": { "const": "ai_action_intent_envelope.v1" },
+            "message": { "type": "string", "minLength": 1, "maxLength": 4000 },
+            "projectId": { "type": "string", "format": "uuid" }
+          }
+        }
+      ]
+    },
+    "sourceRefs": {
+      "type": "array",
+      "maxItems": 50,
+      "items": { "type": "string", "minLength": 1, "maxLength": 500 },
+      "uniqueItems": true
+    },
+    "answer": { "type": ["object", "null"] },
+    "sessionId": { "type": ["string", "null"], "format": "uuid" },
+    "turnId": { "type": ["string", "null"], "format": "uuid" },
+    "sequence": { "type": ["integer", "null"], "minimum": 1 },
+    "sessionVersion": { "type": ["integer", "null"], "minimum": 0 },
+    "clientTurnId": { "type": ["string", "null"], "format": "uuid" },
+    "turnStatus": { "enum": ["running", "completed", "failed"] },
+    "correlationId": { "type": ["string", "null"], "maxLength": 120 },
+    "replayed": { "type": "boolean" },
+    "modelProfile": { "type": "string", "minLength": 1, "maxLength": 60 },
+    "actualProvider": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "actualModel": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "processEvents": {
+      "type": ["array", "null"],
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sequence", "stage", "status", "publicLabel", "startedAt", "retryable"],
+        "properties": {
+          "sequence": { "type": "integer", "minimum": 1 },
+          "stage": { "type": "string", "minLength": 1, "maxLength": 60 },
+          "status": { "enum": ["queued", "running", "completed", "failed"] },
+          "publicLabel": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "startedAt": { "type": "string", "format": "date-time" },
+          "completedAt": { "type": ["string", "null"], "format": "date-time" },
+          "durationMs": { "type": ["integer", "null"], "minimum": 0 },
+          "retryable": { "type": "boolean" },
+          "safeErrorCode": { "type": ["string", "null"], "maxLength": 100 }
+        }
+      }
+    },
+    "capabilities": {
+      "type": ["array", "null"],
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "capabilityId",
+          "kind",
+          "inputSchemaId",
+          "outputSchemaId",
+          "requiredScopes",
+          "contextSources",
+          "riskClass",
+          "confirmationPolicy",
+          "modelProfile",
+          "rendererId",
+          "featureFlag"
+        ],
+        "properties": {
+          "capabilityId": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "kind": { "enum": ["read", "artifact", "mutation_draft"] },
+          "inputSchemaId": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "outputSchemaId": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "requiredScopes": {
+            "type": "array",
+            "maxItems": 20,
+            "items": { "type": "string", "minLength": 1, "maxLength": 100 },
+            "uniqueItems": true
+          },
+          "contextSources": {
+            "type": "array",
+            "maxItems": 20,
+            "items": { "type": "string", "minLength": 1, "maxLength": 100 },
+            "uniqueItems": true
+          },
+          "riskClass": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "confirmationPolicy": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "modelProfile": { "type": "string", "minLength": 1, "maxLength": 60 },
+          "rendererId": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "featureFlag": { "type": "string", "minLength": 1, "maxLength": 120 }
+        }
+      }
+    },
+    "sourceDisclosures": {
+      "type": ["array", "null"],
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sourceId", "status", "label"],
+        "properties": {
+          "sourceId": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "status": { "enum": ["read", "skipped", "denied"] },
+          "label": { "type": "string", "minLength": 1, "maxLength": 240 },
+          "sourceRef": { "type": ["string", "null"], "maxLength": 500 },
+          "reasonCode": { "type": ["string", "null"], "maxLength": 100 }
+        }
+      }
+    },
+    "researchPlan": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "./assistant_research_plan.schema.json" }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "disposition": { "const": "registered_action" } } },
+      "then": {
+        "properties": {
+          "intent": { "const": "task.create.v1" },
+          "executionPolicy": { "const": "draft_then_confirm" },
+          "artifact": { "type": "object" },
+          "clarification": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "disposition": { "const": "clarification_required" } } },
+      "then": {
+        "properties": {
+          "intent": { "const": "clarification.v1" },
+          "executionPolicy": { "const": "none" },
+          "clarification": { "type": "object" },
+          "artifact": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "disposition": { "const": "research_plan" } } },
+      "then": {
+        "properties": {
+          "intent": { "const": "research.plan.v1" },
+          "executionPolicy": { "const": "read_only_proposal" },
+          "artifact": { "type": "null" },
+          "clarification": { "type": "null" },
+          "researchPlan": { "type": "object" }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "group_selected_summary.v1",
+  "type": "object",
+  "required": [
+    "schemaId", "groupId", "projectId", "messageRange", "summary",
+    "summarySourceRefs", "keyDecisions", "openQuestions", "actionCandidates",
+    "sourceRefs", "warnings"
+  ],
+  "properties": {
+    "schemaId": { "const": "group_selected_summary.v1" },
+    "groupId": { "type": "string", "format": "uuid" },
+    "projectId": { "type": "string", "format": "uuid" },
+    "messageRange": {
+      "type": "object",
+      "required": ["messageIds", "fromMessageId", "toMessageId"],
+      "properties": {
+        "messageIds": { "type": "array", "minItems": 1, "maxItems": 50, "uniqueItems": true, "items": { "type": "string", "format": "uuid" } },
+        "fromMessageId": { "type": "string", "format": "uuid" },
+        "toMessageId": { "type": "string", "format": "uuid" }
+      },
+      "additionalProperties": false
+    },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "summarySourceRefs": { "$ref": "#/$defs/sourceKeys" },
+    "keyDecisions": { "type": "array", "maxItems": 12, "items": { "$ref": "#/$defs/groundedText" } },
+    "openQuestions": { "type": "array", "maxItems": 12, "items": { "$ref": "#/$defs/groundedText" } },
+    "actionCandidates": { "type": "array", "maxItems": 12, "items": { "$ref": "#/$defs/groundedAction" } },
+    "sourceRefs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "required": ["key", "messageId", "url"],
+        "properties": {
+          "key": { "type": "string", "pattern": "^message:[0-9a-fA-F-]{36}$" },
+          "messageId": { "type": "string", "format": "uuid" },
+          "url": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "warnings": { "type": "array", "items": { "type": "string" } }
+  },
+  "$defs": {
+    "sourceKeys": { "type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": { "type": "string" } },
+    "groundedText": {
+      "type": "object",
+      "required": ["text", "sourceRefs"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1, "maxLength": 800 },
+        "sourceRefs": { "$ref": "#/$defs/sourceKeys" }
+      },
+      "additionalProperties": false
+    },
+    "groundedAction": {
+      "type": "object",
+      "required": ["title", "details", "sourceRefs"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 800 },
+        "details": { "type": "string", "minLength": 1, "maxLength": 800 },
+        "sourceRefs": { "$ref": "#/$defs/sourceKeys" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

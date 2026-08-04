@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dashboard_strategic_brief.v1",
+  "type": "object",
+  "required": ["schemaId", "organizationId", "requestedById", "snapshotAt", "coverage", "metrics", "summaryPoints", "risks", "priorities", "sourceRefs", "warnings"],
+  "properties": {
+    "schemaId": { "const": "dashboard_strategic_brief.v1" },
+    "organizationId": { "type": "string", "format": "uuid" },
+    "requestedById": { "type": "string", "format": "uuid" },
+    "snapshotAt": { "type": "string", "format": "date-time" },
+    "coverage": {
+      "type": "object",
+      "required": ["visibleProjectCount", "includedTaskCount", "excludedPrivateTaskCount", "visibility"],
+      "properties": {
+        "visibleProjectCount": { "type": "integer", "minimum": 1 },
+        "includedTaskCount": { "type": "integer", "minimum": 0 },
+        "excludedPrivateTaskCount": { "type": "integer", "minimum": 0 },
+        "visibility": { "const": "authorized_tenant_non_private" }
+      }, "additionalProperties": false
+    },
+    "metrics": {
+      "type": "object",
+      "required": ["projectCount", "activeProjectCount", "riskProjectCount", "taskTotal", "done", "inProgress", "todo", "overdue", "dueSoon", "completionRate", "memberCount"],
+      "properties": {
+        "projectCount": { "type": "integer", "minimum": 1 },
+        "activeProjectCount": { "type": "integer", "minimum": 0 },
+        "riskProjectCount": { "type": "integer", "minimum": 0 },
+        "taskTotal": { "type": "integer", "minimum": 0 },
+        "done": { "type": "integer", "minimum": 0 },
+        "inProgress": { "type": "integer", "minimum": 0 },
+        "todo": { "type": "integer", "minimum": 0 },
+        "overdue": { "type": "integer", "minimum": 0 },
+        "dueSoon": { "type": "integer", "minimum": 0 },
+        "completionRate": { "type": "number", "minimum": 0, "maximum": 100 },
+        "memberCount": { "type": "integer", "minimum": 0 }
+      }, "additionalProperties": false
+    },
+    "summaryPoints": { "type": "array", "minItems": 1, "maxItems": 6, "items": { "$ref": "#/$defs/summary" } },
+    "risks": { "type": "array", "maxItems": 6, "items": { "$ref": "#/$defs/risk" } },
+    "priorities": { "type": "array", "maxItems": 6, "items": { "$ref": "#/$defs/priority" } },
+    "sourceRefs": { "type": "array", "maxItems": 40, "items": { "$ref": "#/$defs/source" } },
+    "warnings": { "type": "array", "items": { "type": "string" } }
+  },
+  "$defs": {
+    "keys": { "type": "array", "maxItems": 8, "uniqueItems": true, "items": { "type": "string" } },
+    "summary": { "type": "object", "required": ["text", "metricRefs", "sourceRefs"], "properties": { "text": { "type": "string", "minLength": 1, "maxLength": 800 }, "metricRefs": { "$ref": "#/$defs/keys" }, "sourceRefs": { "$ref": "#/$defs/keys" } }, "additionalProperties": false },
+    "risk": { "type": "object", "required": ["severity", "title", "metricRefs", "sourceRefs"], "properties": { "severity": { "enum": ["low", "medium", "high"] }, "title": { "type": "string", "minLength": 1, "maxLength": 800 }, "metricRefs": { "$ref": "#/$defs/keys" }, "sourceRefs": { "$ref": "#/$defs/keys" } }, "additionalProperties": false },
+    "priority": { "type": "object", "required": ["title", "rationale", "metricRefs", "sourceRefs"], "properties": { "title": { "type": "string", "minLength": 1, "maxLength": 800 }, "rationale": { "type": "string", "minLength": 1, "maxLength": 800 }, "metricRefs": { "$ref": "#/$defs/keys" }, "sourceRefs": { "$ref": "#/$defs/keys" } }, "additionalProperties": false },
+    "source": { "type": "object", "required": ["key", "type", "entityId", "projectId", "label", "url", "version"], "properties": { "key": { "type": "string" }, "type": { "enum": ["project", "task"] }, "entityId": { "type": "string", "format": "uuid" }, "projectId": { "type": "string", "format": "uuid" }, "label": { "type": "string", "minLength": 1 }, "url": { "type": "string", "minLength": 1 }, "version": { "type": ["string", "null"] } }, "additionalProperties": false }
+  },
+  "additionalProperties": false
+}

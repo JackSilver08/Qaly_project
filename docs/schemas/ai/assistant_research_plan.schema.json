@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qaly.local/schemas/ai/assistant_research_plan.v1.json",
+  "title": "Qaly grounded assistant research plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaId", "promptId", "promptVersion", "objective", "scope", "findings",
+    "unknowns", "assumptions", "options", "recommendedOptionId",
+    "recommendationRationale", "proposedActions", "warnings", "privacyNotes", "freshnessAt", "generatedAt",
+    "actualProvider", "actualModel"
+  ],
+  "properties": {
+    "schemaId": { "const": "assistant_research_plan.v1" },
+    "promptId": { "const": "assistant-research-plan" },
+    "promptVersion": { "const": "1.0.0" },
+    "objective": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scopeType", "projectId", "label", "sourceRefs"],
+      "properties": {
+        "scopeType": { "enum": ["workspace", "project", "task"] },
+        "projectId": { "type": ["string", "null"], "format": "uuid" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "sourceRefs": { "$ref": "#/$defs/sourceRefs" }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["findingId", "statement", "severity", "confidence", "sourceRefs"],
+        "properties": {
+          "findingId": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "statement": { "type": "string", "minLength": 1, "maxLength": 1000 },
+          "severity": { "enum": ["info", "low", "medium", "high", "critical"] },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "sourceRefs": { "$ref": "#/$defs/sourceRefs" }
+        }
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["unknownId", "question", "blocking"],
+        "properties": {
+          "unknownId": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "question": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "blocking": { "type": "boolean" }
+        }
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "maxItems": 10,
+      "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+    },
+    "options": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["optionId", "title", "outcome", "tradeOffs", "estimatedEffort", "risk"],
+        "properties": {
+          "optionId": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "outcome": { "type": "string", "minLength": 1, "maxLength": 800 },
+          "tradeOffs": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": { "type": "string", "minLength": 1, "maxLength": 400 }
+          },
+          "estimatedEffort": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "risk": { "type": "string", "minLength": 1, "maxLength": 500 }
+        }
+      }
+    },
+    "recommendedOptionId": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "recommendationRationale": { "type": "string", "minLength": 1, "maxLength": 1200 },
+    "proposedActions": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "actionId", "capabilityId", "title", "dependencyIds", "draftInput",
+          "sourceRefs", "executionEligible", "eligibilityReason"
+        ],
+        "properties": {
+          "actionId": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "capabilityId": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "title": { "type": "string", "minLength": 1, "maxLength": 300 },
+          "dependencyIds": {
+            "type": "array", "maxItems": 8, "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1, "maxLength": 80 }
+          },
+          "draftInput": { "type": "object" },
+          "sourceRefs": { "$ref": "#/$defs/sourceRefs" },
+          "executionEligible": { "type": "boolean" },
+          "eligibilityReason": { "type": "string", "minLength": 1, "maxLength": 160 }
+        }
+      }
+    },
+    "warnings": {
+      "type": "array", "maxItems": 10,
+      "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+    },
+    "privacyNotes": {
+      "type": "array", "maxItems": 12,
+      "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+    },
+    "freshnessAt": { "type": "string", "format": "date-time" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "actualProvider": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "actualModel": { "type": "string", "minLength": 1, "maxLength": 160 }
+  },
+  "$defs": {
+    "sourceRefs": {
+      "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+    }
+  }
+}

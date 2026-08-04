@@ -175,6 +175,13 @@ public class ProjectServiceTests : IDisposable
         
         var project = new Project { Id = Guid.NewGuid(), Name = "Project", OwnerId = ownerId };
         await _projectRepo.AddAsync(project);
+        await _userRepo.AddAsync(new User
+        {
+            Id = ownerId,
+            IsActive = true,
+            Email = "owner@qaly.dev",
+            FullName = "Owner"
+        });
         await _userRepo.AddAsync(new User { Id = newMemberId, IsActive = true, Email = "member@qaly.dev", FullName = "Member" });
         await _context.SaveChangesAsync();
         

@@ -15,6 +15,11 @@ public sealed class AiJobMigrationSqlServerTests
     [Fact]
     public async Task P002Migration_BackfillsCanonicalJobAndClassifiesEveryLegacyQueueRow()
     {
+        if (!SqlServerTestEnvironment.IsAvailable())
+        {
+            return;
+        }
+
         await using var database = await SqlMigrationDatabase.CreateAsync();
         await using (var legacyContext = database.CreateContext())
         {

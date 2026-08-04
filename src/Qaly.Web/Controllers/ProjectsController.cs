@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Qaly.Application.DTOs.Project;
+using Qaly.Application.DTOs.Ai;
 using Qaly.Application.Services;
 using Qaly.Web.Auth;
 
@@ -13,11 +14,16 @@ public class ProjectsController : BaseApiController
 {
     private readonly IProjectService _projectService;
     private readonly ITaskService _taskService;
+    private readonly IPortfolioScheduleService _portfolioScheduleService;
 
-    public ProjectsController(IProjectService projectService, ITaskService taskService)
+    public ProjectsController(
+        IProjectService projectService,
+        ITaskService taskService,
+        IPortfolioScheduleService portfolioScheduleService)
     {
         _projectService = projectService;
         _taskService = taskService;
+        _portfolioScheduleService = portfolioScheduleService;
     }
 
     [HttpGet("{id:guid}/gantt")]
@@ -160,6 +166,75 @@ public class ProjectsController : BaseApiController
     public async Task<IActionResult> GetWorkload(Guid id, CancellationToken ct)
     {
         var result = await _taskService.GetWorkloadAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("{id:guid}/portfolio-capacity")]
+    public async Task<IActionResult> GetPortfolioCapacity(
+        Guid id,
+        [FromQuery] DateTimeOffset? from,
+        [FromQuery] DateTimeOffset? to,
+        CancellationToken ct)
+    {
+        var result = await _portfolioScheduleService.GetCapacityAsync(id, from, to, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("{id:guid}/schedule-proposals")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateScheduleProposal(
+        Guid id,
+        CreatePortfolioScheduleProposalDto dto,
+        CancellationToken ct)
+    {
+        var result = await _portfolioScheduleService.CreateProposalAsync(
+            id,
+            dto,
+            Request.Headers["Idempotency-Key"].ToString(),
+            ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("{id:guid}/schedule-proposals/{draftId:guid}")]
+    public async Task<IActionResult> GetScheduleProposal(Guid id, Guid draftId, CancellationToken ct)
+    {
+        var result = await _portfolioScheduleService.GetProposalAsync(id, draftId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPatch("{id:guid}/schedule-proposals/{draftId:guid}")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateScheduleProposal(
+        Guid id,
+        Guid draftId,
+        UpdatePortfolioScheduleProposalDto dto,
+        CancellationToken ct)
+    {
+        var result = await _portfolioScheduleService.UpdateProposalAsync(id, draftId, dto, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("{id:guid}/schedule-proposals/{draftId:guid}/confirm")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ConfirmScheduleProposal(
+        Guid id,
+        Guid draftId,
+        ConfirmPortfolioScheduleProposalDto dto,
+        CancellationToken ct)
+    {
+        var result = await _portfolioScheduleService.ConfirmProposalAsync(id, draftId, dto, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("{id:guid}/schedule-proposals/{draftId:guid}/reject")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RejectScheduleProposal(
+        Guid id,
+        Guid draftId,
+        RejectPortfolioScheduleProposalDto dto,
+        CancellationToken ct)
+    {
+        var result = await _portfolioScheduleService.RejectProposalAsync(id, draftId, dto, ct);
         return StatusCode(result.StatusCode, result);
     }
 }

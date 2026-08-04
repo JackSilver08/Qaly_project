@@ -184,6 +184,7 @@ public partial class DashboardController : BaseApiController
                         return new DashboardTaskResponse(
                             task.Id,
                             isRestricted ? $"Restricted Task #{task.Id.ToString()[..8]}" : task.Title,
+                            isRestricted ? null : task.Description,
                             task.Status,
                             task.Priority,
                             task.DueDate,
@@ -873,6 +874,7 @@ public partial class DashboardController : BaseApiController
             .Select(t => new DashboardTaskResponse(
                 t.Id,
                 t.Title,
+                t.Description,
                 t.Status,
                 t.Priority,
                 t.DueDate,
@@ -909,80 +911,14 @@ public partial class DashboardController : BaseApiController
     }
 
     [HttpPost("ai-strategy")]
-    public async Task<ActionResult<AiStrategyResponseDto>> GenerateAiStrategy(
-        [FromBody] StrategicOverviewDto data,
-        CancellationToken cancellationToken)
+    public IActionResult GenerateAiStrategy()
     {
-        var response = await _aiGateway.ExecuteAsync(new AiRequest
+        Response.Headers["Deprecation"] = "true";
+        return StatusCode(StatusCodes.Status410Gone, new
         {
-            JobType = "WorkspaceStrategicOverview",
-            ProviderHint = "auto",
-            UserId = User.GetUserId(),
-            Prompt = $"""
-                Phân tích các chỉ số hiện tại của không gian làm việc Qaly và đưa ra hướng xử lý cụ thể:
-                - Điểm sức khỏe: {data.WorkspaceHealthScore}%
-                - Tiến độ dự án trung bình: {data.AverageProjectProgress}%
-                - Tỷ lệ hoàn thành nhiệm vụ: {data.TaskCompletionRate}%
-                - Số dự án đang hoạt động: {data.ActiveProjectCount}
-                - Số dự án có rủi ro: {data.RiskProjectCount}
-                - Số nhiệm vụ quá hạn: {data.OverdueTaskCount}
-                - Số nhiệm vụ sắp đến hạn: {data.DueSoonTaskCount}
-                - Mức tải đội ngũ: {data.TeamWorkloadLevel}
-                - Mức rủi ro chung: {data.RiskLevel}
-                - Nhiệm vụ ưu tiên: {string.Join("; ", data.TopPriorityTasks.Select(task => task.Title))}
-
-                Toàn bộ nội dung phải viết bằng tiếng Việt tự nhiên và dẫn ít nhất hai số liệu ở trên.
-                Riêng summary phải nhắc rõ {data.ActiveProjectCount} dự án đang hoạt động và {data.OverdueTaskCount} nhiệm vụ quá hạn.
-                Các giá trị dự án và nhiệm vụ là số lượng, không phải phần trăm.
-                Hãy nêu rõ người dùng cần kiểm tra hoặc thực hiện việc gì tiếp theo.
-                Không lặp câu mẫu của schema và không bịa tên người, chi phí hoặc thời hạn.
-                """,
-            SystemPrompt = """
-                Bạn là trợ lý vận hành dự án. Chỉ phân tích dữ liệu JSON được cung cấp, không bịa thêm dữ kiện.
-                Trả về duy nhất một JSON object theo đúng cấu trúc:
-                {
-                  "summary": "nhận định ngắn",
-                  "riskAnalysis": ["rủi ro có căn cứ từ dữ liệu"],
-                  "recommendations": ["hành động cụ thể người dùng có thể làm"],
-                  "priorityPlan": ["tối đa 3 ưu tiên có thể thực hiện"]
-                }
-                Mỗi mảng phải có ít nhất một mục. Dùng tiếng Việt rõ ràng, không dùng markdown.
-                """,
-            ExpectedSchemaId = "WorkspaceStrategy.v1",
-            IsSensitive = false,
-            UseCache = false,
-            AllowMockFallback = false
-        }, cancellationToken);
-
-        if (!response.IsSuccess || response.IsMock)
-        {
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
-            {
-                errorCode = response.ErrorCode ?? AiErrorCodes.ProviderUnavailable,
-                error = response.IsMock
-                    ? "AI provider chỉ trả dữ liệu mô phỏng; Qaly đã từ chối hiển thị như kết quả thật."
-                    : response.ErrorMessage ?? "AI provider chưa sẵn sàng."
-            });
-        }
-
-        if (!TryReadAiStrategy(response.Content, out var strategy))
-        {
-            LogInvalidWorkspaceStrategyPayload(_logger, response.ProviderName);
-            return StatusCode(StatusCodes.Status502BadGateway, new
-            {
-                errorCode = AiErrorCodes.SchemaInvalid,
-                error = "Model đã phản hồi nhưng nội dung không đúng cấu trúc yêu cầu."
-            });
-        }
-
-        return Ok(new AiStrategyResponseDto(
-            strategy!.Summary,
-            strategy.RiskAnalysis,
-            strategy.Recommendations,
-            strategy.PriorityPlan,
-            response.ProviderName,
-            response.ModelName,
-            response.CacheHit));
+            errorCode = AiErrorCodes.InvalidRequest,
+            error = "Endpoint nhận metric từ trình duyệt đã ngừng dùng. Hãy gọi POST /api/ai/dashboard/strategic-brief để Qaly dựng snapshot có quyền ở server."
+        });
     }
 
     private static bool TryReadAiStrategy(string content, out AiStrategyPayload? payload)
@@ -1065,6 +1001,7 @@ public sealed record DashboardProjectMemberResponse(
 public sealed record DashboardTaskResponse(
     Guid Id,
     string Title,
+    string? Description,
     string Status,
     string Priority,
     DateTimeOffset? DueDate,

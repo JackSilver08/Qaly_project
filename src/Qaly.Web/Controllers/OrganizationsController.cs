@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Qaly.Application.DTOs.Project;
 using Qaly.Application.DTOs.Task;
+using Qaly.Application.DTOs.Ai;
 using Qaly.Application.Services;
 
 namespace Qaly.Web.Controllers;
@@ -13,13 +14,19 @@ public class OrganizationsController : BaseApiController
 {
     private readonly IOrganizationService _organizationService;
     private readonly ITaskSkillService _taskSkillService;
+    private readonly IMemberSkillEvidenceService _memberSkillEvidenceService;
+    private readonly IPortfolioScheduleService _portfolioScheduleService;
 
     public OrganizationsController(
         IOrganizationService organizationService,
-        ITaskSkillService taskSkillService)
+        ITaskSkillService taskSkillService,
+        IMemberSkillEvidenceService memberSkillEvidenceService,
+        IPortfolioScheduleService portfolioScheduleService)
     {
         _organizationService = organizationService;
         _taskSkillService = taskSkillService;
+        _memberSkillEvidenceService = memberSkillEvidenceService;
+        _portfolioScheduleService = portfolioScheduleService;
     }
 
     [HttpGet]
@@ -138,6 +145,28 @@ public class OrganizationsController : BaseApiController
         CancellationToken ct = default)
     {
         var result = await _taskSkillService.UpdateOrganizationSkillAsync(id, skillId, dto, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPut("{id:guid}/members/{userId:guid}/capacity")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateMemberCapacity(
+        Guid id,
+        Guid userId,
+        UpdateMemberCapacityProfileDto dto,
+        CancellationToken ct = default)
+    {
+        var result = await _portfolioScheduleService.UpdateCapacityProfileAsync(id, userId, dto, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("{id:guid}/members/{memberId:guid}/skill-evidence")]
+    public async Task<IActionResult> GetMemberSkillEvidence(
+        Guid id,
+        Guid memberId,
+        CancellationToken ct = default)
+    {
+        var result = await _memberSkillEvidenceService.GetMemberSkillProfileAsync(id, memberId, ct);
         return StatusCode(result.StatusCode, result);
     }
 }

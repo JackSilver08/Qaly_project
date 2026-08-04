@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Qaly.Application.DTOs.Ai;
+using Qaly.Application.Services;
 
 namespace Qaly.Infrastructure.Services.AI;
 
@@ -32,6 +33,48 @@ public class AiOutputValidator
             using var document = JsonDocument.Parse(content);
             var root = document.RootElement;
 
+            if (string.Equals(schemaId, TaskDraftAiContract.SchemaId, StringComparison.Ordinal))
+            {
+                return TaskDraftAiContract.TryBuildResult(
+                    content,
+                    validationContextJson ?? string.Empty,
+                    out _,
+                    out errorMessage);
+            }
+            if (string.Equals(schemaId, GroupSummaryAiContract.SchemaId, StringComparison.Ordinal))
+            {
+                return string.IsNullOrWhiteSpace(validationContextJson)
+                    ? GroupSummaryOutputContract.TryValidateFinal(content, out errorMessage)
+                    : GroupSummaryOutputContract.TryBuildResult(
+                        content,
+                        validationContextJson,
+                        out _,
+                        out errorMessage);
+            }
+            if (string.Equals(schemaId, MeetingChecknoteAiContract.SchemaId, StringComparison.Ordinal))
+            {
+                string? transcript = null;
+                if (!string.IsNullOrWhiteSpace(validationContextJson))
+                {
+                    using var contextDocument = JsonDocument.Parse(validationContextJson);
+                    if (contextDocument.RootElement.TryGetProperty("transcript", out var transcriptElement) &&
+                        transcriptElement.ValueKind == JsonValueKind.String)
+                    {
+                        transcript = transcriptElement.GetString();
+                    }
+                }
+                return MeetingChecknoteAiContract.TryValidateModel(content, transcript, out _, out errorMessage);
+            }
+            if (string.Equals(schemaId, DashboardStrategicBriefAiContract.SchemaId, StringComparison.Ordinal))
+            {
+                return string.IsNullOrWhiteSpace(validationContextJson)
+                    ? DashboardStrategicBriefOutputContract.TryValidateFinal(content, out errorMessage)
+                    : DashboardStrategicBriefOutputContract.TryBuildResult(
+                        content,
+                        validationContextJson,
+                        out _,
+                        out errorMessage);
+            }
             if (string.Equals(schemaId, "WorkspaceStrategy.v1", StringComparison.OrdinalIgnoreCase))
             {
                 if (root.ValueKind != JsonValueKind.Object)
@@ -158,6 +201,33 @@ public class AiOutputValidator
                 }
 
                 return TaskSkillSuggestionContract.TryValidateFinal(content, out errorMessage);
+            }
+            else if (string.Equals(schemaId, AiActionComposerContract.SchemaId, StringComparison.Ordinal))
+            {
+                if (!string.IsNullOrWhiteSpace(validationContextJson))
+                {
+                    return AiActionComposerOutputContract.TryBuildResult(
+                        content,
+                        validationContextJson,
+                        out _,
+                        out errorMessage);
+                }
+
+                return AiActionComposerOutputContract.TryValidateFinal(content, out errorMessage);
+            }
+            else if (string.Equals(schemaId, AiAssistantResearchPlanContract.SchemaId, StringComparison.Ordinal))
+            {
+                return AiAssistantResearchPlanOutputContract.TryValidateModel(
+                    content,
+                    validationContextJson,
+                    out errorMessage);
+            }
+            else if (string.Equals(schemaId, AiAssistantGoalPlanningContract.SchemaId, StringComparison.Ordinal))
+            {
+                return AiAssistantGoalPlanningOutputContract.TryValidateModel(
+                    content,
+                    validationContextJson,
+                    out errorMessage);
             }
             else if (schemaId.Contains("assignee_recommendation", StringComparison.OrdinalIgnoreCase))
             {

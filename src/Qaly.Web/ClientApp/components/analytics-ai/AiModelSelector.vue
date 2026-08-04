@@ -186,6 +186,18 @@ onBeforeUnmount(() => {
   outline: none;
 }
 
+.ai-model-selector.is-compact .ai-model-trigger {
+  width: 34px;
+  padding: 0;
+  justify-content: center;
+}
+
+.ai-model-selector.is-compact .ai-model-trigger-text,
+.ai-model-selector.is-compact .ai-model-status,
+.ai-model-selector.is-compact .ai-model-trigger > svg {
+  display: none;
+}
+
 .ai-model-trigger-text {
   min-width: 0;
   overflow: hidden;

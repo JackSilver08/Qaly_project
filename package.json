@@ -23,11 +23,12 @@
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
     "vite": "^6.4.3",
-    "vue-tsc": "^3.3.8",
+    "vue-tsc": "^3.3.9",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "dependencies": {
     "@microsoft/signalr": "^10.0.0",
+    "@vue/language-core": "^3.3.8",
     "chart.js": "^4.5.1",
     "dompurify": "^3.4.11",
     "entities": "^7.0.1",

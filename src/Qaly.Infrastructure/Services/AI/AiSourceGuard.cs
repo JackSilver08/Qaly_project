@@ -139,6 +139,7 @@ public sealed class AiSourceGuard : IAiSourceGuard
         => sourceType switch
         {
             "project" => GetProjectStateAsync(project, sourceId, ct),
+            "projectmembers" or "members" => GetProjectMembersStateAsync(project, sourceId, ct),
             "group" or "workgroup" => GetGroupStateAsync(project, userId, sourceId, ct),
             "sprint" => GetSprintStateAsync(project, sourceId, ct),
             "task" or "taskitem" => GetTaskStateAsync(project.Id, userId, sourceId, ct),
@@ -182,6 +183,32 @@ public sealed class AiSourceGuard : IAiSourceGuard
             AiProgressSummaryFingerprint.Compute(project, tasks),
             versions,
             timestamp);
+    }
+
+    private async Task<SourceState?> GetProjectMembersStateAsync(Project project, Guid sourceId, CancellationToken ct)
+    {
+        if (project.Id != sourceId) return null;
+        var members = await _db.ProjectMembers.AsNoTracking()
+            .Include(item => item.User)
+            .Where(item => item.ProjectId == project.Id && item.User.IsActive)
+            .OrderBy(item => item.UserId)
+            .Select(item => new
+            {
+                item.UserId,
+                item.Role,
+                item.JoinedAt,
+                item.UpdatedAt,
+                item.User.FullName,
+                item.User.IsActive
+            })
+            .ToListAsync(ct);
+        var timestamp = members
+            .Select(item => item.UpdatedAt ?? item.JoinedAt)
+            .Append(project.UpdatedAt ?? project.CreatedAt)
+            .Max();
+        var hashInput = string.Join("\n", members.Select(item =>
+            $"{item.UserId:D}|{item.Role}|{item.FullName}|{item.IsActive}|{item.JoinedAt:O}|{item.UpdatedAt:O}"));
+        return CreateState(timestamp, $"{project.Id:D}|{project.OwnerId:D}|{hashInput}");
     }
 
     private async Task<SourceState?> GetGroupStateAsync(Project project, Guid userId, Guid sourceId, CancellationToken ct)

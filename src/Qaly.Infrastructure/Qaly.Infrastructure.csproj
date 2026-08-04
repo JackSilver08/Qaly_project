@@ -29,6 +29,21 @@
     <Content Include="..\..\docs\schemas\ai\task_skill_suggestion.schema.json"
              Link="Schemas\ai\task_skill_suggestion.schema.json"
              CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\docs\schemas\ai\ai_action_intent_envelope.schema.json"
+             Link="Schemas\ai\ai_action_intent_envelope.schema.json"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\docs\schemas\ai\assistant_turn.schema.json"
+             Link="Schemas\ai\assistant_turn.schema.json"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\docs\schemas\ai\group_selected_summary.schema.json"
+             Link="Schemas\ai\group_selected_summary.schema.json"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\docs\schemas\ai\meeting_checknote.schema.json"
+             Link="Schemas\ai\meeting_checknote.schema.json"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\docs\schemas\ai\dashboard_strategic_brief.schema.json"
+             Link="Schemas\ai\dashboard_strategic_brief.schema.json"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <PropertyGroup>

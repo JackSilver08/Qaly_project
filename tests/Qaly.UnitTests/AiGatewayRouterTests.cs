@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,6 +12,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using Moq.Protected;
 using Qaly.Application.Common.Models;
 using Qaly.Application.Services;
 using Qaly.Domain.Entities;
@@ -488,6 +490,51 @@ public class AiGatewayRouterTests : IDisposable
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*not configured*");
+    }
+
+    [Fact]
+    public async Task CompleteAsync_DeepSeekProvider_WithPlaceholder_UsesEnvironmentKey()
+    {
+        const string variableName = "DEEPSEEK_API_KEY";
+        var previousValue = Environment.GetEnvironmentVariable(variableName);
+        HttpRequestMessage? capturedRequest = null;
+        try
+        {
+            Environment.SetEnvironmentVariable(variableName, "deepseek-test-key");
+            var handler = new Mock<HttpMessageHandler>();
+            handler.Protected()
+                .Setup<Task<HttpResponseMessage>>(
+                    "SendAsync",
+                    ItExpr.IsAny<HttpRequestMessage>(),
+                    ItExpr.IsAny<CancellationToken>())
+                .Callback<HttpRequestMessage, CancellationToken>((request, _) => capturedRequest = request)
+                .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        """{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}""")
+                });
+            var factory = new Mock<IHttpClientFactory>();
+            factory.Setup(item => item.CreateClient("AiDeepSeek"))
+                .Returns(new HttpClient(handler.Object));
+            var provider = new DeepSeekProvider(factory.Object);
+
+            var response = await provider.CompleteAsync(
+                new AiRequest { Prompt = "hi" },
+                new AiProviderSetting
+                {
+                    ApiKey = "YOUR_DEEPSEEK_KEY",
+                    BaseUrl = "https://api.deepseek.test",
+                    Model = "deepseek-test-model"
+                });
+
+            response.Content.Should().Be("ok");
+            capturedRequest.Should().NotBeNull();
+            capturedRequest!.Headers.Authorization!.Parameter.Should().Be("deepseek-test-key");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variableName, previousValue);
+        }
     }
 
     [Fact]

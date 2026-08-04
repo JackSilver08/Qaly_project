@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Qaly.Application.Common.Interfaces;
+using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Ai;
 using Qaly.Application.Services;
 
@@ -20,6 +21,9 @@ public class AiController : BaseApiController
     private readonly IAiPlatformQueryService _aiPlatformQueryService;
     private readonly IProjectService _projectService;
     private readonly ITaskService _taskService;
+    private readonly IAiActionComposerService _aiActionComposerService;
+    private readonly IAiJobActivityService _aiJobActivityService;
+    private readonly IAiAssistantSessionService _aiAssistantSessionService;
 
     public AiController(
         IAiService aiService,
@@ -30,7 +34,10 @@ public class AiController : BaseApiController
         IAgentRunService agentRunService,
         IAiPlatformQueryService aiPlatformQueryService,
         IProjectService projectService,
-        ITaskService taskService)
+        ITaskService taskService,
+        IAiActionComposerService aiActionComposerService,
+        IAiJobActivityService aiJobActivityService,
+        IAiAssistantSessionService aiAssistantSessionService)
     {
         _aiService = aiService;
         _erumiChatService = erumiChatService;
@@ -41,6 +48,9 @@ public class AiController : BaseApiController
         _aiPlatformQueryService = aiPlatformQueryService;
         _projectService = projectService;
         _taskService = taskService;
+        _aiActionComposerService = aiActionComposerService;
+        _aiJobActivityService = aiJobActivityService;
+        _aiAssistantSessionService = aiAssistantSessionService;
     }
 
     [HttpPost("generate-plan")]
@@ -151,6 +161,26 @@ public class AiController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpPost("actions/compose")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ComposeAction(
+        AiActionComposeRequestDto dto,
+        CancellationToken ct = default)
+    {
+        var idempotencyKey = Request.Headers["Idempotency-Key"].ToString().Trim();
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            return BadRequest(new { error = "Idempotency-Key is required.", errorCode = AiErrorCodes.InvalidRequest });
+        }
+
+        var result = await _aiActionComposerService.ComposeAsync(
+            dto,
+            idempotencyKey,
+            Request.Headers["X-Request-Id"].FirstOrDefault(),
+            ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpGet("jobs")]
     public async Task<IActionResult> ListJobs(
         [FromQuery] Guid? projectId,
@@ -172,6 +202,16 @@ public class AiController : BaseApiController
     public async Task<IActionResult> GetJobResult(Guid jobId, CancellationToken ct = default)
     {
         var result = await _aiWorkflowService.GetJobResultAsync(jobId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("jobs/{jobId:guid}/activity")]
+    public async Task<IActionResult> GetJobActivity(
+        Guid jobId,
+        [FromQuery] int afterSequence = 0,
+        CancellationToken ct = default)
+    {
+        var result = await _aiJobActivityService.GetAsync(jobId, afterSequence, ct);
         return StatusCode(result.StatusCode, result);
     }
 
@@ -317,33 +357,50 @@ public class AiController : BaseApiController
 
     [HttpPost("meetings/{meetingId:guid}/extract-actions")]
     [ValidateAntiForgeryToken]
-    public Task<IActionResult> EnqueueMeetingActionExtraction(
-        Guid meetingId,
-        AiFunctionJobRequest request,
-        CancellationToken ct = default)
-        => EnqueueFunctionAsync(
-            "meeting_action_extract",
-            "meeting_action_extract.v4",
-            request.ProjectId,
-            "meeting",
-            meetingId,
-            request,
-            ct);
+    public IActionResult EnqueueMeetingActionExtraction(Guid meetingId)
+    {
+        _ = meetingId;
+        Response.Headers["Deprecation"] = "true";
+        return StatusCode(StatusCodes.Status410Gone, new
+        {
+            errorCode = AiErrorCodes.InvalidRequest,
+            error = "The orphan generic meeting extraction route has been retired. Use the privacy-gated /api/meetings/{meetingId}/auto-checknote flow."
+        });
+    }
 
     [HttpPost("groups/{groupId:guid}/summaries")]
     [ValidateAntiForgeryToken]
-    public Task<IActionResult> EnqueueGroupSummary(
+    public async Task<IActionResult> EnqueueGroupSummary(
         Guid groupId,
-        AiFunctionJobRequest request,
+        GroupSummaryRequestDto request,
         CancellationToken ct = default)
-        => EnqueueFunctionAsync(
-            "chat_summary",
-            "chat_summary.v4",
-            request.ProjectId,
-            "group",
+    {
+        var idempotencyKey = Request.Headers["Idempotency-Key"].ToString();
+        var requestId = Request.Headers["X-Request-Id"].FirstOrDefault() ?? HttpContext.TraceIdentifier;
+        var result = await _aiWorkflowService.CreateGroupSelectedSummaryAsync(
             groupId,
             request,
+            idempotencyKey,
+            requestId,
             ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("dashboard/strategic-brief")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> EnqueueDashboardStrategicBrief(
+        DashboardStrategicBriefRequestDto request,
+        CancellationToken ct = default)
+    {
+        var idempotencyKey = Request.Headers["Idempotency-Key"].ToString();
+        var requestId = Request.Headers["X-Request-Id"].FirstOrDefault() ?? HttpContext.TraceIdentifier;
+        var result = await _aiWorkflowService.CreateDashboardStrategicBriefAsync(
+            request,
+            idempotencyKey,
+            requestId,
+            ct);
+        return StatusCode(result.StatusCode, result);
+    }
 
     [HttpPost("task-drafts/from-source")]
     [ValidateAntiForgeryToken]
@@ -358,6 +415,24 @@ public class AiController : BaseApiController
             request.SourceEntityId,
             request,
             ct);
+
+    [HttpPost("groups/{groupId:guid}/task-drafts")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> EnqueueSourceLinkedTaskDraft(
+        Guid groupId,
+        AiFunctionJobRequest request,
+        CancellationToken ct = default)
+    {
+        var idempotencyKey = Request.Headers["Idempotency-Key"].ToString();
+        var requestId = Request.Headers["X-Request-Id"].FirstOrDefault() ?? HttpContext.TraceIdentifier;
+        var result = await _aiWorkflowService.CreateSourceLinkedTaskDraftAsync(
+            groupId,
+            request,
+            idempotencyKey,
+            requestId,
+            ct);
+        return StatusCode(result.StatusCode, result);
+    }
 
     [HttpPost("tasks/{taskId:guid}/recommend-assignees")]
     [ValidateAntiForgeryToken]
@@ -549,6 +624,46 @@ public class AiController : BaseApiController
     public async Task<IActionResult> ChatFast(ErumiChatRequestDto request, CancellationToken ct)
     {
         var result = await _erumiChatService.ChatFastAsync(request, ct);
+        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("assistant/sessions")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateAssistantSession(
+        CreateAiAssistantSessionRequestDto request,
+        CancellationToken ct)
+    {
+        var result = await _aiAssistantSessionService.CreateAsync(request, ct);
+        return result.IsSuccess
+            ? StatusCode(result.StatusCode, result.Data)
+            : StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("assistant/sessions/recent")]
+    public async Task<IActionResult> GetRecentAssistantSession(CancellationToken ct)
+    {
+        var result = await _aiAssistantSessionService.GetRecentAsync(ct);
+        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("assistant/sessions/{sessionId:guid}")]
+    public async Task<IActionResult> GetAssistantSession(Guid sessionId, CancellationToken ct)
+    {
+        var result = await _aiAssistantSessionService.GetAsync(sessionId, ct);
+        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("assistant/turns")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> AssistantTurn(AiAssistantTurnRequestDto request, CancellationToken ct)
+    {
+        var idempotencyKey = Request.Headers["Idempotency-Key"].ToString().Trim();
+        var correlationId = Request.Headers["X-Request-Id"].FirstOrDefault() ?? HttpContext.TraceIdentifier;
+        var result = await _aiAssistantSessionService.AppendTurnAsync(
+            request,
+            idempotencyKey,
+            correlationId,
+            ct);
         return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result);
     }
 

@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "assistant_goal_analysis.v1",
+  "title": "Qaly Assistant Goal Analysis v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaId", "promptId", "promptVersion", "objective", "userJob", "intentFacets", "scopes", "constraints", "unknowns", "assumptions", "rankedSkills", "missingSkills", "riskLevel", "requiresConfirmation", "disposition", "confidence", "warnings", "workPlan"],
+  "properties": {
+    "schemaId": { "const": "assistant_goal_analysis.v1" },
+    "promptId": { "const": "assistant-goal-planner" },
+    "promptVersion": { "const": "1.0.0" },
+    "objective": { "type": "string", "minLength": 1, "maxLength": 1000 },
+    "userJob": { "type": "string", "minLength": 1, "maxLength": 600 },
+    "intentFacets": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "type": "string", "minLength": 1 } },
+    "scopes": { "type": "array", "minItems": 1, "maxItems": 4, "items": { "$ref": "#/$defs/scope" } },
+    "constraints": { "type": "array", "maxItems": 10, "items": { "type": "string" } },
+    "unknowns": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/unknown" } },
+    "assumptions": { "type": "array", "maxItems": 10, "items": { "type": "string" } },
+    "rankedSkills": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/skill" } },
+    "missingSkills": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/missingSkill" } },
+    "riskLevel": { "enum": ["low", "medium", "high", "critical"] },
+    "requiresConfirmation": { "type": "boolean" },
+    "disposition": { "enum": ["answerable", "plannable", "clarification_required", "unsupported_but_analyzed", "policy_blocked"] },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "warnings": { "type": "array", "maxItems": 10, "items": { "type": "string" } },
+    "workPlan": { "$ref": "#/$defs/workPlan" }
+  },
+  "$defs": {
+    "scope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["scopeType", "projectId", "entityType", "entityId", "label", "confidence", "reason"],
+      "properties": {
+        "scopeType": { "type": "string" }, "projectId": { "type": ["string", "null"], "format": "uuid" },
+        "entityType": { "type": ["string", "null"] }, "entityId": { "type": ["string", "null"], "format": "uuid" },
+        "label": { "type": "string" }, "confidence": { "type": "number", "minimum": 0, "maximum": 1 }, "reason": { "type": "string" }
+      }
+    },
+    "unknown": {
+      "type": "object", "additionalProperties": false, "required": ["unknownId", "question", "blocking"],
+      "properties": { "unknownId": { "type": "string" }, "question": { "type": "string" }, "blocking": { "type": "boolean" } }
+    },
+    "skill": {
+      "type": "object", "additionalProperties": false, "required": ["skillId", "fitReason", "confidence"],
+      "properties": { "skillId": { "type": "string" }, "fitReason": { "type": "string" }, "confidence": { "type": "number", "minimum": 0, "maximum": 1 } }
+    },
+    "missingSkill": {
+      "type": "object", "additionalProperties": false, "required": ["skillId", "title", "reason", "suggestedPath"],
+      "properties": { "skillId": { "type": "string" }, "title": { "type": "string" }, "reason": { "type": "string" }, "suggestedPath": { "type": "string" } }
+    },
+    "step": {
+      "type": "object", "additionalProperties": false,
+      "required": ["stepId", "kind", "publicLabel", "skillId", "sourceIds", "dependencyIds", "expectedOutputSchemaId", "verificationIds", "mutationClass", "state"],
+      "properties": {
+        "stepId": { "type": "string" }, "kind": { "enum": ["analyze", "clarify", "call_skill", "verify", "present"] },
+        "publicLabel": { "type": "string" }, "skillId": { "type": ["string", "null"] },
+        "sourceIds": { "type": "array", "items": { "type": "string" } }, "dependencyIds": { "type": "array", "items": { "type": "string" } },
+        "expectedOutputSchemaId": { "type": ["string", "null"] }, "verificationIds": { "type": "array", "items": { "type": "string" } },
+        "mutationClass": { "enum": ["none", "draft_only"] }, "state": { "enum": ["planned", "running", "completed", "blocked", "failed"] }
+      }
+    },
+    "workPlan": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaId", "objective", "scope", "selectedSkillIds", "steps", "blockingUnknowns", "maxSteps", "maxAttemptsPerStep", "stopConditions", "requiresPlanApproval"],
+      "properties": {
+        "schemaId": { "const": "assistant_work_plan.v1" }, "objective": { "type": "string" }, "scope": { "$ref": "#/$defs/scope" },
+        "selectedSkillIds": { "type": "array", "maxItems": 1, "items": { "type": "string" } },
+        "steps": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/step" } },
+        "blockingUnknowns": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/unknown" } },
+        "maxSteps": { "const": 8 }, "maxAttemptsPerStep": { "const": 2 },
+        "stopConditions": { "type": "array", "items": { "type": "string" } }, "requiresPlanApproval": { "type": "boolean" }
+      }
+    }
+  }
+}

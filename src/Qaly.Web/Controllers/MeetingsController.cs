@@ -33,6 +33,13 @@ public class MeetingsController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpGet("{meetingSessionId:guid}/auto-checknote")]
+    public async Task<IActionResult> GetAutoChecknote(Guid meetingSessionId, [FromQuery] Guid projectId, CancellationToken ct)
+    {
+        var result = await _meetingImportService.GetAutoChecknoteAsync(meetingSessionId, projectId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpPost("{meetingId:guid}/action-items/{itemIndex:int}/create-task")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> CreateTaskFromActionItem(Guid meetingId, int itemIndex, MeetingActionItemCreateRequest request, CancellationToken ct)

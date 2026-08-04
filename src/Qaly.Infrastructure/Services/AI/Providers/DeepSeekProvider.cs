@@ -22,10 +22,11 @@ public sealed class DeepSeekProvider : IAiProvider
         AiProviderSetting config,
         CancellationToken cancellationToken = default)
     {
-        var apiKey = string.IsNullOrWhiteSpace(config.ApiKey)
-            ? Environment.GetEnvironmentVariable("DEEPSEEK_API_KEY")
-            : config.ApiKey;
-        if (string.IsNullOrWhiteSpace(apiKey) || apiKey == "YOUR_DEEPSEEK_KEY")
+        var configuredApiKey = config.ApiKey?.Trim();
+        var apiKey = IsMissingApiKey(configuredApiKey)
+            ? Environment.GetEnvironmentVariable("DEEPSEEK_API_KEY")?.Trim()
+            : configuredApiKey;
+        if (IsMissingApiKey(apiKey))
         {
             throw new InvalidOperationException("DeepSeek API key is not configured.");
         }
@@ -123,5 +124,18 @@ public sealed class DeepSeekProvider : IAiProvider
             IsMock = false,
             CacheHit = false
         };
+    }
+
+    private static bool IsMissingApiKey(string? apiKey)
+    {
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            return true;
+        }
+
+        return apiKey.Equals("YOUR_DEEPSEEK_KEY", StringComparison.OrdinalIgnoreCase)
+            || apiKey.Contains("<set-", StringComparison.OrdinalIgnoreCase)
+            || apiKey.Contains("placeholder", StringComparison.OrdinalIgnoreCase)
+            || apiKey.Equals("change-me", StringComparison.OrdinalIgnoreCase);
     }
 }

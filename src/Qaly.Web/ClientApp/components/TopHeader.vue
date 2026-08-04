@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { Bell, ChevronDown, LogOut, Menu, Moon, Sun, User } from 'lucide-vue-next'
+import { Bell, ChevronDown, LogOut, Menu, Moon, Sparkles, Sun, User } from 'lucide-vue-next'
 
 defineProps<{
   brandName: string
@@ -100,6 +100,18 @@ onBeforeUnmount(() => {
 
     <div class="shell-header-actions">
       <button
+        class="shell-ai-action-button"
+        type="button"
+        aria-label="Mở Trợ lý AI"
+        title="Chat, phân tích và soạn hành động có bước duyệt"
+        @click="$emit('assistant')"
+      >
+        <Sparkles :size="16" />
+        <span class="shell-ai-action-button__label">Trợ lý AI</span>
+        <span class="shell-ai-action-button__model"><i></i> Ưu tiên DeepSeek V4 Pro</span>
+      </button>
+
+      <button
         class="shell-icon-button shell-theme-toggle"
         type="button"
         :aria-label="themeButtonLabel()"
@@ -152,3 +164,65 @@ onBeforeUnmount(() => {
     </div>
   </header>
 </template>
+
+<style scoped>
+.shell-ai-action-button {
+  min-width: 0;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 11px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.shell-ai-action-button:hover,
+.shell-ai-action-button:focus-visible {
+  border-color: #60a5fa;
+  background: #dbeafe;
+  outline: none;
+}
+
+.shell-ai-action-button__model {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-left: 7px;
+  border-left: 1px solid #bfdbfe;
+  color: #475569;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.shell-ai-action-button__model i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3b82f6;
+}
+
+:global(:root[data-theme='dark']) .shell-ai-action-button {
+  border-color: rgba(96, 165, 250, .38);
+  color: #93c5fd;
+  background: #172554;
+}
+
+:global(:root[data-theme='dark']) .shell-ai-action-button__model {
+  border-color: rgba(96, 165, 250, .28);
+  color: #cbd5e1;
+}
+
+@media (max-width: 1280px) {
+  .shell-ai-action-button__model { display: none; }
+}
+
+@media (max-width: 760px) {
+  .shell-ai-action-button { width: 36px; padding: 0; justify-content: center; }
+  .shell-ai-action-button__label { display: none; }
+}
+</style>

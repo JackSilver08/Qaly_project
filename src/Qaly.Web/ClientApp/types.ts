@@ -58,6 +58,7 @@ export interface DashboardProjectMember {
 export interface DashboardTask {
     id: string;
     title: string;
+    description: string | null;
     status: string;
     priority: string;
     dueDate: string | null;
@@ -120,6 +121,7 @@ export interface UpdateTaskDto {
     isPinned?: boolean;
     contributesToProgress?: boolean;
     sprintId?: string | null;
+    rowVersion?: string | null;
 }
 
 export interface DashboardMember {
@@ -376,6 +378,126 @@ export interface MemberWorkloadDto {
     completedTaskCount: number;
 }
 
+export interface MemberAvailabilityWindowDto {
+    id: string | null;
+    startsAt: string;
+    endsAt: string;
+    kind: 'Unavailable' | 'ReducedCapacity';
+    availableHours: number | null;
+    rowVersion: string | null;
+}
+
+export interface PortfolioProjectLoadDto {
+    projectId: string;
+    projectName: string;
+    assignedHours: number;
+    openTaskCount: number;
+    sourcesRestricted: boolean;
+}
+
+export interface PortfolioMemberCapacityDto {
+    userId: string;
+    fullName: string;
+    avatarUrl: string | null;
+    weeklyCapacityHours: number;
+    capacityState: 'assumed_default' | 'declared' | 'declared_with_availability';
+    windowCapacityHours: number;
+    assignedHours: number;
+    remainingHours: number;
+    utilizationPercent: number;
+    openTaskCount: number;
+    missingEstimateCount: number;
+    deadlineCollisionCount: number;
+    hasRestrictedLoad: boolean;
+    projectLoads: PortfolioProjectLoadDto[];
+    availabilityWindows: MemberAvailabilityWindowDto[];
+    profileRowVersion: string | null;
+}
+
+export interface PortfolioCapacityDto {
+    projectId: string;
+    organizationId: string;
+    windowStart: string;
+    windowEnd: string;
+    scoringVersion: string;
+    visibilityState: string;
+    canManageCapacity: boolean;
+    canGenerateProposal: boolean;
+    members: PortfolioMemberCapacityDto[];
+    generatedAt: string;
+}
+
+export interface PortfolioScheduleAlternativeDto {
+    userId: string;
+    fullName: string;
+    skillCoveragePercent: number;
+    remainingHours: number;
+    tradeOff: string;
+}
+
+export interface PortfolioScheduleProposalItemDto {
+    itemId: string;
+    taskId: string;
+    taskTitle: string;
+    currentProjectId: string;
+    projectName: string;
+    currentAssigneeId: string | null;
+    currentAssigneeName: string | null;
+    proposedAssigneeId: string;
+    proposedAssigneeName: string;
+    proposedStart: string;
+    proposedDue: string;
+    skillCoveragePercent: number;
+    evidenceConfidence: number;
+    loadBeforeHours: number;
+    loadAfterHours: number;
+    capacityHours: number;
+    dependencyConflicts: string[];
+    deadlineRisks: string[];
+    alternatives: PortfolioScheduleAlternativeDto[];
+    sourceRefs: string[];
+    taskRowVersion: string;
+    selected: boolean;
+}
+
+export interface PortfolioScheduleSourceDto {
+    key: string;
+    type: string;
+    entityId: string | null;
+    label: string;
+    url: string | null;
+    restricted: boolean;
+}
+
+export interface PortfolioScheduleReceiptDto {
+    draftId: string;
+    executionId: string;
+    appliedCount: number;
+    appliedTaskIds: string[];
+    readBackLinks: string[];
+    confirmedAt: string;
+}
+
+export interface PortfolioScheduleProposalDto {
+    draftId: string;
+    jobId: string;
+    projectId: string;
+    organizationId: string;
+    status: string;
+    schemaId: string;
+    scoringVersion: string;
+    windowStart: string;
+    windowEnd: string;
+    items: PortfolioScheduleProposalItemDto[];
+    sources: PortfolioScheduleSourceDto[];
+    warnings: string[];
+    rowVersion: string;
+    providerName: string;
+    modelName: string;
+    generatedAt: string;
+    receipt: PortfolioScheduleReceiptDto | null;
+}
+
 export interface SprintBucketDto {
     label: string;
     startDate: string;
@@ -460,6 +582,11 @@ export interface TaskAssignmentInsightDto {
     recommendationSummary: string;
     generatedAt: string;
     candidates: TaskAssignmentCandidateDto[];
+    scoringVersion: string;
+    evidenceState: 'ready' | 'task_skills_missing' | 'insufficient_evidence';
+    workloadScope: string;
+    taskRowVersion: string;
+    requiredSkills: string[];
 }
 
 export interface TaskAssignmentCandidateDto {
@@ -475,6 +602,21 @@ export interface TaskAssignmentCandidateDto {
     totalScore: number;
     skillSignals: string[];
     recentSignals: string[];
+    skillCoveragePercent: number;
+    evidenceConfidence: number;
+    evidenceBand: 'experienced' | 'practiced' | 'emerging' | 'none';
+    missingSkills: string[];
+    evidenceSourceCount: number;
+    restrictedEvidenceCount: number;
+    evidenceSources: TaskAssignmentEvidenceSourceDto[];
+}
+
+export interface TaskAssignmentEvidenceSourceDto {
+    taskId: string;
+    taskTitle: string;
+    taskUrl: string;
+    completedAt: string;
+    matchedSkills: string[];
 }
 
 export interface SearchResultDto {
