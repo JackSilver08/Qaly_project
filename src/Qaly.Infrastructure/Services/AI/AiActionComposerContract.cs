@@ -246,9 +246,9 @@ public static class AiActionComposerOutputContract
     private static bool TryReconcileCommand(
         AiActionTaskCommandDto command,
         AiActionContextSnapshotDto snapshot,
-        IReadOnlyDictionary<Guid, AiActionMemberContextDto> allowedMembers,
-        IReadOnlyDictionary<Guid, AiActionSkillContextDto> allowedSkills,
-        IReadOnlySet<string> allowedRefs,
+        Dictionary<Guid, AiActionMemberContextDto> allowedMembers,
+        Dictionary<Guid, AiActionSkillContextDto> allowedSkills,
+        HashSet<string> allowedRefs,
         bool allowUserSelected,
         out AiActionTaskCommandDto? reconciled,
         out string? error)
@@ -344,7 +344,7 @@ public static class AiActionComposerOutputContract
         return true;
     }
 
-    private static IReadOnlyList<string> NormalizeList(IReadOnlyList<string>? values, int maxCount, int maxLength)
+    private static List<string> NormalizeList(IReadOnlyList<string>? values, int maxCount, int maxLength)
         => (values ?? [])
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Select(value => value.Trim())

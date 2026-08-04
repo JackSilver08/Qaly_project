@@ -788,7 +788,7 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogWarning(exception, "Could not append AI action activity for job {JobId}.", jobId);
+            ActivityAppendFailed(_logger, exception, jobId);
         }
     }
 
@@ -828,4 +828,7 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "AI job {JobId} failed with {ErrorCode}; retry scheduled: {RetryScheduled}.")]
     private static partial void JobFailed(ILogger logger, Guid jobId, string errorCode, bool retryScheduled);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not append AI action activity for job {JobId}.")]
+    private static partial void ActivityAppendFailed(ILogger logger, Exception exception, Guid jobId);
 }

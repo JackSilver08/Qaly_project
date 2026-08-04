@@ -10,10 +10,10 @@ public sealed class AiActionPlanValidator : IAiActionPlanValidator
         string snapshotJson,
         out AiActionPlanDto? plan,
         out AiActionContextSnapshotDto? snapshot,
-        out string? error)
+        out string? validationError)
     {
         plan = null;
-        if (!AiActionComposerOutputContract.TryReadSnapshot(snapshotJson, out snapshot, out error) || snapshot == null)
+        if (!AiActionComposerOutputContract.TryReadSnapshot(snapshotJson, out snapshot, out validationError) || snapshot == null)
         {
             return false;
         }
@@ -22,6 +22,6 @@ public sealed class AiActionPlanValidator : IAiActionPlanValidator
             payloadJson,
             snapshot,
             out plan,
-            out error);
+            out validationError);
     }
 }

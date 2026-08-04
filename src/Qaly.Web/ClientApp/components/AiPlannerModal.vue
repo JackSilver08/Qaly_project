@@ -1039,6 +1039,225 @@ async function handleCreatePlan() {
   outline: none;
 }
 
+/* Milk white + sapphire theme */
+.ai-planner-backdrop {
+  background: rgba(15, 35, 68, 0.48);
+  backdrop-filter: blur(10px) saturate(110%);
+}
+
+.ai-planner-modal {
+  background: #fffdf7;
+  border: 1px solid rgba(15, 82, 186, 0.22);
+  box-shadow: 0 28px 70px rgba(15, 42, 82, 0.24), 0 4px 16px rgba(15, 82, 186, 0.08);
+  color: #17233b;
+}
+
+.ai-planner-header {
+  background: linear-gradient(135deg, #fffdf7 0%, #f3f7ff 100%);
+  border-bottom-color: rgba(15, 82, 186, 0.12);
+}
+
+.ai-sparkle-icon {
+  background: linear-gradient(135deg, #0f52ba 0%, #2774dc 100%);
+  box-shadow: 0 8px 20px rgba(15, 82, 186, 0.25);
+}
+
+.ai-planner-title h2 {
+  background: none;
+  color: #123568;
+  -webkit-text-fill-color: currentColor;
+}
+
+.ai-planner-title p,
+.suggestions-label,
+.metric-label,
+.meta-item label,
+.ai-loading-overlay p {
+  color: #64748b;
+}
+
+.icon-button {
+  width: 38px;
+  height: 38px;
+  background: #ffffff;
+  border: 1px solid #dbe5f4;
+  color: #52647d;
+  box-shadow: 0 3px 10px rgba(15, 42, 82, 0.08);
+}
+
+.icon-button:hover {
+  background: #edf4ff;
+  border-color: #aac7ef;
+  color: #0f52ba;
+}
+
+.input-section-label,
+.ai-loading-overlay h3,
+.section-title,
+.metric-value {
+  color: #17233b;
+}
+
+.label-icon,
+.metric-icon,
+.ai-spinning-sparkle {
+  color: #0f52ba;
+}
+
+.prompt-textarea,
+.modal-input,
+.task-desc-input,
+.meta-select,
+.date-input-container {
+  background: #ffffff;
+  border-color: #d9e2ef;
+  color: #17233b;
+  box-shadow: inset 0 1px 2px rgba(15, 42, 82, 0.03);
+}
+
+.prompt-textarea::placeholder,
+.modal-input::placeholder,
+.task-desc-input::placeholder,
+.task-title-input::placeholder {
+  color: #94a3b8;
+}
+
+.prompt-textarea:focus,
+.modal-input:focus,
+.task-desc-input:focus,
+.meta-select:focus,
+.date-input-container:focus-within {
+  border-color: #2b6fd3;
+  box-shadow: 0 0 0 3px rgba(15, 82, 186, 0.12);
+  outline: none;
+}
+
+.suggestion-item {
+  background: #fffaf0;
+  border-color: #dce5f1;
+  color: #263954;
+  box-shadow: 0 2px 8px rgba(15, 42, 82, 0.04);
+}
+
+.suggestion-item:hover {
+  background: #edf4ff;
+  border-color: #8db4e8;
+  box-shadow: 0 7px 18px rgba(15, 82, 186, 0.11);
+}
+
+.suggestion-tag {
+  color: #0f52ba;
+}
+
+.suggestion-text {
+  color: #5d6c82;
+}
+
+.btn--ghost {
+  background: #ffffff;
+  border-color: #cbd7e6;
+  color: #40516a;
+}
+
+.btn--ghost:hover {
+  background: #f1f5f9;
+  border-color: #aebed2;
+}
+
+.btn--ai-primary,
+.btn--ai-success {
+  background: linear-gradient(135deg, #0f52ba 0%, #246bd1 100%);
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(15, 82, 186, 0.25);
+}
+
+.btn--ai-primary:hover:not(:disabled),
+.btn--ai-success:hover {
+  opacity: 1;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(15, 82, 186, 0.32);
+}
+
+.btn--ai-primary:disabled {
+  background: #dce5f1;
+  color: #8b9bb0;
+  opacity: 1;
+}
+
+.ai-pulse-glow {
+  background: rgba(15, 82, 186, 0.12);
+}
+
+.review-intro {
+  background: #eef5ff;
+  border-color: #bdd3f1;
+  color: #174b91;
+}
+
+.plan-metrics-bar,
+.project-info-review,
+.task-review-card {
+  background: #fffaf0;
+  border-color: #dce5f1;
+}
+
+.section-title {
+  border-left-color: #0f52ba;
+}
+
+.btn-add-task-inline,
+.task-category-badge {
+  background: #e9f2ff;
+  border-color: #b9d1ef;
+  color: #0f52ba;
+}
+
+.btn-add-task-inline:hover {
+  background: #dceaff;
+  color: #0b438f;
+}
+
+.task-review-card:hover {
+  border-color: #8db4e8;
+}
+
+.task-title-input,
+.meta-select-inner,
+.meta-date-input {
+  color: #17233b;
+}
+
+.task-title-input:focus {
+  border-color: #2b6fd3;
+}
+
+.meta-select option,
+.meta-select-inner option {
+  background: #ffffff;
+  color: #17233b;
+}
+
+.ai-planner-body.has-scroll::-webkit-scrollbar-track {
+  background: #edf2f7;
+}
+
+.ai-planner-body.has-scroll::-webkit-scrollbar-thumb {
+  background: #9bbce6;
+}
+
+.ai-planner-body.has-scroll::-webkit-scrollbar-thumb:hover {
+  background: #5f91d3;
+}
+
+.btn:focus-visible,
+.icon-button:focus-visible,
+.suggestion-item:focus-visible,
+.btn-add-task-inline:focus-visible,
+.task-delete-btn:focus-visible {
+  outline: 3px solid rgba(15, 82, 186, 0.24);
+  outline-offset: 2px;
+}
+
 @media (max-width: 640px) {
   .task-meta-grid {
     grid-template-columns: 1fr 1fr;

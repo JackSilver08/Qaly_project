@@ -32,5 +32,5 @@ public interface IAiActionPlanValidator
         string snapshotJson,
         out AiActionPlanDto? plan,
         out AiActionContextSnapshotDto? snapshot,
-        out string? error);
+        out string? validationError);
 }

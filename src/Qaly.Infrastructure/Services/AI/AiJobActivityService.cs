@@ -38,7 +38,7 @@ public sealed class AiJobActivityService : IAiJobActivityService
         AiActionActivityStatuses.Skipped
     ];
 
-    private static readonly IReadOnlyDictionary<string, string> Labels = new Dictionary<string, string>
+    private static readonly Dictionary<string, string> Labels = new()
     {
         [AiActionActivityStages.UnderstandIntent] = "Đang hiểu yêu cầu",
         [AiActionActivityStages.ResolveContext] = "Đang xác định dự án và quyền",
@@ -219,7 +219,7 @@ public sealed class AiJobActivityService : IAiJobActivityService
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
         var normalized = value.Trim();
-        return normalized.Length <= 500 && normalized.StartsWith("/", StringComparison.Ordinal)
+        return normalized.Length <= 500 && normalized.StartsWith('/')
             ? normalized
             : throw new ArgumentException("Receipt link must be an internal relative URL.", nameof(value));
     }
