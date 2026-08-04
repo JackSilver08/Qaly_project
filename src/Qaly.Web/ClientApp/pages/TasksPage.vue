@@ -23,6 +23,7 @@ import { useDashboardContext } from '../composables/dashboard-context'
 import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
 import { showError, showSuccess } from '../composables/use-toast'
 import { confirmDialog } from '../composables/use-confirm-dialog'
+import TaskDevelopmentPanel from '../components/TaskDevelopmentPanel.vue'
 import type {
   AttachmentDto,
   CommentDto,
@@ -1416,6 +1417,8 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
             </div>
           </div>
         </section>
+
+        <TaskDevelopmentPanel v-if="selectedTaskDisplay" :task-id="selectedTaskDisplay.id" />
 
         <section v-if="selectedTaskDisplay" class="detail-grid">
           <div class="detail-block">

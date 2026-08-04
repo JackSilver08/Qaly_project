@@ -80,6 +80,7 @@ public class QalyDbContext : DbContext
     public DbSet<GitHubPullRequest> GitHubPullRequests => Set<GitHubPullRequest>();
     public DbSet<GitHubPullRequestReview> GitHubPullRequestReviews => Set<GitHubPullRequestReview>();
     public DbSet<GitHubRelease> GitHubReleases => Set<GitHubRelease>();
+    public DbSet<GitHubWorkflowRun> GitHubWorkflowRuns => Set<GitHubWorkflowRun>();
     public DbSet<TaskDevelopmentLink> TaskDevelopmentLinks => Set<TaskDevelopmentLink>();
     public DbSet<GitHubWebhookInbox> GitHubWebhookInbox => Set<GitHubWebhookInbox>();
 

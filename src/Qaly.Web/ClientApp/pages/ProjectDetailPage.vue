@@ -15,6 +15,8 @@ import ImportModal from '../components/import/ImportModal.vue'
 import ImportUndoBanner from '../components/import/ImportUndoBanner.vue'
 import AiPlannerModal from '../components/AiPlannerModal.vue'
 import TaskSkillsAiCard from '../components/TaskSkillsAiCard.vue'
+import TaskDevelopmentPanel from '../components/TaskDevelopmentPanel.vue'
+import GitHubProjectIntegration from '../components/GitHubProjectIntegration.vue'
 import { useDashboardContext } from '../composables/dashboard-context'
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
@@ -176,6 +178,7 @@ const canShowCapacityTab = computed(() => activeProjectTab.value === 'capacity' 
 const canShowActivityTab = computed(() => activeProjectTab.value === 'activity' && !!selectedProject.value)
 const canShowGanttTab = computed(() => activeProjectTab.value === 'gantt' && !!selectedProject.value)
 const canShowWebhooksTab = computed(() => activeProjectTab.value === 'webhooks' && !!selectedProject.value)
+const canShowGitHubTab = computed(() => activeProjectTab.value === 'github' && !!selectedProject.value)
 const canShowImportModal = computed(() => showImportModal.value && !!selectedProject.value)
 const canShowTaskComments = computed(() => !!selectedTask.value && !selectedTask.value.isRestricted)
 
@@ -803,6 +806,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
           </div>
 
           <div v-if="canShowTaskComments" class="comment-list">
+            <TaskDevelopmentPanel v-if="selectedTask" :task-id="selectedTask.id" />
             <TaskSkillsAiCard
               v-if="selectedProject && selectedTask"
               :key="selectedTask.id"
@@ -1034,6 +1038,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
       <div v-if="canShowWebhooksTab" class="tab-pane reveal">
         <WebhooksTab :project-id="selectedProject.id" />
+      </div>
+
+      <div v-if="canShowGitHubTab" class="tab-pane reveal">
+        <GitHubProjectIntegration :project-id="selectedProject.id" :can-manage="isProjectAdmin" />
       </div>
 
       <ImportModal

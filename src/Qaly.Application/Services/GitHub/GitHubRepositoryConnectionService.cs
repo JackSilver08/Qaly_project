@@ -12,17 +12,20 @@ public class GitHubRepositoryConnectionService : IGitHubRepositoryConnectionServ
     private readonly IRepository<GitHubInstallation> _installationRepo;
     private readonly IGitHubAccessGuard _accessGuard;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IGitHubRepositoryProvider _provider;
 
     public GitHubRepositoryConnectionService(
         IRepository<GitHubRepositoryConnection> connectionRepo,
         IRepository<GitHubInstallation> installationRepo,
         IGitHubAccessGuard accessGuard,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IGitHubRepositoryProvider provider)
     {
         _connectionRepo = connectionRepo;
         _installationRepo = installationRepo;
         _accessGuard = accessGuard;
         _unitOfWork = unitOfWork;
+        _provider = provider;
     }
 
     public async Task<Result<IReadOnlyList<GitHubRepositoryConnectionDto>>> GetByProjectAsync(
@@ -56,12 +59,10 @@ public class GitHubRepositoryConnectionService : IGitHubRepositoryConnectionServ
 
         var context = auth.Data!;
 
-        if (dto.RepositoryExternalId <= 0
-            || string.IsNullOrWhiteSpace(dto.Owner)
-            || string.IsNullOrWhiteSpace(dto.Name))
+        if (dto.RepositoryExternalId <= 0)
         {
             return Result.Failure<GitHubRepositoryConnectionDto>(
-                "Repository ID, owner và name là bắt buộc.", 400);
+                "Repository ID là bắt buộc.", 400);
         }
 
         // Installation phải thuộc đúng tenant của project (chặn dùng chéo tenant).
@@ -89,20 +90,22 @@ public class GitHubRepositoryConnectionService : IGitHubRepositoryConnectionServ
                 "Repository này đã được kết nối với dự án.", 409);
         }
 
-        // M1 sẽ lấy và xác minh các trường metadata này trực tiếp từ GitHub API.
-        // M0.5 giữ contract hiện tại nhưng không cho phép dữ liệu rỗng/ID không hợp lệ.
+        var metadata = await _provider.GetAsync(installation.InstallationId, dto.RepositoryExternalId, ct);
+        if (metadata is null)
+        {
+            return Result.Failure<GitHubRepositoryConnectionDto>(
+                "Repository is unavailable or the GitHub App has not been granted access.", 400);
+        }
+
+        // GitHub, không phải payload từ trình duyệt, là nguồn metadata repository.
         if (existingConnection is not null)
         {
             existingConnection.GitHubInstallationId = dto.GitHubInstallationId;
-            existingConnection.Owner = dto.Owner.Trim();
-            existingConnection.Name = dto.Name.Trim();
-            existingConnection.FullName = string.IsNullOrWhiteSpace(dto.FullName)
-                ? $"{existingConnection.Owner}/{existingConnection.Name}"
-                : dto.FullName.Trim();
-            existingConnection.DefaultBranch = string.IsNullOrWhiteSpace(dto.DefaultBranch)
-                ? "main"
-                : dto.DefaultBranch.Trim();
-            existingConnection.IsPrivate = dto.IsPrivate;
+            existingConnection.Owner = metadata.Owner;
+            existingConnection.Name = metadata.Name;
+            existingConnection.FullName = metadata.FullName;
+            existingConnection.DefaultBranch = metadata.DefaultBranch;
+            existingConnection.IsPrivate = metadata.IsPrivate;
             existingConnection.IsActive = true;
             existingConnection.IsDeleted = false;
             existingConnection.DeletedAt = null;
@@ -117,11 +120,11 @@ public class GitHubRepositoryConnectionService : IGitHubRepositoryConnectionServ
             ProjectId = projectId,
             GitHubInstallationId = dto.GitHubInstallationId,
             RepositoryExternalId = dto.RepositoryExternalId,
-            Owner = dto.Owner.Trim(),
-            Name = dto.Name.Trim(),
-            FullName = string.IsNullOrWhiteSpace(dto.FullName) ? $"{dto.Owner.Trim()}/{dto.Name.Trim()}" : dto.FullName.Trim(),
-            DefaultBranch = string.IsNullOrWhiteSpace(dto.DefaultBranch) ? "main" : dto.DefaultBranch.Trim(),
-            IsPrivate = dto.IsPrivate,
+            Owner = metadata.Owner,
+            Name = metadata.Name,
+            FullName = metadata.FullName,
+            DefaultBranch = metadata.DefaultBranch,
+            IsPrivate = metadata.IsPrivate,
             IsActive = true
         };
 

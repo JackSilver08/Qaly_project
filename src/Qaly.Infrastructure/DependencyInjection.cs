@@ -15,6 +15,7 @@ using Qaly.Infrastructure.Services.AI;
 using Qaly.Infrastructure.Services.AI.Providers;
 using OllamaSharp;
 using Qaly.Infrastructure.Services.Privacy;
+using Qaly.Infrastructure.Integrations.GitHub;
 
 namespace Qaly.Infrastructure;
 
@@ -67,6 +68,12 @@ public static class DependencyInjection
         services.AddScoped<ISessionService, RedisSessionService>();
         services.AddScoped<IWebhookPublisher, WebhookPublisher>();
         services.AddScoped<Qaly.Application.Common.Interfaces.IPushSender, WebPushSender>();
+        services.Configure<GitHubIntegrationOptions>(configuration.GetSection(GitHubIntegrationOptions.SectionName));
+        services.AddScoped<IGitHubWebhookReceiver, GitHubWebhookReceiver>();
+        services.AddScoped<IGitHubWebhookProcessor, GitHubWebhookProcessor>();
+        services.AddHttpClient<IGitHubAppClient, GitHubAppClient>();
+        services.AddScoped<IGitHubInstallationService, GitHubInstallationService>();
+        services.AddScoped<Qaly.Application.Services.GitHub.IGitHubRepositoryProvider, GitHubRepositoryProvider>();
 
         // AI Core Services
         services.Configure<AiJobPlatformOptions>(configuration.GetSection(AiJobPlatformOptions.SectionName));
@@ -142,6 +149,7 @@ public static class DependencyInjection
         services.AddHostedService<ProjectTrashCleanupWorker>();
         services.AddHostedService<AiJobWorker>();
         services.AddHostedService<PrivacyWorker>();
+        services.AddHostedService<GitHubWebhookWorker>();
 
         return services;
     }

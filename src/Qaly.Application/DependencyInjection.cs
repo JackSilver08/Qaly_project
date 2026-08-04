@@ -26,6 +26,7 @@ public static class DependencyInjection
         services.AddScoped<IProjectService, ProjectService>();
         services.AddScoped<IGitHubAccessGuard, GitHubAccessGuard>();
         services.AddScoped<IGitHubRepositoryConnectionService, GitHubRepositoryConnectionService>();
+        services.AddScoped<ITaskDevelopmentService, TaskDevelopmentService>();
         services.AddScoped<IGroupsService, GroupsService>();
         services.AddScoped<IGroupAttachmentService, GroupAttachmentService>();
         services.AddScoped<IGroupInvitationEmailBuilder, GroupInvitationEmailBuilder>();

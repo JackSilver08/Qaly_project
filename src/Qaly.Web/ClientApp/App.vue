@@ -190,6 +190,7 @@ const tabs = [
   { id: "activity", label: "Hoạt động" },
   { id: "members", label: "Thành viên" },
   { id: "wiki", label: "Wiki" },
+  { id: "github", label: "GitHub" },
   { id: "webhooks", label: "Webhook" },
 ];
 
