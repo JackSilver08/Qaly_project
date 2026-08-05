@@ -51,6 +51,8 @@ public sealed class TaskDevelopmentService : ITaskDevelopmentService
         var repositories = await _repositories.GetQueryable().AsNoTracking()
             .Where(x => x.ProjectId == task.ProjectId && x.OrganizationId == organizationId)
             .ToDictionaryAsync(x => x.RepositoryExternalId, ct);
+        var taskKey = task.Key ?? string.Empty;
+        var currentTaskReference = new GitHubTaskReferenceDto(task.Id, taskKey);
 
         var commitKeys = links.Where(x => x.EntityType == "Commit").Select(x => x.ExternalEntityId).ToHashSet();
         var prKeys = links.Where(x => x.EntityType == "PullRequest").Select(x => x.ExternalEntityId).ToHashSet();
@@ -71,19 +73,25 @@ public sealed class TaskDevelopmentService : ITaskDevelopmentService
             .OrderByDescending(x => x.StartedAt).ToListAsync(ct);
 
         var dto = new TaskDevelopmentDto(taskId, $"{task.Project.Code}-{task.Number}",
-            commits.Where(x => commitKeys.Contains($"{repositoriesByConnection(repositories, x.RepositoryConnectionId)}:{x.Sha}"))
+            commits.Where(x => commitKeys.Contains($"{repositoriesByConnection(repositories, x.RepositoryConnectionId)}:{x.Sha}")
+                || GitHubTaskKeyMatcher.ContainsTaskKey(string.Join(' ', x.Message, x.BranchName), taskKey))
                 .Select(x => new TaskDevelopmentCommitDto(x.Sha, x.Message, x.AuthorLogin, x.CommittedAt,
                     x.BranchName, x.Url, RepositoryName(repositories, x.RepositoryConnectionId))).ToList(),
-            prs.Where(x => prKeys.Contains($"{repositoriesByConnection(repositories, x.RepositoryConnectionId)}:pr:{x.Number}"))
-                .Select(x => new TaskDevelopmentPullRequestDto(x.Number, x.Title, x.State, x.IsDraft,
-                    x.AuthorLogin, x.HeadBranch, x.BaseBranch, x.Reviews.Count,
-                    x.Reviews.Count(r => r.State == "Approved"), x.MergedAt, x.Url,
-                    RepositoryName(repositories, x.RepositoryConnectionId))).ToList(),
-            workflows.Where(x => workflowKeys.Contains($"{repositoriesByConnection(repositories, x.RepositoryConnectionId)}:workflow:{x.RunExternalId}"))
-                .Select(x => new TaskDevelopmentWorkflowRunDto(x.RunExternalId, x.WorkflowName, x.DisplayTitle,
-                    x.Branch, x.Status, x.Conclusion, x.StartedAt, x.CompletedAt, x.Url,
-                    RepositoryName(repositories, x.RepositoryConnectionId))).ToList(),
-            releases.Where(x => releaseKeys.Contains($"{repositoriesByConnection(repositories, x.RepositoryConnectionId)}:release:{x.ReleaseExternalId}"))
+            prs.Where(x => prKeys.Contains($"{repositoriesByConnection(repositories, x.RepositoryConnectionId)}:pr:{x.Number}")
+                || GitHubTaskKeyMatcher.ContainsTaskKey(string.Join(' ', x.Title, x.HeadBranch, x.BaseBranch), taskKey))
+            .Select(x => new TaskDevelopmentPullRequestDto(x.Number, x.Title, x.State, x.IsDraft,
+                x.AuthorLogin, x.HeadBranch, x.BaseBranch, x.Reviews.Count,
+                x.Reviews.Count(r => r.State == "Approved"), x.MergedAt, x.Url,
+                RepositoryName(repositories, x.RepositoryConnectionId),
+                new[] { currentTaskReference })).ToList(),
+            workflows.Where(x => workflowKeys.Contains($"{repositoriesByConnection(repositories, x.RepositoryConnectionId)}:workflow:{x.RunExternalId}")
+                || GitHubTaskKeyMatcher.ContainsTaskKey(string.Join(' ', x.WorkflowName, x.DisplayTitle, x.Branch), taskKey))
+            .Select(x => new TaskDevelopmentWorkflowRunDto(x.RunExternalId, x.WorkflowName, x.DisplayTitle,
+                x.Branch, x.Status, x.Conclusion, x.StartedAt, x.CompletedAt, x.Url,
+                RepositoryName(repositories, x.RepositoryConnectionId),
+                new[] { currentTaskReference })).ToList(),
+            releases.Where(x => releaseKeys.Contains($"{repositoriesByConnection(repositories, x.RepositoryConnectionId)}:release:{x.ReleaseExternalId}")
+                || GitHubTaskKeyMatcher.ContainsTaskKey(string.Join(' ', x.TagName, x.Name), taskKey))
                 .Select(x => new TaskDevelopmentReleaseDto(x.TagName, x.Name, x.PublishedAt, x.Url,
                     RepositoryName(repositories, x.RepositoryConnectionId))).ToList(),
             links.Select(x => new TaskDevelopmentLinkDto(x.EntityType, x.ExternalEntityId, x.LinkSource, x.CreatedAt)).ToList());

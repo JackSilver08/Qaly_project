@@ -43,7 +43,7 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
     [Fact]
     public async Task HealthUsageAndBudget_ReturnVisibleOperationalSnapshots()
     {
-        var now = new DateTimeOffset(2026, 8, 2, 12, 0, 0, TimeSpan.Zero);
+        var now = DateTimeOffset.UtcNow;
         var user = new User
         {
             Id = _userId,
@@ -63,8 +63,8 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
         var running = Job(project, AiJobStatuses.Running, now);
         var retrying = Job(project, AiJobStatuses.Retrying, now);
         var failed = Job(project, AiJobStatuses.Failed, now);
-        var earlierThisMonth = now.Day > 1 ? now.AddDays(-1) : now.AddMinutes(-5);
-        var expectedDailyUsage = earlierThisMonth.Date == now.Date ? 4m : 1.25m;
+        var earlierThisMonth = now.AddDays(-1);
+        var expectedDailyUsage = 1.25m;
         failed.FinishedAt = now.AddHours(-1);
         _db.AddRange(user, project, running, retrying, failed);
         _db.AiJobDispatches.Add(new AiJobDispatch

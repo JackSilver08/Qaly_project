@@ -1,16 +1,19 @@
 using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Models;
+using Qaly.Application.DTOs.GitHub;
 using Qaly.Application.Services.GitHub;
 using Qaly.Domain.Entities.GitHub;
 using Qaly.Infrastructure.Data;
+using System.Collections.Generic;
 
 namespace Qaly.Infrastructure.Integrations.GitHub;
 
-public sealed record GitHubProjectPullRequest(Guid Id, int Number, string Title, string State, bool IsDraft,
+public sealed record GitHubProjectPullRequest(Guid Id, long RepositoryExternalId, int Number, string Title, string State, bool IsDraft,
     string? AuthorLogin, string HeadBranch, string BaseBranch, int ReviewCount, int ApprovalCount,
-    DateTimeOffset? UpdatedAt, string Url, string Repository);
-public sealed record GitHubProjectWorkflow(long RunId, string Name, string? Title, string Branch, string Status,
-    string? Conclusion, DateTimeOffset StartedAt, DateTimeOffset? CompletedAt, string Url, string Repository);
+    DateTimeOffset? UpdatedAt, string Url, string Repository, IReadOnlyList<GitHubTaskReferenceDto> LinkedTasks);
+public sealed record GitHubProjectWorkflow(long RunId, long RepositoryExternalId, string Name, string? Title, string Branch, string Status,
+    string? Conclusion, DateTimeOffset StartedAt, DateTimeOffset? CompletedAt, string Url, string Repository,
+    IReadOnlyList<GitHubTaskReferenceDto> LinkedTasks);
 public sealed record GitHubProjectRelease(string TagName, string? Name, bool IsPrerelease,
     DateTimeOffset? PublishedAt, string Url, string Repository);
 public sealed record GitHubProjectManagement(int RepositoryCount, int OpenPullRequests, int WaitingForReview,
@@ -91,24 +94,83 @@ public sealed class GitHubProjectManagementService : IGitHubProjectManagementSer
 
     private async Task<GitHubProjectManagement> BuildAsync(Guid projectId, Guid organizationId, CancellationToken ct)
     {
+        var projectCode = await _db.Projects.AsNoTracking()
+            .Where(x => x.Id == projectId)
+            .Select(x => x.Code)
+            .FirstAsync(ct);
+        var taskReferencesByNumber = await _db.TaskItems.AsNoTracking()
+            .Where(x => x.ProjectId == projectId)
+            .Select(x => new { x.Id, x.Number })
+            .ToDictionaryAsync(x => x.Number, x => new GitHubTaskReferenceDto(x.Id, $"{projectCode}-{x.Number}"), ct);
+        var taskReferencesById = taskReferencesByNumber.Values.ToDictionary(x => x.TaskId, x => x);
+        var pullRequestLinks = await _db.TaskDevelopmentLinks.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EntityType == "PullRequest")
+            .Select(x => new { x.ExternalEntityId, x.TaskId })
+            .ToListAsync(ct);
+        var workflowLinks = await _db.TaskDevelopmentLinks.AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EntityType == "WorkflowRun")
+            .Select(x => new { x.ExternalEntityId, x.TaskId })
+            .ToListAsync(ct);
+        var pullRequestLinkLookup = pullRequestLinks.ToLookup(x => x.ExternalEntityId, x => x.TaskId);
+        var workflowLinkLookup = workflowLinks.ToLookup(x => x.ExternalEntityId, x => x.TaskId);
+
         var connections = _db.GitHubRepositoryConnections.AsNoTracking().Where(x => x.ProjectId == projectId && x.OrganizationId == organizationId && x.IsActive && !x.IsDeleted);
         var ids = connections.Select(x => x.Id);
         var prs = await _db.GitHubPullRequests.AsNoTracking().Where(x => ids.Contains(x.RepositoryConnectionId))
             .OrderByDescending(x => x.GitHubUpdatedAt ?? x.OpenedAt).Take(50)
-            .Select(x => new GitHubProjectPullRequest(x.Id, x.Number, x.Title, x.State, x.IsDraft, x.AuthorLogin,
+            .Select(x => new GitHubProjectPullRequest(x.Id, x.RepositoryConnection.RepositoryExternalId, x.Number, x.Title, x.State, x.IsDraft, x.AuthorLogin,
                 x.HeadBranch, x.BaseBranch, x.Reviews.Count, x.Reviews.Count(r => r.State == "Approved"),
-                x.GitHubUpdatedAt, x.Url, x.RepositoryConnection.FullName)).ToListAsync(ct);
+                x.GitHubUpdatedAt, x.Url, x.RepositoryConnection.FullName, Array.Empty<GitHubTaskReferenceDto>()))
+            .ToListAsync(ct);
         var workflows = await _db.GitHubWorkflowRuns.AsNoTracking().Where(x => ids.Contains(x.RepositoryConnectionId))
             .OrderByDescending(x => x.StartedAt).Take(50)
-            .Select(x => new GitHubProjectWorkflow(x.RunExternalId, x.WorkflowName, x.DisplayTitle, x.Branch, x.Status,
-                x.Conclusion, x.StartedAt, x.CompletedAt, x.Url, x.RepositoryConnection.FullName)).ToListAsync(ct);
+            .Select(x => new GitHubProjectWorkflow(x.RunExternalId, x.RepositoryConnection.RepositoryExternalId, x.WorkflowName, x.DisplayTitle, x.Branch, x.Status,
+                x.Conclusion, x.StartedAt, x.CompletedAt, x.Url, x.RepositoryConnection.FullName, Array.Empty<GitHubTaskReferenceDto>()))
+            .ToListAsync(ct);
         var releases = await _db.GitHubReleases.AsNoTracking().Where(x => ids.Contains(x.RepositoryConnectionId) && !x.IsDraft)
             .OrderByDescending(x => x.PublishedAt).Take(20)
             .Select(x => new GitHubProjectRelease(x.TagName, x.Name, x.IsPrerelease, x.PublishedAt, x.Url, x.RepositoryConnection.FullName)).ToListAsync(ct);
         var syncTimes = await connections.Select(x => x.LastSyncedAt).ToListAsync(ct);
+
+        prs = prs.Select(pr =>
+        {
+            var searchable = string.Join(' ', pr.Title, pr.HeadBranch, pr.BaseBranch);
+            var explicitTasks = pullRequestLinkLookup[$"{pr.RepositoryExternalId}:pr:{pr.Number}"];
+            var linkedTasks = ResolveLinkedTasks(searchable, projectCode, explicitTasks, taskReferencesByNumber, taskReferencesById);
+            return pr with { LinkedTasks = linkedTasks };
+        }).ToList();
+        workflows = workflows.Select(workflow =>
+        {
+            var searchable = string.Join(' ', workflow.Name, workflow.Title, workflow.Branch);
+            var explicitTasks = workflowLinkLookup[$"{workflow.RepositoryExternalId}:workflow:{workflow.RunId}"];
+            var linkedTasks = ResolveLinkedTasks(searchable, projectCode, explicitTasks, taskReferencesByNumber, taskReferencesById);
+            return workflow with { LinkedTasks = linkedTasks };
+        }).ToList();
+
         return new(await connections.CountAsync(ct), prs.Count(x => x.State.Equals("open", StringComparison.OrdinalIgnoreCase)),
             prs.Count(x => x.State.Equals("open", StringComparison.OrdinalIgnoreCase) && x.ApprovalCount == 0 && !x.IsDraft),
             workflows.Count(x => x.Conclusion is "failure" or "timed_out" or "cancelled"),
             syncTimes.Where(x => x.HasValue).Max(), prs, workflows, releases);
+    }
+
+    private static List<GitHubTaskReferenceDto> ResolveLinkedTasks(
+        string searchable,
+        string projectCode,
+        IEnumerable<Guid> explicitTaskIds,
+        Dictionary<int, GitHubTaskReferenceDto> taskReferencesByNumber,
+        Dictionary<Guid, GitHubTaskReferenceDto> taskReferencesById)
+    {
+        var matches = GitHubTaskKeyMatcher.ExtractNumbers(searchable, projectCode)
+            .Select(number => taskReferencesByNumber.TryGetValue(number, out var reference) ? reference : null)
+            .Where(reference => reference is not null)
+            .Cast<GitHubTaskReferenceDto>()
+            .Concat(explicitTaskIds.Select(taskId => taskReferencesById.TryGetValue(taskId, out var reference) ? reference : null)
+                .Where(reference => reference is not null)
+                .Cast<GitHubTaskReferenceDto>())
+            .GroupBy(reference => reference.TaskId)
+            .Select(group => group.First())
+            .ToList();
+
+        return matches;
     }
 }

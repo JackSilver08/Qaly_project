@@ -45,8 +45,8 @@ export interface GitHubProjectManagement {
   waitingForReview: number
   failedWorkflows: number
   lastSyncedAt: string | null
-  pullRequests: Array<{ id: string; number: number; title: string; state: string; isDraft: boolean; authorLogin: string | null; headBranch: string; baseBranch: string; reviewCount: number; approvalCount: number; updatedAt: string | null; url: string; repository: string }>
-  workflows: Array<{ runId: number; name: string; title: string | null; branch: string; status: string; conclusion: string | null; startedAt: string; completedAt: string | null; url: string; repository: string }>
+  pullRequests: Array<{ id: string; repositoryExternalId: number; number: number; title: string; state: string; isDraft: boolean; authorLogin: string | null; headBranch: string; baseBranch: string; reviewCount: number; approvalCount: number; updatedAt: string | null; url: string; repository: string; linkedTasks: Array<{ taskId: string; taskKey: string }> }>
+  workflows: Array<{ runId: number; repositoryExternalId: number; name: string; title: string | null; branch: string; status: string; conclusion: string | null; startedAt: string; completedAt: string | null; url: string; repository: string; linkedTasks: Array<{ taskId: string; taskKey: string }> }>
   releases: Array<{ tagName: string; name: string | null; isPrerelease: boolean; publishedAt: string | null; url: string; repository: string }>
 }
 
