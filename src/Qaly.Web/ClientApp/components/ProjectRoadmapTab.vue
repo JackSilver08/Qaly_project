@@ -1031,6 +1031,7 @@ function getDaysRemaining(endDateStr: string): {
           </div>
         </div>
       </div>
+      </template>
 
       <template v-else>
         <div class="roadmap-track-card glass-card timeline-mode-card">
@@ -3855,4 +3856,3 @@ textarea.modal-input {
   }
 }
 </style>
-
