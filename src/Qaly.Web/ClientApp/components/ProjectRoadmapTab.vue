@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from "vue";
 import {
   Compass,
   CheckCircle2,
   Clock,
   Plus,
   Sparkles,
+  CalendarDays,
   Calendar,
   Edit3,
   Trash2,
@@ -36,489 +37,668 @@ import {
   Filter,
   ArrowRight,
   TrendingUp,
-  Target
-} from 'lucide-vue-next'
-import { apiResult, apiCommand } from '../utils/api-client'
-import { showError, showSuccess } from '../composables/use-toast'
-import { useDashboardContext } from '../composables/dashboard-context'
-import type { SprintDto, DashboardTask } from '../types'
-import ProjectProgressAiCard from './ProjectProgressAiCard.vue'
-import { useRoute, useRouter } from 'vue-router'
+  Target,
+} from "lucide-vue-next";
+import { apiResult, apiCommand } from "../utils/api-client";
+import { showError, showSuccess } from "../composables/use-toast";
+import { useDashboardContext } from "../composables/dashboard-context";
+import type { SprintDto, DashboardTask } from "../types";
+import ProjectProgressAiCard from "./ProjectProgressAiCard.vue";
+import { useRoute, useRouter } from "vue-router";
 
 const props = defineProps<{
-  projectId: string
-  projectName?: string
-  canGenerateAi: boolean
-}>()
+  projectId: string;
+  projectName?: string;
+  canGenerateAi: boolean;
+}>();
 
-const { selectedProject, activeProjectTab, isProjectAdmin, loadDashboard } = useDashboardContext()
-const route = useRoute()
-const router = useRouter()
+const {
+  selectedProject,
+  activeProjectTab,
+  isProjectAdmin,
+  loadDashboard,
+  selectTaskInProject,
+} = useDashboardContext();
+const route = useRoute();
+const router = useRouter();
 
 // Sprint list & loading state
-const sprints = ref<SprintDto[]>([])
-const isLoading = ref(false)
-const selectedSprintId = ref<string | null>(null)
+const sprints = ref<SprintDto[]>([]);
+const isLoading = ref(false);
+const selectedSprintId = ref<string | null>(null);
+
+// Roadmap and Timeline View mode
+const viewMode = ref<"journey" | "timeline">("journey");
 
 // View modes: Executive Client View vs Management View
-const isClientViewMode = ref(false)
+const isClientViewMode = ref(false);
 
 // Node Filter & Search
-const milestoneFilter = ref<'all' | 'active' | 'completed' | 'overdue'>('all')
-const milestoneSearchQuery = ref('')
+const milestoneFilter = ref<"all" | "active" | "completed" | "overdue">("all");
+const milestoneSearchQuery = ref("");
 
 // Modals state
-const showCreateModal = ref(false)
-const showEditModal = ref(false)
-const showPresetModal = ref(false)
-const showTaskAssignModal = ref(false)
-const showQuickCreateTaskModal = ref(false)
+const showCreateModal = ref(false);
+const showEditModal = ref(false);
+const showPresetModal = ref(false);
+const showTaskAssignModal = ref(false);
+const showQuickCreateTaskModal = ref(false);
 const confirmation = ref<{
-  type: 'complete' | 'delete'
-  sprint: SprintDto
-} | null>(null)
+  type: "complete" | "delete";
+  sprint: SprintDto;
+} | null>(null);
 
 // Form states for milestone creation/editing
-const milestoneName = ref('')
-const milestoneStartDate = ref('')
-const milestoneEndDate = ref('')
-const milestoneGoal = ref('')
-const milestoneStatus = ref('Planning')
-const editingSprintId = ref<string | null>(null)
+const milestoneName = ref("");
+const milestoneStartDate = ref("");
+const milestoneEndDate = ref("");
+const milestoneGoal = ref("");
+const milestoneStatus = ref("Planning");
+const editingSprintId = ref<string | null>(null);
 
 // Form states for Quick Task Creation in milestone
-const quickTaskTitle = ref('')
-const quickTaskPriority = ref('Medium')
-const quickTaskAssigneeId = ref('')
-const quickTaskDueDate = ref('')
+const quickTaskTitle = ref("");
+const quickTaskPriority = ref("Medium");
+const quickTaskAssigneeId = ref("");
+const quickTaskDueDate = ref("");
 
 // Selected tasks IDs for Task Assignment Modal
-const selectedTaskIdsForSprint = ref<string[]>([])
-const isSavingTaskAssignment = ref(false)
-const isGeneratingPreset = ref(false)
+const selectedTaskIdsForSprint = ref<string[]>([]);
+const isSavingTaskAssignment = ref(false);
+const isGeneratingPreset = ref(false);
 
 // Task status filter inside milestone detail
-const milestoneTaskSearch = ref('')
-const milestoneTaskStatusFilter = ref<string>('all')
+const milestoneTaskSearch = ref("");
+const milestoneTaskStatusFilter = ref<string>("all");
+
+const roadmapTasks = computed<any[]>(() => selectedProject.value?.tasks || []);
+
+const timelineTasks = computed<any[]>(() =>
+  roadmapTasks.value
+    .filter((task) => task.startDate || task.endDate)
+    .slice()
+    .sort((a, b) => {
+      const aDate =
+        toValidTimestamp(a.startDate) ?? toValidTimestamp(a.endDate) ?? 0;
+      const bDate =
+        toValidTimestamp(b.startDate) ?? toValidTimestamp(b.endDate) ?? 0;
+      return aDate - bDate || a.title.localeCompare(b.title);
+    }),
+);
+
+function toValidTimestamp(value: string | null | undefined) {
+  if (!value) return null;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+const timelineBounds = computed(() => {
+  const points = timelineTasks.value
+    .flatMap((task) => [
+      toValidTimestamp(task.startDate),
+      toValidTimestamp(task.endDate),
+    ])
+    .filter((time): time is number => time !== null);
+
+  if (!points.length) {
+    const now = Date.now();
+    return { min: new Date(now), max: new Date(now + 7 * 24 * 60 * 60 * 1000) };
+  }
+
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  return {
+    min: new Date(min),
+    max: new Date(max >= min ? max : min + 7 * 24 * 60 * 60 * 1000),
+  };
+});
+
+const minDate = computed(() => timelineBounds.value.min);
+const maxDate = computed(() => timelineBounds.value.max);
+const totalDays = computed(() => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const spanDays =
+    Math.ceil((maxDate.value.getTime() - minDate.value.getTime()) / DAY_MS) + 3;
+  return Math.max(1, Math.min(366, spanDays));
+});
+
+const timelineDays = computed(() => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  return Array.from({ length: totalDays.value }, (_, index) => {
+    const date = new Date(minDate.value.getTime() + index * DAY_MS);
+    return {
+      key: date.toISOString(),
+      day: date.getDate(),
+      weekday: new Intl.DateTimeFormat("vi-VN", { weekday: "short" }).format(
+        date,
+      ),
+      month:
+        date.getDate() === 1 || index === 0
+          ? new Intl.DateTimeFormat("vi-VN", { month: "short" }).format(date)
+          : "",
+      isWeekend: date.getDay() === 0 || date.getDay() === 6,
+      isToday: new Date().toDateString() === date.toDateString(),
+    };
+  });
+});
+
+function getTaskStyle(task: DashboardTask) {
+  const startTime =
+    toValidTimestamp(task.startDate) ?? toValidTimestamp(task.endDate);
+  const endTime = toValidTimestamp(task.endDate) ?? startTime;
+  if (startTime === null || endTime === null) return { display: "none" };
+
+  const normalizedEnd = Math.max(startTime, endTime);
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const left = Math.floor((startTime - minDate.value.getTime()) / DAY_MS) + 1;
+  const width = Math.ceil((normalizedEnd - startTime) / DAY_MS) + 1;
+  const startColumn = Math.max(1, left);
+  const span = Math.max(1, Math.min(width, totalDays.value - startColumn + 1));
+  return { gridColumn: `${startColumn} / span ${span}` };
+}
+
+function taskTone(task: DashboardTask) {
+  const now = Date.now();
+  const end = toValidTimestamp(task.endDate);
+  if (end !== null && task.status !== "Done" && now > end) return "is-overdue";
+  if (
+    task.status === "Todo" &&
+    task.startDate &&
+    toValidTimestamp(task.startDate)! > now
+  )
+    return "is-stale";
+  if (
+    end !== null &&
+    task.status !== "Done" &&
+    end - now <= 3 * 24 * 60 * 60 * 1000
+  )
+    return "is-due";
+  return "is-normal";
+}
 
 onMounted(() => {
-  loadSprints()
-})
+  loadSprints();
+});
 
-watch(() => props.projectId, () => {
-  selectedSprintId.value = null
-  loadSprints()
-})
+watch(
+  () => props.projectId,
+  () => {
+    selectedSprintId.value = null;
+    loadSprints();
+  },
+);
 
-watch(selectedSprintId, sprintId => {
-  if (!sprintId) return
-  const hash = `#milestone-${sprintId}`
-  if (route.hash !== hash) void router.replace({ hash })
-})
+watch(selectedSprintId, (sprintId) => {
+  if (!sprintId) return;
+  const hash = `#milestone-${sprintId}`;
+  if (route.hash !== hash) void router.replace({ hash });
+});
 
 async function loadSprints() {
-  isLoading.value = true
+  isLoading.value = true;
   try {
-    const result = await apiResult<SprintDto[]>(`/api/projects/${props.projectId}/sprints`)
+    const result = await apiResult<SprintDto[]>(
+      `/api/projects/${props.projectId}/sprints`,
+    );
     // Sort sprints chronologically by StartDate
-    sprints.value = (result || []).sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
-    
-    const requestedSprintId = route.hash.startsWith('#milestone-')
-      ? route.hash.slice('#milestone-'.length)
-      : null
-    if (sprints.value.length > 0 &&
-        (!selectedSprintId.value || !sprints.value.some(s => s.id === selectedSprintId.value))) {
-      const current = sprints.value.find(s => s.id === requestedSprintId) ||
-        sprints.value.find(s => isCurrentMilestone(s)) ||
-        sprints.value[0]
-      selectedSprintId.value = current.id
+    sprints.value = (result || []).sort(
+      (a, b) =>
+        new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
+    );
+
+    const requestedSprintId = route.hash.startsWith("#milestone-")
+      ? route.hash.slice("#milestone-".length)
+      : null;
+    if (
+      sprints.value.length > 0 &&
+      (!selectedSprintId.value ||
+        !sprints.value.some((s) => s.id === selectedSprintId.value))
+    ) {
+      const current =
+        sprints.value.find((s) => s.id === requestedSprintId) ||
+        sprints.value.find((s) => isCurrentMilestone(s)) ||
+        sprints.value[0];
+      selectedSprintId.value = current.id;
     }
   } catch (error) {
-    showError('Không thể tải lộ trình dự án.')
+    showError("Không thể tải lộ trình dự án.");
   } finally {
-    isLoading.value = false
+    isLoading.value = false;
   }
 }
 
 // Milestone state calculation helpers
 function isCompletedMilestone(sprint: SprintDto): boolean {
-  if (sprint.status === 'Completed') return true
-  if (sprint.taskCount > 0 && sprint.completedTaskCount === sprint.taskCount) return true
-  if (sprint.progress >= 100) return true
-  return false
+  if (sprint.status === "Completed") return true;
+  if (sprint.taskCount > 0 && sprint.completedTaskCount === sprint.taskCount)
+    return true;
+  if (sprint.progress >= 100) return true;
+  return false;
 }
 
 function isCurrentMilestone(sprint: SprintDto): boolean {
-  if (isCompletedMilestone(sprint)) return false
-  if (sprint.status === 'Active') return true
-  
-  const now = new Date().getTime()
-  const start = new Date(sprint.startDate).getTime()
-  const end = new Date(sprint.endDate).getTime()
-  
-  if (now >= start && now <= end) return true
+  if (isCompletedMilestone(sprint)) return false;
+  if (sprint.status === "Active") return true;
 
-  const uncompleted = sprints.value.filter(s => !isCompletedMilestone(s))
-  return uncompleted.length > 0 && uncompleted[0].id === sprint.id
+  const now = new Date().getTime();
+  const start = new Date(sprint.startDate).getTime();
+  const end = new Date(sprint.endDate).getTime();
+
+  if (now >= start && now <= end) return true;
+
+  const uncompleted = sprints.value.filter((s) => !isCompletedMilestone(s));
+  return uncompleted.length > 0 && uncompleted[0].id === sprint.id;
 }
 
 function isOverdueMilestone(sprint: SprintDto): boolean {
-  if (isCompletedMilestone(sprint)) return false
-  const now = new Date().getTime()
-  const end = new Date(sprint.endDate).getTime()
-  return now > end && sprint.progress < 100
+  if (isCompletedMilestone(sprint)) return false;
+  const now = new Date().getTime();
+  const end = new Date(sprint.endDate).getTime();
+  return now > end && sprint.progress < 100;
 }
 
 const activeMilestone = computed(() => {
-  return sprints.value.find(s => s.id === selectedSprintId.value) || null
-})
+  return sprints.value.find((s) => s.id === selectedSprintId.value) || null;
+});
 
 const currentPositionMilestone = computed(() => {
-  return sprints.value.find(s => isCurrentMilestone(s)) || null
-})
+  return sprints.value.find((s) => isCurrentMilestone(s)) || null;
+});
 
 // Filtered milestones list
 const filteredSprints = computed(() => {
-  let list = sprints.value
-  if (milestoneFilter.value === 'active') {
-    list = list.filter(s => isCurrentMilestone(s))
-  } else if (milestoneFilter.value === 'completed') {
-    list = list.filter(s => isCompletedMilestone(s))
-  } else if (milestoneFilter.value === 'overdue') {
-    list = list.filter(s => isOverdueMilestone(s))
+  let list = sprints.value;
+  if (milestoneFilter.value === "active") {
+    list = list.filter((s) => isCurrentMilestone(s));
+  } else if (milestoneFilter.value === "completed") {
+    list = list.filter((s) => isCompletedMilestone(s));
+  } else if (milestoneFilter.value === "overdue") {
+    list = list.filter((s) => isOverdueMilestone(s));
   }
 
   if (milestoneSearchQuery.value.trim()) {
-    const q = milestoneSearchQuery.value.trim().toLowerCase()
-    list = list.filter(s => s.name.toLowerCase().includes(q) || (s.goal && s.goal.toLowerCase().includes(q)))
+    const q = milestoneSearchQuery.value.trim().toLowerCase();
+    list = list.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        (s.goal && s.goal.toLowerCase().includes(q)),
+    );
   }
-  return list
-})
+  return list;
+});
 
 // Overall project health summary
 const overallProgress = computed(() => {
-  if (sprints.value.length === 0) return selectedProject.value?.progressPercentage || 0
-  const totalTasks = sprints.value.reduce((sum, s) => sum + s.taskCount, 0)
-  const completedTasks = sprints.value.reduce((sum, s) => sum + s.completedTaskCount, 0)
-  if (totalTasks > 0) return Math.round((completedTasks / totalTasks) * 100)
-  
-  const completedMilestones = sprints.value.filter(s => isCompletedMilestone(s)).length
-  return Math.round((completedMilestones / sprints.value.length) * 100)
-})
+  if (sprints.value.length === 0)
+    return selectedProject.value?.progressPercentage || 0;
+  const totalTasks = sprints.value.reduce((sum, s) => sum + s.taskCount, 0);
+  const completedTasks = sprints.value.reduce(
+    (sum, s) => sum + s.completedTaskCount,
+    0,
+  );
+  if (totalTasks > 0) return Math.round((completedTasks / totalTasks) * 100);
+
+  const completedMilestones = sprints.value.filter((s) =>
+    isCompletedMilestone(s),
+  ).length;
+  return Math.round((completedMilestones / sprints.value.length) * 100);
+});
 
 const projectHealthStatus = computed(() => {
-  if (sprints.value.length === 0) return { label: 'Chưa có mốc', tone: 'muted' }
-  const overdueCount = sprints.value.filter(s => isOverdueMilestone(s)).length
-  if (overdueCount > 0) return { label: `Có ${overdueCount} mốc trễ hạn`, tone: 'danger' }
-  const allCompleted = sprints.value.every(s => isCompletedMilestone(s))
-  if (allCompleted) return { label: 'Đã hoàn thành toàn bộ mốc', tone: 'success' }
-  return { label: 'Đang theo đúng tiến độ', tone: 'primary' }
-})
+  if (sprints.value.length === 0)
+    return { label: "Chưa có mốc", tone: "muted" };
+  const overdueCount = sprints.value.filter((s) =>
+    isOverdueMilestone(s),
+  ).length;
+  if (overdueCount > 0)
+    return { label: `Có ${overdueCount} mốc trễ hạn`, tone: "danger" };
+  const allCompleted = sprints.value.every((s) => isCompletedMilestone(s));
+  if (allCompleted)
+    return { label: "Đã hoàn thành toàn bộ mốc", tone: "success" };
+  return { label: "Đang theo đúng tiến độ", tone: "primary" };
+});
 
 // Milestone tasks
 const allProjectTasks = computed<DashboardTask[]>(() => {
-  return selectedProject.value?.tasks || []
-})
+  return selectedProject.value?.tasks || [];
+});
 
 const milestoneTasks = computed<DashboardTask[]>(() => {
-  if (!selectedSprintId.value || !selectedProject.value?.tasks) return []
-  return selectedProject.value.tasks.filter((t: DashboardTask) => t.sprintId === selectedSprintId.value)
-})
+  if (!selectedSprintId.value || !selectedProject.value?.tasks) return [];
+  return selectedProject.value.tasks.filter(
+    (t: DashboardTask) => t.sprintId === selectedSprintId.value,
+  );
+});
 
 const filteredMilestoneTasks = computed<DashboardTask[]>(() => {
-  let list = milestoneTasks.value
-  if (milestoneTaskStatusFilter.value !== 'all') {
-    list = list.filter(t => t.status.toLowerCase() === milestoneTaskStatusFilter.value.toLowerCase())
+  let list = milestoneTasks.value;
+  if (milestoneTaskStatusFilter.value !== "all") {
+    list = list.filter(
+      (t) =>
+        t.status.toLowerCase() ===
+        milestoneTaskStatusFilter.value.toLowerCase(),
+    );
   }
   if (milestoneTaskSearch.value.trim()) {
-    const q = milestoneTaskSearch.value.trim().toLowerCase()
-    list = list.filter(t => t.title.toLowerCase().includes(q) || (t.key && t.key.toLowerCase().includes(q)))
+    const q = milestoneTaskSearch.value.trim().toLowerCase();
+    list = list.filter(
+      (t) =>
+        t.title.toLowerCase().includes(q) ||
+        (t.key && t.key.toLowerCase().includes(q)),
+    );
   }
-  return list
-})
+  return list;
+});
 
 // Assigned members breakdown in active milestone
 const milestoneAssignedMembers = computed(() => {
-  if (!activeMilestone.value || milestoneTasks.value.length === 0) return []
-  const memberMap = new Map<string, { userId: string; name: string; taskCount: number; completedCount: number }>()
-  
+  if (!activeMilestone.value || milestoneTasks.value.length === 0) return [];
+  const memberMap = new Map<
+    string,
+    { userId: string; name: string; taskCount: number; completedCount: number }
+  >();
+
   for (const t of milestoneTasks.value) {
     if (t.assigneeId && t.assigneeName) {
-      const existing = memberMap.get(t.assigneeId) || { userId: t.assigneeId, name: t.assigneeName, taskCount: 0, completedCount: 0 }
-      existing.taskCount++
-      if (t.status === 'Done') existing.completedCount++
-      memberMap.set(t.assigneeId, existing)
+      const existing = memberMap.get(t.assigneeId) || {
+        userId: t.assigneeId,
+        name: t.assigneeName,
+        taskCount: 0,
+        completedCount: 0,
+      };
+      existing.taskCount++;
+      if (t.status === "Done") existing.completedCount++;
+      memberMap.set(t.assigneeId, existing);
     }
   }
-  return Array.from(memberMap.values())
-})
+  return Array.from(memberMap.values());
+});
 
 const trackFillPercentage = computed(() => {
-  if (sprints.value.length <= 1) return overallProgress.value
-  const currentIndex = sprints.value.findIndex(s => isCurrentMilestone(s))
+  if (sprints.value.length <= 1) return overallProgress.value;
+  const currentIndex = sprints.value.findIndex((s) => isCurrentMilestone(s));
   if (currentIndex === -1) {
-    const allDone = sprints.value.every(s => isCompletedMilestone(s))
-    return allDone ? 100 : 0
+    const allDone = sprints.value.every((s) => isCompletedMilestone(s));
+    return allDone ? 100 : 0;
   }
-  return Math.round(((currentIndex + 0.5) / sprints.value.length) * 100)
-})
+  return Math.round(((currentIndex + 0.5) / sprints.value.length) * 100);
+});
 
 // Action: Jump to Kanban Board for selected milestone
 function jumpToKanban(sprintId?: string) {
-  const targetId = sprintId || selectedSprintId.value
-  if (!targetId) return
-  activeProjectTab.value = 'tasks'
+  const targetId = sprintId || selectedSprintId.value;
+  if (!targetId) return;
+  activeProjectTab.value = "tasks";
 }
 
 // Action: Quick change milestone status
-async function quickChangeMilestoneStatus(sprint: SprintDto, newStatus: string) {
+async function quickChangeMilestoneStatus(
+  sprint: SprintDto,
+  newStatus: string,
+) {
   try {
     await apiCommand(`/api/sprints/${sprint.id}`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify({
         name: sprint.name,
         startDate: sprint.startDate,
         endDate: sprint.endDate,
         status: newStatus,
-        goal: sprint.goal
-      })
-    })
-    await loadSprints()
-    showSuccess(`Đã chuyển mốc "${sprint.name}" sang trạng thái "${newStatus}".`)
+        goal: sprint.goal,
+      }),
+    });
+    await loadSprints();
+    showSuccess(
+      `Đã chuyển mốc "${sprint.name}" sang trạng thái "${newStatus}".`,
+    );
   } catch (error) {
-    showError('Không thể cập nhật trạng thái mốc.')
+    showError("Không thể cập nhật trạng thái mốc.");
   }
 }
 
 // Action: Sign-off / Complete Milestone
 function markMilestoneCompleted(sprint: SprintDto) {
-  confirmation.value = { type: 'complete', sprint }
+  confirmation.value = { type: "complete", sprint };
 }
 
 // Action: Generate Roadmap Preset (Scrum, Outsource, Waterfall)
-async function handleGeneratePreset(presetType: 'scrum' | 'outsource' | 'waterfall') {
-  isGeneratingPreset.value = true
+async function handleGeneratePreset(
+  presetType: "scrum" | "outsource" | "waterfall",
+) {
+  isGeneratingPreset.value = true;
   try {
     await apiCommand(`/api/projects/${props.projectId}/sprints/presets`, {
-      method: 'POST',
-      body: JSON.stringify({ presetType })
-    })
-    showPresetModal.value = false
-    await loadSprints()
-    showSuccess(`Đã tự động khởi tạo Mẫu Lộ trình (${presetType.toUpperCase()}) thành công!`)
+      method: "POST",
+      body: JSON.stringify({ presetType }),
+    });
+    showPresetModal.value = false;
+    await loadSprints();
+    showSuccess(
+      `Đã tự động khởi tạo Mẫu Lộ trình (${presetType.toUpperCase()}) thành công!`,
+    );
   } catch (error) {
-    showError('Không thể khởi tạo mẫu mốc tiến độ.')
+    showError("Không thể khởi tạo mẫu mốc tiến độ.");
   } finally {
-    isGeneratingPreset.value = false
+    isGeneratingPreset.value = false;
   }
 }
 
 // Action: Create manual milestone
 async function handleCreateMilestone() {
-  if (!milestoneName.value.trim() || !milestoneStartDate.value || !milestoneEndDate.value) {
-    showError('Vui lòng nhập đầy đủ Tên mốc, Ngày bắt đầu và Ngày kết thúc.')
-    return
+  if (
+    !milestoneName.value.trim() ||
+    !milestoneStartDate.value ||
+    !milestoneEndDate.value
+  ) {
+    showError("Vui lòng nhập đầy đủ Tên mốc, Ngày bắt đầu và Ngày kết thúc.");
+    return;
   }
 
   try {
     await apiCommand(`/api/projects/${props.projectId}/sprints`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({
         name: milestoneName.value.trim(),
         startDate: new Date(milestoneStartDate.value).toISOString(),
         endDate: new Date(milestoneEndDate.value).toISOString(),
-        goal: milestoneGoal.value.trim() || null
-      })
-    })
+        goal: milestoneGoal.value.trim() || null,
+      }),
+    });
 
-    showCreateModal.value = false
-    resetMilestoneForm()
-    await loadSprints()
-    showSuccess('Đã thêm mốc tiến độ mới.')
+    showCreateModal.value = false;
+    resetMilestoneForm();
+    await loadSprints();
+    showSuccess("Đã thêm mốc tiến độ mới.");
   } catch (error) {
-    showError('Không thể tạo mốc tiến độ.')
+    showError("Không thể tạo mốc tiến độ.");
   }
 }
 
 // Action: Edit milestone
 function openEdit(sprint: SprintDto) {
-  editingSprintId.value = sprint.id
-  milestoneName.value = sprint.name
-  milestoneStartDate.value = sprint.startDate.slice(0, 10)
-  milestoneEndDate.value = sprint.endDate.slice(0, 10)
-  milestoneGoal.value = sprint.goal || ''
-  milestoneStatus.value = sprint.status || 'Planning'
-  showEditModal.value = true
+  editingSprintId.value = sprint.id;
+  milestoneName.value = sprint.name;
+  milestoneStartDate.value = sprint.startDate.slice(0, 10);
+  milestoneEndDate.value = sprint.endDate.slice(0, 10);
+  milestoneGoal.value = sprint.goal || "";
+  milestoneStatus.value = sprint.status || "Planning";
+  showEditModal.value = true;
 }
 
 async function handleUpdateMilestone() {
-  if (!editingSprintId.value || !milestoneName.value.trim()) return
+  if (!editingSprintId.value || !milestoneName.value.trim()) return;
   try {
     await apiCommand(`/api/sprints/${editingSprintId.value}`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify({
         name: milestoneName.value.trim(),
         startDate: new Date(milestoneStartDate.value).toISOString(),
         endDate: new Date(milestoneEndDate.value).toISOString(),
         status: milestoneStatus.value,
-        goal: milestoneGoal.value.trim() || null
-      })
-    })
+        goal: milestoneGoal.value.trim() || null,
+      }),
+    });
 
-    showEditModal.value = false
-    editingSprintId.value = null
-    resetMilestoneForm()
-    await loadSprints()
-    showSuccess('Đã cập nhật thông tin mốc tiến độ.')
+    showEditModal.value = false;
+    editingSprintId.value = null;
+    resetMilestoneForm();
+    await loadSprints();
+    showSuccess("Đã cập nhật thông tin mốc tiến độ.");
   } catch (error) {
-    showError('Không thể cập nhật mốc tiến độ.')
+    showError("Không thể cập nhật mốc tiến độ.");
   }
 }
 
 // Action: Delete milestone
 function handleDeleteMilestone(sprintId: string) {
-  const sprint = sprints.value.find(item => item.id === sprintId)
-  if (sprint) confirmation.value = { type: 'delete', sprint }
+  const sprint = sprints.value.find((item) => item.id === sprintId);
+  if (sprint) confirmation.value = { type: "delete", sprint };
 }
 
 async function confirmMilestoneAction() {
-  const pending = confirmation.value
-  if (!pending) return
-  confirmation.value = null
+  const pending = confirmation.value;
+  if (!pending) return;
+  confirmation.value = null;
 
-  if (pending.type === 'complete') {
-    await quickChangeMilestoneStatus(pending.sprint, 'Completed')
-    return
+  if (pending.type === "complete") {
+    await quickChangeMilestoneStatus(pending.sprint, "Completed");
+    return;
   }
 
   try {
-    await apiCommand(`/api/sprints/${pending.sprint.id}`, { method: 'DELETE' })
-    if (selectedSprintId.value === pending.sprint.id) selectedSprintId.value = null
-    await loadSprints()
-    showSuccess('Đã xóa mốc tiến độ.')
+    await apiCommand(`/api/sprints/${pending.sprint.id}`, { method: "DELETE" });
+    if (selectedSprintId.value === pending.sprint.id)
+      selectedSprintId.value = null;
+    await loadSprints();
+    showSuccess("Đã xóa mốc tiến độ.");
   } catch (error) {
-    showError('Không thể xóa mốc tiến độ.')
+    showError("Không thể xóa mốc tiến độ.");
   }
 }
 
 // Action: Open Task Assignment Modal
 function openTaskAssignModal() {
-  if (!selectedSprintId.value) return
-  selectedTaskIdsForSprint.value = milestoneTasks.value.map(t => t.id)
-  showTaskAssignModal.value = true
+  if (!selectedSprintId.value) return;
+  selectedTaskIdsForSprint.value = milestoneTasks.value.map((t) => t.id);
+  showTaskAssignModal.value = true;
 }
 
 function toggleTaskSelection(taskId: string) {
-  const index = selectedTaskIdsForSprint.value.indexOf(taskId)
+  const index = selectedTaskIdsForSprint.value.indexOf(taskId);
   if (index >= 0) {
-    selectedTaskIdsForSprint.value.splice(index, 1)
+    selectedTaskIdsForSprint.value.splice(index, 1);
   } else {
-    selectedTaskIdsForSprint.value.push(taskId)
+    selectedTaskIdsForSprint.value.push(taskId);
   }
 }
 
 async function handleSaveTaskAssignments() {
-  if (!selectedSprintId.value) return
-  isSavingTaskAssignment.value = true
+  if (!selectedSprintId.value) return;
+  isSavingTaskAssignment.value = true;
   try {
     await apiCommand(`/api/sprints/${selectedSprintId.value}/tasks`, {
-      method: 'PUT',
-      body: JSON.stringify({ taskIds: selectedTaskIdsForSprint.value })
-    })
-    showTaskAssignModal.value = false
-    await loadDashboard()
-    await loadSprints()
-    showSuccess('Đã cập nhật danh sách công việc thuộc mốc.')
+      method: "PUT",
+      body: JSON.stringify({ taskIds: selectedTaskIdsForSprint.value }),
+    });
+    showTaskAssignModal.value = false;
+    await loadDashboard();
+    await loadSprints();
+    showSuccess("Đã cập nhật danh sách công việc thuộc mốc.");
   } catch (error) {
-    showError('Không thể cập nhật phân công công việc vào mốc.')
+    showError("Không thể cập nhật phân công công việc vào mốc.");
   } finally {
-    isSavingTaskAssignment.value = false
+    isSavingTaskAssignment.value = false;
   }
 }
 
 // Action: Quick Create Task inside selected milestone
 async function handleQuickCreateTask() {
   if (!selectedSprintId.value || !quickTaskTitle.value.trim()) {
-    showError('Vui lòng nhập tiêu đề nhiệm vụ.')
-    return
+    showError("Vui lòng nhập tiêu đề nhiệm vụ.");
+    return;
   }
 
   try {
-    await apiCommand('/api/tasks', {
-      method: 'POST',
+    await apiCommand("/api/tasks", {
+      method: "POST",
       body: JSON.stringify({
         title: quickTaskTitle.value.trim(),
         priority: quickTaskPriority.value,
         projectId: props.projectId,
         assigneeId: quickTaskAssigneeId.value || null,
-        dueDate: quickTaskDueDate.value ? new Date(quickTaskDueDate.value).toISOString() : null,
-        sprintId: selectedSprintId.value
-      })
-    })
+        dueDate: quickTaskDueDate.value
+          ? new Date(quickTaskDueDate.value).toISOString()
+          : null,
+        sprintId: selectedSprintId.value,
+      }),
+    });
 
-    showQuickCreateTaskModal.value = false
-    quickTaskTitle.value = ''
-    quickTaskPriority.value = 'Medium'
-    quickTaskAssigneeId.value = ''
-    quickTaskDueDate.value = ''
+    showQuickCreateTaskModal.value = false;
+    quickTaskTitle.value = "";
+    quickTaskPriority.value = "Medium";
+    quickTaskAssigneeId.value = "";
+    quickTaskDueDate.value = "";
 
-    await loadDashboard()
-    await loadSprints()
-    showSuccess('Đã tạo nhiệm vụ mới trực tiếp trong mốc này.')
+    await loadDashboard();
+    await loadSprints();
+    showSuccess("Đã tạo nhiệm vụ mới trực tiếp trong mốc này.");
   } catch (error) {
-    showError('Không thể tạo nhiệm vụ.')
+    showError("Không thể tạo nhiệm vụ.");
   }
 }
 
 // Action: Inline Update Task Status (For members)
 async function updateTaskStatusInline(task: DashboardTask, newStatus: string) {
-  if (task.status === newStatus) return
+  if (task.status === newStatus) return;
   try {
     await apiCommand(`/api/tasks/${task.id}/status`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify({
         status: newStatus,
-        rowVersion: task.rowVersion
-      })
-    })
-    await loadDashboard()
-    await loadSprints()
-    showSuccess(`Đã chuyển trạng thái task sang "${newStatus}".`)
+        rowVersion: task.rowVersion,
+      }),
+    });
+    await loadDashboard();
+    await loadSprints();
+    showSuccess(`Đã chuyển trạng thái task sang "${newStatus}".`);
   } catch (error) {
-    showError('Không thể cập nhật trạng thái nhiệm vụ.')
+    showError("Không thể cập nhật trạng thái nhiệm vụ.");
   }
 }
 
 function resetMilestoneForm() {
-  milestoneName.value = ''
-  milestoneStartDate.value = ''
-  milestoneEndDate.value = ''
-  milestoneGoal.value = ''
-  milestoneStatus.value = 'Planning'
-  editingSprintId.value = null
+  milestoneName.value = "";
+  milestoneStartDate.value = "";
+  milestoneEndDate.value = "";
+  milestoneGoal.value = "";
+  milestoneStatus.value = "Planning";
+  editingSprintId.value = null;
 }
 
 function formatDateRange(start: string, end: string) {
-  if (!start || !end) return ''
-  const d1 = new Date(start)
-  const d2 = new Date(end)
-  return `${d1.getDate()}/${d1.getMonth() + 1} - ${d2.getDate()}/${d2.getMonth() + 1}/${d2.getFullYear()}`
+  if (!start || !end) return "";
+  const d1 = new Date(start);
+  const d2 = new Date(end);
+  return `${d1.getDate()}/${d1.getMonth() + 1} - ${d2.getDate()}/${d2.getMonth() + 1}/${d2.getFullYear()}`;
 }
 
-function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolean } {
-  if (!endDateStr) return { text: '', isOverdue: false }
-  const now = new Date().getTime()
-  const end = new Date(endDateStr).getTime()
-  const diffDays = Math.ceil((end - now) / (1000 * 60 * 60 * 24))
-  if (diffDays < 0) return { text: `Trễ ${Math.abs(diffDays)} ngày`, isOverdue: true }
-  if (diffDays === 0) return { text: 'Hạn chót hôm nay', isOverdue: false }
-  return { text: `Còn ${diffDays} ngày`, isOverdue: false }
+function getDaysRemaining(endDateStr: string): {
+  text: string;
+  isOverdue: boolean;
+} {
+  if (!endDateStr) return { text: "", isOverdue: false };
+  const now = new Date().getTime();
+  const end = new Date(endDateStr).getTime();
+  const diffDays = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0)
+    return { text: `Trễ ${Math.abs(diffDays)} ngày`, isOverdue: true };
+  if (diffDays === 0) return { text: "Hạn chót hôm nay", isOverdue: false };
+  return { text: `Còn ${diffDays} ngày`, isOverdue: false };
 }
 </script>
 
 <template>
   <div class="project-roadmap-shell">
-    
     <!-- Role & Mode Indicator Banner -->
     <div class="role-mode-bar glass-card">
       <div class="role-badge-box">
@@ -526,10 +706,15 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
           <ShieldCheck :size="15" /> Quyền Quản Lý (Project Leader)
         </span>
         <span v-else class="role-chip chip-member">
-          <UserCheck :size="15" /> Giao diện Theo dõi Tiến độ (Thành viên & Stakeholders)
+          <UserCheck :size="15" /> Giao diện Theo dõi Tiến độ (Thành viên &
+          Stakeholders)
         </span>
         <span class="mode-text ms-2">
-          {{ isClientViewMode ? '👀 Đang ở chế độ xem Khách hàng / Stakeholder' : '⚙️ Đang ở chế độ xem Quản trị (Đầy đủ cấu hình & thao tác)' }}
+          {{
+            isClientViewMode
+              ? "👀 Đang ở chế độ xem Khách hàng / Stakeholder"
+              : "⚙️ Đang ở chế độ xem Quản trị (Đầy đủ cấu hình & thao tác)"
+          }}
         </span>
       </div>
 
@@ -565,13 +750,35 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
           <div>
             <h3>Lộ Trình Dự Án & Mốc Tiến Độ</h3>
             <p class="text-muted text-sm">
-              Theo dõi tiến độ nghiệm thu giai đoạn, quản lý mốc bàn giao và kiểm soát rủi ro dự án.
+              Theo dõi tiến độ nghiệm thu giai đoạn, quản lý mốc bàn giao và
+              kiểm soát rủi ro dự án.
             </p>
           </div>
         </div>
       </div>
 
       <div class="roadmap-header__actions">
+        <div class="roadmap-header__view-switch">
+          <button
+            type="button"
+            class="view-mode-pill"
+            :class="{ active: viewMode === 'journey' }"
+            @click="viewMode = 'journey'"
+          >
+            <LayoutGrid :size="14" />
+            <span>Journey View</span>
+          </button>
+          <button
+            type="button"
+            class="view-mode-pill"
+            :class="{ active: viewMode === 'timeline' }"
+            @click="viewMode = 'timeline'"
+          >
+            <CalendarDays :size="14" />
+            <span>Timeline View</span>
+          </button>
+        </div>
+
         <button
           v-if="isProjectAdmin && !isClientViewMode"
           type="button"
@@ -595,12 +802,16 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
     </div>
 
     <!-- Empty State if no milestones exist -->
-    <div v-if="sprints.length === 0 && !isLoading" class="empty-roadmap-card glass-card">
+    <div
+      v-if="sprints.length === 0 && !isLoading"
+      class="empty-roadmap-card glass-card"
+    >
       <div class="empty-roadmap-content">
         <Layers :size="52" class="text-primary opacity-60 mb-3" />
         <h4>Chưa có mốc tiến độ nào được thiết lập</h4>
         <p>
-          Dự án này chưa có mốc tiến độ nào. Bạn có thể sử dụng các <strong>Mẫu Quy trình Chuẩn (Scrum, Outsource, Waterfall)</strong>
+          Dự án này chưa có mốc tiến độ nào. Bạn có thể sử dụng các
+          <strong>Mẫu Quy trình Chuẩn (Scrum, Outsource, Waterfall)</strong>
           hoặc tự thêm các mốc quan trọng để theo dõi tiến độ bàn giao.
         </p>
 
@@ -614,25 +825,34 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
             <span>Chọn Bộ Mẫu Lộ Trình (Scrum / Outsource / Waterfall)</span>
           </button>
 
-          <button type="button" class="secondary-button secondary-button--lg ms-3" @click="showCreateModal = true">
+          <button
+            type="button"
+            class="secondary-button secondary-button--lg ms-3"
+            @click="showCreateModal = true"
+          >
             <Plus :size="18" />
             <span>Tự nhập mốc thủ công</span>
           </button>
         </div>
         <p v-else class="text-muted text-sm mt-3">
-          Vui lòng liên hệ Người quản lý dự án (Project Leader) để thiết lập lộ trình dự án.
+          Vui lòng liên hệ Người quản lý dự án (Project Leader) để thiết lập lộ
+          trình dự án.
         </p>
       </div>
     </div>
 
     <!-- MAIN ROADMAP TIMELINE TRACK -->
     <template v-else>
-      <div class="roadmap-track-card glass-card">
-        <!-- Client Executive Executive Bar & Filters -->
-        <div class="roadmap-metrics-bar">
+      <template v-if="viewMode === 'journey'">
+        <div class="roadmap-track-card glass-card">
+          <!-- Client Executive Executive Bar & Filters -->
+          <div class="roadmap-metrics-bar">
           <div class="metric-pill">
             <span class="metric-label">Trạng thái Sức khỏe Dự án</span>
-            <span :class="`badge-tag tag-${projectHealthStatus.tone}`" class="health-tag">
+            <span
+              :class="`badge-tag tag-${projectHealthStatus.tone}`"
+              class="health-tag"
+            >
               <Zap :size="13" /> {{ projectHealthStatus.label }}
             </span>
           </div>
@@ -640,7 +860,11 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
           <div class="metric-pill">
             <span class="metric-label">Mốc Tập trung Hiện tại</span>
             <strong class="metric-value text-primary">
-              {{ currentPositionMilestone ? currentPositionMilestone.name : 'Đã hoàn thành tất cả mốc' }}
+              {{
+                currentPositionMilestone
+                  ? currentPositionMilestone.name
+                  : "Đã hoàn thành tất cả mốc"
+              }}
             </strong>
           </div>
 
@@ -648,9 +872,14 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
             <span class="metric-label">Tiến độ Nghiệm thu Tổng thể</span>
             <div class="metric-progress-wrap">
               <div class="mini-progress-rail">
-                <div class="mini-progress-fill" :style="{ width: `${overallProgress}%` }"></div>
+                <div
+                  class="mini-progress-fill"
+                  :style="{ width: `${overallProgress}%` }"
+                ></div>
               </div>
-              <strong class="metric-value text-success ms-2">{{ overallProgress }}%</strong>
+              <strong class="metric-value text-success ms-2"
+                >{{ overallProgress }}%</strong
+              >
             </div>
           </div>
 
@@ -664,7 +893,7 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
             <button
               type="button"
               class="filter-pill"
-              :class="{ 'active': milestoneFilter === 'all' }"
+              :class="{ active: milestoneFilter === 'all' }"
               @click="milestoneFilter = 'all'"
             >
               Tất cả ({{ sprints.length }})
@@ -672,7 +901,7 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
             <button
               type="button"
               class="filter-pill"
-              :class="{ 'active': milestoneFilter === 'active' }"
+              :class="{ active: milestoneFilter === 'active' }"
               @click="milestoneFilter = 'active'"
             >
               ⚡ Đang chạy
@@ -680,7 +909,7 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
             <button
               type="button"
               class="filter-pill"
-              :class="{ 'active': milestoneFilter === 'overdue' }"
+              :class="{ active: milestoneFilter === 'overdue' }"
               @click="milestoneFilter = 'overdue'"
             >
               ⚠️ Trễ hạn
@@ -688,7 +917,7 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
             <button
               type="button"
               class="filter-pill"
-              :class="{ 'active': milestoneFilter === 'completed' }"
+              :class="{ active: milestoneFilter === 'completed' }"
               @click="milestoneFilter = 'completed'"
             >
               ✓ Đã xong
@@ -701,7 +930,10 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
           <div class="roadmap-visual-container">
             <!-- Connecting Line -->
             <div class="connecting-line">
-              <div class="connecting-line-fill" :style="{ width: `${trackFillPercentage}%` }"></div>
+              <div
+                class="connecting-line-fill"
+                :style="{ width: `${trackFillPercentage}%` }"
+              ></div>
             </div>
 
             <!-- Milestone Nodes -->
@@ -720,31 +952,57 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
               >
                 <!-- Node Icon & Badge -->
                 <div class="node-circle">
-                  <div v-if="isCurrentMilestone(sprint)" class="current-location-flag">
+                  <div
+                    v-if="isCurrentMilestone(sprint)"
+                    class="current-location-flag"
+                  >
                     <Navigation :size="12" />
                     <span>VỊ TRÍ HIỆN TẠI</span>
                   </div>
 
-                  <CheckCircle2 v-if="isCompletedMilestone(sprint)" :size="24" class="text-success" />
+                  <CheckCircle2
+                    v-if="isCompletedMilestone(sprint)"
+                    :size="24"
+                    class="text-success"
+                  />
                   <span v-else class="node-number">{{ index + 1 }}</span>
                 </div>
 
                 <!-- Milestone Summary Card -->
                 <div class="milestone-node-card">
                   <div class="node-status-badge">
-                    <span v-if="isCompletedMilestone(sprint)" class="badge-tag tag-success">✓ Đã nghiệm thu</span>
-                    <span v-else-if="isCurrentMilestone(sprint)" class="badge-tag tag-primary">⚡ Đang làm</span>
-                    <span v-else-if="isOverdueMilestone(sprint)" class="badge-tag tag-danger">⚠️ Trễ hạn</span>
+                    <span
+                      v-if="isCompletedMilestone(sprint)"
+                      class="badge-tag tag-success"
+                      >✓ Đã nghiệm thu</span
+                    >
+                    <span
+                      v-else-if="isCurrentMilestone(sprint)"
+                      class="badge-tag tag-primary"
+                      >⚡ Đang làm</span
+                    >
+                    <span
+                      v-else-if="isOverdueMilestone(sprint)"
+                      class="badge-tag tag-danger"
+                      >⚠️ Trễ hạn</span
+                    >
                     <span v-else class="badge-tag tag-muted">📅 Chưa tới</span>
                   </div>
 
                   <h5 class="node-title">{{ sprint.name }}</h5>
                   <div class="node-dates">
                     <Calendar :size="12" />
-                    <span>{{ formatDateRange(sprint.startDate, sprint.endDate) }}</span>
+                    <span>{{
+                      formatDateRange(sprint.startDate, sprint.endDate)
+                    }}</span>
                   </div>
 
-                  <div class="node-days-info" :class="{ 'is-overdue': getDaysRemaining(sprint.endDate).isOverdue }">
+                  <div
+                    class="node-days-info"
+                    :class="{
+                      'is-overdue': getDaysRemaining(sprint.endDate).isOverdue,
+                    }"
+                  >
                     <Clock :size="11" />
                     <span>{{ getDaysRemaining(sprint.endDate).text }}</span>
                   </div>
@@ -752,12 +1010,20 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
                   <div class="node-progress-rail">
                     <div
                       class="node-progress-fill"
-                      :class="{ 'bg-success': isCompletedMilestone(sprint), 'bg-primary': isCurrentMilestone(sprint) }"
+                      :class="{
+                        'bg-success': isCompletedMilestone(sprint),
+                        'bg-primary': isCurrentMilestone(sprint),
+                      }"
                       :style="{ width: `${sprint.progress}%` }"
                     ></div>
                   </div>
                   <div class="node-task-count">
-                    <strong>{{ sprint.completedTaskCount }}/{{ sprint.taskCount }}</strong> tasks ({{ sprint.progress }}%)
+                    <strong
+                      >{{ sprint.completedTaskCount }}/{{
+                        sprint.taskCount
+                      }}</strong
+                    >
+                    tasks ({{ sprint.progress }}%)
                   </div>
                 </div>
               </div>
@@ -765,6 +1031,73 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
           </div>
         </div>
       </div>
+
+      <template v-else>
+        <div class="roadmap-track-card glass-card timeline-mode-card">
+          <div class="section-header section-header--timeline">
+            <div>
+              <div class="eyebrow"><CalendarDays :size="14" /> Timeline View</div>
+              <h3>Dòng thời gian Roadmap</h3>
+              <p>Theo dõi các task và mốc theo định dạng biểu đồ Gantt dựa trên dữ liệu Roadmap hiện tại.</p>
+            </div>
+            <div class="timeline-legend">
+              <span><i class="normal"></i>Bình thường</span>
+              <span><i class="due"></i>Sắp hạn</span>
+              <span><i class="stale"></i>Chưa bắt đầu</span>
+              <span><i class="overdue"></i>Quá hạn</span>
+            </div>
+          </div>
+
+          <div v-if="timelineTasks.length === 0" class="empty-state">
+            <AlertTriangle :size="38" />
+            <strong>Không có task có ngày bắt đầu hoặc hạn hoàn thành.</strong>
+            <p>Hãy cập nhật ngày bắt đầu/hạn hoàn thành cho nhiệm vụ trong roadmap.</p>
+          </div>
+
+          <div v-else class="timeline-frame">
+            <div class="timeline-labels">
+              <div class="labels-header">Công việc</div>
+              <button
+                v-for="task in timelineTasks"
+                :key="task.id"
+                type="button"
+                class="timeline-task-label"
+                @click="selectTaskInProject(task.id)"
+              >
+                <span class="task-status-dot" :class="taskTone(task)"></span>
+                <span>
+                  <strong>{{ task.title }}</strong>
+                  <small>{{ task.status }}</small>
+                </span>
+              </button>
+            </div>
+
+            <div class="timeline-scroll no-scrollbar">
+              <div class="timeline-grid" :style="{ width: `${totalDays * 54}px` }">
+                <div class="day-header" :style="{ gridTemplateColumns: `repeat(${totalDays}, 54px)` }">
+                  <div v-for="day in timelineDays" :key="day.key" :class="{ weekend: day.isWeekend, today: day.isToday }">
+                    <small>{{ day.month || day.weekday }}</small>
+                    <strong>{{ day.day }}</strong>
+                  </div>
+                </div>
+                <div v-for="task in timelineTasks" :key="task.id" class="timeline-row" :style="{ gridTemplateColumns: `repeat(${totalDays}, 54px)` }">
+                  <span v-for="day in timelineDays" :key="day.key" class="day-cell" :class="{ weekend: day.isWeekend, today: day.isToday }"></span>
+                  <button
+                    type="button"
+                    class="timeline-bar"
+                    :class="taskTone(task)"
+                    :style="getTaskStyle(task)"
+                    @click="selectTaskInProject(task.id)"
+                  >
+                    <span class="bar-progress" :style="{ width: `${task.progress ?? 0}%` }"></span>
+                    <strong>{{ task.progress ?? 0 }}%</strong>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
 
       <!-- SELECTED MILESTONE DETAIL CONTROL PANEL -->
       <div
@@ -775,7 +1108,9 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
         <!-- Fast Access Command Toolbar -->
         <div class="fast-access-toolbar mb-4">
           <div class="toolbar-left">
-            <span class="toolbar-title">⚡ Thao Tác Nhanh Cho Mốc "{{ activeMilestone.name }}"</span>
+            <span class="toolbar-title"
+              >⚡ Thao Tác Nhanh Cho Mốc "{{ activeMilestone.name }}"</span
+            >
           </div>
 
           <div class="toolbar-right">
@@ -792,7 +1127,11 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
 
             <!-- One-click Sign-off / Complete Milestone -->
             <button
-              v-if="isProjectAdmin && !isClientViewMode && !isCompletedMilestone(activeMilestone)"
+              v-if="
+                isProjectAdmin &&
+                !isClientViewMode &&
+                !isCompletedMilestone(activeMilestone)
+              "
               type="button"
               class="toolbar-btn btn-success-light"
               @click="markMilestoneCompleted(activeMilestone)"
@@ -803,11 +1142,19 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
             </button>
 
             <!-- Quick Status Change dropdown -->
-            <div v-if="isProjectAdmin && !isClientViewMode" class="quick-status-dropdown-wrap">
+            <div
+              v-if="isProjectAdmin && !isClientViewMode"
+              class="quick-status-dropdown-wrap"
+            >
               <select
                 class="quick-status-select"
                 :value="activeMilestone.status || 'Planning'"
-                @change="quickChangeMilestoneStatus(activeMilestone, ($event.target as HTMLSelectElement).value)"
+                @change="
+                  quickChangeMilestoneStatus(
+                    activeMilestone,
+                    ($event.target as HTMLSelectElement).value,
+                  )
+                "
               >
                 <option value="Planning">Trạng thái: Planning</option>
                 <option value="Active">Trạng thái: Active (⚡)</option>
@@ -828,7 +1175,11 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
             </button>
 
             <!-- Kanban Jump -->
-            <button type="button" class="toolbar-btn btn-kanban" @click="jumpToKanban(activeMilestone.id)">
+            <button
+              type="button"
+              class="toolbar-btn btn-kanban"
+              @click="jumpToKanban(activeMilestone.id)"
+            >
               <FolderKanban :size="14" />
               <span>Mở Bảng Kanban ➔</span>
             </button>
@@ -840,31 +1191,62 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
           <div class="detail-header-left">
             <div class="d-flex align-items-center gap-2 mb-1">
               <span class="badge-tag tag-primary">Mốc Đang Chọn</span>
-              <span v-if="isCompletedMilestone(activeMilestone)" class="badge-tag tag-success">✓ Nghiệm thu xong</span>
-              <span v-else-if="isOverdueMilestone(activeMilestone)" class="badge-tag tag-danger">⚠️ Trễ hạn</span>
-              <span v-else class="badge-tag tag-primary">⚡ Đang triển khai</span>
+              <span
+                v-if="isCompletedMilestone(activeMilestone)"
+                class="badge-tag tag-success"
+                >✓ Nghiệm thu xong</span
+              >
+              <span
+                v-else-if="isOverdueMilestone(activeMilestone)"
+                class="badge-tag tag-danger"
+                >⚠️ Trễ hạn</span
+              >
+              <span v-else class="badge-tag tag-primary"
+                >⚡ Đang triển khai</span
+              >
             </div>
 
             <h4>{{ activeMilestone.name }}</h4>
             <p v-if="activeMilestone.goal" class="detail-goal">
-              🎯 <strong>Mục tiêu & Hạng mục nghiệm thu:</strong> {{ activeMilestone.goal }}
+              🎯 <strong>Mục tiêu & Hạng mục nghiệm thu:</strong>
+              {{ activeMilestone.goal }}
             </p>
 
             <div class="detail-dates-info">
               <Clock :size="14" />
-              <span>Thời gian thực hiện: <strong>{{ formatDateRange(activeMilestone.startDate, activeMilestone.endDate) }}</strong></span>
-              <span class="ms-3 badge-tag tag-muted">{{ getDaysRemaining(activeMilestone.endDate).text }}</span>
+              <span
+                >Thời gian thực hiện:
+                <strong>{{
+                  formatDateRange(
+                    activeMilestone.startDate,
+                    activeMilestone.endDate,
+                  )
+                }}</strong></span
+              >
+              <span class="ms-3 badge-tag tag-muted">{{
+                getDaysRemaining(activeMilestone.endDate).text
+              }}</span>
             </div>
           </div>
 
           <div class="detail-header-actions">
             <!-- Manager actions -->
             <template v-if="isProjectAdmin && !isClientViewMode">
-              <button type="button" class="btn btn-outline" @click="openEdit(activeMilestone)" title="Chỉnh sửa tên, deadline, goal">
+              <button
+                type="button"
+                class="btn btn-outline"
+                @click="openEdit(activeMilestone)"
+                title="Chỉnh sửa tên, deadline, goal"
+              >
                 <Edit3 :size="15" />
                 <span>Sửa mốc</span>
               </button>
-              <button type="button" class="btn btn-danger-ghost" @click="handleDeleteMilestone(activeMilestone.id)" title="Xóa mốc">
+              <button
+                type="button"
+                class="btn btn-danger-ghost"
+                @click="handleDeleteMilestone(activeMilestone.id)"
+                title="Xóa mốc"
+              >
                 <Trash2 :size="15" />
               </button>
             </template>
@@ -876,20 +1258,51 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
           <div class="deliverables-header">
             <Target :size="16" class="text-primary" />
             <strong>Tiêu Chí & Hạng Mục Nghiệm Thu (Key Deliverables)</strong>
-            <span class="deliverable-badge">{{ activeMilestone.completedTaskCount }}/{{ activeMilestone.taskCount }} Đã Đạt</span>
+            <span class="deliverable-badge"
+              >{{ activeMilestone.completedTaskCount }}/{{
+                activeMilestone.taskCount
+              }}
+              Đã Đạt</span
+            >
           </div>
 
           <div class="deliverables-grid">
-            <div class="deliverable-item" :class="{ 'is-done': activeMilestone.progress >= 100 }">
-              <CheckSquare v-if="activeMilestone.progress >= 100" :size="16" class="text-success" />
+            <div
+              class="deliverable-item"
+              :class="{ 'is-done': activeMilestone.progress >= 100 }"
+            >
+              <CheckSquare
+                v-if="activeMilestone.progress >= 100"
+                :size="16"
+                class="text-success"
+              />
               <Clock v-else :size="16" class="text-muted" />
-              <span>Hoàn thành 100% nhiệm vụ trong mốc ({{ activeMilestone.completedTaskCount }}/{{ activeMilestone.taskCount }} tasks)</span>
+              <span
+                >Hoàn thành 100% nhiệm vụ trong mốc ({{
+                  activeMilestone.completedTaskCount
+                }}/{{ activeMilestone.taskCount }} tasks)</span
+              >
             </div>
 
-            <div class="deliverable-item" :class="{ 'is-done': !isOverdueMilestone(activeMilestone) }">
-              <CheckSquare v-if="!isOverdueMilestone(activeMilestone)" :size="16" class="text-success" />
+            <div
+              class="deliverable-item"
+              :class="{ 'is-done': !isOverdueMilestone(activeMilestone) }"
+            >
+              <CheckSquare
+                v-if="!isOverdueMilestone(activeMilestone)"
+                :size="16"
+                class="text-success"
+              />
               <AlertTriangle v-else :size="16" class="text-danger" />
-              <span>Đảm bảo đúng mốc thời hạn deadline: {{ formatDateRange(activeMilestone.startDate, activeMilestone.endDate) }}</span>
+              <span
+                >Đảm bảo đúng mốc thời hạn deadline:
+                {{
+                  formatDateRange(
+                    activeMilestone.startDate,
+                    activeMilestone.endDate,
+                  )
+                }}</span
+              >
             </div>
 
             <div v-if="activeMilestone.goal" class="deliverable-item is-done">
@@ -909,13 +1322,27 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
         />
 
         <!-- Team Workload Distribution in Milestone -->
-        <div v-if="milestoneAssignedMembers.length > 0" class="milestone-members-bar mt-4">
-          <span class="section-label mb-2"><Users :size="14" /> Nhân sự phụ trách mốc này ({{ milestoneAssignedMembers.length }} thành viên):</span>
+        <div
+          v-if="milestoneAssignedMembers.length > 0"
+          class="milestone-members-bar mt-4"
+        >
+          <span class="section-label mb-2"
+            ><Users :size="14" /> Nhân sự phụ trách mốc này ({{
+              milestoneAssignedMembers.length
+            }}
+            thành viên):</span
+          >
           <div class="members-chips-row">
-            <div v-for="m in milestoneAssignedMembers" :key="m.userId" class="member-chip">
+            <div
+              v-for="m in milestoneAssignedMembers"
+              :key="m.userId"
+              class="member-chip"
+            >
               <User :size="13" />
               <span class="member-name">{{ m.name }}</span>
-              <span class="member-task-badge">{{ m.completedCount }}/{{ m.taskCount }} tasks</span>
+              <span class="member-task-badge"
+                >{{ m.completedCount }}/{{ m.taskCount }} tasks</span
+              >
             </div>
           </div>
         </div>
@@ -938,7 +1365,10 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
                   class="task-search-input"
                 />
               </div>
-              <select v-model="milestoneTaskStatusFilter" class="task-status-filter">
+              <select
+                v-model="milestoneTaskStatusFilter"
+                class="task-status-filter"
+              >
                 <option value="all">Tất cả trạng thái</option>
                 <option value="todo">Cần làm (Todo)</option>
                 <option value="inprogress">Đang làm (InProgress)</option>
@@ -949,10 +1379,17 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
           </div>
 
           <!-- Empty Tasks Box -->
-          <div v-if="filteredMilestoneTasks.length === 0" class="empty-tasks-box">
+          <div
+            v-if="filteredMilestoneTasks.length === 0"
+            class="empty-tasks-box"
+          >
             <p v-if="milestoneTasks.length === 0">
-              Chưa có task nào được gán vào mốc này. 
-              <span v-if="isProjectAdmin">Bạn có thể bấm <strong>"+ Tạo Task Mốc Này"</strong> hoặc <strong>"Gán Nhiệm Vụ"</strong> trên thanh công cụ để bắt đầu.</span>
+              Chưa có task nào được gán vào mốc này.
+              <span v-if="isProjectAdmin"
+                >Bạn có thể bấm <strong>"+ Tạo Task Mốc Này"</strong> hoặc
+                <strong>"Gán Nhiệm Vụ"</strong> trên thanh công cụ để bắt
+                đầu.</span
+              >
             </p>
             <p v-else>Không tìm thấy nhiệm vụ phù hợp với bộ lọc.</p>
           </div>
@@ -966,8 +1403,13 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
               :class="`status-${task.status.toLowerCase()}`"
             >
               <div class="task-item-header">
-                <span class="task-number">{{ task.key || `#${task.number}` }}</span>
-                <span :class="`priority priority--${task.priority.toLowerCase()}`">{{ task.priority }}</span>
+                <span class="task-number">{{
+                  task.key || `#${task.number}`
+                }}</span>
+                <span
+                  :class="`priority priority--${task.priority.toLowerCase()}`"
+                  >{{ task.priority }}</span
+                >
               </div>
 
               <div class="task-item-title">{{ task.title }}</div>
@@ -984,7 +1426,12 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
                 <select
                   class="task-inline-status-select"
                   :value="task.status"
-                  @change="updateTaskStatusInline(task, ($event.target as HTMLSelectElement).value)"
+                  @change="
+                    updateTaskStatusInline(
+                      task,
+                      ($event.target as HTMLSelectElement).value,
+                    )
+                  "
                 >
                   <option value="Todo">Todo</option>
                   <option value="InProgress">InProgress</option>
@@ -1000,54 +1447,92 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
 
     <!-- MODAL: Select Preset Template (Scrum, Outsource, Waterfall) -->
     <Teleport to="body">
-      <div v-if="showPresetModal" class="modal-backdrop" @click.self="showPresetModal = false">
+      <div
+        v-if="showPresetModal"
+        class="modal-backdrop"
+        @click.self="showPresetModal = false"
+      >
         <div class="preset-modal glass-card">
           <div class="modal-header">
-            <h4><Sparkles :size="18" class="text-primary me-2" /> Khởi Tạo Mẫu Lộ Trình Dự Án</h4>
-            <button type="button" class="icon-button" @click="showPresetModal = false"><X :size="18" /></button>
+            <h4>
+              <Sparkles :size="18" class="text-primary me-2" /> Khởi Tạo Mẫu Lộ
+              Trình Dự Án
+            </h4>
+            <button
+              type="button"
+              class="icon-button"
+              @click="showPresetModal = false"
+            >
+              <X :size="18" />
+            </button>
           </div>
 
           <div class="preset-modal-body">
             <p class="text-muted text-sm mb-4">
-              Chọn phương pháp quản trị dự án phù hợp để hệ thống tự động khởi tạo lộ trình mốc tiến độ tối ưu:
+              Chọn phương pháp quản trị dự án phù hợp để hệ thống tự động khởi
+              tạo lộ trình mốc tiến độ tối ưu:
             </p>
 
             <div class="preset-options-grid">
-              <div class="preset-option-card" @click="handleGeneratePreset('outsource')">
+              <div
+                class="preset-option-card"
+                @click="handleGeneratePreset('outsource')"
+              >
                 <div class="preset-card-header">
                   <Award :size="24" class="text-primary" />
                   <h5>Mẫu Quy Trình Outsource (6 Mốc)</h5>
                 </div>
                 <p class="preset-desc">
-                  Phù hợp dự án phần mềm cho khách hàng. Chia rõ mốc Scope ➔ Prototype ➔ Core Dev ➔ AI Integration ➔ UAT ➔ Go-Live.
+                  Phù hợp dự án phần mềm cho khách hàng. Chia rõ mốc Scope ➔
+                  Prototype ➔ Core Dev ➔ AI Integration ➔ UAT ➔ Go-Live.
                 </p>
-                <button type="button" class="btn btn-outline-primary w-100" :disabled="isGeneratingPreset">
+                <button
+                  type="button"
+                  class="btn btn-outline-primary w-100"
+                  :disabled="isGeneratingPreset"
+                >
                   Tạo Mẫu Outsource
                 </button>
               </div>
 
-              <div class="preset-option-card" @click="handleGeneratePreset('scrum')">
+              <div
+                class="preset-option-card"
+                @click="handleGeneratePreset('scrum')"
+              >
                 <div class="preset-card-header">
                   <RefreshCw :size="24" class="text-success" />
                   <h5>Mẫu Scrum / Agile (Sprint 1...4)</h5>
                 </div>
                 <p class="preset-desc">
-                  Phù hợp quản trị Agile. Chia lộ trình thành các Sprint 2 tuần song song với tiêu chí bàn giao liên tục.
+                  Phù hợp quản trị Agile. Chia lộ trình thành các Sprint 2 tuần
+                  song song với tiêu chí bàn giao liên tục.
                 </p>
-                <button type="button" class="btn btn-outline-success w-100" :disabled="isGeneratingPreset">
+                <button
+                  type="button"
+                  class="btn btn-outline-success w-100"
+                  :disabled="isGeneratingPreset"
+                >
                   Tạo Mẫu Scrum (4 Sprints)
                 </button>
               </div>
 
-              <div class="preset-option-card" @click="handleGeneratePreset('waterfall')">
+              <div
+                class="preset-option-card"
+                @click="handleGeneratePreset('waterfall')"
+              >
                 <div class="preset-card-header">
                   <Layers :size="24" class="text-warning" />
                   <h5>Mẫu Waterfall / Truyền thống (4 Pha)</h5>
                 </div>
                 <p class="preset-desc">
-                  Phù hợp dự án yêu cầu quy trình tuyến tính: Khảo sát ➔ Thiết kế ➔ Phát triển ➔ Bàn giao.
+                  Phù hợp dự án yêu cầu quy trình tuyến tính: Khảo sát ➔ Thiết
+                  kế ➔ Phát triển ➔ Bàn giao.
                 </p>
-                <button type="button" class="btn btn-outline-warning w-100" :disabled="isGeneratingPreset">
+                <button
+                  type="button"
+                  class="btn btn-outline-warning w-100"
+                  :disabled="isGeneratingPreset"
+                >
                   Tạo Mẫu Waterfall
                 </button>
               </div>
@@ -1059,27 +1544,62 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
 
     <!-- MODAL: Create / Edit Milestone -->
     <Teleport to="body">
-      <div v-if="showCreateModal || showEditModal" class="modal-backdrop" @click.self="showCreateModal = showEditModal = false">
+      <div
+        v-if="showCreateModal || showEditModal"
+        class="modal-backdrop"
+        @click.self="showCreateModal = showEditModal = false"
+      >
         <div class="milestone-modal glass-card">
           <div class="modal-header">
-            <h4>{{ showEditModal ? 'Chỉnh sửa Mốc Tiến Độ' : 'Thêm Mốc Tiến Độ Mới' }}</h4>
-            <button type="button" class="icon-button" @click="showCreateModal = showEditModal = false"><X :size="18" /></button>
+            <h4>
+              {{
+                showEditModal ? "Chỉnh sửa Mốc Tiến Độ" : "Thêm Mốc Tiến Độ Mới"
+              }}
+            </h4>
+            <button
+              type="button"
+              class="icon-button"
+              @click="showCreateModal = showEditModal = false"
+            >
+              <X :size="18" />
+            </button>
           </div>
 
-          <form class="modal-body" @submit.prevent="showEditModal ? handleUpdateMilestone() : handleCreateMilestone()">
+          <form
+            class="modal-body"
+            @submit.prevent="
+              showEditModal ? handleUpdateMilestone() : handleCreateMilestone()
+            "
+          >
             <div class="form-group">
               <label>Tên mốc / Giai đoạn *</label>
-              <input v-model="milestoneName" type="text" placeholder="Ví dụ: Mốc 1: Scope Alignment & Prototype UI..." required class="modal-input" />
+              <input
+                v-model="milestoneName"
+                type="text"
+                placeholder="Ví dụ: Mốc 1: Scope Alignment & Prototype UI..."
+                required
+                class="modal-input"
+              />
             </div>
 
             <div class="form-row">
               <div class="form-group">
                 <label>Ngày bắt đầu *</label>
-                <input v-model="milestoneStartDate" type="date" required class="modal-input" />
+                <input
+                  v-model="milestoneStartDate"
+                  type="date"
+                  required
+                  class="modal-input"
+                />
               </div>
               <div class="form-group">
                 <label>Ngày kết thúc *</label>
-                <input v-model="milestoneEndDate" type="date" required class="modal-input" />
+                <input
+                  v-model="milestoneEndDate"
+                  type="date"
+                  required
+                  class="modal-input"
+                />
               </div>
             </div>
 
@@ -1095,13 +1615,24 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
 
             <div class="form-group">
               <label>Mục tiêu nghiệm thu của mốc (Goal Statement)</label>
-              <textarea v-model="milestoneGoal" rows="3" placeholder="Mô tả cụ thể tiêu chí để nghiệm thu hoàn thành mốc này..." class="modal-input"></textarea>
+              <textarea
+                v-model="milestoneGoal"
+                rows="3"
+                placeholder="Mô tả cụ thể tiêu chí để nghiệm thu hoàn thành mốc này..."
+                class="modal-input"
+              ></textarea>
             </div>
 
             <div class="modal-actions mt-4">
-              <button type="button" class="btn btn--ghost" @click="showCreateModal = showEditModal = false">Hủy</button>
+              <button
+                type="button"
+                class="btn btn--ghost"
+                @click="showCreateModal = showEditModal = false"
+              >
+                Hủy
+              </button>
               <button type="submit" class="btn btn--primary">
-                {{ showEditModal ? 'Cập nhật Mốc' : 'Tạo Mốc Mới' }}
+                {{ showEditModal ? "Cập nhật Mốc" : "Tạo Mốc Mới" }}
               </button>
             </div>
           </form>
@@ -1111,20 +1642,36 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
 
     <!-- MODAL: Assign / Unassign Tasks to Milestone -->
     <Teleport to="body">
-      <div v-if="showTaskAssignModal" class="modal-backdrop" @click.self="showTaskAssignModal = false">
+      <div
+        v-if="showTaskAssignModal"
+        class="modal-backdrop"
+        @click.self="showTaskAssignModal = false"
+      >
         <div class="task-assign-modal glass-card">
           <div class="modal-header">
-            <h4><LinkIcon :size="18" class="text-primary me-2" /> Gán Công Việc Vào Mốc: {{ activeMilestone?.name }}</h4>
-            <button type="button" class="icon-button" @click="showTaskAssignModal = false"><X :size="18" /></button>
+            <h4>
+              <LinkIcon :size="18" class="text-primary me-2" /> Gán Công Việc
+              Vào Mốc: {{ activeMilestone?.name }}
+            </h4>
+            <button
+              type="button"
+              class="icon-button"
+              @click="showTaskAssignModal = false"
+            >
+              <X :size="18" />
+            </button>
           </div>
 
           <div class="modal-body">
             <p class="text-muted text-sm mb-3">
-              Tích chọn các công việc trong dự án thuộc về mốc tiến độ này. Tiến độ mốc sẽ tự động tính dựa trên các task được gán.
+              Tích chọn các công việc trong dự án thuộc về mốc tiến độ này. Tiến
+              độ mốc sẽ tự động tính dựa trên các task được gán.
             </p>
 
             <div v-if="allProjectTasks.length === 0" class="empty-tasks-box">
-              <p>Dự án chưa có task nào. Hãy tạo task trước trên bảng Kanban.</p>
+              <p>
+                Dự án chưa có task nào. Hãy tạo task trước trên bảng Kanban.
+              </p>
             </div>
 
             <div v-else class="assign-tasks-list no-scrollbar">
@@ -1132,7 +1679,9 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
                 v-for="task in allProjectTasks"
                 :key="task.id"
                 class="assign-task-row"
-                :class="{ 'is-selected': selectedTaskIdsForSprint.includes(task.id) }"
+                :class="{
+                  'is-selected': selectedTaskIdsForSprint.includes(task.id),
+                }"
               >
                 <input
                   type="checkbox"
@@ -1140,21 +1689,38 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
                   @change="toggleTaskSelection(task.id)"
                 />
                 <div class="task-info">
-                  <strong>{{ task.key || (task.number != null ? `#${task.number}` : 'TASK') }} — {{ task.title }}</strong>
-                  <small class="text-muted ms-2">({{ task.status }} • {{ task.assigneeName || 'Chưa giao' }})</small>
+                  <strong
+                    >{{
+                      task.key ||
+                      (task.number != null ? `#${task.number}` : "TASK")
+                    }}
+                    — {{ task.title }}</strong
+                  >
+                  <small class="text-muted ms-2"
+                    >({{ task.status }} •
+                    {{ task.assigneeName || "Chưa giao" }})</small
+                  >
                 </div>
               </label>
             </div>
 
             <div class="modal-actions mt-4">
-              <button type="button" class="btn btn--ghost" @click="showTaskAssignModal = false">Hủy</button>
+              <button
+                type="button"
+                class="btn btn--ghost"
+                @click="showTaskAssignModal = false"
+              >
+                Hủy
+              </button>
               <button
                 type="button"
                 class="btn btn--primary"
                 :disabled="isSavingTaskAssignment"
                 @click="handleSaveTaskAssignments"
               >
-                {{ isSavingTaskAssignment ? 'Đang lưu...' : 'Lưu Phân Công Mốc' }}
+                {{
+                  isSavingTaskAssignment ? "Đang lưu..." : "Lưu Phân Công Mốc"
+                }}
               </button>
             </div>
           </div>
@@ -1164,17 +1730,36 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
 
     <!-- MODAL: Quick Create Task inside Milestone -->
     <Teleport to="body">
-      <div v-if="showQuickCreateTaskModal" class="modal-backdrop" @click.self="showQuickCreateTaskModal = false">
+      <div
+        v-if="showQuickCreateTaskModal"
+        class="modal-backdrop"
+        @click.self="showQuickCreateTaskModal = false"
+      >
         <div class="milestone-modal glass-card">
           <div class="modal-header">
-            <h4><Plus :size="18" class="text-primary me-2" /> Tạo Nhiệm Vụ Mới Thuộc Mốc: {{ activeMilestone?.name }}</h4>
-            <button type="button" class="icon-button" @click="showQuickCreateTaskModal = false"><X :size="18" /></button>
+            <h4>
+              <Plus :size="18" class="text-primary me-2" /> Tạo Nhiệm Vụ Mới
+              Thuộc Mốc: {{ activeMilestone?.name }}
+            </h4>
+            <button
+              type="button"
+              class="icon-button"
+              @click="showQuickCreateTaskModal = false"
+            >
+              <X :size="18" />
+            </button>
           </div>
 
           <form class="modal-body" @submit.prevent="handleQuickCreateTask">
             <div class="form-group">
               <label>Tiêu đề nhiệm vụ *</label>
-              <input v-model="quickTaskTitle" type="text" placeholder="Nhập tiêu đề nhiệm vụ mới..." required class="modal-input" />
+              <input
+                v-model="quickTaskTitle"
+                type="text"
+                placeholder="Nhập tiêu đề nhiệm vụ mới..."
+                required
+                class="modal-input"
+              />
             </div>
 
             <div class="form-row">
@@ -1190,7 +1775,11 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
 
               <div class="form-group">
                 <label>Hạn chót</label>
-                <input v-model="quickTaskDueDate" type="date" class="modal-input" />
+                <input
+                  v-model="quickTaskDueDate"
+                  type="date"
+                  class="modal-input"
+                />
               </div>
             </div>
 
@@ -1198,14 +1787,24 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
               <label>Người phụ trách</label>
               <select v-model="quickTaskAssigneeId" class="modal-input">
                 <option value="">Chưa giao</option>
-                <option v-for="user in (selectedProject?.members || [])" :key="user.userId" :value="user.userId">
+                <option
+                  v-for="user in selectedProject?.members || []"
+                  :key="user.userId"
+                  :value="user.userId"
+                >
                   {{ user.fullName }}
                 </option>
               </select>
             </div>
 
             <div class="modal-actions mt-4">
-              <button type="button" class="btn btn--ghost" @click="showQuickCreateTaskModal = false">Hủy</button>
+              <button
+                type="button"
+                class="btn btn--ghost"
+                @click="showQuickCreateTaskModal = false"
+              >
+                Hủy
+              </button>
               <button type="submit" class="btn btn--primary">
                 Tạo Task Mốc Này
               </button>
@@ -1216,38 +1815,61 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
     </Teleport>
 
     <Teleport to="body">
-      <div v-if="confirmation" class="modal-backdrop confirm-backdrop" @click.self="confirmation = null">
+      <div
+        v-if="confirmation"
+        class="modal-backdrop confirm-backdrop"
+        @click.self="confirmation = null"
+      >
         <div class="confirmation-modal" role="alertdialog" aria-modal="true">
           <div class="confirmation-icon" :class="`is-${confirmation.type}`">
             <CheckCircle2 v-if="confirmation.type === 'complete'" :size="26" />
             <AlertTriangle v-else :size="26" />
           </div>
           <div class="confirmation-content">
-            <h4>{{ confirmation.type === 'complete' ? 'Xác nhận nghiệm thu mốc' : 'Xóa mốc tiến độ?' }}</h4>
+            <h4>
+              {{
+                confirmation.type === "complete"
+                  ? "Xác nhận nghiệm thu mốc"
+                  : "Xóa mốc tiến độ?"
+              }}
+            </h4>
             <p v-if="confirmation.type === 'complete'">
-              Mốc <strong>“{{ confirmation.sprint.name }}”</strong> sẽ được đánh dấu hoàn thành.
+              Mốc <strong>“{{ confirmation.sprint.name }}”</strong> sẽ được đánh
+              dấu hoàn thành.
             </p>
             <p v-else>
-              Bạn sắp xóa mốc <strong>“{{ confirmation.sprint.name }}”</strong>. Các task liên kết vẫn được giữ lại.
+              Bạn sắp xóa mốc <strong>“{{ confirmation.sprint.name }}”</strong>.
+              Các task liên kết vẫn được giữ lại.
             </p>
           </div>
           <div class="confirmation-actions">
-            <button type="button" class="btn btn--ghost" @click="confirmation = null"><X :size="16" /> Hủy</button>
+            <button
+              type="button"
+              class="btn btn--ghost"
+              @click="confirmation = null"
+            >
+              <X :size="16" /> Hủy
+            </button>
             <button
               type="button"
               class="btn"
-              :class="confirmation.type === 'delete' ? 'btn--danger' : 'btn--primary'"
+              :class="
+                confirmation.type === 'delete' ? 'btn--danger' : 'btn--primary'
+              "
               @click="confirmMilestoneAction"
             >
               <Trash2 v-if="confirmation.type === 'delete'" :size="16" />
               <CheckCircle2 v-else :size="16" />
-              {{ confirmation.type === 'delete' ? 'Xóa mốc' : 'Xác nhận nghiệm thu' }}
+              {{
+                confirmation.type === "delete"
+                  ? "Xóa mốc"
+                  : "Xác nhận nghiệm thu"
+              }}
             </button>
           </div>
         </div>
       </div>
     </Teleport>
-
   </div>
 </template>
 
@@ -1370,6 +1992,209 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   gap: 12px;
 }
 
+.roadmap-header__view-switch {
+  display: flex;
+  gap: 6px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 4px;
+}
+
+.view-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.view-mode-pill.active {
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.timeline-mode-card .section-header--timeline {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.timeline-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.timeline-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.timeline-legend i {
+  width: 10px;
+  height: 10px;
+  display: inline-block;
+  border-radius: 50%;
+}
+
+.timeline-legend .normal { background: #3b82f6; }
+.timeline-legend .due { background: #f59e0b; }
+.timeline-legend .stale { background: #ea580c; }
+.timeline-legend .overdue { background: #dc2626; }
+
+.timeline-frame {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--qaly-radius-lg);
+}
+
+.timeline-labels {
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.labels-header {
+  padding: 16px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.timeline-task-label {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: none;
+  border-bottom: 1px solid var(--line-light);
+  padding: 14px 16px;
+  background: transparent;
+  text-align: left;
+  color: var(--text-strong);
+  cursor: pointer;
+}
+
+.timeline-task-label:hover {
+  background: var(--bg-soft);
+}
+
+.timeline-task-label strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-task-label small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.timeline-scroll {
+  overflow-x: auto;
+  background: var(--panel);
+}
+
+.timeline-grid {
+  min-width: 100%;
+}
+
+.day-header,
+.timeline-row {
+  display: grid;
+}
+
+.day-header {
+  background: rgba(37, 99, 235, 0.05);
+}
+
+.day-header > div,
+.timeline-row > span {
+  padding: 10px 6px;
+  border-right: 1px solid rgba(0, 0, 0, 0.03);
+  text-align: center;
+}
+
+.day-header > div:last-child,
+.timeline-row > span:last-child {
+  border-right: none;
+}
+
+.day-cell {
+  min-height: 54px;
+}
+
+.day-cell.today,
+.day-header > div.today {
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.timeline-row {
+  position: relative;
+  min-height: 68px;
+  border-bottom: 1px solid var(--line-light);
+}
+
+.timeline-bar {
+  position: absolute;
+  top: 14px;
+  height: 40px;
+  border: none;
+  border-radius: 10px;
+  color: white;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.timeline-bar.is-normal { background: #3b82f6; }
+.timeline-bar.is-due { background: #f59e0b; }
+.timeline-bar.is-stale { background: #ea580c; }
+.timeline-bar.is-overdue { background: #dc2626; }
+
+.timeline-bar .bar-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  border-radius: 0 0 10px 10px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.timeline-bar strong {
+  position: relative;
+  z-index: 1;
+  font-size: 12px;
+}
+
+.timeline-frame .timeline-labels,
+.timeline-scroll {
+  min-height: 320px;
+}
+
+.timeline-frame .timeline-scroll {
+  scroll-behavior: smooth;
+}
+
 /* Empty Map */
 .empty-roadmap-card {
   padding: 48px 32px;
@@ -1469,7 +2294,7 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
 .filter-pill.active {
   background: var(--panel);
   color: var(--text-strong);
-  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
 }
 
 /* Scroll Container for Node Path */
@@ -1496,7 +2321,12 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
 
 .connecting-line-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--qaly-success), var(--qaly-primary), var(--qaly-ai));
+  background: linear-gradient(
+    90deg,
+    var(--qaly-success),
+    var(--qaly-primary),
+    var(--qaly-ai)
+  );
   border-radius: 3px;
   transition: width 0.4s ease;
 }
@@ -1548,8 +2378,14 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
 }
 
 @keyframes pulseGlow {
-  0% { transform: scale(1); box-shadow: 0 0 10px rgba(37, 99, 235, 0.3); }
-  100% { transform: scale(1.08); box-shadow: 0 0 22px rgba(37, 99, 235, 0.8); }
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 10px rgba(37, 99, 235, 0.3);
+  }
+  100% {
+    transform: scale(1.08);
+    box-shadow: 0 0 22px rgba(37, 99, 235, 0.8);
+  }
 }
 
 .current-location-flag {
@@ -1569,7 +2405,7 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
 }
 
 .current-location-flag::after {
-  content: '';
+  content: "";
   position: absolute;
   bottom: -4px;
   left: 50%;
@@ -1653,10 +2489,22 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   display: inline-block;
 }
 
-.tag-success { background: rgba(22, 163, 74, 0.15); color: var(--qaly-success); }
-.tag-primary { background: rgba(37, 99, 235, 0.15); color: var(--qaly-primary); }
-.tag-danger { background: rgba(220, 38, 38, 0.15); color: var(--qaly-danger); }
-.tag-muted { background: rgba(148, 163, 184, 0.15); color: var(--muted); }
+.tag-success {
+  background: rgba(22, 163, 74, 0.15);
+  color: var(--qaly-success);
+}
+.tag-primary {
+  background: rgba(37, 99, 235, 0.15);
+  color: var(--qaly-primary);
+}
+.tag-danger {
+  background: rgba(220, 38, 38, 0.15);
+  color: var(--qaly-danger);
+}
+.tag-muted {
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--muted);
+}
 
 /* Fast Access Toolbar */
 .fast-access-toolbar {
@@ -1664,7 +2512,11 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  background: linear-gradient(90deg, rgba(37, 99, 235, 0.08), rgba(99, 102, 241, 0.04));
+  background: linear-gradient(
+    90deg,
+    rgba(37, 99, 235, 0.08),
+    rgba(99, 102, 241, 0.04)
+  );
   border: 1px solid rgba(37, 99, 235, 0.2);
   border-radius: 12px;
   flex-wrap: wrap;
@@ -2069,7 +2921,8 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   margin: 0;
 }
 
-.milestone-modal, .task-assign-modal {
+.milestone-modal,
+.task-assign-modal {
   width: 100%;
   max-width: 540px;
   padding: 24px;
@@ -2157,8 +3010,11 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   color: var(--rm-ink);
 }
 
-.role-mode-bar, .roadmap-header, .roadmap-track-card,
-.milestone-detail-panel, .empty-roadmap-card {
+.role-mode-bar,
+.roadmap-header,
+.roadmap-track-card,
+.milestone-detail-panel,
+.empty-roadmap-card {
   background: rgba(255, 253, 248, 0.97);
   border-color: var(--rm-line);
   box-shadow: 0 12px 34px rgba(34, 60, 96, 0.07);
@@ -2176,7 +3032,10 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   color: var(--rm-blue-dark);
 }
 
-.mode-text { color: var(--rm-muted); line-height: 1.4; }
+.mode-text {
+  color: var(--rm-muted);
+  line-height: 1.4;
+}
 
 .view-mode-toggle {
   padding: 4px;
@@ -2189,7 +3048,10 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   min-height: 34px;
   padding: 6px 13px;
   border-radius: 8px;
-  transition: background-color .3s ease-out, color .3s ease-out, transform .3s ease-out;
+  transition:
+    background-color 0.3s ease-out,
+    color 0.3s ease-out,
+    transform 0.3s ease-out;
 }
 
 .toggle-btn.is-active {
@@ -2208,7 +3070,7 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
 }
 
 .roadmap-header::after {
-  content: '';
+  content: "";
   position: absolute;
   z-index: -1;
   top: -90px;
@@ -2216,7 +3078,7 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   width: 260px;
   height: 190px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(19, 88, 200, .14), transparent 70%);
+  background: radial-gradient(circle, rgba(19, 88, 200, 0.14), transparent 70%);
 }
 
 .icon-glow-box {
@@ -2226,16 +3088,18 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   background: linear-gradient(145deg, #246ee0, #0d4cad);
   border: 0;
   border-radius: 16px;
-  box-shadow: 0 10px 24px rgba(19, 88, 200, .25);
+  box-shadow: 0 10px 24px rgba(19, 88, 200, 0.25);
 }
 
-.icon-glow-box :deep(svg) { color: #fff !important; }
+.icon-glow-box :deep(svg) {
+  color: #fff !important;
+}
 
 .roadmap-header h3 {
   margin: 0 0 5px;
   color: var(--rm-ink);
   font-size: clamp(20px, 2vw, 26px);
-  letter-spacing: -.025em;
+  letter-spacing: -0.025em;
 }
 
 .roadmap-header p {
@@ -2246,14 +3110,16 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   line-height: 1.55;
 }
 
-.roadmap-header__actions button, .toolbar-btn {
+.roadmap-header__actions button,
+.toolbar-btn {
   min-height: 40px;
   border-radius: 10px;
 }
 
-.btn-outsource-preset, .btn-primary-gradient {
+.btn-outsource-preset,
+.btn-primary-gradient {
   background: linear-gradient(135deg, #1762d5, #0d4cad);
-  box-shadow: 0 8px 18px rgba(19, 88, 200, .22);
+  box-shadow: 0 8px 18px rgba(19, 88, 200, 0.22);
 }
 
 .roadmap-track-card {
@@ -2264,7 +3130,7 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
 
 .roadmap-metrics-bar {
   display: grid;
-  grid-template-columns: .9fr minmax(260px, 1.65fr) 1fr .7fr;
+  grid-template-columns: 0.9fr minmax(260px, 1.65fr) 1fr 0.7fr;
   gap: 0;
   margin: 0;
   padding: 0;
@@ -2280,12 +3146,33 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   border-right: 1px solid var(--rm-line);
 }
 
-.metric-pill:nth-child(4) { border-right: 0; }
-.metric-label { color: var(--rm-muted); font-size: 11px; font-weight: 650; }
-.metric-value { color: var(--rm-ink) !important; font-size: 14px; line-height: 1.35; }
-.health-tag { width: fit-content; min-height: 28px; padding: 5px 9px; border-radius: 8px; }
-.mini-progress-rail { width: min(150px, 70%); height: 8px; background: #dfe7f1; }
-.mini-progress-fill { background: linear-gradient(90deg, #16865c, #45b889); }
+.metric-pill:nth-child(4) {
+  border-right: 0;
+}
+.metric-label {
+  color: var(--rm-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+.metric-value {
+  color: var(--rm-ink) !important;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.health-tag {
+  width: fit-content;
+  min-height: 28px;
+  padding: 5px 9px;
+  border-radius: 8px;
+}
+.mini-progress-rail {
+  width: min(150px, 70%);
+  height: 8px;
+  background: #dfe7f1;
+}
+.mini-progress-fill {
+  background: linear-gradient(90deg, #16865c, #45b889);
+}
 
 .milestone-filter-group {
   grid-column: 1 / -1;
@@ -2303,24 +3190,51 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   padding: 6px 12px;
   color: #607087;
   border: 1px solid transparent;
-  transition: background-color .3s ease-out, border-color .3s ease-out, color .3s ease-out;
+  transition:
+    background-color 0.3s ease-out,
+    border-color 0.3s ease-out,
+    color 0.3s ease-out;
 }
 
-.filter-pill:hover { background: #fff; border-color: #d9e3ef; color: var(--rm-ink); }
-.filter-pill.active { background: #fff; border-color: #b8cff0; color: var(--rm-blue-dark); box-shadow: 0 3px 10px rgba(19, 88, 200, .08); }
+.filter-pill:hover {
+  background: #fff;
+  border-color: #d9e3ef;
+  color: var(--rm-ink);
+}
+.filter-pill.active {
+  background: #fff;
+  border-color: #b8cff0;
+  color: var(--rm-blue-dark);
+  box-shadow: 0 3px 10px rgba(19, 88, 200, 0.08);
+}
 
-.roadmap-scroll-wrapper { padding: 52px 24px 28px; scroll-snap-type: x proximity; }
-.roadmap-visual-container { min-width: max(1040px, 100%); }
-.connecting-line { top: 23px; left: 88px; right: 88px; height: 4px; background: #dce5ef; }
-.connecting-line-fill { background: linear-gradient(90deg, #16865c, #1762d5); }
+.roadmap-scroll-wrapper {
+  padding: 52px 24px 28px;
+  scroll-snap-type: x proximity;
+}
+.roadmap-visual-container {
+  min-width: max(1040px, 100%);
+}
+.connecting-line {
+  top: 23px;
+  left: 88px;
+  right: 88px;
+  height: 4px;
+  background: #dce5ef;
+}
+.connecting-line-fill {
+  background: linear-gradient(90deg, #16865c, #1762d5);
+}
 
 .milestone-node {
   width: 196px;
   scroll-snap-align: center;
-  transition: transform .3s ease-out;
+  transition: transform 0.3s ease-out;
 }
 
-.milestone-node:hover { transform: translateY(-5px); }
+.milestone-node:hover {
+  transform: translateY(-5px);
+}
 
 .node-circle {
   width: 48px;
@@ -2328,14 +3242,14 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   color: #465a75;
   background: var(--rm-milk);
   border: 3px solid #d9e3ef;
-  box-shadow: 0 5px 14px rgba(33, 58, 91, .08);
+  box-shadow: 0 5px 14px rgba(33, 58, 91, 0.08);
 }
 
 .milestone-node.is-current .node-circle {
   color: var(--rm-blue-dark);
   background: #edf4ff;
   border-color: var(--rm-blue);
-  box-shadow: 0 0 0 7px rgba(19, 88, 200, .1);
+  box-shadow: 0 0 0 7px rgba(19, 88, 200, 0.1);
   animation: none;
 }
 
@@ -2345,10 +3259,12 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   padding: 3px 9px;
   background: var(--rm-blue-dark);
   border-radius: 6px;
-  box-shadow: 0 5px 12px rgba(12, 63, 152, .2);
+  box-shadow: 0 5px 12px rgba(12, 63, 152, 0.2);
 }
 
-.current-location-flag::after { border-color: var(--rm-blue-dark) transparent; }
+.current-location-flag::after {
+  border-color: var(--rm-blue-dark) transparent;
+}
 
 .milestone-node-card {
   min-height: 170px;
@@ -2356,22 +3272,46 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   background: #f8fafc;
   border-color: #dfe6ef;
   border-radius: 13px;
-  box-shadow: 0 5px 14px rgba(36, 57, 84, .04);
-  transition: transform .3s ease-out, border-color .3s ease-out, background-color .3s ease-out;
+  box-shadow: 0 5px 14px rgba(36, 57, 84, 0.04);
+  transition:
+    transform 0.3s ease-out,
+    border-color 0.3s ease-out,
+    background-color 0.3s ease-out;
 }
 
 .milestone-node.is-selected .milestone-node-card {
   background: #fff;
   border-color: #6e9fe1;
-  box-shadow: 0 10px 24px rgba(19, 88, 200, .13);
+  box-shadow: 0 10px 24px rgba(19, 88, 200, 0.13);
 }
 
-.node-title { min-height: 51px; margin: 9px 0 7px; color: var(--rm-ink); font-size: 13px; line-height: 1.32; }
-.node-dates, .node-task-count { color: var(--rm-muted); }
-.node-days-info { color: var(--rm-blue); font-size: 11px; }
-.badge-tag { padding: 4px 7px; border-radius: 6px; font-size: 10px; line-height: 1.2; }
+.node-title {
+  min-height: 51px;
+  margin: 9px 0 7px;
+  color: var(--rm-ink);
+  font-size: 13px;
+  line-height: 1.32;
+}
+.node-dates,
+.node-task-count {
+  color: var(--rm-muted);
+}
+.node-days-info {
+  color: var(--rm-blue);
+  font-size: 11px;
+}
+.badge-tag {
+  padding: 4px 7px;
+  border-radius: 6px;
+  font-size: 10px;
+  line-height: 1.2;
+}
 
-.milestone-detail-panel { padding: 0; overflow: hidden; border-radius: 18px; }
+.milestone-detail-panel {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 18px;
+}
 
 .fast-access-toolbar {
   margin: 0 !important;
@@ -2382,40 +3322,119 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   border-radius: 0;
 }
 
-.toolbar-title { color: var(--rm-blue-dark); font-size: 12px; }
-.toolbar-btn, .quick-status-select { min-height: 36px; background: #fff; border-color: #cfdae8; color: #30445f; }
-.toolbar-btn:hover { border-color: #87abe0; color: var(--rm-blue-dark); transform: translateY(-1px); }
-.btn-primary-gradient { color: #fff; border: 0; }
-.btn-success-light { background: #eaf8f2; border-color: #a9dbc7; color: #116a49; }
+.toolbar-title {
+  color: var(--rm-blue-dark);
+  font-size: 12px;
+}
+.toolbar-btn,
+.quick-status-select {
+  min-height: 36px;
+  background: #fff;
+  border-color: #cfdae8;
+  color: #30445f;
+}
+.toolbar-btn:hover {
+  border-color: #87abe0;
+  color: var(--rm-blue-dark);
+  transform: translateY(-1px);
+}
+.btn-primary-gradient {
+  color: #fff;
+  border: 0;
+}
+.btn-success-light {
+  background: #eaf8f2;
+  border-color: #a9dbc7;
+  color: #116a49;
+}
 
-.detail-header, .milestone-deliverables-box, .sprint-ai-summary,
-.milestone-members-bar, .detail-body { margin-left: 22px; margin-right: 22px; }
+.detail-header,
+.milestone-deliverables-box,
+.sprint-ai-summary,
+.milestone-members-bar,
+.detail-body {
+  margin-left: 22px;
+  margin-right: 22px;
+}
 
-.detail-header { padding: 22px 0 18px; }
-.detail-header h4 { color: var(--rm-ink); font-size: 21px; letter-spacing: -.02em; }
-.detail-goal { max-width: 850px; color: #374b66; font-size: 13px; line-height: 1.55; }
+.detail-header {
+  padding: 22px 0 18px;
+}
+.detail-header h4 {
+  color: var(--rm-ink);
+  font-size: 21px;
+  letter-spacing: -0.02em;
+}
+.detail-goal {
+  max-width: 850px;
+  color: #374b66;
+  font-size: 13px;
+  line-height: 1.55;
+}
 
-.milestone-deliverables-box { padding: 17px; background: #f8fbff; border-color: #d8e3ef; }
-.deliverables-header { margin-bottom: 13px; color: var(--rm-ink); font-size: 13px; }
-.deliverable-item { min-height: 38px; padding: 8px 11px; background: #fff; border-color: #dce5ef; color: #586981; line-height: 1.45; }
-.deliverable-item.is-done { border-color: #b8dfd0; color: #28483c; }
+.milestone-deliverables-box {
+  padding: 17px;
+  background: #f8fbff;
+  border-color: #d8e3ef;
+}
+.deliverables-header {
+  margin-bottom: 13px;
+  color: var(--rm-ink);
+  font-size: 13px;
+}
+.deliverable-item {
+  min-height: 38px;
+  padding: 8px 11px;
+  background: #fff;
+  border-color: #dce5ef;
+  color: #586981;
+  line-height: 1.45;
+}
+.deliverable-item.is-done {
+  border-color: #b8dfd0;
+  color: #28483c;
+}
 
-.milestone-members-bar { padding: 14px 16px; background: #f8fbff; border-color: #dbe5f0; border-radius: 11px; }
-.member-chip { min-height: 30px; background: #fff; border-color: #d6e1ee; }
-.detail-body { margin-top: 24px !important; padding-bottom: 24px; }
-.tasks-section-header { padding-bottom: 12px; border-bottom: 1px solid var(--rm-line); }
-.tasks-section-header h5 { display: flex; align-items: center; margin: 0; color: var(--rm-ink); font-size: 15px; }
+.milestone-members-bar {
+  padding: 14px 16px;
+  background: #f8fbff;
+  border-color: #dbe5f0;
+  border-radius: 11px;
+}
+.member-chip {
+  min-height: 30px;
+  background: #fff;
+  border-color: #d6e1ee;
+}
+.detail-body {
+  margin-top: 24px !important;
+  padding-bottom: 24px;
+}
+.tasks-section-header {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--rm-line);
+}
+.tasks-section-header h5 {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  color: var(--rm-ink);
+  font-size: 15px;
+}
 
-.task-search-input, .task-status-filter {
+.task-search-input,
+.task-status-filter {
   min-height: 38px;
   background: #fff;
   border-color: #d5dfeb;
   border-radius: 9px;
 }
 
-.task-search-input:focus, .task-status-filter:focus, .quick-status-select:focus {
+.task-search-input:focus,
+.task-status-filter:focus,
+.quick-status-select:focus {
   border-color: #6e9fe1;
-  box-shadow: 0 0 0 3px rgba(19, 88, 200, .12);
+  box-shadow: 0 0 0 3px rgba(19, 88, 200, 0.12);
   outline: none;
 }
 
@@ -2424,11 +3443,16 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   background: #fffdf8;
   border-color: #dce5ef;
   border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(34, 58, 88, .04);
-  transition: transform .3s ease-out, border-color .3s ease-out;
+  box-shadow: 0 4px 12px rgba(34, 58, 88, 0.04);
+  transition:
+    transform 0.3s ease-out,
+    border-color 0.3s ease-out;
 }
 
-.milestone-task-item:hover { border-color: #7fa8df; transform: translateY(-2px); }
+.milestone-task-item:hover {
+  border-color: #7fa8df;
+  transform: translateY(-2px);
+}
 
 .empty-tasks-box {
   min-height: 92px;
@@ -2439,48 +3463,111 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   border-radius: 11px;
 }
 
-.preset-modal, .milestone-modal, .task-assign-modal {
+.preset-modal,
+.milestone-modal,
+.task-assign-modal {
   background: var(--rm-milk);
   border-color: var(--rm-line);
-  box-shadow: 0 26px 70px rgba(20, 42, 72, .24);
+  box-shadow: 0 26px 70px rgba(20, 42, 72, 0.24);
 }
 
-.preset-option-card, .assign-task-row {
+.preset-option-card,
+.assign-task-row {
   background: #f8fbff;
   border-color: #dbe4ef;
-  transition: transform .3s ease-out, border-color .3s ease-out, background-color .3s ease-out;
+  transition:
+    transform 0.3s ease-out,
+    border-color 0.3s ease-out,
+    background-color 0.3s ease-out;
 }
 
-.preset-option-card:hover { background: #fff; border-color: #7fa8df; transform: translateY(-4px); }
+.preset-option-card:hover {
+  background: #fff;
+  border-color: #7fa8df;
+  transform: translateY(-4px);
+}
 
 @media (max-width: 1050px) {
-  .roadmap-metrics-bar { grid-template-columns: 1fr 1fr; }
-  .metric-pill:nth-child(2) { border-right: 0; }
-  .metric-pill:nth-child(-n + 2) { border-bottom: 1px solid var(--rm-line); }
-  .role-badge-box { align-items: flex-start; flex-direction: column; }
+  .roadmap-metrics-bar {
+    grid-template-columns: 1fr 1fr;
+  }
+  .metric-pill:nth-child(2) {
+    border-right: 0;
+  }
+  .metric-pill:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--rm-line);
+  }
+  .role-badge-box {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 @media (max-width: 760px) {
-  .project-roadmap-shell { gap: 16px; padding: 0; }
-  .role-mode-bar, .roadmap-header, .detail-header, .tasks-section-header { align-items: stretch; flex-direction: column; }
-  .roadmap-header { padding: 20px; }
-  .roadmap-header__actions, .roadmap-header__actions button, .view-mode-toggle, .toggle-btn { width: 100%; }
-  .roadmap-header__actions button, .toggle-btn { justify-content: center; }
-  .roadmap-metrics-bar { grid-template-columns: 1fr; }
-  .metric-pill { min-height: 76px; border-right: 0; border-bottom: 1px solid var(--rm-line); }
-  .milestone-filter-group, .toolbar-right, .tasks-filter-tools { width: 100%; overflow-x: auto; flex-wrap: nowrap; }
-  .filter-pill, .toolbar-btn { flex: 0 0 auto; }
-  .detail-header, .milestone-deliverables-box, .sprint-ai-summary,
-  .milestone-members-bar, .detail-body { margin-left: 16px; margin-right: 16px; }
-  .task-search-input { min-width: 220px; }
+  .project-roadmap-shell {
+    gap: 16px;
+    padding: 0;
+  }
+  .role-mode-bar,
+  .roadmap-header,
+  .detail-header,
+  .tasks-section-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .roadmap-header {
+    padding: 20px;
+  }
+  .roadmap-header__actions,
+  .roadmap-header__actions button,
+  .view-mode-toggle,
+  .toggle-btn {
+    width: 100%;
+  }
+  .roadmap-header__actions button,
+  .toggle-btn {
+    justify-content: center;
+  }
+  .roadmap-metrics-bar {
+    grid-template-columns: 1fr;
+  }
+  .metric-pill {
+    min-height: 76px;
+    border-right: 0;
+    border-bottom: 1px solid var(--rm-line);
+  }
+  .milestone-filter-group,
+  .toolbar-right,
+  .tasks-filter-tools {
+    width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+  .filter-pill,
+  .toolbar-btn {
+    flex: 0 0 auto;
+  }
+  .detail-header,
+  .milestone-deliverables-box,
+  .sprint-ai-summary,
+  .milestone-members-bar,
+  .detail-body {
+    margin-left: 16px;
+    margin-right: 16px;
+  }
+  .task-search-input {
+    min-width: 220px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .project-roadmap-shell *, .project-roadmap-shell *::before, .project-roadmap-shell *::after {
+  .project-roadmap-shell *,
+  .project-roadmap-shell *::before,
+  .project-roadmap-shell *::after {
     scroll-behavior: auto !important;
-    animation-duration: .01ms !important;
+    animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: .01ms !important;
+    transition-duration: 0.01ms !important;
   }
 }
 
@@ -2489,7 +3576,7 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   background: linear-gradient(135deg, #1762d5, #0d4cad);
   color: #fff;
   border: 0;
-  box-shadow: 0 8px 18px rgba(19, 88, 200, .22);
+  box-shadow: 0 8px 18px rgba(19, 88, 200, 0.22);
 }
 
 .toolbar-btn.btn-primary-gradient:hover {
@@ -2498,11 +3585,12 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
 }
 
 .modal-backdrop {
-  background: rgba(15, 28, 48, .56);
+  background: rgba(15, 28, 48, 0.56);
   backdrop-filter: blur(8px);
 }
 
-.milestone-modal, .task-assign-modal {
+.milestone-modal,
+.task-assign-modal {
   max-height: min(760px, calc(100vh - 40px));
   padding: 0;
   overflow: hidden;
@@ -2510,7 +3598,9 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   border-radius: 18px;
 }
 
-.task-assign-modal { max-width: 680px; }
+.task-assign-modal {
+  max-width: 680px;
+}
 
 .modal-header {
   min-height: 74px;
@@ -2541,7 +3631,7 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   border: 1px solid #d4dfec;
   border-radius: 11px;
   color: #53657c;
-  box-shadow: 0 4px 12px rgba(24, 48, 78, .08);
+  box-shadow: 0 4px 12px rgba(24, 48, 78, 0.08);
 }
 
 .modal-header .icon-button:hover {
@@ -2556,7 +3646,9 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   overflow-y: auto;
 }
 
-.form-group { gap: 8px; }
+.form-group {
+  gap: 8px;
+}
 
 .form-group label {
   color: #31445f;
@@ -2574,14 +3666,17 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   color: #17243a;
   font: inherit;
   line-height: 1.45;
-  box-shadow: inset 0 1px 2px rgba(20, 42, 72, .03);
+  box-shadow: inset 0 1px 2px rgba(20, 42, 72, 0.03);
 }
 
-textarea.modal-input { min-height: 96px; resize: vertical; }
+textarea.modal-input {
+  min-height: 96px;
+  resize: vertical;
+}
 
 .modal-input:focus {
   border-color: #5f91d3;
-  box-shadow: 0 0 0 3px rgba(19, 88, 200, .12);
+  box-shadow: 0 0 0 3px rgba(19, 88, 200, 0.12);
   outline: none;
 }
 
@@ -2593,7 +3688,8 @@ textarea.modal-input { min-height: 96px; resize: vertical; }
   border-top: 1px solid #dbe4f0;
 }
 
-.modal-actions .btn, .confirmation-actions .btn {
+.modal-actions .btn,
+.confirmation-actions .btn {
   min-height: 42px;
   padding: 9px 16px;
   border: 1px solid transparent;
@@ -2612,8 +3708,13 @@ textarea.modal-input { min-height: 96px; resize: vertical; }
   line-height: 1;
 }
 
-.modal-actions .btn--ghost::before { content: '×'; }
-.modal-actions .btn--primary::before { content: '✓'; font-size: 13px; }
+.modal-actions .btn--ghost::before {
+  content: "×";
+}
+.modal-actions .btn--primary::before {
+  content: "✓";
+  font-size: 13px;
+}
 
 .btn--ghost {
   background: #fff;
@@ -2621,25 +3722,35 @@ textarea.modal-input { min-height: 96px; resize: vertical; }
   color: #40516a;
 }
 
-.btn--ghost:hover { background: #eef3f8; border-color: #aebfd2 !important; }
+.btn--ghost:hover {
+  background: #eef3f8;
+  border-color: #aebfd2 !important;
+}
 
 .btn--primary {
   background: linear-gradient(135deg, #1762d5, #0d4cad);
   color: #fff;
-  box-shadow: 0 7px 16px rgba(19, 88, 200, .22);
+  box-shadow: 0 7px 16px rgba(19, 88, 200, 0.22);
 }
 
-.btn--primary:hover { background: linear-gradient(135deg, #0f55c4, #093b8f); }
+.btn--primary:hover {
+  background: linear-gradient(135deg, #0f55c4, #093b8f);
+}
 
 .btn--danger {
   background: #c93636;
   color: #fff;
-  box-shadow: 0 7px 16px rgba(201, 54, 54, .2);
+  box-shadow: 0 7px 16px rgba(201, 54, 54, 0.2);
 }
 
-.btn--danger:hover { background: #ab2929; }
+.btn--danger:hover {
+  background: #ab2929;
+}
 
-.assign-tasks-list { gap: 10px; max-height: 390px; }
+.assign-tasks-list {
+  gap: 10px;
+  max-height: 390px;
+}
 
 .assign-task-row {
   min-height: 64px;
@@ -2648,17 +3759,31 @@ textarea.modal-input { min-height: 96px; resize: vertical; }
   border-radius: 11px;
 }
 
-.assign-task-row input[type='checkbox'] {
+.assign-task-row input[type="checkbox"] {
   width: 18px;
   height: 18px;
   flex: 0 0 18px;
   accent-color: #1358c8;
 }
 
-.assign-task-row .task-info { min-width: 0; line-height: 1.45; }
-.assign-task-row .task-info strong { color: #17243a; font-size: 13px; overflow-wrap: anywhere; }
-.assign-task-row .task-info small { display: block; margin: 3px 0 0 !important; color: #687991 !important; }
-.assign-task-row.is-selected { background: #edf4ff; border-color: #82a9df; }
+.assign-task-row .task-info {
+  min-width: 0;
+  line-height: 1.45;
+}
+.assign-task-row .task-info strong {
+  color: #17243a;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.assign-task-row .task-info small {
+  display: block;
+  margin: 3px 0 0 !important;
+  color: #687991 !important;
+}
+.assign-task-row.is-selected {
+  background: #edf4ff;
+  border-color: #82a9df;
+}
 
 .confirmation-modal {
   width: min(460px, calc(100vw - 32px));
@@ -2666,7 +3791,7 @@ textarea.modal-input { min-height: 96px; resize: vertical; }
   background: #fffdf8;
   border: 1px solid #d2deeb;
   border-radius: 18px;
-  box-shadow: 0 28px 70px rgba(12, 31, 56, .28);
+  box-shadow: 0 28px 70px rgba(12, 31, 56, 0.28);
 }
 
 .confirmation-icon {
@@ -2678,11 +3803,28 @@ textarea.modal-input { min-height: 96px; resize: vertical; }
   border-radius: 14px;
 }
 
-.confirmation-icon.is-complete { background: #e8f7f0; color: #157452; }
-.confirmation-icon.is-delete { background: #fff0ef; color: #c93636; }
-.confirmation-content h4 { margin: 0 0 8px; color: #13213a; font-size: 19px; }
-.confirmation-content p { margin: 0; color: #5c6c82; font-size: 14px; line-height: 1.6; }
-.confirmation-content strong { color: #263a57; }
+.confirmation-icon.is-complete {
+  background: #e8f7f0;
+  color: #157452;
+}
+.confirmation-icon.is-delete {
+  background: #fff0ef;
+  color: #c93636;
+}
+.confirmation-content h4 {
+  margin: 0 0 8px;
+  color: #13213a;
+  font-size: 19px;
+}
+.confirmation-content p {
+  margin: 0;
+  color: #5c6c82;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.confirmation-content strong {
+  color: #263a57;
+}
 
 .confirmation-actions {
   display: flex;
@@ -2692,9 +3834,25 @@ textarea.modal-input { min-height: 96px; resize: vertical; }
 }
 
 @media (max-width: 600px) {
-  .form-row { grid-template-columns: 1fr; }
-  .modal-header, .modal-body { padding-left: 16px; padding-right: 16px; }
-  .modal-actions { margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px; }
-  .modal-actions .btn, .confirmation-actions .btn { flex: 1; justify-content: center; }
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+  .modal-header,
+  .modal-body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .modal-actions {
+    margin-left: -16px;
+    margin-right: -16px;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .modal-actions .btn,
+  .confirmation-actions .btn {
+    flex: 1;
+    justify-content: center;
+  }
 }
 </style>
+

@@ -1,31 +1,56 @@
 <script setup lang="ts">
-import { MessageSquare, MoreHorizontal, Plus, Send, Search, Clock, Play, Square, Calendar, X, ClipboardList, FileUp, File, Check, Ban, CheckCircle2, CheckSquare, LayoutGrid, List, Lock, Sparkles } from 'lucide-vue-next'
+import {
+  MessageSquare,
+  MoreHorizontal,
+  Plus,
+  Send,
+  Search,
+  Clock,
+  Play,
+  Square,
+  Calendar,
+  X,
+  ClipboardList,
+  FileUp,
+  File,
+  Check,
+  Ban,
+  CheckCircle2,
+  CheckSquare,
+  LayoutGrid,
+  List,
+  Lock,
+  Sparkles,
+} from "lucide-vue-next";
 // @ts-ignore
-import { VueDraggable } from '../utils/vendor/vue-draggable-plus.js'
-import ProjectDetailHeader from '../components/ProjectDetailHeader.vue'
-import ProjectActivityTab from '../components/ProjectActivityTab.vue'
-import ProjectMembersTab from '../components/ProjectMembersTab.vue'
-import ProjectStatsTab from '../components/ProjectStatsTab.vue'
-import ProjectRoadmapTab from '../components/ProjectRoadmapTab.vue'
-import ProjectWorkloadTab from '../components/ProjectWorkloadTab.vue'
-import ProjectWikiTab from '../components/ProjectWikiTab.vue'
-import ProjectGanttTab from '../components/ProjectGanttTab.vue'
-import WebhooksTab from '../components/WebhooksTab.vue'
-import ImportModal from '../components/import/ImportModal.vue'
-import ImportUndoBanner from '../components/import/ImportUndoBanner.vue'
-import TaskSkillsAiCard from '../components/TaskSkillsAiCard.vue'
-import TaskDevelopmentPanel from '../components/TaskDevelopmentPanel.vue'
-import GitHubProjectIntegration from '../components/GitHubProjectIntegration.vue'
-import TaskCompletionContributorsCard from '../components/TaskCompletionContributorsCard.vue'
-import { useDashboardContext } from '../composables/dashboard-context'
-import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import { apiResult } from '../utils/api-client'
-import type { DashboardTask, KanbanMoveResultDto, TaskAssignmentInsightDto } from '../types'
-import { showError } from '../composables/use-toast'
-import { promptDialog } from '../composables/use-confirm-dialog'
-import MarkdownIt from 'markdown-it'
-import DOMPurify from 'dompurify'
+import { VueDraggable } from "../utils/vendor/vue-draggable-plus.js";
+import ProjectDetailHeader from "../components/ProjectDetailHeader.vue";
+import ProjectActivityTab from "../components/ProjectActivityTab.vue";
+import ProjectMembersTab from "../components/ProjectMembersTab.vue";
+import ProjectStatsTab from "../components/ProjectStatsTab.vue";
+import ProjectRoadmapTab from "../components/ProjectRoadmapTab.vue";
+import ProjectWorkloadTab from "../components/ProjectWorkloadTab.vue";
+import ProjectWikiTab from "../components/ProjectWikiTab.vue";
+import WebhooksTab from "../components/WebhooksTab.vue";
+import ImportModal from "../components/import/ImportModal.vue";
+import ImportUndoBanner from "../components/import/ImportUndoBanner.vue";
+import TaskSkillsAiCard from "../components/TaskSkillsAiCard.vue";
+import TaskDevelopmentPanel from "../components/TaskDevelopmentPanel.vue";
+import GitHubProjectIntegration from "../components/GitHubProjectIntegration.vue";
+import TaskCompletionContributorsCard from "../components/TaskCompletionContributorsCard.vue";
+import { useDashboardContext } from "../composables/dashboard-context";
+import { computed, ref, onMounted, onUnmounted, watch } from "vue";
+import { useRouter, useRoute } from "vue-router";
+import { apiResult } from "../utils/api-client";
+import type {
+  DashboardTask,
+  KanbanMoveResultDto,
+  TaskAssignmentInsightDto,
+} from "../types";
+import { showError } from "../composables/use-toast";
+import { promptDialog } from "../composables/use-confirm-dialog";
+import MarkdownIt from "markdown-it";
+import DOMPurify from "dompurify";
 
 const {
   activeProjectTab,
@@ -91,46 +116,54 @@ const {
   startTimer,
   stopTimer,
   loadDashboard,
-} = useDashboardContext()
+} = useDashboardContext();
 
-const router = useRouter()
-const route = useRoute()
+const router = useRouter();
+const route = useRoute();
 
 watch(
   () => route.hash,
-  hash => {
-    if (hash.startsWith('#milestone-')) activeProjectTab.value = 'roadmap'
+  (hash) => {
+    if (hash.startsWith("#milestone-")) activeProjectTab.value = "roadmap";
   },
   { immediate: true },
-)
+);
 
-watch(activeProjectTab, tab => {
-  if (tab !== 'roadmap' && route.hash.startsWith('#milestone-')) {
-    void router.replace({ hash: '' })
+watch(activeProjectTab, (tab) => {
+  if (tab !== "roadmap" && route.hash.startsWith("#milestone-")) {
+    void router.replace({ hash: "" });
   }
-})
-const showImportModal = ref(false)
+});
+const showImportModal = ref(false);
 
 function openAiActionComposer() {
-  if (!selectedProject.value) return
-  window.dispatchEvent(new CustomEvent('qaly:open-ai-action', {
-    detail: { projectId: selectedProject.value.id },
-  }))
+  if (!selectedProject.value) return;
+  window.dispatchEvent(
+    new CustomEvent("qaly:open-ai-action", {
+      detail: { projectId: selectedProject.value.id },
+    }),
+  );
 }
-const undoBannerData = ref<{ importSessionId: string; importedCount: number; failedCount: number; duplicateSkippedCount: number; createdAt: string } | null>(null)
-const assignmentInsight = ref<TaskAssignmentInsightDto | null>(null)
-const assignmentInsightLoading = ref(false)
-const assignmentInsightError = ref('')
+const undoBannerData = ref<{
+  importSessionId: string;
+  importedCount: number;
+  failedCount: number;
+  duplicateSkippedCount: number;
+  createdAt: string;
+} | null>(null);
+const assignmentInsight = ref<TaskAssignmentInsightDto | null>(null);
+const assignmentInsightLoading = ref(false);
+const assignmentInsightError = ref("");
 watch(
   () => selectedTask.value?.id,
   () => {
-    assignmentInsight.value = null
-    assignmentInsightError.value = ''
+    assignmentInsight.value = null;
+    assignmentInsightError.value = "";
   },
-)
+);
 
 function onImported(result: any) {
-  showImportModal.value = false
+  showImportModal.value = false;
   if (result?.importSessionId) {
     undoBannerData.value = {
       importSessionId: result.importSessionId,
@@ -138,966 +171,1510 @@ function onImported(result: any) {
       failedCount: result.failedCount ?? 0,
       duplicateSkippedCount: result.duplicateSkippedCount ?? 0,
       createdAt: new Date().toISOString(),
-    }
+    };
   }
-  loadDashboard()
+  loadDashboard();
 }
 
 async function handleUndoFromBanner() {
-  if (!undoBannerData.value) return
+  if (!undoBannerData.value) return;
   try {
-    const res = await fetch(`/api/import/sessions/${undoBannerData.value.importSessionId}`, { method: 'DELETE' })
-    const data = await res.json()
+    const res = await fetch(
+      `/api/import/sessions/${undoBannerData.value.importSessionId}`,
+      { method: "DELETE" },
+    );
+    const data = await res.json();
     if (data.isSuccess) {
-      undoBannerData.value = null
-      loadDashboard()
+      undoBannerData.value = null;
+      loadDashboard();
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 async function rejectEvidence(attachmentId: string) {
-  const note = await promptDialog({ tone:'warning', title:'Từ chối minh chứng?', message:'Lý do sẽ được lưu cùng kết quả đánh giá.', inputLabel:'Lý do từ chối', placeholder:'Mô tả ngắn gọn nội dung cần bổ sung...', required:true, maxLength:500, confirmLabel:'Từ chối' })
+  const note = await promptDialog({
+    tone: "warning",
+    title: "Từ chối minh chứng?",
+    message: "Lý do sẽ được lưu cùng kết quả đánh giá.",
+    inputLabel: "Lý do từ chối",
+    placeholder: "Mô tả ngắn gọn nội dung cần bổ sung...",
+    required: true,
+    maxLength: 500,
+    confirmLabel: "Từ chối",
+  });
   if (note !== null) {
-    reviewEvidence(attachmentId, false, note)
+    reviewEvidence(attachmentId, false, note);
   }
 }
 
-const quickEditTitle = ref('')
-const manualMinutes = ref<number>(0)
-const manualNote = ref('')
-const showManualForm = ref(false)
-const isKanbanDragging = ref(false)
-const isSuppressingTaskClick = ref(false)
-const draggingTask = ref<DashboardTask | null>(null)
-const taskBoardView = ref<'kanban' | 'list'>('kanban')
-const markdown = new MarkdownIt({ linkify: true, breaks: true })
+const quickEditTitle = ref("");
+const manualMinutes = ref<number>(0);
+const manualNote = ref("");
+const showManualForm = ref(false);
+const isKanbanDragging = ref(false);
+const isSuppressingTaskClick = ref(false);
+const draggingTask = ref<DashboardTask | null>(null);
+const taskBoardView = ref<"kanban" | "list">("kanban");
+const markdown = new MarkdownIt({ linkify: true, breaks: true });
 
-const filteredTaskList = computed(() => statusColumns.value.flatMap((status: string) => tasksByStatus(status)))
+const filteredTaskList = computed(() =>
+  statusColumns.value.flatMap((status: string) => tasksByStatus(status)),
+);
 const kanbanTasksByStatus = computed<Record<string, DashboardTask[]>>(() =>
   Object.fromEntries(
-    statusColumns.value.map((status: string) => [status, tasksByStatus(status)]),
+    statusColumns.value.map((status: string) => [
+      status,
+      tasksByStatus(status),
+    ]),
   ),
-)
-const canShowCapacityTab = computed(() => activeProjectTab.value === 'capacity' && !!selectedProject.value)
-const canShowActivityTab = computed(() => activeProjectTab.value === 'activity' && !!selectedProject.value)
-const canShowGanttTab = computed(() => activeProjectTab.value === 'gantt' && !!selectedProject.value)
-const canShowWebhooksTab = computed(() => activeProjectTab.value === 'webhooks' && !!selectedProject.value)
-const canShowGitHubTab = computed(() => activeProjectTab.value === 'github' && !!selectedProject.value)
-const canShowImportModal = computed(() => showImportModal.value && !!selectedProject.value)
-const canShowTaskComments = computed(() => !!selectedTask.value && !selectedTask.value.isRestricted)
+);
+const canShowCapacityTab = computed(
+  () => activeProjectTab.value === "capacity" && !!selectedProject.value,
+);
+const canShowActivityTab = computed(
+  () => activeProjectTab.value === "activity" && !!selectedProject.value,
+);
+const canShowWebhooksTab = computed(
+  () => activeProjectTab.value === "webhooks" && !!selectedProject.value,
+);
+const canShowGitHubTab = computed(
+  () => activeProjectTab.value === "github" && !!selectedProject.value,
+);
+const canShowImportModal = computed(
+  () => showImportModal.value && !!selectedProject.value,
+);
+const canShowTaskComments = computed(
+  () => !!selectedTask.value && !selectedTask.value.isRestricted,
+);
 
 const isProjectDelayed = computed(() => {
-  if (!selectedProject.value) return false
-  
+  if (!selectedProject.value) return false;
+
   if (selectedProject.value.endDate) {
-    const end = new Date(selectedProject.value.endDate)
+    const end = new Date(selectedProject.value.endDate);
     if (end < new Date() && selectedProject.value.progressPercentage < 100) {
-      return true
+      return true;
     }
   }
-  
-  const overdueCount = selectedProject.value.tasks?.filter((t: any) => {
-    if (t.status === 'Done') return false
-    if (!t.dueDate) return false
-    return new Date(t.dueDate) < new Date()
-  }).length ?? 0
-  
-  return overdueCount > 0
-})
+
+  const overdueCount =
+    selectedProject.value.tasks?.filter((t: any) => {
+      if (t.status === "Done") return false;
+      if (!t.dueDate) return false;
+      return new Date(t.dueDate) < new Date();
+    }).length ?? 0;
+
+  return overdueCount > 0;
+});
 
 async function triggerProposeResolution() {
-  if (!selectedProject.value) return
+  if (!selectedProject.value) return;
   try {
-    const res = await apiResult<{ jobId: string }>(`/api/ai/projects/${selectedProject.value.id}/suggest-resolution`, {
-      method: 'POST',
-      body: JSON.stringify({
-        projectId: selectedProject.value.id,
-        sourceType: 'project',
-        sourceEntityId: selectedProject.value.id,
-        legacySourceKey: selectedProject.value.id.toString(),
-        sourceVersion: selectedProject.value.rowVersion || '',
-        sourceHash: ''
-      })
-    })
-    
+    const res = await apiResult<{ jobId: string }>(
+      `/api/ai/projects/${selectedProject.value.id}/suggest-resolution`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          projectId: selectedProject.value.id,
+          sourceType: "project",
+          sourceEntityId: selectedProject.value.id,
+          legacySourceKey: selectedProject.value.id.toString(),
+          sourceVersion: selectedProject.value.rowVersion || "",
+          sourceHash: "",
+        }),
+      },
+    );
+
     if (res?.jobId) {
       await router.replace({
         query: {
           ...route.query,
-          aiActivity: '1',
-          aiTab: 'jobs',
-          aiJob: res.jobId
-        }
-      })
+          aiActivity: "1",
+          aiTab: "jobs",
+          aiJob: res.jobId,
+        },
+      });
     }
   } catch (err: any) {
-    showError(err.message || 'Không thể bắt đầu đề xuất xử lý trễ hạn.')
+    showError(err.message || "Không thể bắt đầu đề xuất xử lý trễ hạn.");
   }
 }
 
 function canManageTask(task: DashboardTask) {
-  return isProjectAdmin.value && !task.isRestricted
+  return isProjectAdmin.value && !task.isRestricted;
 }
 
 function canReviewEvidence(attachment: any) {
-  return isProjectAdmin.value && attachment.evidenceApprovalStatus !== 'Approved'
+  return (
+    isProjectAdmin.value && attachment.evidenceApprovalStatus !== "Approved"
+  );
 }
 
 function handleTaskTitleDoubleClick(task: DashboardTask) {
-  if (task.isRestricted) return
-  startQuickEdit(task)
+  if (task.isRestricted) return;
+  startQuickEdit(task);
 }
 
 function renderMarkdown(value: string) {
-  return DOMPurify.sanitize(markdown.render(value || ''))
+  return DOMPurify.sanitize(markdown.render(value || ""));
 }
 
 function startQuickEdit(task: DashboardTask) {
-  taskBeingQuickEditedId.value = task.id
-  quickEditTitle.value = task.title
+  taskBeingQuickEditedId.value = task.id;
+  quickEditTitle.value = task.title;
 }
 
 function closeTaskDetails() {
-  selectedTaskId.value = null
-  showManualForm.value = false
-  activeTaskMenu.value = null
+  selectedTaskId.value = null;
+  showManualForm.value = false;
+  activeTaskMenu.value = null;
   if (selectedProject.value?.id) {
-    void router.replace(`/projects/${selectedProject.value.id}`)
+    void router.replace(`/projects/${selectedProject.value.id}`);
   }
 }
 
 function handleTaskCardClick(taskId: string) {
-  if (isSuppressingTaskClick.value) return
-  selectTaskInProject(taskId)
+  if (isSuppressingTaskClick.value) return;
+  selectTaskInProject(taskId);
 }
 
 async function saveQuickEdit() {
-  if (!taskBeingQuickEditedId.value) return
-  const saved = await quickEditTaskTitle(taskBeingQuickEditedId.value, quickEditTitle.value)
-  if (saved) taskBeingQuickEditedId.value = null
+  if (!taskBeingQuickEditedId.value) return;
+  const saved = await quickEditTaskTitle(
+    taskBeingQuickEditedId.value,
+    quickEditTitle.value,
+  );
+  if (saved) taskBeingQuickEditedId.value = null;
 }
 
 async function submitManualEntry() {
-  if (!selectedTask.value || manualMinutes.value <= 0) return
-  const saved = await addManualTimeEntry(selectedTask.value.id, manualMinutes.value, manualNote.value)
+  if (!selectedTask.value || manualMinutes.value <= 0) return;
+  const saved = await addManualTimeEntry(
+    selectedTask.value.id,
+    manualMinutes.value,
+    manualNote.value,
+  );
   if (saved) {
-    manualMinutes.value = 0; manualNote.value = ''; showManualForm.value = false
+    manualMinutes.value = 0;
+    manualNote.value = "";
+    showManualForm.value = false;
   }
 }
 
 async function loadAssignmentInsight() {
-  if (!selectedProject.value || !selectedTask.value) return
-  assignmentInsightLoading.value = true
-  assignmentInsightError.value = ''
+  if (!selectedProject.value || !selectedTask.value) return;
+  assignmentInsightLoading.value = true;
+  assignmentInsightError.value = "";
   try {
-    assignmentInsight.value = await apiResult<TaskAssignmentInsightDto>(`/api/ai/tasks/${selectedTask.value.id}/assignment-insight?projectId=${selectedProject.value.id}`)
+    assignmentInsight.value = await apiResult<TaskAssignmentInsightDto>(
+      `/api/ai/tasks/${selectedTask.value.id}/assignment-insight?projectId=${selectedProject.value.id}`,
+    );
   } catch (error) {
-    assignmentInsightError.value = 'Không thể tải gợi ý assignee.'
+    assignmentInsightError.value = "Không thể tải gợi ý assignee.";
   } finally {
-    assignmentInsightLoading.value = false
+    assignmentInsightLoading.value = false;
   }
 }
 
 function prepareAssignmentDraft(userId: string) {
-  if (!selectedTask.value) return
-  beginEditTask(selectedTask.value)
-  newTaskAssigneeId.value = userId
+  if (!selectedTask.value) return;
+  beginEditTask(selectedTask.value);
+  newTaskAssigneeId.value = userId;
 }
 
 function kanbanStatusFromElement(element: HTMLElement | null | undefined) {
-  return element?.dataset.kanbanStatus
-    ?? element?.closest<HTMLElement>('[data-kanban-status]')?.dataset.kanbanStatus
-    ?? null
+  return (
+    element?.dataset.kanbanStatus ??
+    element?.closest<HTMLElement>("[data-kanban-status]")?.dataset
+      .kanbanStatus ??
+    null
+  );
 }
 
-function moveTargetIndex(evt: { newDraggableIndex?: number; newIndex?: number }, targetCount: number) {
-  const rawIndex = Number.isInteger(evt.newDraggableIndex) ? evt.newDraggableIndex : evt.newIndex
-  return Math.max(0, Math.min(rawIndex ?? targetCount, targetCount))
+function moveTargetIndex(
+  evt: { newDraggableIndex?: number; newIndex?: number },
+  targetCount: number,
+) {
+  const rawIndex = Number.isInteger(evt.newDraggableIndex)
+    ? evt.newDraggableIndex
+    : evt.newIndex;
+  return Math.max(0, Math.min(rawIndex ?? targetCount, targetCount));
 }
 
 function dragDropState(status: string) {
-  const task = draggingTask.value
-  if (!isKanbanDragging.value || !task) return 'idle'
-  if (task.status === status) return 'source'
-  return nextStatuses(task.status).includes(status) ? 'allowed' : 'blocked'
+  const task = draggingTask.value;
+  if (!isKanbanDragging.value || !task) return "idle";
+  if (task.status === status) return "source";
+  return nextStatuses(task.status).includes(status) ? "allowed" : "blocked";
 }
 
 function kanbanColumnClass(status: string) {
-  const state = dragDropState(status)
+  const state = dragDropState(status);
   return {
-    'is-drop-source': state === 'source',
-    'is-drop-allowed': state === 'allowed',
-    'is-drop-blocked': state === 'blocked',
-  }
+    "is-drop-source": state === "source",
+    "is-drop-allowed": state === "allowed",
+    "is-drop-blocked": state === "blocked",
+  };
 }
 
 function isKanbanDropBlocked(status: string) {
-  return dragDropState(status) === 'blocked'
+  return dragDropState(status) === "blocked";
 }
 
 function canDropKanbanTask(task: DashboardTask, status: string) {
-  return task.status === status || nextStatuses(task.status).includes(status)
+  return task.status === status || nextStatuses(task.status).includes(status);
 }
 
 function onDragStart(evt?: { item?: HTMLElement; data?: DashboardTask }) {
-  isKanbanDragging.value = true
-  isSuppressingTaskClick.value = true
-  const taskId = evt?.item?.dataset.id ?? evt?.data?.id
-  draggingTask.value = selectedProject.value?.tasks.find((task: DashboardTask) => task.id === taskId) ?? evt?.data ?? null
-  selectedTaskId.value = null
-  showManualForm.value = false
-  activeTaskMenu.value = null
+  isKanbanDragging.value = true;
+  isSuppressingTaskClick.value = true;
+  const taskId = evt?.item?.dataset.id ?? evt?.data?.id;
+  draggingTask.value =
+    selectedProject.value?.tasks.find(
+      (task: DashboardTask) => task.id === taskId,
+    ) ??
+    evt?.data ??
+    null;
+  selectedTaskId.value = null;
+  showManualForm.value = false;
+  activeTaskMenu.value = null;
 }
 
 function canSelectListStatus(task: DashboardTask, status: string) {
-  return task.status === status || nextStatuses(task.status).includes(status)
+  return task.status === status || nextStatuses(task.status).includes(status);
 }
 
-function applyMovedTaskToCurrentProject(task: DashboardTask, status: string, result: KanbanMoveResultDto) {
-  const project = selectedProject.value
-  if (!project) return
+function applyMovedTaskToCurrentProject(
+  task: DashboardTask,
+  status: string,
+  result: KanbanMoveResultDto,
+) {
+  const project = selectedProject.value;
+  if (!project) return;
 
-  const boardTasks = result.board?.columns?.flatMap((column) => column.tasks) ?? []
+  const boardTasks =
+    result.board?.columns?.flatMap((column) => column.tasks) ?? [];
   if (boardTasks.length) {
-    const boardTaskIds = new Set(boardTasks.map((item) => item.id))
+    const boardTaskIds = new Set(boardTasks.map((item) => item.id));
     project.tasks = [
       ...boardTasks,
-      ...project.tasks.filter((item: DashboardTask) => !boardTaskIds.has(item.id)),
-    ]
-    return
+      ...project.tasks.filter(
+        (item: DashboardTask) => !boardTaskIds.has(item.id),
+      ),
+    ];
+    return;
   }
 
-  const currentTask = project.tasks.find((item: DashboardTask) => item.id === task.id)
-  if (!currentTask) return
+  const currentTask = project.tasks.find(
+    (item: DashboardTask) => item.id === task.id,
+  );
+  if (!currentTask) return;
 
-  const movedTask = result.task
-  currentTask.status = movedTask.status || status
-  currentTask.priority = movedTask.priority ?? currentTask.priority
-  currentTask.dueDate = movedTask.dueDate ?? currentTask.dueDate
-  currentTask.assigneeId = movedTask.assigneeId ?? currentTask.assigneeId
-  currentTask.assigneeName = movedTask.assigneeName ?? currentTask.assigneeName
-  currentTask.sortOrder = movedTask.sortOrder ?? currentTask.sortOrder
-  currentTask.rowVersion = movedTask.rowVersion ?? currentTask.rowVersion
-  currentTask.isPrivate = movedTask.isPrivate ?? currentTask.isPrivate
-  currentTask.isRestricted = movedTask.isRestricted ?? currentTask.isRestricted
-  currentTask.isPinned = movedTask.isPinned ?? currentTask.isPinned
-  currentTask.contributesToProgress = movedTask.contributesToProgress ?? currentTask.contributesToProgress
-  currentTask.upvoteCount = movedTask.upvoteCount ?? currentTask.upvoteCount
-  currentTask.downvoteCount = movedTask.downvoteCount ?? currentTask.downvoteCount
-  currentTask.commentCount = movedTask.commentCount ?? currentTask.commentCount
-  currentTask.attachmentCount = movedTask.attachmentCount ?? currentTask.attachmentCount
+  const movedTask = result.task;
+  currentTask.status = movedTask.status || status;
+  currentTask.priority = movedTask.priority ?? currentTask.priority;
+  currentTask.dueDate = movedTask.dueDate ?? currentTask.dueDate;
+  currentTask.assigneeId = movedTask.assigneeId ?? currentTask.assigneeId;
+  currentTask.assigneeName = movedTask.assigneeName ?? currentTask.assigneeName;
+  currentTask.sortOrder = movedTask.sortOrder ?? currentTask.sortOrder;
+  currentTask.rowVersion = movedTask.rowVersion ?? currentTask.rowVersion;
+  currentTask.isPrivate = movedTask.isPrivate ?? currentTask.isPrivate;
+  currentTask.isRestricted = movedTask.isRestricted ?? currentTask.isRestricted;
+  currentTask.isPinned = movedTask.isPinned ?? currentTask.isPinned;
+  currentTask.contributesToProgress =
+    movedTask.contributesToProgress ?? currentTask.contributesToProgress;
+  currentTask.upvoteCount = movedTask.upvoteCount ?? currentTask.upvoteCount;
+  currentTask.downvoteCount =
+    movedTask.downvoteCount ?? currentTask.downvoteCount;
+  currentTask.commentCount = movedTask.commentCount ?? currentTask.commentCount;
+  currentTask.attachmentCount =
+    movedTask.attachmentCount ?? currentTask.attachmentCount;
 }
 
 async function handleListStatusChange(task: DashboardTask, event: Event) {
-  const select = event.target as HTMLSelectElement
-  const status = select.value
-  if (!selectedProject.value || task.status === status || !canSelectListStatus(task, status)) {
-    select.value = task.status
-    return
+  const select = event.target as HTMLSelectElement;
+  const status = select.value;
+  if (
+    !selectedProject.value ||
+    task.status === status ||
+    !canSelectListStatus(task, status)
+  ) {
+    select.value = task.status;
+    return;
   }
-  const targetTasks = tasksByStatus(status).filter((item: DashboardTask) => item.id !== task.id)
-  const afterTaskId = targetTasks[targetTasks.length - 1]?.id ?? null
-  const result = await moveTaskOnKanban(selectedProject.value.id, task, status, null, afterTaskId)
+  const targetTasks = tasksByStatus(status).filter(
+    (item: DashboardTask) => item.id !== task.id,
+  );
+  const afterTaskId = targetTasks[targetTasks.length - 1]?.id ?? null;
+  const result = await moveTaskOnKanban(
+    selectedProject.value.id,
+    task,
+    status,
+    null,
+    afterTaskId,
+  );
   if (!result) {
-    select.value = task.status
-    return
+    select.value = task.status;
+    return;
   }
-  applyMovedTaskToCurrentProject(task, status, result)
-  closeTaskDetails()
+  applyMovedTaskToCurrentProject(task, status, result);
+  closeTaskDetails();
 }
 
 const onDragEnd = async (evt: {
-  item: HTMLElement
-  to: HTMLElement
-  from: HTMLElement
-  oldIndex?: number
-  newIndex?: number
-  oldDraggableIndex?: number
-  newDraggableIndex?: number
+  item: HTMLElement;
+  to: HTMLElement;
+  from: HTMLElement;
+  oldIndex?: number;
+  newIndex?: number;
+  oldDraggableIndex?: number;
+  newDraggableIndex?: number;
 }) => {
-  isKanbanDragging.value = false
-  draggingTask.value = null
+  isKanbanDragging.value = false;
+  draggingTask.value = null;
   window.setTimeout(() => {
-    isSuppressingTaskClick.value = false
-  }, 160)
-  const taskId = evt.item.dataset.id
-  const newStatus = kanbanStatusFromElement(evt.to)
-  const project = selectedProject.value
-  if (!taskId || !newStatus || !project || !statusColumns.value.includes(newStatus)) {
-    await loadDashboard()
-    showError('Không thể xác định cột đích khi kéo thả nhiệm vụ.')
-    return
+    isSuppressingTaskClick.value = false;
+  }, 160);
+  const taskId = evt.item.dataset.id;
+  const newStatus = kanbanStatusFromElement(evt.to);
+  const project = selectedProject.value;
+  if (
+    !taskId ||
+    !newStatus ||
+    !project ||
+    !statusColumns.value.includes(newStatus)
+  ) {
+    await loadDashboard();
+    showError("Không thể xác định cột đích khi kéo thả nhiệm vụ.");
+    return;
   }
 
-  const task = project.tasks.find((t: DashboardTask) => t.id === taskId)
+  const task = project.tasks.find((t: DashboardTask) => t.id === taskId);
   if (!task) {
-    await loadDashboard()
-    showError('Không tìm thấy nhiệm vụ vừa kéo thả.')
-    return
+    await loadDashboard();
+    showError("Không tìm thấy nhiệm vụ vừa kéo thả.");
+    return;
   }
 
-  const sameColumn = evt.to === evt.from && task.status === newStatus
-  if (sameColumn && evt.oldIndex === evt.newIndex) return
+  const sameColumn = evt.to === evt.from && task.status === newStatus;
+  if (sameColumn && evt.oldIndex === evt.newIndex) return;
   if (!canDropKanbanTask(task, newStatus)) {
-    await loadDashboard()
-    showError(`Không thể chuyển nhiệm vụ từ ${displayStatus(task.status)} sang ${displayStatus(newStatus)}.`)
-    return
+    await loadDashboard();
+    showError(
+      `Không thể chuyển nhiệm vụ từ ${displayStatus(task.status)} sang ${displayStatus(newStatus)}.`,
+    );
+    return;
   }
 
-  const targetTasks = tasksByStatus(newStatus).filter((item: DashboardTask) => item.id !== taskId)
-  const targetIndex = moveTargetIndex(evt, targetTasks.length)
-  const beforeTaskId = targetTasks[targetIndex]?.id ?? null
-  const afterTaskId = beforeTaskId ? null : targetTasks[targetIndex - 1]?.id ?? null
+  const targetTasks = tasksByStatus(newStatus).filter(
+    (item: DashboardTask) => item.id !== taskId,
+  );
+  const targetIndex = moveTargetIndex(evt, targetTasks.length);
+  const beforeTaskId = targetTasks[targetIndex]?.id ?? null;
+  const afterTaskId = beforeTaskId
+    ? null
+    : (targetTasks[targetIndex - 1]?.id ?? null);
 
-  const result = await moveTaskOnKanban(project.id, task, newStatus, beforeTaskId, afterTaskId)
+  const result = await moveTaskOnKanban(
+    project.id,
+    task,
+    newStatus,
+    beforeTaskId,
+    afterTaskId,
+  );
   if (result) {
-    applyMovedTaskToCurrentProject(task, newStatus, result)
-    closeTaskDetails()
+    applyMovedTaskToCurrentProject(task, newStatus, result);
+    closeTaskDetails();
   }
-}
+};
 
 // Keyboard Shortcuts
 const handleKeyDown = (e: KeyboardEvent) => {
-  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-  
-  if (e.key.toLowerCase() === 'n') {
-    e.preventDefault()
-    createTaskOpen.value = true
-  }
-  if (e.key === 'Escape') {
-    createTaskOpen.value = false
-    showManualForm.value = false
-    activeTaskMenu.value = null
-    closeTaskDetails()
-  }
-}
+  if (
+    e.target instanceof HTMLInputElement ||
+    e.target instanceof HTMLTextAreaElement
+  )
+    return;
 
-onMounted(() => window.addEventListener('keydown', handleKeyDown))
-onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
+  if (e.key.toLowerCase() === "n") {
+    e.preventDefault();
+    createTaskOpen.value = true;
+  }
+  if (e.key === "Escape") {
+    createTaskOpen.value = false;
+    showManualForm.value = false;
+    activeTaskMenu.value = null;
+    closeTaskDetails();
+  }
+};
+
+onMounted(() => window.addEventListener("keydown", handleKeyDown));
+onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
 </script>
 
 <template>
   <div class="dashboard-scroll dashboard-scroll--embedded no-scrollbar">
     <div class="dashboard-main project-home-main no-scrollbar">
-      <section v-if="!isLoading && !selectedProject" class="route-entity-error" role="alert">
+      <section
+        v-if="!isLoading && !selectedProject"
+        class="route-entity-error"
+        role="alert"
+      >
         <strong>Không thể mở dự án hoặc nhiệm vụ này</strong>
-        <p>Liên kết không tồn tại, đã bị xóa hoặc bạn không còn quyền truy cập.</p>
-        <button type="button" class="primary-button" @click="router.push('/projects')">Về danh sách dự án</button>
+        <p>
+          Liên kết không tồn tại, đã bị xóa hoặc bạn không còn quyền truy cập.
+        </p>
+        <button
+          type="button"
+          class="primary-button"
+          @click="router.push('/projects')"
+        >
+          Về danh sách dự án
+        </button>
       </section>
 
       <template v-else>
-      <ProjectDetailHeader
-        v-if="selectedProject"
-        :project-name="selectedProject.name"
-        :description="selectedProject.description"
-        :status-label="displayStatus(selectedProject.status)"
-        :status-tone="statusTone(selectedProject.status)"
-        :progress-label="`${selectedProject.completedTaskCount}/${selectedProject.taskCount} task hoàn thành`"
-        :progress-percentage="selectedProject.progressPercentage"
-        :is-delayed="isProjectDelayed"
-        @back="closeProjectDetails"
-        @assistant="openChatWithPrompt()"
-        @propose-resolution="triggerProposeResolution"
-      />
-
-      <nav class="project-tabs glass-card">
-        <button
-          v-for="tab in tabs"
-          :key="tab.id"
-          type="button"
-          class="tab-link"
-          :class="{ 'is-active': activeProjectTab === tab.id }"
-          @click="activeProjectTab = tab.id"
-        >
-          {{ tab.label }}
-        </button>
-      </nav>
-
-      <div v-if="activeProjectTab === 'stats'" class="tab-pane reveal">
-        <ProjectStatsTab
-          :project-id="selectedProject.id"
-          :can-generate-ai="isProjectAdmin"
-          :stats="selectedProjectStats"
-        />
-      </div>
-
-      <div v-if="activeProjectTab === 'roadmap'" class="tab-pane reveal">
-        <ProjectRoadmapTab
-          :project-id="selectedProject.id"
+        <ProjectDetailHeader
+          v-if="selectedProject"
           :project-name="selectedProject.name"
-          :can-generate-ai="isProjectAdmin"
+          :description="selectedProject.description"
+          :status-label="displayStatus(selectedProject.status)"
+          :status-tone="statusTone(selectedProject.status)"
+          :progress-label="`${selectedProject.completedTaskCount}/${selectedProject.taskCount} task hoàn thành`"
+          :progress-percentage="selectedProject.progressPercentage"
+          :is-delayed="isProjectDelayed"
+          @back="closeProjectDetails"
+          @assistant="openChatWithPrompt()"
+          @propose-resolution="triggerProposeResolution"
         />
-      </div>
 
-      <div v-if="canShowCapacityTab" class="tab-pane reveal">
-        <ProjectWorkloadTab :project-id="selectedProject.id" :tasks="filteredTaskList" />
-      </div>
+        <nav class="project-tabs glass-card">
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            type="button"
+            class="tab-link"
+            :class="{ 'is-active': activeProjectTab === tab.id }"
+            @click="activeProjectTab = tab.id"
+          >
+            {{ tab.label }}
+          </button>
+        </nav>
 
-      <div v-if="activeProjectTab === 'tasks'">
-        <section id="tasks" class="task-board-shell glass-card">
-          <div class="panel-heading task-board-heading">
-            <div class="task-board-heading__title">
-              <span>Nhiệm vụ</span>
-              <h2>Bảng công việc</h2>
-            </div>
-            <div class="task-board-search">
-              <div class="search-box task-search-box">
-                <Search :size="16" />
-                <input v-model="taskSearchQuery" type="text" placeholder="Tìm nhiệm vụ (N: mới)..." />
-              </div>
-            </div>
-            <div class="board-actions">
-              <div class="task-view-toggle" aria-label="Chế độ hiển thị nhiệm vụ">
-                <button
-                  type="button"
-                  class="task-view-toggle__button"
-                  :class="{ 'is-active': taskBoardView === 'kanban' }"
-                  @click="taskBoardView = 'kanban'"
-                >
-                  <LayoutGrid :size="15" />
-                  <span>Kanban</span>
-                </button>
-                <button
-                  type="button"
-                  class="task-view-toggle__button"
-                  :class="{ 'is-active': taskBoardView === 'list' }"
-                  @click="taskBoardView = 'list'"
-                >
-                  <List :size="15" />
-                  <span>List</span>
-                </button>
-              </div>
-              <button class="primary-button primary-button--compact" type="button" @click="createTaskOpen ? cancelTaskForm() : (createTaskOpen = true)">
-                <Plus :size="16" />
+        <div v-if="activeProjectTab === 'stats'" class="tab-pane reveal">
+          <ProjectStatsTab
+            :project-id="selectedProject.id"
+            :can-generate-ai="isProjectAdmin"
+            :stats="selectedProjectStats"
+          />
+        </div>
+
+        <div v-if="activeProjectTab === 'roadmap'" class="tab-pane reveal">
+          <ProjectRoadmapTab
+            :project-id="selectedProject.id"
+            :project-name="selectedProject.name"
+            :can-generate-ai="isProjectAdmin"
+          />
+        </div>
+
+        <div v-if="canShowCapacityTab" class="tab-pane reveal">
+          <ProjectWorkloadTab
+            :project-id="selectedProject.id"
+            :tasks="filteredTaskList"
+          />
+        </div>
+
+        <div v-if="activeProjectTab === 'tasks'">
+          <section id="tasks" class="task-board-shell glass-card">
+            <div class="panel-heading task-board-heading">
+              <div class="task-board-heading__title">
                 <span>Nhiệm vụ</span>
-              </button>
-              <button class="import-btn-sm" type="button" @click="showImportModal = true">
-                <FileUp :size="14" /> Nhập file
-              </button>
-              <button v-if="isProjectAdmin" class="btn-ai-plan" type="button" @click="openAiActionComposer">
-                <Sparkles :size="14" /> Soạn task với AI
-              </button>
-            </div>
-          </div>
-
-          <Teleport to="body">
-            <div v-if="createTaskOpen" class="task-modal-backdrop" @click.self="cancelTaskForm">
-              <div class="task-modal">
-                <div class="task-modal-header">
-                  <div class="task-modal-title">
-                    <CheckSquare :size="20" />
-                    <h2>{{ taskBeingEdited ? 'Chỉnh sửa nhiệm vụ' : 'Tạo nhiệm vụ mới' }}</h2>
-                  </div>
-                  <button type="button" class="icon-button" @click="cancelTaskForm">
-                    <X :size="18" />
+                <h2>Bảng công việc</h2>
+              </div>
+              <div class="task-board-search">
+                <div class="search-box task-search-box">
+                  <Search :size="16" />
+                  <input
+                    v-model="taskSearchQuery"
+                    type="text"
+                    placeholder="Tìm nhiệm vụ (N: mới)..."
+                  />
+                </div>
+              </div>
+              <div class="board-actions">
+                <div
+                  class="task-view-toggle"
+                  aria-label="Chế độ hiển thị nhiệm vụ"
+                >
+                  <button
+                    type="button"
+                    class="task-view-toggle__button"
+                    :class="{ 'is-active': taskBoardView === 'kanban' }"
+                    @click="taskBoardView = 'kanban'"
+                  >
+                    <LayoutGrid :size="15" />
+                    <span>Kanban</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="task-view-toggle__button"
+                    :class="{ 'is-active': taskBoardView === 'list' }"
+                    @click="taskBoardView = 'list'"
+                  >
+                    <List :size="15" />
+                    <span>List</span>
                   </button>
                 </div>
-                
-                <form class="task-modal-body" @submit.prevent="createTask">
-                  <div class="form-group">
-                    <label>Tiêu đề nhiệm vụ</label>
-                    <input v-model="newTaskTitle" type="text" placeholder="Nhập tiêu đề nhiệm vụ..." required class="modal-input" />
-                  </div>
-                  
-                  <div class="form-group">
-                    <label>Mô tả chi tiết</label>
-                    <textarea v-model="newTaskDescription" placeholder="Mô tả nhiệm vụ (không bắt buộc)..." rows="3" class="modal-input"></textarea>
-                  </div>
-                  
-                  <div class="modal-grid-2">
-                    <div class="form-group">
-                      <label>Độ ưu tiên</label>
-                      <select v-model="newTaskPriority" class="modal-input">
-                        <option v-for="priority in priorities" :key="priority" :value="priority">{{ priority }}</option>
-                      </select>
-                    </div>
-                    <div class="form-group">
-                      <label>Người thực hiện</label>
-                      <select v-model="newTaskAssigneeId" class="modal-input">
-                        <option value="">Chưa giao</option>
-                        <option v-for="user in selectedProjectMembers" :key="user.id" :value="user.id">{{ user.fullName }}</option>
-                      </select>
-                    </div>
-                  </div>
-                  
-                  <div class="form-group">
-                    <label>Hạn chót</label>
-                    <input v-model="newTaskDueDate" type="date" class="modal-input" />
-                  </div>
-                  
-                  <div class="modal-options-row">
-                    <label class="modal-checkbox">
-                      <input v-model="newTaskIsPrivate" type="checkbox" />
-                      <span>Riêng tư</span>
-                    </label>
-                    <label class="modal-checkbox">
-                      <input v-model="newTaskContributesToProgress" type="checkbox" />
-                      <span>Tính tiến độ</span>
-                    </label>
-                    <label v-if="isProjectAdmin" class="modal-checkbox">
-                      <input v-model="newTaskIsPinned" type="checkbox" />
-                      <span>Ghim</span>
-                    </label>
-                  </div>
-                  
-                  <div class="task-modal-actions">
-                    <button class="btn btn--ghost" type="button" @click="cancelTaskForm">Hủy</button>
-                    <button class="btn btn--primary" type="submit" :disabled="!newTaskTitle.trim()">{{ taskBeingEdited ? 'Lưu thay đổi' : 'Tạo nhiệm vụ' }}</button>
-                  </div>
-                </form>
+                <button
+                  class="primary-button primary-button--compact"
+                  type="button"
+                  @click="
+                    createTaskOpen ? cancelTaskForm() : (createTaskOpen = true)
+                  "
+                >
+                  <Plus :size="16" />
+                  <span>Nhiệm vụ</span>
+                </button>
+                <button
+                  class="import-btn-sm"
+                  type="button"
+                  @click="showImportModal = true"
+                >
+                  <FileUp :size="14" /> Nhập file
+                </button>
+                <button
+                  v-if="isProjectAdmin"
+                  class="btn-ai-plan"
+                  type="button"
+                  @click="openAiActionComposer"
+                >
+                  <Sparkles :size="14" /> Soạn task với AI
+                </button>
               </div>
             </div>
-          </Teleport>
 
-          <div v-if="taskBoardView === 'kanban'" class="kanban-board" :class="{ 'is-dragging-task': isKanbanDragging }">
-            <section
-              v-for="status in statusColumns"
-              :key="status"
-              class="kanban-column"
-              :class="kanbanColumnClass(status)"
-              :data-kanban-status="status"
-            >
-              <div class="kanban-column__header">
-                <strong>{{ displayStatus(status) }}</strong>
-                <div class="kanban-column__badges">
-                  <span v-if="isKanbanDropBlocked(status)" class="drop-lock-badge" :title="`Không thể chuyển sang ${displayStatus(status)}`">
-                    <Lock :size="13" />
-                  </span>
-                  <span class="count-badge">{{ kanbanTasksByStatus[status].length }}</span>
+            <Teleport to="body">
+              <div
+                v-if="createTaskOpen"
+                class="task-modal-backdrop"
+                @click.self="cancelTaskForm"
+              >
+                <div class="task-modal">
+                  <div class="task-modal-header">
+                    <div class="task-modal-title">
+                      <CheckSquare :size="20" />
+                      <h2>
+                        {{
+                          taskBeingEdited
+                            ? "Chỉnh sửa nhiệm vụ"
+                            : "Tạo nhiệm vụ mới"
+                        }}
+                      </h2>
+                    </div>
+                    <button
+                      type="button"
+                      class="icon-button"
+                      @click="cancelTaskForm"
+                    >
+                      <X :size="18" />
+                    </button>
+                  </div>
+
+                  <form class="task-modal-body" @submit.prevent="createTask">
+                    <div class="form-group">
+                      <label>Tiêu đề nhiệm vụ</label>
+                      <input
+                        v-model="newTaskTitle"
+                        type="text"
+                        placeholder="Nhập tiêu đề nhiệm vụ..."
+                        required
+                        class="modal-input"
+                      />
+                    </div>
+
+                    <div class="form-group">
+                      <label>Mô tả chi tiết</label>
+                      <textarea
+                        v-model="newTaskDescription"
+                        placeholder="Mô tả nhiệm vụ (không bắt buộc)..."
+                        rows="3"
+                        class="modal-input"
+                      ></textarea>
+                    </div>
+
+                    <div class="modal-grid-2">
+                      <div class="form-group">
+                        <label>Độ ưu tiên</label>
+                        <select v-model="newTaskPriority" class="modal-input">
+                          <option
+                            v-for="priority in priorities"
+                            :key="priority"
+                            :value="priority"
+                          >
+                            {{ priority }}
+                          </option>
+                        </select>
+                      </div>
+                      <div class="form-group">
+                        <label>Người thực hiện</label>
+                        <select v-model="newTaskAssigneeId" class="modal-input">
+                          <option value="">Chưa giao</option>
+                          <option
+                            v-for="user in selectedProjectMembers"
+                            :key="user.id"
+                            :value="user.id"
+                          >
+                            {{ user.fullName }}
+                          </option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div class="form-group">
+                      <label>Hạn chót</label>
+                      <input
+                        v-model="newTaskDueDate"
+                        type="date"
+                        class="modal-input"
+                      />
+                    </div>
+
+                    <div class="modal-options-row">
+                      <label class="modal-checkbox">
+                        <input v-model="newTaskIsPrivate" type="checkbox" />
+                        <span>Riêng tư</span>
+                      </label>
+                      <label class="modal-checkbox">
+                        <input
+                          v-model="newTaskContributesToProgress"
+                          type="checkbox"
+                        />
+                        <span>Tính tiến độ</span>
+                      </label>
+                      <label v-if="isProjectAdmin" class="modal-checkbox">
+                        <input v-model="newTaskIsPinned" type="checkbox" />
+                        <span>Ghim</span>
+                      </label>
+                    </div>
+
+                    <div class="task-modal-actions">
+                      <button
+                        class="btn btn--ghost"
+                        type="button"
+                        @click="cancelTaskForm"
+                      >
+                        Hủy
+                      </button>
+                      <button
+                        class="btn btn--primary"
+                        type="submit"
+                        :disabled="!newTaskTitle.trim()"
+                      >
+                        {{ taskBeingEdited ? "Lưu thay đổi" : "Tạo nhiệm vụ" }}
+                      </button>
+                    </div>
+                  </form>
                 </div>
               </div>
+            </Teleport>
 
-              <VueDraggable
-                :model-value="kanbanTasksByStatus[status]"
-                :animation="200"
-                draggable=".kanban-card"
-                group="tasks"
-                ghost-class="ghost-card"
-                drag-class="dragging-card"
-                class="kanban-column__list"
-                :class="{ 'is-drop-ready': isKanbanDragging, ...kanbanColumnClass(status) }"
+            <div
+              v-if="taskBoardView === 'kanban'"
+              class="kanban-board"
+              :class="{ 'is-dragging-task': isKanbanDragging }"
+            >
+              <section
+                v-for="status in statusColumns"
+                :key="status"
+                class="kanban-column"
+                :class="kanbanColumnClass(status)"
                 :data-kanban-status="status"
-                :empty-insert-threshold="120"
-                @start="onDragStart"
-                @end="onDragEnd"
               >
-                <article
-                  v-for="task in kanbanTasksByStatus[status]"
-                  :key="task.id"
-                  class="kanban-card draggable-item"
-                  :class="{ 'is-selected': selectedTask?.id === task.id }"
-                  :data-id="task.id"
-                  @click="handleTaskCardClick(task.id)"
-                >
-                  <small v-if="task.key" class="task-key-chip">{{ task.key }}</small>
-                  <div class="kanban-card__top">
-                    <input
-                      v-if="taskBeingQuickEditedId === task.id"
-                      v-model="quickEditTitle"
-                      type="text"
-                      class="quick-edit-input"
-                      @blur="saveQuickEdit"
-                      @keyup.enter="saveQuickEdit"
-                      @click.stop
-                    />
-                    <strong v-else @dblclick.stop="handleTaskTitleDoubleClick(task)">
-                      <span v-if="task.isPrivate" title="Nhiệm vụ riêng tư">Khóa</span>
-                      <span v-if="task.isPinned" title="Nhiệm vụ đã ghim">Ghim</span>
-                      {{ task.title }}
-                    </strong>
-                    
-                    <div class="task-card-actions">
-                      <span :class="`priority priority--${task.priority.toLowerCase()}`">{{ task.priority }}</span>
+                <div class="kanban-column__header">
+                  <strong>{{ displayStatus(status) }}</strong>
+                  <div class="kanban-column__badges">
+                    <span
+                      v-if="isKanbanDropBlocked(status)"
+                      class="drop-lock-badge"
+                      :title="`Không thể chuyển sang ${displayStatus(status)}`"
+                    >
+                      <Lock :size="13" />
+                    </span>
+                    <span class="count-badge">{{
+                      kanbanTasksByStatus[status].length
+                    }}</span>
+                  </div>
+                </div>
 
-                      <div v-if="canManageTask(task)" class="task-menu-dropdown">
-                        <button class="icon-button icon-button--small" type="button" @click.stop="toggleTaskMenu(task.id)">
-                          <MoreHorizontal :size="14" />
-                        </button>
-                        <div v-if="activeTaskMenu === task.id" class="dropdown-content glass-card">
-                          <button type="button" @click.stop="beginEditTask(task)">Sửa</button>
-                          <button type="button" style="color: var(--peach-500)" @click.stop="deleteTask(task.id)">Xóa</button>
+                <VueDraggable
+                  :model-value="kanbanTasksByStatus[status]"
+                  :animation="200"
+                  draggable=".kanban-card"
+                  group="tasks"
+                  ghost-class="ghost-card"
+                  drag-class="dragging-card"
+                  class="kanban-column__list"
+                  :class="{
+                    'is-drop-ready': isKanbanDragging,
+                    ...kanbanColumnClass(status),
+                  }"
+                  :data-kanban-status="status"
+                  :empty-insert-threshold="120"
+                  @start="onDragStart"
+                  @end="onDragEnd"
+                >
+                  <article
+                    v-for="task in kanbanTasksByStatus[status]"
+                    :key="task.id"
+                    class="kanban-card draggable-item"
+                    :class="{ 'is-selected': selectedTask?.id === task.id }"
+                    :data-id="task.id"
+                    @click="handleTaskCardClick(task.id)"
+                  >
+                    <small v-if="task.key" class="task-key-chip">{{
+                      task.key
+                    }}</small>
+                    <div class="kanban-card__top">
+                      <input
+                        v-if="taskBeingQuickEditedId === task.id"
+                        v-model="quickEditTitle"
+                        type="text"
+                        class="quick-edit-input"
+                        @blur="saveQuickEdit"
+                        @keyup.enter="saveQuickEdit"
+                        @click.stop
+                      />
+                      <strong
+                        v-else
+                        @dblclick.stop="handleTaskTitleDoubleClick(task)"
+                      >
+                        <span v-if="task.isPrivate" title="Nhiệm vụ riêng tư"
+                          >Khóa</span
+                        >
+                        <span v-if="task.isPinned" title="Nhiệm vụ đã ghim"
+                          >Ghim</span
+                        >
+                        {{ task.title }}
+                      </strong>
+
+                      <div class="task-card-actions">
+                        <span
+                          :class="`priority priority--${task.priority.toLowerCase()}`"
+                          >{{ task.priority }}</span
+                        >
+
+                        <div
+                          v-if="canManageTask(task)"
+                          class="task-menu-dropdown"
+                        >
+                          <button
+                            class="icon-button icon-button--small"
+                            type="button"
+                            @click.stop="toggleTaskMenu(task.id)"
+                          >
+                            <MoreHorizontal :size="14" />
+                          </button>
+                          <div
+                            v-if="activeTaskMenu === task.id"
+                            class="dropdown-content glass-card"
+                          >
+                            <button
+                              type="button"
+                              @click.stop="beginEditTask(task)"
+                            >
+                              Sửa
+                            </button>
+                            <button
+                              type="button"
+                              style="color: var(--peach-500)"
+                              @click.stop="deleteTask(task.id)"
+                            >
+                              Xóa
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                  <p class="assignee-text">{{ task.isRestricted ? 'Bị giới hạn quyền xem' : (task.assigneeName || 'Chưa giao') }} • {{ formatDate(task.dueDate) }}</p>
-                  <div class="kanban-card__meta">
-                    <span class="meta-item"><MessageSquare :size="12" /> {{ task.commentCount }}</span>
-                    <span class="meta-item">▲ {{ task.upvoteCount || 0 }}</span>
-                    <span v-if="isTaskOverdue(task)" class="overdue-tag">Quá hạn</span>
-                  </div>
-                </article>
-                <div v-if="kanbanTasksByStatus[status].length === 0" class="empty-column-placeholder">Thả nhiệm vụ vào đây</div>
-              </VueDraggable>
-            </section>
-          </div>
-
-          <div v-else class="task-list-board">
-            <div class="task-list-board__head">
-              <span>Nhiệm vụ</span>
-              <span>Người phụ trách</span>
-              <span>Hạn</span>
-              <span>Ưu tiên</span>
-              <span>Trạng thái</span>
-              <span>Hoạt động</span>
-            </div>
-
-            <article
-              v-for="task in filteredTaskList"
-              :key="task.id"
-              class="task-list-row"
-              :class="{ 'is-selected': selectedTask?.id === task.id }"
-              @click="handleTaskCardClick(task.id)"
-            >
-              <div class="task-list-row__main">
-                <strong>
-                  <span v-if="task.isPrivate" title="Nhiệm vụ riêng tư">Khóa</span>
-                  <span v-if="task.isPinned" title="Nhiệm vụ đã ghim">Ghim</span>
-                  {{ task.title }}
-                </strong>
-                <small>{{ task.key ?? ('#' + task.id.slice(0, 4)) }}</small>
-              </div>
-              <span class="task-list-row__muted">{{ task.isRestricted ? 'Bị giới hạn quyền xem' : (task.assigneeName || 'Chưa giao') }}</span>
-              <span class="task-list-row__muted">{{ formatDate(task.dueDate) }}</span>
-              <span :class="`priority priority--${task.priority.toLowerCase()}`">{{ task.priority }}</span>
-              <label class="task-status-select-wrap" @click.stop>
-                <select
-                  class="task-status-select"
-                  :value="task.status"
-                  @change.stop="handleListStatusChange(task, $event)"
-                >
-                  <option
-                    v-for="status in statusColumns"
-                    :key="status"
-                    :value="status"
-                    :disabled="!canSelectListStatus(task, status)"
+                    <p class="assignee-text">
+                      {{
+                        task.isRestricted
+                          ? "Bị giới hạn quyền xem"
+                          : task.assigneeName || "Chưa giao"
+                      }}
+                      • {{ formatDate(task.dueDate) }}
+                    </p>
+                    <div class="kanban-card__meta">
+                      <span class="meta-item"
+                        ><MessageSquare :size="12" />
+                        {{ task.commentCount }}</span
+                      >
+                      <span class="meta-item"
+                        >▲ {{ task.upvoteCount || 0 }}</span
+                      >
+                      <span v-if="isTaskOverdue(task)" class="overdue-tag"
+                        >Quá hạn</span
+                      >
+                    </div>
+                  </article>
+                  <div
+                    v-if="kanbanTasksByStatus[status].length === 0"
+                    class="empty-column-placeholder"
                   >
-                    {{ displayStatus(status) }}
-                  </option>
-                </select>
-              </label>
-              <div class="task-list-row__activity">
-                <span class="meta-item"><MessageSquare :size="12" /> {{ task.commentCount }}</span>
-                <span class="meta-item">▲ {{ task.upvoteCount || 0 }}</span>
-                <span v-if="isTaskOverdue(task)" class="overdue-tag">Quá hạn</span>
-                <div v-if="canManageTask(task)" class="task-menu-dropdown task-list-menu">
-                  <button class="icon-button icon-button--small" type="button" @click.stop="toggleTaskMenu(task.id)">
-                    <MoreHorizontal :size="14" />
-                  </button>
-                  <div v-if="activeTaskMenu === task.id" class="dropdown-content glass-card">
-                    <button type="button" @click.stop="beginEditTask(task)">Sửa</button>
-                    <button type="button" style="color: var(--peach-500)" @click.stop="deleteTask(task.id)">Xóa</button>
+                    Thả nhiệm vụ vào đây
                   </div>
-                </div>
+                </VueDraggable>
+              </section>
+            </div>
+
+            <div v-else class="task-list-board">
+              <div class="task-list-board__head">
+                <span>Nhiệm vụ</span>
+                <span>Người phụ trách</span>
+                <span>Hạn</span>
+                <span>Ưu tiên</span>
+                <span>Trạng thái</span>
+                <span>Hoạt động</span>
               </div>
-            </article>
 
-            <div v-if="filteredTaskList.length === 0" class="empty-column-placeholder task-list-empty">
-              Không có nhiệm vụ phù hợp
-            </div>
-          </div>
-        </section>
-
-        <Teleport to="body">
-          <Transition name="task-detail-drawer">
-            <div v-if="selectedTask" class="task-detail-backdrop" @click.self="closeTaskDetails">
-              <aside class="task-detail-panel task-detail-drawer glass-card" role="dialog" aria-modal="true" aria-label="Chi tiết nhiệm vụ">
-          <div class="panel-heading">
-            <div>
-              <span>Chi tiết nhiệm vụ</span>
-              <h2>{{ selectedTask?.title ?? 'Chưa chọn nhiệm vụ' }}</h2>
-            </div>
-            <div class="task-detail-drawer__actions">
-              <div v-if="selectedTask" class="task-id-badge">{{ selectedTask.key ?? ('#' + selectedTask.id.slice(0, 4)) }}</div>
-              <button type="button" class="task-detail-drawer__close" aria-label="Đóng chi tiết nhiệm vụ" @click="closeTaskDetails">
-                <X :size="18" />
-              </button>
-            </div>
-          </div>
-
-          <div v-if="canShowTaskComments" class="comment-list">
-            <TaskDevelopmentPanel v-if="selectedTask" :task-id="selectedTask.id" />
-            <TaskSkillsAiCard
-              v-if="selectedProject && selectedTask"
-              :key="selectedTask.id"
-              :task-id="selectedTask.id"
-              :project-id="selectedProject.id"
-              :organization-id="selectedProject.organizationId"
-            />
-            <TaskCompletionContributorsCard
-              v-if="selectedTask"
-              :key="`contributors-${selectedTask.id}`"
-              :task-id="selectedTask.id"
-            />
-
-            <div class="assignment-insight glass-card" data-testid="evidence-assignee-recommendation">
-              <div class="section-header section-header--space">
-                <strong>Gợi ý giao việc theo bằng chứng</strong>
-                <button class="ghost-pill" type="button" @click="loadAssignmentInsight">Tải gợi ý</button>
-              </div>
-              <p v-if="assignmentInsightLoading" class="assignment-note">Đang đối soát kỹ năng đã xác nhận và workload được phép xem...</p>
-              <p v-else-if="assignmentInsightError" class="assignment-note assignment-note--error">{{ assignmentInsightError }}</p>
-              <template v-else-if="assignmentInsight">
-                <p class="assignment-note">{{ assignmentInsight.recommendationSummary }}</p>
-                <div class="assignment-recommendation">
-                  <strong>{{ assignmentInsight.recommendedUserName || 'Chưa có đề xuất' }}</strong>
-                  <span>{{ assignmentInsight.recommendedUserId ? `Scoring ${assignmentInsight.scoringVersion}` : 'Không đủ bằng chứng để tuyên bố skill-fit' }}</span>
-                </div>
-                <div v-if="assignmentInsight.requiredSkills?.length" class="assignment-required-skills">
-                  <span v-for="skill in assignmentInsight.requiredSkills" :key="skill">{{ skill }}</span>
-                </div>
-                <div class="assignment-candidates">
-                  <article v-for="candidate in assignmentInsight.candidates.slice(0, 3)" :key="candidate.userId" class="assignment-candidate">
-                    <div class="assignment-candidate__top">
-                      <strong>{{ candidate.fullName }}</strong>
-                      <span>{{ candidate.role }}</span>
-                    </div>
-                    <div class="assignment-candidate__stats">
-                      <span>Phủ skill: {{ candidate.skillCoveragePercent }}%</span>
-                      <span>Confidence: {{ Math.round(candidate.evidenceConfidence * 100) }}%</span>
-                      <span>Đang mở: {{ candidate.activeTaskCount }}</span>
-                      <span>Quá hạn: {{ candidate.overdueTaskCount }}</span>
-                    </div>
-                    <p v-if="candidate.skillSignals.length" class="assignment-sources">Có bằng chứng: {{ candidate.skillSignals.join(', ') }} · {{ candidate.evidenceSourceCount }} task nguồn</p>
-                    <p v-else class="assignment-sources">Chưa có bằng chứng phù hợp; chỉ hiển thị workload.</p>
-                    <div v-if="candidate.evidenceSources?.length" class="assignment-source-links">
-                      <a v-for="source in candidate.evidenceSources.slice(0, 3)" :key="source.taskId" :href="source.taskUrl">
-                        {{ source.taskTitle }} · {{ source.matchedSkills.join(', ') }}
-                      </a>
-                    </div>
-                    <button
-                      v-if="assignmentInsight.evidenceState === 'ready' && candidate.skillCoveragePercent > 0"
-                      class="assignment-draft-button"
-                      type="button"
-                      @click="prepareAssignmentDraft(candidate.userId)"
+              <article
+                v-for="task in filteredTaskList"
+                :key="task.id"
+                class="task-list-row"
+                :class="{ 'is-selected': selectedTask?.id === task.id }"
+                @click="handleTaskCardClick(task.id)"
+              >
+                <div class="task-list-row__main">
+                  <strong>
+                    <span v-if="task.isPrivate" title="Nhiệm vụ riêng tư"
+                      >Khóa</span
                     >
-                      Mở form giao việc
-                    </button>
-                  </article>
+                    <span v-if="task.isPinned" title="Nhiệm vụ đã ghim"
+                      >Ghim</span
+                    >
+                    {{ task.title }}
+                  </strong>
+                  <small>{{ task.key ?? "#" + task.id.slice(0, 4) }}</small>
                 </div>
-                <p class="assignment-note">Qaly không tự giao task. Nút trên chỉ điền assignee vào form hiện có để bạn sửa và xác nhận lưu.</p>
-              </template>
-              <p v-else class="assignment-note">Nhấn “Tải gợi ý” để so khớp task skill với completion attribution đã xác nhận. Label và tin nhắn riêng không được dùng làm bằng chứng.</p>
-            </div>
-
-            <div class="time-tracking-section">
-              <div class="section-header">
-                <Clock :size="16" />
-                <strong>Nhật ký hoạt động và giờ làm</strong>
-              </div>
-              
-              <div class="timer-display glass-card">
-                <div v-if="activeTimer" class="timer-active">
-                  <div class="timer-pulse"></div>
-                  <span>Ghi giờ: <strong>{{ activeTimer.taskTitle }}</strong></span>
-                  <button class="stop-pill" @click="stopTimer(activeTimer.id)">
-                    <Square :size="14" fill="currentColor" /> Dừng
-                  </button>
-                </div>
-                <div v-else class="timer-idle">
-                  <button class="start-pill" @click="startTimer(selectedTask.id)">
-                    <Play :size="14" fill="currentColor" /> Bắt đầu
-                  </button>
-                  <button class="ghost-pill" @click="showManualForm = !showManualForm">Nhập tay</button>
-                </div>
-              </div>
-
-              <transition name="fade">
-                <div v-if="showManualForm" class="manual-log-form glass-card">
-                  <div class="form-row">
-                    <input v-model.number="manualMinutes" type="number" placeholder="Phút" />
-                    <input v-model="manualNote" type="text" placeholder="Ghi chú..." />
-                    <button class="primary-button primary-button--compact" @click="submitManualEntry">Ghi nhận</button>
-                  </div>
-                </div>
-              </transition>
-
-              <div v-if="timeEntries.length > 0" class="activity-timeline">
-                <div v-for="entry in timeEntries.slice(0, 5)" :key="entry.id" class="timeline-item">
-                  <div class="timeline-icon"><Clock :size="12" /></div>
-                  <div class="timeline-content">
-                    <div class="timeline-header">
-                      <strong>{{ entry.userName }}</strong> đã ghi 
-                      <span class="minutes-badge">{{ entry.manualMinutes || entry.totalMinutes }} phút</span>
-                    </div>
-                    <div v-if="entry.note" class="timeline-note">{{ entry.note }}</div>
-                    <div class="timeline-time">{{ formatDate(entry.startedAt) }}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="attachment-section glass-card">
-              <div class="section-header">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <File :size="16" />
-                  <strong>Tệp đính kèm và minh chứng</strong>
-                </div>
-                <label class="upload-pill">
-                  <input type="file" @change="uploadAttachment" />
-                  <span>+ Tải lên</span>
-                </label>
-              </div>
-              <div class="attachment-list">
-                <article v-for="attachment in attachments" :key="attachment.id" class="attachment-card">
-                  <div class="attachment-card__icon">
-                    <File :size="24" stroke-width="1.5" />
-                  </div>
-                  <div class="attachment-card__info">
-                    <strong class="truncate" :title="attachment.fileName">{{ attachment.fileName }}</strong>
-                    <div class="attachment-card__meta">
-                      <span>{{ formatFileSize(attachment.fileSize) }}</span>
-                      <span>•</span>
-                      <span>{{ attachment.uploadedByName }}</span>
-                    </div>
-                  </div>
-                  <div class="attachment-card__actions">
-                    <label class="evidence-toggle" title="Đánh dấu là minh chứng">
-                      <input 
-                        type="checkbox" 
-                        :checked="attachment.isEvidence" 
-                        @change="e => markAsEvidence(attachment.id, (e.target as HTMLInputElement).checked)" 
-                      />
-                      <span class="slider round"></span>
-                      <span class="evidence-label">Minh chứng</span>
-                    </label>
-
-                    <template v-if="attachment.isEvidence">
-                      <span class="evidence-status-badge" :class="(attachment.evidenceApprovalStatus || '').toLowerCase()">
-                        {{ attachment.evidenceApprovalStatus === 'Approved' ? 'Đã duyệt' : (attachment.evidenceApprovalStatus === 'Rejected' ? 'Từ chối' : 'Chờ duyệt') }}
-                      </span>
-                      
-                      <div v-if="canReviewEvidence(attachment)" class="manager-actions">
-                        <button class="approve-btn" title="Duyệt minh chứng" @click="reviewEvidence(attachment.id, true, '')">
-                          <Check :size="14" /> Duyệt
-                        </button>
-                        <button class="reject-btn" title="Từ chối" @click="rejectEvidence(attachment.id)">
-                          <Ban :size="14" /> Từ chối
-                        </button>
-                      </div>
-                    </template>
-                    
-                    <button class="icon-button icon-button--small icon-button--danger" @click="deleteAttachment(attachment)" title="Xóa tệp">
-                      <X :size="14" />
-                    </button>
-                  </div>
-                </article>
-                <div v-if="attachments.length === 0" class="empty-attachments">
-                  Chưa có tệp đính kèm nào
-                </div>
-              </div>
-            </div>
-
-            <div class="discussion-section">
-              <div class="section-header">
-                <MessageSquare :size="16" />
-                <strong>Trao đổi</strong>
-              </div>
-              <div class="chat-container glass-card">
-                <div class="chat-scroll no-scrollbar">
-                  <article
-                    v-for="comment in comments"
-                    :key="comment.id"
-                    class="chat-message"
-                    :class="{ 'chat-message--own': comment.authorId === currentUser?.id }"
+                <span class="task-list-row__muted">{{
+                  task.isRestricted
+                    ? "Bị giới hạn quyền xem"
+                    : task.assigneeName || "Chưa giao"
+                }}</span>
+                <span class="task-list-row__muted">{{
+                  formatDate(task.dueDate)
+                }}</span>
+                <span
+                  :class="`priority priority--${task.priority.toLowerCase()}`"
+                  >{{ task.priority }}</span
+                >
+                <label class="task-status-select-wrap" @click.stop>
+                  <select
+                    class="task-status-select"
+                    :value="task.status"
+                    @change.stop="handleListStatusChange(task, $event)"
                   >
-                    <div class="chat-avatar">
-                      {{ comment.authorName.charAt(0).toUpperCase() }}
+                    <option
+                      v-for="status in statusColumns"
+                      :key="status"
+                      :value="status"
+                      :disabled="!canSelectListStatus(task, status)"
+                    >
+                      {{ displayStatus(status) }}
+                    </option>
+                  </select>
+                </label>
+                <div class="task-list-row__activity">
+                  <span class="meta-item"
+                    ><MessageSquare :size="12" /> {{ task.commentCount }}</span
+                  >
+                  <span class="meta-item">▲ {{ task.upvoteCount || 0 }}</span>
+                  <span v-if="isTaskOverdue(task)" class="overdue-tag"
+                    >Quá hạn</span
+                  >
+                  <div
+                    v-if="canManageTask(task)"
+                    class="task-menu-dropdown task-list-menu"
+                  >
+                    <button
+                      class="icon-button icon-button--small"
+                      type="button"
+                      @click.stop="toggleTaskMenu(task.id)"
+                    >
+                      <MoreHorizontal :size="14" />
+                    </button>
+                    <div
+                      v-if="activeTaskMenu === task.id"
+                      class="dropdown-content glass-card"
+                    >
+                      <button type="button" @click.stop="beginEditTask(task)">
+                        Sửa
+                      </button>
+                      <button
+                        type="button"
+                        style="color: var(--peach-500)"
+                        @click.stop="deleteTask(task.id)"
+                      >
+                        Xóa
+                      </button>
                     </div>
-                    <div class="chat-bubble-wrapper">
-                      <div class="chat-bubble-meta">
-                        <strong>{{ comment.authorName }}</strong>
-                        <span>{{ formatTime(comment.createdAt) }}</span>
-                      </div>
-                      <div class="chat-bubble">
-                        <div class="comment-markdown" v-html="renderMarkdown(comment.content)"></div>
-                      </div>
-                      <div class="chat-actions">
-                        <button v-if="isProjectAdmin || comment.authorId === currentUser?.id" class="chat-action-btn" @click="deleteComment(comment.id)">Xóa</button>
-                      </div>
-                    </div>
-                  </article>
-                  <div v-if="comments.length === 0" class="empty-chat">
-                    Chưa có bình luận nào
                   </div>
                 </div>
+              </article>
 
-                <form class="chat-input-area" @submit.prevent="submitComment">
-                  <div class="chat-input-wrapper">
-                    <input v-model="newComment" type="text" placeholder="Nhập tin nhắn..." />
-                    <button class="chat-send-btn" type="submit" :disabled="!newComment.trim()">
-                      <Send :size="16" />
-                    </button>
-                  </div>
-                </form>
+              <div
+                v-if="filteredTaskList.length === 0"
+                class="empty-column-placeholder task-list-empty"
+              >
+                Không có nhiệm vụ phù hợp
               </div>
             </div>
-          </div>
-          <div v-else class="empty-state-panel">
-            <ClipboardList :size="48" />
-            <p>{{ selectedTask?.isRestricted ? 'Bạn không có quyền xem chi tiết nhiệm vụ riêng tư này.' : 'Chọn một nhiệm vụ để xem chi tiết' }}</p>
-          </div>
-              </aside>
-            </div>
-          </Transition>
-        </Teleport>
-      </div>
+          </section>
 
-      <div v-if="activeProjectTab === 'members'" class="tab-pane reveal">
-        <ProjectMembersTab
-          :members="selectedProjectMembers"
-          :users="users"
-          :is-admin="isProjectAdmin"
-          @add="addMember"
-          @remove="removeMember"
-          @update-role="updateMemberRole"
-          @update-permissions="updateMemberPermissions"
-        />
-      </div>
+          <Teleport to="body">
+            <Transition name="task-detail-drawer">
+              <div
+                v-if="selectedTask"
+                class="task-detail-backdrop"
+                @click.self="closeTaskDetails"
+              >
+                <aside
+                  class="task-detail-panel task-detail-drawer glass-card"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Chi tiết nhiệm vụ"
+                >
+                  <div class="panel-heading">
+                    <div>
+                      <span>Chi tiết nhiệm vụ</span>
+                      <h2>{{ selectedTask?.title ?? "Chưa chọn nhiệm vụ" }}</h2>
+                    </div>
+                    <div class="task-detail-drawer__actions">
+                      <div v-if="selectedTask" class="task-id-badge">
+                        {{
+                          selectedTask.key ?? "#" + selectedTask.id.slice(0, 4)
+                        }}
+                      </div>
+                      <button
+                        type="button"
+                        class="task-detail-drawer__close"
+                        aria-label="Đóng chi tiết nhiệm vụ"
+                        @click="closeTaskDetails"
+                      >
+                        <X :size="18" />
+                      </button>
+                    </div>
+                  </div>
 
-      <div v-if="canShowActivityTab" class="tab-pane reveal">
-        <ProjectActivityTab :project-id="selectedProject.id" :project-name="selectedProject.name" />
-      </div>
+                  <div v-if="canShowTaskComments" class="comment-list">
+                    <TaskDevelopmentPanel
+                      v-if="selectedTask"
+                      :task-id="selectedTask.id"
+                    />
+                    <TaskSkillsAiCard
+                      v-if="selectedProject && selectedTask"
+                      :key="selectedTask.id"
+                      :task-id="selectedTask.id"
+                      :project-id="selectedProject.id"
+                      :organization-id="selectedProject.organizationId"
+                    />
+                    <TaskCompletionContributorsCard
+                      v-if="selectedTask"
+                      :key="`contributors-${selectedTask.id}`"
+                      :task-id="selectedTask.id"
+                    />
 
-      <div v-if="activeProjectTab === 'wiki'" class="tab-pane reveal">
-        <ProjectWikiTab :project-name="selectedProject?.name ?? ''" :is-admin="isProjectAdmin" />
-      </div>
+                    <div
+                      class="assignment-insight glass-card"
+                      data-testid="evidence-assignee-recommendation"
+                    >
+                      <div class="section-header section-header--space">
+                        <strong>Gợi ý giao việc theo bằng chứng</strong>
+                        <button
+                          class="ghost-pill"
+                          type="button"
+                          @click="loadAssignmentInsight"
+                        >
+                          Tải gợi ý
+                        </button>
+                      </div>
+                      <p
+                        v-if="assignmentInsightLoading"
+                        class="assignment-note"
+                      >
+                        Đang đối soát kỹ năng đã xác nhận và workload được phép
+                        xem...
+                      </p>
+                      <p
+                        v-else-if="assignmentInsightError"
+                        class="assignment-note assignment-note--error"
+                      >
+                        {{ assignmentInsightError }}
+                      </p>
+                      <template v-else-if="assignmentInsight">
+                        <p class="assignment-note">
+                          {{ assignmentInsight.recommendationSummary }}
+                        </p>
+                        <div class="assignment-recommendation">
+                          <strong>{{
+                            assignmentInsight.recommendedUserName ||
+                            "Chưa có đề xuất"
+                          }}</strong>
+                          <span>{{
+                            assignmentInsight.recommendedUserId
+                              ? `Scoring ${assignmentInsight.scoringVersion}`
+                              : "Không đủ bằng chứng để tuyên bố skill-fit"
+                          }}</span>
+                        </div>
+                        <div
+                          v-if="assignmentInsight.requiredSkills?.length"
+                          class="assignment-required-skills"
+                        >
+                          <span
+                            v-for="skill in assignmentInsight.requiredSkills"
+                            :key="skill"
+                            >{{ skill }}</span
+                          >
+                        </div>
+                        <div class="assignment-candidates">
+                          <article
+                            v-for="candidate in assignmentInsight.candidates.slice(
+                              0,
+                              3,
+                            )"
+                            :key="candidate.userId"
+                            class="assignment-candidate"
+                          >
+                            <div class="assignment-candidate__top">
+                              <strong>{{ candidate.fullName }}</strong>
+                              <span>{{ candidate.role }}</span>
+                            </div>
+                            <div class="assignment-candidate__stats">
+                              <span
+                                >Phủ skill:
+                                {{ candidate.skillCoveragePercent }}%</span
+                              >
+                              <span
+                                >Confidence:
+                                {{
+                                  Math.round(
+                                    candidate.evidenceConfidence * 100,
+                                  )
+                                }}%</span
+                              >
+                              <span
+                                >Đang mở: {{ candidate.activeTaskCount }}</span
+                              >
+                              <span
+                                >Quá hạn: {{ candidate.overdueTaskCount }}</span
+                              >
+                            </div>
+                            <p
+                              v-if="candidate.skillSignals.length"
+                              class="assignment-sources"
+                            >
+                              Có bằng chứng:
+                              {{ candidate.skillSignals.join(", ") }} ·
+                              {{ candidate.evidenceSourceCount }} task nguồn
+                            </p>
+                            <p v-else class="assignment-sources">
+                              Chưa có bằng chứng phù hợp; chỉ hiển thị workload.
+                            </p>
+                            <div
+                              v-if="candidate.evidenceSources?.length"
+                              class="assignment-source-links"
+                            >
+                              <a
+                                v-for="source in candidate.evidenceSources.slice(
+                                  0,
+                                  3,
+                                )"
+                                :key="source.taskId"
+                                :href="source.taskUrl"
+                              >
+                                {{ source.taskTitle }} ·
+                                {{ source.matchedSkills.join(", ") }}
+                              </a>
+                            </div>
+                            <button
+                              v-if="
+                                assignmentInsight.evidenceState === 'ready' &&
+                                candidate.skillCoveragePercent > 0
+                              "
+                              class="assignment-draft-button"
+                              type="button"
+                              @click="prepareAssignmentDraft(candidate.userId)"
+                            >
+                              Mở form giao việc
+                            </button>
+                          </article>
+                        </div>
+                        <p class="assignment-note">
+                          Qaly không tự giao task. Nút trên chỉ điền assignee
+                          vào form hiện có để bạn sửa và xác nhận lưu.
+                        </p>
+                      </template>
+                      <p v-else class="assignment-note">
+                        Nhấn “Tải gợi ý” để so khớp task skill với completion
+                        attribution đã xác nhận. Label và tin nhắn riêng không
+                        được dùng làm bằng chứng.
+                      </p>
+                    </div>
 
-      <div v-if="canShowGanttTab" class="tab-pane reveal">
-        <ProjectGanttTab
+                    <div class="time-tracking-section">
+                      <div class="section-header">
+                        <Clock :size="16" />
+                        <strong>Nhật ký hoạt động và giờ làm</strong>
+                      </div>
+
+                      <div class="timer-display glass-card">
+                        <div v-if="activeTimer" class="timer-active">
+                          <div class="timer-pulse"></div>
+                          <span
+                            >Ghi giờ:
+                            <strong>{{ activeTimer.taskTitle }}</strong></span
+                          >
+                          <button
+                            class="stop-pill"
+                            @click="stopTimer(activeTimer.id)"
+                          >
+                            <Square :size="14" fill="currentColor" /> Dừng
+                          </button>
+                        </div>
+                        <div v-else class="timer-idle">
+                          <button
+                            class="start-pill"
+                            @click="startTimer(selectedTask.id)"
+                          >
+                            <Play :size="14" fill="currentColor" /> Bắt đầu
+                          </button>
+                          <button
+                            class="ghost-pill"
+                            @click="showManualForm = !showManualForm"
+                          >
+                            Nhập tay
+                          </button>
+                        </div>
+                      </div>
+
+                      <transition name="fade">
+                        <div
+                          v-if="showManualForm"
+                          class="manual-log-form glass-card"
+                        >
+                          <div class="form-row">
+                            <input
+                              v-model.number="manualMinutes"
+                              type="number"
+                              placeholder="Phút"
+                            />
+                            <input
+                              v-model="manualNote"
+                              type="text"
+                              placeholder="Ghi chú..."
+                            />
+                            <button
+                              class="primary-button primary-button--compact"
+                              @click="submitManualEntry"
+                            >
+                              Ghi nhận
+                            </button>
+                          </div>
+                        </div>
+                      </transition>
+
+                      <div
+                        v-if="timeEntries.length > 0"
+                        class="activity-timeline"
+                      >
+                        <div
+                          v-for="entry in timeEntries.slice(0, 5)"
+                          :key="entry.id"
+                          class="timeline-item"
+                        >
+                          <div class="timeline-icon"><Clock :size="12" /></div>
+                          <div class="timeline-content">
+                            <div class="timeline-header">
+                              <strong>{{ entry.userName }}</strong> đã ghi
+                              <span class="minutes-badge"
+                                >{{
+                                  entry.manualMinutes || entry.totalMinutes
+                                }}
+                                phút</span
+                              >
+                            </div>
+                            <div v-if="entry.note" class="timeline-note">
+                              {{ entry.note }}
+                            </div>
+                            <div class="timeline-time">
+                              {{ formatDate(entry.startedAt) }}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="attachment-section glass-card">
+                      <div class="section-header">
+                        <div
+                          style="display: flex; align-items: center; gap: 8px"
+                        >
+                          <File :size="16" />
+                          <strong>Tệp đính kèm và minh chứng</strong>
+                        </div>
+                        <label class="upload-pill">
+                          <input type="file" @change="uploadAttachment" />
+                          <span>+ Tải lên</span>
+                        </label>
+                      </div>
+                      <div class="attachment-list">
+                        <article
+                          v-for="attachment in attachments"
+                          :key="attachment.id"
+                          class="attachment-card"
+                        >
+                          <div class="attachment-card__icon">
+                            <File :size="24" stroke-width="1.5" />
+                          </div>
+                          <div class="attachment-card__info">
+                            <strong
+                              class="truncate"
+                              :title="attachment.fileName"
+                              >{{ attachment.fileName }}</strong
+                            >
+                            <div class="attachment-card__meta">
+                              <span>{{
+                                formatFileSize(attachment.fileSize)
+                              }}</span>
+                              <span>•</span>
+                              <span>{{ attachment.uploadedByName }}</span>
+                            </div>
+                          </div>
+                          <div class="attachment-card__actions">
+                            <label
+                              class="evidence-toggle"
+                              title="Đánh dấu là minh chứng"
+                            >
+                              <input
+                                type="checkbox"
+                                :checked="attachment.isEvidence"
+                                @change="
+                                  (e) =>
+                                    markAsEvidence(
+                                      attachment.id,
+                                      (e.target as HTMLInputElement).checked,
+                                    )
+                                "
+                              />
+                              <span class="slider round"></span>
+                              <span class="evidence-label">Minh chứng</span>
+                            </label>
+
+                            <template v-if="attachment.isEvidence">
+                              <span
+                                class="evidence-status-badge"
+                                :class="
+                                  (
+                                    attachment.evidenceApprovalStatus || ''
+                                  ).toLowerCase()
+                                "
+                              >
+                                {{
+                                  attachment.evidenceApprovalStatus ===
+                                  "Approved"
+                                    ? "Đã duyệt"
+                                    : attachment.evidenceApprovalStatus ===
+                                        "Rejected"
+                                      ? "Từ chối"
+                                      : "Chờ duyệt"
+                                }}
+                              </span>
+
+                              <div
+                                v-if="canReviewEvidence(attachment)"
+                                class="manager-actions"
+                              >
+                                <button
+                                  class="approve-btn"
+                                  title="Duyệt minh chứng"
+                                  @click="
+                                    reviewEvidence(attachment.id, true, '')
+                                  "
+                                >
+                                  <Check :size="14" /> Duyệt
+                                </button>
+                                <button
+                                  class="reject-btn"
+                                  title="Từ chối"
+                                  @click="rejectEvidence(attachment.id)"
+                                >
+                                  <Ban :size="14" /> Từ chối
+                                </button>
+                              </div>
+                            </template>
+
+                            <button
+                              class="icon-button icon-button--small icon-button--danger"
+                              @click="deleteAttachment(attachment)"
+                              title="Xóa tệp"
+                            >
+                              <X :size="14" />
+                            </button>
+                          </div>
+                        </article>
+                        <div
+                          v-if="attachments.length === 0"
+                          class="empty-attachments"
+                        >
+                          Chưa có tệp đính kèm nào
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="discussion-section">
+                      <div class="section-header">
+                        <MessageSquare :size="16" />
+                        <strong>Trao đổi</strong>
+                      </div>
+                      <div class="chat-container glass-card">
+                        <div class="chat-scroll no-scrollbar">
+                          <article
+                            v-for="comment in comments"
+                            :key="comment.id"
+                            class="chat-message"
+                            :class="{
+                              'chat-message--own':
+                                comment.authorId === currentUser?.id,
+                            }"
+                          >
+                            <div class="chat-avatar">
+                              {{ comment.authorName.charAt(0).toUpperCase() }}
+                            </div>
+                            <div class="chat-bubble-wrapper">
+                              <div class="chat-bubble-meta">
+                                <strong>{{ comment.authorName }}</strong>
+                                <span>{{ formatTime(comment.createdAt) }}</span>
+                              </div>
+                              <div class="chat-bubble">
+                                <div
+                                  class="comment-markdown"
+                                  v-html="renderMarkdown(comment.content)"
+                                ></div>
+                              </div>
+                              <div class="chat-actions">
+                                <button
+                                  v-if="
+                                    isProjectAdmin ||
+                                    comment.authorId === currentUser?.id
+                                  "
+                                  class="chat-action-btn"
+                                  @click="deleteComment(comment.id)"
+                                >
+                                  Xóa
+                                </button>
+                              </div>
+                            </div>
+                          </article>
+                          <div v-if="comments.length === 0" class="empty-chat">
+                            Chưa có bình luận nào
+                          </div>
+                        </div>
+
+                        <form
+                          class="chat-input-area"
+                          @submit.prevent="submitComment"
+                        >
+                          <div class="chat-input-wrapper">
+                            <input
+                              v-model="newComment"
+                              type="text"
+                              placeholder="Nhập tin nhắn..."
+                            />
+                            <button
+                              class="chat-send-btn"
+                              type="submit"
+                              :disabled="!newComment.trim()"
+                            >
+                              <Send :size="16" />
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-else class="empty-state-panel">
+                    <ClipboardList :size="48" />
+                    <p>
+                      {{
+                        selectedTask?.isRestricted
+                          ? "Bạn không có quyền xem chi tiết nhiệm vụ riêng tư này."
+                          : "Chọn một nhiệm vụ để xem chi tiết"
+                      }}
+                    </p>
+                  </div>
+                </aside>
+              </div>
+            </Transition>
+          </Teleport>
+        </div>
+
+        <div v-if="activeProjectTab === 'members'" class="tab-pane reveal">
+          <ProjectMembersTab
+            :members="selectedProjectMembers"
+            :users="users"
+            :is-admin="isProjectAdmin"
+            @add="addMember"
+            @remove="removeMember"
+            @update-role="updateMemberRole"
+            @update-permissions="updateMemberPermissions"
+          />
+        </div>
+
+        <div v-if="canShowActivityTab" class="tab-pane reveal">
+          <ProjectActivityTab
+            :project-id="selectedProject.id"
+            :project-name="selectedProject.name"
+          />
+        </div>
+
+        <div v-if="activeProjectTab === 'wiki'" class="tab-pane reveal">
+          <ProjectWikiTab
+            :project-name="selectedProject?.name ?? ''"
+            :is-admin="isProjectAdmin"
+          />
+        </div>
+
+        <div v-if="canShowWebhooksTab" class="tab-pane reveal">
+          <WebhooksTab :project-id="selectedProject.id" />
+        </div>
+
+        <div v-if="canShowGitHubTab" class="tab-pane reveal">
+          <GitHubProjectIntegration
+            :project-id="selectedProject.id"
+            :can-manage="isProjectAdmin"
+          />
+        </div>
+
+        <ImportModal
+          v-if="canShowImportModal"
           :project-id="selectedProject.id"
+          :project-name="selectedProject.name"
           :project-members="selectedProject.members"
-          @open-task="selectTaskInProject"
+          @close="showImportModal = false"
+          @imported="onImported"
         />
-      </div>
 
-      <div v-if="canShowWebhooksTab" class="tab-pane reveal">
-        <WebhooksTab :project-id="selectedProject.id" />
-      </div>
-
-      <div v-if="canShowGitHubTab" class="tab-pane reveal">
-        <GitHubProjectIntegration :project-id="selectedProject.id" :can-manage="isProjectAdmin" />
-      </div>
-
-      <ImportModal
-        v-if="canShowImportModal"
-        :project-id="selectedProject.id"
-        :project-name="selectedProject.name"
-        :project-members="selectedProject.members"
-        @close="showImportModal = false"
-        @imported="onImported"
-      />
-
-      <ImportUndoBanner
-        v-if="undoBannerData"
-        :import-session-id="undoBannerData.importSessionId"
-        :imported-count="undoBannerData.importedCount"
-        :failed-count="undoBannerData.failedCount"
-        :duplicate-skipped-count="undoBannerData.duplicateSkippedCount"
-        :created-at="undoBannerData.createdAt"
-        @undo="handleUndoFromBanner"
-        @dismiss="undoBannerData = null"
-      />
+        <ImportUndoBanner
+          v-if="undoBannerData"
+          :import-session-id="undoBannerData.importSessionId"
+          :imported-count="undoBannerData.importedCount"
+          :failed-count="undoBannerData.failedCount"
+          :duplicate-skipped-count="undoBannerData.duplicateSkippedCount"
+          :created-at="undoBannerData.createdAt"
+          @undo="handleUndoFromBanner"
+          @dismiss="undoBannerData = null"
+        />
       </template>
     </div>
   </div>
@@ -1189,7 +1766,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   font-size: 12px;
   font-weight: 800;
   cursor: pointer;
-  transition: background 180ms ease, color 180ms ease, box-shadow 180ms ease;
+  transition:
+    background 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .task-view-toggle__button.is-active {
@@ -1244,12 +1824,19 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   padding: 4px;
   border: 1px dashed transparent;
   border-radius: var(--qaly-radius-lg);
-  transition: border-color 0.16s ease, background 0.16s ease;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease;
 }
 
 .kanban-column {
   position: relative;
-  transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease, opacity 180ms ease, transform 180ms ease;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease,
+    transform 180ms ease;
 }
 
 .kanban-board.is-dragging-task .kanban-column {
@@ -1266,7 +1853,11 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   opacity: 1;
   transform: translateY(-2px);
   border-color: rgba(16, 185, 129, 0.48);
-  background: linear-gradient(180deg, rgba(236, 253, 245, 0.96), rgba(255, 255, 255, 0.88));
+  background: linear-gradient(
+    180deg,
+    rgba(236, 253, 245, 0.96),
+    rgba(255, 255, 255, 0.88)
+  );
   box-shadow: var(--qaly-shadow-md);
 }
 
@@ -1387,7 +1978,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .task-list-board__head,
 .task-list-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1.6fr) minmax(130px, 0.85fr) minmax(96px, 0.65fr) minmax(88px, 0.55fr) minmax(110px, 0.7fr) minmax(150px, 0.9fr);
+  grid-template-columns:
+    minmax(220px, 1.6fr) minmax(130px, 0.85fr) minmax(96px, 0.65fr)
+    minmax(88px, 0.55fr) minmax(110px, 0.7fr) minmax(150px, 0.9fr);
   gap: 14px;
   align-items: center;
 }
@@ -1407,7 +2000,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   border-radius: var(--qaly-radius-lg);
   background: var(--panel);
   cursor: pointer;
-  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
 }
 
 .task-list-row:hover,
@@ -1573,7 +2169,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   color: var(--muted);
   background: var(--bg-soft);
   cursor: pointer;
-  transition: background 180ms ease, color 180ms ease, transform 180ms ease;
+  transition:
+    background 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
 }
 
 .task-detail-drawer__close:hover {
@@ -1619,7 +2218,11 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   min-height: 132px;
   border: 1px solid rgba(226, 232, 240, 0.95);
   border-radius: var(--qaly-radius-lg);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.92));
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.98),
+    rgba(248, 250, 252, 0.92)
+  );
   box-shadow: var(--qaly-shadow-md);
 }
 
@@ -1703,7 +2306,11 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   min-height: 68px;
   padding: 14px 16px;
   border-radius: var(--qaly-radius-lg);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.92));
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.98),
+    rgba(248, 250, 252, 0.92)
+  );
 }
 
 .task-list-row__main strong {
@@ -1778,7 +2385,12 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .close-pill {
   border-radius: 999px;
   cursor: pointer;
-  transition: transform 220ms ease, border-color 220ms ease, background 220ms ease, box-shadow 220ms ease, color 220ms ease;
+  transition:
+    transform 220ms ease,
+    border-color 220ms ease,
+    background 220ms ease,
+    box-shadow 220ms ease,
+    color 220ms ease;
 }
 
 .start-pill,
@@ -2179,7 +2791,12 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
-  transition: transform 220ms ease, border-color 220ms ease, background 220ms ease, box-shadow 220ms ease, color 220ms ease;
+  transition:
+    transform 220ms ease,
+    border-color 220ms ease,
+    background 220ms ease,
+    box-shadow 220ms ease,
+    color 220ms ease;
 }
 
 .import-btn-sm:hover {
@@ -2306,7 +2923,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--qaly-radius-lg);
-  transition: transform 200ms ease, box-shadow 200ms ease;
+  transition:
+    transform 200ms ease,
+    box-shadow 200ms ease;
 }
 
 .attachment-card:hover {
@@ -2372,7 +2991,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   width: 32px;
   height: 18px;
   background-color: #cbd5e1;
-  transition: .4s;
+  transition: 0.4s;
   border-radius: 34px;
 }
 
@@ -2384,7 +3003,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   left: 2px;
   bottom: 2px;
   background-color: white;
-  transition: .4s;
+  transition: 0.4s;
   border-radius: 50%;
 }
 
@@ -2414,17 +3033,27 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   white-space: nowrap;
 }
 
-.evidence-status-badge.approved { background: rgba(16, 185, 129, 0.15); color: #059669; }
-.evidence-status-badge.rejected { background: rgba(239, 68, 68, 0.15); color: #dc2626; }
+.evidence-status-badge.approved {
+  background: rgba(16, 185, 129, 0.15);
+  color: #059669;
+}
+.evidence-status-badge.rejected {
+  background: rgba(239, 68, 68, 0.15);
+  color: #dc2626;
+}
 .evidence-status-badge.pending,
-.evidence-status-badge { background: rgba(245, 158, 11, 0.15); color: #d97706; }
+.evidence-status-badge {
+  background: rgba(245, 158, 11, 0.15);
+  color: #d97706;
+}
 
 .manager-actions {
   display: flex;
   gap: 4px;
 }
 
-.approve-btn, .reject-btn {
+.approve-btn,
+.reject-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -2441,15 +3070,22 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   background: rgba(16, 185, 129, 0.1);
   color: #059669;
 }
-.approve-btn:hover { background: #10b981; color: white; }
+.approve-btn:hover {
+  background: #10b981;
+  color: white;
+}
 
 .reject-btn {
   background: rgba(239, 68, 68, 0.1);
   color: #dc2626;
 }
-.reject-btn:hover { background: #ef4444; color: white; }
+.reject-btn:hover {
+  background: #ef4444;
+  color: white;
+}
 
-.empty-attachments, .empty-chat {
+.empty-attachments,
+.empty-chat {
   text-align: center;
   padding: 24px;
   color: var(--muted);
@@ -2542,7 +3178,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   border-radius: 0 16px 16px 16px;
   color: var(--text-strong);
   font-size: 13px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
 }
 
 .chat-message--own .chat-bubble {
@@ -2632,11 +3268,15 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
 /* Modal Styles */
 .task-modal-backdrop {
-  position: fixed; inset: 0; z-index: 9999;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
   background: rgba(15, 23, 42, 0.4);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  display: flex; align-items: center; justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -2646,7 +3286,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   --text-main: #0f172a;
   --text-muted: #64748b;
   --border-color: #e2e8f0;
-  
+
   width: min(520px, 94vw);
   max-height: 88vh;
   overflow-y: auto;
@@ -2659,33 +3299,41 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 }
 
 .task-modal-header {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 24px 28px 20px;
   border-bottom: 1px solid var(--border-color);
 }
 
-.task-modal-title { 
-  display: flex; align-items: center; gap: 12px;
+.task-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   color: var(--text-main);
 }
-.task-modal-title h2 { 
-  font-size: 1.25rem; font-weight: 700; margin: 0;
+.task-modal-title h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0;
   letter-spacing: -0.01em;
 }
 
-.icon-button { 
-  background: transparent; 
-  border: none; 
-  color: var(--text-muted); 
-  cursor: pointer; 
-  transition: all 0.2s ease; 
-  display: flex; align-items: center; justify-content: center; 
-  padding: 8px; 
-  border-radius: 50%; 
+.icon-button {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border-radius: 50%;
 }
-.icon-button:hover { 
-  background: #f1f5f9; 
-  color: var(--text-main); 
+.icon-button:hover {
+  background: #f1f5f9;
+  color: var(--text-main);
 }
 
 .task-modal-body {
@@ -2696,10 +3344,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   margin-bottom: 24px;
 }
 .form-group label {
-  display: block; 
-  font-size: 0.875rem; 
-  font-weight: 600; 
-  color: var(--text-main); 
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-main);
   margin-bottom: 8px;
 }
 
@@ -2710,14 +3358,14 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 }
 
 .modal-input {
-  width: 100%; 
-  padding: 12px 16px; 
-  border-radius: var(--qaly-radius-lg); 
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: var(--qaly-radius-lg);
   font-size: 0.95rem;
-  background: #f8fafc; 
+  background: #f8fafc;
   border: 1px solid var(--border-color);
-  color: var(--text-main); 
-  outline: none; 
+  color: var(--text-main);
+  outline: none;
   transition: all 0.2s ease;
   box-sizing: border-box;
 }
@@ -2725,15 +3373,17 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   background: #ffffff;
   border-color: #cbd5e1;
 }
-.modal-input:focus { 
+.modal-input:focus {
   background: #ffffff;
-  border-color: var(--accent); 
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1); 
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
 }
-.modal-input::placeholder { color: #94a3b8; }
+.modal-input::placeholder {
+  color: #94a3b8;
+}
 
-textarea.modal-input { 
-  resize: vertical; 
+textarea.modal-input {
+  resize: vertical;
   min-height: 90px;
   line-height: 1.5;
 }
@@ -2766,52 +3416,75 @@ textarea.modal-input {
 }
 
 .task-modal-actions {
-  display: flex; justify-content: flex-end; gap: 12px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
   padding-top: 16px;
   border-top: 1px solid var(--border-color);
 }
 
 .btn {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 10px 24px; border-radius: var(--qaly-radius-lg); font-size: 0.95rem;
-  font-weight: 600; border: none; cursor: pointer; transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  border-radius: var(--qaly-radius-lg);
+  font-size: 0.95rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
 }
-.btn--primary { 
-  background: var(--accent); 
-  color: #ffffff; 
+.btn--primary {
+  background: var(--accent);
+  color: #ffffff;
   box-shadow: 0 2px 8px -2px rgba(37, 99, 235, 0.4);
 }
-.btn--primary:hover:not(:disabled) { 
-  background: var(--accent-hover); 
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
   transform: translateY(-1px);
   box-shadow: var(--qaly-shadow-md);
 }
 .btn--primary:active:not(:disabled) {
   transform: translateY(0);
 }
-.btn--primary:disabled { 
-  opacity: 0.6; cursor: not-allowed; 
+.btn--primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
   background: #94a3b8;
   box-shadow: none;
 }
 
 .btn--ghost {
-  background: transparent; 
+  background: transparent;
   color: var(--text-muted);
   border: 1px solid var(--border-color);
 }
-.btn--ghost:hover { 
-  background: #f8fafc; 
-  color: var(--text-main); 
+.btn--ghost:hover {
+  background: #f8fafc;
+  color: var(--text-main);
   border-color: #cbd5e1;
 }
 
-@keyframes fadeIn { 
-  from { opacity: 0; backdrop-filter: none; } 
-  to { opacity: 1; backdrop-filter: none; } 
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    backdrop-filter: none;
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: none;
+  }
 }
 @keyframes modalScaleIn {
-  from { opacity: 0; transform: scale(0.96) translateY(10px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 </style>
+
