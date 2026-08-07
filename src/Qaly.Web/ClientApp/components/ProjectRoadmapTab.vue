@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from "vue";
+import {
+  ref,
+  computed,
+  onMounted,
+  onBeforeUnmount,
+  watch,
+  nextTick,
+} from "vue";
 import {
   Compass,
   CheckCircle2,
@@ -106,6 +113,10 @@ const quickTaskDueDate = ref("");
 const selectedTaskIdsForSprint = ref<string[]>([]);
 const isSavingTaskAssignment = ref(false);
 const isGeneratingPreset = ref(false);
+const milestoneTitleInput = ref<HTMLInputElement | null>(null);
+const quickTaskTitleInput = ref<HTMLInputElement | null>(null);
+const activeModalRoot = ref<HTMLElement | null>(null);
+const confirmationModalRoot = ref<HTMLElement | null>(null);
 
 // Task status filter inside milestone detail
 const milestoneTaskSearch = ref("");
@@ -182,6 +193,131 @@ const timelineDays = computed(() => {
   });
 });
 
+const activeModalKind = computed(() => {
+  if (showCreateModal.value || showEditModal.value) return "milestone";
+  if (showTaskAssignModal.value) return "taskAssign";
+  if (showQuickCreateTaskModal.value) return "quickTask";
+  return null;
+});
+
+const modalFocusableSelector = [
+  'button:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
+
+function focusActiveModal() {
+  const root = confirmation.value
+    ? confirmationModalRoot.value
+    : activeModalRoot.value;
+  if (!root) return;
+
+  const preferred = root.querySelector<HTMLElement>(
+    '[data-modal-initial-focus="true"], [autofocus]',
+  );
+  const firstFocusable =
+    preferred || root.querySelector<HTMLElement>(modalFocusableSelector) || root;
+
+  firstFocusable.focus?.();
+}
+
+function closeMilestoneModal() {
+  showCreateModal.value = false;
+  showEditModal.value = false;
+  resetMilestoneForm();
+}
+
+function closeTaskAssignModal() {
+  showTaskAssignModal.value = false;
+}
+
+function closeQuickCreateTaskModal() {
+  showQuickCreateTaskModal.value = false;
+}
+
+function closeActiveModal() {
+  if (showCreateModal.value || showEditModal.value) {
+    closeMilestoneModal();
+    return;
+  }
+  if (showTaskAssignModal.value) {
+    closeTaskAssignModal();
+    return;
+  }
+  if (showQuickCreateTaskModal.value) {
+    closeQuickCreateTaskModal();
+    return;
+  }
+  confirmation.value = null;
+}
+
+function handleModalKeydown(event: KeyboardEvent) {
+  if (!activeModalKind.value && !confirmation.value) return;
+
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeActiveModal();
+    return;
+  }
+
+  if (event.key !== "Tab") return;
+
+  const root = confirmation.value
+    ? confirmationModalRoot.value
+    : activeModalRoot.value;
+  if (!root) return;
+
+  const focusables = Array.from(
+    root.querySelectorAll<HTMLElement>(modalFocusableSelector),
+  ).filter((el) => !el.hasAttribute("disabled") && el.offsetParent !== null);
+
+  if (focusables.length === 0) {
+    event.preventDefault();
+    root.focus?.();
+    return;
+  }
+
+  const currentIndex = focusables.indexOf(document.activeElement as HTMLElement);
+  const lastIndex = focusables.length - 1;
+
+  if (event.shiftKey) {
+    if (currentIndex <= 0) {
+      event.preventDefault();
+      focusables[lastIndex].focus();
+    }
+    return;
+  }
+
+  if (currentIndex === -1 || currentIndex === lastIndex) {
+    event.preventDefault();
+    focusables[0].focus();
+  }
+}
+
+watch(
+  activeModalKind,
+  async (kind) => {
+    if (!kind) return;
+    await nextTick();
+    focusActiveModal();
+  },
+  { flush: "post" },
+);
+
+watch(
+  confirmation,
+  async (value) => {
+    if (!value) return;
+    await nextTick();
+    const focusTarget =
+      confirmationModalRoot.value?.querySelector<HTMLElement>("button") ?? null;
+    focusTarget?.focus();
+  },
+  { flush: "post" },
+);
+
 function getTaskStyle(task: DashboardTask) {
   const startTime =
     toValidTimestamp(task.startDate) ?? toValidTimestamp(task.endDate);
@@ -218,6 +354,11 @@ function taskTone(task: DashboardTask) {
 
 onMounted(() => {
   loadSprints();
+  window.addEventListener("keydown", handleModalKeydown);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", handleModalKeydown);
 });
 
 watch(
@@ -505,8 +646,7 @@ async function handleCreateMilestone() {
       }),
     });
 
-    showCreateModal.value = false;
-    resetMilestoneForm();
+    closeMilestoneModal();
     await loadSprints();
     showSuccess("Đã thêm mốc tiến độ mới.");
   } catch (error) {
@@ -539,9 +679,7 @@ async function handleUpdateMilestone() {
       }),
     });
 
-    showEditModal.value = false;
-    editingSprintId.value = null;
-    resetMilestoneForm();
+    closeMilestoneModal();
     await loadSprints();
     showSuccess("Đã cập nhật thông tin mốc tiến độ.");
   } catch (error) {
@@ -600,7 +738,7 @@ async function handleSaveTaskAssignments() {
       method: "PUT",
       body: JSON.stringify({ taskIds: selectedTaskIdsForSprint.value }),
     });
-    showTaskAssignModal.value = false;
+    closeTaskAssignModal();
     await loadDashboard();
     await loadSprints();
     showSuccess("Đã cập nhật danh sách công việc thuộc mốc.");
@@ -633,7 +771,7 @@ async function handleQuickCreateTask() {
       }),
     });
 
-    showQuickCreateTaskModal.value = false;
+    closeQuickCreateTaskModal();
     quickTaskTitle.value = "";
     quickTaskPriority.value = "Medium";
     quickTaskAssigneeId.value = "";
@@ -1548,11 +1686,18 @@ function getDaysRemaining(endDateStr: string): {
       <div
         v-if="showCreateModal || showEditModal"
         class="modal-backdrop"
-        @click.self="showCreateModal = showEditModal = false"
+        @click.self="closeMilestoneModal()"
       >
-        <div class="milestone-modal glass-card">
+        <div
+          ref="activeModalRoot"
+          class="roadmap-modal-shell roadmap-modal-shell--compact glass-card"
+          role="dialog"
+          aria-modal="true"
+          :aria-labelledby="showEditModal ? 'milestone-modal-title-edit' : 'milestone-modal-title-create'"
+          tabindex="-1"
+        >
           <div class="modal-header">
-            <h4>
+            <h4 :id="showEditModal ? 'milestone-modal-title-edit' : 'milestone-modal-title-create'">
               {{
                 showEditModal ? "Chỉnh sửa Mốc Tiến Độ" : "Thêm Mốc Tiến Độ Mới"
               }}
@@ -1560,7 +1705,8 @@ function getDaysRemaining(endDateStr: string): {
             <button
               type="button"
               class="icon-button"
-              @click="showCreateModal = showEditModal = false"
+              @click="closeMilestoneModal()"
+              aria-label="Đóng hộp thoại mốc tiến độ"
             >
               <X :size="18" />
             </button>
@@ -1575,11 +1721,13 @@ function getDaysRemaining(endDateStr: string): {
             <div class="form-group">
               <label>Tên mốc / Giai đoạn *</label>
               <input
+                ref="milestoneTitleInput"
                 v-model="milestoneName"
                 type="text"
                 placeholder="Ví dụ: Mốc 1: Scope Alignment & Prototype UI..."
                 required
                 class="modal-input"
+                data-modal-initial-focus="true"
               />
             </div>
 
@@ -1624,11 +1772,11 @@ function getDaysRemaining(endDateStr: string): {
               ></textarea>
             </div>
 
-            <div class="modal-actions mt-4">
+            <div class="modal-actions">
               <button
                 type="button"
                 class="btn btn--ghost"
-                @click="showCreateModal = showEditModal = false"
+                @click="closeMilestoneModal()"
               >
                 Hủy
               </button>
@@ -1646,18 +1794,26 @@ function getDaysRemaining(endDateStr: string): {
       <div
         v-if="showTaskAssignModal"
         class="modal-backdrop"
-        @click.self="showTaskAssignModal = false"
+        @click.self="closeTaskAssignModal()"
       >
-        <div class="task-assign-modal glass-card">
+        <div
+          ref="activeModalRoot"
+          class="roadmap-modal-shell roadmap-modal-shell--wide glass-card"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="task-assign-modal-title"
+          tabindex="-1"
+        >
           <div class="modal-header">
-            <h4>
+            <h4 id="task-assign-modal-title">
               <LinkIcon :size="18" class="text-primary me-2" /> Gán Công Việc
               Vào Mốc: {{ activeMilestone?.name }}
             </h4>
             <button
               type="button"
               class="icon-button"
-              @click="showTaskAssignModal = false"
+              @click="closeTaskAssignModal()"
+              aria-label="Đóng hộp thoại gán công việc vào mốc"
             >
               <X :size="18" />
             </button>
@@ -1705,11 +1861,11 @@ function getDaysRemaining(endDateStr: string): {
               </label>
             </div>
 
-            <div class="modal-actions mt-4">
+            <div class="modal-actions">
               <button
                 type="button"
                 class="btn btn--ghost"
-                @click="showTaskAssignModal = false"
+                @click="closeTaskAssignModal()"
               >
                 Hủy
               </button>
@@ -1734,18 +1890,26 @@ function getDaysRemaining(endDateStr: string): {
       <div
         v-if="showQuickCreateTaskModal"
         class="modal-backdrop"
-        @click.self="showQuickCreateTaskModal = false"
+        @click.self="closeQuickCreateTaskModal()"
       >
-        <div class="milestone-modal glass-card">
+        <div
+          ref="activeModalRoot"
+          class="roadmap-modal-shell roadmap-modal-shell--compact glass-card"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="quick-task-modal-title"
+          tabindex="-1"
+        >
           <div class="modal-header">
-            <h4>
+            <h4 id="quick-task-modal-title">
               <Plus :size="18" class="text-primary me-2" /> Tạo Nhiệm Vụ Mới
               Thuộc Mốc: {{ activeMilestone?.name }}
             </h4>
             <button
               type="button"
               class="icon-button"
-              @click="showQuickCreateTaskModal = false"
+              @click="closeQuickCreateTaskModal()"
+              aria-label="Đóng hộp thoại tạo nhiệm vụ mới"
             >
               <X :size="18" />
             </button>
@@ -1755,11 +1919,13 @@ function getDaysRemaining(endDateStr: string): {
             <div class="form-group">
               <label>Tiêu đề nhiệm vụ *</label>
               <input
+                ref="quickTaskTitleInput"
                 v-model="quickTaskTitle"
                 type="text"
                 placeholder="Nhập tiêu đề nhiệm vụ mới..."
                 required
                 class="modal-input"
+                data-modal-initial-focus="true"
               />
             </div>
 
@@ -1798,11 +1964,11 @@ function getDaysRemaining(endDateStr: string): {
               </select>
             </div>
 
-            <div class="modal-actions mt-4">
+            <div class="modal-actions">
               <button
                 type="button"
                 class="btn btn--ghost"
-                @click="showQuickCreateTaskModal = false"
+                @click="closeQuickCreateTaskModal()"
               >
                 Hủy
               </button>
@@ -1821,7 +1987,13 @@ function getDaysRemaining(endDateStr: string): {
         class="modal-backdrop confirm-backdrop"
         @click.self="confirmation = null"
       >
-        <div class="confirmation-modal" role="alertdialog" aria-modal="true">
+        <div
+          ref="confirmationModalRoot"
+          class="confirmation-modal"
+          role="alertdialog"
+          aria-modal="true"
+          tabindex="-1"
+        >
           <div class="confirmation-icon" :class="`is-${confirmation.type}`">
             <CheckCircle2 v-if="confirmation.type === 'complete'" :size="26" />
             <AlertTriangle v-else :size="26" />
@@ -3586,42 +3758,58 @@ function getDaysRemaining(endDateStr: string): {
 }
 
 .modal-backdrop {
-  background: rgba(15, 28, 48, 0.56);
-  backdrop-filter: blur(8px);
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  padding: clamp(16px, 3vw, 32px);
+  background: rgba(10, 15, 25, 0.72);
+  backdrop-filter: blur(10px) saturate(110%);
+  -webkit-backdrop-filter: blur(10px) saturate(110%);
 }
 
-.milestone-modal,
-.task-assign-modal {
-  max-height: min(760px, calc(100vh - 40px));
+.roadmap-modal-shell {
+  display: flex;
+  flex-direction: column;
+  width: min(700px, calc(100vw - 32px));
+  max-height: 88vh;
   padding: 0;
   overflow: hidden;
   border: 1px solid #cbd9e9;
-  border-radius: 18px;
+  border-radius: 20px;
+  background: var(--panel);
+  box-shadow: 0 28px 72px rgba(12, 31, 56, 0.26);
 }
 
-.task-assign-modal {
-  max-width: 680px;
+.roadmap-modal-shell--compact {
+  width: min(680px, calc(100vw - 32px));
 }
 
-.modal-header {
-  min-height: 74px;
+.roadmap-modal-shell--wide {
+  width: min(720px, calc(100vw - 32px));
+}
+
+.roadmap-modal-shell .modal-header {
+  min-height: 76px;
   margin: 0;
-  padding: 18px 22px;
+  padding: 18px 24px 18px 22px;
   background: linear-gradient(135deg, #fffdf8, #f0f6ff);
   border-bottom: 1px solid #dbe4f0;
 }
 
-.modal-header h4 {
+.roadmap-modal-shell .modal-header h4 {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   max-width: calc(100% - 56px);
+  margin: 0;
   color: #13213a;
   font-size: 18px;
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
-.modal-header .icon-button {
+.roadmap-modal-shell .modal-header .icon-button {
   width: 40px;
   height: 40px;
   flex: 0 0 40px;
@@ -3635,29 +3823,35 @@ function getDaysRemaining(endDateStr: string): {
   box-shadow: 0 4px 12px rgba(24, 48, 78, 0.08);
 }
 
-.modal-header .icon-button:hover {
+.roadmap-modal-shell .modal-header .icon-button:hover {
   background: #edf4ff;
   border-color: #91b3e3;
   color: #0c3f98;
 }
 
-.modal-body {
+.roadmap-modal-shell .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
   gap: 18px;
-  padding: 22px;
+  padding: 22px 24px;
   overflow-y: auto;
 }
 
-.form-group {
+.roadmap-modal-shell .form-group {
   gap: 8px;
 }
 
-.form-group label {
+.roadmap-modal-shell .form-group label {
   color: #31445f;
   font-size: 13px;
   font-weight: 700;
 }
 
-.modal-input {
+.roadmap-modal-shell .form-row {
+  gap: 14px;
+}
+
+.roadmap-modal-shell .modal-input {
   width: 100%;
   min-height: 46px;
   padding: 10px 13px;
@@ -3670,72 +3864,99 @@ function getDaysRemaining(endDateStr: string): {
   box-shadow: inset 0 1px 2px rgba(20, 42, 72, 0.03);
 }
 
-textarea.modal-input {
-  min-height: 96px;
+.roadmap-modal-shell textarea.modal-input {
+  min-height: 100px;
   resize: vertical;
 }
 
-.modal-input:focus {
+.roadmap-modal-shell .modal-input:focus {
   border-color: #5f91d3;
   box-shadow: 0 0 0 3px rgba(19, 88, 200, 0.12);
   outline: none;
 }
 
-.modal-actions {
+.roadmap-modal-shell .modal-actions {
+  display: flex;
+  justify-content: flex-end;
   gap: 10px;
-  margin: 4px -22px -22px;
-  padding: 16px 22px;
+  margin: 2px -24px -24px;
+  padding: 18px 24px 22px;
   background: #f7f9fc;
   border-top: 1px solid #dbe4f0;
 }
 
-.modal-actions .btn,
-.confirmation-actions .btn {
-  min-height: 42px;
-  padding: 9px 16px;
-  border: 1px solid transparent;
+.roadmap-modal-shell .modal-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 16px;
   border-radius: 10px;
   font-size: 13px;
   font-weight: 700;
   line-height: 1;
 }
 
-.modal-actions .btn::before {
-  display: inline-grid;
-  place-items: center;
-  width: 17px;
-  height: 17px;
-  font-size: 17px;
-  line-height: 1;
-}
-
-.modal-actions .btn--ghost::before {
-  content: "×";
-}
-.modal-actions .btn--primary::before {
-  content: "✓";
-  font-size: 13px;
-}
-
-.btn--ghost {
+.roadmap-modal-shell .modal-actions .btn--ghost {
   background: #fff;
   border-color: #cbd7e5 !important;
   color: #40516a;
 }
 
-.btn--ghost:hover {
+.roadmap-modal-shell .modal-actions .btn--ghost:hover {
   background: #eef3f8;
   border-color: #aebfd2 !important;
 }
 
-.btn--primary {
+.roadmap-modal-shell .modal-actions .btn--primary {
   background: linear-gradient(135deg, #1762d5, #0d4cad);
   color: #fff;
   box-shadow: 0 7px 16px rgba(19, 88, 200, 0.22);
 }
 
-.btn--primary:hover {
+.roadmap-modal-shell .modal-actions .btn--primary:hover {
   background: linear-gradient(135deg, #0f55c4, #093b8f);
+}
+
+.roadmap-modal-shell--wide .assign-tasks-list {
+  max-height: min(44vh, 430px);
+}
+
+.roadmap-modal-shell--wide .assign-task-row {
+  min-height: 64px;
+  padding: 12px 15px;
+  background: #fff;
+  border-radius: 11px;
+}
+
+.roadmap-modal-shell--wide .assign-task-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  accent-color: #1358c8;
+}
+
+.roadmap-modal-shell--wide .assign-task-row .task-info {
+  min-width: 0;
+  line-height: 1.45;
+}
+
+.roadmap-modal-shell--wide .assign-task-row .task-info strong {
+  display: block;
+  color: #17243a;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.roadmap-modal-shell--wide .assign-task-row .task-info small {
+  display: block;
+  margin: 3px 0 0 !important;
+  color: #687991 !important;
+}
+
+.roadmap-modal-shell--wide .assign-task-row.is-selected {
+  background: #edf4ff;
+  border-color: #82a9df;
 }
 
 .btn--danger {
@@ -3746,44 +3967,6 @@ textarea.modal-input {
 
 .btn--danger:hover {
   background: #ab2929;
-}
-
-.assign-tasks-list {
-  gap: 10px;
-  max-height: 390px;
-}
-
-.assign-task-row {
-  min-height: 64px;
-  padding: 12px 15px;
-  background: #fff;
-  border-radius: 11px;
-}
-
-.assign-task-row input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 18px;
-  accent-color: #1358c8;
-}
-
-.assign-task-row .task-info {
-  min-width: 0;
-  line-height: 1.45;
-}
-.assign-task-row .task-info strong {
-  color: #17243a;
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-.assign-task-row .task-info small {
-  display: block;
-  margin: 3px 0 0 !important;
-  color: #687991 !important;
-}
-.assign-task-row.is-selected {
-  background: #edf4ff;
-  border-color: #82a9df;
 }
 
 .confirmation-modal {
@@ -3838,18 +4021,22 @@ textarea.modal-input {
   .form-row {
     grid-template-columns: 1fr;
   }
-  .modal-header,
-  .modal-body {
+  .roadmap-modal-shell {
+    width: min(100vw - 24px, 720px);
+    max-height: 90dvh;
+  }
+  .roadmap-modal-shell .modal-header,
+  .roadmap-modal-shell .modal-body {
     padding-left: 16px;
     padding-right: 16px;
   }
-  .modal-actions {
+  .roadmap-modal-shell .modal-actions {
     margin-left: -16px;
     margin-right: -16px;
     padding-left: 16px;
     padding-right: 16px;
   }
-  .modal-actions .btn,
+  .roadmap-modal-shell .modal-actions .btn,
   .confirmation-actions .btn {
     flex: 1;
     justify-content: center;
