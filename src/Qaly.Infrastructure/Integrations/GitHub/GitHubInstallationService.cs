@@ -87,7 +87,20 @@ public sealed class GitHubInstallationService : IGitHubInstallationService
             x.Id == installationId && x.OrganizationId == auth.Data!.OrganizationId && x.Status == "Active", ct);
         if (installation is null)
             return Result.NotFound<IReadOnlyList<GitHubRepositoryInfo>>("Không tìm thấy GitHub installation.");
-        return Result.Success(await _client.GetRepositoriesAsync(installation.InstallationId, ct));
+        try
+        {
+            return Result.Success(await _client.GetRepositoriesAsync(installation.InstallationId, ct));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Result.Failure<IReadOnlyList<GitHubRepositoryInfo>>(
+                $"Cấu hình GitHub App không hợp lệ: {ex.Message}", 503);
+        }
+        catch (HttpRequestException ex)
+        {
+            return Result.Failure<IReadOnlyList<GitHubRepositoryInfo>>(
+                $"Không thể lấy danh sách repository từ GitHub: {ex.Message}", 502);
+        }
     }
 
     public async Task<Result<IReadOnlyList<GitHubInstallation>>> ListAsync(Guid projectId, CancellationToken ct = default)

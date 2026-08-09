@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Hosting;
 
 namespace Qaly.Infrastructure.Integrations.GitHub;
 
@@ -31,11 +32,13 @@ public sealed class GitHubAppClient : IGitHubAppClient
 {
     private readonly HttpClient _http;
     private readonly IOptions<GitHubIntegrationOptions> _options;
+    private readonly IHostEnvironment _environment;
 
-    public GitHubAppClient(HttpClient http, IOptions<GitHubIntegrationOptions> options)
+    public GitHubAppClient(HttpClient http, IOptions<GitHubIntegrationOptions> options, IHostEnvironment environment)
     {
         _http = http;
         _options = options;
+        _environment = environment;
     }
 
     public string GetInstallationUrl(string state)
@@ -189,7 +192,7 @@ public sealed class GitHubAppClient : IGitHubAppClient
         return $"{unsigned}.{Base64Url(signature)}";
     }
 
-    private static string ResolvePrivateKey(GitHubIntegrationOptions options)
+    private string ResolvePrivateKey(GitHubIntegrationOptions options)
     {
         if (!string.IsNullOrWhiteSpace(options.PrivateKey))
             return options.PrivateKey;
@@ -197,10 +200,14 @@ public sealed class GitHubAppClient : IGitHubAppClient
         if (string.IsNullOrWhiteSpace(options.PrivateKeyPath))
             return string.Empty;
 
-        if (!File.Exists(options.PrivateKeyPath))
-            throw new InvalidOperationException("GitHub App private key file was not found.");
+        var path = Path.IsPathRooted(options.PrivateKeyPath)
+            ? options.PrivateKeyPath
+            : Path.GetFullPath(options.PrivateKeyPath, _environment.ContentRootPath);
 
-        return File.ReadAllText(options.PrivateKeyPath);
+        if (!File.Exists(path))
+            throw new InvalidOperationException($"GitHub App private key file was not found at the configured path: {path}");
+
+        return File.ReadAllText(path);
     }
 
     private HttpRequestMessage Request(HttpMethod method, string path, string bearer)

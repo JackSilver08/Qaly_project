@@ -9,6 +9,11 @@ const certPath = resolve(root, '.tmp', 'qaly-vite-dev.pfx')
 const certPassword = 'qaly-local-dev'
 const children = []
 let stopping = false
+const startupTimeoutMs = Number.parseInt(process.env.QALY_DEV_STARTUP_TIMEOUT_MS ?? '300000', 10)
+
+if (!Number.isFinite(startupTimeoutMs) || startupTimeoutMs < 30000) {
+  throw new Error('QALY_DEV_STARTUP_TIMEOUT_MS phải là số nguyên >= 30000.')
+}
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, { cwd: root, stdio: 'inherit', shell: false, ...options })
@@ -34,10 +39,19 @@ async function portInUse(port) {
   return results.some(Boolean)
 }
 
-async function waitForPort(port, label, timeoutMs = 90000) {
+async function waitForPort(port, label, child, timeoutMs = startupTimeoutMs) {
   const startedAt = Date.now()
+  let lastProgressAt = startedAt
   while (Date.now() - startedAt < timeoutMs) {
     if (await portInUse(port)) return
+    if (child.exitCode !== null) {
+      throw new Error(`${label} đã dừng với mã ${child.exitCode} trước khi mở cổng ${port}.`)
+    }
+    if (Date.now() - lastProgressAt >= 30000) {
+      const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000)
+      console.log(`[Qaly] Vẫn đang chờ ${label} trên cổng ${port} (${elapsedSeconds}s)...`)
+      lastProgressAt = Date.now()
+    }
     await new Promise(resolveWait => setTimeout(resolveWait, 500))
   }
   throw new Error(`${label} không sẵn sàng trên cổng ${port} sau ${Math.round(timeoutMs / 1000)} giây.`)
@@ -66,11 +80,12 @@ function start(label, command, args, env = {}) {
   })
   children.push(child)
   child.once('exit', code => {
-    if (!stopping && code !== 0) {
+    if (!stopping) {
       console.error(`[Qaly] ${label} đã dừng với mã ${code}.`)
       shutdown(code ?? 1)
     }
   })
+  return child
 }
 
 function openBrowser(url) {
@@ -127,11 +142,12 @@ async function main() {
 
   console.log('[Qaly] Đang khởi động frontend và backend...')
 
-  start('Vite', 'node', ['./node_modules/vite/dist/node/cli.js', '--configLoader', 'runner'], {
+  const vite = start('Vite', 'node', ['./node_modules/vite/dist/node/cli.js', '--configLoader', 'runner'], {
     QALY_VITE_DEV: '1', QALY_VITE_CERT_PASSWORD: certPassword,
   })
-  start('Backend', 'dotnet', ['watch', '--project', 'src/Qaly.Web', '--no-restore'], {
+  const backend = start('Backend', 'dotnet', ['watch', '--project', 'src/Qaly.Web', '--no-restore'], {
     DOTNET_WATCH_SUPPRESS_BROWSER_REFRESH: '1',
+    ASPNETCORE_URLS: 'https://localhost:5005',
     Vite__DevServerUrl: 'https://localhost:5173',
     AI_JOB_V4_WORKER_ENABLED: includeAi ? 'true' : 'false',
     PRIVACY_V4_WORKER_ENABLED: 'false',
@@ -141,8 +157,8 @@ async function main() {
   })
 
   await Promise.all([
-    waitForPort(5173, 'Vite'),
-    waitForPort(5005, 'Qaly backend'),
+    waitForPort(5173, 'Vite', vite),
+    waitForPort(5005, 'Qaly backend', backend),
   ])
   console.log('\n[Qaly] ✓ QALY ĐÃ SẴN SÀNG')
   console.log('[Qaly] Ứng dụng: https://localhost:5005')
