@@ -20,7 +20,9 @@ public partial class DataSeeder
     {
         if (await HasCurrentDemoSeedAsync())
         {
-            return await EnsureAiNativeDemoEvidenceAsync();
+            var presentationSeedChanged = await EnsurePresentationDemoSeedAsync();
+            var aiEvidenceChanged = await EnsureAiNativeDemoEvidenceAsync();
+            return presentationSeedChanged || aiEvidenceChanged;
         }
 
         var isDatabaseEmpty =
@@ -227,6 +229,7 @@ public partial class DataSeeder
 
         await SeedTaskCollaborationAsync(taskByKey, labelByKey, userByEmail, now);
         await SeedKnowledgeAndOperationsAsync(projectByCode, taskByKey, organization, userByEmail, now);
+        await EnsurePresentationDemoSeedAsync();
         await EnsureAiNativeDemoEvidenceAsync();
     }
 

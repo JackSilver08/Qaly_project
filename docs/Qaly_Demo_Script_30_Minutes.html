@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kịch bản Demo Qaly — 30 phút</title>
+  <style>
+    @page { size: A4; margin: 13mm 13mm 15mm; }
+    * { box-sizing: border-box; }
+    :root { --navy:#0b1f3a; --blue:#2563eb; --cyan:#06b6d4; --pale:#eff6ff; --ink:#172033; --muted:#5f6b7a; --line:#dbe4f0; --green:#059669; --amber:#d97706; --red:#dc2626; }
+    html { font-family: "Segoe UI", Arial, sans-serif; color:var(--ink); font-size:10.3pt; line-height:1.43; }
+    body { margin:0; background:white; }
+    h1,h2,h3,h4,p { margin-top:0; }
+    h1 { font-size:29pt; line-height:1.12; letter-spacing:-.8px; }
+    h2 { font-size:18pt; color:var(--navy); margin:0 0 12px; border-bottom:2px solid var(--blue); padding-bottom:6px; }
+    h3 { font-size:13pt; color:var(--blue); margin:15px 0 7px; }
+    h4 { font-size:10.5pt; color:var(--navy); margin:0 0 4px; }
+    p { margin-bottom:7px; }
+    ul,ol { margin:5px 0 8px 20px; padding:0; }
+    li { margin-bottom:3px; }
+    .page { break-after:page; min-height:267mm; position:relative; }
+    .page:last-child { break-after:auto; }
+    .cover { margin:-13mm; height:297mm; padding:24mm 21mm; color:white; overflow:hidden; background:linear-gradient(145deg,#07182e 0%,#0d3473 57%,#0789a7 100%); }
+    .cover:before,.cover:after { content:""; position:absolute; border-radius:50%; background:rgba(255,255,255,.06); }
+    .cover:before { width:190mm;height:190mm;right:-92mm;top:-65mm; }
+    .cover:after { width:120mm;height:120mm;left:-70mm;bottom:-35mm; }
+    .brand { display:flex; align-items:center; gap:12px; font-size:19pt; font-weight:800; letter-spacing:.8px; }
+    .brand-mark { width:47px;height:47px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(145deg,#67e8f9,#fff);color:#0b3471;font-size:25pt;font-weight:900;box-shadow:0 7px 18px rgba(0,0,0,.2); }
+    .cover-main { margin-top:38mm; max-width:150mm; }
+    .eyebrow { text-transform:uppercase; letter-spacing:2.5px; color:#8ee8ff; font-weight:700; font-size:9pt; }
+    .cover h1 { margin:12px 0 16px; }
+    .subtitle { font-size:14pt; color:#dcecff; max-width:135mm; }
+    .timebar { display:flex; gap:9px; margin-top:28px; }
+    .timebox { background:rgba(255,255,255,.11); border:1px solid rgba(255,255,255,.25); border-radius:12px; padding:12px 15px; min-width:43mm; }
+    .timebox b { display:block;font-size:19pt; }
+    .timebox span { color:#cfe4ff;font-size:9pt; }
+    .cover-note { position:absolute;left:21mm;right:21mm;bottom:22mm;border-top:1px solid rgba(255,255,255,.3);padding-top:11px;color:#dcecff;display:flex;justify-content:space-between; }
+    .section-label { color:var(--blue);font-size:8.5pt;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px; }
+    .lead { font-size:11.5pt;color:#334155; }
+    .hero-quote { border-left:5px solid var(--cyan); background:linear-gradient(90deg,#e7faff,#f8fbff); padding:14px 16px; border-radius:0 10px 10px 0; font-size:13pt; font-weight:650; color:var(--navy); margin:14px 0; }
+    .grid-3 { display:grid;grid-template-columns:repeat(3,1fr);gap:9px; }
+    .card { border:1px solid var(--line); border-radius:10px; padding:11px; background:white; break-inside:avoid; }
+    .card.tint { background:var(--pale);border-color:#bfdbfe; }
+    .card .num { width:25px;height:25px;border-radius:8px;background:var(--blue);color:white;display:inline-flex;align-items:center;justify-content:center;font-weight:800;margin-bottom:8px; }
+    .pill { display:inline-block;border-radius:999px;padding:3px 8px;background:#dbeafe;color:#1d4ed8;font-size:8pt;font-weight:700; }
+    table { width:100%;border-collapse:collapse;margin:8px 0 12px;font-size:9.2pt; }
+    th { text-align:left;background:var(--navy);color:white;padding:7px 8px;font-weight:650; }
+    td { padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top; }
+    tr:nth-child(even) td { background:#f8fafc; }
+    .schedule td:first-child { color:var(--blue);font-weight:800;white-space:nowrap;width:26mm; }
+    .owner { font-weight:750;color:var(--navy); }
+    .segment { display:grid;grid-template-columns:24mm 1fr;gap:11px;border-left:3px solid var(--blue);padding:0 0 13px 12px;margin-left:8px;break-inside:avoid; }
+    .segment:last-child { padding-bottom:0; }
+    .clock { background:var(--navy);color:white;border-radius:8px;padding:7px;text-align:center;height:max-content;font-size:8.5pt;font-weight:750; }
+    .script { background:#f1f5f9;border-radius:7px;padding:7px 9px;margin-top:6px;color:#334155;font-style:italic; }
+    .action { color:var(--green);font-weight:750; }
+    .focus { color:var(--blue);font-weight:750; }
+    .warning { background:#fff7ed;border:1px solid #fed7aa;border-left:4px solid var(--amber);padding:9px 11px;border-radius:7px;margin:8px 0; }
+    .do-not { background:#fef2f2;border:1px solid #fecaca;border-left:4px solid var(--red);padding:9px 11px;border-radius:7px; }
+    .checklist { columns:2;column-gap:16px; }
+    .check { break-inside:avoid;padding:5px 0 5px 23px;position:relative; }
+    .check:before { content:"□";position:absolute;left:0;top:2px;font-size:15pt;color:var(--blue); }
+    .footer { position:absolute;bottom:0;left:0;right:0;border-top:1px solid var(--line);padding-top:6px;color:#7a8797;font-size:8pt;display:flex;justify-content:space-between; }
+    .handoff { border:1px dashed #93c5fd;border-radius:8px;padding:8px 10px;margin:6px 0;background:#f8fbff; }
+    .small { font-size:8.5pt;color:var(--muted); }
+    .tight td { padding:5px 7px; }
+    .no-break { break-inside:avoid; }
+  </style>
+</head>
+<body>
+  <section class="page cover">
+    <div class="brand"><span class="brand-mark">Q</span> QALY</div>
+    <div class="cover-main">
+      <div class="eyebrow">Kịch bản thuyết trình &amp; demo sản phẩm</div>
+      <h1>Qaly — Từ quản lý công việc đến điều hành dự án thông minh</h1>
+      <p class="subtitle">Kịch bản 30 phút dành cho đội ngũ 7 thành viên, tập trung vào Lộ trình dự án, tích hợp GitHub và AI-native Assistant.</p>
+      <div class="timebar">
+        <div class="timebox"><b>10'</b><span>Thuyết trình slide</span></div>
+        <div class="timebox"><b>20'</b><span>Demo sản phẩm</span></div>
+        <div class="timebox"><b>7</b><span>Thành viên tham gia</span></div>
+      </div>
+    </div>
+    <div class="cover-note"><span>Qaly Team</span><span>Phiên bản chuẩn bị cho buổi demo</span></div>
+  </section>
+
+  <section class="page">
+    <div class="section-label">01 · Định hướng</div><h2>Một câu chuyện xuyên suốt</h2>
+    <p class="lead">Buổi demo không đi theo danh sách chức năng. Nhóm kể câu chuyện một đội dự án sử dụng Qaly để lập kế hoạch, tổ chức công việc, theo dõi quá trình phát triển trên GitHub và nhận hỗ trợ ra quyết định từ AI.</p>
+    <div class="hero-quote">“Lập kế hoạch — Phát triển — Theo dõi thông minh trên cùng một nền tảng.”</div>
+    <div class="grid-3">
+      <div class="card tint"><div class="num">1</div><h4>Lược qua nền tảng cũ</h4><p>Đăng nhập, tổ chức, dự án, thành viên, task, dashboard và phân quyền.</p></div>
+      <div class="card tint"><div class="num">2</div><h4>Tập trung phần mới</h4><p>Roadmap/Milestone, quản lý GitHub và các luồng AI theo ngữ cảnh.</p></div>
+      <div class="card tint"><div class="num">3</div><h4>Kết bằng bằng chứng</h4><p>Kiểm thử, kiểm soát quyền, fallback và khả năng vận hành.</p></div>
+    </div>
+    <h3>Phân bổ 30 phút</h3>
+    <table class="schedule">
+      <tr><th>Thời gian</th><th>Nội dung</th><th>Mục tiêu</th></tr>
+      <tr><td>00:00–10:00</td><td>Thuyết trình 7 slide</td><td>Đặt vấn đề, giới thiệu nền tảng và ba nhóm tính năng mới.</td></tr>
+      <tr><td>10:00–13:00</td><td>Lược qua tính năng cũ</td><td>Tạo bối cảnh cho dữ liệu và luồng nghiệp vụ.</td></tr>
+      <tr><td>13:00–27:30</td><td>Demo tính năng mới</td><td>Roadmap → GitHub → AI Assistant/Planner.</td></tr>
+      <tr><td>27:30–29:00</td><td>QA và độ ổn định</td><td>Chứng minh sản phẩm đã được kiểm chứng.</td></tr>
+      <tr><td>29:00–30:00</td><td>Kết luận</td><td>Chốt giá trị và mời đặt câu hỏi.</td></tr>
+    </table>
+    <div class="warning"><b>Nguyên tắc thời gian:</b> tập để hoàn thành trong 27–28 phút. Hai phút còn lại là vùng đệm cho chuyển người, tải trang hoặc phản hồi AI.</div>
+    <h3>Thông điệp cần khán giả nhớ</h3>
+    <ul><li>Qaly kết nối kế hoạch quản lý với hoạt động phát triển thực tế.</li><li>Roadmap được liên kết với task, thành viên và trạng thái dự án — không phải hình minh họa tĩnh.</li><li>AI sử dụng ngữ cảnh được cấp quyền, trình bày kế hoạch xử lý và giữ con người trong vòng xác nhận.</li></ul>
+    <div class="footer"><span>Kịch bản Demo Qaly · 30 phút</span><span>2</span></div>
+  </section>
+
+  <section class="page">
+    <div class="section-label">02 · Con người</div><h2>Phân công 7 thành viên</h2>
+    <table>
+      <tr><th>Thành viên</th><th>Vai trò dự án</th><th>Phần trình bày/demo</th></tr>
+      <tr><td class="owner">Quang Tuấn</td><td>Tech Lead, tích hợp &amp; phát hành</td><td>Mở đầu, tổng quan, tích hợp GitHub, kết luận.</td></tr>
+      <tr><td class="owner">Duy Hoàng</td><td>Backend, đa tổ chức &amp; dữ liệu</td><td>Phân quyền, dữ liệu dự án và nghiệp vụ milestone.</td></tr>
+      <tr><td class="owner">Viết Minh</td><td>Frontend, UX &amp; responsive</td><td>Task, trải nghiệm giao diện và Roadmap mới.</td></tr>
+      <tr><td class="owner">Đoàn Trung</td><td>QA, tự động hóa &amp; evidence</td><td>Bằng chứng kiểm thử và độ tin cậy.</td></tr>
+      <tr><td class="owner">Gia Long</td><td>DevOps, staging &amp; phục hồi</td><td>CI/CD, workflow, release và vận hành.</td></tr>
+      <tr><td class="owner">Quốc Bảo</td><td>AI Platform, độ tin cậy &amp; chi phí</td><td>AI-native Assistant và cơ chế kiểm soát.</td></tr>
+      <tr><td class="owner">Chí Khang</td><td>AI Features &amp; chất lượng đầu ra</td><td>AI Planner, tiến độ/kỹ năng và review trước xác nhận.</td></tr>
+    </table>
+    <h3>Quy tắc phối hợp trên sân khấu</h3>
+    <div class="grid-3">
+      <div class="card"><h4>Một người điều khiển</h4><p>Quang Tuấn giữ chuột khi chuyển giữa các module; chỉ giao chuột ở đoạn thao tác dài.</p></div>
+      <div class="card"><h4>Một người dự phòng</h4><p>Đoàn Trung giữ bản PDF, đồng hồ và ảnh/video dự phòng.</p></div>
+      <div class="card"><h4>Không giới thiệu lại</h4><p>Mỗi người vào thẳng nội dung, dùng câu nối từ người trước.</p></div>
+    </div>
+    <h3>Các câu chuyển người</h3>
+    <div class="handoff"><b>Tuấn → Hoàng:</b> “Dữ liệu này được tổ chức và bảo vệ như thế nào, Hoàng sẽ trình bày tiếp.”</div>
+    <div class="handoff"><b>Hoàng → Minh:</b> “Từ nền tảng backend đó, Minh sẽ cho thấy trải nghiệm trên giao diện.”</div>
+    <div class="handoff"><b>Minh → Tuấn:</b> “Kế hoạch nội bộ này tiếp tục được đối chiếu với hoạt động phát triển trên GitHub.”</div>
+    <div class="handoff"><b>Long → Bảo:</b> “Từ dữ liệu dự án và bằng chứng kỹ thuật này, AI có thể hỗ trợ ra quyết định có căn cứ.”</div>
+    <div class="handoff"><b>Khang → Trung:</b> “Cuối cùng, Trung sẽ trình bày cách nhóm kiểm chứng các luồng vừa demo.”</div>
+    <div class="footer"><span>Kịch bản Demo Qaly · Phân công</span><span>3</span></div>
+  </section>
+
+  <section class="page">
+    <div class="section-label">03 · Slide</div><h2>Kịch bản thuyết trình 10 phút</h2>
+    <div class="segment"><div class="clock">00:00<br>01:10</div><div><h4>Slide 1 — Quang Tuấn · Qaly là gì?</h4><p>Giới thiệu Qaly và ba từ khóa: <span class="focus">Lập kế hoạch — Phát triển — Theo dõi</span>.</p><div class="script">“Trong phiên bản mới, nhóm tập trung thu hẹp khoảng cách giữa kế hoạch dự án, hoạt động phát triển trên GitHub và hỗ trợ ra quyết định bằng AI.”</div></div></div>
+    <div class="segment"><div class="clock">01:10<br>02:20</div><div><h4>Slide 2 — Duy Hoàng · Bài toán &amp; dữ liệu</h4><p>Công việc phân tán; khó nhìn tiến độ; AI dễ trả lời chung chung; dữ liệu cần được giới hạn theo tổ chức và dự án.</p><div class="script">“Qaly đặt dữ liệu, quyền truy cập và nghiệp vụ dự án làm nền cho các tính năng phía trên.”</div></div></div>
+    <div class="segment"><div class="clock">02:20<br>03:30</div><div><h4>Slide 3 — Viết Minh · Nền tảng hiện có</h4><p>Đăng nhập, tổ chức, thành viên, dự án, Kanban/task, nhóm, họp, wiki, thông báo và dashboard. Chỉ giới thiệu, không mô tả từng CRUD.</p></div></div>
+    <div class="segment"><div class="clock">03:30<br>04:40</div><div><h4>Slide 4 — Đoàn Trung · Chất lượng</h4><p>Unit, integration, E2E; phân quyền; trạng thái giao diện; schema, timeout và fallback cho AI.</p><div class="script">“Nhóm kiểm tra cả đường thành công, không đủ quyền và tình huống dịch vụ phụ thuộc gặp lỗi.”</div></div></div>
+    <div class="segment"><div class="clock">04:40<br>05:50</div><div><h4>Slide 5 — Gia Long · Kiến trúc vận hành</h4><p>Vue/Razor → ASP.NET Core → SQL Server/Redis → GitHub/AI Provider; Docker, GitHub Actions, log và health check.</p></div></div>
+    <div class="segment"><div class="clock">05:50<br>07:40</div><div><h4>Slide 6 — Quốc Bảo · AI-native Assistant</h4><p>Hiểu mục tiêu, đối chiếu phạm vi/quyền, chọn kỹ năng, tạo Work Plan, hiển thị nguồn và không tự ý mutation.</p><div class="script">“AI trong Qaly nằm bên trong ngữ cảnh dự án và các quy tắc kiểm soát, thay vì hoạt động như một chatbot độc lập.”</div></div></div>
+    <div class="segment"><div class="clock">07:40<br>10:00</div><div><h4>Slide 7 — Chí Khang · Ba điểm mới</h4><ol><li>Roadmap và Milestone.</li><li>GitHub: Pull Request, CI/CD và Release.</li><li>AI Assistant/Planner theo ngữ cảnh.</li></ol><div class="script">“Nhóm sẽ demo trên một dự án mẫu, đi từ dữ liệu quản lý cơ bản đến lộ trình, GitHub và cuối cùng là AI.”</div></div></div>
+    <div class="footer"><span>Kịch bản Demo Qaly · Slide</span><span>4</span></div>
+  </section>
+
+  <section class="page">
+    <div class="section-label">04 · Demo</div><h2>Demo 20 phút — Phần 1</h2>
+    <div class="segment"><div class="clock">10:00<br>11:00</div><div><h4>Quang Tuấn · Vào hệ thống</h4><p class="action">Thao tác:</p><ol><li>Đăng nhập tài khoản demo.</li><li>Mở Dashboard, chỉ nhanh dự án/task/hoạt động.</li><li>Chọn dự án mẫu “Qaly Release 4.0”.</li></ol><div class="script">“Từ dashboard tổng quan, chúng ta đi vào một dự án đang triển khai để xem toàn bộ vòng đời công việc.”</div></div></div>
+    <div class="segment"><div class="clock">11:00<br>12:30</div><div><h4>Duy Hoàng · Phân quyền &amp; dữ liệu</h4><p class="action">Thao tác:</p><ol><li>Mở thành viên dự án.</li><li>Chỉ vai trò Manager/Member.</li><li>Giải thích ranh giới tổ chức/dự án ở backend.</li></ol><div class="script">“Người ngoài dự án không thể chỉ đổi URL hoặc gọi API để truy cập dữ liệu.”</div></div></div>
+    <div class="segment"><div class="clock">12:30<br>14:00</div><div><h4>Viết Minh · Task &amp; trải nghiệm nền tảng</h4><p class="action">Thao tác:</p><ol><li>Mở bảng công việc.</li><li>Lọc hoặc tìm một task.</li><li>Mở chi tiết: trạng thái, người phụ trách, deadline, comment.</li></ol><div class="script">“Ở phiên bản mới, các task này được tổ chức thành các mốc trong lộ trình dự án.”</div></div></div>
+    <div class="segment"><div class="clock">14:00<br>17:30</div><div><h4>Viết Minh + Duy Hoàng · Roadmap/Milestone mới</h4><p class="action">Thao tác chính:</p><ol><li>Mở tab <b>Lộ trình</b>; chỉ số tổng quan.</li><li>Đổi Roadmap/Timeline; tìm kiếm hoặc lọc milestone.</li><li>Chọn milestone, mở panel chi tiết.</li><li>Chỉ mục tiêu, ngày, trạng thái, task và thành viên.</li><li>Gán/gỡ một task; chỉ tạo nhanh task nếu đã tập ổn định.</li></ol><div class="script">“Milestone được liên kết trực tiếp với task, thành viên và trạng thái thực tế — đây không phải một timeline tĩnh.”</div></div></div>
+    <div class="do-not"><b>Không làm trong phần này:</b> tạo cả dự án từ đầu, nhập hàng loạt dữ liệu hoặc xóa milestone. Các thao tác này dài và có rủi ro làm hỏng dữ liệu demo.</div>
+    <div class="footer"><span>Kịch bản Demo Qaly · Demo phần 1</span><span>5</span></div>
+  </section>
+
+  <section class="page">
+    <div class="section-label">04 · Demo</div><h2>Demo 20 phút — Phần 2</h2>
+    <div class="segment"><div class="clock">17:30<br>21:00</div><div><h4>Quang Tuấn + Gia Long · Quản lý cùng GitHub</h4><p class="action">Thao tác:</p><ol><li>Mở tab GitHub và repository đã kết nối.</li><li>Chỉ Pull Request, nhánh nguồn/đích và người tạo.</li><li>Chuyển sang CI/CD, chỉ workflow gần nhất.</li><li>Mở Releases và giải thích quan hệ commit → build → phát hành.</li></ol><div class="script">“GitHub cung cấp bằng chứng kỹ thuật; Qaly đưa bằng chứng đó vào đúng ngữ cảnh dự án và nhiệm vụ.”</div><p class="small">Chỉ nhấn “Đồng bộ” khi đã kiểm tra mạng và quyền GitHub App. Nếu không, dùng dữ liệu đã tải sẵn.</p></div></div>
+    <div class="segment"><div class="clock">21:00<br>24:30</div><div><h4>Quốc Bảo · AI Assistant</h4><p class="action">Prompt đề xuất:</p><div class="script">“Phân tích tình trạng hiện tại của dự án này, xác định rủi ro tiến độ và đề xuất ba việc ưu tiên cho tuần tới.”</div><p>Chỉ mục tiêu, phạm vi, kỹ năng được chọn, Work Plan, nguồn, provider/model và kết quả/fallback.</p><div class="script">“Điểm mới không chỉ là câu trả lời. Hệ thống phân tích mục tiêu, đối chiếu quyền truy cập và công khai kế hoạch xử lý.”</div></div></div>
+    <div class="segment"><div class="clock">24:30<br>27:00</div><div><h4>Chí Khang · AI Planner &amp; review của con người</h4><p class="action">Prompt đề xuất:</p><div class="script">“Lập kế hoạch phát hành phiên bản Qaly tiếp theo trong 2 tuần, gồm frontend, backend, kiểm thử và triển khai.”</div><ol><li>Nhấn “Lên kế hoạch với AI”.</li><li>Tại màn hình review, sửa một task.</li><li>Bỏ chọn một mục không cần thiết.</li><li>Chỉ xác nhận nếu còn đủ thời gian.</li></ol><div class="script">“AI tạo bản nháp để con người kiểm tra và chỉnh sửa; AI không tự động thay đổi dự án khi chưa được xác nhận.”</div></div></div>
+    <div class="segment"><div class="clock">27:00<br>28:30</div><div><h4>Đoàn Trung · Bằng chứng kiểm thử</h4><p>Mở một trang/ảnh tổng hợp sẵn: unit, integration, E2E, phân quyền, AI schema/fallback, GitHub và Roadmap.</p><div class="script">“Nhóm kiểm tra cả happy path, không đủ quyền, lỗi provider và dữ liệu không hợp lệ.”</div></div></div>
+    <div class="segment"><div class="clock">28:30<br>30:00</div><div><h4>Quang Tuấn · Kết luận</h4><div class="script">“Qaly đã tiến từ một hệ thống quản lý task sang nền tảng kết nối kế hoạch dự án, hoạt động phát triển trên GitHub và hỗ trợ ra quyết định bằng AI. Người quản lý nhìn thấy tiến độ có căn cứ, còn thành viên vẫn giữ quyền kiểm soát trước mọi đề xuất của AI.”</div></div></div>
+    <div class="footer"><span>Kịch bản Demo Qaly · Demo phần 2</span><span>6</span></div>
+  </section>
+
+  <section class="page">
+    <div class="section-label">05 · Chuẩn bị</div><h2>Checklist trước giờ demo</h2>
+    <h3>Dữ liệu dự án mẫu</h3>
+    <div class="checklist">
+      <div class="check">Một dự án duy nhất: “Qaly Release 4.0”.</div><div class="check">5–8 thành viên, đủ Manager/Member.</div>
+      <div class="check">12–15 task ở nhiều trạng thái.</div><div class="check">Task có người phụ trách và deadline.</div>
+      <div class="check">Ba milestone: hoàn thành, đang chạy, có nguy cơ trễ.</div><div class="check">2–3 Pull Request có dữ liệu dễ giải thích.</div>
+      <div class="check">Một workflow thành công và một trạng thái khác.</div><div class="check">Ít nhất một GitHub Release.</div>
+      <div class="check">Một session AI có kết quả để đọc lại.</div><div class="check">Một task có yêu cầu kỹ năng phù hợp.</div>
+    </div>
+    <h3>Thiết bị &amp; môi trường</h3>
+    <div class="checklist">
+      <div class="check">Khởi động ứng dụng trước 30 phút.</div><div class="check">Kiểm tra DB, Redis và đăng nhập.</div>
+      <div class="check">Đặt browser zoom 90–100%.</div><div class="check">Tắt notification cá nhân.</div>
+      <div class="check">Mở sẵn các tab cần dùng.</div><div class="check">Kiểm tra GitHub App và mạng.</div>
+      <div class="check">Thử prompt AI đúng một lần.</div><div class="check">Đóng cửa sổ chứa secret/log nhạy cảm.</div>
+      <div class="check">Chuẩn bị đồng hồ bấm giờ.</div><div class="check">Lưu PDF này trên hai thiết bị.</div>
+    </div>
+    <h3>Ba tầng dự phòng</h3>
+    <table>
+      <tr><th>Tầng</th><th>Khi sử dụng</th><th>Cách xử lý</th></tr>
+      <tr><td class="owner">1 · Live</td><td>Toàn bộ dịch vụ ổn định</td><td>Thao tác theo kịch bản chính.</td></tr>
+      <tr><td class="owner">2 · Cached</td><td>GitHub hoặc AI chậm</td><td>Không gọi mới; dùng dữ liệu đã đồng bộ/session đã lưu.</td></tr>
+      <tr><td class="owner">3 · Evidence</td><td>Dịch vụ không khả dụng</td><td>Chuyển ngay sang ảnh/video ngắn, tiếp tục lời thuyết trình.</td></tr>
+    </table>
+    <div class="warning"><b>Quy tắc 10 giây:</b> một thao tác không phản hồi sau 10 giây thì chuyển sang phương án dự phòng. Không đứng chờ hoặc cố bấm nhiều lần.</div>
+    <div class="footer"><span>Kịch bản Demo Qaly · Checklist</span><span>7</span></div>
+  </section>
+
+  <section class="page">
+    <div class="section-label">06 · Diễn tập</div><h2>Runbook cho ngày thuyết trình</h2>
+    <h3>Buổi tổng duyệt cuối</h3>
+    <table class="tight">
+      <tr><th>Mốc</th><th>Việc cần làm</th><th>Người chịu trách nhiệm</th></tr>
+      <tr><td>T−24 giờ</td><td>Khóa dữ liệu demo; không thay đổi giao diện hoặc migration không cần thiết.</td><td>Quang Tuấn</td></tr>
+      <tr><td>T−12 giờ</td><td>Chạy smoke test các luồng sẽ demo; chụp evidence dự phòng.</td><td>Đoàn Trung</td></tr>
+      <tr><td>T−2 giờ</td><td>Kiểm tra môi trường, provider AI, GitHub và dữ liệu seed.</td><td>Gia Long + Quốc Bảo</td></tr>
+      <tr><td>T−30 phút</td><td>Đăng nhập, mở sẵn dự án, roadmap, GitHub, Assistant và báo cáo test.</td><td>Cả nhóm</td></tr>
+      <tr><td>T−10 phút</td><td>Bật trình chiếu, đặt zoom, tắt thông báo, kiểm tra mic.</td><td>Viết Minh</td></tr>
+    </table>
+    <h3>Cách xử lý tình huống</h3>
+    <table>
+      <tr><th>Tình huống</th><th>Câu nói giữ nhịp</th><th>Hành động</th></tr>
+      <tr><td>AI phản hồi chậm</td><td>“Để bảo đảm thời gian, nhóm sẽ mở kết quả đã được lưu từ cùng ngữ cảnh này.”</td><td>Mở session có sẵn.</td></tr>
+      <tr><td>GitHub không đồng bộ</td><td>“Qaly vẫn giữ dữ liệu đồng bộ gần nhất và hiển thị trạng thái trung thực.”</td><td>Dùng dữ liệu cache.</td></tr>
+      <tr><td>Phiên đăng nhập hết hạn</td><td>“Hệ thống yêu cầu xác thực lại để bảo vệ dữ liệu dự án.”</td><td>Đăng nhập nhanh hoặc chuyển evidence.</td></tr>
+      <tr><td>Một người quá giờ</td><td>Người giữ giờ ra dấu; bỏ thao tác phụ.</td><td>Giữ lại thông điệp chốt.</td></tr>
+      <tr><td>Giao diện vỡ bố cục</td><td>Không giải thích lỗi dài.</td><td>Đặt zoom 90%, reload một lần.</td></tr>
+    </table>
+    <h3>Những điều không nên làm</h3>
+    <div class="do-not"><ul><li>Không chạy full test suite trực tiếp trong 30 phút.</li><li>Không tạo toàn bộ dự án hoặc dữ liệu từ đầu.</li><li>Không đọc nguyên văn nội dung trên slide.</li><li>Không mô tả chi tiết class, controller hoặc công nghệ nếu chưa được hỏi.</li><li>Không khẳng định AI luôn đúng; nhấn mạnh nguồn, fallback và xác nhận của con người.</li><li>Không để phần cũ chiếm quá 3 phút demo.</li></ul></div>
+    <div class="hero-quote">Kết quả cần đạt: khán giả hiểu Qaly giải quyết vấn đề gì, thấy rõ phần mới, và tin rằng nhóm đã xây dựng — kiểm thử — vận hành sản phẩm một cách có kiểm soát.</div>
+    <div class="footer"><span>Kịch bản Demo Qaly · Runbook</span><span>8</span></div>
+  </section>
+</body>
+</html>
