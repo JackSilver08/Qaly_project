@@ -38,7 +38,7 @@ public sealed class NotificationTargetResolver : INotificationTargetResolver
 
             if (task.IsPrivate && task.ReporterId != userId && task.AssigneeId != userId &&
                 !task.Assignees.Any(assignment => assignment.UserId == userId) &&
-                !await CanManageProjectAsync(task.Project, userId, cancellationToken))
+                task.Project.OwnerId != userId)
             {
                 return new NotificationTargetAccess(false);
             }
@@ -78,7 +78,7 @@ public sealed class NotificationTargetResolver : INotificationTargetResolver
             var meeting = await _db.GroupMeetingSessions.AsNoTracking()
                 .FirstOrDefaultAsync(item => item.Id == entityId, cancellationToken);
             return meeting != null && await CanAccessGroupAsync(meeting.WorkGroupId, userId, cancellationToken)
-                ? new NotificationTargetAccess(true, $"/groups/{meeting.WorkGroupId}?meetingId={meeting.Id}")
+                ? new NotificationTargetAccess(true, $"/groups/{meeting.WorkGroupId}/meeting?meetingId={meeting.Id}")
                 : new NotificationTargetAccess(false);
         }
 
@@ -87,33 +87,36 @@ public sealed class NotificationTargetResolver : INotificationTargetResolver
 
     private async Task<bool> CanAccessProjectAsync(Project project, Guid userId, CancellationToken ct)
     {
-        if (await IsAdminAsync(userId, ct) || project.OwnerId == userId || project.Organization?.OwnerId == userId) return true;
-        if (await _db.ProjectMembers.AnyAsync(member => member.ProjectId == project.Id && member.UserId == userId, ct)) return true;
-        return project.OrganizationId.HasValue && await _db.OrganizationMembers.AnyAsync(
-            member => member.OrganizationId == project.OrganizationId.Value && member.UserId == userId,
+        if (await IsAdminAsync(userId, ct)) return true;
+        if (project.OrganizationId.HasValue)
+        {
+            var organization = project.Organization ?? await _db.Organizations.AsNoTracking()
+                .FirstOrDefaultAsync(item => item.Id == project.OrganizationId.Value, ct);
+            if (organization == null || !organization.IsActive) return false;
+            if (organization.OwnerId != userId &&
+                !await _db.OrganizationMembers.AnyAsync(member =>
+                    member.OrganizationId == organization.Id && member.UserId == userId,
+                    ct))
+            {
+                return false;
+            }
+        }
+
+        return project.OwnerId == userId || await _db.ProjectMembers.AnyAsync(
+            member => member.ProjectId == project.Id && member.UserId == userId,
             ct);
     }
 
-    private async Task<bool> CanManageProjectAsync(Project project, Guid userId, CancellationToken ct)
-    {
-        if (await IsAdminAsync(userId, ct) || project.OwnerId == userId || project.Organization?.OwnerId == userId) return true;
-        var projectRole = await _db.ProjectMembers
-            .Where(member => member.ProjectId == project.Id && member.UserId == userId)
-            .Select(member => member.Role)
-            .FirstOrDefaultAsync(ct);
-        if (ProjectRoleRules.CanManageProject(projectRole)) return true;
-        if (!project.OrganizationId.HasValue) return false;
-        var organizationRole = await _db.OrganizationMembers
-            .Where(member => member.OrganizationId == project.OrganizationId.Value && member.UserId == userId)
-            .Select(member => member.Role)
-            .FirstOrDefaultAsync(ct);
-        return OrganizationRoleRules.CanManageOrganization(organizationRole);
-    }
-
     private async Task<bool> CanAccessGroupAsync(Guid groupId, Guid userId, CancellationToken ct)
-        => await IsAdminAsync(userId, ct) ||
-           await _db.WorkGroups.AnyAsync(group => group.Id == groupId && group.OwnerId == userId, ct) ||
-           await _db.WorkGroupMembers.AnyAsync(member => member.WorkGroupId == groupId && member.UserId == userId, ct);
+        => await IsAdminAsync(userId, ct) || await _db.WorkGroups.AnyAsync(group =>
+            group.Id == groupId &&
+            (group.OwnerId == userId || group.Members.Any(member => member.UserId == userId)) &&
+            (group.OrganizationId == null ||
+             (group.Organization != null &&
+              group.Organization.IsActive &&
+              (group.Organization.OwnerId == userId ||
+               group.Organization.Members.Any(member => member.UserId == userId)))),
+            ct);
 
     private Task<bool> IsAdminAsync(Guid userId, CancellationToken ct)
         => _db.Users.AnyAsync(user => user.Id == userId && user.Role == ProjectRoleRules.SystemAdmin, ct);

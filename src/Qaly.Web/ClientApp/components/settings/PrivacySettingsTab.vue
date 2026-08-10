@@ -122,7 +122,10 @@ const consentForm = ref({
 const requestForm = ref({ requestType: 'export', scope: 'all' })
 const holdForm = ref({ subjectUserId: '', entityType: '', entityId: '', reason: '' })
 
-const project = computed(() => projects.value.find((item: any) => item.id === selectedProjectId.value) ?? null)
+const project = computed(() =>
+  projects.value.find((item: any) => item.id === selectedProjectId.value)
+  ?? (selectedProject.value?.id === selectedProjectId.value ? selectedProject.value : null),
+)
 const tenantId = computed(() => project.value?.organizationId || project.value?.id || '')
 const activePolicies = computed(() => policies.value.filter(item => item.isActive))
 const selectedPolicy = computed(() => activePolicies.value.find(item => item.id === consentForm.value.retentionPolicyId) ?? null)
@@ -386,10 +389,16 @@ watch(
     () => selectedProject.value?.id || '',
   ],
   () => {
-    if (projects.value.some((item: any) => item.id === selectedProjectId.value)) return
+    if (
+      projects.value.some((item: any) => item.id === selectedProjectId.value)
+      || selectedProject.value?.id === selectedProjectId.value
+    ) return
 
     const preferredId = selectedProject.value?.id || ''
-    selectedProjectId.value = projects.value.some((item: any) => item.id === preferredId)
+    selectedProjectId.value = preferredId && (
+      projects.value.some((item: any) => item.id === preferredId)
+      || selectedProject.value?.id === preferredId
+    )
       ? preferredId
       : projects.value[0]?.id || ''
   },

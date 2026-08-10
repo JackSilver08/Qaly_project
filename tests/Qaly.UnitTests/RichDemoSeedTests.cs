@@ -96,6 +96,8 @@ public sealed class RichDemoSeedTests
         (await db.TaskCompletionAttributions.CountAsync(item => item.Status == TaskCompletionAttribution.Confirmed)).Should().Be(5);
         (await db.OrganizationMemberCapacityProfiles.CountAsync(item => item.OrganizationId == organization.Id)).Should().Be(12);
         (await db.MemberAvailabilityWindows.CountAsync()).Should().Be(5);
+        (await db.OrganizationWorkRuleSets.CountAsync(item =>
+            item.OrganizationId == organization.Id && item.Status == "active")).Should().Be(1);
         (await db.TaskItems.CountAsync(item => item.Title == "Xác nhận dữ liệu POS Wave 1" && item.Status == "Done")).Should().Be(1);
 
         var countsBeforeSecondSeed = new

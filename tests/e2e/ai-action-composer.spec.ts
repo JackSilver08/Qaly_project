@@ -1,7 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-
-const adminEmail = process.env.E2E_ADMIN_EMAIL ?? 'admin@qaly.dev'
-const adminPassword = process.env.E2E_ADMIN_PASSWORD ?? 'Admin@123456'
+import { adminEmail, adminPassword } from './support/credentials'
 
 async function login(page: Page) {
   await page.goto('/Account/Login', { waitUntil: 'domcontentloaded' })

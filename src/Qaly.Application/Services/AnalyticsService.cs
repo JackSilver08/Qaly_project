@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Analytics;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 
@@ -14,19 +15,22 @@ public class AnalyticsService : IAnalyticsService
     private readonly IRepository<ProjectMember> _memberRepo;
     private readonly IRepository<TimeEntry> _timeEntryRepo;
     private readonly ICurrentUserService _currentUserService;
+    private readonly ITaskAccessPolicy _taskAccessPolicy;
 
     public AnalyticsService(
         IRepository<Project> projectRepo,
         IRepository<TaskItem> taskRepo,
         IRepository<ProjectMember> memberRepo,
         IRepository<TimeEntry> timeEntryRepo,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        ITaskAccessPolicy taskAccessPolicy)
     {
         _projectRepo = projectRepo;
         _taskRepo = taskRepo;
         _memberRepo = memberRepo;
         _timeEntryRepo = timeEntryRepo;
         _currentUserService = currentUserService;
+        _taskAccessPolicy = taskAccessPolicy;
     }
 
     public async Task<Result<ProjectAnalyticsDto>> GetProjectAnalyticsAsync(Guid projectId, CancellationToken ct = default)
@@ -36,7 +40,7 @@ public class AnalyticsService : IAnalyticsService
             return Result.Forbidden<ProjectAnalyticsDto>();
         }
 
-        var tasks = await _taskRepo.GetQueryable()
+        var tasks = await _taskAccessPolicy.ApplyVisibilityFilter(_taskRepo.GetQueryable())
             .Where(t => t.ProjectId == projectId)
             .ToListAsync(ct);
 
@@ -109,20 +113,19 @@ public class AnalyticsService : IAnalyticsService
         var currentUserId = _currentUserService.UserId;
         if (currentUserId == null) return Result.Forbidden<WorkspaceAnalyticsDto>();
 
-        // Get all projects the user is a member of or owns
-        var memberProjectIds = await _memberRepo.GetQueryable()
-            .Where(m => m.UserId == currentUserId)
-            .Select(m => m.ProjectId)
-            .ToListAsync(ct);
-
-        var ownedProjectIds = await _projectRepo.GetQueryable()
-            .Where(p => p.OwnerId == currentUserId)
+        var allProjectIds = await _projectRepo.GetQueryable()
+            .Where(project =>
+                (project.OwnerId == currentUserId ||
+                 project.Members.Any(member => member.UserId == currentUserId)) &&
+                (project.OrganizationId == null ||
+                 (project.Organization != null &&
+                  project.Organization.IsActive &&
+                  (project.Organization.OwnerId == currentUserId ||
+                   project.Organization.Members.Any(member => member.UserId == currentUserId)))))
             .Select(p => p.Id)
             .ToListAsync(ct);
 
-        var allProjectIds = memberProjectIds.Union(ownedProjectIds).Distinct().ToList();
-
-        var tasks = await _taskRepo.GetQueryable()
+        var tasks = await _taskAccessPolicy.ApplyVisibilityFilter(_taskRepo.GetQueryable())
             .Where(t => allProjectIds.Contains(t.ProjectId))
             .ToListAsync(ct);
 
@@ -150,12 +153,12 @@ public class AnalyticsService : IAnalyticsService
         if (string.Equals(_currentUserService.Role, "Admin", StringComparison.OrdinalIgnoreCase))
             return true;
 
-        var project = await _projectRepo.GetByIdAsync(projectId, ct);
-        if (project == null) return false;
-
-        if (project.OwnerId == currentUserId) return true;
-
-        return await _memberRepo.GetQueryable()
-            .AnyAsync(m => m.ProjectId == projectId && m.UserId == currentUserId, ct);
+        var ownerId = await _projectRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(project => project.Id == projectId)
+            .Select(project => (Guid?)project.OwnerId)
+            .FirstOrDefaultAsync(ct);
+        return ownerId.HasValue &&
+            await _taskAccessPolicy.CanAccessProjectAsync(projectId, ownerId.Value, ct);
     }
 }

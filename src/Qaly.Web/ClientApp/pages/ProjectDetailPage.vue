@@ -112,6 +112,7 @@ const {
   taskSearchQuery,
   taskBeingQuickEditedId,
   timeEntries,
+  timeEntriesError,
   activeTimer,
   startTimer,
   stopTimer,
@@ -120,11 +121,34 @@ const {
 
 const router = useRouter();
 const route = useRoute();
+const validProjectTabs = new Set(tabs.map((tab: { id: string }) => tab.id));
+
+function routeProjectTab() {
+  const tab = typeof route.query.tab === "string" ? route.query.tab : "";
+  return validProjectTabs.has(tab) ? tab : null;
+}
+
+function selectProjectTab(tab: string) {
+  if (!validProjectTabs.has(tab)) return;
+  void router.push({
+    query: {
+      ...route.query,
+      tab: tab === "stats" ? undefined : tab,
+    },
+  });
+}
 
 watch(
-  () => route.hash,
-  (hash) => {
-    if (hash.startsWith("#milestone-")) activeProjectTab.value = "roadmap";
+  () => [route.params.projectId, route.params.taskId, route.query.tab, route.hash],
+  () => {
+    if (typeof route.params.taskId === "string") {
+      activeProjectTab.value = "tasks";
+      return;
+    }
+
+    activeProjectTab.value = route.hash.startsWith("#milestone-")
+      ? "roadmap"
+      : routeProjectTab() ?? "stats";
   },
   { immediate: true },
 );
@@ -132,6 +156,19 @@ watch(
 watch(activeProjectTab, (tab) => {
   if (tab !== "roadmap" && route.hash.startsWith("#milestone-")) {
     void router.replace({ hash: "" });
+  }
+
+  if (
+    route.name === "project-detail" &&
+    validProjectTabs.has(tab) &&
+    routeProjectTab() !== (tab === "stats" ? null : tab)
+  ) {
+    void router.replace({
+      query: {
+        ...route.query,
+        tab: tab === "stats" ? undefined : tab,
+      },
+    });
   }
 });
 const showImportModal = ref(false);
@@ -657,7 +694,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
             type="button"
             class="tab-link"
             :class="{ 'is-active': activeProjectTab === tab.id }"
-            @click="activeProjectTab = tab.id"
+            @click="selectProjectTab(tab.id)"
           >
             {{ tab.label }}
           </button>
@@ -1383,6 +1420,14 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                           </div>
                         </div>
                       </transition>
+
+                      <p
+                        v-if="timeEntriesError"
+                        class="assignment-note"
+                        role="alert"
+                      >
+                        {{ timeEntriesError }}
+                      </p>
 
                       <div
                         v-if="timeEntries.length > 0"
@@ -3487,4 +3532,3 @@ textarea.modal-input {
   }
 }
 </style>
-

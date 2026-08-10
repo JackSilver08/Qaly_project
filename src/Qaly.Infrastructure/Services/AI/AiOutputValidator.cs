@@ -229,6 +229,14 @@ public class AiOutputValidator
                     validationContextJson,
                     out errorMessage);
             }
+            else if (string.Equals(schemaId, AiProjectLaunchContract.BriefSchemaId, StringComparison.Ordinal))
+            {
+                return AiProjectLaunchOutputContract.TryParse(content, out _, out errorMessage);
+            }
+            else if (string.Equals(schemaId, AiProjectOrchestrationContract.ModelPlanSchemaId, StringComparison.Ordinal))
+            {
+                return AiProjectLaunchPlanningOutputContract.TryParse(content, out _, out errorMessage);
+            }
             else if (schemaId.Contains("assignee_recommendation", StringComparison.OrdinalIgnoreCase))
             {
                 if (root.ValueKind != JsonValueKind.Object)

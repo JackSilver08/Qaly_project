@@ -662,6 +662,28 @@ public sealed class AiJobProcessorTests : IDisposable
             "vi",
             skills));
         var job = await _db.AiJobs.Include(item => item.Sources).SingleAsync(item => item.Id == jobId);
+        if (!await _db.Organizations.AnyAsync(item => item.Id == organizationId))
+        {
+            _db.Organizations.Add(new Organization
+            {
+                Id = organizationId,
+                Name = "Task Skill Organization",
+                Code = "AI-SKILL",
+                OwnerId = job.RequestedById,
+                IsActive = true
+            });
+        }
+        if (!await _db.Projects.AnyAsync(item => item.Id == projectId))
+        {
+            _db.Projects.Add(new Project
+            {
+                Id = projectId,
+                Name = "Task Skill Project",
+                Code = "AI-SKILL",
+                OwnerId = job.RequestedById,
+                OrganizationId = organizationId
+            });
+        }
         job.ProjectId = projectId;
         job.TenantId = organizationId;
         job.SourceType = "task";
@@ -695,6 +717,26 @@ public sealed class AiJobProcessorTests : IDisposable
         var workerId = "worker-test";
         projectId ??= Guid.NewGuid();
         userId ??= Guid.NewGuid();
+        if (!await _db.Users.AnyAsync(item => item.Id == userId.Value))
+        {
+            _db.Users.Add(new User
+            {
+                Id = userId.Value,
+                FullName = "AI Job Owner",
+                Email = $"{userId.Value:N}@qaly.test",
+                PasswordHash = "not-used"
+            });
+        }
+        if (!await _db.Projects.AnyAsync(item => item.Id == projectId.Value))
+        {
+            _db.Projects.Add(new Project
+            {
+                Id = projectId.Value,
+                Name = "AI Job Project",
+                Code = $"AI-{projectId.Value:N}"[..12],
+                OwnerId = userId.Value
+            });
+        }
         var job = new AiJob
         {
             JobType = jobType,

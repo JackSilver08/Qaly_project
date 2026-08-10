@@ -27,6 +27,7 @@ public sealed class FeatureTestFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+        builder.UseSetting("UseInMemoryDatabase", "true");
 
         builder.ConfigureAppConfiguration((_, config) =>
         {

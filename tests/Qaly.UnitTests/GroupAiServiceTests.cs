@@ -104,15 +104,18 @@ public class GroupAiServiceTests : IDisposable
     {
         var groupId = Guid.NewGuid();
         var meetingId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         _groupsService
             .Setup(service => service.CanAccessGroupAsync(groupId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
+
+        await SeedGroupAsync(groupId, userId);
 
         var meeting = new GroupMeetingSession
         {
             Id = meetingId,
             WorkGroupId = groupId,
-            StartedByUserId = Guid.NewGuid(),
+            StartedByUserId = userId,
             Provider = "Jitsi",
             RoomId = "room-123"
         };
@@ -154,7 +157,8 @@ public class GroupAiServiceTests : IDisposable
             .ReturnsAsync(true);
 
         var user = new User { Id = userId, Email = "test@example.com", FullName = "Alice Tester" };
-        await _context.Users.AddAsync(user);
+        var group = new WorkGroup { Id = groupId, Name = "Test Group", OwnerId = userId };
+        await _context.AddRangeAsync(user, group);
         await _context.SaveChangesAsync();
 
         var message = new GroupMessage
@@ -184,7 +188,8 @@ public class GroupAiServiceTests : IDisposable
             .ReturnsAsync(true);
 
         var user = new User { Id = userId, Email = "test@example.com", FullName = "Alice Tester" };
-        await _context.Users.AddAsync(user);
+        var group = new WorkGroup { Id = groupId, Name = "Test Group", OwnerId = userId };
+        await _context.AddRangeAsync(user, group);
         await _context.SaveChangesAsync();
 
         var message = new GroupMessage
@@ -224,7 +229,8 @@ public class GroupAiServiceTests : IDisposable
             .ReturnsAsync(true);
 
         var user = new User { Id = userId, Email = "test@example.com", FullName = "Alice Tester" };
-        await _context.Users.AddAsync(user);
+        var group = new WorkGroup { Id = groupId, Name = "Test Group", OwnerId = userId };
+        await _context.AddRangeAsync(user, group);
         await _context.SaveChangesAsync();
 
         var message = new GroupMessage
@@ -268,6 +274,19 @@ public class GroupAiServiceTests : IDisposable
             _auditLogService.Object,
             NullLogger<GroupAiService>.Instance,
             _currentUserService.Object);
+
+    private async Task SeedGroupAsync(Guid groupId, Guid userId)
+    {
+        var user = new User
+        {
+            Id = userId,
+            Email = $"{userId:N}@qaly.test",
+            FullName = "Meeting Owner"
+        };
+        var group = new WorkGroup { Id = groupId, Name = "Test Group", OwnerId = userId };
+        await _context.AddRangeAsync(user, group);
+        await _context.SaveChangesAsync();
+    }
 
     public void Dispose()
     {

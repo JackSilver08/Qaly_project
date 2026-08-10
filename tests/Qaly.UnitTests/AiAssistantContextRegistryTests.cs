@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using Moq;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Ai;
+using Qaly.Application.Services;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 using Qaly.Infrastructure.Data;
@@ -69,6 +70,87 @@ public sealed class AiAssistantContextRegistryTests
     }
 
     [Fact]
+    public async Task ResolveAsync_ProjectLaunch_UsesOrganizationAndEffectiveRulebookSourcesOnly()
+    {
+        await using var db = CreateContext();
+        var owner = CreateUser("Organization owner");
+        var organization = new Organization
+        {
+            Name = "Launch workspace",
+            Code = "LAUNCH",
+            OwnerId = owner.Id,
+            IsActive = true
+        };
+        db.AddRange(owner, organization,
+            new OrganizationMember { OrganizationId = organization.Id, UserId = owner.Id, Role = OrganizationRoleRules.Owner },
+            new OrganizationWorkRuleSet
+            {
+                OrganizationId = organization.Id,
+                Version = 1,
+                Status = "active",
+                EffectiveFrom = DateTimeOffset.UtcNow.AddDays(-1),
+                RulesJson = "[]",
+                CreatedByUserId = owner.Id,
+                Revision = 1
+            });
+        await db.SaveChangesAsync();
+
+        var result = await CreateRegistry(db, owner.Id).ResolveAsync(new AiAssistantTurnRequestDto(
+            "Khởi chạy một dự án web SPA",
+            new AiAssistantClientContextDto(OrganizationId: organization.Id),
+            RequestedCapabilityId: AiProjectLaunchContract.CapabilityId));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Capabilities.Should().Contain(item => item.CapabilityId == AiProjectLaunchContract.CapabilityId);
+        result.Data.Capabilities.Should().Contain(item =>
+            item.CapabilityId == AiProjectOrchestrationContract.StaffingCapabilityId &&
+            item.RiskClass == "read_only_proposal" &&
+            item.OutputSchemaId == AiProjectOrchestrationContract.PlanSchemaId);
+        result.Data.Capabilities.Should().Contain(item =>
+            item.CapabilityId == AiProjectOrchestrationContract.ExecuteCapabilityId &&
+            item.ConfirmationPolicy == "explicit_batch_confirm" &&
+            item.RollbackPolicy == "impact_checked_soft_delete");
+        result.Data.Sources.Select(item => item.SourceId).Should().Contain(
+            AiAssistantContextContract.OrganizationSummarySource,
+            AiAssistantContextContract.OrganizationRulebookSource);
+        result.Data.Sources.Should().OnlyContain(item => item.PrivacyClass == "organization_private");
+    }
+
+    [Fact]
+    public async Task DiscoverAsync_ForManagedOrganizationWithoutProjects_AdvertisesPlanningExecutionAndMonitoring()
+    {
+        await using var db = CreateContext();
+        var owner = CreateUser("Organization owner");
+        var organization = new Organization
+        {
+            Name = "Empty launch workspace",
+            Code = "EMPTY-LAUNCH",
+            OwnerId = owner.Id,
+            IsActive = true
+        };
+        db.AddRange(owner, organization,
+            new OrganizationMember
+            {
+                OrganizationId = organization.Id,
+                UserId = owner.Id,
+                Role = OrganizationRoleRules.Owner
+            });
+        await db.SaveChangesAsync();
+
+        var result = await CreateRegistry(db, owner.Id).DiscoverAsync(new AiAssistantTurnRequestDto(
+            "Plan and launch the first Project",
+            new AiAssistantClientContextDto(OrganizationId: organization.Id)));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        var capabilityIds = result.Data!.Capabilities.Select(item => item.CapabilityId);
+        capabilityIds.Should().Contain(AiProjectOrchestrationContract.StaffingCapabilityId);
+        capabilityIds.Should().Contain(AiProjectOrchestrationContract.ExecuteCapabilityId);
+        capabilityIds.Should().Contain(AiProjectOrchestrationContract.MonitorCapabilityId);
+        result.Data.Capabilities.Should().NotContain(item =>
+            item.CapabilityId == AiAssistantContextContract.TaskCreateCapability);
+    }
+
+    [Fact]
     public async Task ResolveAsync_ForForeignProject_ReturnsNondisclosingNotFound()
     {
         await using var db = CreateContext();
@@ -128,6 +210,8 @@ public sealed class AiAssistantContextRegistryTests
             item.CapabilityId == AiAssistantContextContract.ResearchPlanCapability);
         result.Data.Capabilities.Should().NotContain(item =>
             item.CapabilityId == AiAssistantContextContract.TaskCreateCapability);
+        result.Data.Capabilities.Should().NotContain(item =>
+            item.CapabilityId == AiProjectOrchestrationContract.MonitorCapabilityId);
         var tasksSource = result.Data.Sources.Single(item =>
             item.SourceId == AiAssistantContextContract.ProjectTasksSource);
         var serializedFacts = JsonSerializer.Serialize(tasksSource.Facts);
@@ -183,6 +267,10 @@ public sealed class AiAssistantContextRegistryTests
             {
                 AssistantContextRegistryEnabled = true,
                 AssistantResearchPlanEnabled = true,
+                ProjectLaunchBriefEnabled = true,
+                ProjectLaunchPlanningEnabled = true,
+                ProjectLaunchExecutionEnabled = true,
+                ProjectOperationMonitoringEnabled = true,
                 ActionComposerEnabled = true,
                 ActionComposerTaskCreateEnabled = true
             }));

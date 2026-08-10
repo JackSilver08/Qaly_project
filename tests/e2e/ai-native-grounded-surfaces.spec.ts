@@ -1,8 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { browserApiRequest } from './support/browser-api'
-
-const adminEmail = process.env.E2E_ADMIN_EMAIL ?? 'admin@qaly.dev'
-const adminPassword = process.env.E2E_ADMIN_PASSWORD ?? 'Qaly@Dev2026!'
+import { adminEmail, adminPassword } from './support/credentials'
 
 // These browser journeys deliberately create and remove shared in-memory Group/Project data.
 // Keep them serial so one journey cannot change another journey's dashboard tenant selector.

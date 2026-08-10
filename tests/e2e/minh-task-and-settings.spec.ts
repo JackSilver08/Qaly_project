@@ -1,10 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
 import { browserApiRequest } from './support/browser-api'
+import { adminEmail, adminPassword } from './support/credentials'
 
 test.describe.configure({ mode: 'serial' })
-
-const adminEmail = process.env.E2E_ADMIN_EMAIL ?? 'admin@qaly.dev'
-const adminPassword = process.env.E2E_ADMIN_PASSWORD ?? 'Admin@123456'
 
 function uniqueName(prefix: string) {
   return `${prefix} ${Date.now()} ${Math.random().toString(36).slice(2, 8)}`
@@ -119,7 +117,7 @@ test('canonical task opens from project and tasks pages, refresh and back keep t
     await expect(page.locator('.task-detail-drawer')).toContainText(taskTitle)
 
     await page.goBack({ waitUntil: 'domcontentloaded' })
-    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}$`))
+    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}\\?tab=tasks$`))
 
     await page.goto('/tasks', { waitUntil: 'domcontentloaded' })
     await expect(page.locator('.task-card').filter({ hasText: taskTitle }).first()).toBeVisible()

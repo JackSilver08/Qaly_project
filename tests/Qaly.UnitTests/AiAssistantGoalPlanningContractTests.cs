@@ -61,7 +61,7 @@ public sealed class AiAssistantGoalPlanningContractTests
     [Fact]
     public void DeterministicFallback_DemoRequest_IsHonestAndNeverExecutes()
     {
-        var context = new AiAssistantExecutionContextDto(AiAssistantCapabilityCatalog.All.ToArray(), [], []);
+        var context = new AiAssistantExecutionContextDto(WithoutSafeTestCapability(), [], []);
         var result = AiAssistantGoalPlanningOutputContract.CreateDeterministicFallback(
             new AiAssistantTurnRequestDto("Chạy test demo tất cả CAND đã implement"), context, "provider_unavailable");
 
@@ -95,6 +95,25 @@ public sealed class AiAssistantGoalPlanningContractTests
     }
 
     [Fact]
+    public void DeterministicFallback_NaturalProjectPhrase_SelectsArtifactOnlyProjectLaunchSkill()
+    {
+        var context = new AiAssistantExecutionContextDto(WithoutSafeTestCapability(), [], []);
+
+        var result = AiAssistantGoalPlanningOutputContract.CreateDeterministicFallback(
+            new AiAssistantTurnRequestDto(
+                "Tạo một dự án web SPA",
+                new AiAssistantClientContextDto("/dashboard", "projects")),
+            context,
+            "goal_provider_unavailable");
+
+        result.SelectedCapabilityId.Should().Be(AiProjectLaunchContract.CapabilityId);
+        result.GoalAnalysis.Disposition.Should().Be("plannable");
+        result.GoalAnalysis.MissingSkills.Should().BeEmpty();
+        result.WorkPlan.Steps.Should().Contain(step =>
+            step.Kind == "call_skill" && step.SkillId == AiProjectLaunchContract.CapabilityId && step.MutationClass == "none");
+    }
+
+    [Fact]
     public async Task Planner_KnownDemoExecutionRequest_DoesNotCallProvider()
     {
         var gateway = new Mock<IAiGateway>(MockBehavior.Strict);
@@ -103,7 +122,7 @@ public sealed class AiAssistantGoalPlanningContractTests
             gateway.Object,
             currentUser.Object,
             Options.Create(new AiJobPlatformOptions { AssistantGoalPlannerEnabled = true }));
-        var context = new AiAssistantExecutionContextDto(AiAssistantCapabilityCatalog.All.ToArray(), [], []);
+        var context = new AiAssistantExecutionContextDto(WithoutSafeTestCapability(), [], []);
 
         var result = await planner.PlanAsync(
             new AiAssistantTurnRequestDto(
@@ -118,6 +137,21 @@ public sealed class AiAssistantGoalPlanningContractTests
     }
 
     [Fact]
+    public void DeterministicFallback_DemoRequest_WithDevCapability_PreparesConfirmedAdapterHandoff()
+    {
+        var context = new AiAssistantExecutionContextDto(AiAssistantCapabilityCatalog.All.ToArray(), [], []);
+
+        var result = AiAssistantGoalPlanningOutputContract.CreateDeterministicFallback(
+            new AiAssistantTurnRequestDto("Chạy test demo tất cả CAND đã implement"), context, "provider_unavailable");
+
+        result.SelectedCapabilityId.Should().Be(AiSafeTestOrchestratorContract.CapabilityId);
+        result.GoalAnalysis.MissingSkills.Should().BeEmpty();
+        result.GoalAnalysis.RequiresConfirmation.Should().BeTrue();
+        result.WorkPlan.Steps.Should().Contain(step =>
+            step.Kind == "call_skill" && step.SkillId == AiSafeTestOrchestratorContract.CapabilityId);
+    }
+
+    [Fact]
     public void ValidateModel_RejectsCyclicWorkPlan()
     {
         var valid = AiAssistantGoalPlanningOutputContract.TryValidateModel(
@@ -128,6 +162,11 @@ public sealed class AiAssistantGoalPlanningContractTests
         valid.Should().BeFalse();
         error.Should().Contain("cycle");
     }
+
+    private static AiAssistantCapabilityDescriptorDto[] WithoutSafeTestCapability()
+        => AiAssistantCapabilityCatalog.All
+            .Where(item => item.CapabilityId != AiSafeTestOrchestratorContract.CapabilityId)
+            .ToArray();
 
     private static string ModelJson(
         string objective,

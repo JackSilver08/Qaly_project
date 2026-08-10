@@ -1,8 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { browserApiRequest } from './support/browser-api'
-
-const adminEmail = process.env.E2E_ADMIN_EMAIL ?? 'admin@qaly.dev'
-const adminPassword = process.env.E2E_ADMIN_PASSWORD ?? 'Qaly@Dev2026!'
+import { adminEmail, adminPassword } from './support/credentials'
 
 function envelope<T>(data: T) {
   return { isSuccess: true, data, error: null, errorCode: null, statusCode: 200 }

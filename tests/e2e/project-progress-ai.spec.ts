@@ -1,10 +1,9 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
+import { adminEmail, adminPassword } from './support/credentials'
 
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(90_000)
 
-const adminEmail = process.env.E2E_ADMIN_EMAIL ?? 'admin@qaly.dev'
-const adminPassword = process.env.E2E_ADMIN_PASSWORD ?? 'Qaly@E2E2026!'
 const projectId = '11111111-1111-4111-8111-111111111111'
 const jobId = '22222222-2222-4222-8222-222222222222'
 const taskId = '33333333-3333-4333-8333-333333333333'

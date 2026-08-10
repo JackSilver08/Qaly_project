@@ -146,6 +146,7 @@ const isLoadingGroups = ref(false);
 const isLoadingMessages = ref(false);
 const loadError = ref<string | null>(null);
 const realtimeState = ref<"connecting" | "connected" | "offline">("offline");
+const isActiveGroupReady = ref(false);
 const showCreateModal = ref(false);
 const createForm = ref({ name: "", color: "#2563eb" });
 const inviteEmail = ref("");
@@ -272,7 +273,9 @@ watch(
 );
 
 watch(activeGroupId, async (next, previous) => {
+  isActiveGroupReady.value = false;
   if (previous && hubConnection?.state === HubConnectionState.Connected) {
+    realtimeState.value = "connecting";
     await hubConnection.invoke("TypingStopped", previous).catch(() => undefined);
     await hubConnection.invoke("LeaveGroup", previous).catch(() => undefined);
   }
@@ -294,8 +297,15 @@ watch(activeGroupId, async (next, previous) => {
   }
 
   if (hubConnection?.state === HubConnectionState.Connected) {
-    await hubConnection.invoke("JoinGroup", next).catch(() => undefined);
+    try {
+      await hubConnection.invoke("JoinGroup", next);
+      realtimeState.value = "connected";
+    } catch {
+      realtimeState.value = "offline";
+    }
   }
+
+  if (activeGroupId.value === next) isActiveGroupReady.value = true;
 });
 
 async function loadGroups() {
@@ -424,9 +434,14 @@ async function connectRealtime() {
     realtimeState.value = "connecting";
   });
   hubConnection.onreconnected(async () => {
-    realtimeState.value = "connected";
-    if (activeGroupId.value) {
-      await hubConnection?.invoke("JoinGroup", activeGroupId.value).catch(() => undefined);
+    realtimeState.value = "connecting";
+    try {
+      if (activeGroupId.value) {
+        await hubConnection?.invoke("JoinGroup", activeGroupId.value);
+      }
+      realtimeState.value = "connected";
+    } catch {
+      realtimeState.value = "offline";
     }
   });
   hubConnection.onclose(() => {
@@ -484,10 +499,10 @@ async function connectRealtime() {
 
   try {
     await hubConnection.start();
-    realtimeState.value = "connected";
     if (activeGroupId.value) {
-      await hubConnection.invoke("JoinGroup", activeGroupId.value).catch(() => undefined);
+      await hubConnection.invoke("JoinGroup", activeGroupId.value);
     }
+    realtimeState.value = "connected";
   } catch {
     realtimeState.value = "offline";
   }
@@ -817,15 +832,23 @@ async function sendMessage(payload: {
     });
     const messageType = payload.poll ? "Poll" : "Text";
 
-    if (hubConnection?.state === HubConnectionState.Connected) {
-      await hubConnection.invoke(
-        "SendMessage",
-        activeGroupId.value,
-        content,
-        messageType,
-        payload.replyToMessageId ?? null,
-      );
-      return true;
+    if (
+      hubConnection?.state === HubConnectionState.Connected &&
+      realtimeState.value === "connected"
+    ) {
+      try {
+        const saved = await hubConnection.invoke<GroupMessageDto>(
+          "SendMessage",
+          activeGroupId.value,
+          content,
+          messageType,
+          payload.replyToMessageId ?? null,
+        );
+        upsertMessage(toMessageModel(saved));
+        return true;
+      } catch {
+        realtimeState.value = "offline";
+      }
     }
 
     const saved = await apiResult<GroupMessageDto>(
@@ -1408,6 +1431,7 @@ function formatMessageTime(value: string) {
           :background-image="activeBackgroundImage"
           :can-customize-background="canManageGroup"
           :available-groups="groups"
+          :can-send="isActiveGroupReady"
           @send="sendMessage"
           @edit="editMessage"
           @pin="setMessagePin"

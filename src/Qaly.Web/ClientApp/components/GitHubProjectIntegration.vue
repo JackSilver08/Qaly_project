@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { Check, ChevronDown, ExternalLink, Github, Loader2, Lock, Plus, RefreshCw, Search, ShieldCheck, Trash2 } from 'lucide-vue-next'
-import { githubApi, type GitHubInstallation, type GitHubRepository, type GitHubRepositoryConnection } from '../utils/github-api'
+import { githubApi, type GitHubInstallation, type GitHubIntegrationStatus, type GitHubRepository, type GitHubRepositoryConnection } from '../utils/github-api'
 import { errorMessage } from '../utils/api-client'
 import { showError, showSuccess } from '../composables/use-toast'
 import { confirmDialog } from '../composables/use-confirm-dialog'
@@ -19,6 +19,7 @@ const selectedRepositoryIds = ref<number[]>([])
 const query = ref('')
 const loadError = ref('')
 const pickerOpen = ref(false)
+const integrationStatus = ref<GitHubIntegrationStatus | null>(null)
 
 const activeConnections = computed(() => connections.value.filter(item => item.isActive))
 const connectedIds = computed(() => new Set(activeConnections.value.map(item => item.repositoryExternalId)))
@@ -27,13 +28,15 @@ const visibleRepositories = computed(() => {
   return repositories.value.filter(item => !connectedIds.value.has(item.id) && (!term || item.fullName.toLowerCase().includes(term)))
 })
 const hasInstallation = computed(() => installations.value.some(item => item.status === 'Active'))
+const hasVerifiedConnection = computed(() => integrationStatus.value?.state === 'connected' && integrationStatus.value.liveVerified)
+const hasConnectionProblem = computed(() => ['invalid_credentials', 'insufficient_permissions', 'rate_limited', 'unavailable'].includes(integrationStatus.value?.state ?? ''))
+const serverUnavailableForSetup = computed(() => ['disabled', 'unconfigured'].includes(integrationStatus.value?.state ?? ''))
 const syncedConnections = computed(() => activeConnections.value.filter(item => item.lastSyncedAt).length)
 const privateConnections = computed(() => activeConnections.value.filter(item => item.isPrivate).length)
 const onboardingStep = computed(() => !hasInstallation.value ? 1 : activeConnections.value.length === 0 ? 2 : 3)
 
 onMounted(async () => {
   const setupStatus = new URLSearchParams(window.location.search).get('github')
-  if (setupStatus === 'connected') showSuccess('Đã kết nối GitHub App')
   if (setupStatus === 'error') showError('Không thể hoàn tất kết nối GitHub App.')
   if (setupStatus) {
     const params = new URLSearchParams(window.location.search); params.delete('github')
@@ -49,10 +52,12 @@ async function loadAll() {
   loading.value = true
   loadError.value = ''
   try {
-    const [installationItems, connectionItems] = await Promise.all([
+    const [status, installationItems, connectionItems] = await Promise.all([
+      githubApi.status(props.projectId),
       githubApi.installations(props.projectId),
       githubApi.connections(props.projectId),
     ])
+    integrationStatus.value = status
     installations.value = installationItems
     connections.value = connectionItems
     if (connections.value.filter(item => item.isActive).length === 0 && installationItems.some(item => item.status === 'Active') && props.canManage) pickerOpen.value = true
@@ -130,7 +135,7 @@ function formatSync(value: string | null) {
     <header class="github-hero">
       <div class="github-mark"><Github :size="26" /></div>
       <div><span>Tích hợp mã nguồn</span><h2>GitHub</h2><p>Theo dõi PR, review, CI và release ngay trong Qaly — chỉ yêu cầu quyền đọc.</p></div>
-      <button v-if="canManage" class="primary-button" type="button" :disabled="connecting" @click="connectGitHub">
+      <button v-if="canManage && !serverUnavailableForSetup" class="primary-button" type="button" :disabled="connecting" @click="connectGitHub">
         <Loader2 v-if="connecting" :size="16" class="spin" /><Github v-else :size="16" />
         {{ hasInstallation ? 'Quản lý quyền GitHub' : 'Kết nối GitHub' }}
       </button>
@@ -138,7 +143,15 @@ function formatSync(value: string | null) {
 
     <div v-if="loading" class="github-state"><Loader2 class="spin" :size="22" /><span>Đang kiểm tra kết nối...</span></div>
     <div v-else-if="loadError" class="github-state is-error"><p>{{ loadError }}</p><button class="ghost-button" @click="loadAll"><RefreshCw :size="15" /> Thử lại</button></div>
-    <div v-else-if="!hasInstallation" class="github-empty">
+    <div v-else-if="serverUnavailableForSetup" class="github-empty">
+      <Github :size="38" /><h3>{{ integrationStatus?.state === 'disabled' ? 'GitHub đang bị tắt' : 'GitHub App chưa được cấu hình' }}</h3>
+      <p>{{ integrationStatus?.message }}</p>
+    </div>
+    <div v-else-if="hasConnectionProblem" class="github-state is-error">
+      <Github :size="38" /><h3>Không thể xác minh kết nối GitHub</h3><p>{{ integrationStatus?.message }}</p>
+      <button class="ghost-button" @click="loadAll"><RefreshCw :size="15" /> Kiểm tra lại</button>
+    </div>
+    <div v-else-if="!hasVerifiedConnection" class="github-empty">
       <Github :size="38" /><h3>Chưa kết nối GitHub</h3><p>Quản trị viên cài Qaly GitHub App, chọn đúng repository và Qaly sẽ tự nhận hoạt động kỹ thuật.</p>
       <button v-if="canManage" class="primary-button" @click="connectGitHub">Bắt đầu kết nối</button>
       <small v-else>Liên hệ quản trị viên project để kết nối.</small>

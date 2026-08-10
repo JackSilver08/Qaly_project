@@ -1,11 +1,9 @@
 import { expect, test, type Browser, type Page, type TestInfo } from '@playwright/test'
 import { browserApiRequest, type BrowserApiResponse } from './support/browser-api'
+import { adminEmail, adminPassword } from './support/credentials'
 
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(120_000)
-
-const adminEmail = process.env.E2E_ADMIN_EMAIL ?? 'admin@qaly.dev'
-const adminPassword = process.env.E2E_ADMIN_PASSWORD ?? 'Admin@123456'
 
 type ApiResult<T> = {
   isSuccess: boolean

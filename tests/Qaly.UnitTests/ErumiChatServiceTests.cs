@@ -27,6 +27,11 @@ namespace Qaly.UnitTests;
 
 public class ErumiChatServiceTests : IDisposable
 {
+    private static readonly string[] ResearchCapacityAssumptions = ["Capacity chưa được xác minh."];
+    private static readonly string[] ResearchTradeOffs = ["Lùi việc phụ."];
+    private static readonly string[] ResearchWarnings = ["Cần human review."];
+    private static readonly string[] ResearchPrivacyNotes = ["model_claim"];
+
     private readonly QalyDbContext _context;
     private readonly GenericRepository<ProjectMember> _memberRepo;
 
@@ -847,6 +852,102 @@ public class ErumiChatServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task AssistantPlannedTurnAsync_WithoutExecutor_ReturnsDeepSeekGuidanceAndNeverCallsTools()
+    {
+        var request = new AiAssistantTurnRequestDto(
+            "chạy tự động để test các CAND đã implement",
+            new AiAssistantClientContextDto("/dashboard", "workspace"),
+            Mode: "agent");
+        var fullContext = FullAssistantContext();
+        var context = fullContext with
+        {
+            Capabilities = fullContext.Capabilities
+                .Where(item => item.CapabilityId != AiProjectLaunchContract.CapabilityId)
+                .ToArray()
+        };
+        var planning = AiAssistantGoalPlanningOutputContract.CreateDeterministicFallback(
+            request,
+            context,
+            "known_missing_execution_capability");
+
+        _analyticsServiceMock
+            .Setup(service => service.GetWorkspaceAnalyticsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new WorkspaceAnalyticsDto(4, 3, 24, 6, 18)));
+        _aiGatewayMock
+            .Setup(gateway => gateway.ExecuteAsync(
+                It.Is<AiRequest>(aiRequest =>
+                    aiRequest.ExpectedSchemaId == "TextAnswer.v1" &&
+                    aiRequest.ProviderHint == "deepseek-v4-pro" &&
+                    !aiRequest.StrictProvider &&
+                    aiRequest.Tools == null),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiResponse
+            {
+                Content = "{\"reply\":\"Mình có thể lập ma trận kiểm thử CAND theo unit, integration và E2E. Bạn muốn ưu tiên smoke test hay regression?\",\"metrics\":[],\"tables\":[],\"charts\":[],\"actions\":[],\"files\":[],\"confidence\":0.9}",
+                ProviderName = "DeepSeek",
+                ModelName = "deepseek-v4-pro"
+            });
+
+        var result = await _service.AssistantPlannedTurnAsync(request, context, planning);
+
+        Console.WriteLine($"[DEBUG] SelectedCapabilityId: {planning.SelectedCapabilityId ?? "NULL"} Disposition: {planning.GoalAnalysis.Disposition}");
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Disposition.Should().Be("guided_answer");
+        result.Data.Intent.Should().Be(AiAssistantTurnContract.GuidedAnswerIntent);
+        result.Data.ExecutionPolicy.Should().Be("analyze_only");
+        result.Data.Artifact.Should().BeNull();
+        result.Data.Answer.Should().NotBeNull();
+        result.Data.Answer!.Model!.Provider.Should().Be("DeepSeek");
+        result.Data.AssistantMessage.Should().Contain("ma trận kiểm thử CAND");
+        result.Data.AssistantMessage.Should().Contain("chưa thể tự thực hiện trực tiếp");
+        result.Data.AssistantMessage.Should().NotContain("schema");
+        result.Data.AssistantMessage.Should().NotContain("adapter");
+        _aiGatewayMock.VerifyAll();
+    }
+
+    [Fact]
+    public async Task AssistantPlannedTurnAsync_AdvisoryProviderFailure_DegradesToManualGuidance()
+    {
+        var request = new AiAssistantTurnRequestDto(
+            "Tạo một dự án web SPA",
+            new AiAssistantClientContextDto("/dashboard", "projects"),
+            Mode: "agent");
+        var fullContext = FullAssistantContext();
+        var context = fullContext with
+        {
+            Capabilities = fullContext.Capabilities
+                .Where(item => item.CapabilityId != AiProjectLaunchContract.CapabilityId)
+                .ToArray()
+        };
+        var planning = AiAssistantGoalPlanningOutputContract.CreateDeterministicFallback(
+            request,
+            context,
+            "goal_provider_unavailable");
+
+        _analyticsServiceMock
+            .Setup(service => service.GetWorkspaceAnalyticsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new WorkspaceAnalyticsDto(0, 0, 0, 0, 0)));
+        _aiGatewayMock
+            .Setup(gateway => gateway.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiResponse
+            {
+                IsSuccess = false,
+                ErrorCode = AiErrorCodes.ProviderUnavailable,
+                ErrorMessage = "Provider unavailable"
+            });
+
+        var result = await _service.AssistantPlannedTurnAsync(request, context, planning);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Disposition.Should().Be("guided_answer");
+        result.Data.Intent.Should().Be(AiAssistantTurnContract.GuidedAnswerIntent);
+        result.Data.Answer.Should().BeNull();
+        result.Data.Artifact.Should().BeNull();
+        result.Data.AssistantMessage.Should().Contain("luồng thủ công tương ứng trong Qaly");
+        result.Data.AssistantMessage.Should().Contain("chưa có dữ liệu nào được thay đổi");
+    }
+
+    [Fact]
     public async Task AssistantTurnAsync_ForExistingTaskAssignment_DoesNotMisrouteToTaskCreate()
     {
         var result = await _service.AssistantTurnAsync(new AiAssistantTurnRequestDto(
@@ -985,10 +1086,10 @@ public class ErumiChatServiceTests : IDisposable
                 new { findingId = "F1", statement = "Dự án cần ưu tiên xử lý rủi ro.", severity = "high", confidence = 0.9, sourceRefs = new[] { sourceRef } }
             },
             unknowns = new[] { new { unknownId = "U1", question = "Capacity sắp tới là bao nhiêu?", blocking = false } },
-            assumptions = new[] { "Capacity chưa được xác minh." },
+            assumptions = ResearchCapacityAssumptions,
             options = new[]
             {
-                new { optionId = "O1", title = "Ưu tiên rủi ro", outcome = "Giảm rủi ro chính.", tradeOffs = new[] { "Lùi việc phụ." }, estimatedEffort = "1 ngày", risk = "Chậm hạng mục phụ." }
+                new { optionId = "O1", title = "Ưu tiên rủi ro", outcome = "Giảm rủi ro chính.", tradeOffs = ResearchTradeOffs, estimatedEffort = "1 ngày", risk = "Chậm hạng mục phụ." }
             },
             recommendedOptionId = "O1",
             recommendationRationale = "Phương án dùng fact có nguồn.",
@@ -996,8 +1097,8 @@ public class ErumiChatServiceTests : IDisposable
             {
                 new { actionId = "A1", capabilityId = "project.create.v1", title = "Tạo project khác", dependencyIds = Array.Empty<string>(), draftInput = new { name = "Draft" }, sourceRefs = new[] { sourceRef }, executionEligible = true, eligibilityReason = "model_claim" }
             },
-            warnings = new[] { "Cần human review." },
-            privacyNotes = new[] { "model_claim" },
+            warnings = ResearchWarnings,
+            privacyNotes = ResearchPrivacyNotes,
             freshnessAt = DateTimeOffset.UnixEpoch,
             generatedAt = DateTimeOffset.UnixEpoch,
             actualProvider = "model_claim",

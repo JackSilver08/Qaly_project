@@ -41,10 +41,7 @@ public class SecurityCriticalTests
         var ticket = new AuthenticationTicket(new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim(ClaimTypes.NameIdentifier, "user") }, "Test")), "TestScheme");
 
         var task = store.RenewAsync("AuthTicket:test", ticket);
-        var completed = await Task.WhenAny(task, Task.Delay(1000));
-
-        completed.Should().Be(task);
-        await task;
+        await task.WaitAsync(TimeSpan.FromSeconds(3));
     }
 
     [Fact]

@@ -15,9 +15,17 @@ interface ProjectOption {
   members?: Array<{ userId?: string; id?: string; fullName: string }>
 }
 
+interface AssistantOpenRequest {
+  id: number
+  view: 'chat' | 'activity'
+  prompt?: string
+  projectId?: string | null
+}
+
 const props = defineProps<{
   projectId?: string | null
   projects: ProjectOption[]
+  openRequest?: AssistantOpenRequest | null
 }>()
 
 const emit = defineEmits<{
@@ -29,6 +37,9 @@ const router = useRouter()
 const isOpen = ref(false)
 const activeView = ref<'chat' | 'create' | 'activity'>('chat')
 const actionPrompt = ref('')
+const assistantPrompt = ref('')
+const assistantPromptToken = ref(0)
+const assistantProjectId = ref<string | null>(props.projectId || null)
 const actionProjectId = ref<string | null>(props.projectId || null)
 const actionComposerKey = ref(0)
 const artifactAvailable = ref(false)
@@ -361,10 +372,17 @@ function closeDrawer() {
   void router.replace({ query })
 }
 
-function openAssistant(event?: Event) {
-  const detail = event instanceof CustomEvent ? event.detail : null
+function applyAssistantOpenRequest(detail?: Partial<AssistantOpenRequest> | null) {
   isOpen.value = true
   activeView.value = detail?.view === 'activity' ? 'activity' : 'chat'
+  assistantPrompt.value = String(detail?.prompt || '').trim()
+  assistantProjectId.value = String(detail?.projectId || props.projectId || '') || null
+  assistantPromptToken.value += 1
+}
+
+function openAssistant(event?: Event) {
+  const detail = event instanceof CustomEvent ? event.detail : null
+  applyAssistantOpenRequest(detail)
 }
 
 function openActionComposer(event?: Event) {
@@ -423,6 +441,14 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', syncViewport)
   removeResizeListeners()
 })
+
+watch(
+  () => props.openRequest?.id,
+  () => {
+    if (props.openRequest) applyAssistantOpenRequest(props.openRequest)
+  },
+  { immediate: true, flush: 'post' },
+)
 
 watch(
   () => [route.query.aiActivity, route.query.aiJob, route.query.aiDraft],
@@ -546,7 +572,13 @@ watch(isOpen, async open => {
           :style="drawerBodyStyle"
         >
           <section v-show="showConversationPane" class="assistant-conversation-pane">
-            <ErumiChatPanel :is-drawer="true" @compose-action="handleComposeAction" />
+            <ErumiChatPanel
+              :is-drawer="true"
+              :external-prompt="assistantPrompt"
+              :external-prompt-token="assistantPromptToken"
+              :external-project-id="assistantProjectId"
+              @compose-action="handleComposeAction"
+            />
           </section>
           <div
             v-if="showArtifactSplitter"

@@ -12,6 +12,13 @@ public sealed class ProjectGitHubInstallationController : BaseApiController
     private readonly IGitHubInstallationService _service;
     public ProjectGitHubInstallationController(IGitHubInstallationService service) => _service = service;
 
+    [HttpGet("status")]
+    public async Task<IActionResult> Status(Guid projectId, CancellationToken ct)
+    {
+        var result = await _service.GetStatusAsync(projectId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpGet("install-url")]
     public async Task<IActionResult> GetInstallUrl(Guid projectId, CancellationToken ct)
     {

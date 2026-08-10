@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   Send,
   Square,
@@ -15,7 +15,7 @@ import {
 } from 'lucide-vue-next'
 import { useDashboardContext } from '../../composables/dashboard-context'
 import { useErumiContext } from '../../composables/use-erumi-context'
-import { apiJson } from '../../utils/api-client'
+import { apiJson, apiResult } from '../../utils/api-client'
 import { showError, showSuccess } from '../../composables/use-toast'
 import ChatbotAvatar from '../ChatbotAvatar.vue'
 import AiModelSelector from '../analytics-ai/AiModelSelector.vue'
@@ -52,8 +52,14 @@ ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, LineElement
 
 const props = withDefaults(defineProps<{
   isDrawer?: boolean
+  externalPrompt?: string
+  externalPromptToken?: number
+  externalProjectId?: string | null
 }>(), {
-  isDrawer: false
+  isDrawer: false,
+  externalPrompt: '',
+  externalPromptToken: 0,
+  externalProjectId: null,
 })
 
 const emit = defineEmits<{
@@ -63,6 +69,7 @@ const emit = defineEmits<{
 const { projects, selectedProject, currentUser, loadDashboard } = useDashboardContext()
 const erumiContext = useErumiContext()
 const route = useRoute()
+const router = useRouter()
 
 const markdown = new (MarkdownIt as any)({
   html: false,
@@ -139,6 +146,185 @@ type AiAssistantProcessEvent = {
   durationMs?: number | null
   retryable?: boolean
   safeErrorCode?: string | null
+  stepId?: string | null
+  attempt?: number | null
+  sourceRefs?: string[] | null
+  actualProvider?: string | null
+  actualModel?: string | null
+}
+
+type AiAssistantQuickReply = { value: string; label: string; description?: string | null }
+type AiAssistantConversationQuestion = {
+  id: string
+  text: string
+  blocking: boolean
+  reason: string
+  quickReplies: AiAssistantQuickReply[]
+  allowFreeText: boolean
+}
+type AiAssistantProgressiveReply = { questionId: string; value: string; label?: string | null }
+type AiAssistantClarificationDraft = {
+  originTurnId: string
+  originalMessage: string
+  requestedCapabilityId?: string | null
+  questions: AiAssistantConversationQuestion[]
+  answers: AiAssistantProgressiveReply[]
+  updatedAt: string
+}
+type AiAssistantManualGuidance = {
+  schemaId: 'assistant_manual_guidance.v1'
+  temporary: boolean
+  summary: string
+  steps: Array<{ sequence: number; label: string; route: string; requiredPermission: string }>
+}
+type AiAssistantConversationTurn = {
+  schemaId: 'assistant_conversation_turn.v2'
+  conversationDisposition: string
+  actionDisposition: string
+  answer: string
+  questions: AiAssistantConversationQuestion[]
+  guidance?: AiAssistantManualGuidance | null
+  capabilityGap?: { capabilityId: string; executionUnavailable: boolean; userMessage: string; internalReasonCode: string } | null
+  proposedActions: string[]
+  sources: string[]
+  confidence: number
+  actualProvider: string
+  actualModel: string
+  promptVersion: string
+}
+type ProjectLaunchBrief = {
+  briefId: string
+  schemaId: 'project_launch_brief.v1'
+  revision: number
+  state: string
+  organizationId: string
+  organizationName: string
+  objective: string
+  proposedProjectName: string
+  scope: string[]
+  exclusions: string[]
+  successMeasures: string[]
+  facts: string[]
+  assumptions: string[]
+  unknowns: string[]
+  questions: AiAssistantConversationQuestion[]
+  rulebookStatus: string
+  ruleSetId?: string | null
+  ruleSetVersion?: number | null
+  ruleDecisions: Array<{ ruleKey: string; result: string; severity: string; explanation: string }>
+  sourceRefs: string[]
+  actualProvider: string
+  actualModel: string
+  promptVersion: string
+  createdAt: string
+}
+type OrganizationWorkRuleSet = {
+  ruleSetId: string
+  organizationId: string
+  version: number
+  status: string
+  revision: number
+}
+
+type ProjectStaffingMember = {
+  userId: string
+  displayName: string
+  proposedRole: string
+  proposedHours: number
+  coveredSkills: string[]
+  missingSkills: string[]
+  loadAfterPercent: number
+  decisionReasons: string[]
+}
+
+type ProjectStaffingScenario = {
+  scenarioId: string
+  title: string
+  description: string
+  feasible: boolean
+  score: number
+  managerUserId?: string | null
+  managerName?: string | null
+  members: ProjectStaffingMember[]
+  managerCandidates: Array<{ userId: string; displayName: string; hardRejects: string[]; loadAfterPercent: number; capacityState: string }>
+  missingSkills: string[]
+  blockingReasons: string[]
+  risks: string[]
+  assumptions: string[]
+  ruleDecisions: Array<{ ruleKey: string; result: string; severity: string; explanation: string }>
+  sourceRefs: string[]
+  scoringVersion: string
+}
+
+type ProjectLaunchTaskPlan = {
+  clientId: string
+  title: string
+  priority: string
+  estimatedHours: number
+  proposedAssigneeId?: string | null
+  requiredSkillNames: string[]
+  dependencyClientIds: string[]
+  selected: boolean
+}
+
+type ProjectLaunchDeliveryPlan = {
+  proposedProjectName: string
+  proposedProjectCode: string
+  objective: string
+  startDate: string
+  endDate: string
+  scope: string[]
+  skillGaps: string[]
+  scheduleRisks: string[]
+  externalDeferred: string[]
+  sprints: Array<{ clientId: string; name: string; objective: string; startDate: string; endDate: string; selected: boolean; tasks: ProjectLaunchTaskPlan[] }>
+}
+
+type ProjectLaunchExecutionReceipt = {
+  receiptId: string
+  state: string
+  projectId: string
+  commands: Array<{ commandId: string; adapterId: string; status: string; summary: string; deepLink?: string | null }>
+  createdEntityLinks: string[]
+  deferredExternalActions: string[]
+  readBackVerified: boolean
+  internalTransactionCommitted: boolean
+  rollbackAvailable: boolean
+  rollbackBlockReason?: string | null
+  executedAt: string
+  revision: number
+}
+
+type ProjectReplanProposal = {
+  proposalId: string
+  revision: number
+  state: string
+  changes: Array<{ changeType: string; severity: string; summary: string; baselineValue: string; currentValue: string; suggestedAction: string }>
+  triggerCodes: string[]
+  requiresConfirmation: boolean
+  createdAt: string
+}
+
+type ProjectLaunchPlan = {
+  planId: string
+  schemaId: 'project_launch_plan.v1'
+  revision: number
+  state: string
+  organizationId: string
+  organizationName: string
+  ruleSetVersion?: number | null
+  scoringVersion: string
+  staffingScenarios: ProjectStaffingScenario[]
+  selectedScenarioId?: string | null
+  deliveryPlan: ProjectLaunchDeliveryPlan
+  blockingReasons: string[]
+  warnings: string[]
+  actualProvider: string
+  actualModel: string
+  promptVersion: string
+  rowRevision: number
+  executionReceipt?: ProjectLaunchExecutionReceipt | null
+  latestReplanProposal?: ProjectReplanProposal | null
 }
 
 type AiAssistantCapabilityDescriptor = {
@@ -203,6 +389,43 @@ type AiAssistantSourceDisclosure = {
   reasonCode?: string | null
 }
 
+type AiSafeTestRunEvent = {
+  sequence: number
+  suiteId: string
+  status: string
+  publicLabel: string
+  startedAt: string
+  completedAt?: string | null
+  exitCode?: number | null
+  safeErrorCode?: string | null
+}
+type AiSafeTestRunPreview = {
+  schemaId: 'safe_test_run_preview.v1'
+  runId: string
+  manifestId: string
+  title: string
+  status: string
+  requiresConfirmation: boolean
+  estimatedSeconds: number
+  estimatedExternalCost: number
+  suites: Array<{ id: string; label: string; project: string; scope: string; estimatedSeconds: number }>
+  revision: number
+}
+type AiSafeTestRunReport = {
+  schemaId: 'safe_test_run_report.v1'
+  runId: string
+  manifestId: string
+  status: string
+  events: AiSafeTestRunEvent[]
+  passedSuites: number
+  failedSuites: number
+  startedAt?: string | null
+  completedAt?: string | null
+  safeSummary?: string | null
+  safeErrorCode?: string | null
+  revision: number
+}
+
 type ErumiChatResponse = {
   reply: string
   metrics: ErumiMetric[]
@@ -225,6 +448,11 @@ type ErumiChatResponse = {
   researchPlan?: AiAssistantResearchPlan | null
   goalAnalysis?: AiAssistantGoalAnalysis | null
   workPlan?: AiAssistantWorkPlan | null
+  conversation?: AiAssistantConversationTurn | null
+  projectLaunchBrief?: ProjectLaunchBrief | null
+  projectLaunchPlan?: ProjectLaunchPlan | null
+  safeTestRunPreview?: AiSafeTestRunPreview | null
+  safeTestRunReport?: AiSafeTestRunReport | null
 }
 
 type AiAssistantChoice = {
@@ -244,7 +472,7 @@ type AiAssistantClarification = {
 }
 
 type AiAssistantArtifact = {
-  kind: 'task_action_plan'
+  kind: 'task_action_plan' | string
   schemaId: string
   message: string
   projectId: string
@@ -307,9 +535,9 @@ type AiAssistantResearchPlan = {
 
 type AiAssistantTurnResponse = {
   schemaId: 'assistant_turn.v1'
-  disposition: 'grounded_answer' | 'research_plan' | 'registered_action' | 'clarification_required' | 'unsupported' | 'unsupported_but_analyzed' | 'policy_blocked'
+  disposition: 'grounded_answer' | 'guided_answer' | 'research_plan' | 'project_launch_brief' | 'registered_action' | 'clarification_required' | 'unsupported' | 'unsupported_but_analyzed' | 'policy_blocked' | 'draft_ready'
   intent: string
-  executionPolicy: 'read_only' | 'read_only_proposal' | 'draft_then_confirm' | 'analyze_only' | 'none'
+  executionPolicy: string
   assistantMessage: string
   confidence: number
   clarification?: AiAssistantClarification | null
@@ -333,6 +561,11 @@ type AiAssistantTurnResponse = {
   researchPlan?: AiAssistantResearchPlan | null
   goalAnalysis?: AiAssistantGoalAnalysis | null
   workPlan?: AiAssistantWorkPlan | null
+  conversation?: AiAssistantConversationTurn | null
+  projectLaunchBrief?: ProjectLaunchBrief | null
+  projectLaunchPlan?: ProjectLaunchPlan | null
+  safeTestRunPreview?: AiSafeTestRunPreview | null
+  safeTestRunReport?: AiSafeTestRunReport | null
 }
 
 type AiAssistantStoredTurn = {
@@ -357,6 +590,19 @@ type AiAssistantSession = {
   createdAt: string
   updatedAt?: string | null
   turns: AiAssistantStoredTurn[]
+  clarificationDraft?: AiAssistantClarificationDraft | null
+}
+type AiAssistantSessionSummary = {
+  sessionId: string
+  title: string
+  status: string
+  version: number
+  projectId?: string | null
+  createdAt: string
+  updatedAt?: string | null
+  archivedAt?: string | null
+  turnCount: number
+  lastMessage?: string | null
 }
 
 type ChatEntry = {
@@ -382,6 +628,11 @@ type ChatEntry = {
   researchPlan?: AiAssistantResearchPlan | null
   goalAnalysis?: AiAssistantGoalAnalysis | null
   workPlan?: AiAssistantWorkPlan | null
+  conversation?: AiAssistantConversationTurn | null
+  projectLaunchBrief?: ProjectLaunchBrief | null
+  projectLaunchPlan?: ProjectLaunchPlan | null
+  safeTestRunPreview?: AiSafeTestRunPreview | null
+  safeTestRunReport?: AiSafeTestRunReport | null
 }
 
 type ErumiUploadedFile = {
@@ -410,6 +661,14 @@ const isDataInsufficient = computed(() => {
 
 const chatInput = ref('')
 const isChatting = ref(false)
+const launchActionBusy = ref<string | null>(null)
+const safeTestActionBusy = ref<string | null>(null)
+const selectedLaunchScenarios = ref<Record<string, string>>({})
+const rulebookDrafts = ref<Record<string, OrganizationWorkRuleSet>>({})
+const activeAssistantTurnId = ref<string | null>(null)
+const activeAssistantClientTurnId = ref<string | null>(null)
+const progressiveDraft = ref<AiAssistantClarificationDraft | null>(null)
+const clarificationDraftSaving = ref(false)
 const selectedFiles = ref<File[]>([])
 const backgroundRefreshing = ref(false)
 const lastRefreshedAt = ref<Date | null>(null)
@@ -430,7 +689,11 @@ function applyRoutePrompt() {
   nextTick(() => textareaRef.value?.focus())
 }
 
-const selectedAiModel = ref(AI_MODEL_OPTIONS[0]?.id ?? 'auto')
+const AI_MODEL_STORAGE_KEY = 'qaly.ai-native.model.v1'
+const storedAiModel = window.localStorage.getItem(AI_MODEL_STORAGE_KEY)
+const selectedAiModel = ref(AI_MODEL_OPTIONS.some(option => option.id === storedAiModel && !option.disabled)
+  ? storedAiModel!
+  : 'deepseek-v4-pro')
 const selectedProviderHint = computed(() => {
   switch (selectedAiModel.value) {
     case 'deepseek-v4-pro':
@@ -450,8 +713,6 @@ const assistantSessionId = ref<string | null>(null)
 const assistantSessionVersion = ref(0)
 const assistantSessionLoading = ref(false)
 const assistantSessionLoadAttempted = ref(false)
-const ANALYTICS_HISTORY_KEY = 'qaly.analytics.erumi.history.v1'
-const MAX_ANALYTICS_HISTORY_ITEMS = 20
 
 // Slash commands predefined popup list (Sprint 1)
 const slashCommands = [
@@ -647,6 +908,7 @@ function handleHeaderMenu(key: string) {
       startNewConversation()
       break
     case 'history':
+      void loadConversationHistory()
       openCockpitDrawer('history')
       break
     case 'sources':
@@ -724,6 +986,14 @@ function compactSourceRef(sourceRef: string) {
   return clean.length > 54 ? `${clean.slice(0, 28)}…${clean.slice(-20)}` : clean
 }
 
+function goalDispositionLabel(disposition: AiAssistantGoalAnalysis['disposition']) {
+  if (disposition === 'unsupported_but_analyzed') return 'Có thể tư vấn · chưa thể tự thao tác'
+  if (disposition === 'policy_blocked') return 'Có thể tư vấn · thao tác bị giới hạn quyền'
+  if (disposition === 'clarification_required') return 'Cần làm rõ'
+  if (disposition === 'answerable') return 'Có thể trả lời'
+  return 'Có thể lập phương án'
+}
+
 async function answerProjectClarification(choice: AiAssistantChoice, action: ErumiAction) {
   const originalMessage = String(action.payload?.originalMessage || '').trim()
   if (!originalMessage || !choice.id) return
@@ -733,7 +1003,142 @@ async function answerProjectClarification(choice: AiAssistantChoice, action: Eru
   await submitChat(originalMessage, undefined, choice.label)
 }
 
-function mapAssistantTurn(turn: AiAssistantTurnResponse): ErumiChatResponse {
+let clarificationSaveChain: Promise<void> = Promise.resolve()
+
+function ensureProgressiveDraft(action: ErumiAction) {
+  const originTurnId = String(action.payload?.originTurnId || '')
+  if (!originTurnId) return null
+  if (progressiveDraft.value?.originTurnId === originTurnId) return progressiveDraft.value
+  progressiveDraft.value = {
+    originTurnId,
+    originalMessage: String(action.payload?.originalMessage || ''),
+    requestedCapabilityId: String(action.payload?.requestedCapabilityId || '') || null,
+    questions: (action.payload?.questions || []) as AiAssistantConversationQuestion[],
+    answers: [],
+    updatedAt: new Date().toISOString()
+  }
+  return progressiveDraft.value
+}
+
+function progressiveAnswer(questionId: string, action: ErumiAction) {
+  const draft = progressiveDraft.value?.originTurnId === String(action.payload?.originTurnId || '')
+    ? progressiveDraft.value
+    : null
+  return draft?.answers.find(answer => answer.questionId === questionId) ?? null
+}
+
+function hasAllBlockingAnswers(action: ErumiAction) {
+  const draft = progressiveDraft.value
+  if (!draft || draft.originTurnId !== String(action.payload?.originTurnId || '')) return false
+  const answered = new Set(draft.answers.filter(answer => answer.value.trim()).map(answer => answer.questionId))
+  return draft.questions.filter(question => question.blocking).every(question => answered.has(question.id))
+}
+
+function queueClarificationDraftSave() {
+  clarificationSaveChain = clarificationSaveChain.catch(() => undefined).then(async () => {
+    const draft = progressiveDraft.value
+    if (!draft || !assistantSessionId.value) return
+    clarificationDraftSaving.value = true
+    const session = await apiJson<AiAssistantSession>(
+      `/api/ai/assistant/sessions/${assistantSessionId.value}/clarification-draft`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({
+          expectedVersion: assistantSessionVersion.value,
+          originTurnId: draft.originTurnId,
+          originalMessage: draft.originalMessage,
+          requestedCapabilityId: draft.requestedCapabilityId,
+          questions: draft.questions,
+          answers: draft.answers
+        })
+      }
+    )
+    assistantSessionVersion.value = session.version
+    progressiveDraft.value = session.clarificationDraft ?? draft
+  }).catch(error => {
+    showError(error instanceof Error ? error.message : 'Không thể lưu câu trả lời nháp.')
+  }).finally(() => {
+    clarificationDraftSaving.value = false
+  })
+}
+
+function setProgressiveAnswer(
+  question: AiAssistantConversationQuestion,
+  value: string,
+  label: string | null,
+  action: ErumiAction,
+  persist = true
+) {
+  const draft = ensureProgressiveDraft(action)
+  if (!draft) return
+  const normalized = value.trim()
+  draft.answers = draft.answers.filter(answer => answer.questionId !== question.id)
+  if (normalized) draft.answers.push({ questionId: question.id, value: normalized, label: label || normalized })
+  draft.updatedAt = new Date().toISOString()
+  if (persist) queueClarificationDraftSave()
+}
+
+function answerProgressiveQuestion(
+  question: AiAssistantConversationQuestion,
+  reply: AiAssistantQuickReply,
+  action: ErumiAction
+) {
+  setProgressiveAnswer(question, reply.value, reply.label, action)
+}
+
+function answerProgressiveWithComposer(question: AiAssistantConversationQuestion, action: ErumiAction) {
+  ensureProgressiveDraft(action)
+  nextTick(() => document.getElementById(`clarification-${question.id}`)?.focus())
+}
+
+function updateProgressiveFreeText(
+  question: AiAssistantConversationQuestion,
+  action: ErumiAction,
+  event: Event,
+  persist: boolean
+) {
+  setProgressiveAnswer(question, (event.target as HTMLInputElement).value, null, action, persist)
+}
+
+async function clearProgressiveDraft() {
+  if (!assistantSessionId.value || !progressiveDraft.value) return
+  await clarificationSaveChain.catch(() => undefined)
+  try {
+    const session = await apiJson<AiAssistantSession>(
+      `/api/ai/assistant/sessions/${assistantSessionId.value}/clarification-draft?expectedVersion=${assistantSessionVersion.value}`,
+      { method: 'DELETE' }
+    )
+    assistantSessionVersion.value = session.version
+    progressiveDraft.value = null
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Không thể xóa câu trả lời nháp.')
+  }
+}
+
+async function submitProgressiveDraft(action: ErumiAction) {
+  const draft = ensureProgressiveDraft(action)
+  if (!draft || !hasAllBlockingAnswers(action)) return
+  await clarificationSaveChain.catch(() => undefined)
+  const answerSummary = draft.answers.map(answer => answer.label || answer.value).join(' · ')
+  const completed = await submitChat(
+    draft.originalMessage,
+    undefined,
+    answerSummary,
+    undefined,
+    draft.requestedCapabilityId || undefined,
+    undefined,
+    draft.answers
+  )
+  if (completed) progressiveDraft.value = null
+}
+
+function openGuidanceRoute(routePath: string) {
+  const allowed = ['/dashboard', '/projects', '/tasks', '/teams', '/groups', '/analytics', '/organizations', '/settings']
+  if (!allowed.includes(routePath)) return
+  router.push(routePath)
+}
+
+function mapAssistantTurn(turn: AiAssistantTurnResponse, originalMessage?: string): ErumiChatResponse {
   const answer = turn.answer
   const actions = [...(answer?.actions ?? [])]
 
@@ -762,6 +1167,19 @@ function mapAssistantTurn(turn: AiAssistantTurnResponse): ErumiChatResponse {
       },
     })
   }
+  if (turn.conversation && (turn.conversation.questions.length || turn.conversation.guidance || turn.conversation.capabilityGap)) {
+    actions.push({
+      type: 'assistant_progressive_questions',
+      label: 'Mình cần biết thêm',
+      requiresConfirmation: false,
+      payload: {
+        ...turn.conversation,
+        requestedCapabilityId: turn.intent === 'project.launch.analyze.v1' ? turn.intent : null,
+        originTurnId: turn.turnId,
+        originalMessage: originalMessage ?? chatHistory.value.slice().reverse().find(item => item.role === 'user')?.text ?? '',
+      },
+    })
+  }
 
   return {
     reply: turn.assistantMessage,
@@ -785,6 +1203,11 @@ function mapAssistantTurn(turn: AiAssistantTurnResponse): ErumiChatResponse {
     researchPlan: turn.researchPlan ?? null,
     goalAnalysis: turn.goalAnalysis ?? null,
     workPlan: turn.workPlan ?? null,
+    conversation: turn.conversation ?? null,
+    projectLaunchBrief: turn.projectLaunchBrief ?? null,
+    projectLaunchPlan: turn.projectLaunchPlan ?? null,
+    safeTestRunPreview: turn.safeTestRunPreview ?? null,
+    safeTestRunReport: turn.safeTestRunReport ?? null,
   }
 }
 
@@ -794,7 +1217,7 @@ function mapStoredAssistantTurn(turn: AiAssistantStoredTurn): ChatEntry[] {
     const response = mapAssistantTurn({
       ...turn.response,
       processEvents: turn.processEvents?.length ? turn.processEvents : turn.response.processEvents
-    })
+    }, turn.userMessage)
     entries.push({
       role: 'assistant',
       text: response.reply,
@@ -815,7 +1238,12 @@ function mapStoredAssistantTurn(turn: AiAssistantStoredTurn): ChatEntry[] {
       sourceDisclosures: response.sourceDisclosures,
       researchPlan: response.researchPlan,
       goalAnalysis: response.goalAnalysis,
-      workPlan: response.workPlan
+      workPlan: response.workPlan,
+      conversation: response.conversation,
+      projectLaunchBrief: response.projectLaunchBrief,
+      projectLaunchPlan: response.projectLaunchPlan,
+      safeTestRunPreview: response.safeTestRunPreview,
+      safeTestRunReport: response.safeTestRunReport
     })
   } else {
     entries.push({
@@ -823,7 +1251,10 @@ function mapStoredAssistantTurn(turn: AiAssistantStoredTurn): ChatEntry[] {
       text: turn.status === 'failed'
         ? 'Lượt này chưa hoàn tất. Yêu cầu đã được lưu trên máy chủ; bạn có thể kiểm tra và thử lại.'
         : 'Yêu cầu đang được xử lý trên máy chủ. Tải lại cuộc trò chuyện để cập nhật trạng thái.',
-      processEvents: turn.processEvents
+      processEvents: turn.processEvents,
+      actions: turn.status === 'failed' || turn.status === 'canceled'
+        ? [{ type: 'assistant_resume_turn', label: 'Tiếp tục lượt này', payload: { turnId: turn.turnId } }]
+        : []
     })
   }
   return entries
@@ -832,6 +1263,10 @@ function mapStoredAssistantTurn(turn: AiAssistantStoredTurn): ChatEntry[] {
 function applyAssistantSession(session: AiAssistantSession) {
   assistantSessionId.value = session.sessionId
   assistantSessionVersion.value = session.version
+  progressiveDraft.value = session.clarificationDraft ?? null
+  const runningTurn = session.turns?.find(turn => turn.status === 'running')
+  activeAssistantTurnId.value = runningTurn?.turnId ?? null
+  activeAssistantClientTurnId.value = runningTurn?.clientTurnId ?? null
   const restored = (session.turns ?? [])
     .slice()
     .sort((left, right) => left.sequence - right.sequence)
@@ -1002,66 +1437,91 @@ function askAboutSource(sourceLabel: string) {
   fillComposer(`Giải thích nguồn "${sourceLabel}" và dữ liệu nào đã được dùng để tạo nhận định này.`)
 }
 
-function loadConversationHistory() {
+async function loadConversationHistory() {
+  if (!props.isDrawer) return
   try {
-    const raw = window.localStorage.getItem(ANALYTICS_HISTORY_KEY)
-    const parsed = raw ? JSON.parse(raw) : []
-    conversationHistory.value = Array.isArray(parsed)
-      ? parsed
-          .filter((item: ConversationHistoryItem) => item?.prompt && item?.createdAt)
-          .slice(0, MAX_ANALYTICS_HISTORY_ITEMS)
-      : []
-  } catch {
+    const sessions = await apiJson<AiAssistantSessionSummary[]>('/api/ai/assistant/sessions?includeArchived=true')
+    conversationHistory.value = sessions.map(session => ({
+      id: session.sessionId,
+      sessionId: session.sessionId,
+      title: session.title,
+      status: session.status,
+      version: session.version,
+      prompt: session.title,
+      projectId: session.projectId ?? null,
+      projectLabel: session.projectId
+        ? projects.value.find((project: { id: string; name?: string }) => project.id === session.projectId)?.name || 'Dự án'
+        : 'Tất cả dự án',
+      createdAt: session.updatedAt || session.createdAt,
+      assistantSnippet: session.lastMessage,
+      turnCount: session.turnCount,
+      archivedAt: session.archivedAt
+    }))
+  } catch (error) {
     conversationHistory.value = []
+    showError(error instanceof Error ? error.message : 'Không thể tải lịch sử trò chuyện.')
   }
 }
 
-function persistConversationHistory() {
+function rememberConversationPrompt(_prompt: string, _attachmentCount: number) {
+  // Durable AssistantSession/AssistantTurn is the only source of truth for drawer mode.
+}
+
+function updateLatestConversationSnippet(_text: string) {
+  if (props.isDrawer) void loadConversationHistory()
+}
+
+async function restoreHistoryItem(item: ConversationHistoryItem) {
   try {
-    window.localStorage.setItem(ANALYTICS_HISTORY_KEY, JSON.stringify(conversationHistory.value.slice(0, MAX_ANALYTICS_HISTORY_ITEMS)))
-  } catch {
-    // Local history is a convenience only; storage failures should not block chat.
+    const session = await apiJson<AiAssistantSession>(`/api/ai/assistant/sessions/${item.sessionId}`)
+    applyAssistantSession(session)
+    closeCockpitDrawer()
+    await scrollToBottom()
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Không thể mở cuộc trò chuyện.')
   }
 }
 
-function rememberConversationPrompt(prompt: string, attachmentCount: number) {
-  if (!prompt.trim()) return
-  const item: ConversationHistoryItem = {
-    id: `analytics-history-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    prompt: prompt.trim(),
-    projectId: selectedTarget.value === 'workspace' ? null : selectedTarget.value,
-    projectLabel: selectedTargetLabel.value,
-    createdAt: new Date().toISOString(),
-    attachmentCount: attachmentCount || undefined
+async function renameHistoryItem(item: ConversationHistoryItem) {
+  const title = window.prompt('Tên mới cho cuộc trò chuyện', item.title)?.trim()
+  if (!title || title === item.title) return
+  try {
+    await apiJson<AiAssistantSession>(`/api/ai/assistant/sessions/${item.sessionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ expectedVersion: item.version, title })
+    })
+    await loadConversationHistory()
+    showSuccess('Đã đổi tên cuộc trò chuyện.')
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Không thể đổi tên cuộc trò chuyện.')
   }
-
-  conversationHistory.value = [
-    item,
-    ...conversationHistory.value.filter(existing => existing.prompt.trim() !== item.prompt || existing.projectId !== item.projectId)
-  ].slice(0, MAX_ANALYTICS_HISTORY_ITEMS)
-  persistConversationHistory()
 }
 
-function updateLatestConversationSnippet(text: string) {
-  const first = conversationHistory.value[0]
-  if (!first || !text.trim()) return
-  first.assistantSnippet = text.replace(/\s+/g, ' ').trim().slice(0, 160)
-  persistConversationHistory()
+async function archiveHistoryItem(item: ConversationHistoryItem) {
+  if (!window.confirm(`Lưu trữ cuộc trò chuyện “${item.title}”?`)) return
+  try {
+    await apiJson<AiAssistantSession>(`/api/ai/assistant/sessions/${item.sessionId}/archive`, {
+      method: 'POST',
+      body: JSON.stringify({ expectedVersion: item.version })
+    })
+    if (assistantSessionId.value === item.sessionId) await startNewConversation()
+    await loadConversationHistory()
+    showSuccess('Đã lưu trữ cuộc trò chuyện.')
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Không thể lưu trữ cuộc trò chuyện.')
+  }
 }
 
-function restoreHistoryItem(item: ConversationHistoryItem) {
-  fillComposer(item.prompt)
-  closeCockpitDrawer()
-}
-
-function deleteHistoryItem(id: string) {
-  conversationHistory.value = conversationHistory.value.filter(item => item.id !== id)
-  persistConversationHistory()
-}
-
-function clearConversationHistory() {
-  conversationHistory.value = []
-  persistConversationHistory()
+async function deleteHistoryItem(item: ConversationHistoryItem) {
+  if (!window.confirm(`Xóa cuộc trò chuyện “${item.title}”? Thao tác này sẽ ẩn cuộc trò chuyện khỏi lịch sử.`)) return
+  try {
+    await apiJson<void>(`/api/ai/assistant/sessions/${item.sessionId}?expectedVersion=${item.version}`, { method: 'DELETE' })
+    if (assistantSessionId.value === item.sessionId) await startNewConversation()
+    await loadConversationHistory()
+    showSuccess('Đã xóa cuộc trò chuyện.')
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Không thể xóa cuộc trò chuyện.')
+  }
 }
 
 function handleFileSelection(event: Event) {
@@ -1237,13 +1697,323 @@ function getFallbackChatAnswer(prompt: string) {
   return `Chào bạn! Mình là Erumi. Hiện tại mô hình AI cục bộ đang ở trạng thái ngoại tuyến.\n\nTuy nhiên, bạn có thể chọn các dự án cụ thể trong menu ngữ cảnh và dùng nút **+** để mở các câu hỏi gợi ý hay công cụ phân tích để mình trích xuất báo cáo thông minh trực tiếp từ dữ liệu hệ thống nhé!`
 }
 
-async function submitChat(explicitText?: string, _action?: string, displayText?: string) {
+async function pollAssistantTurn(clientTurnId: string, placeholderIndex: number, shouldStop: () => boolean) {
+  if (!assistantSessionId.value) return
+  const sessionId = assistantSessionId.value
+  let observedTurn = false
+  let streamedAnswer = ''
+  const streamCompleted = await new Promise<boolean>((resolve) => {
+    const stream = new EventSource(
+      `/api/ai/assistant/sessions/${sessionId}/stream?clientTurnId=${encodeURIComponent(clientTurnId)}`)
+    const stopTimer = window.setInterval(() => {
+      if (shouldStop() && !observedTurn) {
+        window.clearInterval(stopTimer)
+        stream.close()
+        resolve(false)
+      }
+    }, 400)
+    const close = (completed: boolean) => {
+      window.clearInterval(stopTimer)
+      stream.close()
+      resolve(completed)
+    }
+    stream.addEventListener('progress', async (event) => {
+      observedTurn = true
+      try {
+        const progress = JSON.parse((event as MessageEvent).data) as AiAssistantProcessEvent
+        const current = chatHistory.value[placeholderIndex]
+        if (current?.role === 'assistant') {
+          const existing = current.processEvents ?? []
+          const next = [...existing.filter(item => item.sequence !== progress.sequence), progress]
+            .sort((left, right) => left.sequence - right.sequence)
+          chatHistory.value[placeholderIndex] = { ...current, processEvents: next }
+          await scrollToBottom()
+        }
+      } catch {
+        // The durable POST response remains authoritative.
+      }
+    })
+    stream.addEventListener('answer_delta', async (event) => {
+      observedTurn = true
+      try {
+        const payload = JSON.parse((event as MessageEvent).data) as { delta: string }
+        streamedAnswer += payload.delta
+        const current = chatHistory.value[placeholderIndex]
+        if (current?.role === 'assistant') {
+          chatHistory.value[placeholderIndex] = { ...current, text: streamedAnswer }
+          await scrollToBottom()
+        }
+      } catch {
+        // Invalid stream chunks are ignored; read-back supplies the canonical answer.
+      }
+    })
+    stream.addEventListener('done', (event) => {
+      try {
+        const payload = JSON.parse((event as MessageEvent).data) as { version?: number }
+        if (payload.version != null) assistantSessionVersion.value = payload.version
+      } finally {
+        close(true)
+      }
+    })
+    stream.onerror = () => close(false)
+  })
+  if (streamCompleted || shouldStop()) return
+
+  // Compatibility fallback for proxies that do not forward SSE.
+  while (!shouldStop()) {
+    await new Promise(resolve => window.setTimeout(resolve, 650))
+    if (shouldStop()) break
+    try {
+      const session = await apiJson<AiAssistantSession>(`/api/ai/assistant/sessions/${sessionId}`)
+      assistantSessionVersion.value = session.version
+      const stored = session.turns?.find(turn => turn.clientTurnId === clientTurnId)
+      if (!stored) continue
+      activeAssistantTurnId.value = stored.turnId
+      const current = chatHistory.value[placeholderIndex]
+      if (current?.role === 'assistant') {
+        chatHistory.value[placeholderIndex] = { ...current, processEvents: stored.processEvents }
+        await scrollToBottom()
+      }
+    } catch {
+      // The POST and durable reload remain authoritative.
+    }
+  }
+}
+
+async function cancelActiveAssistantTurn() {
+  if (!activeAssistantTurnId.value || !assistantSessionId.value) return
+  try {
+    await apiJson<AiAssistantSession>(`/api/ai/assistant/turns/${activeAssistantTurnId.value}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ expectedVersion: assistantSessionVersion.value })
+    })
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Không thể hủy lượt này.')
+  }
+}
+
+async function resumeAssistantTurn(action: ErumiAction) {
+  const turnId = String(action.payload?.turnId || '')
+  if (!turnId || isChatting.value) return
+  isChatting.value = true
+  try {
+    const clientTurnId = crypto.randomUUID()
+    await apiJson<AiAssistantTurnResponse>(`/api/ai/assistant/turns/${turnId}/resume`, {
+      method: 'POST',
+      headers: {
+        'Idempotency-Key': `assistant:resume:${turnId}:${clientTurnId}`,
+        'X-Request-Id': clientTurnId
+      },
+      body: JSON.stringify({ expectedVersion: assistantSessionVersion.value, clientTurnId })
+    })
+    await restoreAssistantSession()
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Không thể tiếp tục lượt này.')
+  } finally {
+    isChatting.value = false
+  }
+}
+
+async function confirmSafeTestRun(entry: ChatEntry, preview: AiSafeTestRunPreview) {
+  if (safeTestActionBusy.value || !window.confirm(
+    `Chạy manifest cố định ${preview.manifestId} gồm ${preview.suites.length} suite trong Development/Test?`)) return
+  safeTestActionBusy.value = preview.runId
+  try {
+    const report = await apiJson<AiSafeTestRunReport>(
+      `/api/ai/assistant/test-runs/${preview.runId}/confirm`,
+      {
+        method: 'POST',
+        headers: { 'Idempotency-Key': `safe-test:${preview.runId}:${preview.revision}` },
+        body: JSON.stringify({ expectedRevision: preview.revision })
+      })
+    entry.safeTestRunReport = report
+    entry.safeTestRunPreview = { ...preview, status: report.status, requiresConfirmation: false, revision: report.revision }
+    showSuccess(report.status === 'passed' ? 'Acceptance manifest đã PASS.' : 'Acceptance manifest đã hoàn tất; có suite cần xử lý.')
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Không thể chạy acceptance manifest.')
+  } finally {
+    safeTestActionBusy.value = null
+  }
+}
+
+function selectedLaunchScenarioId(plan: ProjectLaunchPlan) {
+  return selectedLaunchScenarios.value[plan.planId]
+    || plan.selectedScenarioId
+    || plan.staffingScenarios.find(item => item.feasible)?.scenarioId
+    || ''
+}
+
+function selectLaunchScenario(planId: string, scenarioId: string) {
+  selectedLaunchScenarios.value = { ...selectedLaunchScenarios.value, [planId]: scenarioId }
+}
+
+async function createRecommendedRulebookDraft(brief: ProjectLaunchBrief) {
+  launchActionBusy.value = `rulebook:${brief.organizationId}`
+  try {
+    const result = await apiResult<OrganizationWorkRuleSet>(
+      `/api/organizations/${brief.organizationId}/work-rulebook`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          effectiveFrom: new Date().toISOString(),
+          rules: [
+            {
+              ruleKey: 'active_membership_required',
+              category: 'governance',
+              enforcement: 'block',
+              description: 'Người yêu cầu phải là thành viên đang hoạt động của tổ chức.'
+            },
+            {
+              ruleKey: 'max_active_projects',
+              category: 'portfolio_capacity',
+              enforcement: 'block',
+              description: 'Giới hạn số dự án đang hoạt động để bảo vệ năng lực tổ chức.',
+              numericValue: 20,
+              unit: 'projects'
+            },
+            {
+              ruleKey: 'capacity_evidence_required',
+              category: 'staffing',
+              enforcement: 'block',
+              description: 'Mọi phân công phải có dữ liệu capacity và availability còn hiệu lực.'
+            }
+          ]
+        })
+      }
+    )
+    rulebookDrafts.value = { ...rulebookDrafts.value, [brief.organizationId]: result }
+    showSuccess('Đã tạo bản nháp Rulebook. Chưa có policy nào được kích hoạt.')
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Không thể tạo bản nháp Rulebook.')
+  } finally {
+    launchActionBusy.value = null
+  }
+}
+
+async function activateRulebookAndResume(brief: ProjectLaunchBrief) {
+  const draft = rulebookDrafts.value[brief.organizationId]
+  if (!draft || !window.confirm(`Kích hoạt Organization Rulebook v${draft.version} và tiếp tục Project Launch?`)) return
+  launchActionBusy.value = `rulebook:${brief.organizationId}`
+  try {
+    await apiResult<OrganizationWorkRuleSet>(
+      `/api/organizations/${brief.organizationId}/work-rulebook/${draft.ruleSetId}/activate`,
+      { method: 'POST', body: JSON.stringify({ revision: draft.revision }) }
+    )
+    rulebookDrafts.value = { ...rulebookDrafts.value, [brief.organizationId]: { ...draft, status: 'active' } }
+    showSuccess('Rulebook đã được kích hoạt. Trợ lý đang tiếp tục Launch Brief bằng policy mới.')
+    await submitChat(
+      brief.objective,
+      undefined,
+      'Tiếp tục sau khi kích hoạt Rulebook',
+      undefined,
+      'project.launch.analyze.v1',
+      brief.organizationId
+    )
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Không thể kích hoạt Rulebook.')
+  } finally {
+    launchActionBusy.value = null
+  }
+}
+
+async function createLaunchPlan(brief: ProjectLaunchBrief) {
+  await submitChat(
+    `Create staffing scenarios and a delivery plan for ${brief.proposedProjectName}. Use the reviewed Launch Brief and current Qaly facts.`,
+    undefined,
+    'Lập staffing + delivery plan',
+    undefined,
+    'project.staffing.plan.v1',
+    brief.organizationId
+  )
+}
+
+async function confirmLaunchPlan(entry: ChatEntry, plan: ProjectLaunchPlan) {
+  const scenarioId = selectedLaunchScenarioId(plan)
+  const scenario = plan.staffingScenarios.find(item => item.scenarioId === scenarioId)
+  if (!scenario?.feasible || scenario.blockingReasons.length || plan.blockingReasons.length) {
+    showError('Hãy chọn một phương án khả thi và xử lý toàn bộ blocking decision trước khi xác nhận.')
+    return
+  }
+  if (!window.confirm(`Xác nhận tạo Project "${plan.deliveryPlan.proposedProjectName}" cùng members, Sprints, Tasks và dependencies đã hiển thị?`)) return
+  launchActionBusy.value = plan.planId
+  try {
+    const updated = await apiResult<ProjectLaunchPlan>(`/api/ai/project-launch/plans/${plan.planId}/confirm`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': `project-launch:${plan.planId}:${plan.rowRevision}:${scenarioId}` },
+      body: JSON.stringify({ confirmed: true, expectedRevision: plan.rowRevision, selectedScenarioId: scenarioId })
+    })
+    entry.projectLaunchPlan = updated
+    showSuccess('Đã tạo Project và kiểm tra lại dữ liệu thành công.')
+    await loadDashboard()
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Không thể xác nhận Project launch.')
+  } finally {
+    launchActionBusy.value = null
+  }
+}
+
+async function rollbackLaunch(entry: ChatEntry, plan: ProjectLaunchPlan) {
+  const receipt = plan.executionReceipt
+  if (!receipt?.rollbackAvailable) return
+  const reason = window.prompt('Nhập lý do rollback (bắt buộc, tối thiểu 5 ký tự):')?.trim()
+  if (!reason || reason.length < 5) return
+  if (!window.confirm('Rollback chỉ được thực hiện khi Project chưa phát sinh công việc người dùng. Tiếp tục?')) return
+  launchActionBusy.value = receipt.receiptId
+  try {
+    const updated = await apiResult<ProjectLaunchPlan>(`/api/ai/project-launch/executions/${receipt.receiptId}/rollback`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': `project-launch-rollback:${receipt.receiptId}:${receipt.revision}` },
+      body: JSON.stringify({ confirmed: true, expectedRevision: receipt.revision, reason })
+    })
+    entry.projectLaunchPlan = updated
+    showSuccess('Đã rollback launch; audit receipt vẫn được giữ lại.')
+    await loadDashboard()
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Không thể rollback Project launch.')
+  } finally {
+    launchActionBusy.value = null
+  }
+}
+
+async function monitorLaunch(entry: ChatEntry, plan: ProjectLaunchPlan) {
+  const receipt = plan.executionReceipt
+  if (!receipt) return
+  launchActionBusy.value = receipt.receiptId
+  try {
+    const updated = await apiResult<ProjectLaunchPlan>(`/api/ai/project-launch/executions/${receipt.receiptId}/monitor`, {
+      method: 'POST',
+      body: JSON.stringify({ expectedRevision: receipt.revision })
+    })
+    entry.projectLaunchPlan = updated
+    showSuccess(updated.latestReplanProposal ? 'Đã tạo replan proposal để review.' : 'Không phát hiện drift đáng kể.')
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Không thể monitor Project launch.')
+  } finally {
+    launchActionBusy.value = null
+  }
+}
+
+function openLaunchLink(path: string) {
+  if (!/^\/projects\/[0-9a-f-]{36}(?:\?tab=(?:tasks|members|roadmap))?$/i.test(path)) return
+  void router.push(path)
+}
+
+async function submitChat(
+  explicitText?: string,
+  _action?: string,
+  displayText?: string,
+  progressiveReply?: { questionId: string; value: string; label?: string },
+  requestedCapabilityId?: string,
+  requestedOrganizationId?: string,
+  progressiveReplies?: AiAssistantProgressiveReply[]
+) {
   const prompt = (explicitText ?? chatInput.value).trim()
   const filesToSend = selectedFiles.value.slice()
-  if ((!prompt && filesToSend.length === 0) || isChatting.value) return
+  if ((!prompt && filesToSend.length === 0) || isChatting.value) return false
 
   const userText = displayText || prompt || 'Phân tích file đã đính kèm'
   rememberConversationPrompt(userText, filesToSend.length)
+  const effectiveProgressiveReplies = progressiveReplies ?? (progressiveReply ? [progressiveReply] : undefined)
   chatHistory.value.push({
     role: 'user',
     text: userText,
@@ -1273,7 +2043,12 @@ async function submitChat(explicitText?: string, _action?: string, displayText?:
     let fastReply: ErumiChatResponse
     if (props.isDrawer) {
       const clientTurnId = crypto.randomUUID()
-      const turn = await apiJson<AiAssistantTurnResponse>('/api/ai/assistant/turns', {
+      activeAssistantClientTurnId.value = clientTurnId
+      let stopPolling = false
+      const polling = pollAssistantTurn(clientTurnId, lastIdx, () => stopPolling)
+      let turn: AiAssistantTurnResponse
+      try {
+        turn = await apiJson<AiAssistantTurnResponse>('/api/ai/assistant/turns', {
           method: 'POST',
           headers: {
             'Idempotency-Key': `assistant:${assistantSessionId.value}:${clientTurnId}`,
@@ -1287,6 +2062,7 @@ async function submitChat(explicitText?: string, _action?: string, displayText?:
               projectId,
               entityType: projectId ? 'project' : null,
               entityId: projectId,
+              organizationId: requestedOrganizationId || null,
               selectionIds: [],
             },
             mode: 'agent',
@@ -1296,8 +2072,17 @@ async function submitChat(explicitText?: string, _action?: string, displayText?:
             sessionId: assistantSessionId.value,
             expectedVersion: assistantSessionVersion.value,
             clientTurnId,
+            progressiveReply: effectiveProgressiveReplies?.length === 1 ? effectiveProgressiveReplies[0] : null,
+            progressiveReplies: effectiveProgressiveReplies,
+            requestedCapabilityId,
           })
         })
+      } finally {
+        stopPolling = true
+        await polling
+      }
+      activeAssistantTurnId.value = null
+      activeAssistantClientTurnId.value = null
       assistantSessionVersion.value = turn.sessionVersion ?? assistantSessionVersion.value
       fastReply = mapAssistantTurn(turn)
     } else {
@@ -1333,12 +2118,22 @@ async function submitChat(explicitText?: string, _action?: string, displayText?:
       usedAi: fastReply.usedAi,
       model: fastReply.model,
       processEvents: fastReply.processEvents,
-      researchPlan: fastReply.researchPlan
+      capabilities: fastReply.capabilities,
+      sourceDisclosures: fastReply.sourceDisclosures,
+      researchPlan: fastReply.researchPlan,
+      goalAnalysis: fastReply.goalAnalysis,
+      workPlan: fastReply.workPlan,
+      conversation: fastReply.conversation,
+      projectLaunchBrief: fastReply.projectLaunchBrief,
+      projectLaunchPlan: fastReply.projectLaunchPlan,
+      safeTestRunPreview: fastReply.safeTestRunPreview,
+      safeTestRunReport: fastReply.safeTestRunReport
     }
     updateLatestConversationSnippet(fastReply.reply)
 
     const composerAction = replyActions.find(action => action.type === 'compose_task_plan')
     if (composerAction) openComposerAction(composerAction)
+    return true
   } catch (e) {
     const lastIdx = chatHistory.value.length - 1
     const detail = e instanceof Error ? e.message : 'Nhà cung cấp AI không phản hồi.'
@@ -1352,8 +2147,11 @@ async function submitChat(explicitText?: string, _action?: string, displayText?:
     updateLatestConversationSnippet(errorText)
     showError('Model AI đã chọn chưa sẵn sàng.')
     if (props.isDrawer) await restoreAssistantSession()
+    return false
   } finally {
     isChatting.value = false
+    activeAssistantTurnId.value = null
+    activeAssistantClientTurnId.value = null
     await scrollToBottom()
   }
 }
@@ -1395,6 +2193,21 @@ onMounted(async () => {
 })
 
 watch(() => [route.query.prompt, route.query.scope], applyRoutePrompt)
+
+watch(selectedAiModel, value => {
+  window.localStorage.setItem(AI_MODEL_STORAGE_KEY, value)
+})
+
+watch(
+  () => props.externalPromptToken,
+  () => {
+    if (props.externalProjectId && projects.value.some((project: { id: string }) => project.id === props.externalProjectId)) {
+      selectedTarget.value = props.externalProjectId
+    }
+    if (props.externalPrompt.trim()) fillComposer(props.externalPrompt.trim())
+    else nextTick(() => textareaRef.value?.focus())
+  },
+)
 
 onBeforeUnmount(() => {
   if (refreshTimer) window.clearInterval(refreshTimer)
@@ -1497,7 +2310,7 @@ onBeforeUnmount(() => {
                 <AiModelSelector
                   v-model="selectedAiModel"
                   :options="AI_MODEL_OPTIONS"
-                  :compact="isCompactViewport || isDrawer"
+                  :compact="isCompactViewport"
                   @open-settings="openCockpitDrawer('model')"
                 />
               </div>
@@ -1588,6 +2401,7 @@ onBeforeUnmount(() => {
                       </li>
                     </ul>
                   </details>
+                  <div v-if="msg.text" class="markdown-body assistant-primary-answer" v-html="renderMarkdown(msg.text)"></div>
                   <article
                     v-if="msg.goalAnalysis && msg.workPlan"
                     class="assistant-work-plan-card"
@@ -1603,8 +2417,9 @@ onBeforeUnmount(() => {
                     </header>
                     <div class="assistant-work-plan-meta">
                       <span>Phạm vi: {{ msg.workPlan.scope.label }}</span>
-                      <span :class="`disposition-${msg.goalAnalysis.disposition}`">{{ msg.goalAnalysis.disposition }}</span>
+                      <span :class="`disposition-${msg.goalAnalysis.disposition}`">{{ goalDispositionLabel(msg.goalAnalysis.disposition) }}</span>
                       <span v-if="msg.goalAnalysis.usedFallback">Fallback giới hạn</span>
+                      <span v-else-if="msg.model">{{ msg.model.label }}</span>
                       <span v-else>{{ msg.goalAnalysis.actualProvider }} / {{ msg.goalAnalysis.actualModel }}</span>
                     </div>
                     <section v-if="msg.goalAnalysis.selectedSkills.length" class="assistant-selected-skill">
@@ -1613,12 +2428,10 @@ onBeforeUnmount(() => {
                       <code>{{ msg.goalAnalysis.selectedSkills[0].skillId }}</code>
                       <p>{{ msg.goalAnalysis.selectedSkills[0].fitReason }}</p>
                     </section>
-                    <section v-else-if="msg.goalAnalysis.missingSkills.length" class="assistant-missing-skill">
-                      <span>Skill còn thiếu</span>
-                      <strong>{{ msg.goalAnalysis.missingSkills[0].title }}</strong>
-                      <code>{{ msg.goalAnalysis.missingSkills[0].skillId }}</code>
+                    <details v-else-if="msg.goalAnalysis.missingSkills.length" class="assistant-missing-skill">
+                      <summary>Chưa thể tự thực hiện trực tiếp</summary>
                       <p>{{ msg.goalAnalysis.missingSkills[0].reason }}</p>
-                    </section>
+                    </details>
                     <ol class="assistant-work-plan-steps" aria-label="Kế hoạch thực hiện của Trợ lý AI">
                       <li v-for="step in msg.workPlan.steps" :key="step.stepId" :class="`step-${step.state}`">
                         <span>{{ step.stepId }}</span>
@@ -1634,7 +2447,282 @@ onBeforeUnmount(() => {
                       <ul><li v-for="warning in msg.goalAnalysis.warnings" :key="warning">{{ warning }}</li></ul>
                     </details>
                   </article>
-                  <div v-if="msg.text" class="markdown-body" v-html="renderMarkdown(msg.text)"></div>
+
+                  <article
+                    v-if="msg.safeTestRunPreview"
+                    class="project-launch-brief-card safe-test-run-card"
+                    data-testid="safe-test-run-preview"
+                  >
+                    <header class="project-launch-brief-header">
+                      <div>
+                        <span>Dev/Test only · manifest cố định</span>
+                        <h3>{{ msg.safeTestRunPreview.title }}</h3>
+                        <p>{{ msg.safeTestRunPreview.manifestId }} · không nhận command từ nội dung chat</p>
+                      </div>
+                      <div class="project-launch-status">
+                        <strong>{{ msg.safeTestRunReport?.status || msg.safeTestRunPreview.status }}</strong>
+                        <small>~{{ Math.max(1, Math.round(msg.safeTestRunPreview.estimatedSeconds / 60)) }} phút</small>
+                        <small>External API cost: {{ msg.safeTestRunPreview.estimatedExternalCost }}</small>
+                      </div>
+                    </header>
+                    <ol class="safe-test-suite-list">
+                      <li v-for="suite in msg.safeTestRunPreview.suites" :key="suite.id">
+                        <div><strong>{{ suite.label }}</strong><small>{{ suite.project }}</small></div>
+                        <span>{{ suite.scope }}</span>
+                      </li>
+                    </ol>
+                    <ol v-if="msg.safeTestRunReport?.events.length" class="safe-test-suite-list safe-test-events">
+                      <li v-for="event in msg.safeTestRunReport.events" :key="event.sequence" :class="`status-${event.status}`">
+                        <strong>{{ event.publicLabel }}</strong><span>{{ event.status }}</span>
+                      </li>
+                    </ol>
+                    <p v-if="msg.safeTestRunReport?.safeSummary" class="safe-test-summary">{{ msg.safeTestRunReport.safeSummary }}</p>
+                    <button
+                      v-if="msg.safeTestRunPreview.requiresConfirmation && !msg.safeTestRunReport"
+                      type="button"
+                      class="launch-primary-action safe-test-confirm"
+                      :disabled="Boolean(safeTestActionBusy)"
+                      data-testid="safe-test-run-confirm"
+                      @click="confirmSafeTestRun(msg, msg.safeTestRunPreview)"
+                    >{{ safeTestActionBusy === msg.safeTestRunPreview.runId ? 'Đang chạy manifest…' : 'Xác nhận và chạy kiểm thử' }}</button>
+                  </article>
+
+                  <article
+                    v-if="msg.projectLaunchBrief"
+                    class="project-launch-brief-card"
+                    data-testid="project-launch-brief"
+                  >
+                    <header class="project-launch-brief-header">
+                      <div>
+                        <span>Project Launch Brief · chỉ xem lại</span>
+                        <h3>{{ msg.projectLaunchBrief.proposedProjectName }}</h3>
+                        <p>{{ msg.projectLaunchBrief.objective }}</p>
+                      </div>
+                      <div class="project-launch-status">
+                        <strong>{{ msg.projectLaunchBrief.state }}</strong>
+                        <small>Revision {{ msg.projectLaunchBrief.revision }}</small>
+                        <small>{{ msg.projectLaunchBrief.organizationName }}</small>
+                      </div>
+                    </header>
+                    <div class="project-launch-rulebook" :class="`status-${msg.projectLaunchBrief.rulebookStatus}`">
+                      <strong>Organization Rulebook</strong>
+                      <span v-if="msg.projectLaunchBrief.ruleSetVersion">v{{ msg.projectLaunchBrief.ruleSetVersion }} hiệu lực</span>
+                      <span v-else>Chưa có phiên bản hiệu lực · policy_missing</span>
+                      <button
+                        v-if="msg.projectLaunchBrief.rulebookStatus === 'policy_missing' && !rulebookDrafts[msg.projectLaunchBrief.organizationId]"
+                        type="button"
+                        :disabled="launchActionBusy === `rulebook:${msg.projectLaunchBrief.organizationId}`"
+                        @click="createRecommendedRulebookDraft(msg.projectLaunchBrief)"
+                      >Tạo bản nháp Rulebook đề xuất</button>
+                      <button
+                        v-else-if="rulebookDrafts[msg.projectLaunchBrief.organizationId]?.status === 'draft'"
+                        type="button"
+                        :disabled="launchActionBusy === `rulebook:${msg.projectLaunchBrief.organizationId}`"
+                        @click="activateRulebookAndResume(msg.projectLaunchBrief)"
+                      >Review và kích hoạt v{{ rulebookDrafts[msg.projectLaunchBrief.organizationId].version }}</button>
+                    </div>
+                    <div class="project-launch-columns">
+                      <section>
+                        <h4>Phạm vi đề xuất</h4>
+                        <ul><li v-for="item in msg.projectLaunchBrief.scope" :key="item">{{ item }}</li></ul>
+                      </section>
+                      <section>
+                        <h4>Thước đo thành công</h4>
+                        <ul><li v-for="item in msg.projectLaunchBrief.successMeasures" :key="item">{{ item }}</li></ul>
+                      </section>
+                      <section>
+                        <h4>Giả định</h4>
+                        <p v-if="!msg.projectLaunchBrief.assumptions.length">Không có giả định được ghi nhận.</p>
+                        <ul v-else><li v-for="item in msg.projectLaunchBrief.assumptions" :key="item">{{ item }}</li></ul>
+                      </section>
+                      <section>
+                        <h4>Unknowns</h4>
+                        <p v-if="!msg.projectLaunchBrief.unknowns.length">Không có unknown từ model.</p>
+                        <ul v-else><li v-for="item in msg.projectLaunchBrief.unknowns" :key="item">{{ item }}</li></ul>
+                      </section>
+                    </div>
+                    <details class="project-launch-decisions" open>
+                      <summary>Quyết định Rulebook ({{ msg.projectLaunchBrief.ruleDecisions.length }})</summary>
+                      <ul>
+                        <li
+                          v-for="decision in msg.projectLaunchBrief.ruleDecisions"
+                          :key="decision.ruleKey"
+                          :class="`decision-${decision.result}`"
+                        >
+                          <strong>{{ decision.ruleKey }}</strong>
+                          <span>{{ decision.result }}</span>
+                          <p>{{ decision.explanation }}</p>
+                        </li>
+                      </ul>
+                    </details>
+                    <footer>
+                      <span>{{ msg.projectLaunchBrief.actualProvider }} / {{ msg.projectLaunchBrief.actualModel }}</span>
+                      <span>{{ msg.projectLaunchBrief.promptVersion }}</span>
+                      <strong>Không tạo Project · không phân công</strong>
+                      <button
+                        class="launch-primary-action"
+                        type="button"
+                        :disabled="isChatting || msg.projectLaunchBrief.rulebookStatus !== 'effective' || msg.projectLaunchBrief.questions.some(question => question.blocking)"
+                        data-testid="project-launch-plan-start"
+                        @click="createLaunchPlan(msg.projectLaunchBrief)"
+                      >Lập staffing + delivery plan</button>
+                      <small v-if="msg.projectLaunchBrief.rulebookStatus !== 'effective'">Cần kích hoạt Rulebook trước khi staffing.</small>
+                      <small v-else-if="msg.projectLaunchBrief.questions.some(question => question.blocking)">Cần gửi đủ câu trả lời còn thiếu trước khi staffing.</small>
+                    </footer>
+                  </article>
+
+                  <article
+                    v-if="msg.projectLaunchPlan"
+                    class="project-launch-plan-card"
+                    data-testid="project-launch-plan"
+                  >
+                    <header class="project-launch-plan-header">
+                      <div>
+                        <span>AI-native Project launch · {{ msg.projectLaunchPlan.schemaId }}</span>
+                        <h3>{{ msg.projectLaunchPlan.deliveryPlan.proposedProjectName }}</h3>
+                        <p>{{ msg.projectLaunchPlan.deliveryPlan.objective }}</p>
+                      </div>
+                      <div class="project-launch-status">
+                        <strong>{{ msg.projectLaunchPlan.state }}</strong>
+                        <small>Plan rev {{ msg.projectLaunchPlan.rowRevision }}</small>
+                        <small>Rulebook v{{ msg.projectLaunchPlan.ruleSetVersion || 'missing' }}</small>
+                      </div>
+                    </header>
+
+                    <div v-if="msg.projectLaunchPlan.blockingReasons.length" class="launch-blocking-list">
+                      <strong>Chưa thể xác nhận</strong>
+                      <ul><li v-for="item in msg.projectLaunchPlan.blockingReasons" :key="item">{{ item }}</li></ul>
+                    </div>
+                    <div v-if="msg.projectLaunchPlan.warnings.length" class="launch-warning-list">
+                      <strong>Cảnh báo</strong>
+                      <ul><li v-for="item in msg.projectLaunchPlan.warnings" :key="item">{{ item }}</li></ul>
+                    </div>
+
+                    <section class="launch-plan-section">
+                      <h4>1. Chọn staffing scenario</h4>
+                      <div class="launch-scenario-list">
+                        <article
+                          v-for="scenario in msg.projectLaunchPlan.staffingScenarios"
+                          :key="scenario.scenarioId"
+                          class="launch-scenario"
+                          :class="{ feasible: scenario.feasible, selected: selectedLaunchScenarioId(msg.projectLaunchPlan) === scenario.scenarioId }"
+                        >
+                          <label>
+                            <input
+                              type="radio"
+                              :name="`launch-scenario-${msg.projectLaunchPlan.planId}`"
+                              :value="scenario.scenarioId"
+                              :checked="selectedLaunchScenarioId(msg.projectLaunchPlan) === scenario.scenarioId"
+                              :disabled="!scenario.feasible || Boolean(msg.projectLaunchPlan.executionReceipt)"
+                              @change="selectLaunchScenario(msg.projectLaunchPlan.planId, scenario.scenarioId)"
+                            >
+                            <span><strong>{{ scenario.title }}</strong><small>Score {{ scenario.score.toFixed(1) }} · {{ scenario.feasible ? 'khả thi' : 'blocked' }}</small></span>
+                          </label>
+                          <p>{{ scenario.description }}</p>
+                          <p><strong>Manager:</strong> {{ scenario.managerName || 'chưa đủ điều kiện' }}</p>
+                          <ul class="launch-member-list">
+                            <li v-for="member in scenario.members" :key="member.userId">
+                              <strong>{{ member.displayName }}</strong>
+                              <span>{{ member.proposedRole }} · {{ member.proposedHours }}h · load {{ member.loadAfterPercent.toFixed(0) }}%</span>
+                              <small>Skills: {{ member.coveredSkills.join(', ') || 'chưa có evidence' }}</small>
+                            </li>
+                          </ul>
+                          <details v-if="scenario.blockingReasons.length || scenario.managerCandidates.some(item => item.hardRejects.length)">
+                            <summary>Blocking / candidate rejects</summary>
+                            <ul>
+                              <li v-for="reason in scenario.blockingReasons" :key="reason">{{ reason }}</li>
+                              <li v-for="candidate in scenario.managerCandidates.filter(item => item.hardRejects.length)" :key="candidate.userId">
+                                {{ candidate.displayName }}: {{ candidate.hardRejects.join(', ') }}
+                              </li>
+                            </ul>
+                          </details>
+                        </article>
+                      </div>
+                    </section>
+
+                    <section class="launch-plan-section">
+                      <h4>2. Delivery plan thật sẽ được tạo</h4>
+                      <p class="launch-plan-range">
+                        {{ new Date(msg.projectLaunchPlan.deliveryPlan.startDate).toLocaleDateString('vi-VN') }}
+                        → {{ new Date(msg.projectLaunchPlan.deliveryPlan.endDate).toLocaleDateString('vi-VN') }}
+                      </p>
+                      <details
+                        v-for="sprint in msg.projectLaunchPlan.deliveryPlan.sprints.filter(item => item.selected)"
+                        :key="sprint.clientId"
+                        class="launch-sprint"
+                        open
+                      >
+                        <summary>{{ sprint.name }} · {{ sprint.tasks.filter(item => item.selected).length }} tasks</summary>
+                        <p>{{ sprint.objective }}</p>
+                        <ol>
+                          <li v-for="task in sprint.tasks.filter(item => item.selected)" :key="task.clientId">
+                            <strong>{{ task.title }}</strong>
+                            <span>{{ task.priority }} · {{ task.estimatedHours }}h</span>
+                            <small>Skills: {{ task.requiredSkillNames.join(', ') || 'general' }}</small>
+                            <small v-if="task.dependencyClientIds.length">Depends on: {{ task.dependencyClientIds.join(', ') }}</small>
+                          </li>
+                        </ol>
+                      </details>
+                      <details v-if="msg.projectLaunchPlan.deliveryPlan.externalDeferred.length" class="launch-external-deferred">
+                        <summary>External actions được hoãn có chủ đích</summary>
+                        <ul><li v-for="item in msg.projectLaunchPlan.deliveryPlan.externalDeferred" :key="item">{{ item }}</li></ul>
+                      </details>
+                    </section>
+
+                    <section v-if="msg.projectLaunchPlan.executionReceipt" class="launch-receipt" data-testid="project-launch-receipt">
+                      <h4>3. Execution receipt · {{ msg.projectLaunchPlan.executionReceipt.state }}</h4>
+                      <p>
+                        Transaction: <strong>{{ msg.projectLaunchPlan.executionReceipt.internalTransactionCommitted ? 'committed' : 'not committed' }}</strong>
+                        · Read-back: <strong>{{ msg.projectLaunchPlan.executionReceipt.readBackVerified ? 'verified' : 'failed' }}</strong>
+                      </p>
+                      <ul>
+                        <li v-for="command in msg.projectLaunchPlan.executionReceipt.commands" :key="command.commandId">
+                          <span><strong>{{ command.adapterId }}</strong> · {{ command.status }}</span>
+                          <small>{{ command.summary }}</small>
+                          <button v-if="command.deepLink" type="button" @click="openLaunchLink(command.deepLink)">Mở</button>
+                        </li>
+                      </ul>
+                    </section>
+
+                    <section v-if="msg.projectLaunchPlan.latestReplanProposal" class="launch-replan" data-testid="project-replan-proposal">
+                      <h4>Replan proposal rev {{ msg.projectLaunchPlan.latestReplanProposal.revision }} · chỉ review</h4>
+                      <p>Qaly không tự sửa Task, assignee hoặc deadline.</p>
+                      <ul>
+                        <li v-for="change in msg.projectLaunchPlan.latestReplanProposal.changes" :key="`${change.changeType}-${change.summary}`">
+                          <strong>{{ change.severity }} · {{ change.summary }}</strong>
+                          <small>Baseline {{ change.baselineValue }} → hiện tại {{ change.currentValue }}</small>
+                          <p>{{ change.suggestedAction }}</p>
+                        </li>
+                      </ul>
+                    </section>
+
+                    <footer class="launch-plan-actions">
+                      <div>
+                        <span>{{ msg.projectLaunchPlan.actualProvider }} / {{ msg.projectLaunchPlan.actualModel }}</span>
+                        <small>{{ msg.projectLaunchPlan.scoringVersion }}</small>
+                      </div>
+                      <button
+                        v-if="!msg.projectLaunchPlan.executionReceipt"
+                        type="button"
+                        class="launch-primary-action"
+                        :disabled="Boolean(launchActionBusy) || Boolean(msg.projectLaunchPlan.blockingReasons.length)"
+                        data-testid="project-launch-confirm"
+                        @click="confirmLaunchPlan(msg, msg.projectLaunchPlan)"
+                      >{{ launchActionBusy === msg.projectLaunchPlan.planId ? 'Đang thực thi…' : 'Xác nhận tạo Project' }}</button>
+                      <template v-else>
+                        <button type="button" :disabled="Boolean(launchActionBusy)" data-testid="project-launch-monitor" @click="monitorLaunch(msg, msg.projectLaunchPlan)">Monitor ngay</button>
+                        <button
+                          v-if="msg.projectLaunchPlan.executionReceipt.rollbackAvailable"
+                          type="button"
+                          class="launch-danger-action"
+                          :disabled="Boolean(launchActionBusy)"
+                          data-testid="project-launch-rollback"
+                          @click="rollbackLaunch(msg, msg.projectLaunchPlan)"
+                        >Rollback launch</button>
+                        <button type="button" @click="openLaunchLink(`/projects/${msg.projectLaunchPlan.executionReceipt.projectId}`)">Mở Project</button>
+                      </template>
+                    </footer>
+                  </article>
 
                   <article
                     v-if="msg.researchPlan"
@@ -1834,6 +2922,79 @@ onBeforeUnmount(() => {
                           </button>
                         </div>
                       </div>
+                      <div v-else-if="action.type === 'assistant_progressive_questions'" class="assistant-progressive-card">
+                        <section v-if="action.payload?.questions?.length" class="assistant-progressive-questions">
+                          <header>
+                            <strong>Mình cần biết thêm</strong>
+                            <span>{{ clarificationDraftSaving ? 'Đang lưu nháp…' : 'Câu trả lời được lưu trên máy chủ' }}</span>
+                          </header>
+                          <article v-for="question in action.payload.questions" :key="question.id">
+                            <strong>{{ question.text }}</strong>
+                            <p>{{ question.reason }}</p>
+                            <div v-if="question.quickReplies?.length" class="assistant-quick-replies">
+                              <button
+                                v-for="reply in question.quickReplies"
+                                :key="reply.value"
+                                type="button"
+                                :class="{ selected: progressiveAnswer(question.id, action)?.value === reply.value }"
+                                :aria-pressed="progressiveAnswer(question.id, action)?.value === reply.value"
+                                @click="answerProgressiveQuestion(question, reply, action)"
+                              >{{ reply.label }}</button>
+                            </div>
+                            <div v-if="question.allowFreeText" class="assistant-free-answer">
+                              <input
+                                :id="`clarification-${question.id}`"
+                                type="text"
+                                :value="progressiveAnswer(question.id, action)?.value || ''"
+                                :aria-label="`Trả lời: ${question.text}`"
+                                placeholder="Nhập câu trả lời…"
+                                @focus="answerProgressiveWithComposer(question, action)"
+                                @input="updateProgressiveFreeText(question, action, $event, false)"
+                                @change="updateProgressiveFreeText(question, action, $event, true)"
+                              />
+                              <button
+                                v-if="progressiveAnswer(question.id, action)"
+                                type="button"
+                                @click="setProgressiveAnswer(question, '', null, action)"
+                              >Xóa</button>
+                            </div>
+                          </article>
+                          <footer class="assistant-progressive-actions">
+                            <button type="button" :disabled="!progressiveDraft" @click="clearProgressiveDraft">Xóa bản nháp</button>
+                            <button
+                              type="button"
+                              class="launch-primary-action"
+                              :disabled="!hasAllBlockingAnswers(action) || clarificationDraftSaving || isChatting"
+                              @click="submitProgressiveDraft(action)"
+                            >Gửi tất cả câu trả lời</button>
+                          </footer>
+                        </section>
+                        <section v-if="action.payload?.guidance" class="assistant-manual-guidance">
+                          <header>
+                            <strong>Cách làm tạm thời</strong>
+                            <span>Luồng Qaly đã xác minh</span>
+                          </header>
+                          <p>{{ action.payload.guidance.summary }}</p>
+                          <ol>
+                            <li v-for="step in action.payload.guidance.steps" :key="`${step.sequence}-${step.route}`">
+                              <button type="button" @click="openGuidanceRoute(step.route)">
+                                <span>{{ step.sequence }}. {{ step.label }}</span>
+                                <small>{{ step.route }}</small>
+                              </button>
+                            </li>
+                          </ol>
+                        </section>
+                        <details v-if="action.payload?.capabilityGap" class="assistant-capability-gap">
+                          <summary>Chưa thể tự thực hiện trực tiếp</summary>
+                          <p>{{ action.payload.capabilityGap.userMessage }}</p>
+                        </details>
+                      </div>
+                      <button
+                        v-else-if="action.type === 'assistant_resume_turn'"
+                        type="button"
+                        class="erumi-action-button"
+                        @click="resumeAssistantTurn(action)"
+                      >{{ action.label }}</button>
                       <div v-else-if="action.type === 'compose_task_plan'" class="erumi-draft-card">
                         <p class="erumi-draft-text">Yêu cầu đã được định tuyến sang Task Action Composer. AI chỉ soạn option; bạn vẫn kiểm tra và xác nhận trước khi tạo task.</p>
                         <div class="erumi-draft-buttons">
@@ -1918,6 +3079,12 @@ onBeforeUnmount(() => {
               <div class="typing-loader">
                 <span></span><span></span><span></span>
               </div>
+              <button
+                v-if="activeAssistantTurnId"
+                type="button"
+                class="assistant-cancel-turn"
+                @click="cancelActiveAssistantTurn"
+              >Hủy an toàn</button>
             </div>
           </div>
         </div>
@@ -1998,7 +3165,7 @@ onBeforeUnmount(() => {
                 <AiModelSelector
                   v-model="selectedAiModel"
                   :options="AI_MODEL_OPTIONS"
-                  :compact="isCompactViewport || isDrawer"
+                  :compact="isCompactViewport"
                   @open-settings="openCockpitDrawer('model')"
                 />
               </div>
@@ -2042,8 +3209,9 @@ onBeforeUnmount(() => {
           v-else-if="activeDrawerTab === 'history'"
           :items="conversationHistory"
           @restore="restoreHistoryItem"
+          @rename="renameHistoryItem"
+          @archive="archiveHistoryItem"
           @delete="deleteHistoryItem"
-          @clear="clearConversationHistory"
         />
 
         <section v-else-if="activeDrawerTab === 'metrics'" class="analytics-drawer-section">
@@ -2075,6 +3243,12 @@ onBeforeUnmount(() => {
               <p>{{ option.description }}</p>
             </article>
           </div>
+          <button
+            v-if="activeDrawerTab === 'settings'"
+            type="button"
+            class="analytics-settings-link"
+            @click="router.push('/settings?tab=privacy')"
+          >Mở thiết lập quyền riêng tư và dữ liệu AI</button>
         </section>
 
         <section v-else-if="activeDrawerTab === 'actions'" class="analytics-drawer-section">
@@ -3380,6 +4554,8 @@ onBeforeUnmount(() => {
   color: #17233d;
 }
 
+.assistant-primary-answer { margin-bottom: 14px; }
+
 .assistant-work-plan-header,
 .assistant-work-plan-meta,
 .assistant-selected-skill,
@@ -3404,6 +4580,9 @@ onBeforeUnmount(() => {
 .assistant-selected-skill p,
 .assistant-missing-skill p { flex-basis: 100%; }
 .assistant-missing-skill { border-left: 3px solid #f59e0b; }
+.assistant-missing-skill { display: block; }
+.assistant-missing-skill summary { cursor: pointer; color: #8a5300; font-size: 12px; font-weight: 800; }
+.assistant-missing-skill p { margin-top: 8px; }
 .assistant-work-plan-steps { margin: 12px 0 0; padding: 0; list-style: none; display: grid; gap: 7px; }
 .assistant-work-plan-steps li { align-items: center; padding: 8px; border-radius: 9px; background: rgba(255,255,255,.72); }
 .assistant-work-plan-steps li > span { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; background: #2563eb; color: white; font-size: 11px; }
@@ -3666,6 +4845,144 @@ onBeforeUnmount(() => {
   }
 }
 
+.project-launch-brief-card,
+.project-launch-plan-card,
+.assistant-progressive-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.project-launch-brief-header,
+.assistant-progressive-questions > header,
+.assistant-manual-guidance > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  background: color-mix(in srgb, var(--surface) 88%, var(--primary) 12%);
+}
+
+.project-launch-brief-header h3,
+.project-launch-brief-header p { margin: 3px 0 0; }
+.project-launch-brief-header span,
+.project-launch-status small { color: var(--muted); font-size: 11px; }
+.project-launch-status { display: grid; justify-items: end; align-content: start; }
+.project-launch-rulebook { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 9px 16px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); font-size: 12px; }
+.project-launch-rulebook button { margin-left: auto; border: 1px solid currentColor; border-radius: 8px; background: var(--surface); color: inherit; padding: 6px 9px; cursor: pointer; }
+.project-launch-rulebook button:disabled { opacity: .55; cursor: not-allowed; }
+.project-launch-rulebook.status-policy_missing { color: #b45309; background: #fffbeb; }
+.project-launch-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 14px 16px; }
+.project-launch-columns section { padding: 10px; border: 1px solid var(--border); border-radius: 10px; }
+.project-launch-columns h4,
+.project-launch-columns p,
+.project-launch-columns ul { margin: 0; }
+.project-launch-columns ul { padding-left: 18px; }
+.project-launch-decisions { margin: 0 16px 14px; }
+.project-launch-decisions summary { cursor: pointer; font-weight: 700; }
+.project-launch-decisions ul { display: grid; gap: 7px; list-style: none; padding: 8px 0 0; }
+.project-launch-decisions li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 10px; padding: 9px; border: 1px solid var(--border); border-radius: 9px; }
+.project-launch-decisions li p { grid-column: 1 / -1; margin: 0; color: var(--muted); }
+.project-launch-decisions .decision-block { border-color: #fecaca; }
+.project-launch-decisions .decision-unknown { border-color: #fde68a; }
+.project-launch-brief-card > footer { display: flex; flex-wrap: wrap; gap: 8px 14px; padding: 10px 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 11px; }
+.safe-test-suite-list { display: grid; gap: 8px; margin: 0; padding: 14px 16px; list-style: none; }
+.safe-test-suite-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 9px; }
+.safe-test-suite-list li div { display: grid; min-width: 0; }
+.safe-test-suite-list small,
+.safe-test-suite-list span { color: var(--muted); font-size: 11px; }
+.safe-test-events { padding-top: 0; }
+.safe-test-events .status-passed { border-color: #86efac; }
+.safe-test-events .status-failed { border-color: #fca5a5; }
+.safe-test-summary { margin: 0; padding: 0 16px 12px; }
+.safe-test-confirm { margin: 0 16px 14px auto; display: flex; }
+.project-launch-plan-card { border: 1px solid color-mix(in srgb, var(--primary) 40%, var(--border)); border-radius: 14px; background: var(--surface); overflow: hidden; }
+.project-launch-plan-header { display: flex; justify-content: space-between; gap: 16px; padding: 14px 16px; background: color-mix(in srgb, var(--surface) 82%, var(--primary) 18%); }
+.project-launch-plan-header h3,
+.project-launch-plan-header p { margin: 3px 0 0; }
+.project-launch-plan-header span { color: var(--muted); font-size: 11px; }
+.launch-blocking-list,
+.launch-warning-list { padding: 10px 16px; border-top: 1px solid var(--border); font-size: 12px; }
+.launch-blocking-list { color: #b91c1c; background: #fef2f2; }
+.launch-warning-list { color: #92400e; background: #fffbeb; }
+.launch-blocking-list ul,
+.launch-warning-list ul { margin: 5px 0 0; padding-left: 18px; }
+.launch-plan-section,
+.launch-receipt,
+.launch-replan { padding: 14px 16px; border-top: 1px solid var(--border); }
+.launch-plan-section > h4,
+.launch-receipt > h4,
+.launch-replan > h4 { margin: 0 0 10px; }
+.launch-scenario-list { display: grid; gap: 10px; }
+.launch-scenario { padding: 11px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--surface) 96%, var(--muted) 4%); }
+.launch-scenario.feasible { border-color: #86efac; }
+.launch-scenario.selected { box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 35%, transparent); }
+.launch-scenario > label { display: flex; gap: 9px; cursor: pointer; }
+.launch-scenario > label span { display: grid; }
+.launch-scenario > label small,
+.launch-member-list small,
+.launch-sprint small,
+.launch-receipt small,
+.launch-replan small,
+.launch-plan-actions small { color: var(--muted); }
+.launch-scenario > p { margin: 7px 0; }
+.launch-member-list { display: grid; gap: 6px; padding: 0; list-style: none; }
+.launch-member-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 7px; border-radius: 8px; background: color-mix(in srgb, var(--surface) 88%, var(--primary) 12%); }
+.launch-member-list small { grid-column: 1 / -1; }
+.launch-sprint { margin-top: 8px; padding: 9px; border: 1px solid var(--border); border-radius: 9px; }
+.launch-sprint summary { cursor: pointer; font-weight: 700; }
+.launch-sprint > p { margin: 7px 0; color: var(--muted); }
+.launch-sprint ol { display: grid; gap: 6px; padding-left: 22px; }
+.launch-sprint li { padding-left: 3px; }
+.launch-sprint li span { float: right; margin-left: 10px; color: var(--muted); }
+.launch-sprint li small { display: block; }
+.launch-plan-range { color: var(--muted); }
+.launch-external-deferred { margin-top: 10px; color: var(--muted); }
+.launch-receipt > ul,
+.launch-replan > ul { display: grid; gap: 7px; padding: 0; list-style: none; }
+.launch-receipt li,
+.launch-replan li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 9px; padding: 9px; border: 1px solid var(--border); border-radius: 9px; }
+.launch-receipt li small,
+.launch-replan li small,
+.launch-replan li p { grid-column: 1 / -1; margin: 0; }
+.launch-receipt button { border: 0; background: none; color: var(--primary); cursor: pointer; }
+.launch-replan { background: color-mix(in srgb, var(--surface) 90%, #f59e0b 10%); }
+.launch-plan-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
+.launch-plan-actions > div { display: grid; margin-right: auto; }
+.launch-plan-actions button,
+.launch-primary-action { border: 1px solid var(--border); border-radius: 9px; padding: 8px 11px; background: var(--surface); color: var(--text); cursor: pointer; }
+.launch-plan-actions button:disabled,
+.launch-primary-action:disabled { opacity: .55; cursor: not-allowed; }
+.launch-primary-action { border-color: var(--primary); background: var(--primary); color: white; }
+.launch-danger-action { border-color: #fecaca !important; color: #b91c1c !important; }
+
+.assistant-progressive-card { display: grid; gap: 0; }
+.assistant-progressive-questions > article,
+.assistant-manual-guidance { padding: 12px 16px; border-top: 1px solid var(--border); }
+.assistant-progressive-questions article > p,
+.assistant-manual-guidance > p { margin: 3px 0 8px; color: var(--muted); font-size: 12px; }
+.assistant-quick-replies { display: flex; flex-wrap: wrap; gap: 7px; }
+.assistant-quick-replies button,
+.assistant-free-text,
+.assistant-cancel-turn { border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text); padding: 6px 10px; cursor: pointer; }
+.assistant-quick-replies button.selected { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 14%, var(--surface)); color: var(--primary); }
+.assistant-free-text { margin-top: 7px; color: var(--primary); }
+.assistant-free-answer { display: flex; gap: 7px; margin-top: 8px; }
+.assistant-free-answer input { min-width: 0; flex: 1; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text); padding: 8px 10px; }
+.assistant-free-answer input:focus { outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent); border-color: var(--primary); }
+.assistant-free-answer button,
+.assistant-progressive-actions > button { border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text); padding: 7px 10px; cursor: pointer; }
+.assistant-progressive-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
+.assistant-progressive-actions button:disabled { opacity: .55; cursor: not-allowed; }
+.assistant-manual-guidance ol { display: grid; gap: 7px; padding: 0; list-style: none; }
+.assistant-manual-guidance li button { width: 100%; display: flex; justify-content: space-between; gap: 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); padding: 9px 10px; text-align: left; cursor: pointer; }
+.assistant-manual-guidance li small { color: var(--muted); }
+.assistant-capability-gap { margin: 0 16px 14px; color: var(--muted); }
+.composer-question-context { display: flex; justify-content: space-between; gap: 8px; padding: 7px 10px; color: var(--primary); font-size: 12px; border-bottom: 1px solid var(--border); }
+.composer-question-context button { border: 0; background: none; color: var(--muted); cursor: pointer; }
+.assistant-cancel-turn { margin-top: 8px; color: var(--danger, #dc2626); }
+
 @media (max-width: 720px) {
   .empty-inner {
     padding: 20px 14px;
@@ -3704,5 +5021,7 @@ onBeforeUnmount(() => {
   .assistant-actions {
     opacity: 1;
   }
+
+  .project-launch-columns { grid-template-columns: 1fr; }
 }
 </style>

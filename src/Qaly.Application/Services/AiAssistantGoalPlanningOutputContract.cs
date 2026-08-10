@@ -88,7 +88,17 @@ public static class AiAssistantGoalPlanningOutputContract
 
         // The model may rank a superficially related read skill for a request that actually asks
         // Qaly to execute a capability which is not installed. The server owns this boundary.
-        if (TryDetectKnownMissingSkill(context.Message, out var controlledMissingSkill))
+        if (TryCreateKnownTestCapabilityPlan(
+                context.Message,
+                context.ClientContext,
+                context.AvailableSkills,
+                out var knownTestPlan) && knownTestPlan != null)
+        {
+            result = knownTestPlan;
+            return true;
+        }
+        if (TryDetectKnownMissingSkill(context.Message, out var controlledMissingSkill) &&
+            !context.AvailableSkills.Any(item => item.CapabilityId == controlledMissingSkill.SkillId))
         {
             result = BuildKnownMissingSkillPlan(
                 context.Message,
@@ -187,13 +197,30 @@ public static class AiAssistantGoalPlanningOutputContract
         var missing = new List<AiAssistantMissingSkillDto>();
         string? selectedId = null;
 
-        if (ContainsAny(normalized, "test demo", "demo tat ca", "chay test", "test cand", "kiem thu tat ca"))
+        if (ContainsAny(normalized, "test demo", "demo tat ca", "chay test", "test cand", "kiem thu tat ca") &&
+            available.ContainsKey(AiAssistantContextContract.SafeTestRunCapability))
+        {
+            selectedId = AiAssistantContextContract.SafeTestRunCapability;
+        }
+        else if (ContainsAny(normalized, "test demo", "demo tat ca", "chay test", "test cand", "kiem thu tat ca"))
         {
             missing.Add(new AiAssistantMissingSkillDto(
                 "demo.test.run.v1", "Chạy bộ test/demo", "Qaly chưa expose test runner như một skill an toàn cho trợ lý.",
                 "Thiết kế một adapter test allowlist, sandbox và report read-only riêng."));
         }
-        else if (ContainsAny(normalized, "tao du an", "tao project", "tao group", "tao nhom", "tao cuoc hop", "tao meeting", "tao poll", "tao form", "tao lich"))
+        else if (ContainsAny(
+                     normalized,
+                     "tao du an", "tao mot du an", "lap du an", "tao project", "tao mot project",
+                     "khoi chay du an", "khoi tao du an", "launch project") &&
+                 available.ContainsKey(AiAssistantContextContract.ProjectLaunchCapability))
+        {
+            selectedId = AiAssistantContextContract.ProjectLaunchCapability;
+        }
+        else if (ContainsAny(
+                     normalized,
+                     "tao du an", "tao mot du an", "lap du an", "tao project", "tao mot project",
+                     "tao group", "tao mot group", "tao nhom", "tao mot nhom",
+                     "tao cuoc hop", "tao mot cuoc hop", "tao meeting", "tao poll", "tao form", "tao lich"))
         {
             missing.Add(new AiAssistantMissingSkillDto(
                 "domain.object.draft.v1", "Soạn đối tượng Qaly", "Chưa có draft adapter tương ứng cho loại đối tượng được yêu cầu.",
@@ -256,9 +283,18 @@ public static class AiAssistantGoalPlanningOutputContract
         out AiAssistantGoalPlanningResultDto? result,
         string? fallbackReason = null)
     {
-        _ = discoveryContext;
         result = null;
+        if (TryCreateKnownTestCapabilityPlan(
+                request.Message,
+                request.Context,
+                discoveryContext.Capabilities,
+                out var availablePlan) && availablePlan != null)
+        {
+            result = availablePlan;
+            return true;
+        }
         if (!TryDetectKnownMissingSkill(request.Message, out var missingSkill)) return false;
+        if (discoveryContext.HasCapability(missingSkill.SkillId)) return false;
 
         var isFallback = !string.IsNullOrWhiteSpace(fallbackReason);
         result = BuildKnownMissingSkillPlan(
@@ -271,6 +307,52 @@ public static class AiAssistantGoalPlanningOutputContract
             isFallback
                 ? $"Goal planner provider was unavailable ({fallbackReason}); server policy still prevented execution."
                 : "Known unavailable execution capability was identified before provider routing; no provider or executor was called.");
+        return true;
+    }
+
+    private static bool TryCreateKnownTestCapabilityPlan(
+        string message,
+        AiAssistantClientContextDto? context,
+        IReadOnlyList<AiAssistantCapabilityDescriptorDto> availableSkills,
+        out AiAssistantGoalPlanningResultDto? result)
+    {
+        result = null;
+        if (!TryDetectKnownMissingSkill(message, out _) ||
+            !availableSkills.Any(item => item.CapabilityId == AiSafeTestOrchestratorContract.CapabilityId) ||
+            !AiAssistantCapabilityCatalog.TryGet(AiSafeTestOrchestratorContract.CapabilityId, out var descriptor))
+            return false;
+
+        var scope = BuildServerScope(context);
+        var selected = ToSelection(
+            descriptor,
+            "Yêu cầu test/demo khớp adapter Development/Test có manifest do máy chủ sở hữu.",
+            1);
+        var analysis = new AiAssistantGoalAnalysisDto(
+            AiAssistantGoalPlanningContract.SchemaId,
+            AiAssistantGoalPlanningContract.PromptId,
+            AiAssistantGoalPlanningContract.PromptVersion,
+            message.Trim(),
+            "Xem trước và chạy evidence test/demo cho các CAND trong manifest cố định.",
+            ["test_execution", "candidate_verification", "fixed_manifest"],
+            [scope],
+            ["Chỉ Development/Test", "Không nhận command hoặc path từ chat", "Bắt buộc xác nhận trước khi chạy"],
+            [],
+            [],
+            [selected],
+            [],
+            "low",
+            true,
+            "plannable",
+            1,
+            [],
+            "Qaly Safe Test Router",
+            "fixed-manifest-v1",
+            false);
+        result = new AiAssistantGoalPlanningResultDto(
+            analysis,
+            BuildServerPlan(message.Trim(), scope, selected, [], "plannable"),
+            selected.SkillId,
+            false);
         return true;
     }
 

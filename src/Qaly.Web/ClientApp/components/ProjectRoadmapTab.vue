@@ -49,7 +49,7 @@ import {
 import { apiResult, apiCommand } from "../utils/api-client";
 import { showError, showSuccess } from "../composables/use-toast";
 import { useDashboardContext } from "../composables/dashboard-context";
-import type { SprintDto, DashboardTask } from "../types";
+import type { SprintDto, DashboardTask, GanttTaskDto } from "../types";
 import ProjectProgressAiCard from "./ProjectProgressAiCard.vue";
 import { useRoute, useRouter } from "vue-router";
 
@@ -122,10 +122,13 @@ const confirmationModalRoot = ref<HTMLElement | null>(null);
 const milestoneTaskSearch = ref("");
 const milestoneTaskStatusFilter = ref<string>("all");
 
-const roadmapTasks = computed<any[]>(() => selectedProject.value?.tasks || []);
+const roadmapTasks = computed<DashboardTask[]>(
+  () => selectedProject.value?.tasks || [],
+);
+const ganttTasks = ref<GanttTaskDto[]>([]);
 
-const timelineTasks = computed<any[]>(() =>
-  roadmapTasks.value
+const timelineTasks = computed<GanttTaskDto[]>(() =>
+  ganttTasks.value
     .filter((task) => task.startDate || task.endDate)
     .slice()
     .sort((a, b) => {
@@ -318,7 +321,7 @@ watch(
   { flush: "post" },
 );
 
-function getTaskStyle(task: DashboardTask) {
+function getTaskStyle(task: GanttTaskDto) {
   const startTime =
     toValidTimestamp(task.startDate) ?? toValidTimestamp(task.endDate);
   const endTime = toValidTimestamp(task.endDate) ?? startTime;
@@ -333,7 +336,7 @@ function getTaskStyle(task: DashboardTask) {
   return { gridColumn: `${startColumn} / span ${span}` };
 }
 
-function taskTone(task: DashboardTask) {
+function taskTone(task: GanttTaskDto) {
   const now = Date.now();
   const end = toValidTimestamp(task.endDate);
   if (end !== null && task.status !== "Done" && now > end) return "is-overdue";
@@ -378,9 +381,11 @@ watch(selectedSprintId, (sprintId) => {
 async function loadSprints() {
   isLoading.value = true;
   try {
-    const result = await apiResult<SprintDto[]>(
-      `/api/projects/${props.projectId}/sprints`,
-    );
+    const [result, ganttResult] = await Promise.all([
+      apiResult<SprintDto[]>(`/api/projects/${props.projectId}/sprints`),
+      apiResult<GanttTaskDto[]>(`/api/tasks/project/${props.projectId}/gantt`),
+    ]);
+    ganttTasks.value = ganttResult || [];
     // Sort sprints chronologically by StartDate
     sprints.value = (result || []).sort(
       (a, b) =>
@@ -402,6 +407,8 @@ async function loadSprints() {
       selectedSprintId.value = current.id;
     }
   } catch (error) {
+    sprints.value = [];
+    ganttTasks.value = [];
     showError("Không thể tải lộ trình dự án.");
   } finally {
     isLoading.value = false;
@@ -941,7 +948,7 @@ function getDaysRemaining(endDateStr: string): {
 
     <!-- Empty State if no milestones exist -->
     <div
-      v-if="sprints.length === 0 && !isLoading"
+      v-if="viewMode === 'journey' && sprints.length === 0 && !isLoading"
       class="empty-roadmap-card glass-card"
     >
       <div class="empty-roadmap-content">

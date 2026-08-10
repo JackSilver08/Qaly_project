@@ -372,7 +372,7 @@ Score = outcome 25 + requirement closure 20 + AI-native fit 15 + canonical reuse
 | CAND-017 | Cross-project Assignment & Schedule Copilot | 25 | 18 | 15 | 13 | 8 | 3 | 82 | **VETO for next run:** needs CAND-015/016, availability/capacity and portfolio permission; too broad for one slice. |
 | CAND-010 | Canonical Meeting Checknote | 22 | 15 | 15 | 14 | 8 | 8 | 82 | Privacy/import/action mapping breadth; defer. |
 | CAND-009 | Canonical Dashboard Strategic Brief | 20 | 10 | 14 | 15 | 9 | 11 | 79 | Good partial closure, but locked AI-08 wins tie-break. |
-| CAND-011 | Canonical AI Project Planner draft | 22 | 12 | 14 | 13 | 8 | 7 | 76 | Multi-entity atomic mutation and rollback increase risk. |
+| CAND-011 | Canonical AI Project Planner draft | 22 | 12 | 14 | 13 | 8 | 7 | 76 | **SUPERSEDED by CAND-023 (§31); do not implement as a standalone duplicate.** |
 | CAND-012 | Grounded Wiki Brief / task draft entry | 18 | 8 | 14 | 15 | 8 | 9 | 72 | New P2 breadth blocked until locked AI-01..08 green. |
 | CAND-013 | Persisted weekly AI progress digest | 17 | 10 | 12 | 15 | 8 | 8 | 70 | Scheduler/email preference and AI-08 dependency; defer. |
 
@@ -3241,3 +3241,827 @@ Data integrity rules:
 - no provider result, AI success state or recent model output is seeded. DeepSeek and other configured providers must still generate runtime results from these sources with normal permission, grounding, usage and failure controls.
 
 Verification evidence: `RichDemoSeedTests` **2/2 PASS**, including exact counts (5 active projects, 9 skills, 20 requirements, 5 confirmed attributions, 12 profiles and 5 availability windows), project-by-project evidence closure and second-run idempotency. Infrastructure Debug build PASS with 0 errors; accumulated analyzer warnings remain pre-existing and non-blocking.
+
+## 31. Plan amendment — CAND-023 Governed Project Launch & Operating Orchestrator
+
+**Amendment date:** 2026-08-10 (Asia/Saigon)
+**Baseline inspected:** `codex/recent-feature-gap-closure` at `24a66ec84e0f12de13bcd69701411bda7cad39ec`, equal to the fetched `origin/main` before this planning amendment; the existing implementation workspace remains uncommitted.
+**Change boundary:** planning and disposition only. This amendment does not claim that Project launch, Rulebook, multi-entity execution or autonomous monitoring is implemented.
+
+### 31.1 Product decision and current verdict
+
+The target user job is no longer only “draft a Project plan.” A user must be able to state an outcome such as “khởi chạy một dự án web SPA production-ready trong 12 tuần,” then let the singleton Qaly Assistant:
+
+1. understand scope, constraints and blocking unknowns;
+2. ask only decision-relevant clarification questions;
+3. load the effective organization rules and authorized operating facts;
+4. evaluate manager/team eligibility, skill evidence and portfolio capacity;
+5. create feasible staffing, delivery and schedule scenarios;
+6. produce an editable Project/Sprint/Task launch plan;
+7. show one reviewable internal mutation batch and separately classified external effects;
+8. execute only after explicit authorization;
+9. read back every created/updated entity and return durable receipts;
+10. monitor the approved baseline and propose, but never silently apply, a replan.
+
+**Current runtime verdict: `MISSING_HIGH_VALUE`.** CAND-022A can understand this goal and correctly report missing `project.create.v1`; CAND-017 can generate a bounded assignment/schedule proposal inside an existing Project; CAND-018 can create Task drafts inside a resolved Project. These are necessary foundations, but they do not compose into an executable Project-launch workflow today.
+
+This candidate must not be described as “fully autonomous AI.” The intended contract is **goal-driven, server-governed orchestration with bounded autonomy and explicit mutation approval**.
+
+### 31.2 Candidate relationship and duplicate disposition
+
+| Existing candidate | Reuse in CAND-023 | Disposition |
+|---|---|---|
+| CAND-011 — Canonical Project Planner | Original brief → Project/Sprint/Task draft product intent | **SUPERSEDED/SUBSUMED.** CAND-011 is historical scope and receives no separate implementation or coverage credit after this amendment. |
+| CAND-015 — Task Skill Taxonomy | Canonical required-skill identities/levels for planned work | Reuse; no inferred or model-created skills. |
+| CAND-016 — Member Skill Evidence | Evidence-backed staffing inputs and correction semantics | Reuse; missing evidence remains unknown, not “unskilled.” |
+| CAND-006 — Assignee Recommendation | Project-local explainable candidate scoring pattern | Reuse and extend only through deterministic CAND-023 policy. |
+| CAND-017 — Portfolio Schedule Copilot | Capacity, availability, workload, dependency and selective-confirm scheduling | Required scheduling foundation; do not create a second capacity engine. |
+| CAND-018 — AI Action Composer | Versioned tool registry, editable action set, confirmation, idempotency and receipt | Required mutation framework; expand through reviewed adapters only. |
+| CAND-021 — Assistant Foundation | Singleton workspace, durable sessions/turns, context/capability registry and artifact rendering | Required host surface and durability boundary. |
+| CAND-022A — Goal Understanding | Natural goal analysis, skill discovery and bounded Work Plan | Required entry contract; already complete for the bounded three-skill catalog. |
+| CAND-022B — Read-only Agent Loop | Multi-step authorized retrieval/analysis/verification | **Immediate platform prerequisite** before CAND-023A; Project launch must not invent a second executor. |
+| CAND-022D — Native Skill Packs | Registers Project-launch analysis/artifact/mutation-draft skills | Incrementally closes as each CAND-023 phase passes its own gate. |
+
+CAND-023 is therefore a **domain composite capability** on top of the CAND-022 platform orchestrator. CAND-022 remains responsible for how safe plans execute; CAND-023 owns the business meaning, rules, artifacts and actions of launching and operating a Project.
+
+### 31.3 Verified current-state gaps
+
+| GAP-ID | Current evidence | Business consequence | Required disposition |
+|---|---|---|---|
+| GAP-082 | No versioned Organization Work Rulebook is present in the current CAND catalog. | AI cannot prove manager eligibility, utilization policy, maximum concurrent Projects, separation of duties, required approvals or exception handling. | CAND-023A — server-owned effective Rulebook and rule-decision receipts. |
+| GAP-083 | CAND-022A understands goals, but there is no strict durable Project-launch brief or grouped clarification contract. | A broad goal becomes prose/unsupported analysis rather than a reviewable scope baseline. | CAND-023A — `project_launch_brief.v1` plus clarification state. |
+| GAP-084 | CAND-017 schedules Tasks inside an existing Project; no launch-time manager/team formation policy exists. | “Available” members may be selected without role eligibility, team coverage, continuity, focus cost or fairness constraints. | CAND-023B — deterministic manager/team scenario engine using CAND-015/016/017 facts. |
+| GAP-085 | `assistant_work_plan.v1` is an Assistant process plan, not a domain Project delivery plan. | Users cannot review a versioned scope → milestone/sprint → task/dependency delivery artifact. | CAND-023B — `project_launch_plan.v1` with schema/domain validation. |
+| GAP-086 | `project.create.v1`, membership/role, milestone/sprint and dependency adapters are still deferred. | The Assistant cannot execute the approved launch plan. | CAND-023C — reviewed canonical adapters and one bounded launch command handler. |
+| GAP-087 | CAND-018 atomicity is task-create bounded; external effects cannot share the database transaction. | Partial Project launch could leave misleading membership, collaboration or integration state. | CAND-023C — transactional internal core, compensation/outbox and truthful partial-effect receipt. |
+| GAP-088 | No approved-baseline monitor links Project/Sprint progress, capacity change and rule exceptions to a replan draft. | The Assistant cannot safely adapt when workload, leave, deadline or scope changes. | CAND-023D — event/schedule-triggered monitoring and human-confirmed replan. |
+| GAP-089 | There is no one-sentence-goal → real Project/team/sprints/tasks E2E suite. | Product may appear agentic while only rendering plans. | Phase-specific integration/E2E gates plus final composite acceptance journey. |
+| GAP-090 | CAND-017 declared capacity does not by itself define meeting/support duty, focus reserve or concurrent-Project policy. | Nominal free hours can still produce unreasonable staffing. | CAND-023A Rulebook + CAND-023B capacity extension; unknown inputs remain visible blockers/risks. |
+| GAP-091 | Calendar provider sync, GitHub repository creation and outbound invitations are external side effects with separate credentials/scopes. | A single generic confirmation cannot safely promise completion. | CAND-023C classifies internal and external commands, exposes exact authorization, and persists pending/failed compensation state. |
+
+Unowned new gap after this amendment = 0. The gaps are intentionally phased; they are not implementation claims.
+
+### 31.4 Candidate definition and score
+
+**CAND-023 — Governed Project Launch & Operating Orchestrator.**
+
+- **User job:** turn a business/product outcome into a feasible, staffed, scheduled and reviewable Qaly Project, then operate against the approved baseline.
+- **Why AI:** ambiguous goal interpretation, clarification, solution options, work decomposition and trade-off explanation benefit from a strong reasoning model.
+- **Why deterministic services:** rule eligibility, permissions, skill evidence bands, capacity, calendar feasibility, dependencies, scoring, concurrency, execution and read-back must be repeatable and auditable.
+- **Trigger:** existing singleton `Trợ lý AI`; contextual Project/Organization entry points may prefill authorized scope but do not create another assistant.
+- **Primary artifacts:** `project_launch_brief.v1`, `organization_work_rule_decision.v1`, `project_staffing_scenario.v1`, `project_launch_plan.v1`, `project_launch_action_set.v1`, `project_launch_execution_receipt.v1`.
+- **Mutation boundary:** no Project/member/sprint/task/integration mutation before an editable batch is explicitly confirmed.
+- **Rollback:** phase flags disable launch generation/execution/monitoring independently; manual Project creation and all existing native cards remain available; historical drafts/receipts remain readable.
+
+Full-candidate score: outcome **25/25** + gap closure **20/20** + AI-native fit **15/15** + canonical reuse **15/15** + testability **9/10** + quota fit **3/15** = **87/100**, with a **full-scope quota veto**.
+CAND-023A score with its bounded no-domain-mutation scope: **98/100** and is the next domain Primary after CAND-022B is green.
+
+### 31.5 End-to-end state machine
+
+```text
+INTAKE
+  → CLARIFICATION_REQUIRED | BRIEF_READY
+  → RULE_VALIDATION
+  → STAFFING_SIMULATION
+  → DELIVERY_PLAN
+  → PLAN_REVIEW
+  → AWAITING_CONFIRMATION
+  → EXECUTING_INTERNAL
+  → EXECUTING_EXTERNAL | EXTERNAL_DEFERRED
+  → READ_BACK_VERIFICATION
+  → ACTIVE_MONITORING
+  → REPLAN_PROPOSED
+  → AWAITING_REPLAN_CONFIRMATION
+```
+
+Terminal/honest states include `insufficient_information`, `rule_blocked`, `no_feasible_staffing`, `no_feasible_schedule`, `permission_denied`, `budget_blocked`, `provider_failed`, `stale_plan`, `partial_external_failure`, `canceled`, `rejected` and `rolled_back_or_compensated`.
+
+Rules:
+
+1. Clarification questions are grouped, deduplicated and limited to fields that materially change scope, deadline, budget, compliance, architecture or feasibility.
+2. Data already available through authorized Qaly sources is not asked again.
+3. Assumptions are visibly separated from facts and require acknowledgement when they affect feasibility.
+4. A domain plan and an Assistant process plan are different artifacts linked by IDs; one must not masquerade as the other.
+5. Internal mutation and external side effects have separate execution classes and receipts.
+6. Monitoring is event/schedule bounded, never an unbounded recursive agent loop.
+
+### 31.6 CAND-023A — Organization Work Rulebook + Project Launch Brief
+
+#### Organization Work Rulebook
+
+The Rulebook is a server-owned, versioned business-policy aggregate. A model may explain a rule or identify a missing policy, but it cannot author, activate, suppress or override an effective rule during Project launch.
+
+Minimum `organization_work_rule_set.v1` fields:
+
+| Rule class | Required contract |
+|---|---|
+| Identity/effective version | `ruleSetId`, organization, semantic/schema version, status, effective range, approver, row version and superseded version. |
+| Role eligibility | Manager/lead/member eligibility, active-membership requirement, required role/scope and separation-of-duties constraints. |
+| Skill coverage | Required canonical skills/levels, certification/evidence policy, minimum confidence/recency and allowed unknown-evidence behavior. |
+| Capacity/utilization | Weekly capacity authority, maximum planned utilization, operational/risk buffer and approved overtime/exception policy. |
+| Concurrent work | Maximum active Projects, focus/context-switch reserve and continuity preference. |
+| Calendar collaboration | Required timezone overlap, leave/reduced-capacity treatment, meeting/support duty source policy and Project calendar boundaries. |
+| Fairness | Rotation/load-balance rule, prohibited factors, correction/appeal path and no protected-attribute/message-sentiment inference. |
+| Delivery governance | Deadline hardness, minimum review/QA/security ownership, Definition of Ready/Done and required approval gates. |
+| External effects | Who may invite members, create/link repository, configure webhook, notify external parties or deploy. |
+| Exception policy | Blocking vs warning rule, authorized exception approver, reason, expiry and audit requirements. |
+
+If no effective Rulebook exists, Qaly may show a proposed baseline template, but it must remain `policy_missing` and cannot silently become execution authority. An authorized Organization owner must explicitly activate a version.
+
+Every evaluation returns `organization_work_rule_decision.v1` containing rule ID/version, result (`pass|warning|block|unknown`), affected proposal rows, deterministic facts, safe explanation, exception eligibility and source freshness.
+
+#### Project launch brief
+
+`project_launch_brief.v1` contains:
+
+- objective, target users and measurable outcomes;
+- MVP/in-scope/out-of-scope deliverables;
+- fixed vs negotiable deadline and budget/cost envelope when applicable;
+- required technology/integration constraints without presenting generated code as a domain fact;
+- security, privacy, accessibility, quality, testing, observability and documentation gates;
+- organization, preferred start window and relevant Project/Group/Wiki/manual sources;
+- blocking/non-blocking unknowns, grouped clarification questions, facts, assumptions and user acknowledgements;
+- source versions/hashes, actual provider/model, prompt version and correlation ID.
+
+CAND-023A performs no Project mutation and no staffing assignment. It ends at a durable, reviewable `BRIEF_READY` plus Rulebook decision artifact.
+
+### 31.7 CAND-023B — Deterministic staffing and delivery scenarios
+
+#### Capacity and team formation
+
+CAND-023B extends, but does not duplicate, `portfolio-capacity-scheduler.v1`.
+
+```text
+effective capacity
+= contracted/declared work capacity
+- approved leave or reduced-capacity windows
+- authorized meeting/support duty commitments
+- existing cross-Project committed effort
+- Rulebook focus/context-switch reserve
+- operational and risk buffer
+```
+
+Unknown estimate, missing capacity, stale availability, private aggregate or unsupported calendar source is not converted into fabricated free time. Current CAND-017's visible 8-hour task fallback may be used only as an explicitly labelled scenario assumption and must be sensitivity-tested before launch approval.
+
+Manager/team selection order:
+
+1. hard eligibility and active Organization membership;
+2. required skill/evidence/certification coverage;
+3. capacity and date-window feasibility;
+4. concurrent-Project/focus policy;
+5. delivery-role coverage and separation of duties;
+6. continuity/domain context when supported by authorized deterministic records;
+7. fairness/load distribution and exception policy;
+8. ranked soft trade-offs and alternatives.
+
+Hard failures disqualify a candidate; a high soft score can never override them. Weights and thresholds come from the effective Rulebook/scoring version, not from a prompt. The AI explains the deterministic scenario and asks follow-up questions; it does not invent performance or personality claims.
+
+`project_staffing_scenario.v1` includes:
+
+- manager candidates, eligibility result, hard rejects and alternatives;
+- proposed member/role rows, required-skill coverage, evidence confidence/recency and missing skills;
+- load before/after by time bucket, concurrent Projects, focus reserve and privacy-restricted aggregate load;
+- timezone/collaboration overlap, leave/reduced-capacity windows and deadline/dependency conflicts;
+- fairness/rule decisions, unresolved exceptions and sensitivity scenarios;
+- exact source refs or privacy-safe aggregate refs and scoring/rule versions.
+
+#### Delivery plan
+
+`project_launch_plan.v1` is a domain artifact containing:
+
+- Project identity draft, objective, scope, exclusions, lifecycle dates and success measures;
+- architecture/quality proposal clearly labelled as proposal rather than existing fact;
+- milestones and Sprints, each with objective, dates, capacity and exit criteria;
+- Epics/Tasks with acceptance criteria, Definition of Done, estimate, priority, dependencies, required skills, proposed assignee/reviewer and source refs;
+- critical path, fixed dates, schedule risks, unallocated work and skill gaps;
+- collaboration setup proposal: primary Group, Wiki structure, meeting cadence, notification/analytics setup;
+- external integration proposal: GitHub/repository/webhook/deployment entries with credential/scope readiness;
+- one to three meaningful scenarios such as fastest feasible, balanced and lowest-risk; no cosmetically different duplicates.
+
+“Sprint” must bind to the existing canonical Milestone/Sprint semantics. CAND-023 must not introduce a duplicate Sprint entity merely to satisfy model output; if the domain mapping is not decision-complete, Sprint mutation remains blocked while the rest of the plan stays reviewable.
+
+### 31.8 CAND-023 capability and action catalog
+
+Discovery descriptors are registered only after their phase passes verification:
+
+| Skill/capability | Risk class | Phase behavior |
+|---|---|---|
+| `project.launch.analyze.v1` | `artifact` | CAND-023A: create/edit durable brief and Rulebook decisions; zero domain mutation. |
+| `project.staffing.plan.v1` | `artifact` | CAND-023B: deterministic staffing/capacity scenarios and delivery plan; zero domain mutation. |
+| `project.launch.execute.v1` | `mutation_draft` | CAND-023C: compose one registered action set; explicit batch confirmation required. |
+| `project.operation.monitor.v1` | `read_only`/`artifact` | CAND-023D: compare actual state with approved baseline and create replan proposal only. |
+
+Required internal action adapters for CAND-023C:
+
+| Adapter | Contract boundary |
+|---|---|
+| `project.create.v1` | Create one authorized Project from reviewed identity/lifecycle fields. |
+| `project.membership.upsert.v1` | Add an active Organization member to the new Project with reviewed membership role. |
+| `project.role.assign.v1` | Assign manager/lead/reviewer roles under Rulebook and current permission. |
+| `milestone.create.v1` / canonical Sprint adapter | Create reviewed delivery buckets only after domain mapping is confirmed. |
+| `task.create.v1` | Reuse CAND-018; create selected reviewed Tasks and confirmed CAND-015 requirements. |
+| `task.dependency.set.v1` | Apply an acyclic same-Project dependency graph after all referenced Tasks exist. |
+| `group.create_or_link.v1` | Optional internal collaboration setup with exact membership/source policy. |
+| `wiki.bootstrap.v1` | Optional reviewed Wiki structure/content stubs; no fabricated completion claim. |
+| `notification.policy.configure.v1` | Optional internal notification settings under owner policy. |
+
+External adapters such as `github.repository.create_or_link.v1`, webhook configuration, external invitation, calendar-provider sync and deployment remain unavailable until credentials, scopes, provider-specific idempotency and compensation are separately decision-complete. Their absence yields `external_deferred`, not fake launch success.
+
+Unknown, disabled, forged or model-invented adapter IDs fail closed. Legacy `AiTools` are not a fallback execution path.
+
+### 31.9 CAND-023C — Batch execution, receipt and rollback
+
+The user reviews one internal launch batch. Commands are grouped by dependency:
+
+```text
+Project
+  → membership/roles
+  → milestones/Sprints
+  → Tasks
+  → Task skill requirements/dependencies
+  → internal collaboration/configuration
+  → separately authorized external effects
+```
+
+Confirmation requirements:
+
+1. draft is current, pending review and not expired;
+2. authenticated actor still has Organization/Project creation and every affected action permission;
+3. Rulebook version remains effective and all blocking decisions still pass or have valid approved exceptions;
+4. member, skill, capacity, availability, source and plan row versions remain current;
+5. edited commands are schema/domain validated and cannot change tenant, adapter, scope or protected source identities;
+6. dependency graph is acyclic and every selected downstream command has a selected/satisfied prerequisite;
+7. idempotency key + normalized payload owns one execution receipt;
+8. internal database writes are all-or-nothing where supported;
+9. external effects use outbox/operation state and compensation; they never cause blind replay of internal creation;
+10. read-back validates entity IDs, roles, dates, dependencies, links and current row versions before reporting success.
+
+`project_launch_execution_receipt.v1` includes internal transaction outcome, command-by-command status, created/updated entity deep links, skipped/deferred commands, external operation state, compensation/rollback availability, rule/source versions, audit/usage IDs, actual provider/model and verified-at timestamps.
+
+Rollback does not erase audit or completed external effects. Before rollback, Qaly computes an impact diff, checks whether the new Project has accrued user work, rechecks permission/concurrency/rules, and performs normal compensating updates/soft-delete where eligible. Irreversible or manually compensated effects are listed explicitly.
+
+### 31.10 CAND-023D — Active monitoring and governed replan
+
+Monitoring compares the approved launch baseline with deterministic current facts from Project/Sprint progress, Task dependencies, CAND-017 capacity/availability, leave changes, Rulebook updates and authorized operational signals.
+
+Triggers are bounded events or schedules, for example:
+
+- a blocking dependency, milestone risk or fixed-date breach;
+- member capacity/availability or active-membership change;
+- Rulebook version superseded or exception expired;
+- material scope/estimate change;
+- provider-independent deterministic progress threshold.
+
+The Assistant may summarize impact and create `project_replan_proposal.v1`. It must not silently change assignee, date, scope, role or deadline. Replan reuses the same visible diff, stale-source, permission, confirmation, receipt and rollback boundaries as launch execution.
+
+### 31.11 Native Assistant UX
+
+The singleton Assistant remains the only global entry point. Its existing Work Plan card hosts a Project-launch artifact rail:
+
+1. **Mục tiêu & câu hỏi còn thiếu**;
+2. **Bộ luật đang áp dụng** with version and pass/warn/block decisions;
+3. **Phương án đội ngũ** with hard rejects, alternatives and before/after load;
+4. **Kế hoạch Project/Sprint/Task** with editable tree and dependencies;
+5. **Diff sẽ áp dụng** separating internal and external commands;
+6. **Xác nhận** with exact command/risk counts;
+7. **Biên nhận & liên kết** after server read-back;
+8. **Theo dõi/Replan** after launch.
+
+Canonical entity links, stable back behavior and reload read-back are mandatory. No raw JSON, generic success toast, hidden chain-of-thought or duplicate modal-only planner earns native coverage.
+
+### 31.12 Phased execution plan
+
+| Phase | Outcome | Scope guard | Dependency | Status |
+|---|---|---|---|---|
+| CAND-023A — Rulebook + Launch Brief | Durable brief, grouped clarification and effective rule decisions. | No staffing assignment, Project mutation or external effect. | CAND-022B | **NEXT DOMAIN PRIMARY after CAND-022B** |
+| CAND-023B — Staffing + Delivery Scenario | Feasible manager/team/capacity and Project/Sprint/Task scenarios. | Artifact only; no domain mutation. | 023A + CAND-015/016/017 | Deferred behind A |
+| CAND-023C — Confirmed Launch Execution | Internal Project/team/milestone/task launch with receipt; external operations truthfully separated. | Registered adapters only; one reviewed internal batch; no unrestricted tools. | 023B + CAND-018/022D | Deferred behind B |
+| CAND-023D — Monitor + Replan | Baseline monitoring and confirmed replan drafts. | No silent mutation; bounded triggers; no autonomous recursion. | 023C + progress/capacity signals | Deferred behind C |
+
+`CAND-020 — Native Group Poll Draft` remains valid backlog but is reprioritized behind CAND-023A because Project launch is now the selected product outcome. It may still be implemented independently if the Product Owner changes the outcome priority; it must not be bundled into a CAND-023 phase.
+
+### 31.13 PRIMARY implementation breakdown — CAND-023A only
+
+Maximum three implementation tasks after CAND-022B is fully green:
+
+1. **TASK-PL-1 — Rulebook decision-complete contract and persistence.** Reconcile current Organization roles/policies, decide missing product semantics with the Product Owner, add versioned effective Rulebook storage/read/admin activation, deterministic evaluator and rule-decision receipts. Do not let AI activate policy.
+2. **TASK-PL-2 — Launch Brief skill and durable clarification.** Add strict schemas, prompt/version/eval corpus, authorized context adapters and `project.launch.analyze.v1`; persist brief revisions, grouped blocking questions, assumptions/acknowledgements and source versions in the current Assistant session/artifact framework.
+3. **TASK-PL-3 — Native review and evidence closure.** Render Brief/Rulebook tabs in the singleton workspace; add feature rollback, unit/integration/Chromium evidence, current Assistant/CAND regression and honest policy/provider/budget/stale states. Stop at artifact/read-back.
+
+No CAND-023B staffing scenario, Project mutation, new Project action adapter, migration outside approved Rulebook/brief persistence, external integration or monitoring is allowed in this Primary slice.
+
+### 31.14 CAND-023A Definition of Done
+
+- A broad Vietnamese or English Project-launch goal yields `project_launch_brief.v1`, not a generic answer or fake Project success.
+- Qaly asks at most eight grouped blocking questions in one round where possible and does not ask authorized facts already present in Qaly.
+- Facts, assumptions, unknowns and user acknowledgements are distinct and persist after reload.
+- An effective Organization Rulebook version is resolved server-side; missing/expired/conflicting Rulebook states are honest.
+- Every rule decision cites rule/version and deterministic source facts without exposing private content.
+- Model output cannot create/activate rules, grant exceptions, choose tenant scope or mark a blocking rule as passed.
+- Cross-tenant/foreign Organization, forged source, prompt injection and private title/content fail closed before provider/context use.
+- Provider unavailable/timeout/schema-invalid, budget deny, cancellation, duplicate turn and stale source have distinct durable states.
+- `project.create.v1` remains unavailable; domain mutation count is zero.
+- Feature disable returns to the CAND-022 grounded/research/task paths and manual Project workflow.
+
+### 31.15 Full CAND-023 Definition of Done
+
+The top-level candidate remains incomplete until one composite E2E proves all of the following:
+
+- one natural-language objective reaches an approved real Project without hidden manual data surgery;
+- manager/team selection uses active membership, Rulebook, CAND-015/016 evidence and CAND-017 capacity rather than title/empty-slot guessing;
+- no hard rule, capacity, calendar or dependency constraint is overridden by model scoring;
+- skill gaps, unknown capacity, unavailable candidates and infeasible deadlines remain visible and produce alternatives or blockers;
+- Project, roles, members, milestones/Sprints, Tasks, skills and dependencies match the reviewed action set after read-back;
+- no internal mutation occurs before confirmation; duplicate confirm is idempotent;
+- permission revoke, Rulebook/source/version change or workload change before confirm blocks stale execution;
+- internal partial failure rolls back transactionally; external partial failure is exact, durable and compensatable;
+- reload/resume restores brief, rule decisions, scenarios, plan, execution progress and receipt;
+- monitoring detects a controlled deviation and creates a replan proposal without applying it;
+- canonical links/navigation, audit, usage, privacy, fairness, feature rollback and manual workflows remain valid.
+
+### 31.16 Required verification matrix
+
+| Layer | Minimum evidence |
+|---|---|
+| Rulebook unit | Effective-version selection, block/warn/unknown, role eligibility, maximum utilization/concurrent Projects, focus buffer, timezone overlap, required skills, separation of duties, exception expiry and deterministic repeatability. |
+| Staffing/schedule unit | Skill gap, missing/stale evidence, leave/reduced capacity, meeting/support reserve, cross-Project load, private aggregate, context-switch policy, fairness, no feasible manager/team, deadline/dependency infeasibility and sensitivity analysis. |
+| Contract/schema | Strict brief/rule/scenario/plan/action/receipt schemas, unknown fields/adapters, graph cycles, unsupported Sprint mapping, invalid source refs and semantic reconciliation. |
+| Authorization/privacy | Cross-tenant/Organization/Project/member deny, inactive membership, private Task aggregate, forged IDs, revoke between plan/confirm, prompt injection in Wiki/chat/manual source and protected-factor exclusion. |
+| Mutation integration | No-write-before-confirm, one internal transaction, dependency ordering, selective command validation, idempotency replay/conflict, concurrency, rollback/compensation, read-back mismatch and audit/receipt. |
+| Provider/budget | Strong-model success, unavailable/timeout, schema repair exhaustion, budget hard stop, requested-vs-actual model and zero fabricated fallback. |
+| E2E | Goal → clarification → Rulebook → staffing scenarios → editable plan → confirm → Project/team/Sprints/Tasks → receipt/reload; overload/no-feasible, stale/revoke, partial external failure and monitor/replan journeys. |
+| Regression | CAND-001/002/006/008/009/010/015/016/017/018/021/022, manual Project/Task/member flows, canonical navigation, browser console/network, migrations and full serial/parallel suites. |
+
+Release evaluation thresholds:
+
+- blocking hard-rule violation accepted = 0;
+- unauthorized or inactive member assigned = 0;
+- planned load above policy without an approved visible exception = 0;
+- model-created skill/evidence/rule/capacity fact accepted = 0;
+- domain mutation before explicit confirmation = 0;
+- duplicate entities from idempotent replay = 0;
+- success receipt with failed read-back = 0;
+- grounded staffing/schedule claim without authorized source/rule version = 0;
+- unbounded tool/step/external retry path = 0.
+
+### 31.17 Security, privacy and fairness boundaries
+
+- Models never see protected attributes, private foreign-Project details, raw secrets, credentials or unrestricted member activity history.
+- Chat/message sentiment, presence surveillance and inferred health/personality are prohibited staffing inputs.
+- Private cross-Project work contributes only authorized aggregate load unless the viewer can open the source.
+- Evidence correction/appeal and declared capacity/availability correction remain available.
+- The caller's authority is re-evaluated before every adapter and at batch confirmation; a generated plan grants no permission.
+- Model-generated architecture, estimate and decomposition are proposals. Deterministic domain/rule validators own feasibility.
+- Repository creation, webhook, invitation, calendar sync and deployment require explicit registered adapter scopes and separate effect receipts.
+- No shell, SQL, dynamic code, self-installed skill, self-modifying Rulebook or unrestricted provider tool list.
+
+### 31.18 Ownership, merge order and rollback
+
+Planned ownership zones:
+
+| Zone | Owner boundary |
+|---|---|
+| Rulebook/domain/data | Rule entities, evaluator, migration, admin API and policy tests. |
+| Assistant orchestration | CAND-022B executor integration, launch skill descriptors, brief/scenario/plan adapters and durable artifact refs. |
+| Action execution | Registered adapters, application command handler, idempotency, transaction/outbox, compensation and receipt. |
+| Native UI | Existing singleton workspace artifact rail, review/diff/receipt and canonical links; no second assistant. |
+| Verification/docs | Schema fixtures, eval corpus, unit/integration/E2E, migration/recovery evidence and CAND disposition. |
+
+Merge order: CAND-022B → CAND-023A contracts/persistence → A UI/evidence → CAND-023B deterministic services/artifacts → CAND-023C internal adapters/execution → optional external adapters → CAND-023D monitoring. Each phase has an independent feature flag and must be green before the next mutation breadth is exposed.
+
+### 31.19 Coverage and priority update
+
+- `CAND-023` is newly dispositioned `MISSING_HIGH_VALUE`; no implementation credit is claimed.
+- `CAND-011` is `SUPERSEDED_BY_CAND_023` and no longer an active standalone backlog area or independent coverage denominator.
+- The catalog now contains **23 CAND IDs**: **14 top-level candidates closed**, **8 active candidate areas containing work**, and **1 superseded candidate (CAND-011)**. CAND-022A remains complete inside partial CAND-022.
+- Runtime surface/capability denominators do not change because this amendment adds no route, schema runtime, renderer or action adapter.
+- GAP-082..091 map to CAND-023A–D; unowned new gap = 0.
+- Immediate platform priority remains CAND-022B. Immediate domain priority after it becomes CAND-023A. CAND-020 moves behind that outcome without being canceled.
+
+**Coverage gate: PASS. Product completeness: NOT PASS.** The desired Project-launch behavior is now decision-complete enough to phase and verify, but none of CAND-023A–D is implemented by this amendment.
+
+### 31.20 Superseding NEXT_IMPLEMENTATION_GOAL
+
+> First implement only `CAND-022B — Bounded Read-only Agent Loop` exactly as specified in §30.5; do not combine it with a Project mutation. After CAND-022B is green, implement only `CAND-023A — Organization Work Rulebook + Project Launch Brief` from §31. Add a versioned server-owned effective Rulebook and deterministic rule-decision receipts; add strict durable `project_launch_brief.v1` with grouped blocking clarification, facts/assumptions/unknowns, authorized source versions and actual provider/model; register `project.launch.analyze.v1` as an artifact-only skill in the existing capability registry and render Brief/Rulebook review in the singleton Assistant workspace. Preserve CAND-015/016/017/018/021/022 and manual Project flows. Complete TASK-PL-1..3 and §31.16 evidence applicable to Phase A. Do not create a Project, assign a manager/member, generate an executable staffing schedule, expose `project.create.v1`, add external integrations, start monitoring, or claim top-level CAND-023 completion in this slice.
+
+---
+
+## 32. Corrective amendment — CAND-024 Native Conversation Freedom & Graceful Capability Degradation
+
+**Amendment date:** 2026-08-10 (Asia/Saigon)
+
+**Product-owner outcome:** Qaly Assistant must feel like a capable native chat, especially with the configured strong profile preferring DeepSeek V4 Pro. A missing execution skill may prevent a domain mutation, but it must not reduce the whole response to “Qaly chưa có skill”, expose developer implementation instructions to the user, or stop the Assistant from answering, asking useful questions and guiding a safe temporary workflow.
+
+**Planning-only boundary:** this amendment specifies the corrective architecture, contracts, UX, rollout and evidence. It does not claim the behavior is already implemented.
+
+### 32.1 Current-source diagnosis and verdict
+
+Current runtime has three cumulative gates that create the dead-end visible in the Assistant UI:
+
+1. `AiAssistantGoalPlanner.PlanAsync` resolves known missing execution skills before provider routing and returns a controlled plan without asking DeepSeek to help with the user's broader goal.
+2. `AiAssistantGoalPlanningOutputContract` makes “no selected skill” become `unsupported_but_analyzed` unless the turn is a blocking clarification case.
+3. `ErumiChatService.AssistantPlannedTurnAsync` returns a fixed missing-skill sentence when `SelectedCapabilityId` is empty; it does not invoke the general conversational answer path.
+
+The current behavior is safe for mutations but over-constrains conversation. It incorrectly couples two different questions:
+
+- **Can Qaly help the user think, understand, plan or navigate?** Usually yes.
+- **Can Qaly execute this exact domain mutation now?** Only when a registered, authorized and verified capability exists.
+
+**Verdict:** `MISSING_HIGH_VALUE / P0 corrective`. CAND-022A remains valuable for goal understanding and skill discovery, but its shipped no-skill handoff is not product-complete until this corrective increment is green.
+
+### 32.2 Non-negotiable product rule
+
+> **Language capability is broad; action capability is allowlisted. Missing action skill blocks only the action, never the useful conversation around it.**
+
+The Assistant must therefore follow **answer-first, act-when-capable**:
+
+1. Understand the user outcome and authorized context.
+2. Give the most useful truthful answer available now.
+3. Ask only the smallest set of blocking questions needed for a materially better next step.
+4. Offer a canonical temporary/manual workflow when direct execution is unavailable.
+5. Draft or execute registered actions only through the existing review/confirm/receipt gates.
+
+“Thoáng” means natural language, progressive clarification and useful partial progress. It does not mean bypassing privacy, permission, confirmation, Rulebook, idempotency or read-back controls.
+
+### 32.3 New gaps
+
+| Gap | Current failure | User impact | Required closure |
+|---|---|---|---|
+| GAP-092 | Missing execution skill short-circuits the conversational model path. | Broad requests end in a one-sentence refusal even when advice/planning is possible. | Dual-lane answer/action orchestration. |
+| GAP-093 | One `disposition` conflates answerability with executability. | UI cannot say “I can guide you, but cannot click this action yet.” | Separate `conversationDisposition` and `actionDisposition`. |
+| GAP-094 | Missing-skill `suggestedPath` contains developer language such as schema/renderer/endpoint. | End users receive implementation instructions instead of product guidance. | Internal capability-gap diagnostic plus user-safe workaround. |
+| GAP-095 | No bounded progressive clarification policy exists for general chat. | AI either guesses too much or presents a long questionnaire. | Ask 1–3 highest-information blocking questions per turn and provide a provisional answer when possible. |
+| GAP-096 | No canonical manual-guidance artifact/deep-link contract exists. | “Cannot execute” becomes a dead end rather than guided use of current Qaly features. | `assistant_manual_guidance.v1` with verified routes, permissions and steps. |
+| GAP-097 | Goal analysis and final prose are not explicitly separated. | A safe deterministic skill veto can accidentally suppress all model usefulness. | Deterministic execution classification plus independent conversational synthesis. |
+| GAP-098 | Strong-model prompt is optimized for bounded JSON planning rather than helpful mixed conversation/action output. | DeepSeek V4 Pro appears rigid despite model capability. | Versioned answer-first prompt and schema-validated action sidecar. |
+| GAP-099 | Missing-skill UI is a primary response state. | Diagnostic metadata dominates the conversation. | Natural answer first; capability limitation is a secondary compact disclosure. |
+| GAP-100 | Existing tests assert that no provider is called for known missing-skill requests. | Tests lock in the dead-end behavior. | Replace with “no executor called, conversational provider may still answer” evidence. |
+| GAP-101 | No quality metric tracks conversational dead ends or clarification usefulness. | The system can be technically safe while failing the user outcome. | Evaluation set and telemetry thresholds for helpfulness, dead ends and false action claims. |
+
+### 32.4 Candidate definition and CAND relationship
+
+**CAND-024 — Native Conversation Freedom & Graceful Capability Degradation.**
+
+This is a corrective platform increment, not another domain skill. It changes how every current and future CAND behaves when exact execution is unavailable.
+
+| Existing CAND | Relationship to CAND-024 |
+|---|---|
+| CAND-021 — Unified Assistant Foundation | Reuse singleton workspace, session/history, source disclosure and operational timeline. |
+| CAND-022A — Goal Understanding + Skill Discovery | Correct the no-skill handoff; keep goal/scope/risk analysis and deterministic execution boundary. |
+| CAND-022B — Read-only Agent Loop | Must consume the new conversation/action split instead of treating “no tool” as a failed loop. |
+| CAND-022D — Native Skill Packs | Capability gaps remain discoverable backlog, but are not user-facing refusal templates. |
+| CAND-018 — Action Composer | Preserve draft/review/confirm/receipt for mutation; CAND-024 does not weaken it. |
+| CAND-023 — Project Launch Orchestrator | Until Project actions ship, users still receive a real launch plan, grouped questions and verified manual guidance rather than only “missing project.create”. |
+
+Score: outcome **25/25** + gap closure **20/20** + AI-native fit **15/15** + reuse **15/15** + testability **10/10** + bounded delivery **13/15** = **98/100**. No full-scope quota veto applies to Phase A below.
+
+### 32.5 Dual-lane turn contract
+
+Introduce `assistant_conversation_turn.v2` as an additive response contract during migration. The server owns its reconciliation.
+
+```json
+{
+  "schemaId": "assistant_conversation_turn.v2",
+  "conversationDisposition": "answered|clarification|guided|degraded|policy_blocked",
+  "actionDisposition": "not_requested|available|confirmation_required|unavailable|permission_blocked|policy_blocked",
+  "answer": "Natural, useful user-facing response",
+  "questions": [
+    { "id": "Q1", "text": "...", "blocking": true, "reason": "..." }
+  ],
+  "guidance": {
+    "schemaId": "assistant_manual_guidance.v1",
+    "temporary": true,
+    "summary": "What the user can do now",
+    "steps": [
+      { "sequence": 1, "label": "...", "route": "/projects", "requiredPermission": "..." }
+    ]
+  },
+  "capabilityGap": {
+    "capabilityId": "project.create.v1",
+    "executionUnavailable": true,
+    "userMessage": "Mình chưa thể tạo dự án trực tiếp trong chat ở phiên bản này.",
+    "internalReasonCode": "capability_not_registered"
+  },
+  "proposedActions": [],
+  "sources": [],
+  "confidence": 0.0,
+  "actualProvider": "DeepSeek",
+  "actualModel": "deepseek-v4-pro"
+}
+```
+
+Contract rules:
+
+- `answer` is non-empty unless a real safety/policy block prevents even a response or all eligible providers fail and no deterministic guidance exists.
+- `questions` contains at most three questions per turn, ordered by information gain. Do not ask for data already available in authorized context.
+- A question may coexist with a provisional answer/plan; clarification is progressive, not a blank form.
+- `capabilityGap` is secondary metadata. `internalReasonCode` and implementation advice are not rendered as primary user prose.
+- `guidance.steps[].route` must come from a server-owned route/action registry; the model cannot invent a URL or permission.
+- `proposedActions` remain empty or non-executable when the required capability is unavailable.
+- Final provider/model fields record the model that produced the answer, independently of the deterministic router that classified action eligibility.
+
+### 32.6 Required decision matrix
+
+| User intent / runtime state | Conversation lane | Action lane |
+|---|---|---|
+| Advice, explanation or ideation; no mutation requested | Answer naturally with relevant context and optional sources. | `not_requested`; skill absence is not mentioned. |
+| Mutation requested and registered capability is available | Explain the proposed result and any important assumption. | Produce structured draft; require existing confirmation policy. |
+| Mutation requested but capability is missing | Answer the broader goal, ask up to three useful questions, produce a non-executable proposal and verified temporary workflow. | `unavailable`; no executor/tool call and no false success. |
+| Request is ambiguous | Give a provisional interpretation and ask the smallest clarifying set. | No mutation until resolved. |
+| Capability exists but user lacks permission | Explain what can still be done and how access can legitimately be requested. | `permission_blocked`; do not leak inaccessible data. |
+| DeepSeek is privacy-ineligible for selected sources | Answer only from eligible/non-sensitive context, request explicit consent when policy supports it, or use an approved provider. | Do not silently send private context to DeepSeek. |
+| Provider/model is unavailable | Use an approved strong fallback when `auto`; otherwise return honest degraded/manual guidance. | Never relabel fallback output as DeepSeek. |
+| Genuine safety or governance prohibition | Give the permitted explanation and safe alternative. | `policy_blocked`; this is the only intended hard stop. |
+
+### 32.7 DeepSeek V4 Pro conversation profile
+
+Create a server-owned profile `assistant_conversation_strong`:
+
+- Preferred configured model: `DeepSeek/deepseek-v4-pro`.
+- `auto` means prefer DeepSeek V4 Pro, then use only another privacy/budget/quality-eligible strong model. It is not strict provider lock.
+- Explicit user model lock is strict and must surface availability/privacy errors without silently switching providers.
+- Provider eligibility, retention/consent, budget and health are checked before private context is included. CAND-024 does not bypass the current privacy gateway.
+- UI before execution says “Ưu tiên DeepSeek V4 Pro”; completed response says the actual provider/model.
+- Stream answer tokens or meaningful response sections to the client. Operational progress remains safe summaries, not hidden chain-of-thought.
+- Reserve output tokens for the final answer; rank and limit retrieved context rather than stuffing all workspace data into the prompt.
+- Track latency, token usage, fallback, schema retry and user-visible failure per turn.
+
+The provider prompt must be versioned as code, for example `assistant_answer_first.v1`, and include these behavioral rules:
+
+1. Help with the user's outcome before discussing internal capability limitations.
+2. If direct execution is unavailable, still answer, reason from authorized facts, ask concise questions and provide a usable temporary method.
+3. Never tell an end user to “add a schema/renderer/endpoint”; translate it into what Qaly can/cannot do now.
+4. Never claim that data changed without a successful registered action receipt and read-back.
+5. Separate facts, assumptions and unknowns when they materially affect the recommendation.
+6. Ask no more than three blocking questions in one turn; prefer one coherent group.
+7. Use structured JSON only for the contract/action sidecar. The visible answer must remain natural rather than sounding like an internal state machine.
+
+### 32.8 Server orchestration changes
+
+Required control flow:
+
+```text
+authorize context
+  -> understand goal and classify action eligibility
+  -> synthesize useful conversational response
+  -> if needed, ask progressive clarification
+  -> if capability is available, build validated draft
+  -> preview / explicit confirm / execute / read-back
+  -> otherwise attach verified manual guidance and capability-gap telemetry
+```
+
+Concrete source dispositions:
+
+- `AiAssistantGoalPlanner`: known missing-skill detection may classify action eligibility deterministically, but must no longer be treated as a completed user response. The conversational lane still runs when policy permits.
+- `AiAssistantGoalPlanningOutputContract`: preserve `missingSkills` for diagnostics while adding separate conversation/action dispositions. “No selected skill” is not automatically “unsupported conversation”.
+- `ErumiChatService.AssistantPlannedTurnAsync`: when no executor is selected, invoke an advisory-only conversational synthesis with authorized context; attach limitations/guidance afterward. On provider failure, return deterministic user guidance rather than developer instructions.
+- Assistant DTOs/controller: add v2 fields additively; preserve v1 compatibility until frontend and clients migrate.
+- Route registry: provide server-verified temporary steps/deep links for Project, Task, Team, Meeting, Group, Calendar, Wiki and settings surfaces. Unknown routes are omitted rather than generated.
+- Telemetry: record missing capability and action denial internally without turning it into the main answer.
+
+No arbitrary shell, database query, hidden browser action or unregistered tool is introduced by this candidate.
+
+### 32.9 Native chat UX
+
+The message body is always the primary surface. Supporting controls appear only when relevant:
+
+- `Mình có thể làm ngay`: answer, analysis, draft or supported read.
+- `Mình cần bạn xác nhận`: mutation preview using existing action contracts.
+- `Mình cần biết thêm`: one group of up to three contextual questions with quick-reply/free-text support.
+- `Cách làm tạm thời`: verified Qaly steps and deep links, clearly labeled as manual/temporary.
+- `Chưa thể tự thực hiện`: compact execution limitation; expandable technical diagnostic only for authorized admin/developer roles.
+
+The five operational progress rows may remain in the timeline, but the completed chat must not look like a pipeline log followed by a refusal. Missing skill title, reason code and suggested implementation path must not dominate the final message.
+
+### 32.10 Phased execution plan
+
+| Phase | Deliverable | Boundary | Priority |
+|---|---|---|---|
+| CAND-024A — Answer-first fallback | Dual-lane server behavior for no-selected-skill turns; DeepSeek advisory response; user-safe limitation; tests. | No new domain mutation, no arbitrary tool, no route generation. | **IMMEDIATE CORRECTIVE PRIMARY** |
+| CAND-024B — Progressive interaction | v2 response fields, 1–3 question UI, quick replies, provisional answer and verified manual guidance registry. | Guidance/read-only only. | After A |
+| CAND-024C — Streaming + quality evaluation | Streamed visible response, versioned prompt evaluation set, dead-end/latency/fallback telemetry and quality gate. | No mutation breadth increase. | After B; may share transport work with CAND-022B |
+
+### 32.11 PRIMARY implementation breakdown — CAND-024A only
+
+Maximum three primary tasks:
+
+| Task | Deliverable | Required evidence |
+|---|---|---|
+| TASK-CF-1 | Split execution eligibility from conversation response; missing skill still forbids executor but permits advisory synthesis. | Unit tests for goal planner/output contract and no-executor invariant. |
+| TASK-CF-2 | Replace selected-capability-null canned refusal with DeepSeek-preferred answer-first response plus user-safe capability limitation and deterministic provider-failure guidance. | Integration tests with actual provider/model truth and zero mutation. |
+| TASK-CF-3 | Update Assistant rendering and E2E fixtures so answer is primary and missing-skill metadata is secondary. | E2E for missing Project action, broad CAND test request, normal advice and permission block. |
+
+CAND-024B fields may be added as an additive skeleton only when required for A compatibility. Do not bundle a new domain action, CAND-022B multi-step loop, CAND-023 Project mutation, arbitrary tool execution or external integration into this Primary.
+
+### 32.12 Acceptance examples
+
+| Prompt | Required behavior |
+|---|---|
+| “Khởi chạy dự án web SPA cho khách hàng trong 8 tuần.” | Give a provisional launch approach, identify known facts/assumptions, ask at most three high-value questions, and explain current direct-execution status. Until CAND-023C, offer verified Project/Task manual steps; never stop at `project.create.v1` missing. |
+| “Chạy tự động để test các CAND đã implement.” | Explain what can be verified, what access/runtime is needed and a safe temporary verification method. Do not run shell/tests without a registered adapter; do not show “add schema/endpoint” as the answer. |
+| “Tôi nên chia team thế nào?” | Answer from authorized skill/capacity evidence when present, clearly flag missing data and ask only the most material questions. No assignment mutation. |
+| “Tạo 5 task này.” with registered capability | Use CAND-018 draft/review/confirm/receipt. Conversation freedom must not bypass the action gate. |
+| “Tạo project” without permission | Explain permitted preparation/manual route and legitimate access request; do not reveal projects or members outside scope. |
+| DeepSeek timeout under `auto` | Use only an eligible strong fallback and show its real identity, or return useful deterministic guidance. No fake DeepSeek success. |
+
+### 32.13 Verification and release gates
+
+Required evidence:
+
+- Unit: known missing skill does not select or call an executor; it also does not suppress eligible conversational synthesis.
+- Unit: internal `SuggestedPath`/reason codes are not rendered as end-user primary text.
+- Unit: no selected skill produces separate action-unavailable state rather than an unsupported whole-turn state.
+- Integration: `project.create` missing returns a substantive answer and zero database mutations.
+- Integration: broad CAND test request may call the conversational provider but never test/shell executor; actual answer provider/model is truthful.
+- Integration: privacy-ineligible DeepSeek receives zero protected source content.
+- Integration: provider failure returns user-safe deterministic guidance; no HTTP 500 and no false completion.
+- E2E: answer is visually primary; capability limitation is secondary; temporary guidance links resolve to registered routes.
+- E2E: progressive questions contain 1–3 items, accept reply and retain session context.
+- Regression: CAND-018 confirmation/idempotency/read-back remains green; CAND-021 singleton history/session remains green.
+
+Zero-tolerance gates:
+
+- False mutation-success claim: **0**.
+- Unregistered executor/tool call: **0**.
+- Private source sent to privacy-ineligible provider: **0**.
+- Internal developer remediation shown as the sole user answer: **0**.
+- Known missing-skill prompt ending only in a capability refusal when useful guidance is possible: **0** in the locked evaluation set.
+- Provider/model mislabel: **0**.
+
+Quality release thresholds for the locked Vietnamese evaluation set:
+
+- Useful answer or useful progressive question on non-policy-blocked turns: **≥ 95%**.
+- Clarification groups with more than three questions: **0%**.
+- Unsupported dead-end rate: **≤ 2%**, with every remaining case reviewed.
+- Manual guidance route validity: **100%**.
+- Schema-valid action sidecar after bounded retry: **≥ 99%**; otherwise action lane degrades safely while conversation remains available.
+
+### 32.14 Coverage and priority update
+
+- Top-level catalog becomes **24 CAND IDs**: 14 closed, 9 active work and 1 superseded (`CAND-011`).
+- GAP-092..101 are owned by CAND-024A–C; unowned new gap = 0.
+- CAND-022A implementation credit is retained for goal analysis/skill discovery, but its user-facing no-skill path is explicitly under corrective work.
+- CAND-024 is not a promise that every domain action exists. It is the platform guarantee that absence of an action never makes the Assistant needlessly useless.
+
+**Coverage gate: PASS. Product completeness: NOT PASS.** The desired conversational behavior is now decision-complete and testable, but CAND-024A–C are not implemented by this amendment.
+
+### 32.15 Superseding NEXT_IMPLEMENTATION_GOAL
+
+> Implement only `CAND-024A — Answer-first fallback` before CAND-022B. Preserve deterministic capability discovery and all CAND-018 mutation controls, but decouple conversational usefulness from executor availability. A known missing skill may block the executor; it must not finish the user turn. For a no-selected-skill, non-policy-prohibited request, invoke an advisory-only response through the server-owned `assistant_conversation_strong` profile preferring configured DeepSeek V4 Pro, render a substantive answer or useful clarification, attach a concise user-safe execution limitation, record actual provider/model, and guarantee zero domain mutation. Replace tests that require “provider never called” with tests requiring “executor never called; conversational provider may be called safely.” Complete TASK-CF-1..3 and the Phase A evidence in §32.13. Do not add a new domain action, arbitrary tool/shell access, CAND-022B multi-step execution, CAND-023 Project mutation, external integration or privacy bypass. After CAND-024A is green, resume CAND-022B; after CAND-022B is green, resume CAND-023A.
+
+## 33. Implementation checkpoint — CAND-022B + CAND-024B + CAND-023A
+
+**Checkpoint date:** 2026-08-10 (Asia/Saigon)
+
+**Implementation boundary:** this checkpoint closes three bounded increments in the required order on top of the existing CAND-024A answer-first baseline. It does not claim CAND-022C/D, CAND-023B/C/D, CAND-024C, arbitrary tool execution or full top-level CAND-022/023/024 completion.
+
+### 33.1 CAND-022B — bounded read-only agent loop
+
+Delivered runtime behavior:
+
+- The durable Assistant turn now executes a server-owned dependency-ordered read-only loop with four canonical stages — `retrieve`, `analyze`, `verify`, `present` — inside the contract limit of eight steps.
+- Only registered descriptors with `read_only` or `read_only_proposal` risk are eligible. Unknown skills, write/mutation descriptors, unapproved sources, privacy/trust violations and invalid dependency state stop before adapter execution.
+- Tenant/entity authorization, source eligibility, privacy/trust and budget/provider eligibility are rechecked at the relevant step boundary. Model output is treated as untrusted until schema, source references and mutation/confirmation invariants pass verification.
+- Attempts are bounded at two per step. Queued/running/completed/verified/skipped/blocked/failed/canceled public states, safe error codes, attempt number, source receipts and actual provider/model are persisted without chain-of-thought.
+- `POST /api/ai/assistant/turns/{turnId}/cancel` requests cancellation between safe boundaries. `POST /api/ai/assistant/turns/{turnId}/resume` creates a linked durable turn from the stored request snapshot; reload restores both history and operational receipts.
+- The loop exposes no shell, SQL, repository scanner, production test runner or write tool.
+
+**Disposition:** `CAND-022B = NATIVE_COMPLETE` for this bounded registered read/artifact contract. Top-level CAND-022 remains partial because CAND-022C/D are outside this increment.
+
+### 33.2 CAND-024B — progressive interaction v2
+
+Delivered runtime behavior:
+
+- `assistant_conversation_turn.v2` is additive to the existing turn response and separates useful answer text, conversation disposition, action disposition, progressive questions, manual guidance, capability gap, sources, confidence and actual provider/model.
+- The server emits no more than three highest-value questions in one turn. A provisional answer remains primary; questions support registered quick replies and free text rather than forcing a blank-form stop.
+- Quick replies are posted back with stable `questionId`, value and optional label. Project-launch follow-ups preserve the capability/session context, generate a new durable brief revision and omit already answered questions.
+- `assistant_manual_guidance.v1` is generated only from the server-owned route registry for `/projects`, `/tasks`, `/teams`, `/meetings`, `/groups`, `/calendar`, `/wiki` and `/settings`; the client repeats the allowlist before navigation. The model cannot invent routes.
+- The singleton Assistant renders answer-first text, progressive questions, quick replies/free-text, verified temporary guidance and a secondary capability-gap disclosure. Completed responses show actual provider/model rather than the preferred model label.
+
+**Disposition:** `CAND-024B = NATIVE_COMPLETE` for the additive progressive conversation and verified manual-guidance contract. CAND-024A remains the retained answer-first baseline; top-level CAND-024 remains partial because CAND-024C streaming/evaluation is not implemented.
+
+### 33.3 CAND-023A — Organization Rulebook + Project Launch Brief
+
+Delivered runtime behavior:
+
+- A server-owned versioned Organization Work Rulebook supports durable draft versions, manager-authorized activation, one effective version at a time and superseded history. Effective-rule read-back is exposed through organization-scoped APIs.
+- `project.launch.analyze.v1` is registered as `artifact` / `read_only_proposal` with strict input/output schema, renderer and feature flag. It consumes authorized `organization.summary` and `organization.rulebook` source packs through the existing context registry and CAND-022B executor.
+- `project_launch_brief.v1` persists revision history, facts, assumptions, unknowns, source versions, Rulebook status/version, deterministic per-rule decision receipts, actual provider/model and prompt version. Missing policy or facts remain `policy_missing`/`unknown`; they are not guessed into a pass.
+- The native review card renders scope, success measures, assumptions, unknowns, Rulebook decisions, provider/model, prompt version and revision. It explicitly states that no Project is created and no member is assigned.
+- Integration evidence asserts zero `Project` count change across initial brief and progressive revision. No manager/team selection, Sprint/Task generation, Project mutation or staffing schedule is exposed in this phase.
+- Persistence is covered by migration `20260809190001_P010AiNativeReadLoopConversationLaunchBrief` for Assistant turn resume metadata, Organization Rulebook versions, Project Launch Brief revisions and rule-decision receipts.
+
+**Disposition:** `CAND-023A = NATIVE_COMPLETE` for Rulebook + artifact-only launch brief. Top-level CAND-023 remains **PARTIAL / NOT COMPLETE**; CAND-023B/C/D are still required for staffing/delivery scenarios, confirmed execution and monitoring.
+
+### 33.4 Feature flags and rollback
+
+The three increments are independently guarded by:
+
+- `AiJobsV4:AssistantReadOnlyLoopEnabled`
+- `AiJobsV4:AssistantProgressiveInteractionEnabled`
+- `AiJobsV4:ProjectLaunchBriefEnabled`
+
+They are enabled in Development, disabled by default/Production example, and support rollback without removing durable records. Existing manual Project flows, CAND-018 mutation confirmation and CAND-021 session/history remain unchanged.
+
+### 33.5 Verification evidence
+
+| Gate | Result |
+|---|---|
+| Frontend typecheck | `npm run typecheck` — PASS. |
+| Frontend production build | `npm run build` — PASS; 3,975 modules transformed. |
+| Full unit suite | `Qaly.UnitTests` — 466 passed, 0 failed, 0 skipped. |
+| Full integration suite | `Qaly.IntegrationTests` — 147 passed, 0 failed, 0 skipped. |
+| Assistant API focused regression | `AiAssistantTurnApiTests` — 15 passed, including bounded loop, provider/schema handling, cancel/reload/resume and launch revision with zero Project mutation. |
+| Full web-feature suite | `Qaly.WebFeatureTests` — 38 passed, 0 failed, 0 skipped. |
+| Chromium AI regression | Assistant workspace, goal planner, research plan, action composer and new loop/launch/resume coverage — 9 passed. |
+| Chromium console/navigation smoke | Public auth, authenticated main routes and Group detail — 3 passed. |
+| Preview | Development in-memory host serves `http://127.0.0.1:5000`; authenticated routes redirect through the normal login flow and the browser suites run against this host. |
+
+Provider evidence in unit/integration/E2E uses controlled gateway fixtures so it can prove routing, schema reconciliation and provider/model truth without making a billable external request. Runtime still requires a valid, privacy/budget-eligible DeepSeek configuration to produce live `DeepSeek / deepseek-v4-pro`; failure or fallback must retain the actual identity and must not be presented as DeepSeek success.
+
+### 33.6 Remaining boundary and superseding NEXT_IMPLEMENTATION_GOAL
+
+The next implementation goal is `CAND-023B — Deterministic staffing and delivery scenarios`. It must consume the effective CAND-023A Rulebook plus the existing CAND-015/016/017 skill/capacity facts to produce reviewable manager/team/capacity and scope→milestone→Sprint→Task/dependency scenarios. CAND-023B remains artifact-only: no Project/member/Sprint/Task mutation, no “fill every free slot” heuristic, no unavailable/private fact inference and no top-level CAND-023 completion claim.
+
+> Implement only `CAND-023B — Deterministic staffing and delivery scenarios` on top of the completed CAND-022B/CAND-023A/CAND-024B contracts. Reuse the effective versioned Organization Rulebook, authorized member skill evidence, declared availability and cross-Project load to build deterministic, explainable manager/team scenarios with eligibility, skill coverage, continuity, focus cost, fairness, concurrent-Project limits and schedule-conflict decisions. Add a strict durable `project_launch_plan.v1` that maps approved scope to milestones, Sprints, Tasks, dependencies, estimates, risks, capacity windows, alternatives and source/version receipts; keep facts, assumptions and blocking unknowns separate. Render side-by-side reviewable scenarios and progressive questions in the singleton Assistant. Persist revisions and decision receipts, record actual provider/model only for model-authored content, and verify reload/idempotency/privacy/fairness/stale-source behavior. Do not create a Project, assign a manager/member, create Sprints/Tasks, expose `project.create.v1`, call external calendars, bypass confirmation, implement CAND-023C/D or claim full CAND-023 completion.
+
+## 34. Implementation checkpoint — CAND-023B + CAND-023C + CAND-023D
+
+**Checkpoint date:** 2026-08-10 (Asia/Saigon)
+
+**Implementation boundary:** this checkpoint completes the governed internal Project-launch loop after CAND-023A. It covers deterministic staffing/delivery planning, explicit-confirmation creation of a real canonical Project graph, and baseline monitoring with review-only replan proposals. It does not add arbitrary tools or silently perform external repository, webhook, calendar, invitation or deployment effects.
+
+### 34.1 CAND-023B — deterministic staffing and delivery plan
+
+Delivered runtime behavior:
+
+- `project.staffing.plan.v1` is registered only for actors who can manage an authorized Organization. Capability discovery now derives this permission from the Organization even when it has no Project yet; Project-only permissions are not incorrectly required for the first launch.
+- DeepSeek or another eligible gateway model may propose only the strict bounded delivery decomposition. The server treats that output as untrusted, rejects unknown fields, limits the plan to eight Sprints and eighty Tasks, validates IDs/references, and rejects cyclic dependencies.
+- Manager/team eligibility, capacity, availability, cross-Project commitments, concurrent-Project limits, focus reserve, fairness and Rulebook decisions are recomputed deterministically from canonical Qaly data. The model cannot turn a rejected candidate into an eligible member.
+- Missing capacity is a visible hard reject rather than an inferred free slot. Skill evidence is based on confirmed Qaly evidence; unknown skills remain explicit gaps. Private cross-Project details are reduced to authorized aggregate load facts.
+- `project_launch_plan.v1` is durable and revisioned with staffing alternatives, hard rejects, capacity windows, delivery Sprints/Tasks/dependencies, risks, assumptions, source hash, Rulebook version, provider/model and prompt version. Generation is idempotent for the same durable Assistant turn.
+- The singleton Assistant renders reviewable staffing scenarios and the Project/Sprint/Task tree, including dependencies, gaps and deferred external work. No Project mutation occurs during this phase.
+
+**Disposition:** `CAND-023B = NATIVE_COMPLETE` for deterministic staffing and reviewable delivery artifacts.
+
+### 34.2 CAND-023C — confirmed canonical Project launch
+
+Delivered runtime behavior:
+
+- `project.launch.execute.v1` is exposed as an explicit batch-confirm mutation. Chat text alone cannot confirm the launch; the user selects a feasible scenario and confirms the exact reviewed plan through the native card.
+- Confirmation rechecks authenticated Organization-management permission, feature state, plan state/revision, selected scenario, effective Rulebook, active membership and the complete staffing/capacity/source hash. Any stale Rulebook, member or capacity fact returns a conflict before domain mutation.
+- An idempotency key owns one execution. The internal command graph runs in one database transaction and creates the canonical `Project`, `ProjectMember`/role assignments, existing canonical `Sprint`, selected `TaskItem` records, Task skill requirements and an acyclic dependency graph.
+- Post-commit read-back verifies the created entity counts and IDs before success is reported. `project_launch_execution_receipt.v1` persists command status, deep links, rule/source versions, audit references, actual provider/model, verification time, revision and rollback availability.
+- Repository, webhook, calendar, invitation and deployment operations remain `external_deferred`; the receipt never labels them successful. No legacy `AiTools`, shell or unrestricted executor is used as a fallback.
+- Impact-checked rollback is available only before the Project accumulates user work. It soft-deletes the internal launch graph while retaining the execution receipt and audit trail; stale or unsafe rollback fails closed.
+
+**Disposition:** `CAND-023C = NATIVE_COMPLETE` for the reviewed canonical internal launch batch and truthful external deferral.
+
+### 34.3 CAND-023D — monitored baseline and governed replan
+
+Delivered runtime behavior:
+
+- `project.operation.monitor.v1` can be invoked from the confirmed receipt and by a bounded five-minute worker schedule; evaluation itself records the next six-hour check and is a no-op when its feature flag is disabled.
+- The deterministic monitor compares the confirmed baseline with current Project, Task, dependency, staffing, capacity and Rulebook facts. It detects missing/deleted Project state, Rulebook change, scope drift, staffing drift, overdue/unassigned work, progress lag and effort overrun.
+- Material drift creates a durable `project_replan_proposal.v1` in `pending_review` state with trigger codes, baseline/current hashes, source references and an explicit confirmation requirement.
+- Monitoring never changes assignee, date, scope, role, deadline, Project or Task state. Repeated checks for the same current hash do not create duplicate proposals.
+- Reload restores the plan, execution receipt and latest replan proposal in the same Assistant artifact rail.
+
+**Disposition:** `CAND-023D = NATIVE_COMPLETE` for bounded monitoring and review-only replan generation.
+
+### 34.4 Persistence, flags and API surface
+
+Migration `20260809201444_P011ProjectLaunchOrchestration` adds durable Project launch plan artifacts, execution receipts and replan proposals with Organization/Project/Assistant relationships and required indexes.
+
+Independent flags are enabled in Development and disabled by default/Production example:
+
+- `AiJobsV4:ProjectLaunchPlanningEnabled`
+- `AiJobsV4:ProjectLaunchExecutionEnabled`
+- `AiJobsV4:ProjectOperationMonitoringEnabled`
+
+The authorized API surface provides plan read-back, explicit confirm, impact-checked rollback and manual monitor commands. Mutation endpoints require CSRF protection; confirm/rollback additionally require idempotency keys and row revisions.
+
+### 34.5 Verification evidence
+
+| Gate | Result |
+|---|---|
+| Full solution build | `dotnet build Qaly_project.slnx --no-restore` — PASS, 0 warnings, 0 errors. |
+| Frontend typecheck | `npm run typecheck` — PASS. |
+| Frontend production build | `npm run build` — PASS; 3,975 modules transformed. |
+| Full unit suite | `Qaly.UnitTests` — 471 passed, 0 failed, 0 skipped. |
+| Full integration suite | `Qaly.IntegrationTests` — 149 passed, 0 failed, 0 skipped. |
+| Full web-feature suite | `Qaly.WebFeatureTests` — 38 passed, 0 failed, 0 skipped. |
+| Composite domain evidence | Launch Brief → staffing plan with zero Project mutation → explicit/idempotent confirm → real Project/member/Sprint/Task/skill/dependency read-back → controlled overdue drift → replan proposal with zero silent Task change → audited rollback. |
+| Stale-source evidence | Capacity changes after plan generation return HTTP conflict and create neither Project nor execution receipt. |
+| Chromium AI + console gate | 9 passed: goal planner, bounded loop/reload/resume, existing native candidates, CAND-023B/C/D card/confirm/receipt/replan and public/authenticated console routes. |
+| Preview | Development in-memory host health is 200 at `http://127.0.0.1:5000`. |
+
+The browser orchestration test uses controlled API fixtures to verify the UI contract deterministically. The integration test executes the real server orchestration and canonical EF domain writes against an isolated in-memory database. Live DeepSeek use remains subject to configured provider availability plus privacy, budget and retention eligibility; actual provider/model identity is always retained.
+
+### 34.6 Coverage disposition and remaining platform work
+
+The primary governed internal Project-launch loop is now native end to end: objective/brief → staffing/delivery plan → explicit confirmation → real Project graph → receipt/navigation → monitor/replan. Qaly no longer answers this flow with “missing project.create”; it creates the Project only after deterministic business checks and user confirmation.
+
+`CAND-023B`, `CAND-023C` and `CAND-023D` are complete within their declared boundaries. Top-level `CAND-023` is **INTERNAL-CORE COMPLETE / overall PARTIAL** until provider-specific external operation adapters and their outbox/compensation evidence are implemented; external effects remain honestly deferred rather than simulated.
+
+This does not make the whole Qaly AI-native program complete. The next broad coverage work is `CAND-022D — Native Skill Packs` for the remaining main Qaly flows, followed by `CAND-024C — Streaming + quality evaluation`; `CAND-022C` remains a separate Development/Test-only safe demo/test orchestrator and must not broaden production execution authority.

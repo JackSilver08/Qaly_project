@@ -69,12 +69,18 @@ export type AiToolbarAction = {
 
 export type ConversationHistoryItem = {
   id: string
+  sessionId: string
+  title: string
+  status: string
+  version: number
   prompt: string
   projectId: string | null
   projectLabel: string
   createdAt: string
   assistantSnippet?: string | null
   attachmentCount?: number
+  turnCount?: number
+  archivedAt?: string | null
 }
 
 export const AI_MODEL_OPTIONS: AiModelOption[] = [

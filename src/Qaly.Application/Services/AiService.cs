@@ -839,33 +839,13 @@ Yêu cầu:
 
     private async Task<bool> CanAccessProjectAsync(Guid projectId)
     {
-        var currentUserId = _currentUserService.UserId;
-        if (currentUserId == null) return false;
-
-        if (string.Equals(_currentUserService.Role, "Admin", StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        var project = await _projectRepo.GetByIdAsync(projectId);
-        if (project == null) return false;
-
-        var projectInfo = await _projectRepo.GetQueryable()
+        var projectOwnerId = await _projectRepo.GetQueryable()
             .AsNoTracking()
             .Where(item => item.Id == projectId)
-            .Select(item => new
-            {
-                item.OrganizationId,
-                OrganizationIsActive = item.Organization != null && item.Organization.IsActive,
-                OrganizationOwnerId = item.Organization != null ? (Guid?)item.Organization.OwnerId : null
-            })
+            .Select(item => (Guid?)item.OwnerId)
             .FirstOrDefaultAsync();
-
-        if (projectInfo?.OrganizationId == null || projectInfo.OrganizationOwnerId == null || !projectInfo.OrganizationIsActive)
-            return false;
-
-        if (project.OwnerId == currentUserId || projectInfo.OrganizationOwnerId == currentUserId) return true;
-
-        return await _memberRepo.GetQueryable()
-            .AnyAsync(m => m.ProjectId == projectId && m.UserId == currentUserId);
+        return projectOwnerId.HasValue &&
+            await _taskAccessPolicy.CanAccessProjectAsync(projectId, projectOwnerId.Value, CancellationToken.None);
     }
 
     private async Task<Guid?> GetProjectTenantIdAsync(Guid? projectId)

@@ -5,6 +5,7 @@ public sealed record WebhookDto(
     Guid ProjectId,
     string PayloadUrl,
     string[] Events,
+    bool HasSecret,
     bool IsActive,
     DateTimeOffset CreatedAt
 );

@@ -671,7 +671,9 @@ public class AiGateway : IAiGateway
             anyProviderResponse ? AiErrorCodes.SchemaInvalid : AiErrorCodes.ProviderUnavailable,
             anyProviderResponse
                 ? $"AI output failed schema validation after the permitted repair attempts. {validationError}"
-                : validationError ?? "No eligible AI provider completed the request.",
+                : request.StrictProvider
+                    ? validationError ?? "The selected AI provider did not complete the request."
+                    : "No configured AI provider completed the request. Choose a configured model or try again.",
             retryable: !anyProviderResponse);
     }
 

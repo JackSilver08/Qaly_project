@@ -6,6 +6,7 @@ using Qaly.Application.Common.Interfaces;
 using Qaly.Application.DTOs.Comment;
 using Qaly.Application.Services;
 using Qaly.Application.Services.Tasks;
+using Qaly.Application.Services.Groups;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 using Qaly.Infrastructure.Data;
@@ -125,6 +126,47 @@ public sealed class NotificationAndWikiPolicyTests : IDisposable
         var visible = await service.GetByUserAsync(memberId);
         visible.Data.Should().ContainSingle();
         visible.Data!.Single().TargetUrl.Should().Be($"/projects/{projectId}/tasks/{taskId}");
+    }
+
+    [Fact]
+    public async Task NotificationTargetResolver_Meeting_UsesCanonicalMeetingRoute()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        var groupId = Guid.NewGuid();
+        var meetingId = Guid.NewGuid();
+        SeedUser(ownerId, "Owner");
+        SeedUser(memberId, "Member");
+        _context.WorkGroups.Add(new WorkGroup { Id = groupId, Name = "Delivery", OwnerId = ownerId });
+        _context.WorkGroupMembers.Add(new WorkGroupMember
+        {
+            WorkGroupId = groupId,
+            UserId = memberId,
+            Role = GroupRoleRules.Member
+        });
+        _context.GroupMeetingSessions.Add(new GroupMeetingSession
+        {
+            Id = meetingId,
+            WorkGroupId = groupId,
+            StartedByUserId = ownerId,
+            RoomId = "delivery-room"
+        });
+        await _context.SaveChangesAsync();
+
+        var notification = new Notification
+        {
+            UserId = memberId,
+            Message = "Cuộc họp đang diễn ra",
+            Type = "MeetingStarted",
+            RelatedEntityId = meetingId,
+            RelatedEntityType = nameof(GroupMeetingSession)
+        };
+
+        var result = await new NotificationTargetResolver(_context)
+            .ResolveAsync(notification, memberId);
+
+        result.IsVisible.Should().BeTrue();
+        result.TargetUrl.Should().Be($"/groups/{groupId}/meeting?meetingId={meetingId}");
     }
 
     [Fact]

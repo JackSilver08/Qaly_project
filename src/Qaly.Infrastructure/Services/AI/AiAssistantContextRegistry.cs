@@ -56,6 +56,10 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
         var isAdmin = ProjectRoleRules.IsSystemAdmin(_currentUser.Role) ||
             await _db.Users.AsNoTracking().AnyAsync(
                 user => user.Id == userId && user.Role == ProjectRoleRules.SystemAdmin, ct);
+        var canUseProjectLaunch = _options.ProjectLaunchBriefEnabled &&
+            await HasReadableOrganizationAsync(userId, isAdmin, ct);
+        var canManageOrganization = canUseProjectLaunch &&
+            await HasManageableOrganizationAsync(userId, isAdmin, ct);
         var projectId = ResolveProjectId(request.Context);
         if (projectId.HasValue)
         {
@@ -66,7 +70,10 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
             if (project == null || !CanReadProject(project, userId, isAdmin))
                 return Result.NotFound<AiAssistantExecutionContextDto>();
             return Result.Success(new AiAssistantExecutionContextDto(
-                AuthorizedCapabilities(CanManageProject(project, userId, isAdmin)), [], []));
+                AuthorizedCapabilities(
+                    CanManageProject(project, userId, isAdmin),
+                    canUseProjectLaunch,
+                    canManageOrganization), [], []));
         }
 
         var projects = await _db.Projects.AsNoTracking()
@@ -76,7 +83,10 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
             .ToListAsync(ct);
         var authorized = projects.Where(project => CanReadProject(project, userId, isAdmin)).ToList();
         return Result.Success(new AiAssistantExecutionContextDto(
-            AuthorizedCapabilities(authorized.Any(project => CanManageProject(project, userId, isAdmin))), [], []));
+            AuthorizedCapabilities(
+                authorized.Any(project => CanManageProject(project, userId, isAdmin)),
+                canUseProjectLaunch,
+                canManageOrganization), [], []));
     }
 
     public async Task<Result<AiAssistantExecutionContextDto>> ResolveAsync(
@@ -120,6 +130,13 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
                 user => user.Id == userId && user.Role == ProjectRoleRules.SystemAdmin,
                 ct);
 
+        if (selectedCapabilityId is AiAssistantContextContract.ProjectLaunchCapability or
+            AiAssistantContextContract.ProjectStaffingPlanCapability or
+            AiAssistantContextContract.ProjectLaunchExecuteCapability)
+        {
+            return await ResolveOrganizationLaunchAsync(request, userId, isAdmin, selectedCapabilityId, ct);
+        }
+
         if (!projectId.HasValue)
         {
             return await ResolveWorkspaceAsync(
@@ -143,7 +160,9 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
         }
 
         var canManage = CanManageProject(project, userId, isAdmin);
-        var capabilities = AuthorizedCapabilities(canManage);
+        var capabilities = AuthorizedCapabilities(
+            canManage,
+            _options.ProjectLaunchBriefEnabled && project.OrganizationId.HasValue);
         if (!capabilities.Any(item => item.CapabilityId == selectedCapabilityId))
         {
             return Result.Success(new AiAssistantExecutionContextDto(
@@ -219,7 +238,11 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
             .Where(project => CanReadProject(project, userId, isAdmin))
             .ToList();
         var canManageAny = authorizedProjects.Any(project => CanManageProject(project, userId, isAdmin));
-        var capabilities = AuthorizedCapabilities(canManageAny);
+        var canManageOrganization = await HasManageableOrganizationAsync(userId, isAdmin, ct);
+        var capabilities = AuthorizedCapabilities(
+            canManageAny,
+            _options.ProjectLaunchBriefEnabled && await HasReadableOrganizationAsync(userId, isAdmin, ct),
+            canManageOrganization);
 
         if (!capabilities.Any(item => item.CapabilityId == selectedCapabilityId))
         {
@@ -248,8 +271,12 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
         return Result.Success(new AiAssistantExecutionContextDto(capabilities, [source], disclosures));
     }
 
-    private List<AiAssistantCapabilityDescriptorDto> AuthorizedCapabilities(bool canManage)
+    private List<AiAssistantCapabilityDescriptorDto> AuthorizedCapabilities(
+        bool canManageProject,
+        bool canUseProjectLaunch,
+        bool? canManageOrganization = null)
     {
+        var canManageLaunch = canManageOrganization ?? canManageProject;
         var result = new List<AiAssistantCapabilityDescriptorDto>();
         if (AiAssistantCapabilityCatalog.TryGet(
                 AiAssistantContextContract.GroundedReadCapability,
@@ -266,7 +293,7 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
             result.Add(researchPlan);
         }
 
-        if (canManage && _options.ActionComposerEnabled && _options.ActionComposerTaskCreateEnabled &&
+        if (canManageProject && _options.ActionComposerEnabled && _options.ActionComposerTaskCreateEnabled &&
             AiAssistantCapabilityCatalog.TryGet(
                 AiAssistantContextContract.TaskCreateCapability,
                 out var taskCreate))
@@ -274,7 +301,203 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
             result.Add(taskCreate);
         }
 
+        if (canUseProjectLaunch &&
+            AiAssistantCapabilityCatalog.TryGet(
+                AiAssistantContextContract.ProjectLaunchCapability,
+                out var projectLaunch))
+        {
+            result.Add(projectLaunch);
+        }
+
+        if (canUseProjectLaunch && canManageLaunch && _options.ProjectLaunchPlanningEnabled &&
+            AiAssistantCapabilityCatalog.TryGet(
+                AiAssistantContextContract.ProjectStaffingPlanCapability,
+                out var staffingPlan))
+        {
+            result.Add(staffingPlan);
+        }
+
+        if (canUseProjectLaunch && canManageLaunch && _options.ProjectLaunchExecutionEnabled &&
+            AiAssistantCapabilityCatalog.TryGet(
+                AiAssistantContextContract.ProjectLaunchExecuteCapability,
+                out var launchExecute))
+        {
+            result.Add(launchExecute);
+        }
+
+        if (canManageLaunch && _options.ProjectOperationMonitoringEnabled &&
+            AiAssistantCapabilityCatalog.TryGet(
+                AiAssistantContextContract.ProjectOperationMonitorCapability,
+                out var operationMonitor))
+        {
+            result.Add(operationMonitor);
+        }
+
+        if (_options.SafeTestOrchestratorEnabled &&
+            AiAssistantCapabilityCatalog.TryGet(
+                AiAssistantContextContract.SafeTestRunCapability,
+                out var safeTestRun))
+        {
+            result.Add(safeTestRun);
+        }
+
         return result;
+    }
+
+    private async Task<Result<AiAssistantExecutionContextDto>> ResolveOrganizationLaunchAsync(
+        AiAssistantTurnRequestDto request,
+        Guid userId,
+        bool isAdmin,
+        string selectedCapabilityId,
+        CancellationToken ct)
+    {
+        if (!_options.ProjectLaunchBriefEnabled ||
+            selectedCapabilityId == AiAssistantContextContract.ProjectStaffingPlanCapability && !_options.ProjectLaunchPlanningEnabled ||
+            selectedCapabilityId == AiAssistantContextContract.ProjectLaunchExecuteCapability && !_options.ProjectLaunchExecutionEnabled)
+        {
+            return Result.Failure<AiAssistantExecutionContextDto>(
+                "The requested Project launch stage is disabled.", 503, "project_launch_stage_disabled");
+        }
+
+        var organizations = await _db.Organizations.AsNoTracking()
+            .Include(item => item.Members)
+            .Include(item => item.Projects)
+            .Where(item => item.IsActive)
+            .OrderBy(item => item.Name)
+            .ToListAsync(ct);
+        var readable = organizations.Where(item => CanReadOrganization(item, userId, isAdmin)).ToList();
+        var requestedOrganizationId = request.Context?.OrganizationId ??
+            (string.Equals(request.Context?.EntityType, "organization", StringComparison.OrdinalIgnoreCase)
+                ? request.Context?.EntityId
+                : null);
+        Organization? organization;
+        if (requestedOrganizationId.HasValue)
+        {
+            organization = readable.SingleOrDefault(item => item.Id == requestedOrganizationId.Value);
+            if (organization == null) return Result.NotFound<AiAssistantExecutionContextDto>();
+        }
+        else
+        {
+            organization = readable.Count == 1 ? readable[0] : null;
+        }
+
+        var canManageOrganization = organization != null
+            ? CanManageOrganization(organization, userId, isAdmin)
+            : readable.Any(item => CanManageOrganization(item, userId, isAdmin));
+        var capabilities = AuthorizedCapabilities(
+            canManageProject: false,
+            canUseProjectLaunch: readable.Count > 0,
+            canManageOrganization);
+        if (organization == null)
+        {
+            var reason = readable.Count == 0 ? "organization_not_authorized" : "organization_scope_required";
+            return Result.Success(new AiAssistantExecutionContextDto(
+                capabilities,
+                [],
+                [new AiAssistantSourceDisclosureDto(
+                    "organization.scope",
+                    readable.Count == 0 ? "denied" : "required",
+                    readable.Count == 0
+                        ? "Không có tổ chức được phép đọc cho yêu cầu này."
+                        : "Hãy chọn tổ chức áp dụng Rulebook trước khi hoàn tất Launch Brief.",
+                    ReasonCode: reason)]));
+        }
+
+        var summary = await BuildOrganizationSummarySourceAsync(organization, ct);
+        var rulebook = await BuildOrganizationRulebookSourceAsync(organization, ct);
+        var sources = new List<AiAssistantContextSourceEnvelopeDto> { summary, rulebook };
+        var visibleProjects = organization.Projects
+            .Where(item => !item.IsDeleted && item.ArchivedAt == null && CanReadProject(item, userId, isAdmin))
+            .ToList();
+        if (visibleProjects.Count > 0)
+        {
+            sources.Add(BuildWorkspaceProjectsSource(visibleProjects));
+        }
+
+        return Result.Success(new AiAssistantExecutionContextDto(
+            capabilities,
+            sources,
+            sources.Select(ToDisclosure).ToArray()));
+    }
+
+    private async Task<AiAssistantContextSourceEnvelopeDto> BuildOrganizationSummarySourceAsync(
+        Organization organization,
+        CancellationToken ct)
+    {
+        var activeMembers = organization.Members.Count;
+        var activeProjects = organization.Projects.Count(item => !item.IsDeleted && item.ArchivedAt == null);
+        var skills = await _db.OrganizationSkills.AsNoTracking()
+            .Where(item => item.OrganizationId == organization.Id && item.IsActive)
+            .OrderBy(item => item.Name)
+            .Select(item => new { item.Id, item.Name, item.Description, item.UpdatedAt, item.CreatedAt })
+            .Take(MaxSkillFacts + 1)
+            .ToListAsync(ct);
+        var facts = new Dictionary<string, object?>
+        {
+            ["organizationId"] = organization.Id,
+            ["name"] = organization.Name,
+            ["code"] = organization.Code,
+            ["activeMemberCount"] = activeMembers,
+            ["activeProjectCount"] = activeProjects,
+            ["skills"] = skills.Take(MaxSkillFacts).ToArray()
+        };
+        return BuildOrganizationEnvelope(
+            AiAssistantContextContract.OrganizationSummarySource,
+            organization,
+            "organization",
+            organization.Name,
+            skills.Select(item => item.UpdatedAt ?? item.CreatedAt)
+                .Append(organization.UpdatedAt ?? organization.CreatedAt).Max(),
+            facts,
+            skills.Count > MaxSkillFacts ? ["context_limit_applied"] : []);
+    }
+
+    private async Task<AiAssistantContextSourceEnvelopeDto> BuildOrganizationRulebookSourceAsync(
+        Organization organization,
+        CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var effective = await _db.OrganizationWorkRuleSets.AsNoTracking()
+            .Where(item => item.OrganizationId == organization.Id && item.Status == "active" &&
+                (!item.EffectiveFrom.HasValue || item.EffectiveFrom <= now) &&
+                (!item.EffectiveUntil.HasValue || item.EffectiveUntil > now))
+            .OrderByDescending(item => item.Version)
+            .FirstOrDefaultAsync(ct);
+        var facts = new Dictionary<string, object?>
+        {
+            ["organizationId"] = organization.Id,
+            ["status"] = effective == null ? "policy_missing" : "effective",
+            ["ruleSetId"] = effective?.Id,
+            ["version"] = effective?.Version,
+            ["effectiveFrom"] = effective?.EffectiveFrom,
+            ["effectiveUntil"] = effective?.EffectiveUntil,
+            ["rules"] = effective == null
+                ? Array.Empty<object>()
+                : JsonSerializer.Deserialize<object[]>(effective.RulesJson, JsonOptions) ?? Array.Empty<object>()
+        };
+        return BuildOrganizationEnvelope(
+            AiAssistantContextContract.OrganizationRulebookSource,
+            organization,
+            "organization_rulebook",
+            effective == null ? "Organization Rulebook chưa được kích hoạt" : $"Organization Rulebook v{effective.Version}",
+            effective?.UpdatedAt ?? effective?.CreatedAt ?? organization.UpdatedAt ?? organization.CreatedAt,
+            facts,
+            effective == null ? ["policy_missing"] : []);
+    }
+
+    private async Task<bool> HasReadableOrganizationAsync(Guid userId, bool isAdmin, CancellationToken ct)
+        => isAdmin || await _db.Organizations.AsNoTracking().AnyAsync(
+            item => item.IsActive && (item.OwnerId == userId || item.Members.Any(member => member.UserId == userId)), ct);
+
+    private async Task<bool> HasManageableOrganizationAsync(Guid userId, bool isAdmin, CancellationToken ct)
+    {
+        if (isAdmin) return true;
+        var organizations = await _db.Organizations.AsNoTracking()
+            .Include(item => item.Members)
+            .Where(item => item.IsActive &&
+                (item.OwnerId == userId || item.Members.Any(member => member.UserId == userId)))
+            .ToListAsync(ct);
+        return organizations.Any(item => CanManageOrganization(item, userId, isAdmin: false));
     }
 
     private async Task<AiAssistantContextSourceEnvelopeDto?> MaterializeProjectSourceAsync(
@@ -612,6 +835,30 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
             "deterministic");
     }
 
+    private static AiAssistantContextSourceEnvelopeDto BuildOrganizationEnvelope(
+        string sourceId,
+        Organization organization,
+        string sourceType,
+        string title,
+        DateTimeOffset freshness,
+        IReadOnlyDictionary<string, object?> facts,
+        IReadOnlyList<string> redactions)
+    {
+        var hash = ComputeHash(facts);
+        return new AiAssistantContextSourceEnvelopeDto(
+            sourceId,
+            $"qaly://organization/{organization.Id:D}/{sourceId.Replace('.', '/')}@{hash[7..19]}",
+            sourceType,
+            title,
+            freshness,
+            "qaly_domain_record",
+            "organization_private",
+            hash,
+            facts,
+            redactions,
+            "deterministic");
+    }
+
     private static string ComputeHash(IReadOnlyDictionary<string, object?> facts)
     {
         var json = JsonSerializer.Serialize(facts, JsonOptions);
@@ -633,6 +880,15 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
            project.Members.Any(member => member.UserId == userId) ||
            project.Organization?.OwnerId == userId ||
            project.Organization?.Members.Any(member => member.UserId == userId) == true;
+
+    private static bool CanReadOrganization(Organization organization, Guid userId, bool isAdmin)
+        => isAdmin || organization.OwnerId == userId ||
+           organization.Members.Any(member => member.UserId == userId);
+
+    private static bool CanManageOrganization(Organization organization, Guid userId, bool isAdmin)
+        => isAdmin || organization.OwnerId == userId ||
+           organization.Members.Any(member => member.UserId == userId &&
+               OrganizationRoleRules.CanManageOrganization(member.Role));
 
     private static bool CanManageProject(Project project, Guid userId, bool isAdmin)
         => isAdmin || project.OwnerId == userId ||

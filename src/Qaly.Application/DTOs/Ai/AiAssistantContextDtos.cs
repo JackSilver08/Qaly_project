@@ -8,6 +8,11 @@ public static class AiAssistantContextContract
     public const string GroundedReadCapability = AiAssistantTurnContract.GroundedReadIntent;
     public const string ResearchPlanCapability = AiAssistantResearchPlanContract.CapabilityId;
     public const string TaskCreateCapability = AiAssistantTurnContract.TaskCreateIntent;
+    public const string ProjectLaunchCapability = AiProjectLaunchContract.CapabilityId;
+    public const string ProjectStaffingPlanCapability = AiProjectOrchestrationContract.StaffingCapabilityId;
+    public const string ProjectLaunchExecuteCapability = AiProjectOrchestrationContract.ExecuteCapabilityId;
+    public const string ProjectOperationMonitorCapability = AiProjectOrchestrationContract.MonitorCapabilityId;
+    public const string SafeTestRunCapability = AiSafeTestOrchestratorContract.CapabilityId;
 
     public const string WorkspaceProjectsSource = "workspace.projects";
     public const string ProjectSummarySource = "project.summary";
@@ -16,6 +21,8 @@ public static class AiAssistantContextContract
     public const string ProjectMembersSource = "project.members";
     public const string ProjectSkillsSource = "project.skills";
     public const string TaskDetailSource = "task.detail";
+    public const string OrganizationSummarySource = "organization.summary";
+    public const string OrganizationRulebookSource = "organization.rulebook";
 
     public static readonly IReadOnlySet<string> KnownSourceIds = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -25,7 +32,9 @@ public static class AiAssistantContextContract
         ProjectWorkloadSource,
         ProjectMembersSource,
         ProjectSkillsSource,
-        TaskDetailSource
+        TaskDetailSource,
+        OrganizationSummarySource,
+        OrganizationRulebookSource
     };
 }
 
@@ -150,7 +159,113 @@ public static class AiAssistantCapabilityCatalog
                 Description: "Soạn task có cấu trúc để người dùng chỉnh sửa và xác nhận chọn lọc.",
                 UserJobs: ["create_task", "break_down_work"],
                 EntityTypes: ["project"],
-                VerificationPolicy: "schema_source_permission_and_human_confirmation")
+                VerificationPolicy: "schema_source_permission_and_human_confirmation"),
+            [AiAssistantContextContract.ProjectLaunchCapability] = new(
+                AiAssistantContextContract.ProjectLaunchCapability,
+                "artifact",
+                AiProjectLaunchContract.RequestSchemaId,
+                AiProjectLaunchContract.BriefSchemaId,
+                ["organization.read"],
+                [
+                    AiAssistantContextContract.OrganizationSummarySource,
+                    AiAssistantContextContract.OrganizationRulebookSource,
+                    AiAssistantContextContract.WorkspaceProjectsSource
+                ],
+                "read_only_proposal",
+                "none",
+                "reasoning_strong",
+                AiProjectLaunchContract.RendererId,
+                "AiJobsV4:ProjectLaunchBriefEnabled",
+                Title: "Phân tích khởi chạy dự án",
+                Description: "Tạo Project Launch Brief và quyết định Rulebook để xem lại; không tạo Project hoặc phân công nhân sự.",
+                UserJobs: ["launch_project", "clarify_project", "review_rulebook"],
+                EntityTypes: ["workspace", "organization"],
+                VerificationPolicy: "schema_source_rulebook_and_zero_domain_mutation"),
+            [AiAssistantContextContract.ProjectStaffingPlanCapability] = new(
+                AiAssistantContextContract.ProjectStaffingPlanCapability,
+                "artifact",
+                AiProjectOrchestrationContract.PlanningRequestSchemaId,
+                AiProjectOrchestrationContract.PlanSchemaId,
+                ["organization.manage"],
+                [
+                    AiAssistantContextContract.OrganizationSummarySource,
+                    AiAssistantContextContract.OrganizationRulebookSource,
+                    AiAssistantContextContract.WorkspaceProjectsSource
+                ],
+                "read_only_proposal",
+                "none",
+                "reasoning_strong",
+                AiProjectOrchestrationContract.PlanRendererId,
+                "AiJobsV4:ProjectLaunchPlanningEnabled",
+                Title: "Plan staffing and delivery",
+                Description: "Creates deterministic staffing scenarios and a reviewable delivery plan from a Launch Brief; no Project is created.",
+                UserJobs: ["staff_project", "plan_delivery", "check_capacity"],
+                EntityTypes: ["workspace", "organization"],
+                VerificationPolicy: "strict_model_schema_plus_deterministic_capacity_skill_rulebook_validation"),
+            [AiAssistantContextContract.ProjectLaunchExecuteCapability] = new(
+                AiAssistantContextContract.ProjectLaunchExecuteCapability,
+                "mutation_draft",
+                AiProjectOrchestrationContract.ConfirmRequestSchemaId,
+                AiProjectOrchestrationContract.ExecutionReceiptSchemaId,
+                ["organization.manage", "project.create", "task.create"],
+                [
+                    AiAssistantContextContract.OrganizationSummarySource,
+                    AiAssistantContextContract.OrganizationRulebookSource,
+                    AiAssistantContextContract.WorkspaceProjectsSource
+                ],
+                "project_mutation",
+                "explicit_batch_confirm",
+                "reasoning_strong",
+                AiProjectOrchestrationContract.PlanRendererId,
+                "AiJobsV4:ProjectLaunchExecutionEnabled",
+                Title: "Execute reviewed Project launch",
+                Description: "Executes only a reviewed scenario with stale-source checks, one internal transaction, idempotency and read-back receipt.",
+                UserJobs: ["confirm_project_launch", "create_project_from_plan"],
+                EntityTypes: ["workspace", "organization"],
+                VerificationPolicy: "permission_rulebook_source_idempotency_transaction_and_readback",
+                RollbackPolicy: "impact_checked_soft_delete"),
+            [AiAssistantContextContract.ProjectOperationMonitorCapability] = new(
+                AiAssistantContextContract.ProjectOperationMonitorCapability,
+                "artifact",
+                AiProjectOrchestrationContract.MonitorRequestSchemaId,
+                AiProjectOrchestrationContract.ReplanSchemaId,
+                ["organization.manage", "project.read"],
+                [
+                    AiAssistantContextContract.ProjectSummarySource,
+                    AiAssistantContextContract.ProjectTasksSource,
+                    AiAssistantContextContract.ProjectWorkloadSource,
+                    AiAssistantContextContract.ProjectMembersSource
+                ],
+                "read_only_proposal",
+                "none",
+                "reasoning_strong",
+                AiProjectOrchestrationContract.PlanRendererId,
+                "AiJobsV4:ProjectOperationMonitoringEnabled",
+                Title: "Monitor launch and propose replan",
+                Description: "Compares the confirmed baseline with current Project facts and creates a review-only replan proposal.",
+                UserJobs: ["monitor_project", "detect_delivery_drift", "propose_replan"],
+                EntityTypes: ["project"],
+                VerificationPolicy: "deterministic_baseline_current_comparison_and_zero_silent_mutation")
+            ,
+            [AiAssistantContextContract.SafeTestRunCapability] = new(
+                AiAssistantContextContract.SafeTestRunCapability,
+                "development_action",
+                AiSafeTestOrchestratorContract.PreviewSchemaId,
+                AiSafeTestOrchestratorContract.ReportSchemaId,
+                ["development.test.execute"],
+                [],
+                "development_test_execution",
+                "explicit_batch_confirm",
+                "deterministic_local",
+                AiSafeTestOrchestratorContract.RendererId,
+                "AiJobsV4:SafeTestOrchestratorEnabled",
+                Title: "Chạy acceptance manifest an toàn",
+                Description: "Chỉ trong Development/Test: xem trước và chạy manifest kiểm thử cố định, không nhận command từ người dùng.",
+                UserJobs: ["run_tests", "verify_candidates", "collect_acceptance_evidence"],
+                EntityTypes: ["workspace"],
+                Executor: "safe_allowlisted_test_orchestrator",
+                VerificationPolicy: "environment_allowlist_confirmation_exit_code_and_durable_report",
+                RollbackPolicy: "not_applicable_read_only_test_data")
         };
 
     private static readonly HashSet<string> KnownSchemaIds = new(StringComparer.Ordinal)
@@ -160,14 +275,27 @@ public static class AiAssistantCapabilityCatalog
         AiAssistantResearchPlanContract.RequestSchemaId,
         AiAssistantResearchPlanContract.SchemaId,
         "ai_action_compose_request.v1",
-        "ai_action_intent_envelope.v1"
+        "ai_action_intent_envelope.v1",
+        AiProjectLaunchContract.RequestSchemaId,
+        AiProjectLaunchContract.BriefSchemaId,
+        AiProjectOrchestrationContract.PlanningRequestSchemaId,
+        AiProjectOrchestrationContract.PlanSchemaId,
+        AiProjectOrchestrationContract.ConfirmRequestSchemaId,
+        AiProjectOrchestrationContract.ExecutionReceiptSchemaId,
+        AiProjectOrchestrationContract.MonitorRequestSchemaId,
+        AiProjectOrchestrationContract.ReplanSchemaId,
+        AiSafeTestOrchestratorContract.PreviewSchemaId,
+        AiSafeTestOrchestratorContract.ReportSchemaId
     };
 
     private static readonly HashSet<string> KnownRendererIds = new(StringComparer.Ordinal)
     {
         "assistant-answer.v1",
         AiAssistantResearchPlanContract.RendererId,
-        "task-plan-review.v1"
+        "task-plan-review.v1",
+        AiProjectLaunchContract.RendererId,
+        AiProjectOrchestrationContract.PlanRendererId,
+        AiSafeTestOrchestratorContract.RendererId
     };
 
     static AiAssistantCapabilityCatalog()
@@ -195,6 +323,23 @@ public static class AiAssistantCapabilityIntentClassifier
     public static string Infer(string message)
     {
         var normalized = Normalize(message ?? string.Empty);
+        var hasProjectNoun = ContainsAny(normalized, "du an", "project", "web spa", "san pham moi");
+        var asksForCandidateTests = ContainsAny(normalized, "chay test", "run test", "kiem thu", "test demo") &&
+            ContainsAny(normalized, "cand", "candidate", "ai native");
+        if (asksForCandidateTests)
+            return AiAssistantContextContract.SafeTestRunCapability;
+        if (hasProjectNoun && ContainsAny(normalized, "monitor", "theo doi", "replan", "lap lai ke hoach", "lech tien do"))
+            return AiAssistantContextContract.ProjectOperationMonitorCapability;
+        if (hasProjectNoun && ContainsAny(normalized, "xac nhan khoi chay", "thuc thi launch", "execute launch", "tao project tu plan"))
+            return AiAssistantContextContract.ProjectLaunchExecuteCapability;
+        if (hasProjectNoun && ContainsAny(normalized, "staffing", "phan bo nhan su", "xep nhan su", "kiem tra capacity", "lap delivery plan"))
+            return AiAssistantContextContract.ProjectStaffingPlanCapability;
+        var hasLaunchVerb = ContainsAny(normalized, "khoi chay", "khoi tao", "bat dau", "launch", "lap du an", "tao du an");
+        if (hasProjectNoun && hasLaunchVerb)
+        {
+            return AiAssistantContextContract.ProjectLaunchCapability;
+        }
+
         var hasTaskNoun = ContainsAny(normalized, "task", "cong viec", "nhiem vu");
         var hasCreateVerb = ContainsAny(normalized, "tao", "them", "soan", "tach") ||
             ContainsAny(normalized, "lap task", "lap cong viec", "lap nhiem vu");

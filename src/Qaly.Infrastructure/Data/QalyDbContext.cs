@@ -57,6 +57,13 @@ public class QalyDbContext : DbContext
     public DbSet<AssistantTurn> AssistantTurns => Set<AssistantTurn>();
     public DbSet<AssistantProcessEvent> AssistantProcessEvents => Set<AssistantProcessEvent>();
     public DbSet<AssistantArtifactRef> AssistantArtifactRefs => Set<AssistantArtifactRef>();
+    public DbSet<AssistantTestRun> AssistantTestRuns => Set<AssistantTestRun>();
+    public DbSet<OrganizationWorkRuleSet> OrganizationWorkRuleSets => Set<OrganizationWorkRuleSet>();
+    public DbSet<ProjectLaunchBrief> ProjectLaunchBriefs => Set<ProjectLaunchBrief>();
+    public DbSet<ProjectLaunchPlanArtifact> ProjectLaunchPlanArtifacts => Set<ProjectLaunchPlanArtifact>();
+    public DbSet<ProjectLaunchExecution> ProjectLaunchExecutions => Set<ProjectLaunchExecution>();
+    public DbSet<ProjectReplanProposal> ProjectReplanProposals => Set<ProjectReplanProposal>();
+    public DbSet<OrganizationWorkRuleDecision> OrganizationWorkRuleDecisions => Set<OrganizationWorkRuleDecision>();
     public DbSet<AiJobMigrationRecord> AiJobMigrationRecords => Set<AiJobMigrationRecord>();
     public DbSet<AiGeneratedDraft> AiGeneratedDrafts => Set<AiGeneratedDraft>();
     public DbSet<MeetingImport> MeetingImports => Set<MeetingImport>();
@@ -347,22 +354,70 @@ public class QalyDbContext : DbContext
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
             var clrType = entityType.ClrType;
-            if (!typeof(ISoftDeleteEntity).IsAssignableFrom(clrType))
+            var parameter = Expression.Parameter(clrType, "entity");
+            Expression? filterBody = null;
+
+            if (typeof(ISoftDeleteEntity).IsAssignableFrom(clrType))
+            {
+                modelBuilder.Entity(clrType)
+                    .Property<bool>(nameof(ISoftDeleteEntity.IsDeleted))
+                    .HasDefaultValue(false);
+
+                var isDeletedProperty = Expression.Property(parameter, nameof(ISoftDeleteEntity.IsDeleted));
+                filterBody = Expression.Equal(isDeletedProperty, Expression.Constant(false));
+            }
+
+            // A required child must disappear with every soft-deleted ancestor.
+            // Walking the full required chain also covers descendants such as a
+            // PR review -> pull request -> repository connection.
+            AppendRequiredParentVisibilityFilters(
+                entityType,
+                parameter,
+                ref filterBody,
+                [entityType]);
+
+            if (filterBody != null)
+            {
+                modelBuilder.Entity(clrType).HasQueryFilter(Expression.Lambda(filterBody, parameter));
+            }
+        }
+    }
+
+    private static void AppendRequiredParentVisibilityFilters(
+        Microsoft.EntityFrameworkCore.Metadata.IMutableEntityType entityType,
+        Expression entityExpression,
+        ref Expression? filterBody,
+        HashSet<Microsoft.EntityFrameworkCore.Metadata.IMutableEntityType> path)
+    {
+        foreach (var foreignKey in entityType.GetForeignKeys())
+        {
+            var navigation = foreignKey.DependentToPrincipal;
+            var principalEntityType = foreignKey.PrincipalEntityType;
+            if (!foreignKey.IsRequired || navigation == null || !path.Add(principalEntityType))
             {
                 continue;
             }
 
-            modelBuilder.Entity(clrType)
-                .Property<bool>(nameof(ISoftDeleteEntity.IsDeleted))
-                .HasDefaultValue(false);
+            var principalNavigation = Expression.PropertyOrField(entityExpression, navigation.Name);
+            if (typeof(ISoftDeleteEntity).IsAssignableFrom(principalEntityType.ClrType))
+            {
+                var principalIsDeleted = Expression.Property(
+                    principalNavigation,
+                    nameof(ISoftDeleteEntity.IsDeleted));
+                var principalIsVisible = Expression.Equal(
+                    principalIsDeleted,
+                    Expression.Constant(false));
+                filterBody = filterBody == null
+                    ? principalIsVisible
+                    : Expression.AndAlso(filterBody, principalIsVisible);
+            }
 
-            var parameter = Expression.Parameter(clrType, "entity");
-            var isDeletedProperty = Expression.Property(parameter, nameof(ISoftDeleteEntity.IsDeleted));
-            var filter = Expression.Lambda(
-                Expression.Equal(isDeletedProperty, Expression.Constant(false)),
-                parameter);
-
-            modelBuilder.Entity(clrType).HasQueryFilter(filter);
+            AppendRequiredParentVisibilityFilters(
+                principalEntityType,
+                principalNavigation,
+                ref filterBody,
+                path);
+            path.Remove(principalEntityType);
         }
     }
 }

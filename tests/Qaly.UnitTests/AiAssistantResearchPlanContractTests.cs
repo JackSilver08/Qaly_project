@@ -10,6 +10,11 @@ public sealed class AiAssistantResearchPlanContractTests
 {
     private const string SourceRef = "qaly://project/11111111-1111-1111-1111-111111111111/summary@abc123";
     private static readonly Guid ProjectId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private static readonly string[] A1DependencyIds = ["A1"];
+    private static readonly string[] CapacityAssumptions = ["Capacity chưa được xác minh."];
+    private static readonly string[] OptionTradeOffs = ["Lùi hạng mục ít quan trọng."];
+    private static readonly string[] HumanReviewWarnings = ["Cần xác minh capacity trước khi giao việc."];
+    private static readonly string[] ModelClaimPrivacyNotes = ["model_claim"];
 
     [Fact]
     public void TryBuildResult_ReconcilesRegisteredAndUnknownActionsServerSide()
@@ -32,7 +37,7 @@ public sealed class AiAssistantResearchPlanContractTests
                 actionId = "A2",
                 capabilityId = "project.create.v1",
                 title = "Tạo project mới",
-                dependencyIds = new[] { "A1" },
+                dependencyIds = A1DependencyIds,
                 draftInput = new { name = "Untrusted project" },
                 sourceRefs = new[] { SourceRef },
                 executionEligible = true,
@@ -155,7 +160,7 @@ public sealed class AiAssistantResearchPlanContractTests
                 }
             },
             unknowns = new[] { new { unknownId = "U1", question = "Capacity tuần tới là bao nhiêu?", blocking = false } },
-            assumptions = new[] { "Capacity chưa được xác minh." },
+            assumptions = CapacityAssumptions,
             options = new[]
             {
                 new
@@ -163,7 +168,7 @@ public sealed class AiAssistantResearchPlanContractTests
                     optionId = "O1",
                     title = "Xử lý rủi ro trước",
                     outcome = "Giảm rủi ro deadline.",
-                    tradeOffs = new[] { "Lùi hạng mục ít quan trọng." },
+                    tradeOffs = OptionTradeOffs,
                     estimatedEffort = "1-2 ngày",
                     risk = "Có thể chậm hạng mục phụ."
                 }
@@ -171,8 +176,8 @@ public sealed class AiAssistantResearchPlanContractTests
             recommendedOptionId = "O1",
             recommendationRationale = "Đây là phương án bám sát fact có nguồn.",
             proposedActions = actions,
-            warnings = new[] { "Cần xác minh capacity trước khi giao việc." },
-            privacyNotes = new[] { "model_claim" },
+            warnings = HumanReviewWarnings,
+            privacyNotes = ModelClaimPrivacyNotes,
             freshnessAt = DateTimeOffset.UnixEpoch,
             generatedAt = DateTimeOffset.UnixEpoch,
             actualProvider = "model_claim",

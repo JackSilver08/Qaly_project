@@ -1,10 +1,9 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test'
+import { adminEmail, adminPassword } from './support/credentials'
 
 test.describe.configure({ mode: 'serial' })
 
 const baseURL = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:5000'
-const adminEmail = process.env.E2E_ADMIN_EMAIL ?? 'admin@qaly.dev'
-const adminPassword = process.env.E2E_ADMIN_PASSWORD ?? 'Admin@123456'
 
 let infraBlockedReason: string | null = null
 

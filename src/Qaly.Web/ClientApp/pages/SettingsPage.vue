@@ -123,6 +123,7 @@ function loadProjectSettings() {
   }
 
   const proj = projects.value.find((p: any) => p.id === selectedProjectId.value)
+    ?? (selectedProject.value?.id === selectedProjectId.value ? selectedProject.value : null)
   if (proj) {
     enableOnHold.value = proj.enableOnHold !== false
     enableInReview.value = proj.enableInReview !== false
@@ -138,9 +139,9 @@ function syncProjectSelection() {
   }
 
   const selectedStillExists = projects.value.some((project: any) => project.id === selectedProjectId.value)
+    || selectedProject.value?.id === selectedProjectId.value
   if (!selectedStillExists) {
-    const routeSelection = projects.value.find((project: any) => project.id === selectedProject.value?.id)
-    selectedProjectId.value = routeSelection?.id || projects.value[0]?.id || null
+    selectedProjectId.value = selectedProject.value?.id || projects.value[0]?.id || null
   }
 
   loadProjectSettings()

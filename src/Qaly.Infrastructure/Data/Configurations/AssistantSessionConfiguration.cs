@@ -11,6 +11,7 @@ public sealed class AssistantSessionConfiguration : IEntityTypeConfiguration<Ass
         builder.HasKey(item => item.Id);
         builder.Property(item => item.Title).HasMaxLength(160).IsRequired();
         builder.Property(item => item.Status).HasMaxLength(24).IsRequired();
+        builder.Property(item => item.ClarificationDraftJson).HasColumnType("nvarchar(max)");
         builder.Property(item => item.Version).IsConcurrencyToken();
 
         builder.HasOne<User>()

@@ -7,7 +7,8 @@ public sealed record ErumiChatRequestDto(
     IList<AiChatMessageDto>? History = null,
     IReadOnlyList<ErumiUploadedFileDto>? Files = null,
     string ProviderHint = "auto",
-    AiAssistantExecutionContextDto? AuthorizedContext = null);
+    AiAssistantExecutionContextDto? AuthorizedContext = null,
+    bool AdvisoryOnly = false);
 
 public sealed record ErumiChatResponseDto(
     string Reply,

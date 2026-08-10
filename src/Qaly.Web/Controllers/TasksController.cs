@@ -69,37 +69,15 @@ public class TasksController : BaseApiController
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
-        try
-        {
-            var result = await _taskService.GetByIdAsync(id, ct);
-            if (result.StatusCode == 404)
-            {
-                return Ok(null);
-            }
-            return StatusCode(result.StatusCode, result);
-        }
-        catch
-        {
-            return Ok(null);
-        }
+        var result = await _taskService.GetByIdAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
     }
 
     [HttpGet("{id}/meeting-source")]
     public async Task<IActionResult> GetMeetingSource(Guid id, CancellationToken ct)
     {
-        try
-        {
-            var result = await _meetingImportService.GetTaskMeetingSourceAsync(id, ct);
-            if (result.StatusCode == 404)
-            {
-                return Ok(null);
-            }
-            return StatusCode(result.StatusCode, result);
-        }
-        catch
-        {
-            return Ok(null);
-        }
+        var result = await _meetingImportService.GetTaskMeetingSourceAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
     }
 
     [HttpGet("{id:guid}/skills")]
@@ -227,21 +205,13 @@ public class TasksController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
     [HttpGet("{id}/time-entries")]
-    public async Task<IActionResult> GetTimeEntries(Guid id, [FromServices] ITimeTrackingService timeTrackingService)
+    public async Task<IActionResult> GetTimeEntries(
+        Guid id,
+        [FromServices] ITimeTrackingService timeTrackingService,
+        CancellationToken ct)
     {
-        try
-        {
-            var result = await timeTrackingService.GetByTaskAsync(id);
-            if (result.StatusCode == 404)
-            {
-                return Ok(Array.Empty<TimeEntryDto>());
-            }
-            return StatusCode(result.StatusCode, result);
-        }
-        catch
-        {
-            return Ok(Array.Empty<TimeEntryDto>());
-        }
+        var result = await timeTrackingService.GetByTaskAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
     }
 
     [HttpGet("/api/projects/{projectId:guid}/task-attention")]

@@ -42,7 +42,7 @@ public class GroupHub : Hub
         await Clients.Caller.SendAsync("groupLeft", new { groupId }, Context.ConnectionAborted);
     }
 
-    public async Task SendMessage(
+    public async Task<GroupMessageDto> SendMessage(
         Guid groupId,
         string content,
         string messageType = "Text",
@@ -61,6 +61,8 @@ public class GroupHub : Hub
         await Clients
             .Group(WorkGroup(groupId))
             .SendAsync("groupMessageReceived", result.Data, Context.ConnectionAborted);
+
+        return result.Data;
     }
 
     public async Task UpdateMessage(Guid groupId, Guid messageId, string content)
