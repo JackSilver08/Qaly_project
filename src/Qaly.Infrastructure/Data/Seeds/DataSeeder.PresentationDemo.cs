@@ -201,10 +201,18 @@ public partial class DataSeeder
                 AccountLogin = "qaly-demo",
                 AccountType = "Organization",
                 InstalledByUserId = admin.Id,
-                Status = "Active",
+                Status = "Cached",
                 CreatedAt = now.AddDays(-30)
             };
             await _context.GitHubInstallations.AddAsync(installation);
+            await _context.SaveChangesAsync();
+            changed = true;
+        }
+
+        if (installation.Status != "Cached")
+        {
+            installation.Status = "Cached";
+            installation.UpdatedAt = now;
             await _context.SaveChangesAsync();
             changed = true;
         }

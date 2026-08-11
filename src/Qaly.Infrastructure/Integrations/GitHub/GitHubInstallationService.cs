@@ -64,6 +64,13 @@ public sealed class GitHubInstallationService : IGitHubInstallationService
                 "Tích hợp GitHub đang bị tắt trên máy chủ Qaly."));
         }
 
+        if (await HasOfflineSnapshotAsync(auth.Data!.OrganizationId, projectId, ct))
+        {
+            return Result.Success(Status(
+                "cached", enabled: true, configured: IsConfigured(configuration), hasInstallation: true, liveVerified: false,
+                "GitHub demo data is served from the latest cached snapshot without calling the live GitHub API."));
+        }
+
         if (!IsConfigured(configuration))
         {
             return Result.Success(Status(
@@ -222,6 +229,14 @@ public sealed class GitHubInstallationService : IGitHubInstallationService
                               item.ProjectId == projectId &&
                               item.IsActive &&
                               item.LastSyncedAt != null, ct);
+
+    private Task<bool> HasOfflineSnapshotAsync(Guid organizationId, Guid projectId, CancellationToken ct)
+        => _db.GitHubRepositoryConnections.AsNoTracking()
+            .AnyAsync(item => item.OrganizationId == organizationId &&
+                              item.ProjectId == projectId &&
+                              item.IsActive &&
+                              item.LastSyncedAt != null &&
+                              item.Installation.Status == "Cached", ct);
 
     private static GitHubIntegrationStatusDto Status(
         string state,

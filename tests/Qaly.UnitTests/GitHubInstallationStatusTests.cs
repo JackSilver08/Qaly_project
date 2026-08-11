@@ -174,6 +174,71 @@ public sealed class GitHubInstallationStatusTests : IDisposable
         result.Data.Message.Should().Contain("snapshot");
     }
 
+    [Fact]
+    public async Task GetStatusAsync_WhenOfflineDemoSnapshotBelongsToAnotherProject_ReturnsNotConnected()
+    {
+        ConfigureApp();
+        await AddActiveInstallationAsync();
+        var installation = await _db.GitHubInstallations.SingleAsync();
+        installation.Status = "Cached";
+        var demoProjectId = Guid.NewGuid();
+        _db.Projects.Add(new Project
+        {
+            Id = demoProjectId,
+            Name = "Presentation demo",
+            Code = "PRESENTATION-DEMO",
+            OwnerId = _userId,
+            OrganizationId = _organizationId
+        });
+        _db.GitHubRepositoryConnections.Add(new GitHubRepositoryConnection
+        {
+            OrganizationId = _organizationId,
+            ProjectId = demoProjectId,
+            GitHubInstallationId = installation.Id,
+            RepositoryExternalId = 4_000_001,
+            Owner = "qaly-demo",
+            Name = "qaly-release-4",
+            FullName = "qaly-demo/qaly-release-4",
+            LastSyncedAt = DateTimeOffset.UtcNow,
+            IsActive = true
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await CreateService().GetStatusAsync(_projectId);
+
+        result.Data!.State.Should().Be("not_connected");
+        result.Data.HasInstallation.Should().BeFalse();
+        _client.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task GetStatusAsync_WhenProjectOwnsOfflineDemoSnapshot_ReturnsCachedWithoutCallingProvider()
+    {
+        ConfigureApp();
+        await AddActiveInstallationAsync();
+        var installation = await _db.GitHubInstallations.SingleAsync();
+        installation.Status = "Cached";
+        _db.GitHubRepositoryConnections.Add(new GitHubRepositoryConnection
+        {
+            OrganizationId = _organizationId,
+            ProjectId = _projectId,
+            GitHubInstallationId = installation.Id,
+            RepositoryExternalId = 4_000_001,
+            Owner = "qaly-demo",
+            Name = "qaly-release-4",
+            FullName = "qaly-demo/qaly-release-4",
+            LastSyncedAt = DateTimeOffset.UtcNow,
+            IsActive = true
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await CreateService().GetStatusAsync(_projectId);
+
+        result.Data!.State.Should().Be("cached");
+        result.Data.LiveVerified.Should().BeFalse();
+        _client.VerifyNoOtherCalls();
+    }
+
     private GitHubInstallationService CreateService()
         => new(_db, _guard.Object, _client.Object, _currentUser.Object, Options.Create(_options));
 

@@ -1631,90 +1631,82 @@ function getDaysRemaining(endDateStr: string): {
         class="modal-backdrop"
         @click.self="showPresetModal = false"
       >
-        <div class="preset-modal glass-card">
-          <div class="modal-header">
-            <h4>
-              <Sparkles :size="18" class="text-primary me-2" /> Khởi Tạo Mẫu Lộ
-              Trình Dự Án
-            </h4>
+        <div class="preset-modal" role="dialog" aria-modal="true" aria-labelledby="preset-modal-title">
+          <div class="modal-header preset-modal-header">
+            <div class="preset-modal-heading">
+              <span class="preset-heading-icon"><Sparkles :size="20" /></span>
+              <div>
+                <span class="preset-eyebrow">Thiết lập nhanh lộ trình</span>
+                <h4 id="preset-modal-title">Khởi Tạo Mẫu Lộ Trình Dự Án</h4>
+              </div>
+            </div>
             <button
               type="button"
-              class="icon-button"
+              class="icon-button preset-close-button"
               @click="showPresetModal = false"
+              aria-label="Đóng hộp thoại mẫu lộ trình"
             >
               <X :size="18" />
             </button>
           </div>
 
           <div class="preset-modal-body">
-            <p class="text-muted text-sm mb-4">
-              Chọn phương pháp quản trị dự án phù hợp để hệ thống tự động khởi
-              tạo lộ trình mốc tiến độ tối ưu:
+            <p class="preset-intro">
+              Chọn cách vận hành phù hợp. Qaly sẽ tạo sẵn các mốc, thứ tự và
+              khoảng thời gian để bạn tiếp tục tinh chỉnh.
             </p>
 
             <div class="preset-options-grid">
-              <div
+              <button
+                type="button"
                 class="preset-option-card"
+                :disabled="isGeneratingPreset"
                 @click="handleGeneratePreset('outsource')"
               >
                 <div class="preset-card-header">
-                  <Award :size="24" class="text-primary" />
-                  <h5>Mẫu Quy Trình Outsource (6 Mốc)</h5>
+                  <span class="preset-card-icon"><Award :size="22" /></span>
+                  <div><span class="preset-count">6 mốc</span><h5>Quy Trình Outsource</h5></div>
                 </div>
                 <p class="preset-desc">
-                  Phù hợp dự án phần mềm cho khách hàng. Chia rõ mốc Scope ➔
-                  Prototype ➔ Core Dev ➔ AI Integration ➔ UAT ➔ Go-Live.
+                  Dành cho dự án khách hàng, có điểm kiểm soát và bàn giao rõ ràng.
                 </p>
-                <button
-                  type="button"
-                  class="btn btn-outline-primary w-100"
-                  :disabled="isGeneratingPreset"
-                >
-                  Tạo Mẫu Outsource
-                </button>
-              </div>
+                <span class="preset-flow">Scope → Prototype → Dev → UAT → Go-live</span>
+                <span class="preset-card-action">Dùng mẫu Outsource <span>→</span></span>
+              </button>
 
-              <div
+              <button
+                type="button"
                 class="preset-option-card"
+                :disabled="isGeneratingPreset"
                 @click="handleGeneratePreset('scrum')"
               >
                 <div class="preset-card-header">
-                  <RefreshCw :size="24" class="text-success" />
-                  <h5>Mẫu Scrum / Agile (Sprint 1...4)</h5>
+                  <span class="preset-card-icon"><RefreshCw :size="22" /></span>
+                  <div><span class="preset-count">4 sprint</span><h5>Scrum / Agile</h5></div>
                 </div>
                 <p class="preset-desc">
-                  Phù hợp quản trị Agile. Chia lộ trình thành các Sprint 2 tuần
-                  song song với tiêu chí bàn giao liên tục.
+                  Phù hợp đội sản phẩm phát triển lặp, review và bàn giao liên tục.
                 </p>
-                <button
-                  type="button"
-                  class="btn btn-outline-success w-100"
-                  :disabled="isGeneratingPreset"
-                >
-                  Tạo Mẫu Scrum (4 Sprints)
-                </button>
-              </div>
+                <span class="preset-flow">Sprint 1 → Sprint 2 → Sprint 3 → Sprint 4</span>
+                <span class="preset-card-action">Dùng mẫu Scrum <span>→</span></span>
+              </button>
 
-              <div
+              <button
+                type="button"
                 class="preset-option-card"
+                :disabled="isGeneratingPreset"
                 @click="handleGeneratePreset('waterfall')"
               >
                 <div class="preset-card-header">
-                  <Layers :size="24" class="text-warning" />
-                  <h5>Mẫu Waterfall / Truyền thống (4 Pha)</h5>
+                  <span class="preset-card-icon"><Layers :size="22" /></span>
+                  <div><span class="preset-count">4 giai đoạn</span><h5>Waterfall / Truyền thống</h5></div>
                 </div>
                 <p class="preset-desc">
-                  Phù hợp dự án yêu cầu quy trình tuyến tính: Khảo sát ➔ Thiết
-                  kế ➔ Phát triển ➔ Bàn giao.
+                  Dành cho dự án tuyến tính, yêu cầu được chốt trước từng giai đoạn.
                 </p>
-                <button
-                  type="button"
-                  class="btn btn-outline-warning w-100"
-                  :disabled="isGeneratingPreset"
-                >
-                  Tạo Mẫu Waterfall
-                </button>
-              </div>
+                <span class="preset-flow">Khảo sát → Thiết kế → Phát triển → Bàn giao</span>
+                <span class="preset-card-action">Dùng mẫu Waterfall <span>→</span></span>
+              </button>
             </div>
           </div>
         </div>
@@ -3698,6 +3690,326 @@ function getDaysRemaining(endDateStr: string): {
   background: #fff;
   border-color: #7fa8df;
   transform: translateY(-4px);
+}
+
+/* Compact roadmap surface */
+.project-roadmap-shell {
+  gap: 14px;
+}
+
+.role-mode-bar {
+  min-height: 44px;
+  padding: 6px 8px 6px 14px;
+}
+
+.roadmap-header {
+  min-height: 88px;
+  padding: 16px 20px;
+}
+
+.title-with-icon {
+  gap: 12px;
+}
+
+.icon-glow-box {
+  width: 44px;
+  height: 44px;
+  flex-basis: 44px;
+  border-radius: 13px;
+}
+
+.roadmap-header h3 {
+  margin-bottom: 2px;
+  font-size: clamp(18px, 1.7vw, 22px);
+}
+
+.roadmap-header__actions {
+  align-items: center;
+  gap: 8px;
+}
+
+.roadmap-header__view-switch {
+  gap: 2px;
+  padding: 3px;
+}
+
+.view-mode-pill {
+  min-height: 38px;
+  padding: 7px 11px;
+  font-size: 12px;
+}
+
+.roadmap-header__actions > button {
+  min-height: 44px;
+  padding: 9px 14px;
+  font-size: 12px;
+}
+
+.empty-roadmap-card {
+  min-height: 320px;
+  padding: 36px 24px;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 20%, rgba(19, 88, 200, 0.07), transparent 32%),
+    rgba(255, 253, 248, 0.98);
+}
+
+.empty-roadmap-content {
+  max-width: 520px;
+}
+
+.empty-roadmap-content > svg {
+  width: 44px;
+  height: 44px;
+  margin-bottom: 10px !important;
+  color: var(--rm-blue);
+}
+
+.empty-roadmap-content h4 {
+  margin: 0 0 6px;
+  color: var(--rm-ink);
+  font-size: 17px;
+}
+
+.empty-roadmap-content p {
+  margin: 0 auto;
+  color: var(--rm-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.empty-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px !important;
+}
+
+.empty-actions .primary-button--lg,
+.empty-actions .secondary-button--lg {
+  min-height: 42px;
+  margin-left: 0 !important;
+  padding: 9px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+/* Preset dialog: milk-white canvas with sapphire accents. Variables are local
+   because Teleport moves this element outside .project-roadmap-shell. */
+.modal-backdrop:has(.preset-modal) {
+  background: rgba(15, 31, 54, 0.58);
+  backdrop-filter: blur(7px);
+}
+
+.preset-modal {
+  --preset-sapphire: #0f52ba;
+  --preset-sapphire-dark: #093b88;
+  --preset-sapphire-soft: #eaf2ff;
+  --preset-milk: #fffaf0;
+  --preset-ink: #14213a;
+  --preset-muted: #66758b;
+  --preset-line: #d8e2ef;
+  width: min(940px, calc(100vw - 32px));
+  max-width: 940px;
+  max-height: min(720px, calc(100vh - 32px));
+  padding: 0;
+  overflow: auto;
+  color: var(--preset-ink);
+  background: var(--preset-milk);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 22px;
+  box-shadow: 0 28px 80px rgba(8, 35, 78, 0.3);
+}
+
+.preset-modal-header {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  margin: 0;
+  padding: 22px 24px 18px;
+  background: rgba(255, 250, 240, 0.96);
+  border-bottom: 1px solid var(--preset-line);
+  backdrop-filter: blur(12px);
+}
+
+.preset-modal-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.preset-heading-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  flex: 0 0 42px;
+  place-items: center;
+  color: #fff;
+  background: linear-gradient(145deg, #246ee0, var(--preset-sapphire-dark));
+  border-radius: 13px;
+  box-shadow: 0 9px 20px rgba(15, 82, 186, 0.24);
+}
+
+.preset-eyebrow {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--preset-sapphire);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.preset-modal-header h4 {
+  color: var(--preset-ink);
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.preset-close-button {
+  width: 38px;
+  height: 38px;
+  color: #516078;
+  background: #fff;
+  border: 1px solid var(--preset-line);
+  border-radius: 11px;
+}
+
+.preset-close-button:hover {
+  color: var(--preset-sapphire-dark);
+  border-color: #9ab9e7;
+  transform: rotate(4deg);
+}
+
+.preset-modal-body {
+  padding: 20px 24px 24px;
+}
+
+.preset-intro {
+  max-width: 690px;
+  margin: 0 0 18px;
+  color: var(--preset-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.preset-options-grid {
+  gap: 12px;
+}
+
+.preset-option-card {
+  min-width: 0;
+  min-height: 300px;
+  padding: 18px;
+  align-items: stretch;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid var(--preset-line);
+  border-radius: 16px;
+  box-shadow: 0 8px 22px rgba(33, 62, 98, 0.055);
+  cursor: pointer;
+  transition:
+    transform 0.3s ease-out,
+    border-color 0.3s ease-out,
+    background-color 0.3s ease-out;
+}
+
+.preset-option-card:hover {
+  color: var(--preset-ink);
+  background: #fff;
+  border-color: #7ca7e4;
+  transform: translateY(-4px);
+}
+
+.preset-option-card:focus-visible {
+  outline: 3px solid rgba(15, 82, 186, 0.2);
+  outline-offset: 3px;
+}
+
+.preset-option-card:disabled {
+  opacity: 0.62;
+  cursor: wait;
+  transform: none;
+}
+
+.preset-card-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 11px;
+}
+
+.preset-card-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  flex: 0 0 40px;
+  place-items: center;
+  color: var(--preset-sapphire);
+  background: var(--preset-sapphire-soft);
+  border: 1px solid #c6d9f5;
+  border-radius: 12px;
+}
+
+.preset-count {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--preset-sapphire);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.preset-card-header h5 {
+  color: var(--preset-ink);
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.preset-desc {
+  min-height: 60px;
+  color: var(--preset-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.preset-flow {
+  min-height: 48px;
+  padding: 10px 11px;
+  color: #3d587a;
+  background: #f2f6fb;
+  border: 1px solid #e1e8f1;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.preset-card-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  margin-top: auto;
+  padding: 9px 12px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--preset-sapphire), var(--preset-sapphire-dark));
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 750;
+  box-shadow: 0 7px 15px rgba(15, 82, 186, 0.18);
+}
+
+.preset-card-action > span {
+  transition: transform 0.3s ease-out;
+}
+
+.preset-option-card:hover .preset-card-action > span {
+  transform: translateX(3px);
 }
 
 @media (max-width: 1050px) {
