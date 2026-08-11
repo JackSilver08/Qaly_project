@@ -11,7 +11,7 @@ public sealed record GroupSummaryRequestDto(
     Guid ProjectId,
     IReadOnlyList<Guid> MessageIds,
     string Language = "vi",
-    string ProviderHint = "deepseek-v4-pro",
+    string ProviderHint = "deepseek-chat",
     decimal? MaximumEstimatedCostUsd = null,
     string CacheMode = "use");
 

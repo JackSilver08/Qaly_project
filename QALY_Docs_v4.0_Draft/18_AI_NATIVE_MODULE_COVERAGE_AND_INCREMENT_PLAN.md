@@ -4065,3 +4065,56 @@ The primary governed internal Project-launch loop is now native end to end: obje
 `CAND-023B`, `CAND-023C` and `CAND-023D` are complete within their declared boundaries. Top-level `CAND-023` is **INTERNAL-CORE COMPLETE / overall PARTIAL** until provider-specific external operation adapters and their outbox/compensation evidence are implemented; external effects remain honestly deferred rather than simulated.
 
 This does not make the whole Qaly AI-native program complete. The next broad coverage work is `CAND-022D — Native Skill Packs` for the remaining main Qaly flows, followed by `CAND-024C — Streaming + quality evaluation`; `CAND-022C` remains a separate Development/Test-only safe demo/test orchestrator and must not broaden production execution authority.
+
+## 35. Corrective implementation checkpoint — Native conversation to governed launch without dead ends
+
+**Checkpoint date:** 2026-08-11 (Asia/Saigon)
+
+The live Assistant exposed four cross-layer defects after §34: a create-Project sentence containing staffing details could route directly to staffing before a Brief existed; explicit continuation still depended on a second goal-planner model ranking; the final clarification answer hid its own submit control; and a delayed draft-save response could overwrite a newer local answer. A complete natural-language request also asked for scope again even when the message already supplied must-haves.
+
+The corrective implementation now:
+
+- routes registered action intents through the authenticated server capability registry without a redundant planner-provider round trip; open-ended requests still use the strong conversational model;
+- gives `project.launch.analyze.v1` precedence for “create/launch Project + staffing” composite goals, then automatically chains to governed staffing/delivery planning when the Brief has no blocking product unknown and an effective Rulebook is available;
+- recognizes deadline, audience and explicit must-have scope from the current utterance or durable prior replies instead of asking again;
+- stores up to three progressive replies as one durable draft, preserves newer local edits while earlier saves are in flight, keeps the final submit control visible and clears the server draft only after a successful turn;
+- presents the result first; process, authorized context and AI work-plan details remain collapsed by default;
+- retains one explicit batch confirmation before canonical Project/member/Sprint/Task/dependency mutation, followed by read-back receipt and monitor/replan controls.
+
+Corrective evidence: solution build PASS with zero warnings/errors; targeted unit 20/20 PASS; real orchestration integration 5/5 PASS including auto-plan and canonical execution; Chromium clarification/resume/confirm/monitor 3/3 PASS; frontend typecheck and production build PASS.
+
+## 36. Unified durable conversation and execution checkpoint
+
+**Checkpoint date:** 2026-08-11 (Asia/Saigon)
+
+This checkpoint removes the remaining split between the Analytics chat and the native Assistant. Both surfaces now use the same durable Assistant-turn API, capability registry, server-owned session history and governed Project-launch executor. Short follow-ups such as "thử luôn" inherit only the relevant recent launch intent; an unrelated new request is not made sticky by old Project messages.
+
+Delivered corrections:
+
+- session history is loaded before capability discovery and goal planning, scoped by authenticated user and optional Project, restored after reload, and available from the native history drawer;
+- progressive questions keep their inputs mounted while being answered, debounce-save all replies as one server draft, survive reload, and submit as one batch without the first-character disappearance/race;
+- both Analytics and native chat can continue through Launch Brief, Rulebook, staffing/delivery planning and the single explicit confirmation into the same canonical Project graph;
+- results render first while process, checked context, work plan and temporary manual guidance are collapsed by default;
+- useful deterministic server fallback remains available when a provider/planner fails, while receipts retain the actual provider/model identity;
+- manual navigation guidance is not presented as the primary outcome when the governed native launch capability is available.
+
+Verification evidence for this checkpoint:
+
+| Gate | Result |
+|---|---|
+| Full solution build | PASS, 0 warnings, 0 errors. |
+| Frontend typecheck and production build | PASS; 3,975 modules transformed. |
+| Full unit suite | 482 passed, 0 failed. |
+| Full integration suite | 155 passed, 0 failed. |
+| Assistant-turn integration suite | 22 passed, including durable short-follow-up context. |
+| Chromium focused E2E | 3 passed: multi-answer/reload/history, session resume, canonical confirm/receipt/monitor/replan. |
+| Canonical persistence proof | 1 ProjectMember, 1 Sprint, 2 TaskItems and 1 TaskDependency persisted; transaction receipt was committed, read back and verified idempotent. |
+| Preview | HTTP 200 at `http://127.0.0.1:5000`. |
+
+**Disposition:** the governed internal Project-launch core and its durable conversation path are complete. Provider-specific calendar, repository, invitation, webhook and deployment adapters remain explicitly `external_deferred`; they are not simulated or reported as successful.
+
+### 36.1 Reusable implementation goal prompt
+
+```text
+Đặt một goal duy nhất và triển khai đến khi có evidence end-to-end: hoàn thiện Qaly AI Native thành trợ lý tự động hóa dùng dữ liệu thật, hội thoại tự nhiên và không dead-end. Với yêu cầu khởi chạy dự án, AI phải hiểu câu tự nhiên, chỉ hỏi tối đa ba unknown thực sự còn thiếu và lưu được nhiều câu trả lời qua reload; không hỏi lại dữ kiện người dùng đã nêu. Khi đủ dữ kiện, tự tạo Launch Brief, đối chiếu Organization Rulebook, kỹ năng/evidence, capacity, availability, lịch và tải đa dự án; lập các phương án manager/team có giải thích, phase/Sprint/Task/dependency/estimate/assignee; sau đúng một xác nhận rõ ràng phải tạo Project graph canonical thật, read-back và trả receipt/deep-link. Không được coi chỗ trống là capacity, không bịa skill/lịch, không báo thành công khi chưa đọc lại dữ liệu, không để provider/planner failure trở thành ngõ cụt; dùng fallback server có ích và ghi actual provider/model. Câu trả lời hiển thị kết quả trước, process/context/work-plan collapse mặc định. Rà cả business logic, navigation, history, model selection, multi-answer race, idempotency, stale-source, rollback và monitor/replan. Chỉ kết luận hoàn thành khi build/typecheck/unit/integration/Chromium PASS và integration chứng minh dữ liệu canonical đã persisted; phân biệt rõ internal-core complete với external adapters còn deferred.
+```

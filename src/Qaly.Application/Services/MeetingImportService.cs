@@ -1091,7 +1091,7 @@ public partial class MeetingImportService : IMeetingImportService
         var validationContextJson = JsonSerializer.Serialize(new { transcript }, JsonOptions);
         var now = DateTimeOffset.UtcNow;
         var meetingImportId = Guid.NewGuid();
-        var providerHint = privacyDecision?.ProviderClass == PrivacyProviderClasses.Local ? "local" : "deepseek-v4-pro";
+        var providerHint = privacyDecision?.ProviderClass == PrivacyProviderClasses.Local ? "local" : "deepseek-chat";
         var requestJson = JsonSerializer.Serialize(new
         {
             projectId = project.Id,

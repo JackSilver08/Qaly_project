@@ -135,16 +135,25 @@ public class AiOutputValidator
                     return false;
                 }
 
-                bool hasReply = root.TryGetProperty("reply", out _);
-                bool hasMetrics = root.TryGetProperty("metrics", out var metrics) && metrics.ValueKind == JsonValueKind.Array;
-                bool hasTables = root.TryGetProperty("tables", out var tables) && tables.ValueKind == JsonValueKind.Array;
-                bool hasCharts = root.TryGetProperty("charts", out var charts) && charts.ValueKind == JsonValueKind.Array;
-                bool hasActions = root.TryGetProperty("actions", out var actions) && actions.ValueKind == JsonValueKind.Array;
-                bool hasFiles = root.TryGetProperty("files", out var files) && files.ValueKind == JsonValueKind.Array;
+                bool hasReply = root.TryGetProperty("reply", out var replyProp) &&
+                                replyProp.ValueKind == JsonValueKind.String &&
+                                !string.IsNullOrWhiteSpace(replyProp.GetString());
 
-                if (!hasReply || !hasMetrics || !hasTables || !hasCharts || !hasActions || !hasFiles)
+                if (!hasReply)
                 {
-                    errorMessage = $"Missing required fields for TextAnswer.v1. HasReply={hasReply}, HasMetrics={hasMetrics}, HasTables={hasTables}, HasCharts={hasCharts}, HasActions={hasActions}, HasFiles={hasFiles}";
+                    errorMessage = "HasReply failed: missing or empty required 'reply' field for TextAnswer.v1.";
+                    return false;
+                }
+
+                bool metricsValid = !root.TryGetProperty("metrics", out var metrics) || metrics.ValueKind is JsonValueKind.Array or JsonValueKind.Object or JsonValueKind.Null;
+                bool tablesValid = !root.TryGetProperty("tables", out var tables) || tables.ValueKind is JsonValueKind.Array or JsonValueKind.Object or JsonValueKind.Null;
+                bool chartsValid = !root.TryGetProperty("charts", out var charts) || charts.ValueKind is JsonValueKind.Array or JsonValueKind.Object or JsonValueKind.Null;
+                bool actionsValid = !root.TryGetProperty("actions", out var actions) || actions.ValueKind is JsonValueKind.Array or JsonValueKind.Object or JsonValueKind.Null;
+                bool filesValid = !root.TryGetProperty("files", out var files) || files.ValueKind is JsonValueKind.Array or JsonValueKind.Object or JsonValueKind.Null;
+
+                if (!metricsValid || !tablesValid || !chartsValid || !actionsValid || !filesValid)
+                {
+                    errorMessage = $"Invalid array field types for TextAnswer.v1. MetricsValid={metricsValid}, TablesValid={tablesValid}, ChartsValid={chartsValid}, ActionsValid={actionsValid}, FilesValid={filesValid}";
                     return false;
                 }
             }

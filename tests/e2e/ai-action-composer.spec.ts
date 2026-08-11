@@ -265,6 +265,76 @@ test('TEST-ACTION-E2E unified AI assistant shows real progress, editable review 
   await expect(page.getByText('Reviewed task from browser')).toBeVisible()
 })
 
+test('TEST-ACTION-LIVE-WORKER-01 live worker claims Action Composer job and persists a reviewable draft', async ({ page }) => {
+  test.setTimeout(70_000)
+  await login(page)
+  const projectsResponse = await page.request.get('/api/projects?page=1&pageSize=20')
+  expect(projectsResponse.ok()).toBeTruthy()
+  const projectsPayload = await projectsResponse.json()
+  const project = (projectsPayload.data?.items ?? projectsPayload.items ?? [])
+    .find((item: { status?: string }) => item.status !== 'Archived')
+  expect(project?.id).toBeTruthy()
+
+  const csrfResponse = await page.request.get('/api/security/csrf')
+  expect(csrfResponse.ok()).toBeTruthy()
+  const csrf = await csrfResponse.json()
+  const composeResponse = await page.request.post('/api/ai/actions/compose', {
+    headers: {
+      'X-CSRF-TOKEN': csrf.token,
+      'Idempotency-Key': `live-action-compose-${Date.now()}`,
+    },
+    data: {
+      message: 'Soạn hai task chi tiết cho Sprint 1: hoàn thiện API dịch vụ và kiểm thử luồng thanh toán. Chỉ tạo bản nháp để duyệt.',
+      context: {
+        route: `/projects/${project.id}`,
+        module: 'project_tasks',
+        projectId: project.id,
+        entityType: 'project',
+        entityId: project.id,
+      },
+      language: 'vi',
+      modelProfile: 'action_composer_strong',
+      maximumOptions: 2,
+      maximumEstimatedCostUsd: 0.08,
+      cacheMode: 'bypass',
+    },
+  })
+  expect(composeResponse.status()).toBe(202)
+  const createdPayload = await composeResponse.json()
+  const created = createdPayload.data ?? createdPayload
+  expect(created.jobId).toBeTruthy()
+
+  async function jobDetail() {
+    const response = await page.request.get(`/api/ai/jobs/${created.jobId}`)
+    expect(response.ok()).toBeTruthy()
+    const payload = await response.json()
+    return payload.data ?? payload
+  }
+
+  await expect.poll(async () => (await jobDetail()).status, {
+    message: 'Worker phải claim job tương tác thay vì để queued vô hạn',
+    timeout: 15_000,
+    intervals: [250, 500, 1_000],
+  }).not.toBe('queued')
+
+  await expect.poll(async () => (await jobDetail()).status, {
+    message: 'Action Composer phải tạo xong bản nháp hoặc trả trạng thái terminal rõ ràng',
+    timeout: 50_000,
+    intervals: [1_000, 2_000, 3_000],
+  }).toBe('succeeded')
+
+  const completed = await jobDetail()
+  expect(completed.draftIds?.length).toBeGreaterThan(0)
+  expect(completed.selectedProvider).toBeTruthy()
+  expect(completed.selectedModel).toBeTruthy()
+  const resultResponse = await page.request.get(`/api/ai/jobs/${created.jobId}/result`)
+  expect(resultResponse.ok()).toBeTruthy()
+  const resultPayload = await resultResponse.json()
+  const result = resultPayload.data ?? resultPayload
+  expect(result.draftIds?.length).toBeGreaterThan(0)
+  expect(result.result?.options?.length).toBeGreaterThan(0)
+})
+
 test('TEST-UA-E2E chat function call opens the canonical task composer without mutating data', async ({ page }) => {
   await login(page)
   await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })

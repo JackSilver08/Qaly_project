@@ -6,6 +6,7 @@ public sealed class AiJobPlatformOptions
 
     public bool Enabled { get; set; }
     public bool WorkerEnabled { get; set; }
+    public bool AllowEnqueueWhenWorkerDisabled { get; set; }
     public bool BudgetUiEnabled { get; set; }
     public bool TaskSkillSuggestionEnabled { get; set; }
     public bool ActionComposerEnabled { get; set; }

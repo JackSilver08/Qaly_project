@@ -77,6 +77,7 @@ export type ConversationHistoryItem = {
   projectId: string | null
   projectLabel: string
   createdAt: string
+  updatedAt?: string | null
   assistantSnippet?: string | null
   attachmentCount?: number
   turnCount?: number
@@ -105,7 +106,7 @@ export const AI_MODEL_OPTIONS: AiModelOption[] = [
     privacyNote: 'Phù hợp dữ liệu cần xử lý cục bộ.'
   },
   {
-    id: 'deepseek-v4-pro',
+    id: 'deepseek-chat',
     label: 'DeepSeek V4 Pro',
     shortLabel: 'V4 Pro',
     providerLabel: 'DeepSeek Cloud',

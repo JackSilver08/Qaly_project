@@ -80,7 +80,7 @@
         "title": { "type": "string", "minLength": 1, "maxLength": 200 },
         "description": { "type": ["string", "null"], "maxLength": 4000 },
         "acceptanceCriteria": { "$ref": "#/$defs/textList" },
-        "priority": { "enum": ["Low", "Medium", "High", "Urgent"] },
+        "priority": { "enum": ["Low", "Medium", "High", "Critical"] },
         "dueDate": { "type": ["string", "null"], "format": "date-time" },
         "estimatedHours": { "type": ["integer", "null"], "minimum": 1, "maximum": 1000 },
         "assigneeId": { "type": ["string", "null"], "format": "uuid" },
@@ -108,4 +108,3 @@
     }
   }
 }
-

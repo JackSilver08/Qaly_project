@@ -74,6 +74,31 @@ public class ErumiChatServiceTests : IDisposable
         _aiGatewayMock.VerifyNoOtherCalls();
     }
 
+    [Theory]
+    [InlineData("Bạn có thể giúp cho tôi những gì?")]
+    [InlineData("Tôi có thể hỏi gì?")]
+    [InlineData("Nên bắt đầu từ đâu với trợ lý AI?")]
+    public async Task ChatFastAsync_WithCapabilityOverviewQuestion_ReturnsConsistentNavigationMenu(string message)
+    {
+        var result = await _service.ChatFastAsync(
+            new ErumiChatRequestDto(Message: message, ProjectId: null),
+            CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Intent.Should().Be("capability_overview");
+        result.Data.UsedAi.Should().BeFalse();
+        result.Data.Model.Should().NotBeNull();
+        result.Data.Model!.Id.Should().Be("qaly-native");
+        result.Data.Actions.Should().HaveCount(5);
+        result.Data.Actions.Should().OnlyContain(action => action.Type == "assistant_navigation");
+        var payloads = result.Data.Actions
+            .Select(action => JsonSerializer.Serialize(action.Payload))
+            .ToArray();
+        payloads.Should().Contain(payload => payload.Contains("/projects", StringComparison.Ordinal));
+        payloads.Should().Contain(payload => payload.Contains("/analytics", StringComparison.Ordinal));
+        _aiGatewayMock.VerifyNoOtherCalls();
+    }
+
     [Fact]
     public async Task ChatFastAsync_WithProjectCustomMessage_ReturnsLocalProjectSummaryWithoutAi()
     {
@@ -877,7 +902,7 @@ public class ErumiChatServiceTests : IDisposable
             .Setup(gateway => gateway.ExecuteAsync(
                 It.Is<AiRequest>(aiRequest =>
                     aiRequest.ExpectedSchemaId == "TextAnswer.v1" &&
-                    aiRequest.ProviderHint == "deepseek-v4-pro" &&
+                    aiRequest.ProviderHint == "deepseek-chat" &&
                     !aiRequest.StrictProvider &&
                     aiRequest.Tools == null),
                 It.IsAny<CancellationToken>()))
@@ -885,7 +910,7 @@ public class ErumiChatServiceTests : IDisposable
             {
                 Content = "{\"reply\":\"Mình có thể lập ma trận kiểm thử CAND theo unit, integration và E2E. Bạn muốn ưu tiên smoke test hay regression?\",\"metrics\":[],\"tables\":[],\"charts\":[],\"actions\":[],\"files\":[],\"confidence\":0.9}",
                 ProviderName = "DeepSeek",
-                ModelName = "deepseek-v4-pro"
+                ModelName = "deepseek-chat"
             });
 
         var result = await _service.AssistantPlannedTurnAsync(request, context, planning);

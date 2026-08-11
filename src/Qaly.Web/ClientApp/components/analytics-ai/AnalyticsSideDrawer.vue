@@ -77,7 +77,9 @@ onBeforeUnmount(() => {
   --analytics-drawer-shell-top: 72px;
   position: fixed;
   inset: var(--analytics-drawer-shell-top) 0 0 var(--analytics-drawer-shell-left);
-  z-index: 1700;
+  /* Must stay above the global AI workspace (z-index 9999) as this drawer is
+     shared by both Analytics and the floating native assistant. */
+  z-index: 10020;
   pointer-events: auto;
 }
 

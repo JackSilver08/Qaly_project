@@ -36,6 +36,14 @@ public sealed class AiAssistantGoalPlanner : IAiAssistantGoalPlanner
                 request, discoveryContext, out var controlledPlan) && controlledPlan != null)
             return Result.Success(controlledPlan);
 
+        // Action turns already have a server-owned capability contract. Route those
+        // deterministically and reserve the planner model for genuinely open-ended intent
+        // analysis. This removes an avoidable provider round-trip and prevents a valid
+        // create/continue request from being misrouted to a neighbouring read skill.
+        if (AiAssistantGoalPlanningOutputContract.TryCreateAuthorizedExecutionPlan(
+                request, discoveryContext, out var executionPlan) && executionPlan != null)
+            return Result.Success(executionPlan);
+
         var context = new AiAssistantGoalPlanningValidationContextDto(
             request.Message.Trim(), request.Context, request.RequestedCapabilityId, discoveryContext.Capabilities);
         var contextJson = JsonSerializer.Serialize(context, JsonOptions);
@@ -63,7 +71,7 @@ public sealed class AiAssistantGoalPlanner : IAiAssistantGoalPlanner
             {{skillsJson}}
             """;
         var providerHint = string.Equals(request.ProviderHint, "auto", StringComparison.OrdinalIgnoreCase)
-            ? "deepseek-v4-pro"
+            ? "deepseek-chat"
             : request.ProviderHint;
         var response = await _gateway.ExecuteAsync(new AiRequest
         {
@@ -81,10 +89,10 @@ public sealed class AiAssistantGoalPlanner : IAiAssistantGoalPlanner
             DataClassification = "workspace_private",
             SourceType = "assistant_skill_registry",
             SourceEntityId = request.Context?.ProjectId,
-            UseCache = true,
+            UseCache = false,
             UseRetrievalAugmentation = false,
             AllowMockFallback = false,
-            History = null,
+            History = request.History,
             Tools = null
         }, ct);
 

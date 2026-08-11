@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Activity, ListChecks, MessageSquare, RotateCcw, X, Sparkles } from 'lucide-vue-next'
+import { Activity, Clock3, ListChecks, MessageSquare, RotateCcw, X, Sparkles } from 'lucide-vue-next'
 import ChatbotAvatar from '../ChatbotAvatar.vue'
 import AiActionComposerDrawer from '../AiActionComposerDrawer.vue'
 import ErumiChatPanel from './ErumiChatPanel.vue'
@@ -39,6 +39,7 @@ const activeView = ref<'chat' | 'create' | 'activity'>('chat')
 const actionPrompt = ref('')
 const assistantPrompt = ref('')
 const assistantPromptToken = ref(0)
+const assistantHistoryToken = ref(0)
 const assistantProjectId = ref<string | null>(props.projectId || null)
 const actionProjectId = ref<string | null>(props.projectId || null)
 const actionComposerKey = ref(0)
@@ -48,6 +49,11 @@ const drawerBodyRef = ref<HTMLElement | null>(null)
 const isCompactViewport = ref(false)
 const isResizing = ref(false)
 const hasSavedLayout = ref(false)
+
+function openAssistantHistory() {
+  activeView.value = 'chat'
+  assistantHistoryToken.value++
+}
 
 const LAYOUT_STORAGE_KEY = 'qaly-ai-agent-workspace-layout-v1'
 const LAYOUT_VERSION = 1
@@ -556,6 +562,7 @@ watch(isOpen, async open => {
               @click="toggleArtifactPane"
             ><ListChecks :size="17" /></button>
             <button class="drawer-icon-btn" :class="{ active: activeView === 'activity' }" title="Hoạt động AI" @click="activeView = 'activity'"><Activity :size="17" /></button>
+            <button class="drawer-icon-btn" title="Lịch sử phiên Trợ lý AI" aria-label="Lịch sử phiên Trợ lý AI" data-testid="assistant-session-history-toolbar" @click="openAssistantHistory"><Clock3 :size="17" /></button>
             <button class="drawer-icon-btn reset-layout-btn" title="Đặt lại kích thước" aria-label="Đặt lại kích thước Trợ lý AI" @click="resetAssistantLayout"><RotateCcw :size="17" /></button>
             <button class="drawer-close-btn" @click="closeDrawer" aria-label="Đóng"><X :size="20" /></button>
           </div>
@@ -576,6 +583,7 @@ watch(isOpen, async open => {
               :is-drawer="true"
               :external-prompt="assistantPrompt"
               :external-prompt-token="assistantPromptToken"
+              :external-history-token="assistantHistoryToken"
               :external-project-id="assistantProjectId"
               @compose-action="handleComposeAction"
             />

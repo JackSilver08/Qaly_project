@@ -200,6 +200,7 @@ let pollTimer: number | null = null
 let clockTimer: number | null = null
 let mounted = false
 let autoStartConsumed = false
+let refreshInFlight = false
 
 const selectedProject = computed(() =>
   props.projects.find(project => project.id === selectedProjectId.value) ?? null,
@@ -230,6 +231,12 @@ const workedFor = computed(() => {
   const rest = seconds % 60
   return `${minutes} phút ${rest.toString().padStart(2, '0')} giây`
 })
+const queueWaitSeconds = computed(() => {
+  if (job.value?.status !== 'queued') return 0
+  const createdAt = new Date(job.value.createdAt).getTime()
+  return Number.isNaN(createdAt) ? 0 : Math.max(0, Math.floor((now.value - createdAt) / 1000))
+})
+const queueDelayed = computed(() => queueWaitSeconds.value >= 15)
 
 watch(() => props.projectId, value => {
   if (!jobId.value && value) selectedProjectId.value = value
@@ -324,17 +331,20 @@ async function compose() {
   submitting.value = true
   requestError.value = ''
   try {
+    const sprintId = window.location.hash.startsWith('#milestone-')
+      ? window.location.hash.slice('#milestone-'.length)
+      : ''
     const created = await apiResult<AiJobCreated>('/api/ai/actions/compose', {
       method: 'POST',
       headers: { 'Idempotency-Key': newIdempotencyKey('action-compose') },
       body: JSON.stringify({
         message: promptText.value.trim(),
         context: {
-          route: window.location.pathname,
+          route: `${window.location.pathname}${window.location.hash}`,
           module: 'project_tasks',
           projectId: selectedProjectId.value,
-          entityType: 'project',
-          entityId: selectedProjectId.value,
+          entityType: sprintId ? 'sprint' : 'project',
+          entityId: sprintId || selectedProjectId.value,
         },
         language: 'vi',
         modelProfile: 'action_composer_strong',
@@ -368,7 +378,8 @@ function stopPolling() {
 }
 
 async function refreshWorkflow() {
-  if (!jobId.value) return
+  if (!jobId.value || refreshInFlight) return
+  refreshInFlight = true
   try {
     const [jobDetail, feed] = await Promise.all([
       apiResult<AiJobDetail>(`/api/ai/jobs/${jobId.value}`),
@@ -386,6 +397,8 @@ async function refreshWorkflow() {
     }
   } catch (error) {
     requestError.value = errorMessage(error, 'Mất kết nối khi theo dõi tiến trình AI.')
+  } finally {
+    refreshInFlight = false
   }
 }
 
@@ -531,7 +544,7 @@ async function retryJob() {
   try {
     job.value = await apiResult<AiJobDetail>(`/api/ai/jobs/${jobId.value}/retry`, {
       method: 'POST',
-      body: JSON.stringify({ providerOverride: 'deepseek-v4-pro' }),
+      body: JSON.stringify({ providerOverride: 'deepseek-chat' }),
     })
     await startPolling()
   } catch (error) {
@@ -632,6 +645,13 @@ function isInternalLink(value: string) {
               </li>
             </ol>
 
+            <div v-if="queueDelayed && !requestError" class="queue-delayed-warning" role="status">
+              <AlertTriangle :size="16" />
+              <div>
+                <strong>Worker chưa nhận yêu cầu sau {{ queueWaitSeconds }} giây</strong>
+                <span>Qaly vẫn đang kiểm tra tự động. Nếu trạng thái không đổi, hãy hủy an toàn và thử lại sau khi kiểm tra worker.</span>
+              </div>
+            </div>
             <div v-if="requestError" class="truthful-error" role="alert"><AlertTriangle :size="16" /> {{ requestError }}</div>
             <div class="composer-actions">
               <button class="secondary-action" type="button" @click="resetSession"><RotateCcw :size="15" /> Phiên mới</button>
@@ -813,6 +833,9 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .activity-timeline .is-failed .activity-icon, .activity-timeline .is-warning .activity-icon { border-color: #fecaca; color: #dc2626; background: #fff1f2; }
 .activity-timeline.is-compact li { min-height: 44px; }
 .truthful-error { display: flex; align-items: flex-start; gap: 8px; padding: 11px 12px; border: 1px solid #fecaca; border-radius: 11px; color: #b91c1c; background: #fff1f2; }
+.queue-delayed-warning { display: flex; align-items: flex-start; gap: 8px; padding: 11px 12px; border: 1px solid #fde68a; border-radius: 11px; color: #92400e; background: #fffbeb; }
+.queue-delayed-warning>div { display: grid; gap: 3px; }
+.queue-delayed-warning span { font-size: 12px; line-height: 1.45; }
 .review-banner { align-items: flex-start; gap: 10px; padding: 13px; border: 1px solid #a7f3d0; border-radius: 12px; color: #047857; background: #ecfdf5; }
 .review-banner p { margin-top: 3px; color: #047857; }
 .intent-card { display: grid; gap: 5px; padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-soft); }

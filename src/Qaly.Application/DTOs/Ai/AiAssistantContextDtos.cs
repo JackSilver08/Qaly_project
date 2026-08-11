@@ -320,10 +320,52 @@ public static class AiAssistantCapabilityCatalog
 
 public static class AiAssistantCapabilityIntentClassifier
 {
+    public static bool IsCapabilityOverviewQuery(string? message)
+    {
+        var normalized = Normalize(message ?? string.Empty);
+        var matchesKnownPhrase = ContainsAny(
+            normalized,
+            "giup toi tu dong nhung gi",
+            "tu dong nhung gi",
+            "tu dong duoc gi",
+            "kha nang ai",
+            "capabilities",
+            "lam duoc gi",
+            "giup toi nhung gi",
+            "toi co the hoi gi",
+            "nen hoi gi",
+            "bat dau tu dau",
+            "huong dan su dung tro ly",
+            "tro ly ho tro gi");
+        var asksWhatHelpIsAvailable =
+            ContainsAny(normalized, "giup toi", "giup cho toi", "ho tro toi", "ho tro cho toi") &&
+            ContainsAny(normalized, "nhung gi", "lam gi", "duoc gi", "ho tro gi");
+        return matchesKnownPhrase || asksWhatHelpIsAvailable;
+    }
+
+    public static string Infer(string message, IEnumerable<AiChatMessageDto>? history)
+    {
+        var direct = Infer(message);
+        if (direct != AiAssistantContextContract.GroundedReadCapability || !IsContinuation(message))
+            return direct;
+
+        var recentContext = string.Join(' ', (history ?? [])
+            .TakeLast(6)
+            .Select(item => item.Content ?? string.Empty));
+        var normalizedContext = Normalize(recentContext);
+        if (ContainsAny(normalizedContext,
+                "project launch", "launch brief", "tao project", "tao du an", "khoi chay du an",
+                "staffing", "chi dinh manager", "phan bo thanh vien", "tu dong lap project"))
+            return AiAssistantContextContract.ProjectLaunchCapability;
+        if (ContainsAny(normalizedContext, "tao task", "tao nhiem vu", "soan task"))
+            return AiAssistantContextContract.TaskCreateCapability;
+        return direct;
+    }
+
     public static string Infer(string message)
     {
         var normalized = Normalize(message ?? string.Empty);
-        var hasProjectNoun = ContainsAny(normalized, "du an", "project", "web spa", "san pham moi");
+        var hasProjectNoun = ContainsAny(normalized, "du an", "project", "web spa", "san pham moi", "plan 18", "18_native", "chuc nang ai native");
         var asksForCandidateTests = ContainsAny(normalized, "chay test", "run test", "kiem thu", "test demo") &&
             ContainsAny(normalized, "cand", "candidate", "ai native");
         if (asksForCandidateTests)
@@ -332,13 +374,38 @@ public static class AiAssistantCapabilityIntentClassifier
             return AiAssistantContextContract.ProjectOperationMonitorCapability;
         if (hasProjectNoun && ContainsAny(normalized, "xac nhan khoi chay", "thuc thi launch", "execute launch", "tao project tu plan"))
             return AiAssistantContextContract.ProjectLaunchExecuteCapability;
-        if (hasProjectNoun && ContainsAny(normalized, "staffing", "phan bo nhan su", "xep nhan su", "kiem tra capacity", "lap delivery plan"))
-            return AiAssistantContextContract.ProjectStaffingPlanCapability;
-        var hasLaunchVerb = ContainsAny(normalized, "khoi chay", "khoi tao", "bat dau", "launch", "lap du an", "tao du an");
-        if (hasProjectNoun && hasLaunchVerb)
+        if (IsCapabilityOverviewQuery(message))
+            return AiAssistantContextContract.GroundedReadCapability;
+
+        // Prefer the action target the user names first. A task request often explains that
+        // the tasks are "de khoi tao du an"; treating that purpose clause as the primary
+        // action incorrectly opens Project Launch instead of Task Composer. Conversely,
+        // "khoi tao du an ... sau do tao task" is still a Project Launch request.
+        var taskActionIndex = FirstActionObjectIndex(
+            normalized,
+            ["tao", "khoi tao", "them", "soan", "tach", "lap", "len"],
+            "task", "cong viec", "nhiem vu");
+        var projectLaunchActionIndex = FirstActionObjectIndex(
+            normalized,
+            ["tao", "khoi tao", "khoi chay", "bat dau", "lap", "launch", "start"],
+            "du an", "project");
+        if (taskActionIndex >= 0 || projectLaunchActionIndex >= 0)
         {
-            return AiAssistantContextContract.ProjectLaunchCapability;
+            if (taskActionIndex >= 0 &&
+                (projectLaunchActionIndex < 0 || taskActionIndex < projectLaunchActionIndex))
+                return AiAssistantContextContract.TaskCreateCapability;
+            if (projectLaunchActionIndex >= 0)
+                return AiAssistantContextContract.ProjectLaunchCapability;
         }
+
+        var hasLaunchVerb = ContainsAny(normalized, "khoi chay", "khoi tao", "bat dau", "launch", "lap du an", "tao du an", "tu dong tao", "bien chat thanh", "tu dong hoa", "thu nghiem luon", "thu nghiem", "thu luon", "chay luon", "trien khai luon");
+        if (hasProjectNoun || hasLaunchVerb || ContainsAny(normalized, "tao project", "manager", "member", "phan tao task"))
+        {
+            if (hasLaunchVerb || ContainsAny(normalized, "tao project", "plan 18", "18_native"))
+                return AiAssistantContextContract.ProjectLaunchCapability;
+        }
+        if (ContainsAny(normalized, "staffing", "phan bo nhan su", "xep nhan su", "kiem tra capacity", "lap delivery plan", "chi dinh manager", "chi dinh member", "phan chia thanh vien", "muc do phu hop", "lich hop ly"))
+            return AiAssistantContextContract.ProjectStaffingPlanCapability;
 
         var hasTaskNoun = ContainsAny(normalized, "task", "cong viec", "nhiem vu");
         var hasCreateVerb = ContainsAny(normalized, "tao", "them", "soan", "tach") ||
@@ -374,6 +441,56 @@ public static class AiAssistantCapabilityIntentClassifier
 
     private static bool ContainsAny(string value, params string[] terms)
         => terms.Any(term => value.Contains(term, StringComparison.OrdinalIgnoreCase));
+
+    private static int FirstPhraseIndex(string value, params string[] phrases)
+    {
+        var first = -1;
+        foreach (var phrase in phrases)
+        {
+            var index = value.IndexOf(phrase, StringComparison.OrdinalIgnoreCase);
+            if (index >= 0 && (first < 0 || index < first)) first = index;
+        }
+
+        return first;
+    }
+
+    private static int FirstActionObjectIndex(
+        string value,
+        IReadOnlyList<string> actionVerbs,
+        params string[] objectTerms)
+    {
+        const int maximumActionDistance = 64;
+        var first = -1;
+        foreach (var objectTerm in objectTerms)
+        {
+            var searchFrom = 0;
+            while (searchFrom < value.Length)
+            {
+                var objectIndex = value.IndexOf(objectTerm, searchFrom, StringComparison.OrdinalIgnoreCase);
+                if (objectIndex < 0) break;
+
+                var prefixStart = Math.Max(0, objectIndex - maximumActionDistance);
+                var prefix = value[prefixStart..objectIndex];
+                if (actionVerbs.Any(verb => prefix.Contains(verb, StringComparison.OrdinalIgnoreCase)) &&
+                    (first < 0 || objectIndex < first))
+                {
+                    first = objectIndex;
+                }
+
+                searchFrom = objectIndex + objectTerm.Length;
+            }
+        }
+
+        return first;
+    }
+
+    private static bool IsContinuation(string message)
+    {
+        var normalized = Normalize(message);
+        return normalized.Length <= 80 && ContainsAny(normalized,
+            "thu luon", "thu nghiem luon", "lam luon", "lam di", "bat dau di", "tiep tuc",
+            "proceed", "go ahead", "ok", "dong y", "chay luon", "trien khai luon");
+    }
 
     private static string Normalize(string value)
     {

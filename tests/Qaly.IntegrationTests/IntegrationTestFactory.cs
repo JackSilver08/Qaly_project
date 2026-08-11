@@ -50,6 +50,7 @@ public class IntegrationTestFactory : WebApplicationFactory<Program>
                 ["Redis:ConnectionString"] = "localhost:6379", // Just to satisfy Program.cs
                 ["AiJobsV4:Enabled"] = "true",
                 ["AiJobsV4:WorkerEnabled"] = "false",
+                ["AiJobsV4:AllowEnqueueWhenWorkerDisabled"] = "true",
                 ["AiJobsV4:BudgetUiEnabled"] = "true",
                 ["AiJobsV4:TaskSkillSuggestionEnabled"] = "true",
                 ["AiJobsV4:ActionComposerEnabled"] = "true",

@@ -81,6 +81,14 @@ public sealed record AiActionSkillContextDto(
     string? Description,
     string SourceRef);
 
+public sealed record AiActionSprintContextDto(
+    Guid Id,
+    string Name,
+    string Status,
+    DateTimeOffset StartDate,
+    DateTimeOffset EndDate,
+    string SourceRef);
+
 public sealed record AiActionContextSnapshotDto(
     string SchemaId,
     AiActionProjectContextDto Project,
@@ -90,7 +98,8 @@ public sealed record AiActionContextSnapshotDto(
     string UserIntent,
     IReadOnlyList<AiActionMemberContextDto> Members,
     IReadOnlyList<AiActionSkillContextDto> Skills,
-    IReadOnlyList<string> AllowedSourceRefs);
+    IReadOnlyList<string> AllowedSourceRefs,
+    AiActionSprintContextDto? Sprint = null);
 
 public sealed record AiActionTargetEntityDto(
     string Type,

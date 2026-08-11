@@ -11,7 +11,8 @@ import {
   Clock3,
   Settings2,
   MessageSquarePlus,
-  X
+  X,
+  ArrowRight
 } from 'lucide-vue-next'
 import { useDashboardContext } from '../../composables/dashboard-context'
 import { useErumiContext } from '../../composables/use-erumi-context'
@@ -54,11 +55,13 @@ const props = withDefaults(defineProps<{
   isDrawer?: boolean
   externalPrompt?: string
   externalPromptToken?: number
+  externalHistoryToken?: number
   externalProjectId?: string | null
 }>(), {
   isDrawer: false,
   externalPrompt: '',
   externalPromptToken: 0,
+  externalHistoryToken: 0,
   externalProjectId: null,
 })
 
@@ -690,13 +693,14 @@ function applyRoutePrompt() {
 }
 
 const AI_MODEL_STORAGE_KEY = 'qaly.ai-native.model.v1'
+const AI_ACTIVE_SESSION_STORAGE_KEY = 'qaly.ai-native.active-session.v1'
 const storedAiModel = window.localStorage.getItem(AI_MODEL_STORAGE_KEY)
 const selectedAiModel = ref(AI_MODEL_OPTIONS.some(option => option.id === storedAiModel && !option.disabled)
   ? storedAiModel!
-  : 'deepseek-v4-pro')
+  : 'deepseek-chat')
 const selectedProviderHint = computed(() => {
   switch (selectedAiModel.value) {
-    case 'deepseek-v4-pro':
+    case 'deepseek-chat':
       return 'deepseek'
     case 'ollama-local':
       return 'local'
@@ -709,6 +713,7 @@ const cockpitDrawerOpen = ref(false)
 const selectedDrawerMessage = ref<ChatEntry | null>(null)
 const isCompactViewport = ref(false)
 const conversationHistory = ref<ConversationHistoryItem[]>([])
+const conversationHistoryLoading = ref(false)
 const assistantSessionId = ref<string | null>(null)
 const assistantSessionVersion = ref(0)
 const assistantSessionLoading = ref(false)
@@ -808,11 +813,8 @@ function clearProjectContext() {
 }
 
 // Watchers
-watch(() => erumiContext.projectId.value, (newProjectId) => {
-  if (newProjectId) {
-    selectedTarget.value = newProjectId
-  }
-}, { immediate: true })
+// Default target is always workspace (Tất cả dự án)
+selectedTarget.value = 'workspace'
 
 function buildWelcomeMessage(): ChatEntry {
   if (selectedTarget.value === 'workspace') {
@@ -875,7 +877,7 @@ const cockpitDrawerTitle = computed(() => {
     report: 'Report',
     actions: 'Actions',
     model: 'Thiết lập model',
-    history: 'Lịch sử trò chuyện',
+    history: 'Lịch sử phiên Trợ lý AI',
     settings: 'Thiết lập'
   }
   return titles[activeDrawerTab.value]
@@ -908,8 +910,7 @@ function handleHeaderMenu(key: string) {
       startNewConversation()
       break
     case 'history':
-      void loadConversationHistory()
-      openCockpitDrawer('history')
+      void openSessionHistory()
       break
     case 'sources':
       openCockpitDrawer('sources')
@@ -941,15 +942,14 @@ async function startNewConversation() {
   chatHistory.value = [buildWelcomeMessage()]
   selectedDrawerMessage.value = null
   closeCockpitDrawer()
-  if (props.isDrawer) {
-    assistantSessionId.value = null
-    assistantSessionVersion.value = 0
-    assistantSessionLoadAttempted.value = true
-    try {
-      await createAssistantSession()
-    } catch (error) {
-      showError(error instanceof Error ? error.message : 'Không thể tạo cuộc trò chuyện mới.')
-    }
+  assistantSessionId.value = null
+  assistantSessionVersion.value = 0
+  assistantSessionLoadAttempted.value = true
+  try {
+    await createAssistantSession()
+    await loadConversationHistory()
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Không thể tạo phiên Trợ lý AI mới.')
   }
   focusComposer()
 }
@@ -1004,6 +1004,7 @@ async function answerProjectClarification(choice: AiAssistantChoice, action: Eru
 }
 
 let clarificationSaveChain: Promise<void> = Promise.resolve()
+let clarificationInputSaveTimer: number | null = null
 
 function ensureProgressiveDraft(action: ErumiAction) {
   const originTurnId = String(action.payload?.originTurnId || '')
@@ -1034,10 +1035,31 @@ function hasAllBlockingAnswers(action: ErumiAction) {
   return draft.questions.filter(question => question.blocking).every(question => answered.has(question.id))
 }
 
+function isQuestionAnsweredInHistory(questionId: string): boolean {
+  return chatHistory.value.some(msg => {
+    const text = msg.text || ''
+    if (questionId === 'launch.deadline' && (text.includes('tuần') || text.includes('ngày') || text.includes('tháng') || text.includes('6_weeks') || text.includes('8_weeks') || text.includes('12_weeks'))) return true
+    if (questionId === 'launch.audience' && (text.includes('nội bộ') || text.includes('khách hàng') || text.includes('người dùng') || text.includes('Nội bộ') || text.includes('Khách hàng'))) return true
+    if (questionId === 'launch.scope' && (text.includes('trang chủ') || text.includes('thanh toán') || text.includes('quản lý') || text.includes('chức năng'))) return true
+    return false
+  })
+}
+
+function filteredProgressiveQuestions(questions: AiAssistantConversationQuestion[] = [], action: ErumiAction): AiAssistantConversationQuestion[] {
+  return questions.filter(question => !isQuestionAnsweredInHistory(question.id))
+}
+
+function pendingProgressiveQuestions(questions: AiAssistantConversationQuestion[] = [], action: ErumiAction) {
+  return filteredProgressiveQuestions(questions, action)
+    .filter(question => !progressiveAnswer(question.id, action)?.value.trim())
+}
+
 function queueClarificationDraftSave() {
   clarificationSaveChain = clarificationSaveChain.catch(() => undefined).then(async () => {
     const draft = progressiveDraft.value
     if (!draft || !assistantSessionId.value) return
+    const sentUpdatedAt = draft.updatedAt
+    const sentAnswersJson = JSON.stringify(draft.answers)
     clarificationDraftSaving.value = true
     const session = await apiJson<AiAssistantSession>(
       `/api/ai/assistant/sessions/${assistantSessionId.value}/clarification-draft`,
@@ -1054,7 +1076,17 @@ function queueClarificationDraftSave() {
       }
     )
     assistantSessionVersion.value = session.version
-    progressiveDraft.value = session.clarificationDraft ?? draft
+    const latestLocal = progressiveDraft.value
+    const serverDraft = session.clarificationDraft ?? draft
+    progressiveDraft.value = latestLocal?.originTurnId === draft.originTurnId &&
+      (latestLocal.updatedAt !== sentUpdatedAt || JSON.stringify(latestLocal.answers) !== sentAnswersJson)
+      ? {
+          ...serverDraft,
+          questions: latestLocal.questions,
+          answers: latestLocal.answers,
+          updatedAt: latestLocal.updatedAt,
+        }
+      : serverDraft
   }).catch(error => {
     showError(error instanceof Error ? error.message : 'Không thể lưu câu trả lời nháp.')
   }).finally(() => {
@@ -1071,9 +1103,13 @@ function setProgressiveAnswer(
 ) {
   const draft = ensureProgressiveDraft(action)
   if (!draft) return
-  const normalized = value.trim()
+  const normalized = persist ? value.trim() : value
   draft.answers = draft.answers.filter(answer => answer.questionId !== question.id)
-  if (normalized) draft.answers.push({ questionId: question.id, value: normalized, label: label || normalized })
+  if (normalized.trim()) draft.answers.push({
+    questionId: question.id,
+    value: normalized,
+    label: label || normalized.trim()
+  })
   draft.updatedAt = new Date().toISOString()
   if (persist) queueClarificationDraftSave()
 }
@@ -1098,6 +1134,16 @@ function updateProgressiveFreeText(
   persist: boolean
 ) {
   setProgressiveAnswer(question, (event.target as HTMLInputElement).value, null, action, persist)
+  if (persist && clarificationInputSaveTimer != null) {
+    window.clearTimeout(clarificationInputSaveTimer)
+    clarificationInputSaveTimer = null
+  } else if (!persist) {
+    if (clarificationInputSaveTimer != null) window.clearTimeout(clarificationInputSaveTimer)
+    clarificationInputSaveTimer = window.setTimeout(() => {
+      clarificationInputSaveTimer = null
+      queueClarificationDraftSave()
+    }, 400)
+  }
 }
 
 async function clearProgressiveDraft() {
@@ -1129,13 +1175,18 @@ async function submitProgressiveDraft(action: ErumiAction) {
     undefined,
     draft.answers
   )
-  if (completed) progressiveDraft.value = null
+  if (completed) await clearProgressiveDraft()
 }
 
 function openGuidanceRoute(routePath: string) {
   const allowed = ['/dashboard', '/projects', '/tasks', '/teams', '/groups', '/analytics', '/organizations', '/settings']
   if (!allowed.includes(routePath)) return
   router.push(routePath)
+}
+
+function openAssistantNavigation(action: ErumiAction) {
+  const routePath = String(action.payload?.route || '').trim()
+  openGuidanceRoute(routePath)
 }
 
 function mapAssistantTurn(turn: AiAssistantTurnResponse, originalMessage?: string): ErumiChatResponse {
@@ -1261,7 +1312,15 @@ function mapStoredAssistantTurn(turn: AiAssistantStoredTurn): ChatEntry[] {
 }
 
 function applyAssistantSession(session: AiAssistantSession) {
+  const restoredTarget = session.projectId && projects.value.some((project: { id: string }) => project.id === session.projectId)
+    ? session.projectId
+    : 'workspace'
+  if (selectedTarget.value !== restoredTarget) {
+    keepConversationForNextTargetChange = true
+    selectedTarget.value = restoredTarget
+  }
   assistantSessionId.value = session.sessionId
+  window.localStorage.setItem(AI_ACTIVE_SESSION_STORAGE_KEY, session.sessionId)
   assistantSessionVersion.value = session.version
   progressiveDraft.value = session.clarificationDraft ?? null
   const runningTurn = session.turns?.find(turn => turn.status === 'running')
@@ -1275,18 +1334,19 @@ function applyAssistantSession(session: AiAssistantSession) {
 }
 
 async function createAssistantSession() {
+  const projectId = selectedTarget.value === 'workspace' ? null : selectedTarget.value
   const session = await apiJson<AiAssistantSession>('/api/ai/assistant/sessions', {
     method: 'POST',
     body: JSON.stringify({
       context: {
         route: window.location.pathname,
-        module: 'workspace',
-        projectId: null,
-        entityType: null,
-        entityId: null,
+        module: projectId ? 'project' : 'workspace',
+        projectId,
+        entityType: projectId ? 'project' : null,
+        entityId: projectId,
         selectionIds: []
       },
-      title: 'Cuộc trò chuyện Trợ lý AI'
+      title: `Cuộc trò chuyện Trợ lý AI · ${selectedTargetLabel.value}`
     })
   })
   applyAssistantSession(session)
@@ -1294,10 +1354,19 @@ async function createAssistantSession() {
 }
 
 async function restoreAssistantSession() {
-  if (!props.isDrawer || assistantSessionLoading.value) return
+  if (assistantSessionLoading.value) return
   assistantSessionLoading.value = true
   try {
-    const session = await apiJson<AiAssistantSession | null>('/api/ai/assistant/sessions/recent')
+    let session: AiAssistantSession | null = null
+    const preferredSessionId = window.localStorage.getItem(AI_ACTIVE_SESSION_STORAGE_KEY)
+    if (preferredSessionId) {
+      try {
+        session = await apiJson<AiAssistantSession>(`/api/ai/assistant/sessions/${preferredSessionId}`)
+      } catch {
+        window.localStorage.removeItem(AI_ACTIVE_SESSION_STORAGE_KEY)
+      }
+    }
+    if (!session) session = await apiJson<AiAssistantSession | null>('/api/ai/assistant/sessions/recent')
     if (session) applyAssistantSession(session)
     else await createAssistantSession()
   } catch (error) {
@@ -1438,7 +1507,7 @@ function askAboutSource(sourceLabel: string) {
 }
 
 async function loadConversationHistory() {
-  if (!props.isDrawer) return
+  conversationHistoryLoading.value = true
   try {
     const sessions = await apiJson<AiAssistantSessionSummary[]>('/api/ai/assistant/sessions?includeArchived=true')
     conversationHistory.value = sessions.map(session => ({
@@ -1452,7 +1521,8 @@ async function loadConversationHistory() {
       projectLabel: session.projectId
         ? projects.value.find((project: { id: string; name?: string }) => project.id === session.projectId)?.name || 'Dự án'
         : 'Tất cả dự án',
-      createdAt: session.updatedAt || session.createdAt,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
       assistantSnippet: session.lastMessage,
       turnCount: session.turnCount,
       archivedAt: session.archivedAt
@@ -1460,21 +1530,29 @@ async function loadConversationHistory() {
   } catch (error) {
     conversationHistory.value = []
     showError(error instanceof Error ? error.message : 'Không thể tải lịch sử trò chuyện.')
+  } finally {
+    conversationHistoryLoading.value = false
   }
 }
 
+async function openSessionHistory() {
+  openCockpitDrawer('history')
+  await loadConversationHistory()
+}
+
 function rememberConversationPrompt(_prompt: string, _attachmentCount: number) {
-  // Durable AssistantSession/AssistantTurn is the only source of truth for drawer mode.
+  // Durable AssistantSession/AssistantTurn is the only source of truth in every surface.
 }
 
 function updateLatestConversationSnippet(_text: string) {
-  if (props.isDrawer) void loadConversationHistory()
+  void loadConversationHistory()
 }
 
 async function restoreHistoryItem(item: ConversationHistoryItem) {
   try {
     const session = await apiJson<AiAssistantSession>(`/api/ai/assistant/sessions/${item.sessionId}`)
     applyAssistantSession(session)
+    await loadConversationHistory()
     closeCockpitDrawer()
     await scrollToBottom()
   } catch (error) {
@@ -1486,10 +1564,11 @@ async function renameHistoryItem(item: ConversationHistoryItem) {
   const title = window.prompt('Tên mới cho cuộc trò chuyện', item.title)?.trim()
   if (!title || title === item.title) return
   try {
-    await apiJson<AiAssistantSession>(`/api/ai/assistant/sessions/${item.sessionId}`, {
+    const updated = await apiJson<AiAssistantSession>(`/api/ai/assistant/sessions/${item.sessionId}`, {
       method: 'PATCH',
       body: JSON.stringify({ expectedVersion: item.version, title })
     })
+    if (assistantSessionId.value === item.sessionId) applyAssistantSession(updated)
     await loadConversationHistory()
     showSuccess('Đã đổi tên cuộc trò chuyện.')
   } catch (error) {
@@ -1615,13 +1694,21 @@ async function scrollToBottom() {
   }
 }
 
-watch(selectedTarget, () => {
+watch(selectedTarget, async () => {
   if (keepConversationForNextTargetChange) {
     keepConversationForNextTargetChange = false
     return
   }
   chatHistory.value = [buildWelcomeMessage()]
   selectedDrawerMessage.value = null
+  assistantSessionId.value = null
+  assistantSessionVersion.value = 0
+  assistantSessionLoadAttempted.value = false
+  try {
+    await createAssistantSession()
+  } catch {
+    // Keep the composer available; the next send will retry durable session creation.
+  }
   scrollToBottom()
 })
 
@@ -2030,74 +2117,54 @@ async function submitChat(
   await scrollToBottom()
 
   try {
-    if (props.isDrawer) await ensureAssistantSession()
+    await ensureAssistantSession()
     chatHistory.value.push({ role: 'assistant', text: '' })
     const lastIdx = chatHistory.value.length - 1
     const attachedFileContexts = filesToSend.length ? await parseAttachedFiles(filesToSend) : []
-    const historyToSend = chatHistory.value
-      .slice(1, -2)
-      .slice(-6)
-      .map(h => ({ role: h.role, content: h.text }))
-
     const projectId = selectedTarget.value === 'workspace' ? null : selectedTarget.value
-    let fastReply: ErumiChatResponse
-    if (props.isDrawer) {
-      const clientTurnId = crypto.randomUUID()
-      activeAssistantClientTurnId.value = clientTurnId
-      let stopPolling = false
-      const polling = pollAssistantTurn(clientTurnId, lastIdx, () => stopPolling)
-      let turn: AiAssistantTurnResponse
-      try {
-        turn = await apiJson<AiAssistantTurnResponse>('/api/ai/assistant/turns', {
-          method: 'POST',
-          headers: {
-            'Idempotency-Key': `assistant:${assistantSessionId.value}:${clientTurnId}`,
-            'X-Request-Id': clientTurnId
-          },
-          body: JSON.stringify({
-            message: prompt || userText,
-            context: {
-              route: window.location.pathname,
-              module: projectId ? 'project' : 'workspace',
-              projectId,
-              entityType: projectId ? 'project' : null,
-              entityId: projectId,
-              organizationId: requestedOrganizationId || null,
-              selectionIds: [],
-            },
-            mode: 'agent',
-            language: 'vi',
-            providerHint: selectedProviderHint.value,
-            files: attachedFileContexts,
-            sessionId: assistantSessionId.value,
-            expectedVersion: assistantSessionVersion.value,
-            clientTurnId,
-            progressiveReply: effectiveProgressiveReplies?.length === 1 ? effectiveProgressiveReplies[0] : null,
-            progressiveReplies: effectiveProgressiveReplies,
-            requestedCapabilityId,
-          })
-        })
-      } finally {
-        stopPolling = true
-        await polling
-      }
-      activeAssistantTurnId.value = null
-      activeAssistantClientTurnId.value = null
-      assistantSessionVersion.value = turn.sessionVersion ?? assistantSessionVersion.value
-      fastReply = mapAssistantTurn(turn)
-    } else {
-      fastReply = await apiJson<ErumiChatResponse>('/api/ai/chat/fast', {
-          method: 'POST',
-          body: JSON.stringify({
-            message: prompt || userText,
+    const clientTurnId = crypto.randomUUID()
+    activeAssistantClientTurnId.value = clientTurnId
+    let stopPolling = false
+    const polling = pollAssistantTurn(clientTurnId, lastIdx, () => stopPolling)
+    let turn: AiAssistantTurnResponse
+    try {
+      turn = await apiJson<AiAssistantTurnResponse>('/api/ai/assistant/turns', {
+        method: 'POST',
+        headers: {
+          'Idempotency-Key': `assistant:${assistantSessionId.value}:${clientTurnId}`,
+          'X-Request-Id': clientTurnId
+        },
+        body: JSON.stringify({
+          message: prompt || userText,
+          context: {
+            route: window.location.pathname,
+            module: projectId ? 'project' : 'workspace',
             projectId,
-            mode: 'agent',
-            providerHint: selectedProviderHint.value,
-            history: historyToSend,
-            files: attachedFileContexts
-          })
+            entityType: projectId ? 'project' : null,
+            entityId: projectId,
+            organizationId: requestedOrganizationId || null,
+            selectionIds: [],
+          },
+          mode: 'agent',
+          language: 'vi',
+          providerHint: selectedProviderHint.value,
+          files: attachedFileContexts,
+          sessionId: assistantSessionId.value,
+          expectedVersion: assistantSessionVersion.value,
+          clientTurnId,
+          progressiveReply: effectiveProgressiveReplies?.length === 1 ? effectiveProgressiveReplies[0] : null,
+          progressiveReplies: effectiveProgressiveReplies,
+          requestedCapabilityId,
         })
+      })
+    } finally {
+      stopPolling = true
+      await polling
     }
+    activeAssistantTurnId.value = null
+    activeAssistantClientTurnId.value = null
+    assistantSessionVersion.value = turn.sessionVersion ?? assistantSessionVersion.value
+    const fastReply: ErumiChatResponse = mapAssistantTurn(turn)
 
     const replyActions = fastReply.actions || []
 
@@ -2146,7 +2213,7 @@ async function submitChat(
     }
     updateLatestConversationSnippet(errorText)
     showError('Model AI đã chọn chưa sẵn sàng.')
-    if (props.isDrawer) await restoreAssistantSession()
+    await restoreAssistantSession()
     return false
   } finally {
     isChatting.value = false
@@ -2179,11 +2246,9 @@ function exportAsMarkdown(projectName: string, text: string) {
 
 onMounted(async () => {
   syncViewportFlag()
-  loadConversationHistory()
   await restoreAssistantSession()
-  if (selectedProject.value) {
-    selectedTarget.value = selectedProject.value.id
-  }
+  await loadConversationHistory()
+  selectedTarget.value = 'workspace'
   applyRoutePrompt()
   refreshAnalyticsContext()
   refreshTimer = window.setInterval(refreshAnalyticsContext, 30000)
@@ -2201,16 +2266,21 @@ watch(selectedAiModel, value => {
 watch(
   () => props.externalPromptToken,
   () => {
-    if (props.externalProjectId && projects.value.some((project: { id: string }) => project.id === props.externalProjectId)) {
-      selectedTarget.value = props.externalProjectId
-    }
     if (props.externalPrompt.trim()) fillComposer(props.externalPrompt.trim())
     else nextTick(() => textareaRef.value?.focus())
   },
 )
 
+watch(
+  () => props.externalHistoryToken,
+  (value, previous) => {
+    if (value !== previous && value > 0) void openSessionHistory()
+  },
+)
+
 onBeforeUnmount(() => {
   if (refreshTimer) window.clearInterval(refreshTimer)
+  if (clarificationInputSaveTimer != null) window.clearTimeout(clarificationInputSaveTimer)
   window.removeEventListener('resize', syncViewportFlag)
   window.removeEventListener('focus', refreshAnalyticsContext)
 })
@@ -2229,6 +2299,9 @@ onBeforeUnmount(() => {
 
     <!-- EMPTY STATE -->
     <div v-if="!isChatActive" class="chat-empty">
+      <button type="button" class="empty-session-history" data-testid="assistant-session-history" @click="openSessionHistory">
+        <Clock3 :size="16" aria-hidden="true" /> Phiên
+      </button>
       <div class="empty-inner">
         <div class="empty-avatar">
           <ChatbotAvatar size="medium" />
@@ -2335,13 +2408,21 @@ onBeforeUnmount(() => {
     <!-- ACTIVE STATE -->
     <template v-else>
       <header class="chat-header">
-        <h1 class="chat-title">Phân tích dự án</h1>
-        <OverflowMenu
-          :items="headerMenuItems"
-          aria-label="Tùy chọn cuộc trò chuyện"
-          trigger-title="Tùy chọn"
-          @select="handleHeaderMenu"
-        />
+        <div class="chat-title-wrap">
+          <h1 class="chat-title">Phân tích dự án</h1>
+          <span v-if="assistantSessionId" class="chat-session-state">Phiên được lưu tự động</span>
+        </div>
+        <div class="chat-header-actions">
+          <button type="button" class="session-history-btn" data-testid="assistant-session-history" @click="openSessionHistory">
+            <Clock3 :size="15" aria-hidden="true" /> Phiên
+          </button>
+          <OverflowMenu
+            :items="headerMenuItems"
+            aria-label="Tùy chọn cuộc trò chuyện"
+            trigger-title="Tùy chọn"
+            @select="handleHeaderMenu"
+          />
+        </div>
       </header>
 
       <div class="chat-thread no-scrollbar" ref="chatContainerRef">
@@ -2365,19 +2446,23 @@ onBeforeUnmount(() => {
             <div class="msg-content">
               <template v-if="msg.role === 'assistant'">
                 <div class="assistant-body">
-                  <ol v-if="msg.processEvents?.length" class="assistant-process" aria-label="Các bước Trợ lý AI đã thực hiện">
-                    <li
-                      v-for="event in msg.processEvents"
-                      :key="`${event.sequence}-${event.stage}`"
-                      :class="`status-${event.status}`"
-                    >
-                      <span class="assistant-process-dot" aria-hidden="true"></span>
-                      <span>{{ event.publicLabel }}</span>
-                      <small v-if="typeof event.durationMs === 'number' && event.durationMs > 0">
-                        {{ Math.max(1, Math.round(event.durationMs / 1000)) }}s
-                      </small>
-                    </li>
-                  </ol>
+                  <div v-if="msg.text" class="markdown-body assistant-primary-answer" v-html="renderMarkdown(msg.text)"></div>
+                  <details v-if="msg.processEvents?.length" class="assistant-process-disclosure">
+                    <summary>Các bước Trợ lý AI đã thực hiện ({{ msg.processEvents.length }})</summary>
+                    <ol class="assistant-process" aria-label="Các bước Trợ lý AI đã thực hiện">
+                      <li
+                        v-for="event in msg.processEvents"
+                        :key="`${event.sequence}-${event.stage}`"
+                        :class="`status-${event.status}`"
+                      >
+                        <span class="assistant-process-dot" aria-hidden="true"></span>
+                        <span>{{ event.publicLabel }}</span>
+                        <small v-if="typeof event.durationMs === 'number' && event.durationMs > 0">
+                          {{ Math.max(1, Math.round(event.durationMs / 1000)) }}s
+                        </small>
+                      </li>
+                    </ol>
+                  </details>
                   <details
                     v-if="msg.capabilities?.length || msg.sourceDisclosures?.length"
                     class="assistant-context-disclosure"
@@ -2401,52 +2486,56 @@ onBeforeUnmount(() => {
                       </li>
                     </ul>
                   </details>
-                  <div v-if="msg.text" class="markdown-body assistant-primary-answer" v-html="renderMarkdown(msg.text)"></div>
-                  <article
+                  <details
                     v-if="msg.goalAnalysis && msg.workPlan"
-                    class="assistant-work-plan-card"
-                    data-testid="assistant-work-plan"
+                    class="assistant-work-plan-details"
                   >
-                    <header class="assistant-work-plan-header">
-                      <div>
-                        <span>AI hiểu yêu cầu</span>
-                        <h3>{{ msg.goalAnalysis.objective }}</h3>
-                        <p>{{ msg.goalAnalysis.userJob }}</p>
-                      </div>
-                      <strong>{{ Math.round(msg.goalAnalysis.confidence * 100) }}%</strong>
-                    </header>
-                    <div class="assistant-work-plan-meta">
-                      <span>Phạm vi: {{ msg.workPlan.scope.label }}</span>
-                      <span :class="`disposition-${msg.goalAnalysis.disposition}`">{{ goalDispositionLabel(msg.goalAnalysis.disposition) }}</span>
-                      <span v-if="msg.goalAnalysis.usedFallback">Fallback giới hạn</span>
-                      <span v-else-if="msg.model">{{ msg.model.label }}</span>
-                      <span v-else>{{ msg.goalAnalysis.actualProvider }} / {{ msg.goalAnalysis.actualModel }}</span>
-                    </div>
-                    <section v-if="msg.goalAnalysis.selectedSkills.length" class="assistant-selected-skill">
-                      <span>Skill được chọn</span>
-                      <strong>{{ msg.goalAnalysis.selectedSkills[0].title }}</strong>
-                      <code>{{ msg.goalAnalysis.selectedSkills[0].skillId }}</code>
-                      <p>{{ msg.goalAnalysis.selectedSkills[0].fitReason }}</p>
-                    </section>
-                    <details v-else-if="msg.goalAnalysis.missingSkills.length" class="assistant-missing-skill">
-                      <summary>Chưa thể tự thực hiện trực tiếp</summary>
-                      <p>{{ msg.goalAnalysis.missingSkills[0].reason }}</p>
-                    </details>
-                    <ol class="assistant-work-plan-steps" aria-label="Kế hoạch thực hiện của Trợ lý AI">
-                      <li v-for="step in msg.workPlan.steps" :key="step.stepId" :class="`step-${step.state}`">
-                        <span>{{ step.stepId }}</span>
+                    <summary>Chi tiết lập kế hoạch AI ({{ Math.round(msg.goalAnalysis.confidence * 100) }}%)</summary>
+                    <article
+                      class="assistant-work-plan-card"
+                      data-testid="assistant-work-plan"
+                    >
+                      <header class="assistant-work-plan-header">
                         <div>
-                          <strong>{{ step.publicLabel }}</strong>
-                          <small v-if="step.verificationIds.length">Kiểm tra: {{ step.verificationIds.join(', ') }}</small>
+                          <span>AI hiểu yêu cầu</span>
+                          <h3>{{ msg.goalAnalysis.objective }}</h3>
+                          <p>{{ msg.goalAnalysis.userJob }}</p>
                         </div>
-                        <em>{{ step.state }}</em>
-                      </li>
-                    </ol>
-                    <details v-if="msg.goalAnalysis.warnings.length" class="assistant-work-plan-warnings">
-                      <summary>Giới hạn và cảnh báo ({{ msg.goalAnalysis.warnings.length }})</summary>
-                      <ul><li v-for="warning in msg.goalAnalysis.warnings" :key="warning">{{ warning }}</li></ul>
-                    </details>
-                  </article>
+                        <strong>{{ Math.round(msg.goalAnalysis.confidence * 100) }}%</strong>
+                      </header>
+                      <div class="assistant-work-plan-meta">
+                        <span>Phạm vi: {{ msg.workPlan.scope.label }}</span>
+                        <span :class="`disposition-${msg.goalAnalysis.disposition}`">{{ goalDispositionLabel(msg.goalAnalysis.disposition) }}</span>
+                        <span v-if="msg.goalAnalysis.usedFallback">Fallback giới hạn</span>
+                        <span v-else-if="msg.model">{{ msg.model.label }}</span>
+                        <span v-else>{{ msg.goalAnalysis.actualProvider }} / {{ msg.goalAnalysis.actualModel }}</span>
+                      </div>
+                      <section v-if="msg.goalAnalysis.selectedSkills.length" class="assistant-selected-skill">
+                        <span>Skill được chọn</span>
+                        <strong>{{ msg.goalAnalysis.selectedSkills[0].title }}</strong>
+                        <code>{{ msg.goalAnalysis.selectedSkills[0].skillId }}</code>
+                        <p>{{ msg.goalAnalysis.selectedSkills[0].fitReason }}</p>
+                      </section>
+                      <details v-else-if="msg.goalAnalysis.missingSkills.length" class="assistant-missing-skill">
+                        <summary>Chưa thể tự thực hiện trực tiếp</summary>
+                        <p>{{ msg.goalAnalysis.missingSkills[0].reason }}</p>
+                      </details>
+                      <ol class="assistant-work-plan-steps" aria-label="Kế hoạch thực hiện của Trợ lý AI">
+                        <li v-for="step in msg.workPlan.steps" :key="step.stepId" :class="`step-${step.state}`">
+                          <span>{{ step.stepId }}</span>
+                          <div>
+                            <strong>{{ step.publicLabel }}</strong>
+                            <small v-if="step.verificationIds.length">Kiểm tra: {{ step.verificationIds.join(', ') }}</small>
+                          </div>
+                          <em>{{ step.state }}</em>
+                        </li>
+                      </ol>
+                      <details v-if="msg.goalAnalysis.warnings.length" class="assistant-work-plan-warnings">
+                        <summary>Giới hạn và cảnh báo ({{ msg.goalAnalysis.warnings.length }})</summary>
+                        <ul><li v-for="warning in msg.goalAnalysis.warnings" :key="warning">{{ warning }}</li></ul>
+                      </details>
+                    </article>
+                  </details>
 
                   <article
                     v-if="msg.safeTestRunPreview"
@@ -2541,7 +2630,7 @@ onBeforeUnmount(() => {
                         <ul v-else><li v-for="item in msg.projectLaunchBrief.unknowns" :key="item">{{ item }}</li></ul>
                       </section>
                     </div>
-                    <details class="project-launch-decisions" open>
+                    <details class="project-launch-decisions">
                       <summary>Quyết định Rulebook ({{ msg.projectLaunchBrief.ruleDecisions.length }})</summary>
                       <ul>
                         <li
@@ -2905,7 +2994,7 @@ onBeforeUnmount(() => {
                   </div>
 
                   <div v-if="msg.actions?.length" class="erumi-action-list">
-                    <template v-for="action in msg.actions" :key="action.type">
+                    <template v-for="(action, actionIndex) in msg.actions" :key="`${action.type}-${action.label}-${actionIndex}`">
                       <div v-if="action.type === 'assistant_clarification'" class="erumi-draft-card clarification-card">
                         <strong>{{ action.payload?.prompt || action.label }}</strong>
                         <p class="erumi-draft-text">Chọn một dự án để Trợ lý AI tiếp tục. Việc chọn này chưa thay đổi dữ liệu.</p>
@@ -2923,12 +3012,16 @@ onBeforeUnmount(() => {
                         </div>
                       </div>
                       <div v-else-if="action.type === 'assistant_progressive_questions'" class="assistant-progressive-card">
-                        <section v-if="action.payload?.questions?.length" class="assistant-progressive-questions">
+                        <section class="assistant-progressive-questions">
                           <header>
-                            <strong>Mình cần biết thêm</strong>
+                            <strong>{{ pendingProgressiveQuestions(action.payload?.questions, action).length ? 'Mình cần biết thêm' : 'Đã đủ câu trả lời cần thiết' }}</strong>
                             <span>{{ clarificationDraftSaving ? 'Đang lưu nháp…' : 'Câu trả lời được lưu trên máy chủ' }}</span>
                           </header>
-                          <article v-for="question in action.payload.questions" :key="question.id">
+                          <article
+                            v-for="question in filteredProgressiveQuestions(action.payload?.questions, action)"
+                            :key="question.id"
+                            :class="{ answered: Boolean(progressiveAnswer(question.id, action)?.value.trim()) }"
+                          >
                             <strong>{{ question.text }}</strong>
                             <p>{{ question.reason }}</p>
                             <div v-if="question.quickReplies?.length" class="assistant-quick-replies">
@@ -2969,11 +3062,8 @@ onBeforeUnmount(() => {
                             >Gửi tất cả câu trả lời</button>
                           </footer>
                         </section>
-                        <section v-if="action.payload?.guidance" class="assistant-manual-guidance">
-                          <header>
-                            <strong>Cách làm tạm thời</strong>
-                            <span>Luồng Qaly đã xác minh</span>
-                          </header>
+                        <details v-if="action.payload?.guidance && !hasAllBlockingAnswers(action)" class="assistant-manual-guidance">
+                          <summary>Cách làm tạm thời</summary>
                           <p>{{ action.payload.guidance.summary }}</p>
                           <ol>
                             <li v-for="step in action.payload.guidance.steps" :key="`${step.sequence}-${step.route}`">
@@ -2983,7 +3073,7 @@ onBeforeUnmount(() => {
                               </button>
                             </li>
                           </ol>
-                        </section>
+                        </details>
                         <details v-if="action.payload?.capabilityGap" class="assistant-capability-gap">
                           <summary>Chưa thể tự thực hiện trực tiếp</summary>
                           <p>{{ action.payload.capabilityGap.userMessage }}</p>
@@ -2995,6 +3085,19 @@ onBeforeUnmount(() => {
                         class="erumi-action-button"
                         @click="resumeAssistantTurn(action)"
                       >{{ action.label }}</button>
+                      <button
+                        v-else-if="action.type === 'assistant_navigation'"
+                        type="button"
+                        class="assistant-navigation-action"
+                        :aria-label="`${action.label}: ${action.payload?.description || 'Mở trang'}`"
+                        @click="openAssistantNavigation(action)"
+                      >
+                        <span>
+                          <strong>{{ action.label }}</strong>
+                          <small v-if="action.payload?.description">{{ action.payload.description }}</small>
+                        </span>
+                        <ArrowRight :size="18" aria-hidden="true" />
+                      </button>
                       <div v-else-if="action.type === 'compose_task_plan'" class="erumi-draft-card">
                         <p class="erumi-draft-text">Yêu cầu đã được định tuyến sang Task Action Composer. AI chỉ soạn option; bạn vẫn kiểm tra và xác nhận trước khi tạo task.</p>
                         <div class="erumi-draft-buttons">
@@ -3189,7 +3292,6 @@ onBeforeUnmount(() => {
     </template>
 
     <AnalyticsSideDrawer
-      v-if="!isDrawer"
       :open="cockpitDrawerOpen"
       :title="cockpitDrawerTitle"
       :subtitle="selectedAiModelCompactLabel"
@@ -3208,6 +3310,9 @@ onBeforeUnmount(() => {
         <ConversationHistoryDrawer
           v-else-if="activeDrawerTab === 'history'"
           :items="conversationHistory"
+          :current-session-id="assistantSessionId"
+          :loading="conversationHistoryLoading"
+          @create="startNewConversation"
           @restore="restoreHistoryItem"
           @rename="renameHistoryItem"
           @archive="archiveHistoryItem"
@@ -3552,8 +3657,25 @@ onBeforeUnmount(() => {
   animation: assistant-process-pulse 1.2s ease-in-out infinite;
 }
 
-@keyframes assistant-process-pulse {
-  50% { transform: scale(1.5); opacity: 0.35; }
+.assistant-process-disclosure {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.assistant-process-disclosure summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 600;
+  user-select: none;
+}
+
+.assistant-process-disclosure summary:hover {
+  color: var(--text);
 }
 
 .assistant-context-disclosure {
@@ -3883,6 +4005,60 @@ onBeforeUnmount(() => {
 .erumi-action-button:hover,
 .erumi-action-button:focus-visible {
   border-color: var(--primary);
+  outline: none;
+}
+
+.chat-title-wrap { min-width: 0; display: grid; gap: 2px; }
+.chat-session-state { color: var(--muted); font-size: 10px; }
+.chat-header-actions { display: flex; align-items: center; gap: 7px; }
+.session-history-btn,
+.empty-session-history { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--text); padding: 7px 10px; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
+.session-history-btn:hover,
+.empty-session-history:hover { border-color: color-mix(in srgb, var(--primary) 42%, var(--line)); color: var(--primary); }
+.empty-session-history { position: absolute; z-index: 6; top: 14px; right: 18px; }
+
+.assistant-navigation-action {
+  flex: 1 1 230px;
+  min-width: min(230px, 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--panel);
+  color: var(--text-strong);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.16s ease, background-color 0.16s ease, transform 0.16s ease;
+}
+
+.assistant-navigation-action > span {
+  display: grid;
+  gap: 4px;
+}
+
+.assistant-navigation-action strong {
+  font-size: 13px;
+}
+
+.assistant-navigation-action small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.assistant-navigation-action > svg {
+  flex: 0 0 auto;
+  color: var(--primary-strong);
+}
+
+.assistant-navigation-action:hover,
+.assistant-navigation-action:focus-visible {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 6%, var(--panel));
+  transform: translateY(-1px);
   outline: none;
 }
 

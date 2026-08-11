@@ -40,6 +40,27 @@ public sealed class AiActionComposerContractTests
     }
 
     [Fact]
+    public void TryBuildDeterministicFallback_ProducesSafeReviewableTasksWithoutInventedAssignments()
+    {
+        var valid = AiActionComposerOutputContract.TryBuildDeterministicFallback(
+            SnapshotJson(),
+            out var resultJson,
+            out var error);
+
+        valid.Should().BeTrue(error);
+        var result = JsonSerializer.Deserialize<AiActionPlanDto>(resultJson, JsonOptions)!;
+        result.Options.Should().ContainSingle();
+        result.Options[0].Commands.Should().HaveCount(3);
+        result.Options[0].Commands.Should().OnlyContain(command =>
+            command.AssigneeId == null &&
+            command.AssigneeMode == "unassigned" &&
+            command.RequiredSkills.Count == 0 &&
+            command.SourceRefs.SequenceEqual(new[] { ProjectRef }));
+        result.Warnings.Should().ContainSingle(message => message.Contains("server", StringComparison.OrdinalIgnoreCase));
+        AiActionComposerOutputContract.TryValidateFinal(resultJson, out error).Should().BeTrue(error);
+    }
+
+    [Fact]
     public void TryBuildResult_InventedTool_FailsClosed()
     {
         var output = ProviderPlan(toolName: "project.delete.v1");

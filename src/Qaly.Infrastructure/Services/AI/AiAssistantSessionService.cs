@@ -383,16 +383,27 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
             return Result.NotFound<AiAssistantTurnResponseDto>();
         }
 
+        // Session history is server-owned memory. Enrich the request before discovery and
+        // planning so short follow-ups such as "thử luôn" or "tiếp tục" retain the intent
+        // established by the previous turn. The client is never trusted as the source of
+        // durable conversation state.
+        var serverHistory = BuildServerHistory(session);
+        var requestWithMemory = request with
+        {
+            Message = message,
+            History = serverHistory
+        };
+
         AiAssistantGoalPlanningResultDto? planning = null;
         Result<AiAssistantExecutionContextDto> contextResult;
         if (_options.AssistantGoalPlannerEnabled)
         {
-            var discoveryResult = await _contextRegistry.DiscoverAsync(request, ct);
+            var discoveryResult = await _contextRegistry.DiscoverAsync(requestWithMemory, ct);
             if (!discoveryResult.IsSuccess || discoveryResult.Data == null)
                 return Result.Failure<AiAssistantTurnResponseDto>(
                     discoveryResult.Error ?? "Assistant skills could not be authorized.",
                     discoveryResult.StatusCode, discoveryResult.ErrorCode);
-            var planningResult = await _goalPlanner.PlanAsync(request, discoveryResult.Data, ct);
+            var planningResult = await _goalPlanner.PlanAsync(requestWithMemory, discoveryResult.Data, ct);
             if (!planningResult.IsSuccess || planningResult.Data == null)
                 return Result.Failure<AiAssistantTurnResponseDto>(
                     planningResult.Error ?? "Assistant goal could not be analysed.",
@@ -412,11 +423,11 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
                     }
                     : discoveryResult.Data)
                 : await _contextRegistry.ResolveAsync(
-                    request with { RequestedCapabilityId = planning.SelectedCapabilityId }, ct);
+                    requestWithMemory with { RequestedCapabilityId = planning.SelectedCapabilityId }, ct);
         }
         else
         {
-            contextResult = await _contextRegistry.ResolveAsync(request, ct);
+            contextResult = await _contextRegistry.ResolveAsync(requestWithMemory, ct);
         }
         if (!contextResult.IsSuccess || contextResult.Data == null)
         {
@@ -502,6 +513,8 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
         });
 
         session.LastSequence = turn.Sequence;
+        if (turn.Sequence == 1 && IsDefaultSessionTitle(session.Title))
+            session.Title = BuildSessionTitle(message);
         session.Version++;
         session.UpdatedAt = now;
         turn.Session = session;
@@ -556,27 +569,11 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
                 "assistant_turn_conflict");
         }
 
-        var serverHistory = session.Turns
-            .Where(item => item.Id != turn.Id && item.Status == "completed" && !string.IsNullOrWhiteSpace(item.AssistantResponse))
-            .OrderByDescending(item => item.Sequence)
-            .Take(6)
-            .OrderBy(item => item.Sequence)
-            .SelectMany(item => new[]
-            {
-                new AiChatMessageDto("user", item.UserMessage),
-                new AiChatMessageDto("assistant", item.AssistantResponse!)
-            })
-            .ToList();
-
         var routingStartedAt = now;
         Result<AiAssistantTurnResponseDto> coreResult;
         try
         {
-            var serverRequest = request with
-            {
-                Message = message,
-                History = serverHistory
-            };
+            var serverRequest = requestWithMemory;
             var useReadOnlyLoop = _options.AssistantReadOnlyLoopEnabled &&
                 planning?.SelectedCapabilityId is { Length: > 0 } selectedCapabilityId &&
                 AiAssistantCapabilityCatalog.TryGet(selectedCapabilityId, out var selectedDescriptor) &&
@@ -1495,6 +1492,31 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
                 "Durable assistant sessions are disabled.",
                 503,
                 "assistant_session_disabled");
+
+    private static List<AiChatMessageDto> BuildServerHistory(AssistantSession session)
+        => session.Turns
+            .Where(item => item.Status == "completed" && !string.IsNullOrWhiteSpace(item.AssistantResponse))
+            .OrderByDescending(item => item.Sequence)
+            .Take(8)
+            .OrderBy(item => item.Sequence)
+            .SelectMany(item => new[]
+            {
+                new AiChatMessageDto("user", item.UserMessage),
+                new AiChatMessageDto("assistant", item.AssistantResponse!)
+            })
+            .ToList();
+
+    private static bool IsDefaultSessionTitle(string title)
+        => string.Equals(title, "Cuộc trò chuyện mới", StringComparison.OrdinalIgnoreCase) ||
+           title.StartsWith("Cuộc trò chuyện Trợ lý AI", StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildSessionTitle(string message)
+    {
+        var compact = string.Join(' ', message.Split(
+            ['\r', '\n', '\t', ' '], StringSplitOptions.RemoveEmptyEntries));
+        if (compact.Length > 72) compact = $"{compact[..69]}…";
+        return NormalizeTitle(compact);
+    }
 
     private static string NormalizeTitle(string? title)
     {

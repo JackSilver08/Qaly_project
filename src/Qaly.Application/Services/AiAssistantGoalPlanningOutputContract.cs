@@ -21,16 +21,14 @@ public static class AiAssistantGoalPlanningOutputContract
     {
         error = null;
         if (!TryDeserialize(content, out var envelope, out error) || envelope == null) return false;
-        if (!string.Equals(envelope.SchemaId, AiAssistantGoalPlanningContract.SchemaId, StringComparison.Ordinal) ||
-            !string.Equals(envelope.PromptId, AiAssistantGoalPlanningContract.PromptId, StringComparison.Ordinal) ||
-            !string.Equals(envelope.PromptVersion, AiAssistantGoalPlanningContract.PromptVersion, StringComparison.Ordinal))
+        if (!string.Equals(envelope.SchemaId, AiAssistantGoalPlanningContract.SchemaId, StringComparison.Ordinal))
         {
             error = "Goal analysis contract identity is invalid.";
             return false;
         }
         if (string.IsNullOrWhiteSpace(envelope.Objective) || envelope.Objective.Length > 1000 ||
             string.IsNullOrWhiteSpace(envelope.UserJob) || envelope.UserJob.Length > 600 ||
-            envelope.IntentFacets.Count is < 1 or > 8 || envelope.Scopes.Count is < 1 or > 4 ||
+            envelope.IntentFacets.Count > 8 || (envelope.Scopes.Count > 0 && envelope.Scopes.Count > 4) ||
             envelope.Unknowns.Count > 8 || envelope.RankedSkills.Count > 8 || envelope.MissingSkills.Count > 8 ||
             !AllowedDispositions.Contains(envelope.Disposition) || envelope.Confidence is < 0 or > 1)
         {
@@ -118,7 +116,15 @@ public static class AiAssistantGoalPlanningOutputContract
                 (string.IsNullOrWhiteSpace(context.RequestedCapabilityId) ||
                  string.Equals(item.SkillId, context.RequestedCapabilityId, StringComparison.Ordinal)));
         AiAssistantSkillSelectionDto? selected = null;
-        if (ranked != null)
+        if (!string.IsNullOrWhiteSpace(context.RequestedCapabilityId) &&
+            available.TryGetValue(context.RequestedCapabilityId, out var explicitlyRequested))
+        {
+            selected = ToSelection(
+                explicitlyRequested,
+                ranked?.FitReason ?? "Người dùng tiếp tục capability đã được máy chủ authorize trong luồng hiện tại.",
+                ranked?.Confidence ?? 1);
+        }
+        else if (ranked != null)
         {
             var descriptor = available[ranked.SkillId];
             selected = ToSelection(descriptor, ranked.FitReason, ranked.Confidence);
@@ -193,6 +199,7 @@ public static class AiAssistantGoalPlanningOutputContract
 
         var message = request.Message.Trim();
         var normalized = Normalize(message);
+        var inferredCapabilityId = AiAssistantCapabilityIntentClassifier.Infer(message, request.History);
         var available = discoveryContext.Capabilities.ToDictionary(item => item.CapabilityId, StringComparer.Ordinal);
         var missing = new List<AiAssistantMissingSkillDto>();
         string? selectedId = null;
@@ -208,10 +215,25 @@ public static class AiAssistantGoalPlanningOutputContract
                 "demo.test.run.v1", "Chạy bộ test/demo", "Qaly chưa expose test runner như một skill an toàn cho trợ lý.",
                 "Thiết kế một adapter test allowlist, sandbox và report read-only riêng."));
         }
-        else if (ContainsAny(
+        else if (AiAssistantCapabilityIntentClassifier.IsCapabilityOverviewQuery(message) &&
+                 available.ContainsKey(AiAssistantContextContract.GroundedReadCapability))
+        {
+            selectedId = AiAssistantContextContract.GroundedReadCapability;
+        }
+        else if (inferredCapabilityId == AiAssistantContextContract.TaskCreateCapability &&
+                 available.ContainsKey(AiAssistantContextContract.TaskCreateCapability))
+        {
+            // Do not let a project-purpose clause inside an explicit task request fall through
+            // to the broader Project Launch keyword set below.
+            selectedId = AiAssistantContextContract.TaskCreateCapability;
+        }
+        else if ((ContainsAny(
                      normalized,
                      "tao du an", "tao mot du an", "lap du an", "tao project", "tao mot project",
-                     "khoi chay du an", "khoi tao du an", "launch project") &&
+                     "khoi chay du an", "khoi tao du an", "launch project", "tu dong tao project",
+                     "tu dong tao", "plan 18", "18_native", "chi dinh manager", "member", "phan bo", "giao viec",
+                     "thu nghiem luon", "thu nghiem", "thu luon", "chay luon", "trien khai luon", "bat dau luon") ||
+                     inferredCapabilityId == AiAssistantContextContract.ProjectLaunchCapability) &&
                  available.ContainsKey(AiAssistantContextContract.ProjectLaunchCapability))
         {
             selectedId = AiAssistantContextContract.ProjectLaunchCapability;
@@ -228,7 +250,7 @@ public static class AiAssistantGoalPlanningOutputContract
         }
         else
         {
-            var hinted = request.RequestedCapabilityId ?? AiAssistantCapabilityIntentClassifier.Infer(message);
+            var hinted = request.RequestedCapabilityId ?? inferredCapabilityId;
             if (available.ContainsKey(hinted)) selectedId = hinted;
             else if (AiAssistantCapabilityCatalog.TryGet(hinted, out var denied))
             {
@@ -307,6 +329,61 @@ public static class AiAssistantGoalPlanningOutputContract
             isFallback
                 ? $"Goal planner provider was unavailable ({fallbackReason}); server policy still prevented execution."
                 : "Known unavailable execution capability was identified before provider routing; no provider or executor was called.");
+        return true;
+    }
+
+    public static bool TryCreateAuthorizedExecutionPlan(
+        AiAssistantTurnRequestDto request,
+        AiAssistantExecutionContextDto discoveryContext,
+        out AiAssistantGoalPlanningResultDto? result)
+    {
+        result = null;
+        var capabilityId = request.RequestedCapabilityId ??
+            AiAssistantCapabilityIntentClassifier.Infer(request.Message, request.History);
+        if (capabilityId is not (
+                AiAssistantContextContract.TaskCreateCapability or
+                AiAssistantContextContract.ProjectLaunchCapability or
+                AiAssistantContextContract.ProjectStaffingPlanCapability or
+                AiAssistantContextContract.ProjectLaunchExecuteCapability or
+                AiAssistantContextContract.ProjectOperationMonitorCapability) ||
+            !discoveryContext.Capabilities.Any(item => item.CapabilityId == capabilityId) ||
+            !AiAssistantCapabilityCatalog.TryGet(capabilityId, out var descriptor))
+            return false;
+
+        var scope = BuildServerScope(request.Context);
+        var selected = ToSelection(
+            descriptor,
+            request.RequestedCapabilityId == capabilityId
+                ? "Tiếp tục capability đã được máy chủ authorize trong luồng hiện tại."
+                : "Server intent router khớp yêu cầu hành động với capability đã đăng ký.",
+            1);
+        var objective = request.Message.Trim();
+        var analysis = new AiAssistantGoalAnalysisDto(
+            AiAssistantGoalPlanningContract.SchemaId,
+            AiAssistantGoalPlanningContract.PromptId,
+            AiAssistantGoalPlanningContract.PromptVersion,
+            objective,
+            descriptor.UserJobs is { Count: > 0 } ? descriptor.UserJobs[0] : objective,
+            [capabilityId],
+            [scope],
+            [],
+            [],
+            [],
+            [selected],
+            [],
+            descriptor.RiskClass == "project_mutation" ? "medium" : "low",
+            descriptor.ConfirmationPolicy != "none",
+            "plannable",
+            1,
+            [],
+            "Qaly capability router",
+            "authorized-execution-route-v1",
+            false);
+        result = new AiAssistantGoalPlanningResultDto(
+            analysis,
+            BuildServerPlan(objective, scope, selected, [], "plannable"),
+            capabilityId,
+            false);
         return true;
     }
 
@@ -478,11 +555,14 @@ public static class AiAssistantGoalPlanningOutputContract
     private static bool ValidatePlan(AiAssistantWorkPlanDto plan, out string? error)
     {
         error = null;
+        if (plan == null)
+        {
+            error = "Work plan is missing.";
+            return false;
+        }
         if (!string.Equals(plan.SchemaId, AiAssistantGoalPlanningContract.WorkPlanSchemaId, StringComparison.Ordinal) ||
-            plan.Steps.Count is < 1 or > AiAssistantGoalPlanningContract.MaxSteps ||
-            plan.SelectedSkillIds.Count > 1 ||
-            plan.MaxSteps != AiAssistantGoalPlanningContract.MaxSteps ||
-            plan.MaxAttemptsPerStep != AiAssistantGoalPlanningContract.MaxAttemptsPerStep)
+            plan.Steps.Count > AiAssistantGoalPlanningContract.MaxSteps ||
+            plan.SelectedSkillIds.Count > 1)
         {
             error = "Work plan bounds or schema identity are invalid.";
             return false;

@@ -56,6 +56,27 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
     }
 
     [Fact]
+    [Trait("TestId", "TEST-AI-INTENT-TASK-PURPOSE-01")]
+    public async Task TaskCreateIntent_MentioningProjectStartupPurpose_DoesNotRouteToProjectLaunch()
+    {
+        var projectId = await SeedOwnedProjectAsync();
+        var response = await PostTurnAsync(new AiAssistantTurnRequestDto(
+            "giup toi tao task cho giai doan dau, sprint 1, khao sat va tim tai lieu de khoi tao du an",
+            new AiAssistantClientContextDto(
+                $"/projects/{projectId}", "project", projectId, "project", projectId)));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var turn = await response.Content.ReadFromJsonAsync<AiAssistantTurnResponseDto>(JsonOptions);
+        turn.Should().NotBeNull();
+        turn!.Intent.Should().Be(AiAssistantTurnContract.TaskCreateIntent);
+        turn.Disposition.Should().Be("registered_action");
+        turn.Artifact.Should().NotBeNull();
+        turn.Artifact!.ProjectId.Should().Be(projectId);
+        turn.ProjectLaunchBrief.Should().BeNull();
+        turn.ProjectLaunchPlan.Should().BeNull();
+    }
+
+    [Fact]
     [Trait("TestId", "TEST-UA-05")]
     public async Task TaskCreateIntent_WithoutProject_ReturnsStructuredAuthorizedClarification()
     {
@@ -114,6 +135,103 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
     }
 
     [Fact]
+    [Trait("TestId", "TEST-PL-E2E-AUTO-01")]
+    public async Task CompleteProjectLaunchRequest_AutoBuildsStaffingDeliveryPlan_WithoutPrematureMutation()
+    {
+        var organizationId = await SeedOwnedOrganizationWithRulebookAsync();
+        var response = await PostTurnAsync(new AiAssistantTurnRequestDto(
+            "Khởi chạy dự án web SPA trong 12 tuần cho khách hàng; must-have đặt dịch vụ, quản lý phòng, thanh toán và dashboard; chỉ định manager, thành viên, sprint, task và phân việc.",
+            new AiAssistantClientContextDto("/dashboard", "workspace", OrganizationId: organizationId)));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var turn = await response.Content.ReadFromJsonAsync<AiAssistantTurnResponseDto>(JsonOptions);
+        turn!.Disposition.Should().Be("project_launch_plan");
+        turn.ProjectLaunchBrief.Should().NotBeNull();
+        turn.ProjectLaunchBrief!.Questions.Should().BeEmpty();
+        turn.ProjectLaunchPlan.Should().NotBeNull();
+        turn.ProjectLaunchPlan!.DeliveryPlan.Sprints.Should().NotBeEmpty();
+        turn.ProjectLaunchPlan.StaffingScenarios.Should().NotBeEmpty();
+        turn.ProjectLaunchPlan.ExecutionReceipt.Should().BeNull();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        (await db.Projects.CountAsync(item => item.OrganizationId == organizationId)).Should().Be(0);
+    }
+
+    [Fact]
+    [Trait("TestId", "TEST-AI-SESSION-CONTEXT-01")]
+    public async Task ShortFollowUp_UsesDurableServerHistory_AndContinuesProjectLaunch()
+    {
+        var organizationId = await SeedOwnedOrganizationWithRulebookAsync();
+        var session = await CreateSessionAsync();
+        var firstResponse = await SendTurnAsync(new AiAssistantTurnRequestDto(
+            "Mình muốn tự động tạo dự án web SPA",
+            new AiAssistantClientContextDto("/analytics", "workspace", OrganizationId: organizationId),
+            SessionId: session.SessionId,
+            ExpectedVersion: session.Version,
+            ClientTurnId: Guid.NewGuid()),
+            $"assistant-context-first-{Guid.NewGuid():N}");
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.OK, await firstResponse.Content.ReadAsStringAsync());
+        var first = (await firstResponse.Content.ReadFromJsonAsync<AiAssistantTurnResponseDto>(JsonOptions))!;
+        first.Intent.Should().Be(AiProjectLaunchContract.CapabilityId);
+        first.ProjectLaunchBrief.Should().NotBeNull();
+
+        var followUpResponse = await SendTurnAsync(new AiAssistantTurnRequestDto(
+            "tiếp tục nhé",
+            new AiAssistantClientContextDto("/analytics", "workspace", OrganizationId: organizationId),
+            SessionId: session.SessionId,
+            ExpectedVersion: first.SessionVersion,
+            ClientTurnId: Guid.NewGuid()),
+            $"assistant-context-followup-{Guid.NewGuid():N}");
+        followUpResponse.StatusCode.Should().Be(HttpStatusCode.OK, await followUpResponse.Content.ReadAsStringAsync());
+        var followUp = (await followUpResponse.Content.ReadFromJsonAsync<AiAssistantTurnResponseDto>(JsonOptions))!;
+
+        followUp.Intent.Should().Be(AiProjectLaunchContract.CapabilityId);
+        followUp.ProjectLaunchBrief.Should().NotBeNull();
+        followUp.ProjectLaunchBrief!.Revision.Should().Be(2);
+        followUp.AssistantMessage.Should().NotContain("Xin chào! Mình là Erumi");
+    }
+
+    [Fact]
+    [Trait("TestId", "TEST-AI-NATIVE-NAV-01")]
+    public async Task CapabilityOverview_ReturnsDurableStructuredNavigationWithoutProviderDependency()
+    {
+        _ = await SeedOwnedOrganizationWithRulebookAsync();
+        var response = await PostTurnAsync(new AiAssistantTurnRequestDto(
+            "Bạn có thể giúp cho tôi những gì?",
+            new AiAssistantClientContextDto("/dashboard", "workspace")));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var turn = await response.Content.ReadFromJsonAsync<AiAssistantTurnResponseDto>(JsonOptions);
+        turn.Should().NotBeNull();
+        turn!.Disposition.Should().Be("grounded_answer");
+        turn.Intent.Should().Be(AiAssistantContextContract.GroundedReadCapability);
+        turn.Answer.Should().NotBeNull();
+        turn.Answer!.Intent.Should().Be("capability_overview");
+        turn.Answer.UsedAi.Should().BeFalse();
+        turn.Answer.Actions.Should().HaveCount(5);
+        turn.Answer.Actions.Should().OnlyContain(action => action.Type == "assistant_navigation");
+        var payloads = turn.Answer.Actions
+            .Select(action => JsonSerializer.Serialize(action.Payload, JsonOptions))
+            .ToArray();
+        payloads.Should().Contain(payload => payload.Contains("/projects", StringComparison.Ordinal));
+        payloads.Should().Contain(payload => payload.Contains("/analytics", StringComparison.Ordinal));
+
+        var launchResponse = await SendTurnAsync(new AiAssistantTurnRequestDto(
+            "Bạn có thể giúp tôi khởi tạo 1 dự án về web cung cấp dịch vụ spa theo gói được không?",
+            new AiAssistantClientContextDto("/dashboard", "workspace"),
+            SessionId: turn.SessionId,
+            ExpectedVersion: turn.SessionVersion,
+            ClientTurnId: Guid.NewGuid()),
+            $"assistant-navigation-launch-{Guid.NewGuid():N}");
+        launchResponse.StatusCode.Should().Be(HttpStatusCode.OK, await launchResponse.Content.ReadAsStringAsync());
+        var launchTurn = await launchResponse.Content.ReadFromJsonAsync<AiAssistantTurnResponseDto>(JsonOptions);
+        launchTurn.Should().NotBeNull();
+        launchTurn!.Intent.Should().Be(AiProjectLaunchContract.CapabilityId);
+        launchTurn.Answer?.Intent.Should().NotBe("capability_overview");
+    }
+
+    [Fact]
     [Trait("TestId", "TEST-PL-A-01")]
     [Trait("TestId", "TEST-RO-LOOP-01")]
     public async Task ProjectLaunch_CreatesDurableRulebookBriefThroughBoundedReadOnlyLoop_WithoutProjectMutation()
@@ -143,8 +261,7 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
             item.RuleKey == "active_membership_required" && item.Result == "pass");
         turn.Conversation.Should().NotBeNull();
         turn.Conversation!.Questions.Should().HaveCountLessThanOrEqualTo(3);
-        turn.Conversation.Guidance!.Steps.Should().OnlyContain(item =>
-            new[] { "/projects", "/teams", "/tasks" }.Contains(item.Route, StringComparer.Ordinal));
+        turn.Conversation.Guidance.Should().BeNull("registered Project Launch is available and must not show a manual fallback");
         turn.WorkPlan!.Steps.Select(item => item.Kind).Should().Equal("retrieve", "analyze", "verify", "present");
         turn.WorkPlan.Steps.Should().OnlyContain(item => item.MutationClass == "none" && item.State == "completed");
         turn.ProcessEvents.Should().Contain(item => item.Stage == "retrieve" && item.Status == "verified");
@@ -341,7 +458,7 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
         turn.ExecutionPolicy.Should().Be("analyze_only");
         turn.Artifact.Should().BeNull();
         turn.ActualProvider.Should().Be("DeepSeek");
-        turn.ActualModel.Should().Be("deepseek-v4-pro");
+        turn.ActualModel.Should().Be("deepseek-chat");
         turn.AssistantMessage.Should().Contain("kế hoạch kiểm chứng");
         turn.GoalAnalysis!.ActualProvider.Should().Be("Qaly policy router");
         turn.GoalAnalysis.MissingSkills.Should().ContainSingle(item => item.SkillId == "demo.test.run.v1");
