@@ -278,10 +278,7 @@ public class AdminUsersController : BaseApiController
         => (Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!), User.FindFirstValue(ClaimTypes.Role) ?? SystemRoleRules.Member);
     private static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
     private static bool IsSupportedProjectRole(string? role)
-        => new[] { ProjectRoleRules.Manager, ProjectRoleRules.ScrumMaster, ProjectRoleRules.Developer,
-            ProjectRoleRules.Tester, ProjectRoleRules.Reviewer, ProjectRoleRules.Member,
-            ProjectRoleRules.Viewer, ProjectRoleRules.Customer }
-            .Contains(role?.Trim(), StringComparer.OrdinalIgnoreCase);
+        => ProjectRoleRules.TryNormalizeAssignableRole(role, out _);
     private static AdminUserDto ToDto(User user) => new(user.Id, user.FullName, user.Email, user.Role, user.IsActive, user.AvatarUrl, user.CreatedAt, 0, 0);
     private static string HashPassword(string password)
     {

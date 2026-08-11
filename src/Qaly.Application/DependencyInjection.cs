@@ -24,6 +24,8 @@ public static class DependencyInjection
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IOrganizationService, OrganizationService>();
         services.AddScoped<IProjectService, ProjectService>();
+        services.AddScoped<IProjectRoleCatalog, ProjectRoleCatalog>();
+        services.AddScoped<IProjectRoleDefinitionService, ProjectRoleDefinitionService>();
         services.AddScoped<IGitHubAccessGuard, GitHubAccessGuard>();
         services.AddScoped<IGitHubRepositoryConnectionService, GitHubRepositoryConnectionService>();
         services.AddScoped<ITaskDevelopmentService, TaskDevelopmentService>();

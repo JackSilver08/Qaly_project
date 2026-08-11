@@ -726,7 +726,10 @@ public class AiWorkflowService : IAiWorkflowService
             return Result.Failure<AiJobCreatedDto>("Project was not found.", 404);
         }
 
-        if (!await CanManageProjectAsync(project, currentUserId.Value, ct))
+        // Progress and summary are the AI floor: every project member may read them, including
+        // read-only roles. Anything that changes the plan stays behind a higher tier.
+        var tier = await ResolveAiCapabilityTierAsync(project, currentUserId.Value, ct);
+        if (!AiCapabilityRules.Allows(tier, AiCapabilityRules.ProgressAndSummaryTier))
         {
             return Result.Forbidden<AiJobCreatedDto>();
         }
@@ -3612,6 +3615,55 @@ Rules: create 1-8 non-duplicate tasks; use concise action titles; include accept
             .FirstOrDefaultAsync(ct);
 
         return OrganizationRoleRules.CanManageOrganization(organizationRole);
+    }
+
+    /// <summary>
+    /// Resolves the caller's AI capability tier inside a project. Unlike
+    /// <see cref="CanManageProjectAsync"/> this distinguishes every project role, so read-only AI
+    /// features stay open to ordinary members instead of being manager-only.
+    /// </summary>
+    private async Task<AiCapabilityTier> ResolveAiCapabilityTierAsync(
+        Project project,
+        Guid currentUserId,
+        CancellationToken ct)
+    {
+        if (IsAdmin() || project.OwnerId == currentUserId)
+        {
+            return AiCapabilityTier.Full;
+        }
+
+        var projectRole = await _projectMemberRepo.GetQueryable()
+            .Where(member => member.ProjectId == project.Id && member.UserId == currentUserId)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+
+        if (projectRole != null)
+        {
+            return AiCapabilityRules.ResolveTier(projectRole);
+        }
+
+        // Organization managers keep full reach over their organization's projects.
+        if (!project.OrganizationId.HasValue)
+        {
+            return AiCapabilityTier.None;
+        }
+
+        if (project.Organization?.OwnerId == currentUserId)
+        {
+            return AiCapabilityTier.Full;
+        }
+
+        var organizationRole = await _organizationMemberRepo.GetQueryable()
+            .Where(member => member.OrganizationId == project.OrganizationId.Value && member.UserId == currentUserId)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+
+        if (OrganizationRoleRules.CanManageOrganization(organizationRole))
+        {
+            return AiCapabilityTier.Full;
+        }
+
+        return organizationRole != null ? AiCapabilityTier.ReadOnly : AiCapabilityTier.None;
     }
 
     private async Task<Result> ValidateExecuteActionAsync(

@@ -42,6 +42,7 @@ export interface DashboardProject {
     requireEvidenceToDone: boolean;
     restrictTransitionsToAdmin: boolean;
     archivedAt?: string | null;
+    permissions?: ProjectPermissionsDto | null;
 }
 
 export interface DashboardProjectMember {
@@ -197,6 +198,28 @@ export interface UserDto {
     createdAt: string;
 }
 
+/**
+ * What the signed-in user may do inside a project, resolved by the server.
+ * Render controls from this instead of re-deriving permissions from the role string.
+ */
+export interface ProjectPermissionsDto {
+    role: string;
+    roleLabel: string;
+    canManageProject: boolean;
+    canManageMembers: boolean;
+    canManageAllTasks: boolean;
+    canCreateTask: boolean;
+    canUpdateOwnTasks: boolean;
+    canComment: boolean;
+    canTrackTime: boolean;
+    canReviewEvidence: boolean;
+    canReadInternalWiki: boolean;
+    canWriteWiki: boolean;
+    canManageIntegrations: boolean;
+    aiTier: "None" | "ReadOnly" | "Contributor" | "Specialist" | "Full";
+    aiTierDescription: string;
+}
+
 export interface ProjectDto {
     id: string;
     name: string;
@@ -214,6 +237,7 @@ export interface ProjectDto {
     labels: ProjectLabelDto[];
     createdAt: string;
     archivedAt?: string | null;
+    permissions?: ProjectPermissionsDto | null;
 }
 
 export interface TaskItemDto {

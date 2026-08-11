@@ -1749,10 +1749,6 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
 
         var allTools = _aiTools.GetAvailableTools();
 
-        // 1. Check if the user is a system admin
-        bool isAdmin = ProjectRoleRules.IsSystemAdmin(_currentUserService.Role);
-
-        // 2. Check project owner (PM/Owner)
         var projectResult = await _projectService.GetByIdAsync(projectId, ct);
         if (!projectResult.IsSuccess || projectResult.Data == null)
         {
@@ -1760,58 +1756,42 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
         }
 
         var project = projectResult.Data;
-        bool isOwner = project.OwnerId == userId;
 
-        if (isAdmin || isOwner)
-        {
-            return allTools;
-        }
-
-        // 3. Check member role in project
-        var member = await _memberRepo.GetQueryable()
+        var memberRole = await _memberRepo.GetQueryable()
             .AsNoTracking()
-            .FirstOrDefaultAsync(m => m.ProjectId == projectId && m.UserId == userId, ct);
+            .Where(m => m.ProjectId == projectId && m.UserId == userId)
+            .Select(m => m.Role)
+            .FirstOrDefaultAsync(ct);
 
-        if (member == null)
+        var tier = AiCapabilityRules.ResolveTier(
+            memberRole,
+            isSystemAdmin: ProjectRoleRules.IsSystemAdmin(_currentUserService.Role),
+            isProjectOwner: project.OwnerId == userId);
+
+        if (tier == AiCapabilityTier.None)
         {
             return new System.Collections.Generic.List<Microsoft.Extensions.AI.AITool>();
         }
 
-        string normalizedRole = ProjectRoleRules.NormalizeProjectRole(member.Role);
-        bool isPM = ProjectRoleRules.IsProjectManager(normalizedRole);
-
-        if (isPM)
+        // Being the assignee of at least one task unlocks status updates on top of the tier.
+        var isAssignee = false;
+        if (tier is AiCapabilityTier.Contributor or AiCapabilityTier.Specialist)
         {
-            return allTools;
+            var assignedTasksResult = await _taskService.GetByProjectAsync(
+                projectId: projectId,
+                assigneeId: userId,
+                pageSize: 1,
+                ct: ct);
+
+            isAssignee = assignedTasksResult.IsSuccess
+                && assignedTasksResult.Data != null
+                && assignedTasksResult.Data.TotalCount > 0;
         }
 
-        // 4. For normal members and task assignees:
-        var assignedTasksResult = await _taskService.GetByProjectAsync(
-            projectId: projectId,
-            assigneeId: userId,
-            pageSize: 1,
-            ct: ct);
-
-        bool isAssignee = assignedTasksResult.IsSuccess 
-            && assignedTasksResult.Data != null 
-            && assignedTasksResult.Data.TotalCount > 0;
-
-        var allowedToolNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        var allowedToolNames = AiCapabilityRules.AllowedToolNames(tier, isAssignee);
+        if (allowedToolNames == null)
         {
-            "GetProjectSummary",
-            "GetOverdueTasks",
-            "GetMemberWorkload",
-            "SearchKnowledge",
-            "GetMyTimeLogs",
-            "SuggestTaskAssignment",
-            "AddComment",
-            "StartTimeTracking",
-            "StopTimeTracking"
-        };
-
-        if (isAssignee)
-        {
-            allowedToolNames.Add("UpdateTaskStatus");
+            return allTools;
         }
 
         return allTools

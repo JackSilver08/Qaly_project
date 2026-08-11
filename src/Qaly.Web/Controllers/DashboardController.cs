@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Qaly.Infrastructure.Data;
 using Qaly.Web.Auth;
 using Qaly.Application.Common.Models;
+using Qaly.Application.DTOs.Project;
 using Qaly.Application.Services;
 using System.Globalization;
 using System.Text.Json;
@@ -227,7 +228,11 @@ public partial class DashboardController : BaseApiController
                     project.EnableOnHold,
                     project.EnableInReview,
                     project.RequireEvidenceToDone,
-                    project.RestrictTransitionsToAdmin);
+                    project.RestrictTransitionsToAdmin,
+                    ProjectPermissionRules.Resolve(
+                        projectMembers.FirstOrDefault(member => member.UserId == currentUserId)?.Role,
+                        isOwner: currentUserId.HasValue && project.OwnerId == currentUserId.Value,
+                        isSystemAdmin: isAdmin));
             })
             .ToList();
 
@@ -979,7 +984,8 @@ public sealed record DashboardProjectResponse(
     bool EnableOnHold = true,
     bool EnableInReview = true,
     bool RequireEvidenceToDone = false,
-    bool RestrictTransitionsToAdmin = false);
+    bool RestrictTransitionsToAdmin = false,
+    ProjectPermissionsDto? Permissions = null);
 
 public sealed record DashboardProjectMemberResponse(
     Guid UserId,

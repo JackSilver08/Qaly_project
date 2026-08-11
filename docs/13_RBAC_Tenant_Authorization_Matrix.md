@@ -84,12 +84,54 @@ not grant `view` or `update_role`.
 |---|:---:|:---:|:---:|:---:|
 | Read project | Allow when project member | Allow when project member | Allow | Allow, restricted views |
 | Manage project/membership | Allow | Deny | Deny | Deny |
-| General project write | Allow | Endpoint/task-policy decision | Allow under current compatibility rule | Deny |
+| Create task | Allow | Allow | Deny | Deny |
+| Update own task / comment / track time | Allow | Allow | Allow | Deny |
+| Review evidence | Allow | Tester, Reviewer only | Deny | Deny |
+| Read internal wiki | Allow | Allow | Allow | Viewer allow, Customer deny |
 | View-only operation | Allow | Allow | Allow | Allow |
 
 Task and AI operations must additionally pass `ITaskAccessPolicy`; a project
 role alone must not authorize access to a task belonging to another project or
 organization.
+
+`ProjectPermissionRules.Resolve` is the single mapping from project role to this
+table and is returned to clients on the project payload. It is a rendering aid
+only; each endpoint still authorizes independently.
+
+Adding a project member to a project owned by an organization also grants the
+lowest organization role when the user has none. Project reads are filtered by
+organization membership, so without that row the member cannot see the project
+at all. The grant never overwrites an existing organization role, and it does not
+change who may add members.
+
+### 5.1 Organization-defined project roles
+
+An organization owner or `OrganizationAdmin` may define additional project roles
+(`ProjectRoleDefinition`). A custom role is a label plus an inherited built-in
+role (`BaseRole`); authorization reads only `BaseRole`, so a custom role can
+never grant more than an existing built-in role. Rules:
+
+- The key is unique per organization and never resolves across organizations.
+- A custom role may not shadow a built-in role name.
+- An inactive definition is not assignable, and existing assignments keep working.
+- A definition still assigned to project members cannot be deleted, only deactivated.
+
+### 5.2 AI capability tiers
+
+`AiCapabilityRules` maps a project role to one ordered tier. Both the chat tool
+filter and the AI job endpoints read from it, so they cannot diverge.
+
+| Tier | Roles | Reach |
+|---|---|---|
+| `Full` | Owner, Manager, ScrumMaster, system Admin, organization managers | All AI capabilities |
+| `Specialist` | Developer, Tester, Reviewer | Team analysis, task shaping |
+| `Contributor` | Member | Own work only |
+| `ReadOnly` | Viewer, Customer | Progress and summary, no writes |
+| `None` | Not a project member | Nothing |
+
+Progress and summary are the floor: every project member may read them. Staffing
+and replanning require `Full`. Read-only roles get no write tools even when they
+appear as a task assignee.
 
 ## 6. Required response and isolation behaviour
 
@@ -115,6 +157,13 @@ request.
 | Member cannot read another organization's users | `OrganizationUsersAuthorizationTests.OrganizationUsers_RejectsMemberFromAnotherOrganization` |
 | Moderator capability is organization-scoped | `OrganizationUsersAuthorizationTests.OrganizationUsers_AllowsModeratorWithActiveViewCapabilityOnlyForAssignedOrganization` |
 | Organization roles do not become project/system roles | `OrganizationRoleRulesTests`, `ProjectRoleRulesTests` |
+| A project member can actually see the project | `ProjectServiceTests.AddMemberAsync_WhenProjectBelongsToOrganization_GrantsOrganizationMembership` |
+| Membership backfill does not escalate or downgrade | `ProjectServiceTests.AddMemberAsync_WhenUserAlreadyHasElevatedOrganizationRole_DoesNotDowngradeIt`, `..._WhenCallerIsPlainMember_IsStillForbidden` |
+| Unknown role is rejected, not downgraded to Member | `ProjectRoleRulesTests.TryNormalizeAssignableRole_ShouldRejectUnknownRoleInsteadOfDowngradingToMember` |
+| Custom roles stay inside their organization | `ProjectServiceTests.AddMemberAsync_WithRoleFromAnotherOrganization_IsRejected`, `..._WithDeactivatedCustomRole_IsRejected` |
+| Custom role inherits only its base role's reach | `ProjectServiceTests.AddMemberAsync_WithOrganizationDefinedRole_StoresKeyAndInheritsBaseRolePermissions` |
+| AI tiers are ordered and role-correct | `AiCapabilityRulesTests` |
+| Every project role may read progress; outsiders may not | `AiProgressSummaryApiTests.Enqueue_AnyProjectMember_CanReadProgressSummary`, `..._Enqueue_UserOutsideProject_IsDenied` |
 | Tasks remain tenant/project scoped | `TaskAccessPolicyIsolationTests`, `TaskConcurrencyTests` |
 | Auth boundary and session resilience | `AuthBoundaryIntegrationTests`, `AuthSessionResilienceTests` |
 | AI source/budget/security boundaries | `AiSourceGuardTests`, `AiBudgetApiTests`, `AiSecurityGuardTests` |

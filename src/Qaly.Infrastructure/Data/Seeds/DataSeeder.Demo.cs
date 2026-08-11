@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Qaly.Application.Services;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Enums;
 
@@ -548,23 +549,29 @@ public partial class DataSeeder
                     UserId = U(email).Id,
                     Role = role,
                     JoinedAt = project.StartDate?.AddDays(1) ?? now.AddDays(-10),
-                    CanViewProjectTimeline = role is "Owner" or "Manager",
-                    CanViewTaskRisk = role is "Owner" or "Manager",
-                    CanNudgeAssignee = role is "Owner" or "Manager",
-                    CanViewUnseenTaskSignal = role is "Owner" or "Manager",
+                    CanViewProjectTimeline = ProjectRoleRules.CanManageProject(role),
+                    CanViewTaskRisk = ProjectRoleRules.CanManageProject(role),
+                    CanNudgeAssignee = ProjectRoleRules.CanManageProject(role),
+                    CanViewUnseenTaskSignal = ProjectRoleRules.CanManageProject(role),
                     CreatedAt = project.StartDate?.AddDays(1) ?? now.AddDays(-10)
                 });
             }
         }
 
         var projectByCode = projects.ToDictionary(project => project.Code, StringComparer.OrdinalIgnoreCase);
+        // The customer demo project carries one account per project role so the whole permission
+        // matrix can be walked live instead of described.
         AddMembers(projectByCode["qaly-workos-demo"],
             ("admin@qaly.dev", "Owner"),
             ("minh.anh@qaly.dev", "Manager"),
-            ("bao.ngoc@qaly.dev", "Manager"),
-            ("linh.chi@qaly.dev", "Member"),
-            ("tuan.kiet@qaly.dev", "Member"),
-            ("yen.nhi@qaly.dev", "Viewer"));
+            ("bao.ngoc@qaly.dev", "ScrumMaster"),
+            ("linh.chi@qaly.dev", "Developer"),
+            ("quoc.huy@qaly.dev", "Developer"),
+            ("tuan.kiet@qaly.dev", "Tester"),
+            ("thanh.tam@qaly.dev", "Reviewer"),
+            ("mai.phuong@qaly.dev", "Member"),
+            ("yen.nhi@qaly.dev", "Viewer"),
+            ("viet.long@qaly.dev", "Customer"));
         AddMembers(projectByCode["erumi-local-analytics"],
             ("linh.chi@qaly.dev", "Owner"),
             ("admin@qaly.dev", "Manager"),

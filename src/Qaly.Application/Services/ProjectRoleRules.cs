@@ -16,11 +16,25 @@ public static class ProjectRoleRules
     public static bool IsSystemAdmin(string? role)
         => string.Equals(role, SystemAdmin, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Roles a project manager may assign. <see cref="Owner"/> is excluded: ownership transfers
+    /// through its own flow, not through membership updates.
+    /// </summary>
+    public static readonly IReadOnlyList<string> AssignableRoles =
+    [
+        Manager, ScrumMaster, Developer, Tester, Reviewer, Member, Viewer, Customer
+    ];
+
     public static bool CanManageProject(string? projectRole)
         => IsProjectManager(projectRole);
 
+    /// <summary>
+    /// Every role except the read-only ones may contribute work.
+    /// </summary>
     public static bool CanWrite(string? projectRole)
-        => IsProjectManager(projectRole) || string.Equals(projectRole, Member, StringComparison.OrdinalIgnoreCase);
+        => !string.IsNullOrWhiteSpace(projectRole)
+           && !IsViewer(projectRole)
+           && !IsCustomer(projectRole);
 
     public static bool IsViewer(string? projectRole)
         => string.Equals(projectRole, Viewer, StringComparison.OrdinalIgnoreCase);
@@ -37,6 +51,39 @@ public static class ProjectRoleRules
            || string.Equals(projectRole, "ProjectManager", StringComparison.OrdinalIgnoreCase)
            || string.Equals(projectRole, ScrumMaster, StringComparison.OrdinalIgnoreCase)
            || string.Equals(projectRole, "Admin", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Strict normalization for write paths. Unlike <see cref="NormalizeProjectRole"/> this refuses
+    /// unknown input instead of silently downgrading it to <see cref="Member"/>, so a typo in a role
+    /// name surfaces as a 400 rather than as an unintended change of privilege.
+    /// </summary>
+    public static bool TryNormalizeAssignableRole(string? role, out string normalized)
+    {
+        normalized = NormalizeProjectRole(role);
+
+        if (string.IsNullOrWhiteSpace(role))
+        {
+            return false;
+        }
+
+        // NormalizeProjectRole falls back to Member, so an input that is not itself a Member alias
+        // must be rejected rather than accepted as Member.
+        if (string.Equals(normalized, Member, StringComparison.Ordinal)
+            && !IsMemberAlias(role))
+        {
+            return false;
+        }
+
+        return AssignableRoles.Contains(normalized, StringComparer.Ordinal);
+    }
+
+    private static bool IsMemberAlias(string role)
+    {
+        var value = role.Trim();
+        return string.Equals(value, Member, StringComparison.OrdinalIgnoreCase)
+               || string.Equals(value, "Thanh vien", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(value, "Thành viên", StringComparison.OrdinalIgnoreCase);
+    }
 
     public static string NormalizeProjectRole(string? role)
     {

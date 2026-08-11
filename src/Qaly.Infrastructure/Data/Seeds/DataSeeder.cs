@@ -94,6 +94,8 @@ public partial class DataSeeder
                 LogSeedSkipped(_logger);
             }
         }
+
+        await EnsureProjectMemberOrganizationConsistencyAsync();
     }
 
     private async Task SeedGroupsDemoAsync()
@@ -769,8 +771,52 @@ public partial class DataSeeder
         return $"{Convert.ToBase64String(salt)}.{Convert.ToBase64String(hash)}";
     }
 
+    /// <summary>
+    /// Repairs project members that were added before project membership started backfilling
+    /// organization membership. Those rows are invisible to the owner because project reads are
+    /// filtered by organization membership, so the member sees an empty project list.
+    /// </summary>
+    private async Task<int> EnsureProjectMemberOrganizationConsistencyAsync()
+    {
+        var orphanedMemberships = await _context.ProjectMembers
+            .Where(member => member.Project.OrganizationId != null)
+            .Where(member => member.Project.Organization!.OwnerId != member.UserId)
+            .Where(member => !_context.OrganizationMembers.Any(organizationMember =>
+                organizationMember.OrganizationId == member.Project.OrganizationId &&
+                organizationMember.UserId == member.UserId))
+            .Select(member => new
+            {
+                OrganizationId = member.Project.OrganizationId!.Value,
+                member.UserId
+            })
+            .Distinct()
+            .ToListAsync();
+
+        if (orphanedMemberships.Count == 0)
+        {
+            return 0;
+        }
+
+        foreach (var membership in orphanedMemberships)
+        {
+            await _context.OrganizationMembers.AddAsync(new OrganizationMember
+            {
+                OrganizationId = membership.OrganizationId,
+                UserId = membership.UserId,
+                Role = "Member"
+            });
+        }
+
+        await _context.SaveChangesAsync();
+        LogRepairedOrganizationMemberships(_logger, orphanedMemberships.Count);
+        return orphanedMemberships.Count;
+    }
+
     [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Cơ sở dữ liệu đã migrate thành công.")]
     private static partial void LogDatabaseMigrated(ILogger logger);
+
+    [LoggerMessage(EventId = 7, Level = LogLevel.Information, Message = "Đã bổ sung {Count} thành viên tổ chức bị thiếu cho các dự án thuộc tổ chức.")]
+    private static partial void LogRepairedOrganizationMemberships(ILogger logger, int count);
 
     [LoggerMessage(EventId = 2, Level = LogLevel.Information, Message = "Dữ liệu mẫu đã được tạo thành công.")]
     private static partial void LogSeedDataCreated(ILogger logger);

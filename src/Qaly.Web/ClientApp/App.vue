@@ -44,6 +44,7 @@ import {
   isTaskOverdue,
   statusTone,
 } from "./utils/formatters";
+import { fallbackProjectPermissions } from "./utils/project-roles";
 import type {
   ProjectCardModel,
   SummaryCardModel,
@@ -57,6 +58,7 @@ import type {
   DashboardProject,
   DashboardTask,
   NotificationDto,
+  ProjectPermissionsDto,
   WikiPageDto,
   TimeEntryDto,
 } from "./types";
@@ -393,23 +395,31 @@ const selectedTask = computed(() => {
   );
 });
 
-const isProjectAdmin = computed(() => {
+/**
+ * What the signed-in user may do in the selected project.
+ *
+ * The server resolves this and returns it on the project payload, so the UI does not re-derive
+ * permissions from the role string. The fallback below only covers a payload from an older server
+ * that does not send `permissions` yet.
+ */
+const projectPermissions = computed<ProjectPermissionsDto | null>(() => {
   const project = selectedProject.value;
   const user = currentUser.value;
-  if (!project || !user) return false;
-  const userRole = String(user.role || "").toLowerCase();
-  if (userRole === "admin") return true;
+  if (!project || !user) return null;
+  if (project.permissions) return project.permissions;
+
   const userId = String(user.id || "").toLowerCase();
-  if (project.ownerId?.toLowerCase() === userId) return true;
   const member = project.members?.find(
     (m) => String(m.userId || "").toLowerCase() === userId,
   );
-  return member
-    ? ["owner", "manager", "admin", "pm", "projectowner", "projectmanager", "scrummaster"].includes(
-        String(member.role || "").replace(/\s+/g, "").toLowerCase(),
-      )
-    : false;
+  return fallbackProjectPermissions({
+    role: member?.role ?? null,
+    isOwner: project.ownerId?.toLowerCase() === userId,
+    isSystemAdmin: String(user.role || "").toLowerCase() === "admin",
+  });
 });
+
+const isProjectAdmin = computed(() => projectPermissions.value?.canManageProject ?? false);
 
 const selectedProjectMembers = computed(() => {
   const project = selectedProject.value;
@@ -955,12 +965,12 @@ async function deleteComment(id: string) {
   }
 }
 
-async function addMember(uId: string) {
+async function addMember(uId: string, role = "Member") {
   if (!selectedProject.value) return;
   try {
     await apiCommand(`/api/projects/${selectedProject.value.id}/members`, {
       method: "POST",
-      body: JSON.stringify({ userId: uId, role: "Member" }),
+      body: JSON.stringify({ userId: uId, role }),
     });
     await loadDashboard();
     showSuccess("Thành công");
@@ -1299,6 +1309,7 @@ provide(dashboardContextKey, {
   isLoading,
   loadError,
   isProjectAdmin,
+  projectPermissions,
   isTaskOverdue,
   logout,
   moveTask,

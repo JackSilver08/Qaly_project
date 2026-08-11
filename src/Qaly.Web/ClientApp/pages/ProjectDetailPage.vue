@@ -25,6 +25,7 @@ import {
 // @ts-ignore
 import { VueDraggable } from "../utils/vendor/vue-draggable-plus.js";
 import ProjectDetailHeader from "../components/ProjectDetailHeader.vue";
+import OnboardingGuideCard from "../components/OnboardingGuideCard.vue";
 import ProjectActivityTab from "../components/ProjectActivityTab.vue";
 import ProjectMembersTab from "../components/ProjectMembersTab.vue";
 import ProjectStatsTab from "../components/ProjectStatsTab.vue";
@@ -74,6 +75,7 @@ const {
   formatFileSize,
   formatTime,
   isProjectAdmin,
+  projectPermissions,
   isLoading,
   isTaskOverdue,
   moveTaskOnKanban,
@@ -689,6 +691,11 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
           @back="closeProjectDetails"
           @assistant="openChatWithPrompt()"
           @propose-resolution="triggerProposeResolution"
+        />
+
+        <OnboardingGuideCard
+          :project-id="selectedProject?.id ?? null"
+          @ask-ai="openChatWithPrompt"
         />
 
         <nav class="project-tabs glass-card">
@@ -1673,6 +1680,9 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
             :members="selectedProjectMembers"
             :users="users"
             :is-admin="isProjectAdmin"
+            :permissions="projectPermissions"
+            :project-id="selectedProject.id"
+            :organization-id="selectedProject.organizationId"
             @add="addMember"
             @remove="removeMember"
             @update-role="updateMemberRole"
