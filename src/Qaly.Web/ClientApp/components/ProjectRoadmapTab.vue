@@ -53,6 +53,12 @@ import type { SprintDto, DashboardTask, GanttTaskDto } from "../types";
 import ProjectProgressAiCard from "./ProjectProgressAiCard.vue";
 import { useRoute, useRouter } from "vue-router";
 
+type RoadmapTask = DashboardTask & {
+  startDate?: string | null;
+  endDate?: string | null;
+  progress?: number | null;
+};
+
 const props = defineProps<{
   projectId: string;
   projectName?: string;
@@ -122,23 +128,47 @@ const confirmationModalRoot = ref<HTMLElement | null>(null);
 const milestoneTaskSearch = ref("");
 const milestoneTaskStatusFilter = ref<string>("all");
 
-const roadmapTasks = computed<DashboardTask[]>(
-  () => selectedProject.value?.tasks || [],
+const roadmapTasks = computed<RoadmapTask[]>(() =>
+  (selectedProject.value?.tasks || []) as RoadmapTask[],
 );
 const ganttTasks = ref<GanttTaskDto[]>([]);
 
-const timelineTasks = computed<GanttTaskDto[]>(() =>
-  ganttTasks.value
-    .filter((task) => task.startDate || task.endDate)
+type TimelineTask = RoadmapTask | GanttTaskDto;
+
+function taskStartDate(task: TimelineTask) {
+  return task.startDate ?? ("dueDate" in task ? task.dueDate : null);
+}
+
+function taskEndDate(task: TimelineTask) {
+  return (
+    task.endDate ??
+    ("dueDate" in task ? task.dueDate : null) ??
+    task.startDate
+  );
+}
+
+const timelineTasks = computed<TimelineTask[]>(() => {
+  const ganttWithDates = ganttTasks.value.filter(
+    (task) => task.startDate || task.endDate,
+  );
+  const source: TimelineTask[] = ganttWithDates.length
+    ? ganttWithDates
+    : roadmapTasks.value;
+  return source
+    .filter((task) => taskStartDate(task) || taskEndDate(task))
     .slice()
     .sort((a, b) => {
       const aDate =
-        toValidTimestamp(a.startDate) ?? toValidTimestamp(a.endDate) ?? 0;
+        toValidTimestamp(taskStartDate(a)) ??
+        toValidTimestamp(taskEndDate(a)) ??
+        0;
       const bDate =
-        toValidTimestamp(b.startDate) ?? toValidTimestamp(b.endDate) ?? 0;
+        toValidTimestamp(taskStartDate(b)) ??
+        toValidTimestamp(taskEndDate(b)) ??
+        0;
       return aDate - bDate || a.title.localeCompare(b.title);
-    }),
-);
+    });
+});
 
 function toValidTimestamp(value: string | null | undefined) {
   if (!value) return null;
@@ -149,8 +179,8 @@ function toValidTimestamp(value: string | null | undefined) {
 const timelineBounds = computed(() => {
   const points = timelineTasks.value
     .flatMap((task) => [
-      toValidTimestamp(task.startDate),
-      toValidTimestamp(task.endDate),
+      toValidTimestamp(taskStartDate(task)),
+      toValidTimestamp(taskEndDate(task)),
     ])
     .filter((time): time is number => time !== null);
 
@@ -321,10 +351,11 @@ watch(
   { flush: "post" },
 );
 
-function getTaskStyle(task: GanttTaskDto) {
+function getTaskStyle(task: TimelineTask) {
   const startTime =
-    toValidTimestamp(task.startDate) ?? toValidTimestamp(task.endDate);
-  const endTime = toValidTimestamp(task.endDate) ?? startTime;
+    toValidTimestamp(taskStartDate(task)) ??
+    toValidTimestamp(taskEndDate(task));
+  const endTime = toValidTimestamp(taskEndDate(task)) ?? startTime;
   if (startTime === null || endTime === null) return { display: "none" };
 
   const normalizedEnd = Math.max(startTime, endTime);
@@ -336,14 +367,14 @@ function getTaskStyle(task: GanttTaskDto) {
   return { gridColumn: `${startColumn} / span ${span}` };
 }
 
-function taskTone(task: GanttTaskDto) {
+function taskTone(task: TimelineTask) {
   const now = Date.now();
-  const end = toValidTimestamp(task.endDate);
+  const end = toValidTimestamp(taskEndDate(task));
   if (end !== null && task.status !== "Done" && now > end) return "is-overdue";
   if (
     task.status === "Todo" &&
-    task.startDate &&
-    toValidTimestamp(task.startDate)! > now
+    taskStartDate(task) &&
+    toValidTimestamp(taskStartDate(task))! > now
   )
     return "is-stale";
   if (
@@ -383,7 +414,9 @@ async function loadSprints() {
   try {
     const [result, ganttResult] = await Promise.all([
       apiResult<SprintDto[]>(`/api/projects/${props.projectId}/sprints`),
-      apiResult<GanttTaskDto[]>(`/api/tasks/project/${props.projectId}/gantt`),
+      apiResult<GanttTaskDto[]>(`/api/tasks/project/${props.projectId}/gantt`).catch(
+        () => [] as GanttTaskDto[],
+      ),
     ]);
     ganttTasks.value = ganttResult || [];
     // Sort sprints chronologically by StartDate
