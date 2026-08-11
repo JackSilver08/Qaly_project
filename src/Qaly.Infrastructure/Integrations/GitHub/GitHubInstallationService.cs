@@ -51,11 +51,7 @@ public sealed class GitHubInstallationService : IGitHubInstallationService
         var configuration = _options.Value;
         if (!configuration.Enabled)
         {
-            var hasCachedSnapshot = await _db.GitHubRepositoryConnections.AsNoTracking()
-                .AnyAsync(item => item.OrganizationId == auth.Data!.OrganizationId &&
-                                  item.ProjectId == projectId &&
-                                  item.IsActive &&
-                                  item.LastSyncedAt != null, ct);
+            var hasCachedSnapshot = await HasCachedSnapshotAsync(auth.Data!.OrganizationId, projectId, ct);
             if (hasCachedSnapshot)
             {
                 return Result.Success(Status(
@@ -101,7 +97,16 @@ public sealed class GitHubInstallationService : IGitHubInstallationService
         }
         catch (HttpRequestException ex)
         {
-            return Result.Success(MapApiStatus(ex, hasInstallation: true));
+            var providerStatus = MapApiStatus(ex, hasInstallation: true);
+            if (providerStatus.State is "unavailable" or "rate_limited" &&
+                await HasCachedSnapshotAsync(auth.Data!.OrganizationId, projectId, ct))
+            {
+                return Result.Success(Status(
+                    "cached", enabled: true, configured: true, hasInstallation: true, liveVerified: false,
+                    "GitHub tạm thời không phản hồi; Qaly đang hiển thị snapshot đã đồng bộ gần nhất."));
+            }
+
+            return Result.Success(providerStatus);
         }
     }
 
@@ -210,6 +215,13 @@ public sealed class GitHubInstallationService : IGitHubInstallationService
            !string.IsNullOrWhiteSpace(configuration.AppSlug) &&
            (!string.IsNullOrWhiteSpace(configuration.PrivateKey) ||
             !string.IsNullOrWhiteSpace(configuration.PrivateKeyPath));
+
+    private Task<bool> HasCachedSnapshotAsync(Guid organizationId, Guid projectId, CancellationToken ct)
+        => _db.GitHubRepositoryConnections.AsNoTracking()
+            .AnyAsync(item => item.OrganizationId == organizationId &&
+                              item.ProjectId == projectId &&
+                              item.IsActive &&
+                              item.LastSyncedAt != null, ct);
 
     private static GitHubIntegrationStatusDto Status(
         string state,

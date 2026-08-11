@@ -4,7 +4,12 @@ test.describe.configure({ mode: 'serial' })
 
 const adminEmail = process.env.E2E_ADMIN_EMAIL ?? 'admin@qaly.dev'
 const adminPassword = process.env.E2E_ADMIN_PASSWORD ?? 'Admin@123456'
-const demoProjectName = process.env.E2E_DEMO_PROJECT ?? 'Qaly Release 4.0'
+const configuredDemoProject = process.env.E2E_DEMO_PROJECT?.trim()
+// “Qaly Work OS - Customer Demo” was the pre-Release-4 seed name. Keep old
+// developer shells and CI variables compatible after the canonical rename.
+const demoProjectName = !configuredDemoProject || configuredDemoProject === 'Qaly Work OS - Customer Demo'
+  ? 'Qaly Release 4.0'
+  : configuredDemoProject
 
 type BrowserIssue = {
   kind: 'console' | 'pageerror' | 'http' | 'requestfailed'

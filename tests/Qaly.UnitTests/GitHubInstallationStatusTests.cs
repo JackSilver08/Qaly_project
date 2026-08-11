@@ -145,6 +145,35 @@ public sealed class GitHubInstallationStatusTests : IDisposable
         result.Data!.State.Should().Be("rate_limited");
     }
 
+    [Fact]
+    public async Task GetStatusAsync_WhenProviderIsUnavailable_UsesPersistedSnapshot()
+    {
+        ConfigureApp();
+        await AddActiveInstallationAsync();
+        var installationId = await _db.GitHubInstallations.Select(item => item.Id).SingleAsync();
+        _db.GitHubRepositoryConnections.Add(new GitHubRepositoryConnection
+        {
+            OrganizationId = _organizationId,
+            ProjectId = _projectId,
+            GitHubInstallationId = installationId,
+            RepositoryExternalId = 42,
+            Owner = "qaly",
+            Name = "cached-demo",
+            FullName = "qaly/cached-demo",
+            LastSyncedAt = DateTimeOffset.UtcNow,
+            IsActive = true
+        });
+        await _db.SaveChangesAsync();
+        _client.Setup(item => item.GetInstallationAsync(1234, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("GitHub unavailable", null, HttpStatusCode.BadGateway));
+
+        var result = await CreateService().GetStatusAsync(_projectId);
+
+        result.Data!.State.Should().Be("cached");
+        result.Data.LiveVerified.Should().BeFalse();
+        result.Data.Message.Should().Contain("snapshot");
+    }
+
     private GitHubInstallationService CreateService()
         => new(_db, _guard.Object, _client.Object, _currentUser.Object, Options.Create(_options));
 
