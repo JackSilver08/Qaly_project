@@ -68,6 +68,7 @@ const {
   users,
   isLoading,
   usingFallback,
+  loadError,
   projects,
   team,
   summaryCards,
@@ -80,8 +81,34 @@ const refreshDashboard = async () => {
   await loadDashboard();
 };
 
-const activeProjectId = ref<string | null>(null);
+const activeProjectStorageKey = "qaly-active-project-id";
+
+function readActiveProjectId() {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.sessionStorage.getItem(activeProjectStorageKey);
+  } catch {
+    return null;
+  }
+}
+
+const activeProjectId = ref<string | null>(readActiveProjectId());
+const selectedProjectSnapshot = ref<DashboardProject | null>(null);
 const selectedTaskId = ref<string | null>(null);
+
+watch(
+  activeProjectId,
+  (projectId) => {
+    if (typeof window === "undefined") return;
+    try {
+      if (projectId) window.sessionStorage.setItem(activeProjectStorageKey, projectId);
+      else window.sessionStorage.removeItem(activeProjectStorageKey);
+    } catch {
+      // Storage can be unavailable in hardened browser contexts; in-memory selection still works.
+    }
+  },
+  { flush: "sync" },
+);
 
 const {
   createProjectOpen,
@@ -166,6 +193,7 @@ const comments = ref<CommentDto[]>([]);
 const attachments = ref<AttachmentDto[]>([]);
 const wikiPages = ref<WikiPageDto[]>([]);
 const timeEntries = ref<TimeEntryDto[]>([]);
+const timeEntriesError = ref("");
 const activeTimer = ref<TimeEntryDto | null>(null);
 
 const notificationsOpen = ref(false);
@@ -175,6 +203,16 @@ const globalSearchInput = ref<HTMLInputElement | null>(null);
 const taskSearchQuery = ref("");
 const taskBeingQuickEditedId = ref<string | null>(null);
 const activeTaskMenu = ref<string | null>(null);
+
+interface AiAssistantOpenRequest {
+  id: number;
+  view: "chat";
+  prompt: string;
+  projectId: string | null;
+}
+
+const aiAssistantOpenRequest = ref<AiAssistantOpenRequest | null>(null);
+let aiAssistantOpenRequestId = 0;
 
 function toggleTaskMenu(taskId: string) {
   activeTaskMenu.value = activeTaskMenu.value === taskId ? null : taskId;
@@ -311,7 +349,8 @@ const selectedProject = computed(() => {
     ["project-detail", "project-task"].includes(String(route.name ?? "")) &&
     typeof routeProjectId === "string"
   ) {
-    return projects.value.find((project) => project.id === routeProjectId) ?? null;
+    return projects.value.find((project) => project.id === routeProjectId)
+      ?? (selectedProjectSnapshot.value?.id === routeProjectId ? selectedProjectSnapshot.value : null);
   }
 
   if (activeProjectId.value) {
@@ -319,8 +358,15 @@ const selectedProject = computed(() => {
       (project) => project.id === activeProjectId.value,
     );
     if (active) return active;
+    if (selectedProjectSnapshot.value?.id === activeProjectId.value) {
+      return selectedProjectSnapshot.value;
+    }
   }
   return filteredProjects.value[0] ?? projects.value[0] ?? null;
+});
+
+watch(selectedProject, (project) => {
+  if (project) selectedProjectSnapshot.value = project;
 });
 
 const aiActionProjectOptions = computed(() =>
@@ -645,6 +691,7 @@ async function loadAttachments(taskId: string) {
 }
 
 async function loadTimeEntries(taskId: string) {
+  timeEntriesError.value = "";
   try {
     const entries = await apiJson<TimeEntryDto[]>(
       `/api/tasks/${taskId}/time-entries`,
@@ -654,6 +701,10 @@ async function loadTimeEntries(taskId: string) {
   } catch (e) {
     timeEntries.value = [];
     activeTimer.value = null;
+    timeEntriesError.value = errorMessage(
+      e,
+      "Không thể tải dữ liệu thời gian của nhiệm vụ.",
+    );
   }
 }
 
@@ -762,7 +813,11 @@ function goToProjectFromSearch(projectId: string, tab = "stats") {
   activeProjectTab.value = tab;
   selectedTaskId.value = null;
   closeGlobalSearch();
-  void router.push(`/projects/${projectId}`);
+  void router.push({
+    name: "project-detail",
+    params: { projectId },
+    query: tab === "stats" ? undefined : { tab },
+  });
 }
 
 function goToTaskFromSearch(projectId: string, taskId: string) {
@@ -793,7 +848,11 @@ function createTaskFromSearch() {
   activeProjectTab.value = "tasks";
   createTaskOpen.value = true;
   if (selectedProject.value?.id) {
-    void router.push(`/projects/${selectedProject.value.id}`);
+    void router.push({
+      name: "project-detail",
+      params: { projectId: selectedProject.value.id },
+      query: { tab: "tasks" },
+    });
   }
 }
 
@@ -1114,13 +1173,12 @@ async function clearActionableNotifications() {
 function openChatWithPrompt(prompt?: string) {
   const normalizedPrompt = prompt?.trim()
   const routeProjectId = typeof route.params.projectId === 'string' ? route.params.projectId : null
-  window.dispatchEvent(new CustomEvent('qaly:open-ai-assistant', {
-    detail: {
-      view: 'chat',
-      prompt: normalizedPrompt || '',
-      projectId: routeProjectId,
-    },
-  }))
+  aiAssistantOpenRequest.value = {
+    id: ++aiAssistantOpenRequestId,
+    view: 'chat',
+    prompt: normalizedPrompt || '',
+    projectId: routeProjectId,
+  }
 }
 
 async function logout() {
@@ -1239,6 +1297,7 @@ provide(dashboardContextKey, {
   formatFileSize,
   formatTime,
   isLoading,
+  loadError,
   isProjectAdmin,
   isTaskOverdue,
   logout,
@@ -1299,6 +1358,7 @@ provide(dashboardContextKey, {
   taskSearchQuery,
   taskBeingQuickEditedId,
   timeEntries,
+  timeEntriesError,
   activeTimer,
   startTimer,
   stopTimer,
@@ -1479,6 +1539,7 @@ provide(dashboardContextKey, {
       <FloatingChatbot
         :project-id="typeof route.params.projectId === 'string' ? route.params.projectId : null"
         :projects="aiActionProjectOptions"
+        :open-request="aiAssistantOpenRequest"
         @completed="handleAiActionCompleted"
       />
     </template>

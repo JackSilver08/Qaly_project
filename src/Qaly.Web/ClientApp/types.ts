@@ -81,6 +81,17 @@ export interface DashboardTask {
     key?: string | null;
 }
 
+export interface GanttTaskDto {
+    id: string;
+    title: string;
+    status: string;
+    startDate: string | null;
+    endDate: string | null;
+    progress: number;
+    isCriticalPath: boolean;
+    dependencies: string[];
+}
+
 export interface SprintDto {
     id: string;
     projectId: string;

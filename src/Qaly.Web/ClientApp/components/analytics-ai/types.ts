@@ -69,12 +69,19 @@ export type AiToolbarAction = {
 
 export type ConversationHistoryItem = {
   id: string
+  sessionId: string
+  title: string
+  status: string
+  version: number
   prompt: string
   projectId: string | null
   projectLabel: string
   createdAt: string
+  updatedAt?: string | null
   assistantSnippet?: string | null
   attachmentCount?: number
+  turnCount?: number
+  archivedAt?: string | null
 }
 
 export const AI_MODEL_OPTIONS: AiModelOption[] = [
@@ -99,7 +106,7 @@ export const AI_MODEL_OPTIONS: AiModelOption[] = [
     privacyNote: 'Phù hợp dữ liệu cần xử lý cục bộ.'
   },
   {
-    id: 'deepseek-v4-pro',
+    id: 'deepseek-chat',
     label: 'DeepSeek V4 Pro',
     shortLabel: 'V4 Pro',
     providerLabel: 'DeepSeek Cloud',

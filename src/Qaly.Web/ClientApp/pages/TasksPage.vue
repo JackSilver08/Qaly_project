@@ -110,6 +110,7 @@ const selectedTaskDetail = ref<TaskItemDto | null>(null)
 const selectedTaskComments = ref<CommentDto[]>([])
 const selectedTaskAttachments = ref<AttachmentDto[]>([])
 const selectedTaskTimeEntries = ref<TimeEntryDto[]>([])
+const selectedTaskTimeEntriesError = ref('')
 const selectedTaskMeetingSource = ref<TaskMeetingSourceDto | null>(null)
 const selectedTaskLoading = ref(false)
 const taskDetailCache = ref(new Map<string, TaskItemDto>())
@@ -737,6 +738,7 @@ async function loadTaskDetail(taskId: string) {
     selectedTaskComments.value = []
     selectedTaskAttachments.value = []
     selectedTaskTimeEntries.value = []
+    selectedTaskTimeEntriesError.value = ''
     selectedTaskMeetingSource.value = null
 
     void loadTaskDetailExtras(taskId)
@@ -746,6 +748,7 @@ async function loadTaskDetail(taskId: string) {
     selectedTaskComments.value = []
     selectedTaskAttachments.value = []
     selectedTaskTimeEntries.value = []
+    selectedTaskTimeEntriesError.value = ''
     selectedTaskMeetingSource.value = null
   } finally {
     selectedTaskLoading.value = false
@@ -766,6 +769,9 @@ async function loadTaskDetailExtras(taskId: string) {
     selectedTaskComments.value = commentsResult.status === 'fulfilled' ? commentsResult.value ?? [] : []
     selectedTaskAttachments.value = attachmentsResult.status === 'fulfilled' ? attachmentsResult.value ?? [] : []
     selectedTaskTimeEntries.value = timeEntriesResult.status === 'fulfilled' ? timeEntriesResult.value ?? [] : []
+    selectedTaskTimeEntriesError.value = timeEntriesResult.status === 'rejected'
+      ? errorMessage(timeEntriesResult.reason, 'Không thể tải dữ liệu thời gian của nhiệm vụ.')
+      : ''
     selectedTaskMeetingSource.value = meetingSourceResult.status === 'fulfilled' ? meetingSourceResult.value : null
   } catch (error) {
     if (selectedTaskId.value !== taskId) return
@@ -790,6 +796,7 @@ function resetTaskDrawer() {
   selectedTaskComments.value = []
   selectedTaskAttachments.value = []
   selectedTaskTimeEntries.value = []
+  selectedTaskTimeEntriesError.value = ''
   selectedTaskMeetingSource.value = null
   selectedTaskLoading.value = false
 }
@@ -1460,7 +1467,8 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
               <p>{{ entry.note || 'Không có ghi chú' }}</p>
               <small>{{ formatTime(entry.startedAt) }}</small>
             </article>
-            <div v-if="selectedTaskTimeEntries.length === 0" class="detail-empty">Chưa ghi nhận thời gian.</div>
+            <div v-if="selectedTaskTimeEntriesError" class="detail-empty is-error" role="alert">{{ selectedTaskTimeEntriesError }}</div>
+            <div v-else-if="selectedTaskTimeEntries.length === 0" class="detail-empty">Chưa ghi nhận thời gian.</div>
           </div>
         </section>
       </div>

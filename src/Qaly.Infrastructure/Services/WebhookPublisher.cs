@@ -16,15 +16,18 @@ public partial class WebhookPublisher : IWebhookPublisher
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<WebhookPublisher> _logger;
+    private readonly IWebhookEndpointPolicy _webhookEndpointPolicy;
 
     public WebhookPublisher(
         IHttpClientFactory httpClientFactory,
         IServiceScopeFactory scopeFactory,
-        ILogger<WebhookPublisher> logger)
+        ILogger<WebhookPublisher> logger,
+        IWebhookEndpointPolicy webhookEndpointPolicy)
     {
         _httpClientFactory = httpClientFactory;
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _webhookEndpointPolicy = webhookEndpointPolicy;
     }
 
     public async Task PublishAsync(Guid projectId, string eventType, object payload, CancellationToken ct = default)
@@ -69,9 +72,6 @@ public partial class WebhookPublisher : IWebhookPublisher
         var webhook = await webhookRepo.GetByIdAsync(webhookId, ct);
         if (webhook == null) return;
 
-        using var client = _httpClientFactory.CreateClient("WebhookClient");
-        client.Timeout = TimeSpan.FromSeconds(10);
-
         var dataJson = JsonSerializer.Serialize(payload);
         var idempotencyKey = BuildIdempotencyKey(webhook.Id, eventType, dataJson);
         var alreadyDelivered = await logRepo.GetQueryable()
@@ -102,31 +102,43 @@ public partial class WebhookPublisher : IWebhookPublisher
         var isSuccess = false;
         var attempt = 0;
 
-        for (attempt = 1; attempt <= 3; attempt++)
+        var endpointValidation = await _webhookEndpointPolicy.ValidateAsync(webhook.PayloadUrl, ct);
+        if (!endpointValidation.IsAllowed)
         {
-            try
-            {
-                using var request = BuildRequest(webhook, eventType, idempotencyKey, payloadJson);
-                using var response = await client.SendAsync(request, ct);
-                responseStatusCode = (int)response.StatusCode;
-                responseBody = await response.Content.ReadAsStringAsync(ct);
-                isSuccess = response.IsSuccessStatusCode;
+            attempt = 1;
+            responseBody = endpointValidation.Error;
+        }
+        else
+        {
+            using var client = _httpClientFactory.CreateClient("WebhookClient");
+            client.Timeout = TimeSpan.FromSeconds(10);
 
-                if (isSuccess || !ShouldRetry(response.StatusCode))
+            for (attempt = 1; attempt <= 3; attempt++)
+            {
+                try
                 {
-                    break;
-                }
-            }
-            catch (Exception ex) when (!ct.IsCancellationRequested)
-            {
-                responseStatusCode = null;
-                responseBody = ex.Message;
-            }
+                    using var request = BuildRequest(webhook, eventType, idempotencyKey, payloadJson);
+                    using var response = await client.SendAsync(request, ct);
+                    responseStatusCode = (int)response.StatusCode;
+                    responseBody = await response.Content.ReadAsStringAsync(ct);
+                    isSuccess = response.IsSuccessStatusCode;
 
-            if (attempt < 3)
-            {
-                LogWebhookDeliveryFailedRetry(_logger, eventType, webhook.Id, attempt, idempotencyKey);
-                await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt), ct);
+                    if (isSuccess || !ShouldRetry(response.StatusCode))
+                    {
+                        break;
+                    }
+                }
+                catch (Exception ex) when (!ct.IsCancellationRequested)
+                {
+                    responseStatusCode = null;
+                    responseBody = ex.Message;
+                }
+
+                if (attempt < 3)
+                {
+                    LogWebhookDeliveryFailedRetry(_logger, eventType, webhook.Id, attempt, idempotencyKey);
+                    await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt), ct);
+                }
             }
         }
 

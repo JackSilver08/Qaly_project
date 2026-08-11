@@ -61,7 +61,7 @@ public sealed class AiAssistantGoalPlanningContractTests
     [Fact]
     public void DeterministicFallback_DemoRequest_IsHonestAndNeverExecutes()
     {
-        var context = new AiAssistantExecutionContextDto(AiAssistantCapabilityCatalog.All.ToArray(), [], []);
+        var context = new AiAssistantExecutionContextDto(WithoutSafeTestCapability(), [], []);
         var result = AiAssistantGoalPlanningOutputContract.CreateDeterministicFallback(
             new AiAssistantTurnRequestDto("Chạy test demo tất cả CAND đã implement"), context, "provider_unavailable");
 
@@ -95,7 +95,128 @@ public sealed class AiAssistantGoalPlanningContractTests
     }
 
     [Fact]
-    public async Task Planner_KnownDemoExecutionRequest_DoesNotCallProvider()
+    public void DeterministicFallback_NaturalProjectPhrase_SelectsArtifactOnlyProjectLaunchSkill()
+    {
+        var context = new AiAssistantExecutionContextDto(WithoutSafeTestCapability(), [], []);
+
+        var result = AiAssistantGoalPlanningOutputContract.CreateDeterministicFallback(
+            new AiAssistantTurnRequestDto(
+                "Tạo một dự án web SPA",
+                new AiAssistantClientContextDto("/dashboard", "projects")),
+            context,
+            "goal_provider_unavailable");
+
+        result.SelectedCapabilityId.Should().Be(AiProjectLaunchContract.CapabilityId);
+        result.GoalAnalysis.Disposition.Should().Be("plannable");
+        result.GoalAnalysis.MissingSkills.Should().BeEmpty();
+        result.WorkPlan.Steps.Should().Contain(step =>
+            step.Kind == "call_skill" && step.SkillId == AiProjectLaunchContract.CapabilityId && step.MutationClass == "none");
+    }
+
+    [Fact]
+    public void IntentClassifier_CreateProjectWithStaffingDetails_StartsWithLaunchBrief()
+    {
+        var capability = AiAssistantCapabilityIntentClassifier.Infer(
+            "Khởi chạy dự án web SPA, chỉ định manager, thành viên, sprint và phân việc");
+
+        capability.Should().Be(AiProjectLaunchContract.CapabilityId);
+    }
+
+    [Fact]
+    public void IntentClassifier_CreateTasksForProjectStartup_SelectsTaskComposer()
+    {
+        var capability = AiAssistantCapabilityIntentClassifier.Infer(
+            "giup toi tao mot loat cac task cho giai doan dau, sprint 1, khao sat va tim tai lieu de khoi tao du an");
+
+        capability.Should().Be(AiAssistantContextContract.TaskCreateCapability);
+    }
+
+    [Fact]
+    public void IntentClassifier_ProjectLaunchBeforeTaskBreakdown_SelectsProjectLaunch()
+    {
+        var capability = AiAssistantCapabilityIntentClassifier.Infer(
+            "khoi tao du an web SPA, sau do tao task chi tiet theo sprint");
+
+        capability.Should().Be(AiProjectLaunchContract.CapabilityId);
+    }
+
+    [Fact]
+    public void DeterministicFallback_CreateTasksMentioningProjectPurpose_SelectsTaskComposer()
+    {
+        var context = new AiAssistantExecutionContextDto(AiAssistantCapabilityCatalog.All.ToArray(), [], []);
+        var result = AiAssistantGoalPlanningOutputContract.CreateDeterministicFallback(
+            new AiAssistantTurnRequestDto(
+                "giup toi tao task cho sprint 1 de khoi tao du an",
+                new AiAssistantClientContextDto("/projects/project-id", "project", Guid.NewGuid())),
+            context,
+            "goal_provider_unavailable");
+
+        result.SelectedCapabilityId.Should().Be(AiAssistantContextContract.TaskCreateCapability);
+    }
+
+    [Fact]
+    public void IntentClassifier_PoliteProjectActionAfterCapabilityMenu_IsNotMistakenForAnotherOverview()
+    {
+        var message = "Bạn có thể giúp tôi khởi tạo 1 dự án về web cung cấp dịch vụ spa theo gói được không?";
+        var history = new List<AiChatMessageDto>
+        {
+            new("user", "Bạn có thể giúp cho tôi những gì?"),
+            new("assistant", "Mình có thể hỗ trợ bạn theo 5 hướng chính.")
+        };
+
+        AiAssistantCapabilityIntentClassifier.IsCapabilityOverviewQuery(message).Should().BeFalse();
+        AiAssistantCapabilityIntentClassifier.Infer(message, history)
+            .Should().Be(AiProjectLaunchContract.CapabilityId);
+    }
+
+    [Fact]
+    public void IntentClassifier_ShortContinuation_UsesRecentProjectLaunchContext()
+    {
+        var history = new List<AiChatMessageDto>
+        {
+            new("user", "Mình muốn tự động tạo dự án web SPA"),
+            new("assistant", "Mình có thể lập Project Launch Brief và phương án manager/team cho bạn.")
+        };
+
+        var capability = AiAssistantCapabilityIntentClassifier.Infer("thử luôn", history);
+
+        capability.Should().Be(AiProjectLaunchContract.CapabilityId);
+    }
+
+    [Fact]
+    public void IntentClassifier_UnrelatedQuestion_DoesNotStayLockedToOldLaunchContext()
+    {
+        var history = new List<AiChatMessageDto>
+        {
+            new("user", "Mình muốn tự động tạo dự án web SPA"),
+            new("assistant", "Mình có thể lập Project Launch Brief cho bạn.")
+        };
+
+        var capability = AiAssistantCapabilityIntentClassifier.Infer("Tiến độ workspace tuần này thế nào?", history);
+
+        capability.Should().Be(AiAssistantContextContract.GroundedReadCapability);
+    }
+
+    [Fact]
+    public void AuthorizedExecutionPlan_ExplicitContinuation_DoesNotDependOnModelRanking()
+    {
+        var context = new AiAssistantExecutionContextDto(AiAssistantCapabilityCatalog.All.ToArray(), [], []);
+        var request = new AiAssistantTurnRequestDto(
+            "Tiếp tục lập staffing và delivery plan",
+            new AiAssistantClientContextDto("/dashboard", "workspace"),
+            RequestedCapabilityId: AiProjectOrchestrationContract.StaffingCapabilityId);
+
+        var ok = AiAssistantGoalPlanningOutputContract.TryCreateAuthorizedExecutionPlan(
+            request, context, out var result);
+
+        ok.Should().BeTrue();
+        result!.SelectedCapabilityId.Should().Be(AiProjectOrchestrationContract.StaffingCapabilityId);
+        result.GoalAnalysis.ActualProvider.Should().Be("Qaly capability router");
+        result.UsedFallback.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Planner_ProjectLaunchAction_RoutesWithoutCallingPlannerProvider()
     {
         var gateway = new Mock<IAiGateway>(MockBehavior.Strict);
         var currentUser = new Mock<ICurrentUserService>(MockBehavior.Strict);
@@ -104,6 +225,26 @@ public sealed class AiAssistantGoalPlanningContractTests
             currentUser.Object,
             Options.Create(new AiJobPlatformOptions { AssistantGoalPlannerEnabled = true }));
         var context = new AiAssistantExecutionContextDto(AiAssistantCapabilityCatalog.All.ToArray(), [], []);
+
+        var result = await planner.PlanAsync(
+            new AiAssistantTurnRequestDto("Tạo dự án web SPA và chỉ định manager phù hợp"),
+            context);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Data!.SelectedCapabilityId.Should().Be(AiProjectLaunchContract.CapabilityId);
+        gateway.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Planner_KnownDemoExecutionRequest_DoesNotCallProvider()
+    {
+        var gateway = new Mock<IAiGateway>(MockBehavior.Strict);
+        var currentUser = new Mock<ICurrentUserService>(MockBehavior.Strict);
+        var planner = new AiAssistantGoalPlanner(
+            gateway.Object,
+            currentUser.Object,
+            Options.Create(new AiJobPlatformOptions { AssistantGoalPlannerEnabled = true }));
+        var context = new AiAssistantExecutionContextDto(WithoutSafeTestCapability(), [], []);
 
         var result = await planner.PlanAsync(
             new AiAssistantTurnRequestDto(
@@ -118,6 +259,21 @@ public sealed class AiAssistantGoalPlanningContractTests
     }
 
     [Fact]
+    public void DeterministicFallback_DemoRequest_WithDevCapability_PreparesConfirmedAdapterHandoff()
+    {
+        var context = new AiAssistantExecutionContextDto(AiAssistantCapabilityCatalog.All.ToArray(), [], []);
+
+        var result = AiAssistantGoalPlanningOutputContract.CreateDeterministicFallback(
+            new AiAssistantTurnRequestDto("Chạy test demo tất cả CAND đã implement"), context, "provider_unavailable");
+
+        result.SelectedCapabilityId.Should().Be(AiSafeTestOrchestratorContract.CapabilityId);
+        result.GoalAnalysis.MissingSkills.Should().BeEmpty();
+        result.GoalAnalysis.RequiresConfirmation.Should().BeTrue();
+        result.WorkPlan.Steps.Should().Contain(step =>
+            step.Kind == "call_skill" && step.SkillId == AiSafeTestOrchestratorContract.CapabilityId);
+    }
+
+    [Fact]
     public void ValidateModel_RejectsCyclicWorkPlan()
     {
         var valid = AiAssistantGoalPlanningOutputContract.TryValidateModel(
@@ -128,6 +284,11 @@ public sealed class AiAssistantGoalPlanningContractTests
         valid.Should().BeFalse();
         error.Should().Contain("cycle");
     }
+
+    private static AiAssistantCapabilityDescriptorDto[] WithoutSafeTestCapability()
+        => AiAssistantCapabilityCatalog.All
+            .Where(item => item.CapabilityId != AiSafeTestOrchestratorContract.CapabilityId)
+            .ToArray();
 
     private static string ModelJson(
         string objective,

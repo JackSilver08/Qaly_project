@@ -7,6 +7,7 @@ public static class AiAssistantTurnContract
     public const string ResearchPlanIntent = AiAssistantResearchPlanContract.CapabilityId;
     public const string TaskCreateIntent = "task.create.v1";
     public const string ClarificationIntent = "clarification.v1";
+    public const string GuidedAnswerIntent = "advisory.answer.v1";
     public const string UnsupportedIntent = "unsupported.v1";
     public const string PolicyBlockedIntent = "policy_blocked.v1";
 }
@@ -17,7 +18,13 @@ public sealed record AiAssistantClientContextDto(
     Guid? ProjectId = null,
     string? EntityType = null,
     Guid? EntityId = null,
-    IReadOnlyList<Guid>? SelectionIds = null);
+    IReadOnlyList<Guid>? SelectionIds = null,
+    Guid? OrganizationId = null);
+
+public sealed record AiAssistantProgressiveReplyDto(
+    string QuestionId,
+    string Value,
+    string? Label = null);
 
 public sealed record AiAssistantTurnRequestDto(
     string Message,
@@ -31,7 +38,10 @@ public sealed record AiAssistantTurnRequestDto(
     long? ExpectedVersion = null,
     Guid? ClientTurnId = null,
     string? RequestedCapabilityId = null,
-    IReadOnlyList<string>? RequestedSourceIds = null);
+    IReadOnlyList<string>? RequestedSourceIds = null,
+    AiAssistantProgressiveReplyDto? ProgressiveReply = null,
+    IReadOnlyList<AiAssistantProgressiveReplyDto>? ProgressiveReplies = null,
+    Guid? ResumeFromTurnId = null);
 
 public sealed record AiAssistantChoiceDto(
     string Id,
@@ -80,11 +90,50 @@ public sealed record AiAssistantTurnResponseDto(
     IReadOnlyList<AiAssistantSourceDisclosureDto>? SourceDisclosures = null,
     AiAssistantResearchPlanDto? ResearchPlan = null,
     AiAssistantGoalAnalysisDto? GoalAnalysis = null,
-    AiAssistantWorkPlanDto? WorkPlan = null);
+    AiAssistantWorkPlanDto? WorkPlan = null,
+    AiAssistantConversationTurnDto? Conversation = null,
+    ProjectLaunchBriefDto? ProjectLaunchBrief = null,
+    ProjectLaunchPlanDto? ProjectLaunchPlan = null,
+    AiSafeTestRunPreviewDto? SafeTestRunPreview = null,
+    AiSafeTestRunReportDto? SafeTestRunReport = null);
 
 public sealed record CreateAiAssistantSessionRequestDto(
     AiAssistantClientContextDto? Context = null,
     string? Title = null);
+
+public sealed record AiAssistantClarificationDraftDto(
+    Guid OriginTurnId,
+    string OriginalMessage,
+    string? RequestedCapabilityId,
+    IReadOnlyList<AiAssistantConversationQuestionDto> Questions,
+    IReadOnlyList<AiAssistantProgressiveReplyDto> Answers,
+    DateTimeOffset UpdatedAt);
+
+public sealed record UpdateAiAssistantClarificationDraftRequestDto(
+    long ExpectedVersion,
+    Guid OriginTurnId,
+    string OriginalMessage,
+    string? RequestedCapabilityId,
+    IReadOnlyList<AiAssistantConversationQuestionDto> Questions,
+    IReadOnlyList<AiAssistantProgressiveReplyDto> Answers);
+
+public sealed record UpdateAiAssistantSessionRequestDto(
+    long ExpectedVersion,
+    string Title);
+
+public sealed record AiAssistantSessionControlRequestDto(long ExpectedVersion);
+
+public sealed record AiAssistantSessionSummaryDto(
+    Guid SessionId,
+    string Title,
+    string Status,
+    long Version,
+    Guid? ProjectId,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? UpdatedAt,
+    DateTimeOffset? ArchivedAt,
+    int TurnCount,
+    string? LastMessage);
 
 public sealed record AiAssistantProcessEventDto(
     int Sequence,
@@ -95,7 +144,17 @@ public sealed record AiAssistantProcessEventDto(
     DateTimeOffset? CompletedAt = null,
     int? DurationMs = null,
     bool Retryable = false,
-    string? SafeErrorCode = null);
+    string? SafeErrorCode = null,
+    string? StepId = null,
+    int? Attempt = null,
+    IReadOnlyList<string>? SourceRefs = null,
+    string? ActualProvider = null,
+    string? ActualModel = null);
+
+public sealed record AiAssistantTurnControlRequestDto(
+    long ExpectedVersion,
+    string? IdempotencyKey = null,
+    Guid? ClientTurnId = null);
 
 public sealed record AiAssistantStoredTurnDto(
     Guid TurnId,
@@ -117,4 +176,5 @@ public sealed record AiAssistantSessionDto(
     Guid? ProjectId,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
-    IReadOnlyList<AiAssistantStoredTurnDto> Turns);
+    IReadOnlyList<AiAssistantStoredTurnDto> Turns,
+    AiAssistantClarificationDraftDto? ClarificationDraft = null);

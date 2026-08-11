@@ -96,6 +96,14 @@ public static class AiActionComposerOutputContract
         }
 
         var first = canonicalOptions[0];
+        var targetEntities = new List<AiActionTargetEntityDto>
+        {
+            new("project", snapshot.Project.Id, snapshot.Project.Name)
+        };
+        if (snapshot.Sprint != null)
+        {
+            targetEntities.Add(new AiActionTargetEntityDto("sprint", snapshot.Sprint.Id, snapshot.Sprint.Name));
+        }
         var final = new AiActionPlanDto(
             AiActionComposerContract.SchemaId,
             "1.0",
@@ -104,7 +112,7 @@ public static class AiActionComposerOutputContract
             snapshot.UserIntent,
             "task.create",
             Math.Round(model.Confidence, 2, MidpointRounding.AwayFromZero),
-            [new AiActionTargetEntityDto("project", snapshot.Project.Id, snapshot.Project.Name)],
+            targetEntities,
             NormalizeList(model.Assumptions, 12, 300),
             NormalizeList(model.MissingFields, 8, 120),
             NormalizeList(model.Warnings, 12, 300),
@@ -114,6 +122,118 @@ public static class AiActionComposerOutputContract
         resultJson = JsonSerializer.Serialize(final, JsonOptions);
         error = null;
         return true;
+    }
+
+    public static bool TryBuildDeterministicFallback(
+        string snapshotJson,
+        out string resultJson,
+        out string? error)
+    {
+        resultJson = string.Empty;
+        if (!SchemaArtifactIsAvailable(out error) ||
+            !TryReadSnapshot(snapshotJson, out var snapshot, out error))
+        {
+            return false;
+        }
+
+        var isVietnamese = !string.Equals(snapshot!.Language, "en", StringComparison.OrdinalIgnoreCase);
+        var intent = snapshot.UserIntent.Trim();
+        var conciseIntent = intent.Length <= 140 ? intent : $"{intent[..137]}...";
+        var projectRef = snapshot.Project.SourceRef;
+        IReadOnlyList<string> fallbackSourceRefs = snapshot.Sprint == null
+            ? [projectRef]
+            : [projectRef, snapshot.Sprint.SourceRef];
+        IReadOnlyList<AiActionTargetEntityDto> fallbackTargetEntities = snapshot.Sprint == null
+            ? [new AiActionTargetEntityDto("project", snapshot.Project.Id, snapshot.Project.Name)]
+            : [
+                new AiActionTargetEntityDto("project", snapshot.Project.Id, snapshot.Project.Name),
+                new AiActionTargetEntityDto("sprint", snapshot.Sprint.Id, snapshot.Sprint.Name)
+            ];
+        var commands = isVietnamese
+            ? new List<AiActionTaskCommandDto>
+            {
+                BuildFallbackCommand(
+                    "fallback-discovery",
+                    "Khảo sát yêu cầu và tài liệu liên quan",
+                    $"Làm rõ phạm vi và thu thập tài liệu cho yêu cầu: {intent}",
+                    ["Phạm vi và nguồn tham khảo được ghi lại", "Các điểm chưa rõ và rủi ro được liệt kê"],
+                    "High",
+                    4,
+                    fallbackSourceRefs),
+                BuildFallbackCommand(
+                    "fallback-delivery",
+                    $"Triển khai: {conciseIntent}",
+                    $"Thực hiện phạm vi đã được người dùng yêu cầu: {intent}",
+                    ["Kết quả đáp ứng phạm vi đã thống nhất", "Thay đổi có thể được kiểm tra trên dữ liệu thật"],
+                    "High",
+                    8,
+                    fallbackSourceRefs),
+                BuildFallbackCommand(
+                    "fallback-acceptance",
+                    "Kiểm thử, nghiệm thu và cập nhật tài liệu",
+                    "Kiểm tra kết quả end-to-end, ghi nhận lỗi còn lại và cập nhật tài liệu bàn giao.",
+                    ["Luồng chính được kiểm thử end-to-end", "Lỗi còn lại và hướng xử lý được ghi nhận"],
+                    "Medium",
+                    4,
+                    fallbackSourceRefs)
+            }
+            : new List<AiActionTaskCommandDto>
+            {
+                BuildFallbackCommand(
+                    "fallback-discovery",
+                    "Research requirements and supporting material",
+                    $"Clarify scope and collect supporting material for: {intent}",
+                    ["Scope and source material are documented", "Unknowns and risks are listed"],
+                    "High",
+                    4,
+                    fallbackSourceRefs),
+                BuildFallbackCommand(
+                    "fallback-delivery",
+                    $"Deliver: {conciseIntent}",
+                    $"Implement the user-requested scope: {intent}",
+                    ["The agreed scope is implemented", "The change can be verified against real data"],
+                    "High",
+                    8,
+                    fallbackSourceRefs),
+                BuildFallbackCommand(
+                    "fallback-acceptance",
+                    "Test, accept and document the outcome",
+                    "Verify the end-to-end result, record remaining defects, and update handover documentation.",
+                    ["The main flow is verified end to end", "Remaining defects and next actions are recorded"],
+                    "Medium",
+                    4,
+                    fallbackSourceRefs)
+            };
+
+        var option = new AiActionOptionDto(
+            "server-safe-plan",
+            isVietnamese ? "Phương án an toàn để duyệt" : "Safe review plan",
+            isVietnamese
+                ? "Qaly đã tạo bản nháp có thể chỉnh sửa từ đúng yêu cầu gốc; chưa tự gán người hoặc kỹ năng khi thiếu bằng chứng."
+                : "Qaly created an editable draft from the original request and did not assign people or skills without evidence.",
+            isVietnamese
+                ? ["Cần duyệt nội dung, Sprint, người phụ trách và kỹ năng trước khi xác nhận."]
+                : ["Review content, Sprint, assignees, and skills before confirmation."],
+            commands);
+        var plan = new AiActionPlanDto(
+            AiActionComposerContract.SchemaId,
+            "1.0",
+            snapshot.Project.Id,
+            snapshot.SourceVersion,
+            snapshot.UserIntent,
+            "task.create",
+            0.72m,
+            fallbackTargetEntities,
+            [],
+            isVietnamese ? ["Sprint", "Người phụ trách", "Kỹ năng bắt buộc"] : ["Sprint", "Assignee", "Required skills"],
+            isVietnamese
+                ? ["Model đã chọn không trả được schema hợp lệ; Qaly dùng bản nháp server an toàn để luồng không bị gián đoạn."]
+                : ["The selected model did not return a valid schema; Qaly used a safe server draft so the workflow can continue."],
+            [option],
+            new AiActionReviewSelectionDto(option.OptionId, commands.Select(command => command.CommandId).ToList()),
+            DateTimeOffset.UtcNow);
+        resultJson = JsonSerializer.Serialize(plan, JsonOptions);
+        return TryValidateFinal(resultJson, out error);
     }
 
     public static bool TryValidateReviewedPlan(
@@ -207,6 +327,11 @@ public static class AiActionComposerOutputContract
             snapshot.UserIntent.Length > 4000 ||
             snapshot.MaximumOptions is < 1 or > 3 ||
             snapshot.Members == null || snapshot.Skills == null || snapshot.AllowedSourceRefs == null ||
+            (snapshot.Sprint != null &&
+                (snapshot.Sprint.Id == Guid.Empty ||
+                 string.IsNullOrWhiteSpace(snapshot.Sprint.Name) ||
+                 string.IsNullOrWhiteSpace(snapshot.Sprint.SourceRef) ||
+                 !snapshot.AllowedSourceRefs.Contains(snapshot.Sprint.SourceRef, StringComparer.Ordinal))) ||
             snapshot.Members.Select(item => item.UserId).Distinct().Count() != snapshot.Members.Count ||
             snapshot.Skills.Select(item => item.SkillId).Distinct().Count() != snapshot.Skills.Count)
         {
@@ -321,7 +446,8 @@ public static class AiActionComposerOutputContract
             .ToList();
         if (sourceRefs.Count is < 1 or > 12 ||
             sourceRefs.Any(reference => !allowedRefs.Contains(reference)) ||
-            !sourceRefs.Contains(snapshot.Project.SourceRef, StringComparer.Ordinal))
+            !sourceRefs.Contains(snapshot.Project.SourceRef, StringComparer.Ordinal) ||
+            (snapshot.Sprint != null && !sourceRefs.Contains(snapshot.Sprint.SourceRef, StringComparer.Ordinal)))
         {
             error = "Every task command must cite only authorized sources and include the project source.";
             return false;
@@ -343,6 +469,29 @@ public static class AiActionComposerOutputContract
             sourceRefs);
         return true;
     }
+
+    private static AiActionTaskCommandDto BuildFallbackCommand(
+        string commandId,
+        string title,
+        string description,
+        IReadOnlyList<string> acceptanceCriteria,
+        string priority,
+        int estimatedHours,
+        IReadOnlyList<string> sourceRefs)
+        => new(
+            commandId,
+            AiActionComposerContract.TaskCreateTool,
+            "1.0",
+            title.Length <= 200 ? title : $"{title[..197]}...",
+            description.Length <= 4000 ? description : $"{description[..3997]}...",
+            acceptanceCriteria,
+            priority,
+            null,
+            estimatedHours,
+            null,
+            "unassigned",
+            [],
+            sourceRefs);
 
     private static List<string> NormalizeList(IReadOnlyList<string>? values, int maxCount, int maxLength)
         => (values ?? [])

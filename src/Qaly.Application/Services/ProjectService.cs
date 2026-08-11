@@ -103,11 +103,13 @@ public class ProjectService : IProjectService
         if (!IsAdmin())
         {
             query = query.Where(project =>
-                project.OwnerId == currentUserId ||
-                project.Members.Any(member => member.UserId == currentUserId) ||
-                (project.OrganizationId != null &&
-                 (project.Organization!.OwnerId == currentUserId ||
-                  project.Organization.Members.Any(member => member.UserId == currentUserId))));
+                (project.OwnerId == currentUserId ||
+                 project.Members.Any(member => member.UserId == currentUserId)) &&
+                (project.OrganizationId == null ||
+                 (project.Organization != null &&
+                  project.Organization.IsActive &&
+                  (project.Organization.OwnerId == currentUserId ||
+                   project.Organization.Members.Any(member => member.UserId == currentUserId)))));
         }
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -592,13 +594,23 @@ public class ProjectService : IProjectService
     }
 
     private IQueryable<Project> ProjectDetailsQuery()
-        => _projectRepo.GetQueryable()
+    {
+        var currentUserId = _currentUserService.UserId;
+        var canViewEveryPrivateTask = IsAdmin();
+        return _projectRepo.GetQueryable()
             .Include(p => p.Owner)
             .Include(p => p.Organization)
                 .ThenInclude(o => o!.Members)
             .Include(p => p.Members)
             .Include(p => p.Labels)
-            .Include(p => p.Tasks);
+            .Include(p => p.Tasks.Where(task =>
+                canViewEveryPrivateTask ||
+                !task.IsPrivate ||
+                task.ReporterId == currentUserId ||
+                task.AssigneeId == currentUserId ||
+                task.Assignees.Any(assignment => assignment.UserId == currentUserId) ||
+                task.Project.OwnerId == currentUserId));
+    }
 
     private async Task<bool> CanAccessProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
     {
@@ -623,11 +635,6 @@ public class ProjectService : IProjectService
             return false;
         }
 
-        if (ownerId == currentUserId)
-        {
-            return true;
-        }
-
         var projectInfo = await _projectRepo.GetQueryable()
             .AsNoTracking()
             .Where(project => project.Id == projectId)
@@ -642,6 +649,21 @@ public class ProjectService : IProjectService
         if (projectInfo?.OrganizationId != null && !projectInfo.OrganizationIsActive)
         {
             return false;
+        }
+
+        if (projectInfo?.OrganizationId != null &&
+            projectInfo.OrganizationOwnerId != currentUserId &&
+            !await _organizationMemberRepo.GetQueryable().AnyAsync(member =>
+                member.OrganizationId == projectInfo.OrganizationId.Value &&
+                member.UserId == currentUserId,
+                ct))
+        {
+            return false;
+        }
+
+        if (ownerId == currentUserId)
+        {
+            return true;
         }
 
         var isProjectMember = await _memberRepo.GetQueryable()
@@ -672,7 +694,7 @@ public class ProjectService : IProjectService
             return true;
         }
 
-        if (!await IsProjectOrganizationActiveAsync(projectId, ct))
+        if (!await CanAccessProjectAsync(projectId, ownerId, ct))
         {
             return false;
         }
@@ -682,37 +704,13 @@ public class ProjectService : IProjectService
             return true;
         }
 
-        var projectInfo = await _projectRepo.GetQueryable()
-            .AsNoTracking()
-            .Where(project => project.Id == projectId)
-            .Select(project => new
-            {
-                project.OrganizationId,
-                OrganizationIsActive = project.Organization != null && project.Organization.IsActive,
-                OrganizationOwnerId = project.Organization != null ? (Guid?)project.Organization.OwnerId : null
-            })
-            .FirstOrDefaultAsync(ct);
-
-        if (projectInfo?.OrganizationId != null && !projectInfo.OrganizationIsActive)
-        {
-            return false;
-        }
-
         var role = await GetProjectRoleAsync(projectId, currentUserId.Value, ct);
         if (ProjectRoleRules.CanManageProject(role))
         {
             return true;
         }
 
-        if (projectInfo?.OrganizationId == null || projectInfo.OrganizationOwnerId == null)
-        {
-            return false;
-        }
-
-        return await CanManageOrganizationAsync(
-            projectInfo.OrganizationId.Value,
-            projectInfo.OrganizationOwnerId.Value,
-            ct);
+        return false;
     }
 
     private async Task<string?> GetProjectRoleAsync(Guid projectId, Guid userId, CancellationToken ct)
@@ -852,11 +850,13 @@ public class ProjectService : IProjectService
         if (!IsAdmin())
         {
             query = query.Where(project =>
-                project.OwnerId == currentUserId ||
-                project.Members.Any(member => member.UserId == currentUserId) ||
-                (project.OrganizationId != null &&
-                 (project.Organization!.OwnerId == currentUserId ||
-                  project.Organization.Members.Any(member => member.UserId == currentUserId))));
+                (project.OwnerId == currentUserId ||
+                 project.Members.Any(member => member.UserId == currentUserId)) &&
+                (project.OrganizationId == null ||
+                 (project.Organization != null &&
+                  project.Organization.IsActive &&
+                  (project.Organization.OwnerId == currentUserId ||
+                   project.Organization.Members.Any(member => member.UserId == currentUserId)))));
         }
 
         var totalCount = await query.CountAsync(ct);
@@ -999,11 +999,13 @@ public class ProjectService : IProjectService
         if (!IsAdmin())
         {
             query = query.Where(project =>
-                project.OwnerId == currentUserId ||
-                project.Members.Any(member => member.UserId == currentUserId) ||
-                (project.OrganizationId != null &&
-                 (project.Organization!.OwnerId == currentUserId ||
-                  project.Organization.Members.Any(member => member.UserId == currentUserId))));
+                (project.OwnerId == currentUserId ||
+                 project.Members.Any(member => member.UserId == currentUserId)) &&
+                (project.OrganizationId == null ||
+                 (project.Organization != null &&
+                  project.Organization.IsActive &&
+                  (project.Organization.OwnerId == currentUserId ||
+                   project.Organization.Members.Any(member => member.UserId == currentUserId)))));
         }
 
         if (!string.IsNullOrWhiteSpace(search))

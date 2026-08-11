@@ -1,9 +1,7 @@
 import { expect, test, type ConsoleMessage, type Page } from "@playwright/test";
+import { adminEmail, adminPassword } from "./support/credentials";
 
 test.setTimeout(150_000);
-
-const adminEmail = process.env.E2E_ADMIN_EMAIL ?? "admin@qaly.dev";
-const adminPassword = process.env.E2E_ADMIN_PASSWORD ?? "Qaly@E2E2026!";
 
 type BrowserProblem = {
     source: "console" | "pageerror" | "requestfailed";

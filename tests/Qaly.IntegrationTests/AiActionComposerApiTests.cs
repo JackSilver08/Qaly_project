@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Ai;
 using Qaly.Application.Services;
@@ -124,6 +125,44 @@ public sealed class AiActionComposerApiTests : IClassFixture<IntegrationTestFact
     }
 
     [Fact]
+    [Trait("TestId", "TEST-ACTION-SPRINT-01")]
+    public async Task SprintScopedCompose_ConfirmationPersistsTasksInTheSelectedSprint()
+    {
+        var scope = await SeedScopeAsync(includeViewer: false);
+        var csrf = await GetCsrfTokenAsync(_client);
+        var compose = await ComposeAsync(
+            _client,
+            scope.ProjectId,
+            csrf,
+            $"sprint-compose-{Guid.NewGuid():N}",
+            scope.SprintId);
+        compose.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var created = await ReadResultAsync<AiJobCreatedDto>(compose);
+        var draftId = await CompleteActionJobAsync(created.JobId);
+        var draft = await GetResultAsync<AiDraftDetailDto>(_client, $"/api/ai/drafts/{draftId}");
+
+        var confirmedResponse = await ConfirmAsync(
+            _client,
+            draftId,
+            draft.WorkingPayload.GetRawText(),
+            draft.RowVersion,
+            $"sprint-confirm-{Guid.NewGuid():N}",
+            csrf);
+        confirmedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var confirmed = await ReadResultAsync<AiDraftConfirmResultDto>(confirmedResponse);
+        confirmed.CreatedTaskCount.Should().Be(1);
+        confirmed.ActionReceipt!.ReadBackLinks.Should().Contain(link =>
+            link.Contains($"#milestone-{scope.SprintId:D}", StringComparison.Ordinal));
+
+        using var dbScope = _factory.Services.CreateScope();
+        var db = dbScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        var task = await db.TaskItems.AsNoTracking()
+            .SingleAsync(item => item.Id == confirmed.CreatedTaskIds.Single());
+        task.ProjectId.Should().Be(scope.ProjectId);
+        task.SprintId.Should().Be(scope.SprintId);
+    }
+
+    [Fact]
     [Trait("TestId", "TEST-ACTION-03")]
     public async Task ViewerAndForeignProject_ComposeAreDeniedWithoutCreatingJobs()
     {
@@ -193,6 +232,38 @@ public sealed class AiActionComposerApiTests : IClassFixture<IntegrationTestFact
             .Should().Be(AiDraftStatuses.PendingReview);
     }
 
+    [Fact]
+    [Trait("TestId", "TEST-ACTION-QUEUE-01")]
+    public async Task Compose_WhenWorkerIsDisabled_FailsFastWithoutCreatingAnUnservedJob()
+    {
+        var seeded = await SeedScopeAsync(includeViewer: false);
+        using var optionsScope = _factory.Services.CreateScope();
+        var platform = optionsScope.ServiceProvider.GetRequiredService<IOptionsMonitor<AiJobPlatformOptions>>().CurrentValue;
+        var previousAllow = platform.AllowEnqueueWhenWorkerDisabled;
+        var previousWorker = platform.WorkerEnabled;
+        platform.AllowEnqueueWhenWorkerDisabled = false;
+        platform.WorkerEnabled = false;
+        try
+        {
+            var response = await ComposeAsync(
+                _client,
+                seeded.ProjectId,
+                await GetCsrfTokenAsync(_client),
+                $"worker-disabled-{Guid.NewGuid():N}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            (await ReadEnvelopeAsync<AiJobCreatedDto>(response)).ErrorCode.Should().Be(AiErrorCodes.WorkerPaused);
+            using var assertScope = _factory.Services.CreateScope();
+            var db = assertScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+            (await db.AiJobs.CountAsync(item => item.ProjectId == seeded.ProjectId)).Should().Be(0);
+        }
+        finally
+        {
+            platform.WorkerEnabled = previousWorker;
+            platform.AllowEnqueueWhenWorkerDisabled = previousAllow;
+        }
+    }
+
     private async Task<SeededScope> SeedScopeAsync(bool includeViewer)
     {
         using var scope = _factory.Services.CreateScope();
@@ -223,7 +294,15 @@ public sealed class AiActionComposerApiTests : IClassFixture<IntegrationTestFact
             Description = "Frontend engineering",
             IsActive = true
         };
-        db.AddRange(organization, project, skill);
+        var sprint = new Sprint
+        {
+            ProjectId = project.Id,
+            Name = "Sprint 1",
+            Status = "Active",
+            StartDate = DateTimeOffset.UtcNow.AddDays(-2),
+            EndDate = DateTimeOffset.UtcNow.AddDays(12)
+        };
+        db.AddRange(organization, project, skill, sprint);
         if (viewerId.HasValue)
         {
             db.ProjectMembers.Add(new ProjectMember
@@ -234,7 +313,7 @@ public sealed class AiActionComposerApiTests : IClassFixture<IntegrationTestFact
             });
         }
         await db.SaveChangesAsync();
-        return new SeededScope(organization.Id, project.Id, skill.Id, viewerId);
+        return new SeededScope(organization.Id, project.Id, sprint.Id, skill.Id, viewerId);
     }
 
     private async Task<Guid> CompleteActionJobAsync(Guid jobId)
@@ -246,6 +325,8 @@ public sealed class AiActionComposerApiTests : IClassFixture<IntegrationTestFact
         var snapshotJson = request.RootElement.GetProperty("sourceText").GetString()!;
         var snapshot = JsonSerializer.Deserialize<AiActionContextSnapshotDto>(snapshotJson, JsonOptions)!;
         var skill = snapshot.Skills.Single();
+        var sourceRefs = new List<string> { snapshot.Project.SourceRef, skill.SourceRef };
+        if (snapshot.Sprint != null) sourceRefs.Add(snapshot.Sprint.SourceRef);
         var command = new AiActionTaskCommandDto(
             "task-1",
             AiActionComposerContract.TaskCreateTool,
@@ -259,7 +340,7 @@ public sealed class AiActionComposerApiTests : IClassFixture<IntegrationTestFact
             null,
             "unassigned",
             [new AiActionSkillSelectionDto(skill.SkillId, "Proficient")],
-            [snapshot.Project.SourceRef, skill.SourceRef]);
+            sourceRefs);
         var model = new AiActionPlanDto(
             AiActionComposerContract.SchemaId,
             "1.0",
@@ -316,13 +397,19 @@ public sealed class AiActionComposerApiTests : IClassFixture<IntegrationTestFact
         HttpClient client,
         Guid projectId,
         string csrf,
-        string idempotencyKey)
+        string idempotencyKey,
+        Guid? sprintId = null)
     {
         var message = new HttpRequestMessage(HttpMethod.Post, "/api/ai/actions/compose")
         {
             Content = JsonContent.Create(new AiActionComposeRequestDto(
                 "Tạo một task frontend có skill và tiêu chí nghiệm thu.",
-                new AiActionClientContextDto("/projects/test", "project_tasks", projectId, "project", projectId)))
+                new AiActionClientContextDto(
+                    sprintId.HasValue ? $"/projects/test#milestone-{sprintId:D}" : "/projects/test",
+                    "project_tasks",
+                    projectId,
+                    sprintId.HasValue ? "sprint" : "project",
+                    sprintId ?? projectId)))
         };
         message.Headers.Add("Idempotency-Key", idempotencyKey);
         message.Headers.Add("X-CSRF-TOKEN", csrf);
@@ -390,7 +477,7 @@ public sealed class AiActionComposerApiTests : IClassFixture<IntegrationTestFact
     private static string Hash(string value)
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 
-    private sealed record SeededScope(Guid OrganizationId, Guid ProjectId, Guid SkillId, Guid? ViewerId);
+    private sealed record SeededScope(Guid OrganizationId, Guid ProjectId, Guid SprintId, Guid SkillId, Guid? ViewerId);
     private sealed record CsrfResponse(string Token);
     private sealed record ApiEnvelope<T>(bool IsSuccess, T? Data, string? Error, string? ErrorCode, int StatusCode);
 }

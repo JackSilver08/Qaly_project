@@ -8,6 +8,9 @@ namespace Qaly.UnitTests;
 
 public sealed class AiNativeCandidateContractTests
 {
+    private static readonly string[] CompletionRateMetricRefs = ["completionRate"];
+    private static readonly string[] OverdueMetricRefs = ["overdue"];
+
     [Fact]
     public void GroupSummary_OnlyAcceptsAuthorizedOrderedMessageReferences()
     {
@@ -84,8 +87,8 @@ public sealed class AiNativeCandidateContractTests
         });
         var provider = JsonSerializer.Serialize(new
         {
-            summaryPoints = new[] { new { text = "Một trong hai task đã hoàn thành.", metricRefs = new[] { "completionRate" }, sourceRefs = Array.Empty<string>() } },
-            risks = new[] { new { severity = "high", title = "Có task quá hạn.", metricRefs = new[] { "overdue" }, sourceRefs = Array.Empty<string>() } },
+            summaryPoints = new[] { new { text = "Một trong hai task đã hoàn thành.", metricRefs = CompletionRateMetricRefs, sourceRefs = Array.Empty<string>() } },
+            risks = new[] { new { severity = "high", title = "Có task quá hạn.", metricRefs = OverdueMetricRefs, sourceRefs = Array.Empty<string>() } },
             priorities = Array.Empty<object>()
         });
 

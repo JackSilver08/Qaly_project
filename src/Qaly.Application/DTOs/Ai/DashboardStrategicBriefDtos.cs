@@ -10,6 +10,6 @@ public static class DashboardStrategicBriefAiContract
 public sealed record DashboardStrategicBriefRequestDto(
     Guid OrganizationId,
     string Language = "vi",
-    string ProviderHint = "deepseek-v4-pro",
+    string ProviderHint = "deepseek-chat",
     decimal? MaximumEstimatedCostUsd = null,
     string CacheMode = "use");

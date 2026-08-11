@@ -46,9 +46,14 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
         return query.Where(task =>
             (
                 task.Project.OwnerId == currentUserId ||
-                task.Project.Members.Any(member => member.UserId == currentUserId) ||
-                (task.Project.OrganizationId != null &&
-                 (task.Project.Organization!.OwnerId == currentUserId ||
+                task.Project.Members.Any(member => member.UserId == currentUserId)
+            )
+            &&
+            (
+                task.Project.OrganizationId == null ||
+                (task.Project.Organization != null &&
+                 task.Project.Organization.IsActive &&
+                 (task.Project.Organization.OwnerId == currentUserId ||
                   task.Project.Organization.Members.Any(member => member.UserId == currentUserId)))
             )
             &&
@@ -103,7 +108,20 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
             return false;
         }
 
-        if (IsAdmin ||
+        if (IsAdmin)
+        {
+            return true;
+        }
+
+        // Reporter/assignee identity is not a substitute for current project access.
+        // A removed member may remain in historical assignment rows, but must lose
+        // every mutation path as soon as project/organization access is revoked.
+        if (!await CanAccessProjectAsync(task.ProjectId, task.Project.OwnerId, ct))
+        {
+            return false;
+        }
+
+        if (
             task.ReporterId == currentUserId ||
             task.AssigneeId == currentUserId ||
             task.Assignees.Any(assignment => assignment.UserId == currentUserId) ||
@@ -123,7 +141,7 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
             return true;
         }
 
-        return await CanManageOrganizationForProjectAsync(task.ProjectId, currentUserId.Value, ct);
+        return false;
     }
 
     public async Task<bool> CanAccessProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
@@ -134,14 +152,7 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
             return false;
         }
 
-        if (IsAdmin || ownerId == currentUserId)
-        {
-            return true;
-        }
-
-        var isProjectMember = await _memberRepo.GetQueryable()
-            .AnyAsync(member => member.ProjectId == projectId && member.UserId == currentUserId, ct);
-        if (isProjectMember)
+        if (IsAdmin)
         {
             return true;
         }
@@ -151,31 +162,49 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
             .Select(project => new
             {
                 project.OrganizationId,
+                OrganizationIsActive = project.Organization == null || project.Organization.IsActive,
                 OrganizationOwnerId = project.Organization != null ? (Guid?)project.Organization.OwnerId : null
             })
             .FirstOrDefaultAsync(ct);
 
-        if (projectOrganizationInfo?.OrganizationId == null || projectOrganizationInfo.OrganizationOwnerId == null)
+        if (projectOrganizationInfo == null || !projectOrganizationInfo.OrganizationIsActive)
         {
             return false;
         }
 
-        if (projectOrganizationInfo.OrganizationOwnerId == currentUserId)
+        if (projectOrganizationInfo.OrganizationId.HasValue &&
+            projectOrganizationInfo.OrganizationOwnerId != currentUserId &&
+            !await _organizationMemberRepo.GetQueryable().AnyAsync(member =>
+                member.OrganizationId == projectOrganizationInfo.OrganizationId.Value &&
+                member.UserId == currentUserId,
+                ct))
+        {
+            return false;
+        }
+
+        if (ownerId == currentUserId)
         {
             return true;
         }
 
-        return await _organizationMemberRepo.GetQueryable()
-            .AnyAsync(member =>
-                member.OrganizationId == projectOrganizationInfo.OrganizationId.Value &&
-                member.UserId == currentUserId,
-                ct);
+        return await _memberRepo.GetQueryable()
+            .AnyAsync(member => member.ProjectId == projectId && member.UserId == currentUserId, ct);
     }
 
     public async Task<bool> CanManageProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
     {
         var currentUserId = CurrentUserId;
         if (currentUserId == null)
+        {
+            return false;
+        }
+
+        if (!await CanAccessProjectAsync(projectId, ownerId, ct))
+        {
+            return false;
+        }
+
+        if (!await CanAccessProjectAsync(projectId, ownerId, ct))
         {
             return false;
         }
@@ -195,7 +224,7 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
             return true;
         }
 
-        return await CanManageOrganizationForProjectAsync(projectId, currentUserId.Value, ct);
+        return false;
     }
 
     public async Task<bool> CanViewProjectTimelineAsync(Guid projectId, Guid ownerId, CancellationToken ct)
@@ -244,6 +273,11 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
             return false;
         }
 
+        if (!await CanAccessProjectAsync(projectId, ownerId, ct))
+        {
+            return false;
+        }
+
         if (IsAdmin || ownerId == currentUserId)
         {
             return true;
@@ -255,46 +289,18 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
             .Select(member => member.Role)
             .FirstOrDefaultAsync(ct);
 
-        if (projectRole != null)
-        {
-            return !ProjectRoleRules.IsCustomer(projectRole);
-        }
-
-        var projectOrganizationInfo = await _projectRepo.GetQueryable()
-            .AsNoTracking()
-            .Where(project => project.Id == projectId)
-            .Select(project => new
-            {
-                project.OrganizationId,
-                OrganizationOwnerId = project.Organization != null ? (Guid?)project.Organization.OwnerId : null
-            })
-            .FirstOrDefaultAsync(ct);
-
-        if (projectOrganizationInfo?.OrganizationId == null || projectOrganizationInfo.OrganizationOwnerId == null)
-        {
-            return false;
-        }
-
-        if (projectOrganizationInfo.OrganizationOwnerId == currentUserId)
-        {
-            return true;
-        }
-
-        var organizationRole = await _organizationMemberRepo.GetQueryable()
-            .AsNoTracking()
-            .Where(member =>
-                member.OrganizationId == projectOrganizationInfo.OrganizationId.Value &&
-                member.UserId == currentUserId)
-            .Select(member => member.Role)
-            .FirstOrDefaultAsync(ct);
-
-        return !ProjectRoleRules.IsCustomer(organizationRole);
+        return projectRole != null && !ProjectRoleRules.IsCustomer(projectRole);
     }
 
     public async Task<bool> CanWriteWikiAsync(Guid projectId, Guid ownerId, CancellationToken ct)
     {
         var currentUserId = CurrentUserId;
         if (currentUserId == null)
+        {
+            return false;
+        }
+
+        if (!await CanAccessProjectAsync(projectId, ownerId, ct))
         {
             return false;
         }
@@ -315,7 +321,7 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
             return !ProjectRoleRules.IsViewer(memberRole) && !ProjectRoleRules.IsCustomer(memberRole);
         }
 
-        return await CanManageOrganizationForProjectAsync(projectId, currentUserId.Value, ct);
+        return false;
     }
 
     private async Task<bool> HasProjectPermissionAsync(
@@ -326,6 +332,11 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
     {
         var currentUserId = CurrentUserId;
         if (currentUserId == null)
+        {
+            return false;
+        }
+
+        if (!await CanAccessProjectAsync(projectId, ownerId, ct))
         {
             return false;
         }
@@ -344,45 +355,9 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
             return true;
         }
 
-        return await CanManageOrganizationForProjectAsync(projectId, currentUserId.Value, ct);
-    }
-
-    private async Task<bool> CanManageOrganizationForProjectAsync(Guid projectId, Guid currentUserId, CancellationToken ct)
-    {
-        var projectOrganizationInfo = await _projectRepo.GetQueryable()
-            .Where(project => project.Id == projectId)
-            .Select(project => new
-            {
-                project.OrganizationId,
-                OrganizationOwnerId = project.Organization != null ? (Guid?)project.Organization.OwnerId : null
-            })
-            .FirstOrDefaultAsync(ct);
-
-        if (projectOrganizationInfo?.OrganizationId == null || projectOrganizationInfo.OrganizationOwnerId == null)
-        {
-            return false;
-        }
-
-        if (projectOrganizationInfo.OrganizationOwnerId == currentUserId)
-        {
-            return true;
-        }
-
-        var organizationRole = await _organizationMemberRepo.GetQueryable()
-            .Where(member =>
-                member.OrganizationId == projectOrganizationInfo.OrganizationId.Value &&
-                member.UserId == currentUserId)
-            .Select(member => member.Role)
-            .FirstOrDefaultAsync(ct);
-
-        return OrganizationRoleRules.CanManageOrganization(organizationRole);
+        return false;
     }
 
     private static bool IsElevatedProjectRole(string? role)
-        => string.Equals(role, "Owner", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(role, "ProjectOwner", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(role, "PM", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(role, "ProjectManager", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(role, "ScrumMaster", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase);
+        => ProjectRoleRules.CanManageProject(role);
 }

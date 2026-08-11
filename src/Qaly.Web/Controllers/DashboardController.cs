@@ -54,6 +54,8 @@ public partial class DashboardController : BaseApiController
                     .Include(project => project.Tasks)
                         .ThenInclude(task => task.Assignee)
                     .Include(project => project.Tasks)
+                        .ThenInclude(task => task.Assignees)
+                    .Include(project => project.Tasks)
                         .ThenInclude(task => task.Reporter)
                     .Include(project => project.Tasks)
                         .ThenInclude(task => task.Comments)
@@ -64,10 +66,13 @@ public partial class DashboardController : BaseApiController
                 if (restrictToMembership && !isAdmin && currentUserId.HasValue)
                 {
                     query = query.Where(project =>
-                        project.Organization != null &&
-                        project.Organization.IsActive &&
                         (project.OwnerId == currentUserId ||
-                         project.Members.Any(member => member.UserId == currentUserId)));
+                         project.Members.Any(member => member.UserId == currentUserId)) &&
+                        (project.OrganizationId == null ||
+                         (project.Organization != null &&
+                          project.Organization.IsActive &&
+                          (project.Organization.OwnerId == currentUserId ||
+                           project.Organization.Members.Any(member => member.UserId == currentUserId)))));
                 }
 
                 return query;
@@ -76,6 +81,19 @@ public partial class DashboardController : BaseApiController
             var projects = await BuildProjectQuery(restrictToMembership: true)
                 .OrderByDescending(project => project.CreatedAt)
                 .ToListAsync(cancellationToken);
+
+            if (!isAdmin && currentUserId.HasValue)
+            {
+                foreach (var project in projects)
+                {
+                    project.Tasks = project.Tasks.Where(task =>
+                        !task.IsPrivate ||
+                        task.ReporterId == currentUserId ||
+                        task.AssigneeId == currentUserId ||
+                        task.Assignees.Any(assignment => assignment.UserId == currentUserId) ||
+                        project.OwnerId == currentUserId).ToList();
+                }
+            }
 
             var accessibleUserIds = projects
                 .SelectMany(project => project.Members.Select(member => member.UserId))
@@ -300,26 +318,11 @@ public partial class DashboardController : BaseApiController
         catch (Exception ex)
         {
             LogFailedToBuildDashboardOverview(_logger, ex);
-            return Ok(CreateSafeFallbackOverview(DateTimeOffset.UtcNow));
+            return Problem(
+                statusCode: StatusCodes.Status500InternalServerError,
+                title: "Không thể tải dữ liệu dashboard lúc này.");
         }
     }
-
-    private static DashboardOverviewResponse CreateSafeFallbackOverview(DateTimeOffset now)
-        => new(
-            now,
-            new DashboardStatsResponse(0, 0, 0, 0, 0, 0, 0),
-            "Không thể tải số liệu trực tiếp, nên hệ thống đang hiển thị dữ liệu an toàn.",
-            "Đã gặp lỗi khi tổng hợp dashboard; vui lòng kiểm tra dữ liệu dự án hoặc nhật ký máy chủ.",
-            Array.Empty<DashboardProjectResponse>(),
-            Array.Empty<DashboardMemberResponse>(),
-            [
-                new DashboardNotificationResponse(
-                    "dashboard-fallback",
-                    "Đang dùng dữ liệu an toàn",
-                    "Dashboard đã chuyển sang dữ liệu an toàn để tránh màn hình lỗi.",
-                    "warning",
-                    now)
-            ]);
 
     private static List<DashboardNotificationResponse> BuildNotifications(
         IReadOnlyList<DashboardProjectResponse> projects,
@@ -457,7 +460,7 @@ public partial class DashboardController : BaseApiController
             _ => value
         };
 
-    [LoggerMessage(EventId = 2001, Level = LogLevel.Error, Message = "Failed to build dashboard overview. Returning safe fallback response.")]
+    [LoggerMessage(EventId = 2001, Level = LogLevel.Error, Message = "Failed to build dashboard overview.")]
     private static partial void LogFailedToBuildDashboardOverview(ILogger logger, Exception exception);
 
     [LoggerMessage(EventId = 2002, Level = LogLevel.Warning, Message = "AI provider {Provider} returned an invalid workspace strategy payload.")]
@@ -741,17 +744,7 @@ public partial class DashboardController : BaseApiController
             return true;
         }
 
-        if (project.OrganizationId == null || project.Organization == null)
-        {
-            return false;
-        }
-
-        if (project.Organization.OwnerId == currentUserId)
-        {
-            return true;
-        }
-
-        return project.Organization.Members.Any(member => member.UserId == currentUserId);
+        return false;
     }
 
     private async Task<Guid?> TryResolveProjectIdAsync(AuditLog log, CancellationToken ct)

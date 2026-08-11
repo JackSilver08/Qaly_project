@@ -17,6 +17,7 @@ public class WebhookService : IWebhookService
     private readonly ITaskAccessPolicy _taskAccessPolicy;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IWebhookPublisher _webhookPublisher;
+    private readonly IWebhookEndpointPolicy _webhookEndpointPolicy;
 
     public WebhookService(
         IRepository<WebhookSubscription> webhookRepo,
@@ -24,7 +25,8 @@ public class WebhookService : IWebhookService
         ICurrentUserService currentUserService,
         ITaskAccessPolicy taskAccessPolicy,
         IUnitOfWork unitOfWork,
-        IWebhookPublisher webhookPublisher)
+        IWebhookPublisher webhookPublisher,
+        IWebhookEndpointPolicy webhookEndpointPolicy)
     {
         _webhookRepo = webhookRepo;
         _projectRepo = projectRepo;
@@ -32,6 +34,7 @@ public class WebhookService : IWebhookService
         _taskAccessPolicy = taskAccessPolicy;
         _unitOfWork = unitOfWork;
         _webhookPublisher = webhookPublisher;
+        _webhookEndpointPolicy = webhookEndpointPolicy;
     }
 
     public async Task<Result<IEnumerable<WebhookDto>>> GetByProjectAsync(Guid projectId, CancellationToken ct = default)
@@ -53,6 +56,7 @@ public class WebhookService : IWebhookService
             w.ProjectId,
             w.PayloadUrl,
             DeserializeEvents(w.Events),
+            !string.IsNullOrWhiteSpace(w.Secret),
             w.IsActive,
             w.CreatedAt
         ));
@@ -62,10 +66,16 @@ public class WebhookService : IWebhookService
 
     public async Task<Result<WebhookDto>> CreateAsync(CreateWebhookDto dto, CancellationToken ct = default)
     {
-        var validation = ValidateWebhook(dto.PayloadUrl, dto.Events);
+        var validation = ValidateWebhookEvents(dto.Events);
         if (!validation.IsSuccess)
         {
             return Result.Failure<WebhookDto>(validation.Error!, validation.StatusCode);
+        }
+
+        var endpointValidation = await _webhookEndpointPolicy.ValidateAsync(dto.PayloadUrl, ct);
+        if (!endpointValidation.IsAllowed)
+        {
+            return Result.Failure<WebhookDto>(endpointValidation.Error!, 400);
         }
 
         var project = await _projectRepo.GetByIdAsync(dto.ProjectId, ct);
@@ -79,7 +89,7 @@ public class WebhookService : IWebhookService
         var webhook = new WebhookSubscription
         {
             ProjectId = dto.ProjectId,
-            PayloadUrl = dto.PayloadUrl,
+            PayloadUrl = endpointValidation.Endpoint!.AbsoluteUri,
             Secret = dto.Secret,
             Events = JsonSerializer.Serialize(dto.Events ?? Array.Empty<string>())
         };
@@ -107,6 +117,7 @@ public class WebhookService : IWebhookService
             webhook.ProjectId,
             webhook.PayloadUrl,
             dto.Events ?? Array.Empty<string>(),
+            !string.IsNullOrWhiteSpace(webhook.Secret),
             webhook.IsActive,
             webhook.CreatedAt
         ));
@@ -114,10 +125,16 @@ public class WebhookService : IWebhookService
 
     public async Task<Result<WebhookDto>> UpdateAsync(Guid projectId, Guid id, UpdateWebhookDto dto, CancellationToken ct = default)
     {
-        var validation = ValidateWebhook(dto.PayloadUrl, dto.Events);
+        var validation = ValidateWebhookEvents(dto.Events);
         if (!validation.IsSuccess)
         {
             return Result.Failure<WebhookDto>(validation.Error!, validation.StatusCode);
+        }
+
+        var endpointValidation = await _webhookEndpointPolicy.ValidateAsync(dto.PayloadUrl, ct);
+        if (!endpointValidation.IsAllowed)
+        {
+            return Result.Failure<WebhookDto>(endpointValidation.Error!, 400);
         }
 
         var project = await _projectRepo.GetByIdAsync(projectId, ct);
@@ -136,7 +153,7 @@ public class WebhookService : IWebhookService
             return Result.Forbidden<WebhookDto>();
         }
 
-        webhook.PayloadUrl = dto.PayloadUrl;
+        webhook.PayloadUrl = endpointValidation.Endpoint!.AbsoluteUri;
         webhook.Secret = dto.Secret;
         webhook.Events = JsonSerializer.Serialize(dto.Events ?? Array.Empty<string>());
         webhook.IsActive = dto.IsActive;
@@ -149,6 +166,7 @@ public class WebhookService : IWebhookService
             webhook.ProjectId,
             webhook.PayloadUrl,
             dto.Events ?? Array.Empty<string>(),
+            !string.IsNullOrWhiteSpace(webhook.Secret),
             webhook.IsActive,
             webhook.CreatedAt
         ));
@@ -200,19 +218,8 @@ public class WebhookService : IWebhookService
         return Result.Success();
     }
 
-    private static Result ValidateWebhook(string payloadUrl, string[]? events)
+    private static Result ValidateWebhookEvents(string[]? events)
     {
-        if (string.IsNullOrWhiteSpace(payloadUrl))
-        {
-            return Result.Failure("Payload URL is required.");
-        }
-
-        if (!Uri.TryCreate(payloadUrl.Trim(), UriKind.Absolute, out var uri) ||
-            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-        {
-            return Result.Failure("Payload URL must be a valid http or https URL.");
-        }
-
         if (events == null || events.Length == 0 || events.Any(e => string.IsNullOrWhiteSpace(e)))
         {
             return Result.Failure("At least one webhook event must be selected.");

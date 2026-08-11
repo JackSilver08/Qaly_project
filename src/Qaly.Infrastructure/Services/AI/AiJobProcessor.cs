@@ -258,6 +258,50 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
         {
             response = await _gateway.ExecuteAsync(request, cancellationToken);
         }
+
+        if (actionComposerSnapshotJson != null &&
+            !response.IsSuccess &&
+            AiActionComposerOutputContract.TryBuildDeterministicFallback(
+                actionComposerSnapshotJson,
+                out var fallbackResult,
+                out var fallbackError))
+        {
+            ActionComposerFallbackUsed(
+                _logger,
+                job.Id,
+                response.ErrorCode ?? AiErrorCodes.ProviderUnavailable,
+                fallbackError ?? "fallback contract valid");
+            response = new AiResponse
+            {
+                IsSuccess = true,
+                Content = fallbackResult,
+                ProviderName = "Qaly",
+                ModelName = "server-action-fallback-v1",
+                IsMock = false,
+                InputTokens = 0,
+                OutputTokens = 0,
+                EstimatedCostUsd = 0m
+            };
+            if (_costService != null)
+            {
+                await _costService.RecordJobUsageAsync(
+                    job.TenantId,
+                    job.ProjectId,
+                    job.RequestedById,
+                    job.JobType,
+                    response.ProviderName,
+                    response.ModelName,
+                    0,
+                    0,
+                    0m,
+                    checked((int)Math.Min(int.MaxValue, stopwatch.ElapsedMilliseconds)),
+                    "success",
+                    false,
+                    job.Id,
+                    attempt.Id,
+                    cancellationToken: cancellationToken);
+            }
+        }
         stopwatch.Stop();
 
         await _db.Entry(job).ReloadAsync(cancellationToken);
@@ -706,6 +750,10 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
             ProviderAttemptId = attemptId,
             JobType = job.JobType,
             ProviderHint = job.ProviderHint,
+            StrictProvider = isNativeActionComposer &&
+                !string.Equals(job.ProviderHint, "auto", StringComparison.OrdinalIgnoreCase),
+            ProviderTimeoutSeconds = isNativeActionComposer ? 35 : null,
+            SchemaRepairAttempts = isNativeActionComposer ? 0 : null,
             Prompt = prompt ?? "Generate a grounded result from the authorized source references.",
             SystemPrompt = systemPrompt ?? $"Return only valid JSON matching schema {job.SchemaId}. Do not execute domain mutations.",
             ExpectedSchemaId = job.SchemaId,
@@ -831,4 +879,7 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Could not append AI action activity for job {JobId}.")]
     private static partial void ActivityAppendFailed(ILogger logger, Exception exception, Guid jobId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Action Composer job {JobId} used the bounded server fallback after provider error {ErrorCode}: {FallbackDetail}")]
+    private static partial void ActionComposerFallbackUsed(ILogger logger, Guid jobId, string errorCode, string fallbackDetail);
 }

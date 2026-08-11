@@ -9,6 +9,7 @@ public sealed class AssistantTurn : BaseEntity
     public string RequestHash { get; set; } = string.Empty;
     public string UserMessage { get; set; } = string.Empty;
     public string? RequestContextJson { get; set; }
+    public string? RequestPayloadJson { get; set; }
     public string Status { get; set; } = "running";
     public string? Disposition { get; set; }
     public string? Intent { get; set; }
@@ -21,6 +22,8 @@ public sealed class AssistantTurn : BaseEntity
     public string? ActualModel { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
     public string? SafeErrorCode { get; set; }
+    public DateTimeOffset? CancellationRequestedAt { get; set; }
+    public Guid? ResumedFromTurnId { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
 
     public AssistantSession Session { get; set; } = null!;

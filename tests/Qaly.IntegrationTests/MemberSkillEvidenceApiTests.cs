@@ -252,7 +252,8 @@ public sealed class MemberSkillEvidenceApiTests : IClassFixture<IntegrationTestF
         db.AddRange(organization, project, skill, evidenceTask, targetTask, evidenceRequirement, targetRequirement);
         db.OrganizationMembers.AddRange(
             new OrganizationMember { OrganizationId = organization.Id, UserId = contributorId, Role = OrganizationRoleRules.Member },
-            new OrganizationMember { OrganizationId = organization.Id, UserId = organizationAdminId, Role = OrganizationRoleRules.OrganizationAdmin });
+            new OrganizationMember { OrganizationId = organization.Id, UserId = organizationAdminId, Role = OrganizationRoleRules.OrganizationAdmin },
+            new OrganizationMember { OrganizationId = organization.Id, UserId = projectManagerId, Role = OrganizationRoleRules.Member });
         db.ProjectMembers.AddRange(
             new ProjectMember { ProjectId = project.Id, UserId = contributorId, Role = ProjectRoleRules.Member },
             new ProjectMember { ProjectId = project.Id, UserId = projectManagerId, Role = ProjectRoleRules.Manager });

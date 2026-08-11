@@ -8,8 +8,8 @@
       "applicationUrl": "https://localhost:5005",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development",
-        "UseInMemoryDatabase": "false",
-        "AiJobsV4__WorkerEnabled": "false"
+        "UseInMemoryDatabase": "true",
+        "AiJobsV4__WorkerEnabled": "true"
       }
     }
   }

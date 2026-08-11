@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Activity, ListChecks, MessageSquare, RotateCcw, X, Sparkles } from 'lucide-vue-next'
+import { Activity, Clock3, ListChecks, MessageSquare, RotateCcw, X, Sparkles } from 'lucide-vue-next'
 import ChatbotAvatar from '../ChatbotAvatar.vue'
 import AiActionComposerDrawer from '../AiActionComposerDrawer.vue'
 import ErumiChatPanel from './ErumiChatPanel.vue'
@@ -15,9 +15,17 @@ interface ProjectOption {
   members?: Array<{ userId?: string; id?: string; fullName: string }>
 }
 
+interface AssistantOpenRequest {
+  id: number
+  view: 'chat' | 'activity'
+  prompt?: string
+  projectId?: string | null
+}
+
 const props = defineProps<{
   projectId?: string | null
   projects: ProjectOption[]
+  openRequest?: AssistantOpenRequest | null
 }>()
 
 const emit = defineEmits<{
@@ -29,6 +37,10 @@ const router = useRouter()
 const isOpen = ref(false)
 const activeView = ref<'chat' | 'create' | 'activity'>('chat')
 const actionPrompt = ref('')
+const assistantPrompt = ref('')
+const assistantPromptToken = ref(0)
+const assistantHistoryToken = ref(0)
+const assistantProjectId = ref<string | null>(props.projectId || null)
 const actionProjectId = ref<string | null>(props.projectId || null)
 const actionComposerKey = ref(0)
 const artifactAvailable = ref(false)
@@ -37,6 +49,11 @@ const drawerBodyRef = ref<HTMLElement | null>(null)
 const isCompactViewport = ref(false)
 const isResizing = ref(false)
 const hasSavedLayout = ref(false)
+
+function openAssistantHistory() {
+  activeView.value = 'chat'
+  assistantHistoryToken.value++
+}
 
 const LAYOUT_STORAGE_KEY = 'qaly-ai-agent-workspace-layout-v1'
 const LAYOUT_VERSION = 1
@@ -361,10 +378,17 @@ function closeDrawer() {
   void router.replace({ query })
 }
 
-function openAssistant(event?: Event) {
-  const detail = event instanceof CustomEvent ? event.detail : null
+function applyAssistantOpenRequest(detail?: Partial<AssistantOpenRequest> | null) {
   isOpen.value = true
   activeView.value = detail?.view === 'activity' ? 'activity' : 'chat'
+  assistantPrompt.value = String(detail?.prompt || '').trim()
+  assistantProjectId.value = String(detail?.projectId || props.projectId || '') || null
+  assistantPromptToken.value += 1
+}
+
+function openAssistant(event?: Event) {
+  const detail = event instanceof CustomEvent ? event.detail : null
+  applyAssistantOpenRequest(detail)
 }
 
 function openActionComposer(event?: Event) {
@@ -423,6 +447,14 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', syncViewport)
   removeResizeListeners()
 })
+
+watch(
+  () => props.openRequest?.id,
+  () => {
+    if (props.openRequest) applyAssistantOpenRequest(props.openRequest)
+  },
+  { immediate: true, flush: 'post' },
+)
 
 watch(
   () => [route.query.aiActivity, route.query.aiJob, route.query.aiDraft],
@@ -530,6 +562,7 @@ watch(isOpen, async open => {
               @click="toggleArtifactPane"
             ><ListChecks :size="17" /></button>
             <button class="drawer-icon-btn" :class="{ active: activeView === 'activity' }" title="Hoạt động AI" @click="activeView = 'activity'"><Activity :size="17" /></button>
+            <button class="drawer-icon-btn" title="Lịch sử phiên Trợ lý AI" aria-label="Lịch sử phiên Trợ lý AI" data-testid="assistant-session-history-toolbar" @click="openAssistantHistory"><Clock3 :size="17" /></button>
             <button class="drawer-icon-btn reset-layout-btn" title="Đặt lại kích thước" aria-label="Đặt lại kích thước Trợ lý AI" @click="resetAssistantLayout"><RotateCcw :size="17" /></button>
             <button class="drawer-close-btn" @click="closeDrawer" aria-label="Đóng"><X :size="20" /></button>
           </div>
@@ -546,7 +579,14 @@ watch(isOpen, async open => {
           :style="drawerBodyStyle"
         >
           <section v-show="showConversationPane" class="assistant-conversation-pane">
-            <ErumiChatPanel :is-drawer="true" @compose-action="handleComposeAction" />
+            <ErumiChatPanel
+              :is-drawer="true"
+              :external-prompt="assistantPrompt"
+              :external-prompt-token="assistantPromptToken"
+              :external-history-token="assistantHistoryToken"
+              :external-project-id="assistantProjectId"
+              @compose-action="handleComposeAction"
+            />
           </section>
           <div
             v-if="showArtifactSplitter"

@@ -10,5 +10,6 @@ public sealed class AssistantSession : BaseEntity
     public long Version { get; set; }
     public int LastSequence { get; set; }
     public DateTimeOffset? ArchivedAt { get; set; }
+    public string? ClarificationDraftJson { get; set; }
     public ICollection<AssistantTurn> Turns { get; set; } = new List<AssistantTurn>();
 }

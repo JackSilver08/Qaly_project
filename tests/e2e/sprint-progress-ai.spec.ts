@@ -1,10 +1,9 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
+import { adminEmail, adminPassword } from './support/credentials'
 
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(90_000)
 
-const adminEmail = process.env.E2E_ADMIN_EMAIL ?? 'admin@qaly.dev'
-const adminPassword = process.env.E2E_ADMIN_PASSWORD ?? 'Admin@123456'
 const projectId = '61111111-1111-4111-8111-111111111111'
 const sprintA = '62222222-2222-4222-8222-222222222222'
 const sprintB = '63333333-3333-4333-8333-333333333333'
@@ -151,6 +150,19 @@ function sprints() {
   ]
 }
 
+function ganttTasks() {
+  return [{
+    id: taskA,
+    title: 'Unblock release milestone',
+    status: 'InProgress',
+    startDate: '2026-07-20T00:00:00Z',
+    endDate: '2026-07-25T10:00:00Z',
+    progress: 45,
+    isCriticalPath: true,
+    dependencies: [],
+  }]
+}
+
 function job(jobId: string, sprintId: string | null, status: string) {
   return {
     jobId,
@@ -271,6 +283,7 @@ async function installMocks(page: Page, initialMode: Mode) {
     body: JSON.stringify(dashboard()),
   }))
   await page.route(`**/api/projects/${projectId}/sprints`, route => fulfill(route, sprints()))
+  await page.route(`**/api/tasks/project/${projectId}/gantt`, route => fulfill(route, ganttTasks()))
 
   await page.route(/\/api\/ai(?:\/|$)/, async route => {
     const request = route.request()
@@ -338,9 +351,20 @@ async function installMocks(page: Page, initialMode: Mode) {
 }
 
 async function openDemoMap(page: Page) {
-  await page.getByRole('button', { name: 'Journey Map (Hành trình)' }).click()
+  await page.getByRole('button', { name: 'Lộ Trình Dự Án' }).click()
   await expect(page.getByTestId('sprint-progress-ai-card')).toBeVisible()
 }
+
+test('timeline renders the real Gantt contract instead of dashboard task dates', async ({ page }) => {
+  await installMocks(page, 'idle')
+  await login(page, `/projects/${projectId}`)
+  await openDemoMap(page)
+
+  await page.getByRole('button', { name: 'Timeline View' }).click()
+  await expect(page.locator('.timeline-task-label')).toContainText('Unblock release milestone')
+  await expect(page.locator('.timeline-bar')).toBeVisible()
+  await expect(page.locator('.timeline-bar')).toContainText('45%')
+})
 
 test('native sprint card creates a minimal request, renders grounded output, and restores the exact milestone', async ({ page }) => {
   const state = await installMocks(page, 'idle')

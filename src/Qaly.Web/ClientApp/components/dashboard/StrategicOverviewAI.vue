@@ -118,7 +118,7 @@ const generateAiInsight = async () => {
       body: JSON.stringify({
         organizationId: selectedOrganizationId.value,
         language: 'vi',
-        providerHint: 'deepseek-v4-pro',
+        providerHint: 'deepseek-chat',
         cacheMode: 'use',
       })
     })

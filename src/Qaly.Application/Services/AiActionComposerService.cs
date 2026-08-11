@@ -17,6 +17,7 @@ public sealed class AiActionComposerService : IAiActionComposerService
     private readonly IRepository<Project> _projects;
     private readonly IRepository<ProjectMember> _projectMembers;
     private readonly IRepository<TaskItem> _tasks;
+    private readonly IRepository<Sprint> _sprints;
     private readonly IRepository<OrganizationSkill> _skills;
     private readonly IRepository<OrganizationMember> _organizationMembers;
     private readonly IRepository<User> _users;
@@ -29,6 +30,7 @@ public sealed class AiActionComposerService : IAiActionComposerService
         IRepository<Project> projects,
         IRepository<ProjectMember> projectMembers,
         IRepository<TaskItem> tasks,
+        IRepository<Sprint> sprints,
         IRepository<OrganizationSkill> skills,
         IRepository<OrganizationMember> organizationMembers,
         IRepository<User> users,
@@ -40,6 +42,7 @@ public sealed class AiActionComposerService : IAiActionComposerService
         _projects = projects;
         _projectMembers = projectMembers;
         _tasks = tasks;
+        _sprints = sprints;
         _skills = skills;
         _organizationMembers = organizationMembers;
         _users = users;
@@ -68,6 +71,13 @@ public sealed class AiActionComposerService : IAiActionComposerService
                 "AI Action Composer is disabled. Manual task creation remains available.",
                 503,
                 AiErrorCodes.PlatformDisabled);
+        }
+        if (!feature.WorkerEnabled && !feature.AllowEnqueueWhenWorkerDisabled)
+        {
+            return Result.Failure<AiJobCreatedDto>(
+                "Worker AI đang tắt nên yêu cầu chưa được đưa vào hàng đợi. Hãy bật worker rồi thử lại; chưa có dữ liệu nào bị thay đổi.",
+                503,
+                AiErrorCodes.WorkerPaused);
         }
 
         var message = dto.Message?.Trim() ?? string.Empty;
@@ -124,6 +134,25 @@ public sealed class AiActionComposerService : IAiActionComposerService
                 AiErrorCodes.PermissionDenied);
         }
 
+        Sprint? targetSprint = null;
+        var requestedSprintId = string.Equals(dto.Context?.EntityType, "sprint", StringComparison.OrdinalIgnoreCase)
+            ? dto.Context?.EntityId
+            : null;
+        if (requestedSprintId.HasValue)
+        {
+            targetSprint = await _sprints.GetQueryable()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(item =>
+                    item.Id == requestedSprintId.Value && item.ProjectId == project.Id, ct);
+            if (targetSprint == null)
+            {
+                return Result.Failure<AiJobCreatedDto>(
+                    "The selected Sprint is absent or does not belong to this project.",
+                    422,
+                    AiErrorCodes.InvalidRequest);
+            }
+        }
+
         var memberRows = await _projectMembers.GetQueryable()
             .AsNoTracking()
             .Include(item => item.User)
@@ -177,6 +206,10 @@ public sealed class AiActionComposerService : IAiActionComposerService
 
         var projectSourceRef = $"/projects/{project.Id:D}";
         var allowedSourceRefs = new List<string> { projectSourceRef };
+        var sprintSourceRef = targetSprint == null
+            ? null
+            : $"/projects/{project.Id:D}#milestone-{targetSprint.Id:D}";
+        if (sprintSourceRef != null) allowedSourceRefs.Add(sprintSourceRef);
         allowedSourceRefs.AddRange(memberContexts.Select(item => item.SourceRef));
         allowedSourceRefs.AddRange(skillContexts.Select(item => item.SourceRef));
 
@@ -189,6 +222,15 @@ public sealed class AiActionComposerService : IAiActionComposerService
             project.StartDate,
             project.EndDate,
             project.UpdatedAt,
+            sprint = targetSprint == null ? null : new
+            {
+                targetSprint.Id,
+                targetSprint.Name,
+                targetSprint.Status,
+                targetSprint.StartDate,
+                targetSprint.EndDate,
+                targetSprint.UpdatedAt
+            },
             members = memberContexts,
             skills = skillContexts,
             workload = openTasks.OrderBy(item => item.Id)
@@ -211,7 +253,16 @@ public sealed class AiActionComposerService : IAiActionComposerService
             message,
             memberContexts,
             skillContexts,
-            allowedSourceRefs);
+            allowedSourceRefs,
+            targetSprint == null
+                ? null
+                : new AiActionSprintContextDto(
+                    targetSprint.Id,
+                    targetSprint.Name,
+                    targetSprint.Status,
+                    targetSprint.StartDate,
+                    targetSprint.EndDate,
+                    sprintSourceRef!));
         var snapshotJson = JsonSerializer.Serialize(snapshot, JsonOptions);
 
         var sourceInputs = new List<AiJobSourceInputDto>
@@ -224,6 +275,15 @@ public sealed class AiActionComposerService : IAiActionComposerService
             sourceInputs.Add(new AiJobSourceInputDto(
                 "skill_catalog",
                 project.OrganizationId.Value,
+                null,
+                null,
+                null));
+        }
+        if (targetSprint != null)
+        {
+            sourceInputs.Add(new AiJobSourceInputDto(
+                "sprint",
+                targetSprint.Id,
                 null,
                 null,
                 null));
@@ -246,7 +306,7 @@ public sealed class AiActionComposerService : IAiActionComposerService
                 project.Id,
                 "project",
                 project.Id.ToString("D"),
-                "deepseek-v4-pro",
+                "deepseek-chat",
                 openTasks.Any(item => item.IsPrivate),
                 snapshotJson,
                 sourceInputs,

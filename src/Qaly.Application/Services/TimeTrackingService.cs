@@ -4,6 +4,7 @@ using Qaly.Application.DTOs.Task;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 using Qaly.Application.Common.Interfaces;
+using Qaly.Application.Services.Tasks;
 
 namespace Qaly.Application.Services;
 
@@ -11,22 +12,25 @@ public class TimeTrackingService : ITimeTrackingService
 {
     private readonly IRepository<TimeEntry> _timeRepo;
     private readonly IRepository<TaskItem> _taskRepo;
-    private readonly IRepository<ProjectMember> _memberRepo;
+    private readonly IRepository<Project> _projectRepo;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
+    private readonly ITaskAccessPolicy _accessPolicy;
 
     public TimeTrackingService(
         IRepository<TimeEntry> timeRepo,
         IRepository<TaskItem> taskRepo,
-        IRepository<ProjectMember> memberRepo,
+        IRepository<Project> projectRepo,
         IUnitOfWork unitOfWork,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        ITaskAccessPolicy accessPolicy)
     {
         _timeRepo = timeRepo;
         _taskRepo = taskRepo;
-        _memberRepo = memberRepo;
+        _projectRepo = projectRepo;
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
+        _accessPolicy = accessPolicy;
     }
 
     public async Task<Result<TimeEntryDto>> StartTimerAsync(Guid taskId, CancellationToken ct = default)
@@ -36,11 +40,12 @@ public class TimeTrackingService : ITimeTrackingService
 
         var task = await _taskRepo.GetQueryable()
             .Include(t => t.Project)
+            .Include(t => t.Assignees)
             .FirstOrDefaultAsync(t => t.Id == taskId, ct);
         if (task == null) return Result.NotFound<TimeEntryDto>();
         if (task.Project == null) return Result.NotFound<TimeEntryDto>();
 
-        if (!await IsProjectMember(task.ProjectId, userId.Value, ct)) return Result.Forbidden<TimeEntryDto>();
+        if (!await _accessPolicy.CanAccessTaskAsync(task, ct)) return Result.Forbidden<TimeEntryDto>();
 
         // Stop existing timers for this user
         var activeTimers = await _timeRepo.GetQueryable()
@@ -70,11 +75,15 @@ public class TimeTrackingService : ITimeTrackingService
     {
         var entry = await _timeRepo.GetQueryable()
             .Include(te => te.Task)
+                .ThenInclude(task => task.Project)
+            .Include(te => te.Task)
+                .ThenInclude(task => task.Assignees)
             .Include(te => te.User)
             .FirstOrDefaultAsync(te => te.Id == entryId, ct);
 
         if (entry == null) return Result.NotFound<TimeEntryDto>();
         if (entry.UserId != _currentUserService.UserId) return Result.Forbidden<TimeEntryDto>();
+        if (!await _accessPolicy.CanAccessTaskAsync(entry.Task, ct)) return Result.Forbidden<TimeEntryDto>();
 
         if (entry.EndedAt != null) return Result.Failure<TimeEntryDto>("Timer already stopped.");
 
@@ -92,11 +101,12 @@ public class TimeTrackingService : ITimeTrackingService
 
         var task = await _taskRepo.GetQueryable()
             .Include(t => t.Project)
+            .Include(t => t.Assignees)
             .FirstOrDefaultAsync(t => t.Id == dto.TaskId, ct);
         if (task == null) return Result.NotFound<TimeEntryDto>();
         if (task.Project == null) return Result.NotFound<TimeEntryDto>();
 
-        if (!await IsProjectMember(task.ProjectId, userId.Value, ct)) return Result.Forbidden<TimeEntryDto>();
+        if (!await _accessPolicy.CanAccessTaskAsync(task, ct)) return Result.Forbidden<TimeEntryDto>();
 
         var entry = new TimeEntry
         {
@@ -122,11 +132,12 @@ public class TimeTrackingService : ITimeTrackingService
         var task = await _taskRepo.GetQueryable()
             .AsNoTracking()
             .Include(t => t.Project)
+            .Include(t => t.Assignees)
             .FirstOrDefaultAsync(t => t.Id == taskId, ct);
         if (task == null) return Result.NotFound<List<TimeEntryDto>>();
         if (task.Project == null) return Result.NotFound<List<TimeEntryDto>>();
 
-        if (!await IsProjectMember(task.ProjectId, userId.Value, ct))
+        if (!await _accessPolicy.CanAccessTaskAsync(task, ct))
             return Result.Forbidden<List<TimeEntryDto>>();
 
         var entries = await _timeRepo.GetQueryable()
@@ -144,42 +155,28 @@ public class TimeTrackingService : ITimeTrackingService
         var userId = _currentUserService.UserId;
         if (userId == null) return Result.Forbidden<List<TimeEntryDto>>();
 
-        if (!await IsProjectMember(projectId, userId.Value, ct))
+        var project = await _projectRepo.GetQueryable()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == projectId, ct);
+        if (project == null) return Result.NotFound<List<TimeEntryDto>>();
+
+        if (!await _accessPolicy.CanAccessProjectAsync(projectId, project.OwnerId, ct))
             return Result.Forbidden<List<TimeEntryDto>>();
+
+        var visibleTaskIds = _accessPolicy.ApplyVisibilityFilter(_taskRepo.GetQueryable())
+            .Where(task => task.ProjectId == projectId)
+            .Select(task => task.Id);
 
         var query = _timeRepo.GetQueryable()
             .Include(te => te.Task)
             .Include(te => te.User)
-            .Where(te => te.Task.ProjectId == projectId);
+            .Where(te => visibleTaskIds.Contains(te.TaskId));
 
         if (from.HasValue) query = query.Where(te => te.StartedAt >= from.Value);
         if (endAt.HasValue) query = query.Where(te => te.StartedAt <= endAt.Value);
 
         var entries = await query.OrderByDescending(te => te.StartedAt).ToListAsync(ct);
         return Result.Success(entries.Select(e => MapToDto(e, e.Task.Title, e.User.FullName)).ToList());
-    }
-
-    private async Task<bool> IsProjectMember(Guid projectId, Guid userId, CancellationToken ct)
-    {
-        if (string.Equals(_currentUserService.Role, "Admin", StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        var project = await _taskRepo.GetQueryable()
-            .AsNoTracking()
-            .Where(t => t.ProjectId == projectId)
-            .Select(t => t.Project)
-            .FirstOrDefaultAsync(ct);
-
-        if (project == null)
-        {
-            return false;
-        }
-
-        var isOwner = project.OwnerId == userId;
-        if (isOwner) return true;
-
-        return await _memberRepo.GetQueryable()
-            .AnyAsync(m => m.ProjectId == projectId && m.UserId == userId, ct);
     }
 
     private static TimeEntryDto MapToDto(TimeEntry e, string taskTitle, string userName)

@@ -50,7 +50,7 @@ jobs:
 
       - name: Start .NET server with in-memory database
         run: |
-          dotnet run --no-restore --project src/Qaly.Web --urls http://127.0.0.1:5000 > server.log 2>&1 &
+          dotnet run --no-restore --no-launch-profile --project src/Qaly.Web --urls http://127.0.0.1:5000 > server.log 2>&1 &
           echo $! > server.pid
           echo "Server PID: $(cat server.pid)"
 

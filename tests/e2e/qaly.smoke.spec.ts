@@ -6,13 +6,17 @@ import {
     type Page,
 } from "@playwright/test";
 import { browserApiRequest } from "./support/browser-api";
+import {
+    adminEmail,
+    adminPassword,
+    memberEmail,
+    memberPassword,
+} from "./support/credentials";
 
 test.describe.configure({ mode: "serial" });
 
-const adminEmail = process.env.E2E_ADMIN_EMAIL ?? "admin@qaly.dev";
-const adminPassword = process.env.E2E_ADMIN_PASSWORD ?? "Qaly@E2E2026!";
-const secondaryEmail = process.env.E2E_MEMBER_EMAIL ?? adminEmail;
-const secondaryPassword = process.env.E2E_MEMBER_PASSWORD ?? adminPassword;
+const secondaryEmail = process.env.E2E_MEMBER_EMAIL ? memberEmail : adminEmail;
+const secondaryPassword = process.env.E2E_MEMBER_PASSWORD ? memberPassword : adminPassword;
 const wikiFixturePath = "tests/e2e/fixtures/wiki-smoke.md";
 
 type ApiResult<T> = {
@@ -34,6 +38,27 @@ type ProjectDto = {
 type UserDto = {
     id: string;
     email: string;
+};
+
+type WebhookDto = {
+    id: string;
+    projectId: string;
+    payloadUrl: string;
+    events: string[];
+    hasSecret: boolean;
+    isActive: boolean;
+    createdAt: string;
+};
+
+type GanttTaskDto = {
+    id: string;
+    title: string;
+    status: string;
+    startDate: string | null;
+    endDate: string | null;
+    progress: number;
+    isCriticalPath: boolean;
+    dependencies: string[];
 };
 
 type ApiResponseLike = {
@@ -156,6 +181,27 @@ async function createProjectViaApi(page: Page, name: string) {
     );
 }
 
+async function createTaskViaApi(page: Page, projectId: string, title: string) {
+    return apiResult<{ id: string; title: string }>(
+        await browserApiRequest(page, "POST", "/api/tasks", {
+            data: {
+                title,
+                description: "Real Gantt contract E2E task",
+                priority: "High",
+                dueDate: null,
+                estimatedHours: null,
+                projectId,
+                assigneeId: null,
+                isPrivate: false,
+                isPinned: false,
+                contributesToProgress: true,
+                assigneeIds: [],
+                labelIds: [],
+            },
+        }),
+    );
+}
+
 async function cleanupGroup(page: Page, groupId?: string) {
     if (!groupId) return;
     await browserApiRequest(page, "DELETE", `/api/groups/${groupId}`).catch(() => undefined);
@@ -239,6 +285,109 @@ test("should login successfully", async ({ page }) => {
         timeout: 20_000,
     });
     await expect(page.locator("#loginForm")).toBeVisible();
+});
+
+test("should show an honest empty state when dashboard data fails", async ({ page }) => {
+    await page.route("**/api/dashboard/overview", (route) => route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "dashboard unavailable" }),
+    }));
+
+    await login(page);
+
+    await expect(page.getByRole("alert")).toContainText("không phải dữ liệu mẫu");
+    await expect(page.getByText("Qaly MVP", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Thử lại" })).toBeVisible();
+});
+
+test("should report webhook secret presence without exposing the secret", async ({ page }) => {
+    let projectId: string | undefined;
+    let webhookId: string | undefined;
+
+    try {
+        await login(page);
+        const project = await createProjectViaApi(page, uniqueName("Webhook contract project"));
+        projectId = project.id;
+
+        const webhook = await apiResult<WebhookDto>(await browserApiRequest(
+            page,
+            "POST",
+            `/api/projects/${project.id}/webhooks`,
+            {
+                data: {
+                    payloadUrl: "https://8.8.8.8/qaly-webhook",
+                    secret: "e2e-webhook-secret",
+                    events: ["task.created"],
+                },
+            },
+        ));
+        webhookId = webhook.id;
+
+        expect(webhook.hasSecret).toBe(true);
+        expect(webhook).not.toHaveProperty("secret");
+
+        const webhooks = await apiResult<WebhookDto[]>(await browserApiRequest(
+            page,
+            "GET",
+            `/api/projects/${project.id}/webhooks`,
+        ));
+        expect(webhooks).toContainEqual(expect.objectContaining({
+            id: webhook.id,
+            hasSecret: true,
+        }));
+        expect(webhooks[0]).not.toHaveProperty("secret");
+    } finally {
+        if (projectId && webhookId) {
+            await browserApiRequest(page, "DELETE", `/api/projects/${projectId}/webhooks/${webhookId}`)
+                .catch(() => undefined);
+        }
+        await cleanupProject(page, projectId);
+    }
+});
+
+test("should render database-backed Gantt dates on the project timeline", async ({ page }) => {
+    let projectId: string | undefined;
+    let taskId: string | undefined;
+    const taskTitle = uniqueName("Real Gantt task");
+
+    try {
+        await login(page);
+        const project = await createProjectViaApi(page, uniqueName("Real Gantt project"));
+        projectId = project.id;
+        const task = await createTaskViaApi(page, project.id, taskTitle);
+        taskId = task.id;
+
+        await apiCommand(await browserApiRequest(page, "PATCH", `/api/tasks/${task.id}/dates`, {
+            data: {
+                startDate: "2026-08-10T00:00:00Z",
+                endDate: "2026-08-14T00:00:00Z",
+            },
+        }));
+
+        const gantt = await apiResult<GanttTaskDto[]>(await browserApiRequest(
+            page,
+            "GET",
+            `/api/tasks/project/${project.id}/gantt`,
+        ));
+        expect(gantt).toContainEqual(expect.objectContaining({
+            id: task.id,
+            title: taskTitle,
+            startDate: "2026-08-10T00:00:00+00:00",
+            endDate: "2026-08-14T00:00:00+00:00",
+        }));
+
+        await page.goto(`/projects/${project.id}`);
+        await page.getByRole("button", { name: "Lộ Trình Dự Án" }).click();
+        await page.getByRole("button", { name: "Timeline View" }).click();
+        await expect(page.locator(".timeline-task-label")).toContainText(taskTitle);
+        await expect(page.locator(".timeline-bar")).toBeVisible();
+    } finally {
+        if (taskId) {
+            await browserApiRequest(page, "DELETE", `/api/tasks/${taskId}`).catch(() => undefined);
+        }
+        await cleanupProject(page, projectId);
+    }
 });
 
 test("should create a group and open group page", async ({ page }) => {
@@ -329,7 +478,7 @@ test("should open analytics page", async ({ page }) => {
     await page.locator('a[href="/analytics"]').click();
     await expect(page).toHaveURL(/\/analytics$/);
     await expect(page.getByRole("heading", { name: /Bạn muốn Qaly giúp gì/i })).toBeVisible();
-    await expect(page.getByRole("textbox", { name: /Erumi/i })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: /Nhập yêu cầu cho Trợ lý AI/i })).toBeVisible();
 });
 
 test("should render meeting page in two authenticated contexts", async ({

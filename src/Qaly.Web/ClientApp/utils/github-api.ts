@@ -9,6 +9,15 @@ export interface GitHubInstallation {
   createdAt: string
 }
 
+export interface GitHubIntegrationStatus {
+  state: 'disabled' | 'unconfigured' | 'not_connected' | 'connected' | 'cached' | 'invalid_credentials' | 'insufficient_permissions' | 'rate_limited' | 'unavailable'
+  enabled: boolean
+  configured: boolean
+  hasInstallation: boolean
+  liveVerified: boolean
+  message: string
+}
+
 export interface GitHubRepository {
   id: number
   owner: string
@@ -51,6 +60,7 @@ export interface GitHubProjectManagement {
 }
 
 export const githubApi = {
+  status: (projectId: string) => apiResult<GitHubIntegrationStatus>(`/api/projects/${projectId}/github/status`),
   installations: (projectId: string) => apiResult<GitHubInstallation[]>(`/api/projects/${projectId}/github/installations`),
   installUrl: (projectId: string) => apiResult<string>(`/api/projects/${projectId}/github/install-url`),
   completeInstallation: (projectId: string, installationId: number) =>

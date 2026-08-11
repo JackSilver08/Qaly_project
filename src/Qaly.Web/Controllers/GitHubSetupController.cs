@@ -23,7 +23,7 @@ public sealed class GitHubSetupController : ControllerBase
 
         var result = await _service.CompleteAsync(projectId, installationId, ct);
         return result.IsSuccess
-            ? Redirect($"/projects/{projectId}?github=connected")
-            : Redirect($"/projects/{projectId}?github=error");
+            ? Redirect($"/projects/{projectId}?tab=github&github=connected")
+            : Redirect($"/projects/{projectId}?tab=github&github=error");
     }
 }

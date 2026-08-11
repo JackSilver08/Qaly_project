@@ -46,7 +46,7 @@ function startEdit() {
   if (!currentPage.value) return;
   editTitle.value = currentPage.value.title;
   editContent.value = currentPage.value.content || "";
-  editVisibility.value = (currentPage.value as any).visibility || "internal";
+  editVisibility.value = currentPage.value.visibility || "internal";
   isEditing.value = true;
 }
 
@@ -91,8 +91,8 @@ async function saveEdit() {
               <h1 class="wiki-title">{{ currentPage.title }}</h1>
               <div class="wiki-meta">
                 <span class="wiki-author">Cập nhật bởi {{ currentPage.authorName }} vào {{ formatDate(currentPage.updatedAt) }}</span>
-                <span class="wiki-badge" :class="`badge-${(currentPage as any).visibility || 'internal'}`">
-                  {{ (currentPage as any).visibility === 'public' ? 'Công khai' : ((currentPage as any).visibility === 'customer_safe' ? 'Cho khách hàng' : 'Nội bộ') }}
+                <span class="wiki-badge" :class="`badge-${currentPage.visibility || 'internal'}`">
+                  {{ currentPage.visibility === 'public' ? 'Công khai' : (currentPage.visibility === 'customer_safe' ? 'Cho khách hàng' : 'Nội bộ') }}
                 </span>
               </div>
               <button class="primary-button edit-btn" @click="startEdit">

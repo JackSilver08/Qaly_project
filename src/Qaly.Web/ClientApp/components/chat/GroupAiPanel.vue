@@ -435,7 +435,7 @@ async function submitSelectedMessages() {
               sourceEntityId: selectedMessageIds.value[0],
               sources,
             }),
-        providerHint: 'deepseek-v4-pro',
+        providerHint: 'deepseek-chat',
       })
     })
     showSuccess(selectedAction.value === 'summary'

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Ai;
@@ -24,6 +25,7 @@ public class AiController : BaseApiController
     private readonly IAiActionComposerService _aiActionComposerService;
     private readonly IAiJobActivityService _aiJobActivityService;
     private readonly IAiAssistantSessionService _aiAssistantSessionService;
+    private readonly IAiSafeTestOrchestratorService _aiSafeTestOrchestratorService;
 
     public AiController(
         IAiService aiService,
@@ -37,7 +39,8 @@ public class AiController : BaseApiController
         ITaskService taskService,
         IAiActionComposerService aiActionComposerService,
         IAiJobActivityService aiJobActivityService,
-        IAiAssistantSessionService aiAssistantSessionService)
+        IAiAssistantSessionService aiAssistantSessionService,
+        IAiSafeTestOrchestratorService aiSafeTestOrchestratorService)
     {
         _aiService = aiService;
         _erumiChatService = erumiChatService;
@@ -51,6 +54,7 @@ public class AiController : BaseApiController
         _aiActionComposerService = aiActionComposerService;
         _aiJobActivityService = aiJobActivityService;
         _aiAssistantSessionService = aiAssistantSessionService;
+        _aiSafeTestOrchestratorService = aiSafeTestOrchestratorService;
     }
 
     [HttpPost("generate-plan")]
@@ -579,12 +583,20 @@ public class AiController : BaseApiController
     }
 
     [HttpGet("projects/{projectId:guid}/summary")]
-    public async Task<IActionResult> ProjectSummary(Guid projectId)
-        => Ok(new { summary = await _aiService.GenerateProjectSummaryAsync(projectId) });
+    public async Task<IActionResult> ProjectSummary(Guid projectId, CancellationToken ct)
+    {
+        var access = await _projectService.GetByIdAsync(projectId, ct);
+        if (!access.IsSuccess) return StatusCode(access.StatusCode, access);
+        return Ok(new { summary = await _aiService.GenerateProjectSummaryAsync(projectId) });
+    }
 
     [HttpGet("projects/{projectId:guid}/risks")]
-    public async Task<IActionResult> ProjectRisks(Guid projectId)
-        => Ok(new { risks = await _aiService.AnalyzeProjectRisksAsync(projectId) });
+    public async Task<IActionResult> ProjectRisks(Guid projectId, CancellationToken ct)
+    {
+        var access = await _projectService.GetByIdAsync(projectId, ct);
+        if (!access.IsSuccess) return StatusCode(access.StatusCode, access);
+        return Ok(new { risks = await _aiService.AnalyzeProjectRisksAsync(projectId) });
+    }
 
     [HttpGet("projects/{projectId:guid}/insights")]
     public async Task<IActionResult> ProjectInsights(Guid projectId)
@@ -598,8 +610,13 @@ public class AiController : BaseApiController
     }
 
     [HttpGet("tasks/{taskId:guid}/assignment")]
-    public async Task<IActionResult> SuggestAssignment(Guid taskId, [FromQuery] Guid projectId)
-        => Ok(new { suggestion = await _aiService.SuggestTaskAssignmentAsync(taskId, projectId) });
+    public async Task<IActionResult> SuggestAssignment(Guid taskId, [FromQuery] Guid projectId, CancellationToken ct)
+    {
+        var task = await _taskService.GetByIdAsync(taskId, ct);
+        if (!task.IsSuccess) return StatusCode(task.StatusCode, task);
+        if (task.Data?.ProjectId != projectId) return NotFound();
+        return Ok(new { suggestion = await _aiService.SuggestTaskAssignmentAsync(taskId, projectId) });
+    }
 
     [HttpGet("tasks/{taskId:guid}/assignment-insight")]
     public async Task<IActionResult> AssignmentInsight(Guid taskId, [FromQuery] Guid projectId, CancellationToken ct = default)
@@ -646,10 +663,85 @@ public class AiController : BaseApiController
         return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result);
     }
 
+    [HttpGet("assistant/sessions")]
+    public async Task<IActionResult> ListAssistantSessions(
+        [FromQuery] bool includeArchived = false,
+        CancellationToken ct = default)
+    {
+        var result = await _aiAssistantSessionService.ListAsync(includeArchived, ct);
+        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("assistant/capabilities/coverage")]
+    public IActionResult GetAiNativeCoverageMatrix()
+        => Ok(AiNativeModuleCoverageCatalog.Matrix());
+
+    [HttpGet("assistant/quality/metrics")]
+    public async Task<IActionResult> GetAssistantQualityMetrics(CancellationToken ct)
+    {
+        var result = await _aiAssistantSessionService.GetQualityMetricsAsync(ct);
+        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result);
+    }
+
     [HttpGet("assistant/sessions/{sessionId:guid}")]
     public async Task<IActionResult> GetAssistantSession(Guid sessionId, CancellationToken ct)
     {
         var result = await _aiAssistantSessionService.GetAsync(sessionId, ct);
+        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPatch("assistant/sessions/{sessionId:guid}")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RenameAssistantSession(
+        Guid sessionId,
+        UpdateAiAssistantSessionRequestDto request,
+        CancellationToken ct)
+    {
+        var result = await _aiAssistantSessionService.RenameAsync(sessionId, request, ct);
+        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("assistant/sessions/{sessionId:guid}/archive")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ArchiveAssistantSession(
+        Guid sessionId,
+        AiAssistantSessionControlRequestDto request,
+        CancellationToken ct)
+    {
+        var result = await _aiAssistantSessionService.ArchiveAsync(sessionId, request.ExpectedVersion, ct);
+        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result);
+    }
+
+    [HttpDelete("assistant/sessions/{sessionId:guid}")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteAssistantSession(
+        Guid sessionId,
+        [FromQuery] long expectedVersion,
+        CancellationToken ct)
+    {
+        var result = await _aiAssistantSessionService.DeleteAsync(sessionId, expectedVersion, ct);
+        return result.IsSuccess ? NoContent() : StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPut("assistant/sessions/{sessionId:guid}/clarification-draft")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveAssistantClarificationDraft(
+        Guid sessionId,
+        UpdateAiAssistantClarificationDraftRequestDto request,
+        CancellationToken ct)
+    {
+        var result = await _aiAssistantSessionService.SaveClarificationDraftAsync(sessionId, request, ct);
+        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result);
+    }
+
+    [HttpDelete("assistant/sessions/{sessionId:guid}/clarification-draft")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ClearAssistantClarificationDraft(
+        Guid sessionId,
+        [FromQuery] long expectedVersion,
+        CancellationToken ct)
+    {
+        var result = await _aiAssistantSessionService.ClearClarificationDraftAsync(sessionId, expectedVersion, ct);
         return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result);
     }
 
@@ -667,6 +759,108 @@ public class AiController : BaseApiController
         return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result);
     }
 
+    [HttpGet("assistant/sessions/{sessionId:guid}/stream")]
+    public async Task StreamAssistantTurn(
+        Guid sessionId,
+        [FromQuery] Guid clientTurnId,
+        CancellationToken ct)
+    {
+        var initial = await _aiAssistantSessionService.GetAsync(sessionId, ct);
+        if (!initial.IsSuccess || initial.Data == null)
+        {
+            Response.StatusCode = initial.StatusCode;
+            return;
+        }
+
+        Response.StatusCode = StatusCodes.Status200OK;
+        Response.ContentType = "text/event-stream";
+        Response.Headers.CacheControl = "no-cache, no-transform";
+        Response.Headers.Append("X-Accel-Buffering", "no");
+        var sentEventCount = 0;
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(3);
+        while (!ct.IsCancellationRequested && DateTimeOffset.UtcNow < deadline)
+        {
+            var current = await _aiAssistantSessionService.GetAsync(sessionId, ct);
+            if (!current.IsSuccess || current.Data == null) break;
+            var turn = current.Data.Turns.FirstOrDefault(item => item.ClientTurnId == clientTurnId);
+            if (turn != null)
+            {
+                var pendingEvents = turn.ProcessEvents.Skip(sentEventCount).ToArray();
+                foreach (var processEvent in pendingEvents)
+                    await WriteSseAsync("progress", processEvent, ct);
+                sentEventCount += pendingEvents.Length;
+
+                if (turn.Status is "completed" or "failed" or "canceled")
+                {
+                    var answer = turn.Response?.Conversation?.Answer ?? turn.Response?.AssistantMessage;
+                    if (!string.IsNullOrWhiteSpace(answer))
+                    {
+                        foreach (var delta in Chunk(answer, 36))
+                        {
+                            await WriteSseAsync("answer_delta", new { delta }, ct);
+                            await Task.Delay(12, ct);
+                        }
+                    }
+                    await WriteSseAsync("done", new { turn.Status, current.Data.Version }, ct);
+                    return;
+                }
+            }
+            else
+            {
+                await Response.WriteAsync(": waiting\n\n", ct);
+                await Response.Body.FlushAsync(ct);
+            }
+            await Task.Delay(350, ct);
+        }
+    }
+
+    [HttpPost("assistant/test-runs/{runId:guid}/confirm")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ConfirmSafeTestRun(
+        Guid runId,
+        ConfirmAiSafeTestRunRequestDto request,
+        CancellationToken ct)
+    {
+        var idempotencyKey = Request.Headers["Idempotency-Key"].ToString().Trim();
+        var result = await _aiSafeTestOrchestratorService.ConfirmAsync(
+            runId, request.ExpectedRevision, idempotencyKey, ct);
+        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("assistant/test-runs/{runId:guid}")]
+    public async Task<IActionResult> GetSafeTestRun(Guid runId, CancellationToken ct)
+    {
+        var result = await _aiSafeTestOrchestratorService.GetAsync(runId, ct);
+        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("assistant/turns/{turnId:guid}/cancel")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CancelAssistantTurn(
+        Guid turnId,
+        AiAssistantTurnControlRequestDto request,
+        CancellationToken ct)
+    {
+        var result = await _aiAssistantSessionService.CancelTurnAsync(turnId, request.ExpectedVersion, ct);
+        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("assistant/turns/{turnId:guid}/resume")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ResumeAssistantTurn(
+        Guid turnId,
+        AiAssistantTurnControlRequestDto request,
+        CancellationToken ct)
+    {
+        var idempotencyKey = Request.Headers["Idempotency-Key"].ToString().Trim();
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+            return BadRequest(new { error = "Idempotency-Key is required.", errorCode = AiErrorCodes.InvalidRequest });
+        var correlationId = Request.Headers["X-Request-Id"].FirstOrDefault() ?? HttpContext.TraceIdentifier;
+        var result = await _aiAssistantSessionService.ResumeTurnAsync(
+            turnId, request, idempotencyKey, correlationId, ct);
+        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result);
+    }
+
     [HttpPost("chat/stream")]
     public async Task ChatStreaming(AiChatRequest request)
     {
@@ -676,6 +870,19 @@ public class AiController : BaseApiController
             await Response.WriteAsync(token);
             await Response.Body.FlushAsync();
         }
+    }
+
+    private async Task WriteSseAsync(string eventName, object payload, CancellationToken ct)
+    {
+        await Response.WriteAsync($"event: {eventName}\n", ct);
+        await Response.WriteAsync($"data: {JsonSerializer.Serialize(payload)}\n\n", ct);
+        await Response.Body.FlushAsync(ct);
+    }
+
+    private static IEnumerable<string> Chunk(string value, int size)
+    {
+        for (var index = 0; index < value.Length; index += size)
+            yield return value.Substring(index, Math.Min(size, value.Length - index));
     }
 
     [HttpGet("export/{projectId:guid}")]

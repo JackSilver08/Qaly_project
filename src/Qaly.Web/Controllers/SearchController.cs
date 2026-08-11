@@ -48,10 +48,13 @@ public class SearchController : BaseApiController
         if (!isAdmin)
         {
             projectQuery = projectQuery.Where(project =>
-                project.Organization != null &&
-                project.Organization.IsActive &&
                 (project.OwnerId == userId.Value ||
-                 project.Members.Any(member => member.UserId == userId.Value)));
+                 project.Members.Any(member => member.UserId == userId.Value)) &&
+                (project.OrganizationId == null ||
+                 (project.Organization != null &&
+                  project.Organization.IsActive &&
+                  (project.Organization.OwnerId == userId.Value ||
+                   project.Organization.Members.Any(member => member.UserId == userId.Value)))));
         }
 
         var accessibleProjects = await projectQuery
@@ -79,6 +82,9 @@ public class SearchController : BaseApiController
             .Include(task => task.Project)
                 .ThenInclude(project => project.Members)
             .Where(task => accessibleProjectIds.Contains(task.ProjectId) &&
+                (isAdmin || !task.IsPrivate || task.ReporterId == userId.Value ||
+                 task.AssigneeId == userId.Value || task.Project.OwnerId == userId.Value ||
+                 task.Assignees.Any(assignment => assignment.UserId == userId.Value)) &&
                 (task.Title.Contains(normalized) || (task.Description != null && task.Description.Contains(normalized))))
             .OrderByDescending(task => task.IsPinned)
             .ThenByDescending(task => task.CreatedAt)
@@ -86,20 +92,7 @@ public class SearchController : BaseApiController
             .ToListAsync(ct);
 
         var taskResults = tasks.Select(task =>
-        {
-            var restricted = task.IsPrivate &&
-                !isAdmin &&
-                task.ReporterId != userId.Value &&
-                task.AssigneeId != userId.Value &&
-                task.Project.OwnerId != userId.Value &&
-                !task.Project.Members.Any(member =>
-                    member.UserId == userId.Value &&
-                    (member.Role == "Owner" || member.Role == "Manager" || member.Role == "Admin"));
-
-            var title = restricted ? $"Restricted Task #{task.Id.ToString()[..8]}" : task.Title;
-            var summary = restricted ? null : task.Description;
-            return new SearchResultDto("Task", task.Id, title, summary, task.ProjectId, $"/projects/{task.ProjectId}/tasks/{task.Id}");
-        });
+            new SearchResultDto("Task", task.Id, task.Title, task.Description, task.ProjectId, $"/projects/{task.ProjectId}/tasks/{task.Id}"));
 
         var wikiResults = await _context.WikiPages
             .AsNoTracking()

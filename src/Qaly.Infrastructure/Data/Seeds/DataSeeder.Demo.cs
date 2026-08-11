@@ -43,6 +43,7 @@ public partial class DataSeeder
         }
 
         await SeedRichDemoDataAsync();
+        await EnsureAiNativeDemoEvidenceAsync();
         return true;
     }
 
@@ -133,6 +134,8 @@ public partial class DataSeeder
 
         await RemoveEntitiesAsync(_context.WorkGroupMembers);
         await RemoveEntitiesAsync(_context.WorkGroups.IgnoreQueryFilters());
+        await RemoveEntitiesAsync(_context.OrganizationWorkRuleDecisions);
+        await RemoveEntitiesAsync(_context.OrganizationWorkRuleSets);
         await RemoveEntitiesAsync(_context.OrganizationSkills);
         await RemoveEntitiesAsync(_context.OrganizationMembers);
         await RemoveEntitiesAsync(_context.Organizations);
@@ -1384,6 +1387,36 @@ public partial class DataSeeder
             .IgnoreQueryFilters()
             .Where(item => item.OrganizationId == organization.Id && item.Status == "Active" && !item.IsDeleted)
             .ToDictionaryAsync(item => item.Code, StringComparer.OrdinalIgnoreCase);
+
+        var hasEffectiveRulebook = await _context.OrganizationWorkRuleSets.AnyAsync(item =>
+            item.OrganizationId == organization.Id && item.Status == "active" &&
+            (!item.EffectiveFrom.HasValue || item.EffectiveFrom <= now) &&
+            (!item.EffectiveUntil.HasValue || item.EffectiveUntil > now));
+        if (!hasEffectiveRulebook && users.TryGetValue("admin@qaly.dev", out var rulebookOwner))
+        {
+            await _context.OrganizationWorkRuleSets.AddAsync(new OrganizationWorkRuleSet
+            {
+                OrganizationId = organization.Id,
+                Version = 1,
+                Status = "active",
+                EffectiveFrom = now.AddDays(-30),
+                RulesJson = """
+                    [
+                      {"ruleKey":"active_membership_required","category":"governance","enforcement":"block","description":"Requester must be an active organization member.","enabled":true},
+                      {"ruleKey":"max_active_projects","category":"portfolio_capacity","enforcement":"block","description":"Protect organization capacity by limiting concurrent active projects.","numericValue":20,"unit":"projects","enabled":true},
+                      {"ruleKey":"capacity_evidence_required","category":"staffing","enforcement":"block","description":"Staffing requires current capacity and availability evidence.","enabled":true}
+                    ]
+                    """,
+                CreatedByUserId = rulebookOwner.Id,
+                ActivatedByUserId = rulebookOwner.Id,
+                ActivatedAt = now.AddDays(-30),
+                Revision = 2,
+                CreatedAt = now.AddDays(-30),
+                UpdatedAt = now.AddDays(-30)
+            });
+            changed = true;
+            await SaveIfChangedAsync();
+        }
 
         var requiredProjectCodes = new[]
         {

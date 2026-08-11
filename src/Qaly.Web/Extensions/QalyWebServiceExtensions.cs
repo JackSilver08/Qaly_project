@@ -67,10 +67,14 @@ public static class QalyWebServiceExtensions
         services.AddSingleton<GroupMeetingPresenceTracker>();
 
         services.AddOpenApi();
-        services.AddHealthChecks()
-            .AddSqlServer(configuration.GetConnectionString("DefaultConnection")!)
-            .AddRedis(redisConnection)
+        var healthChecks = services.AddHealthChecks()
             .AddCheck<OutboxHealthCheck>("vector_outbox");
+        if (!useInMemoryDistributedCache)
+        {
+            healthChecks
+                .AddSqlServer(configuration.GetConnectionString("DefaultConnection")!)
+                .AddRedis(redisConnection);
+        }
 
         return builder;
     }
