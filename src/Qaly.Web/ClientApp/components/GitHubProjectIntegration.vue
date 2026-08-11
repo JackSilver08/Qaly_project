@@ -28,7 +28,11 @@ const visibleRepositories = computed(() => {
   return repositories.value.filter(item => !connectedIds.value.has(item.id) && (!term || item.fullName.toLowerCase().includes(term)))
 })
 const hasInstallation = computed(() => installations.value.some(item => item.status === 'Active'))
-const hasVerifiedConnection = computed(() => integrationStatus.value?.state === 'connected' && integrationStatus.value.liveVerified)
+const hasVerifiedConnection = computed(() =>
+  (integrationStatus.value?.state === 'connected' && integrationStatus.value.liveVerified) ||
+  (integrationStatus.value?.state === 'cached' && activeConnections.value.length > 0),
+)
+const isCachedSnapshot = computed(() => integrationStatus.value?.state === 'cached')
 const hasConnectionProblem = computed(() => ['invalid_credentials', 'insufficient_permissions', 'rate_limited', 'unavailable'].includes(integrationStatus.value?.state ?? ''))
 const serverUnavailableForSetup = computed(() => ['disabled', 'unconfigured'].includes(integrationStatus.value?.state ?? ''))
 const syncedConnections = computed(() => activeConnections.value.filter(item => item.lastSyncedAt).length)
@@ -95,7 +99,7 @@ async function connectGitHub() {
 async function loadAvailableRepositories() {
   repositories.value = []
   selectedRepositoryIds.value = []
-  if (!selectedInstallationId.value || !props.canManage) return
+  if (!selectedInstallationId.value || !props.canManage || isCachedSnapshot.value) return
   try { repositories.value = await githubApi.availableRepositories(props.projectId, selectedInstallationId.value) }
   catch (error) { showError(errorMessage(error, 'Không thể tải repository được cấp quyền.')) }
 }
@@ -135,7 +139,7 @@ function formatSync(value: string | null) {
     <header class="github-hero">
       <div class="github-mark"><Github :size="26" /></div>
       <div><span>Tích hợp mã nguồn</span><h2>GitHub</h2><p>Theo dõi PR, review, CI và release ngay trong Qaly — chỉ yêu cầu quyền đọc.</p></div>
-      <button v-if="canManage && !serverUnavailableForSetup" class="primary-button" type="button" :disabled="connecting" @click="connectGitHub">
+      <button v-if="canManage && !serverUnavailableForSetup && !isCachedSnapshot" class="primary-button" type="button" :disabled="connecting" @click="connectGitHub">
         <Loader2 v-if="connecting" :size="16" class="spin" /><Github v-else :size="16" />
         {{ hasInstallation ? 'Quản lý quyền GitHub' : 'Kết nối GitHub' }}
       </button>
@@ -162,7 +166,12 @@ function formatSync(value: string | null) {
           <span><Check v-if="onboardingStep > step.n" :size="13" />{{ onboardingStep > step.n ? '' : step.n }}</span><strong>{{ step.label }}</strong>
         </div>
       </div>
-      <div class="connection-summary"><span class="status-dot"></span><strong>GitHub đang hoạt động</strong><span>Qaly chỉ đọc metadata được cấp quyền</span></div>
+      <div class="connection-summary">
+        <span class="status-dot" :class="{ cached: isCachedSnapshot }"></span>
+        <strong>GitHub đang hoạt động</strong>
+        <span v-if="isCachedSnapshot">Cached · snapshot đã đồng bộ, live adapter đang tắt</span>
+        <span v-else>Live · Qaly chỉ đọc metadata được cấp quyền</span>
+      </div>
       <div class="health-grid">
         <article><span>Repository</span><strong>{{ activeConnections.length }}</strong><small>đang kết nối</small></article>
         <article><span>Đã nhận dữ liệu</span><strong>{{ syncedConnections }}</strong><small>repository</small></article>
@@ -179,8 +188,8 @@ function formatSync(value: string | null) {
 
       <GitHubProjectManagement v-if="activeConnections.length > 0" :project-id="projectId" :can-manage="canManage" />
 
-      <button v-if="canManage && !pickerOpen" class="add-repository" type="button" @click="pickerOpen = true"><Plus :size="16" /><span><strong>Thêm repository</strong><small>Chỉ chọn những repository thuộc project này</small></span><ChevronDown :size="16" /></button>
-      <section v-if="canManage && pickerOpen" class="repo-picker">
+      <button v-if="canManage && !isCachedSnapshot && !pickerOpen" class="add-repository" type="button" @click="pickerOpen = true"><Plus :size="16" /><span><strong>Thêm repository</strong><small>Chỉ chọn những repository thuộc project này</small></span><ChevronDown :size="16" /></button>
+      <section v-if="canManage && !isCachedSnapshot && pickerOpen" class="repo-picker">
         <div class="picker-head"><div><span>Thêm repository</span><strong>Chọn nơi Qaly được phép đọc</strong></div><button class="ghost-button" @click="loadAvailableRepositories"><RefreshCw :size="14" /> Làm mới</button></div>
         <div class="privacy-note"><ShieldCheck :size="17" /><span><strong>An toàn theo mặc định</strong><small>Qaly không sao chép source code và không yêu cầu quyền ghi.</small></span></div>
         <label v-if="installations.length > 1" class="field"><span>Tài khoản GitHub</span><select v-model="selectedInstallationId"><option v-for="item in installations" :key="item.id" :value="item.id">{{ item.accountLogin }}</option></select></label>
@@ -217,6 +226,7 @@ function formatSync(value: string | null) {
 .github-hero .primary-button:hover,.picker-footer .primary-button:hover{background:linear-gradient(135deg,#0f55c4,#093b8f);transform:translateY(-1px)}
 .onboarding{padding:18px 28px;background:#f8fbff;border-bottom-color:var(--gh-line)}.onboarding-step{color:#708097;font-size:12px}.onboarding-step:not(:last-child)::after{height:2px;background:#dce5f0}.onboarding-step>span{width:28px;height:28px;background:#fff;border-color:#cbd8e8}.onboarding-step.done>span{background:#17a673;border-color:#17a673;box-shadow:0 4px 10px rgba(23,166,115,.18)}.onboarding-step.current{color:var(--gh-ink)}.onboarding-step.current>span{border-color:var(--gh-blue);color:var(--gh-blue);box-shadow:0 0 0 4px rgba(19,88,200,.1)}
 .connection-summary{min-height:56px;padding:14px 28px;background:#fff;border-bottom-color:var(--gh-line)}.connection-summary strong{color:#165c46}.connection-summary span:last-child{color:var(--gh-muted);font-size:12px}
+.connection-summary .status-dot.cached{background:#f59e0b;box-shadow:0 0 0 4px rgba(245,158,11,.14)}
 .health-grid{gap:12px;padding:20px 28px 12px}.health-grid article{min-height:82px;padding:16px;background:linear-gradient(145deg,#fff,#f8fbff);border-color:var(--gh-line);border-radius:14px;box-shadow:0 5px 14px rgba(34,57,86,.04)}.health-grid span{color:#4c5f79;font-size:12px;font-weight:650}.health-grid small{color:var(--gh-muted)}.health-grid strong{color:var(--gh-dark);font-size:28px;letter-spacing:-.04em}
 .repo-list{gap:10px;padding:10px 28px 22px}.repo-card{min-height:70px;padding:14px 16px;background:#fff;border-color:var(--gh-line);border-radius:14px;box-shadow:0 4px 12px rgba(35,57,84,.035);transition:transform .25s ease,border-color .25s ease,box-shadow .25s ease}.repo-card:hover{border-color:#9ab9e2;box-shadow:0 8px 20px rgba(19,88,200,.08);transform:translateY(-1px)}.repo-icon{width:38px;height:38px;background:var(--gh-soft);color:var(--gh-dark);border-radius:11px}.repo-copy strong{color:var(--gh-ink);font-size:13px}.repo-copy span{color:var(--gh-muted);line-height:1.45}
 .repo-card .icon-button{width:38px;height:38px;display:grid;place-items:center;background:#fff;border:1px solid #d6e0eb;border-radius:10px}.repo-card .icon-button:hover{background:#fff0ef;border-color:#f0b9b5}

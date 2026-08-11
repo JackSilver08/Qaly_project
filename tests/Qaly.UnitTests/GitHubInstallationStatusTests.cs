@@ -48,6 +48,34 @@ public sealed class GitHubInstallationStatusTests : IDisposable
     }
 
     [Fact]
+    public async Task GetStatusAsync_WhenLiveAdapterIsDisabled_ExposesPersistedSnapshotAsCached()
+    {
+        _options.Enabled = false;
+        await AddActiveInstallationAsync();
+        var installationId = await _db.GitHubInstallations.Select(item => item.Id).SingleAsync();
+        _db.GitHubRepositoryConnections.Add(new GitHubRepositoryConnection
+        {
+            OrganizationId = _organizationId,
+            ProjectId = _projectId,
+            GitHubInstallationId = installationId,
+            RepositoryExternalId = 42,
+            Owner = "qaly",
+            Name = "cached-demo",
+            FullName = "qaly/cached-demo",
+            LastSyncedAt = DateTimeOffset.UtcNow,
+            IsActive = true
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await CreateService().GetStatusAsync(_projectId);
+
+        result.Data!.State.Should().Be("cached");
+        result.Data.HasInstallation.Should().BeTrue();
+        result.Data.LiveVerified.Should().BeFalse();
+        _client.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task GetStatusAsync_WhenConfigurationIsIncomplete_ReturnsUnconfigured()
     {
         _options.Enabled = true;
@@ -137,6 +165,14 @@ public sealed class GitHubInstallationStatusTests : IDisposable
             Name = "GitHub organization",
             Code = "github-org",
             OwnerId = _userId
+        });
+        _db.Projects.Add(new Project
+        {
+            Id = _projectId,
+            Name = "GitHub project",
+            Code = "GH-TEST",
+            OwnerId = _userId,
+            OrganizationId = _organizationId
         });
         _db.GitHubInstallations.Add(new GitHubInstallation
         {

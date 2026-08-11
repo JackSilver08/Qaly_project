@@ -368,7 +368,11 @@ function closeTaskDetails() {
   showManualForm.value = false;
   activeTaskMenu.value = null;
   if (selectedProject.value?.id) {
-    void router.replace(`/projects/${selectedProject.value.id}`);
+    void router.replace({
+      name: "project-detail",
+      params: { projectId: selectedProject.value.id },
+      query: { ...route.query, tab: "tasks" },
+    });
   }
 }
 

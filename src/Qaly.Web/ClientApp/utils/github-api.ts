@@ -10,7 +10,7 @@ export interface GitHubInstallation {
 }
 
 export interface GitHubIntegrationStatus {
-  state: 'disabled' | 'unconfigured' | 'not_connected' | 'connected' | 'invalid_credentials' | 'insufficient_permissions' | 'rate_limited' | 'unavailable'
+  state: 'disabled' | 'unconfigured' | 'not_connected' | 'connected' | 'cached' | 'invalid_credentials' | 'insufficient_permissions' | 'rate_limited' | 'unavailable'
   enabled: boolean
   configured: boolean
   hasInstallation: boolean

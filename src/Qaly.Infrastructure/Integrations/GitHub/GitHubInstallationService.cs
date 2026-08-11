@@ -51,6 +51,18 @@ public sealed class GitHubInstallationService : IGitHubInstallationService
         var configuration = _options.Value;
         if (!configuration.Enabled)
         {
+            var hasCachedSnapshot = await _db.GitHubRepositoryConnections.AsNoTracking()
+                .AnyAsync(item => item.OrganizationId == auth.Data!.OrganizationId &&
+                                  item.ProjectId == projectId &&
+                                  item.IsActive &&
+                                  item.LastSyncedAt != null, ct);
+            if (hasCachedSnapshot)
+            {
+                return Result.Success(Status(
+                    "cached", enabled: false, configured: false, hasInstallation: true, liveVerified: false,
+                    "GitHub live adapter đang tắt; Qaly đang hiển thị snapshot đã đồng bộ gần nhất."));
+            }
+
             return Result.Success(Status(
                 "disabled", enabled: false, configured: false, hasInstallation: false, liveVerified: false,
                 "Tích hợp GitHub đang bị tắt trên máy chủ Qaly."));
