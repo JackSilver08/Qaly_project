@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CKCK v5.0 - Đột Phá Kiến Trúc Phân Quyền Đa Tầng, View-As Simulation & Trí Tuệ Nhân Tạo Erumi</title>
+    <!-- Google Fonts & Tailwind CSS -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f7ff',
+                            100: '#e0effe',
+                            500: '#2563eb',
+                            600: '#1d4ed8',
+                            700: '#1e40af',
+                            900: '#0f172a'
+                        },
+                        erumi: {
+                            500: '#8b5cf6',
+                            600: '#7c3aed',
+                            glow: 'rgba(139, 92, 246, 0.15)'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Plus Jakarta Sans', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #090d16;
+            color: #f1f5f9;
+        }
+        .glass-card {
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .glass-card-hover {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-card-hover:hover {
+            border-color: rgba(99, 102, 241, 0.4);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px -10px rgba(99, 102, 241, 0.2);
+        }
+        .gradient-text {
+            background: linear-gradient(135deg, #60a5fa 0%, #a855f7 50%, #ec4899 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .active-tab {
+            background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
+            color: white;
+            box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+        }
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="min-h-screen pb-20 selection:bg-purple-500 selection:text-white">
+
+    <!-- HEADER / HERO -->
+    <header class="relative border-b border-slate-800 bg-slate-950/90 backdrop-blur-md sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center space-x-4">
+                <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-blue-600 to-purple-600 flex items-center justify-center font-bold text-white text-xl shadow-lg shadow-blue-500/20">
+                    CK
+                </div>
+                <div>
+                    <h1 class="text-xl font-extrabold tracking-tight text-white flex items-center gap-2">
+                        Kế Hoạch Nâng Cấp <span class="gradient-text font-mono">"CKCK v5.0"</span>
+                        <span class="bg-purple-500/10 text-purple-400 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-purple-500/20">Zero-Regression Edition</span>
+                    </h1>
+                    <p class="text-xs text-slate-400">Dự án Qaly / ProjectHub • Phòng Tránh Tái Phát Bug Demo & Đột Phá AI Copilot</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-3">
+                <div class="bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-1.5 rounded-lg flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                    <span>View-As Simulation Enabled</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN CONTAINER -->
+    <main class="max-w-7xl mx-auto px-6 pt-8 space-y-10">
+
+        <!-- HIGHLIGHT: PHÒNG TRÁNH TÁI PHÁT (ZERO-REGRESSION SYSTEM) -->
+        <section class="glass-card rounded-2xl p-8 border-l-8 border-emerald-500 relative overflow-hidden">
+            <div class="absolute right-0 top-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+            <div class="relative z-10 space-y-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2 text-emerald-400 font-bold text-sm tracking-wide uppercase">
+                        🛡️ Giải Pháp Độc Quyền: Phòng Tránh Tái Phát Lỗi (Zero-Regression Framework)
+                    </div>
+                    <span class="bg-emerald-500/20 text-emerald-300 text-xs font-mono px-3 py-1 rounded-full border border-emerald-500/30">Phase 0 Ready</span>
+                </div>
+
+                <h2 class="text-2xl font-extrabold text-white">
+                    Triển Khai "View-As Simulation Mode" & Automated Visibility Health-Check
+                </h2>
+
+                <p class="text-slate-300 text-sm leading-relaxed max-w-4xl">
+                    Để không bao giờ lặp lại sự cố lộ bug visibility khi demo trước mặt giảng viên, CKCK v5.0 bổ sung ngay 3 lá chắn bảo vệ chủ động:
+                </p>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-5 pt-2">
+                    <!-- Shield 1 -->
+                    <div class="bg-slate-900/90 p-5 rounded-xl border border-slate-800 space-y-2">
+                        <div class="text-emerald-400 font-bold text-base flex items-center gap-2">
+                            <span>🎭 View-As Simulation Mode</span>
+                        </div>
+                        <p class="text-slate-400 text-xs leading-relaxed">
+                            Admin/PM có thể chọn <em>"Xem giao diện dưới vai trò Member X"</em> ngay trên thanh công cụ góc màn hình mà không cần logout hay tạo account phụ. Giúp test nhanh quyền hạn trong <strong>30 giây</strong> trước mỗi lần demo.
+                        </p>
+                    </div>
+
+                    <!-- Shield 2 -->
+                    <div class="bg-slate-900/90 p-5 rounded-xl border border-slate-800 space-y-2">
+                        <div class="text-blue-400 font-bold text-base flex items-center gap-2">
+                            <span>🩺 Health-Check Cron Job</span>
+                        </div>
+                        <p class="text-slate-400 text-xs leading-relaxed">
+                            Background Service chạy định kỳ quét DB: Phát hiện User nào có record <code>ProjectMember</code> nhưng 0 project visible -> Cảnh báo ngay qua System Notification & Slack alert cho Admin trước khi người dùng kịp thấy bug.
+                        </p>
+                    </div>
+
+                    <!-- Shield 3 -->
+                    <div class="bg-slate-900/90 p-5 rounded-xl border border-slate-800 space-y-2">
+                        <div class="text-purple-400 font-bold text-base flex items-center gap-2">
+                            <span>🧪 Phase 0 Integration Test</span>
+                        </div>
+                        <p class="text-slate-400 text-xs leading-relaxed">
+                            Bổ sung Phase 0 chuyên biệt: Viết bộ Integration Test tự động kiểm tra ma trận Ma Trận Permission (Role x Module x Action) + Rehearsal trực tiếp trên môi trường Staging trước khi demo thật.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- NAVIGATION TABS -->
+        <div class="flex space-x-2 border-b border-slate-800 pb-2 overflow-x-auto" id="navigation-tabs">
+            <button onclick="switchTab('tab-viewas')" id="btn-tab-viewas" class="active-tab text-sm font-semibold px-5 py-2.5 rounded-xl transition flex items-center gap-2">
+                🎭 Demo View-As Mode
+            </button>
+            <button onclick="switchTab('tab-permission')" id="btn-tab-permission" class="text-slate-400 hover:text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition flex items-center gap-2">
+                🛡️ Rules Phân Quyền & Realtime Invalidate
+            </button>
+            <button onclick="switchTab('tab-private')" id="btn-tab-private" class="text-slate-400 hover:text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition flex items-center gap-2">
+                🔒 Bảo Mật Private Tasks
+            </button>
+            <button onclick="switchTab('tab-erumi')" id="btn-tab-erumi" class="text-slate-400 hover:text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition flex items-center gap-2">
+                ✨ Erumi AI & Diff Preview
+            </button>
+            <button onclick="switchTab('tab-onboarding')" id="btn-tab-onboarding" class="text-slate-400 hover:text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition flex items-center gap-2">
+                🧭 Personalized AI Onboarding
+            </button>
+            <button onclick="switchTab('tab-observability')" id="btn-tab-observability" class="text-slate-400 hover:text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition flex items-center gap-2">
+                📊 Technical Stack & Observability
+            </button>
+        </div>
+
+        <!-- TAB 1: DEMO VIEW-AS SIMULATION MODE -->
+        <div id="tab-viewas" class="tab-pane space-y-6">
+            <div class="glass-card rounded-2xl p-6">
+                <h3 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                    <span class="text-amber-400">#1.</span> Giả Lập UI: View-As Permission Simulation Mode
+                </h3>
+                <p class="text-slate-400 text-sm mb-6">
+                    Thanh Simulation Banner sẽ xuất hiện ở top màn hình khi Admin kích hoạt chế độ giả lập vai trò. Toàn bộ UI và API request sẽ mang Context của user được chọn.
+                </p>
+
+                <!-- SIMULATION TOP BANNER DEMO -->
+                <div class="bg-gradient-to-r from-amber-600 via-purple-600 to-blue-600 p-0.5 rounded-xl shadow-xl mb-6">
+                    <div class="bg-slate-950 px-5 py-3 rounded-[11px] flex flex-wrap items-center justify-between gap-4">
+                        <div class="flex items-center space-x-3">
+                            <span class="px-2.5 py-1 rounded bg-amber-500/20 text-amber-300 font-mono text-xs font-bold border border-amber-500/40 animate-pulse">
+                                🎭 SIMULATION MODE ACTIVE
+                            </span>
+                            <span class="text-xs text-slate-300">
+                                Đang xem giao diện dưới danh nghĩa: <strong class="text-white">Nguyễn Văn B (Member Role • Dev Backend)</strong>
+                            </span>
+                        </div>
+
+                        <div class="flex items-center space-x-3">
+                            <select class="bg-slate-900 border border-slate-700 text-xs text-slate-200 px-3 py-1.5 rounded-lg focus:outline-none">
+                                <option>Chuyển View: Member A (Dev FE)</option>
+                                <option selected>Chuyển View: Member B (Dev BE)</option>
+                                <option>Chuyển View: Tester C (QA)</option>
+                                <option>Chuyển View: Guest / Client</option>
+                            </select>
+                            <button class="bg-rose-600 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-rose-500 font-semibold transition">
+                                ❌ Thoát Simulation Mode
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900 p-5 rounded-xl border border-slate-800 text-xs text-slate-300 space-y-2">
+                    <div class="text-blue-400 font-bold text-sm">💡 Cơ chế kỹ thuật đằng sau (Backend Header Injection):</div>
+                    <p>Khi bật Simulation Mode, Client gửi header <code>X-Simulate-User-Id: {targetUserId}</code> kèm JWT token của Admin. Backend Check Policy: Nếu Claims là SystemAdmin -> Override <code>ICurrentUserService.UserId</code> tạm thời để trả về đúng dữ liệu & permission mà Member đó được phép thấy!</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: RULES PHÂN QUYỀN & REALTIME INVALIDATE -->
+        <div id="tab-permission" class="tab-pane hidden space-y-6">
+            <div class="glass-card rounded-2xl p-6">
+                <h3 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                    <span class="text-blue-400">#2.</span> Quy Tắc Giải Quyết Mâu Thuẫn Phân Quyền & Real-Time Invalidate
+                </h3>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <!-- Rule 1 -->
+                    <div class="bg-slate-900 p-5 rounded-xl border border-slate-800 space-y-3">
+                        <div class="text-purple-400 font-bold text-sm">⚖️ Conflict Resolution Precedence (Thứ Tự Ưu Tiên Quy Tắc):</div>
+                        <div class="space-y-2 text-xs">
+                            <div class="bg-slate-950 p-2.5 rounded border-l-4 border-rose-500 text-slate-300">
+                                <strong>Level 1 (Highest): Explicit Deny</strong><br>
+                                Nếu System Role hoặc System User Override cấu hình Deny module X -> Deny tuyệt đối, bất kể Project Role có cho phép hay không.
+                            </div>
+                            <div class="bg-slate-950 p-2.5 rounded border-l-4 border-amber-500 text-slate-300">
+                                <strong>Level 2: Project Granular Override</strong><br>
+                                Nếu System Level cho phép -> Cấu hình của Project Custom Role hoặc Project Member Matrix sẽ quyết định quyền chi tiết (Kanban Edit, Roadmap View Only...).
+                            </div>
+                            <div class="bg-slate-950 p-2.5 rounded border-l-4 border-blue-500 text-slate-300">
+                                <strong>Level 3: Default Role Fallback</strong><br>
+                                Sử dụng quyền mặc định của System Role (Admin / User).
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SignalR Invalidate -->
+                    <div class="bg-slate-900 p-5 rounded-xl border border-slate-800 space-y-3">
+                        <div class="text-emerald-400 font-bold text-sm">⚡ SignalR Real-Time Invalidation:</div>
+                        <p class="text-xs text-slate-300 leading-relaxed">
+                            Khắc phục lỗ hổng Pinia Cache bị thiu: Ngay khi Admin sửa ma trận phân quyền, SignalR Hub phát sự kiện <code>"PermissionUpdatedEvent"</code> tới Channel của User/Project tương ứng. Client tự động âm thầm refetch permission matrix mà không bắt user phải ấn F5 reload trang!
+                        </p>
+                        <div class="bg-slate-950 p-3 rounded font-mono text-[11px] text-emerald-300">
+                            await _hubContext.Clients.User(targetUserId)<br>
+                            &nbsp;&nbsp;.SendAsync("OnPermissionsInvalidated", new { projectId });
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Policy as Code -->
+                <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 text-xs">
+                    <span class="text-purple-400 font-bold">📜 Export / Import "Policy-as-Code":</span> Cho phép PM xuất (Export JSON) bộ khung phân quyền chuẩn của dự án này để Import áp dụng ngay cho dự án mới, giúp chuẩn hóa quản trị across nhiều project.
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 3: PRIVATE TASKS BẢO MẬT & UX -->
+        <div id="tab-private" class="tab-pane hidden space-y-6">
+            <div class="glass-card rounded-2xl p-6">
+                <h3 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                    <span class="text-rose-400">#3.</span> Bảo Mật Tuyệt Đối & UX Nhiệm Vụ Riêng Tư (Private Tasks)
+                </h3>
+
+                <div class="space-y-4 mb-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                        <div class="bg-slate-900 p-4 rounded-xl border border-slate-800">
+                            <div class="text-rose-400 font-bold mb-1">🔍 Filter Chi Viết (Global Search / Feeds)</div>
+                            <p class="text-slate-400">Search Controller, Task Comments API & Activity Feed tự động lọc Private Task khỏi kết quả tìm kiếm đối với người dùng không phải Assigner hay Assignee.</p>
+                        </div>
+                        <div class="bg-slate-900 p-4 rounded-xl border border-slate-800">
+                            <div class="text-amber-400 font-bold mb-1">🔄 Tự Động Chuyển Quyền Khi Re-assign</div>
+                            <p class="text-slate-400">Khi đổi Assignee từ User B sang User C, quyền xem lập tức thu hồi khỏi User B và cấp mới cho User C ngay trong thời gian thực.</p>
+                        </div>
+                        <div class="bg-slate-900 p-4 rounded-xl border border-slate-800">
+                            <div class="text-purple-400 font-bold mb-1">📝 Audit Logging Xem Task Riêng Tư</div>
+                            <p class="text-slate-400">Mọi hành động xem/sửa Private Task đều ghi nhận log kiểm toán (Who viewed Private Task #QALY-108 at timestamp) bảo vệ dữ liệu HR nhạy cảm.</p>
+                        </div>
+                    </div>
+
+                    <!-- PROGRESS UX SOLUTION -->
+                    <div class="bg-slate-950 p-4 rounded-xl border border-amber-500/30">
+                        <div class="text-amber-300 font-bold text-sm mb-1">💡 Giải pháp Tiến độ (Tránh hiện tượng số liệu "ma"):</div>
+                        <p class="text-xs text-slate-300">
+                            Trên giao diện Member không có quyền xem private task, Kanban vẫn hiển thị chỉ báo minh bạch: <code class="bg-slate-900 text-amber-300 px-2 py-0.5 rounded border border-amber-500/40">🔒 +2 Private Tasks (Hidden Content)</code>. Thành viên hiểu rõ lý do tổng số task tăng mà không thấy tò mò hoặc nghi ngờ số liệu bị lỗi.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 4: ERUMI AI & DIFF PREVIEW -->
+        <div id="tab-erumi" class="tab-pane hidden space-y-6">
+            <div class="glass-card rounded-2xl p-6">
+                <h3 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                    <span class="text-purple-400">#4.</span> Trợ Lý Erumi AI, Diff Preview & Capacity Safety Check
+                </h3>
+
+                <!-- DIFF PREVIEW MODAL DEMO -->
+                <div class="bg-slate-950 p-5 rounded-xl border border-purple-500/40 space-y-4 mb-6">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                        <div class="flex items-center gap-2">
+                            <span class="text-purple-400 font-bold text-sm">🔍 AI Roadmap Change Proposal (Diff Preview)</span>
+                            <span class="bg-purple-500/20 text-purple-300 text-[10px] px-2 py-0.5 rounded">Before Approval</span>
+                        </div>
+                        <span class="text-xs text-slate-400">Giai đoạn đề xuất: Phase 4 Security Hardening</span>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                        <div class="bg-slate-900 p-3 rounded-lg border border-emerald-500/30">
+                            <div class="text-emerald-400 font-bold mb-2">+ 3 Task Mới Sẽ Tạo (Gắn Nhãn 🤖 Erumi AI):</div>
+                            <ul class="space-y-1 text-slate-300">
+                                <li>• Task: Hardening Auth Controller (Assigned: BE Dev • 12h)</li>
+                                <li>• Task: Playwright E2E Security Suite (Assigned: Tester • 16h)</li>
+                                <li>• Task: Rate Limiting Redis Cache (Assigned: BE Dev • 8h)</li>
+                            </ul>
+                        </div>
+
+                        <div class="bg-slate-900 p-3 rounded-lg border border-blue-500/30">
+                            <div class="text-blue-400 font-bold mb-2">📊 Capacity & Workload Impact (Kiểm Trợ Khả Năng Chịu Tải):</div>
+                            <ul class="space-y-1 text-slate-300">
+                                <li>• BE Dev: Hiện tại 20h/tuần -> Tải mới: 40h/tuần <span class="text-emerald-400 font-semibold">(An toàn)</span></li>
+                                <li>• Tester: Hiện tại 35h/tuần -> Tải mới: 51h/tuần <span class="text-rose-400 font-semibold">(⚠️ Cảnh báo Overload!)</span></li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between pt-2 text-xs">
+                        <div class="text-slate-400">
+                            🛡️ Có hỗ trợ <strong>1-Click Rollback / Undo</strong> trong 24h nếu phê duyệt nhầm.
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button class="bg-slate-800 text-slate-300 px-3 py-1.5 rounded hover:bg-slate-700">Chỉnh sửa Workload</button>
+                            <button class="bg-purple-600 text-white font-bold px-4 py-1.5 rounded hover:bg-purple-500">Xác Nhận Approve Roadmap</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- WEEKLY DIGEST -->
+                <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 text-xs">
+                    <span class="text-purple-300 font-bold">📢 Weekly AI Digest cho PM:</span> Erumi chủ động gửi thông báo mỗi sáng Thứ Hai tổng hợp: <em>"Tuần này ai có nguy cơ quá tải, task nào trễ deadline và đề xuất phân bổ lại công việc."</em>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 5: PERSONALIZED AI ONBOARDING -->
+        <div id="tab-onboarding" class="tab-pane hidden space-y-6">
+            <div class="glass-card rounded-2xl p-6">
+                <h3 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                    <span class="text-emerald-400">#5.</span> Cá Nhân Hoá AI Onboarding Theo Role & RAG Q&A Wiki
+                </h3>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div class="bg-slate-900 p-5 rounded-xl border border-slate-800 space-y-3 text-xs">
+                        <div class="text-emerald-400 font-bold text-sm">🎯 Onboarding Theo Từng Role Cụ Thể:</div>
+                        <div class="space-y-2 text-slate-300">
+                            <div><strong>• Backend Developer:</strong> Hướng dẫn kết nối DB local, chạy EF Core Migration, cấu hình Swagger API và quy tắc phân quyền Backend.</div>
+                            <div><strong>• QA / Tester:</strong> Hướng dẫn chạy Playwright E2E suite, quy trình mở Private Bug Task và tiêu chí duyệt Sprint.</div>
+                            <div><strong>• Designer / FE Dev:</strong> Hướng dẫn sơ đồ Vue 3 Pinia Store, Tailwind System Tokens và các component UI dùng lại.</div>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-900 p-5 rounded-xl border border-slate-800 space-y-3 text-xs">
+                        <div class="text-purple-400 font-bold text-sm">💬 Trợ Lý RAG Q&A Hỏi Đáp Trên Wiki Dự Án:</div>
+                        <p class="text-slate-400">
+                            Thành viên mới có thể đặt câu hỏi tự nhiên cho AI OnboardingBot (ví dụ: <em>"Quy trình deploy staging như nào?"</em>), AI sẽ tự tìm kiếm thông tin trong Qdrant Vector DB dựa trên Wiki của dự án để trả lời chính xác.
+                        </p>
+                        <div class="bg-slate-950 p-2.5 rounded border border-purple-500/30 text-purple-300">
+                            📊 Tự động theo dõi <strong>% Tiến Độ Hoàn Thành Onboarding</strong> của nhân sự mới.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 6: TECHNICAL STACK & OBSERVABILITY -->
+        <div id="tab-observability" class="tab-pane hidden space-y-6">
+            <div class="glass-card rounded-2xl p-6">
+                <h3 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                    <span class="text-blue-400">#6.</span> Observability & Structured Permission Logging
+                </h3>
+
+                <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-xs text-slate-300 space-y-2 mb-6">
+                    <div class="text-blue-400 font-bold">LOGGING SCHEMA CHO PERMISSION PIPELINE (SERILOG STRUCTURED LOG):</div>
+                    <pre class="text-slate-400">
+{
+  "Timestamp": "2026-08-12T10:45:00Z",
+  "Event": "PermissionEvaluation",
+  "UserId": "usr_99812",
+  "SystemRole": "User",
+  "ProjectId": "prj_00123",
+  "RequestedAction": "kanban:task:view_private",
+  "EvaluationResult": "Granted",
+  "EvaluationReason": "User is Assignee of Private Task QALY-108",
+  "ExecutionTimeMs": 2.4
+}
+                    </pre>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800">
+                        <div class="text-amber-400 font-bold mb-1">💰 AI Cost Control & Token Budget</div>
+                        <p class="text-slate-400">Giới hạn budget token AI theo tháng cho từng dự án, ngăn chặn nguy cơ vượt cước OpenAI/Azure OpenAI ngoài ý muốn.</p>
+                    </div>
+                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800">
+                        <div class="text-emerald-400 font-bold mb-1">🧪 Comprehensive Phase 0 Pipeline</div>
+                        <p class="text-slate-400">Xây dựng xUnit Integration Tests bao phủ 100% các cặp (System Role x Project Role x Action), chạy tự động CI/CD trước khi ship code.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- EXECUTION TIMELINE WITH PHASE 0 -->
+        <section class="glass-card rounded-2xl p-6 border-t-4 border-purple-500">
+            <h3 class="text-xl font-bold text-white mb-4">📍 Kế Hoạch Triển Khai Kỹ Thuật CKCK v5.0 (5 Phase Timeline)</h3>
+
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-3 text-xs">
+                <div class="bg-slate-900 p-3.5 rounded-xl border-t-2 border-emerald-500 space-y-1">
+                    <div class="text-emerald-400 font-bold">PHASE 0 (1 Ngày)</div>
+                    <div class="text-white font-semibold">Test Suite & Staging</div>
+                    <p class="text-slate-400 text-[11px]">Integration tests permission pipeline, dựng Staging rehearsal setup.</p>
+                </div>
+                <div class="bg-slate-900 p-3.5 rounded-xl border-t-2 border-blue-500 space-y-1">
+                    <div class="text-blue-400 font-bold">PHASE 1 (1.5 Ngày)</div>
+                    <div class="text-white font-semibold">Fix Bug & Multi-Tier DB</div>
+                    <p class="text-slate-400 text-[11px]">Fix GetMine EF Core query, SystemModulePermission, ProjectCustomRole, RoleHistory.</p>
+                </div>
+                <div class="bg-slate-900 p-3.5 rounded-xl border-t-2 border-amber-500 space-y-1">
+                    <div class="text-amber-400 font-bold">PHASE 2 (1.5 Ngày)</div>
+                    <div class="text-white font-semibold">View-As & Realtime Matrix</div>
+                    <p class="text-slate-400 text-[11px]">Simulation mode UI, SignalR permission invalidate Hub, Pinia store.</p>
+                </div>
+                <div class="bg-slate-900 p-3.5 rounded-xl border-t-2 border-rose-500 space-y-1">
+                    <div class="text-rose-400 font-bold">PHASE 3 (1 Ngày)</div>
+                    <div class="text-white font-semibold">Private Tasks & Security</div>
+                    <p class="text-slate-400 text-[11px]">IsPrivate filtering in Search/Feeds, Audit logging, Progress UI indicator.</p>
+                </div>
+                <div class="bg-slate-900 p-3.5 rounded-xl border-t-2 border-purple-500 space-y-1">
+                    <div class="text-purple-400 font-bold">PHASE 4 (2 Ngày)</div>
+                    <div class="text-white font-semibold">Erumi AI & Onboarding</div>
+                    <p class="text-slate-400 text-[11px]">Erumi Roadmap Diff preview, Rollback, Personalized Onboarding RAG.</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="mt-16 border-t border-slate-800 text-center py-6 text-xs text-slate-500">
+        CKCK v5.0 Zero-Regression Architecture Proposal • Qaly Project • Pair Programming with Antigravity AI
+    </footer>
+
+    <!-- INTERACTIVE TAB SCRIPT -->
+    <script>
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-pane').forEach(el => el.classList.add('hidden'));
+            const target = document.getElementById(tabId);
+            if (target) target.classList.remove('hidden');
+
+            const navTabs = document.getElementById('navigation-tabs');
+            navTabs.querySelectorAll('button').forEach(btn => {
+                btn.className = 'text-slate-400 hover:text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition flex items-center gap-2';
+            });
+
+            const activeBtn = document.getElementById('btn-' + tabId);
+            if (activeBtn) {
+                activeBtn.className = 'active-tab text-sm font-semibold px-5 py-2.5 rounded-xl transition flex items-center gap-2';
+            }
+        }
+    </script>
+</body>
+</html>
