@@ -85,21 +85,14 @@ public class SearchController : BaseApiController
             .Take(12)
             .ToListAsync(ct);
 
-        var taskResults = tasks.Select(task =>
-        {
-            var restricted = task.IsPrivate &&
-                !isAdmin &&
-                task.ReporterId != userId.Value &&
-                task.AssigneeId != userId.Value &&
-                task.Project.OwnerId != userId.Value &&
-                !task.Project.Members.Any(member =>
-                    member.UserId == userId.Value &&
-                    (member.Role == "Owner" || member.Role == "Manager" || member.Role == "Admin"));
-
-            var title = restricted ? $"Restricted Task #{task.Id.ToString()[..8]}" : task.Title;
-            var summary = restricted ? null : task.Description;
-            return new SearchResultDto("Task", task.Id, title, summary, task.ProjectId, $"/projects/{task.ProjectId}/tasks/{task.Id}");
-        });
+        var taskResults = tasks
+            .Where(task => !task.IsPrivate ||
+                           isAdmin ||
+                           task.ReporterId == userId.Value ||
+                           task.AssigneeId == userId.Value ||
+                           task.Project.OwnerId == userId.Value)
+            .Select(task => new SearchResultDto("Task", task.Id, task.Title, task.Description, task.ProjectId, $"/projects/{task.ProjectId}?taskId={task.Id}"))
+            .ToList();
 
         var wikiResults = await _context.WikiPages
             .AsNoTracking()

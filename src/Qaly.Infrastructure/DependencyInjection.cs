@@ -140,6 +140,7 @@ public static class DependencyInjection
         services.AddHostedService<EmailDigestWorker>();
         services.AddHostedService<TaskAttentionSignalWorker>();
         services.AddHostedService<ProjectTrashCleanupWorker>();
+        services.AddHostedService<ProjectVisibilityHealthCheckWorker>();
         services.AddHostedService<AiJobWorker>();
         services.AddHostedService<PrivacyWorker>();
 

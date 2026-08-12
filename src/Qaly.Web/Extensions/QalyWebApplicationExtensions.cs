@@ -4,6 +4,7 @@ using Qaly.Application.Common.Interfaces;
 using Qaly.Infrastructure.Data.Seeds;
 using Qaly.Web.Hubs;
 using Qaly.Web.Middleware;
+using Qaly.Web.Middlewares;
 using Scalar.AspNetCore;
 using Serilog;
 
@@ -38,6 +39,7 @@ public static class QalyWebApplicationExtensions
             await next();
         });
         app.UseAuthorization();
+        app.UseHeaderSimulation();
         app.UseAntiforgery();
         app.UseSession();
     }
@@ -91,6 +93,7 @@ public static class QalyWebApplicationExtensions
         app.MapHub<NotificationHub>("/hubs/notification");
         app.MapHub<AiHub>("/hubs/ai");
         app.MapHub<GroupHub>("/hubs/groups");
+        app.MapHub<PermissionHub>("/hubs/permissions");
 
         // Preserve backend/auth 404 contracts while allowing Vue Router to
         // render its own not-found page for unknown browser routes.

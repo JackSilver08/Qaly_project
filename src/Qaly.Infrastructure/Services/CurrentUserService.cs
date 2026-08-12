@@ -17,8 +17,32 @@ public class CurrentUserService : ICurrentUserService
     {
         get
         {
+            var httpContext = _httpContextAccessor.HttpContext;
+            if (httpContext != null && httpContext.Items.TryGetValue("SimulatedUserId", out var simObj) && simObj is Guid simId)
+            {
+                return simId;
+            }
+
+            var userId = httpContext?.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+            return Guid.TryParse(userId, out var parsed) ? parsed : null;
+        }
+    }
+
+    public Guid? RealUserId
+    {
+        get
+        {
             var userId = _httpContextAccessor.HttpContext?.User?.FindFirstValue(ClaimTypes.NameIdentifier);
             return Guid.TryParse(userId, out var parsed) ? parsed : null;
+        }
+    }
+
+    public bool IsSimulated
+    {
+        get
+        {
+            var httpContext = _httpContextAccessor.HttpContext;
+            return httpContext != null && httpContext.Items.ContainsKey("SimulatedUserId");
         }
     }
 

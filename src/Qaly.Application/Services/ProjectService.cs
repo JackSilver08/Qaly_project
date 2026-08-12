@@ -133,7 +133,11 @@ public class ProjectService : IProjectService
         }
 
         var query = ProjectDetailsQuery()
-            .Where(p => p.OwnerId == userId || p.Members.Any(m => m.UserId == userId));
+            .Where(p => p.OwnerId == userId ||
+                        p.Members.Any(m => m.UserId == userId) ||
+                        (p.OrganizationId != null &&
+                         (p.Organization!.OwnerId == userId ||
+                          p.Organization.Members.Any(m => m.UserId == userId))));
 
         var totalCount = await query.CountAsync(ct);
         var items = await query

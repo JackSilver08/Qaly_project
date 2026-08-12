@@ -11,4 +11,6 @@ public interface ICurrentUserService
     string? Email { get; }
     string? Role { get; }
     bool IsAuthenticated { get; }
+    bool IsSimulated { get; }
+    Guid? RealUserId { get; }
 }

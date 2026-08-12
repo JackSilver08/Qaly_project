@@ -24,6 +24,8 @@ public static class DependencyInjection
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IOrganizationService, OrganizationService>();
         services.AddScoped<IProjectService, ProjectService>();
+        services.AddScoped<IProjectRoleService, ProjectRoleService>();
+        services.AddScoped<IErumiRoadmapAiService, ErumiRoadmapAiService>();
         services.AddScoped<IGitHubAccessGuard, GitHubAccessGuard>();
         services.AddScoped<IGitHubRepositoryConnectionService, GitHubRepositoryConnectionService>();
         services.AddScoped<IGroupsService, GroupsService>();
