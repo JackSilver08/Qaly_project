@@ -23,6 +23,8 @@ import { useDashboardContext } from '../composables/dashboard-context'
 import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
 import { showError, showSuccess } from '../composables/use-toast'
 import { confirmDialog } from '../composables/use-confirm-dialog'
+import TaskDevelopmentPanel from '../components/TaskDevelopmentPanel.vue'
+import PageStatePanel from '../components/PageStatePanel.vue'
 import type {
   AttachmentDto,
   CommentDto,
@@ -108,6 +110,7 @@ const selectedTaskDetail = ref<TaskItemDto | null>(null)
 const selectedTaskComments = ref<CommentDto[]>([])
 const selectedTaskAttachments = ref<AttachmentDto[]>([])
 const selectedTaskTimeEntries = ref<TimeEntryDto[]>([])
+const selectedTaskTimeEntriesError = ref('')
 const selectedTaskMeetingSource = ref<TaskMeetingSourceDto | null>(null)
 const selectedTaskLoading = ref(false)
 const taskDetailCache = ref(new Map<string, TaskItemDto>())
@@ -691,11 +694,7 @@ function deleteSavedTaskView(viewId: string) {
 }
 
 async function refreshDashboard() {
-  try {
-    await loadDashboard()
-  } catch (error) {
-    console.warn(error)
-  }
+  await loadDashboard()
 }
 
 async function refreshAttentionInbox() {
@@ -739,6 +738,7 @@ async function loadTaskDetail(taskId: string) {
     selectedTaskComments.value = []
     selectedTaskAttachments.value = []
     selectedTaskTimeEntries.value = []
+    selectedTaskTimeEntriesError.value = ''
     selectedTaskMeetingSource.value = null
 
     void loadTaskDetailExtras(taskId)
@@ -748,8 +748,8 @@ async function loadTaskDetail(taskId: string) {
     selectedTaskComments.value = []
     selectedTaskAttachments.value = []
     selectedTaskTimeEntries.value = []
+    selectedTaskTimeEntriesError.value = ''
     selectedTaskMeetingSource.value = null
-    console.warn(error)
   } finally {
     selectedTaskLoading.value = false
   }
@@ -769,10 +769,12 @@ async function loadTaskDetailExtras(taskId: string) {
     selectedTaskComments.value = commentsResult.status === 'fulfilled' ? commentsResult.value ?? [] : []
     selectedTaskAttachments.value = attachmentsResult.status === 'fulfilled' ? attachmentsResult.value ?? [] : []
     selectedTaskTimeEntries.value = timeEntriesResult.status === 'fulfilled' ? timeEntriesResult.value ?? [] : []
+    selectedTaskTimeEntriesError.value = timeEntriesResult.status === 'rejected'
+      ? errorMessage(timeEntriesResult.reason, 'Không thể tải dữ liệu thời gian của nhiệm vụ.')
+      : ''
     selectedTaskMeetingSource.value = meetingSourceResult.status === 'fulfilled' ? meetingSourceResult.value : null
   } catch (error) {
     if (selectedTaskId.value !== taskId) return
-    console.warn(error)
   }
 }
 
@@ -794,6 +796,7 @@ function resetTaskDrawer() {
   selectedTaskComments.value = []
   selectedTaskAttachments.value = []
   selectedTaskTimeEntries.value = []
+  selectedTaskTimeEntriesError.value = ''
   selectedTaskMeetingSource.value = null
   selectedTaskLoading.value = false
 }
@@ -1177,11 +1180,20 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
           </div>
         </div>
 
-        <div v-if="filteredTasks.length === 0" class="empty-state">
-          <ListFilter :size="24" />
-          <strong>Không có task phù hợp</strong>
-          <p>Thử xóa bớt bộ lọc hoặc đổi sang phạm vi khác.</p>
-        </div>
+        <PageStatePanel
+          v-if="filteredTasks.length === 0"
+          variant="empty"
+          title="Không có nhiệm vụ phù hợp"
+          message="Thử xoá bớt bộ lọc, đổi phạm vi hiển thị hoặc quay lại khi có dữ liệu mới."
+          :skeleton-rows="3"
+        >
+          <template #actions>
+            <button class="pill-button pill-button--soft" type="button" @click="clearFilters">
+              <ListFilter :size="15" />
+              Xoá bộ lọc
+            </button>
+          </template>
+        </PageStatePanel>
 
         <div v-else class="task-cards">
           <article
@@ -1417,6 +1429,8 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
           </div>
         </section>
 
+        <TaskDevelopmentPanel v-if="selectedTaskDisplay" :task-id="selectedTaskDisplay.id" />
+
         <section v-if="selectedTaskDisplay" class="detail-grid">
           <div class="detail-block">
             <div class="detail-block__header">
@@ -1453,7 +1467,8 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
               <p>{{ entry.note || 'Không có ghi chú' }}</p>
               <small>{{ formatTime(entry.startedAt) }}</small>
             </article>
-            <div v-if="selectedTaskTimeEntries.length === 0" class="detail-empty">Chưa ghi nhận thời gian.</div>
+            <div v-if="selectedTaskTimeEntriesError" class="detail-empty is-error" role="alert">{{ selectedTaskTimeEntriesError }}</div>
+            <div v-else-if="selectedTaskTimeEntries.length === 0" class="detail-empty">Chưa ghi nhận thời gian.</div>
           </div>
         </section>
       </div>

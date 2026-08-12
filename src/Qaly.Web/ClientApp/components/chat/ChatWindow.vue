@@ -42,6 +42,7 @@ const props = defineProps<{
   backgroundImage?: string;
   canCustomizeBackground?: boolean;
   availableGroups?: ChatGroupModel[];
+  canSend?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -367,6 +368,7 @@ function cancelEditing() {
 }
 
 function sendMessage() {
+  if (props.canSend === false) return;
   const text = draft.value.trim();
   if (!text && pendingAttachments.value.length === 0) return;
 
@@ -608,13 +610,14 @@ function uploadBackground(event: Event) {
           ref="textareaRef"
           v-model="draft"
           rows="1"
+          :disabled="canSend === false"
           :placeholder="editingMessage ? 'Chỉnh sửa nội dung...' : 'Nhập tin nhắn...'"
           @input="updateMentionQuery"
           @focus="updateMentionQuery"
           @blur="$emit('typing', false)"
           @keydown.enter.exact.prevent="sendMessage"
         ></textarea>
-        <button class="primary-button composer-send-btn" type="submit" :aria-label="editingMessage ? 'Lưu chỉnh sửa' : 'Gửi tin nhắn'">
+        <button class="primary-button composer-send-btn" type="submit" :disabled="canSend === false" :aria-label="editingMessage ? 'Lưu chỉnh sửa' : 'Gửi tin nhắn'">
           <Send :size="16" />
         </button>
       </form>

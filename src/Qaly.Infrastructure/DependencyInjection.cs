@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,6 +14,7 @@ using Qaly.Infrastructure.Services.AI;
 using Qaly.Infrastructure.Services.AI.Providers;
 using OllamaSharp;
 using Qaly.Infrastructure.Services.Privacy;
+using Qaly.Infrastructure.Integrations.GitHub;
 
 namespace Qaly.Infrastructure;
 
@@ -44,8 +44,7 @@ public static class DependencyInjection
                         {
                             sqlOptions.MigrationsAssembly(typeof(QalyDbContext).Assembly.FullName);
                             sqlOptions.EnableRetryOnFailure(maxRetryCount: 3);
-                        })
-                    .ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning));
+                        });
             }
 
             options.AddInterceptors(sp.GetRequiredService<VectorSyncInterceptor>());
@@ -66,7 +65,16 @@ public static class DependencyInjection
         services.AddScoped<IAiExportService, AiExportService>();
         services.AddScoped<ISessionService, RedisSessionService>();
         services.AddScoped<IWebhookPublisher, WebhookPublisher>();
+        services.AddSingleton<IWebhookDnsResolver, SystemWebhookDnsResolver>();
+        services.AddSingleton<IWebhookEndpointPolicy, WebhookEndpointPolicy>();
         services.AddScoped<Qaly.Application.Common.Interfaces.IPushSender, WebPushSender>();
+        services.Configure<GitHubIntegrationOptions>(configuration.GetSection(GitHubIntegrationOptions.SectionName));
+        services.AddScoped<IGitHubWebhookReceiver, GitHubWebhookReceiver>();
+        services.AddScoped<IGitHubWebhookProcessor, GitHubWebhookProcessor>();
+        services.AddHttpClient<IGitHubAppClient, GitHubAppClient>();
+        services.AddScoped<IGitHubInstallationService, GitHubInstallationService>();
+        services.AddScoped<IGitHubProjectManagementService, GitHubProjectManagementService>();
+        services.AddScoped<Qaly.Application.Services.GitHub.IGitHubRepositoryProvider, GitHubRepositoryProvider>();
 
         // AI Core Services
         services.Configure<AiJobPlatformOptions>(configuration.GetSection(AiJobPlatformOptions.SectionName));
@@ -76,6 +84,19 @@ public static class DependencyInjection
             if (bool.TryParse(configuration["AI_JOB_V4_WORKER_ENABLED"], out var workerEnabled)) options.WorkerEnabled = workerEnabled;
             if (bool.TryParse(configuration["AI_BUDGET_UI_ENABLED"], out var budgetUiEnabled)) options.BudgetUiEnabled = budgetUiEnabled;
             if (bool.TryParse(configuration["AI_TASK_SKILL_SUGGESTION_ENABLED"], out var taskSkillSuggestionEnabled)) options.TaskSkillSuggestionEnabled = taskSkillSuggestionEnabled;
+            if (bool.TryParse(configuration["AI_ACTION_COMPOSER_ENABLED"], out var actionComposerEnabled)) options.ActionComposerEnabled = actionComposerEnabled;
+            if (bool.TryParse(configuration["AI_ACTION_COMPOSER_TASK_CREATE_ENABLED"], out var actionComposerTaskCreateEnabled)) options.ActionComposerTaskCreateEnabled = actionComposerTaskCreateEnabled;
+            if (bool.TryParse(configuration["AI_ASSISTANT_SESSION_ENABLED"], out var assistantSessionEnabled)) options.AssistantSessionEnabled = assistantSessionEnabled;
+            if (bool.TryParse(configuration["AI_ASSISTANT_CONTEXT_REGISTRY_ENABLED"], out var assistantContextRegistryEnabled)) options.AssistantContextRegistryEnabled = assistantContextRegistryEnabled;
+            if (bool.TryParse(configuration["AI_ASSISTANT_RESEARCH_PLAN_ENABLED"], out var assistantResearchPlanEnabled)) options.AssistantResearchPlanEnabled = assistantResearchPlanEnabled;
+            if (bool.TryParse(configuration["AI_ASSISTANT_GOAL_PLANNER_ENABLED"], out var assistantGoalPlannerEnabled)) options.AssistantGoalPlannerEnabled = assistantGoalPlannerEnabled;
+            if (bool.TryParse(configuration["AI_ASSISTANT_READ_ONLY_LOOP_ENABLED"], out var assistantReadOnlyLoopEnabled)) options.AssistantReadOnlyLoopEnabled = assistantReadOnlyLoopEnabled;
+            if (bool.TryParse(configuration["AI_ASSISTANT_PROGRESSIVE_INTERACTION_ENABLED"], out var assistantProgressiveInteractionEnabled)) options.AssistantProgressiveInteractionEnabled = assistantProgressiveInteractionEnabled;
+            if (bool.TryParse(configuration["AI_PROJECT_LAUNCH_BRIEF_ENABLED"], out var projectLaunchBriefEnabled)) options.ProjectLaunchBriefEnabled = projectLaunchBriefEnabled;
+            if (bool.TryParse(configuration["AI_PROJECT_LAUNCH_PLANNING_ENABLED"], out var projectLaunchPlanningEnabled)) options.ProjectLaunchPlanningEnabled = projectLaunchPlanningEnabled;
+            if (bool.TryParse(configuration["AI_PROJECT_LAUNCH_EXECUTION_ENABLED"], out var projectLaunchExecutionEnabled)) options.ProjectLaunchExecutionEnabled = projectLaunchExecutionEnabled;
+            if (bool.TryParse(configuration["AI_PROJECT_OPERATION_MONITORING_ENABLED"], out var projectOperationMonitoringEnabled)) options.ProjectOperationMonitoringEnabled = projectOperationMonitoringEnabled;
+            if (bool.TryParse(configuration["AI_SAFE_TEST_ORCHESTRATOR_ENABLED"], out var safeTestOrchestratorEnabled)) options.SafeTestOrchestratorEnabled = safeTestOrchestratorEnabled;
         });
         services.Configure<PrivacyV4Options>(configuration.GetSection(PrivacyV4Options.SectionName));
         services.PostConfigure<PrivacyV4Options>(options =>
@@ -92,6 +113,14 @@ public static class DependencyInjection
         services.AddScoped<IPrivacyWorkProcessor, PrivacyWorkProcessor>();
         services.AddScoped<IPrivacyOperationsService, PrivacyOperationsService>();
         services.AddScoped<IAiSourceGuard, AiSourceGuard>();
+        services.AddScoped<IAiJobActivityService, AiJobActivityService>();
+        services.AddScoped<IAiActionPlanValidator, AiActionPlanValidator>();
+        services.AddScoped<IAiAssistantSessionService, AiAssistantSessionService>();
+        services.AddScoped<IAiAssistantContextRegistry, AiAssistantContextRegistry>();
+        services.AddScoped<IOrganizationWorkRulebookService, OrganizationWorkRulebookService>();
+        services.AddScoped<IProjectLaunchService, ProjectLaunchService>();
+        services.AddScoped<IProjectLaunchOrchestratorService, ProjectLaunchOrchestratorService>();
+        services.AddScoped<IAiSafeTestOrchestratorService, AiSafeTestOrchestratorService>();
         services.AddScoped<IAiJobDispatchStore, AiJobDispatchStore>();
         services.AddScoped<IAiJobProcessor, AiJobProcessor>();
         
@@ -106,7 +135,8 @@ public static class DependencyInjection
         services.AddScoped<IAiGateway, Qaly.Infrastructure.Services.AI.AiGateway>();
         services.AddScoped<IAiAgentOrchestrator, MicrosoftAgentOrchestrator>();
         
-        services.AddHttpClient("WebhookClient");
+        services.AddHttpClient("WebhookClient")
+            .ConfigurePrimaryHttpMessageHandler(WebhookConnectionGuard.CreateHandler);
 
         // AI Services
         var ollamaUrl = configuration["Ai:OllamaUrl"] ?? "http://localhost:11434";
@@ -143,6 +173,8 @@ public static class DependencyInjection
         services.AddHostedService<ProjectVisibilityHealthCheckWorker>();
         services.AddHostedService<AiJobWorker>();
         services.AddHostedService<PrivacyWorker>();
+        services.AddHostedService<GitHubWebhookWorker>();
+        services.AddHostedService<ProjectOperationMonitorWorker>();
 
         return services;
     }

@@ -101,6 +101,12 @@ const editingTranscriptText = ref("");
 const transcriptEditInputRef = ref<HTMLInputElement | null>(null);
 const selectedProjectId = ref("");
 const isGeneratingChecknote = ref(false);
+const checknoteProgressStep = ref("");
+let checknoteAbortController: AbortController | null = null;
+let checknoteProgressTimer: number | null = null;
+type ChecknoteEvidence = { quote: string; sourceStart: number; sourceEnd: number };
+type ChecknoteDecision = { text: string; reason: string | null; sourceEvidence: string; sourceStart: number; sourceEnd: number };
+type ChecknoteRisk = { text: string; severity: string; sourceEvidence: string; sourceStart: number; sourceEnd: number };
 type ChecknoteActionItem = {
   title: string;
   description: string;
@@ -108,11 +114,22 @@ type ChecknoteActionItem = {
   dueDateFormatted: string;
   assigneeId: string;
   mappingStatus: string | null;
+  sourceEvidence: string | null;
+  sourceStart: number | null;
+  sourceEnd: number | null;
 };
 type ChecknoteResult = {
   meetingImportId: string;
+  aiJobId: string;
+  draftId: string;
   summary: string;
   actionItems: ChecknoteActionItem[];
+  summaryEvidence: ChecknoteEvidence[];
+  decisions: ChecknoteDecision[];
+  risks: ChecknoteRisk[];
+  provider: string | null;
+  model: string | null;
+  cacheHit: boolean;
 };
 const checknoteResult = ref<ChecknoteResult | null>(null);
 const projectMembers = ref<any[]>([]);
@@ -482,7 +499,13 @@ async function runGenerateChecknote() {
   const context = privacyContext.value;
   if (!selectedProjectId.value || transcriptList.value.length === 0 || !meetingId.value || !context) return;
 
+  checknoteAbortController?.abort();
+  checknoteAbortController = new AbortController();
   isGeneratingChecknote.value = true;
+  checknoteProgressStep.value = "Đã kiểm tra quyền riêng tư · đang chuẩn hóa transcript";
+  checknoteProgressTimer = window.setTimeout(() => {
+    checknoteProgressStep.value = "Model đang phân tích nội dung và đối chiếu trích dẫn";
+  }, 900);
   try {
     const compiledTranscriptText = transcriptList.value
       .map((log) => `[${formatTime(log.timestamp)}] ${log.senderName}: ${log.text}`)
@@ -493,6 +516,7 @@ async function runGenerateChecknote() {
 
     const result = await apiResult<any>(`/api/meetings/${meetingId.value}/auto-checknote`, {
       method: "POST",
+      signal: checknoteAbortController.signal,
       body: JSON.stringify({
         projectId: selectedProjectId.value,
         title: `Biên bản họp - ${new Date().toLocaleDateString("vi-VN")}`,
@@ -512,8 +536,11 @@ async function runGenerateChecknote() {
       typeof result.summary === "string" &&
       Array.isArray(result.actionItems)
     ) {
+      checknoteProgressStep.value = "Đã kiểm schema · đang lưu job, draft và nguồn";
       checknoteResult.value = {
         meetingImportId: result.meetingImportId,
+        aiJobId: typeof result.aiJobId === "string" ? result.aiJobId : "",
+        draftId: typeof result.draftId === "string" ? result.draftId : "",
         summary: result.summary,
         actionItems: result.actionItems.map((item: any) => ({
           title: typeof item?.title === "string" ? item.title : "",
@@ -522,7 +549,16 @@ async function runGenerateChecknote() {
           dueDateFormatted: formatDateForInput(item.dueDate),
           assigneeId: "",
           mappingStatus: typeof item?.mappingStatus === "string" ? item.mappingStatus : null,
+          sourceEvidence: typeof item?.sourceEvidence === "string" ? item.sourceEvidence : null,
+          sourceStart: typeof item?.sourceStart === "number" ? item.sourceStart : null,
+          sourceEnd: typeof item?.sourceEnd === "number" ? item.sourceEnd : null,
         })),
+        summaryEvidence: Array.isArray(result.summaryEvidence) ? result.summaryEvidence : [],
+        decisions: Array.isArray(result.decisions) ? result.decisions : [],
+        risks: Array.isArray(result.risks) ? result.risks : [],
+        provider: typeof result.provider === "string" ? result.provider : null,
+        model: typeof result.model === "string" ? result.model : null,
+        cacheHit: result.cacheHit === true,
       };
       showSuccess("Đã tạo biên bản AI thành công.");
     } else {
@@ -530,10 +566,60 @@ async function runGenerateChecknote() {
     }
   } catch (e: any) {
     console.error(e);
-    showError(e?.message || "Không thể phân tích cuộc họp qua AI.");
+    if (checknoteAbortController?.signal.aborted) {
+      showError("Đã hủy tạo biên bản; không có kết quả giả được lưu.");
+    } else {
+      showError(e?.message || "Không thể phân tích cuộc họp qua AI.");
+    }
   } finally {
+    if (checknoteProgressTimer !== null) window.clearTimeout(checknoteProgressTimer);
+    checknoteProgressTimer = null;
+    checknoteAbortController = null;
     isGeneratingChecknote.value = false;
+    checknoteProgressStep.value = "";
   }
+}
+
+function cancelChecknote() {
+  checknoteAbortController?.abort();
+}
+
+async function loadPersistedChecknote() {
+  if (!meetingId.value || !selectedProjectId.value || isGeneratingChecknote.value) return;
+  try {
+    const result = await apiResult<any>(`/api/meetings/${meetingId.value}/auto-checknote?projectId=${selectedProjectId.value}`);
+    if (!result || typeof result.meetingImportId !== "string" || typeof result.summary !== "string") return;
+    checknoteResult.value = {
+      meetingImportId: result.meetingImportId,
+      aiJobId: typeof result.aiJobId === "string" ? result.aiJobId : "",
+      draftId: typeof result.draftId === "string" ? result.draftId : "",
+      summary: result.summary,
+      actionItems: (Array.isArray(result.actionItems) ? result.actionItems : []).map((item: any) => ({
+        title: typeof item?.title === "string" ? item.title : "",
+        description: typeof item?.description === "string" ? item.description : "",
+        priority: typeof item?.priority === "string" ? item.priority : "Medium",
+        dueDateFormatted: formatDateForInput(item?.dueDate),
+        assigneeId: "",
+        mappingStatus: typeof item?.mappingStatus === "string" ? item.mappingStatus : null,
+        sourceEvidence: typeof item?.sourceEvidence === "string" ? item.sourceEvidence : null,
+        sourceStart: typeof item?.sourceStart === "number" ? item.sourceStart : null,
+        sourceEnd: typeof item?.sourceEnd === "number" ? item.sourceEnd : null,
+      })),
+      summaryEvidence: Array.isArray(result.summaryEvidence) ? result.summaryEvidence : [],
+      decisions: Array.isArray(result.decisions) ? result.decisions : [],
+      risks: Array.isArray(result.risks) ? result.risks : [],
+      provider: typeof result.provider === "string" ? result.provider : null,
+      model: typeof result.model === "string" ? result.model : null,
+      cacheHit: result.cacheHit === true,
+    };
+  } catch {
+    // A missing persisted checknote is the normal empty state for a new meeting.
+  }
+}
+
+function openTranscriptEvidence() {
+  activeSidebarTab.value = "transcript";
+  nextTick(() => transcriptLogRef.value?.scrollTo({ top: 0, behavior: "smooth" }));
 }
 
 async function createTaskFromCard(idx: number) {
@@ -590,7 +676,10 @@ watch(selectedProjectId, async (newVal) => {
   } else {
     projectMembers.value = [];
   }
+  await loadPersistedChecknote();
 });
+
+watch(meetingId, () => loadPersistedChecknote());
 
 const meetingShortCode = computed(() =>
   groupId ? groupId.slice(0, 8).toUpperCase() : "QALY-MEET",
@@ -903,6 +992,8 @@ function formatTime(value: string | number) {
 }
 
 onBeforeUnmount(async () => {
+  checknoteAbortController?.abort();
+  if (checknoteProgressTimer !== null) window.clearTimeout(checknoteProgressTimer);
   speechRec.stop();
   if (hubConnection) {
     try {
@@ -1626,15 +1717,47 @@ function disconnectLiveKit() {
           <div v-else-if="isGeneratingChecknote" class="gm-checknote-loading">
             <div class="gm-pulse-ring"></div>
             <Sparkles :size="24" class="gm-pulse-icon" />
-            <span>Đang phân tích cuộc họp bằng AI...</span>
-            <p>Quá trình có thể mất 10-30 giây.</p>
+            <span>{{ checknoteProgressStep || 'Đang phân tích cuộc họp bằng AI...' }}</span>
+            <p>Privacy → transcript → model → schema/source validation → lưu draft</p>
+            <button type="button" class="gm-btn-reset" @click="cancelChecknote">Hủy</button>
           </div>
 
           <!-- Results -->
-          <div v-else-if="checknoteResult" class="gm-checknote-results">
+          <div v-else-if="checknoteResult" class="gm-checknote-results" data-testid="meeting-checknote-results">
+            <div class="gm-checknote-truth">
+              <span>Provider: <strong>{{ checknoteResult.provider || 'không xác định' }}</strong></span>
+              <span>Model: <strong>{{ checknoteResult.model || 'không xác định' }}</strong></span>
+              <span v-if="checknoteResult.cacheHit">Cache hit đã kiểm nguồn</span>
+              <span>Job {{ checknoteResult.aiJobId.slice(0, 8) }} · reload vẫn đọc lại được</span>
+            </div>
             <div class="gm-cn-section">
               <h4><Sparkles :size="14" /> Tóm tắt cuộc họp</h4>
               <div class="gm-cn-summary">{{ checknoteResult.summary }}</div>
+              <button
+                v-for="evidence in checknoteResult.summaryEvidence"
+                :key="`${evidence.sourceStart}-${evidence.quote}`"
+                type="button"
+                class="gm-source-quote"
+                @click="openTranscriptEvidence"
+              >“{{ evidence.quote }}” · ký tự {{ evidence.sourceStart }}–{{ evidence.sourceEnd }}</button>
+            </div>
+
+            <div v-if="checknoteResult.decisions.length" class="gm-cn-section">
+              <h4><CheckCircle2 :size="14" /> Quyết định ({{ checknoteResult.decisions.length }})</h4>
+              <article v-for="decision in checknoteResult.decisions" :key="`${decision.sourceStart}-${decision.text}`" class="gm-grounded-item">
+                <strong>{{ decision.text }}</strong>
+                <span v-if="decision.reason">{{ decision.reason }}</span>
+                <button type="button" class="gm-source-quote" @click="openTranscriptEvidence">“{{ decision.sourceEvidence }}”</button>
+              </article>
+            </div>
+
+            <div v-if="checknoteResult.risks.length" class="gm-cn-section">
+              <h4><AlertTriangle :size="14" /> Rủi ro ({{ checknoteResult.risks.length }})</h4>
+              <article v-for="risk in checknoteResult.risks" :key="`${risk.sourceStart}-${risk.text}`" class="gm-grounded-item">
+                <strong>{{ risk.text }}</strong>
+                <span class="gm-risk-severity">{{ risk.severity }}</span>
+                <button type="button" class="gm-source-quote" @click="openTranscriptEvidence">“{{ risk.sourceEvidence }}”</button>
+              </article>
             </div>
 
             <div class="gm-cn-section">
@@ -1662,6 +1785,9 @@ function disconnectLiveKit() {
                     placeholder="Mô tả..."
                     :disabled="item.mappingStatus === 'Linked'"
                   ></textarea>
+                  <button v-if="item.sourceEvidence" type="button" class="gm-source-quote" @click="openTranscriptEvidence">
+                    Nguồn: “{{ item.sourceEvidence }}”
+                  </button>
                   <div class="gm-cn-card__meta">
                     <div class="gm-cn-field">
                       <label>Ưu tiên</label>
@@ -2729,6 +2855,57 @@ function disconnectLiveKit() {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.gm-checknote-truth {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  border-radius: var(--gm-radius-sm);
+  background: rgba(16, 185, 129, 0.08);
+  color: var(--gm-text-secondary);
+  font-size: 0.72rem;
+}
+
+.gm-grounded-item {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 10px;
+  border: 1px solid var(--gm-surface-border);
+  border-radius: var(--gm-radius-sm);
+  color: var(--gm-text-secondary);
+  font-size: 0.8rem;
+}
+
+.gm-grounded-item strong { color: var(--gm-text-primary); }
+
+.gm-risk-severity {
+  width: fit-content;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.14);
+  color: #f59e0b;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.gm-source-quote {
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 6px;
+  padding: 5px 8px;
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  border-radius: 6px;
+  background: rgba(59, 130, 246, 0.08);
+  color: #60a5fa;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
 }
 
 .gm-cn-section h4 {

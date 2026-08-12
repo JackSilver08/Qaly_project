@@ -32,21 +32,8 @@ public class GroupsController : BaseApiController
     [HttpGet]
     public async Task<IActionResult> GetMine([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? search = null, CancellationToken ct = default)
     {
-        try
-        {
-            var result = await _groupsService.GetMineAsync(page, pageSize, search, ct);
-            return StatusCode(result.StatusCode, result);
-        }
-        catch
-        {
-            return Ok(new PagedResult<GroupDto>
-            {
-                Items = [],
-                TotalCount = 0,
-                PageNumber = page,
-                PageSize = pageSize
-            });
-        }
+        var result = await _groupsService.GetMineAsync(page, pageSize, search, ct);
+        return StatusCode(result.StatusCode, result);
     }
 
     [HttpGet("{id:guid}")]

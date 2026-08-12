@@ -114,11 +114,18 @@ public sealed class AiProgressSummaryApiTests : IClassFixture<IntegrationTestFac
         conflictPayload!.ErrorCode.Should().Be(AiErrorCodes.IdempotencyConflict);
     }
 
-    [Fact]
-    public async Task Enqueue_OrdinaryProjectMember_IsDenied()
+    [Theory]
+    [InlineData(ProjectRoleRules.Member)]
+    [InlineData(ProjectRoleRules.Developer)]
+    [InlineData(ProjectRoleRules.Tester)]
+    [InlineData(ProjectRoleRules.Reviewer)]
+    [InlineData(ProjectRoleRules.Viewer)]
+    [InlineData(ProjectRoleRules.Customer)]
+    public async Task Enqueue_AnyProjectMember_CanReadProgressSummary(string role)
     {
+        // Progress and summary are the AI floor for every project role, including read-only ones.
         var memberId = Guid.NewGuid();
-        var projectId = await SeedProjectAsync(_factory.TestUserId, memberId, ProjectRoleRules.Member);
+        var projectId = await SeedProjectAsync(_factory.TestUserId, memberId, role);
         var memberClient = _factory.CreateClient();
         memberClient.DefaultRequestHeaders.Add("X-Test-UserId", memberId.ToString());
         var csrf = await GetCsrfTokenAsync(memberClient);
@@ -126,7 +133,38 @@ public sealed class AiProgressSummaryApiTests : IClassFixture<IntegrationTestFac
         var response = await memberClient.SendAsync(CreateRequest(
             projectId,
             csrf,
-            "progress-member-denied-1",
+            $"progress-{role.ToLowerInvariant()}-allowed-1",
+            new ProjectProgressSummaryRequestDto()));
+
+        response.StatusCode.Should().NotBe(HttpStatusCode.Forbidden);
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        (await db.AiJobs.CountAsync(item =>
+            item.ProjectId == projectId &&
+            item.JobType == "project_progress_summary")).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Enqueue_UserOutsideProject_IsDenied()
+    {
+        // Opening progress to every role must not open it to non-members.
+        var outsiderId = Guid.NewGuid();
+        var projectId = await SeedProjectAsync(_factory.TestUserId);
+        using (var seedScope = _factory.Services.CreateScope())
+        {
+            var seedDb = seedScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+            await EnsureUserAsync(seedDb, outsiderId, "Progress Outsider");
+            await seedDb.SaveChangesAsync();
+        }
+
+        var outsiderClient = _factory.CreateClient();
+        outsiderClient.DefaultRequestHeaders.Add("X-Test-UserId", outsiderId.ToString());
+        var csrf = await GetCsrfTokenAsync(outsiderClient);
+
+        var response = await outsiderClient.SendAsync(CreateRequest(
+            projectId,
+            csrf,
+            "progress-outsider-denied-1",
             new ProjectProgressSummaryRequestDto()));
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);

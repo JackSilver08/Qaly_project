@@ -1902,9 +1902,26 @@ public class GroupsServiceTests : IDisposable
     public async Task LinkProjectAsync_WhenGroupAndProjectBelongToDifferentOrganizations_ReturnsConflict()
     {
         var ownerId = Guid.NewGuid();
+        var groupOrganizationId = Guid.NewGuid();
+        var projectOrganizationId = Guid.NewGuid();
         await AddUserAsync(ownerId, "Owner", "cross-org-owner@qaly.dev");
-        var group = await AddGroupAsync(ownerId, "Organization A Group", Guid.NewGuid());
-        var project = await AddProjectAsync(ownerId, "Organization B Project", organizationId: Guid.NewGuid());
+        await _organizationRepo.AddAsync(new Organization
+        {
+            Id = groupOrganizationId,
+            Name = "Organization A",
+            Code = "ORG-A",
+            OwnerId = ownerId
+        });
+        await _organizationRepo.AddAsync(new Organization
+        {
+            Id = projectOrganizationId,
+            Name = "Organization B",
+            Code = "ORG-B",
+            OwnerId = ownerId
+        });
+        await _uow.SaveChangesAsync();
+        var group = await AddGroupAsync(ownerId, "Organization A Group", groupOrganizationId);
+        var project = await AddProjectAsync(ownerId, "Organization B Project", organizationId: projectOrganizationId);
         _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
 
         var result = await CreateService().LinkProjectAsync(group.Id, project.Id);

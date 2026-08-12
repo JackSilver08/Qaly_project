@@ -17,6 +17,11 @@ public sealed class AiJobDispatchStoreSqlServerTests
     [Fact]
     public async Task ClaimNextAsync_WithTwoWorkers_GrantsOneExclusiveLease()
     {
+        if (!SqlServerTestEnvironment.IsAvailable())
+        {
+            return;
+        }
+
         await using var database = await SqlTestDatabase.CreateAsync();
         var jobId = await database.SeedQueuedJobAsync();
 
@@ -44,6 +49,11 @@ public sealed class AiJobDispatchStoreSqlServerTests
     [Fact]
     public async Task ClaimNextAsync_AfterLeaseExpiry_RecordsFailedAttemptAndReclaimsJob()
     {
+        if (!SqlServerTestEnvironment.IsAvailable())
+        {
+            return;
+        }
+
         await using var database = await SqlTestDatabase.CreateAsync();
         var jobId = await database.SeedQueuedJobAsync();
 
@@ -90,6 +100,11 @@ public sealed class AiJobDispatchStoreSqlServerTests
     [Fact]
     public async Task RenewLeaseAsync_ExtendsOnlyTheCurrentWorkerLease()
     {
+        if (!SqlServerTestEnvironment.IsAvailable())
+        {
+            return;
+        }
+
         await using var database = await SqlTestDatabase.CreateAsync();
         var jobId = await database.SeedQueuedJobAsync();
 
@@ -116,6 +131,11 @@ public sealed class AiJobDispatchStoreSqlServerTests
     [Fact]
     public async Task AbandonLeaseAsync_SchedulesBackoffAndPreventsEarlyReclaim()
     {
+        if (!SqlServerTestEnvironment.IsAvailable())
+        {
+            return;
+        }
+
         await using var database = await SqlTestDatabase.CreateAsync();
         var jobId = await database.SeedQueuedJobAsync();
 
@@ -166,6 +186,11 @@ public sealed class AiJobDispatchStoreSqlServerTests
     [Fact]
     public async Task ProcessAsync_WhenJobCanceledAfterClaim_CompletesAttemptWithoutGatewayMutation()
     {
+        if (!SqlServerTestEnvironment.IsAvailable())
+        {
+            return;
+        }
+
         await using var database = await SqlTestDatabase.CreateAsync();
         var jobId = await database.SeedQueuedJobAsync();
         AiJobLease lease;
@@ -210,6 +235,11 @@ public sealed class AiJobDispatchStoreSqlServerTests
     [Fact]
     public async Task ProcessAsync_DuplicateDelivery_PersistsOneDraftAndOneProviderCall()
     {
+        if (!SqlServerTestEnvironment.IsAvailable())
+        {
+            return;
+        }
+
         await using var database = await SqlTestDatabase.CreateAsync();
         var jobId = await database.SeedQueuedJobAsync();
         AiJobLease lease;

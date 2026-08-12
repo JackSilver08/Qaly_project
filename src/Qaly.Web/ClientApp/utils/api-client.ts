@@ -26,9 +26,15 @@ async function csrfToken() {
       headers: { Accept: 'application/json' },
     })
       .then(async response => {
-        if (!response.ok) throw new Error(`CSRF token request failed (${response.status}).`)
+        if (!response.ok) {
+          throw new Error(`CSRF token request failed (${response.status}).`)
+        }
+
         const payload = await response.json()
-        if (!payload?.token) throw new Error('CSRF token response is invalid.')
+        if (!payload?.token) {
+          throw new Error('CSRF token response is invalid.')
+        }
+
         return payload.token as string
       })
       .catch(error => {
@@ -116,22 +122,50 @@ function parseApiPayload(text: string) {
 }
 
 function apiPayloadError(payload: unknown, status: number) {
-  if (typeof payload === 'string' && payload.trim()) return payload.trim()
+  if (typeof payload === 'string' && payload.trim()) {
+    return payload.trim()
+  }
 
   if (payload && typeof payload === 'object') {
-    if ('error' in payload && typeof (payload as any).error === 'string' && (payload as any).error.trim()) return (payload as any).error
-    if ('message' in payload && typeof (payload as any).message === 'string' && (payload as any).message.trim()) return (payload as any).message
-    if ('title' in payload && typeof (payload as any).title === 'string' && (payload as any).title.trim()) {
+    if (
+      'error' in payload &&
+      typeof (payload as any).error === 'string' &&
+      (payload as any).error.trim()
+    ) {
+      return (payload as any).error
+    }
+
+    if (
+      'message' in payload &&
+      typeof (payload as any).message === 'string' &&
+      (payload as any).message.trim()
+    ) {
+      return (payload as any).message
+    }
+
+    if (
+      'title' in payload &&
+      typeof (payload as any).title === 'string' &&
+      (payload as any).title.trim()
+    ) {
       const validationMessage = validationErrorMessage(payload)
       return validationMessage ?? (payload as any).title
     }
   }
 
+  if (status === 403) return 'Bạn không có quyền thực hiện thao tác này.'
+  if (status === 409) return 'Dữ liệu đã thay đổi hoặc bị trùng. Vui lòng tải lại rồi thử lại.'
+  if (status === 404) return 'Không tìm thấy dữ liệu yêu cầu.'
+  if (status === 422) return 'Dữ liệu nhập vào chưa hợp lệ.'
+  if (status >= 500) return 'Máy chủ đang gặp sự cố. Vui lòng thử lại sau.'
+
   return `Không thể hoàn tất yêu cầu (mã ${status}).`
 }
 
 function validationErrorMessage(payload: object) {
-  if (!('errors' in payload) || !(payload as any).errors || typeof (payload as any).errors !== 'object') return null
+  if (!('errors' in payload) || !(payload as any).errors || typeof (payload as any).errors !== 'object') {
+    return null
+  }
 
   for (const value of Object.values((payload as any).errors)) {
     if (Array.isArray(value) && typeof value[0] === 'string') return value[0]
@@ -147,6 +181,10 @@ function isApiResult<T>(payload: unknown): payload is ApiResult<T> {
 
 export function errorMessage(error: unknown, fallback = 'Đã xảy ra lỗi khi lưu dữ liệu') {
   const message = error instanceof Error ? error.message.trim() : ''
+
+  if (error instanceof ApiError) {
+    return message || fallback
+  }
 
   if (
     !message ||

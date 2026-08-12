@@ -84,7 +84,7 @@ function startEdit(page: WikiPageDto) {
   editingPageId.value = page.id;
   newPageTitle.value = page.title;
   newPageContent.value = page.content;
-  newPageVisibility.value = (page as any).visibility ?? "internal";
+  newPageVisibility.value = page.visibility ?? "internal";
   showAddForm.value = true;
   activeEditorTab.value = 'write';
 }
@@ -202,14 +202,14 @@ function navigateToWiki(page: WikiPageDto) {
             <strong>{{ page.title }}</strong>
             <span
               class="wiki-visibility-badge"
-              :class="{ 'is-public': (page as any).visibility === 'public' }"
+              :class="{ 'is-public': page.visibility === 'public' }"
             >
-              <Globe2 v-if="(page as any).visibility === 'public'" :size="13" />
+              <Globe2 v-if="page.visibility === 'public'" :size="13" />
               <Lock v-else :size="13" />
               {{
-                (page as any).visibility === "public"
+                page.visibility === "public"
                   ? "Công khai"
-                  : (page as any).visibility === "customer_safe"
+                  : page.visibility === "customer_safe"
                     ? "Cho khách hàng"
                     : "Nội bộ"
               }}

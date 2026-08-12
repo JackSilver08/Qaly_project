@@ -26,14 +26,19 @@ public static class DependencyInjection
         services.AddScoped<IProjectService, ProjectService>();
         services.AddScoped<IProjectRoleService, ProjectRoleService>();
         services.AddScoped<IErumiRoadmapAiService, ErumiRoadmapAiService>();
+        services.AddScoped<IProjectRoleCatalog, ProjectRoleCatalog>();
+        services.AddScoped<IProjectRoleDefinitionService, ProjectRoleDefinitionService>();
         services.AddScoped<IGitHubAccessGuard, GitHubAccessGuard>();
         services.AddScoped<IGitHubRepositoryConnectionService, GitHubRepositoryConnectionService>();
+        services.AddScoped<ITaskDevelopmentService, TaskDevelopmentService>();
         services.AddScoped<IGroupsService, GroupsService>();
         services.AddScoped<IGroupAttachmentService, GroupAttachmentService>();
         services.AddScoped<IGroupInvitationEmailBuilder, GroupInvitationEmailBuilder>();
         services.AddScoped<ILiveKitTokenService, LiveKitTokenService>();
         services.AddScoped<ITaskService, TaskService>();
         services.AddScoped<ITaskSkillService, TaskSkillService>();
+        services.AddScoped<IMemberSkillEvidenceService, MemberSkillEvidenceService>();
+        services.AddScoped<IPortfolioScheduleService, PortfolioScheduleService>();
         services.AddScoped<ITaskAccessPolicy, TaskAccessPolicy>();
         services.AddScoped<ICommentService, CommentService>();
         services.AddScoped<IAttachmentService, AttachmentService>();
@@ -44,6 +49,8 @@ public static class DependencyInjection
         services.AddScoped<IErumiChatService, ErumiChatService>();
         services.AddScoped<IAgentRunService, AgentRunService>();
         services.AddScoped<IAiWorkflowService, AiWorkflowService>();
+        services.AddScoped<IAiActionComposerService, AiActionComposerService>();
+        services.AddScoped<IAiAssistantGoalPlanner, AiAssistantGoalPlanner>();
         services.AddScoped<IAiPlatformQueryService, AiPlatformQueryService>();
         services.AddScoped<IGroupAiService, GroupAiService>();
         services.AddScoped<IWebhookService, WebhookService>();

@@ -14,15 +14,18 @@ public class TasksController : BaseApiController
     private readonly ITaskService _taskService;
     private readonly IMeetingImportService _meetingImportService;
     private readonly ITaskSkillService _taskSkillService;
+    private readonly IMemberSkillEvidenceService _memberSkillEvidenceService;
 
     public TasksController(
         ITaskService taskService,
         IMeetingImportService meetingImportService,
-        ITaskSkillService taskSkillService)
+        ITaskSkillService taskSkillService,
+        IMemberSkillEvidenceService memberSkillEvidenceService)
     {
         _taskService = taskService;
         _meetingImportService = meetingImportService;
         _taskSkillService = taskSkillService;
+        _memberSkillEvidenceService = memberSkillEvidenceService;
     }
 
     [HttpGet("project/{projectId}")]
@@ -66,37 +69,15 @@ public class TasksController : BaseApiController
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
-        try
-        {
-            var result = await _taskService.GetByIdAsync(id, ct);
-            if (result.StatusCode == 404)
-            {
-                return Ok(null);
-            }
-            return StatusCode(result.StatusCode, result);
-        }
-        catch
-        {
-            return Ok(null);
-        }
+        var result = await _taskService.GetByIdAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
     }
 
     [HttpGet("{id}/meeting-source")]
     public async Task<IActionResult> GetMeetingSource(Guid id, CancellationToken ct)
     {
-        try
-        {
-            var result = await _meetingImportService.GetTaskMeetingSourceAsync(id, ct);
-            if (result.StatusCode == 404)
-            {
-                return Ok(null);
-            }
-            return StatusCode(result.StatusCode, result);
-        }
-        catch
-        {
-            return Ok(null);
-        }
+        var result = await _meetingImportService.GetTaskMeetingSourceAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
     }
 
     [HttpGet("{id:guid}/skills")]
@@ -114,6 +95,36 @@ public class TasksController : BaseApiController
         CancellationToken ct = default)
     {
         var result = await _taskSkillService.ReplaceTaskSkillsAsync(id, dto, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("{id:guid}/completion-contributors")]
+    public async Task<IActionResult> GetCompletionContributors(Guid id, CancellationToken ct = default)
+    {
+        var result = await _memberSkillEvidenceService.GetTaskCompletionAttributionsAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPut("{id:guid}/completion-contributors")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ReplaceCompletionContributors(
+        Guid id,
+        ReplaceTaskCompletionAttributionsDto dto,
+        CancellationToken ct = default)
+    {
+        var result = await _memberSkillEvidenceService.ReplaceTaskCompletionAttributionsAsync(id, dto, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("{id:guid}/completion-contributors/{attributionId:guid}/correction")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RequestCompletionContributorCorrection(
+        Guid id,
+        Guid attributionId,
+        RequestCompletionAttributionCorrectionDto dto,
+        CancellationToken ct = default)
+    {
+        var result = await _memberSkillEvidenceService.RequestCorrectionAsync(id, attributionId, dto, ct);
         return StatusCode(result.StatusCode, result);
     }
 
@@ -194,21 +205,13 @@ public class TasksController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
     [HttpGet("{id}/time-entries")]
-    public async Task<IActionResult> GetTimeEntries(Guid id, [FromServices] ITimeTrackingService timeTrackingService)
+    public async Task<IActionResult> GetTimeEntries(
+        Guid id,
+        [FromServices] ITimeTrackingService timeTrackingService,
+        CancellationToken ct)
     {
-        try
-        {
-            var result = await timeTrackingService.GetByTaskAsync(id);
-            if (result.StatusCode == 404)
-            {
-                return Ok(Array.Empty<TimeEntryDto>());
-            }
-            return StatusCode(result.StatusCode, result);
-        }
-        catch
-        {
-            return Ok(Array.Empty<TimeEntryDto>());
-        }
+        var result = await timeTrackingService.GetByTaskAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
     }
 
     [HttpGet("/api/projects/{projectId:guid}/task-attention")]

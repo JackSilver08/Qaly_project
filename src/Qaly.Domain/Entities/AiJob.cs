@@ -58,5 +58,6 @@ public class AiJob : BaseEntity
     public ICollection<AiGeneratedDraft> Drafts { get; set; } = new List<AiGeneratedDraft>();
     public ICollection<AiJobSource> Sources { get; set; } = new List<AiJobSource>();
     public ICollection<AiProviderAttempt> ProviderAttempts { get; set; } = new List<AiProviderAttempt>();
+    public ICollection<AiJobActivityEvent> ActivityEvents { get; set; } = new List<AiJobActivityEvent>();
     public ICollection<AiUsageLedger> UsageEntries { get; set; } = new List<AiUsageLedger>();
 }

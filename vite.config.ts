@@ -2,8 +2,11 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { existsSync, readFileSync } from 'node:fs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const useDevHttps = process.env.QALY_VITE_DEV === '1'
+const devCertificatePath = resolve(__dirname, '.tmp/qaly-vite-dev.pfx')
 
 export default defineConfig({
   base: '/dist/',
@@ -55,10 +58,15 @@ export default defineConfig({
     },
   },
   server: {
+    host: 'localhost',
     port: 5173,
     strictPort: true,
+    https: useDevHttps && existsSync(devCertificatePath) ? {
+      pfx: readFileSync(devCertificatePath),
+      passphrase: process.env.QALY_VITE_CERT_PASSWORD ?? 'qaly-local-dev',
+    } : undefined,
     hmr: {
-      protocol: 'ws',
+      protocol: useDevHttps ? 'wss' : 'ws',
     },
   },
 })

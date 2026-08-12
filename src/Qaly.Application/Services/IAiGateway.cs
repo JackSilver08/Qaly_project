@@ -12,6 +12,8 @@ public class AiRequest
     public string JobType { get; set; } = string.Empty;
     public string ProviderHint { get; set; } = "auto";
     public bool StrictProvider { get; set; }
+    public int? ProviderTimeoutSeconds { get; set; }
+    public int? SchemaRepairAttempts { get; set; }
     public string Prompt { get; set; } = string.Empty;
     public string SystemPrompt { get; set; } = string.Empty;
     public string ExpectedSchemaId { get; set; } = string.Empty;

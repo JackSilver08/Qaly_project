@@ -518,6 +518,44 @@ public sealed class AiJobProcessorTests : IDisposable
         (await _db.AiGeneratedDrafts.CountAsync(item => item.AiJobId == job.Id)).Should().Be(0);
     }
 
+    [Fact]
+    [Trait("TestId", "TEST-ACTION-FALLBACK-01")]
+    public async Task ProcessAsync_ActionComposerProviderFailure_CompletesWithBoundedSafeReviewDraft()
+    {
+        var seeded = await SeedRunningJobAsync(AiActionComposerContract.JobType);
+        await ConfigureActionComposerJobAsync(seeded.JobId);
+        AiRequest? captured = null;
+        _gateway.Setup(gateway => gateway.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<AiRequest, CancellationToken>((request, _) => captured = request)
+            .ReturnsAsync(new AiResponse
+            {
+                IsSuccess = false,
+                ErrorCode = AiErrorCodes.SchemaInvalid,
+                ErrorMessage = "selected provider returned invalid JSON",
+                Retryable = false,
+                ProviderName = "DeepSeek",
+                ModelName = "deepseek-chat"
+            });
+
+        await CreateProcessor().ProcessAsync(seeded.Lease, seeded.WorkerId);
+
+        captured.Should().NotBeNull();
+        captured!.StrictProvider.Should().BeTrue();
+        captured.ProviderTimeoutSeconds.Should().Be(35);
+        captured.SchemaRepairAttempts.Should().Be(0);
+        var job = await _db.AiJobs.SingleAsync(item => item.Id == seeded.JobId);
+        job.Status.Should().Be(AiJobStatuses.Succeeded, job.LastErrorMessage);
+        job.SelectedProvider.Should().Be("Qaly");
+        job.SelectedModel.Should().Be("server-action-fallback-v1");
+        job.LastErrorCode.Should().BeNull();
+        var draft = await _db.AiGeneratedDrafts.SingleAsync(item => item.AiJobId == job.Id);
+        draft.Status.Should().Be(AiDraftStatuses.PendingReview);
+        AiActionComposerOutputContract.TryValidateFinal(draft.PayloadJson, out var validationError)
+            .Should().BeTrue(validationError);
+        using var payload = JsonDocument.Parse(draft.PayloadJson);
+        payload.RootElement.GetProperty("options")[0].GetProperty("commands").GetArrayLength().Should().Be(3);
+    }
+
     public void Dispose()
     {
         _db.Dispose();
@@ -662,6 +700,28 @@ public sealed class AiJobProcessorTests : IDisposable
             "vi",
             skills));
         var job = await _db.AiJobs.Include(item => item.Sources).SingleAsync(item => item.Id == jobId);
+        if (!await _db.Organizations.AnyAsync(item => item.Id == organizationId))
+        {
+            _db.Organizations.Add(new Organization
+            {
+                Id = organizationId,
+                Name = "Task Skill Organization",
+                Code = "AI-SKILL",
+                OwnerId = job.RequestedById,
+                IsActive = true
+            });
+        }
+        if (!await _db.Projects.AnyAsync(item => item.Id == projectId))
+        {
+            _db.Projects.Add(new Project
+            {
+                Id = projectId,
+                Name = "Task Skill Project",
+                Code = "AI-SKILL",
+                OwnerId = job.RequestedById,
+                OrganizationId = organizationId
+            });
+        }
         job.ProjectId = projectId;
         job.TenantId = organizationId;
         job.SourceType = "task";
@@ -685,6 +745,44 @@ public sealed class AiJobProcessorTests : IDisposable
         return new TaskSkillProcessorContext(taskId, skillId, sourceVersion, sourceRef);
     }
 
+    private async Task ConfigureActionComposerJobAsync(Guid jobId)
+    {
+        var job = await _db.AiJobs.Include(item => item.Sources).SingleAsync(item => item.Id == jobId);
+        var project = await _db.Projects.SingleAsync(item => item.Id == job.ProjectId);
+        var projectRef = $"/projects/{project.Id:D}";
+        var snapshot = JsonSerializer.Serialize(new AiActionContextSnapshotDto(
+            AiActionComposerContract.SnapshotSchemaId,
+            new AiActionProjectContextDto(
+                project.Id,
+                project.OrganizationId,
+                project.Name,
+                project.Code,
+                project.Status,
+                project.StartDate,
+                project.EndDate,
+                projectRef),
+            "action-source-v1",
+            "vi",
+            3,
+            "Tạo task khảo sát, triển khai và kiểm thử cho Sprint 1.",
+            [],
+            [],
+            [projectRef]));
+        job.ProviderHint = "deepseek-chat";
+        job.SchemaId = AiActionComposerContract.SchemaId;
+        job.SchemaVersion = "1.0";
+        job.RequestJson = JsonSerializer.Serialize(new
+        {
+            sourceText = snapshot,
+            cacheMode = "bypass",
+            options = new { prompt = "Tạo task cho Sprint 1.", systemPrompt = "Return JSON only." }
+        });
+        var source = job.Sources.Single();
+        source.SourceType = "project";
+        source.SourceEntityId = project.Id;
+        await _db.SaveChangesAsync();
+    }
+
     private async Task<SeededJob> SeedRunningJobAsync(
         string jobType,
         string status = AiJobStatuses.Running,
@@ -695,6 +793,26 @@ public sealed class AiJobProcessorTests : IDisposable
         var workerId = "worker-test";
         projectId ??= Guid.NewGuid();
         userId ??= Guid.NewGuid();
+        if (!await _db.Users.AnyAsync(item => item.Id == userId.Value))
+        {
+            _db.Users.Add(new User
+            {
+                Id = userId.Value,
+                FullName = "AI Job Owner",
+                Email = $"{userId.Value:N}@qaly.test",
+                PasswordHash = "not-used"
+            });
+        }
+        if (!await _db.Projects.AnyAsync(item => item.Id == projectId.Value))
+        {
+            _db.Projects.Add(new Project
+            {
+                Id = projectId.Value,
+                Name = "AI Job Project",
+                Code = $"AI-{projectId.Value:N}"[..12],
+                OwnerId = userId.Value
+            });
+        }
         var job = new AiJob
         {
             JobType = jobType,

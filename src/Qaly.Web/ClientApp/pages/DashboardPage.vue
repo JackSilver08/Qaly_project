@@ -15,12 +15,18 @@ const router = useRouter()
 const {
   projects,
   team,
+  isLoading,
+  loadError,
+  loadDashboard,
   openCreateProject,
   selectProject,
   openChatWithPrompt,
 } = useDashboardContext() as {
   projects: Ref<DashboardProject[]>
   team: Ref<DashboardMember[]>
+  isLoading: Ref<boolean>
+  loadError: Ref<string | null>
+  loadDashboard: () => Promise<boolean>
   openCreateProject: () => void
   selectProject: (projectId: string) => void
   openChatWithPrompt: (prompt?: string) => void
@@ -80,6 +86,16 @@ const averageTeamCapacity = computed(() => {
   return Math.round(team.value.reduce((sum, member) => sum + member.capacityPercent, 0) / team.value.length)
 })
 const overloadedTeamCount = computed(() => team.value.filter(member => member.capacityPercent >= 90).length)
+const strategicOrganizationScopes = computed(() => {
+  const scopes = new Map<string, string>()
+  for (const project of projects.value) {
+    const id = project.organizationId || project.id
+    if (!scopes.has(id)) {
+      scopes.set(id, project.organizationId ? `Tổ chức ${id.slice(0, 8)}` : `Dự án ${project.name}`)
+    }
+  }
+  return Array.from(scopes, ([id, name]) => ({ id, name }))
+})
 
 function askDashboardAi(area: 'projects' | 'tasks' | 'team') {
   const prompts = {
@@ -167,6 +183,13 @@ const hoveredProject = computed(() => {
 <template>
   <div class="dashboard-scroll dashboard-scroll--embedded no-scrollbar">
     <div class="dashboard-container no-scrollbar">
+      <div v-if="loadError" class="dashboard-data-error" role="alert">
+        <AlertTriangle :size="20" />
+        <span>{{ loadError }}</span>
+        <button type="button" :disabled="isLoading" @click="loadDashboard">
+          {{ isLoading ? 'Đang tải...' : 'Thử lại' }}
+        </button>
+      </div>
       
       <!-- Left Main Column -->
       <div class="dashboard-main-col no-scrollbar">
@@ -617,7 +640,7 @@ const hoveredProject = computed(() => {
         </section>
 
         <!-- Strategic Performance Banner -->
-        <StrategicOverviewAI />
+        <StrategicOverviewAI :organization-scopes="strategicOrganizationScopes" />
 
       </div>
 
@@ -637,6 +660,37 @@ const hoveredProject = computed(() => {
 </template>
 
 <style scoped>
+.dashboard-data-error {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 12px 14px;
+  color: #991b1b;
+  background: #fef2f2;
+}
+
+.dashboard-data-error span {
+  flex: 1;
+}
+
+.dashboard-data-error button {
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+  padding: 7px 11px;
+  color: #991b1b;
+  background: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dashboard-data-error button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .summary-card {
   position: relative;
   outline: none;

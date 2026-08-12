@@ -28,3 +28,29 @@ public record CreateGitHubRepositoryConnectionDto(
     string? FullName = null,
     string DefaultBranch = "main",
     bool IsPrivate = true);
+
+public record TaskDevelopmentCommitDto(string Sha, string Message, string? AuthorLogin,
+    DateTimeOffset CommittedAt, string? BranchName, string Url, string Repository);
+
+public record GitHubTaskReferenceDto(Guid TaskId, string TaskKey);
+
+public record TaskDevelopmentPullRequestDto(int Number, string Title, string State, bool IsDraft,
+    string? AuthorLogin, string HeadBranch, string BaseBranch, int ReviewCount, int ApprovalCount,
+    DateTimeOffset? MergedAt, string Url, string Repository, IReadOnlyList<GitHubTaskReferenceDto> LinkedTasks);
+
+public record TaskDevelopmentReleaseDto(string TagName, string? Name, DateTimeOffset? PublishedAt,
+    string Url, string Repository);
+
+public record TaskDevelopmentWorkflowRunDto(long RunId, string WorkflowName, string? DisplayTitle,
+    string Branch, string Status, string? Conclusion, DateTimeOffset StartedAt,
+    DateTimeOffset? CompletedAt, string Url, string Repository, IReadOnlyList<GitHubTaskReferenceDto> LinkedTasks);
+
+public record TaskDevelopmentLinkDto(string EntityType, string ExternalEntityId, string LinkSource,
+    DateTimeOffset CreatedAt);
+
+public record TaskDevelopmentDto(Guid TaskId, string TaskKey,
+    IReadOnlyList<TaskDevelopmentCommitDto> Commits,
+    IReadOnlyList<TaskDevelopmentPullRequestDto> PullRequests,
+    IReadOnlyList<TaskDevelopmentWorkflowRunDto> WorkflowRuns,
+    IReadOnlyList<TaskDevelopmentReleaseDto> Releases,
+    IReadOnlyList<TaskDevelopmentLinkDto> Links);

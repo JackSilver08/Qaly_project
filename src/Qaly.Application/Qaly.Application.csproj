@@ -24,6 +24,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <WarningsAsErrors>$(WarningsAsErrors);CA1716</WarningsAsErrors>
   </PropertyGroup>
 
 </Project>

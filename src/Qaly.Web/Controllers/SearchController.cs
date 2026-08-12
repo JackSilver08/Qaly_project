@@ -48,10 +48,13 @@ public class SearchController : BaseApiController
         if (!isAdmin)
         {
             projectQuery = projectQuery.Where(project =>
-                project.Organization != null &&
-                project.Organization.IsActive &&
                 (project.OwnerId == userId.Value ||
-                 project.Members.Any(member => member.UserId == userId.Value)));
+                 project.Members.Any(member => member.UserId == userId.Value)) &&
+                (project.OrganizationId == null ||
+                 (project.Organization != null &&
+                  project.Organization.IsActive &&
+                  (project.Organization.OwnerId == userId.Value ||
+                   project.Organization.Members.Any(member => member.UserId == userId.Value)))));
         }
 
         var accessibleProjects = await projectQuery
@@ -79,6 +82,9 @@ public class SearchController : BaseApiController
             .Include(task => task.Project)
                 .ThenInclude(project => project.Members)
             .Where(task => accessibleProjectIds.Contains(task.ProjectId) &&
+                (isAdmin || !task.IsPrivate || task.ReporterId == userId.Value ||
+                 task.AssigneeId == userId.Value || task.Project.OwnerId == userId.Value ||
+                 task.Assignees.Any(assignment => assignment.UserId == userId.Value)) &&
                 (task.Title.Contains(normalized) || (task.Description != null && task.Description.Contains(normalized))))
             .OrderByDescending(task => task.IsPinned)
             .ThenByDescending(task => task.CreatedAt)
@@ -91,7 +97,7 @@ public class SearchController : BaseApiController
                            task.ReporterId == userId.Value ||
                            task.AssigneeId == userId.Value ||
                            task.Project.OwnerId == userId.Value)
-            .Select(task => new SearchResultDto("Task", task.Id, task.Title, task.Description, task.ProjectId, $"/projects/{task.ProjectId}?taskId={task.Id}"))
+            .Select(task => new SearchResultDto("Task", task.Id, task.Title, task.Description, task.ProjectId, $"/projects/{task.ProjectId}/tasks/{task.Id}"))
             .ToList();
 
         var wikiResults = await _context.WikiPages

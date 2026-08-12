@@ -40,4 +40,5 @@ public class GitHubRepositoryConnection : BaseEntity, ITenantScoped, ISoftDelete
     public ICollection<GitHubCommit> Commits { get; set; } = new List<GitHubCommit>();
     public ICollection<GitHubPullRequest> PullRequests { get; set; } = new List<GitHubPullRequest>();
     public ICollection<GitHubRelease> Releases { get; set; } = new List<GitHubRelease>();
+    public ICollection<GitHubWorkflowRun> WorkflowRuns { get; set; } = new List<GitHubWorkflowRun>();
 }

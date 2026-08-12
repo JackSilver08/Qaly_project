@@ -17,6 +17,8 @@ builder.AddQalyWebServices();
 
 var app = builder.Build();
 
+
+// Configure the HTTP request pipeline.
 app.UseQalyRequestPipeline();
 await app.UseQalyDevelopmentSetupAsync();
 app.MapQalyEndpoints();

@@ -15,6 +15,11 @@ public sealed class PrivacyMigrationSqlServerTests
     [Fact]
     public async Task P003Migration_ClassifiesLegacySensitiveDataWithoutSilentConsentOrDeletionSchedule()
     {
+        if (!SqlServerTestEnvironment.IsAvailable())
+        {
+            return;
+        }
+
         await using var database = await SqlMigrationDatabase.CreateAsync();
         Guid meetingId;
         Guid consentId;

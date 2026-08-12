@@ -1,7 +1,10 @@
 <!DOCTYPE html>
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment WebHostEnvironment
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
 @{
     var isDevelopment = WebHostEnvironment.EnvironmentName == "Development";
+    var viteDevServerUrl = Configuration["Vite:DevServerUrl"]?.TrimEnd('/');
+    var useViteDevServer = isDevelopment && !string.IsNullOrWhiteSpace(viteDevServerUrl);
 }
 <html lang="vi">
 <head>
@@ -10,7 +13,10 @@
     <title>@ViewData["Title"] - Qaly</title>
     <meta name="theme-color" content="#6366f1" />
     <link rel="manifest" href="/manifest.json" />
-    <link rel="stylesheet" href="~/dist/assets/main.css" asp-append-version="true" />
+    @if (!useViteDevServer)
+    {
+        <link rel="stylesheet" href="~/dist/assets/main.css" asp-append-version="true" />
+    }
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
 </head>
 <body>
@@ -24,7 +30,15 @@
     {
         <div hidden data-toast-message="@toastError" data-toast-type="error"></div>
     }
-    <script type="module" src="~/dist/assets/main.js" asp-append-version="true"></script>
+    @if (useViteDevServer)
+    {
+        <script type="module" src="@(viteDevServerUrl)/dist/@@vite/client"></script>
+        <script type="module" src="@(viteDevServerUrl)/dist/src/Qaly.Web/ClientApp/main.ts"></script>
+    }
+    else
+    {
+        <script type="module" src="~/dist/assets/main.js" asp-append-version="true"></script>
+    }
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {

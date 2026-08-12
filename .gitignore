@@ -19,6 +19,7 @@ out/
 *.userosscache
 *.sln.docstates
 launchSettings.json
+!src/Qaly.Web/Properties/launchSettings.json
 
 ## NuGet
 **/packages/*

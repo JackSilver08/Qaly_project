@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Qaly.Infrastructure.Data;
 using Qaly.Web.Auth;
 using Qaly.Application.Common.Models;
+using Qaly.Application.DTOs.Project;
 using Qaly.Application.Services;
 using System.Globalization;
 using System.Text.Json;
@@ -54,6 +55,8 @@ public partial class DashboardController : BaseApiController
                     .Include(project => project.Tasks)
                         .ThenInclude(task => task.Assignee)
                     .Include(project => project.Tasks)
+                        .ThenInclude(task => task.Assignees)
+                    .Include(project => project.Tasks)
                         .ThenInclude(task => task.Reporter)
                     .Include(project => project.Tasks)
                         .ThenInclude(task => task.Comments)
@@ -64,10 +67,13 @@ public partial class DashboardController : BaseApiController
                 if (restrictToMembership && !isAdmin && currentUserId.HasValue)
                 {
                     query = query.Where(project =>
-                        project.Organization != null &&
-                        project.Organization.IsActive &&
                         (project.OwnerId == currentUserId ||
-                         project.Members.Any(member => member.UserId == currentUserId)));
+                         project.Members.Any(member => member.UserId == currentUserId)) &&
+                        (project.OrganizationId == null ||
+                         (project.Organization != null &&
+                          project.Organization.IsActive &&
+                          (project.Organization.OwnerId == currentUserId ||
+                           project.Organization.Members.Any(member => member.UserId == currentUserId)))));
                 }
 
                 return query;
@@ -76,6 +82,19 @@ public partial class DashboardController : BaseApiController
             var projects = await BuildProjectQuery(restrictToMembership: true)
                 .OrderByDescending(project => project.CreatedAt)
                 .ToListAsync(cancellationToken);
+
+            if (!isAdmin && currentUserId.HasValue)
+            {
+                foreach (var project in projects)
+                {
+                    project.Tasks = project.Tasks.Where(task =>
+                        !task.IsPrivate ||
+                        task.ReporterId == currentUserId ||
+                        task.AssigneeId == currentUserId ||
+                        task.Assignees.Any(assignment => assignment.UserId == currentUserId) ||
+                        project.OwnerId == currentUserId).ToList();
+                }
+            }
 
             var accessibleUserIds = projects
                 .SelectMany(project => project.Members.Select(member => member.UserId))
@@ -184,6 +203,7 @@ public partial class DashboardController : BaseApiController
                         return new DashboardTaskResponse(
                             task.Id,
                             isRestricted ? $"Restricted Task #{task.Id.ToString()[..8]}" : task.Title,
+                            isRestricted ? null : task.Description,
                             task.Status,
                             task.Priority,
                             task.DueDate,
@@ -208,7 +228,11 @@ public partial class DashboardController : BaseApiController
                     project.EnableOnHold,
                     project.EnableInReview,
                     project.RequireEvidenceToDone,
-                    project.RestrictTransitionsToAdmin);
+                    project.RestrictTransitionsToAdmin,
+                    ProjectPermissionRules.Resolve(
+                        projectMembers.FirstOrDefault(member => member.UserId == currentUserId)?.Role,
+                        isOwner: currentUserId.HasValue && project.OwnerId == currentUserId.Value,
+                        isSystemAdmin: isAdmin));
             })
             .ToList();
 
@@ -299,26 +323,11 @@ public partial class DashboardController : BaseApiController
         catch (Exception ex)
         {
             LogFailedToBuildDashboardOverview(_logger, ex);
-            return Ok(CreateSafeFallbackOverview(DateTimeOffset.UtcNow));
+            return Problem(
+                statusCode: StatusCodes.Status500InternalServerError,
+                title: "Không thể tải dữ liệu dashboard lúc này.");
         }
     }
-
-    private static DashboardOverviewResponse CreateSafeFallbackOverview(DateTimeOffset now)
-        => new(
-            now,
-            new DashboardStatsResponse(0, 0, 0, 0, 0, 0, 0),
-            "Không thể tải số liệu trực tiếp, nên hệ thống đang hiển thị dữ liệu an toàn.",
-            "Đã gặp lỗi khi tổng hợp dashboard; vui lòng kiểm tra dữ liệu dự án hoặc nhật ký máy chủ.",
-            Array.Empty<DashboardProjectResponse>(),
-            Array.Empty<DashboardMemberResponse>(),
-            [
-                new DashboardNotificationResponse(
-                    "dashboard-fallback",
-                    "Đang dùng dữ liệu an toàn",
-                    "Dashboard đã chuyển sang dữ liệu an toàn để tránh màn hình lỗi.",
-                    "warning",
-                    now)
-            ]);
 
     private static List<DashboardNotificationResponse> BuildNotifications(
         IReadOnlyList<DashboardProjectResponse> projects,
@@ -456,7 +465,7 @@ public partial class DashboardController : BaseApiController
             _ => value
         };
 
-    [LoggerMessage(EventId = 2001, Level = LogLevel.Error, Message = "Failed to build dashboard overview. Returning safe fallback response.")]
+    [LoggerMessage(EventId = 2001, Level = LogLevel.Error, Message = "Failed to build dashboard overview.")]
     private static partial void LogFailedToBuildDashboardOverview(ILogger logger, Exception exception);
 
     [LoggerMessage(EventId = 2002, Level = LogLevel.Warning, Message = "AI provider {Provider} returned an invalid workspace strategy payload.")]
@@ -740,17 +749,7 @@ public partial class DashboardController : BaseApiController
             return true;
         }
 
-        if (project.OrganizationId == null || project.Organization == null)
-        {
-            return false;
-        }
-
-        if (project.Organization.OwnerId == currentUserId)
-        {
-            return true;
-        }
-
-        return project.Organization.Members.Any(member => member.UserId == currentUserId);
+        return false;
     }
 
     private async Task<Guid?> TryResolveProjectIdAsync(AuditLog log, CancellationToken ct)
@@ -873,6 +872,7 @@ public partial class DashboardController : BaseApiController
             .Select(t => new DashboardTaskResponse(
                 t.Id,
                 t.Title,
+                t.Description,
                 t.Status,
                 t.Priority,
                 t.DueDate,
@@ -909,80 +909,14 @@ public partial class DashboardController : BaseApiController
     }
 
     [HttpPost("ai-strategy")]
-    public async Task<ActionResult<AiStrategyResponseDto>> GenerateAiStrategy(
-        [FromBody] StrategicOverviewDto data,
-        CancellationToken cancellationToken)
+    public IActionResult GenerateAiStrategy()
     {
-        var response = await _aiGateway.ExecuteAsync(new AiRequest
+        Response.Headers["Deprecation"] = "true";
+        return StatusCode(StatusCodes.Status410Gone, new
         {
-            JobType = "WorkspaceStrategicOverview",
-            ProviderHint = "auto",
-            UserId = User.GetUserId(),
-            Prompt = $"""
-                Phân tích các chỉ số hiện tại của không gian làm việc Qaly và đưa ra hướng xử lý cụ thể:
-                - Điểm sức khỏe: {data.WorkspaceHealthScore}%
-                - Tiến độ dự án trung bình: {data.AverageProjectProgress}%
-                - Tỷ lệ hoàn thành nhiệm vụ: {data.TaskCompletionRate}%
-                - Số dự án đang hoạt động: {data.ActiveProjectCount}
-                - Số dự án có rủi ro: {data.RiskProjectCount}
-                - Số nhiệm vụ quá hạn: {data.OverdueTaskCount}
-                - Số nhiệm vụ sắp đến hạn: {data.DueSoonTaskCount}
-                - Mức tải đội ngũ: {data.TeamWorkloadLevel}
-                - Mức rủi ro chung: {data.RiskLevel}
-                - Nhiệm vụ ưu tiên: {string.Join("; ", data.TopPriorityTasks.Select(task => task.Title))}
-
-                Toàn bộ nội dung phải viết bằng tiếng Việt tự nhiên và dẫn ít nhất hai số liệu ở trên.
-                Riêng summary phải nhắc rõ {data.ActiveProjectCount} dự án đang hoạt động và {data.OverdueTaskCount} nhiệm vụ quá hạn.
-                Các giá trị dự án và nhiệm vụ là số lượng, không phải phần trăm.
-                Hãy nêu rõ người dùng cần kiểm tra hoặc thực hiện việc gì tiếp theo.
-                Không lặp câu mẫu của schema và không bịa tên người, chi phí hoặc thời hạn.
-                """,
-            SystemPrompt = """
-                Bạn là trợ lý vận hành dự án. Chỉ phân tích dữ liệu JSON được cung cấp, không bịa thêm dữ kiện.
-                Trả về duy nhất một JSON object theo đúng cấu trúc:
-                {
-                  "summary": "nhận định ngắn",
-                  "riskAnalysis": ["rủi ro có căn cứ từ dữ liệu"],
-                  "recommendations": ["hành động cụ thể người dùng có thể làm"],
-                  "priorityPlan": ["tối đa 3 ưu tiên có thể thực hiện"]
-                }
-                Mỗi mảng phải có ít nhất một mục. Dùng tiếng Việt rõ ràng, không dùng markdown.
-                """,
-            ExpectedSchemaId = "WorkspaceStrategy.v1",
-            IsSensitive = false,
-            UseCache = false,
-            AllowMockFallback = false
-        }, cancellationToken);
-
-        if (!response.IsSuccess || response.IsMock)
-        {
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
-            {
-                errorCode = response.ErrorCode ?? AiErrorCodes.ProviderUnavailable,
-                error = response.IsMock
-                    ? "AI provider chỉ trả dữ liệu mô phỏng; Qaly đã từ chối hiển thị như kết quả thật."
-                    : response.ErrorMessage ?? "AI provider chưa sẵn sàng."
-            });
-        }
-
-        if (!TryReadAiStrategy(response.Content, out var strategy))
-        {
-            LogInvalidWorkspaceStrategyPayload(_logger, response.ProviderName);
-            return StatusCode(StatusCodes.Status502BadGateway, new
-            {
-                errorCode = AiErrorCodes.SchemaInvalid,
-                error = "Model đã phản hồi nhưng nội dung không đúng cấu trúc yêu cầu."
-            });
-        }
-
-        return Ok(new AiStrategyResponseDto(
-            strategy!.Summary,
-            strategy.RiskAnalysis,
-            strategy.Recommendations,
-            strategy.PriorityPlan,
-            response.ProviderName,
-            response.ModelName,
-            response.CacheHit));
+            errorCode = AiErrorCodes.InvalidRequest,
+            error = "Endpoint nhận metric từ trình duyệt đã ngừng dùng. Hãy gọi POST /api/ai/dashboard/strategic-brief để Qaly dựng snapshot có quyền ở server."
+        });
     }
 
     private static bool TryReadAiStrategy(string content, out AiStrategyPayload? payload)
@@ -1050,7 +984,8 @@ public sealed record DashboardProjectResponse(
     bool EnableOnHold = true,
     bool EnableInReview = true,
     bool RequireEvidenceToDone = false,
-    bool RestrictTransitionsToAdmin = false);
+    bool RestrictTransitionsToAdmin = false,
+    ProjectPermissionsDto? Permissions = null);
 
 public sealed record DashboardProjectMemberResponse(
     Guid UserId,
@@ -1065,6 +1000,7 @@ public sealed record DashboardProjectMemberResponse(
 public sealed record DashboardTaskResponse(
     Guid Id,
     string Title,
+    string? Description,
     string Status,
     string Priority,
     DateTimeOffset? DueDate,

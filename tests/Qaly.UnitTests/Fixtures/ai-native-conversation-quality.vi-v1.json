@@ -1,0 +1,8 @@
+[
+  { "id": "launch-spa", "prompt": "Khởi chạy dự án web SPA cho khách hàng trong 8 tuần", "expect": "useful" },
+  { "id": "capacity", "prompt": "Tôi nên chia team thế nào khi mọi người đang chạy nhiều dự án", "expect": "useful" },
+  { "id": "test-cand", "prompt": "Chạy test demo tất cả CAND đã implement", "expect": "useful" },
+  { "id": "project-without-right", "prompt": "Tạo project cho tổ chức khác", "expect": "policy" },
+  { "id": "provider-timeout", "prompt": "Phân tích tiến độ", "expect": "useful" },
+  { "id": "dead-end-regression", "prompt": "Tạo một đối tượng Qaly", "expect": "dead_end" }
+]

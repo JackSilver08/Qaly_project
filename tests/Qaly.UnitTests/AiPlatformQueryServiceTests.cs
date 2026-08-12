@@ -63,6 +63,8 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
         var running = Job(project, AiJobStatuses.Running, now);
         var retrying = Job(project, AiJobStatuses.Retrying, now);
         var failed = Job(project, AiJobStatuses.Failed, now);
+        var earlierThisMonth = now.AddDays(-1);
+        var expectedDailyUsage = 1.25m;
         failed.FinishedAt = now.AddHours(-1);
         _db.AddRange(user, project, running, retrying, failed);
         _db.AiJobDispatches.Add(new AiJobDispatch
@@ -74,7 +76,7 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
         });
         _db.AiUsageLedger.AddRange(
             Usage(running.Id, now, "success", 1.25m, cacheHit: true),
-            Usage(retrying.Id, now.AddDays(-2), "failed", 2.75m, cacheHit: false));
+            Usage(retrying.Id, earlierThisMonth, "failed", 2.75m, cacheHit: false));
         _db.AiBudgetPolicies.Add(new AiBudgetPolicy
         {
             TenantId = _tenantId,
@@ -109,7 +111,7 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
 
         var budget = await service.GetBudgetAsync(_tenantId, _projectId);
         var budgetSnapshot = budget.Data!;
-        budgetSnapshot.DailyUsageUsd.Should().Be(1.25m);
+        budgetSnapshot.DailyUsageUsd.Should().Be(expectedDailyUsage);
         budgetSnapshot.MonthlyUsageUsd.Should().Be(4m);
         budgetSnapshot.WarningActive.Should().BeTrue();
         budgetSnapshot.HardStopActive.Should().BeTrue();

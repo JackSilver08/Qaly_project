@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Services;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 
@@ -84,6 +85,7 @@ public class AiSecurityGuardTests
         var taskRepo = new Mock<IRepository<TaskItem>>();
         var memberRepo = new Mock<IRepository<ProjectMember>>();
         var currentUser = new Mock<ICurrentUserService>();
+        var taskAccessPolicy = new Mock<ITaskAccessPolicy>();
         var aiTools = CreateAiTools();
 
         return new AiService(
@@ -94,6 +96,7 @@ public class AiSecurityGuardTests
             taskRepo.Object,
             memberRepo.Object,
             currentUser.Object,
+            taskAccessPolicy.Object,
             NullLogger<AiService>.Instance,
             aiTools);
     }

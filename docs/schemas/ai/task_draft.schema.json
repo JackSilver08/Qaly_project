@@ -1,77 +1,48 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "task_draft.v3.2",
+  "$id": "task_draft.v5",
+  "title": "Qaly source-linked task draft",
   "type": "object",
-  "required": [
-    "title",
-    "description",
-    "priority",
-    "deadline",
-    "assignee_suggestion",
-    "source_refs",
-    "confidence"
-  ],
+  "additionalProperties": false,
+  "required": ["schemaId", "dataState", "tasks"],
   "properties": {
-    "title": {
-      "type": "string",
-      "minLength": 3
-    },
-    "description": {
-      "type": "string"
-    },
-    "priority": {
-      "type": "string",
-      "enum": [
-        "low",
-        "medium",
-        "high",
-        "urgent"
-      ]
-    },
-    "deadline": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "assignee_suggestion": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "acceptance_criteria": {
+    "schemaId": { "const": "task_draft.v5" },
+    "dataState": { "enum": ["ready", "insufficient_evidence"] },
+    "tasks": {
       "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "source_refs": {
-      "type": "array",
+      "maxItems": 20,
       "items": {
         "type": "object",
+        "additionalProperties": false,
         "required": [
-          "source_type",
-          "source_id"
+          "clientId", "title", "description", "priority", "status", "dueDate",
+          "assigneeId", "selected", "confidence", "sourceRefs"
         ],
         "properties": {
-          "source_type": {
-            "type": "string"
-          },
-          "source_id": {
-            "type": [
-              "string",
-              "integer"
-            ]
+          "clientId": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "title": { "type": "string", "minLength": 3, "maxLength": 200 },
+          "description": { "type": ["string", "null"], "maxLength": 4000 },
+          "priority": { "enum": ["Low", "Medium", "High", "Critical"] },
+          "status": { "const": "Todo" },
+          "dueDate": { "type": ["string", "null"], "format": "date-time" },
+          "assigneeId": { "type": ["string", "null"], "format": "uuid" },
+          "selected": { "type": "boolean" },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "sourceRefs": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string", "pattern": "^message:[0-9a-fA-F-]{36}$" }
           }
         }
       }
-    },
-    "confidence": {
-      "type": "number",
-      "minimum": 0,
-      "maximum": 1
     }
   },
-  "additionalProperties": false
+  "allOf": [
+    {
+      "if": { "properties": { "dataState": { "const": "insufficient_evidence" } } },
+      "then": { "properties": { "tasks": { "maxItems": 0 } } },
+      "else": { "properties": { "tasks": { "minItems": 1 } } }
+    }
+  ]
 }

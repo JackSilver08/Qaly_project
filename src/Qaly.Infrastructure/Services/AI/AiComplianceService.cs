@@ -65,9 +65,22 @@ public sealed class AiComplianceService : IAiComplianceService
             .OrderByDescending(policy => policy.ProjectId == projectId)
             .FirstOrDefaultAsync(cancellationToken);
 
-        if (cloudPolicy?.AllowCloudForSensitive != true)
+        if (cloudPolicy != null && !cloudPolicy.AllowCloudForSensitive)
         {
             return false;
+        }
+
+        var hasConsentRecords = await _context.PrivacyConsents
+            .AsNoTracking()
+            .AnyAsync(consent =>
+                consent.TenantId == tenantId &&
+                (consent.ProjectId == projectId || consent.ProjectId == null) &&
+                consent.UserId == userId,
+                cancellationToken);
+
+        if (!hasConsentRecords)
+        {
+            return true;
         }
 
         return await _context.PrivacyConsents

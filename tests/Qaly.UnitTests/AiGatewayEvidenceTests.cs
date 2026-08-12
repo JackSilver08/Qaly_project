@@ -36,6 +36,13 @@ public class AiGatewayEvidenceTests : IDisposable
         var tenantId = Guid.NewGuid();
         var projectId = Guid.NewGuid();
         var userId = Guid.NewGuid();
+        _context.AiBudgetPolicies.Add(new AiBudgetPolicy
+        {
+            TenantId = tenantId,
+            ProjectId = projectId,
+            AllowCloudForSensitive = false
+        });
+        await _context.SaveChangesAsync();
         var gateway = CreateGateway();
 
         var response = await gateway.ExecuteAsync(new AiRequest

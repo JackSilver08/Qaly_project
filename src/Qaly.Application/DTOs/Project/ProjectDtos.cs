@@ -24,7 +24,32 @@ public record ProjectDto(
     bool RequireEvidenceToDone = false,
     bool RestrictTransitionsToAdmin = false,
     DateTimeOffset? DeletedAt = null,
-    DateTimeOffset? ArchivedAt = null);
+    DateTimeOffset? ArchivedAt = null,
+    ProjectPermissionsDto? Permissions = null);
+
+/// <summary>
+/// What the calling user may do inside one project, resolved on the server.
+///
+/// The UI renders from this instead of re-deriving permissions from the role string, so the two
+/// cannot drift. It is a rendering aid, not an authorization control: every endpoint still checks
+/// permissions independently.
+/// </summary>
+public record ProjectPermissionsDto(
+    string Role,
+    string RoleLabel,
+    bool CanManageProject,
+    bool CanManageMembers,
+    bool CanManageAllTasks,
+    bool CanCreateTask,
+    bool CanUpdateOwnTasks,
+    bool CanComment,
+    bool CanTrackTime,
+    bool CanReviewEvidence,
+    bool CanReadInternalWiki,
+    bool CanWriteWiki,
+    bool CanManageIntegrations,
+    string AiTier,
+    string AiTierDescription);
 
 public record CreateProjectDto(
     string Name,

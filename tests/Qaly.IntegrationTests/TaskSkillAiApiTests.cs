@@ -598,6 +598,12 @@ public sealed class TaskSkillAiApiTests : IClassFixture<IntegrationTestFactory>
         if (includeCatalog) db.AddRange(frontend, backend);
         if (viewerId.HasValue)
         {
+            db.OrganizationMembers.Add(new OrganizationMember
+            {
+                OrganizationId = organization.Id,
+                UserId = viewerId.Value,
+                Role = OrganizationRoleRules.Member
+            });
             db.ProjectMembers.Add(new ProjectMember
             {
                 ProjectId = project.Id,

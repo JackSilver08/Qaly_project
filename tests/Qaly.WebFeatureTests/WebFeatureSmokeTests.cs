@@ -74,6 +74,17 @@ public sealed class WebFeatureSmokeTests : IDisposable
     }
 
     [Test]
+    public void In_memory_health_check_does_not_register_external_sql_or_redis()
+    {
+        var options = _factory.Services
+            .GetRequiredService<Microsoft.Extensions.Options.IOptions<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckServiceOptions>>()
+            .Value;
+
+        options.Registrations.Select(registration => registration.Name)
+            .Should().BeEquivalentTo("vector_outbox");
+    }
+
+    [Test]
     public async Task Project_feature_can_create_list_and_read_project()
     {
         await EnsureUserExistsAsync(_factory.TestUserId, "Feature Owner", "owner@qaly.test");

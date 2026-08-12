@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Ai;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 using System.Text;
@@ -20,6 +21,7 @@ public partial class AiService : IAiService
     private readonly IRepository<TaskItem> _taskRepo;
     private readonly IRepository<ProjectMember> _memberRepo;
     private readonly ICurrentUserService _currentUserService;
+    private readonly ITaskAccessPolicy _taskAccessPolicy;
     private readonly ILogger<AiService> _logger;
     private readonly AiTools _aiTools;
     private const string CollectionName = "qaly_context";
@@ -41,6 +43,7 @@ public partial class AiService : IAiService
         IRepository<TaskItem> taskRepo,
         IRepository<ProjectMember> memberRepo,
         ICurrentUserService currentUserService,
+        ITaskAccessPolicy taskAccessPolicy,
         ILogger<AiService> logger,
         AiTools aiTools)
     {
@@ -52,6 +55,7 @@ public partial class AiService : IAiService
         _taskRepo = taskRepo;
         _memberRepo = memberRepo;
         _currentUserService = currentUserService;
+        _taskAccessPolicy = taskAccessPolicy;
         _logger = logger;
         _aiTools = aiTools;
     }
@@ -126,58 +130,224 @@ Trả lời theo định dạng: [Priority] - [Lý do]";
 
     public async Task<string> SuggestTaskAssignmentAsync(Guid taskId, Guid projectId)
     {
-        if (!await CanAccessProjectAsync(projectId))
-        {
-            return "Bạn không có quyền truy cập dự án này.";
-        }
-
-        var task = await _taskRepo.GetByIdAsync(taskId);
-        if (task == null) return "Không tìm thấy công việc.";
-
-        var members = await _memberRepo.GetQueryable()
-            .Where(m => m.ProjectId == projectId)
-            .Include(m => m.User)
-            .ToListAsync();
-
-        var activeTasks = await _taskRepo.GetQueryable()
-            .Where(t => t.ProjectId == projectId && t.Status != "Done" && t.AssigneeId != null)
-            .ToListAsync();
-
-        var workload = members.Select(m => new
-        {
-            m.User.FullName,
-            m.Role,
-            ActiveCount = activeTasks.Count(t => t.AssigneeId == m.UserId)
-        }).ToList();
-
-        var membersContext = string.Join("\n", workload.Select(w => $"- {w.FullName} (Vai trò: {w.Role}): Đang có {w.ActiveCount} task(s) chưa hoàn thành."));
-
-        var prompt = $@"Bạn là trợ lý quản lý dự án xuất sắc. Hãy phân tích và đề xuất thành viên phù hợp nhất để thực hiện công việc sau:
-
-Công việc: {task.Title}
-Mô tả: {task.Description}
-
-Danh sách thành viên hiện tại trong dự án và khối lượng công việc:
-{membersContext}
-
-Yêu cầu:
-1. Đề xuất 1-2 người phù hợp nhất (ưu tiên người đang rảnh hoặc có vai trò phù hợp).
-2. Giải thích lý do chọn họ dựa trên thông tin trên.
-3. Trả lời ngắn gọn, chuyên nghiệp bằng Tiếng Việt.";
-        var tenantId = await GetProjectTenantIdAsync(projectId);
-        var response = await _aiGateway.ExecuteAsync(new AiRequest
-        {
-            JobType = "SuggestTaskAssignment",
-            Prompt = prompt,
-            ProjectId = projectId,
-            TenantId = tenantId,
-            UserId = _currentUserService.UserId,
-            UseCache = true
-        });
-        return response.Content ?? "Không thể đưa ra đề xuất.";
+        var result = await GetTaskAssignmentInsightAsync(taskId, projectId);
+        return result.IsSuccess && result.Data != null
+            ? result.Data.RecommendationSummary
+            : result.Error ?? "Không thể đưa ra đề xuất trong phạm vi được cấp quyền.";
     }
 
     public async Task<Result<TaskAssignmentInsightDto>> GetTaskAssignmentInsightAsync(Guid taskId, Guid projectId, CancellationToken ct = default)
+    {
+        var task = await _taskRepo.GetQueryable()
+            .AsNoTracking()
+            .Include(item => item.Project)
+                .ThenInclude(project => project.Owner)
+            .Include(item => item.Assignees)
+                .ThenInclude(assignment => assignment.User)
+            .Include(item => item.SkillRequirements)
+                .ThenInclude(requirement => requirement.OrganizationSkill)
+            .FirstOrDefaultAsync(item => item.Id == taskId && item.ProjectId == projectId, ct);
+
+        if (task == null ||
+            !await _taskAccessPolicy.CanAccessTaskAsync(task, ct) ||
+            !await _taskAccessPolicy.CanManageProjectAsync(task.ProjectId, task.Project.OwnerId, ct))
+        {
+            return Result.NotFound<TaskAssignmentInsightDto>("Không tìm thấy công việc trong phạm vi được phép quản lý.");
+        }
+
+        var members = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(member => member.ProjectId == projectId)
+            .Include(member => member.User)
+            .ToListAsync(ct);
+        var memberCandidates = members
+            .Select(member => (member.UserId, member.User.FullName, member.Role))
+            .ToList();
+        if (memberCandidates.All(member => member.UserId != task.Project.OwnerId))
+        {
+            memberCandidates.Add((task.Project.OwnerId, task.Project.Owner.FullName, "ProjectOwner"));
+        }
+
+        var projectTasks = await _taskAccessPolicy.ApplyVisibilityFilter(_taskRepo.GetQueryable())
+            .AsNoTracking()
+            .Where(taskItem => taskItem.ProjectId == projectId)
+            .Include(taskItem => taskItem.Assignees)
+            .Include(taskItem => taskItem.SkillRequirements)
+                .ThenInclude(requirement => requirement.OrganizationSkill)
+            .Include(taskItem => taskItem.CompletionAttributions)
+            .ToListAsync(ct);
+
+        var now = DateTimeOffset.UtcNow;
+        var requiredSkills = task.SkillRequirements
+            .Where(requirement => requirement.OrganizationSkill.IsActive)
+            .Select(requirement => new
+            {
+                requirement.OrganizationSkillId,
+                requirement.OrganizationSkill.Name
+            })
+            .DistinctBy(requirement => requirement.OrganizationSkillId)
+            .ToList();
+
+        var candidates = memberCandidates.Select(member =>
+        {
+            var activeAssignments = projectTasks
+                .Where(taskItem => IsAssignedTo(taskItem, member.UserId) && !IsClosedForAssignment(taskItem.Status))
+                .ToList();
+            var overdueTaskCount = activeAssignments.Count(item => item.DueDate.HasValue && item.DueDate.Value < now);
+            var completedEvidenceTasks = projectTasks
+                .Where(taskItem =>
+                    string.Equals(taskItem.Status, "Done", StringComparison.OrdinalIgnoreCase) &&
+                    taskItem.CompletionAttributions.Any(attribution =>
+                        attribution.ContributorUserId == member.UserId &&
+                        attribution.Status == TaskCompletionAttribution.Confirmed))
+                .ToList();
+            var evidenceBySkill = completedEvidenceTasks
+                .SelectMany(completedTask => completedTask.SkillRequirements.Select(requirement => new
+                {
+                    TaskId = completedTask.Id,
+                    requirement.OrganizationSkillId,
+                    requirement.RequiredLevel,
+                    CompletedAt = completedTask.CompletionAttributions
+                        .Where(attribution =>
+                            attribution.ContributorUserId == member.UserId &&
+                            attribution.Status == TaskCompletionAttribution.Confirmed)
+                        .Max(attribution => attribution.CompletedAt)
+                }))
+                .GroupBy(item => item.OrganizationSkillId)
+                .ToDictionary(group => group.Key, group => new
+                {
+                    Count = group.Select(item => item.TaskId).Distinct().Count(),
+                    MaxLevel = group.Max(item => SkillLevelRank(item.RequiredLevel)),
+                    Latest = group.Max(item => item.CompletedAt)
+                });
+            var matching = requiredSkills.Where(requirement => evidenceBySkill.ContainsKey(requirement.OrganizationSkillId)).ToList();
+            var matchingNames = matching.Select(requirement => requirement.Name).ToList();
+            var matchingSkillIds = matching.Select(requirement => requirement.OrganizationSkillId).ToHashSet();
+            var missing = requiredSkills.Where(requirement => !evidenceBySkill.ContainsKey(requirement.OrganizationSkillId)).Select(requirement => requirement.Name).ToList();
+            var coveragePercent = requiredSkills.Count == 0
+                ? 0
+                : (int)Math.Round(matching.Count * 100m / requiredSkills.Count, MidpointRounding.AwayFromZero);
+            var matchingConfidence = matching.Count == 0
+                ? 0m
+                : decimal.Round(matching.Average(requirement =>
+                {
+                    var evidence = evidenceBySkill[requirement.OrganizationSkillId];
+                    return MemberSkillEvidenceService.CalculateConfidence(evidence.Count, evidence.MaxLevel);
+                }), 2);
+            var matchingBand = matching.Count == 0
+                ? "none"
+                : matching.Select(requirement =>
+                    {
+                        var evidence = evidenceBySkill[requirement.OrganizationSkillId];
+                        return MemberSkillEvidenceService.CalculateEvidenceBand(evidence.Count, evidence.MaxLevel);
+                    })
+                    .OrderBy(EvidenceBandRank)
+                    .First();
+            var evidenceSources = completedEvidenceTasks
+                .Select(completedTask => new
+                {
+                    Task = completedTask,
+                    MatchedSkills = completedTask.SkillRequirements
+                        .Where(requirement => matchingSkillIds.Contains(requirement.OrganizationSkillId))
+                        .Select(requirement => requirement.OrganizationSkill.Name)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                        .ToList(),
+                    CompletedAt = completedTask.CompletionAttributions
+                        .Where(attribution =>
+                            attribution.ContributorUserId == member.UserId &&
+                            attribution.Status == TaskCompletionAttribution.Confirmed)
+                        .Max(attribution => attribution.CompletedAt)
+                })
+                .Where(item => item.MatchedSkills.Count > 0)
+                .OrderByDescending(item => item.CompletedAt)
+                .ToList();
+            var recentCompletionCount = completedEvidenceTasks.Count(completedTask =>
+                completedTask.CompletionAttributions.Any(attribution =>
+                    attribution.ContributorUserId == member.UserId &&
+                    attribution.Status == TaskCompletionAttribution.Confirmed &&
+                    attribution.CompletedAt >= now.AddDays(-90)));
+
+            var activeTaskCount = activeAssignments.Count;
+            var activeHours = activeAssignments.Sum(item => item.EstimatedHours ?? 8);
+            var workloadScore = Math.Max(0, 40 - Math.Min(32, activeHours / 4) - (overdueTaskCount * 4));
+            var skillMatchScore = (int)Math.Round(coveragePercent * 0.4m, MidpointRounding.AwayFromZero);
+            var historyScore = matching.Count == 0
+                ? 0
+                : Math.Min(20, (int)Math.Round(matchingConfidence * 12m, MidpointRounding.AwayFromZero) + Math.Min(8, recentCompletionCount * 2));
+            var totalScore = workloadScore + skillMatchScore + historyScore;
+            var recentSignals = new List<string>();
+            if (activeTaskCount == 0) recentSignals.Add("Không có task mở trong phạm vi xem được");
+            if (overdueTaskCount > 0) recentSignals.Add($"{overdueTaskCount} task quá hạn");
+            if (recentCompletionCount > 0) recentSignals.Add($"{recentCompletionCount} bằng chứng hoàn thành trong 90 ngày");
+
+            return new TaskAssignmentCandidateDto(
+                member.UserId,
+                member.FullName,
+                member.Role,
+                activeTaskCount,
+                overdueTaskCount,
+                recentCompletionCount,
+                skillMatchScore,
+                historyScore,
+                workloadScore,
+                totalScore,
+                matchingNames,
+                recentSignals,
+                coveragePercent,
+                matchingConfidence,
+                matchingBand,
+                missing,
+                evidenceSources.Count,
+                0,
+                evidenceSources.Take(8).Select(item => new TaskAssignmentEvidenceSourceDto(
+                    item.Task.Id,
+                    item.Task.Title,
+                    $"/projects/{projectId}/tasks/{item.Task.Id}",
+                    item.CompletedAt,
+                    item.MatchedSkills)).ToList());
+        })
+        .OrderByDescending(candidate => candidate.SkillCoveragePercent > 0)
+        .ThenByDescending(candidate => candidate.TotalScore)
+        .ThenByDescending(candidate => candidate.SkillCoveragePercent)
+        .ThenBy(candidate => candidate.ActiveTaskCount)
+        .ThenBy(candidate => candidate.FullName, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+        var evidenceState = requiredSkills.Count == 0
+            ? "task_skills_missing"
+            : candidates.Any(candidate => candidate.SkillCoveragePercent > 0)
+                ? "ready"
+                : "insufficient_evidence";
+        var recommended = evidenceState == "ready" ? candidates.FirstOrDefault() : null;
+        var summary = evidenceState switch
+        {
+            "task_skills_missing" => "Task chưa có kỹ năng yêu cầu đã xác nhận. Hệ thống không suy luận skill-fit từ label, mô tả hoặc lịch sử assignee.",
+            "insufficient_evidence" => "Chưa có bằng chứng hoàn thành được xác nhận phù hợp với kỹ năng của task. Có thể xem workload, nhưng chưa được gọi đó là skill-fit.",
+            _ => $"Ưu tiên xem xét {recommended!.FullName}: phủ {recommended.SkillCoveragePercent}% kỹ năng yêu cầu, confidence {decimal.Round(recommended.EvidenceConfidence * 100m)}%, {recommended.ActiveTaskCount} task đang mở trong phạm vi được phép xem."
+        };
+
+        return Result.Success(new TaskAssignmentInsightDto(
+            task.Id,
+            projectId,
+            task.Title,
+            task.Description,
+            task.Priority,
+            task.Status,
+            task.DueDate,
+            recommended?.UserId,
+            recommended?.FullName ?? string.Empty,
+            summary,
+            now,
+            candidates,
+            "assignee-evidence-score.v1",
+            evidenceState,
+            "authorized_project_tasks",
+            EncodeRowVersion(task.RowVersion),
+            requiredSkills.Select(requirement => requirement.Name).ToList()));
+    }
+
+    private async Task<Result<TaskAssignmentInsightDto>> GetLegacyTaskAssignmentInsightAsync(Guid taskId, Guid projectId, CancellationToken ct = default)
     {
         if (!await CanAccessProjectAsync(projectId))
         {
@@ -669,33 +839,13 @@ Yêu cầu:
 
     private async Task<bool> CanAccessProjectAsync(Guid projectId)
     {
-        var currentUserId = _currentUserService.UserId;
-        if (currentUserId == null) return false;
-
-        if (string.Equals(_currentUserService.Role, "Admin", StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        var project = await _projectRepo.GetByIdAsync(projectId);
-        if (project == null) return false;
-
-        var projectInfo = await _projectRepo.GetQueryable()
+        var projectOwnerId = await _projectRepo.GetQueryable()
             .AsNoTracking()
             .Where(item => item.Id == projectId)
-            .Select(item => new
-            {
-                item.OrganizationId,
-                OrganizationIsActive = item.Organization != null && item.Organization.IsActive,
-                OrganizationOwnerId = item.Organization != null ? (Guid?)item.Organization.OwnerId : null
-            })
+            .Select(item => (Guid?)item.OwnerId)
             .FirstOrDefaultAsync();
-
-        if (projectInfo?.OrganizationId == null || projectInfo.OrganizationOwnerId == null || !projectInfo.OrganizationIsActive)
-            return false;
-
-        if (project.OwnerId == currentUserId || projectInfo.OrganizationOwnerId == currentUserId) return true;
-
-        return await _memberRepo.GetQueryable()
-            .AnyAsync(m => m.ProjectId == projectId && m.UserId == currentUserId);
+        return projectOwnerId.HasValue &&
+            await _taskAccessPolicy.CanAccessProjectAsync(projectId, projectOwnerId.Value, CancellationToken.None);
     }
 
     private async Task<Guid?> GetProjectTenantIdAsync(Guid? projectId)
@@ -722,6 +872,25 @@ Yêu cầu:
 
     private static bool IsAssignedTo(TaskItem task, Guid userId)
         => task.AssigneeId == userId || task.Assignees.Any(assignment => assignment.UserId == userId);
+
+    private static bool IsClosedForAssignment(string? status)
+        => string.Equals(status, "Done", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, "Cancelled", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, "Canceled", StringComparison.OrdinalIgnoreCase);
+
+    private static int SkillLevelRank(string value)
+        => value switch
+        {
+            TaskSkillService.LevelExpert => 3,
+            TaskSkillService.LevelProficient => 2,
+            _ => 1
+        };
+
+    private static int EvidenceBandRank(string band)
+        => band == "experienced" ? 3 : band == "practiced" ? 2 : band == "emerging" ? 1 : 0;
+
+    private static string EncodeRowVersion(byte[] rowVersion)
+        => rowVersion.Length == 0 ? string.Empty : Convert.ToBase64String(rowVersion);
 
     private static bool IsTaskOverdue(TaskItem task)
         => task.DueDate.HasValue && task.DueDate.Value < DateTimeOffset.UtcNow && !IsDone(task);

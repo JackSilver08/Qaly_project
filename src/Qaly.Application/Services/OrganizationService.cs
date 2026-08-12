@@ -514,6 +514,11 @@ public class OrganizationService : IOrganizationService
 
     private async Task<bool> CanAccessOrganizationAsync(Guid organizationId, Guid ownerId, CancellationToken ct)
     {
+        if (!await HasActiveCurrentUserAsync(ct))
+        {
+            return false;
+        }
+
         var currentUserId = _currentUserService.UserId;
         if (currentUserId == null)
         {
@@ -546,6 +551,11 @@ public class OrganizationService : IOrganizationService
 
     private async Task<bool> CanManageOrganizationAsync(Guid organizationId, Guid ownerId, CancellationToken ct)
     {
+        if (!await HasActiveCurrentUserAsync(ct))
+        {
+            return false;
+        }
+
         var currentUserId = _currentUserService.UserId;
         if (currentUserId == null)
         {
@@ -582,6 +592,18 @@ public class OrganizationService : IOrganizationService
 
     private bool IsSystemAdmin()
         => ProjectRoleRules.IsSystemAdmin(_currentUserService.Role);
+
+    private async Task<bool> HasActiveCurrentUserAsync(CancellationToken ct)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return false;
+        }
+
+        return await _userRepo.GetQueryable()
+            .AnyAsync(user => user.Id == currentUserId.Value && user.IsActive, ct);
+    }
 
     private async Task<bool> HasModeratorCapabilityAsync(Guid organizationId, string capability, CancellationToken ct)
     {

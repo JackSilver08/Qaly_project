@@ -236,6 +236,8 @@ public class AiGateway : IAiGateway
             .Append(request.ExpectedSchemaId).Append('|')
             .Append(request.ProviderHint).Append('|')
             .Append(request.StrictProvider).Append('|')
+            .Append(request.ProviderTimeoutSeconds).Append('|')
+            .Append(request.SchemaRepairAttempts).Append('|')
             .Append(settings.Provider).Append('|')
             .Append(settings.Ollama.Model).Append('|')
             .Append(settings.DeepSeek.Model).Append('|')
@@ -311,7 +313,7 @@ public class AiGateway : IAiGateway
 
         // 4. Execute AI Request with Schema Validation & Retry & Tool Calling
         string originalPrompt = request.Prompt;
-        int maxRetries = Math.Max(0, settings.SchemaRepairAttempts);
+        int maxRetries = Math.Max(0, request.SchemaRepairAttempts ?? settings.SchemaRepairAttempts);
         AiResponse? finalResponse = null;
         string? validationError = null;
         bool anyProviderResponse = false;
@@ -361,7 +363,7 @@ public class AiGateway : IAiGateway
                 try
                 {
                     var providerConfig = GetProviderSetting(settings, providerName);
-                    var timeoutSeconds = Math.Max(1, settings.ProviderTimeoutSeconds);
+                    var timeoutSeconds = Math.Max(1, request.ProviderTimeoutSeconds ?? settings.ProviderTimeoutSeconds);
                     using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                     cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
@@ -671,7 +673,9 @@ public class AiGateway : IAiGateway
             anyProviderResponse ? AiErrorCodes.SchemaInvalid : AiErrorCodes.ProviderUnavailable,
             anyProviderResponse
                 ? $"AI output failed schema validation after the permitted repair attempts. {validationError}"
-                : validationError ?? "No eligible AI provider completed the request.",
+                : request.StrictProvider
+                    ? validationError ?? "The selected AI provider did not complete the request."
+                    : "No configured AI provider completed the request. Choose a configured model or try again.",
             retryable: !anyProviderResponse);
     }
 
@@ -732,7 +736,7 @@ public class AiGateway : IAiGateway
         {
             null or "" or "auto" => null,
             "local" => "Ollama",
-            "deepseek" or "deepseek-v4-pro" => "DeepSeek",
+            "deepseek" or "deepseek-chat" or "deepseek-reasoner" => "DeepSeek",
             "openai" => "OpenAI",
             "gemini" => "Gemini",
             "ollama" => "Ollama",

@@ -67,22 +67,26 @@ public static class QalyWebServiceExtensions
         services.AddSingleton<GroupMeetingPresenceTracker>();
 
         services.AddOpenApi();
-        services.AddHealthChecks()
-            .AddSqlServer(configuration.GetConnectionString("DefaultConnection")!)
-            .AddRedis(redisConnection)
+        var healthChecks = services.AddHealthChecks()
             .AddCheck<OutboxHealthCheck>("vector_outbox");
+        if (!useInMemoryDistributedCache)
+        {
+            healthChecks
+                .AddSqlServer(configuration.GetConnectionString("DefaultConnection")!)
+                .AddRedis(redisConnection);
+        }
 
         return builder;
     }
 
     private static void AddQalyDataProtection(this IServiceCollection services, IWebHostEnvironment environment)
     {
-        services.AddDataProtection()
-            .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(environment.ContentRootPath, ".keys")));
-
         var dataProtectionKeysPath = Path.Combine(environment.ContentRootPath, "dp-keys");
         Directory.CreateDirectory(dataProtectionKeysPath);
 
+        // One application name and one durable key ring keep auth/session/CSRF
+        // protection consistent across preview restarts. Registering two key
+        // locations makes the active key ring depend on options ordering.
         services.AddDataProtection()
             .SetApplicationName("Qaly")
             .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));

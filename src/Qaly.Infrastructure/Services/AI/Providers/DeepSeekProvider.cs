@@ -22,10 +22,11 @@ public sealed class DeepSeekProvider : IAiProvider
         AiProviderSetting config,
         CancellationToken cancellationToken = default)
     {
-        var apiKey = string.IsNullOrWhiteSpace(config.ApiKey)
-            ? Environment.GetEnvironmentVariable("DEEPSEEK_API_KEY")
-            : config.ApiKey;
-        if (string.IsNullOrWhiteSpace(apiKey) || apiKey == "YOUR_DEEPSEEK_KEY")
+        var configuredApiKey = config.ApiKey?.Trim();
+        var apiKey = IsMissingApiKey(configuredApiKey)
+            ? Environment.GetEnvironmentVariable("DEEPSEEK_API_KEY")?.Trim()
+            : configuredApiKey;
+        if (IsMissingApiKey(apiKey))
         {
             throw new InvalidOperationException("DeepSeek API key is not configured.");
         }
@@ -34,7 +35,7 @@ public sealed class DeepSeekProvider : IAiProvider
             ? "https://api.deepseek.com"
             : config.BaseUrl;
         var model = string.IsNullOrWhiteSpace(config.Model)
-            ? "deepseek-v4-pro"
+            ? "deepseek-chat"
             : config.Model;
 
         var messages = new List<object>
@@ -96,6 +97,16 @@ public sealed class DeepSeekProvider : IAiProvider
             .GetProperty("content")
             .GetString() ?? string.Empty;
 
+        if (!string.IsNullOrWhiteSpace(request.ExpectedSchemaId))
+        {
+            var startIndex = content.IndexOf('{');
+            var endIndex = content.LastIndexOf('}');
+            if (startIndex >= 0 && endIndex >= startIndex)
+            {
+                content = content.Substring(startIndex, endIndex - startIndex + 1);
+            }
+        }
+
         var inputTokens = 0;
         var outputTokens = 0;
         if (root.TryGetProperty("usage", out var usage))
@@ -123,5 +134,18 @@ public sealed class DeepSeekProvider : IAiProvider
             IsMock = false,
             CacheHit = false
         };
+    }
+
+    private static bool IsMissingApiKey(string? apiKey)
+    {
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            return true;
+        }
+
+        return apiKey.Equals("YOUR_DEEPSEEK_KEY", StringComparison.OrdinalIgnoreCase)
+            || apiKey.Contains("<set-", StringComparison.OrdinalIgnoreCase)
+            || apiKey.Contains("placeholder", StringComparison.OrdinalIgnoreCase)
+            || apiKey.Equals("change-me", StringComparison.OrdinalIgnoreCase);
     }
 }

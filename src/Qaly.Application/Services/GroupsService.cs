@@ -129,7 +129,13 @@ public partial class GroupsService : IGroupsService
         var query = GroupDetailsQuery();
         if (!IsSystemAdmin())
         {
-            query = query.Where(group => group.OwnerId == currentUserId || group.Members.Any(member => member.UserId == currentUserId));
+            query = query.Where(group =>
+                (group.OwnerId == currentUserId || group.Members.Any(member => member.UserId == currentUserId)) &&
+                (group.OrganizationId == null ||
+                 (group.Organization != null &&
+                  group.Organization.IsActive &&
+                  (group.Organization.OwnerId == currentUserId ||
+                   group.Organization.Members.Any(member => member.UserId == currentUserId)))));
         }
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -2173,7 +2179,12 @@ public partial class GroupsService : IGroupsService
             .AnyAsync(group =>
                 group.Id == groupId &&
                 (group.OwnerId == currentUserId ||
-                 group.Members.Any(member => member.UserId == currentUserId)), ct);
+                 group.Members.Any(member => member.UserId == currentUserId)) &&
+                (group.OrganizationId == null ||
+                 (group.Organization != null &&
+                  group.Organization.IsActive &&
+                  (group.Organization.OwnerId == currentUserId ||
+                   group.Organization.Members.Any(member => member.UserId == currentUserId)))), ct);
     }
 
     private async Task<bool> CanAccessProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
@@ -2184,35 +2195,47 @@ public partial class GroupsService : IGroupsService
             return false;
         }
 
-        if (IsSystemAdmin() || ownerId == currentUserId)
-        {
-            return true;
-        }
-
-        var isProjectMember = await _projectMemberRepo.GetQueryable()
-            .AnyAsync(member => member.ProjectId == projectId && member.UserId == currentUserId.Value, ct);
-        if (isProjectMember)
+        if (IsSystemAdmin())
         {
             return true;
         }
 
         var project = await _projectRepo.GetQueryable()
             .Where(item => item.Id == projectId)
-            .Select(item => new { item.OrganizationId })
+            .Select(item => new
+            {
+                item.OrganizationId,
+                OrganizationIsActive = item.Organization == null || item.Organization.IsActive,
+                OrganizationOwnerId = item.Organization != null ? (Guid?)item.Organization.OwnerId : null
+            })
             .FirstOrDefaultAsync(ct);
-        if (project?.OrganizationId == null)
+        if (project == null || !project.OrganizationIsActive)
         {
             return false;
         }
 
-        return await _organizationMemberRepo.GetQueryable()
-            .AnyAsync(member => member.OrganizationId == project.OrganizationId && member.UserId == currentUserId.Value, ct);
+        if (project.OrganizationId.HasValue &&
+            project.OrganizationOwnerId != currentUserId &&
+            !await _organizationMemberRepo.GetQueryable().AnyAsync(member =>
+                member.OrganizationId == project.OrganizationId.Value && member.UserId == currentUserId.Value,
+                ct))
+        {
+            return false;
+        }
+
+        return ownerId == currentUserId || await _projectMemberRepo.GetQueryable()
+            .AnyAsync(member => member.ProjectId == projectId && member.UserId == currentUserId.Value, ct);
     }
 
     private async Task<bool> CanManageProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
     {
         var currentUserId = _currentUserService.UserId;
         if (currentUserId == null)
+        {
+            return false;
+        }
+
+        if (!await CanAccessProjectAsync(projectId, ownerId, ct))
         {
             return false;
         }
@@ -2231,17 +2254,7 @@ public partial class GroupsService : IGroupsService
             return true;
         }
 
-        var project = await _projectRepo.GetQueryable()
-            .Where(item => item.Id == projectId)
-            .Select(item => new { item.OrganizationId })
-            .FirstOrDefaultAsync(ct);
-        if (project?.OrganizationId == null)
-        {
-            return false;
-        }
-
-        return await _organizationMemberRepo.GetQueryable()
-            .AnyAsync(member => member.OrganizationId == project.OrganizationId && member.UserId == currentUserId.Value && OrganizationRoleRules.CanManageOrganization(member.Role), ct);
+        return false;
     }
 
     public async Task<bool> CanManageGroupAsync(Guid groupId, CancellationToken ct = default)
@@ -2255,6 +2268,11 @@ public partial class GroupsService : IGroupsService
         if (IsSystemAdmin())
         {
             return true;
+        }
+
+        if (!await CanAccessGroupAsync(groupId, ct))
+        {
+            return false;
         }
 
         var membership = await _memberRepo.GetQueryable()

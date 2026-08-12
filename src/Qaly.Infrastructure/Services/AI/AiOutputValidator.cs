@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Qaly.Application.DTOs.Ai;
+using Qaly.Application.Services;
 
 namespace Qaly.Infrastructure.Services.AI;
 
@@ -32,6 +33,48 @@ public class AiOutputValidator
             using var document = JsonDocument.Parse(content);
             var root = document.RootElement;
 
+            if (string.Equals(schemaId, TaskDraftAiContract.SchemaId, StringComparison.Ordinal))
+            {
+                return TaskDraftAiContract.TryBuildResult(
+                    content,
+                    validationContextJson ?? string.Empty,
+                    out _,
+                    out errorMessage);
+            }
+            if (string.Equals(schemaId, GroupSummaryAiContract.SchemaId, StringComparison.Ordinal))
+            {
+                return string.IsNullOrWhiteSpace(validationContextJson)
+                    ? GroupSummaryOutputContract.TryValidateFinal(content, out errorMessage)
+                    : GroupSummaryOutputContract.TryBuildResult(
+                        content,
+                        validationContextJson,
+                        out _,
+                        out errorMessage);
+            }
+            if (string.Equals(schemaId, MeetingChecknoteAiContract.SchemaId, StringComparison.Ordinal))
+            {
+                string? transcript = null;
+                if (!string.IsNullOrWhiteSpace(validationContextJson))
+                {
+                    using var contextDocument = JsonDocument.Parse(validationContextJson);
+                    if (contextDocument.RootElement.TryGetProperty("transcript", out var transcriptElement) &&
+                        transcriptElement.ValueKind == JsonValueKind.String)
+                    {
+                        transcript = transcriptElement.GetString();
+                    }
+                }
+                return MeetingChecknoteAiContract.TryValidateModel(content, transcript, out _, out errorMessage);
+            }
+            if (string.Equals(schemaId, DashboardStrategicBriefAiContract.SchemaId, StringComparison.Ordinal))
+            {
+                return string.IsNullOrWhiteSpace(validationContextJson)
+                    ? DashboardStrategicBriefOutputContract.TryValidateFinal(content, out errorMessage)
+                    : DashboardStrategicBriefOutputContract.TryBuildResult(
+                        content,
+                        validationContextJson,
+                        out _,
+                        out errorMessage);
+            }
             if (string.Equals(schemaId, "WorkspaceStrategy.v1", StringComparison.OrdinalIgnoreCase))
             {
                 if (root.ValueKind != JsonValueKind.Object)
@@ -92,16 +135,25 @@ public class AiOutputValidator
                     return false;
                 }
 
-                bool hasReply = root.TryGetProperty("reply", out _);
-                bool hasMetrics = root.TryGetProperty("metrics", out var metrics) && metrics.ValueKind == JsonValueKind.Array;
-                bool hasTables = root.TryGetProperty("tables", out var tables) && tables.ValueKind == JsonValueKind.Array;
-                bool hasCharts = root.TryGetProperty("charts", out var charts) && charts.ValueKind == JsonValueKind.Array;
-                bool hasActions = root.TryGetProperty("actions", out var actions) && actions.ValueKind == JsonValueKind.Array;
-                bool hasFiles = root.TryGetProperty("files", out var files) && files.ValueKind == JsonValueKind.Array;
+                bool hasReply = root.TryGetProperty("reply", out var replyProp) &&
+                                replyProp.ValueKind == JsonValueKind.String &&
+                                !string.IsNullOrWhiteSpace(replyProp.GetString());
 
-                if (!hasReply || !hasMetrics || !hasTables || !hasCharts || !hasActions || !hasFiles)
+                if (!hasReply)
                 {
-                    errorMessage = $"Missing required fields for TextAnswer.v1. HasReply={hasReply}, HasMetrics={hasMetrics}, HasTables={hasTables}, HasCharts={hasCharts}, HasActions={hasActions}, HasFiles={hasFiles}";
+                    errorMessage = "HasReply failed: missing or empty required 'reply' field for TextAnswer.v1.";
+                    return false;
+                }
+
+                bool metricsValid = !root.TryGetProperty("metrics", out var metrics) || metrics.ValueKind is JsonValueKind.Array or JsonValueKind.Object or JsonValueKind.Null;
+                bool tablesValid = !root.TryGetProperty("tables", out var tables) || tables.ValueKind is JsonValueKind.Array or JsonValueKind.Object or JsonValueKind.Null;
+                bool chartsValid = !root.TryGetProperty("charts", out var charts) || charts.ValueKind is JsonValueKind.Array or JsonValueKind.Object or JsonValueKind.Null;
+                bool actionsValid = !root.TryGetProperty("actions", out var actions) || actions.ValueKind is JsonValueKind.Array or JsonValueKind.Object or JsonValueKind.Null;
+                bool filesValid = !root.TryGetProperty("files", out var files) || files.ValueKind is JsonValueKind.Array or JsonValueKind.Object or JsonValueKind.Null;
+
+                if (!metricsValid || !tablesValid || !chartsValid || !actionsValid || !filesValid)
+                {
+                    errorMessage = $"Invalid array field types for TextAnswer.v1. MetricsValid={metricsValid}, TablesValid={tablesValid}, ChartsValid={chartsValid}, ActionsValid={actionsValid}, FilesValid={filesValid}";
                     return false;
                 }
             }
@@ -158,6 +210,41 @@ public class AiOutputValidator
                 }
 
                 return TaskSkillSuggestionContract.TryValidateFinal(content, out errorMessage);
+            }
+            else if (string.Equals(schemaId, AiActionComposerContract.SchemaId, StringComparison.Ordinal))
+            {
+                if (!string.IsNullOrWhiteSpace(validationContextJson))
+                {
+                    return AiActionComposerOutputContract.TryBuildResult(
+                        content,
+                        validationContextJson,
+                        out _,
+                        out errorMessage);
+                }
+
+                return AiActionComposerOutputContract.TryValidateFinal(content, out errorMessage);
+            }
+            else if (string.Equals(schemaId, AiAssistantResearchPlanContract.SchemaId, StringComparison.Ordinal))
+            {
+                return AiAssistantResearchPlanOutputContract.TryValidateModel(
+                    content,
+                    validationContextJson,
+                    out errorMessage);
+            }
+            else if (string.Equals(schemaId, AiAssistantGoalPlanningContract.SchemaId, StringComparison.Ordinal))
+            {
+                return AiAssistantGoalPlanningOutputContract.TryValidateModel(
+                    content,
+                    validationContextJson,
+                    out errorMessage);
+            }
+            else if (string.Equals(schemaId, AiProjectLaunchContract.BriefSchemaId, StringComparison.Ordinal))
+            {
+                return AiProjectLaunchOutputContract.TryParse(content, out _, out errorMessage);
+            }
+            else if (string.Equals(schemaId, AiProjectOrchestrationContract.ModelPlanSchemaId, StringComparison.Ordinal))
+            {
+                return AiProjectLaunchPlanningOutputContract.TryParse(content, out _, out errorMessage);
             }
             else if (schemaId.Contains("assignee_recommendation", StringComparison.OrdinalIgnoreCase))
             {

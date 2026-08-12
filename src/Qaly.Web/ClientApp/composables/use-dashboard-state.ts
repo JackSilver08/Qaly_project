@@ -1,17 +1,17 @@
 import { ref, computed } from 'vue'
 import type { DashboardResponse, UserDto } from '../types'
-import { fallbackDashboard } from '../fallback-dashboard'
 import { apiJson, apiResult } from '../utils/api-client'
 import { isTaskOverdue } from '../utils/formatters'
 import type { SummaryCardModel } from '../components/dashboard-models'
 
 export function useDashboard() {
-  const dashboard = ref<DashboardResponse>(fallbackDashboard)
+  const dashboard = ref<DashboardResponse>(createEmptyDashboard())
   const currentUser = ref<UserDto | null>(null)
   const currentUserLoaded = ref(false)
   const users = ref<UserDto[]>([])
   const isLoading = ref(true)
   const usingFallback = ref(true)
+  const loadError = ref<string | null>(null)
 
   const projects = computed(() => dashboard.value.projects)
   const team = computed(() => dashboard.value.team)
@@ -52,18 +52,15 @@ export function useDashboard() {
     isLoading.value = true
     try {
       const normalized = normalizeDashboard(await apiJson<DashboardResponse>('/api/dashboard/overview'))
-      if (isEmptyDashboard(normalized)) {
-        dashboard.value = fallbackDashboard
-        usingFallback.value = true
-      } else {
-        dashboard.value = normalized
-        usingFallback.value = false
-      }
+      dashboard.value = normalized
+      usingFallback.value = false
+      loadError.value = null
       return true
     } catch (error) {
-      console.warn('Using fallback dashboard data.', error)
-      dashboard.value = fallbackDashboard
+      console.warn('Could not load dashboard data.', error)
+      dashboard.value = createEmptyDashboard()
       usingFallback.value = true
+      loadError.value = 'Không thể tải dữ liệu bảng điều khiển. Qaly đang hiển thị trạng thái trống, không phải dữ liệu mẫu.'
       return false
     } finally {
       isLoading.value = false
@@ -95,6 +92,7 @@ export function useDashboard() {
     users,
     isLoading,
     usingFallback,
+    loadError,
     projects,
     team,
     activeProjectsCount,
@@ -123,10 +121,22 @@ function normalizeDashboard(dashboard: DashboardResponse): DashboardResponse {
   }
 }
 
-function isEmptyDashboard(dashboard: DashboardResponse) {
-  return (
-    (dashboard.projects?.length ?? 0) === 0 &&
-    (dashboard.stats?.totalTasks ?? 0) === 0 &&
-    (dashboard.team?.length ?? 0) === 0
-  )
+function createEmptyDashboard(): DashboardResponse {
+  return {
+    generatedAt: new Date().toISOString(),
+    stats: {
+      activeProjects: 0,
+      totalTasks: 0,
+      overdueTasks: 0,
+      teamMembers: 0,
+      completedTasks: 0,
+      completionRate: 0,
+      tasksAtRisk: 0,
+    },
+    summary: '',
+    riskDigest: '',
+    projects: [],
+    team: [],
+    notifications: [],
+  }
 }

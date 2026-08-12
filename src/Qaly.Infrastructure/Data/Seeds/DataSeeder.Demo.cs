@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Qaly.Application.Services;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Enums;
 
@@ -20,7 +21,9 @@ public partial class DataSeeder
     {
         if (await HasCurrentDemoSeedAsync())
         {
-            return false;
+            var presentationSeedChanged = await EnsurePresentationDemoSeedAsync();
+            var aiEvidenceChanged = await EnsureAiNativeDemoEvidenceAsync();
+            return presentationSeedChanged || aiEvidenceChanged;
         }
 
         var isDatabaseEmpty =
@@ -41,6 +44,7 @@ public partial class DataSeeder
         }
 
         await SeedRichDemoDataAsync();
+        await EnsureAiNativeDemoEvidenceAsync();
         return true;
     }
 
@@ -72,6 +76,7 @@ public partial class DataSeeder
         await RemoveEntitiesAsync(_context.MeetingActionItemMappings);
         await RemoveEntitiesAsync(_context.MeetingImports);
         await RemoveEntitiesAsync(_context.AiGeneratedDrafts);
+        await RemoveEntitiesAsync(_context.AiJobActivityEvents);
         await RemoveEntitiesAsync(_context.AiUsageLedger);
         await RemoveEntitiesAsync(_context.AiPromptCache);
         await RemoveEntitiesAsync(_context.AiJobQueue);
@@ -93,6 +98,10 @@ public partial class DataSeeder
         await SaveIfChangedAsync();
 
         await RemoveEntitiesAsync(_context.Votes);
+        await RemoveEntitiesAsync(_context.MemberAvailabilityWindows);
+        await RemoveEntitiesAsync(_context.OrganizationMemberCapacityProfiles);
+        await RemoveEntitiesAsync(_context.TaskCompletionAttributions);
+        await RemoveEntitiesAsync(_context.TaskSkillRequirements);
         await RemoveEntitiesAsync(_context.TaskAttentionSignals);
         await RemoveEntitiesAsync(_context.TaskViewEvents);
         await RemoveEntitiesAsync(_context.TimeEntries);
@@ -126,6 +135,9 @@ public partial class DataSeeder
 
         await RemoveEntitiesAsync(_context.WorkGroupMembers);
         await RemoveEntitiesAsync(_context.WorkGroups.IgnoreQueryFilters());
+        await RemoveEntitiesAsync(_context.OrganizationWorkRuleDecisions);
+        await RemoveEntitiesAsync(_context.OrganizationWorkRuleSets);
+        await RemoveEntitiesAsync(_context.OrganizationSkills);
         await RemoveEntitiesAsync(_context.OrganizationMembers);
         await RemoveEntitiesAsync(_context.Organizations);
         await SaveIfChangedAsync();
@@ -221,6 +233,8 @@ public partial class DataSeeder
 
         await SeedTaskCollaborationAsync(taskByKey, labelByKey, userByEmail, now);
         await SeedKnowledgeAndOperationsAsync(projectByCode, taskByKey, organization, userByEmail, now);
+        await EnsurePresentationDemoSeedAsync();
+        await EnsureAiNativeDemoEvidenceAsync();
     }
 
     private static List<User> CreateDemoUsers(string adminPassword, string userPassword, DateTimeOffset now)
@@ -535,23 +549,29 @@ public partial class DataSeeder
                     UserId = U(email).Id,
                     Role = role,
                     JoinedAt = project.StartDate?.AddDays(1) ?? now.AddDays(-10),
-                    CanViewProjectTimeline = role is "Owner" or "Manager",
-                    CanViewTaskRisk = role is "Owner" or "Manager",
-                    CanNudgeAssignee = role is "Owner" or "Manager",
-                    CanViewUnseenTaskSignal = role is "Owner" or "Manager",
+                    CanViewProjectTimeline = ProjectRoleRules.CanManageProject(role),
+                    CanViewTaskRisk = ProjectRoleRules.CanManageProject(role),
+                    CanNudgeAssignee = ProjectRoleRules.CanManageProject(role),
+                    CanViewUnseenTaskSignal = ProjectRoleRules.CanManageProject(role),
                     CreatedAt = project.StartDate?.AddDays(1) ?? now.AddDays(-10)
                 });
             }
         }
 
         var projectByCode = projects.ToDictionary(project => project.Code, StringComparer.OrdinalIgnoreCase);
+        // The customer demo project carries one account per project role so the whole permission
+        // matrix can be walked live instead of described.
         AddMembers(projectByCode["qaly-workos-demo"],
             ("admin@qaly.dev", "Owner"),
             ("minh.anh@qaly.dev", "Manager"),
-            ("bao.ngoc@qaly.dev", "Manager"),
-            ("linh.chi@qaly.dev", "Member"),
-            ("tuan.kiet@qaly.dev", "Member"),
-            ("yen.nhi@qaly.dev", "Viewer"));
+            ("bao.ngoc@qaly.dev", "ScrumMaster"),
+            ("linh.chi@qaly.dev", "Developer"),
+            ("quoc.huy@qaly.dev", "Developer"),
+            ("tuan.kiet@qaly.dev", "Tester"),
+            ("thanh.tam@qaly.dev", "Reviewer"),
+            ("mai.phuong@qaly.dev", "Member"),
+            ("yen.nhi@qaly.dev", "Viewer"),
+            ("viet.long@qaly.dev", "Customer"));
         AddMembers(projectByCode["erumi-local-analytics"],
             ("linh.chi@qaly.dev", "Owner"),
             ("admin@qaly.dev", "Manager"),
@@ -1348,6 +1368,357 @@ public partial class DataSeeder
             new AuditLog { Action = "Update", EntityType = "ProjectMember", EntityId = "nova-retail-pilot:yen.nhi", UserId = U("bao.ngoc@qaly.dev").Id, ChangesJson = """{"role":"Viewer"}""", IpAddress = "127.0.0.1", Timestamp = now.AddDays(-2) });
 
         await _context.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Extends the canonical rich demo with relational source evidence used by the
+    /// member-skill, assignee-recommendation and portfolio-capacity AI-native flows.
+    /// The extension is deliberately idempotent so it can enrich an existing demo
+    /// database without replacing data that a user has edited.
+    /// </summary>
+    private async Task<bool> EnsureAiNativeDemoEvidenceAsync()
+    {
+        var organization = await _context.Organizations
+            .SingleOrDefaultAsync(item => item.Code == "qaly-demo-2026");
+        if (organization == null)
+        {
+            return false;
+        }
+
+        var changed = false;
+        var now = DateTimeOffset.UtcNow;
+        var users = await _context.Users
+            .Where(item => item.Email.EndsWith("@qaly.dev"))
+            .ToDictionaryAsync(item => item.Email, StringComparer.OrdinalIgnoreCase);
+        var projects = await _context.Projects
+            .IgnoreQueryFilters()
+            .Where(item => item.OrganizationId == organization.Id && item.Status == "Active" && !item.IsDeleted)
+            .ToDictionaryAsync(item => item.Code, StringComparer.OrdinalIgnoreCase);
+
+        var hasEffectiveRulebook = await _context.OrganizationWorkRuleSets.AnyAsync(item =>
+            item.OrganizationId == organization.Id && item.Status == "active" &&
+            (!item.EffectiveFrom.HasValue || item.EffectiveFrom <= now) &&
+            (!item.EffectiveUntil.HasValue || item.EffectiveUntil > now));
+        if (!hasEffectiveRulebook && users.TryGetValue("admin@qaly.dev", out var rulebookOwner))
+        {
+            await _context.OrganizationWorkRuleSets.AddAsync(new OrganizationWorkRuleSet
+            {
+                OrganizationId = organization.Id,
+                Version = 1,
+                Status = "active",
+                EffectiveFrom = now.AddDays(-30),
+                RulesJson = """
+                    [
+                      {"ruleKey":"active_membership_required","category":"governance","enforcement":"block","description":"Requester must be an active organization member.","enabled":true},
+                      {"ruleKey":"max_active_projects","category":"portfolio_capacity","enforcement":"block","description":"Protect organization capacity by limiting concurrent active projects.","numericValue":20,"unit":"projects","enabled":true},
+                      {"ruleKey":"capacity_evidence_required","category":"staffing","enforcement":"block","description":"Staffing requires current capacity and availability evidence.","enabled":true}
+                    ]
+                    """,
+                CreatedByUserId = rulebookOwner.Id,
+                ActivatedByUserId = rulebookOwner.Id,
+                ActivatedAt = now.AddDays(-30),
+                Revision = 2,
+                CreatedAt = now.AddDays(-30),
+                UpdatedAt = now.AddDays(-30)
+            });
+            changed = true;
+            await SaveIfChangedAsync();
+        }
+
+        var requiredProjectCodes = new[]
+        {
+            "qaly-workos-demo",
+            "erumi-local-analytics",
+            "nova-retail-pilot",
+            "field-ops-mobile",
+            "ops-compliance-readiness"
+        };
+        if (requiredProjectCodes.Any(code => !projects.ContainsKey(code)) || users.Count < 5)
+        {
+            return false;
+        }
+
+        const string novaEvidenceTitle = "Xác nhận dữ liệu POS Wave 1";
+        var novaProject = projects["nova-retail-pilot"];
+        var novaEvidenceTask = await _context.TaskItems
+            .IgnoreQueryFilters()
+            .SingleOrDefaultAsync(item => item.ProjectId == novaProject.Id && item.Title == novaEvidenceTitle);
+        if (novaEvidenceTask == null &&
+            users.TryGetValue("quoc.huy@qaly.dev", out var novaContributor) &&
+            users.TryGetValue("minh.anh@qaly.dev", out var novaOwner))
+        {
+            var activeSprint = await _context.Set<Sprint>()
+                .Where(item => item.ProjectId == novaProject.Id && item.Status == "Active")
+                .OrderByDescending(item => item.StartDate)
+                .FirstOrDefaultAsync();
+            novaEvidenceTask = new TaskItem
+            {
+                ProjectId = novaProject.Id,
+                SprintId = activeSprint?.Id,
+                Title = novaEvidenceTitle,
+                Description = "Đối soát giao dịch POS với master data của 8 cửa hàng Wave 1, xác nhận sai lệch SKU đã được đóng và lưu biên bản bàn giao làm nguồn cho quyết định mở rộng pilot.",
+                Status = "Done",
+                Priority = "High",
+                AssigneeId = novaContributor.Id,
+                ReporterId = novaOwner.Id,
+                StartDate = now.AddDays(-16),
+                DueDate = now.AddDays(-9),
+                EstimatedHours = 14,
+                ActualHours = 13,
+                SortOrder = 50,
+                UpvoteCount = 3,
+                CreatedAt = now.AddDays(-16),
+                UpdatedAt = now.AddDays(-9)
+            };
+            await _context.TaskItems.AddAsync(novaEvidenceTask);
+            await _context.TaskAssignments.AddAsync(new TaskAssignment
+            {
+                TaskItemId = novaEvidenceTask.Id,
+                UserId = novaContributor.Id,
+                AssignedByUserId = novaOwner.Id,
+                AssignedAt = now.AddDays(-16),
+                CreatedAt = now.AddDays(-16)
+            });
+            changed = true;
+            await _context.SaveChangesAsync();
+        }
+
+        var skillDefinitions = new (string NormalizedName, string Name, string Description)[]
+        {
+            ("frontend-vue", "Frontend / Vue 3", "Thiết kế component Vue 3, state, accessibility và hành vi UI có thể kiểm thử."),
+            ("backend-dotnet", "Backend / .NET APIs", "Xây dựng API ASP.NET Core, service domain, authorization và xử lý lỗi có contract."),
+            ("database-efcore-sql", "Database / EF Core & SQL Server", "Thiết kế truy vấn, mapping EF Core, migration và tính toàn vẹn dữ liệu SQL Server."),
+            ("qa-playwright", "QA Automation / Playwright", "Thiết kế kiểm thử browser, regression và evidence lặp lại được bằng Playwright."),
+            ("security-auth-privacy", "Security / Authorization & Privacy", "Authorization, tenant isolation, audit và xử lý dữ liệu riêng tư theo policy."),
+            ("ai-structured-llm", "AI Integration / Structured LLM", "Thiết kế prompt, structured output, grounding, provider routing và failure handling cho LLM."),
+            ("mobile-offline-sync", "Mobile / Offline Sync", "Đồng bộ mobile khi mất mạng, retry an toàn, conflict handling và evidence upload."),
+            ("devops-observability", "DevOps / Observability", "Telemetry, webhook, latency, health signal và điều tra lỗi vận hành."),
+            ("data-retail-integration", "Data / Retail Integration", "Đối soát dữ liệu POS, master data, mapping SKU và chất lượng dữ liệu bán lẻ.")
+        };
+        var skills = await _context.OrganizationSkills
+            .Where(item => item.OrganizationId == organization.Id)
+            .ToDictionaryAsync(item => item.NormalizedName, StringComparer.OrdinalIgnoreCase);
+        foreach (var definition in skillDefinitions)
+        {
+            if (skills.ContainsKey(definition.NormalizedName))
+            {
+                continue;
+            }
+
+            var skill = new OrganizationSkill
+            {
+                OrganizationId = organization.Id,
+                Name = definition.Name,
+                NormalizedName = definition.NormalizedName,
+                Description = definition.Description,
+                IsActive = true,
+                CreatedAt = now.AddDays(-30)
+            };
+            skills[definition.NormalizedName] = skill;
+            await _context.OrganizationSkills.AddAsync(skill);
+            changed = true;
+        }
+        await SaveIfChangedAsync();
+
+        var allProjectIds = projects.Values.Select(item => item.Id).ToHashSet();
+        var projectTasks = await _context.TaskItems
+            .IgnoreQueryFilters()
+            .Where(item => allProjectIds.Contains(item.ProjectId) && !item.IsDeleted)
+            .ToListAsync();
+        TaskItem? FindTask(string projectCode, string title) => projectTasks.SingleOrDefault(item =>
+            item.ProjectId == projects[projectCode].Id && string.Equals(item.Title, title, StringComparison.Ordinal));
+
+        var requirementDefinitions = new (string ProjectCode, string TaskTitle, string Skill, string Level)[]
+        {
+            ("qaly-workos-demo", "Rà soát matrix phân quyền cho manager và viewer", "security-auth-privacy", "Advanced"),
+            ("qaly-workos-demo", "Rà soát matrix phân quyền cho manager và viewer", "qa-playwright", "Working"),
+            ("erumi-local-analytics", "Phân loại intent câu hỏi Erumi", "ai-structured-llm", "Advanced"),
+            ("erumi-local-analytics", "Phân loại intent câu hỏi Erumi", "backend-dotnet", "Working"),
+            ("nova-retail-pilot", novaEvidenceTitle, "data-retail-integration", "Advanced"),
+            ("nova-retail-pilot", novaEvidenceTitle, "devops-observability", "Working"),
+            ("field-ops-mobile", "Nén ảnh evidence trước khi upload", "mobile-offline-sync", "Advanced"),
+            ("field-ops-mobile", "Nén ảnh evidence trước khi upload", "frontend-vue", "Working"),
+            ("ops-compliance-readiness", "Tạo webhook demo cho sự kiện task.updated", "backend-dotnet", "Working"),
+            ("ops-compliance-readiness", "Tạo webhook demo cho sự kiện task.updated", "devops-observability", "Advanced"),
+            ("qaly-workos-demo", "Chuẩn hóa dashboard demo theo dữ liệu thật", "frontend-vue", "Advanced"),
+            ("qaly-workos-demo", "Chuẩn hóa dashboard demo theo dữ liệu thật", "data-retail-integration", "Familiar"),
+            ("erumi-local-analytics", "Tạo snapshot realtime từ database cho phân tích local", "backend-dotnet", "Advanced"),
+            ("erumi-local-analytics", "Tạo snapshot realtime từ database cho phân tích local", "database-efcore-sql", "Advanced"),
+            ("nova-retail-pilot", "Cấu hình dashboard rủi ro vận hành Nova", "frontend-vue", "Working"),
+            ("nova-retail-pilot", "Cấu hình dashboard rủi ro vận hành Nova", "devops-observability", "Working"),
+            ("field-ops-mobile", "Xử lý hàng đợi đồng bộ offline", "mobile-offline-sync", "Advanced"),
+            ("field-ops-mobile", "Xử lý hàng đợi đồng bộ offline", "backend-dotnet", "Working"),
+            ("ops-compliance-readiness", "Bổ sung audit log cho thao tác nhạy cảm", "security-auth-privacy", "Advanced"),
+            ("ops-compliance-readiness", "Bổ sung audit log cho thao tác nhạy cảm", "backend-dotnet", "Working")
+        };
+        var requirementTaskIds = requirementDefinitions
+            .Select(item => FindTask(item.ProjectCode, item.TaskTitle)?.Id)
+            .Where(item => item.HasValue)
+            .Select(item => item!.Value)
+            .ToHashSet();
+        var existingRequirements = await _context.TaskSkillRequirements
+            .Where(item => requirementTaskIds.Contains(item.TaskItemId))
+            .Select(item => new { item.TaskItemId, item.OrganizationSkillId })
+            .ToListAsync();
+        var requirementKeys = existingRequirements
+            .Select(item => (item.TaskItemId, item.OrganizationSkillId))
+            .ToHashSet();
+        foreach (var definition in requirementDefinitions)
+        {
+            var task = FindTask(definition.ProjectCode, definition.TaskTitle);
+            if (task == null || !skills.TryGetValue(definition.Skill, out var skill))
+            {
+                continue;
+            }
+
+            var key = (task.Id, skill.Id);
+            if (requirementKeys.Contains(key))
+            {
+                continue;
+            }
+
+            await _context.TaskSkillRequirements.AddAsync(new TaskSkillRequirement
+            {
+                TaskItemId = task.Id,
+                OrganizationSkillId = skill.Id,
+                RequiredLevel = definition.Level,
+                Provenance = "MANUAL",
+                ConfirmedByUserId = projects[definition.ProjectCode].OwnerId,
+                ConfirmedAt = task.CreatedAt.AddHours(2),
+                CreatedAt = task.CreatedAt.AddHours(2)
+            });
+            requirementKeys.Add(key);
+            changed = true;
+        }
+
+        var evidenceDefinitions = new (string ProjectCode, string TaskTitle, string ContributorEmail)[]
+        {
+            ("qaly-workos-demo", "Rà soát matrix phân quyền cho manager và viewer", "admin@qaly.dev"),
+            ("erumi-local-analytics", "Phân loại intent câu hỏi Erumi", "linh.chi@qaly.dev"),
+            ("nova-retail-pilot", novaEvidenceTitle, "quoc.huy@qaly.dev"),
+            ("field-ops-mobile", "Nén ảnh evidence trước khi upload", "gia.khang@qaly.dev"),
+            ("ops-compliance-readiness", "Tạo webhook demo cho sự kiện task.updated", "viet.long@qaly.dev")
+        };
+        var evidenceTaskIds = evidenceDefinitions
+            .Select(item => FindTask(item.ProjectCode, item.TaskTitle)?.Id)
+            .Where(item => item.HasValue)
+            .Select(item => item!.Value)
+            .ToHashSet();
+        var attributionKeys = (await _context.TaskCompletionAttributions
+                .Where(item => evidenceTaskIds.Contains(item.TaskItemId))
+                .Select(item => new { item.TaskItemId, item.ContributorUserId })
+                .ToListAsync())
+            .Select(item => (item.TaskItemId, item.ContributorUserId))
+            .ToHashSet();
+        foreach (var definition in evidenceDefinitions)
+        {
+            var task = FindTask(definition.ProjectCode, definition.TaskTitle);
+            if (task == null || !users.TryGetValue(definition.ContributorEmail, out var contributor))
+            {
+                continue;
+            }
+
+            var key = (task.Id, contributor.Id);
+            if (attributionKeys.Contains(key))
+            {
+                continue;
+            }
+
+            var completedAt = task.UpdatedAt ?? task.DueDate ?? task.CreatedAt;
+            await _context.TaskCompletionAttributions.AddAsync(new TaskCompletionAttribution
+            {
+                TaskItemId = task.Id,
+                ContributorUserId = contributor.Id,
+                ConfirmedByUserId = projects[definition.ProjectCode].OwnerId,
+                CompletedAt = completedAt,
+                ConfirmedAt = completedAt.AddHours(4),
+                Status = TaskCompletionAttribution.Confirmed,
+                AttributionPolicyVersion = "completion-contributor.v1",
+                CreatedAt = completedAt.AddHours(4)
+            });
+            attributionKeys.Add(key);
+            changed = true;
+        }
+        await SaveIfChangedAsync();
+
+        var weeklyCapacityByEmail = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["admin@qaly.dev"] = 36m,
+            ["minh.anh@qaly.dev"] = 38m,
+            ["bao.ngoc@qaly.dev"] = 36m,
+            ["quoc.huy@qaly.dev"] = 40m,
+            ["thu.ha@qaly.dev"] = 36m,
+            ["gia.khang@qaly.dev"] = 40m,
+            ["linh.chi@qaly.dev"] = 36m,
+            ["tuan.kiet@qaly.dev"] = 40m,
+            ["mai.phuong@qaly.dev"] = 36m,
+            ["thanh.tam@qaly.dev"] = 38m,
+            ["viet.long@qaly.dev"] = 40m,
+            ["yen.nhi@qaly.dev"] = 32m
+        };
+        var capacityProfiles = await _context.OrganizationMemberCapacityProfiles
+            .Include(item => item.AvailabilityWindows)
+            .Where(item => item.OrganizationId == organization.Id)
+            .ToDictionaryAsync(item => item.UserId);
+        foreach (var (email, weeklyHours) in weeklyCapacityByEmail)
+        {
+            if (!users.TryGetValue(email, out var user) || capacityProfiles.ContainsKey(user.Id))
+            {
+                continue;
+            }
+
+            var profile = new OrganizationMemberCapacityProfile
+            {
+                OrganizationId = organization.Id,
+                UserId = user.Id,
+                WeeklyCapacityHours = weeklyHours,
+                TimeZoneId = "Asia/Ho_Chi_Minh",
+                CreatedAt = now.AddDays(-21)
+            };
+            capacityProfiles[user.Id] = profile;
+            await _context.OrganizationMemberCapacityProfiles.AddAsync(profile);
+            changed = true;
+        }
+        await SaveIfChangedAsync();
+
+        var nextMonday = now.Date.AddDays(((int)DayOfWeek.Monday - (int)now.DayOfWeek + 7) % 7);
+        if (nextMonday <= now.Date)
+        {
+            nextMonday = nextMonday.AddDays(7);
+        }
+        var availabilityDefinitions = new (string Email, int StartDay, int EndDay, string Kind, decimal? Hours)[]
+        {
+            ("admin@qaly.dev", 0, 5, MemberAvailabilityWindow.ReducedCapacity, 32m),
+            ("linh.chi@qaly.dev", 7, 12, MemberAvailabilityWindow.ReducedCapacity, 28m),
+            ("quoc.huy@qaly.dev", 2, 4, MemberAvailabilityWindow.Unavailable, null),
+            ("gia.khang@qaly.dev", 9, 10, MemberAvailabilityWindow.Unavailable, null),
+            ("viet.long@qaly.dev", 14, 19, MemberAvailabilityWindow.ReducedCapacity, 30m)
+        };
+        foreach (var definition in availabilityDefinitions)
+        {
+            if (!users.TryGetValue(definition.Email, out var user) ||
+                !capacityProfiles.TryGetValue(user.Id, out var profile) ||
+                profile.AvailabilityWindows.Count > 0)
+            {
+                continue;
+            }
+
+            var window = new MemberAvailabilityWindow
+            {
+                OrganizationMemberCapacityProfileId = profile.Id,
+                StartsAt = nextMonday.AddDays(definition.StartDay),
+                EndsAt = nextMonday.AddDays(definition.EndDay),
+                Kind = definition.Kind,
+                AvailableHours = definition.Hours,
+                CreatedAt = now.AddDays(-2)
+            };
+            profile.AvailabilityWindows.Add(window);
+            await _context.MemberAvailabilityWindows.AddAsync(window);
+            changed = true;
+        }
+        await SaveIfChangedAsync();
+
+        return changed;
     }
 
     private static string ComputeDemoHash(string value)

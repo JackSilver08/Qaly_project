@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Mappings;
 using Qaly.Application.Common.Models;
@@ -21,6 +21,8 @@ public class ProjectService : IProjectService
     private readonly IRepository<TaskAttachment> _attachmentRepo;
     private readonly IRepository<PhysicalFile> _physicalFileRepo;
     private readonly IRepository<VectorSyncOutbox> _outboxRepo;
+    private readonly IRepository<ProjectRoleDefinition> _roleDefinitionRepo;
+    private readonly IProjectRoleCatalog _roleCatalog;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IFileStorageService _fileStorageService;
     private readonly ICurrentUserService _currentUserService;
@@ -37,6 +39,8 @@ public class ProjectService : IProjectService
         IRepository<TaskAttachment> attachmentRepo,
         IRepository<PhysicalFile> physicalFileRepo,
         IRepository<VectorSyncOutbox> outboxRepo,
+        IRepository<ProjectRoleDefinition> roleDefinitionRepo,
+        IProjectRoleCatalog roleCatalog,
         IUnitOfWork unitOfWork,
         IFileStorageService fileStorageService,
         ICurrentUserService currentUserService,
@@ -52,6 +56,8 @@ public class ProjectService : IProjectService
         _attachmentRepo = attachmentRepo;
         _physicalFileRepo = physicalFileRepo;
         _outboxRepo = outboxRepo;
+        _roleDefinitionRepo = roleDefinitionRepo;
+        _roleCatalog = roleCatalog;
         _unitOfWork = unitOfWork;
         _fileStorageService = fileStorageService;
         _currentUserService = currentUserService;
@@ -61,6 +67,11 @@ public class ProjectService : IProjectService
 
     public async Task<Result<ProjectDto>> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
+        if (!await HasActiveCurrentUserAsync(ct))
+        {
+            return Result.Forbidden<ProjectDto>();
+        }
+
         var project = await ProjectDetailsQuery()
             .FirstOrDefaultAsync(p => p.Id == id, ct);
 
@@ -74,11 +85,17 @@ public class ProjectService : IProjectService
             return Result.Forbidden<ProjectDto>();
         }
 
-        return Result.Success(project.ToDto());
+        var customRoles = await LoadCustomRolesAsync([project], ct);
+        return Result.Success(ToDtoWithPermissions(project, customRoles));
     }
 
     public async Task<Result<PagedResult<ProjectDto>>> GetAllAsync(int page = 1, int pageSize = 10, string? search = null, CancellationToken ct = default)
     {
+        if (!await HasActiveCurrentUserAsync(ct))
+        {
+            return Result.Forbidden<PagedResult<ProjectDto>>();
+        }
+
         var currentUserId = _currentUserService.UserId;
         if (currentUserId == null)
         {
@@ -93,11 +110,13 @@ public class ProjectService : IProjectService
         if (!IsAdmin())
         {
             query = query.Where(project =>
-                project.OwnerId == currentUserId ||
-                project.Members.Any(member => member.UserId == currentUserId) ||
-                (project.OrganizationId != null &&
-                 (project.Organization!.OwnerId == currentUserId ||
-                  project.Organization.Members.Any(member => member.UserId == currentUserId))));
+                (project.OwnerId == currentUserId ||
+                 project.Members.Any(member => member.UserId == currentUserId)) &&
+                (project.OrganizationId == null ||
+                 (project.Organization != null &&
+                  project.Organization.IsActive &&
+                  (project.Organization.OwnerId == currentUserId ||
+                   project.Organization.Members.Any(member => member.UserId == currentUserId)))));
         }
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -113,9 +132,10 @@ public class ProjectService : IProjectService
             .Take(pageSize)
             .ToListAsync(ct);
 
+        var customRoles = await LoadCustomRolesAsync(items, ct);
         return Result.Success(new PagedResult<ProjectDto>
         {
-            Items = items.Select(item => item.ToDto()).ToList(),
+            Items = items.Select(item => ToDtoWithPermissions(item, customRoles)).ToList(),
             TotalCount = totalCount,
             PageNumber = page,
             PageSize = pageSize
@@ -124,6 +144,11 @@ public class ProjectService : IProjectService
 
     public async Task<Result<PagedResult<ProjectDto>>> GetByUserAsync(Guid userId, int page = 1, int pageSize = 10, CancellationToken ct = default)
     {
+        if (!await HasActiveCurrentUserAsync(ct))
+        {
+            return Result.Forbidden<PagedResult<ProjectDto>>();
+        }
+
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
@@ -146,9 +171,10 @@ public class ProjectService : IProjectService
             .Take(pageSize)
             .ToListAsync(ct);
 
+        var customRoles = await LoadCustomRolesAsync(items, ct);
         return Result.Success(new PagedResult<ProjectDto>
         {
-            Items = items.Select(item => item.ToDto()).ToList(),
+            Items = items.Select(item => ToDtoWithPermissions(item, customRoles)).ToList(),
             TotalCount = totalCount,
             PageNumber = page,
             PageSize = pageSize
@@ -326,7 +352,18 @@ public class ProjectService : IProjectService
             return Result.Failure("User was not found.", 404);
         }
 
-        var memberRole = ProjectRoleRules.NormalizeProjectRole(role);
+        // Accepts a built-in role or one this organization defined for itself. Unknown values are
+        // rejected rather than silently downgraded to Member.
+        var resolvedRole = await _roleCatalog.ResolveAsync(role, project.OrganizationId, ct);
+        if (resolvedRole == null || string.Equals(resolvedRole.Key, ProjectRoleRules.Owner, StringComparison.Ordinal))
+        {
+            return Result.Failure(
+                $"'{role}' is not an assignable project role. Allowed built-in roles: {string.Join(", ", ProjectRoleRules.AssignableRoles)}.",
+                400);
+        }
+
+        var memberRole = resolvedRole.Key;
+
         var existingMember = await _memberRepo.GetQueryable()
             .FirstOrDefaultAsync(member => member.ProjectId == projectId && member.UserId == userId, ct);
 
@@ -339,8 +376,10 @@ public class ProjectService : IProjectService
 
             existingMember.Role = memberRole;
             await _memberRepo.UpdateAsync(existingMember, ct);
+            var backfilledOrganization = await EnsureOrganizationMembershipAsync(project, userId, ct);
             await _unitOfWork.SaveChangesAsync(ct);
             await _auditLogService.LogAsync("UpdateMemberRole", nameof(Project), projectId.ToString(), new { userId, role = memberRole }, ct);
+            await LogOrganizationBackfillAsync(backfilledOrganization, project, userId, ct);
             return Result.Success();
         }
 
@@ -349,14 +388,16 @@ public class ProjectService : IProjectService
             ProjectId = projectId,
             UserId = userId,
             Role = memberRole,
-            CanViewProjectTimeline = ProjectRoleRules.CanManageProject(memberRole),
-            CanViewTaskRisk = ProjectRoleRules.CanManageProject(memberRole),
-            CanNudgeAssignee = ProjectRoleRules.CanManageProject(memberRole),
-            CanViewUnseenTaskSignal = ProjectRoleRules.CanManageProject(memberRole)
+            CanViewProjectTimeline = ProjectRoleRules.CanManageProject(resolvedRole.BaseRole),
+            CanViewTaskRisk = ProjectRoleRules.CanManageProject(resolvedRole.BaseRole),
+            CanNudgeAssignee = ProjectRoleRules.CanManageProject(resolvedRole.BaseRole),
+            CanViewUnseenTaskSignal = ProjectRoleRules.CanManageProject(resolvedRole.BaseRole)
         }, ct);
 
+        var organizationBackfilled = await EnsureOrganizationMembershipAsync(project, userId, ct);
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogService.LogAsync("AddMember", nameof(Project), projectId.ToString(), new { userId, role = memberRole }, ct);
+        await LogOrganizationBackfillAsync(organizationBackfilled, project, userId, ct);
         await _notificationService.CreateAsync(
             userId,
             $"You were added to project \"{project.Name}\".",
@@ -580,24 +621,152 @@ public class ProjectService : IProjectService
         await _outboxRepo.AddAsync(message, ct);
     }
 
+    /// <summary>
+    /// Maps a project and attaches what the current user may do with it, so the UI renders controls
+    /// from the server's answer rather than re-deriving permissions from the role string.
+    /// Relies on <see cref="ProjectDetailsQuery"/> having loaded members.
+    /// </summary>
+    /// <param name="customRoles">
+    /// Custom role key to its inherited built-in role and label, pre-loaded by
+    /// <see cref="LoadCustomRolesAsync"/>. Built-in roles are absent from this map.
+    /// </param>
+    private ProjectDto ToDtoWithPermissions(
+        Project project,
+        IReadOnlyDictionary<string, CustomRoleInfo> customRoles)
+    {
+        var currentUserId = _currentUserService.UserId;
+        var storedRole = project.Members?
+            .FirstOrDefault(member => member.UserId == currentUserId)?
+            .Role;
+
+        CustomRoleInfo? custom = null;
+        var effectiveRole = storedRole;
+        if (storedRole != null && customRoles.TryGetValue(storedRole, out var match))
+        {
+            custom = match;
+            effectiveRole = match.BaseRole;
+        }
+
+        var permissions = ProjectPermissionRules.Resolve(
+            effectiveRole,
+            isOwner: currentUserId != null && project.OwnerId == currentUserId,
+            isSystemAdmin: IsAdmin());
+
+        // Show the organization's own label while permissions stay driven by the inherited role.
+        if (custom != null)
+        {
+            permissions = permissions with { Role = storedRole!, RoleLabel = custom.DisplayName };
+        }
+
+        return project.ToDto() with { Permissions = permissions };
+    }
+
+    private sealed record CustomRoleInfo(string BaseRole, string DisplayName);
+
+    /// <summary>
+    /// Loads the custom roles of the organizations owning the given projects in one query, so
+    /// permission mapping does not issue a query per project.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, CustomRoleInfo>> LoadCustomRolesAsync(
+        IEnumerable<Project> projects,
+        CancellationToken ct)
+    {
+        var organizationIds = projects
+            .Select(project => project.OrganizationId)
+            .OfType<Guid>()
+            .Distinct()
+            .ToList();
+
+        if (organizationIds.Count == 0)
+        {
+            return new Dictionary<string, CustomRoleInfo>(StringComparer.Ordinal);
+        }
+
+        var definitions = await _roleDefinitionRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(definition => organizationIds.Contains(definition.OrganizationId))
+            .Select(definition => new { definition.Key, definition.BaseRole, definition.DisplayName })
+            .ToListAsync(ct);
+
+        return definitions
+            .GroupBy(definition => definition.Key, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => new CustomRoleInfo(
+                    ProjectRoleRules.NormalizeProjectRole(group.First().BaseRole),
+                    group.First().DisplayName),
+                StringComparer.Ordinal);
+    }
+
     private IQueryable<Project> ProjectDetailsQuery()
-        => _projectRepo.GetQueryable()
+    {
+        var currentUserId = _currentUserService.UserId;
+        var canViewEveryPrivateTask = IsAdmin();
+        return _projectRepo.GetQueryable()
             .Include(p => p.Owner)
             .Include(p => p.Organization)
                 .ThenInclude(o => o!.Members)
             .Include(p => p.Members)
             .Include(p => p.Labels)
-            .Include(p => p.Tasks);
+            .Include(p => p.Tasks.Where(task =>
+                canViewEveryPrivateTask ||
+                !task.IsPrivate ||
+                task.ReporterId == currentUserId ||
+                task.AssigneeId == currentUserId ||
+                task.Assignees.Any(assignment => assignment.UserId == currentUserId) ||
+                task.Project.OwnerId == currentUserId));
+    }
 
     private async Task<bool> CanAccessProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
     {
+        if (!await HasActiveCurrentUserAsync(ct))
+        {
+            return false;
+        }
+
         var currentUserId = _currentUserService.UserId;
         if (currentUserId == null)
         {
             return false;
         }
 
-        if (IsAdmin() || ownerId == currentUserId)
+        if (IsAdmin())
+        {
+            return true;
+        }
+
+        if (!await IsProjectOrganizationActiveAsync(projectId, ct))
+        {
+            return false;
+        }
+
+        var projectInfo = await _projectRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(project => project.Id == projectId)
+            .Select(project => new
+            {
+                project.OrganizationId,
+                OrganizationIsActive = project.Organization != null && project.Organization.IsActive,
+                OrganizationOwnerId = project.Organization != null ? (Guid?)project.Organization.OwnerId : null
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (projectInfo?.OrganizationId != null && !projectInfo.OrganizationIsActive)
+        {
+            return false;
+        }
+
+        if (projectInfo?.OrganizationId != null &&
+            projectInfo.OrganizationOwnerId != currentUserId &&
+            !await _organizationMemberRepo.GetQueryable().AnyAsync(member =>
+                member.OrganizationId == projectInfo.OrganizationId.Value &&
+                member.UserId == currentUserId,
+                ct))
+        {
+            return false;
+        }
+
+        if (ownerId == currentUserId)
         {
             return true;
         }
@@ -609,35 +778,33 @@ public class ProjectService : IProjectService
             return true;
         }
 
-        var organizationProjection = await _projectRepo.GetQueryable()
-            .Where(project => project.Id == projectId)
-            .Select(project => new
-            {
-                project.OrganizationId,
-                OrganizationOwnerId = project.Organization != null ? (Guid?)project.Organization.OwnerId : null
-            })
-            .FirstOrDefaultAsync(ct);
-
-        if (organizationProjection?.OrganizationId == null || organizationProjection.OrganizationOwnerId == null)
-        {
-            return false;
-        }
-
-        return await CanAccessOrganizationAsync(
-            organizationProjection.OrganizationId.Value,
-            organizationProjection.OrganizationOwnerId.Value,
-            ct);
+        return false;
     }
 
     private async Task<bool> CanManageProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
     {
+        if (!await HasActiveCurrentUserAsync(ct))
+        {
+            return false;
+        }
+
         var currentUserId = _currentUserService.UserId;
         if (currentUserId == null)
         {
             return false;
         }
 
-        if (IsAdmin() || ownerId == currentUserId)
+        if (IsAdmin())
+        {
+            return true;
+        }
+
+        if (!await CanAccessProjectAsync(projectId, ownerId, ct))
+        {
+            return false;
+        }
+
+        if (ownerId == currentUserId)
         {
             return true;
         }
@@ -648,31 +815,84 @@ public class ProjectService : IProjectService
             return true;
         }
 
-        var organizationProjection = await _projectRepo.GetQueryable()
-            .Where(project => project.Id == projectId)
-            .Select(project => new
-            {
-                project.OrganizationId,
-                OrganizationOwnerId = project.Organization != null ? (Guid?)project.Organization.OwnerId : null
-            })
-            .FirstOrDefaultAsync(ct);
+        return false;
+    }
 
-        if (organizationProjection?.OrganizationId == null || organizationProjection.OrganizationOwnerId == null)
+    /// <summary>
+    /// A project member must also belong to the owning organization. Project reads are filtered by
+    /// organization membership, so without this row a user added to an organization-scoped project
+    /// sees an empty project list and gets 403 on the project detail.
+    /// The grant is the lowest organization role and never overwrites an existing membership.
+    /// </summary>
+    private async Task<bool> EnsureOrganizationMembershipAsync(Project project, Guid userId, CancellationToken ct)
+    {
+        if (project.OrganizationId is not Guid organizationId)
         {
             return false;
         }
 
-        return await CanManageOrganizationAsync(
-            organizationProjection.OrganizationId.Value,
-            organizationProjection.OrganizationOwnerId.Value,
-            ct);
+        var organizationOwnerId = await _organizationRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(organization => organization.Id == organizationId)
+            .Select(organization => (Guid?)organization.OwnerId)
+            .FirstOrDefaultAsync(ct);
+
+        if (organizationOwnerId == null || organizationOwnerId == userId)
+        {
+            return false;
+        }
+
+        var alreadyMember = await _organizationMemberRepo.GetQueryable()
+            .AnyAsync(member => member.OrganizationId == organizationId && member.UserId == userId, ct);
+        if (alreadyMember)
+        {
+            return false;
+        }
+
+        await _organizationMemberRepo.AddAsync(new OrganizationMember
+        {
+            OrganizationId = organizationId,
+            UserId = userId,
+            Role = OrganizationRoleRules.Member
+        }, ct);
+
+        return true;
     }
+
+    private Task LogOrganizationBackfillAsync(bool backfilled, Project project, Guid userId, CancellationToken ct)
+        => backfilled && project.OrganizationId.HasValue
+            ? _auditLogService.LogAsync(
+                "AddOrganizationMemberViaProject",
+                nameof(Organization),
+                project.OrganizationId.Value.ToString(),
+                new { userId, role = OrganizationRoleRules.Member, projectId = project.Id },
+                ct)
+            : Task.CompletedTask;
 
     private async Task<string?> GetProjectRoleAsync(Guid projectId, Guid userId, CancellationToken ct)
         => await _memberRepo.GetQueryable()
             .Where(member => member.ProjectId == projectId && member.UserId == userId)
             .Select(member => member.Role)
             .FirstOrDefaultAsync(ct);
+
+    private async Task<bool> IsProjectOrganizationActiveAsync(Guid projectId, CancellationToken ct)
+        => await _projectRepo.GetQueryable()
+            .Where(project => project.Id == projectId)
+            .Select(project => project.OrganizationId == null ||
+                (project.Organization != null && project.Organization.IsActive))
+            .FirstOrDefaultAsync(ct);
+
+    private async Task<bool> HasActiveCurrentUserAsync(CancellationToken ct)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return false;
+        }
+
+        return await _userRepo.GetQueryable()
+            .AnyAsync(user => user.Id == currentUserId.Value && user.IsActive, ct);
+    }
 
     private bool IsAdmin()
         => ProjectRoleRules.IsSystemAdmin(_currentUserService.Role);
@@ -786,11 +1006,13 @@ public class ProjectService : IProjectService
         if (!IsAdmin())
         {
             query = query.Where(project =>
-                project.OwnerId == currentUserId ||
-                project.Members.Any(member => member.UserId == currentUserId) ||
-                (project.OrganizationId != null &&
-                 (project.Organization!.OwnerId == currentUserId ||
-                  project.Organization.Members.Any(member => member.UserId == currentUserId))));
+                (project.OwnerId == currentUserId ||
+                 project.Members.Any(member => member.UserId == currentUserId)) &&
+                (project.OrganizationId == null ||
+                 (project.Organization != null &&
+                  project.Organization.IsActive &&
+                  (project.Organization.OwnerId == currentUserId ||
+                   project.Organization.Members.Any(member => member.UserId == currentUserId)))));
         }
 
         var totalCount = await query.CountAsync(ct);
@@ -800,9 +1022,10 @@ public class ProjectService : IProjectService
             .Take(pageSize)
             .ToListAsync(ct);
 
+        var customRoles = await LoadCustomRolesAsync(items, ct);
         return Result.Success(new PagedResult<ProjectDto>
         {
-            Items = items.Select(item => item.ToDto()).ToList(),
+            Items = items.Select(item => ToDtoWithPermissions(item, customRoles)).ToList(),
             TotalCount = totalCount,
             PageNumber = page,
             PageSize = pageSize
@@ -933,11 +1156,13 @@ public class ProjectService : IProjectService
         if (!IsAdmin())
         {
             query = query.Where(project =>
-                project.OwnerId == currentUserId ||
-                project.Members.Any(member => member.UserId == currentUserId) ||
-                (project.OrganizationId != null &&
-                 (project.Organization!.OwnerId == currentUserId ||
-                  project.Organization.Members.Any(member => member.UserId == currentUserId))));
+                (project.OwnerId == currentUserId ||
+                 project.Members.Any(member => member.UserId == currentUserId)) &&
+                (project.OrganizationId == null ||
+                 (project.Organization != null &&
+                  project.Organization.IsActive &&
+                  (project.Organization.OwnerId == currentUserId ||
+                   project.Organization.Members.Any(member => member.UserId == currentUserId)))));
         }
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -953,9 +1178,10 @@ public class ProjectService : IProjectService
             .Take(pageSize)
             .ToListAsync(ct);
 
+        var customRoles = await LoadCustomRolesAsync(items, ct);
         return Result.Success(new PagedResult<ProjectDto>
         {
-            Items = items.Select(item => item.ToDto()).ToList(),
+            Items = items.Select(item => ToDtoWithPermissions(item, customRoles)).ToList(),
             TotalCount = totalCount,
             PageNumber = page,
             PageSize = pageSize

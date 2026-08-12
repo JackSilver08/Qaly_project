@@ -10,7 +10,8 @@ public class ProjectMemberConfiguration : IEntityTypeConfiguration<ProjectMember
     {
         builder.HasKey(pm => pm.Id);
         builder.Property(pm => pm.Id).HasDefaultValueSql("NEWID()");
-        builder.Property(pm => pm.Role).HasMaxLength(20).IsRequired();
+        // Wide enough to hold an organization-defined custom role key, not just the built-in names.
+        builder.Property(pm => pm.Role).HasMaxLength(64).IsRequired();
         builder.Property(pm => pm.JoinedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
         builder.Property(pm => pm.CanViewProjectTimeline).HasDefaultValue(false);
         builder.Property(pm => pm.CanViewTaskRisk).HasDefaultValue(false);

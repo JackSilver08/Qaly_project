@@ -48,7 +48,11 @@ public class GitHubRepositoryConnectionServiceTests : IDisposable
             new GenericRepository<GitHubRepositoryConnection>(_context),
             new GenericRepository<GitHubInstallation>(_context),
             guard,
-            new UnitOfWork(_context));
+            new UnitOfWork(_context),
+            Mock.Of<IGitHubRepositoryProvider>(provider => provider.GetAsync(
+                It.IsAny<long>(), It.IsAny<long>(), It.IsAny<CancellationToken>()) ==
+                Task.FromResult<SourceRepositoryMetadata?>(new SourceRepositoryMetadata(
+                    5001, "org-a", "web", "org-a/web", "main", true))));
     }
 
     private void SeedTenants()

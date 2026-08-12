@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, watch } from 'vue'
 import { Webhook, Trash2, Plus, Activity, ShieldCheck } from 'lucide-vue-next'
 import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
 import { showError, showSuccess } from '../composables/use-toast'
@@ -9,9 +9,20 @@ const props = defineProps<{
   projectId: string
 }>()
 
-const webhooks = ref<any[]>([])
+interface WebhookDto {
+  id: string
+  projectId: string
+  payloadUrl: string
+  events: string[]
+  hasSecret: boolean
+  isActive: boolean
+  createdAt: string
+}
+
+const webhooks = ref<WebhookDto[]>([])
 const showCreateForm = ref(false)
 const isLoading = ref(false)
+const isFetching = ref(false)
 
 const newWebhook = ref({
   payloadUrl: '',
@@ -28,11 +39,14 @@ const availableEvents = [
 ]
 
 async function fetchWebhooks() {
+  isFetching.value = true
   try {
-    webhooks.value = await apiResult<any[]>(`/api/projects/${props.projectId}/webhooks`)
+    webhooks.value = await apiResult<WebhookDto[]>(`/api/projects/${props.projectId}/webhooks`)
   } catch (e) {
     showError(errorMessage(e, 'Không thể tải danh sách webhook.'))
     webhooks.value = []
+  } finally {
+    isFetching.value = false
   }
 }
 
@@ -82,7 +96,7 @@ async function testWebhook(id: string) {
   }
 }
 
-onMounted(fetchWebhooks)
+watch(() => props.projectId, fetchWebhooks, { immediate: true })
 </script>
 
 <template>
@@ -130,7 +144,7 @@ onMounted(fetchWebhooks)
         <div class="hook-main">
           <div class="hook-url">
             <strong>{{ hook.payloadUrl }}</strong>
-            <span v-if="hook.secret" class="secure-badge"><ShieldCheck :size="12" /> Đã bảo mật</span>
+            <span v-if="hook.hasSecret" class="secure-badge"><ShieldCheck :size="12" /> Đã bảo mật</span>
           </div>
           <div class="hook-events">
             <span v-for="ev in hook.events" :key="ev" class="event-tag">{{ ev }}</span>
@@ -145,7 +159,8 @@ onMounted(fetchWebhooks)
           </button>
         </div>
       </div>
-      <div v-if="webhooks.length === 0" class="empty-state">Chưa có webhook nào được cấu hình cho dự án này.</div>
+      <div v-if="isFetching" class="empty-state">Đang tải danh sách webhook...</div>
+      <div v-else-if="webhooks.length === 0" class="empty-state">Chưa có webhook nào được cấu hình cho dự án này.</div>
     </div>
   </div>
 </template>
