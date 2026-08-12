@@ -43,6 +43,8 @@ import { showError, showSuccess } from '../composables/use-toast'
 import { useDashboardContext } from '../composables/dashboard-context'
 import type { SprintDto, DashboardTask } from '../types'
 import ProjectProgressAiCard from './ProjectProgressAiCard.vue'
+import ErumiDiffPreviewModal from './ErumiDiffPreviewModal.vue'
+import AiOnboardingGuideModal from './AiOnboardingGuideModal.vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const props = defineProps<{
@@ -54,6 +56,15 @@ const props = defineProps<{
 const { selectedProject, activeProjectTab, isProjectAdmin, loadDashboard } = useDashboardContext()
 const route = useRoute()
 const router = useRouter()
+
+// Erumi AI Assistant & Onboarding Guide State
+const showErumiDiffModal = ref(false)
+const showOnboardingGuideModal = ref(false)
+const erumiProposal = ref<any>(null)
+const isAskingErumi = ref(false)
+const erumiUserMessage = ref('')
+const erumiChatMessages = ref<Array<{ sender: 'user' | 'erumi'; text: string; proposal?: any }>>([])
+const activeSnapshotId = ref<string | null>(null)
 
 // Sprint list & loading state
 const sprints = ref<SprintDto[]>([])
@@ -498,6 +509,90 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
   if (diffDays === 0) return { text: 'Hạn chót hôm nay', isOverdue: false }
   return { text: `Còn ${diffDays} ngày`, isOverdue: false }
 }
+
+const askErumiAI = async () => {
+  if (!erumiUserMessage.value.trim()) return
+  const userText = erumiUserMessage.value.trim()
+  erumiUserMessage.value = ''
+  erumiChatMessages.value.push({ sender: 'user', text: userText })
+  isAskingErumi.value = true
+
+  try {
+    const res = await apiResult<any>('/api/erumi-roadmap/chat', {
+      method: 'POST',
+      body: JSON.stringify({
+        projectId: props.projectId,
+        userMessage: userText
+      })
+    })
+
+    if (res.isSuccess && res.data) {
+      erumiChatMessages.value.push({
+        sender: 'erumi',
+        text: res.data.replyMessage,
+        proposal: res.data.proposal
+      })
+      if (res.data.hasRoadmapProposal && res.data.proposal) {
+        erumiProposal.value = res.data.proposal
+      }
+    } else {
+      showError(res.error || 'Không thể kết nối tới Erumi AI.')
+    }
+  } catch (e) {
+    showError('Lỗi kết nối Erumi AI.')
+  } finally {
+    isAskingErumi.value = false
+  }
+}
+
+const handleApproveErumiProposal = async () => {
+  if (!erumiProposal.value) return
+  try {
+    const res = await apiResult('/api/erumi-roadmap/approve', {
+      method: 'POST',
+      body: JSON.stringify({
+        snapshotId: erumiProposal.value.snapshotId,
+        projectId: props.projectId,
+        approvedTasks: erumiProposal.value.proposedTasks
+      })
+    })
+    if (res.isSuccess) {
+      activeSnapshotId.value = erumiProposal.value.snapshotId
+      showErumiDiffModal.value = false
+      showSuccess('Đã phê duyệt và chèn Phase/Task mới từ Erumi AI vào Roadmap!')
+      await loadSprints()
+      await loadDashboard()
+    } else {
+      showError(res.error || 'Không thể phê duyệt đề xuất.')
+    }
+  } catch (e) {
+    showError('Không thể phê duyệt đề xuất.')
+  }
+}
+
+const handleRollbackErumiSnapshot = async () => {
+  if (!activeSnapshotId.value) return
+  if (!confirm('Bạn có chắc chắn muốn Rollback (xóa) Phase và Tasks vừa sinh từ Erumi AI không?')) return
+  try {
+    const res = await apiResult('/api/erumi-roadmap/rollback', {
+      method: 'POST',
+      body: JSON.stringify({
+        snapshotId: activeSnapshotId.value,
+        projectId: props.projectId
+      })
+    })
+    if (res.isSuccess) {
+      activeSnapshotId.value = null
+      showSuccess('Đã hoàn tác (Rollback) thành công Phase do AI sinh ra.')
+      await loadSprints()
+      await loadDashboard()
+    } else {
+      showError(res.error || 'Không thể rollback snapshot.')
+    }
+  } catch (e) {
+    showError('Lỗi khi rollback snapshot.')
+  }
+}
 </script>
 
 <template>
@@ -556,6 +651,25 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
       </div>
 
       <div class="roadmap-header__actions">
+        <button
+          type="button"
+          class="secondary-button text-emerald-400 border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20"
+          @click="showOnboardingGuideModal = true"
+        >
+          <Compass :size="16" />
+          <span>🧭 Onboarding Guide</span>
+        </button>
+
+        <button
+          v-if="activeSnapshotId"
+          type="button"
+          class="secondary-button text-rose-400 border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20"
+          @click="handleRollbackErumiSnapshot"
+        >
+          <RotateCcw :size="16" />
+          <span>🔄 Rollback AI Phase</span>
+        </button>
+
         <button
           v-if="isProjectAdmin && !isClientViewMode"
           type="button"
@@ -1198,6 +1312,20 @@ function getDaysRemaining(endDateStr: string): { text: string; isOverdue: boolea
         </div>
       </div>
     </Teleport>
+
+    <!-- Erumi AI Diff Preview Modal -->
+    <ErumiDiffPreviewModal
+      :show="showErumiDiffModal"
+      :proposal="erumiProposal"
+      @close="showErumiDiffModal = false"
+      @approve="handleApproveErumiProposal"
+    />
+
+    <!-- Interactive AI Onboarding Guide Modal -->
+    <AiOnboardingGuideModal
+      :show="showOnboardingGuideModal"
+      @close="showOnboardingGuideModal = false"
+    />
 
   </div>
 </template>

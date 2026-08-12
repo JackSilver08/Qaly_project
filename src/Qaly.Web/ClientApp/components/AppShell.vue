@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import SidebarNav from './SidebarNav.vue'
 import TopHeader from './TopHeader.vue'
+import SimulationHeaderBanner from './SimulationHeaderBanner.vue'
 import type { ShellNavItem } from './shell-models'
 
 defineProps<{
@@ -36,6 +37,7 @@ function handleNavigate() {
 <template>
   <!-- Shared shell adapts the old UI structure: full top header, left nav, single scrolling content panel. -->
   <div class="app-shell" :class="{ 'is-chat-shell': isChatShell }">
+    <SimulationHeaderBanner />
     <TopHeader
       brand-name="QALY"
       :notification-count="notificationCount"

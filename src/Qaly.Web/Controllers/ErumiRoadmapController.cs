@@ -18,7 +18,7 @@ public class ErumiRoadmapController : BaseApiController
     }
 
     [HttpPost("chat")]
-    public async Task<IActionResult> ChatAndPropose([FromBody] ErumiChatRequestDto dto, CancellationToken ct)
+    public async Task<IActionResult> ChatAndPropose([FromBody] ErumiRoadmapChatRequestDto dto, CancellationToken ct)
     {
         var result = await _erumiService.ChatAndProposeRoadmapAsync(dto, ct);
         return StatusCode(result.StatusCode, result);

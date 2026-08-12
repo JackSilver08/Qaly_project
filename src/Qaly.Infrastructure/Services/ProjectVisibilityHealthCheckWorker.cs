@@ -70,8 +70,8 @@ public class ProjectVisibilityHealthCheckWorker : BackgroundService
                 Action = "VisibilityHealthCheckAlert",
                 EntityType = "ProjectMember",
                 EntityId = "SystemHealthCheck",
-                Details = $"Detected {orphanedMemberUserIds.Count} orphaned members. UserIds: {string.Join(',', orphanedMemberUserIds.Take(10))}",
-                CreatedAt = DateTimeOffset.UtcNow
+                ChangesJson = $"Detected {orphanedMemberUserIds.Count} orphaned members. UserIds: {string.Join(',', orphanedMemberUserIds.Take(10))}",
+                Timestamp = DateTimeOffset.UtcNow
             };
             await dbContext.AuditLogs.AddAsync(auditLog, ct);
             await dbContext.SaveChangesAsync(ct);

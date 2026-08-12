@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Mail, Shield, Trash2, UserPlus } from 'lucide-vue-next'
+import { Mail, Shield, Trash2, UserPlus, History, AlertTriangle } from 'lucide-vue-next'
 import type { UserDto } from '../types'
+import RoleHistoryModal from './RoleHistoryModal.vue'
+import AssignRoleOverlapModal from './AssignRoleOverlapModal.vue'
+import AssignRoleSystemConflictModal from './AssignRoleSystemConflictModal.vue'
 
 interface Member {
   id: string
@@ -16,6 +19,7 @@ interface Member {
 }
 
 const props = defineProps<{
+  projectId: string
   members: Member[]
   users: UserDto[]
   isAdmin: boolean
@@ -31,6 +35,24 @@ const emit = defineEmits<{
 const showAddForm = ref(false)
 const selectedUserId = ref('')
 
+// Modals State
+const showHistoryModal = ref(false)
+const selectedMemberForHistory = ref<{ id: string; name: string } | null>(null)
+
+const showOverlapModal = ref(false)
+const showConflictModal = ref(false)
+const pendingRoleChange = ref<{ userId: string; newRole: string; userName: string; activeRole: string } | null>(null)
+
+const projectCustomRoles = [
+  'Product Owner (PO)',
+  'Project Manager (PM)',
+  'QA Lead / Tester',
+  'Dev Backend',
+  'Dev Frontend',
+  'Member',
+  'Viewer'
+]
+
 function handleAdd() {
   if (!selectedUserId.value) return
   emit('add', selectedUserId.value)
@@ -38,7 +60,42 @@ function handleAdd() {
   showAddForm.value = false
 }
 
-const roles = ['Manager', 'Member', 'Viewer']
+function openRoleHistory(member: Member) {
+  selectedMemberForHistory.value = { id: member.id, name: member.fullName }
+  showHistoryModal.value = true
+}
+
+function onRoleSelectChange(member: Member, newRole: string) {
+  pendingRoleChange.value = {
+    userId: member.id,
+    newRole,
+    userName: member.fullName,
+    activeRole: member.role
+  }
+
+  // Luôn cảnh báo Overlap ngày (modal a) để chốt EndDate=null cho active role cũ
+  showOverlapModal.value = true
+}
+
+function confirmRoleChangeAfterOverlap() {
+  showOverlapModal.value = false
+  if (pendingRoleChange.value) {
+    // Nếu role mới là PO/PM/QA và member có System Role là Restricted User -> Hiện Modal b (System conflict)
+    if (pendingRoleChange.value.newRole.includes('PO') || pendingRoleChange.value.newRole.includes('PM')) {
+      showConflictModal.value = true
+    } else {
+      executeRoleChange()
+    }
+  }
+}
+
+function executeRoleChange() {
+  showConflictModal.value = false
+  if (pendingRoleChange.value) {
+    emit('update-role', pendingRoleChange.value.userId, pendingRoleChange.value.newRole)
+    pendingRoleChange.value = null
+  }
+}
 
 function toggleTimelinePermission(member: Member, enabled: boolean) {
   emit('update-permissions', member.id, {
@@ -62,8 +119,8 @@ function canToggleTimeline(member: Member) {
   <div class="members-tab-content glass-card">
     <div class="panel-heading">
       <div>
-        <span>Members</span>
-        <h2>DANH SÁCH THÀNH VIÊN</h2>
+        <span>Members & Single Active Roles</span>
+        <h2>DANH SÁCH THÀNH VIÊN VÀ QUYỀN HẠN</h2>
       </div>
       <button v-if="isAdmin" class="primary-button primary-button--compact" type="button" @click="showAddForm = !showAddForm">
         <UserPlus :size="16" />
@@ -90,7 +147,7 @@ function canToggleTimeline(member: Member) {
       </div>
     </div>
 
-    <div class="members-list">
+    <div class="members-list space-y-3">
       <article v-for="member in members" :key="member.id" class="member-item">
         <div class="member-avatar">{{ member.initials }}</div>
 
@@ -104,17 +161,28 @@ function canToggleTimeline(member: Member) {
           </div>
         </div>
 
-        <div class="member-role-actions">
+        <div class="member-role-actions flex items-center space-x-2">
           <!-- Role Selector for Admin -->
           <div v-if="canManageMember(member)" class="role-selector">
-            <select :value="member.role" @change="e => $emit('update-role', member.id, (e.target as HTMLSelectElement).value)">
-              <option v-for="role in roles" :key="role" :value="role">{{ role }}</option>
+            <select :value="member.role" @change="e => onRoleSelectChange(member, (e.target as HTMLSelectElement).value)">
+              <option v-for="role in projectCustomRoles" :key="role" :value="role">{{ role }}</option>
             </select>
           </div>
           <span v-else :class="`role-badge role-badge--${member.role.toLowerCase()}`">
             <Shield :size="14" />
             {{ member.role }}
           </span>
+
+          <!-- Role History Button -->
+          <button
+            type="button"
+            class="text-xs bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 border border-purple-500/30 px-2.5 py-1 rounded-lg flex items-center gap-1 transition ms-2"
+            @click="openRoleHistory(member)"
+            title="Xem lịch sử thay đổi vai trò qua các giai đoạn (Single Active Role)"
+          >
+            <History :size="14" />
+            <span>Lịch sử Role</span>
+          </button>
 
           <button 
             v-if="canManageMember(member)" 
@@ -141,6 +209,36 @@ function canToggleTimeline(member: Member) {
         Không có thành viên nào trong dự án này.
       </div>
     </div>
+
+    <!-- Modals -->
+    <RoleHistoryModal
+      :show="showHistoryModal"
+      :project-id="projectId"
+      :member-id="selectedMemberForHistory?.id || ''"
+      :member-name="selectedMemberForHistory?.name || ''"
+      @close="showHistoryModal = false"
+    />
+
+    <AssignRoleOverlapModal
+      :show="showOverlapModal"
+      :member-name="pendingRoleChange?.userName || ''"
+      :active-role-name="pendingRoleChange?.activeRole || 'Member'"
+      :active-role-start-date="new Date().toLocaleDateString('vi-VN')"
+      :new-role-name="pendingRoleChange?.newRole || ''"
+      :new-role-start-date="new Date().toLocaleDateString('vi-VN')"
+      @close="showOverlapModal = false"
+      @confirm="confirmRoleChangeAfterOverlap"
+    />
+
+    <AssignRoleSystemConflictModal
+      :show="showConflictModal"
+      :member-name="pendingRoleChange?.userName || ''"
+      :new-role-name="pendingRoleChange?.newRole || ''"
+      system-role-name="User (Restricted AI Tier)"
+      system-ai-tier="SummaryOnly"
+      @close="showConflictModal = false"
+      @confirm="executeRoleChange"
+    />
   </div>
 </template>
 
@@ -148,180 +246,19 @@ function canToggleTimeline(member: Member) {
 .add-member-form {
   padding: 20px;
   margin-bottom: 24px;
-  background: var(--blue-50);
-  border: 1px solid var(--line);
-  border-radius: var(--qaly-radius-lg);
 }
-
-.add-member-form h3 {
-  font-size: 15px;
-  margin-bottom: 12px;
-  color: var(--text-strong);
-  font-weight: 700;
-}
-
-.form-row {
+.members-list {
   display: flex;
+  flex-direction: column;
   gap: 12px;
-  align-items: center;
 }
-
-.form-row select {
-  flex: 1;
-  padding: 8px 12px;
-  border-radius: var(--qaly-radius-lg);
-  border: 1px solid var(--line);
-  color: var(--text-strong);
-  background: var(--panel);
-}
-
-.role-selector select {
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-strong);
-  background: var(--panel);
-}
-
-.form-row select option,
-.role-selector select option {
-  color: var(--text-strong);
-  background: var(--panel);
-}
-
-.member-role-actions {
+.member-item {
   display: flex;
   align-items: center;
-}
-
-.timeline-permission-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-.timeline-permission-toggle input {
-  accent-color: var(--primary);
-}
-.members-tab-content {
-  padding: 24px;
+  justify-content: space-between;
+  padding: 12px 16px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-shell);
-}
-
-.members-list {
-  display: grid;
-  gap: 16px;
-  margin-top: 20px;
-}
-
-.member-item {
-  display: grid;
-  grid-template-columns: auto 1fr auto auto;
-  align-items: center;
-  gap: 16px;
-  padding: 16px;
-  border-radius: var(--qaly-radius-lg);
-  background: var(--bg-soft);
-  border: 1px solid var(--line);
-}
-
-.member-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--qaly-radius-lg);
-  background: var(--primary);
-  color: white;
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  font-size: 16px;
-}
-
-.member-info {
-  flex: 1;
-}
-
-.member-info strong {
-  display: block;
-  font-size: 16px;
-  margin-bottom: 4px;
-  color: var(--text-strong);
-}
-
-.member-meta {
-  display: flex;
-  gap: 16px;
-  color: var(--muted);
-}
-
-.member-email {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-}
-
-.role-badge {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: var(--qaly-radius-lg);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.role-badge--admin, .role-badge--manager {
-  background: rgba(31, 128, 255, 0.2);
-  color: #d9ebff;
-}
-
-.role-badge--member {
-  background: rgba(34, 211, 238, 0.2);
-  color: #d8f8ff;
-}
-
-.panel-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-}
-
-.panel-heading h2 {
-  font-size: 18px;
-  font-weight: 800;
-  color: var(--text-strong);
-}
-
-.panel-heading span {
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.panel-heading .primary-button {
-  color: #ffffff;
-}
-
-.panel-heading .primary-button span {
-  color: #ffffff;
-}
-
-.empty-state {
-  border: 1px dashed var(--line);
-  border-radius: var(--qaly-radius-lg);
-  background: var(--bg-soft);
-  padding: 16px;
-  color: var(--muted);
 }
 </style>

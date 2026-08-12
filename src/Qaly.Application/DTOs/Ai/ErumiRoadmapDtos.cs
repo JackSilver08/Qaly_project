@@ -1,11 +1,11 @@
 namespace Qaly.Application.DTOs.Ai;
 
-public record ErumiChatRequestDto(
+public record ErumiRoadmapChatRequestDto(
     Guid ProjectId,
     string UserMessage,
     string? ContextSprintName);
 
-public record ErumiChatResponseDto(
+public record ErumiRoadmapChatResponseDto(
     string ReplyMessage,
     bool HasRoadmapProposal,
     ErumiRoadmapDiffProposalDto? Proposal);
