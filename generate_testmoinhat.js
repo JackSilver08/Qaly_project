@@ -12,10 +12,13 @@ const testResultsData = [
     ['TC_E2E_003', 'Dashboard', 'dashboard renders seeded demo data', 'Admin', 'Hiển thị dữ liệu demo', 'Đúng như mong đợi', 'Pass', 'Playwright Automated', 'Bot', new Date().toLocaleDateString()],
     ['TC_E2E_004', 'Navigation', 'primary authenticated navigation routes render', 'Admin', 'Các trang chuyển hướng thành công', 'Đúng như mong đợi', 'Pass', 'Playwright Automated', 'Bot', new Date().toLocaleDateString()],
     ['TC_E2E_005', 'Project', 'projects page shows seeded project or empty-state safely', 'Admin', 'Hiển thị danh sách dự án', 'Đúng như mong đợi', 'Pass', 'Playwright Automated', 'Bot', new Date().toLocaleDateString()],
-    ['TC_E2E_006', 'Project Launch', 'Tạo dự án mới với AI Planner', 'PM', 'Dự án và Sprint được tạo', '', '', '', '', ''],
-    ['TC_E2E_007', 'Skill Assignment', 'AI auto-assign task theo skill', 'PM, Member', 'Task gán đúng người', '', '', '', '', ''],
-    ['TC_E2E_008', 'Safety Workflow', 'QA review và duyệt task', 'QA, Member', 'Trạng thái cập nhật đúng', '', '', '', '', ''],
-    ['TC_E2E_009', 'Privacy Retention', 'Kiểm tra mask dữ liệu nhạy cảm', 'Admin, Member', 'Dữ liệu được che giấu', '', '', '', '', '']
+    ['TC_E2E_006', 'Project Launch', 'AI Planner creates project & sprint', 'PM', 'Dự án và Sprint được tạo', 'Lỗi hiển thị receipt', 'Fail', 'ai-action-composer.spec.ts', 'Bot', new Date().toLocaleDateString()],
+    ['TC_E2E_007', 'Skill Assignment', 'AI auto-assign task theo skill', 'PM, Member', 'Task gán đúng người', 'Đúng như mong đợi', 'Pass', 'member-skill-assignment.spec.ts', 'Bot', new Date().toLocaleDateString()],
+    ['TC_E2E_008', 'Safety Workflow', 'QA review và duyệt task', 'QA, Member', 'Trạng thái cập nhật đúng', 'Đúng như mong đợi', 'Pass', 'rc-safety-workflow.spec.ts', 'Bot', new Date().toLocaleDateString()],
+    ['TC_E2E_009', 'Privacy Retention', 'Kiểm tra mask dữ liệu nhạy cảm', 'Admin, Member', 'Dữ liệu được che giấu', 'Đúng như mong đợi', 'Pass', 'privacy-retention.spec.ts', 'Bot', new Date().toLocaleDateString()],
+    ['TC_E2E_010', 'AI Grounding', 'AI preserves exact selected-message grounding', 'Member', 'AI đọc đúng message', 'Fail do model timeout', 'Fail', 'ai-native-grounded-surfaces.spec.ts', 'Bot', new Date().toLocaleDateString()],
+    ['TC_E2E_011', 'Demo Script', 'Chạy xuyên suốt kịch bản 30p', 'All', 'Hoàn thành đúng kịch bản', 'Fail (Expected <=8 members, got 10)', 'Fail', 'demo-script-30-minutes.spec.ts', 'Bot', new Date().toLocaleDateString()],
+    ['TC_E2E_012', 'General', 'Tổng hợp 53 test cases khác', 'All', 'Các luồng cơ bản hoạt động tốt', 'Thành công', 'Pass', 'playwright-report', 'Bot', new Date().toLocaleDateString()]
 ];
 const wsTestResults = xlsx.utils.aoa_to_sheet(testResultsData);
 
