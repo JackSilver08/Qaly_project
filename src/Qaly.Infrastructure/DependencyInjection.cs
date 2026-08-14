@@ -32,20 +32,7 @@ public static class DependencyInjection
         // DbContext
         services.AddDbContext<QalyDbContext>((sp, options) =>
         {
-            if (configuration.GetValue<bool>("UseInMemoryDatabase"))
-            {
-                options.UseInMemoryDatabase("QalyInMemory");
-            }
-            else
-            {
-                options.UseSqlServer(
-                        configuration.GetConnectionString("DefaultConnection"),
-                        sqlOptions =>
-                        {
-                            sqlOptions.MigrationsAssembly(typeof(QalyDbContext).Assembly.FullName);
-                            sqlOptions.EnableRetryOnFailure(maxRetryCount: 3);
-                        });
-            }
+            options.UseInMemoryDatabase("QalyInMemory");
 
             options.AddInterceptors(sp.GetRequiredService<VectorSyncInterceptor>());
         });

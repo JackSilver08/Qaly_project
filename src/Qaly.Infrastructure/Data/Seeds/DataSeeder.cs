@@ -21,7 +21,7 @@ public partial class DataSeeder
 
     public async Task SeedAsync()
     {
-        var useInMemoryDatabase = _configuration.GetValue<bool>("UseInMemoryDatabase");
+        var useInMemoryDatabase = true;
         if (!useInMemoryDatabase)
         {
             await _context.Database.MigrateAsync();
