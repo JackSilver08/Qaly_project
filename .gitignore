@@ -116,3 +116,5 @@ docker-compose.override.local.yml
 ## Uploads
 uploads/
 temp/
+Qaly_300_TestCases_Report.xlsx
+artifacts/screenshots/SCREENSHOT_AUDIT.md
