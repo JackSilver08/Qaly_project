@@ -1,8 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Qaly.Domain.Entities;
 
 /// <summary>
 /// Quản lý phân quyền hiển thị Module & AI Access ở Tầng Hệ Thống (System-Level)
 /// </summary>
+[SuppressMessage("Naming", "CA1711:Identifiers should not have incorrect suffix", Justification = "Permission is the established domain term for this persisted access-control entity.")]
 public class SystemModulePermission : BaseEntity
 {
     /// <summary>

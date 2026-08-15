@@ -25,7 +25,7 @@ public sealed partial class DatabaseMigrationHostedService : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        if (true)
+        if (_configuration.GetValue<bool>("UseInMemoryDatabase"))
         {
             LogSkippingMigrations(_logger);
             return;
