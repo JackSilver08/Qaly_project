@@ -49,3 +49,5 @@ Thứ tự chèn nên dùng:
 - Có giải thích actor, boundary, service, database.
 - Có mapping sang use case/API/table/test case trong `QALY_Diagram_Traceability_v2.3.csv`.
 - Không chèn diagram quá nhỏ; nếu rộng, xuất SVG hoặc để landscape page.
+
+

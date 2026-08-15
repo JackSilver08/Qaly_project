@@ -37,9 +37,11 @@ export function usePermissions() {
   }
 
   const loadSystemPermissions = async (systemRole?: string) => {
-    const res = await apiResult<SystemPermission[]>(`/api/ProjectRoles/system-permissions?systemRole=${systemRole || ''}`)
-    if (res.isSuccess && res.data) {
-      systemPermissions.value = res.data
+    try {
+      systemPermissions.value = await apiResult<SystemPermission[]>(`/api/ProjectRoles/system-permissions?systemRole=${systemRole || ''}`)
+    } catch {
+      systemPermissions.value = []
+      showError('Không tải được quyền hệ thống.')
     }
   }
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { Clock, History, Shield, X, UserCheck, Calendar } from 'lucide-vue-next'
-import { apiResult } from '../utils/api-client'
+import { ApiError, apiResult } from '../utils/api-client'
 import { showError } from '../composables/use-toast'
 
 interface RoleHistoryItem {
@@ -33,13 +33,17 @@ const isLoading = ref(false)
 const loadRoleHistory = async () => {
   if (!props.projectId || !props.memberId) return
   isLoading.value = true
-  const res = await apiResult<RoleHistoryItem[]>(`/api/ProjectRoles/projects/${props.projectId}/members/${props.memberId}/history`)
-  isLoading.value = false
-  if (res.isSuccess && res.data) {
-    histories.value = res.data
-  } else if (res.statusCode === 403) {
-    showError('Bảo mật dữ liệu nhân sự: Chỉ bản thân thành viên và Ban quản lý mới được xem lịch sử vai trò.')
-    emit('close')
+  try {
+    histories.value = await apiResult<RoleHistoryItem[]>(`/api/ProjectRoles/projects/${props.projectId}/members/${props.memberId}/history`)
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 403) {
+      showError('Bảo mật dữ liệu nhân sự: Chỉ bản thân thành viên và Ban quản lý mới được xem lịch sử vai trò.')
+      emit('close')
+    } else {
+      showError('Không tải được lịch sử vai trò.')
+    }
+  } finally {
+    isLoading.value = false
   }
 }
 

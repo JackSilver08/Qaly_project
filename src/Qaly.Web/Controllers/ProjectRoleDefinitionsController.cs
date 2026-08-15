@@ -29,6 +29,13 @@ public class ProjectRoleDefinitionsController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpGet("organizations/{organizationId:guid}/role-definitions/access")]
+    public async Task<IActionResult> GetManagementAccess(Guid organizationId, CancellationToken ct)
+    {
+        var result = await _service.CanManageAsync(organizationId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     /// <summary>Built-in roles and the organization's own roles, ready for a role picker.</summary>
     [HttpGet("projects/{projectId:guid}/assignable-roles")]
     public async Task<IActionResult> GetAssignableForProject(Guid projectId, CancellationToken ct)

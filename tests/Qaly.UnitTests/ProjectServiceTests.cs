@@ -599,5 +599,63 @@ public class ProjectServiceTests : IDisposable
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().Be(400);
     }
+
+    [Fact]
+    public async Task AddMemberAsync_CustomRoleInheritingManager_CanManageMembership()
+    {
+        var ownerId = Guid.NewGuid();
+        var customManagerId = Guid.NewGuid();
+        var newMemberId = Guid.NewGuid();
+        var organizationId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+
+        await _userRepo.AddAsync(new User { Id = ownerId, IsActive = true, Email = "owner-manager@qaly.dev", FullName = "Owner" });
+        await _userRepo.AddAsync(new User { Id = customManagerId, IsActive = true, Email = "manager@qaly.dev", FullName = "Manager" });
+        await _userRepo.AddAsync(new User { Id = newMemberId, IsActive = true, Email = "new-member@qaly.dev", FullName = "New member" });
+        await _organizationRepo.AddAsync(new Organization
+        {
+            Id = organizationId,
+            Name = "Qaly",
+            Code = "custom-manager",
+            OwnerId = ownerId,
+            IsActive = true
+        });
+        await _organizationMemberRepo.AddAsync(new OrganizationMember
+        {
+            OrganizationId = organizationId,
+            UserId = customManagerId,
+            Role = OrganizationRoleRules.Member
+        });
+        await _roleDefinitionRepo.AddAsync(new ProjectRoleDefinition
+        {
+            OrganizationId = organizationId,
+            Key = "delivery-lead",
+            DisplayName = "Delivery Lead",
+            BaseRole = ProjectRoleRules.Manager,
+            IsActive = true,
+            CreatedByUserId = ownerId
+        });
+        await _projectRepo.AddAsync(new Project
+        {
+            Id = projectId,
+            Name = "Project",
+            OwnerId = ownerId,
+            OrganizationId = organizationId
+        });
+        await _memberRepo.AddAsync(new ProjectMember
+        {
+            ProjectId = projectId,
+            UserId = customManagerId,
+            Role = "delivery-lead"
+        });
+        await _context.SaveChangesAsync();
+        _currentUser.SetupGet(user => user.UserId).Returns(customManagerId);
+
+        var result = await CreateService().AddMemberAsync(projectId, newMemberId, ProjectRoleRules.Member);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        (await _memberRepo.GetQueryable().AnyAsync(member =>
+            member.ProjectId == projectId && member.UserId == newMemberId)).Should().BeTrue();
+    }
 }
 #pragma warning restore CA1707

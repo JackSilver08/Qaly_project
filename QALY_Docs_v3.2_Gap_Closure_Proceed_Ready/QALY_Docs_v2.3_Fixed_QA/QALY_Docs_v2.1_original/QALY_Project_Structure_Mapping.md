@@ -67,7 +67,7 @@ Qaly_project/
 │   ├── Qaly.IntegrationTests/
 │   ├── Qaly.E2ETests/
 │   └── Qaly.TestData/
-├── docs/
+├── docs/   
 │   ├── QALY_Docs_v2.0/
 │   └── diagrams/
 ├── docker-compose.yml
