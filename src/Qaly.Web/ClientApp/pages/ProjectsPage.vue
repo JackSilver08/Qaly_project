@@ -2194,6 +2194,93 @@ textarea.modal-input {
   color: #b91c1c !important;
 }
 
+:global(:root[data-theme='dark'] .projects-page-shell) {
+  background: var(--surface-canvas);
+}
+
+:global(:root[data-theme='dark'] .projects-page-shell__glow) {
+  display: none;
+}
+
+:global(:root[data-theme='dark'] .projects-overview--enterprise),
+:global(:root[data-theme='dark'] .project-workspace--modern),
+:global(:root[data-theme='dark'] .projects-overview__stat-card),
+:global(:root[data-theme='dark'] .projects-overview__feature) {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: var(--qaly-shadow-sm);
+}
+
+:global(:root[data-theme='dark'] .projects-overview__title h1),
+:global(:root[data-theme='dark'] .projects-overview__stat-card strong),
+:global(:root[data-theme='dark'] .projects-overview__feature strong),
+:global(:root[data-theme='dark'] .project-workspace__header h2) {
+  color: var(--text-primary);
+}
+
+:global(:root[data-theme='dark'] .projects-overview__title p),
+:global(:root[data-theme='dark'] .projects-overview__stat-card span),
+:global(:root[data-theme='dark'] .projects-overview__feature p),
+:global(:root[data-theme='dark'] .projects-overview__feature-meta span),
+:global(:root[data-theme='dark'] .project-workspace__header p),
+:global(:root[data-theme='dark'] .project-workspace__hint span) {
+  color: var(--text-secondary);
+}
+
+:global(:root[data-theme='dark'] .projects-overview__eyebrow),
+:global(:root[data-theme='dark'] .projects-overview__stat-icon),
+:global(:root[data-theme='dark'] .project-source-toggle button.is-active),
+:global(:root[data-theme='dark'] .icon-button:hover) {
+  border-color: rgba(96, 165, 250, 0.34);
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+}
+
+:global(:root[data-theme='dark'] .btn-hero:not(.btn-hero--primary)),
+:global(:root[data-theme='dark'] .btn-toolbar:not(.btn-toolbar--accent)) {
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
+  color: var(--text-primary);
+  box-shadow: var(--qaly-shadow-sm);
+}
+
+:global(:root[data-theme='dark'] .project-modal) {
+  border-color: var(--border) !important;
+  background: var(--surface) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--qaly-shadow-md) !important;
+}
+
+:global(:root[data-theme='dark'] .project-modal-header) {
+  border-color: var(--border) !important;
+}
+
+:global(:root[data-theme='dark'] .project-modal-title),
+:global(:root[data-theme='dark'] .project-modal-title h2),
+:global(:root[data-theme='dark'] .project-modal .form-group label),
+:global(:root[data-theme='dark'] .project-member-picker label) {
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .project-modal .icon-button),
+:global(:root[data-theme='dark'] .project-modal .modal-input),
+:global(:root[data-theme='dark'] .project-modal .project-source-toggle button),
+:global(:root[data-theme='dark'] .project-modal .project-member-picker),
+:global(:root[data-theme='dark'] .project-modal .project-member-picker label),
+:global(:root[data-theme='dark'] .project-modal .project-option-card),
+:global(:root[data-theme='dark'] .project-modal .create-source-grid__card) {
+  border-color: var(--border-strong) !important;
+  background: var(--surface-muted) !important;
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .project-modal .modal-input:hover),
+:global(:root[data-theme='dark'] .project-modal .modal-input:focus) {
+  border-color: var(--primary) !important;
+  background: var(--surface-hover) !important;
+}
+
 @media (max-width: 1180px) {
   .projects-hero--spotlight {
     grid-template-columns: 1fr;

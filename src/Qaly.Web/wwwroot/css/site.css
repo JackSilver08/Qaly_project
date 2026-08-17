@@ -1098,3 +1098,77 @@ li {
   backdrop-filter: none !important;
 }
 
+/* Dark theme for Razor authentication and access-state pages. */
+:root[data-theme='dark'] .auth-page,
+:root[data-theme='dark'] .login-page,
+:root[data-theme='dark'] .auth-container,
+:root[data-theme='dark'] .login-page .auth-container,
+:root[data-theme='dark'] .auth-side-form,
+:root[data-theme='dark'] .login-page .auth-side-form,
+:root[data-theme='dark'] .login-form-shell,
+:root[data-theme='dark'] .auth-card {
+  background: var(--surface-canvas, #0b1120) !important;
+  color: var(--text-primary, #f8fafc) !important;
+}
+
+:root[data-theme='dark'] .login-page .auth-side-form {
+  box-shadow: inset -1px 0 0 var(--border, #273449) !important;
+}
+
+:root[data-theme='dark'] .auth-card__brand h1,
+:root[data-theme='dark'] .auth-card__brand h2,
+:root[data-theme='dark'] .login-page .auth-card__brand h1,
+:root[data-theme='dark'] .login-page .auth-form label span,
+:root[data-theme='dark'] .login-page .auth-form .remember-option,
+:root[data-theme='dark'] .login-page .auth-form .remember-option span {
+  color: var(--text-primary, #f8fafc) !important;
+}
+
+:root[data-theme='dark'] .auth-card__brand p,
+:root[data-theme='dark'] .login-page .auth-card__brand p,
+:root[data-theme='dark'] .login-page .auth-link,
+:root[data-theme='dark'] .login-page .auth-hint {
+  color: var(--text-secondary, #a7b4c8) !important;
+}
+
+:root[data-theme='dark'] .login-page .auth-hint {
+  border-color: var(--border, #273449) !important;
+  background: var(--surface-muted, #172033) !important;
+  box-shadow: var(--qaly-shadow-sm) !important;
+}
+
+:root[data-theme='dark'] .login-page .auth-hint strong {
+  color: var(--text-primary, #f8fafc) !important;
+}
+
+:root[data-theme='dark'] .login-page .auth-form input {
+  border-color: var(--border-strong, #334155) !important;
+  background: var(--surface, #111827) !important;
+  color: var(--text-primary, #f8fafc) !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme='dark'] .login-page .auth-form input:hover {
+  border-color: var(--qaly-primary, #3b82f6) !important;
+  background: var(--surface-hover, #1e293b) !important;
+}
+
+:root[data-theme='dark'] .login-page .auth-form input:focus {
+  border-color: var(--qaly-primary-hover, #60a5fa) !important;
+  background: var(--surface, #111827) !important;
+  box-shadow: var(--qaly-focus-ring, 0 0 0 3px rgba(96, 165, 250, 0.3)) !important;
+}
+
+:root[data-theme='dark'] .login-page .auth-form input:-webkit-autofill,
+:root[data-theme='dark'] .login-page .auth-form input:-webkit-autofill:hover,
+:root[data-theme='dark'] .login-page .auth-form input:-webkit-autofill:focus,
+:root[data-theme='dark'] .login-page .auth-form input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px var(--surface, #111827) inset !important;
+  -webkit-text-fill-color: var(--text-primary, #f8fafc) !important;
+}
+
+:root[data-theme='dark'] .login-page .auth-form input:autofill {
+  background-color: var(--surface, #111827) !important;
+  color: var(--text-primary, #f8fafc) !important;
+}
+

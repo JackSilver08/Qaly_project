@@ -11,7 +11,33 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>@ViewData["Title"] - Qaly</title>
-    <meta name="theme-color" content="#6366f1" />
+    <meta name="theme-color" content="#f8fafc" />
+    <script>
+        (() => {
+            const storageKey = 'qaly-theme';
+            let storedTheme = null;
+
+            try {
+                storedTheme = window.localStorage.getItem(storageKey);
+            } catch {
+                // Continue with the operating-system preference when storage is unavailable.
+            }
+
+            const theme = storedTheme === 'light' || storedTheme === 'dark'
+                ? storedTheme
+                : window.matchMedia?.('(prefers-color-scheme: dark)').matches
+                    ? 'dark'
+                    : 'light';
+
+            document.documentElement.dataset.theme = theme;
+            document.documentElement.style.colorScheme = theme;
+
+            const themeColor = document.querySelector('meta[name="theme-color"]');
+            if (themeColor) {
+                themeColor.content = theme === 'dark' ? '#0b1120' : '#f8fafc';
+            }
+        })();
+    </script>
     <link rel="manifest" href="/manifest.json" />
     @if (!useViteDevServer)
     {

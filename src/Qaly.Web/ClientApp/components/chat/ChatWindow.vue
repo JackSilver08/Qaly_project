@@ -1547,4 +1547,56 @@ function uploadBackground(event: Event) {
   background: #f8fafc;
   white-space: pre-wrap;
 }
+
+:global(:root[data-theme='dark'] .team-pinned),
+:global(:root[data-theme='dark'] .team-pinned-list),
+:global(:root[data-theme='dark'] .team-reply-banner),
+:global(:root[data-theme='dark'] .team-selection-toolbar),
+:global(:root[data-theme='dark'] .team-edit-banner) {
+  border-color: rgba(96, 165, 250, 0.34) !important;
+  background: var(--primary-soft) !important;
+  color: #bfdbfe !important;
+}
+
+:global(:root[data-theme='dark'] .team-chat-search),
+:global(:root[data-theme='dark'] .team-pinned-panel),
+:global(:root[data-theme='dark'] .team-chat-composer),
+:global(:root[data-theme='dark'] .team-mention-popover),
+:global(:root[data-theme='dark'] .team-emoji-picker),
+:global(:root[data-theme='dark'] .message-detail-card) {
+  border-color: var(--border) !important;
+  background: var(--surface) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--qaly-shadow-sm) !important;
+}
+
+:global(:root[data-theme='dark'] .attachment-chip),
+:global(:root[data-theme='dark'] .composer-tool-btn),
+:global(:root[data-theme='dark'] .message-detail-card p),
+:global(:root[data-theme='dark'] .team-pinned-panel button:hover),
+:global(:root[data-theme='dark'] .team-mention-popover button:hover) {
+  border-color: var(--border) !important;
+  background: var(--surface-muted) !important;
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .team-chat-search input),
+:global(:root[data-theme='dark'] .team-chat-composer textarea),
+:global(:root[data-theme='dark'] .team-mention-popover button),
+:global(:root[data-theme='dark'] .message-detail-card dd) {
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .team-chat-search span),
+:global(:root[data-theme='dark'] .team-pinned-panel span),
+:global(:root[data-theme='dark'] .team-reply-banner span),
+:global(:root[data-theme='dark'] .message-detail-card dt) {
+  color: var(--text-secondary) !important;
+}
+
+:global(:root[data-theme='dark'] .team-pinned-list span) {
+  padding: 0;
+  background: transparent;
+  color: inherit !important;
+}
 </style>
