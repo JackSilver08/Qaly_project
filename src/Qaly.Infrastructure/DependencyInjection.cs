@@ -30,9 +30,28 @@ public static class DependencyInjection
         services.AddSingleton<VectorSyncInterceptor>();
 
         // DbContext
+        var useInMemoryDatabase = configuration.GetValue<bool>("UseInMemoryDatabase");
+        var defaultConnection = configuration.GetConnectionString("DefaultConnection");
         services.AddDbContext<QalyDbContext>((sp, options) =>
         {
-            options.UseInMemoryDatabase("QalyInMemory");
+            if (useInMemoryDatabase)
+            {
+                options.UseInMemoryDatabase("QalyInMemory");
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(defaultConnection))
+                {
+                    throw new InvalidOperationException(
+                        "ConnectionStrings:DefaultConnection is required when UseInMemoryDatabase is false.");
+                }
+
+                options.UseSqlServer(defaultConnection, sqlServer =>
+                    sqlServer.EnableRetryOnFailure(
+                        maxRetryCount: 5,
+                        maxRetryDelay: TimeSpan.FromSeconds(5),
+                        errorNumbersToAdd: null));
+            }
 
             options.AddInterceptors(sp.GetRequiredService<VectorSyncInterceptor>());
         });
