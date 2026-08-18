@@ -4973,22 +4973,22 @@ onBeforeUnmount(() => {
 }
 
 /* Dark-mode metric tone tweaks */
-:global(:root[data-theme='dark']) .erumi-metric.tone-good,
-:global(:root[data-theme='dark']) .analytics-drawer-metric.tone-good {
+:global(:root[data-theme='dark'] .erumi-metric.tone-good),
+:global(:root[data-theme='dark'] .analytics-drawer-metric.tone-good) {
   background: rgba(34, 197, 94, 0.12);
   border-color: rgba(34, 197, 94, 0.4);
   color: #86efac;
 }
 
-:global(:root[data-theme='dark']) .erumi-metric.tone-warning,
-:global(:root[data-theme='dark']) .analytics-drawer-metric.tone-warning {
+:global(:root[data-theme='dark'] .erumi-metric.tone-warning),
+:global(:root[data-theme='dark'] .analytics-drawer-metric.tone-warning) {
   background: rgba(245, 158, 11, 0.12);
   border-color: rgba(245, 158, 11, 0.4);
   color: #fcd34d;
 }
 
-:global(:root[data-theme='dark']) .erumi-metric.tone-danger,
-:global(:root[data-theme='dark']) .analytics-drawer-metric.tone-danger {
+:global(:root[data-theme='dark'] .erumi-metric.tone-danger),
+:global(:root[data-theme='dark'] .analytics-drawer-metric.tone-danger) {
   background: rgba(248, 113, 113, 0.12);
   border-color: rgba(248, 113, 113, 0.4);
   color: #fca5a5;

@@ -207,20 +207,20 @@ onBeforeUnmount(() => {
   transform: translateX(8px);
 }
 
-:global(:root[data-theme='dark']) .analytics-drawer-panel,
-:global(:root[data-theme='dark']) .analytics-drawer-header,
-:global(:root[data-theme='dark']) .analytics-drawer-footer,
-:global(:root[data-theme='dark']) .analytics-drawer-close {
+:global(:root[data-theme='dark'] .analytics-drawer-panel),
+:global(:root[data-theme='dark'] .analytics-drawer-header),
+:global(:root[data-theme='dark'] .analytics-drawer-footer),
+:global(:root[data-theme='dark'] .analytics-drawer-close) {
   border-color: var(--line) !important;
   background: var(--panel) !important;
   color: var(--text) !important;
 }
 
-:global(:root[data-theme='dark']) .analytics-drawer-heading strong {
+:global(:root[data-theme='dark'] .analytics-drawer-heading strong) {
   color: var(--text-strong) !important;
 }
 
-:global(:root[data-theme='dark']) .analytics-drawer-heading span {
+:global(:root[data-theme='dark'] .analytics-drawer-heading span) {
   color: var(--muted) !important;
 }
 

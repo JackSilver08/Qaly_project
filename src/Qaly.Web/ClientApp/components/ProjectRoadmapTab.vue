@@ -922,25 +922,91 @@ const askErumiAI = async () => {
   }
 }
 
-const handleApproveErumiProposal = async () => {
+const isApprovingProposal = ref(false)
+const isExecutingFastAction = ref(false)
+const showExecutiveBriefModal = ref(false)
+const executiveBriefData = ref<any | null>(null)
+const isLoadingBrief = ref(false)
+
+const triggerFastAction = async (actionType: string, prompt?: string) => {
+  if (isExecutingFastAction.value) return
+  isExecutingFastAction.value = true
+
+  try {
+    if (actionType === 'ExecutiveBrief') {
+      await openExecutiveBriefModal()
+      return
+    }
+
+    const res = await apiResult<ErumiRoadmapDiffProposalDto>('/api/erumi-roadmap/fast-action', {
+      method: 'POST',
+      body: JSON.stringify({
+        projectId: props.projectId,
+        actionType: actionType,
+        userPrompt: prompt || null,
+        contextSprintName: sprints.value.find(s => s.id === selectedSprintId.value)?.name || null
+      })
+    })
+
+    if (res && res.snapshotId) {
+      erumiProposal.value = res
+      showErumiDiffModal.value = true
+    } else {
+      showError('Không nhận được dữ liệu đề xuất từ AI.')
+    }
+  } catch (e: any) {
+    showError(e?.message || 'Lỗi khi kích hoạt tính năng Fast Action AI.')
+  } finally {
+    isExecutingFastAction.value = false
+  }
+}
+
+const openExecutiveBriefModal = async () => {
+  isLoadingBrief.value = true
+  showExecutiveBriefModal.value = true
+  try {
+    const res = await apiResult<any>(`/api/erumi-roadmap/executive-brief/${props.projectId}`)
+    executiveBriefData.value = res
+  } catch (e: any) {
+    showError('Không thể tạo báo cáo tiến độ cho Sếp/Khách hàng.')
+    showExecutiveBriefModal.value = false
+  } finally {
+    isLoadingBrief.value = false
+  }
+}
+
+const handleApproveErumiProposal = async (approvedTasks: any[]) => {
   if (!erumiProposal.value) return
+  if (!approvedTasks || approvedTasks.length === 0) {
+    showError('Vui lòng chọn ít nhất 1 task để phê duyệt.')
+    return
+  }
+
+  isApprovingProposal.value = true
   try {
     await apiCommand('/api/erumi-roadmap/approve', {
       method: 'POST',
       body: JSON.stringify({
         snapshotId: erumiProposal.value.snapshotId,
         projectId: props.projectId,
-        approvedTasks: erumiProposal.value.proposedTasks
+        approvedTasks: approvedTasks
       })
     })
     activeSnapshotId.value = erumiProposal.value.snapshotId
     showErumiDiffModal.value = false
-    showSuccess('Đã phê duyệt và chèn Phase/Task mới từ Erumi AI vào Roadmap!')
+    showSuccess(`Đã phê duyệt và đẩy ${approvedTasks.length} task mới vào Roadmap!`)
     await loadSprints()
     await loadDashboard()
-  } catch (e) {
-    showError('Không thể phê duyệt đề xuất.')
+  } catch (e: any) {
+    showError(e?.message || 'Không thể phê duyệt đề xuất.')
+  } finally {
+    isApprovingProposal.value = false
   }
+}
+
+const handleSubmitReview = async (proposal: any) => {
+  showSuccess(`Đã gửi đề xuất Roadmap Snapshot #${proposal.snapshotId.substring(0, 8)} tới Project Owner xem xét.`)
+  showErumiDiffModal.value = false
 }
 
 const handleRollbackErumiSnapshot = async () => {
@@ -958,8 +1024,8 @@ const handleRollbackErumiSnapshot = async () => {
     showSuccess('Đã hoàn tác (Rollback) thành công Phase do AI sinh ra.')
     await loadSprints()
     await loadDashboard()
-  } catch (e) {
-    showError('Lỗi khi rollback snapshot.')
+  } catch (e: any) {
+    showError(e?.message || 'Lỗi khi rollback snapshot.')
   }
 }
 </script>
@@ -1003,6 +1069,109 @@ const handleRollbackErumiSnapshot = async () => {
         >
           <Eye :size="14" />
           <span>Khách hàng</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Fast Access AI Command Toolbar (Erumi AI 2.0) -->
+    <div class="roadmap-ai-fastbar glass-card">
+      <div class="ai-fastbar-header">
+        <div class="ai-title-wrap">
+          <span class="ai-glow-dot"></span>
+          <span class="ai-badge">✨ ERUMI AI ROADMAP CO-PILOT</span>
+          <span class="ai-desc text-muted">Trợ lý Lộ Trình: Phân tích rủi ro, mở rộng Phase, cân bằng tải & dự báo</span>
+        </div>
+        <div class="ai-right-badges">
+          <button
+            v-if="activeSnapshotId"
+            type="button"
+            class="rollback-pill-btn"
+            @click="handleRollbackErumiSnapshot"
+            title="Hoàn tác Phase vừa sinh bởi AI trong 72 giờ"
+          >
+            <RefreshCw :size="12" class="spin-hover" /> Hoàn Tác (Rollback AI Snapshot)
+          </button>
+        </div>
+      </div>
+
+      <!-- 6 Fast Action Buttons Grid -->
+      <div class="ai-fast-actions-grid">
+        <button
+          type="button"
+          class="ai-action-card card-purple"
+          :disabled="isExecutingFastAction"
+          @click="triggerFastAction('ExpandPhase', 'Mở rộng tính năng và đề xuất chèn Phase mới')"
+        >
+          <div class="ai-action-icon">🚀</div>
+          <div class="ai-action-text">
+            <strong>Mở Rộng Phase</strong>
+            <span>Chèn Phase & Task mới</span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          class="ai-action-card card-rose"
+          :disabled="isExecutingFastAction"
+          @click="triggerFastAction('AuditRisks')"
+        >
+          <div class="ai-action-icon">⚡</div>
+          <div class="ai-action-text">
+            <strong>Quét Rủi Ro</strong>
+            <span>Phát hiện Bottleneck</span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          class="ai-action-card card-emerald"
+          :disabled="isExecutingFastAction"
+          @click="triggerFastAction('AutoBalance')"
+        >
+          <div class="ai-action-icon">✨</div>
+          <div class="ai-action-text">
+            <strong>Cân Bằng Tải</strong>
+            <span>Phân bổ &lt;40h/tuần</span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          class="ai-action-card card-blue"
+          :disabled="isExecutingFastAction"
+          @click="triggerFastAction('BreakdownWBS')"
+        >
+          <div class="ai-action-icon">🧩</div>
+          <div class="ai-action-text">
+            <strong>Tách Nhỏ WBS</strong>
+            <span>Bóc tách mốc thành Task</span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          class="ai-action-card card-amber"
+          :disabled="isExecutingFastAction"
+          @click="triggerFastAction('Forecast')"
+        >
+          <div class="ai-action-icon">📊</div>
+          <div class="ai-action-text">
+            <strong>Dự Báo Tiến Độ</strong>
+            <span>Monte Carlo Forecast</span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          class="ai-action-card card-cyan"
+          :disabled="isExecutingFastAction"
+          @click="triggerFastAction('ExecutiveBrief')"
+        >
+          <div class="ai-action-icon">📑</div>
+          <div class="ai-action-text">
+            <strong>Báo Cáo Sếp</strong>
+            <span>Executive Client Brief</span>
+          </div>
         </button>
       </div>
     </div>
@@ -2196,11 +2365,278 @@ const handleRollbackErumiSnapshot = async () => {
           </div>
         </div>
       </div>
+
+      <!-- Erumi Diff Preview Modal (AI Proposal Inspection & Approval) -->
+      <ErumiDiffPreviewModal
+        :show="showErumiDiffModal"
+        :proposal="erumiProposal"
+        :is-owner-or-authorized="isProjectAdmin"
+        :is-submitting="isApprovingProposal"
+        @close="showErumiDiffModal = false"
+        @approve="handleApproveErumiProposal"
+        @submit-for-review="handleSubmitReview"
+      />
+
+      <!-- Executive Brief Modal for Client/Stakeholder Presentation -->
+      <div v-if="showExecutiveBriefModal" class="modal-backdrop">
+        <div class="roadmap-modal-shell executive-brief-shell">
+          <div class="modal-header">
+            <div class="modal-title">
+              <Sparkles :size="20" class="text-purple" />
+              <h3>Báo Cáo Tiến Độ Lộ Trình (Executive Brief)</h3>
+            </div>
+            <button type="button" class="btn-close" @click="showExecutiveBriefModal = false">
+              <X :size="18" />
+            </button>
+          </div>
+          <div class="modal-body" v-if="isLoadingBrief">
+            <div class="brief-loading">
+              <RefreshCw :size="24" class="spin" />
+              <p>Erumi AI đang tổng hợp báo cáo tiến độ dự án...</p>
+            </div>
+          </div>
+          <div class="modal-body" v-else-if="executiveBriefData">
+            <div class="brief-health-card" :class="`health--${executiveBriefData.healthStatus?.toLowerCase()}`">
+              <div class="health-header">
+                <strong>{{ executiveBriefData.healthStatus === 'Healthy' ? '🟢 TIẾN ĐỘ ỔN ĐỊNH (ON TRACK)' : '🟡 CẦN LƯU Ý ĐIỀU CHỈNH' }}</strong>
+                <span class="health-rate">Hoàn thành: <strong>{{ executiveBriefData.completionPercentage }}%</strong></span>
+              </div>
+            </div>
+            <div class="brief-markdown-wrap">
+              <pre class="brief-pre-text">{{ executiveBriefData.formattedMarkdownSummary }}</pre>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn--ghost" @click="showExecutiveBriefModal = false">Đóng</button>
+          </div>
+        </div>
+      </div>
     </Teleport>
   </div>
 </template>
 
 <style scoped>
+/* Erumi AI Fast Access Toolbar Styles */
+.roadmap-ai-fastbar {
+  padding: 16px 20px;
+  background: linear-gradient(135deg, rgba(24, 18, 43, 0.85) 0%, rgba(15, 23, 42, 0.85) 100%);
+  border: 1px solid rgba(167, 139, 250, 0.25);
+  border-radius: var(--radius-shell);
+  box-shadow: 0 8px 24px -6px rgba(139, 92, 246, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ai-fastbar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ai-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ai-glow-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #a855f7;
+  box-shadow: 0 0 10px #a855f7;
+  display: inline-block;
+}
+
+.ai-badge {
+  font-size: 11px;
+  font-weight: 800;
+  font-family: var(--font-mono, monospace);
+  color: #c084fc;
+  background: rgba(168, 85, 247, 0.15);
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  letter-spacing: 0.5px;
+}
+
+.ai-desc {
+  font-size: 12px;
+}
+
+.rollback-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #f43f5e;
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+  padding: 4px 10px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.rollback-pill-btn:hover {
+  background: rgba(244, 63, 94, 0.25);
+  border-color: #f43f5e;
+}
+
+.ai-fast-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.ai-action-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-action-card:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px -4px rgba(0, 0, 0, 0.3);
+}
+
+.ai-action-card:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.card-purple:hover:not(:disabled) {
+  border-color: rgba(168, 85, 247, 0.6);
+  background: rgba(168, 85, 247, 0.1);
+}
+
+.card-rose:hover:not(:disabled) {
+  border-color: rgba(244, 63, 94, 0.6);
+  background: rgba(244, 63, 94, 0.1);
+}
+
+.card-emerald:hover:not(:disabled) {
+  border-color: rgba(16, 185, 129, 0.6);
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.card-blue:hover:not(:disabled) {
+  border-color: rgba(59, 130, 246, 0.6);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.card-amber:hover:not(:disabled) {
+  border-color: rgba(245, 158, 11, 0.6);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.card-cyan:hover:not(:disabled) {
+  border-color: rgba(6, 182, 212, 0.6);
+  background: rgba(6, 182, 212, 0.1);
+}
+
+.ai-action-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.ai-action-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.ai-action-text strong {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text, #f1f5f9);
+}
+
+.ai-action-text span {
+  font-size: 10px;
+  color: var(--muted, #94a3b8);
+}
+
+/* Executive Brief Modal Styles */
+.executive-brief-shell {
+  max-width: 680px;
+  width: 95vw;
+}
+
+.brief-health-card {
+  padding: 12px 16px;
+  border-radius: 10px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.health--healthy {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #34d399;
+}
+
+.health--needsattention {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
+}
+
+.health-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
+
+.brief-markdown-wrap {
+  max-height: 400px;
+  overflow-y: auto;
+  background: var(--bg, #0b1120);
+  border: 1px solid var(--line, #1e293b);
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.brief-pre-text {
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  color: var(--text, #e2e8f0);
+  margin: 0;
+}
+
+.brief-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  gap: 12px;
+  color: var(--muted, #94a3b8);
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .project-roadmap-shell {
   display: flex;
   flex-direction: column;

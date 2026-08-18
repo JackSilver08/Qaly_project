@@ -916,6 +916,57 @@ function fileIcon(name: string, contentType?: string) {
   cursor: pointer;
 }
 
+:global(:root[data-theme='dark'] .team-message__bubble),
+:global(:root[data-theme='dark'] .team-message.is-mine .team-message__bubble),
+:global(:root[data-theme='dark'] .team-message.has-image-attachment .team-message__text),
+:global(:root[data-theme='dark'] .message-action-menu),
+:global(:root[data-theme='dark'] .message-attachment-menu),
+:global(:root[data-theme='dark'] .team-message__system-card) {
+  border-color: var(--border) !important;
+  background: var(--surface-muted) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--qaly-shadow-sm) !important;
+}
+
+:global(:root[data-theme='dark'] .team-message__selector),
+:global(:root[data-theme='dark'] .team-message__more),
+:global(:root[data-theme='dark'] .message-attachment-more) {
+  border-color: var(--border-strong) !important;
+  background: var(--surface) !important;
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .team-message__more svg) {
+  color: var(--text-primary) !important;
+  stroke: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .team-message__meta strong),
+:global(:root[data-theme='dark'] .team-message__text),
+:global(:root[data-theme='dark'] .message-action-menu button),
+:global(:root[data-theme='dark'] .message-attachment-menu a),
+:global(:root[data-theme='dark'] .message-attachment-menu button) {
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .team-message__meta span),
+:global(:root[data-theme='dark'] .message-attachment-info span),
+:global(:root[data-theme='dark'] .team-message__system-card small),
+:global(:root[data-theme='dark'] .team-message__system-card div > span) {
+  color: var(--text-secondary) !important;
+}
+
+:global(:root[data-theme='dark'] .message-action-menu button:hover),
+:global(:root[data-theme='dark'] .message-attachment-menu a:hover),
+:global(:root[data-theme='dark'] .message-attachment-menu button:hover) {
+  background: var(--surface-hover) !important;
+}
+
+:global(:root[data-theme='dark'] .message-attachment-card) {
+  border-color: var(--border) !important;
+  background: rgba(23, 32, 51, 0.9) !important;
+}
+
 @media (max-width: 720px) {
   .team-message {
     max-width: 88%;

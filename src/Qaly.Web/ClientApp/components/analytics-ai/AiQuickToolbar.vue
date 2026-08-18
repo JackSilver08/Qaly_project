@@ -440,35 +440,35 @@ onBeforeUnmount(() => {
   transform: translateY(6px);
 }
 
-:global(:root[data-theme='dark']) .ai-quick-tool,
-:global(:root[data-theme='dark']) .ai-quick-utility,
-:global(:root[data-theme='dark']) .ai-tool-palette,
-:global(:root[data-theme='dark']) .ai-tool-palette-item {
+:global(:root[data-theme='dark'] .ai-quick-tool),
+:global(:root[data-theme='dark'] .ai-quick-utility),
+:global(:root[data-theme='dark'] .ai-tool-palette),
+:global(:root[data-theme='dark'] .ai-tool-palette-item) {
   border-color: var(--line) !important;
   background: var(--panel) !important;
   color: var(--text) !important;
 }
 
-:global(:root[data-theme='dark']) .ai-quick-tool:hover,
-:global(:root[data-theme='dark']) .ai-quick-tool:focus-visible,
-:global(:root[data-theme='dark']) .ai-quick-tool.is-active,
-:global(:root[data-theme='dark']) .ai-quick-utility:hover,
-:global(:root[data-theme='dark']) .ai-quick-utility:focus-visible,
-:global(:root[data-theme='dark']) .ai-quick-utility.is-active,
-:global(:root[data-theme='dark']) .ai-tool-palette-item:hover,
-:global(:root[data-theme='dark']) .ai-tool-palette-item:focus-visible {
+:global(:root[data-theme='dark'] .ai-quick-tool:hover),
+:global(:root[data-theme='dark'] .ai-quick-tool:focus-visible),
+:global(:root[data-theme='dark'] .ai-quick-tool.is-active),
+:global(:root[data-theme='dark'] .ai-quick-utility:hover),
+:global(:root[data-theme='dark'] .ai-quick-utility:focus-visible),
+:global(:root[data-theme='dark'] .ai-quick-utility.is-active),
+:global(:root[data-theme='dark'] .ai-tool-palette-item:hover),
+:global(:root[data-theme='dark'] .ai-tool-palette-item:focus-visible) {
   border-color: rgba(96, 165, 250, 0.46) !important;
   background: var(--panel-soft) !important;
   color: var(--primary-strong) !important;
 }
 
-:global(:root[data-theme='dark']) .ai-tool-palette header strong,
-:global(:root[data-theme='dark']) .ai-tool-palette-item strong {
+:global(:root[data-theme='dark'] .ai-tool-palette header strong),
+:global(:root[data-theme='dark'] .ai-tool-palette-item strong) {
   color: var(--text-strong) !important;
 }
 
-:global(:root[data-theme='dark']) .ai-tool-palette header span,
-:global(:root[data-theme='dark']) .ai-tool-palette-item small {
+:global(:root[data-theme='dark'] .ai-tool-palette header span),
+:global(:root[data-theme='dark'] .ai-tool-palette-item small) {
   color: var(--muted) !important;
 }
 

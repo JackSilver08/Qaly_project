@@ -724,6 +724,14 @@ export interface AiStrategyResponseDto {
     model: string;
     cacheHit: boolean;
 }
+export interface ErumiRoadmapRiskDto {
+  riskType: string
+  severity: string
+  description: string
+  mitigationAdvice: string
+  blockedItemTitle?: string | null
+}
+
 export interface ErumiTaskProposalDto {
   title: string
   description: string
@@ -732,6 +740,7 @@ export interface ErumiTaskProposalDto {
   recommendedRole: string
   recommendedAssigneeId: string | null
   recommendedAssigneeName: string | null
+  dependencyNote?: string | null
 }
 
 export interface ErumiWorkloadImpactDto {
@@ -753,6 +762,8 @@ export interface ErumiRoadmapDiffProposalDto {
   proposedTasks: ErumiTaskProposalDto[]
   workloadImpacts: ErumiWorkloadImpactDto[]
   summary: string
+  confidenceScore?: number
+  identifiedRisks?: ErumiRoadmapRiskDto[] | null
 }
 
 export interface ErumiRoadmapChatResponseDto {
@@ -760,3 +771,34 @@ export interface ErumiRoadmapChatResponseDto {
   hasRoadmapProposal: boolean
   proposal: ErumiRoadmapDiffProposalDto | null
 }
+
+export interface ErumiRoadmapActionRequestDto {
+  projectId: string
+  actionType: 'ExpandPhase' | 'AuditRisks' | 'AutoBalance' | 'BreakdownWBS' | 'Forecast' | 'ExecutiveBrief' | string
+  userPrompt?: string | null
+  targetSprintOrPhaseId?: string | null
+  contextSprintName?: string | null
+}
+
+export interface ErumiRoadmapSimulationResultDto {
+  scenarioName: string
+  completionDateDeltaDays: number
+  totalAdditionalHours: number
+  confidencePercentage: number
+  keyTradeoffs: string[]
+  memberImpacts: ErumiWorkloadImpactDto[]
+  recommendationSummary: string
+}
+
+export interface ErumiRoadmapExecutiveBriefDto {
+  projectId: string
+  projectName: string
+  healthStatus: string
+  completionPercentage: number
+  keyAchievements: string[]
+  upcomingMilestones: string[]
+  executiveRisks: string[]
+  formattedMarkdownSummary: string
+  generatedAt: string
+}
+

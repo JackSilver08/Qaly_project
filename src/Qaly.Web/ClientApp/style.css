@@ -81,6 +81,20 @@
   --shadow-soft: var(--qaly-shadow-sm);
   --shadow-card: var(--qaly-shadow-md);
 
+  /* Semantic aliases consumed by both global and component-scoped styles. */
+  --surface-canvas: #f8fafc;
+  --surface: var(--qaly-surface);
+  --surface-muted: var(--qaly-surface-muted);
+  --surface-hover: #f1f5f9;
+  --text-primary: #0f172a;
+  --text-secondary: var(--qaly-text-muted);
+  --border: var(--qaly-border);
+  --border-color: var(--qaly-border);
+  --border-strong: var(--qaly-border-strong);
+  --primary-dark: #1e40af;
+  --text-on-accent: #ffffff;
+  --overlay: rgba(15, 23, 42, 0.54);
+
   /* Radius - compact, sharp rectangular panels */
   --radius-shell: var(--qaly-radius-lg);
   --radius-panel: var(--qaly-radius-lg);
@@ -167,6 +181,19 @@
 
   --shadow-soft: var(--qaly-shadow-sm);
   --shadow-card: var(--qaly-shadow-md);
+
+  --surface-canvas: var(--qaly-bg);
+  --surface: var(--qaly-surface);
+  --surface-muted: var(--qaly-surface-muted);
+  --surface-hover: #1e293b;
+  --text-primary: #f8fafc;
+  --text-secondary: #a7b4c8;
+  --border: var(--qaly-border);
+  --border-color: var(--qaly-border);
+  --border-strong: var(--qaly-border-strong);
+  --primary-dark: #93c5fd;
+  --text-on-accent: #ffffff;
+  --overlay: rgba(2, 6, 23, 0.72);
 }
 
 *,
@@ -4130,17 +4157,14 @@ p {
 }
 
 /* ==========================================================================
-   Qaly Premium Bright White & Deep Sapphire Blue Light Theme Customization
+   Qaly enterprise surface customization
    ========================================================================== */
-:root {
-  color-scheme: light !important;
-}
 
 html,
 body,
 #qaly-dashboard-app {
-  background: #f8fafc !important;
-  color: #0f172a !important;
+  background: var(--surface-canvas) !important;
+  color: var(--text-primary) !important;
 }
 
 body::before,
@@ -4149,25 +4173,25 @@ body::after {
 }
 
 .app-shell {
-  background: #f8fafc !important;
+  background: var(--surface-canvas) !important;
 }
 
 .dashboard-scroll,
 .shell-main {
-  background: #f8fafc !important;
+  background: var(--surface-canvas) !important;
 }
 
 input,
 select,
 textarea {
-  color: #0f172a !important;
-  background: #ffffff !important;
-  border: 1px solid #cbd5e1 !important;
+  color: var(--text-primary) !important;
+  background: var(--surface) !important;
+  border: 1px solid var(--border-strong) !important;
 }
 
 input::placeholder,
 textarea::placeholder {
-  color: #94a3b8 !important;
+  color: var(--text-secondary) !important;
 }
 
 /* Align layout to sidebar without empty gap */
@@ -4187,24 +4211,24 @@ textarea::placeholder {
 
 .dashboard-welcome-banner h1 {
   font-size: 24px;
-  color: #0f172a;
+  color: var(--text-primary);
   margin-bottom: 4px;
 }
 
 .dashboard-welcome-banner p {
-  color: #64748b;
+  color: var(--text-secondary);
   font-size: 14px;
 }
 
 .shell-header {
-  border-bottom: 1px solid #e2e8f0 !important;
-  background: #ffffff !important;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05) !important;
+  border-bottom: 1px solid var(--border) !important;
+  background: var(--surface) !important;
+  box-shadow: var(--qaly-shadow-sm) !important;
   backdrop-filter: none !important;
 }
 
 .shell-brand strong {
-  color: #0f172a !important;
+  color: var(--text-primary) !important;
   text-shadow: none !important;
 }
 
@@ -4215,55 +4239,55 @@ textarea::placeholder {
 }
 
 .shell-menu-button {
-  border-color: #cbd5e1 !important;
-  color: #0f172a !important;
-  background: #ffffff !important;
+  border-color: var(--border-strong) !important;
+  color: var(--text-primary) !important;
+  background: var(--surface) !important;
 }
 
 .shell-icon-button,
 .shell-user-menu,
 .secondary-button {
-  color: #0f172a !important;
-  border-color: #e2e8f0 !important;
-  background: #ffffff !important;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border) !important;
+  background: var(--surface) !important;
+  box-shadow: var(--qaly-shadow-sm) !important;
   backdrop-filter: none !important;
 }
 
 .shell-icon-button:hover,
 .shell-user-menu:hover,
 .secondary-button:hover {
-  border-color: #cbd5e1 !important;
-  background: #f1f5f9 !important;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08) !important;
+  border-color: var(--border-strong) !important;
+  background: var(--surface-hover) !important;
+  box-shadow: var(--qaly-shadow-md) !important;
 }
 
 .shell-action-badge {
-  border-color: #ffffff !important;
+  border-color: var(--surface) !important;
   background: #ef4444 !important;
   box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2) !important;
 }
 
 .shell-user-menu.is-open {
-  border-color: #cbd5e1 !important;
-  background: #f1f5f9 !important;
+  border-color: var(--border-strong) !important;
+  background: var(--surface-hover) !important;
 }
 
 .shell-user-dropdown-menu {
-  border: 1px solid #e2e8f0 !important;
+  border: 1px solid var(--border) !important;
   border-radius: var(--qaly-radius-lg) !important;
-  background: #ffffff !important;
+  background: var(--surface) !important;
   box-shadow: var(--qaly-shadow-md) !important;
 }
 
 .shell-user-dropdown-item {
-  color: #334155 !important;
+  color: var(--text) !important;
 }
 
 .shell-user-dropdown-item:hover,
 .shell-user-dropdown-item:focus-visible {
-  background: #f1f5f9 !important;
-  border-color: #cbd5e1 !important;
+  background: var(--surface-hover) !important;
+  border-color: var(--border-strong) !important;
 }
 
 .shell-user-dropdown-item--danger {
@@ -4279,14 +4303,14 @@ textarea::placeholder {
 }
 
 .shell-sidebar {
-  border-right: 1px solid #e2e8f0 !important;
-  background: #ffffff !important;
+  border-right: 1px solid var(--border) !important;
+  background: var(--surface) !important;
   backdrop-filter: none !important;
 }
 
 .shell-nav-item {
   border-radius: var(--qaly-radius-lg) !important;
-  color: #475569 !important;
+  color: var(--text-secondary) !important;
   font-weight: 600 !important;
   border-left: 4px solid transparent !important;
 }
@@ -4294,7 +4318,7 @@ textarea::placeholder {
 .shell-nav-item:hover,
 .shell-nav-item:focus-visible {
   color: var(--primary) !important;
-  background: #f1f5f9 !important;
+  background: var(--surface-hover) !important;
   box-shadow: none !important;
 }
 
@@ -4307,10 +4331,10 @@ textarea::placeholder {
 }
 
 .shell-archive-button {
-  border: 1px dashed #cbd5e1 !important;
+  border: 1px dashed var(--border-strong) !important;
   border-radius: var(--qaly-radius-lg) !important;
-  color: #64748b !important;
-  background: #f8fafc !important;
+  color: var(--text-secondary) !important;
+  background: var(--surface-muted) !important;
   box-shadow: none !important;
 }
 

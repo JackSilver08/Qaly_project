@@ -3,12 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CKCK v6.1 Final - Architecture Blueprint & Complete Spec</title>
+    <title>Qaly - Đặc Tả Kỹ Thuật Module Lộ Trình Dự Án Tích Hợp AI Siêu Cấp (Erumi AI 2.0)</title>
     <!-- Google Fonts & Tailwind CSS -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -20,12 +22,22 @@
                             500: '#2563eb',
                             600: '#1d4ed8',
                             700: '#1e40af',
-                            900: '#0f172a'
+                            900: '#0b1120'
                         },
                         erumi: {
+                            400: '#a78bfa',
                             500: '#8b5cf6',
                             600: '#7c3aed',
-                            glow: 'rgba(139, 92, 246, 0.15)'
+                            700: '#6d28d9',
+                            glow: 'rgba(139, 92, 246, 0.25)',
+                            surface: '#131127'
+                        },
+                        cyber: {
+                            cyan: '#06b6d4',
+                            emerald: '#10b981',
+                            amber: '#f59e0b',
+                            rose: '#f43f5e',
+                            violet: '#8b5cf6'
                         }
                     },
                     fontFamily: {
@@ -39,327 +51,1178 @@
     <style>
         body {
             font-family: 'Plus Jakarta Sans', sans-serif;
-            background-color: #090d16;
-            color: #f1f5f9;
+            background-color: #060913;
+            color: #e2e8f0;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.08) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(37, 99, 235, 0.08) 0px, transparent 50%),
+                radial-gradient(at 50% 50%, rgba(15, 23, 42, 0.5) 0px, transparent 100%);
+            background-attachment: fixed;
         }
-        .glass-card {
-            background: rgba(15, 23, 42, 0.8);
-            backdrop-filter: blur(16px);
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
             border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .glass-panel-purple {
+            background: rgba(24, 18, 43, 0.75);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(167, 139, 250, 0.2);
         }
         .glass-card-hover {
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
         .glass-card-hover:hover {
-            border-color: rgba(99, 102, 241, 0.4);
+            border-color: rgba(139, 92, 246, 0.4);
             transform: translateY(-2px);
-            box-shadow: 0 12px 30px -10px rgba(99, 102, 241, 0.2);
+            box-shadow: 0 12px 30px -10px rgba(139, 92, 246, 0.25);
         }
-        .gradient-text {
-            background: linear-gradient(135deg, #60a5fa 0%, #a855f7 50%, #ec4899 100%);
+        .gradient-text-ai {
+            background: linear-gradient(135deg, #38bdf8 0%, #a855f7 50%, #f43f5e 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
-        .active-tab {
-            background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
+        .gradient-text-gold {
+            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .gradient-border-glow {
+            position: relative;
+        }
+        .gradient-border-glow::before {
+            content: '';
+            position: absolute;
+            inset: -1px;
+            border-radius: inherit;
+            padding: 1px;
+            background: linear-gradient(135deg, #8b5cf6, #3b82f6, #10b981);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
+        }
+        .tab-btn.active {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
             color: white;
-            box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+            box-shadow: 0 4px 18px rgba(139, 92, 246, 0.35);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+        .pulse-ai {
+            animation: pulseGlow 2.5s infinite;
+        }
+        @keyframes pulseGlow {
+            0%, 100% { box-shadow: 0 0 15px rgba(139, 92, 246, 0.3); }
+            50% { box-shadow: 0 0 30px rgba(139, 92, 246, 0.6), 0 0 10px rgba(56, 189, 248, 0.4); }
         }
         ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
+            width: 7px;
+            height: 7px;
         }
         ::-webkit-scrollbar-track {
-            background: #0f172a;
+            background: #090d16;
         }
         ::-webkit-scrollbar-thumb {
-            background: #334155;
+            background: #252e48;
             border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3b4870;
+        }
+        code, pre {
+            font-family: 'JetBrains Mono', monospace;
         }
     </style>
 </head>
-<body class="min-h-screen pb-20 selection:bg-purple-500 selection:text-white">
+<body class="min-h-screen pb-24 selection:bg-purple-600 selection:text-white">
 
-    <!-- HEADER / HERO -->
-    <header class="relative border-b border-slate-800 bg-slate-950/90 backdrop-blur-md sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-            <div class="flex items-center space-x-4">
-                <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-blue-600 to-purple-600 flex items-center justify-center font-bold text-white text-xl shadow-lg shadow-blue-500/20">
-                    CK
+    <!-- TOP ANNOUNCEMENT BAR -->
+    <div class="bg-gradient-to-r from-purple-950/80 via-blue-950/80 to-purple-950/80 border-b border-purple-800/30 px-4 py-2 text-center text-xs text-purple-200 backdrop-blur-md">
+        <div class="max-w-7xl mx-auto flex items-center justify-center gap-2 flex-wrap font-medium">
+            <span class="inline-flex items-center gap-1 bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/40 text-[11px] font-mono">
+                <i data-lucide="sparkles" class="w-3 h-3 text-purple-400"></i> ERUMI AI 2.0 ROADMAP SUITE
+            </span>
+            <span>Đặc tả kỹ thuật nâng cấp: Trợ lý Lộ trình Đa tầng, Fast Access Buttons, Cơ chế Diff Preview & Phân quyền Duyệt Nghiêm ngặt.</span>
+            <span class="text-slate-400">• Cập nhật: 2026-08-18</span>
+        </div>
+    </div>
+
+    <!-- MAIN NAVBAR / HEADER -->
+    <header class="sticky top-0 z-50 border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-xl">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between">
+            <div class="flex items-center space-x-3.5">
+                <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-blue-500 flex items-center justify-center font-black text-white text-xl shadow-lg shadow-purple-600/30 ring-1 ring-white/20">
+                    <i data-lucide="sparkles" class="w-5 h-5 text-white"></i>
                 </div>
                 <div>
-                    <h1 class="text-xl font-extrabold tracking-tight text-white flex items-center gap-2">
-                        Kế Hoạch Nâng Cấp <span class="gradient-text font-mono">"CKCK v6.1 Final"</span>
-                        <span class="bg-emerald-500/10 text-emerald-400 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-emerald-500/20">Production Approved</span>
-                    </h1>
-                    <p class="text-xs text-slate-400">Dự án Qaly / ProjectHub • DB Unique Filtered Index & Chốt Policy Chi Tiết</p>
+                    <div class="flex items-center gap-2">
+                        <h1 class="text-lg font-extrabold tracking-tight text-white flex items-center gap-2">
+                            Đặc Tả Module <span class="gradient-text-ai font-bold">Lộ Trình Dự Án AI Siêu Cấp</span>
+                        </h1>
+                        <span class="bg-emerald-500/10 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-md border border-emerald-500/30 uppercase tracking-wider">
+                            Verified Blueprint
+                        </span>
+                    </div>
+                    <p class="text-xs text-slate-400">Hệ thống Qaly • Hỗ Trợ Lập Kế Hoạch, Tự Động Mở Rộng, Kiểm Soát Phê Duyệt & Fast Access Bar</p>
                 </div>
             </div>
-            <div class="flex items-center space-x-3">
-                <div class="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs px-3 py-1.5 rounded-lg flex items-center gap-2">
-                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-                    <span>Ready For Code Execution</span>
+
+            <!-- Quick Action / Status Badges -->
+            <div class="hidden md:flex items-center space-x-3">
+                <div class="bg-purple-900/30 border border-purple-600/40 text-purple-300 text-xs px-3 py-1.5 rounded-lg flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-purple-400 animate-ping"></span>
+                    <span class="font-semibold font-mono">RBAC + Diff Merge Guard</span>
                 </div>
+                <button onclick="scrollToSection('demo-diff-modal')" class="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs px-4 py-2 rounded-lg shadow-lg shadow-purple-600/20 flex items-center gap-1.5 transition">
+                    <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                    <span>Xem Mockup Diff Preview</span>
+                </button>
             </div>
         </div>
     </header>
 
-    <!-- MAIN CONTAINER -->
-    <main class="max-w-7xl mx-auto px-6 pt-8 space-y-10">
+    <!-- HERO SECTION -->
+    <section class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-6">
+        <div class="glass-panel-purple rounded-3xl p-6 sm:p-8 relative overflow-hidden gradient-border-glow shadow-2xl">
+            <div class="absolute -right-16 -top-16 w-80 h-80 bg-purple-600/15 rounded-full blur-3xl pointer-events-none"></div>
+            <div class="absolute -left-16 -bottom-16 w-80 h-80 bg-blue-600/15 rounded-full blur-3xl pointer-events-none"></div>
 
-        <!-- HIGHLIGHT: 3 ĐIỂM HOÀN THIỆN CUỐI CÙNG -->
-        <section class="glass-card rounded-2xl p-8 border-l-8 border-emerald-500 relative overflow-hidden">
-            <div class="absolute right-0 top-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div class="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+                <div class="lg:col-span-8 space-y-4">
+                    <div class="inline-flex items-center gap-2 bg-purple-500/10 border border-purple-500/30 px-3 py-1 rounded-full text-xs text-purple-300 font-medium">
+                        <i data-lucide="compass" class="w-3.5 h-3.5 text-purple-400"></i>
+                        <span>Autonomous Roadmap Architecture & Scope Scalability</span>
+                    </div>
 
-            <div class="relative z-10 space-y-4">
+                    <h2 class="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white tracking-tight leading-tight">
+                        Tăng tốc Quản trị Lộ trình với <br/>
+                        <span class="gradient-text-ai">AI Co-Pilot Dự Báo, Mở Rộng & Kiểm Soát Phê Duyệt</span>
+                    </h2>
+
+                    <p class="text-sm text-slate-300 leading-relaxed">
+                        Chuyển đổi toàn diện module <strong>Lộ trình dự án (Project Roadmap & Timeline)</strong> thành một trung tâm điều phối thông minh. 
+                        Tích hợp các phím tắt <strong>Fast Access AI</strong>, tự động bóc tách mục tiêu thành Phase & Task, phát hiện rủi ro đường găng (Critical Path), 
+                        hỗ trợ mở rộng dự án (Project Expansion/Scaling) khi khách hàng phát sinh yêu cầu, và bắt buộc kiểm duyệt qua <strong>Diff Review Modal</strong> 
+                        trước khi Owner/PM áp dụng vào cơ sở dữ liệu.
+                    </p>
+
+                    <!-- Key Metrics & Highlights -->
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+                        <div class="bg-slate-900/80 border border-slate-800 p-3 rounded-xl">
+                            <div class="text-[11px] text-slate-400 flex items-center gap-1"><i data-lucide="zap" class="w-3 h-3 text-amber-400"></i> Fast Access Bar</div>
+                            <div class="text-base font-bold text-white font-mono mt-0.5">6 Nút AI 1-Chạm</div>
+                        </div>
+                        <div class="bg-slate-900/80 border border-slate-800 p-3 rounded-xl">
+                            <div class="text-[11px] text-slate-400 flex items-center gap-1"><i data-lucide="git-pull-request" class="w-3 h-3 text-purple-400"></i> An Toàn Dữ Liệu</div>
+                            <div class="text-base font-bold text-purple-300 font-mono mt-0.5">Diff & Rollback 72h</div>
+                        </div>
+                        <div class="bg-slate-900/80 border border-slate-800 p-3 rounded-xl">
+                            <div class="text-[11px] text-slate-400 flex items-center gap-1"><i data-lucide="shield-check" class="w-3 h-3 text-emerald-400"></i> Quyền Phê Duyệt</div>
+                            <div class="text-base font-bold text-emerald-300 font-mono mt-0.5">Project Owner Only</div>
+                        </div>
+                        <div class="bg-slate-900/80 border border-slate-800 p-3 rounded-xl">
+                            <div class="text-[11px] text-slate-400 flex items-center gap-1"><i data-lucide="layers" class="w-3 h-3 text-blue-400"></i> Mở Rộng Quy Mô</div>
+                            <div class="text-base font-bold text-blue-300 font-mono mt-0.5">Multi-Phase Scaling</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Visual: Quick Preview of AI Widget -->
+                <div class="lg:col-span-4 bg-slate-950/90 border border-purple-500/30 rounded-2xl p-5 shadow-2xl relative">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-3">
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 rounded-full bg-rose-500"></div>
+                            <div class="w-3 h-3 rounded-full bg-amber-500"></div>
+                            <div class="w-3 h-3 rounded-full bg-emerald-500"></div>
+                            <span class="text-xs font-mono text-purple-300 font-bold ml-1">Erumi Roadmap Guard</span>
+                        </div>
+                        <span class="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded font-mono">v2.0 Active</span>
+                    </div>
+
+                    <div class="space-y-2.5 text-xs font-mono">
+                        <div class="bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-slate-300">
+                            <span class="text-purple-400 font-bold">$ fast-action:</span> <span class="text-emerald-400">Expand_Phase_Scale</span>
+                            <div class="text-[11px] text-slate-400 mt-1">Phát hiện mục tiêu mới: "Tích hợp Payment & Mobile App Phase"</div>
+                        </div>
+                        <div class="bg-slate-900 p-2.5 rounded-lg border border-purple-500/40 text-slate-300">
+                            <div class="flex items-center justify-between text-purple-300 font-bold">
+                                <span>📊 Proposal Ready (#SN-8921)</span>
+                                <span class="text-amber-400 text-[10px] font-sans">Chờ Owner Duyệt</span>
+                            </div>
+                            <div class="text-[10px] text-slate-400 mt-1">
+                                + 2 Phase mới • + 14 Tasks • 0 Overload Detected
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between pt-1">
+                            <span class="text-[11px] text-slate-400 font-sans">Chỉ thẩm quyền cấp cao:</span>
+                            <span class="bg-emerald-500/20 text-emerald-400 text-[10px] px-2 py-0.5 rounded border border-emerald-500/30">Owner / PM</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- NAVIGATION TABS -->
+    <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-8">
+        <div class="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none border-b border-slate-800">
+            <button onclick="switchTab('tab-pillars')" id="btn-tab-pillars" class="tab-btn active px-4 py-2.5 rounded-xl font-semibold text-xs whitespace-nowrap flex items-center gap-2 transition border border-transparent">
+                <i data-lucide="cpu" class="w-4 h-4"></i>
+                <span>1. 6 Trụ Cột Năng Lực AI Siêu Bá</span>
+            </button>
+            <button onclick="switchTab('tab-fastaccess')" id="btn-tab-fastaccess" class="tab-btn px-4 py-2.5 rounded-xl font-semibold text-xs whitespace-nowrap flex items-center gap-2 text-slate-400 hover:text-white transition border border-transparent">
+                <i data-lucide="zap" class="w-4 h-4 text-amber-400"></i>
+                <span>2. Hệ Thống Nút Fast Access 1-Chạm</span>
+            </button>
+            <button onclick="switchTab('tab-diffmodal')" id="btn-tab-diffmodal" class="tab-btn px-4 py-2.5 rounded-xl font-semibold text-xs whitespace-nowrap flex items-center gap-2 text-slate-400 hover:text-white transition border border-transparent">
+                <i data-lucide="git-pull-request" class="w-4 h-4 text-purple-400"></i>
+                <span>3. Cơ Chế Diff Review & Hoàn Tác</span>
+            </button>
+            <button onclick="switchTab('tab-rbac')" id="btn-tab-rbac" class="tab-btn px-4 py-2.5 rounded-xl font-semibold text-xs whitespace-nowrap flex items-center gap-2 text-slate-400 hover:text-white transition border border-transparent">
+                <i data-lucide="shield-alert" class="w-4 h-4 text-emerald-400"></i>
+                <span>4. Ma Trận Quyền Phê Duyệt (Owner Only)</span>
+            </button>
+            <button onclick="switchTab('tab-specs')" id="btn-tab-specs" class="tab-btn px-4 py-2.5 rounded-xl font-semibold text-xs whitespace-nowrap flex items-center gap-2 text-slate-400 hover:text-white transition border border-transparent">
+                <i data-lucide="code-2" class="w-4 h-4 text-blue-400"></i>
+                <span>5. Đặc Tả DTO, API & Frontend Vue</span>
+            </button>
+            <button onclick="switchTab('tab-roadmap-plan')" id="btn-tab-roadmap-plan" class="tab-btn px-4 py-2.5 rounded-xl font-semibold text-xs whitespace-nowrap flex items-center gap-2 text-slate-400 hover:text-white transition border border-transparent">
+                <i data-lucide="calendar-check" class="w-4 h-4 text-pink-400"></i>
+                <span>6. Kế Hoạch Triển Khai 4 Tuần</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- CONTENT SECTIONS -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
+
+        <!-- ========================================== -->
+        <!-- TAB 1: 6 TRỤ CỘT NĂNG LỰC AI SIÊU BÁ      -->
+        <!-- ========================================== -->
+        <div id="tab-pillars" class="tab-content space-y-8">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                        <i data-lucide="sparkles" class="w-5 h-5 text-purple-400"></i>
+                        <span>6 Trụ Cột Năng Lực AI Trong Quản Trị Lộ Trình (Erumi AI 2.0)</span>
+                    </h3>
+                    <p class="text-xs text-slate-400">Các tính năng AI chuyên sâu được tối ưu hoá riêng cho Quản lý Lộ trình (Roadmap / Milestones / Sprints)</p>
+                </div>
+                <span class="bg-purple-500/10 text-purple-300 text-xs px-3 py-1 rounded-full border border-purple-500/20 font-mono">
+                    LLM Engine: Gemini 1.5 Pro / GPT-4o
+                </span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+                <!-- Pillar 1 -->
+                <div class="glass-panel p-6 rounded-2xl glass-card-hover border-t-2 border-t-purple-500 space-y-4">
+                    <div class="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 font-bold">
+                        <i data-lucide="git-branch" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h4 class="text-base font-bold text-white">1. Smart Scope & WBS Generator</h4>
+                        <p class="text-xs text-purple-300 font-mono">Tự động sinh Lộ trình đa tầng từ Mục tiêu</p>
+                    </div>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                        Chỉ cần nhập mục tiêu lớn (ví dụ: "Xây dựng tính năng thanh toán VNPay & Mobile App"), AI tự động bóc tách thành các <strong>Phase & Milestone</strong> hợp lý theo chuẩn Agile, kèm thời lượng dự kiến, độ ưu tiên và phụ thuộc (Dependencies DAG).
+                    </p>
+                    <div class="bg-slate-900/90 p-2.5 rounded-lg text-[11px] text-slate-400 font-mono border border-slate-800">
+                        ⚡ Input: 1 dòng Goal / Spec Document<br/>
+                        🎯 Output: WBS 3 cấp (Phase ➔ Milestone ➔ Tasks)
+                    </div>
+                </div>
+
+                <!-- Pillar 2 -->
+                <div class="glass-panel p-6 rounded-2xl glass-card-hover border-t-2 border-t-blue-500 space-y-4">
+                    <div class="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 font-bold">
+                        <i data-lucide="maximize-2" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h4 class="text-base font-bold text-white">2. Project Expander & Phase Scaler</h4>
+                        <p class="text-xs text-blue-300 font-mono">Mở rộng dự án không gãy kiến trúc cũ</p>
+                    </div>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                        Khi khách hàng yêu cầu mở rộng quy mô (Scale up, thêm Security Hardening, Audit Compliance, chuyển đổi Microservices), AI phân tích lộ trình hiện có và gợi ý <strong>chèn Phase mới</strong> hoặc kéo dài Phase mà không làm xáo trộn các mốc bàn giao đã chốt.
+                    </p>
+                    <div class="bg-slate-900/90 p-2.5 rounded-lg text-[11px] text-slate-400 font-mono border border-slate-800">
+                        🛡️ Giữ nguyên Phase Completed<br/>
+                        🔄 Tự động dời mốc các Phase chưa khởi chạy
+                    </div>
+                </div>
+
+                <!-- Pillar 3 -->
+                <div class="glass-panel p-6 rounded-2xl glass-card-hover border-t-2 border-t-rose-500 space-y-4">
+                    <div class="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 font-bold">
+                        <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h4 class="text-base font-bold text-white">3. Bottleneck & Critical Path Radar</h4>
+                        <p class="text-xs text-rose-300 font-mono">Phát hiện điểm nghẽn & rủi ro trễ hạn</p>
+                    </div>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                        Thuật toán AI liên tục quét tiến độ thực tế so với Deadline dự kiến. Tự động đánh dấu <strong>Đường găng (Critical Path)</strong> có nguy cơ trễ hạn, chỉ rõ task nào đang chặn (blockers) các task tiếp theo và đưa ra gợi ý xử lý tức thì.
+                    </p>
+                    <div class="bg-slate-900/90 p-2.5 rounded-lg text-[11px] text-slate-400 font-mono border border-slate-800">
+                        ⚠️ Cảnh báo xung đột Dependencies<br/>
+                        📈 Xác suất hoàn thành đúng hạn (Confidence %)
+                    </div>
+                </div>
+
+                <!-- Pillar 4 -->
+                <div class="glass-panel p-6 rounded-2xl glass-card-hover border-t-2 border-t-emerald-500 space-y-4">
+                    <div class="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold">
+                        <i data-lucide="users" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h4 class="text-base font-bold text-white">4. Workload Auto-Balancer & Smart Assign</h4>
+                        <p class="text-xs text-emerald-300 font-mono">Cân bằng tải & gán việc theo Năng lực</p>
+                    </div>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                        Phân tích năng lực thực tế của từng thành viên (Backend, Frontend, QA, DevOps). Ngăn chặn tình trạng quá tải (>40h/tuần), tự động đề xuất gán task mới cho người phù hợp nhất dựa trên lịch sử hoàn thành công việc và kỹ năng chuyên môn.
+                    </p>
+                    <div class="bg-slate-900/90 p-2.5 rounded-lg text-[11px] text-slate-400 font-mono border border-slate-800">
+                        👥 Capacity Matrix per Member<br/>
+                        🚫 Tự động gắn cờ cảnh báo Burnout / Overload
+                    </div>
+                </div>
+
+                <!-- Pillar 5 -->
+                <div class="glass-panel p-6 rounded-2xl glass-card-hover border-t-2 border-t-amber-500 space-y-4">
+                    <div class="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 font-bold">
+                        <i data-lucide="sliders" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h4 class="text-base font-bold text-white">5. What-If Scenario Simulation</h4>
+                        <p class="text-xs text-amber-300 font-mono">Mô phỏng kịch bản giả định trong Sandbox</p>
+                    </div>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                        Cho phép Owner/PM đặt câu hỏi giả định: <em>"Nếu rút ngắn Phase 2 xuống 1 tuần thì cần thêm bao nhiêu nhân sự?"</em> hoặc <em>"Nếu khách thêm tính năng Chat Realtime thì dự án trễ bao lâu?"</em>. AI chạy mô phỏng không làm ảnh hưởng dữ liệu thật.
+                    </p>
+                    <div class="bg-slate-900/90 p-2.5 rounded-lg text-[11px] text-slate-400 font-mono border border-slate-800">
+                        🧪 Sandbox Sandbox Mode độc lập<br/>
+                        📊 So sánh 3 kịch bản: Optimistic / Realistic / Pessimistic
+                    </div>
+                </div>
+
+                <!-- Pillar 6 -->
+                <div class="glass-panel p-6 rounded-2xl glass-card-hover border-t-2 border-t-cyan-500 space-y-4">
+                    <div class="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 font-bold">
+                        <i data-lucide="presentation" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h4 class="text-base font-bold text-white">6. Executive Client Presentation AI</h4>
+                        <p class="text-xs text-cyan-300 font-mono">Tự động tổng hợp Báo cáo cho Sếp & Đối tác</p>
+                    </div>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                        1-Click biến dữ liệu Roadmap kỹ thuật phức tạp thành bản trình bày <strong>Executive Client View</strong> tinh gọn, chuyên nghiệp, ẩn các task nội bộ nhạy cảm và nêu bật các cột mốc bàn giao (Milestone Deliverables) cùng giá trị kinh doanh.
+                    </p>
+                    <div class="bg-slate-900/90 p-2.5 rounded-lg text-[11px] text-slate-400 font-mono border border-slate-800">
+                        📄 Xuất PDF / Web View chia sẻ an toàn<br/>
+                        🗣️ Tóm tắt giọng văn chuyên nghiệp (Executive Brief)
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 2: HỆ THỐNG NÚT FAST ACCESS 1-CHẠM     -->
+        <!-- ========================================== -->
+        <div id="tab-fastaccess" class="tab-content hidden space-y-8">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                        <i data-lucide="zap" class="w-5 h-5 text-amber-400"></i>
+                        <span>Hệ Thống Nút Fast Access AI Thuận Tiện (Quick Action Bar)</span>
+                    </h3>
+                    <p class="text-xs text-slate-400">Thiết kế vị trí, tương tác và phím tắt giúp người dùng thao tác 1-chạm cực nhanh trong tab Lộ Trình</p>
+                </div>
+            </div>
+
+            <!-- Fast Access Bar Mockup -->
+            <div class="glass-panel-purple p-6 rounded-2xl border border-purple-500/40 space-y-5">
+                <div class="flex items-center justify-between border-b border-purple-800/40 pb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-purple-400 pulse-ai"></span>
+                        <h4 class="text-sm font-bold text-white">ROADMAP AI COMMAND TOOLBAR (STICKY TOP TRONG TAB LỘ TRÌNH)</h4>
+                    </div>
+                    <span class="text-xs text-purple-300 font-mono">Shortcut: Ctrl + Space / Cmd + K</span>
+                </div>
+
+                <!-- 6 Quick Action Buttons Grid -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                    
+                    <!-- Fast Button 1 -->
+                    <button class="bg-slate-900/90 hover:bg-purple-900/30 border border-purple-500/30 hover:border-purple-500 p-3.5 rounded-xl text-left flex items-start gap-3 transition group">
+                        <div class="p-2 rounded-lg bg-purple-500/20 text-purple-400 group-hover:scale-110 transition">
+                            <i data-lucide="plus-circle" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <div class="text-xs font-bold text-white group-hover:text-purple-300 flex items-center gap-1.5">
+                                <span>🚀 Mở Rộng Phase Mới</span>
+                                <span class="bg-purple-500/20 text-purple-300 text-[9px] px-1.5 py-0.2 rounded font-mono">Fast</span>
+                            </div>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Nhập yêu cầu mới, AI tự chèn Phase & phân bổ task</p>
+                        </div>
+                    </button>
+
+                    <!-- Fast Button 2 -->
+                    <button class="bg-slate-900/90 hover:bg-rose-900/30 border border-rose-500/30 hover:border-rose-500 p-3.5 rounded-xl text-left flex items-start gap-3 transition group">
+                        <div class="p-2 rounded-lg bg-rose-500/20 text-rose-400 group-hover:scale-110 transition">
+                            <i data-lucide="shield-alert" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <div class="text-xs font-bold text-white group-hover:text-rose-300 flex items-center gap-1.5">
+                                <span>⚡ Quét Rủi Ro & Bottleneck</span>
+                                <span class="bg-rose-500/20 text-rose-300 text-[9px] px-1.5 py-0.2 rounded font-mono">Audit</span>
+                            </div>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Kiểm tra trễ deadline, xung đột phụ thuộc & tắc nghẽn</p>
+                        </div>
+                    </button>
+
+                    <!-- Fast Button 3 -->
+                    <button class="bg-slate-900/90 hover:bg-emerald-900/30 border border-emerald-500/30 hover:border-emerald-500 p-3.5 rounded-xl text-left flex items-start gap-3 transition group">
+                        <div class="p-2 rounded-lg bg-emerald-500/20 text-emerald-400 group-hover:scale-110 transition">
+                            <i data-lucide="scale" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <div class="text-xs font-bold text-white group-hover:text-emerald-300 flex items-center gap-1.5">
+                                <span>✨ Cân Bằng Tải Workload</span>
+                                <span class="bg-emerald-500/20 text-emerald-300 text-[9px] px-1.5 py-0.2 rounded font-mono">Auto</span>
+                            </div>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Tự động phân bổ lại task cho dev rảnh, giảm quá tải</p>
+                        </div>
+                    </button>
+
+                    <!-- Fast Button 4 -->
+                    <button class="bg-slate-900/90 hover:bg-blue-900/30 border border-blue-500/30 hover:border-blue-500 p-3.5 rounded-xl text-left flex items-start gap-3 transition group">
+                        <div class="p-2 rounded-lg bg-blue-500/20 text-blue-400 group-hover:scale-110 transition">
+                            <i data-lucide="split" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <div class="text-xs font-bold text-white group-hover:text-blue-300 flex items-center gap-1.5">
+                                <span>🧩 Tách Nhỏ WBS Milestone</span>
+                                <span class="bg-blue-500/20 text-blue-300 text-[9px] px-1.5 py-0.2 rounded font-mono">Breakdown</span>
+                            </div>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Bẻ nhỏ milestone lớn thành các task chi tiết khả thi</p>
+                        </div>
+                    </button>
+
+                    <!-- Fast Button 5 -->
+                    <button class="bg-slate-900/90 hover:bg-amber-900/30 border border-amber-500/30 hover:border-amber-500 p-3.5 rounded-xl text-left flex items-start gap-3 transition group">
+                        <div class="p-2 rounded-lg bg-amber-500/20 text-amber-400 group-hover:scale-110 transition">
+                            <i data-lucide="trending-up" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <div class="text-xs font-bold text-white group-hover:text-amber-300 flex items-center gap-1.5">
+                                <span>📊 Dự Báo Tiến Độ (Monte Carlo)</span>
+                                <span class="bg-amber-500/20 text-amber-300 text-[9px] px-1.5 py-0.2 rounded font-mono">Forecast</span>
+                            </div>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Xác suất hoàn thành đúng hạn & ngày bàn giao khả thi</p>
+                        </div>
+                    </button>
+
+                    <!-- Fast Button 6 -->
+                    <button class="bg-slate-900/90 hover:bg-cyan-900/30 border border-cyan-500/30 hover:border-cyan-500 p-3.5 rounded-xl text-left flex items-start gap-3 transition group">
+                        <div class="p-2 rounded-lg bg-cyan-500/20 text-cyan-400 group-hover:scale-110 transition">
+                            <i data-lucide="file-text" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <div class="text-xs font-bold text-white group-hover:text-cyan-300 flex items-center gap-1.5">
+                                <span>📑 Báo Cáo Sếp / Khách Hàng</span>
+                                <span class="bg-cyan-500/20 text-cyan-300 text-[9px] px-1.5 py-0.2 rounded font-mono">Export</span>
+                            </div>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Tổng hợp tóm tắt tiến độ & cột mốc bàn giao chuyên nghiệp</p>
+                        </div>
+                    </button>
+
+                </div>
+
+                <!-- Contextual Quick Chips Bar -->
+                <div class="pt-2 flex items-center gap-2 flex-wrap text-xs">
+                    <span class="text-slate-400 font-mono text-[11px] flex items-center gap-1">
+                        <i data-lucide="sparkles" class="w-3.5 h-3.5 text-purple-400"></i> Gợi ý nhanh:
+                    </span>
+                    <button class="bg-slate-900 hover:bg-slate-800 text-slate-300 px-3 py-1 rounded-full border border-slate-700 hover:border-purple-500 text-[11px] transition">
+                        "Nếu trễ 3 ngày ở Phase 1 thì cứu thế nào?"
+                    </button>
+                    <button class="bg-slate-900 hover:bg-slate-800 text-slate-300 px-3 py-1 rounded-full border border-slate-700 hover:border-purple-500 text-[11px] transition">
+                        "Thêm module Quản lý Tài chính & Báo cáo thuế"
+                    </button>
+                    <button class="bg-slate-900 hover:bg-slate-800 text-slate-300 px-3 py-1 rounded-full border border-slate-700 hover:border-purple-500 text-[11px] transition">
+                        "Kiểm tra ai trong team đang rảnh tuần này"
+                    </button>
+                </div>
+            </div>
+
+            <!-- Contextual Actions on Each Milestone Card -->
+            <div class="glass-panel p-6 rounded-2xl space-y-4">
+                <h4 class="text-sm font-bold text-white flex items-center gap-2">
+                    <i data-lucide="layers" class="w-4 h-4 text-purple-400"></i>
+                    <span>Fast Action Ngay Trên Từng Milestone Card (In-Node Actions)</span>
+                </h4>
+                <p class="text-xs text-slate-300">Trên mỗi Phase / Milestone trên giao diện Timeline, người dùng có nút AI ngữ cảnh riêng:</p>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                    <div class="bg-slate-900/90 p-4 rounded-xl border border-slate-800 space-y-2">
+                        <div class="font-bold text-purple-300 flex items-center gap-1.5">
+                            <i data-lucide="sparkles" class="w-4 h-4"></i>
+                            <span>✨ AI Tối Ưu Phase Này</span>
+                        </div>
+                        <p class="text-slate-400 text-[11px]">Tự động sắp xếp thứ tự thực thi các task bên trong Phase để đạt tốc độ tối đa.</p>
+                    </div>
+
+                    <div class="bg-slate-900/90 p-4 rounded-xl border border-slate-800 space-y-2">
+                        <div class="font-bold text-blue-300 flex items-center gap-1.5">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                            <span>➕ AI Sinh Thêm Sub-tasks</span>
+                        </div>
+                        <p class="text-slate-400 text-[11px]">Phát hiện những task còn thiếu (ví dụ: thiếu task viết Unit Test hoặc Security Review).</p>
+                    </div>
+
+                    <div class="bg-slate-900/90 p-4 rounded-xl border border-slate-800 space-y-2">
+                        <div class="font-bold text-emerald-300 flex items-center gap-1.5">
+                            <i data-lucide="check-check" class="w-4 h-4"></i>
+                            <span>🛡️ AI Đo Độ Sẵn Sàng (DoD)</span>
+                        </div>
+                        <p class="text-slate-400 text-[11px]">Đánh giá xem Phase đã đủ điều kiện đóng (Definition of Done) hay chưa.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 3: CƠ CHẾ DIFF REVIEW & HOÀN TÁC      -->
+        <!-- ========================================== -->
+        <div id="tab-diffmodal" class="tab-content hidden space-y-8">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                        <i data-lucide="git-pull-request" class="w-5 h-5 text-purple-400"></i>
+                        <span>Cơ Chế Review Trước Khi Chấp Nhận & Safe Merge Engine</span>
+                    </h3>
+                    <p class="text-xs text-slate-400">Nguyên tắc Bất Di Bất Dịch: AI chỉ đề xuất bản thảo (Proposal), không bao giờ ghi đè trực tiếp DB</p>
+                </div>
+                <span class="bg-emerald-500/10 text-emerald-300 text-xs px-3 py-1 rounded-full border border-emerald-500/20 font-mono">
+                    Zero Unvetted Writes
+                </span>
+            </div>
+
+            <!-- Workflow Visual Diagram -->
+            <div class="glass-panel p-6 rounded-2xl space-y-4">
+                <h4 class="text-sm font-bold text-white">QUY TRÌNH 4 BƯỚC AN TOÀN TUYỆT ĐỐI (AI SAFETY PIPELINE)</h4>
+                
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+                    <div class="bg-slate-900 p-4 rounded-xl border border-purple-500/30 space-y-2">
+                        <div class="w-6 h-6 rounded-full bg-purple-500/20 text-purple-300 font-bold flex items-center justify-center font-mono">1</div>
+                        <div class="font-bold text-white">Kích Hoạt AI & Sinh Proposal</div>
+                        <p class="text-slate-400 text-[11px]">Người dùng bấm Fast Access hoặc Chat. AI tạo ra một <strong class="text-purple-300">Proposal Snapshot</strong> tạm lưu trong cache.</p>
+                    </div>
+
+                    <div class="bg-slate-900 p-4 rounded-xl border border-blue-500/30 space-y-2">
+                        <div class="w-6 h-6 rounded-full bg-blue-500/20 text-blue-300 font-bold flex items-center justify-center font-mono">2</div>
+                        <div class="font-bold text-white">Bật Diff Preview Modal</div>
+                        <p class="text-slate-400 text-[11px]">Hiển thị so sánh trực quan (Before vs After), màu sắc phân biệt rõ ràng: Thêm mới 🟢, Đổi 🟡, Xung đột 🔴.</p>
+                    </div>
+
+                    <div class="bg-slate-900 p-4 rounded-xl border border-emerald-500/30 space-y-2">
+                        <div class="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-300 font-bold flex items-center justify-center font-mono">3</div>
+                        <div class="font-bold text-white">Kiểm Tra Quyền & Selective Check</div>
+                        <p class="text-slate-400 text-[11px]">Chỉ <strong class="text-emerald-300">Project Owner / PM</strong> mới có nút [Phê Duyệt]. Có thể bỏ chọn từng task không muốn tạo.</p>
+                    </div>
+
+                    <div class="bg-slate-900 p-4 rounded-xl border border-amber-500/30 space-y-2">
+                        <div class="w-6 h-6 rounded-full bg-amber-500/20 text-amber-300 font-bold flex items-center justify-center font-mono">4</div>
+                        <div class="font-bold text-white">Áp Dụng & Hỗ Trợ Rollback 72h</div>
+                        <p class="text-slate-400 text-[11px]">Ghi DB thật, gắn cờ <code class="text-[10px] bg-slate-800 px-1 rounded">🤖 Generated by Erumi AI</code> và hỗ trợ hoàn tác 1-chạm nếu đổi ý.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- LIVE INTERACTIVE MOCKUP: THE DIFF PREVIEW MODAL -->
+            <div id="demo-diff-modal" class="glass-panel-purple p-6 sm:p-8 rounded-3xl border-2 border-purple-500/50 shadow-2xl space-y-6">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+                    <div class="flex items-center gap-3">
+                        <div class="p-2 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                            <i data-lucide="sparkles" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <div class="text-base font-bold text-white flex items-center gap-2">
+                                <span>✨ AI Roadmap Change Proposal (Diff Preview)</span>
+                                <span class="bg-amber-500/20 text-amber-300 text-[10px] font-mono px-2 py-0.5 rounded border border-amber-500/40">Chờ Duyệt</span>
+                            </div>
+                            <p class="text-xs text-slate-400">Snapshot ID: <span class="text-purple-300 font-mono">#SNP-20260818-VNPAY</span> • Được sinh bởi Erumi AI 2.0</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs text-slate-400 font-mono hidden sm:inline">Thẩm quyền duyệt:</span>
+                        <span class="bg-purple-900/40 text-purple-300 border border-purple-600/40 text-xs px-2.5 py-1 rounded-lg font-semibold flex items-center gap-1">
+                            <i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400"></i> Project Owner
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Summary Banner -->
+                <div class="bg-gradient-to-r from-purple-950/60 via-slate-900/80 to-blue-950/60 border border-purple-500/30 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                        <div class="text-sm font-bold text-white flex items-center gap-2">
+                            <span>Mở Rộng: Phase 4 - VNPay Payment Gateway & Security Hardening</span>
+                            <span class="bg-emerald-500/20 text-emerald-400 text-[10px] px-2 py-0.5 rounded font-mono">+ 14 Ngày</span>
+                        </div>
+                        <div class="text-xs text-purple-200 mt-1">
+                            Đề xuất bổ sung 3 công việc trọng yếu nhằm tích hợp cổng thanh toán trực tuyến và gia cố bảo mật toàn diện.
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <span class="text-[11px] text-slate-400">Dự kiến hoàn thành:</span>
+                        <span class="text-xs font-mono font-bold text-emerald-400 bg-slate-950 px-2 py-1 rounded border border-slate-800">2026-09-01</span>
+                    </div>
+                </div>
+
+                <!-- PROPOSED TASKS LIST (SELECTIVE ACCEPTANCE) -->
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div class="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                            <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+                            <span>Danh sách Task đề xuất thêm mới (Cho phép tích chọn lọc):</span>
+                        </div>
+                        <button class="text-[11px] text-purple-400 hover:text-purple-300 font-semibold underline">Chọn tất cả (3)</button>
+                    </div>
+
+                    <div class="space-y-2.5">
+                        
+                        <!-- Task Item 1 -->
+                        <div class="bg-slate-950/90 p-3.5 rounded-xl border border-purple-500/30 flex items-start gap-3 hover:border-purple-500/60 transition">
+                            <input type="checkbox" checked class="mt-1 h-4 w-4 rounded border-slate-700 bg-slate-900 text-purple-600 focus:ring-purple-500">
+                            <div class="flex-1 space-y-1">
+                                <div class="flex items-center justify-between">
+                                    <div class="text-xs font-bold text-white flex items-center gap-2">
+                                        <span class="text-purple-300">🤖 Generated by Erumi AI: Tích hợp VNPay Merchant API & Webhook IPN</span>
+                                        <span class="bg-rose-500/20 text-rose-300 text-[10px] px-1.5 py-0.2 rounded font-mono">High Priority</span>
+                                    </div>
+                                    <span class="text-xs font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">16 Giờ</span>
+                                </div>
+                                <p class="text-[11px] text-slate-400">Xây dựng Endpoint xử lý thanh toán, giải mã chữ ký số Checksum SHA256 và ghi log giao dịch tài chính.</p>
+                                <div class="flex items-center gap-4 text-[10px] text-slate-400 pt-1">
+                                    <span class="flex items-center gap-1 text-purple-300"><i data-lucide="user-check" class="w-3 h-3"></i> Đề xuất gán: <strong>Nguyễn Văn A</strong> (Backend Lead)</span>
+                                    <span class="text-slate-500">• Phụ thuộc: Phase 3 Core Auth</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Task Item 2 -->
+                        <div class="bg-slate-950/90 p-3.5 rounded-xl border border-purple-500/30 flex items-start gap-3 hover:border-purple-500/60 transition">
+                            <input type="checkbox" checked class="mt-1 h-4 w-4 rounded border-slate-700 bg-slate-900 text-purple-600 focus:ring-purple-500">
+                            <div class="flex-1 space-y-1">
+                                <div class="flex items-center justify-between">
+                                    <div class="text-xs font-bold text-white flex items-center gap-2">
+                                        <span class="text-purple-300">🤖 Generated by Erumi AI: Bộ Kịch Bản Playwright E2E Test Giao Dịch Thanh Toán</span>
+                                        <span class="bg-purple-500/20 text-purple-300 text-[10px] px-1.5 py-0.2 rounded font-mono">High Priority</span>
+                                    </div>
+                                    <span class="text-xs font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">12 Giờ</span>
+                                </div>
+                                <p class="text-[11px] text-slate-400">Viết test tự động giả lập sandbox thanh toán thành công, hoàn tiền (Refund) và xử lý lỗi mạng.</p>
+                                <div class="flex items-center gap-4 text-[10px] text-slate-400 pt-1">
+                                    <span class="flex items-center gap-1 text-purple-300"><i data-lucide="user-check" class="w-3 h-3"></i> Đề xuất gán: <strong>Trần Thị B</strong> (QA Lead)</span>
+                                    <span class="text-slate-500">• Phụ thuộc: Task VNPay API</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Task Item 3 -->
+                        <div class="bg-slate-950/90 p-3.5 rounded-xl border border-purple-500/30 flex items-start gap-3 hover:border-purple-500/60 transition">
+                            <input type="checkbox" checked class="mt-1 h-4 w-4 rounded border-slate-700 bg-slate-900 text-purple-600 focus:ring-purple-500">
+                            <div class="flex-1 space-y-1">
+                                <div class="flex items-center justify-between">
+                                    <div class="text-xs font-bold text-white flex items-center gap-2">
+                                        <span class="text-purple-300">🤖 Generated by Erumi AI: UI Thanh Toán & Quét Mã QR Động (Vue 3)</span>
+                                        <span class="bg-blue-500/20 text-blue-300 text-[10px] px-1.5 py-0.2 rounded font-mono">Medium</span>
+                                    </div>
+                                    <span class="text-xs font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">8 Giờ</span>
+                                </div>
+                                <p class="text-[11px] text-slate-400">Giao diện hiển thị hóa đơn, bộ đếm ngược thời gian thanh toán và SignalR cập nhật trạng thái thời gian thực.</p>
+                                <div class="flex items-center gap-4 text-[10px] text-slate-400 pt-1">
+                                    <span class="flex items-center gap-1 text-purple-300"><i data-lucide="user-check" class="w-3 h-3"></i> Đề xuất gán: <strong>Lê Hoàng C</strong> (Frontend Dev)</span>
+                                    <span class="text-slate-500">• Phụ thuộc: Thiết kế Figma</span>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- CAPACITY & WORKLOAD IMPACT RADAR -->
+                <div class="space-y-3 pt-2">
+                    <div class="text-xs font-bold text-blue-400 flex items-center gap-1.5">
+                        <i data-lucide="activity" class="w-4 h-4"></i>
+                        <span>Đánh giá Tác Động Tải & Năng Lực Thành Viên (Workload Impact Radar):</span>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div class="bg-slate-950 p-3 rounded-xl border border-emerald-500/30 text-xs space-y-1">
+                            <div class="flex items-center justify-between font-bold">
+                                <span class="text-white">Nguyễn Văn A (Backend)</span>
+                                <span class="text-emerald-400 text-[10px] font-mono">✔️ An Toàn</span>
+                            </div>
+                            <div class="text-[11px] text-slate-400">Hiện tại: 20h/t • Thêm: <strong class="text-purple-300">+16h</strong> (Tổng: 36h/40h)</div>
+                            <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                                <div class="bg-emerald-500 h-full rounded-full" style="width: 90%"></div>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-950 p-3 rounded-xl border border-emerald-500/30 text-xs space-y-1">
+                            <div class="flex items-center justify-between font-bold">
+                                <span class="text-white">Trần Thị B (QA Lead)</span>
+                                <span class="text-emerald-400 text-[10px] font-mono">✔️ An Toàn</span>
+                            </div>
+                            <div class="text-[11px] text-slate-400">Hiện tại: 18h/t • Thêm: <strong class="text-purple-300">+12h</strong> (Tổng: 30h/40h)</div>
+                            <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                                <div class="bg-emerald-500 h-full rounded-full" style="width: 75%"></div>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-950 p-3 rounded-xl border border-emerald-500/30 text-xs space-y-1">
+                            <div class="flex items-center justify-between font-bold">
+                                <span class="text-white">Lê Hoàng C (Frontend)</span>
+                                <span class="text-emerald-400 text-[10px] font-mono">✔️ An Toàn</span>
+                            </div>
+                            <div class="text-[11px] text-slate-400">Hiện tại: 22h/t • Thêm: <strong class="text-purple-300">+8h</strong> (Tổng: 30h/40h)</div>
+                            <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                                <div class="bg-emerald-500 h-full rounded-full" style="width: 75%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MODAL FOOTER & ACTION BUTTONS -->
+                <div class="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-800">
+                    <div class="text-xs text-slate-400 flex items-center gap-1.5">
+                        <i data-lucide="rotate-ccw" class="w-4 h-4 text-purple-400"></i>
+                        <span>Bảo vệ với cơ chế <strong>1-Click Rollback Snapshot</strong> trong 72 giờ.</span>
+                    </div>
+
+                    <div class="flex items-center space-x-3 w-full sm:w-auto justify-end">
+                        <button class="bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-semibold px-4 py-2.5 rounded-xl border border-slate-700 transition">
+                            Hủy Bỏ (Discard)
+                        </button>
+                        <button class="bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white text-xs font-bold px-6 py-2.5 rounded-xl shadow-lg shadow-purple-600/30 flex items-center gap-2 transition">
+                            <i data-lucide="check" class="w-4 h-4"></i>
+                            <span>Phê Duyệt & Áp Dụng Lộ Trình (Approve & Merge)</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 4: MA TRẬN PHÂN QUYỀN DUYỆT (OWNER)    -->
+        <!-- ========================================== -->
+        <div id="tab-rbac" class="tab-content hidden space-y-8">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                        <i data-lucide="shield-check" class="w-5 h-5 text-emerald-400"></i>
+                        <span>Ma Trận Phân Quyền & Thẩm Quyền Phê Duyệt AI Lộ Trình</span>
+                    </h3>
+                    <p class="text-xs text-slate-400">Kiểm soát nghiêm ngặt: Ai có thể gợi ý, ai có quyền duyệt, và ai chỉ được xem</p>
+                </div>
+            </div>
+
+            <!-- RBAC Table -->
+            <div class="glass-panel rounded-2xl overflow-hidden border border-slate-800">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-900/90 text-slate-400 font-mono border-b border-slate-800">
+                            <tr>
+                                <th class="p-4">Vai Trò / Quyền Hạn</th>
+                                <th class="p-4 text-center">Bấm Fast Access AI</th>
+                                <th class="p-4 text-center">Tạo Bản Thảo (Sandbox)</th>
+                                <th class="p-4 text-center">Gửi Đề Xuất Trình Duyệt</th>
+                                <th class="p-4 text-center">Phê Duyệt Vào Lộ Trình (Merge)</th>
+                                <th class="p-4 text-center">Hoàn Tác (Rollback Snapshot)</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800 text-slate-300">
+                            <!-- Owner -->
+                            <tr class="bg-purple-950/20 hover:bg-purple-950/30 transition">
+                                <td class="p-4 font-bold text-white flex items-center gap-2">
+                                    <span class="w-2.5 h-2.5 rounded-full bg-purple-400"></span>
+                                    <span>Project Owner (Chủ dự án)</span>
+                                    <span class="bg-purple-500/20 text-purple-300 text-[10px] px-2 py-0.5 rounded font-mono">Toàn Quyền</span>
+                                </td>
+                                <td class="p-4 text-center text-emerald-400 font-bold"><i data-lucide="check" class="w-4 h-4 mx-auto"></i></td>
+                                <td class="p-4 text-center text-emerald-400 font-bold"><i data-lucide="check" class="w-4 h-4 mx-auto"></i></td>
+                                <td class="p-4 text-center text-emerald-400 font-bold"><i data-lucide="check" class="w-4 h-4 mx-auto"></i></td>
+                                <td class="p-4 text-center text-emerald-400 font-bold bg-emerald-500/10"><i data-lucide="shield-check" class="w-4 h-4 mx-auto text-emerald-400"></i></td>
+                                <td class="p-4 text-center text-emerald-400 font-bold bg-emerald-500/10"><i data-lucide="check" class="w-4 h-4 mx-auto"></i></td>
+                            </tr>
+
+                            <!-- Project Manager / Lead -->
+                            <tr class="hover:bg-slate-900/50 transition">
+                                <td class="p-4 font-bold text-white flex items-center gap-2">
+                                    <span class="w-2.5 h-2.5 rounded-full bg-blue-400"></span>
+                                    <span>Project Manager / Tech Lead</span>
+                                    <span class="bg-blue-500/20 text-blue-300 text-[10px] px-2 py-0.5 rounded font-mono">Ủy Quyền</span>
+                                </td>
+                                <td class="p-4 text-center text-emerald-400 font-bold"><i data-lucide="check" class="w-4 h-4 mx-auto"></i></td>
+                                <td class="p-4 text-center text-emerald-400 font-bold"><i data-lucide="check" class="w-4 h-4 mx-auto"></i></td>
+                                <td class="p-4 text-center text-emerald-400 font-bold"><i data-lucide="check" class="w-4 h-4 mx-auto"></i></td>
+                                <td class="p-4 text-center text-emerald-400 font-bold bg-emerald-500/5">
+                                    <span class="text-[11px] font-normal text-emerald-300 font-sans">Được duyệt nếu có quyền</span>
+                                </td>
+                                <td class="p-4 text-center text-amber-400 font-bold">
+                                    <span class="text-[11px] font-normal text-amber-300 font-sans">Trong 24h</span>
+                                </td>
+                            </tr>
+
+                            <!-- Team Member -->
+                            <tr class="hover:bg-slate-900/50 transition">
+                                <td class="p-4 font-semibold text-slate-300 flex items-center gap-2">
+                                    <span class="w-2.5 h-2.5 rounded-full bg-slate-500"></span>
+                                    <span>Thành viên dự án (Dev / QA / UI)</span>
+                                </td>
+                                <td class="p-4 text-center text-emerald-400"><i data-lucide="check" class="w-4 h-4 mx-auto"></i></td>
+                                <td class="p-4 text-center text-emerald-400"><i data-lucide="check" class="w-4 h-4 mx-auto"></i></td>
+                                <td class="p-4 text-center text-emerald-400 font-bold">
+                                    <span class="text-[11px] text-purple-300 font-mono">Submit for Review</span>
+                                </td>
+                                <td class="p-4 text-center text-rose-500 font-bold"><i data-lucide="x" class="w-4 h-4 mx-auto"></i> (Bị Khóa)</td>
+                                <td class="p-4 text-center text-rose-500 font-bold"><i data-lucide="x" class="w-4 h-4 mx-auto"></i></td>
+                            </tr>
+
+                            <!-- Viewer / Client -->
+                            <tr class="hover:bg-slate-900/50 transition">
+                                <td class="p-4 font-semibold text-slate-400 flex items-center gap-2">
+                                    <span class="w-2.5 h-2.5 rounded-full bg-slate-700"></span>
+                                    <span>Khách hàng / Khách xem (Viewer)</span>
+                                </td>
+                                <td class="p-4 text-center text-rose-500"><i data-lucide="x" class="w-4 h-4 mx-auto"></i></td>
+                                <td class="p-4 text-center text-rose-500"><i data-lucide="x" class="w-4 h-4 mx-auto"></i></td>
+                                <td class="p-4 text-center text-rose-500"><i data-lucide="x" class="w-4 h-4 mx-auto"></i></td>
+                                <td class="p-4 text-center text-rose-500 font-bold"><i data-lucide="x" class="w-4 h-4 mx-auto"></i></td>
+                                <td class="p-4 text-center text-rose-500 font-bold"><i data-lucide="x" class="w-4 h-4 mx-auto"></i></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Permission Check Architecture in Backend -->
+            <div class="glass-panel p-6 rounded-2xl space-y-3">
+                <h4 class="text-sm font-bold text-white flex items-center gap-2">
+                    <i data-lucide="lock" class="w-4 h-4 text-amber-400"></i>
+                    <span>Cơ Chế Bảo Vệ 3 Lớp Phía Backend .NET (Multi-Layer Security Guard)</span>
+                </h4>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-1.5">
+                        <div class="font-bold text-purple-300 font-mono">1. System Level (AiHub)</div>
+                        <p class="text-slate-400 text-[11px]">Kiểm tra tài khoản có bị System Admin khóa module AI hay không thông qua bảng <code class="text-purple-300">SystemModulePermission</code>.</p>
+                    </div>
+
+                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-1.5">
+                        <div class="font-bold text-blue-300 font-mono">2. Project Level (Owner/PM)</div>
+                        <p class="text-slate-400 text-[11px]">Kiểm tra UserId có khớp với <code class="text-blue-300">Project.OwnerId</code> hoặc role có quyền <code class="text-blue-300">Roadmap.ApproveAiDiff</code>.</p>
+                    </div>
+
+                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-1.5">
+                        <div class="font-bold text-emerald-300 font-mono">3. Audit Logging (Ghi vết)</div>
+                        <p class="text-slate-400 text-[11px]">Ghi lại mọi hành động Duyệt hoặc Rollback vào <code class="text-emerald-300">AuditLogService</code> phục vụ truy vết bảo mật.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 5: ĐẶC TẢ DTO, API & CODE FRONTEND     -->
+        <!-- ========================================== -->
+        <div id="tab-specs" class="tab-content hidden space-y-8">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                        <i data-lucide="code-2" class="w-5 h-5 text-blue-400"></i>
+                        <span>Đặc Tả Kỹ Thuật: DTOs, REST APIs & Component Vue.js 3</span>
+                    </h3>
+                    <p class="text-xs text-slate-400">Đồng bộ hoàn chỉnh giữa Backend C# ASP.NET Core & Frontend Vue 3 Composition API</p>
+                </div>
+            </div>
+
+            <!-- C# DTOs Section -->
+            <div class="glass-panel p-6 rounded-2xl space-y-3">
                 <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-2 text-emerald-400 font-bold text-sm tracking-wide uppercase">
-                        ⚡ Đã Chốt Hoàn Hảo 3 Điểm Cuối Cùng Trước Khi Phóng Code
-                    </div>
-                    <span class="bg-emerald-500/20 text-emerald-300 text-xs font-mono px-3 py-1 rounded-full border border-emerald-500/30">100% Spec Locked</span>
+                    <h4 class="text-sm font-bold text-white font-mono text-purple-300">1. C# DTO Models (Qaly.Application.DTOs.Ai)</h4>
+                    <span class="text-xs text-slate-400 font-mono">ErumiRoadmapDtos.cs</span>
                 </div>
+                <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 text-xs font-mono text-slate-300 overflow-x-auto">
+<pre><code class="language-csharp">namespace Qaly.Application.DTOs.Ai;
 
-                <h2 class="text-2xl font-extrabold text-white">
-                    Bảo Vệ DB Cấp Thấp (Unique Filtered Index), 2 Modals Cảnh Báo & Policy Nhiệm Vụ / Lịch Sử
-                </h2>
+// Fast Action Trigger DTO
+public record ErumiRoadmapActionRequestDto(
+    Guid ProjectId,
+    string ActionType, // "ExpandPhase" | "AuditRisks" | "AutoBalance" | "BreakdownWBS" | "Forecast"
+    string? UserPrompt,
+    Guid? TargetSprintOrPhaseId,
+    string? ContextSprintName);
 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-5 pt-2">
-                    <!-- Point 1 -->
-                    <div class="bg-slate-900/90 p-5 rounded-xl border border-slate-800 space-y-2">
-                        <div class="text-purple-400 font-bold text-base flex items-center gap-2">
-                            <span>🔒 DB Unique Filtered Index</span>
-                        </div>
-                        <p class="text-slate-400 text-xs leading-relaxed">
-                            Bảo vệ chống Race Condition ở DB: <code>CREATE UNIQUE INDEX ... WHERE EndDate IS NULL</code>. Đảm bảo ở cấp Database tuyệt đối không bao giờ tồn tại 2 record active cùng lúc cho 1 member.
-                        </p>
-                    </div>
+// Proposal Diff Snapshot DTO
+public record ErumiRoadmapDiffProposalDto(
+    Guid SnapshotId,
+    Guid ProjectId,
+    string PhaseName,
+    DateTimeOffset EstimatedStartDate,
+    DateTimeOffset EstimatedEndDate,
+    IReadOnlyList&lt;ErumiTaskProposalDto&gt; ProposedTasks,
+    IReadOnlyList&lt;ErumiWorkloadImpactDto&gt; WorkloadImpacts,
+    string Summary,
+    double ConfidenceScore);
 
-                    <!-- Point 2 -->
-                    <div class="bg-slate-900/90 p-5 rounded-xl border border-slate-800 space-y-2">
-                        <div class="text-amber-400 font-bold text-base flex items-center gap-2">
-                            <span>⚠️ Đủ Cả 2 Warning Modals</span>
-                        </div>
-                        <p class="text-slate-400 text-xs leading-relaxed">
-                            Phase 2 triển khai đủ 2 UI Modal: <strong>Modal (a) Overlap thời gian gán role mới</strong> & <strong>Modal (b) System Limit vs Project Role Preference conflict</strong>.
-                        </p>
-                    </div>
+// Task Proposal Item
+public record ErumiTaskProposalDto(
+    string Title,
+    string Description,
+    string Priority,
+    int EstimatedHours,
+    string RecommendedRole,
+    Guid? RecommendedAssigneeId,
+    string? RecommendedAssigneeName);
 
-                    <!-- Point 3 -->
-                    <div class="bg-slate-900/90 p-5 rounded-xl border border-slate-800 space-y-2">
-                        <div class="text-blue-400 font-bold text-base flex items-center gap-2">
-                            <span>📜 Chốt 2 Policy Quan Trọng</span>
-                        </div>
-                        <p class="text-slate-400 text-xs leading-relaxed">
-                            (1) Task cũ đã assign cho User thì User <strong>giữ nguyên quyền Edit</strong> tới khi đóng task; (2) Role History chỉ chính thành viên đó + Owner/PM/Admin được quyền xem.
-                        </p>
-                    </div>
-                </div>
-            </div>
-        </section>
+// Workload Impact Radar DTO
+public record ErumiWorkloadImpactDto(
+    Guid MemberUserId,
+    string MemberName,
+    string CurrentRole,
+    int CurrentWeeklyHours,
+    int ProposedAdditionalHours,
+    bool IsOverloaded,
+    string WarningMessage);
 
-        <!-- NAVIGATION TABS -->
-        <div class="flex space-x-2 border-b border-slate-800 pb-2 overflow-x-auto" id="navigation-tabs">
-            <button onclick="switchTab('tab-roles')" id="btn-tab-roles" class="active-tab text-sm font-semibold px-5 py-2.5 rounded-xl transition flex items-center gap-2">
-                👥 1. Role History & DB Unique Index
-            </button>
-            <button onclick="switchTab('tab-modals')" id="btn-tab-modals" class="text-slate-400 hover:text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition flex items-center gap-2">
-                ⚠️ 2. Demo Cả 2 Warning Modals
-            </button>
-            <button onclick="switchTab('tab-policies')" id="btn-tab-policies" class="text-slate-400 hover:text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition flex items-center gap-2">
-                📜 3. Policy Task Cũ & Quyền Xem History
-            </button>
-            <button onclick="switchTab('tab-viewas')" id="btn-tab-viewas" class="text-slate-400 hover:text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition flex items-center gap-2">
-                🎭 4. View-As Simulation Mode
-            </button>
-            <button onclick="switchTab('tab-erumi')" id="btn-tab-erumi" class="text-slate-400 hover:text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition flex items-center gap-2">
-                ✨ 5. Erumi AI & Private Tasks
-            </button>
-        </div>
+// Approval Request DTO (Chỉ Owner/PM gọi)
+public record ApproveErumiRoadmapProposalDto(
+    Guid SnapshotId,
+    Guid ProjectId,
+    List&lt;ErumiTaskProposalDto&gt; ApprovedTasks);
 
-        <!-- TAB 1: ROLE HISTORY & DB UNIQUE INDEX -->
-        <div id="tab-roles" class="tab-pane space-y-6">
-            <div class="glass-card rounded-2xl p-6">
-                <h3 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
-                    <span class="text-purple-400">#1.</span> DB Unique Filtered Index Chống Race Condition
-                </h3>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                    <div class="bg-slate-900 p-5 rounded-xl border border-slate-800 space-y-3">
-                        <div class="text-purple-400 font-bold text-sm">🔒 EF Core Entity Configuration & Migration:</div>
-                        <pre class="font-mono text-xs text-slate-300 leading-relaxed bg-slate-950 p-3 rounded">
-// EF Core DbContext Configuration
-builder.Entity&lt;ProjectMemberRoleHistory&gt;()
-    .HasIndex(h =&gt; h.ProjectMemberId)
-    .IsUnique()
-    .HasFilter("\"EndDate\" IS NULL");
-                        </pre>
-                        <p class="text-xs text-slate-400">
-                            SQL tự động sinh ra: <br>
-                            <code>CREATE UNIQUE INDEX IX_ProjectMemberRoleHistory_Active ON "ProjectMemberRoleHistory" ("ProjectMemberId") WHERE "EndDate" IS NULL;</code>
-                        </p>
-                    </div>
-
-                    <div class="bg-slate-900 p-5 rounded-xl border border-slate-800 space-y-3 text-xs">
-                        <div class="text-emerald-400 font-bold text-sm">🛡️ Lợi Ích Của DB Index Filtered:</div>
-                        <p class="text-slate-300">
-                            Dù cho Admin thao tác click đúp chuột cực nhanh hoặc 2 request API bắn đồng thời (Race condition), Database sẽ tự động từ chối transaction thứ hai. Đảm bảo ở tầng dữ liệu vĩnh viễn chỉ có duy nhất **1 Active Role Record**.
-                        </p>
-                    </div>
+// Rollback Snapshot DTO (Undo 1-chạm)
+public record RollbackErumiRoadmapSnapshotDto(
+    Guid SnapshotId,
+    Guid ProjectId);</code></pre>
                 </div>
             </div>
-        </div>
 
-        <!-- TAB 2: DEMO CẢ 2 WARNING MODALS -->
-        <div id="tab-modals" class="tab-pane hidden space-y-6">
-            <div class="glass-card rounded-2xl p-6">
-                <h3 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
-                    <span class="text-amber-400">#2.</span> Chi Tiết Giao Diện Cả 2 Warning Modals Trong Phase 2
-                </h3>
+            <!-- REST APIs Specification Table -->
+            <div class="glass-panel p-6 rounded-2xl space-y-3">
+                <h4 class="text-sm font-bold text-white font-mono text-blue-300">2. Danh Sách REST API Endpoints Phục Vụ Module</h4>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs font-mono">
+                        <thead class="bg-slate-900/90 text-slate-400 border-b border-slate-800">
+                            <tr>
+                                <th class="p-3">Method</th>
+                                <th class="p-3">Endpoint URL</th>
+                                <th class="p-3">Quyền Tối Thiểu</th>
+                                <th class="p-3">Mục Đích Sử Dụng</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800 text-slate-300">
+                            <tr>
+                                <td class="p-3 text-emerald-400 font-bold">POST</td>
+                                <td class="p-3 text-purple-300">/api/erumi-roadmap/fast-action</td>
+                                <td class="p-3 text-slate-400">Project Member</td>
+                                <td class="p-3 font-sans">Kích hoạt Fast Action AI (Mở rộng, Phân tích rủi ro, Sinh WBS)</td>
+                            </tr>
+                            <tr>
+                                <td class="p-3 text-emerald-400 font-bold">POST</td>
+                                <td class="p-3 text-purple-300">/api/erumi-roadmap/chat</td>
+                                <td class="p-3 text-slate-400">Project Member</td>
+                                <td class="p-3 font-sans">Chat tự do và nhận phản hồi kèm bản thảo Proposal</td>
+                            </tr>
+                            <tr>
+                                <td class="p-3 text-amber-400 font-bold">POST</td>
+                                <td class="p-3 text-purple-300">/api/erumi-roadmap/approve</td>
+                                <td class="p-3 text-amber-300 font-bold">Project Owner / PM</td>
+                                <td class="p-3 font-sans">Phê duyệt Diff Proposal & ghi danh sách Task vào Database</td>
+                            </tr>
+                            <tr>
+                                <td class="p-3 text-rose-400 font-bold">POST</td>
+                                <td class="p-3 text-purple-300">/api/erumi-roadmap/rollback</td>
+                                <td class="p-3 text-amber-300 font-bold">Project Owner / PM</td>
+                                <td class="p-3 font-sans">Hoàn tác 1-Click Snapshot đã duyệt trong vòng 72 giờ</td>
+                            </tr>
+                            <tr>
+                                <td class="p-3 text-blue-400 font-bold">GET</td>
+                                <td class="p-3 text-purple-300">/api/erumi-roadmap/simulation-sandbox</td>
+                                <td class="p-3 text-slate-400">Project Member</td>
+                                <td class="p-3 font-sans">Lấy kết quả mô phỏng kịch bản What-If mà không ghi DB</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <!-- Modal A -->
-                    <div class="bg-slate-900 p-5 rounded-xl border border-amber-500/40 space-y-3 text-xs">
-                        <div class="text-amber-400 font-bold text-sm flex items-center gap-2">
-                            <span>⚠️ Modal (a): Cảnh Báo Overlap Thời Gian Gán Role</span>
-                        </div>
-                        <div class="bg-slate-950 p-4 rounded-xl border border-amber-500/20 space-y-2">
-                            <div class="text-amber-200 font-bold">XÁC NHẬN KẾT THÚC ROLE CŨ & MỞ ROLE MỚI</div>
-                            <p class="text-slate-300">
-                                Member <strong>Nguyễn Văn B</strong> đang có role active là <span class="text-blue-400 font-bold">[Dev Backend]</span> từ 01/01/2026.
-                            </p>
-                            <p class="text-amber-300/90">
-                                Việc gán role mới <span class="text-purple-400 font-bold">[Lead QA]</span> từ ngày 15/06/2026 sẽ tự động chốt ngày kết thúc của role [Dev Backend] tại 15/06/2026.
-                            </p>
-                            <div class="flex justify-end gap-2 pt-2">
-                                <button class="bg-slate-800 text-slate-300 px-3 py-1.5 rounded">Hủy</button>
-                                <button class="bg-amber-600 text-white font-bold px-3 py-1.5 rounded">Chấp Nhận Chuyển Role</button>
-                            </div>
-                        </div>
+            <!-- Vue Component Architecture -->
+            <div class="glass-panel p-6 rounded-2xl space-y-3">
+                <h4 class="text-sm font-bold text-white font-mono text-emerald-300">3. Cấu Trúc File & Components Vue.js 3</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-2">
+                        <div class="text-purple-300 font-bold">📂 src/Qaly.Web/ClientApp/components/</div>
+                        <ul class="space-y-1.5 text-slate-300">
+                            <li>📄 <span class="text-white font-semibold">ProjectRoadmapTab.vue</span> - Tab Lộ trình chính (4500+ lines)</li>
+                            <li>📄 <span class="text-white font-semibold">ErumiDiffPreviewModal.vue</span> - Modal so sánh Diff & Duyệt</li>
+                            <li>📄 <span class="text-white font-semibold">RoadmapFastActionBar.vue</span> - Toolbar 6 nút AI 1-chạm (Mới)</li>
+                            <li>📄 <span class="text-white font-semibold">WorkloadImpactRadar.vue</span> - Biểu đồ tải thành viên (Mới)</li>
+                            <li>📄 <span class="text-white font-semibold">AiOnboardingGuideModal.vue</span> - Hướng dẫn tính năng AI</li>
+                        </ul>
                     </div>
 
-                    <!-- Modal B -->
-                    <div class="bg-slate-900 p-5 rounded-xl border border-rose-500/40 space-y-3 text-xs">
-                        <div class="text-rose-400 font-bold text-sm flex items-center gap-2">
-                            <span>⚠️ Modal (b): Cảnh Báo System Limit vs Project Role</span>
-                        </div>
-                        <div class="bg-slate-950 p-4 rounded-xl border border-rose-500/20 space-y-2">
-                            <div class="text-rose-200 font-bold">CẢNH BÁO MÂU THUẪN GIỚI HẠN TẦNG HỆ THỐNG</div>
-                            <p class="text-slate-300">
-                                Project Role <span class="text-purple-400 font-bold">[Lead Dev]</span> có mặc định Full AI, nhưng <strong>System Role</strong> của user này là <span class="text-rose-400 font-bold">[User - Giới Hạn AI]</span>.
-                            </p>
-                            <p class="text-slate-400">
-                                Quy tắc Explicit System Deny (Level 1) vẫn sẽ chặn các tính năng AI biến đổi dữ liệu của tài khoản này.
-                            </p>
-                            <div class="flex justify-end gap-2 pt-2">
-                                <button class="bg-slate-800 text-slate-300 px-3 py-1.5 rounded">Hủy</button>
-                                <button class="bg-rose-600 text-white font-bold px-3 py-1.5 rounded">Vẫn Tiếp Tục Gán Role</button>
-                            </div>
+                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-2">
+                        <div class="text-blue-300 font-bold">⚙️ Props & Emits trong ErumiDiffPreviewModal.vue</div>
+                        <div class="text-slate-400 text-[11px] font-sans">
+                            • <code>props.isProjectOwner</code>: Boolean để render nút Approve hoặc nút Submit Review.<br/>
+                            • <code>props.canApproveAi</code>: Boolean kiểm tra quyền từ Pinia store.<br/>
+                            • <code>emit('approve')</code>: Gửi mảng task đã tích chọn lên API.<br/>
+                            • <code>emit('rollback')</code>: Gọi API hoàn tác với snapshotId.
                         </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- TAB 3: POLICY TASK CŨ & QUYỀN XEM HISTORY -->
-        <div id="tab-policies" class="tab-pane hidden space-y-6">
-            <div class="glass-card rounded-2xl p-6">
-                <h3 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
-                    <span class="text-blue-400">#3.</span> Quy Định Chính Thức Cho 2 Câu Hỏi Policy
-                </h3>
+        <!-- ========================================== -->
+        <!-- TAB 6: KẾ HOẠCH TRIỂN KHAI 4 TUẦN          -->
+        <!-- ========================================== -->
+        <div id="tab-roadmap-plan" class="tab-content hidden space-y-8">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                        <i data-lucide="calendar-check" class="w-5 h-5 text-pink-400"></i>
+                        <span>Kế Hoạch Triển Khai Kỹ Thuật (Phased Implementation Roadmap)</span>
+                    </h3>
+                    <p class="text-xs text-slate-400">Lộ trình 4 tuần hoàn thiện và đưa module AI Lộ Trình vào Production</p>
+                </div>
+            </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="bg-slate-900 p-5 rounded-xl border border-slate-800 space-y-3 text-xs">
-                        <div class="text-blue-400 font-bold text-sm">📌 Policy 1: Quyền Hạn Task Khi Đổi Role (Dev -> Tester)</div>
-                        <div class="bg-slate-950 p-3.5 rounded border border-blue-500/30 text-slate-300 space-y-2">
-                            <div>• <strong>Task cũ đã Assign (User is Assignee):</strong> Giữ NGUYÊN 100% quyền View/Edit/Move task cũ cho đến khi task đóng. Đảm bảo công việc cũ không bị nghẽn.</div>
-                            <div>• <strong>Task mới phát sinh:</strong> User chỉ được nhận các Task mới thuộc phạm vi chuyên môn của Role mới (QA/Tester).</div>
-                        </div>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                
+                <!-- Week 1 -->
+                <div class="glass-panel p-5 rounded-2xl border-t-4 border-t-purple-500 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-mono font-bold text-purple-400">TUẦN 1</span>
+                        <span class="bg-purple-500/20 text-purple-300 text-[10px] px-2 py-0.5 rounded font-mono">Hoàn Tất</span>
                     </div>
+                    <h4 class="text-sm font-bold text-white">Kiến Trúc DTO & AI Fast Actions</h4>
+                    <ul class="text-xs text-slate-300 space-y-1.5 list-disc list-inside">
+                        <li>Hoàn thiện DTOs & Service Contract trong C#</li>
+                        <li>Tích hợp Prompting Engine cho 6 Fast Actions</li>
+                        <li>Cơ chế Snapshot Cache an toàn cho Diff</li>
+                    </ul>
+                </div>
 
-                    <div class="bg-slate-900 p-5 rounded-xl border border-slate-800 space-y-3 text-xs">
-                        <div class="text-purple-400 font-bold text-sm">🔒 Policy 2: Phân Quyền Xem Lịch Sử Vai Trò (Role History)</div>
-                        <div class="bg-slate-950 p-3.5 rounded border border-purple-500/30 text-slate-300 space-y-2">
-                            <div>• <strong>Chính bản thân (Self):</strong> Được phép xem 100% Role History Timeline của chính mình.</div>
-                            <div>• <strong>Ban Quản Lý (Owner, PM, Admin):</strong> Được xem Role History của toàn bộ thành viên trong dự án.</div>
-                            <div>• <strong>Member thường khác:</strong> KHÔNG được phép xem Role History của đồng nghiệp khác để bảo mật thông tin nhân sự.</div>
-                        </div>
+                <!-- Week 2 -->
+                <div class="glass-panel p-5 rounded-2xl border-t-4 border-t-blue-500 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-mono font-bold text-blue-400">TUẦN 2</span>
+                        <span class="bg-blue-500/20 text-blue-300 text-[10px] px-2 py-0.5 rounded font-mono">Đang Thực Hiện</span>
                     </div>
+                    <h4 class="text-sm font-bold text-white">Giao Diện Diff Preview & Fast Bar</h4>
+                    <ul class="text-xs text-slate-300 space-y-1.5 list-disc list-inside">
+                        <li>Cải tiến <code class="text-[10px]">ErumiDiffPreviewModal.vue</code></li>
+                        <li>Thêm thanh Sticky Fast Access Bar trong tab Lộ trình</li>
+                        <li>Hỗ trợ tích chọn lọc Task (Selective Checkboxes)</li>
+                    </ul>
                 </div>
+
+                <!-- Week 3 -->
+                <div class="glass-panel p-5 rounded-2xl border-t-4 border-t-emerald-500 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-mono font-bold text-emerald-400">TUẦN 3</span>
+                        <span class="bg-slate-800 text-slate-400 text-[10px] px-2 py-0.5 rounded font-mono">Kế Hoạch</span>
+                    </div>
+                    <h4 class="text-sm font-bold text-white">Phân Quyền RBAC & Workload Radar</h4>
+                    <ul class="text-xs text-slate-300 space-y-1.5 list-disc list-inside">
+                        <li>Chốt chặn quyền Owner Only ở Backend & Frontend</li>
+                        <li>Phát triển Radar đo tải thành viên (>40h/tuần)</li>
+                        <li>Audit log mọi thao tác duyệt & rollback</li>
+                    </ul>
+                </div>
+
+                <!-- Week 4 -->
+                <div class="glass-panel p-5 rounded-2xl border-t-4 border-t-pink-500 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-mono font-bold text-pink-400">TUẦN 4</span>
+                        <span class="bg-slate-800 text-slate-400 text-[10px] px-2 py-0.5 rounded font-mono">Kế Hoạch</span>
+                    </div>
+                    <h4 class="text-sm font-bold text-white">E2E Testing & Production Launch</h4>
+                    <ul class="text-xs text-slate-300 space-y-1.5 list-disc list-inside">
+                        <li>Bộ test tự động Playwright kiểm thử quyền phê duyệt</li>
+                        <li>Benchmark tốc độ sinh WBS & Snapshot merge</li>
+                        <li>Phát hành chính thức cho người dùng</li>
+                    </ul>
+                </div>
+
             </div>
         </div>
-
-        <!-- TAB 4: VIEW-AS SIMULATION MODE -->
-        <div id="tab-viewas" class="tab-pane hidden space-y-6">
-            <div class="glass-card rounded-2xl p-6">
-                <h3 class="text-xl font-bold text-white mb-2 font-mono">🎭 View-As Simulation Mode Enabled</h3>
-                <p class="text-xs text-slate-400">Giúp Admin test toàn bộ quyền hạn & visibility của Member khác trong 30 giây trước khi demo.</p>
-            </div>
-        </div>
-
-        <!-- TAB 5: ERUMI AI & PRIVATE TASKS -->
-        <div id="tab-erumi" class="tab-pane hidden space-y-6">
-            <div class="glass-card rounded-2xl p-6">
-                <h3 class="text-xl font-bold text-white mb-2 font-mono">✨ Erumi AI Assistant & Confidential Tasks</h3>
-                <p class="text-xs text-slate-400">Diff Preview Modal, Workload Capacity Check, 1-Click Rollback & Task Ẩn Kanban.</p>
-            </div>
-        </div>
-
-        <!-- EXECUTION TIMELINE CKCK v6.1 FINAL -->
-        <section class="glass-card rounded-2xl p-6 border-t-4 border-emerald-500">
-            <h3 class="text-xl font-bold text-white mb-4">📍 Execution Timeline CKCK v6.1 Final (Sẵn Sàng Triển Khai)</h3>
-
-            <div class="grid grid-cols-1 md:grid-cols-5 gap-3 text-xs">
-                <div class="bg-slate-900 p-3.5 rounded-xl border-t-2 border-emerald-500 space-y-1">
-                    <div class="text-emerald-400 font-bold">PHASE 0 (1 Ngày)</div>
-                    <div class="text-white font-semibold">Test Suite & DB Index</div>
-                    <p class="text-slate-400 text-[11px]">xUnit tests, DB Unique Filtered Index configuration.</p>
-                </div>
-                <div class="bg-slate-900 p-3.5 rounded-xl border-t-2 border-blue-500 space-y-1">
-                    <div class="text-blue-400 font-bold">PHASE 1 (1.5 Ngày)</div>
-                    <div class="text-white font-semibold">Fix Bug & DB Migration</div>
-                    <p class="text-slate-400 text-[11px]">Fix GetMine EF query, SystemModulePermission, ProjectMemberRoleHistory.</p>
-                </div>
-                <div class="bg-slate-900 p-3.5 rounded-xl border-t-2 border-purple-500 space-y-1">
-                    <div class="text-purple-400 font-bold">PHASE 2 (1.5 Ngày)</div>
-                    <div class="text-white font-semibold">View-As & Both Modals</div>
-                    <p class="text-slate-400 text-[11px]">Simulation mode UI, SignalR Invalidate, Warning Modal (a) & (b).</p>
-                </div>
-                <div class="bg-slate-900 p-3.5 rounded-xl border-t-2 border-rose-500 space-y-1">
-                    <div class="text-rose-400 font-bold">PHASE 3 (1 Ngày)</div>
-                    <div class="text-white font-semibold">Private Tasks & Policies</div>
-                    <p class="text-slate-400 text-[11px]">IsPrivate filtering, Audit log, Task editing rights policy & History privacy.</p>
-                </div>
-                <div class="bg-slate-900 p-3.5 rounded-xl border-t-2 border-pink-500 space-y-1">
-                    <div class="text-pink-400 font-bold">PHASE 4 (2 Ngày)</div>
-                    <div class="text-white font-semibold">Erumi AI & Onboarding</div>
-                    <p class="text-slate-400 text-[11px]">Erumi Roadmap Diff preview, Rollback, Role-Personalized Onboarding RAG.</p>
-                </div>
-            </div>
-        </section>
 
     </main>
 
-    <footer class="mt-16 border-t border-slate-800 text-center py-6 text-xs text-slate-500">
-        CKCK v6.1 Final Spec Approved • Qaly Project • Pair Programming with Antigravity AI
+    <!-- FOOTER -->
+    <footer class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-16 pt-8 border-t border-slate-800/80 text-center text-xs text-slate-500 space-y-2">
+        <div class="flex items-center justify-center gap-2">
+            <span class="font-bold text-purple-400">Qaly AI Roadmap Engine</span>
+            <span>•</span>
+            <span>Erumi AI 2.0 Co-Pilot</span>
+            <span>•</span>
+            <span class="text-emerald-400">Zero Unvetted Write Policy</span>
+        </div>
+        <p>© 2026 Qaly Project Management Ecosystem. Bản đặc tả kỹ thuật chính thức.</p>
     </footer>
 
-    <!-- INTERACTIVE TAB SCRIPT -->
+    <!-- JAVASCRIPT FOR INTERACTIVITY -->
     <script>
+        // Tab switching logic
         function switchTab(tabId) {
-            document.querySelectorAll('.tab-pane').forEach(el => el.classList.add('hidden'));
-            const target = document.getElementById(tabId);
-            if (target) target.classList.remove('hidden');
-
-            const navTabs = document.getElementById('navigation-tabs');
-            navTabs.querySelectorAll('button').forEach(btn => {
-                btn.className = 'text-slate-400 hover:text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition flex items-center gap-2';
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.add('hidden');
             });
 
-            const activeBtn = document.getElementById('btn-' + tabId);
-            if (activeBtn) {
-                activeBtn.className = 'active-tab text-sm font-semibold px-5 py-2.5 rounded-xl transition flex items-center gap-2';
+            // Remove active class from all buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active', 'text-white');
+                btn.classList.add('text-slate-400');
+            });
+
+            // Show selected tab
+            const targetContent = document.getElementById(tabId);
+            if (targetContent) {
+                targetContent.classList.remove('hidden');
             }
+
+            // Activate button
+            const targetBtn = document.getElementById('btn-' + tabId);
+            if (targetBtn) {
+                targetBtn.classList.add('active', 'text-white');
+                targetBtn.classList.remove('text-slate-400');
+            }
+
+            // Re-render icons if needed
+            lucide.createIcons();
         }
+
+        // Scroll to specific section
+        function scrollToSection(elementId) {
+            switchTab('tab-diffmodal');
+            setTimeout(() => {
+                const el = document.getElementById(elementId);
+                if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }, 100);
+        }
+
+        // Initialize Lucide icons
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+        });
     </script>
 </body>
 </html>

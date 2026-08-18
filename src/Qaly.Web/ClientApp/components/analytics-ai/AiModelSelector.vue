@@ -344,31 +344,31 @@ onBeforeUnmount(() => {
   transform: translateY(-4px);
 }
 
-:global(:root[data-theme='dark']) .ai-model-trigger,
-:global(:root[data-theme='dark']) .ai-model-menu,
-:global(:root[data-theme='dark']) .ai-model-option,
-:global(:root[data-theme='dark']) .ai-model-settings {
+:global(:root[data-theme='dark'] .ai-model-trigger),
+:global(:root[data-theme='dark'] .ai-model-menu),
+:global(:root[data-theme='dark'] .ai-model-option),
+:global(:root[data-theme='dark'] .ai-model-settings) {
   border-color: var(--line) !important;
   background: var(--panel) !important;
   color: var(--text) !important;
 }
 
-:global(:root[data-theme='dark']) .ai-model-trigger:hover,
-:global(:root[data-theme='dark']) .ai-model-trigger:focus-visible,
-:global(:root[data-theme='dark']) .ai-model-option:hover:not(:disabled),
-:global(:root[data-theme='dark']) .ai-model-option:focus-visible:not(:disabled),
-:global(:root[data-theme='dark']) .ai-model-option.is-selected,
-:global(:root[data-theme='dark']) .ai-model-settings:hover,
-:global(:root[data-theme='dark']) .ai-model-settings:focus-visible {
+:global(:root[data-theme='dark'] .ai-model-trigger:hover),
+:global(:root[data-theme='dark'] .ai-model-trigger:focus-visible),
+:global(:root[data-theme='dark'] .ai-model-option:hover:not(:disabled)),
+:global(:root[data-theme='dark'] .ai-model-option:focus-visible:not(:disabled)),
+:global(:root[data-theme='dark'] .ai-model-option.is-selected),
+:global(:root[data-theme='dark'] .ai-model-settings:hover),
+:global(:root[data-theme='dark'] .ai-model-settings:focus-visible) {
   background: var(--panel-soft) !important;
 }
 
-:global(:root[data-theme='dark']) .ai-model-option-copy strong {
+:global(:root[data-theme='dark'] .ai-model-option-copy strong) {
   color: var(--text-strong) !important;
 }
 
-:global(:root[data-theme='dark']) .ai-model-option-copy small,
-:global(:root[data-theme='dark']) .ai-model-option-copy em {
+:global(:root[data-theme='dark'] .ai-model-option-copy small),
+:global(:root[data-theme='dark'] .ai-model-option-copy em) {
   color: var(--muted) !important;
 }
 
