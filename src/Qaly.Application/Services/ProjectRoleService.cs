@@ -15,6 +15,7 @@ public class ProjectRoleService : IProjectRoleService
     private readonly IRepository<Project> _projectRepo;
     private readonly IRepository<SystemModulePermission> _systemPermRepo;
     private readonly IRepository<User> _userRepo;
+    private readonly IProjectRoleCatalog _roleCatalog;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditLogService _auditLogService;
@@ -26,6 +27,7 @@ public class ProjectRoleService : IProjectRoleService
         IRepository<Project> projectRepo,
         IRepository<SystemModulePermission> systemPermRepo,
         IRepository<User> userRepo,
+        IProjectRoleCatalog roleCatalog,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
         IAuditLogService auditLogService)
@@ -36,6 +38,7 @@ public class ProjectRoleService : IProjectRoleService
         _projectRepo = projectRepo;
         _systemPermRepo = systemPermRepo;
         _userRepo = userRepo;
+        _roleCatalog = roleCatalog;
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
         _auditLogService = auditLogService;
@@ -43,6 +46,11 @@ public class ProjectRoleService : IProjectRoleService
 
     public async Task<Result<List<ProjectCustomRoleDto>>> GetCustomRolesAsync(Guid projectId, CancellationToken ct = default)
     {
+        if (!await CanAccessProjectAsync(projectId, ct))
+        {
+            return Result.Forbidden<List<ProjectCustomRoleDto>>();
+        }
+
         var roles = await _roleRepo.GetQueryable()
             .Where(r => r.ProjectId == projectId)
             .OrderBy(r => r.Name)
@@ -59,6 +67,16 @@ public class ProjectRoleService : IProjectRoleService
     {
         var currentUserId = _currentUserService.UserId;
         if (currentUserId == null) return Result.Forbidden<ProjectCustomRoleDto>();
+
+        if (!await CanManageProjectAsync(projectId, ct))
+        {
+            return Result.Forbidden<ProjectCustomRoleDto>();
+        }
+
+        if (!await _projectRepo.GetQueryable().AnyAsync(project => project.Id == projectId, ct))
+        {
+            return Result.NotFound<ProjectCustomRoleDto>();
+        }
 
         if (string.IsNullOrWhiteSpace(dto.Name))
         {
@@ -85,6 +103,11 @@ public class ProjectRoleService : IProjectRoleService
 
     public async Task<Result<RoleAssignConflictCheckResultDto>> CheckRoleAssignConflictsAsync(Guid projectId, Guid memberId, AssignProjectMemberRoleDto dto, CancellationToken ct = default)
     {
+        if (!await CanManageProjectAsync(projectId, ct))
+        {
+            return Result.Forbidden<RoleAssignConflictCheckResultDto>();
+        }
+
         var member = await _memberRepo.GetQueryable()
             .Include(m => m.User)
             .FirstOrDefaultAsync(m => m.Id == memberId && m.ProjectId == projectId, ct);
@@ -123,6 +146,11 @@ public class ProjectRoleService : IProjectRoleService
     {
         var currentUserId = _currentUserService.UserId;
         if (currentUserId == null) return Result.Forbidden<ProjectMemberRoleHistoryDto>();
+
+        if (!await CanManageProjectAsync(projectId, ct))
+        {
+            return Result.Forbidden<ProjectMemberRoleHistoryDto>();
+        }
 
         var member = await _memberRepo.GetQueryable()
             .Include(m => m.User)
@@ -236,6 +264,11 @@ public class ProjectRoleService : IProjectRoleService
 
     public async Task<Result<List<SystemModulePermissionDto>>> GetSystemModulePermissionsAsync(string? systemRole, Guid? userId, CancellationToken ct = default)
     {
+        if (!IsAdmin())
+        {
+            return Result.Forbidden<List<SystemModulePermissionDto>>();
+        }
+
         var query = _systemPermRepo.GetQueryable();
         if (!string.IsNullOrEmpty(systemRole))
         {
@@ -288,6 +321,60 @@ public class ProjectRoleService : IProjectRoleService
         return Result.Success(new SystemModulePermissionDto(
             existing.Id, existing.SystemRole, existing.UserId, existing.ModuleKey, existing.IsAllowed, existing.AiTier, existing.CreatedAt
         ));
+    }
+
+    private async Task<bool> CanAccessProjectAsync(Guid projectId, CancellationToken ct)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return false;
+        }
+
+        if (IsAdmin())
+        {
+            return true;
+        }
+
+        return await _projectRepo.GetQueryable().AnyAsync(
+            project => project.Id == projectId
+                && (project.OwnerId == currentUserId
+                    || project.Members.Any(member => member.UserId == currentUserId)),
+            ct);
+    }
+
+    private async Task<bool> CanManageProjectAsync(Guid projectId, CancellationToken ct)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return false;
+        }
+
+        if (IsAdmin())
+        {
+            return true;
+        }
+
+        var project = await _projectRepo.GetQueryable()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == projectId, ct);
+        if (project == null)
+        {
+            return false;
+        }
+
+        if (project.OwnerId == currentUserId)
+        {
+            return true;
+        }
+
+        var role = await _memberRepo.GetQueryable()
+            .Where(member => member.ProjectId == projectId && member.UserId == currentUserId)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+        var resolvedRole = await _roleCatalog.ResolveAsync(role, project.OrganizationId, ct);
+        return resolvedRole != null && ProjectRoleRules.CanManageProject(resolvedRole.BaseRole);
     }
 
     private bool IsAdmin() => ProjectRoleRules.IsSystemAdmin(_currentUserService.Role);

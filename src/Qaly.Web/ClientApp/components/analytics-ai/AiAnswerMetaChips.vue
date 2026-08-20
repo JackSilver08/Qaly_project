@@ -110,17 +110,17 @@ function confidenceLabel(value?: number) {
   outline: none;
 }
 
-:global(:root[data-theme='dark']) .ai-answer-meta-chip {
+:global(:root[data-theme='dark'] .ai-answer-meta-chip) {
   border-color: var(--line) !important;
   background: var(--panel-soft) !important;
   color: var(--text) !important;
 }
 
-:global(:root[data-theme='dark']) .ai-answer-meta-chip small {
+:global(:root[data-theme='dark'] .ai-answer-meta-chip small) {
   color: var(--muted) !important;
 }
 
-:global(:root[data-theme='dark']) .ai-answer-meta-chip strong {
+:global(:root[data-theme='dark'] .ai-answer-meta-chip strong) {
   color: var(--text-strong) !important;
 }
 </style>

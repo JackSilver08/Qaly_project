@@ -3244,6 +3244,89 @@ function formatMessageTime(value: string) {
   font-weight: 700;
 }
 
+:global(:root[data-theme='dark'] .groups-workspace),
+:global(:root[data-theme='dark'] .project-home-main),
+:global(:root[data-theme='dark'] .groups-workspace .glass-card:not(.team-chat-window)),
+:global(:root[data-theme='dark'] .groups-workspace .team-chat-sidebar),
+:global(:root[data-theme='dark'] .groups-workspace .team-chat-window),
+:global(:root[data-theme='dark'] .group-detail-panel),
+:global(:root[data-theme='dark'] .group-detail-header),
+:global(:root[data-theme='dark'] .group-modal) {
+  border-color: var(--border) !important;
+  background: var(--surface) !important;
+  color: var(--text-primary) !important;
+  box-shadow: none !important;
+}
+
+:global(:root[data-theme='dark'] .groups-workspace .team-chat-sidebar__header),
+:global(:root[data-theme='dark'] .groups-workspace .team-chat-window__header),
+:global(:root[data-theme='dark'] .group-detail-titlebar),
+:global(:root[data-theme='dark'] .group-detail-tabs),
+:global(:root[data-theme='dark'] .group-detail-tabs button),
+:global(:root[data-theme='dark'] .group-member-row),
+:global(:root[data-theme='dark'] .group-pending-list article),
+:global(:root[data-theme='dark'] .group-poll-composer),
+:global(:root[data-theme='dark'] .group-poll-item),
+:global(:root[data-theme='dark'] .team-chat-status) {
+  border-color: var(--border) !important;
+  background: var(--surface-muted) !important;
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .groups-workspace .team-chat-group:hover),
+:global(:root[data-theme='dark'] .groups-workspace .team-chat-group.is-active),
+:global(:root[data-theme='dark'] .group-detail-icon-button:hover),
+:global(:root[data-theme='dark'] .group-detail-collapse-button:hover),
+:global(:root[data-theme='dark'] .group-detail-tabs button:hover),
+:global(:root[data-theme='dark'] .group-detail-tabs button.active) {
+  border-color: rgba(96, 165, 250, 0.36) !important;
+  background: var(--primary-soft) !important;
+  color: var(--primary-strong) !important;
+}
+
+:global(:root[data-theme='dark'] .groups-workspace .team-chat-group strong),
+:global(:root[data-theme='dark'] .group-detail-titlebar),
+:global(:root[data-theme='dark'] .group-detail-profile h2),
+:global(:root[data-theme='dark'] .group-member-row strong),
+:global(:root[data-theme='dark'] .group-pending-list strong),
+:global(:root[data-theme='dark'] .group-poll-item__meta strong),
+:global(:root[data-theme='dark'] .group-empty-state strong),
+:global(:root[data-theme='dark'] .group-tool-empty strong),
+:global(:root[data-theme='dark'] .group-modal h2) {
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .groups-workspace .team-chat-group span),
+:global(:root[data-theme='dark'] .group-detail-profile p),
+:global(:root[data-theme='dark'] .group-member-row span),
+:global(:root[data-theme='dark'] .group-pending-list span),
+:global(:root[data-theme='dark'] .group-poll-item__meta),
+:global(:root[data-theme='dark'] .group-empty-state),
+:global(:root[data-theme='dark'] .group-tool-empty),
+:global(:root[data-theme='dark'] .team-chat-status) {
+  color: var(--text-secondary) !important;
+}
+
+:global(:root[data-theme='dark'] .team-chat-banner) {
+  border-color: rgba(96, 165, 250, 0.34) !important;
+  background: var(--primary-soft) !important;
+  color: #bfdbfe !important;
+}
+
+:global(:root[data-theme='dark'] .team-chat-banner--error) {
+  border-color: rgba(248, 113, 113, 0.34) !important;
+  background: var(--danger-soft) !important;
+  color: #fca5a5 !important;
+}
+
+:global(:root[data-theme='dark'] .groups-workspace .team-chat-window__actions .icon-button),
+:global(:root[data-theme='dark'] .group-detail-icon-button),
+:global(:root[data-theme='dark'] .group-detail-collapse-button) {
+  border-color: var(--border) !important;
+  background: var(--surface-muted) !important;
+  color: var(--text-primary) !important;
+}
+
 @media (max-width: 1280px) {
   .groups-workspace {
     grid-template-columns: 250px minmax(0, 1fr);

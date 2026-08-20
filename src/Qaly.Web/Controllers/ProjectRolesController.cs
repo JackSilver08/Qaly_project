@@ -25,6 +25,7 @@ public class ProjectRolesController : BaseApiController
     }
 
     [HttpPost("projects/{projectId:guid}/roles")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> CreateCustomRole(Guid projectId, [FromBody] CreateProjectCustomRoleDto dto, CancellationToken ct)
     {
         var result = await _roleService.CreateCustomRoleAsync(projectId, dto, ct);
@@ -32,6 +33,7 @@ public class ProjectRolesController : BaseApiController
     }
 
     [HttpPost("projects/{projectId:guid}/members/{memberId:guid}/check-conflicts")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> CheckConflicts(Guid projectId, Guid memberId, [FromBody] AssignProjectMemberRoleDto dto, CancellationToken ct)
     {
         var result = await _roleService.CheckRoleAssignConflictsAsync(projectId, memberId, dto, ct);
@@ -39,6 +41,7 @@ public class ProjectRolesController : BaseApiController
     }
 
     [HttpPost("projects/{projectId:guid}/members/{memberId:guid}/assign-role")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> AssignRole(Guid projectId, Guid memberId, [FromBody] AssignProjectMemberRoleDto dto, CancellationToken ct)
     {
         var result = await _roleService.AssignRoleAsync(projectId, memberId, dto, ct);
@@ -60,6 +63,7 @@ public class ProjectRolesController : BaseApiController
     }
 
     [HttpPut("system-permissions")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateSystemPermission([FromQuery] string? systemRole, [FromQuery] Guid? userId, [FromBody] UpdateSystemModulePermissionDto dto, CancellationToken ct)
     {
         var result = await _roleService.UpdateSystemModulePermissionAsync(systemRole, userId, dto, ct);

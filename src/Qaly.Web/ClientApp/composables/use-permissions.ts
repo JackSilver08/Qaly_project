@@ -37,7 +37,12 @@ export function usePermissions() {
   }
 
   const loadSystemPermissions = async (systemRole?: string) => {
-    systemPermissions.value = await apiResult<SystemPermission[]>(`/api/ProjectRoles/system-permissions?systemRole=${systemRole || ''}`)
+    try {
+      systemPermissions.value = await apiResult<SystemPermission[]>(`/api/ProjectRoles/system-permissions?systemRole=${systemRole || ''}`)
+    } catch {
+      systemPermissions.value = []
+      showError('Không tải được quyền hệ thống.')
+    }
   }
 
   const canAccessModule = (moduleKey: string): boolean => {

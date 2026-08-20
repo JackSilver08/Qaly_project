@@ -67,8 +67,13 @@ const micMuted = ref(false);
 const cameraMuted = ref(false);
 const meetingError = ref<string | null>(null);
 const meetingConnectionState = ref<ConnectionState>(ConnectionState.Disconnected);
+const inheritedMeetingTheme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
 const theme = ref<"dark" | "light">(
-  localStorage.getItem("qaly-meeting-theme") === "light" ? "light" : "dark",
+  localStorage.getItem("qaly-meeting-theme") === "light"
+    ? "light"
+    : localStorage.getItem("qaly-meeting-theme") === "dark"
+      ? "dark"
+      : inheritedMeetingTheme,
 );
 const localVideoRef = ref<HTMLVideoElement | null>(null);
 const screenShareRef = ref<InstanceType<typeof ScreenSharePanel> | null>(null);

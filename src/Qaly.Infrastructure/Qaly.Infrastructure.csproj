@@ -50,7 +50,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <WarningsAsErrors>$(WarningsAsErrors);CA1848;CA1859;CA1865</WarningsAsErrors>
+    <WarningsAsErrors>$(WarningsAsErrors);CS0162;CA1848;CA1859;CA1865</WarningsAsErrors>
   </PropertyGroup>
 
 </Project>

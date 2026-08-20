@@ -24,9 +24,12 @@ public interface IProjectRoleCatalog
     /// <summary>Every role assignable in an organization: the built-ins plus its active custom roles.</summary>
     Task<IReadOnlyList<ResolvedProjectRole>> GetAssignableRolesAsync(Guid? organizationId, CancellationToken ct = default);
 
+    /// <summary>Resolves only roles currently available for a new membership assignment.</summary>
+    Task<ResolvedProjectRole?> ResolveAssignableAsync(string? role, Guid? organizationId, CancellationToken ct = default);
+
     /// <summary>
     /// Resolves a stored role value. Returns null when the value matches neither a built-in role
-    /// nor an active custom role in the organization.
+    /// nor a custom role in the organization. Inactive roles still resolve for existing members.
     /// </summary>
     Task<ResolvedProjectRole?> ResolveAsync(string? role, Guid? organizationId, CancellationToken ct = default);
 }
@@ -86,16 +89,39 @@ public class ProjectRoleCatalog : IProjectRoleCatalog
         }
 
         var key = NormalizeKey(role);
-        var definition = await ActiveDefinitionsQuery(organizationId.Value)
+        // Inactive definitions are not offered for new assignments, but existing memberships
+        // must continue to resolve after a role is deactivated.
+        var definition = await DefinitionsQuery(organizationId.Value)
             .FirstOrDefaultAsync(item => item.Key == key, ct);
 
         return definition == null ? null : FromDefinition(definition);
     }
 
+    public async Task<ResolvedProjectRole?> ResolveAssignableAsync(
+        string? role,
+        Guid? organizationId,
+        CancellationToken ct = default)
+    {
+        var resolved = await ResolveAsync(role, organizationId, ct);
+        if (resolved == null || !resolved.IsCustom || !organizationId.HasValue)
+        {
+            return resolved;
+        }
+
+        return await ActiveDefinitionsQuery(organizationId.Value)
+            .AnyAsync(definition => definition.Key == resolved.Key, ct)
+            ? resolved
+            : null;
+    }
+
     private IQueryable<ProjectRoleDefinition> ActiveDefinitionsQuery(Guid organizationId)
+        => DefinitionsQuery(organizationId)
+            .Where(definition => definition.IsActive);
+
+    private IQueryable<ProjectRoleDefinition> DefinitionsQuery(Guid organizationId)
         => _definitionRepo.GetQueryable()
             .AsNoTracking()
-            .Where(definition => definition.OrganizationId == organizationId && definition.IsActive);
+            .Where(definition => definition.OrganizationId == organizationId);
 
     private static ResolvedProjectRole BuiltIn(string role)
         => new(role, ProjectPermissionRules.DescribeRoleVietnamese(role), role, false, []);

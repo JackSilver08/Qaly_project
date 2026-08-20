@@ -7,7 +7,7 @@
  * built-in role it is based on.
  */
 import { computed, ref, watch } from 'vue'
-import { Plus, Sparkles, Trash2, X } from 'lucide-vue-next'
+import { Pencil, Plus, Sparkles, Trash2, X } from 'lucide-vue-next'
 import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
 import { showError, showSuccess } from '../composables/use-toast'
 import { PROJECT_ROLE_OPTIONS } from '../utils/project-roles'
@@ -20,6 +20,9 @@ interface RoleDefinition {
   description: string | null
   baseRole: string
   baseRoleLabel: string
+  permissionSummary: string
+  aiTier: string
+  aiTierDescription: string
   skillTags: string[]
   isActive: boolean
   memberCount: number
@@ -36,6 +39,11 @@ const definitions = ref<RoleDefinition[]>([])
 const loading = ref(false)
 const saving = ref(false)
 const formOpen = ref(false)
+const editingId = ref<string | null>(null)
+const serverCanManage = ref(false)
+// The organization-scoped API is authoritative. Project-level manager permission belongs to a
+// different RBAC boundary and must not grant or suppress custom-role administration.
+const effectiveCanManage = computed(() => serverCanManage.value)
 
 const displayName = ref('')
 const baseRole = ref('Member')
@@ -55,13 +63,17 @@ const previewKey = computed(() =>
 async function load() {
   if (!props.organizationId) {
     definitions.value = []
+    serverCanManage.value = false
     return
   }
   loading.value = true
   try {
-    definitions.value = await apiResult<RoleDefinition[]>(
-      `/api/organizations/${props.organizationId}/role-definitions`,
-    )
+    const [roles, canManage] = await Promise.all([
+      apiResult<RoleDefinition[]>(`/api/organizations/${props.organizationId}/role-definitions`),
+      apiResult<boolean>(`/api/organizations/${props.organizationId}/role-definitions/access`),
+    ])
+    definitions.value = roles
+    serverCanManage.value = canManage
   } catch (e) {
     showError(errorMessage(e, 'Không tải được danh sách vai trò.'))
   } finally {
@@ -77,22 +89,39 @@ function resetForm() {
   description.value = ''
   skillTags.value = ''
   formOpen.value = false
+  editingId.value = null
 }
 
-async function create() {
+function edit(definition: RoleDefinition) {
+  editingId.value = definition.id
+  displayName.value = definition.displayName
+  baseRole.value = definition.baseRole
+  description.value = definition.description ?? ''
+  skillTags.value = definition.skillTags.join(', ')
+  formOpen.value = true
+}
+
+async function save() {
   if (!props.organizationId || !displayName.value.trim()) return
   saving.value = true
   try {
-    await apiCommand(`/api/organizations/${props.organizationId}/role-definitions`, {
-      method: 'POST',
+    const isEditing = editingId.value !== null
+    const current = definitions.value.find(item => item.id === editingId.value)
+    await apiCommand(isEditing
+      ? `/api/role-definitions/${editingId.value}`
+      : `/api/organizations/${props.organizationId}/role-definitions`, {
+      method: isEditing ? 'PUT' : 'POST',
       body: JSON.stringify({
         displayName: displayName.value.trim(),
         baseRole: baseRole.value,
         description: description.value.trim() || null,
         skillTags: skillTags.value.trim() || null,
+        ...(isEditing ? { isActive: current?.isActive ?? true } : {}),
       }),
     })
-    showSuccess(`Đã tạo vai trò "${displayName.value.trim()}".`)
+    showSuccess(isEditing
+      ? `Đã cập nhật vai trò "${displayName.value.trim()}".`
+      : `Đã tạo vai trò "${displayName.value.trim()}".`)
     resetForm()
     await load()
     emit('changed')
@@ -149,13 +178,13 @@ async function remove(definition: RoleDefinition) {
           Tạo vai trò theo cách nhóm bạn làm việc. Mỗi vai trò kế thừa quyền của một vai trò có sẵn.
         </p>
       </div>
-      <button v-if="canManage" class="primary-button primary-button--compact" type="button" @click="formOpen = !formOpen">
+      <button v-if="effectiveCanManage" class="primary-button primary-button--compact" type="button" @click="formOpen = !formOpen">
         <component :is="formOpen ? X : Plus" :size="15" />
         <span>{{ formOpen ? 'Đóng' : 'Tạo vai trò' }}</span>
       </button>
     </header>
 
-    <form v-if="formOpen && canManage" class="role-form" @submit.prevent="create">
+    <form v-if="formOpen && effectiveCanManage" class="role-form" @submit.prevent="save">
       <div class="field">
         <label for="role-name">Tên vai trò</label>
         <input id="role-name" v-model="displayName" placeholder="VD: Lập trình viên Backend" maxlength="80" />
@@ -184,7 +213,9 @@ async function remove(definition: RoleDefinition) {
       </div>
 
       <div class="form-actions">
-        <button class="primary-button" type="submit" :disabled="saving || !displayName.trim()">Tạo vai trò</button>
+        <button class="primary-button" type="submit" :disabled="saving || !displayName.trim()">
+          {{ editingId ? 'Lưu thay đổi' : 'Tạo vai trò' }}
+        </button>
         <button class="text-button" type="button" @click="resetForm">Hủy</button>
       </div>
     </form>
@@ -202,11 +233,18 @@ async function remove(definition: RoleDefinition) {
           <span v-if="!definition.isActive" class="state-chip">Đã tắt</span>
         </div>
         <p v-if="definition.description" class="definition-desc">{{ definition.description }}</p>
+        <div class="permission-preview">
+          <strong>{{ definition.permissionSummary }}</strong>
+          <span>AI {{ definition.aiTier }} · {{ definition.aiTierDescription }}</span>
+        </div>
         <div class="definition-meta">
           <span v-for="tag in definition.skillTags" :key="tag" class="skill-chip">{{ tag }}</span>
           <span class="usage">{{ definition.memberCount }} thành viên đang dùng</span>
         </div>
-        <div v-if="canManage" class="definition-actions">
+        <div v-if="effectiveCanManage" class="definition-actions">
+          <button class="text-button" type="button" :disabled="saving" @click="edit(definition)">
+            <Pencil :size="13" /> Sửa
+          </button>
           <button class="text-button" type="button" :disabled="saving" @click="toggleActive(definition)">
             {{ definition.isActive ? 'Tắt' : 'Bật lại' }}
           </button>
@@ -377,6 +415,20 @@ async function remove(definition: RoleDefinition) {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.permission-preview {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: var(--qaly-radius-lg);
+  background: var(--bg-soft);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.permission-preview strong {
+  color: var(--text-strong);
 }
 
 .skill-chip {

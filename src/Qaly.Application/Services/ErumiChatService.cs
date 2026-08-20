@@ -551,7 +551,9 @@ public sealed class ErumiChatService : IErumiChatService
             null,
             null,
             answerResult.Data.Sources,
-            answerResult.Data));
+            answerResult.Data,
+            ActualProvider: answerResult.Data.Model?.Provider ?? "Qaly",
+            ActualModel: answerResult.Data.Model?.Id ?? "qaly-native"));
     }
 
     public async Task<Result<AiAssistantTurnResponseDto>> AssistantPlannedTurnAsync(
@@ -795,8 +797,22 @@ public sealed class ErumiChatService : IErumiChatService
                     1, null, null, [], navigation.Data)));
             }
             if (_portfolioScheduleService == null)
-                return Result.Failure<AiAssistantTurnResponseDto>(
-                    "Assignment schedule service is unavailable.", 503, "assignment_schedule_service_unavailable");
+            {
+                var navigation = BuildAssignmentNavigationResponse(projectId, taskId, Stopwatch.StartNew());
+                return Result.Success(Attach(new AiAssistantTurnResponseDto(
+                    AiAssistantTurnContract.SchemaId,
+                    "registered_action",
+                    AiAssistantTurnContract.TaskAssignmentScheduleIntent,
+                    "draft_then_confirm",
+                    navigation.Data?.Reply ?? "Mở Task để lập phương án phân công.",
+                    0.98,
+                    null,
+                    null,
+                    [$"/projects/{projectId.Value}/tasks/{taskId.Value}"],
+                    navigation.Data,
+                    ActualProvider: "Qaly",
+                    ActualModel: "assignment-navigation")));
+            }
 
             var normalized = Normalize(request.Message);
             var useCurrentDraft = ContainsAny(normalized, "giu phuong an", "phuong an hien tai", "xac nhan cuoi", "final confirm");
@@ -1010,9 +1026,18 @@ public sealed class ErumiChatService : IErumiChatService
                     "read_only", fallbackData.Reply, fallbackData.Confidence, null, null, fallbackData.Sources, fallbackData,
                     ActualProvider: "Qaly", ActualModel: "qaly-native")));
             }
+            var groundedData = answer.Data.Model == null
+                ? answer.Data with
+                {
+                    Model = new AiModelMetadataDto("qaly-native", "Qaly Native", "Qaly", "server_fallback"),
+                    ConfidenceReason = $"Kết quả được dựng từ bộ đọc server trên dữ liệu Qaly canonical. {answer.Data.ConfidenceReason}".Trim()
+                }
+                : answer.Data;
             return Result.Success(Attach(new AiAssistantTurnResponseDto(
                 AiAssistantTurnContract.SchemaId, "grounded_answer", AiAssistantTurnContract.GroundedReadIntent,
-                "read_only", answer.Data.Reply, answer.Data.Confidence, null, null, answer.Data.Sources, answer.Data)));
+                "read_only", groundedData.Reply, groundedData.Confidence, null, null, groundedData.Sources, groundedData,
+                ActualProvider: groundedData.Model?.Provider ?? "Qaly",
+                ActualModel: groundedData.Model?.Id ?? "qaly-native")));
         }
 
         var unsupportedDescriptor = executionContext.Capabilities.FirstOrDefault(c => c.CapabilityId == planning.SelectedCapabilityId);
@@ -3810,8 +3835,22 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
         CancellationToken ct)
     {
         if (_portfolioScheduleService == null)
-            return Result.Failure<AiAssistantTurnResponseDto>(
-                "Assignment schedule service is unavailable.", 503, "assignment_schedule_service_unavailable");
+        {
+            var navigation = BuildAssignmentNavigationResponse(projectId, taskId, Stopwatch.StartNew());
+            return Result.Success(new AiAssistantTurnResponseDto(
+                AiAssistantTurnContract.SchemaId,
+                "registered_action",
+                AiAssistantTurnContract.TaskAssignmentScheduleIntent,
+                "draft_then_confirm",
+                navigation.Data?.Reply ?? "Mở Task để lập phương án phân công.",
+                0.98,
+                null,
+                null,
+                [$"/projects/{projectId}/tasks/{taskId}"],
+                navigation.Data,
+                ActualProvider: "Qaly",
+                ActualModel: "assignment-navigation"));
+        }
 
         var normalized = Normalize(request.Message);
         var useCurrentDraft = ContainsAny(normalized,

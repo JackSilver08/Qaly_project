@@ -10,6 +10,7 @@ namespace Qaly.Application.Services;
 public interface IProjectRoleDefinitionService
 {
     Task<Result<IReadOnlyList<ProjectRoleDefinitionDto>>> GetByOrganizationAsync(Guid organizationId, CancellationToken ct = default);
+    Task<Result<bool>> CanManageAsync(Guid organizationId, CancellationToken ct = default);
     Task<Result<IReadOnlyList<AssignableProjectRoleDto>>> GetAssignableForProjectAsync(Guid projectId, CancellationToken ct = default);
     Task<Result<ProjectRoleDefinitionDto>> CreateAsync(Guid organizationId, CreateProjectRoleDefinitionDto dto, CancellationToken ct = default);
     Task<Result<ProjectRoleDefinitionDto>> UpdateAsync(Guid definitionId, UpdateProjectRoleDefinitionDto dto, CancellationToken ct = default);
@@ -308,7 +309,11 @@ public class ProjectRoleDefinitionService : IProjectRoleDefinitionService
     private static ProjectRoleDefinitionDto ToDto(
         ProjectRoleDefinition definition,
         Dictionary<string, int> usageCounts)
-        => new(
+    {
+        var permissions = ProjectPermissionRules.Resolve(definition.BaseRole, false, false);
+        var aiTier = AiCapabilityRules.ResolveTier(definition.BaseRole);
+
+        return new(
             definition.Id,
             definition.OrganizationId,
             definition.Key,
@@ -316,10 +321,24 @@ public class ProjectRoleDefinitionService : IProjectRoleDefinitionService
             definition.Description,
             definition.BaseRole,
             ProjectPermissionRules.DescribeRoleVietnamese(definition.BaseRole),
+            SummarizePermissions(permissions),
+            aiTier.ToString(),
+            AiCapabilityRules.DescribeVietnamese(aiTier),
             ProjectRoleCatalog.SplitSkillTags(definition.SkillTags),
             definition.IsActive,
             usageCounts.TryGetValue(definition.Key, out var count) ? count : 0,
             definition.CreatedAt);
+    }
+
+    public async Task<Result<bool>> CanManageAsync(Guid organizationId, CancellationToken ct = default)
+    {
+        if (!await CanReadOrganizationAsync(organizationId, ct))
+        {
+            return Result.Forbidden<bool>();
+        }
+
+        return Result.Success(await CanManageOrganizationAsync(organizationId, ct));
+    }
 
     private static string SummarizePermissions(DTOs.Project.ProjectPermissionsDto permissions)
     {

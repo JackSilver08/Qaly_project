@@ -40,7 +40,7 @@ const loadRoleHistory = async () => {
       showError('Bảo mật dữ liệu nhân sự: Chỉ bản thân thành viên và Ban quản lý mới được xem lịch sử vai trò.')
       emit('close')
     } else {
-      showError('Không thể tải lịch sử vai trò.')
+      showError('Không tải được lịch sử vai trò.')
     }
   } finally {
     isLoading.value = false

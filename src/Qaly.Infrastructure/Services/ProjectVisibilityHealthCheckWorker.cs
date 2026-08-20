@@ -1,3 +1,4 @@
+#pragma warning disable CA1848
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

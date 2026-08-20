@@ -354,7 +354,7 @@ public class ProjectService : IProjectService
 
         // Accepts a built-in role or one this organization defined for itself. Unknown values are
         // rejected rather than silently downgraded to Member.
-        var resolvedRole = await _roleCatalog.ResolveAsync(role, project.OrganizationId, ct);
+        var resolvedRole = await _roleCatalog.ResolveAssignableAsync(role, project.OrganizationId, ct);
         if (resolvedRole == null || string.Equals(resolvedRole.Key, ProjectRoleRules.Owner, StringComparison.Ordinal))
         {
             return Result.Failure(
@@ -627,12 +627,12 @@ public class ProjectService : IProjectService
     /// Relies on <see cref="ProjectDetailsQuery"/> having loaded members.
     /// </summary>
     /// <param name="customRoles">
-    /// Custom role key to its inherited built-in role and label, pre-loaded by
+    /// Organization and custom role key to its inherited built-in role and label, pre-loaded by
     /// <see cref="LoadCustomRolesAsync"/>. Built-in roles are absent from this map.
     /// </param>
     private ProjectDto ToDtoWithPermissions(
         Project project,
-        IReadOnlyDictionary<string, CustomRoleInfo> customRoles)
+        IReadOnlyDictionary<(Guid OrganizationId, string Key), CustomRoleInfo> customRoles)
     {
         var currentUserId = _currentUserService.UserId;
         var storedRole = project.Members?
@@ -641,7 +641,9 @@ public class ProjectService : IProjectService
 
         CustomRoleInfo? custom = null;
         var effectiveRole = storedRole;
-        if (storedRole != null && customRoles.TryGetValue(storedRole, out var match))
+        if (storedRole != null
+            && project.OrganizationId.HasValue
+            && customRoles.TryGetValue((project.OrganizationId.Value, storedRole), out var match))
         {
             custom = match;
             effectiveRole = match.BaseRole;
@@ -667,7 +669,7 @@ public class ProjectService : IProjectService
     /// Loads the custom roles of the organizations owning the given projects in one query, so
     /// permission mapping does not issue a query per project.
     /// </summary>
-    private async Task<IReadOnlyDictionary<string, CustomRoleInfo>> LoadCustomRolesAsync(
+    private async Task<IReadOnlyDictionary<(Guid OrganizationId, string Key), CustomRoleInfo>> LoadCustomRolesAsync(
         IEnumerable<Project> projects,
         CancellationToken ct)
     {
@@ -679,23 +681,28 @@ public class ProjectService : IProjectService
 
         if (organizationIds.Count == 0)
         {
-            return new Dictionary<string, CustomRoleInfo>(StringComparer.Ordinal);
+            return new Dictionary<(Guid OrganizationId, string Key), CustomRoleInfo>();
         }
 
         var definitions = await _roleDefinitionRepo.GetQueryable()
             .AsNoTracking()
             .Where(definition => organizationIds.Contains(definition.OrganizationId))
-            .Select(definition => new { definition.Key, definition.BaseRole, definition.DisplayName })
+            .Select(definition => new
+            {
+                definition.OrganizationId,
+                definition.Key,
+                definition.BaseRole,
+                definition.DisplayName
+            })
             .ToListAsync(ct);
 
         return definitions
-            .GroupBy(definition => definition.Key, StringComparer.Ordinal)
+            .GroupBy(definition => (definition.OrganizationId, definition.Key))
             .ToDictionary(
                 group => group.Key,
                 group => new CustomRoleInfo(
                     ProjectRoleRules.NormalizeProjectRole(group.First().BaseRole),
-                    group.First().DisplayName),
-                StringComparer.Ordinal);
+                    group.First().DisplayName));
     }
 
     private IQueryable<Project> ProjectDetailsQuery()
@@ -810,7 +817,12 @@ public class ProjectService : IProjectService
         }
 
         var role = await GetProjectRoleAsync(projectId, currentUserId.Value, ct);
-        if (ProjectRoleRules.CanManageProject(role))
+        var organizationId = await _projectRepo.GetQueryable()
+            .Where(project => project.Id == projectId)
+            .Select(project => project.OrganizationId)
+            .FirstOrDefaultAsync(ct);
+        var resolvedRole = await _roleCatalog.ResolveAsync(role, organizationId, ct);
+        if (resolvedRole != null && ProjectRoleRules.CanManageProject(resolvedRole.BaseRole))
         {
             return true;
         }

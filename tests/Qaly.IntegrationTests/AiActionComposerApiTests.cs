@@ -466,7 +466,7 @@ public sealed class AiActionComposerApiTests : IClassFixture<IntegrationTestFact
         using var request = JsonDocument.Parse(job.RequestJson);
         var snapshotJson = request.RootElement.GetProperty("sourceText").GetString()!;
         var snapshot = JsonSerializer.Deserialize<AiActionContextSnapshotDto>(snapshotJson, JsonOptions)!;
-        var skill = snapshot.Skills.First();
+        var skill = snapshot.Skills[0];
         var sourceRefs = new List<string> { snapshot.Project.SourceRef, skill.SourceRef };
         if (snapshot.Sprint != null) sourceRefs.Add(snapshot.Sprint.SourceRef);
         var command = new AiActionTaskCommandDto(

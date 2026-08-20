@@ -95,6 +95,7 @@ public class IntegrationTestFactory : WebApplicationFactory<Program>
             services.RemoveAll<QalyDbContext>();
             services.RemoveAll<DbContextOptions>();
             services.RemoveAll<DbContextOptions<QalyDbContext>>();
+            services.RemoveAll<Microsoft.EntityFrameworkCore.Infrastructure.IDbContextOptionsConfiguration<QalyDbContext>>();
             services.RemoveAll<Microsoft.EntityFrameworkCore.Storage.IDatabaseProvider>();
             services.AddDbContext<QalyDbContext>(options =>
             {

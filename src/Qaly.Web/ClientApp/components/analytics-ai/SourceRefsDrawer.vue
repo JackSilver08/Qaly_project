@@ -244,27 +244,27 @@ function confidencePercent(value?: number | null) {
   text-align: center;
 }
 
-:global(:root[data-theme='dark']) .source-refs-toolbar p,
-:global(:root[data-theme='dark']) .source-ref-main p,
-:global(:root[data-theme='dark']) .source-ref-main small,
-:global(:root[data-theme='dark']) .source-label-card span,
-:global(:root[data-theme='dark']) .source-empty span {
+:global(:root[data-theme='dark'] .source-refs-toolbar p),
+:global(:root[data-theme='dark'] .source-ref-main p),
+:global(:root[data-theme='dark'] .source-ref-main small),
+:global(:root[data-theme='dark'] .source-label-card span),
+:global(:root[data-theme='dark'] .source-empty span) {
   color: var(--muted) !important;
 }
 
-:global(:root[data-theme='dark']) .source-copy-btn,
-:global(:root[data-theme='dark']) .source-ref-action,
-:global(:root[data-theme='dark']) .source-ref-item,
-:global(:root[data-theme='dark']) .source-label-card,
-:global(:root[data-theme='dark']) .source-empty {
+:global(:root[data-theme='dark'] .source-copy-btn),
+:global(:root[data-theme='dark'] .source-ref-action),
+:global(:root[data-theme='dark'] .source-ref-item),
+:global(:root[data-theme='dark'] .source-label-card),
+:global(:root[data-theme='dark'] .source-empty) {
   border-color: var(--line) !important;
   background: var(--panel-soft) !important;
   color: var(--text) !important;
 }
 
-:global(:root[data-theme='dark']) .source-ref-main strong,
-:global(:root[data-theme='dark']) .source-label-card strong,
-:global(:root[data-theme='dark']) .source-empty strong {
+:global(:root[data-theme='dark'] .source-ref-main strong),
+:global(:root[data-theme='dark'] .source-label-card strong),
+:global(:root[data-theme='dark'] .source-empty strong) {
   color: var(--text-strong) !important;
 }
 
