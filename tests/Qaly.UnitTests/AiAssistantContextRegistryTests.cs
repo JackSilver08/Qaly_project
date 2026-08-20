@@ -9,6 +9,7 @@ using Qaly.Application.Services;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 using Qaly.Infrastructure.Data;
+using Qaly.Infrastructure.Data.Repositories;
 using Qaly.Infrastructure.Services.AI;
 
 namespace Qaly.UnitTests;
@@ -221,6 +222,64 @@ public sealed class AiAssistantContextRegistryTests
     }
 
     [Fact]
+    public async Task ResolveAsync_P03SelectedProjectOnGroupRoute_UsesProjectScopeInsteadOfAmbientGroup()
+    {
+        await using var db = CreateContext();
+        var owner = CreateUser("Owner");
+        var project = CreateProject(owner.Id);
+        project.Name = "Qaly Release 4.0";
+        var group = new WorkGroup { Name = "Demo flow", OwnerId = owner.Id };
+        db.AddRange(owner, project, group);
+        await db.SaveChangesAsync();
+
+        var result = await CreateRegistry(db, owner.Id).ResolveAsync(new AiAssistantTurnRequestDto(
+            "Phân tích Project đang chọn: mục tiêu, tiến độ Sprint, task nghẽn, dependency, workload, rủi ro deadline và ba hành động ưu tiên. Chỉ dùng dữ liệu tôi được phép xem.",
+            new AiAssistantClientContextDto(
+                Route: $"/groups/{group.Id}",
+                Module: "groups",
+                ProjectId: project.Id,
+                EntityType: "group",
+                EntityId: group.Id),
+            RequestedCapabilityId: AiAssistantContextContract.GroundedReadCapability));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Sources.Should().Contain(item =>
+            item.SourceId == AiAssistantContextContract.ProjectSummarySource &&
+            item.SourceRef.Contains(project.Id.ToString(), StringComparison.OrdinalIgnoreCase));
+        result.Data.Sources.Should().Contain(item =>
+            item.SourceId == AiAssistantContextContract.ProjectTasksSource);
+        result.Data.Sources.Should().NotContain(item =>
+            item.SourceId == AiAssistantContextContract.GroupContextSource);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ExplicitGroupReadWithProjectSelected_StillUsesGroupScope()
+    {
+        await using var db = CreateContext();
+        var owner = CreateUser("Owner");
+        var project = CreateProject(owner.Id);
+        var group = new WorkGroup { Name = "Delivery group", OwnerId = owner.Id };
+        db.AddRange(owner, project, group);
+        await db.SaveChangesAsync();
+
+        var result = await CreateRegistry(db, owner.Id).ResolveAsync(new AiAssistantTurnRequestDto(
+            "Tóm tắt Group đang mở và các trao đổi gần đây.",
+            new AiAssistantClientContextDto(
+                Route: $"/groups/{group.Id}",
+                Module: "groups",
+                ProjectId: project.Id,
+                EntityType: "group",
+                EntityId: group.Id),
+            RequestedCapabilityId: AiAssistantContextContract.GroundedReadCapability));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Sources.Should().ContainSingle(item =>
+            item.SourceId == AiAssistantContextContract.GroupContextSource);
+        result.Data.Sources.Should().NotContain(item =>
+            item.SourceId == AiAssistantContextContract.ProjectSummarySource);
+    }
+
+    [Fact]
     public async Task ResolveAsync_ForRestrictedSelectedTask_DisclosesDenyWithoutTitleOrEnvelope()
     {
         await using var db = CreateContext();
@@ -254,12 +313,167 @@ public sealed class AiAssistantContextRegistryTests
         JsonSerializer.Serialize(result.Data).Should().NotContain("PRIVATE-BOARD-MATTER");
     }
 
+    [Fact]
+    public async Task DiscoverAsync_WithRestrictedUserOverride_ExposesNoCapabilityOrSource()
+    {
+        await using var db = CreateContext();
+        var owner = CreateUser("Restricted owner");
+        var project = CreateProject(owner.Id);
+        db.AddRange(owner, project, new SystemModulePermission
+        {
+            UserId = owner.Id,
+            ModuleKey = "AiHub",
+            IsAllowed = true,
+            AiTier = "Restricted"
+        });
+        await db.SaveChangesAsync();
+
+        var result = await CreateRegistry(db, owner.Id).DiscoverAsync(new AiAssistantTurnRequestDto(
+            "Tạo task",
+            new AiAssistantClientContextDto(ProjectId: project.Id)));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Capabilities.Should().BeEmpty();
+        result.Data.Sources.Should().BeEmpty();
+        result.Data.SourceDisclosures.Should().ContainSingle(item => item.ReasonCode == "ai_hub_restricted");
+    }
+
+    [Fact]
+    public async Task DiscoverAsync_WithSummaryOnlyOverride_ExposesReadCapabilitiesButNoMutation()
+    {
+        await using var db = CreateContext();
+        var owner = CreateUser("Summary owner");
+        var project = CreateProject(owner.Id);
+        db.AddRange(owner, project, new SystemModulePermission
+        {
+            UserId = owner.Id,
+            ModuleKey = "AiHub",
+            IsAllowed = true,
+            AiTier = "SummaryOnly"
+        });
+        await db.SaveChangesAsync();
+
+        var result = await CreateRegistry(db, owner.Id).DiscoverAsync(new AiAssistantTurnRequestDto(
+            "Tóm tắt rồi tạo task",
+            new AiAssistantClientContextDto(ProjectId: project.Id)));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Capabilities.Should().Contain(item =>
+            item.CapabilityId == AiAssistantContextContract.GroundedReadCapability);
+        result.Data.Capabilities.Should().Contain(item =>
+            item.CapabilityId == AiAssistantContextContract.ResearchPlanCapability);
+        result.Data.Capabilities.Should().NotContain(item =>
+            item.CapabilityId == AiAssistantContextContract.TaskCreateCapability ||
+            item.CapabilityId == AiProjectOrchestrationContract.ExecuteCapabilityId);
+    }
+
+    [Theory]
+    [InlineData(ProjectRoleRules.Manager, true)]
+    [InlineData(ProjectRoleRules.Member, false)]
+    public async Task DiscoverAsync_CustomRole_UsesActiveBaseRoleForMutation(
+        string baseRole,
+        bool expectsTaskCreate)
+    {
+        await using var db = CreateContext();
+        var organizationOwner = CreateUser("Organization owner");
+        var member = CreateUser("Custom role member");
+        var organization = new Organization
+        {
+            Name = "Custom role workspace",
+            Code = $"CR-{Guid.NewGuid():N}"[..12],
+            OwnerId = organizationOwner.Id,
+            IsActive = true
+        };
+        var project = CreateProject(organizationOwner.Id);
+        project.OrganizationId = organization.Id;
+        var roleKey = $"custom-{baseRole.ToLowerInvariant()}";
+        db.AddRange(
+            organizationOwner,
+            member,
+            organization,
+            project,
+            new OrganizationMember
+            {
+                OrganizationId = organization.Id,
+                UserId = member.Id,
+                Role = OrganizationRoleRules.Member
+            },
+            new ProjectRoleDefinition
+            {
+                OrganizationId = organization.Id,
+                Key = roleKey,
+                DisplayName = roleKey,
+                BaseRole = baseRole,
+                CreatedByUserId = organizationOwner.Id,
+                IsActive = true
+            },
+            new ProjectMember
+            {
+                ProjectId = project.Id,
+                UserId = member.Id,
+                Role = roleKey
+            });
+        await db.SaveChangesAsync();
+
+        var result = await CreateRegistry(db, member.Id).DiscoverAsync(new AiAssistantTurnRequestDto(
+            "Tạo task cho dự án",
+            new AiAssistantClientContextDto(ProjectId: project.Id)));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Capabilities.Any(item =>
+            item.CapabilityId == AiAssistantContextContract.TaskCreateCapability)
+            .Should().Be(expectsTaskCreate);
+        result.Data.Capabilities.Any(item =>
+            item.CapabilityId == AiAssistantContextContract.TaskBreakdownCapability)
+            .Should().Be(expectsTaskCreate);
+        result.Data.Capabilities.Any(item =>
+            item.CapabilityId == AiAssistantContextContract.ProjectDigestCapability)
+            .Should().Be(expectsTaskCreate);
+    }
+
+    [Fact]
+    public async Task DiscoverAsync_RemovedCustomRole_PreservesReadButFailsClosedForAllMutations()
+    {
+        await using var db = CreateContext();
+        var owner = CreateUser("Owner");
+        var member = CreateUser("Orphan custom role");
+        var project = CreateProject(owner.Id);
+        db.AddRange(owner, member, project, new ProjectMember
+        {
+            ProjectId = project.Id,
+            UserId = member.Id,
+            Role = "deleted-manager-role"
+        });
+        await db.SaveChangesAsync();
+
+        var result = await CreateRegistry(db, member.Id).DiscoverAsync(new AiAssistantTurnRequestDto(
+            "Phan tich va tao task",
+            new AiAssistantClientContextDto(ProjectId: project.Id)));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Capabilities.Should().Contain(item =>
+            item.CapabilityId == AiAssistantContextContract.GroundedReadCapability);
+        result.Data.Capabilities.Should().NotContain(item =>
+            item.CapabilityId == AiAssistantContextContract.TaskCreateCapability ||
+            item.CapabilityId == AiAssistantContextContract.AcceptanceChecklistCapability ||
+            item.CapabilityId == AiAssistantContextContract.TaskBreakdownCapability ||
+            item.CapabilityId == AiAssistantContextContract.WikiBriefTaskCapability ||
+            item.CapabilityId == AiAssistantContextContract.ProjectDigestCapability ||
+            item.CapabilityId == AiProjectOrchestrationContract.ExecuteCapabilityId);
+    }
+
     private static AiAssistantContextRegistry CreateRegistry(QalyDbContext db, Guid userId)
     {
         var currentUser = new Mock<ICurrentUserService>();
         currentUser.SetupGet(item => item.UserId).Returns(userId);
         currentUser.SetupGet(item => item.Role).Returns("User");
         currentUser.SetupGet(item => item.IsAuthenticated).Returns(true);
+        var roleCatalog = new ProjectRoleCatalog(new GenericRepository<ProjectRoleDefinition>(db));
+        var authorization = new AiNativeAuthorizationService(
+            new GenericRepository<SystemModulePermission>(db),
+            new GenericRepository<ProjectMember>(db),
+            new GenericRepository<OrganizationMember>(db),
+            roleCatalog);
         return new AiAssistantContextRegistry(
             db,
             currentUser.Object,
@@ -272,8 +486,10 @@ public sealed class AiAssistantContextRegistryTests
                 ProjectLaunchExecutionEnabled = true,
                 ProjectOperationMonitoringEnabled = true,
                 ActionComposerEnabled = true,
-                ActionComposerTaskCreateEnabled = true
-            }));
+                ActionComposerTaskCreateEnabled = true,
+                NativeDomainActionsEnabled = true
+            }),
+            authorization);
     }
 
     private static QalyDbContext CreateContext()

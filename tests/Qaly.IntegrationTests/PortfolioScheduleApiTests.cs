@@ -88,6 +88,9 @@ public sealed class PortfolioScheduleApiTests : IClassFixture<IntegrationTestFac
         confirmed.Status.Should().Be(AiDraftStatuses.Confirmed);
         confirmed.Receipt.Should().NotBeNull();
         confirmed.Receipt!.AppliedTaskIds.Should().Equal(data.TargetTaskId);
+        confirmed.Receipt.Status.Should().Be(AiActionReceiptStatuses.Succeeded);
+        confirmed.Receipt.ReadBackVerified.Should().BeTrue();
+        confirmed.Receipt.VerificationErrors.Should().BeEmpty();
 
         var confirmReplay = await SendWithCsrfAsync(manager, HttpMethod.Post,
             $"/api/projects/{data.ProjectId}/schedule-proposals/{proposal.DraftId}/confirm",
@@ -149,6 +152,52 @@ public sealed class PortfolioScheduleApiTests : IClassFixture<IntegrationTestFac
         var verifyDb = verifyScope.ServiceProvider.GetRequiredService<QalyDbContext>();
         var unchanged = await verifyDb.TaskItems.SingleAsync(value => value.Id == data.TargetTaskId);
         unchanged.AssigneeId.Should().BeNull();
+    }
+
+    [Fact]
+    [Trait("TestId", "TEST-AI-P14-CAPACITY-BLOCK-01")]
+    public async Task P14_NoDeclaredCapacityAvailable_ReturnsBlockedAlternativesAndCannotMutate()
+    {
+        var data = await SeedAsync();
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+            var profiles = await db.OrganizationMemberCapacityProfiles
+                .Where(item => item.OrganizationId == data.OrganizationId)
+                .ToListAsync();
+            profiles.Should().NotBeEmpty();
+            foreach (var profile in profiles) profile.WeeklyCapacityHours = 0m;
+            await db.SaveChangesAsync();
+        }
+
+        using var manager = CreateClient(data.ManagerId);
+        var csrf = await GetCsrfTokenAsync(manager);
+        var start = DateTimeOffset.UtcNow.Date;
+        var end = start.AddDays(14);
+        var create = await SendWithCsrfAsync(manager, HttpMethod.Post,
+            $"/api/projects/{data.ProjectId}/schedule-proposals",
+            new CreatePortfolioScheduleProposalDto([data.TargetTaskId], start, end), csrf,
+            new Dictionary<string, string> { ["Idempotency-Key"] = $"p14-{Guid.NewGuid():N}" });
+        create.StatusCode.Should().Be(HttpStatusCode.OK, await create.Content.ReadAsStringAsync());
+        var proposal = await ReadResultAsync<PortfolioScheduleProposalDto>(create);
+        var item = proposal.Items.Should().ContainSingle().Subject;
+        item.Selected.Should().BeFalse();
+        item.BlockingReasons.Should().Contain(reason => reason.Contains("capacity", StringComparison.OrdinalIgnoreCase));
+        item.Alternatives.Should().NotBeEmpty();
+        proposal.Warnings.Should().Contain(warning => warning.Contains("phương án", StringComparison.OrdinalIgnoreCase));
+
+        var confirmKey = $"p14-confirm-{Guid.NewGuid():N}";
+        var confirm = await SendWithCsrfAsync(manager, HttpMethod.Post,
+            $"/api/projects/{data.ProjectId}/schedule-proposals/{proposal.DraftId}/confirm",
+            new ConfirmPortfolioScheduleProposalDto([item.ItemId], proposal.RowVersion, confirmKey, Confirmed: true), csrf,
+            new Dictionary<string, string> { ["Idempotency-Key"] = confirmKey });
+        confirm.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        (await verifyDb.TaskItems.AsNoTracking().SingleAsync(value => value.Id == data.TargetTaskId))
+            .AssigneeId.Should().BeNull();
+        (await verifyDb.TaskAssignments.CountAsync(value => value.TaskItemId == data.TargetTaskId)).Should().Be(0);
     }
 
     private async Task<SeededData> SeedAsync()
@@ -222,6 +271,21 @@ public sealed class PortfolioScheduleApiTests : IClassFixture<IntegrationTestFac
             UserId = contributorId,
             AssignedByUserId = OwnerId
         });
+        db.OrganizationMemberCapacityProfiles.AddRange(
+            new OrganizationMemberCapacityProfile
+            {
+                OrganizationId = organization.Id,
+                UserId = OwnerId,
+                WeeklyCapacityHours = 40m,
+                TimeZoneId = "Asia/Ho_Chi_Minh"
+            },
+            new OrganizationMemberCapacityProfile
+            {
+                OrganizationId = organization.Id,
+                UserId = managerId,
+                WeeklyCapacityHours = 40m,
+                TimeZoneId = "Asia/Ho_Chi_Minh"
+            });
         await db.SaveChangesAsync();
         return new SeededData(organization.Id, project.Id, targetTask.Id, contributorId, managerId, outsiderId, privateProjectName);
     }

@@ -189,6 +189,60 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
         return Result.Success(MapSession(session));
     }
 
+    public async Task<Result<AiAssistantSessionDto>> UpdateScopeAsync(
+        Guid sessionId,
+        UpdateAiAssistantSessionScopeRequestDto request,
+        CancellationToken ct = default)
+    {
+        var enabled = EnsureEnabled<AiAssistantSessionDto>();
+        if (enabled != null) return enabled;
+        var sessionResult = await GetOwnedMutableSessionAsync(sessionId, request.ExpectedVersion, ct);
+        if (!sessionResult.IsSuccess || sessionResult.Data == null)
+            return Result.Failure<AiAssistantSessionDto>(
+                sessionResult.Error ?? "Assistant session not found.",
+                sessionResult.StatusCode,
+                sessionResult.ErrorCode);
+
+        var session = sessionResult.Data;
+        Guid? tenantId = null;
+        if (request.ProjectId.HasValue)
+        {
+            var projectResult = await _projectService.GetByIdAsync(request.ProjectId.Value, ct);
+            if (!projectResult.IsSuccess || projectResult.Data == null)
+                return Result.NotFound<AiAssistantSessionDto>();
+            tenantId = projectResult.Data.OrganizationId;
+        }
+
+        if (session.ProjectId == request.ProjectId && session.TenantId == tenantId)
+            return Result.Success(MapSession(session));
+
+        session.ProjectId = request.ProjectId;
+        session.TenantId = tenantId;
+        session.Version++;
+        session.UpdatedAt = DateTimeOffset.UtcNow;
+        _db.AiAuditEvents.Add(BuildAudit(
+            session.OwnerUserId,
+            session.TenantId,
+            session.ProjectId,
+            "assistant_session.scope_changed",
+            "AssistantSession",
+            session.Id,
+            "accepted"));
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Result.Failure<AiAssistantSessionDto>(
+                "The assistant session changed. Reload before updating its scope.",
+                409,
+                "assistant_session_stale");
+        }
+
+        return Result.Success(MapSession(session));
+    }
+
     public async Task<Result<AiAssistantSessionDto>> ArchiveAsync(
         Guid sessionId,
         long expectedVersion,
@@ -687,12 +741,14 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
                 coreResult.Data.ProjectLaunchBrief?.ActualProvider ??
                 coreResult.Data.Conversation?.ActualProvider ??
                 coreResult.Data.Answer?.Model?.Provider ??
+                (coreResult.Data.NativeActionDraft != null ? coreResult.Data.ActualProvider : null) ??
                 planning?.GoalAnalysis.ActualProvider ?? "not_reached",
             ActualModel = coreResult.Data.ResearchPlan?.ActualModel ??
                 coreResult.Data.ProjectLaunchPlan?.ActualModel ??
                 coreResult.Data.ProjectLaunchBrief?.ActualModel ??
                 coreResult.Data.Conversation?.ActualModel ??
                 coreResult.Data.Answer?.Model?.Id ??
+                (coreResult.Data.NativeActionDraft != null ? coreResult.Data.ActualModel : null) ??
                 planning?.GoalAnalysis.ActualModel ?? "not_reached",
             GoalAnalysis = planning?.GoalAnalysis ?? coreResult.Data.GoalAnalysis,
             Conversation = _options.AssistantProgressiveInteractionEnabled
@@ -743,14 +799,19 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
         turn.CompletedAt = completedAt;
 
         var hasArtifact = response.Artifact != null || response.ResearchPlan != null ||
-            response.ProjectLaunchBrief != null || response.ProjectLaunchPlan != null;
+            response.ProjectLaunchBrief != null || response.ProjectLaunchPlan != null ||
+            response.SafeTestRunPreview != null || response.NativeActionDraft != null;
         var finalEvent = new AssistantProcessEvent
         {
             TurnId = turn.Id,
             Sequence = turn.ProcessEvents.Max(item => item.Sequence) + 1,
             Stage = hasArtifact ? "artifact" : "answer",
             Status = "completed",
-            PublicLabel = response.ProjectLaunchPlan != null
+            PublicLabel = response.NativeActionDraft != null
+                ? "Native action draft is ready for review"
+                : response.SafeTestRunPreview != null
+                ? "Safe test manifest is ready for review"
+                : response.ProjectLaunchPlan != null
                 ? "Project launch plan is ready for review"
                 : response.ResearchPlan != null
                 ? "Đã chuẩn bị Research Plan có nguồn để bạn xem lại"
@@ -825,6 +886,19 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
             };
             turn.ArtifactRefs.Add(testArtifactRef);
             _db.AssistantArtifactRefs.Add(testArtifactRef);
+        }
+        if (response.NativeActionDraft != null)
+        {
+            var nativeArtifactRef = new AssistantArtifactRef
+            {
+                TurnId = turn.Id,
+                SchemaId = response.NativeActionDraft.SchemaId,
+                SchemaVersion = "v1",
+                RendererId = AiNativeDomainActionContract.RendererId,
+                DraftId = response.NativeActionDraft.DraftId
+            };
+            turn.ArtifactRefs.Add(nativeArtifactRef);
+            _db.AssistantArtifactRefs.Add(nativeArtifactRef);
         }
 
         response = response with { ProcessEvents = MapEvents(turn.ProcessEvents) };
@@ -1220,6 +1294,20 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
                     await _db.SaveChangesAsync(ct);
                     return coreResult ?? Result.Failure<AiAssistantTurnResponseDto>(
                         "Read-only analysis failed after bounded retries.", 503, processEvent.SafeErrorCode);
+                }
+                // Cancellation can arrive while the provider call is in flight.
+                // Recheck before accepting its answer so a fast final step cannot
+                // turn an acknowledged cancel into a completed HTTP 200 response.
+                if (await IsCancellationRequestedAsync(turn.Id, ct))
+                {
+                    processEvent.Status = "blocked";
+                    processEvent.CompletedAt = DateTimeOffset.UtcNow;
+                    processEvent.DurationMs = SafeDurationMilliseconds(processEvent.StartedAt, processEvent.CompletedAt.Value);
+                    processEvent.SafeErrorCode = "assistant_turn_canceled";
+                    SkipRemainingLoopEvents(eventByStep.Values, processEvent.Sequence, processEvent.SafeErrorCode);
+                    await _db.SaveChangesAsync(ct);
+                    return Result.Failure<AiAssistantTurnResponseDto>(
+                        "The assistant turn was canceled safely.", 409, processEvent.SafeErrorCode);
                 }
                 processEvent.SafeDetailJson = SerializeLoopDetail(
                     step.StepId,

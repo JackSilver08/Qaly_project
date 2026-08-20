@@ -36,6 +36,6 @@ public class ProjectMemberRoleHistoryConfiguration : IEntityTypeConfiguration<Pr
         // Unique Filtered Index: Đảm bảo ở cấp Database chỉ duy nhất 1 Active Role per Member (EndDate IS NULL)
         builder.HasIndex(h => h.ProjectMemberId)
             .IsUnique()
-            .HasFilter("\"EndDate\" IS NULL");
+            .HasFilter("[EndDate] IS NULL");
     }
 }

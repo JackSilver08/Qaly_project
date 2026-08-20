@@ -38,6 +38,7 @@ public class QalyDbContext : DbContext
     public DbSet<GroupPollVote> GroupPollVotes => Set<GroupPollVote>();
     public DbSet<GroupMeetingSession> GroupMeetingSessions => Set<GroupMeetingSession>();
     public DbSet<TaskItem> TaskItems => Set<TaskItem>();
+    public DbSet<TaskAcceptanceChecklistItem> TaskAcceptanceChecklistItems => Set<TaskAcceptanceChecklistItem>();
     public DbSet<TaskComment> TaskComments => Set<TaskComment>();
     public DbSet<TaskAttachment> TaskAttachments => Set<TaskAttachment>();
     public DbSet<PhysicalFile> PhysicalFiles => Set<PhysicalFile>();
@@ -66,10 +67,13 @@ public class QalyDbContext : DbContext
     public DbSet<ProjectLaunchBrief> ProjectLaunchBriefs => Set<ProjectLaunchBrief>();
     public DbSet<ProjectLaunchPlanArtifact> ProjectLaunchPlanArtifacts => Set<ProjectLaunchPlanArtifact>();
     public DbSet<ProjectLaunchExecution> ProjectLaunchExecutions => Set<ProjectLaunchExecution>();
+    public DbSet<ProjectLaunchTaskTrace> ProjectLaunchTaskTraces => Set<ProjectLaunchTaskTrace>();
     public DbSet<ProjectReplanProposal> ProjectReplanProposals => Set<ProjectReplanProposal>();
     public DbSet<OrganizationWorkRuleDecision> OrganizationWorkRuleDecisions => Set<OrganizationWorkRuleDecision>();
     public DbSet<AiJobMigrationRecord> AiJobMigrationRecords => Set<AiJobMigrationRecord>();
     public DbSet<AiGeneratedDraft> AiGeneratedDrafts => Set<AiGeneratedDraft>();
+    public DbSet<AiNativeActionDraft> AiNativeActionDrafts => Set<AiNativeActionDraft>();
+    public DbSet<ProjectDigestSubscription> ProjectDigestSubscriptions => Set<ProjectDigestSubscription>();
     public DbSet<MeetingImport> MeetingImports => Set<MeetingImport>();
     public DbSet<MeetingActionItemMapping> MeetingActionItemMappings => Set<MeetingActionItemMapping>();
     public DbSet<VectorSyncOutbox> VectorSyncOutbox => Set<VectorSyncOutbox>();

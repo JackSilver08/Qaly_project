@@ -19,7 +19,7 @@ public static class AiProjectLaunchPlanningOutputContract
     private static readonly HashSet<string> TaskFields = new(StringComparer.Ordinal)
     {
         "clientId", "title", "description", "acceptanceCriteria", "definitionOfDone", "priority", "estimatedHours",
-        "requiredSkillNames", "dependencyClientIds"
+        "requiredSkillNames", "dependencyClientIds", "featureId", "objectiveMetricIds"
     };
 
     public static bool TryParse(string json, out ProjectLaunchModelOutputDto? output, out string error)
@@ -92,6 +92,8 @@ public static class AiProjectLaunchPlanningOutputContract
                         task.EstimatedHours is < 1 or > 320 ||
                         task.RequiredSkillNames == null || task.RequiredSkillNames.Count > 12 ||
                         task.DependencyClientIds == null || task.DependencyClientIds.Count > 20 ||
+                        task.ObjectiveMetricIds?.Count > 12 ||
+                        (task.FeatureId != null && !ValidId(task.FeatureId)) ||
                         task.Priority is not ("Low" or "Medium" or "High" or "Critical"))
                     {
                         error = "Task is invalid.";
@@ -146,7 +148,11 @@ public static class AiProjectLaunchPlanningOutputContract
                     AcceptanceCriteria = NormalizeList(task.AcceptanceCriteria, 12, 500),
                     DefinitionOfDone = NormalizeList(task.DefinitionOfDone, 12, 500),
                     RequiredSkillNames = NormalizeList(task.RequiredSkillNames, 12, 100),
-                    DependencyClientIds = NormalizeList(task.DependencyClientIds, 20, 80)
+                    DependencyClientIds = NormalizeList(task.DependencyClientIds, 20, 80),
+                    FeatureId = string.IsNullOrWhiteSpace(task.FeatureId) ? null : task.FeatureId.Trim(),
+                    ObjectiveMetricIds = task.ObjectiveMetricIds == null
+                        ? null
+                        : NormalizeList(task.ObjectiveMetricIds, 12, 80)
                 }).ToArray()
             }).ToArray()
         };

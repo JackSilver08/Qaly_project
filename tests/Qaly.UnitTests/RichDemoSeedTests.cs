@@ -91,7 +91,17 @@ public sealed class RichDemoSeedTests
         activeProjectIds.Should().HaveCount(5);
         evidenceProjectIds.Should().BeEquivalentTo(activeProjectIds);
         requirementProjectIds.Should().Contain(activeProjectIds);
-        (await db.OrganizationSkills.CountAsync(item => item.OrganizationId == organization.Id)).Should().Be(9);
+        var skillCatalog = await db.OrganizationSkills
+            .Where(item => item.OrganizationId == organization.Id)
+            .ToListAsync();
+        skillCatalog.Should().HaveCount(17);
+        skillCatalog.Should().OnlyContain(item => item.IsSystemSeed &&
+            !string.IsNullOrWhiteSpace(item.Category) &&
+            !string.IsNullOrWhiteSpace(item.DefaultRequiredLevel) &&
+            item.AliasesJson != "[]");
+        skillCatalog.Should().Contain(item => item.NormalizedName == "project-product-management" && item.Category == "Quản lý sản phẩm và dự án");
+        skillCatalog.Should().Contain(item => item.NormalizedName == "security-auth-privacy" && item.Category == "Bảo mật và tuân thủ");
+        skillCatalog.Should().Contain(item => item.NormalizedName == "communication-leadership" && item.Category == "Giao tiếp và lãnh đạo");
         (await db.TaskSkillRequirements.CountAsync()).Should().Be(20);
         (await db.TaskCompletionAttributions.CountAsync(item => item.Status == TaskCompletionAttribution.Confirmed)).Should().Be(5);
         (await db.OrganizationMemberCapacityProfiles.CountAsync(item => item.OrganizationId == organization.Id)).Should().Be(12);

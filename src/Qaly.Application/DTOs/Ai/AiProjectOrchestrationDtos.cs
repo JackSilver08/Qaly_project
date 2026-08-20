@@ -1,5 +1,21 @@
 namespace Qaly.Application.DTOs.Ai;
 
+public static class ProjectLaunchAssignmentModes
+{
+    public const string AutoBalance = "auto_balance";
+    public const string PreserveAssignments = "preserve_assignments";
+
+    public static bool IsValid(string? value) => value is AutoBalance or PreserveAssignments;
+}
+
+public static class ProjectLaunchScheduleModes
+{
+    public const string SequentialSprints = "sequential_sprints";
+    public const string ParallelWorkstreams = "parallel_workstreams";
+
+    public static bool IsValid(string? value) => value is SequentialSprints or ParallelWorkstreams;
+}
+
 public static class AiProjectOrchestrationContract
 {
     public const string StaffingCapabilityId = "project.staffing.plan.v1";
@@ -81,7 +97,9 @@ public sealed record ProjectLaunchTaskPlanDto(
     IReadOnlyList<string> RequiredSkillNames,
     IReadOnlyList<string> DependencyClientIds,
     IReadOnlyList<string> SourceRefs,
-    bool Selected = true);
+    bool Selected = true,
+    string? FeatureId = null,
+    IReadOnlyList<string>? ObjectiveMetricIds = null);
 
 public sealed record ProjectLaunchSprintPlanDto(
     string ClientId,
@@ -110,7 +128,27 @@ public sealed record ProjectLaunchDeliveryPlanDto(
     IReadOnlyList<string> ScheduleRisks,
     IReadOnlyList<string> CollaborationProposal,
     IReadOnlyList<string> ExternalDeferred,
-    IReadOnlyList<string> Assumptions);
+    IReadOnlyList<string> Assumptions,
+    IReadOnlyList<ProjectLaunchFeatureDto>? Features = null,
+    IReadOnlyList<ProjectObjectiveMetricDto>? ObjectiveMetrics = null,
+    int SuggestedTeamSize = 0,
+    string AssignmentMode = ProjectLaunchAssignmentModes.AutoBalance,
+    string ScheduleMode = ProjectLaunchScheduleModes.SequentialSprints);
+
+public sealed record ProjectStaffingOverrideDto(
+    Guid UserId,
+    string ProposedRole,
+    decimal ProposedHours,
+    bool Included = true,
+    bool Manager = false);
+
+public sealed record UpdateProjectLaunchPlanRequestDto(
+    long ExpectedRevision,
+    string SelectedScenarioId,
+    IReadOnlyList<ProjectStaffingOverrideDto> Staffing,
+    IReadOnlyList<ProjectLaunchSprintPlanDto> Sprints,
+    string? AssignmentMode = null,
+    string? ScheduleMode = null);
 
 public sealed record ProjectLaunchCommandReceiptDto(
     string CommandId,
@@ -219,7 +257,9 @@ public sealed record ProjectLaunchModelTaskDto(
     string Priority,
     int EstimatedHours,
     IReadOnlyList<string> RequiredSkillNames,
-    IReadOnlyList<string> DependencyClientIds);
+    IReadOnlyList<string> DependencyClientIds,
+    string? FeatureId = null,
+    IReadOnlyList<string>? ObjectiveMetricIds = null);
 
 public sealed record ProjectLaunchModelSprintDto(
     string ClientId,

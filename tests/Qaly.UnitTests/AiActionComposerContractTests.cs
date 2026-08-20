@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using Qaly.Application.DTOs.Ai;
+using Qaly.Application.Services;
 using Qaly.Infrastructure.Services.AI;
 
 namespace Qaly.UnitTests;
@@ -60,6 +61,38 @@ public sealed class AiActionComposerContractTests
         AiActionComposerOutputContract.TryValidateFinal(resultJson, out error).Should().BeTrue(error);
     }
 
+    [Theory]
+    [InlineData("tạo 10 task cho sprint 1", 10)]
+    [InlineData("Create 12 tasks for the first phase", 12)]
+    [InlineData("tạo 50 nhiệm vụ", 50)]
+    [InlineData("tạo mười task cho giai đoạn đầu", 10)]
+    [InlineData("tạo mười hai công việc", 12)]
+    [InlineData("create twenty tasks", 20)]
+    [InlineData("phân tích sprint hiện tại", null)]
+    public void ExtractRequestedTaskCount_UnderstandsExplicitNaturalLanguageCount(string message, int? expected)
+        => AiActionComposerService.ExtractRequestedTaskCount(message).Should().Be(expected);
+
+    [Fact]
+    public void ExplicitTenTaskIntent_IsPreservedByContractAndFallback()
+    {
+        AiActionComposerOutputContract.TryBuildResult(
+            ProviderPlan(),
+            SnapshotJson(10),
+            out _,
+            out var providerError).Should().BeFalse();
+        providerError.Should().Contain("exactly the 10 task commands");
+
+        AiActionComposerOutputContract.TryBuildDeterministicFallback(
+            SnapshotJson(10),
+            out var fallbackJson,
+            out var fallbackError).Should().BeTrue(fallbackError);
+        var fallback = JsonSerializer.Deserialize<AiActionPlanDto>(fallbackJson, JsonOptions)!;
+        fallback.Options[0].Commands.Should().HaveCount(10);
+        fallback.Options[0].Commands.Select(item => item.CommandId).Should().OnlyHaveUniqueItems();
+        fallback.Options[0].Commands.Select(item => item.Title).Should().OnlyHaveUniqueItems();
+        fallback.Review.SelectedCommandIds.Should().HaveCount(10);
+    }
+
     [Fact]
     public void TryBuildResult_InventedTool_FailsClosed()
     {
@@ -84,7 +117,7 @@ public sealed class AiActionComposerContractTests
             SnapshotJson(),
             out _,
             out var memberError).Should().BeFalse();
-        memberError.Should().Contain("authorized project");
+        memberError.Should().Contain("model cannot assign");
 
         AiActionComposerOutputContract.TryBuildResult(
             ProviderPlan(skillId: outsider),
@@ -177,7 +210,7 @@ public sealed class AiActionComposerContractTests
         error.Should().Contain("protected");
     }
 
-    private static string SnapshotJson()
+    private static string SnapshotJson(int? requestedTaskCount = null)
         => JsonSerializer.Serialize(new AiActionContextSnapshotDto(
             AiActionComposerContract.SnapshotSchemaId,
             new AiActionProjectContextDto(
@@ -195,7 +228,9 @@ public sealed class AiActionComposerContractTests
             "Tách module đăng nhập thành task frontend, backend và QA.",
             [new AiActionMemberContextDto(MemberId, "Project Manager", "Manager", 2, 12, MemberRef)],
             [new AiActionSkillContextDto(SkillId, "Vue.js", "Frontend engineering", SkillRef)],
-            [ProjectRef, MemberRef, SkillRef]),
+            [ProjectRef, MemberRef, SkillRef],
+            null,
+            requestedTaskCount),
             JsonOptions);
 
     private static string ProviderPlan(
@@ -217,7 +252,8 @@ public sealed class AiActionComposerContractTests
             assigneeId,
             assigneeId.HasValue ? "workload_only" : "unassigned",
             [new AiActionSkillSelectionDto(skillId ?? SkillId, "proficient")],
-            sourceRefs ?? [ProjectRef, SkillRef]);
+            sourceRefs ?? [ProjectRef, SkillRef],
+            []);
         var plan = new AiActionPlanDto(
             AiActionComposerContract.SchemaId,
             "1.0",

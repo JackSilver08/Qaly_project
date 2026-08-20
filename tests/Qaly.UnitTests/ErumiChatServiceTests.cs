@@ -100,6 +100,37 @@ public class ErumiChatServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ChatFastAsync_P04SessionMemory_AcknowledgesAndRecallsServerHistoryWithoutWorkspaceQuery()
+    {
+        const string memory = "Ghi nhớ rằng trong phiên này “MVP” nghĩa là ba chức năng: đăng ký, đặt lịch và thanh toán. Chưa tạo dữ liệu; chỉ xác nhận ngắn.";
+        var acknowledged = await _service.ChatFastAsync(
+            new ErumiChatRequestDto(memory, ProjectId: null),
+            CancellationToken.None);
+
+        acknowledged.IsSuccess.Should().BeTrue(acknowledged.Error);
+        acknowledged.Data!.Intent.Should().Be("session_memory_ack");
+        acknowledged.Data.Reply.Should().Contain("đăng ký, đặt lịch và thanh toán");
+        acknowledged.Data.Reply.Should().Contain("chưa tạo hoặc thay đổi dữ liệu Qaly");
+
+        var recalled = await _service.ChatFastAsync(
+            new ErumiChatRequestDto(
+                "Trong phiên này MVP nghĩa là gì?",
+                ProjectId: null,
+                History:
+                [
+                    new AiChatMessageDto("user", memory),
+                    new AiChatMessageDto("assistant", acknowledged.Data.Reply)
+                ]),
+            CancellationToken.None);
+
+        recalled.IsSuccess.Should().BeTrue(recalled.Error);
+        recalled.Data!.Intent.Should().Be("session_memory_recall");
+        recalled.Data.Reply.Should().Contain("đăng ký, đặt lịch và thanh toán");
+        _analyticsServiceMock.VerifyNoOtherCalls();
+        _aiGatewayMock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task ChatFastAsync_WithProjectCustomMessage_ReturnsLocalProjectSummaryWithoutAi()
     {
         var projectId = Guid.NewGuid();
@@ -704,7 +735,7 @@ public class ErumiChatServiceTests : IDisposable
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AiResponse
             {
-                Content = "{\"reply\":\"DeepSeek response\",\"metrics\":[],\"tables\":[],\"charts\":[],\"actions\":[],\"files\":[]}",
+                Content = "{\"reply\":\"DeepSeek response\",\"metrics\":[],\"tables\":[],\"charts\":[],\"actions\":[{\"type\":\"assistant_navigation\",\"label\":\"Injected navigation\"}],\"files\":[{\"label\":\"Fake report\",\"format\":\"pdf\",\"url\":\"https://provider.invalid/report.pdf\"}]}",
                 ProviderName = "DeepSeek",
                 ModelName = "deepseek-v4-pro"
             });
@@ -721,6 +752,12 @@ public class ErumiChatServiceTests : IDisposable
         result.Data.Model.Should().NotBeNull();
         result.Data.Model!.Provider.Should().Be("DeepSeek");
         result.Data.Model.Status.Should().Be("live");
+        result.Data.Actions.Should().ContainSingle(action =>
+            action.Type == "suggested_action" &&
+            action.Label == "Injected navigation" &&
+            action.Payload == null &&
+            !action.RequiresConfirmation);
+        result.Data.Files.Should().BeEmpty("only deterministic Qaly export flows may issue download cards");
         _aiGatewayMock.VerifyAll();
     }
 
@@ -973,16 +1010,120 @@ public class ErumiChatServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task AssistantPlannedTurnAsync_GroundedProviderFailure_UsesCanonicalServerReaderInsteadOfCannedPitch()
+    {
+        var request = new AiAssistantTurnRequestDto(
+            "Tóm tắt tình hình workspace bằng dữ liệu thật",
+            new AiAssistantClientContextDto("/dashboard", "workspace"),
+            Mode: "agent");
+        var context = FullAssistantContext();
+        var planning = AiAssistantGoalPlanningOutputContract.CreateDeterministicFallback(
+            request,
+            context,
+            "goal_provider_unavailable");
+        planning.SelectedCapabilityId.Should().Be(AiAssistantContextContract.GroundedReadCapability);
+
+        _analyticsServiceMock
+            .Setup(service => service.GetWorkspaceAnalyticsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new WorkspaceAnalyticsDto(0, 0, 0, 0, 0)));
+        _projectServiceMock
+            .Setup(service => service.GetAllAsync(1, 100, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new PagedResult<ProjectDto>
+            {
+                Items = [],
+                TotalCount = 0,
+                PageNumber = 1,
+                PageSize = 100
+            }));
+        _aiGatewayMock
+            .Setup(gateway => gateway.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiResponse
+            {
+                IsSuccess = false,
+                ErrorCode = AiErrorCodes.ProviderUnavailable,
+                ErrorMessage = "Provider unavailable"
+            });
+
+        var result = await _service.AssistantPlannedTurnAsync(request, context, planning);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.AssistantMessage.Should().Contain("chưa thấy dự án");
+        result.Data.AssistantMessage.Should().NotContain("Mình có thể đọc dữ liệu Qaly để trả lời");
+        result.Data.ActualProvider.Should().Be("Qaly");
+        result.Data.ActualModel.Should().Be("qaly-native");
+        result.Data.Answer!.Intent.Should().Be("workspace_summary");
+        result.Data.Answer.Model!.Status.Should().Be("server_fallback");
+    }
+
+    [Fact]
+    public async Task AssistantPlannedTurnAsync_P26ResearchProviderFailure_ContinuesWithCanonicalProjectReader()
+    {
+        var projectId = Guid.NewGuid();
+        var sourceRef = $"qaly://project/{projectId:D}/project/summary@abc123";
+        var request = new AiAssistantTurnRequestDto(
+            "Phân tích Project hiện tại và đề xuất bước tiếp theo. Nếu model lỗi, dùng fallback server có ích, ghi actual provider/model và tiếp tục; không báo thành công cho thao tác chưa ghi.",
+            new AiAssistantClientContextDto($"/projects/{projectId:D}", "project", projectId, "project", projectId),
+            Mode: "agent");
+        var context = ResearchAssistantContext(projectId, sourceRef);
+        var planning = AiAssistantGoalPlanningOutputContract.CreateDeterministicFallback(
+            request,
+            context,
+            "goal_provider_unavailable");
+        planning.SelectedCapabilityId.Should().Be(AiAssistantContextContract.ResearchPlanCapability);
+
+        _aiGatewayMock
+            .Setup(gateway => gateway.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiResponse
+            {
+                IsSuccess = false,
+                ErrorCode = AiErrorCodes.ProviderUnavailable,
+                ErrorMessage = "Provider unavailable",
+                Retryable = true
+            });
+        _projectServiceMock
+            .Setup(service => service.GetByIdAsync(projectId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(CreateProject(projectId, "P26 canonical project")));
+        _analyticsServiceMock
+            .Setup(service => service.GetProjectAnalyticsAsync(projectId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new ProjectAnalyticsDto(
+                8, 3, 2, 1, 40, 18,
+                [new MemberProductivityDto(Guid.NewGuid(), "Mai", 4, 2, 12)],
+                [])));
+
+        var result = await _service.AssistantPlannedTurnAsync(request, context, planning);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Disposition.Should().Be("grounded_fallback");
+        result.Data.Intent.Should().Be(AiAssistantContextContract.GroundedReadCapability);
+        result.Data.ExecutionPolicy.Should().Be("read_only");
+        result.Data.ActualProvider.Should().Be("Qaly");
+        result.Data.ActualModel.Should().Be("qaly-native");
+        result.Data.Answer!.Model!.Status.Should().Be("server_fallback");
+        result.Data.Answer.ConfidenceReason.Should().Contain("Research model không phản hồi");
+        result.Data.AssistantMessage.Should().Contain("P26 canonical project");
+        result.Data.Artifact.Should().BeNull();
+    }
+
+    [Fact]
     public async Task AssistantTurnAsync_ForExistingTaskAssignment_DoesNotMisrouteToTaskCreate()
     {
+        var projectId = Guid.NewGuid();
+        var taskId = Guid.NewGuid();
         var result = await _service.AssistantTurnAsync(new AiAssistantTurnRequestDto(
-            "Giao task đăng nhập hiện có cho Minh"),
+            "Giao task đăng nhập hiện có cho Minh",
+            new AiAssistantClientContextDto(
+                ProjectId: projectId,
+                EntityType: "task",
+                EntityId: taskId)),
             FullAssistantContext());
 
         result.IsSuccess.Should().BeTrue(result.Error);
-        result.Data!.Disposition.Should().Be("unsupported");
+        result.Data!.Disposition.Should().Be("registered_action");
+        result.Data.Intent.Should().Be(AiAssistantTurnContract.TaskAssignmentScheduleIntent);
         result.Data.Artifact.Should().BeNull();
-        result.Data.AssistantMessage.Should().Contain("task hiện có");
+        result.Data.Answer!.Actions.Should().ContainSingle(action =>
+            action.Type == "assistant_navigation" &&
+            JsonSerializer.Serialize(action.Payload).Contains($"/projects/{projectId}/tasks/{taskId}?assignmentPlanner=1", StringComparison.Ordinal));
         _projectServiceMock.VerifyNoOtherCalls();
         _aiGatewayMock.VerifyNoOtherCalls();
     }

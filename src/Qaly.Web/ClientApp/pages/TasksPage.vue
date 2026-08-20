@@ -68,6 +68,15 @@ type HubTask = DashboardTask & {
 type TaskSummary = HubTask | TaskAttentionDto
 type TaskDisplay = TaskItemDto | TaskSummary
 
+type TaskAcceptanceChecklistItem = {
+  id: string
+  taskId: string
+  text: string
+  sortOrder: number
+  isCompleted: boolean
+  rowVersion: string
+}
+
 type WorkflowTask = {
   id: string
   status: string
@@ -112,6 +121,7 @@ const selectedTaskAttachments = ref<AttachmentDto[]>([])
 const selectedTaskTimeEntries = ref<TimeEntryDto[]>([])
 const selectedTaskTimeEntriesError = ref('')
 const selectedTaskMeetingSource = ref<TaskMeetingSourceDto | null>(null)
+const selectedTaskChecklist = ref<TaskAcceptanceChecklistItem[]>([])
 const selectedTaskLoading = ref(false)
 const taskDetailCache = ref(new Map<string, TaskItemDto>())
 
@@ -263,6 +273,14 @@ const selectedTaskSummary = computed(() => {
 })
 
 const selectedTaskDisplay = computed<TaskDisplay | null>(() => selectedTaskDetail.value ?? selectedTaskSummary.value)
+const canUseTaskAiMutation = computed(() => {
+  // Permission visibility must be anchored to the dashboard task selected by the
+  // user. The detail request is asynchronous and may briefly be null/stale while
+  // switching projects, which previously made the AI launchers disappear.
+  const task = selectedTaskSummary.value ?? selectedTaskDisplay.value
+  const project = task ? projects.value.find((item: DashboardProject) => item.id === task.projectId) : null
+  return project?.permissions?.aiTier === 'Full' && Boolean(project.permissions.canManageAllTasks)
+})
 
 const selectedTaskProjectLine = computed(() => {
   const task = selectedTaskDisplay.value
@@ -740,6 +758,7 @@ async function loadTaskDetail(taskId: string) {
     selectedTaskTimeEntries.value = []
     selectedTaskTimeEntriesError.value = ''
     selectedTaskMeetingSource.value = null
+    selectedTaskChecklist.value = []
 
     void loadTaskDetailExtras(taskId)
   } catch (error) {
@@ -750,6 +769,7 @@ async function loadTaskDetail(taskId: string) {
     selectedTaskTimeEntries.value = []
     selectedTaskTimeEntriesError.value = ''
     selectedTaskMeetingSource.value = null
+    selectedTaskChecklist.value = []
   } finally {
     selectedTaskLoading.value = false
   }
@@ -757,11 +777,12 @@ async function loadTaskDetail(taskId: string) {
 
 async function loadTaskDetailExtras(taskId: string) {
   try {
-    const [commentsResult, attachmentsResult, timeEntriesResult, meetingSourceResult] = await Promise.allSettled([
+    const [commentsResult, attachmentsResult, timeEntriesResult, meetingSourceResult, checklistResult] = await Promise.allSettled([
       apiResult<CommentDto[]>(`/api/comments/task/${taskId}`),
       apiResult<AttachmentDto[]>(`/api/attachments/task/${taskId}`),
       apiResult<TimeEntryDto[]>(`/api/tasks/${taskId}/time-entries`),
       apiResult<TaskMeetingSourceDto>(`/api/tasks/${taskId}/meeting-source`),
+      apiResult<TaskAcceptanceChecklistItem[]>(`/api/ai/native-actions/tasks/${taskId}/acceptance-checklist`),
     ])
 
     if (selectedTaskId.value !== taskId) return
@@ -773,6 +794,7 @@ async function loadTaskDetailExtras(taskId: string) {
       ? errorMessage(timeEntriesResult.reason, 'Không thể tải dữ liệu thời gian của nhiệm vụ.')
       : ''
     selectedTaskMeetingSource.value = meetingSourceResult.status === 'fulfilled' ? meetingSourceResult.value : null
+    selectedTaskChecklist.value = checklistResult.status === 'fulfilled' ? checklistResult.value ?? [] : []
   } catch (error) {
     if (selectedTaskId.value !== taskId) return
   }
@@ -798,20 +820,19 @@ function resetTaskDrawer() {
   selectedTaskTimeEntries.value = []
   selectedTaskTimeEntriesError.value = ''
   selectedTaskMeetingSource.value = null
+  selectedTaskChecklist.value = []
   selectedTaskLoading.value = false
 }
 
 function openTaskDrawer(task: TaskSummary) {
-  openTask(task.projectId, task.id)
+  selectedTaskId.value = task.id
+  selectedTaskDetail.value = taskDetailCache.value.get(task.id) ?? null
+  void loadTaskDetail(task.id)
 }
 
 function closeTaskDrawer() {
-  const projectId = selectedTaskSummary.value?.projectId
   selectedTaskId.value = null
   resetTaskDrawer()
-  if (projectId) {
-    void router.replace(`/projects/${projectId}`)
-  }
 }
 
 function taskActionLabel(status: string) {
@@ -877,6 +898,37 @@ async function nudgeTask(task: HubTask | TaskAttentionDto) {
 
 function openProjectTask(task: HubTask | TaskAttentionDto) {
   openTask(task.projectId, task.id)
+}
+
+async function toggleChecklistItem(item: TaskAcceptanceChecklistItem) {
+  if (!canUseTaskAiMutation.value) return
+  try {
+    const updated = await apiResult<TaskAcceptanceChecklistItem>(
+      `/api/ai/native-actions/acceptance-checklist/${item.id}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ isCompleted: !item.isCompleted, rowVersion: item.rowVersion }),
+      },
+    )
+    selectedTaskChecklist.value = selectedTaskChecklist.value.map(current =>
+      current.id === updated.id ? updated : current,
+    )
+  } catch (error) {
+    showError(errorMessage(error, 'Không thể cập nhật tiêu chí nghiệm thu. Hãy tải lại task rồi thử lại.'))
+    if (selectedTaskId.value) void loadTaskDetailExtras(selectedTaskId.value)
+  }
+}
+
+async function openTaskAiNative(capability: 'checklist' | 'breakdown') {
+  const task = selectedTaskDisplay.value
+  if (!task || !canUseTaskAiMutation.value) return
+  await router.push(`/projects/${task.projectId}/tasks/${task.id}`)
+  const prompt = capability === 'checklist'
+    ? `Soạn acceptance checklist nghiệm thu cho task "${task.title}" để tôi review và xác nhận tạo.`
+    : `Tách task "${task.title}" thành các subtask theo thứ tự và dependency hợp lý để tôi review và xác nhận tạo.`
+  window.dispatchEvent(new CustomEvent('qaly:open-ai-assistant', {
+    detail: { view: 'chat', prompt, projectId: task.projectId }
+  }))
 }
 
 function showQuickStatusButtons(task: DashboardTask) {
@@ -1373,6 +1425,12 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
               <button class="pill-button pill-button--ghost" type="button" @click="openProjectTask({ ...selectedTaskSummary, ...selectedTaskDisplay } as HubTask)">
                 Mở project
               </button>
+              <button v-if="canUseTaskAiMutation" class="pill-button" type="button" data-testid="task-ai-checklist-launcher" @click="openTaskAiNative('checklist')">
+                AI checklist
+              </button>
+              <button v-if="canUseTaskAiMutation" class="pill-button" type="button" data-testid="task-ai-breakdown-launcher" @click="openTaskAiNative('breakdown')">
+                AI tách subtask
+              </button>
             </div>
           </div>
 
@@ -1427,6 +1485,33 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
               </div>
             </div>
           </div>
+        </section>
+
+        <section v-if="selectedTaskDisplay && selectedTaskChecklist.length > 0" class="task-checklist-readback" data-testid="task-acceptance-checklist-readback">
+          <div class="task-checklist-readback__header">
+            <div>
+              <span>Acceptance checklist</span>
+              <h3>Tiêu chí nghiệm thu đã lưu</h3>
+            </div>
+            <strong>{{ selectedTaskChecklist.filter((item) => item.isCompleted).length }}/{{ selectedTaskChecklist.length }}</strong>
+          </div>
+          <ol>
+            <li v-for="item in selectedTaskChecklist" :key="item.id" :class="{ 'is-complete': item.isCompleted }">
+              <button
+                v-if="canUseTaskAiMutation"
+                class="task-checklist-readback__toggle"
+                type="button"
+                :aria-label="item.isCompleted ? 'Đánh dấu chưa hoàn thành' : 'Đánh dấu hoàn thành'"
+                @click="toggleChecklistItem(item)"
+              >
+                <CheckSquare2 v-if="item.isCompleted" :size="16" />
+                <Circle v-else :size="16" />
+              </button>
+              <CheckSquare2 v-else-if="item.isCompleted" :size="16" />
+              <Circle v-else :size="16" />
+              <span>{{ item.text }}</span>
+            </li>
+          </ol>
         </section>
 
         <TaskDevelopmentPanel v-if="selectedTaskDisplay" :task-id="selectedTaskDisplay.id" />
@@ -1489,7 +1574,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 }
 
 .tasks-page.has-detail {
-  grid-template-columns: minmax(0, 1fr) 368px;
+  grid-template-columns: minmax(0, 1fr) minmax(400px, 440px);
 }
 
 .tasks-main {
@@ -3460,6 +3545,76 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
     width: 34px;
     height: 34px;
   }
+}
+
+.task-checklist-readback {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(240, 253, 244, 0.88), rgba(255, 255, 255, 0.98));
+}
+
+.task-checklist-readback__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.task-checklist-readback__header span {
+  color: #15803d;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.task-checklist-readback__header h3 {
+  margin-top: 3px;
+  color: var(--text-strong);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.task-checklist-readback__header strong {
+  color: #15803d;
+  font-size: 13px;
+}
+
+.task-checklist-readback ol {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-checklist-readback li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  color: #334155;
+  line-height: 1.45;
+}
+
+.task-checklist-readback li.is-complete {
+  color: #15803d;
+  text-decoration: line-through;
+}
+
+.task-checklist-readback__toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
 }
 
 .detail-grid {

@@ -172,6 +172,8 @@ const props = defineProps<{
   artifactOnly?: boolean
   initialPrompt?: string
   autoStart?: boolean
+  providerHint?: string
+  modelProfile?: string
 }>()
 
 const emit = defineEmits<{
@@ -189,18 +191,23 @@ const jobId = ref('')
 const draft = ref<AiDraftDetail | null>(null)
 const plan = ref<AiActionPlan | null>(null)
 const receipt = ref<AiActionReceipt | null>(null)
+const recoveryPlan = ref<AiActionPlan | null>(null)
 const activityEvents = ref<AiActivityEvent[]>([])
 const activityLastSequence = ref(0)
 const activityCancellable = ref(false)
 const requestError = ref('')
 const sourceStale = ref(false)
 const submitting = ref(false)
+const draftSaveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const now = ref(Date.now())
 let pollTimer: number | null = null
 let clockTimer: number | null = null
+let autosaveTimer: number | null = null
 let mounted = false
 let autoStartConsumed = false
 let refreshInFlight = false
+let lastSavedPlanJson = ''
+let restoredDraft: { draftId: string; rowVersion: string; plan: AiActionPlan } | null = null
 
 const selectedProject = computed(() =>
   props.projects.find(project => project.id === selectedProjectId.value) ?? null,
@@ -237,6 +244,7 @@ const queueWaitSeconds = computed(() => {
   return Number.isNaN(createdAt) ? 0 : Math.max(0, Math.floor((now.value - createdAt) / 1000))
 })
 const queueDelayed = computed(() => queueWaitSeconds.value >= 15)
+const receiptVerified = computed(() => receipt.value?.status === 'succeeded')
 
 watch(() => props.projectId, value => {
   if (!jobId.value && value) selectedProjectId.value = value
@@ -249,6 +257,12 @@ watch(
   },
 )
 
+watch(plan, () => {
+  if (!plan.value || !draft.value || receipt.value || draft.value.status.toLowerCase() !== 'pending_review') return
+  persistSession()
+  scheduleDraftAutosave()
+}, { deep: true })
+
 onMounted(() => {
   mounted = true
   clockTimer = window.setInterval(() => { now.value = Date.now() }, 1000)
@@ -258,6 +272,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stopPolling()
+  stopAutosave()
+  persistSession()
   if (clockTimer != null) window.clearInterval(clockTimer)
 })
 
@@ -289,6 +305,12 @@ function persistSession() {
     jobId: jobId.value,
     projectId: selectedProjectId.value,
     prompt: promptText.value,
+    draftId: draft.value?.draftId || null,
+    rowVersion: draft.value?.rowVersion || null,
+    plan: plan.value,
+    recoveryPlan: recoveryPlan.value,
+    sourceStale: sourceStale.value,
+    savedAt: new Date().toISOString(),
   }))
 }
 
@@ -296,12 +318,30 @@ function restoreSession() {
   try {
     const raw = localStorage.getItem(storageKey)
     if (!raw) return
-    const saved = JSON.parse(raw) as { jobId?: string; projectId?: string; prompt?: string }
+    const saved = JSON.parse(raw) as {
+      jobId?: string
+      projectId?: string
+      prompt?: string
+      draftId?: string | null
+      rowVersion?: string | null
+      plan?: AiActionPlan | null
+      recoveryPlan?: AiActionPlan | null
+      sourceStale?: boolean
+    }
     if (!saved.jobId) return
     if (props.projectId && saved.projectId && saved.projectId !== props.projectId) return
     jobId.value = saved.jobId
     selectedProjectId.value = saved.projectId || props.projectId || ''
     promptText.value = saved.prompt || ''
+    if (saved.plan && saved.draftId) {
+      restoredDraft = {
+        draftId: saved.draftId,
+        rowVersion: saved.rowVersion || '',
+        plan: structuredClone(saved.plan),
+      }
+    }
+    recoveryPlan.value = saved.recoveryPlan ? structuredClone(saved.recoveryPlan) : null
+    sourceStale.value = Boolean(saved.sourceStale)
     startPolling()
   } catch {
     localStorage.removeItem(storageKey)
@@ -310,20 +350,78 @@ function restoreSession() {
 
 function resetSession() {
   stopPolling()
+  stopAutosave()
   job.value = null
   jobId.value = ''
   draft.value = null
   plan.value = null
   receipt.value = null
+  recoveryPlan.value = null
   activityEvents.value = []
   activityLastSequence.value = 0
   activityCancellable.value = false
   requestError.value = ''
   sourceStale.value = false
+  draftSaveState.value = 'idle'
+  lastSavedPlanJson = ''
+  restoredDraft = null
   promptText.value = ''
   selectedProjectId.value = props.projectId || selectedProjectId.value
   localStorage.removeItem(storageKey)
   if (props.artifactOnly) emit('sessionReset')
+}
+
+function stopAutosave() {
+  if (autosaveTimer != null) window.clearTimeout(autosaveTimer)
+  autosaveTimer = null
+}
+
+function scheduleDraftAutosave() {
+  if (!plan.value || !draft.value || receipt.value || submitting.value) return
+  const payloadJson = JSON.stringify(plan.value)
+  if (payloadJson === lastSavedPlanJson) {
+    draftSaveState.value = 'saved'
+    return
+  }
+  stopAutosave()
+  autosaveTimer = window.setTimeout(() => { void saveDraftNow() }, 650)
+}
+
+async function saveDraftNow() {
+  stopAutosave()
+  if (!plan.value || !draft.value || receipt.value || draft.value.status.toLowerCase() !== 'pending_review') return true
+  const payloadJson = JSON.stringify(plan.value)
+  if (payloadJson === lastSavedPlanJson) return true
+  if (!draft.value.rowVersion?.trim()) {
+    draftSaveState.value = 'error'
+    persistSession()
+    return false
+  }
+
+  draftSaveState.value = 'saving'
+  try {
+    const patched = await apiResult<AiDraftDetail>(`/api/ai/drafts/${draft.value.draftId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        workingPayloadJson: payloadJson,
+        rowVersion: draft.value.rowVersion,
+      }),
+    })
+    draft.value = { ...patched, workingPayload: plan.value }
+    lastSavedPlanJson = payloadJson
+    draftSaveState.value = 'saved'
+    persistSession()
+    if (JSON.stringify(plan.value) !== payloadJson) scheduleDraftAutosave()
+    return true
+  } catch (error) {
+    draftSaveState.value = 'error'
+    persistSession()
+    requestError.value = errorMessage(
+      error,
+      'Không thể đồng bộ bản tùy chỉnh lên máy chủ. Bản khôi phục cục bộ vẫn được giữ; hãy tải lại bản mới trước khi xác nhận.',
+    )
+    return false
+  }
 }
 
 async function compose() {
@@ -347,7 +445,8 @@ async function compose() {
           entityId: sprintId || selectedProjectId.value,
         },
         language: 'vi',
-        modelProfile: 'action_composer_strong',
+        modelProfile: props.modelProfile || 'balanced',
+        providerHint: props.providerHint || 'auto',
         maximumOptions: 3,
         maximumEstimatedCostUsd: 0.08,
         cacheMode: 'bypass',
@@ -411,15 +510,49 @@ function mergeActivity(feed: AiActivityFeed) {
 }
 
 async function loadPlanAndDraft(jobDetail: AiJobDetail) {
-  if (plan.value && draft.value) return
+  if (receipt.value) return
   const result = await apiResult<AiJobResult>(`/api/ai/jobs/${jobDetail.jobId}/result`)
   sourceStale.value = result.sourceStale
   const draftId = result.draftIds[0] || jobDetail.draftIds[0]
   if (!draftId) throw new Error('AI đã hoàn tất nhưng không tạo được bản nháp để duyệt.')
   const draftDetail = await apiResult<AiDraftDetail>(`/api/ai/drafts/${draftId}`)
   draft.value = draftDetail
-  plan.value = structuredClone(draftDetail.workingPayload || result.result)
+  const serverPlan = structuredClone(draftDetail.workingPayload || result.result)
+  lastSavedPlanJson = JSON.stringify(serverPlan)
+  if (
+    restoredDraft?.draftId === draftDetail.draftId
+    && restoredDraft.plan.projectId === serverPlan.projectId
+    && restoredDraft.plan.sourceVersion === serverPlan.sourceVersion
+  ) {
+    if (restoredDraft.rowVersion === draftDetail.rowVersion) {
+      plan.value = structuredClone(restoredDraft.plan)
+      if (JSON.stringify(plan.value) !== lastSavedPlanJson) scheduleDraftAutosave()
+    } else {
+      recoveryPlan.value = structuredClone(restoredDraft.plan)
+      plan.value = serverPlan
+      requestError.value = 'Máy chủ có phiên bản mới hơn. Qaly giữ riêng bản tùy chỉnh trên máy này để bạn chọn khôi phục hoặc bỏ qua.'
+    }
+  } else {
+    plan.value = serverPlan
+  }
+  restoredDraft = null
   receipt.value = draftDetail.confirmationResult?.actionReceipt ?? null
+  persistSession()
+}
+
+function applyRecoveryPlan() {
+  if (!recoveryPlan.value || !draft.value) return
+  plan.value = structuredClone(recoveryPlan.value)
+  recoveryPlan.value = null
+  requestError.value = ''
+  persistSession()
+  scheduleDraftAutosave()
+}
+
+function discardRecoveryPlan() {
+  recoveryPlan.value = null
+  requestError.value = ''
+  persistSession()
 }
 
 function chooseOption(option: AiActionOption) {
@@ -467,29 +600,120 @@ function updateCriteria(command: AiTaskCommand, value: string) {
 }
 
 async function confirmPlan() {
-  if (!draft.value || !plan.value || selectedCount.value === 0) return
+  if (!draft.value || !plan.value || selectedCount.value === 0 || submitting.value) return
+  const confirmingDraftId = draft.value.draftId
   submitting.value = true
   requestError.value = ''
   try {
-    const key = newIdempotencyKey('action-confirm')
-    const result = await apiResult<AiDraftConfirmResult>(`/api/ai/drafts/${draft.value.draftId}/confirm`, {
+    if (!await saveDraftNow()) {
+      throw new Error('Bản tùy chỉnh chưa đồng bộ được với máy chủ nên Qaly chưa tạo Task. Bản khôi phục vẫn được giữ nguyên.')
+    }
+    // Always reconcile the server-owned draft immediately before a mutation. This
+    // rehydrates legacy/restored UI state that did not retain a concurrency token.
+    const latest = await apiResult<AiDraftDetail>(`/api/ai/drafts/${confirmingDraftId}`)
+    if (latest.status.toLowerCase() === 'confirmed' && latest.confirmationResult?.actionReceipt) {
+      draft.value = latest
+      receipt.value = latest.confirmationResult.actionReceipt
+      await loadLatestActivity()
+      if (receipt.value.status === 'succeeded') {
+        showSuccess(`Bản nháp đã tạo ${latest.confirmationResult.createdTaskCount} nhiệm vụ; Qaly đã đọc lại receipt thay vì tạo trùng.`)
+        emit('completed', selectedProjectId.value)
+      } else {
+        requestError.value = 'Task đã được ghi nhưng chưa đối chiếu canonical thành công. Hãy dùng “Đối chiếu lại”; Qaly sẽ không tạo thêm Task.'
+      }
+      return
+    }
+    if (!latest.rowVersion?.trim()) {
+      throw new Error('Bản nháp trên máy chủ chưa có rowVersion. Hãy bỏ bản nháp legacy và soạn lại; chưa có Task nào được tạo.')
+    }
+    if (draft.value.rowVersion?.trim() && draft.value.rowVersion !== latest.rowVersion) {
+      draft.value = latest
+      plan.value = structuredClone(latest.workingPayload)
+      throw new Error('Bản nháp đã thay đổi trên máy chủ. Qaly đã tải phiên bản mới; vui lòng xem lại trước khi xác nhận.')
+    }
+    draft.value = { ...draft.value, rowVersion: latest.rowVersion }
+
+    // Stable across retries: a lost HTTP response must replay the same server execution.
+    const key = `action-confirm:${confirmingDraftId}`
+    const result = await apiResult<AiDraftConfirmResult>(`/api/ai/drafts/${confirmingDraftId}/confirm`, {
       method: 'POST',
       headers: { 'Idempotency-Key': key },
       body: JSON.stringify({
         editedPayloadJson: JSON.stringify(plan.value),
         confirmAction: 'execute_action_set',
         confirmationNote: 'Đã xem, chỉnh sửa và xác nhận từ AI Action Composer.',
-        rowVersion: draft.value.rowVersion,
+        rowVersion: latest.rowVersion,
         idempotencyKey: key,
       }),
     })
     receipt.value = result.actionReceipt
     draft.value.status = result.status
     await loadLatestActivity()
-    showSuccess(`Đã tạo ${result.createdTaskCount} nhiệm vụ sau khi bạn xác nhận.`)
-    emit('completed', selectedProjectId.value)
+    persistSession()
+    if (receipt.value?.status === 'succeeded') {
+      showSuccess(`Đã tạo và đối chiếu ${result.createdTaskCount} nhiệm vụ sau khi bạn xác nhận.`)
+      emit('completed', selectedProjectId.value)
+    } else {
+      requestError.value = 'Task đã được ghi nhưng bước đọc lại dữ liệu thật chưa khớp. Qaly đã khóa tạo lặp; hãy đối chiếu lại.'
+      showError(requestError.value)
+    }
   } catch (error) {
+    // The transaction may have committed even when the browser lost its response.
+    // Read the canonical draft before allowing another mutation attempt.
+    try {
+      const latest = await apiResult<AiDraftDetail>(`/api/ai/drafts/${confirmingDraftId}`)
+      if (latest.status.toLowerCase() === 'confirmed' && latest.confirmationResult?.actionReceipt) {
+        draft.value = latest
+        receipt.value = latest.confirmationResult.actionReceipt
+        requestError.value = ''
+        await loadLatestActivity()
+        persistSession()
+        if (receipt.value.status === 'succeeded') {
+          showSuccess(`Đã tạo ${latest.confirmationResult.createdTaskCount} nhiệm vụ và đối chiếu lại dữ liệu thành công.`)
+          emit('completed', selectedProjectId.value)
+        } else {
+          requestError.value = 'Task đã được ghi nhưng chưa đối chiếu canonical thành công. Qaly sẽ chỉ đọc lại, không tạo lần hai.'
+        }
+        return
+      }
+    } catch {
+      // Preserve the original execution error when canonical reconciliation is unavailable.
+    }
     requestError.value = errorMessage(error, 'Không thể thực thi bản nháp. Dữ liệu chưa bị thay đổi.')
+    showError(requestError.value)
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function retryVerification() {
+  if (!draft.value || !receipt.value || submitting.value || receiptVerified.value) return
+  submitting.value = true
+  requestError.value = ''
+  try {
+    const key = `action-confirm:${draft.value.draftId}`
+    const result = await apiResult<AiDraftConfirmResult>(`/api/ai/drafts/${draft.value.draftId}/confirm`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': key },
+      body: JSON.stringify({
+        editedPayloadJson: JSON.stringify(plan.value || draft.value.workingPayload),
+        confirmAction: 'execute_action_set',
+        confirmationNote: 'Chỉ đối chiếu lại lần thực thi đã có; không tạo thêm Task.',
+        rowVersion: draft.value.rowVersion,
+        idempotencyKey: key,
+      }),
+    })
+    receipt.value = result.actionReceipt
+    await loadLatestActivity()
+    persistSession()
+    if (receipt.value?.status === 'succeeded') {
+      showSuccess(`Đã đối chiếu ${result.createdTaskCount} Task với dữ liệu thật; không tạo thêm Task.`)
+      emit('completed', selectedProjectId.value)
+    } else {
+      requestError.value = 'Dữ liệu vẫn chưa khớp receipt. Qaly tiếp tục khóa tạo lặp; hãy mở liên kết Task hoặc kiểm tra nhật ký.'
+    }
+  } catch (error) {
+    requestError.value = errorMessage(error, 'Không thể đối chiếu lại lúc này. Không có Task mới nào được tạo.')
     showError(requestError.value)
   } finally {
     submitting.value = false
@@ -666,6 +890,18 @@ function isInternalLink(value: string) {
               <div><strong>Đã soạn xong — chưa thay đổi dữ liệu</strong><p>Chọn phương án, sửa nội dung và chỉ xác nhận các task bạn muốn tạo.</p></div>
             </div>
 
+            <div v-if="recoveryPlan" class="recovery-banner" role="status">
+              <AlertTriangle :size="17" />
+              <div>
+                <strong>Có bản tùy chỉnh chưa đồng bộ từ phiên trước</strong>
+                <p>Bản trên máy chủ đang được giữ nguyên. Bạn có thể khôi phục bản của mình hoặc bỏ qua.</p>
+                <div class="recovery-actions">
+                  <button type="button" class="secondary-action" @click="applyRecoveryPlan">Khôi phục bản của tôi</button>
+                  <button type="button" class="secondary-action" @click="discardRecoveryPlan">Dùng bản máy chủ</button>
+                </div>
+              </div>
+            </div>
+
             <div v-if="sourceStale" class="truthful-error" role="alert"><AlertTriangle :size="16" /> Nguồn dữ liệu đã thay đổi. Hãy tạo phiên mới trước khi xác nhận.</div>
 
             <div class="intent-card">
@@ -736,7 +972,10 @@ function isInternalLink(value: string) {
             <div v-if="requestError" class="truthful-error" role="alert"><AlertTriangle :size="16" /> {{ requestError }}</div>
             <div class="composer-actions composer-actions--sticky">
               <button class="danger-action" type="button" :disabled="submitting" @click="rejectPlan">Bỏ bản nháp</button>
-              <span class="selection-count">Đã chọn {{ selectedCount }} task</span>
+              <span class="selection-count">
+                Đã chọn {{ selectedCount }} task ·
+                {{ draftSaveState === 'saving' ? 'đang lưu' : draftSaveState === 'error' ? 'có bản khôi phục' : 'đã lưu' }}
+              </span>
               <button class="primary-action" type="button" :disabled="submitting || sourceStale || selectedCount === 0" @click="confirmPlan">
                 <LoaderCircle v-if="submitting" class="spin" :size="16" /><Check v-else :size="16" /> Xác nhận và tạo task
               </button>
@@ -744,7 +983,9 @@ function isInternalLink(value: string) {
           </section>
 
           <section v-else-if="receipt" class="composer-receipt">
-            <div class="receipt-success"><CheckCircle2 :size="28" /><h3>Đã thực hiện sau khi bạn xác nhận</h3><p>Mỗi kết quả bên dưới đã được đọc lại từ hệ thống.</p></div>
+            <div v-if="receiptVerified" class="receipt-success"><CheckCircle2 :size="28" /><h3>Đã thực hiện sau khi bạn xác nhận</h3><p>Mỗi kết quả bên dưới đã được đọc lại từ dữ liệu thật.</p></div>
+            <div v-else class="receipt-verification-warning" role="alert"><AlertTriangle :size="26" /><h3>Đã khóa tạo lặp — cần đối chiếu lại</h3><p>Task có thể đã được ghi, nhưng receipt chưa khớp dữ liệu canonical. Nút bên dưới chỉ đọc lại, không tạo thêm.</p></div>
+            <div v-if="requestError" class="truthful-error" role="alert"><AlertTriangle :size="16" /> {{ requestError }}</div>
             <div class="receipt-meta">
               <span>Execution {{ receipt.executionId.slice(0, 8) }}</span>
               <span>{{ modelLabel }}</span>
@@ -768,7 +1009,8 @@ function isInternalLink(value: string) {
             </details>
             <div class="composer-actions">
               <button class="secondary-action" type="button" @click="emit('close')">Đóng</button>
-              <button class="primary-action" type="button" @click="resetSession"><Sparkles :size="15" /> Soạn yêu cầu mới</button>
+              <button v-if="!receiptVerified" class="primary-action" type="button" :disabled="submitting" @click="retryVerification"><RotateCcw :size="15" /> Đối chiếu lại</button>
+              <button v-else class="primary-action" type="button" @click="resetSession"><Sparkles :size="15" /> Soạn yêu cầu mới</button>
             </div>
           </section>
         </div>
@@ -838,6 +1080,11 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .queue-delayed-warning span { font-size: 12px; line-height: 1.45; }
 .review-banner { align-items: flex-start; gap: 10px; padding: 13px; border: 1px solid #a7f3d0; border-radius: 12px; color: #047857; background: #ecfdf5; }
 .review-banner p { margin-top: 3px; color: #047857; }
+.recovery-banner, .receipt-verification-warning { display: flex; align-items: flex-start; gap: 10px; padding: 14px; border: 1px solid #fbbf24; border-radius: 12px; color: #92400e; background: #fffbeb; }
+.recovery-banner > div, .receipt-verification-warning { gap: 5px; }
+.recovery-banner p, .receipt-verification-warning p { margin-top: 3px; line-height: 1.45; }
+.recovery-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.receipt-verification-warning { display: grid; justify-items: center; padding: 22px; text-align: center; }
 .intent-card { display: grid; gap: 5px; padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-soft); }
 .option-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .option-tabs button { display: grid; gap: 2px; padding: 10px; border: 1px solid var(--line); border-radius: 11px; color: var(--text); background: var(--panel-soft); text-align: left; }
@@ -865,6 +1112,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .receipt-meta { justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 10px; color: var(--muted); background: var(--panel-soft); }
 .receipt-list { display: grid; gap: 9px; }
 .receipt-list article { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 12px; border: 1px solid #a7f3d0; border-radius: 11px; color: #059669; background: #ecfdf5; }
+.receipt-list article:not(.is-succeeded) { border-color: #fbbf24; color: #b45309; background: #fffbeb; }
 .receipt-list article > div { display: grid; gap: 2px; color: var(--text); }
 .receipt-list a { color: #2563eb; }
 .spin { animation: spin .8s linear infinite; }

@@ -198,7 +198,15 @@ export function useTaskActions(
     if (!taskBeingEdited.value) return
 
     try {
-      await apiResult<TaskItemDto>(`/api/tasks/${taskBeingEdited.value.id}`, {
+      // The edit sheet only exposes a subset of Task fields. Merge against a
+      // fresh canonical row so reassigning from Kanban cannot silently clear
+      // estimate, logged hours, labels or Sprint.
+      const current = await apiResult<TaskItemDto>(`/api/tasks/${taskBeingEdited.value.id}`)
+      const requestedAssigneeId = newTaskAssigneeId.value || null
+      const assigneeIds = requestedAssigneeId === current.assigneeId
+        ? current.assignees.map(assignee => assignee.userId)
+        : requestedAssigneeId ? [requestedAssigneeId] : []
+      const updated = await apiResult<TaskItemDto>(`/api/tasks/${taskBeingEdited.value.id}`, {
         method: 'PUT',
         body: JSON.stringify({
           title: newTaskTitle.value.trim(),
@@ -206,16 +214,27 @@ export function useTaskActions(
           status: taskBeingEdited.value.status,
           priority: newTaskPriority.value,
           dueDate: newTaskDueDate.value ? new Date(newTaskDueDate.value).toISOString() : null,
-          estimatedHours: null,
-          actualHours: null,
-          assigneeId: newTaskAssigneeId.value || null,
-          assigneeIds: newTaskAssigneeId.value ? [newTaskAssigneeId.value] : [],
+          estimatedHours: current.estimatedHours,
+          actualHours: current.actualHours,
+          assigneeId: requestedAssigneeId,
+          assigneeIds,
+          labelIds: current.labels.map(label => label.id),
+          sprintId: current.sprintId,
           isPrivate: newTaskIsPrivate.value,
           isPinned: newTaskIsPinned.value,
           contributesToProgress: newTaskContributesToProgress.value,
-          rowVersion: taskBeingEdited.value.rowVersion || null,
+          rowVersion: current.rowVersion,
         }),
       })
+
+      const sameLabels = updated.labels.map(label => label.id).sort().join(',') ===
+        current.labels.map(label => label.id).sort().join(',')
+      if (updated.assigneeId !== requestedAssigneeId ||
+          updated.estimatedHours !== current.estimatedHours ||
+          updated.actualHours !== current.actualHours ||
+          updated.sprintId !== current.sprintId || !sameLabels) {
+        throw new Error('Máy chủ chưa xác nhận đầy đủ thay đổi hoặc đã làm lệch dữ liệu Task; vui lòng tải lại trước khi thử lại.')
+      }
 
       clearTaskForm()
       createTaskOpen.value = false

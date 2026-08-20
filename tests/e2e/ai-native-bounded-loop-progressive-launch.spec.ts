@@ -133,6 +133,10 @@ function launchResponse(revision: number, includeDeadline: boolean, turnId: stri
 }
 
 test('TEST-AI-NATIVE-LOOP-E2E reload renders verified launch brief and progressive reply creates revision', async ({ page }) => {
+  const rendererErrors: string[] = []
+  page.on('console', message => {
+    if (message.type() === 'error') rendererErrors.push(message.text())
+  })
   await login(page)
   const firstTurnId = '50505050-5050-5050-5050-505050505050'
   const firstClientTurnId = '60606060-6060-6060-6060-606060606060'
@@ -202,11 +206,12 @@ test('TEST-AI-NATIVE-LOOP-E2E reload renders verified launch brief and progressi
   await expect(assistant).toBeVisible()
   const firstBrief = assistant.getByTestId('project-launch-brief').first()
   await expect(firstBrief).toContainText('Customer Portal SPA')
-  await expect(firstBrief).toContainText('Revision 1')
-  await expect(firstBrief).toContainText('Organization Rulebook')
-  await expect(firstBrief).toContainText('v3 hiệu lực')
+  await expect(firstBrief).toContainText('Bản 1')
+  await expect(firstBrief).toContainText('Quy tắc làm việc của tổ chức')
+  await expect(firstBrief).toContainText('Bản 3 đang áp dụng')
   await expect(firstBrief).toContainText('DeepSeek / deepseek-v4-pro')
-  await expect(firstBrief).toContainText('Không tạo Project · không phân công')
+  await expect(firstBrief).toContainText('Chưa tạo dự án hoặc phân công công việc')
+  expect(rendererErrors.filter(message => message.includes('DataCloneError'))).toEqual([])
   await expect(assistant.getByText('Các bước Trợ lý AI đã thực hiện (4)')).toBeVisible()
   await expect(assistant.getByText('Đã kiểm tra schema, nguồn và chính sách')).toBeHidden()
   await expect(assistant.getByText('Cách làm tạm thời')).toHaveCount(0)
@@ -219,7 +224,10 @@ test('TEST-AI-NATIVE-LOOP-E2E reload renders verified launch brief and progressi
   await expect(historyDrawer.getByText('Đang mở')).toBeVisible()
   await historyDrawer.getByRole('button', { name: 'Đóng bảng phụ' }).click()
 
-  await assistant.getByRole('button', { name: '8 tuần' }).click()
+  const deadlineQuestion = assistant.locator('.assistant-progressive-questions article').filter({
+    hasText: 'Mốc hoàn thành hoặc timebox mong muốn là khi nào?',
+  })
+  await deadlineQuestion.getByRole('button', { name: '8 tuần', exact: true }).click()
   const teamAnswer = assistant.getByRole('textbox', { name: 'Trả lời: Quy mô nhóm mong muốn là bao nhiêu?' })
   await teamAnswer.fill('')
   await teamAnswer.pressSequentially('5 people', { delay: 25 })
@@ -235,7 +243,7 @@ test('TEST-AI-NATIVE-LOOP-E2E reload renders verified launch brief and progressi
   await expect(restoredTeamAnswer).toHaveValue('5 people')
   await restoredAssistant.getByRole('button', { name: 'Gửi tất cả câu trả lời' }).click()
   const revisedBrief = restoredAssistant.getByTestId('project-launch-brief').last()
-  await expect(revisedBrief).toContainText('Revision 2')
+  await expect(revisedBrief).toContainText('Bản 2')
   await expect(restoredAssistant.getByText('Đã cập nhật Project Launch Brief theo timebox 8 tuần')).toBeVisible()
   await expect(restoredAssistant.getByText('Quy mô nhóm mong muốn là bao nhiêu?').last()).toBeVisible()
 })

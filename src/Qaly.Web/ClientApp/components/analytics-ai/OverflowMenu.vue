@@ -8,6 +8,7 @@ type OverflowMenuItem = {
   label: string
   icon?: Component
   danger?: boolean
+  separatorBefore?: boolean
 }
 
 const props = withDefaults(defineProps<{
@@ -146,7 +147,7 @@ onBeforeUnmount(() => {
           v-for="item in items"
           :key="item.key"
           class="overflow-menu-item"
-          :class="{ 'is-danger': item.danger }"
+          :class="{ 'is-danger': item.danger, 'has-separator': item.separatorBefore }"
           type="button"
           role="menuitem"
           @click="handleSelect(item.key)"
@@ -263,6 +264,13 @@ onBeforeUnmount(() => {
 .overflow-menu-item.is-danger:focus-visible {
   background: var(--danger-soft);
   color: var(--danger);
+}
+
+.overflow-menu-item.has-separator {
+  margin-top: 5px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 8px 8px;
+  padding-top: 11px;
 }
 
 .overflow-menu-pop-enter-active,

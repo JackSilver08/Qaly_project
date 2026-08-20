@@ -58,95 +58,21 @@ public class AiController : BaseApiController
     }
 
     [HttpPost("generate-plan")]
-    public async Task<IActionResult> GeneratePlan(GeneratePlanRequestDto request, CancellationToken ct)
-    {
-        var result = await _aiService.GeneratePlanAsync(request.UserPrompt, request.ProjectId, ct);
-        return StatusCode(result.StatusCode, result);
-    }
+    public IActionResult GeneratePlan(GeneratePlanRequestDto request)
+        => StatusCode(StatusCodes.Status410Gone, new
+        {
+            errorCode = "legacy_ai_planner_retired",
+            error = "The legacy planner was retired. Open the unified Assistant and use the governed Project Launch capability."
+        });
 
     [HttpPost("create-plan")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> CreatePlan(ConfirmPlanRequestDto request, CancellationToken ct)
-    {
-        Guid projectId;
-        if (request.IsNewProject)
+    public IActionResult CreatePlan(ConfirmPlanRequestDto request)
+        => StatusCode(StatusCodes.Status410Gone, new
         {
-            if (string.IsNullOrWhiteSpace(request.ProjectName))
-            {
-                return BadRequest(new { error = "Tên dự án là bắt buộc." });
-            }
-
-            var createProjectResult = await _projectService.CreateAsync(new Qaly.Application.DTOs.Project.CreateProjectDto(
-                request.ProjectName.Trim(),
-                null,
-                request.ProjectDescription?.Trim(),
-                null,
-                null,
-                null
-            ), ct);
-
-            if (!createProjectResult.IsSuccess || createProjectResult.Data == null)
-            {
-                return StatusCode(createProjectResult.StatusCode, createProjectResult.Error);
-            }
-
-            projectId = createProjectResult.Data.Id;
-        }
-        else
-        {
-            if (request.ProjectId == null || request.ProjectId == Guid.Empty)
-            {
-                return BadRequest(new { error = "ProjectId là bắt buộc đối với dự án hiện tại." });
-            }
-            projectId = request.ProjectId.Value;
-        }
-
-        var createdTasks = new List<Qaly.Application.DTOs.Task.TaskItemDto>();
-        var failedTasks = new List<CreatePlanTaskFailureDto>();
-        if (request.Tasks != null)
-        {
-            foreach (var taskDto in request.Tasks)
-            {
-                if (string.IsNullOrWhiteSpace(taskDto.Title))
-                {
-                    failedTasks.Add(new CreatePlanTaskFailureDto(taskDto.Title, "Task title is required."));
-                    continue;
-                }
-
-                var createTaskResult = await _taskService.CreateAsync(new Qaly.Application.DTOs.Task.CreateTaskDto(
-                    taskDto.Title.Trim(),
-                    taskDto.Description?.Trim(),
-                    taskDto.Priority,
-                    taskDto.DueDate,
-                    taskDto.EstimatedHours,
-                    projectId,
-                    taskDto.AssigneeId
-                ), ct);
-
-                if (createTaskResult.IsSuccess && createTaskResult.Data != null)
-                {
-                    createdTasks.Add(createTaskResult.Data);
-                }
-                else
-                {
-                    failedTasks.Add(new CreatePlanTaskFailureDto(taskDto.Title.Trim(), createTaskResult.Error ?? "Task could not be created."));
-                }
-            }
-        }
-
-        if (createdTasks.Count == 0 && failedTasks.Count > 0)
-        {
-            return BadRequest(new
-            {
-                error = "Không thể tạo công việc nào từ kế hoạch AI.",
-                projectId,
-                taskCount = 0,
-                failedTasks
-            });
-        }
-
-        return Ok(new { projectId, taskCount = createdTasks.Count, failedTasks });
-    }
+            errorCode = "legacy_ai_planner_mutation_retired",
+            error = "Direct planner mutation is disabled. Use the unified Assistant review, single-confirm and canonical read-back flow."
+        });
 
     [HttpPost("sync")]
     public async Task<IActionResult> Sync()
@@ -266,12 +192,21 @@ public class AiController : BaseApiController
     public async Task<IActionResult> ConfirmDraft(Guid draftId, ConfirmAiDraftDto dto, CancellationToken ct = default)
     {
         var idempotencyKey = dto.IdempotencyKey ?? Request.Headers["Idempotency-Key"].ToString();
-        if (string.IsNullOrWhiteSpace(idempotencyKey) || string.IsNullOrWhiteSpace(dto.RowVersion))
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
         {
             return BadRequest(new
             {
                 errorCode = Qaly.Application.Common.Models.AiErrorCodes.InvalidRequest,
-                error = "Idempotency-Key and rowVersion are required."
+                error = "Idempotency-Key is required for draft confirmation."
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(dto.RowVersion))
+        {
+            return BadRequest(new
+            {
+                errorCode = Qaly.Application.Common.Models.AiErrorCodes.InvalidRequest,
+                error = "rowVersion is required. Reload the canonical draft before confirmation."
             });
         }
 
@@ -281,11 +216,12 @@ public class AiController : BaseApiController
     }
 
     [HttpPost("agent-runs")]
-    public async Task<IActionResult> StartAgentRun(StartAgentRunDto request, CancellationToken ct = default)
-    {
-        var result = await _agentRunService.StartAsync(request, ct);
-        return StatusCode(result.StatusCode, result);
-    }
+    public IActionResult StartAgentRun(StartAgentRunDto request)
+        => StatusCode(StatusCodes.Status410Gone, new
+        {
+            errorCode = "legacy_agent_run_retired",
+            error = "Legacy autonomous runs are read-only history. Start work through a registered unified Assistant capability."
+        });
 
     [HttpGet("agent-runs/{runId:guid}")]
     public async Task<IActionResult> GetAgentRun(Guid runId, CancellationToken ct = default)
@@ -295,11 +231,12 @@ public class AiController : BaseApiController
     }
 
     [HttpPost("agent-runs/{runId:guid}/approve")]
-    public async Task<IActionResult> ApproveAgentRun(Guid runId, ApproveAgentRunDto request, CancellationToken ct = default)
-    {
-        var result = await _agentRunService.ApproveAsync(runId, request, ct);
-        return StatusCode(result.StatusCode, result);
-    }
+    public IActionResult ApproveAgentRun(Guid runId, ApproveAgentRunDto request)
+        => StatusCode(StatusCodes.Status410Gone, new
+        {
+            errorCode = "legacy_agent_run_mutation_retired",
+            error = "Legacy approval cannot mutate data. Review and confirm the registered native draft in the unified Assistant."
+        });
 
     [HttpPost("drafts/{draftId:guid}/reject")]
     [ValidateAntiForgeryToken]
@@ -477,14 +414,11 @@ public class AiController : BaseApiController
         Guid taskId,
         AiFunctionJobRequest request,
         CancellationToken ct = default)
-        => EnqueueFunctionAsync(
-            "task_breakdown",
-            "task_breakdown.v4",
-            request.ProjectId,
-            "task",
-            taskId,
-            request,
-            ct);
+        => Task.FromResult<IActionResult>(StatusCode(StatusCodes.Status410Gone, new
+        {
+            errorCode = "legacy_task_breakdown_retired",
+            error = "Task breakdown is now a governed native draft. Open the unified Assistant, review the breakdown, then confirm it once."
+        }));
 
     [HttpPost("tasks/{taskId:guid}/acceptance-checklist")]
     [ValidateAntiForgeryToken]
@@ -492,14 +426,11 @@ public class AiController : BaseApiController
         Guid taskId,
         AiFunctionJobRequest request,
         CancellationToken ct = default)
-        => EnqueueFunctionAsync(
-            "acceptance_checklist",
-            "acceptance_checklist.v4",
-            request.ProjectId,
-            "task",
-            taskId,
-            request,
-            ct);
+        => Task.FromResult<IActionResult>(StatusCode(StatusCodes.Status410Gone, new
+        {
+            errorCode = "legacy_acceptance_checklist_retired",
+            error = "Acceptance checklist is now a governed native draft. Open the unified Assistant, review the checklist, then confirm it once."
+        }));
 
     [HttpPost("projects/{projectId:guid}/progress-summary")]
     [ValidateAntiForgeryToken]
@@ -698,6 +629,17 @@ public class AiController : BaseApiController
         CancellationToken ct)
     {
         var result = await _aiAssistantSessionService.RenameAsync(sessionId, request, ct);
+        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPut("assistant/sessions/{sessionId:guid}/scope")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateAssistantSessionScope(
+        Guid sessionId,
+        UpdateAiAssistantSessionScopeRequestDto request,
+        CancellationToken ct)
+    {
+        var result = await _aiAssistantSessionService.UpdateScopeAsync(sessionId, request, ct);
         return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, result);
     }
 

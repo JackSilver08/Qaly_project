@@ -119,7 +119,7 @@ test('TEST-CAND-007-E2E preserves exact selected-message grounding and reload re
     await page.route(`**/api/ai/groups/${group.id}/summaries`, async route => {
       const body = route.request().postDataJSON()
       expect(body.projectId).toBe(project.id)
-      expect(body.providerHint).toBe('deepseek-v4-pro')
+      expect(body.providerHint).toBe('deepseek-chat')
       selectedMessageIds = body.messageIds
       await route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ jobId, status: 'queued', isExisting: false })) })
     })

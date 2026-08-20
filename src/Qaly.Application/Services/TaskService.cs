@@ -694,8 +694,38 @@ public class TaskService : ITaskService
             return result;
         }
 
-        var suggestion = await _taskPrioritySuggestionService.SuggestAsync(task.Title, task.Description ?? string.Empty, project.Name);
-        return Result.Created(result.Data with { AiPrioritySuggestion = suggestion });
+        return Result.Created(result.Data);
+    }
+
+    public async Task<Result<TaskPrioritySuggestionDto>> SuggestPriorityAsync(
+        SuggestTaskPriorityDto dto,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Title))
+        {
+            return Result.Failure<TaskPrioritySuggestionDto>("Tiêu đề nhiệm vụ là bắt buộc.", 400);
+        }
+
+        var project = await _projectRepo.GetByIdAsync(dto.ProjectId, ct);
+        if (project == null) return Result.NotFound<TaskPrioritySuggestionDto>();
+        if (!await _taskAccessPolicy.CanAccessProjectAsync(project.Id, project.OwnerId, ct))
+        {
+            return Result.Forbidden<TaskPrioritySuggestionDto>();
+        }
+
+        var raw = await _taskPrioritySuggestionService.SuggestAsync(
+            dto.Title.Trim(),
+            dto.Description?.Trim() ?? string.Empty,
+            project.Name);
+        var separator = raw.IndexOf('-', StringComparison.Ordinal);
+        var proposed = separator >= 0 ? raw[..separator].Trim().Trim('[', ']') : raw.Trim().Trim('[', ']');
+        var allowed = new[] { "Low", "Medium", "High", "Critical" };
+        var priority = allowed.FirstOrDefault(item => item.Equals(proposed, StringComparison.OrdinalIgnoreCase))
+            ?? "Medium";
+        var reason = separator >= 0 ? raw[(separator + 1)..].Trim() : "Chưa đủ tín hiệu để đề xuất mức khác.";
+        if (string.IsNullOrWhiteSpace(reason)) reason = "Chưa đủ tín hiệu để đề xuất mức khác.";
+
+        return Result.Success(new TaskPrioritySuggestionDto(priority, reason));
     }
 
     public async Task<Result<TaskItemDto>> UpdateAsync(Guid id, UpdateTaskDto dto, CancellationToken ct = default)

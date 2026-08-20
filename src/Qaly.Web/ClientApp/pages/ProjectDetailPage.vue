@@ -21,6 +21,7 @@ import {
   List,
   Lock,
   Sparkles,
+  LoaderCircle,
 } from "lucide-vue-next";
 // @ts-ignore
 import { VueDraggable } from "../utils/vendor/vue-draggable-plus.js";
@@ -174,6 +175,38 @@ watch(activeProjectTab, (tab) => {
   }
 });
 const showImportModal = ref(false);
+const prioritySuggestionLoading = ref(false);
+const prioritySuggestion = ref<{ priority: string; reason: string } | null>(null);
+
+watch([newTaskTitle, newTaskDescription], () => {
+  prioritySuggestion.value = null;
+});
+
+async function suggestTaskPriority() {
+  if (!selectedProject.value || !newTaskTitle.value.trim() || prioritySuggestionLoading.value) return;
+  prioritySuggestionLoading.value = true;
+  try {
+    prioritySuggestion.value = await apiResult<{ priority: string; reason: string }>(
+      "/api/tasks/priority-suggestion",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          projectId: selectedProject.value.id,
+          title: newTaskTitle.value.trim(),
+          description: newTaskDescription.value.trim() || null,
+        }),
+      },
+    );
+  } catch (error) {
+    showError(error instanceof Error ? error.message : "Không thể gợi ý độ ưu tiên.");
+  } finally {
+    prioritySuggestionLoading.value = false;
+  }
+}
+
+function applyPrioritySuggestion() {
+  if (prioritySuggestion.value) newTaskPriority.value = prioritySuggestion.value.priority;
+}
 
 function openAiActionComposer() {
   if (!selectedProject.value) return;
@@ -193,12 +226,21 @@ const undoBannerData = ref<{
 const assignmentInsight = ref<TaskAssignmentInsightDto | null>(null);
 const assignmentInsightLoading = ref(false);
 const assignmentInsightError = ref("");
+const assignmentPlannerOpen = ref(false);
 watch(
   () => selectedTask.value?.id,
   () => {
     assignmentInsight.value = null;
     assignmentInsightError.value = "";
+    assignmentPlannerOpen.value = route.query.assignmentPlanner === "1";
   },
+);
+watch(
+  () => route.query.assignmentPlanner,
+  (value) => {
+    if (selectedTask.value) assignmentPlannerOpen.value = value === "1";
+  },
+  { immediate: true },
 );
 
 function onImported(result: any) {
@@ -425,6 +467,17 @@ function prepareAssignmentDraft(userId: string) {
   if (!selectedTask.value) return;
   beginEditTask(selectedTask.value);
   newTaskAssigneeId.value = userId;
+}
+
+async function onAssignmentApplied() {
+  assignmentPlannerOpen.value = false;
+  await loadDashboard();
+  await loadAssignmentInsight();
+  if (route.query.assignmentPlanner === "1") {
+    const query = { ...route.query };
+    delete query.assignmentPlanner;
+    await router.replace({ query });
+  }
 }
 
 function kanbanStatusFromElement(element: HTMLElement | null | undefined) {
@@ -854,7 +907,19 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
 
                     <div class="modal-grid-2">
                       <div class="form-group">
-                        <label>Độ ưu tiên</label>
+                        <div class="form-label-actions">
+                          <label>Độ ưu tiên</label>
+                          <button
+                            type="button"
+                            class="priority-suggest-button"
+                            :disabled="prioritySuggestionLoading || !newTaskTitle.trim()"
+                            @click="suggestTaskPriority"
+                          >
+                            <LoaderCircle v-if="prioritySuggestionLoading" :size="13" class="spin" />
+                            <Sparkles v-else :size="13" />
+                            AI gợi ý
+                          </button>
+                        </div>
                         <select v-model="newTaskPriority" class="modal-input">
                           <option
                             v-for="priority in priorities"
@@ -864,6 +929,15 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                             {{ priority }}
                           </option>
                         </select>
+                        <div v-if="prioritySuggestion" class="priority-suggestion-card" role="status">
+                          <div>
+                            <strong>Đề xuất: {{ prioritySuggestion.priority }}</strong>
+                            <span>{{ prioritySuggestion.reason }}</span>
+                          </div>
+                          <button type="button" @click="applyPrioritySuggestion">
+                            Dùng mức này
+                          </button>
+                        </div>
                       </div>
                       <div class="form-group">
                         <label>Người thực hiện</label>
@@ -1246,6 +1320,15 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                         >
                           Tải gợi ý
                         </button>
+                        <button
+                          v-if="isProjectAdmin"
+                          class="ghost-pill"
+                          type="button"
+                          data-testid="open-controlled-auto-assignment"
+                          @click="assignmentPlannerOpen = !assignmentPlannerOpen"
+                        >
+                          {{ assignmentPlannerOpen ? "Đóng phương án" : "Tự giao có kiểm soát" }}
+                        </button>
                       </div>
                       <p
                         v-if="assignmentInsightLoading"
@@ -1346,21 +1429,18 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                               </a>
                             </div>
                             <button
-                              v-if="
-                                assignmentInsight.evidenceState === 'ready' &&
-                                candidate.skillCoveragePercent > 0
-                              "
+                              v-if="isProjectAdmin"
                               class="assignment-draft-button"
                               type="button"
                               @click="prepareAssignmentDraft(candidate.userId)"
                             >
-                              Mở form giao việc
+                              Chọn thủ công
                             </button>
                           </article>
                         </div>
                         <p class="assignment-note">
-                          Qaly không tự giao task. Nút trên chỉ điền assignee
-                          vào form hiện có để bạn sửa và xác nhận lưu.
+                          “Chọn thủ công” mở form Task; “Tự giao có kiểm soát”
+                          kiểm tra tải đa dự án, capacity và lịch rồi mới cho xác nhận ghi thật.
                         </p>
                       </template>
                       <p v-else class="assignment-note">
@@ -1368,6 +1448,14 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                         attribution đã xác nhận. Label và tin nhắn riêng không
                         được dùng làm bằng chứng.
                       </p>
+                      <ProjectWorkloadTab
+                        v-if="assignmentPlannerOpen && selectedProject && selectedTask"
+                        compact
+                        :initial-task-id="selectedTask.id"
+                        :project-id="selectedProject.id"
+                        :tasks="[selectedTask]"
+                        @applied="onAssignmentApplied"
+                      />
                     </div>
 
                     <div class="time-tracking-section">
@@ -2203,11 +2291,14 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
 }
 
 .task-detail-drawer {
-  width: min(440px, calc(100vw - 24px));
+  width: min(620px, calc(100vw - 32px));
   height: 100vh;
   min-height: 100vh;
   max-height: 100vh;
+  min-width: 0;
+  overflow-x: hidden;
   overflow-y: auto;
+  overscroll-behavior: contain;
   border-radius: var(--qaly-radius-lg) 0 0 var(--qaly-radius-lg);
   box-shadow: var(--qaly-shadow-md);
 }
@@ -3408,6 +3499,58 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
   font-weight: 600;
   color: var(--text-main);
   margin-bottom: 8px;
+}
+
+.form-label-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.priority-suggest-button,
+.priority-suggestion-card button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  color: #1d4ed8;
+  background: transparent;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.priority-suggest-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.priority-suggestion-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 9px 10px;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 10px;
+  background: rgba(239, 246, 255, 0.85);
+}
+
+.priority-suggestion-card > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.priority-suggestion-card strong,
+.priority-suggestion-card span {
+  font-size: 0.74rem;
+}
+
+.priority-suggestion-card span {
+  color: var(--muted);
 }
 
 .modal-grid-2 {

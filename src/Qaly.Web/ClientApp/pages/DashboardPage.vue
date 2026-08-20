@@ -110,17 +110,18 @@ const hoveredIndex = ref<number | null>(null)
 const tooltipX = ref(0)
 const tooltipY = ref(0)
 
-const maxTasks = computed(() => {
-  const values = projects.value.slice(0, 5).map(p => p.taskCount || 0)
-  const maxVal = Math.max(...values, 0)
-  return maxVal > 0 ? maxVal : 10
-})
+// The chart has one percent axis, so both the bars and the connecting line must
+// represent the same canonical metric.  Previously the line plotted task count
+// on this percent axis, which made a valid dataset look incorrect.
+const chartProjects = computed(() =>
+  projects.value.filter(project => project.status !== 'Archived').slice(0, 5),
+)
 
 const splinePoints = computed(() => {
-  return projects.value.slice(0, 5).map((project, i) => {
+  return chartProjects.value.map((project, i) => {
     const x = 65 + i * 90 + 16
-    const tasks = project.taskCount || 0
-    const y = 280 - (tasks / maxTasks.value) * 200
+    const progress = Math.min(100, Math.max(0, project.progressPercentage || 0))
+    const y = 280 - (progress / 100) * 240
     return { x, y }
   })
 })
@@ -176,7 +177,7 @@ const tooltipStyle = computed(() => {
 
 const hoveredProject = computed(() => {
   if (hoveredIndex.value === null) return null
-  return projects.value[hoveredIndex.value] ?? null
+  return chartProjects.value[hoveredIndex.value] ?? null
 })
 </script>
 
@@ -394,7 +395,7 @@ const hoveredProject = computed(() => {
                 </g>
                 
                 <!-- Columns (Bars) Group -->
-                <g v-for="(project, i) in projects.slice(0, 5)" :key="'bar-' + project.id" 
+                <g v-for="(project, i) in chartProjects" :key="'bar-' + project.id"
                    class="svg-bar-group" 
                    style="cursor: pointer;"
                    @click="selectProject(project.id)"
@@ -464,7 +465,7 @@ const hoveredProject = computed(() => {
                   </text>
                 </g>
                 
-                <!-- Overlay line representing tasks/velocity -->
+                <!-- The line connects the exact progress value at the top of each bar. -->
                 <path 
                   v-if="splinePath"
                   :d="splinePath" 
@@ -550,7 +551,7 @@ const hoveredProject = computed(() => {
                 </g>
                 
                 <!-- 3D Bars Loop -->
-                <g v-for="(project, i) in projects.slice(0, 5)" :key="'bar3d-' + project.id" 
+                <g v-for="(project, i) in chartProjects" :key="'bar3d-' + project.id"
                    class="svg-bar-group" 
                    style="cursor: pointer; transition: transform 0.2s ease-in-out; transform-origin: center bottom;"
                    :style="{ transform: hoveredIndex === i ? 'translateY(-6px)' : 'none' }"
@@ -713,6 +714,15 @@ const hoveredProject = computed(() => {
   color: #0f172a;
   background: #ffffff;
   box-shadow: var(--qaly-shadow-md);
+}
+
+/* Keep the hover target continuous while the pointer crosses the visual gap
+   between the summary card and its interactive context panel. */
+.summary-card__context::before {
+  content: '';
+  position: absolute;
+  inset: -8px 0 auto;
+  height: 8px;
 }
 
 .summary-card:hover .summary-card__context,

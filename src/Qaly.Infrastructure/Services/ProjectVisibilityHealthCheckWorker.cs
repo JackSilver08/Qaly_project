@@ -14,6 +14,15 @@ namespace Qaly.Infrastructure.Services;
 /// </summary>
 public class ProjectVisibilityHealthCheckWorker : BackgroundService
 {
+    private static readonly Action<ILogger, Exception?> WorkerStarted =
+        LoggerMessage.Define(LogLevel.Information, new EventId(1, nameof(WorkerStarted)), "ProjectVisibilityHealthCheckWorker started.");
+    private static readonly Action<ILogger, Exception?> WorkerFailed =
+        LoggerMessage.Define(LogLevel.Error, new EventId(2, nameof(WorkerFailed)), "Error occurred during ProjectVisibilityHealthCheckWorker execution.");
+    private static readonly Action<ILogger, int, Exception?> OrphanedMembersFound =
+        LoggerMessage.Define<int>(LogLevel.Warning, new EventId(3, nameof(OrphanedMembersFound)), "[Visibility Alert] Found {Count} users with orphaned ProjectMember records for deleted/inaccessible projects.");
+    private static readonly Action<ILogger, Exception?> VisibilityHealthy =
+        LoggerMessage.Define(LogLevel.Information, new EventId(4, nameof(VisibilityHealthy)), "[Visibility Health Check] All ProjectMember visibility constraints OK.");
+
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<ProjectVisibilityHealthCheckWorker> _logger;
     private readonly TimeSpan _checkInterval = TimeSpan.FromHours(1);
@@ -28,7 +37,7 @@ public class ProjectVisibilityHealthCheckWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("ProjectVisibilityHealthCheckWorker started.");
+        WorkerStarted(_logger, null);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -38,7 +47,7 @@ public class ProjectVisibilityHealthCheckWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error occurred during ProjectVisibilityHealthCheckWorker execution.");
+                WorkerFailed(_logger, ex);
             }
 
             await Task.Delay(_checkInterval, stoppingToken);
@@ -60,9 +69,7 @@ public class ProjectVisibilityHealthCheckWorker : BackgroundService
 
         if (orphanedMemberUserIds.Count > 0)
         {
-            _logger.LogWarning(
-                "[Visibility Alert] Found {Count} users with orphaned ProjectMember records for deleted/inaccessible projects.",
-                orphanedMemberUserIds.Count);
+            OrphanedMembersFound(_logger, orphanedMemberUserIds.Count, null);
 
             // Audit log warning
             var auditLog = new AuditLog
@@ -78,7 +85,7 @@ public class ProjectVisibilityHealthCheckWorker : BackgroundService
         }
         else
         {
-            _logger.LogInformation("[Visibility Health Check] All ProjectMember visibility constraints OK.");
+            VisibilityHealthy(_logger, null);
         }
     }
 }

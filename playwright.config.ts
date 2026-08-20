@@ -26,10 +26,16 @@ export default defineConfig({
     : [['list'], ['html', { open: 'never' }]],
   webServer: shouldStartLocalServer
     ? {
-        command: 'dotnet run --project src/Qaly.Web --urls http://127.0.0.1:5000',
+        command: 'dotnet run --project src/Qaly.Web --no-launch-profile --urls http://127.0.0.1:5000',
         url: 'http://127.0.0.1:5000/Account/Login',
         reuseExistingServer: true,
         timeout: 180_000,
+        // Browser evidence must be hermetic and must not depend on a developer's local SQL
+        // service. Set E2E_USE_SQL=true only for an explicit relational migration exercise.
+        env: {
+          ASPNETCORE_ENVIRONMENT: 'Development',
+          UseInMemoryDatabase: process.env.E2E_USE_SQL === 'true' ? 'false' : 'true',
+        },
       }
     : undefined,
   use: {

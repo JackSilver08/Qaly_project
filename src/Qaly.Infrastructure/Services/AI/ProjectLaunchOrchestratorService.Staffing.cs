@@ -35,14 +35,14 @@ public sealed partial class ProjectLaunchOrchestratorService
             .Where(item => item.OrganizationId == organization.Id && userIds.Contains(item.UserId))
             .ToDictionaryAsync(item => item.UserId, ct);
         var activeProjects = await _db.ProjectMembers.AsNoTracking()
-            .Where(item => userIds.Contains(item.UserId) && item.Project.OrganizationId == organization.Id &&
+            .Where(item => userIds.Contains(item.UserId) &&
                 !item.Project.IsDeleted && item.Project.Status != "Archived")
             .GroupBy(item => item.UserId)
             .Select(group => new { UserId = group.Key, Count = group.Select(item => item.ProjectId).Distinct().Count() })
             .ToDictionaryAsync(item => item.UserId, item => item.Count, ct);
         var commitments = await _db.TaskItems.AsNoTracking()
             .Where(item => item.AssigneeId.HasValue && userIds.Contains(item.AssigneeId.Value) &&
-                item.Project.OrganizationId == organization.Id && !item.Project.IsDeleted && !item.IsDeleted &&
+                !item.Project.IsDeleted && !item.IsDeleted &&
                 item.Status != "Done" && item.Status != "Completed" &&
                 (!item.StartDate.HasValue || item.StartDate < windowEnd) && (!item.DueDate.HasValue || item.DueDate >= windowStart))
             .GroupBy(item => item.AssigneeId!.Value)
@@ -112,6 +112,7 @@ public sealed partial class ProjectLaunchOrchestratorService
 
         var requiredSkillNames = modelPlan.Sprints.SelectMany(item => item.Tasks)
             .SelectMany(item => item.RequiredSkillNames)
+            .Concat(brief.Features?.Where(IsInScopeFeature).SelectMany(item => item.RequiredSkillNames) ?? [])
             .Select(Normalize)
             .Where(item => item.Length > 0)
             .Distinct(StringComparer.Ordinal)
@@ -127,36 +128,31 @@ public sealed partial class ProjectLaunchOrchestratorService
             .ThenByDescending(item => item.EvidenceConfidence)
             .ThenBy(item => item.ActiveProjectCount)
             .ThenBy(item => item.UserId)
-            .Take(2)
+            .Take(3)
             .ToArray();
+        var eligibleCount = candidates.Count(item => item.StaffingEligible);
+        var averageAvailable = candidates.Where(item => item.StaffingEligible)
+            .Select(item => item.AvailableHours)
+            .DefaultIfEmpty(1m)
+            .Average();
+        var balancedTeamSize = Math.Clamp(
+            (int)Math.Ceiling(totalHours / Math.Max(1m, averageAvailable)),
+            Math.Min(2, Math.Max(1, eligibleCount)),
+            Math.Max(1, eligibleCount));
+        var leanTeamSize = Math.Min(Math.Max(1, eligibleCount), Math.Max(1, balancedTeamSize - 1));
+        var acceleratedTeamSize = Math.Min(Math.Max(1, eligibleCount), balancedTeamSize + 1);
         var scenarios = new List<ProjectStaffingScenarioDto>();
-        if (managerOptions.Length == 0)
+        var primaryManager = managerOptions.FirstOrDefault();
+        var variants = new[]
         {
-            scenarios.Add(BuildScenario(null, "balanced", "Cân bằng", candidates, knownRequiredSkills,
-                unknownCatalogSkills, catalog, totalHours, maxUtilizationPercent, maxConcurrentProjects,
-                focusReservePercent, sourceVersionHash, brief.SourceRefs));
-        }
-        else
-        {
-            for (var index = 0; index < managerOptions.Length; index++)
-            {
-                var manager = managerOptions[index];
-                scenarios.Add(BuildScenario(
-                    manager,
-                    index == 0 ? "balanced" : $"manager-alternative-{index}",
-                    index == 0 ? "Cân bằng" : $"Phương án manager thay thế: {manager.DisplayName}",
-                    candidates,
-                    knownRequiredSkills,
-                    unknownCatalogSkills,
-                    catalog,
-                    totalHours,
-                    maxUtilizationPercent,
-                    maxConcurrentProjects,
-                    focusReservePercent,
-                    sourceVersionHash,
-                    brief.SourceRefs));
-            }
-        }
+            (Id: "lean", Title: "Gọn nhẹ", Size: leanTeamSize),
+            (Id: "balanced", Title: "Cân bằng", Size: balancedTeamSize),
+            (Id: "accelerated", Title: "Tăng tốc", Size: acceleratedTeamSize)
+        };
+        foreach (var variant in variants.DistinctBy(item => (item.Id, item.Size)))
+            scenarios.Add(BuildScenario(primaryManager, variant.Id, variant.Title, variant.Size, candidates,
+                knownRequiredSkills, unknownCatalogSkills, catalog, totalHours, maxUtilizationPercent,
+                maxConcurrentProjects, focusReservePercent, sourceVersionHash, brief.SourceRefs));
         var warnings = new List<string>();
         if (candidates.Any(item => item.CapacityState == "missing"))
             warnings.Add("Thành viên thiếu capacity profile bị loại khỏi phương án khả thi; Qaly không đổi missing capacity thành thời gian trống.");
@@ -171,6 +167,7 @@ public sealed partial class ProjectLaunchOrchestratorService
         CandidateFacts? manager,
         string scenarioId,
         string title,
+        int desiredTeamSize,
         IReadOnlyList<CandidateFacts> candidates,
         IReadOnlyList<string> requiredSkills,
         IReadOnlyList<string> unknownCatalogSkills,
@@ -196,11 +193,12 @@ public sealed partial class ProjectLaunchOrchestratorService
             if (candidate == null) missing.Add(catalog.GetValueOrDefault(skill, skill));
             else selected[candidate.UserId] = candidate;
         }
-        if (selected.Count == 1 && totalHours > selected.Values.Sum(item => item.AvailableHours))
+        while (selected.Count < desiredTeamSize)
         {
             var additional = candidates.Where(item => item.StaffingEligible && !selected.ContainsKey(item.UserId))
                 .OrderByDescending(item => item.AvailableHours).ThenBy(item => item.ActiveProjectCount).FirstOrDefault();
-            if (additional != null) selected[additional.UserId] = additional;
+            if (additional == null) break;
+            selected[additional.UserId] = additional;
         }
 
         var totalAvailable = selected.Values.Sum(item => item.AvailableHours);
@@ -251,7 +249,7 @@ public sealed partial class ProjectLaunchOrchestratorService
         return new(
             scenarioId,
             title,
-            "Phương án server quyết định theo hard gates trước, sau đó mới xếp hạng soft trade-off.",
+            $"Quy mô đề xuất {members.Length} người; kiểm tra hard constraints trước rồi mới cân bằng kỹ năng, tải và thời hạn.",
             feasible,
             Math.Round(score, 2),
             manager?.UserId,

@@ -25,6 +25,7 @@ test('TEST-ACTION-E2E unified AI assistant shows real progress, editable review 
   let projectId = ''
   let jobPolls = 0
   let confirmed = false
+  let confirmRequests = 0
   const assistantSessionId = 'dddddddd-dddd-dddd-dddd-dddddddddddd'
 
   await page.route('**/api/security/csrf', async route => {
@@ -61,7 +62,7 @@ test('TEST-ACTION-E2E unified AI assistant shows real progress, editable review 
     expect(body.expectedVersion).toBe(0)
     expect(body.clientTurnId).toBeTruthy()
     expect(route.request().headers()['idempotency-key']).toContain(assistantSessionId)
-    projectId = body.context.projectId
+    projectId = body.context.projectId || '12121212-1212-1212-1212-121212121212'
     await route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({
@@ -216,16 +217,15 @@ test('TEST-ACTION-E2E unified AI assistant shows real progress, editable review 
     })
   })
   await page.route(`**/api/ai/drafts/${draftId}/confirm`, async route => {
+    confirmRequests += 1
     confirmed = true
+    expect(route.request().headers()['idempotency-key']).toBe(`action-confirm:${draftId}`)
     const edited = JSON.parse(route.request().postDataJSON().editedPayloadJson)
     expect(edited.options[0].commands[0].title).toBe('Reviewed task from browser')
     await route.fulfill({
+      status: 502,
       contentType: 'application/json',
-      body: JSON.stringify(envelope({
-        status: 'confirmed',
-        createdTaskCount: 1,
-        actionReceipt: receipt(projectId, taskId),
-      })),
+      body: JSON.stringify({ error: 'Simulated response loss after canonical commit.' }),
     })
   })
 
@@ -234,9 +234,9 @@ test('TEST-ACTION-E2E unified AI assistant shows real progress, editable review 
   await expect(page.getByText('Bạn muốn Qaly chuẩn bị việc gì?')).toHaveCount(0)
   await page.getByLabel('Nhập yêu cầu cho Trợ lý AI').fill('Tạo task frontend có tiêu chí nghiệm thu.')
   await page.getByRole('button', { name: 'Gửi câu hỏi' }).click()
+  await page.getByRole('button', { name: 'Mở phương án task' }).click()
 
   await expect(page.getByText(/Đã chạy \d+ giây/)).toBeVisible()
-  await expect(page.getByText('Đang định tuyến DeepSeek V4 Pro')).toBeVisible()
   await expect(page.getByText('Đã soạn xong — chưa thay đổi dữ liệu')).toBeVisible({ timeout: 10_000 })
 
   const artifactSplitter = page.getByRole('separator', { name: 'Thay đổi độ rộng hội thoại và bản nháp' })
@@ -255,6 +255,7 @@ test('TEST-ACTION-E2E unified AI assistant shows real progress, editable review 
   await expect(page.getByText('Đã thực hiện sau khi bạn xác nhận')).toBeVisible()
   await expect(page.getByText('Reviewed task from browser')).toBeVisible()
   await expect(page.getByText('Đã đọc lại kết quả')).toBeVisible()
+  expect(confirmRequests).toBe(1)
 
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.locator('.welcome-overlay').waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => undefined)

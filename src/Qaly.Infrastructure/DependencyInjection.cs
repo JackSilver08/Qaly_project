@@ -97,6 +97,7 @@ public static class DependencyInjection
             if (bool.TryParse(configuration["AI_PROJECT_LAUNCH_EXECUTION_ENABLED"], out var projectLaunchExecutionEnabled)) options.ProjectLaunchExecutionEnabled = projectLaunchExecutionEnabled;
             if (bool.TryParse(configuration["AI_PROJECT_OPERATION_MONITORING_ENABLED"], out var projectOperationMonitoringEnabled)) options.ProjectOperationMonitoringEnabled = projectOperationMonitoringEnabled;
             if (bool.TryParse(configuration["AI_SAFE_TEST_ORCHESTRATOR_ENABLED"], out var safeTestOrchestratorEnabled)) options.SafeTestOrchestratorEnabled = safeTestOrchestratorEnabled;
+            if (bool.TryParse(configuration["AI_NATIVE_DOMAIN_ACTIONS_ENABLED"], out var nativeDomainActionsEnabled)) options.NativeDomainActionsEnabled = nativeDomainActionsEnabled;
         });
         services.Configure<PrivacyV4Options>(configuration.GetSection(PrivacyV4Options.SectionName));
         services.PostConfigure<PrivacyV4Options>(options =>
@@ -117,6 +118,7 @@ public static class DependencyInjection
         services.AddScoped<IAiActionPlanValidator, AiActionPlanValidator>();
         services.AddScoped<IAiAssistantSessionService, AiAssistantSessionService>();
         services.AddScoped<IAiAssistantContextRegistry, AiAssistantContextRegistry>();
+        services.AddScoped<IAiNativeActionService, AiNativeActionService>();
         services.AddScoped<IOrganizationWorkRulebookService, OrganizationWorkRulebookService>();
         services.AddScoped<IProjectLaunchService, ProjectLaunchService>();
         services.AddScoped<IProjectLaunchOrchestratorService, ProjectLaunchOrchestratorService>();

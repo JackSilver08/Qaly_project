@@ -1,6 +1,7 @@
 export type AiModelStatus = 'live' | 'mock' | 'planned' | 'fallback' | 'budget' | 'privacy'
 
 export type AnalyticsMiniTab =
+  | 'tools'
   | 'insights'
   | 'metrics'
   | 'risks'

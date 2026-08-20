@@ -35,14 +35,19 @@ public class TaskItem : BaseEntity, ISoftDeleteEntity
     // Foreign keys
     public Guid ProjectId { get; set; }
     public Guid? SprintId { get; set; }
+    public Guid? ParentTaskId { get; set; }
     public Guid? AssigneeId { get; set; }
+    public Guid? ReviewerId { get; set; }
     public Guid ReporterId { get; set; }
     public Guid? ImportSessionId { get; set; }
 
     // Navigation properties
     public Project Project { get; set; } = null!;
     public Sprint? Sprint { get; set; }
+    public TaskItem? ParentTask { get; set; }
+    public ICollection<TaskItem> Subtasks { get; set; } = new List<TaskItem>();
     public User? Assignee { get; set; }
+    public User? Reviewer { get; set; }
     public User Reporter { get; set; } = null!;
     public ImportSession? ImportSession { get; set; }
     public ICollection<TaskComment> Comments { get; set; } = new List<TaskComment>();
@@ -54,6 +59,7 @@ public class TaskItem : BaseEntity, ISoftDeleteEntity
     public ICollection<TaskDependency> PredecessorDependencies { get; set; } = new List<TaskDependency>();
     public ICollection<TaskDependency> SuccessorDependencies { get; set; } = new List<TaskDependency>();
     public ICollection<TaskViewEvent> ViewEvents { get; set; } = new List<TaskViewEvent>();
+    public ICollection<TaskAcceptanceChecklistItem> AcceptanceChecklist { get; set; } = new List<TaskAcceptanceChecklistItem>();
 
     /// <summary>
     /// Task Key hiển thị dạng "QALY-142". Chỉ khả dụng khi navigation

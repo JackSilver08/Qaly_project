@@ -36,9 +36,21 @@ public class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
             .HasForeignKey(t => t.SprintId)
             .OnDelete(DeleteBehavior.ClientSetNull);
 
+        builder.HasOne(t => t.ParentTask)
+            .WithMany(t => t.Subtasks)
+            .HasForeignKey(t => t.ParentTaskId)
+            .OnDelete(DeleteBehavior.NoAction)
+            .IsRequired(false);
+
         builder.HasOne(t => t.Assignee)
             .WithMany(u => u.AssignedTasks)
             .HasForeignKey(t => t.AssigneeId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .IsRequired(false);
+
+        builder.HasOne(t => t.Reviewer)
+            .WithMany()
+            .HasForeignKey(t => t.ReviewerId)
             .OnDelete(DeleteBehavior.Restrict)
             .IsRequired(false);
 
@@ -53,7 +65,9 @@ public class TaskItemConfiguration : IEntityTypeConfiguration<TaskItem>
         // Task key uniqueness per project (backs "QALY-142" resolution).
         builder.HasIndex(t => new { t.ProjectId, t.Number }).IsUnique();
         builder.HasIndex(t => t.SprintId);
+        builder.HasIndex(t => new { t.ProjectId, t.ParentTaskId, t.SortOrder });
         builder.HasIndex(t => t.AssigneeId);
+        builder.HasIndex(t => t.ReviewerId);
         builder.HasIndex(t => t.Status);
         builder.HasIndex(t => t.DueDate);
         builder.HasIndex(t => t.StartDate);

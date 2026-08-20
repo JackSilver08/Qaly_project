@@ -61,7 +61,7 @@
         "commands": {
           "type": "array",
           "minItems": 1,
-          "maxItems": 5,
+          "maxItems": 20,
           "items": { "$ref": "#/$defs/taskCreateCommand" }
         }
       }
@@ -71,7 +71,7 @@
       "additionalProperties": false,
       "required": [
         "commandId", "toolName", "toolVersion", "title", "acceptanceCriteria",
-        "priority", "assigneeMode", "requiredSkills", "sourceRefs"
+        "priority", "assigneeMode", "requiredSkills", "sourceRefs", "dependencyCommandIds"
       ],
       "properties": {
         "commandId": { "type": "string", "minLength": 1, "maxLength": 80 },
@@ -103,6 +103,12 @@
           "minItems": 1,
           "maxItems": 12,
           "items": { "type": "string", "maxLength": 500 }
+        },
+        "dependencyCommandIds": {
+          "type": "array",
+          "maxItems": 19,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 80 }
         }
       }
     }

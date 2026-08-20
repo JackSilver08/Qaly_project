@@ -271,6 +271,11 @@ export interface TaskItemDto {
     rowVersion: string;
     number: number;
     key: string | null;
+    parentTaskId: string | null;
+    subtaskCount: number;
+    completedSubtaskCount: number;
+    subtaskProgressPercentage: number;
+    sprintId: string | null;
 }
 
 export interface KanbanBoardDto {
@@ -468,6 +473,9 @@ export interface PortfolioScheduleAlternativeDto {
     skillCoveragePercent: number;
     remainingHours: number;
     tradeOff: string;
+    evidenceConfidence: number;
+    loadBeforeHours: number;
+    capacityHours: number;
 }
 
 export interface PortfolioScheduleProposalItemDto {
@@ -511,6 +519,9 @@ export interface PortfolioScheduleReceiptDto {
     appliedTaskIds: string[];
     readBackLinks: string[];
     confirmedAt: string;
+    status: string;
+    readBackVerified: boolean;
+    verificationErrors: string[];
 }
 
 export interface PortfolioScheduleProposalDto {
@@ -723,4 +734,41 @@ export interface AiStrategyResponseDto {
     provider: string;
     model: string;
     cacheHit: boolean;
+}
+
+export interface ErumiTaskProposalDto {
+    title: string;
+    description: string;
+    priority: string;
+    estimatedHours: number;
+    recommendedRole: string;
+    recommendedAssigneeId: string | null;
+    recommendedAssigneeName: string | null;
+}
+
+export interface ErumiWorkloadImpactDto {
+    memberUserId: string;
+    memberName: string;
+    currentRole: string;
+    currentWeeklyHours: number;
+    proposedAdditionalHours: number;
+    isOverloaded: boolean;
+    warningMessage: string;
+}
+
+export interface ErumiRoadmapDiffProposalDto {
+    snapshotId: string;
+    projectId: string;
+    phaseName: string;
+    estimatedStartDate: string;
+    estimatedEndDate: string;
+    proposedTasks: ErumiTaskProposalDto[];
+    workloadImpacts: ErumiWorkloadImpactDto[];
+    summary: string;
+}
+
+export interface ErumiRoadmapChatResponseDto {
+    replyMessage: string;
+    hasRoadmapProposal: boolean;
+    proposal: ErumiRoadmapDiffProposalDto | null;
 }

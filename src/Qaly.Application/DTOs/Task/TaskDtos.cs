@@ -30,7 +30,14 @@ public record TaskItemDto(
     int SortOrder,
     string RowVersion,
     int Number = 0,
-    string? Key = null);
+    string? Key = null,
+    Guid? ParentTaskId = null,
+    int SubtaskCount = 0,
+    int CompletedSubtaskCount = 0,
+    int SubtaskProgressPercentage = 0,
+    Guid? ReviewerId = null,
+    string? ReviewerName = null,
+    Guid? SprintId = null);
 
 public record CreateTaskDto(
     string Title,
@@ -46,6 +53,15 @@ public record CreateTaskDto(
     IReadOnlyList<Guid>? AssigneeIds = null,
     IReadOnlyList<Guid>? LabelIds = null,
     Guid? SprintId = null);
+
+public record SuggestTaskPriorityDto(
+    Guid ProjectId,
+    string Title,
+    string? Description);
+
+public record TaskPrioritySuggestionDto(
+    string Priority,
+    string Reason);
 
 public record UpdateTaskDto(
     string Title,

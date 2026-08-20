@@ -18,7 +18,9 @@ public sealed record AiAssistantConversationQuestionDto(
     bool Blocking,
     string Reason,
     IReadOnlyList<AiAssistantQuickReplyDto> QuickReplies,
-    bool AllowFreeText = true);
+    bool AllowFreeText = true,
+    string InputType = "text",
+    string? Placeholder = null);
 
 public sealed record AiAssistantManualGuidanceStepDto(
     int Sequence,

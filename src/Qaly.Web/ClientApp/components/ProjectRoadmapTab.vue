@@ -49,7 +49,14 @@ import {
 import { apiResult, apiCommand } from "../utils/api-client";
 import { showError, showSuccess } from "../composables/use-toast";
 import { useDashboardContext } from "../composables/dashboard-context";
-import type { SprintDto, DashboardTask, GanttTaskDto } from "../types";
+import type {
+  SprintDto,
+  DashboardTask,
+  GanttTaskDto,
+  ErumiRoadmapChatResponseDto,
+  ErumiRoadmapDiffProposalDto,
+  ErumiTaskProposalDto,
+} from "../types";
 import ProjectProgressAiCard from "./ProjectProgressAiCard.vue";
 import ErumiDiffPreviewModal from "./ErumiDiffPreviewModal.vue";
 import AiOnboardingGuideModal from "./AiOnboardingGuideModal.vue";
@@ -79,11 +86,12 @@ const router = useRouter();
 
 // Erumi AI Assistant & Onboarding Guide State
 const showErumiDiffModal = ref(false)
+const showErumiAiPanel = ref(false)
 const showOnboardingGuideModal = ref(false)
-const erumiProposal = ref<any>(null)
+const erumiProposal = ref<ErumiRoadmapDiffProposalDto | null>(null)
 const isAskingErumi = ref(false)
 const erumiUserMessage = ref('')
-const erumiChatMessages = ref<Array<{ sender: 'user' | 'erumi'; text: string; proposal?: any }>>([])
+const erumiChatMessages = ref<Array<{ sender: 'user' | 'erumi'; text: string; proposal?: ErumiRoadmapDiffProposalDto | null }>>([])
 const activeSnapshotId = ref<string | null>(null)
 
 // Sprint list & loading state
@@ -893,7 +901,7 @@ const askErumiAI = async () => {
   isAskingErumi.value = true
 
   try {
-    const res = await apiResult<any>('/api/erumi-roadmap/chat', {
+    const res = await apiResult<ErumiRoadmapChatResponseDto>('/api/erumi-roadmap/chat', {
       method: 'POST',
       body: JSON.stringify({
         projectId: props.projectId,
@@ -901,17 +909,14 @@ const askErumiAI = async () => {
       })
     })
 
-    if (res.isSuccess && res.data) {
-      erumiChatMessages.value.push({
-        sender: 'erumi',
-        text: res.data.replyMessage,
-        proposal: res.data.proposal
-      })
-      if (res.data.hasRoadmapProposal && res.data.proposal) {
-        erumiProposal.value = res.data.proposal
-      }
-    } else {
-      showError(res.error || 'Không thể kết nối tới Erumi AI.')
+    erumiChatMessages.value.push({
+      sender: 'erumi',
+      text: res.replyMessage,
+      proposal: res.proposal
+    })
+    if (res.hasRoadmapProposal && res.proposal) {
+      erumiProposal.value = res.proposal
+      showErumiDiffModal.value = true
     }
   } catch (e) {
     showError('Lỗi kết nối Erumi AI.')
@@ -920,26 +925,22 @@ const askErumiAI = async () => {
   }
 }
 
-const handleApproveErumiProposal = async () => {
+const handleApproveErumiProposal = async (approvedTasks?: ErumiTaskProposalDto[]) => {
   if (!erumiProposal.value) return
   try {
-    const res = await apiResult('/api/erumi-roadmap/approve', {
+    await apiResult<unknown>('/api/erumi-roadmap/approve', {
       method: 'POST',
       body: JSON.stringify({
         snapshotId: erumiProposal.value.snapshotId,
         projectId: props.projectId,
-        approvedTasks: erumiProposal.value.proposedTasks
+        approvedTasks: approvedTasks?.length ? approvedTasks : erumiProposal.value.proposedTasks
       })
     })
-    if (res.isSuccess) {
-      activeSnapshotId.value = erumiProposal.value.snapshotId
-      showErumiDiffModal.value = false
-      showSuccess('Đã phê duyệt và chèn Phase/Task mới từ Erumi AI vào Roadmap!')
-      await loadSprints()
-      await loadDashboard()
-    } else {
-      showError(res.error || 'Không thể phê duyệt đề xuất.')
-    }
+    activeSnapshotId.value = erumiProposal.value.snapshotId
+    showErumiDiffModal.value = false
+    showSuccess('Đã phê duyệt và chèn Phase/Task mới từ Erumi AI vào Roadmap!')
+    await loadSprints()
+    await loadDashboard()
   } catch (e) {
     showError('Không thể phê duyệt đề xuất.')
   }
@@ -949,21 +950,17 @@ const handleRollbackErumiSnapshot = async () => {
   if (!activeSnapshotId.value) return
   if (!confirm('Bạn có chắc chắn muốn Rollback (xóa) Phase và Tasks vừa sinh từ Erumi AI không?')) return
   try {
-    const res = await apiResult('/api/erumi-roadmap/rollback', {
+    await apiResult<unknown>('/api/erumi-roadmap/rollback', {
       method: 'POST',
       body: JSON.stringify({
         snapshotId: activeSnapshotId.value,
         projectId: props.projectId
       })
     })
-    if (res.isSuccess) {
-      activeSnapshotId.value = null
-      showSuccess('Đã hoàn tác (Rollback) thành công Phase do AI sinh ra.')
-      await loadSprints()
-      await loadDashboard()
-    } else {
-      showError(res.error || 'Không thể rollback snapshot.')
-    }
+    activeSnapshotId.value = null
+    showSuccess('Đã hoàn tác (Rollback) thành công Phase do AI sinh ra.')
+    await loadSprints()
+    await loadDashboard()
   } catch (e) {
     showError('Lỗi khi rollback snapshot.')
   }
@@ -1053,6 +1050,16 @@ const handleRollbackErumiSnapshot = async () => {
         </div>
 
         <button
+          v-if="canGenerateAi && isProjectAdmin && !isClientViewMode"
+          type="button"
+          class="secondary-button roadmap-ai-button"
+          @click="showErumiAiPanel = !showErumiAiPanel"
+        >
+          <Sparkles :size="16" />
+          <span>AI đề xuất lộ trình</span>
+        </button>
+
+        <button
           type="button"
           class="secondary-button text-emerald-400 border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20"
           @click="showOnboardingGuideModal = true"
@@ -1092,6 +1099,46 @@ const handleRollbackErumiSnapshot = async () => {
         </button>
       </div>
     </div>
+
+    <section
+      v-if="showErumiAiPanel && canGenerateAi && isProjectAdmin && !isClientViewMode"
+      class="roadmap-ai-panel glass-card"
+      data-testid="roadmap-ai-proposal-entry"
+    >
+      <div>
+        <strong>Đề xuất Roadmap/Sprint/mốc theo dữ liệu Project</strong>
+        <p>AI chỉ tạo phương án có thể chỉnh. Sprint và task chỉ được ghi sau khi bạn duyệt bản so sánh.</p>
+      </div>
+      <textarea
+        v-model="erumiUserMessage"
+        rows="2"
+        placeholder="Ví dụ: Chia phần còn lại thành 2 Sprint, ưu tiên luồng thanh toán và nghiệm thu trước 30/9…"
+        @keydown.ctrl.enter="askErumiAI"
+      />
+      <div class="roadmap-ai-panel__actions">
+        <button
+          v-if="erumiProposal"
+          type="button"
+          class="secondary-button"
+          @click="showErumiDiffModal = true"
+        >
+          Xem lại phương án gần nhất
+        </button>
+        <button
+          type="button"
+          class="primary-button"
+          :disabled="isAskingErumi || !erumiUserMessage.trim()"
+          @click="askErumiAI"
+        >
+          <RefreshCw v-if="isAskingErumi" :size="15" class="spin" />
+          <Sparkles v-else :size="15" />
+          {{ isAskingErumi ? 'Đang lập phương án…' : 'Tạo phương án để duyệt' }}
+        </button>
+      </div>
+      <p v-if="erumiChatMessages.length" class="roadmap-ai-panel__reply">
+        {{ erumiChatMessages[erumiChatMessages.length - 1].text }}
+      </p>
+    </section>
 
     <!-- Empty State if no milestones exist -->
     <div
@@ -4235,6 +4282,51 @@ const handleRollbackErumiSnapshot = async () => {
 .toolbar-btn.btn-primary-gradient:hover {
   background: linear-gradient(135deg, #0f55c4, #093b8f);
   color: #fff;
+}
+
+.roadmap-ai-button {
+  color: #4f46e5;
+  border-color: rgba(99, 102, 241, 0.28);
+  background: rgba(238, 242, 255, 0.9);
+}
+
+.roadmap-ai-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid rgba(99, 102, 241, 0.22);
+}
+
+.roadmap-ai-panel p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.roadmap-ai-panel textarea {
+  width: 100%;
+  min-height: 72px;
+  padding: 10px 12px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: inherit;
+  background: var(--surface, #fff);
+  font: inherit;
+}
+
+.roadmap-ai-panel__actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.roadmap-ai-panel__reply {
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: rgba(238, 242, 255, 0.72);
 }
 
 .modal-backdrop {

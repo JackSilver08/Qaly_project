@@ -12,6 +12,15 @@ public interface IProjectLaunchOrchestratorService
 
     Task<Result<ProjectLaunchPlanDto>> GetPlanAsync(Guid planId, CancellationToken ct = default);
 
+    Task<Result<ProjectLaunchPlanDto>> GetLatestPlanForSessionAsync(
+        Guid sessionId,
+        CancellationToken ct = default);
+
+    Task<Result<ProjectLaunchPlanDto>> UpdatePlanAsync(
+        Guid planId,
+        UpdateProjectLaunchPlanRequestDto request,
+        CancellationToken ct = default);
+
     Task<Result<ProjectLaunchPlanDto>> ConfirmAsync(
         Guid planId,
         ConfirmProjectLaunchPlanRequestDto request,

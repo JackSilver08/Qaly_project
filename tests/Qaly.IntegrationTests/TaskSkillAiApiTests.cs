@@ -44,12 +44,21 @@ public sealed class TaskSkillAiApiTests : IClassFixture<IntegrationTestFactory>
             _client,
             HttpMethod.Post,
             $"/api/organizations/{seeded.OrganizationId}/skills",
-            new CreateOrganizationSkillDto("  Vue.js  ", "Frontend components"),
+            new CreateOrganizationSkillDto(
+                "  Vue.js  ",
+                "Frontend components",
+                "Kỹ thuật phần mềm",
+                ["Vue", "Vue 3", "vue"],
+                "Advanced"),
             csrf);
         createFrontend.StatusCode.Should().Be(HttpStatusCode.Created);
         var frontend = await ReadResultAsync<OrganizationSkillDto>(createFrontend);
         frontend.Name.Should().Be("Vue.js");
         frontend.NormalizedName.Should().Be("vue.js");
+        frontend.Category.Should().Be("Kỹ thuật phần mềm");
+        frontend.Aliases.Should().BeEquivalentTo("Vue", "Vue 3");
+        frontend.DefaultRequiredLevel.Should().Be("Advanced");
+        frontend.IsSystemSeed.Should().BeFalse();
 
         var createBackend = await SendWithCsrfAsync(
             _client,

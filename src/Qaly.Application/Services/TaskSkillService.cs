@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Models;
@@ -73,6 +74,8 @@ public sealed class TaskSkillService : ITaskSkillService
         {
             query = query.Where(skill =>
                 skill.Name.Contains(normalizedSearch) ||
+                skill.Category.Contains(normalizedSearch) ||
+                skill.AliasesJson.Contains(normalizedSearch) ||
                 (skill.Description != null && skill.Description.Contains(normalizedSearch)));
         }
 
@@ -119,6 +122,10 @@ public sealed class TaskSkillService : ITaskSkillService
             Name = name,
             NormalizedName = normalizedName,
             Description = NormalizeDescription(dto.Description),
+            Category = NormalizeCatalogText(dto.Category, "Chuyên môn", 100),
+            AliasesJson = SerializeAliases(dto.Aliases),
+            DefaultRequiredLevel = NormalizeLevel(dto.DefaultRequiredLevel),
+            IsSystemSeed = false,
             IsActive = true
         };
 
@@ -192,10 +199,13 @@ public sealed class TaskSkillService : ITaskSkillService
                 AiErrorCodes.SkillCatalogConflict);
         }
 
-        var before = new { skill.Name, skill.Description, skill.IsActive };
+        var before = new { skill.Name, skill.Description, skill.Category, skill.AliasesJson, skill.DefaultRequiredLevel, skill.IsActive };
         skill.Name = name;
         skill.NormalizedName = normalizedName;
         skill.Description = NormalizeDescription(dto.Description);
+        skill.Category = NormalizeCatalogText(dto.Category, "Chuyên môn", 100);
+        skill.AliasesJson = SerializeAliases(dto.Aliases);
+        skill.DefaultRequiredLevel = NormalizeLevel(dto.DefaultRequiredLevel);
         skill.IsActive = dto.IsActive;
         skill.UpdatedAt = DateTimeOffset.UtcNow;
         await _skillRepo.UpdateAsync(skill, ct);
@@ -222,7 +232,7 @@ public sealed class TaskSkillService : ITaskSkillService
             "UpdateOrganizationSkill",
             nameof(OrganizationSkill),
             skill.Id.ToString(),
-            new { before, after = new { skill.Name, skill.Description, skill.IsActive } },
+            new { before, after = new { skill.Name, skill.Description, skill.Category, skill.AliasesJson, skill.DefaultRequiredLevel, skill.IsActive } },
             ct);
 
         return Result.Success(ToDto(skill));
@@ -533,7 +543,43 @@ public sealed class TaskSkillService : ITaskSkillService
             skill.NormalizedName,
             skill.Description,
             skill.IsActive,
-            EncodeRowVersion(skill.RowVersion));
+            EncodeRowVersion(skill.RowVersion),
+            skill.Category,
+            DeserializeAliases(skill.AliasesJson),
+            skill.DefaultRequiredLevel,
+            skill.IsSystemSeed);
+
+    private static string NormalizeCatalogText(string? value, string fallback, int maxLength)
+    {
+        var normalized = string.IsNullOrWhiteSpace(value) ? fallback : Regex.Replace(value.Trim(), @"\s+", " ");
+        return normalized.Length <= maxLength ? normalized : normalized[..maxLength];
+    }
+
+    private static string NormalizeLevel(string? value)
+    {
+        var normalized = NormalizeCatalogText(value, "Intermediate", 30);
+        return normalized.ToLowerInvariant() switch
+        {
+            "foundation" => "Foundation",
+            "advanced" => "Advanced",
+            "expert" => "Expert",
+            _ => "Intermediate"
+        };
+    }
+
+    private static string SerializeAliases(IReadOnlyList<string>? aliases)
+        => JsonSerializer.Serialize((aliases ?? [])
+            .Select(item => NormalizeCatalogText(item, string.Empty, 100))
+            .Where(item => item.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(20)
+            .ToArray());
+
+    private static string[] DeserializeAliases(string json)
+    {
+        try { return JsonSerializer.Deserialize<string[]>(json) ?? []; }
+        catch (JsonException) { return []; }
+    }
 
     private static TaskSkillsDto ToTaskSkillsDto(
         TaskItem task,

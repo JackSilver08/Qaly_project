@@ -703,7 +703,7 @@ async function loadAttachments(taskId: string) {
 async function loadTimeEntries(taskId: string) {
   timeEntriesError.value = "";
   try {
-    const entries = await apiJson<TimeEntryDto[]>(
+    const entries = await apiResult<TimeEntryDto[]>(
       `/api/tasks/${taskId}/time-entries`,
     );
     timeEntries.value = entries;
@@ -1551,6 +1551,7 @@ provide(dashboardContextKey, {
         :project-id="typeof route.params.projectId === 'string' ? route.params.projectId : null"
         :projects="aiActionProjectOptions"
         :open-request="aiAssistantOpenRequest"
+        :conversation-runtime-enabled="route.name !== 'analytics'"
         @completed="handleAiActionCompleted"
       />
     </template>

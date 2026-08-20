@@ -135,6 +135,14 @@ public class TasksController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpPost("priority-suggestion")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SuggestPriority(SuggestTaskPriorityDto dto, CancellationToken ct)
+    {
+        var result = await _taskService.SuggestPriorityAsync(dto, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(Guid id, UpdateTaskDto dto, CancellationToken ct)
     {

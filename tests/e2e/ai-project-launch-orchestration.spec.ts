@@ -89,6 +89,7 @@ function assistantResponse(plan: ReturnType<typeof launchPlan>) {
 test('TEST-PL-BCD-E2E review card confirms with idempotency receipt then produces review-only replan', async ({ page }) => {
   await login(page)
   let currentPlan = launchPlan(false, false)
+  let confirmRequests = 0
   const now = new Date().toISOString()
   const session = () => ({
     sessionId, title: 'AI-native Project launch', status: 'active', version: 1, projectId: null, createdAt: now, updatedAt: now,
@@ -98,12 +99,15 @@ test('TEST-PL-BCD-E2E review card confirms with idempotency receipt then produce
   await page.route('**/api/ai/assistant/sessions/recent', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(session()) }))
   await page.route(`**/api/ai/assistant/sessions/${sessionId}`, route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(session()) }))
   await page.route(`**/api/ai/project-launch/plans/${planId}/confirm`, async route => {
+    confirmRequests += 1
     const body = route.request().postDataJSON()
     expect(body).toEqual({ confirmed: true, expectedRevision: 1, selectedScenarioId: 'balanced' })
     expect(route.request().headers()['idempotency-key']).toContain(`project-launch:${planId}:1:balanced`)
     currentPlan = launchPlan(true, false)
-    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(currentPlan)) })
+    await route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'Simulated response loss after commit.' }) })
   })
+  await page.route(`**/api/ai/project-launch/plans/${planId}`, route =>
+    route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(currentPlan)) }))
   await page.route(`**/api/ai/project-launch/executions/${receiptId}/monitor`, async route => {
     expect(route.request().postDataJSON()).toEqual({ expectedRevision: 1 })
     currentPlan = launchPlan(true, true)
@@ -124,6 +128,7 @@ test('TEST-PL-BCD-E2E review card confirms with idempotency receipt then produce
   await card.getByTestId('project-launch-confirm').click()
   await expect(card.getByTestId('project-launch-receipt')).toContainText('Read-back: verified')
   await expect(card.getByTestId('project-launch-receipt')).toContainText('external_deferred')
+  expect(confirmRequests).toBe(1)
 
   await card.getByTestId('project-launch-monitor').click()
   const proposal = card.getByTestId('project-replan-proposal')

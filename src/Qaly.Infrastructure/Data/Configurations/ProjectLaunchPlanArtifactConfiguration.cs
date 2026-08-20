@@ -16,6 +16,7 @@ public sealed class ProjectLaunchPlanArtifactConfiguration : IEntityTypeConfigur
         builder.Property(item => item.PromptVersion).HasMaxLength(100).IsRequired();
         builder.Property(item => item.ActualProvider).HasMaxLength(80).IsRequired();
         builder.Property(item => item.ActualModel).HasMaxLength(120).IsRequired();
+        builder.Property(item => item.RowRevision).IsConcurrencyToken();
         builder.Property(item => item.StaffingScenariosJson).IsRequired();
         builder.Property(item => item.DeliveryPlanJson).IsRequired();
         builder.Property(item => item.BlockingReasonsJson).IsRequired();

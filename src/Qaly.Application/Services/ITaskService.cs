@@ -13,6 +13,7 @@ public interface ITaskService
     Task<Result<PagedResult<TaskAttentionDto>>> GetAttentionByProjectAsync(Guid projectId, Guid? assigneeId = null, Guid? reporterId = null, string? status = null, string? priority = null, string? riskType = null, DateTimeOffset? from = null, DateTimeOffset? toDate = null, int page = 1, int pageSize = 25, string sort = "risk", CancellationToken ct = default);
     Task<Result<PagedResult<TaskAttentionDto>>> GetGlobalAttentionAsync(Guid? assigneeId = null, Guid? reporterId = null, string? status = null, string? priority = null, string? riskType = null, DateTimeOffset? from = null, DateTimeOffset? toDate = null, int page = 1, int pageSize = 25, string sort = "risk", CancellationToken ct = default);
     Task<Result<TaskItemDto>> CreateAsync(CreateTaskDto dto, CancellationToken ct = default);
+    Task<Result<TaskPrioritySuggestionDto>> SuggestPriorityAsync(SuggestTaskPriorityDto dto, CancellationToken ct = default);
     Task<Result<TaskItemDto>> UpdateAsync(Guid id, UpdateTaskDto dto, CancellationToken ct = default);
     Task<Result<TaskItemDto>> UpdateStatusAsync(Guid id, string newStatus, string? rowVersion = null, CancellationToken ct = default);
     Task<Result<TaskItemDto>> UpdateSortOrderAsync(Guid id, int sortOrder, string? rowVersion = null, CancellationToken ct = default);

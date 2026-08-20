@@ -349,7 +349,7 @@ async function generateSuggestions() {
         headers: { 'Idempotency-Key': newIdempotencyKey() },
         body: JSON.stringify({
           language: 'vi',
-          providerHint: 'auto',
+          providerHint: 'deepseek',
           maximumEstimatedCostUsd: 0.15,
           cacheMode: 'use',
         }),
@@ -409,6 +409,19 @@ function addManualSkill() {
   })
   selectedCatalogSkillId.value = ''
   selectedCatalogLevel.value = 'Proficient'
+}
+
+function isSkillAssigned(skillId: string) {
+  return manualSelections.value.some(item => item.skillId === skillId)
+}
+
+async function assignSuggestedSkill(suggestion: SkillSuggestion) {
+  if (manualSaving.value || isSkillAssigned(suggestion.skillId)) return
+  manualSelections.value.push({
+    skillId: suggestion.skillId,
+    requiredLevel: suggestion.requiredLevel,
+  })
+  await saveManualSkills()
 }
 
 function removeManualSkill(skillId: string) {
@@ -686,6 +699,44 @@ onBeforeUnmount(clearPoll)
 
       <details v-if="taskSkills.canManage && taskSkills.availability !== 'organization_required'" class="manual-editor">
         <summary>Gắn hoặc sửa thủ công</summary>
+        <div class="task-based-suggestions" data-testid="task-based-skill-suggestions">
+          <div class="subhead">
+            <div>
+              <strong>Gợi ý theo nhiệm vụ</strong>
+              <span>Chỉ dùng kỹ năng có thật trong catalog; bạn có thể gắn từng kỹ năng.</span>
+            </div>
+            <button
+              v-if="!reviewSuggestions.length"
+              type="button"
+              class="secondary-button"
+              :disabled="actionPending || isActive || taskSkills.availability === 'catalog_empty'"
+              @click="generateSuggestions"
+            >
+              <LoaderCircle v-if="actionPending || isActive" :size="15" class="spin" />
+              <Sparkles v-else :size="15" />
+              {{ isActive ? 'Đang phân tích…' : 'Phân tích task' }}
+            </button>
+          </div>
+          <div v-if="reviewSuggestions.length" class="quick-suggestion-list">
+            <article v-for="suggestion in reviewSuggestions" :key="`quick-${suggestion.skillId}`">
+              <div>
+                <strong>{{ suggestion.canonicalName }}</strong>
+                <small>{{ levelLabel(suggestion.requiredLevel) }} · tin cậy {{ confidenceLabel(suggestion.confidence) }}</small>
+                <p>{{ suggestion.rationale }}</p>
+              </div>
+              <button
+                type="button"
+                class="secondary-button"
+                :disabled="manualSaving || isSkillAssigned(suggestion.skillId)"
+                @click="assignSuggestedSkill(suggestion)"
+              >
+                <Check v-if="isSkillAssigned(suggestion.skillId)" :size="15" />
+                <Plus v-else :size="15" />
+                {{ isSkillAssigned(suggestion.skillId) ? 'Đã gắn' : 'Gắn kỹ năng' }}
+              </button>
+            </article>
+          </div>
+        </div>
         <div v-if="catalog.length" class="manual-list">
           <div v-for="selection in manualSelections" :key="selection.skillId" class="manual-row">
             <span>{{ skillName(selection.skillId) }}</span>
@@ -1030,6 +1081,45 @@ onBeforeUnmount(clearPoll)
   display: grid;
   gap: 8px;
   margin-top: 10px;
+}
+
+.task-based-suggestions {
+  display: grid;
+  gap: 9px;
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, #8b7cf6 7%, transparent);
+}
+
+.task-based-suggestions .subhead > div,
+.quick-suggestion-list article > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.task-based-suggestions span,
+.quick-suggestion-list small,
+.quick-suggestion-list p {
+  color: var(--text-muted, #73738a);
+  font-size: 0.72rem;
+}
+
+.quick-suggestion-list {
+  display: grid;
+  gap: 7px;
+}
+
+.quick-suggestion-list article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, #8b7cf6 18%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface, #fff) 94%, transparent);
 }
 
 .manual-row,

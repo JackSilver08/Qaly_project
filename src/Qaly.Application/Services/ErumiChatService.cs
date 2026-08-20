@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Ai;
@@ -49,6 +50,7 @@ public sealed class ErumiChatService : IErumiChatService
     private readonly IProjectService _projectService;
     private readonly ITaskService _taskService;
     private readonly IRepository<ProjectMember> _memberRepo;
+    private readonly IRepository<Sprint>? _sprintRepo;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAiGateway _aiGateway;
     private readonly AiTools? _aiTools;
@@ -57,6 +59,8 @@ public sealed class ErumiChatService : IErumiChatService
     private readonly IAgentRunService? _agentRunService;
     private readonly IProjectLaunchService? _projectLaunchService;
     private readonly IProjectLaunchOrchestratorService? _projectLaunchOrchestrator;
+    private readonly IAiNativeActionService? _nativeActionService;
+    private readonly IPortfolioScheduleService? _portfolioScheduleService;
     private readonly ILogger<ErumiChatService>? _logger;
 
     public ErumiChatService(
@@ -72,7 +76,10 @@ public sealed class ErumiChatService : IErumiChatService
         IAiWorkflowService? aiWorkflowService = null,
         IAgentRunService? agentRunService = null,
         IProjectLaunchService? projectLaunchService = null,
-        IProjectLaunchOrchestratorService? projectLaunchOrchestrator = null)
+        IProjectLaunchOrchestratorService? projectLaunchOrchestrator = null,
+        IAiNativeActionService? nativeActionService = null,
+        IRepository<Sprint>? sprintRepo = null,
+        IPortfolioScheduleService? portfolioScheduleService = null)
     {
         _analyticsService = analyticsService;
         _projectService = projectService;
@@ -87,6 +94,9 @@ public sealed class ErumiChatService : IErumiChatService
         _agentRunService = agentRunService;
         _projectLaunchService = projectLaunchService;
         _projectLaunchOrchestrator = projectLaunchOrchestrator;
+        _nativeActionService = nativeActionService;
+        _sprintRepo = sprintRepo;
+        _portfolioScheduleService = portfolioScheduleService;
     }
 
     public async Task<Result<ErumiChatResponseDto>> ChatFastAsync(ErumiChatRequestDto request, CancellationToken ct = default)
@@ -99,9 +109,20 @@ public sealed class ErumiChatService : IErumiChatService
         }
 
         var normalized = Normalize(message);
+        var explicitlyReadOnlyOutcome = IsExplicitReadOnlyOutcomeQuery(normalized);
         if (request.Files is { Count: > 0 })
         {
             return Result.Success(BuildUploadedFileResponse(request.Files, sw));
+        }
+
+        if (TryBuildSessionMemoryResponse(message, request.History, sw, out var memoryResponse))
+        {
+            return Result.Success(memoryResponse);
+        }
+
+        if (AiAssistantCapabilityIntentClassifier.IsExternalAdapterStatusQuery(message))
+        {
+            return Result.Success(BuildExternalAdapterStatusResponse(request.ProjectId));
         }
 
         if (AiAssistantCapabilityIntentClassifier.IsCapabilityOverviewQuery(message))
@@ -117,14 +138,19 @@ public sealed class ErumiChatService : IErumiChatService
                 sw));
         }
 
-        if (!request.AdvisoryOnly && IsAgentMode(request) &&
+        if (!request.AdvisoryOnly && !explicitlyReadOnlyOutcome && IsRegisteredTaskAssignmentIntent(normalized))
+        {
+            return BuildAssignmentNavigationResponse(request.ProjectId, null, sw);
+        }
+
+        if (!request.AdvisoryOnly && !explicitlyReadOnlyOutcome && IsAgentMode(request) &&
             (TryResolveUnsupportedMutation(normalized, out _) ||
              (!IsRegisteredTaskCreateIntent(normalized) && IsWriteIntent(normalized))))
         {
             request = request with { AdvisoryOnly = true };
         }
 
-        if (!request.AdvisoryOnly && TryResolveUnsupportedMutation(normalized, out var unsupportedCapability))
+        if (!request.AdvisoryOnly && !explicitlyReadOnlyOutcome && TryResolveUnsupportedMutation(normalized, out var unsupportedCapability))
         {
             return Result.Success(CreateResponse(
                 $"Trợ lý AI chưa có action adapter an toàn để {unsupportedCapability}. Mình chưa tạo hay thay đổi dữ liệu.",
@@ -134,12 +160,12 @@ public sealed class ErumiChatService : IErumiChatService
                 confidence: 1));
         }
 
-        if (!request.AdvisoryOnly && IsRegisteredTaskCreateIntent(normalized))
+        if (!request.AdvisoryOnly && !explicitlyReadOnlyOutcome && IsRegisteredTaskCreateIntent(normalized))
         {
             return await BuildWriteConfirmationResponseAsync(message, request.ProjectId, sw, ct);
         }
 
-        if (!request.AdvisoryOnly && IsWriteIntent(normalized))
+        if (!request.AdvisoryOnly && !explicitlyReadOnlyOutcome && IsWriteIntent(normalized))
         {
             return Result.Success(CreateResponse(
                 "Trợ lý AI hiện chỉ hỗ trợ soạn bản nháp để tạo task mới. Hãy dùng màn hình task để cập nhật hoặc giao lại task hiện có.",
@@ -155,6 +181,61 @@ public sealed class ErumiChatService : IErumiChatService
         }
 
         return await BuildProjectResponseAsync(request.ProjectId.Value, request, sw, ct);
+    }
+
+    private static bool TryBuildSessionMemoryResponse(
+        string message,
+        IEnumerable<AiChatMessageDto>? history,
+        Stopwatch sw,
+        out ErumiChatResponseDto response)
+    {
+        var fact = ExtractSessionMemoryFact(message);
+        if (!string.IsNullOrWhiteSpace(fact))
+        {
+            response = CreateResponse(
+                $"Đã ghi nhớ trong cuộc trò chuyện này: {fact}. Mình chưa tạo hoặc thay đổi dữ liệu Qaly.",
+                "session_memory_ack",
+                sw,
+                confidence: 1);
+            return true;
+        }
+
+        var normalized = Normalize(message);
+        var asksForSessionMemory = ContainsAny(normalized,
+            "trong phien nay", "ban co nho", "toi da noi", "nghia la gi") &&
+            ContainsAny(normalized, "la gi", "nghia la", "nhung gi", "noi lai", "nhac lai");
+        if (asksForSessionMemory)
+        {
+            var rememberedFact = (history ?? [])
+                .Where(item => string.Equals(item.Role, "user", StringComparison.OrdinalIgnoreCase))
+                .Select(item => ExtractSessionMemoryFact(item.Content ?? string.Empty))
+                .LastOrDefault(item => !string.IsNullOrWhiteSpace(item));
+            if (!string.IsNullOrWhiteSpace(rememberedFact))
+            {
+                response = CreateResponse(
+                    $"Trong cuộc trò chuyện này, bạn đã xác định: {rememberedFact}.",
+                    "session_memory_recall",
+                    sw,
+                    confidence: 1);
+                return true;
+            }
+        }
+
+        response = null!;
+        return false;
+    }
+
+    private static string? ExtractSessionMemoryFact(string message)
+    {
+        var match = Regex.Match(
+            message,
+            @"ghi\s+nhớ\s+rằng\s+(?<fact>.+?)(?:[.;]\s*(?:chưa|không)\s+tạo|$)",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant);
+        if (!match.Success) return null;
+        var fact = string.Join(' ', match.Groups["fact"].Value
+            .Split(['\r', '\n', '\t', ' '], StringSplitOptions.RemoveEmptyEntries));
+        if (string.IsNullOrWhiteSpace(fact)) return null;
+        return fact.Length <= 400 ? fact : $"{fact[..397]}…";
     }
 
     public async Task<Result<AiAssistantTurnResponseDto>> AssistantTurnAsync(
@@ -182,10 +263,99 @@ public sealed class ErumiChatService : IErumiChatService
         Result<AiAssistantTurnResponseDto> Complete(AiAssistantTurnResponseDto response)
             => Result.Success(AttachExecutionContext(response));
 
+        if (AiAssistantCapabilityIntentClassifier.IsExternalAdapterStatusQuery(message) &&
+            executionContext.HasCapability(AiAssistantContextContract.GroundedReadCapability))
+        {
+            var status = BuildExternalAdapterStatusResponse(projectId);
+            return Complete(new AiAssistantTurnResponseDto(
+                AiAssistantTurnContract.SchemaId,
+                "grounded_answer",
+                AiAssistantTurnContract.GroundedReadIntent,
+                "read_only",
+                status.Reply,
+                status.Confidence,
+                null,
+                null,
+                status.Sources,
+                status));
+        }
+
         if (AiAssistantCapabilityIntentClassifier.IsCapabilityOverviewQuery(message) &&
             executionContext.HasCapability(AiAssistantContextContract.GroundedReadCapability))
         {
             return Complete(BuildCapabilityOverviewTurn(BuildCapabilityOverviewResponse(executionContext)));
+        }
+
+        var isTaskAssignmentFollowUp =
+            string.Equals(request.Context?.EntityType, "task", StringComparison.OrdinalIgnoreCase) &&
+            ContainsAny(normalized, "giu phuong an", "phuong an hien tai", "xac nhan cuoi", "final confirm");
+        if (IsRegisteredTaskAssignmentIntent(normalized) || isTaskAssignmentFollowUp)
+        {
+            if (!executionContext.HasCapability(AiAssistantContextContract.TaskAssignmentScheduleCapability))
+            {
+                return Complete(new AiAssistantTurnResponseDto(
+                    AiAssistantTurnContract.SchemaId,
+                    "policy_blocked",
+                    AiAssistantTurnContract.PolicyBlockedIntent,
+                    "none",
+                    "Bạn có thể xem phân tích nhưng chưa có quyền giao lại Task. Không có dữ liệu nào được thay đổi.",
+                    1,
+                    null,
+                    null,
+                    []));
+            }
+
+            if (!projectId.HasValue)
+            {
+                var navigation = CreateResponse(
+                    "Hãy mở một Project để chọn Task cần phân công. Mình sẽ giữ luồng ở dạng bản nháp cho tới khi bạn xác nhận.",
+                    AiAssistantTurnContract.TaskAssignmentScheduleIntent,
+                    Stopwatch.StartNew(),
+                    actions: [new ErumiActionDto("assistant_navigation", "Chọn Project", new { route = "/projects", description = "Chọn Project và Task cần phân công." })],
+                    sources: IntentRouterSources,
+                    confidence: 1);
+                return Complete(new AiAssistantTurnResponseDto(
+                    AiAssistantTurnContract.SchemaId,
+                    "clarification_required",
+                    AiAssistantTurnContract.TaskAssignmentScheduleIntent,
+                    "draft_then_confirm",
+                    navigation.Reply,
+                    1,
+                    null,
+                    null,
+                    [],
+                    navigation));
+            }
+
+            var taskId = string.Equals(request.Context?.EntityType, "task", StringComparison.OrdinalIgnoreCase)
+                ? request.Context?.EntityId
+                : null;
+            if (taskId.HasValue)
+            {
+                var proposal = await BuildAssignmentScheduleResponseAsync(request, projectId.Value, taskId.Value, ct);
+                if (!proposal.IsSuccess || proposal.Data == null)
+                    return Result.Failure<AiAssistantTurnResponseDto>(
+                        proposal.Error ?? "Không thể lập phương án phân công.",
+                        proposal.StatusCode,
+                        proposal.ErrorCode);
+                return Complete(proposal.Data);
+            }
+            var assignment = BuildAssignmentNavigationResponse(projectId, taskId, Stopwatch.StartNew());
+            if (!assignment.IsSuccess || assignment.Data == null)
+                return Result.Failure<AiAssistantTurnResponseDto>(assignment.Error ?? "Không thể mở phương án phân công.", assignment.StatusCode);
+            return Complete(new AiAssistantTurnResponseDto(
+                AiAssistantTurnContract.SchemaId,
+                "registered_action",
+                AiAssistantTurnContract.TaskAssignmentScheduleIntent,
+                "draft_then_confirm",
+                assignment.Data.Reply,
+                0.98,
+                null,
+                null,
+                taskId.HasValue
+                    ? [$"/projects/{projectId.Value}/tasks/{taskId.Value}"]
+                    : [$"/projects/{projectId.Value}?tab=capacity"],
+                assignment.Data));
         }
 
         if (TryResolveUnsupportedMutation(normalized, out var unsupportedCapability))
@@ -538,16 +708,25 @@ public sealed class ErumiChatService : IErumiChatService
 
         if (planning.SelectedCapabilityId == AiAssistantContextContract.ProjectLaunchExecuteCapability)
         {
+            ProjectLaunchPlanDto? latestPlan = null;
+            if (_projectLaunchOrchestrator != null && request.SessionId.HasValue)
+            {
+                var latest = await _projectLaunchOrchestrator.GetLatestPlanForSessionAsync(request.SessionId.Value, ct);
+                if (latest.IsSuccess) latestPlan = latest.Data;
+            }
             return Result.Success(Attach(new AiAssistantTurnResponseDto(
                 AiAssistantTurnContract.SchemaId,
                 "confirmation_required",
                 AiProjectOrchestrationContract.ExecuteCapabilityId,
                 "explicit_batch_confirm",
-                "Open the latest Project launch plan, choose one feasible staffing scenario, review the exact internal commands, then use the Confirm launch control. A chat message alone does not authorize this mutation.",
+                latestPlan == null
+                    ? "Chưa tìm thấy phương án khởi chạy trong phiên này. Hãy lập staffing và delivery plan trước; tin nhắn chat không tự tạo Project."
+                    : "Đây là phương án đã chọn để review lần cuối. Kiểm tra Project, manager/team, Sprint và tổng số Task trên card; chỉ nút xác nhận trên card mới cho phép tạo dữ liệu thật.",
                 1,
                 null,
                 null,
-                [])));
+                [],
+                ProjectLaunchPlan: latestPlan)));
         }
 
         if (planning.SelectedCapabilityId == AiAssistantContextContract.ProjectOperationMonitorCapability)
@@ -575,9 +754,14 @@ public sealed class ErumiChatService : IErumiChatService
                     monitored.ErrorCode);
             var plan = monitored.Data;
             var proposal = plan.LatestReplanProposal;
-            var message = proposal == null
-                ? "I compared the confirmed launch baseline with current Qaly facts and found no material replan trigger. No Project data was changed."
-                : $"I detected {proposal.Changes.Count} material delivery change(s) and created replan proposal revision {proposal.Revision} for review. No Project data was changed automatically.";
+            var idempotencyReadBack = IsProjectLaunchIdempotencyReadBackQuery(request.Message);
+            var message = idempotencyReadBack && plan.ExecutionReceipt is { } receipt
+                ? proposal == null
+                    ? $"Đã đọc lại Project graph theo biên nhận {receipt.ReceiptId}. Project, Sprint và Task vẫn khớp baseline; không phát hiện bản ghi tạo trùng. Retry phải dùng cùng idempotency key và trả lại đúng biên nhận này. Không có dữ liệu Project nào được thay đổi."
+                    : $"Đã đọc lại Project graph theo biên nhận {receipt.ReceiptId} và phát hiện {proposal.Changes.Count} sai lệch so với baseline. Qaly chưa thể kết luận retry không tạo trùng; hãy mở chi tiết before/after. Không có dữ liệu Project nào được tự động sửa."
+                : proposal == null
+                    ? "I compared the confirmed launch baseline with current Qaly facts and found no material replan trigger. No Project data was changed."
+                    : $"I detected {proposal.Changes.Count} material delivery change(s) and created replan proposal revision {proposal.Revision} for review. No Project data was changed automatically.";
             return Result.Success(Attach(new AiAssistantTurnResponseDto(
                 AiAssistantTurnContract.SchemaId,
                 proposal == null ? "project_monitor_current" : "project_replan_proposal",
@@ -591,6 +775,86 @@ public sealed class ErumiChatService : IErumiChatService
                 ActualProvider: "deterministic",
                 ActualModel: "project-operation-monitor@1.0.0",
                 ProjectLaunchPlan: plan)));
+        }
+
+        if (planning.SelectedCapabilityId == AiAssistantContextContract.TaskAssignmentScheduleCapability)
+        {
+            var projectId = ResolveAssistantProjectId(request.Context);
+            var taskId = string.Equals(request.Context?.EntityType, "task", StringComparison.OrdinalIgnoreCase)
+                ? request.Context?.EntityId
+                : request.Context?.SelectionIds?.Count > 0 ? request.Context.SelectionIds[0] : null;
+            if (!projectId.HasValue || !taskId.HasValue)
+            {
+                var navigation = BuildAssignmentNavigationResponse(projectId, taskId, Stopwatch.StartNew());
+                return Result.Success(Attach(new AiAssistantTurnResponseDto(
+                    AiAssistantTurnContract.SchemaId,
+                    "clarification_required",
+                    AiAssistantTurnContract.TaskAssignmentScheduleIntent,
+                    "none",
+                    navigation.Data?.Reply ?? "Hãy mở Task cần phân công trước.",
+                    1, null, null, [], navigation.Data)));
+            }
+            if (_portfolioScheduleService == null)
+                return Result.Failure<AiAssistantTurnResponseDto>(
+                    "Assignment schedule service is unavailable.", 503, "assignment_schedule_service_unavailable");
+
+            var normalized = Normalize(request.Message);
+            var useCurrentDraft = ContainsAny(normalized, "giu phuong an", "phuong an hien tai", "xac nhan cuoi", "final confirm");
+            Result<PortfolioScheduleProposalDto> proposalResult;
+            if (useCurrentDraft)
+            {
+                proposalResult = await _portfolioScheduleService.GetLatestProposalForTaskAsync(projectId.Value, taskId.Value, ct);
+            }
+            else
+            {
+                var taskResult = await _taskService.GetByIdAsync(taskId.Value, ct);
+                if (!taskResult.IsSuccess || taskResult.Data == null || taskResult.Data.ProjectId != projectId.Value)
+                    return Result.NotFound<AiAssistantTurnResponseDto>();
+                var start = DateTimeOffset.UtcNow.Date;
+                var requestedEnd = taskResult.Data.DueDate.HasValue && taskResult.Data.DueDate.Value > start
+                    ? taskResult.Data.DueDate.Value
+                    : start.AddDays(14);
+                var end = requestedEnd <= start ? start.AddDays(14) : requestedEnd;
+                var idempotencyKey = $"assistant-assignment:{request.SessionId?.ToString("N") ?? "none"}:{request.ClientTurnId?.ToString("N") ?? taskId.Value.ToString("N")}";
+                proposalResult = await _portfolioScheduleService.CreateProposalAsync(
+                    projectId.Value,
+                    new CreatePortfolioScheduleProposalDto([taskId.Value], start, end),
+                    idempotencyKey,
+                    ct);
+            }
+
+            if (!proposalResult.IsSuccess || proposalResult.Data == null)
+            {
+                var blocked = BuildAssignmentNavigationResponse(projectId, taskId, Stopwatch.StartNew());
+                var reason = proposalResult.Error ?? "Chưa có phương án phân công khả thi từ dữ liệu hiện tại.";
+                return Result.Success(Attach(new AiAssistantTurnResponseDto(
+                    AiAssistantTurnContract.SchemaId,
+                    "assignment_blocked",
+                    AiAssistantTurnContract.TaskAssignmentScheduleIntent,
+                    "none",
+                    $"Chưa thể lập phương án an toàn: {reason} Không có assignee hoặc deadline nào được thay đổi.",
+                    1, null, null, [], blocked.Data,
+                    ActualProvider: "LocalRules",
+                    ActualModel: PortfolioScheduleService.ScoringVersion)));
+            }
+
+            var proposal = proposalResult.Data;
+            var item = proposal.Items.Single();
+            var warning = item.DeadlineRisks.Count + item.DependencyConflicts.Count;
+            var message = useCurrentDraft
+                ? "Đây là phương án hiện tại để kiểm tra lần cuối. Chưa ghi dữ liệu; chỉ nút xác nhận trên card mới áp dụng assignee và lịch."
+                : $"Đã lập phương án cho Task “{item.TaskTitle}” từ required skill, evidence đã xác nhận, capacity, lịch vắng và tải đa dự án. Có {item.Alternatives.Count} ứng viên thay thế và {warning} cảnh báo cần xem; chưa ghi dữ liệu.";
+            return Result.Success(Attach(new AiAssistantTurnResponseDto(
+                AiAssistantTurnContract.SchemaId,
+                "assignment_schedule_proposal",
+                AiAssistantTurnContract.TaskAssignmentScheduleIntent,
+                "explicit_single_confirm",
+                message,
+                warning == 0 ? 0.95 : 0.8,
+                null, null, proposal.Sources.Select(source => source.Key).ToArray(),
+                ActualProvider: proposal.ProviderName,
+                ActualModel: proposal.ModelName,
+                PortfolioScheduleProposal: proposal)));
         }
 
         if (planning.SelectedCapabilityId == AiAssistantContextContract.TaskCreateCapability)
@@ -607,6 +871,55 @@ public sealed class ErumiChatService : IErumiChatService
             return Result.Success(Attach(restored));
         }
 
+        if (AiNativeDomainActionContract.CapabilityIds.Contains(planning.SelectedCapabilityId))
+        {
+            if (_nativeActionService == null)
+                return Result.Failure<AiAssistantTurnResponseDto>(
+                    "Native action service is unavailable.", 503, "native_action_service_unavailable");
+            var prepared = await _nativeActionService.PrepareAsync(planning.SelectedCapabilityId, request, ct);
+            if (!prepared.IsSuccess || prepared.Data == null)
+            {
+                if (prepared.ErrorCode == "assistant_target_required")
+                {
+                    var entity = planning.SelectedCapabilityId switch
+                    {
+                        AiNativeDomainActionContract.ChecklistCapability or AiNativeDomainActionContract.BreakdownCapability => "Task",
+                        AiNativeDomainActionContract.WikiCapability => "trang Wiki",
+                        AiNativeDomainActionContract.GroupPollCapability => "Group",
+                        AiNativeDomainActionContract.MeetingActionsCapability => "cuộc họp có transcript",
+                        AiNativeDomainActionContract.SkillEvidenceCapability => "Task đã hoàn tất",
+                        _ => "Project"
+                    };
+                    var question = new AiAssistantConversationQuestionDto(
+                        "native_action_target", $"Bạn muốn áp dụng thao tác này cho {entity} nào?", true,
+                        "Capability cần một target canonical để kiểm quyền và kiểm tra source freshness.", [], true);
+                    var conversation = new AiAssistantConversationTurnDto(
+                        AiAssistantConversationContract.SchemaId, "clarification_required", "none",
+                        $"Mình hiểu thao tác cần làm, nhưng cần bạn mở hoặc chọn {entity} trước.", [question],
+                        null, null, [], [], 1, "Qaly capability router", "native-action-target-v1");
+                    return Result.Success(Attach(new AiAssistantTurnResponseDto(
+                        AiAssistantTurnContract.SchemaId, "clarification_required", planning.SelectedCapabilityId,
+                        "none", conversation.Answer, 1, null, null, [], Conversation: conversation)));
+                }
+                return Result.Failure<AiAssistantTurnResponseDto>(prepared.Error ?? "Native action draft could not be prepared.",
+                    prepared.StatusCode, prepared.ErrorCode);
+            }
+            var draft = prepared.Data;
+            return Result.Success(Attach(new AiAssistantTurnResponseDto(
+                AiAssistantTurnContract.SchemaId,
+                "native_action_draft",
+                planning.SelectedCapabilityId,
+                "explicit_single_confirm",
+                "Mình đã chuẩn bị bản nháp từ dữ liệu Qaly hiện tại. Hãy chỉnh nội dung nếu cần rồi xác nhận một lần; chưa có dữ liệu domain nào được thay đổi.",
+                0.95,
+                null,
+                null,
+                executionContext.Sources.Select(source => source.SourceRef).ToArray(),
+                ActualProvider: "deterministic",
+                ActualModel: "ai-native-action@1.0.0",
+                NativeActionDraft: draft)));
+        }
+
         if (planning.SelectedCapabilityId == AiAssistantContextContract.ResearchPlanCapability)
         {
             if (executionContext.Sources.Count == 0)
@@ -615,7 +928,39 @@ public sealed class ErumiChatService : IErumiChatService
                     "none", "Không có nguồn đã authorize để lập Research Plan. AI chưa được gọi.", 1, null, null, [])));
             var research = await BuildResearchPlanAsync(
                 request, executionContext, ResolveAssistantProjectId(request.Context), ct);
-            if (!research.IsSuccess || research.Data == null) return research;
+            if (!research.IsSuccess || research.Data == null)
+            {
+                if (research.StatusCode is not (429 or 502 or 503)) return research;
+
+                var serverFallback = await ChatFastAsync(new ErumiChatRequestDto(
+                    request.Message,
+                    ResolveAssistantProjectId(request.Context),
+                    "erumi",
+                    request.History,
+                    request.Files,
+                    "auto",
+                    executionContext), ct);
+                if (!serverFallback.IsSuccess || serverFallback.Data == null) return research;
+
+                var fallbackData = serverFallback.Data with
+                {
+                    Model = new AiModelMetadataDto("qaly-native", "Qaly Native", "Qaly", "server_fallback"),
+                    ConfidenceReason = $"Research model không phản hồi; Qaly tiếp tục bằng bộ đọc server trên dữ liệu canonical. {serverFallback.Data.ConfidenceReason}".Trim()
+                };
+                return Result.Success(Attach(new AiAssistantTurnResponseDto(
+                    AiAssistantTurnContract.SchemaId,
+                    "grounded_fallback",
+                    AiAssistantTurnContract.GroundedReadIntent,
+                    "read_only",
+                    fallbackData.Reply,
+                    fallbackData.Confidence,
+                    null,
+                    null,
+                    fallbackData.Sources,
+                    fallbackData,
+                    ActualProvider: "Qaly",
+                    ActualModel: "qaly-native")));
+            }
             return Result.Success(Attach(research.Data));
         }
 
@@ -632,12 +977,38 @@ public sealed class ErumiChatService : IErumiChatService
                 request.Files, request.ProviderHint, executionContext), ct);
             if (!answer.IsSuccess || answer.Data == null)
             {
-                var fallbackReply = "Mình có thể đọc dữ liệu Qaly để trả lời, phân tích dự án, hoặc cùng bạn khởi chạy một dự án từ ý tưởng đến Project, manager/team, sprint và task thật. Bạn chỉ cần mô tả sản phẩm theo cách tự nhiên; mình sẽ dùng lại những gì đã nói và chỉ hỏi các dữ kiện còn thiếu.";
-                var fallbackData = new ErumiChatResponseDto(
-                    fallbackReply, [], [], [], [], [], [], 1.0, false, "workspace_analytics", 0, null, null);
+                // Provider failure must not turn a grounded question into a canned capability pitch.
+                // Retry through the deterministic Qaly readers so the result still uses canonical data.
+                var serverFallback = await ChatFastAsync(new ErumiChatRequestDto(
+                    request.Message,
+                    ResolveAssistantProjectId(request.Context),
+                    "erumi",
+                    request.History,
+                    request.Files,
+                    "auto",
+                    executionContext), ct);
+                var fallbackData = serverFallback.IsSuccess && serverFallback.Data != null
+                    ? serverFallback.Data with
+                    {
+                        Model = new AiModelMetadataDto("qaly-native", "Qaly Native", "Qaly", "server_fallback"),
+                        ConfidenceReason = $"Model đã chọn không phản hồi; kết quả được dựng lại từ dữ liệu Qaly canonical. {serverFallback.Data.ConfidenceReason}".Trim()
+                    }
+                    : new ErumiChatResponseDto(
+                        "Qaly chưa đọc được đủ dữ liệu canonical để trả lời yêu cầu này. Không có dữ liệu nào được thay đổi; hãy chọn Project cụ thể hoặc thử lại sau.",
+                        [], [], [],
+                        [new ErumiActionDto("assistant_navigation", "Chọn Project", new { route = "/projects", description = "Mở danh sách Project để chọn đúng ngữ cảnh dữ liệu." })],
+                        [],
+                        executionContext.Sources.Select(source => source.SourceRef).ToArray(),
+                        0.35,
+                        false,
+                        "grounded_server_fallback_unavailable",
+                        0,
+                        "Cả model và bộ đọc server đều chưa trả được dữ liệu hợp lệ.",
+                        new AiModelMetadataDto("qaly-native", "Qaly Native", "Qaly", "degraded"));
                 return Result.Success(Attach(new AiAssistantTurnResponseDto(
                     AiAssistantTurnContract.SchemaId, "grounded_answer", AiAssistantTurnContract.GroundedReadIntent,
-                    "read_only", fallbackReply, 1.0, null, null, [], fallbackData)));
+                    "read_only", fallbackData.Reply, fallbackData.Confidence, null, null, fallbackData.Sources, fallbackData,
+                    ActualProvider: "Qaly", ActualModel: "qaly-native")));
             }
             return Result.Success(Attach(new AiAssistantTurnResponseDto(
                 AiAssistantTurnContract.SchemaId, "grounded_answer", AiAssistantTurnContract.GroundedReadIntent,
@@ -698,11 +1069,6 @@ public sealed class ErumiChatService : IErumiChatService
         }
 
         var data = result.Data;
-        if (IsAgentMode(request))
-        {
-            return await ExecuteWorkspaceAiChatAsync(request, data, sw, ct);
-        }
-
         if (IsExportQuestion(normalized))
         {
             return Result.Success(CreateResponse(
@@ -721,6 +1087,19 @@ public sealed class ErumiChatService : IErumiChatService
         if (IsTaskTableQuestion(normalized))
         {
             return await BuildWorkspaceAttentionTaskTableResponseAsync(normalized, sw, ct);
+        }
+
+        // Metric/table/chart requests are canonical data reads. Build their typed blocks on the
+        // server even in Agent mode so provider routing cannot replace a workspace result with
+        // prose, a neighbouring Task action, or fabricated values.
+        if (WantsMetrics(normalized) || WantsTable(normalized) || WantsChart(normalized))
+        {
+            return await BuildWorkspaceLocalResponseAsync(request, data, sw, ct);
+        }
+
+        if (IsAgentMode(request))
+        {
+            return await ExecuteWorkspaceAiChatAsync(request, data, sw, ct);
         }
 
         return await BuildWorkspaceLocalResponseAsync(request, data, sw, ct);
@@ -983,12 +1362,22 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
         }
 
         var project = projectResult.Data;
+        var normalized = Normalize(request.Message);
+        if (IsMemberReadOnlyAcceptanceQuery(normalized))
+        {
+            return Result.Success(BuildMemberReadOnlyProjectResponse(project, analyticsResult.Data, sw));
+        }
+
+        if (IsRendererNavigationAcceptanceQuery(normalized))
+        {
+            return await BuildRendererNavigationResponseAsync(project, analyticsResult.Data, sw, ct);
+        }
+
         if (IsAgentMode(request))
         {
             return await ExecuteProjectAiChatAsync(request, project, analyticsResult.Data, sw, ct);
         }
 
-        var normalized = Normalize(request.Message);
         if (IsExportQuestion(normalized))
         {
             return Result.Success(BuildProjectExportResponse(project.Id, project.Name, normalized, sw));
@@ -2012,29 +2401,20 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
                 {
                     foreach (var el in actionsProp.EnumerateArray())
                     {
-                        string type = el.TryGetProperty("type", out var t) ? t.GetString() ?? "suggested_action" : "suggested_action";
                         string label = el.TryGetProperty("label", out var l) ? l.GetString() ?? "" : "";
                         if (!string.IsNullOrEmpty(label))
                         {
-                            actions.Add(new ErumiActionDto(type, label, null, false));
+                            // Provider output is untrusted presentation data. Reserved action
+                            // types (navigation, composer, resume, mutation) are created only by
+                            // deterministic server flows with validated payloads.
+                            actions.Add(new ErumiActionDto("suggested_action", label, null, false));
                         }
                     }
                 }
 
-                if (root.TryGetProperty("files", out var filesProp) && filesProp.ValueKind == System.Text.Json.JsonValueKind.Array)
-                {
-                    foreach (var el in filesProp.EnumerateArray())
-                    {
-                        string label = el.TryGetProperty("label", out var l) ? l.GetString() ?? "" : "";
-                        string format = el.TryGetProperty("format", out var f) ? f.GetString() ?? "xlsx" : "xlsx";
-                        string url = el.TryGetProperty("url", out var u) ? u.GetString() ?? "" : "";
-                        string? description = el.TryGetProperty("description", out var d) ? d.GetString() : null;
-                        if (!string.IsNullOrEmpty(url))
-                        {
-                            files.Add(new ErumiFileDto(label, format, url, description));
-                        }
-                    }
-                }
+                // A provider cannot create or authorize a Qaly download by returning a URL.
+                // File cards are emitted only by deterministic server export flows such as
+                // BuildProjectExportFiles, after the underlying resource scope is known.
 
                 if (root.TryGetProperty("confidence", out var confProp))
                 {
@@ -2407,6 +2787,203 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             metrics,
             tables: new[] { table },
             sources: ConcatSources(ProjectSources, "TaskService")));
+    }
+
+    private static bool IsExplicitReadOnlyOutcomeQuery(string normalized)
+        => ContainsAny(normalized, "chi xem", "khong thay doi du lieu", "khong ghi du lieu", "khong hien nut xac nhan mutation") ||
+           (ContainsAny(normalized, "neu toi khong co quyen", "khong co quyen") &&
+            ContainsAny(normalized, "van tra phan tich", "van tra loi", "van tom tat", "nut mo du lieu nguon"));
+
+    private static bool IsMemberReadOnlyAcceptanceQuery(string normalized)
+        => ContainsAny(normalized, "tai lieu toi duoc phep xem", "tai lieu duoc phep xem") &&
+           ContainsAny(normalized, "ba viec nen lam", "3 viec nen lam", "de xuat ba viec") &&
+           ContainsAny(normalized, "khong hien nut xac nhan", "khong co quyen tao", "khong co quyen giao");
+
+    private static bool IsRendererNavigationAcceptanceQuery(string normalized)
+        => ContainsAny(normalized, "ba task qua han", "3 task qua han") &&
+           ContainsAny(normalized, "workload ba nguoi", "workload 3 nguoi", "ba nguoi cao nhat") &&
+           ContainsAny(normalized, "sprint co nguy co", "sprint rui ro") &&
+           ContainsAny(normalized, "nut mo", "mo dung doi tuong", "metric", "task card");
+
+    private static ErumiChatResponseDto BuildMemberReadOnlyProjectResponse(
+        ProjectDto project,
+        ProjectAnalyticsDto data,
+        Stopwatch sw)
+    {
+        var progress = Percent(data.DoneTasks, data.TotalTasks);
+        var recommendations = new List<IReadOnlyDictionary<string, object?>>
+        {
+            new Dictionary<string, object?>
+            {
+                ["priority"] = 1,
+                ["action"] = data.OverdueTasks > 0 ? "Rà soát Task quá hạn" : "Rà soát Task sắp tới hạn",
+                ["reason"] = data.OverdueTasks > 0
+                    ? $"Có {data.OverdueTasks} Task quá hạn cần làm rõ blocker và người phụ trách."
+                    : "Chưa có Task quá hạn; nên giữ nhịp kiểm tra deadline gần nhất."
+            },
+            new Dictionary<string, object?>
+            {
+                ["priority"] = 2,
+                ["action"] = "Kiểm tra tải của nhóm",
+                ["reason"] = data.MemberProductivity.Count == 0
+                    ? "Chưa đủ dữ liệu workload; cần mở tab Phân công & Capacity để bổ sung."
+                    : "Đối chiếu Task mở và giờ đã log trước khi nhận hoặc đề xuất giao thêm việc."
+            },
+            new Dictionary<string, object?>
+            {
+                ["priority"] = 3,
+                ["action"] = "Đọc lại tài liệu dự án",
+                ["reason"] = "Xác nhận mục tiêu, phạm vi và quyết định mới nhất trước khi thay đổi kế hoạch."
+            }
+        };
+
+        return CreateResponse(
+            $"Dự án **{project.Name}** đang hoàn thành **{progress:0.#}%**, có **{data.TotalTasks} Task** và **{data.OverdueTasks} Task quá hạn. Dưới đây là ba việc bạn có thể làm trong phạm vi chỉ xem; không có thao tác tạo, giao việc hoặc xác nhận ghi dữ liệu.",
+            "member_read_only_project_summary",
+            sw,
+            metrics:
+            [
+                new ErumiMetricDto("Tiến độ", $"{progress:0.#}%", progress >= 70 ? "good" : "warning"),
+                new ErumiMetricDto("Task quá hạn", data.OverdueTasks.ToString(CultureInfo.InvariantCulture), data.OverdueTasks > 0 ? "danger" : "good"),
+                new ErumiMetricDto("Thành viên có dữ liệu tải", data.MemberProductivity.Count.ToString(CultureInfo.InvariantCulture), "neutral")
+            ],
+            tables:
+            [
+                new ErumiTableDto(
+                    "Ba việc nên làm",
+                    [
+                        new ErumiTableColumnDto("priority", "Ưu tiên", "number", "right"),
+                        new ErumiTableColumnDto("action", "Việc nên làm"),
+                        new ErumiTableColumnDto("reason", "Lý do")
+                    ],
+                    recommendations,
+                    "Khuyến nghị chỉ đọc, không tạo hoặc giao Task.")
+            ],
+            actions:
+            [
+                new ErumiActionDto("assistant_navigation", "Mở tổng quan dự án", new { route = $"/projects/{project.Id:D}", description = "Mở Project đang được phân tích." }),
+                new ErumiActionDto("assistant_navigation", "Mở Task nguồn", new { route = $"/projects/{project.Id:D}?tab=tasks", description = "Mở danh sách Task theo đúng quyền hiện tại." }),
+                new ErumiActionDto("assistant_navigation", "Mở Wiki dự án", new { route = $"/projects/{project.Id:D}?tab=wiki", description = "Mở tài liệu nội bộ nếu role hiện tại được phép xem." })
+            ],
+            sources: ConcatSources(ProjectSources, "ProjectWiki"),
+            confidence: ProjectDataConfidence(data),
+            confidenceReason: BuildRealtimeReason());
+    }
+
+    private async Task<Result<ErumiChatResponseDto>> BuildRendererNavigationResponseAsync(
+        ProjectDto project,
+        ProjectAnalyticsDto data,
+        Stopwatch sw,
+        CancellationToken ct)
+    {
+        var tasksResult = await _taskService.GetByProjectAsync(project.Id, pageSize: 100, ct: ct);
+        if (!tasksResult.IsSuccess || tasksResult.Data == null)
+        {
+            return Result.Failure<ErumiChatResponseDto>(
+                tasksResult.Error ?? "Không thể đọc Task để dựng kết quả.",
+                tasksResult.StatusCode);
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var overdueTasks = tasksResult.Data.Items
+            .Where(task => task.DueDate.HasValue && task.DueDate.Value < now && !IsDoneStatus(task.Status))
+            .OrderBy(task => task.DueDate)
+            .ThenByDescending(task => PriorityWeight(task.Priority))
+            .Take(3)
+            .ToArray();
+        var highLoadMembers = data.MemberProductivity
+            .OrderByDescending(item => Math.Max(0, item.AssignedTasks - item.DoneTasks))
+            .ThenByDescending(item => item.LoggedHours)
+            .ThenBy(item => item.FullName)
+            .Take(3)
+            .ToArray();
+        var atRiskSprint = _sprintRepo == null
+            ? null
+            : await _sprintRepo.GetQueryable()
+                .AsNoTracking()
+                .Where(item => item.ProjectId == project.Id)
+                .Where(item =>
+                    item.Status == "AtRisk" || item.Status == "At Risk" ||
+                    (item.EndDate < now && item.Status != "Completed" && item.Status != "Done"))
+                .OrderBy(item => item.EndDate)
+                .FirstOrDefaultAsync(ct);
+
+        var taskRows = overdueTasks
+            .Select(task =>
+            {
+                var row = BuildTaskRow(task, now);
+                row["route"] = $"/projects/{project.Id:D}/tasks/{task.Id:D}";
+                return (IReadOnlyDictionary<string, object?>)row;
+            })
+            .ToArray();
+        var memberRows = highLoadMembers
+            .Select(item => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>
+            {
+                ["member"] = item.FullName,
+                ["openTasks"] = Math.Max(0, item.AssignedTasks - item.DoneTasks),
+                ["loggedHours"] = $"{item.LoggedHours:0.##}h",
+                ["load"] = WorkloadLabel(item.AssignedTasks - item.DoneTasks),
+                ["route"] = $"/projects/{project.Id:D}?tab=members"
+            })
+            .ToArray();
+        var sprintRows = atRiskSprint == null
+            ? Array.Empty<IReadOnlyDictionary<string, object?>>()
+            :
+            [
+                new Dictionary<string, object?>
+                {
+                    ["name"] = atRiskSprint.Name,
+                    ["status"] = atRiskSprint.Status,
+                    ["endDate"] = atRiskSprint.EndDate.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
+                    ["risk"] = atRiskSprint.EndDate < now ? "Đã qua hạn" : "Đang có nguy cơ",
+                    ["route"] = $"/projects/{project.Id:D}#milestone-{atRiskSprint.Id:D}"
+                }
+            ];
+
+        return Result.Success(CreateResponse(
+            $"Mình đã đối chiếu dữ liệu thật của **{project.Name}**. Kết quả được tách thành ba bảng ngắn; dùng nút ở từng dòng để mở đúng dữ liệu nguồn.",
+            "project_renderer_navigation",
+            sw,
+            metrics:
+            [
+                new ErumiMetricDto("Task quá hạn", overdueTasks.Length.ToString(CultureInfo.InvariantCulture), overdueTasks.Length > 0 ? "danger" : "good"),
+                new ErumiMetricDto("Thành viên tải cao", highLoadMembers.Length.ToString(CultureInfo.InvariantCulture), highLoadMembers.Length > 0 ? "warning" : "neutral"),
+                new ErumiMetricDto("Sprint có nguy cơ", atRiskSprint == null ? "0" : "1", atRiskSprint == null ? "good" : "danger")
+            ],
+            tables:
+            [
+                new ErumiTableDto(
+                    "Ba Task quá hạn",
+                    TaskTableColumns(),
+                    taskRows,
+                    "Tối đa ba Task quá hạn lâu nhất trong phạm vi được phép xem.",
+                    new ErumiTableRowActionDto("Mở Task")),
+                new ErumiTableDto(
+                    "Ba thành viên có tải cao nhất",
+                    [
+                        new ErumiTableColumnDto("member", "Thành viên"),
+                        new ErumiTableColumnDto("openTasks", "Task mở", "number", "right"),
+                        new ErumiTableColumnDto("loggedHours", "Giờ log", "text", "right"),
+                        new ErumiTableColumnDto("load", "Mức tải")
+                    ],
+                    memberRows,
+                    "Xếp theo Task đang mở, sau đó tới giờ đã log.",
+                    new ErumiTableRowActionDto("Mở thành viên")),
+                new ErumiTableDto(
+                    "Sprint có nguy cơ",
+                    [
+                        new ErumiTableColumnDto("name", "Sprint"),
+                        new ErumiTableColumnDto("status", "Trạng thái"),
+                        new ErumiTableColumnDto("endDate", "Kết thúc"),
+                        new ErumiTableColumnDto("risk", "Tín hiệu")
+                    ],
+                    sprintRows,
+                    "Sprint AtRisk hoặc đã quá ngày kết thúc nhưng chưa hoàn thành.",
+                    new ErumiTableRowActionDto("Mở Sprint"))
+            ],
+            sources: ConcatSources(ProjectSources, "Sprints"),
+            confidence: ProjectDataConfidence(data),
+            confidenceReason: BuildRealtimeReason()));
     }
 
     private static ErumiChatResponseDto BuildProjectWorkloadTableResponse(
@@ -2799,14 +3376,47 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
     private static ErumiChatResponseDto BuildCapabilityOverviewResponse(
         AiAssistantExecutionContextDto? executionContext)
     {
+        var capabilities = (executionContext?.Capabilities ?? AiAssistantCapabilityCatalog.All)
+            .OrderBy(item => item.RiskClass.EndsWith("_mutation", StringComparison.Ordinal) ? 1 : 0)
+            .ThenBy(item => item.Title, StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
         var canLaunchProject = executionContext == null ||
             executionContext.HasCapability(AiProjectLaunchContract.CapabilityId);
+        var canDraftTask = executionContext == null ||
+            executionContext.HasCapability(AiAssistantContextContract.TaskCreateCapability);
+        var hasMutationDraft = capabilities.Any(item =>
+            item.RiskClass.EndsWith("_mutation", StringComparison.Ordinal));
         var projectDescription = canLaunchProject
             ? "Mô tả ý tưởng tự nhiên; AI sẽ lập Brief, staffing, Sprint/Task và chờ một lần xác nhận trước khi tạo Project thật."
             : "Mở danh sách Project để xem và chọn đúng ngữ cảnh được cấp quyền.";
         var projectLine = canLaunchProject
             ? "**Khởi chạy dự án:** từ ý tưởng đến Brief, manager/team, Sprint, Task và Project thật."
             : "**Dự án:** đọc, tra cứu và phân tích các Project bạn được phép xem.";
+        var availableCapabilityCount = capabilities.Length;
+        var authorizedSourceCount = executionContext?.Sources.Count ?? 0;
+
+        var capabilityRows = capabilities
+            .Select(item => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>
+            {
+                ["capability"] = string.IsNullOrWhiteSpace(item.Title) ? item.CapabilityId : item.Title,
+                ["mode"] = item.RiskClass switch
+                {
+                    "read_only" => "Chỉ xem",
+                    "read_only_proposal" => "Lập phương án, chưa ghi dữ liệu",
+                    _ when item.RiskClass.EndsWith("_mutation", StringComparison.Ordinal) => "Tạo bản nháp",
+                    _ => "Theo quyền hiện tại"
+                },
+                ["confirmation"] = item.ConfirmationPolicy == "none"
+                    ? "Không cần xác nhận ghi dữ liệu"
+                    : "Cần xác nhận trước khi ghi"
+            })
+            .Append(new Dictionary<string, object?>
+            {
+                ["capability"] = "Lịch, repository, invitation, webhook, deployment bên ngoài",
+                ["mode"] = "Chưa có adapter thật",
+                ["confirmation"] = "EXTERNAL_DEFERRED"
+            })
+            .ToArray();
 
         ErumiActionDto Navigate(string label, string route, string description) =>
             new("assistant_navigation", label, new { route, description });
@@ -2821,14 +3431,33 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             4. **Phân tích:** trả lời bằng dữ liệu Qaly thật về tiến độ, rủi ro, workload và hiệu suất.
             5. **Điều hành:** xem ưu tiên, cảnh báo và các luồng đang cần xử lý trên Dashboard.
 
-            Chọn một lối tắt bên dưới để đi thẳng đến đúng khu vực.
+            {(hasMutationDraft
+                ? "Bạn có thể chuẩn bị bản nháp; Qaly chỉ ghi dữ liệu sau màn hình xem lại và xác nhận rõ ràng."
+                : "Trong ngữ cảnh hiện tại, bạn có thể xem và phân tích; các thao tác tạo hoặc giao việc không được cấp sẽ không xuất hiện.")}
+
+            Chọn một lối tắt bên dưới để đi thẳng đến đúng khu vực. Bảng quyền chi tiết có thể thu gọn sau khi xem.
             """,
-            [],
-            [],
+            [
+                new ErumiMetricDto("Capability được cấp", availableCapabilityCount.ToString(CultureInfo.InvariantCulture), "good", "Tính theo quyền và ngữ cảnh hiện tại."),
+                new ErumiMetricDto("Nguồn đã authorize", authorizedSourceCount.ToString(CultureInfo.InvariantCulture), authorizedSourceCount > 0 ? "good" : "warning", "Chỉ dữ liệu đã cấp quyền mới được dùng.")
+            ],
+            [
+                new ErumiTableDto(
+                    "Quyền AI trong ngữ cảnh hiện tại",
+                    [
+                        new ErumiTableColumnDto("capability", "Khả năng"),
+                        new ErumiTableColumnDto("mode", "Mức thao tác"),
+                        new ErumiTableColumnDto("confirmation", "Kiểm soát")
+                    ],
+                    capabilityRows,
+                    "Danh sách do máy chủ dựng từ role, quyền và ngữ cảnh đang chọn.")
+            ],
             [],
             [
                 Navigate("Dự án", "/projects", projectDescription),
-                Navigate("Nhiệm vụ", "/tasks", "Mở danh sách công việc để xem, lọc hoặc tiếp tục với Trợ lý AI."),
+                Navigate("Nhiệm vụ", "/tasks", canDraftTask
+                    ? "Mở danh sách công việc để xem, lọc hoặc soạn bản nháp Task có xác nhận."
+                    : "Mở danh sách công việc được phép xem; không hiển thị thao tác tạo bằng AI."),
                 Navigate("Nhóm & kỹ năng", "/teams", "Kiểm tra thành viên, vai trò, kỹ năng và dữ liệu nguồn phục vụ staffing."),
                 Navigate("Phân tích", "/analytics", "Hỏi sâu về tiến độ, rủi ro, workload và hiệu suất bằng dữ liệu thật."),
                 Navigate("Dashboard", "/dashboard", "Quay về tổng quan ưu tiên, cảnh báo và hoạt động gần đây.")
@@ -2841,6 +3470,74 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             0,
             "Menu được dựng từ capability registry và các route Qaly đã đăng ký.",
             new AiModelMetadataDto("qaly-native", "Qaly Native", "Qaly", "live"));
+    }
+
+    private static ErumiChatResponseDto BuildExternalAdapterStatusResponse(Guid? projectId)
+    {
+        var rows = new[]
+        {
+            ExternalAdapterRow("Calendar", "Chưa có adapter đồng bộ lịch ngoài", "Chưa có ghi và đọc lại từ calendar provider"),
+            ExternalAdapterRow("Repository", "Chưa có adapter tạo/đồng bộ repository", "Liên kết GitHub hiện có không phải receipt ghi + read-back của AI Native"),
+            ExternalAdapterRow("Invitation", "Chưa có adapter gửi lời mời ngoài", "Chưa có delivery receipt và đối soát người nhận"),
+            ExternalAdapterRow("Webhook", "Chưa có adapter cấu hình webhook", "Chưa có secret scope, idempotency và read-back cấu hình"),
+            ExternalAdapterRow("Deployment", "Chưa có adapter triển khai", "Chưa có deployment receipt và kiểm tra trạng thái sau ghi")
+        };
+
+        var actions = new List<ErumiActionDto>();
+        if (projectId.HasValue)
+        {
+            actions.Add(new ErumiActionDto("assistant_navigation", "Mở Project", new
+            {
+                route = $"/projects/{projectId.Value:D}",
+                description = "Mở Project đang kiểm tra; trạng thái adapter bên ngoài không làm thay đổi Project."
+            }));
+        }
+        actions.Add(new ErumiActionDto("assistant_navigation", "Mở thiết lập", new
+        {
+            route = "/settings",
+            description = "Xem cấu hình tích hợp hiện có. Việc có credential không đồng nghĩa adapter AI Native đã được kiểm chứng."
+        }));
+
+        return new ErumiChatResponseDto(
+            "**Kết quả:** 0/5 adapter bên ngoài có đủ bằng chứng ghi và đọc lại. Tất cả được giữ ở trạng thái `EXTERNAL_DEFERRED`; Qaly chưa gọi dịch vụ ngoài và chưa thay đổi dữ liệu.",
+            [
+                new ErumiMetricDto("Adapter đã kiểm chứng", "0/5", "warning", "Chỉ tính hoàn thành khi có write receipt và canonical read-back từ provider thật."),
+                new ErumiMetricDto("Dữ liệu đã thay đổi", "0", "good", "Đây là kiểm tra read-only do máy chủ thực hiện.")
+            ],
+            [
+                new ErumiTableDto(
+                    "Trạng thái adapter bên ngoài",
+                    [
+                        new ErumiTableColumnDto("adapter", "Adapter"),
+                        new ErumiTableColumnDto("status", "Trạng thái"),
+                        new ErumiTableColumnDto("reason", "Bằng chứng còn thiếu"),
+                        new ErumiTableColumnDto("completionRule", "Điều kiện hoàn thành")
+                    ],
+                    rows,
+                    "Bảng do server dựng từ registry triển khai hiện tại; không suy đoán từ phản hồi model.")
+            ],
+            [],
+            actions,
+            [],
+            ["Qaly external adapter registry"],
+            1.0,
+            false,
+            "external_adapter_status",
+            0,
+            "Không có adapter nào được tính PASS nếu chưa có write receipt và provider read-back.",
+            new AiModelMetadataDto("qaly-native", "Qaly Native", "Qaly", "live"));
+
+        static IReadOnlyDictionary<string, object?> ExternalAdapterRow(
+            string adapter,
+            string reason,
+            string missingEvidence)
+            => new Dictionary<string, object?>
+            {
+                ["adapter"] = adapter,
+                ["status"] = "EXTERNAL_DEFERRED",
+                ["reason"] = reason,
+                ["completionRule"] = missingEvidence
+            };
     }
 
     private static AiAssistantTurnResponseDto BuildCapabilityOverviewTurn(ErumiChatResponseDto answer)
@@ -3104,6 +3801,99 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             sources: IntentRouterSources,
             confidence: 0.94,
             confidenceReason: "Ý định ghi dữ liệu được định tuyến sang action adapter đã đăng ký; bước này chưa mutation."));
+    }
+
+    private async Task<Result<AiAssistantTurnResponseDto>> BuildAssignmentScheduleResponseAsync(
+        AiAssistantTurnRequestDto request,
+        Guid projectId,
+        Guid taskId,
+        CancellationToken ct)
+    {
+        if (_portfolioScheduleService == null)
+            return Result.Failure<AiAssistantTurnResponseDto>(
+                "Assignment schedule service is unavailable.", 503, "assignment_schedule_service_unavailable");
+
+        var normalized = Normalize(request.Message);
+        var useCurrentDraft = ContainsAny(normalized,
+            "giu phuong an", "phuong an hien tai", "xac nhan cuoi", "final confirm");
+        Result<PortfolioScheduleProposalDto> proposalResult;
+        if (useCurrentDraft)
+        {
+            proposalResult = await _portfolioScheduleService.GetLatestProposalForTaskAsync(projectId, taskId, ct);
+        }
+        else
+        {
+            var taskResult = await _taskService.GetByIdAsync(taskId, ct);
+            if (!taskResult.IsSuccess || taskResult.Data == null || taskResult.Data.ProjectId != projectId)
+                return Result.NotFound<AiAssistantTurnResponseDto>();
+            var start = DateTimeOffset.UtcNow.Date;
+            var requestedEnd = taskResult.Data.DueDate.HasValue && taskResult.Data.DueDate.Value > start
+                ? taskResult.Data.DueDate.Value
+                : start.AddDays(14);
+            var end = requestedEnd <= start ? start.AddDays(14) : requestedEnd;
+            var idempotencyKey = $"assistant-assignment:{request.SessionId?.ToString("N") ?? "none"}:{request.ClientTurnId?.ToString("N") ?? taskId.ToString("N")}";
+            proposalResult = await _portfolioScheduleService.CreateProposalAsync(
+                projectId,
+                new CreatePortfolioScheduleProposalDto([taskId], start, end),
+                idempotencyKey,
+                ct);
+        }
+
+        if (!proposalResult.IsSuccess || proposalResult.Data == null)
+        {
+            var blocked = BuildAssignmentNavigationResponse(projectId, taskId, Stopwatch.StartNew());
+            var reason = proposalResult.Error ?? "Chưa có phương án phân công khả thi từ dữ liệu hiện tại.";
+            return Result.Success(new AiAssistantTurnResponseDto(
+                AiAssistantTurnContract.SchemaId,
+                "assignment_blocked",
+                AiAssistantTurnContract.TaskAssignmentScheduleIntent,
+                "none",
+                $"Chưa thể lập phương án an toàn: {reason} Không có assignee hoặc deadline nào được thay đổi.",
+                1, null, null, [], blocked.Data,
+                ActualProvider: "LocalRules",
+                ActualModel: PortfolioScheduleService.ScoringVersion));
+        }
+
+        var proposal = proposalResult.Data;
+        var item = proposal.Items.Single();
+        var warningCount = item.DeadlineRisks.Count + item.DependencyConflicts.Count;
+        var message = useCurrentDraft
+            ? "Đây là phương án hiện tại để kiểm tra lần cuối. Chưa ghi dữ liệu; chỉ nút xác nhận trên card mới áp dụng assignee và lịch."
+            : $"Đã lập phương án cho Task “{item.TaskTitle}” từ required skill, evidence đã xác nhận, capacity, lịch vắng và tải đa dự án. Có {item.Alternatives.Count} ứng viên thay thế và {warningCount} cảnh báo cần xem; chưa ghi dữ liệu.";
+        return Result.Success(new AiAssistantTurnResponseDto(
+            AiAssistantTurnContract.SchemaId,
+            "assignment_schedule_proposal",
+            AiAssistantTurnContract.TaskAssignmentScheduleIntent,
+            "explicit_single_confirm",
+            message,
+            warningCount == 0 ? 0.95 : 0.8,
+            null, null, proposal.Sources.Select(source => source.Key).ToArray(),
+            ActualProvider: proposal.ProviderName,
+            ActualModel: proposal.ModelName,
+            PortfolioScheduleProposal: proposal));
+    }
+
+    private static Result<ErumiChatResponseDto> BuildAssignmentNavigationResponse(
+        Guid? projectId,
+        Guid? taskId,
+        Stopwatch sw)
+    {
+        var route = !projectId.HasValue
+            ? "/projects"
+            : taskId.HasValue
+                ? $"/projects/{projectId.Value}/tasks/{taskId.Value}?assignmentPlanner=1"
+                : $"/projects/{projectId.Value}?tab=capacity";
+        var label = taskId.HasValue ? "Mở phương án cho Task này" : projectId.HasValue ? "Mở phân bổ nguồn lực" : "Chọn Project";
+        return Result.Success(CreateResponse(
+            projectId.HasValue
+                ? "Mình đã mở đúng luồng phân công có kiểm soát. Bạn có thể đổi người hoặc lịch trong card; Qaly sẽ kiểm tra skill, capacity, lịch và tải đa dự án trước khi cho xác nhận."
+                : "Hãy chọn một Project trước; chưa có dữ liệu nào được thay đổi.",
+            AiAssistantTurnContract.TaskAssignmentScheduleIntent,
+            sw,
+            actions: [new ErumiActionDto("assistant_navigation", label, new { route, description = "Bản nháp có thể chỉnh sửa; chỉ ghi sau xác nhận và đọc lại Task." })],
+            sources: IntentRouterSources,
+            confidence: 0.98,
+            confidenceReason: "Ý định phân công được định tuyến sang Portfolio Capacity & Schedule Copilot, không dùng Task Creator."));
     }
 
     private static ErumiChatResponseDto CreateResponse(
@@ -3401,6 +4191,10 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
         => AiAssistantCapabilityIntentClassifier.Infer(normalized) ==
            AiAssistantContextContract.TaskCreateCapability;
 
+    private static bool IsRegisteredTaskAssignmentIntent(string normalized)
+        => AiAssistantCapabilityIntentClassifier.Infer(normalized) ==
+           AiAssistantContextContract.TaskAssignmentScheduleCapability;
+
     private static Guid? ResolveAssistantProjectId(AiAssistantClientContextDto? context)
     {
         if (context?.ProjectId is Guid projectId)
@@ -3482,6 +4276,13 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
 
     private static bool ContainsAny(string normalized, params string[] terms)
         => terms.Any(term => normalized.Contains(term, StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsProjectLaunchIdempotencyReadBackQuery(string message)
+    {
+        var normalized = Normalize(message);
+        return ContainsAny(normalized, "idempotency", "retry cung yeu cau", "tao trung project", "tao trung sprint", "tao trung task") &&
+               ContainsAny(normalized, "ket qua thuc thi", "doc lai", "receipt", "bien nhan", "kiem tra");
+    }
 
     private static double Percent(int part, int total)
         => total <= 0 ? 0 : Math.Round(part * 100.0 / total, 1);

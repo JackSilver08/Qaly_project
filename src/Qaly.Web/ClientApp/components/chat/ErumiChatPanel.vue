@@ -11,13 +11,30 @@ import {
   Clock3,
   Settings2,
   MessageSquarePlus,
+  Gauge,
+  ListChecks,
+  ShieldCheck,
+  Wrench,
   X,
   ArrowRight
 } from 'lucide-vue-next'
 import { useDashboardContext } from '../../composables/dashboard-context'
 import { useErumiContext } from '../../composables/use-erumi-context'
 import { apiJson, apiResult } from '../../utils/api-client'
-import { showError, showSuccess } from '../../composables/use-toast'
+import { showError, showInfo, showSuccess } from '../../composables/use-toast'
+import { normalizeAssistantProjectTarget, resolveAssistantProjectId } from './assistant-project-context'
+import { cloneAssistantJson } from './assistant-render-normalization'
+import {
+  applyLaunchMetricDefaults,
+  launchMetricIntentLabel,
+  launchMetricTemplates,
+  launchMetricValueExample,
+  normalizeLaunchAudience,
+  normalizeLaunchTimebox,
+  simplifyLaunchObjective,
+  simplifyLaunchProblem,
+  suggestLaunchBusinessValue,
+} from './project-launch-form-ux'
 import ChatbotAvatar from '../ChatbotAvatar.vue'
 import AiModelSelector from '../analytics-ai/AiModelSelector.vue'
 import AnalyticsSideDrawer from '../analytics-ai/AnalyticsSideDrawer.vue'
@@ -66,7 +83,7 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{
-  composeAction: [payload: { message: string; projectId: string }]
+  composeAction: [payload: { message: string; projectId: string; providerHint: string; modelProfile: string }]
 }>()
 
 const { projects, selectedProject, currentUser, loadDashboard } = useDashboardContext()
@@ -112,6 +129,10 @@ type ErumiTable = {
   columns: ErumiTableColumn[]
   rows: Record<string, unknown>[]
   description?: string | null
+  rowAction?: {
+    label: string
+    routeKey?: string | null
+  } | null
 }
 
 type ErumiAction = {
@@ -164,6 +185,8 @@ type AiAssistantConversationQuestion = {
   reason: string
   quickReplies: AiAssistantQuickReply[]
   allowFreeText: boolean
+  inputType?: 'text' | 'textarea' | 'select' | string
+  placeholder?: string | null
 }
 type AiAssistantProgressiveReply = { questionId: string; value: string; label?: string | null }
 type AiAssistantClarificationDraft = {
@@ -195,6 +218,59 @@ type AiAssistantConversationTurn = {
   actualModel: string
   promptVersion: string
 }
+
+type ProjectLaunchBriefDraft = {
+  projectName: string
+  objective: string
+  targetTimebox: string
+  primaryAudience: string
+  objectiveProfile: ProjectLaunchObjectiveProfile
+  features: ProjectLaunchFeature[]
+  successMeasures: string
+  exclusions: string
+  customFeatureTitle: string
+}
+type ProjectObjectiveMetric = {
+  metricId: string
+  title: string
+  metricType: string
+  baseline?: number | null
+  target?: number | null
+  unit?: string | null
+  measurementWindow?: string | null
+  dataSource?: string | null
+  owner?: string | null
+  status: string
+}
+type ProjectLaunchObjectiveProfile = {
+  problemStatement: string
+  primaryAudience: string
+  desiredOutcome: string
+  businessValue: string
+  metrics: ProjectObjectiveMetric[]
+  guardrails: string[]
+  assumptions: string[]
+  nonGoals: string[]
+}
+type ProjectLaunchFeature = {
+  featureId: string
+  title: string
+  category: string
+  priority: string
+  description: string
+  primaryAudience: string
+  acceptanceCriteria: string[]
+  requiredSkillNames: string[]
+  selected: boolean
+  custom: boolean
+}
+type ProjectLaunchSkillOption = {
+  skillId: string
+  name: string
+  category: string
+  defaultRequiredLevel: string
+  organizationDefined: boolean
+}
 type ProjectLaunchBrief = {
   briefId: string
   schemaId: 'project_launch_brief.v1'
@@ -220,6 +296,21 @@ type ProjectLaunchBrief = {
   actualModel: string
   promptVersion: string
   createdAt: string
+  targetTimebox?: string | null
+  primaryAudience?: string | null
+  objectiveProfile?: ProjectLaunchObjectiveProfile | null
+  features?: ProjectLaunchFeature[] | null
+  skillCatalog?: ProjectLaunchSkillOption[] | null
+}
+type OrganizationWorkRule = {
+  ruleKey: string
+  category: string
+  enforcement: 'block' | 'warn'
+  description: string
+  numericValue?: number | null
+  unit?: string | null
+  values?: string[] | null
+  enabled: boolean
 }
 type OrganizationWorkRuleSet = {
   ruleSetId: string
@@ -227,6 +318,7 @@ type OrganizationWorkRuleSet = {
   version: number
   status: string
   revision: number
+  rules: OrganizationWorkRule[]
 }
 
 type ProjectStaffingMember = {
@@ -240,6 +332,26 @@ type ProjectStaffingMember = {
   decisionReasons: string[]
 }
 
+type ProjectStaffingCandidate = {
+  userId: string
+  displayName: string
+  organizationRole: string
+  managerEligible: boolean
+  staffingEligible: boolean
+  hardRejects: string[]
+  evidenceSkills: string[]
+  evidenceConfidence: number
+  weeklyCapacityHours: number
+  windowCapacityHours: number
+  existingCommittedHours: number
+  focusReserveHours: number
+  availableHours: number
+  proposedHours: number
+  loadAfterPercent: number
+  activeProjectCount: number
+  timeZoneId: string
+  capacityState: string
+}
 type ProjectStaffingScenario = {
   scenarioId: string
   title: string
@@ -249,7 +361,7 @@ type ProjectStaffingScenario = {
   managerUserId?: string | null
   managerName?: string | null
   members: ProjectStaffingMember[]
-  managerCandidates: Array<{ userId: string; displayName: string; hardRejects: string[]; loadAfterPercent: number; capacityState: string }>
+  managerCandidates: ProjectStaffingCandidate[]
   missingSkills: string[]
   blockingReasons: string[]
   risks: string[]
@@ -262,11 +374,30 @@ type ProjectStaffingScenario = {
 type ProjectLaunchTaskPlan = {
   clientId: string
   title: string
+  description: string
+  acceptanceCriteria: string[]
+  definitionOfDone: string[]
   priority: string
   estimatedHours: number
   proposedAssigneeId?: string | null
+  proposedReviewerId?: string | null
+  requiredSkillIds: string[]
   requiredSkillNames: string[]
   dependencyClientIds: string[]
+  sourceRefs: string[]
+  selected: boolean
+  featureId?: string | null
+  objectiveMetricIds?: string[] | null
+}
+
+type ProjectLaunchSprintPlan = {
+  clientId: string
+  name: string
+  objective: string
+  startDate: string
+  endDate: string
+  exitCriteria: string[]
+  tasks: ProjectLaunchTaskPlan[]
   selected: boolean
 }
 
@@ -280,7 +411,21 @@ type ProjectLaunchDeliveryPlan = {
   skillGaps: string[]
   scheduleRisks: string[]
   externalDeferred: string[]
-  sprints: Array<{ clientId: string; name: string; objective: string; startDate: string; endDate: string; selected: boolean; tasks: ProjectLaunchTaskPlan[] }>
+  sprints: ProjectLaunchSprintPlan[]
+  features?: ProjectLaunchFeature[] | null
+  objectiveMetrics?: ProjectObjectiveMetric[] | null
+  suggestedTeamSize?: number
+  assignmentMode?: 'auto_balance' | 'preserve_assignments'
+  scheduleMode?: 'sequential_sprints' | 'parallel_workstreams'
+}
+
+type ProjectLaunchPlanDraft = {
+  selectedScenarioId: string
+  staffing: Array<{ userId: string; proposedRole: string; proposedHours: number; included: boolean; manager: boolean }>
+  sprints: ProjectLaunchSprintPlan[]
+  assignmentMode: 'auto_balance' | 'preserve_assignments'
+  scheduleMode: 'sequential_sprints' | 'parallel_workstreams'
+  dirty: boolean
 }
 
 type ProjectLaunchExecutionReceipt = {
@@ -429,6 +574,99 @@ type AiSafeTestRunReport = {
   revision: number
 }
 
+type AiNativeActionReceipt = {
+  schemaId: 'ai_native_action_receipt.v1'
+  receiptId: string
+  draftId: string
+  capabilityId: string
+  status: string
+  items: Array<{ entityType: string; entityId: string; label: string; url: string }>
+  readBackLinks: string[]
+  confirmedAt: string
+  replayed: boolean
+}
+
+type AiNativeActionDraft = {
+  draftId: string
+  capabilityId: string
+  schemaId: string
+  rendererId: string
+  targetType: string
+  targetId: string
+  projectId?: string | null
+  status: string
+  revision: number
+  rowVersion: string
+  payload: Record<string, any>
+  sourceVersion: string
+  expiresAt: string
+  createdAt: string
+  receipt?: AiNativeActionReceipt | null
+}
+
+type PortfolioScheduleAlternative = {
+  userId: string
+  fullName: string
+  skillCoveragePercent: number
+  remainingHours: number
+  tradeOff: string
+  evidenceConfidence: number
+  loadBeforeHours: number
+  capacityHours: number
+  blockingReasons?: string[] | null
+}
+
+type PortfolioScheduleProposalItem = {
+  itemId: string
+  taskId: string
+  taskTitle: string
+  proposedAssigneeId: string
+  proposedAssigneeName: string
+  proposedStart: string
+  proposedDue: string
+  skillCoveragePercent: number
+  evidenceConfidence: number
+  loadBeforeHours: number
+  loadAfterHours: number
+  capacityHours: number
+  dependencyConflicts: string[]
+  deadlineRisks: string[]
+  blockingReasons: string[]
+  alternatives: PortfolioScheduleAlternative[]
+  sourceRefs: string[]
+  taskRowVersion: string
+  selected: boolean
+}
+
+type PortfolioScheduleProposal = {
+  draftId: string
+  projectId: string
+  status: string
+  scoringVersion: string
+  items: PortfolioScheduleProposalItem[]
+  sources: Array<{ key: string; label: string; url?: string | null; restricted: boolean }>
+  warnings: string[]
+  rowVersion: string
+  providerName: string
+  modelName: string
+  receipt?: { appliedCount: number; readBackVerified: boolean; readBackLinks: string[] } | null
+}
+
+function normalizePortfolioScheduleProposal(proposal?: PortfolioScheduleProposal | null) {
+  if (!proposal) return null
+  return {
+    ...proposal,
+    items: proposal.items.map(item => ({
+      ...item,
+      blockingReasons: item.blockingReasons ?? [],
+      alternatives: item.alternatives.map(candidate => ({
+        ...candidate,
+        blockingReasons: candidate.blockingReasons ?? [],
+      })),
+    })),
+  }
+}
+
 type ErumiChatResponse = {
   reply: string
   metrics: ErumiMetric[]
@@ -456,6 +694,8 @@ type ErumiChatResponse = {
   projectLaunchPlan?: ProjectLaunchPlan | null
   safeTestRunPreview?: AiSafeTestRunPreview | null
   safeTestRunReport?: AiSafeTestRunReport | null
+  nativeActionDraft?: AiNativeActionDraft | null
+  portfolioScheduleProposal?: PortfolioScheduleProposal | null
 }
 
 type AiAssistantChoice = {
@@ -538,7 +778,7 @@ type AiAssistantResearchPlan = {
 
 type AiAssistantTurnResponse = {
   schemaId: 'assistant_turn.v1'
-  disposition: 'grounded_answer' | 'guided_answer' | 'research_plan' | 'project_launch_brief' | 'registered_action' | 'clarification_required' | 'unsupported' | 'unsupported_but_analyzed' | 'policy_blocked' | 'draft_ready'
+  disposition: 'grounded_answer' | 'guided_answer' | 'research_plan' | 'project_launch_brief' | 'registered_action' | 'clarification_required' | 'unsupported' | 'unsupported_but_analyzed' | 'policy_blocked' | 'draft_ready' | 'native_action_draft'
   intent: string
   executionPolicy: string
   assistantMessage: string
@@ -569,6 +809,8 @@ type AiAssistantTurnResponse = {
   projectLaunchPlan?: ProjectLaunchPlan | null
   safeTestRunPreview?: AiSafeTestRunPreview | null
   safeTestRunReport?: AiSafeTestRunReport | null
+  nativeActionDraft?: AiNativeActionDraft | null
+  portfolioScheduleProposal?: PortfolioScheduleProposal | null
 }
 
 type AiAssistantStoredTurn = {
@@ -636,6 +878,8 @@ type ChatEntry = {
   projectLaunchPlan?: ProjectLaunchPlan | null
   safeTestRunPreview?: AiSafeTestRunPreview | null
   safeTestRunReport?: AiSafeTestRunReport | null
+  nativeActionDraft?: AiNativeActionDraft | null
+  portfolioScheduleProposal?: PortfolioScheduleProposal | null
 }
 
 type ErumiUploadedFile = {
@@ -666,8 +910,94 @@ const chatInput = ref('')
 const isChatting = ref(false)
 const launchActionBusy = ref<string | null>(null)
 const safeTestActionBusy = ref<string | null>(null)
+const nativeActionBusy = ref<string | null>(null)
+const assignmentProposalBusy = ref<string | null>(null)
 const selectedLaunchScenarios = ref<Record<string, string>>({})
 const rulebookDrafts = ref<Record<string, OrganizationWorkRuleSet>>({})
+const rulebookReviewRules = ref<Record<string, OrganizationWorkRule[]>>({})
+const projectLaunchBriefDrafts = ref<Record<string, ProjectLaunchBriefDraft>>({})
+const projectLaunchPlanDrafts = ref<Record<string, ProjectLaunchPlanDraft>>({})
+const PROJECT_LAUNCH_DRAFT_BACKUP_VERSION = 1
+
+function projectLaunchDraftBackupKey() {
+  const userId = String((currentUser.value as any)?.id || (currentUser.value as any)?.userId || 'current')
+  return `qaly.ai-native.project-launch-working-drafts.v1:${userId}`
+}
+
+function normalizeLaunchBriefForEditing(draft: ProjectLaunchBriefDraft): ProjectLaunchBriefDraft {
+  const targetTimebox = normalizeLaunchTimebox(draft.targetTimebox)
+  const primaryAudience = normalizeLaunchAudience(draft.primaryAudience)
+  const objective = simplifyLaunchObjective(draft.objective)
+  return {
+    ...draft,
+    objective,
+    targetTimebox,
+    primaryAudience,
+    objectiveProfile: {
+      ...draft.objectiveProfile,
+      problemStatement: simplifyLaunchProblem(draft.objectiveProfile.problemStatement, objective),
+      desiredOutcome: objective,
+      businessValue: suggestLaunchBusinessValue(draft.objectiveProfile.businessValue, objective),
+      primaryAudience: normalizeLaunchAudience(draft.objectiveProfile.primaryAudience) || primaryAudience,
+      metrics: draft.objectiveProfile.metrics.map(metric => applyLaunchMetricDefaults(metric, targetTimebox)),
+    },
+    features: draft.features.map(feature => ({
+      ...feature,
+      primaryAudience: normalizeLaunchAudience(feature.primaryAudience) || primaryAudience,
+    })),
+  }
+}
+
+function persistProjectLaunchWorkingDrafts() {
+  try {
+    window.localStorage.setItem(projectLaunchDraftBackupKey(), JSON.stringify({
+      version: PROJECT_LAUNCH_DRAFT_BACKUP_VERSION,
+      savedAt: new Date().toISOString(),
+      briefDrafts: projectLaunchBriefDrafts.value,
+      planDrafts: Object.fromEntries(
+        Object.entries(projectLaunchPlanDrafts.value).filter(([, draft]) => draft.dirty),
+      ),
+    }))
+  } catch {
+    // Server-side review remains authoritative; storage exhaustion must not break chat.
+  }
+}
+
+function restoreProjectLaunchWorkingDrafts() {
+  try {
+    const raw = window.localStorage.getItem(projectLaunchDraftBackupKey())
+    if (!raw) return
+    const saved = JSON.parse(raw) as {
+      version?: number
+      briefDrafts?: Record<string, ProjectLaunchBriefDraft>
+      planDrafts?: Record<string, ProjectLaunchPlanDraft>
+    }
+    if (saved.version !== PROJECT_LAUNCH_DRAFT_BACKUP_VERSION) return
+    projectLaunchBriefDrafts.value = saved.briefDrafts && typeof saved.briefDrafts === 'object'
+      ? Object.fromEntries(Object.entries(saved.briefDrafts).map(([id, draft]) => [id, normalizeLaunchBriefForEditing(draft)]))
+      : {}
+    projectLaunchPlanDrafts.value = saved.planDrafts && typeof saved.planDrafts === 'object'
+      ? saved.planDrafts
+      : {}
+  } catch {
+    window.localStorage.removeItem(projectLaunchDraftBackupKey())
+  }
+}
+const launchAudienceOptions = ['Nội bộ', 'Khách hàng', 'Người dùng công khai', 'Đối tác']
+const launchTimeboxOptions = ['6 tuần', '8 tuần', '12 tuần']
+const launchFeatureTemplates = [
+  { title: 'Đăng nhập và phân quyền', category: 'Authentication/RBAC' },
+  { title: 'Cổng thông tin khách hàng', category: 'Customer portal' },
+  { title: 'Quản trị và vận hành', category: 'Admin/Operations' },
+  { title: 'Đặt lịch và điều phối', category: 'Booking/Scheduling' },
+  { title: 'Thanh toán và hóa đơn', category: 'Billing/Payment' },
+  { title: 'Dashboard và báo cáo', category: 'Dashboard/Reporting' },
+  { title: 'Thông báo', category: 'Notification' },
+  { title: 'Tìm kiếm và nội dung', category: 'Search/Content' },
+  { title: 'Nhật ký và bảo mật', category: 'Audit/Security' },
+  { title: 'Tích hợp hệ thống', category: 'Integration' },
+  { title: 'Nhập và xuất dữ liệu', category: 'Data import/export' },
+]
 const activeAssistantTurnId = ref<string | null>(null)
 const activeAssistantClientTurnId = ref<string | null>(null)
 const progressiveDraft = ref<AiAssistantClarificationDraft | null>(null)
@@ -680,6 +1010,7 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 let refreshTimer: number | undefined
 let keepConversationForNextTargetChange = false
+let assistantScopeSyncQueue: Promise<void> = Promise.resolve()
 
 function applyRoutePrompt() {
   const rawPrompt = Array.isArray(route.query.prompt) ? route.query.prompt[0] : route.query.prompt
@@ -690,6 +1021,36 @@ function applyRoutePrompt() {
     selectedTarget.value = 'workspace'
   }
   nextTick(() => textareaRef.value?.focus())
+}
+
+function assistantContextForCurrentRoute(organizationId?: string | null) {
+  const param = (name: string) => {
+    const value = route.params[name]
+    return typeof value === 'string' && value.trim() ? value : null
+  }
+  const routeProjectId = param('projectId')
+  // The visible composer selection is the source of truth outside a concrete
+  // Project route. externalProjectId is only a launcher input: once reflected
+  // into selectedTarget it must never override a later selection by the user.
+  const projectId = resolveAssistantProjectId(routeProjectId, selectedTarget.value)
+  const taskId = param('taskId')
+  const wikiId = param('wikiId')
+  const groupId = param('groupId')
+  const rawMeetingId = Array.isArray(route.query.meetingId) ? route.query.meetingId[0] : route.query.meetingId
+  const meetingId = typeof rawMeetingId === 'string' && rawMeetingId.trim() ? rawMeetingId : null
+  const entityType = taskId ? 'task' : wikiId ? 'wiki' : meetingId ? 'meeting' : groupId ? 'group' : projectId ? 'project' : null
+  const entityId = taskId || wikiId || meetingId || groupId || projectId
+  return {
+    route: window.location.pathname,
+    module: entityType || 'workspace',
+    // A group route is the source entity, not a reason to discard an explicit
+    // Project chosen by the user from the composer.
+    projectId,
+    entityType,
+    entityId,
+    organizationId: organizationId || null,
+    selectionIds: [],
+  }
 }
 
 const AI_MODEL_STORAGE_KEY = 'qaly.ai-native.model.v1'
@@ -708,6 +1069,20 @@ const selectedProviderHint = computed(() => {
       return 'auto'
   }
 })
+const selectedActionModelProfile = computed(() => {
+  if (selectedAiModel.value === 'deepseek-chat') return 'reasoning_strong'
+  if (selectedAiModel.value === 'ollama-local') return 'fast_local'
+  return 'balanced'
+})
+
+function composeActionPayload(message: string, projectId: string) {
+  return {
+    message,
+    projectId,
+    providerHint: selectedProviderHint.value,
+    modelProfile: selectedActionModelProfile.value,
+  }
+}
 const activeDrawerTab = ref<AnalyticsMiniTab>('sources')
 const cockpitDrawerOpen = ref(false)
 const selectedDrawerMessage = ref<ChatEntry | null>(null)
@@ -716,6 +1091,7 @@ const conversationHistory = ref<ConversationHistoryItem[]>([])
 const conversationHistoryLoading = ref(false)
 const assistantSessionId = ref<string | null>(null)
 const assistantSessionVersion = ref(0)
+const assistantSessionProjectId = ref<string | null>(null)
 const assistantSessionLoading = ref(false)
 const assistantSessionLoadAttempted = ref(false)
 
@@ -757,6 +1133,24 @@ const menuSuggestions = [
   { label: 'Tìm dự án đang có rủi ro', prompt: 'Hiện tại có dự án nào đang gặp rủi ro hoặc chậm tiến độ không?' },
   { label: 'So sánh tiến độ các dự án', prompt: 'So sánh tiến độ và số lượng task của các dự án đang hoạt động dưới dạng bảng.' },
   { label: 'Tóm tắt vấn đề cần xử lý', prompt: 'Tóm tắt các vấn đề cần xử lý và ưu tiên hành động tiếp theo.' }
+]
+
+const newcomerShortcuts = [
+  {
+    label: 'Qaly giúp được gì?',
+    description: 'Xem các luồng AI có thể phân tích hoặc hỗ trợ thực hiện.',
+    prompt: 'Bạn có thể giúp tôi những gì trong Qaly? Hãy trả lời ngắn gọn và cho nút điều hướng phù hợp.'
+  },
+  {
+    label: 'Việc nào cần chú ý?',
+    description: 'Tìm rủi ro và công việc cần ưu tiên trong phạm vi hiện tại.',
+    prompt: 'Trong phạm vi hiện tại, việc gì cần tôi chú ý trước và vì sao?'
+  },
+  {
+    label: 'Tóm tắt nhanh',
+    description: 'Nhận tóm tắt ngắn từ dữ liệu Qaly hiện tại.',
+    prompt: 'Tóm tắt ngắn tình hình hiện tại bằng dữ liệu thật và đề xuất bước tiếp theo.'
+  }
 ]
 
 // Analysis tools surfaced inside the "+" menu. Prompts reuse the existing
@@ -846,17 +1240,41 @@ const selectedAiModelOption = computed<AiModelOption | undefined>(() => {
   return AI_MODEL_OPTIONS.find(option => option.id === selectedAiModel.value) ?? AI_MODEL_OPTIONS[0]
 })
 const selectedAiModelCompactLabel = computed(() => aiModelCompactLabel(selectedAiModelOption.value))
+
+function hasAssistantContent(msg: ChatEntry) {
+  return Boolean(
+    msg.text ||
+    msg.metrics?.length ||
+    msg.tables?.length ||
+    msg.charts?.length ||
+    msg.actions?.length ||
+    msg.files?.length ||
+    msg.sources?.length ||
+    msg.sourceRefs?.length ||
+    msg.researchPlan ||
+    msg.goalAnalysis ||
+    msg.workPlan ||
+    msg.conversation ||
+    msg.projectLaunchBrief ||
+    msg.projectLaunchPlan ||
+    msg.safeTestRunPreview ||
+    msg.safeTestRunReport ||
+    msg.nativeActionDraft
+  )
+}
+
 const latestAssistantMessage = computed(() => {
   return chatHistory.value
     .slice()
     .reverse()
-    .find(msg => msg.role === 'assistant' && (!!msg.text || !!msg.metrics?.length || !!msg.sources?.length))
+    .find(msg => msg.role === 'assistant' && hasAssistantContent(msg))
 })
 const drawerMessage = computed(() => selectedDrawerMessage.value ?? latestAssistantMessage.value ?? null)
 const drawerSources = computed(() => drawerMessage.value?.sources ?? [])
 const drawerSourceRefs = computed(() => drawerMessage.value?.sourceRefs ?? [])
 const drawerMetrics = computed(() => drawerMessage.value?.metrics ?? [])
 const drawerTables = computed(() => drawerMessage.value?.tables ?? [])
+const drawerCharts = computed(() => drawerMessage.value?.charts ?? [])
 const drawerActions = computed(() => drawerMessage.value?.actions ?? [])
 const composerPlaceholder = computed(() => {
   return isCompactViewport.value
@@ -870,13 +1288,14 @@ const freshnessLabel = computed(() => {
 })
 const cockpitDrawerTitle = computed(() => {
   const titles: Record<AnalyticsMiniTab, string> = {
-    insights: 'Insights',
-    metrics: 'Metrics',
-    risks: 'Risks',
+    tools: 'Công cụ AI',
+    insights: 'Điểm nổi bật',
+    metrics: 'Số liệu',
+    risks: 'Rủi ro',
     sources: 'Nguồn dữ liệu',
-    report: 'Report',
-    actions: 'Actions',
-    model: 'Thiết lập model',
+    report: 'Báo cáo',
+    actions: 'Việc cần làm',
+    model: 'Model AI',
     history: 'Lịch sử phiên Trợ lý AI',
     settings: 'Thiết lập'
   }
@@ -885,21 +1304,44 @@ const cockpitDrawerTitle = computed(() => {
 
 // Kebab (•••) menus. Keep secondary actions out of the default view while
 // staying keyboard + screen-reader accessible.
-const headerMenuItems = computed(() => [
-  { key: 'new', label: 'Cuộc trò chuyện mới', icon: MessageSquarePlus },
-  { key: 'history', label: 'Lịch sử', icon: Clock3 },
-  { key: 'sources', label: 'Nguồn dữ liệu', icon: Database },
-  { key: 'export', label: 'Xuất báo cáo', icon: Download },
-  { key: 'settings', label: 'Thiết lập', icon: Settings2 }
-])
+const headerMenuItems = computed(() => {
+  const items: Array<{ key: string; label: string; icon: any; separatorBefore?: boolean }> = [
+    { key: 'new', label: 'Cuộc trò chuyện mới', icon: MessageSquarePlus },
+    { key: 'history', label: 'Lịch sử phiên', icon: Clock3 },
+    { key: 'tools', label: 'Công cụ AI', icon: Wrench, separatorBefore: true }
+  ]
+  const latest = latestAssistantMessage.value
+  if (latest?.metrics?.length || latest?.tables?.length || latest?.charts?.length) {
+    items.push({ key: 'metrics', label: 'Dữ liệu gần nhất', icon: Gauge })
+  }
+  if (latest?.actions?.length) {
+    items.push({ key: 'actions', label: 'Việc cần làm gần nhất', icon: ListChecks })
+  }
+  items.push(
+    { key: 'sources', label: 'Nguồn dữ liệu', icon: Database },
+    { key: 'model', label: 'Model đang dùng', icon: Settings2, separatorBefore: true }
+  )
+  if (latest?.text.trim()) items.push({ key: 'export', label: 'Xuất báo cáo', icon: Download })
+  items.push({ key: 'settings', label: 'Quyền riêng tư AI', icon: ShieldCheck })
+  return items
+})
 
 function messageMenuItems(msg: ChatEntry) {
-  const items = [
-    { key: 'copy', label: 'Sao chép', icon: Copy },
-    { key: 'export', label: 'Xuất báo cáo', icon: Download }
-  ]
+  const items: Array<{ key: string; label: string; icon: any; separatorBefore?: boolean }> = []
+  if (msg.metrics?.length || msg.tables?.length || msg.charts?.length) {
+    items.push({ key: 'metrics', label: 'Xem dữ liệu', icon: Gauge })
+  }
+  if (msg.actions?.length) {
+    items.push({ key: 'actions', label: 'Xem việc cần làm', icon: ListChecks })
+  }
   if (msg.sources?.length || msg.sourceRefs?.length) {
     items.push({ key: 'sources', label: 'Xem nguồn', icon: Database })
+  }
+  if (msg.text.trim()) {
+    items.push(
+      { key: 'copy', label: 'Sao chép', icon: Copy, separatorBefore: items.length > 0 },
+      { key: 'export', label: 'Xuất báo cáo', icon: Download }
+    )
   }
   return items
 }
@@ -912,14 +1354,27 @@ function handleHeaderMenu(key: string) {
     case 'history':
       void openSessionHistory()
       break
+    case 'tools':
+      openCockpitDrawer('tools')
+      break
+    case 'metrics':
+      openCockpitDrawer('metrics')
+      break
+    case 'actions':
+      openCockpitDrawer('actions')
+      break
     case 'sources':
       openCockpitDrawer('sources')
+      break
+    case 'model':
+      openCockpitDrawer('model')
       break
     case 'export':
       exportLatestReport()
       break
     case 'settings':
-      openCockpitDrawer('settings')
+      closeCockpitDrawer()
+      void router.push('/settings?tab=privacy')
       break
   }
 }
@@ -935,6 +1390,12 @@ function handleMessageMenu(key: string, msg: ChatEntry) {
     case 'sources':
       openSourcesForMessage(msg)
       break
+    case 'metrics':
+      openCockpitDrawer('metrics', msg)
+      break
+    case 'actions':
+      openCockpitDrawer('actions', msg)
+      break
   }
 }
 
@@ -944,6 +1405,7 @@ async function startNewConversation() {
   closeCockpitDrawer()
   assistantSessionId.value = null
   assistantSessionVersion.value = 0
+  assistantSessionProjectId.value = null
   assistantSessionLoadAttempted.value = true
   try {
     await createAssistantSession()
@@ -967,7 +1429,46 @@ function openComposerAction(action: ErumiAction) {
   const message = String(action.payload?.message || '').trim()
   const projectId = String(action.payload?.projectId || '').trim()
   if (!message || !projectId) return
-  emit('composeAction', { message, projectId })
+  emit('composeAction', composeActionPayload(message, projectId))
+}
+
+async function selectProjectForTaskPlan(projectId: string, action: ErumiAction) {
+  const message = String(action.payload?.message || '').trim()
+  if (!message || !projectId) return
+  keepConversationForNextTargetChange = true
+  selectedTarget.value = projectId
+  await nextTick()
+  emit('composeAction', composeActionPayload(message, projectId))
+}
+
+function drawerActionHint(action: ErumiAction) {
+  if (action.type === 'assistant_navigation') return String(action.payload?.description || 'Mở đúng màn hình nghiệp vụ')
+  if (action.type === 'compose_task_plan') return 'Mở bản nháp có cấu trúc; chỉ ghi dữ liệu sau khi bạn xác nhận.'
+  if (action.type === 'assistant_resume_turn') return 'Tiếp tục lượt đã lưu trên máy chủ.'
+  if (['assistant_clarification', 'assistant_progressive_questions', 'select_project_for_task_plan', 'draft_change'].includes(action.type)) {
+    return 'Mở lại card tương tác trong hội thoại để chọn hoặc trả lời đầy đủ.'
+  }
+  return 'Điền gợi ý này vào ô chat để bạn kiểm tra trước khi gửi.'
+}
+
+function handleDrawerAction(action: ErumiAction) {
+  if (action.type === 'assistant_navigation') {
+    openAssistantNavigation(action)
+    return
+  }
+  if (action.type === 'compose_task_plan') {
+    openComposerAction(action)
+    return
+  }
+  if (action.type === 'assistant_resume_turn') {
+    void resumeAssistantTurn(action)
+    return
+  }
+  if (['assistant_clarification', 'assistant_progressive_questions', 'select_project_for_task_plan', 'draft_change'].includes(action.type)) {
+    focusDrawerMessage()
+    return
+  }
+  fillComposer(action.label)
 }
 
 function openResearchAction(action: AiAssistantResearchAction) {
@@ -978,7 +1479,7 @@ function openResearchAction(action: AiAssistantResearchAction) {
     showError('Action này thiếu project hoặc nội dung bản nháp nên chưa thể mở Task Composer.')
     return
   }
-  emit('composeAction', { message, projectId })
+  emit('composeAction', composeActionPayload(message, projectId))
 }
 
 function compactSourceRef(sourceRef: string) {
@@ -1028,6 +1529,13 @@ function progressiveAnswer(questionId: string, action: ErumiAction) {
   return draft?.answers.find(answer => answer.questionId === questionId) ?? null
 }
 
+function progressiveAnswerDisplay(question: AiAssistantConversationQuestion, action: ErumiAction) {
+  const answer = progressiveAnswer(question.id, action)
+  if (!answer) return ''
+  const selectedReply = question.quickReplies?.find(reply => reply.value === answer.value)
+  return selectedReply?.label || answer.value
+}
+
 function hasAllBlockingAnswers(action: ErumiAction) {
   const draft = progressiveDraft.value
   if (!draft || draft.originTurnId !== String(action.payload?.originTurnId || '')) return false
@@ -1035,21 +1543,14 @@ function hasAllBlockingAnswers(action: ErumiAction) {
   return draft.questions.filter(question => question.blocking).every(question => answered.has(question.id))
 }
 
-function isQuestionAnsweredInHistory(questionId: string): boolean {
-  return chatHistory.value.some(msg => {
-    const text = msg.text || ''
-    if (questionId === 'launch.deadline' && (text.includes('tuần') || text.includes('ngày') || text.includes('tháng') || text.includes('6_weeks') || text.includes('8_weeks') || text.includes('12_weeks'))) return true
-    if (questionId === 'launch.audience' && (text.includes('nội bộ') || text.includes('khách hàng') || text.includes('người dùng') || text.includes('Nội bộ') || text.includes('Khách hàng'))) return true
-    if (questionId === 'launch.scope' && (text.includes('trang chủ') || text.includes('thanh toán') || text.includes('quản lý') || text.includes('chức năng'))) return true
-    return false
-  })
+function filteredProgressiveQuestions(questions: AiAssistantConversationQuestion[] | null | undefined, action: ErumiAction): AiAssistantConversationQuestion[] {
+  void action
+  // The server owns clarification state. Inferring answers from arbitrary chat text
+  // made the form disappear while the durable Brief was still blocked.
+  return Array.isArray(questions) ? questions : []
 }
 
-function filteredProgressiveQuestions(questions: AiAssistantConversationQuestion[] = [], action: ErumiAction): AiAssistantConversationQuestion[] {
-  return questions.filter(question => !isQuestionAnsweredInHistory(question.id))
-}
-
-function pendingProgressiveQuestions(questions: AiAssistantConversationQuestion[] = [], action: ErumiAction) {
+function pendingProgressiveQuestions(questions: AiAssistantConversationQuestion[] | null | undefined, action: ErumiAction) {
   return filteredProgressiveQuestions(questions, action)
     .filter(question => !progressiveAnswer(question.id, action)?.value.trim())
 }
@@ -1180,7 +1681,8 @@ async function submitProgressiveDraft(action: ErumiAction) {
 
 function openGuidanceRoute(routePath: string) {
   const allowed = ['/dashboard', '/projects', '/tasks', '/teams', '/groups', '/analytics', '/organizations', '/settings']
-  if (!allowed.includes(routePath)) return
+  const internalEntityRoute = /^\/projects\/[0-9a-f-]{36}(?:\/tasks\/[0-9a-f-]{36})?(?:\?(?:tab=(?:capacity|tasks|members|roadmap|wiki)|assignmentPlanner=1))?(?:#milestone-[0-9a-f-]{36})?$/i.test(routePath)
+  if (!allowed.includes(routePath) && !internalEntityRoute) return
   router.push(routePath)
 }
 
@@ -1192,6 +1694,12 @@ function openAssistantNavigation(action: ErumiAction) {
 function mapAssistantTurn(turn: AiAssistantTurnResponse, originalMessage?: string): ErumiChatResponse {
   const answer = turn.answer
   const actions = [...(answer?.actions ?? [])]
+  const actualProvider = turn.actualProvider?.trim()
+  const actualModel = turn.actualModel?.trim()
+  const reachedModel = Boolean(actualProvider && actualModel &&
+    actualProvider !== 'not_reached' && actualModel !== 'not_reached')
+  const answerModelReached = Boolean(answer?.model?.provider && answer?.model?.id &&
+    answer.model.provider !== 'not_reached' && answer.model.id !== 'not_reached')
 
   if (turn.disposition === 'registered_action' && turn.artifact) {
     actions.push({
@@ -1247,7 +1755,14 @@ function mapAssistantTurn(turn: AiAssistantTurnResponse, originalMessage?: strin
     usedAi: answer?.usedAi ?? false,
     intent: turn.intent,
     latencyMs: answer?.latencyMs ?? 0,
-    model: answer?.model ?? null,
+    model: answerModelReached ? answer?.model : (reachedModel
+      ? {
+          id: actualModel ?? null,
+          label: [actualProvider, actualModel].filter(Boolean).join(' / '),
+          provider: actualProvider ?? null,
+          status: 'actual',
+        }
+      : null),
     processEvents: turn.processEvents ?? null,
     capabilities: turn.capabilities ?? null,
     sourceDisclosures: turn.sourceDisclosures ?? null,
@@ -1259,6 +1774,8 @@ function mapAssistantTurn(turn: AiAssistantTurnResponse, originalMessage?: strin
     projectLaunchPlan: turn.projectLaunchPlan ?? null,
     safeTestRunPreview: turn.safeTestRunPreview ?? null,
     safeTestRunReport: turn.safeTestRunReport ?? null,
+    nativeActionDraft: turn.nativeActionDraft ?? null,
+    portfolioScheduleProposal: normalizePortfolioScheduleProposal(turn.portfolioScheduleProposal),
   }
 }
 
@@ -1294,7 +1811,9 @@ function mapStoredAssistantTurn(turn: AiAssistantStoredTurn): ChatEntry[] {
       projectLaunchBrief: response.projectLaunchBrief,
       projectLaunchPlan: response.projectLaunchPlan,
       safeTestRunPreview: response.safeTestRunPreview,
-      safeTestRunReport: response.safeTestRunReport
+      safeTestRunReport: response.safeTestRunReport,
+      nativeActionDraft: response.nativeActionDraft,
+      portfolioScheduleProposal: response.portfolioScheduleProposal
     })
   } else {
     entries.push({
@@ -1320,6 +1839,7 @@ function applyAssistantSession(session: AiAssistantSession) {
     selectedTarget.value = restoredTarget
   }
   assistantSessionId.value = session.sessionId
+  assistantSessionProjectId.value = session.projectId ?? null
   window.localStorage.setItem(AI_ACTIVE_SESSION_STORAGE_KEY, session.sessionId)
   assistantSessionVersion.value = session.version
   progressiveDraft.value = session.clarificationDraft ?? null
@@ -1333,19 +1853,20 @@ function applyAssistantSession(session: AiAssistantSession) {
   chatHistory.value = restored.length ? [buildWelcomeMessage(), ...restored] : [buildWelcomeMessage()]
 }
 
+function applyAssistantSessionScopeMetadata(session: AiAssistantSession) {
+  assistantSessionId.value = session.sessionId
+  assistantSessionProjectId.value = session.projectId ?? null
+  assistantSessionVersion.value = session.version
+  window.localStorage.setItem(AI_ACTIVE_SESSION_STORAGE_KEY, session.sessionId)
+  progressiveDraft.value = session.clarificationDraft ?? progressiveDraft.value
+}
+
 async function createAssistantSession() {
-  const projectId = selectedTarget.value === 'workspace' ? null : selectedTarget.value
+  const context = assistantContextForCurrentRoute()
   const session = await apiJson<AiAssistantSession>('/api/ai/assistant/sessions', {
     method: 'POST',
     body: JSON.stringify({
-      context: {
-        route: window.location.pathname,
-        module: projectId ? 'project' : 'workspace',
-        projectId,
-        entityType: projectId ? 'project' : null,
-        entityId: projectId,
-        selectionIds: []
-      },
+      context,
       title: `Cuộc trò chuyện Trợ lý AI · ${selectedTargetLabel.value}`
     })
   })
@@ -1383,6 +1904,44 @@ async function ensureAssistantSession() {
   if (assistantSessionId.value) return
   if (!assistantSessionLoadAttempted.value) await restoreAssistantSession()
   if (!assistantSessionId.value) await createAssistantSession()
+}
+
+async function persistAssistantSessionScope(projectId: string | null) {
+  await ensureAssistantSession()
+  if (!assistantSessionId.value || assistantSessionProjectId.value === projectId) return
+  try {
+    const updated = await apiJson<AiAssistantSession>(
+      `/api/ai/assistant/sessions/${assistantSessionId.value}/scope`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({
+          expectedVersion: assistantSessionVersion.value,
+          projectId
+        })
+      }
+    )
+    // A scope update must not restore the old target/history over a newer
+    // composer selection. Only advance the durable session metadata here.
+    applyAssistantSessionScopeMetadata(updated)
+  } catch (error) {
+    try {
+      const current = await apiJson<AiAssistantSession>(
+        `/api/ai/assistant/sessions/${assistantSessionId.value}`
+      )
+      applyAssistantSessionScopeMetadata(current)
+    } catch {
+      // Keep the original scope error; the next restore/send can recover the server session.
+    }
+    throw error
+  }
+}
+
+function queueAssistantSessionScope(projectId: string | null) {
+  const queued = assistantScopeSyncQueue
+    .catch(() => undefined)
+    .then(() => persistAssistantSessionScope(projectId))
+  assistantScopeSyncQueue = queued
+  return queued
 }
 
 function chartComponent(type: string) {
@@ -1462,6 +2021,13 @@ function tableCell(row: Record<string, unknown>, key: string) {
   return String(value)
 }
 
+function openTableRowAction(table: ErumiTable, row: Record<string, unknown>) {
+  const routeKey = String(table.rowAction?.routeKey || 'route')
+  const routePath = String(row[routeKey] || '').trim()
+  if (!routePath) return
+  openGuidanceRoute(routePath)
+}
+
 function formatUploadSize(size: number) {
   if (size < 1024) return `${size} B`
   if (size < 1024 * 1024) return `${Math.round(size / 102.4) / 10} KB`
@@ -1488,6 +2054,31 @@ function fillComposer(prompt: string) {
   focusComposer()
 }
 
+function choosePrompt(prompt: string) {
+  closeCockpitDrawer()
+  fillComposer(prompt)
+}
+
+function useAnalysisTool(tool: AiToolbarAction) {
+  if (tool.behavior === 'open-drawer') {
+    openCockpitDrawer(tool.tab)
+    return
+  }
+  if (tool.prompt) choosePrompt(tool.prompt)
+}
+
+function focusDrawerMessage() {
+  const messageIndex = selectedDrawerMessage.value
+    ? chatHistory.value.indexOf(selectedDrawerMessage.value)
+    : chatHistory.value.length - 1
+  closeCockpitDrawer()
+  void nextTick(() => {
+    const message = chatContainerRef.value?.querySelector<HTMLElement>(`[data-message-index="${messageIndex}"]`)
+    if (message) message.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    else scrollToBottom()
+  })
+}
+
 function openCockpitDrawer(tab: AnalyticsMiniTab, message?: ChatEntry) {
   activeDrawerTab.value = tab
   selectedDrawerMessage.value = message ?? null
@@ -1503,7 +2094,7 @@ function openSourcesForMessage(message: ChatEntry) {
 }
 
 function askAboutSource(sourceLabel: string) {
-  fillComposer(`Giải thích nguồn "${sourceLabel}" và dữ liệu nào đã được dùng để tạo nhận định này.`)
+  choosePrompt(`Giải thích nguồn "${sourceLabel}" và dữ liệu nào đã được dùng để tạo nhận định này.`)
 }
 
 async function loadConversationHistory() {
@@ -1699,15 +2290,19 @@ watch(selectedTarget, async () => {
     keepConversationForNextTargetChange = false
     return
   }
-  chatHistory.value = [buildWelcomeMessage()]
+  const nextProjectId = normalizeAssistantProjectTarget(selectedTarget.value)
+  if (assistantSessionId.value && assistantSessionProjectId.value === nextProjectId) {
+    selectedDrawerMessage.value = null
+    scrollToBottom()
+    return
+  }
   selectedDrawerMessage.value = null
-  assistantSessionId.value = null
-  assistantSessionVersion.value = 0
-  assistantSessionLoadAttempted.value = false
   try {
-    await createAssistantSession()
-  } catch {
-    // Keep the composer available; the next send will retry durable session creation.
+    await queueAssistantSessionScope(nextProjectId)
+  } catch (error) {
+    showError(error instanceof Error
+      ? `Không thể đổi phạm vi cuộc trò chuyện: ${error.message}`
+      : 'Không thể đổi phạm vi cuộc trò chuyện. Phiên đã được tải lại theo dữ liệu máy chủ.')
   }
   scrollToBottom()
 })
@@ -1930,11 +2525,680 @@ function selectedLaunchScenarioId(plan: ProjectLaunchPlan) {
     || ''
 }
 
-function selectLaunchScenario(planId: string, scenarioId: string) {
-  selectedLaunchScenarios.value = { ...selectedLaunchScenarios.value, [planId]: scenarioId }
+function launchReviewSummary(plan: ProjectLaunchPlan) {
+  const draft = launchPlanDraft(plan)
+  const scenario = plan.staffingScenarios.find(item => item.scenarioId === draft.selectedScenarioId)
+  const selectedSprints = draft.sprints.filter(item => item.selected)
+  return {
+    manager: scenario?.managerName || 'Chưa chọn',
+    memberCount: draft.staffing.filter(item => item.included).length,
+    sprintCount: selectedSprints.length,
+    taskCount: selectedSprints.reduce((total, sprint) => total + sprint.tasks.filter(item => item.selected).length, 0),
+  }
+}
+
+function launchBriefStateLabel(state: string) {
+  if (state === 'BRIEF_READY') return 'Đủ dữ kiện để lập phương án'
+  if (state === 'CLARIFICATION_REQUIRED') return 'Cần bổ sung thông tin'
+  return state
+}
+
+function launchPlanStateLabel(state: string) {
+  if (state === 'pending_review') return 'Sẵn sàng để bạn xem lại'
+  if (state === 'blocked') return 'Cần điều chỉnh trước khi tạo'
+  if (state === 'executing') return 'Đang tạo dự án'
+  if (state === 'executed') return 'Đã tạo và kiểm tra lại'
+  if (state === 'rolled_back') return 'Đã hoàn tác'
+  return state
+}
+
+function staffingRejectLabel(code: string) {
+  const labels: Record<string, string> = {
+    missing_capacity_profile: 'chưa khai báo năng lực theo tuần',
+    max_concurrent_projects_reached: 'đã đạt giới hạn dự án đồng thời',
+    no_effective_capacity: 'không còn thời gian khả dụng sau khi trừ tải và thời gian dự phòng',
+    unavailable_for_full_window: 'không khả dụng trong toàn bộ thời gian dự án',
+  }
+  return labels[code] || code
+}
+
+function launchFeatureTitle(plan: ProjectLaunchPlan, featureId: string | null | undefined) {
+  if (!featureId) return ''
+  return plan.deliveryPlan.features?.find(item => item.featureId === featureId)?.title || featureId
+}
+
+function hasAssistantCapability(entry: ChatEntry, capabilityId: string) {
+  return Boolean(entry.capabilities?.some(item => item.capabilityId === capabilityId))
+}
+
+function canManageProjectLaunch(entry: ChatEntry) {
+  return hasAssistantCapability(entry, 'project.staffing.plan.v1')
+}
+
+function canExecuteProjectLaunch(entry: ChatEntry) {
+  return hasAssistantCapability(entry, 'project.launch.execute.v1')
+}
+
+function selectedLaunchCandidates(plan?: ProjectLaunchPlan | null) {
+  if (!plan) return []
+  return plan.staffingScenarios.find(item => item.scenarioId === selectedLaunchScenarioId(plan))?.managerCandidates || []
+}
+
+function selectLaunchScenario(plan: ProjectLaunchPlan, scenarioId: string) {
+  selectedLaunchScenarios.value = { ...selectedLaunchScenarios.value, [plan.planId]: scenarioId }
+  const scenario = plan.staffingScenarios.find(item => item.scenarioId === scenarioId)
+  if (scenario) projectLaunchPlanDrafts.value = {
+    ...projectLaunchPlanDrafts.value,
+    [plan.planId]: createLaunchPlanDraft(plan, scenario),
+  }
+}
+
+function createLaunchPlanDraft(plan: ProjectLaunchPlan, scenario: ProjectStaffingScenario): ProjectLaunchPlanDraft {
+  const memberMap = new Map(scenario.members.map(item => [item.userId, item]))
+  return {
+    selectedScenarioId: scenario.scenarioId,
+    staffing: scenario.managerCandidates.map(candidate => {
+      const member = memberMap.get(candidate.userId)
+      return {
+        userId: candidate.userId,
+        proposedRole: member?.proposedRole || 'Member',
+        proposedHours: member?.proposedHours || Math.min(8, candidate.availableHours || 0),
+        included: Boolean(member),
+        manager: scenario.managerUserId === candidate.userId,
+      }
+    }),
+    sprints: cloneAssistantJson(plan.deliveryPlan.sprints || []),
+    assignmentMode: plan.deliveryPlan.assignmentMode || 'auto_balance',
+    scheduleMode: plan.deliveryPlan.scheduleMode || 'sequential_sprints',
+    dirty: false,
+  }
+}
+
+function updateLaunchPlanMode(
+  plan: ProjectLaunchPlan,
+  field: 'assignmentMode' | 'scheduleMode',
+  event: Event,
+) {
+  const draft = launchPlanDraft(plan)
+  const value = (event.target as HTMLSelectElement).value
+  projectLaunchPlanDrafts.value = {
+    ...projectLaunchPlanDrafts.value,
+    [plan.planId]: { ...draft, [field]: value, dirty: true },
+  }
+}
+
+function launchPlanDraft(plan: ProjectLaunchPlan) {
+  const existing = projectLaunchPlanDrafts.value[plan.planId]
+  if (existing) return existing
+  const scenarioId = selectedLaunchScenarioId(plan)
+  const scenario = plan.staffingScenarios.find(item => item.scenarioId === scenarioId) || plan.staffingScenarios[0]
+  const draft = createLaunchPlanDraft(plan, scenario)
+  projectLaunchPlanDrafts.value = { ...projectLaunchPlanDrafts.value, [plan.planId]: draft }
+  return draft
+}
+
+function updateLaunchStaffing(
+  plan: ProjectLaunchPlan,
+  userId: string,
+  field: 'included' | 'manager' | 'proposedRole' | 'proposedHours',
+  event: Event
+) {
+  const draft = launchPlanDraft(plan)
+  const input = event.target as HTMLInputElement | HTMLSelectElement
+  const value = field === 'included' || field === 'manager'
+    ? (input as HTMLInputElement).checked
+    : field === 'proposedHours' ? Number(input.value) : input.value
+  const staffing = draft.staffing.map(item => {
+    if (item.userId !== userId) return field === 'manager' ? { ...item, manager: false } : item
+    return { ...item, [field]: value, included: field === 'manager' && value ? true : item.included }
+  })
+  projectLaunchPlanDrafts.value = { ...projectLaunchPlanDrafts.value, [plan.planId]: { ...draft, staffing, dirty: true } }
+}
+
+function updateLaunchSprint(
+  plan: ProjectLaunchPlan,
+  sprintId: string,
+  field: 'selected' | 'name' | 'objective' | 'startDate' | 'endDate',
+  event: Event
+) {
+  const draft = launchPlanDraft(plan)
+  const input = event.target as HTMLInputElement
+  let value: string | boolean = field === 'selected' ? input.checked : input.value
+  if ((field === 'startDate' || field === 'endDate') && typeof value === 'string' && value)
+    value = new Date(`${value}T00:00:00Z`).toISOString()
+  const sprints = draft.sprints.map(item => item.clientId === sprintId ? { ...item, [field]: value } : item)
+  projectLaunchPlanDrafts.value = { ...projectLaunchPlanDrafts.value, [plan.planId]: { ...draft, sprints, dirty: true } }
+}
+
+function addLaunchSprint(plan: ProjectLaunchPlan) {
+  const draft = launchPlanDraft(plan)
+  const lastEnd = draft.sprints.at(-1)?.endDate || plan.deliveryPlan.startDate
+  const start = new Date(lastEnd)
+  const end = new Date(start)
+  end.setUTCDate(end.getUTCDate() + 14)
+  const sprint: ProjectLaunchSprintPlan = {
+    clientId: `sprint-${crypto.randomUUID()}`,
+    name: `Sprint ${draft.sprints.length + 1}`,
+    objective: 'Mục tiêu Sprint cần được xác nhận',
+    startDate: start.toISOString(),
+    endDate: end.toISOString(),
+    exitCriteria: ['Các công việc đã chọn đạt tiêu chí nghiệm thu.'],
+    tasks: [],
+    selected: true,
+  }
+  projectLaunchPlanDrafts.value = {
+    ...projectLaunchPlanDrafts.value,
+    [plan.planId]: { ...draft, sprints: [...draft.sprints, sprint], dirty: true },
+  }
+}
+
+function moveLaunchSprint(plan: ProjectLaunchPlan, sprintId: string, direction: -1 | 1) {
+  const draft = launchPlanDraft(plan)
+  const sprints = [...draft.sprints]
+  const index = sprints.findIndex(item => item.clientId === sprintId)
+  const target = index + direction
+  if (index < 0 || target < 0 || target >= sprints.length) return
+  ;[sprints[index], sprints[target]] = [sprints[target], sprints[index]]
+  projectLaunchPlanDrafts.value = { ...projectLaunchPlanDrafts.value, [plan.planId]: { ...draft, sprints, dirty: true } }
+}
+
+function addLaunchTask(plan: ProjectLaunchPlan, sprintId: string) {
+  const draft = launchPlanDraft(plan)
+  const feature = plan.deliveryPlan.features?.find(item => item.selected)
+  const task: ProjectLaunchTaskPlan = {
+    clientId: `task-${crypto.randomUUID()}`,
+    title: 'Công việc mới',
+    description: 'Mô tả kết quả cần hoàn thành.',
+    acceptanceCriteria: ['Kết quả đáp ứng tiêu chí nghiệm thu đã duyệt.'],
+    definitionOfDone: ['Đã review và kiểm chứng trên dữ liệu phù hợp.'],
+    priority: 'Medium',
+    estimatedHours: 8,
+    proposedAssigneeId: null,
+    proposedReviewerId: null,
+    requiredSkillIds: [],
+    requiredSkillNames: feature?.requiredSkillNames || [],
+    dependencyClientIds: [],
+    sourceRefs: [],
+    selected: true,
+    featureId: feature?.featureId || null,
+    objectiveMetricIds: plan.deliveryPlan.objectiveMetrics?.slice(0, 1).map(item => item.metricId) || [],
+  }
+  const sprints = draft.sprints.map(item => item.clientId === sprintId ? { ...item, tasks: [...item.tasks, task] } : item)
+  projectLaunchPlanDrafts.value = { ...projectLaunchPlanDrafts.value, [plan.planId]: { ...draft, sprints, dirty: true } }
+}
+
+function moveLaunchTask(plan: ProjectLaunchPlan, sprintId: string, taskId: string, direction: -1 | 1) {
+  const draft = launchPlanDraft(plan)
+  const sprints = draft.sprints.map(sprint => {
+    if (sprint.clientId !== sprintId) return sprint
+    const tasks = [...sprint.tasks]
+    const index = tasks.findIndex(item => item.clientId === taskId)
+    const target = index + direction
+    if (index < 0 || target < 0 || target >= tasks.length) return sprint
+    ;[tasks[index], tasks[target]] = [tasks[target], tasks[index]]
+    return { ...sprint, tasks }
+  })
+  projectLaunchPlanDrafts.value = { ...projectLaunchPlanDrafts.value, [plan.planId]: { ...draft, sprints, dirty: true } }
+}
+
+function updateLaunchTask(
+  plan: ProjectLaunchPlan,
+  sprintId: string,
+  taskId: string,
+  field: 'selected' | 'title' | 'estimatedHours' | 'proposedAssigneeId' | 'proposedReviewerId',
+  event: Event
+) {
+  const draft = launchPlanDraft(plan)
+  const input = event.target as HTMLInputElement | HTMLSelectElement
+  const value = field === 'selected'
+    ? (input as HTMLInputElement).checked
+    : field === 'estimatedHours' ? Number(input.value) : input.value || null
+  const sprints = draft.sprints.map(sprint => sprint.clientId !== sprintId ? sprint : {
+    ...sprint,
+    tasks: sprint.tasks.map(task => {
+      if (task.clientId !== taskId) return task
+      const updated = { ...task, [field]: value }
+      if (field === 'proposedAssigneeId' && updated.proposedReviewerId === value)
+        updated.proposedReviewerId = null
+      return updated
+    }),
+  })
+  projectLaunchPlanDrafts.value = { ...projectLaunchPlanDrafts.value, [plan.planId]: { ...draft, sprints, dirty: true } }
+}
+
+function updateLaunchTaskDetail(
+  plan: ProjectLaunchPlan,
+  sprintId: string,
+  taskId: string,
+  field: 'description' | 'acceptanceCriteria' | 'definitionOfDone' | 'requiredSkillNames' | 'featureId',
+  event: Event
+) {
+  const draft = launchPlanDraft(plan)
+  const raw = (event.target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value
+  const value = field === 'acceptanceCriteria' || field === 'definitionOfDone' || field === 'requiredSkillNames'
+    ? raw.split(/\r?\n/).map(item => item.trim()).filter(Boolean)
+    : raw
+  const sprints = draft.sprints.map(sprint => sprint.clientId !== sprintId ? sprint : {
+    ...sprint,
+    tasks: sprint.tasks.map(task => {
+      if (task.clientId !== taskId) return task
+      if (field !== 'featureId') return { ...task, [field]: value }
+      const feature = plan.deliveryPlan.features?.find(item => item.featureId === value)
+      return {
+        ...task,
+        featureId: String(value),
+        requiredSkillNames: [...new Set([...task.requiredSkillNames, ...(feature?.requiredSkillNames || [])])],
+      }
+    }),
+  })
+  projectLaunchPlanDrafts.value = { ...projectLaunchPlanDrafts.value, [plan.planId]: { ...draft, sprints, dirty: true } }
+}
+
+function toggleLaunchTaskMetric(plan: ProjectLaunchPlan, sprintId: string, taskId: string, metricId: string) {
+  const draft = launchPlanDraft(plan)
+  const sprints = draft.sprints.map(sprint => sprint.clientId !== sprintId ? sprint : {
+    ...sprint,
+    tasks: sprint.tasks.map(task => task.clientId !== taskId ? task : {
+      ...task,
+      objectiveMetricIds: (task.objectiveMetricIds || []).includes(metricId)
+        ? (task.objectiveMetricIds || []).filter(item => item !== metricId)
+        : [...(task.objectiveMetricIds || []), metricId],
+    }),
+  })
+  projectLaunchPlanDrafts.value = { ...projectLaunchPlanDrafts.value, [plan.planId]: { ...draft, sprints, dirty: true } }
+}
+
+function toggleLaunchTaskDependency(plan: ProjectLaunchPlan, sprintId: string, taskId: string, dependencyId: string) {
+  const draft = launchPlanDraft(plan)
+  const sprints = draft.sprints.map(sprint => sprint.clientId !== sprintId ? sprint : {
+    ...sprint,
+    tasks: sprint.tasks.map(task => task.clientId !== taskId ? task : {
+      ...task,
+      dependencyClientIds: task.dependencyClientIds.includes(dependencyId)
+        ? task.dependencyClientIds.filter(item => item !== dependencyId)
+        : [...task.dependencyClientIds, dependencyId],
+    }),
+  })
+  projectLaunchPlanDrafts.value = { ...projectLaunchPlanDrafts.value, [plan.planId]: { ...draft, sprints, dirty: true } }
+}
+
+async function saveLaunchPlanReview(entry: ChatEntry, plan: ProjectLaunchPlan) {
+  if (launchActionBusy.value) return
+  const draft = launchPlanDraft(plan)
+  launchActionBusy.value = `review:${plan.planId}`
+  try {
+    const updated = await apiResult<ProjectLaunchPlan>(`/api/ai/project-launch/plans/${plan.planId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        expectedRevision: plan.rowRevision,
+        selectedScenarioId: draft.selectedScenarioId,
+        staffing: draft.staffing,
+        sprints: draft.sprints,
+        assignmentMode: draft.assignmentMode,
+        scheduleMode: draft.scheduleMode,
+      }),
+    })
+    entry.projectLaunchPlan = updated
+    selectedLaunchScenarios.value = { ...selectedLaunchScenarios.value, [plan.planId]: updated.selectedScenarioId || 'custom' }
+    delete projectLaunchPlanDrafts.value[plan.planId]
+    projectLaunchPlanDrafts.value = { ...projectLaunchPlanDrafts.value }
+    showSuccess(updated.blockingReasons.length
+      ? 'Đã lưu. Qaly đã chỉ rõ các điểm cần xử lý trước khi tạo Project.'
+      : 'Đã lưu và kiểm tra lại đội hình, lịch, kỹ năng và Sprint.')
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Không thể lưu phương án đã chỉnh.')
+  } finally {
+    launchActionBusy.value = null
+  }
+}
+
+function launchBriefDraft(brief: ProjectLaunchBrief): ProjectLaunchBriefDraft {
+  const current = projectLaunchBriefDrafts.value[brief.briefId]
+  if (current) return current
+  const objectiveProfile: ProjectLaunchObjectiveProfile = cloneAssistantJson(brief.objectiveProfile || {
+    problemStatement: brief.objective || '',
+    primaryAudience: brief.primaryAudience || 'Chưa quyết định',
+    desiredOutcome: brief.objective || '',
+    businessValue: '',
+    metrics: (brief.successMeasures || []).map((title, index) => ({
+      metricId: `metric-${index + 1}`,
+      title,
+      metricType: 'outcome',
+      baseline: null,
+      target: null,
+      unit: null,
+      measurementWindow: null,
+      dataSource: null,
+      owner: null,
+      status: 'needs_confirmation',
+    })),
+    guardrails: [],
+    assumptions: brief.assumptions || [],
+    nonGoals: brief.exclusions || [],
+  })
+  const features: ProjectLaunchFeature[] = cloneAssistantJson(brief.features || (brief.scope || []).map((title, index) => ({
+    featureId: `feature-${index + 1}`,
+    title,
+    category: 'Product flow',
+    priority: index < 3 ? 'must_have' : 'should_have',
+    description: title,
+    primaryAudience: brief.primaryAudience || 'Chưa quyết định',
+    acceptanceCriteria: [`Luồng ${title} đáp ứng tiêu chí nghiệm thu đã duyệt.`],
+    requiredSkillNames: [],
+    selected: true,
+    custom: false,
+  })))
+  const created = normalizeLaunchBriefForEditing({
+    projectName: brief.proposedProjectName || '',
+    objective: brief.objective || '',
+    targetTimebox: normalizeLaunchTimebox(brief.targetTimebox),
+    primaryAudience: normalizeLaunchAudience(brief.primaryAudience),
+    objectiveProfile,
+    features,
+    successMeasures: (brief.successMeasures || []).join('\n'),
+    exclusions: (brief.exclusions || []).join('\n'),
+    customFeatureTitle: '',
+  })
+  projectLaunchBriefDrafts.value = { ...projectLaunchBriefDrafts.value, [brief.briefId]: created }
+  return created
+}
+
+function updateLaunchBriefDraft(
+  brief: ProjectLaunchBrief,
+  field: 'projectName' | 'objective' | 'targetTimebox' | 'primaryAudience' | 'successMeasures' | 'exclusions' | 'customFeatureTitle',
+  event: Event
+) {
+  const draft = { ...launchBriefDraft(brief) }
+  draft[field] = (event.target as HTMLInputElement | HTMLTextAreaElement).value
+  if (field === 'objective') draft.objectiveProfile = { ...draft.objectiveProfile, desiredOutcome: draft.objective }
+  if (field === 'primaryAudience') {
+    draft.objectiveProfile = { ...draft.objectiveProfile, primaryAudience: draft.primaryAudience }
+    draft.features = draft.features.map(item => ({ ...item, primaryAudience: draft.primaryAudience }))
+  }
+  projectLaunchBriefDrafts.value = { ...projectLaunchBriefDrafts.value, [brief.briefId]: draft }
+}
+
+function setLaunchBriefChoice(brief: ProjectLaunchBrief, field: 'targetTimebox' | 'primaryAudience', value: string) {
+  const draft = launchBriefDraft(brief)
+  const next = { ...draft, [field]: value }
+  if (field === 'primaryAudience') {
+    next.objectiveProfile = { ...next.objectiveProfile, primaryAudience: value }
+    next.features = next.features.map(item => ({ ...item, primaryAudience: value }))
+  }
+  projectLaunchBriefDrafts.value = { ...projectLaunchBriefDrafts.value, [brief.briefId]: next }
+}
+
+function addLaunchMetric(brief: ProjectLaunchBrief, title: string) {
+  const draft = launchBriefDraft(brief)
+  if (draft.objectiveProfile.metrics.some(item => item.title === title)) return
+  const metric: ProjectObjectiveMetric = applyLaunchMetricDefaults({
+    metricId: `metric-${Date.now()}`,
+    title,
+    metricType: 'outcome',
+    baseline: null,
+    target: null,
+    unit: null,
+    measurementWindow: draft.targetTimebox || null,
+    dataSource: null,
+    owner: null,
+    status: 'needs_confirmation',
+  }, draft.targetTimebox)
+  const next = { ...draft, objectiveProfile: { ...draft.objectiveProfile, metrics: [...draft.objectiveProfile.metrics, metric] } }
+  projectLaunchBriefDrafts.value = { ...projectLaunchBriefDrafts.value, [brief.briefId]: next }
+}
+
+function updateLaunchObjectiveField(
+  brief: ProjectLaunchBrief,
+  field: 'problemStatement' | 'businessValue',
+  event: Event
+) {
+  const draft = launchBriefDraft(brief)
+  const value = (event.target as HTMLInputElement | HTMLTextAreaElement).value
+  projectLaunchBriefDrafts.value = {
+    ...projectLaunchBriefDrafts.value,
+    [brief.briefId]: { ...draft, objectiveProfile: { ...draft.objectiveProfile, [field]: value } },
+  }
+}
+
+function updateLaunchObjectiveList(
+  brief: ProjectLaunchBrief,
+  field: 'guardrails' | 'assumptions' | 'nonGoals',
+  event: Event
+) {
+  const draft = launchBriefDraft(brief)
+  const values = (event.target as HTMLTextAreaElement).value.split(/\r?\n/).map(item => item.trim()).filter(Boolean)
+  projectLaunchBriefDrafts.value = {
+    ...projectLaunchBriefDrafts.value,
+    [brief.briefId]: { ...draft, objectiveProfile: { ...draft.objectiveProfile, [field]: values } },
+  }
+}
+
+function updateLaunchMetric(brief: ProjectLaunchBrief, metricId: string, field: keyof ProjectObjectiveMetric, event: Event) {
+  const draft = launchBriefDraft(brief)
+  const raw = (event.target as HTMLInputElement).value
+  const value = field === 'baseline' || field === 'target' ? (raw === '' ? null : Number(raw)) : raw
+  const metrics = draft.objectiveProfile.metrics.map(item => item.metricId === metricId
+    ? { ...item, [field]: value, status: field === 'baseline' || field === 'target' ? 'reviewed' : item.status }
+    : item)
+  projectLaunchBriefDrafts.value = {
+    ...projectLaunchBriefDrafts.value,
+    [brief.briefId]: { ...draft, objectiveProfile: { ...draft.objectiveProfile, metrics } },
+  }
+}
+
+function removeLaunchMetric(brief: ProjectLaunchBrief, metricId: string) {
+  const draft = launchBriefDraft(brief)
+  projectLaunchBriefDrafts.value = {
+    ...projectLaunchBriefDrafts.value,
+    [brief.briefId]: {
+      ...draft,
+      objectiveProfile: { ...draft.objectiveProfile, metrics: draft.objectiveProfile.metrics.filter(item => item.metricId !== metricId) },
+    },
+  }
+}
+
+function moveLaunchMetric(brief: ProjectLaunchBrief, metricId: string, direction: -1 | 1) {
+  const draft = launchBriefDraft(brief)
+  const metrics = [...draft.objectiveProfile.metrics]
+  const index = metrics.findIndex(item => item.metricId === metricId)
+  const target = index + direction
+  if (index < 0 || target < 0 || target >= metrics.length) return
+  ;[metrics[index], metrics[target]] = [metrics[target], metrics[index]]
+  projectLaunchBriefDrafts.value = {
+    ...projectLaunchBriefDrafts.value,
+    [brief.briefId]: { ...draft, objectiveProfile: { ...draft.objectiveProfile, metrics } },
+  }
+}
+
+function toggleLaunchFeatureTemplate(brief: ProjectLaunchBrief, template: { title: string; category: string }) {
+  const draft = launchBriefDraft(brief)
+  const existing = draft.features.find(item => item.title === template.title)
+  const features = existing
+    ? draft.features.map(item => item.featureId === existing.featureId ? { ...item, selected: !item.selected } : item)
+    : [...draft.features, {
+      featureId: `feature-${Date.now()}`,
+      title: template.title,
+      category: template.category,
+      priority: 'must_have',
+      description: template.title,
+      primaryAudience: draft.primaryAudience || 'Chưa quyết định',
+      acceptanceCriteria: [`Luồng ${template.title} hoạt động end-to-end.`],
+      requiredSkillNames: [],
+      selected: true,
+      custom: false,
+    }]
+  projectLaunchBriefDrafts.value = { ...projectLaunchBriefDrafts.value, [brief.briefId]: { ...draft, features } }
+}
+
+function addCustomLaunchFeature(brief: ProjectLaunchBrief) {
+  const draft = launchBriefDraft(brief)
+  const title = draft.customFeatureTitle.trim()
+  if (!title) return
+  const features = [...draft.features, {
+    featureId: `custom-${Date.now()}`,
+    title,
+    category: 'Khác',
+    priority: 'must_have',
+    description: title,
+    primaryAudience: draft.primaryAudience || 'Chưa quyết định',
+    acceptanceCriteria: [`Luồng ${title} hoạt động end-to-end.`],
+    requiredSkillNames: [],
+    selected: true,
+    custom: true,
+  }]
+  projectLaunchBriefDrafts.value = {
+    ...projectLaunchBriefDrafts.value,
+    [brief.briefId]: { ...draft, features, customFeatureTitle: '' },
+  }
+}
+
+function updateLaunchFeature(
+  brief: ProjectLaunchBrief,
+  featureId: string,
+  field: 'title' | 'category' | 'priority' | 'description' | 'primaryAudience' | 'acceptanceCriteria',
+  event: Event
+) {
+  const draft = launchBriefDraft(brief)
+  const raw = (event.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).value
+  const value = field === 'acceptanceCriteria'
+    ? raw.split(/\r?\n/).map(item => item.trim()).filter(Boolean)
+    : raw
+  const features = draft.features.map(item => item.featureId === featureId ? { ...item, [field]: value } : item)
+  projectLaunchBriefDrafts.value = { ...projectLaunchBriefDrafts.value, [brief.briefId]: { ...draft, features } }
+}
+
+function toggleLaunchFeatureSkill(brief: ProjectLaunchBrief, featureId: string, skillName: string) {
+  const draft = launchBriefDraft(brief)
+  const features = draft.features.map(item => {
+    if (item.featureId !== featureId) return item
+    const selected = item.requiredSkillNames.includes(skillName)
+    return { ...item, requiredSkillNames: selected
+      ? item.requiredSkillNames.filter(name => name !== skillName)
+      : [...item.requiredSkillNames, skillName] }
+  })
+  projectLaunchBriefDrafts.value = { ...projectLaunchBriefDrafts.value, [brief.briefId]: { ...draft, features } }
+}
+
+function addCustomLaunchFeatureSkill(brief: ProjectLaunchBrief, featureId: string, event: KeyboardEvent) {
+  const input = event.target as HTMLInputElement
+  const skillName = input.value.trim()
+  if (!skillName) return
+  const draft = launchBriefDraft(brief)
+  const features = draft.features.map(item => item.featureId === featureId && !item.requiredSkillNames.includes(skillName)
+    ? { ...item, requiredSkillNames: [...item.requiredSkillNames, skillName] }
+    : item)
+  projectLaunchBriefDrafts.value = { ...projectLaunchBriefDrafts.value, [brief.briefId]: { ...draft, features } }
+  input.value = ''
+}
+
+function moveLaunchFeature(brief: ProjectLaunchBrief, featureId: string, direction: -1 | 1) {
+  const draft = launchBriefDraft(brief)
+  const features = [...draft.features]
+  const index = features.findIndex(item => item.featureId === featureId)
+  const target = index + direction
+  if (index < 0 || target < 0 || target >= features.length) return
+  ;[features[index], features[target]] = [features[target], features[index]]
+  projectLaunchBriefDrafts.value = { ...projectLaunchBriefDrafts.value, [brief.briefId]: { ...draft, features } }
+}
+
+function launchBriefMissingFields(brief: ProjectLaunchBrief) {
+  const draft = launchBriefDraft(brief)
+  const missing: string[] = []
+  if (!draft.projectName.trim()) missing.push('tên dự án')
+  if (!draft.objective.trim()) missing.push('kết quả mong muốn')
+  if (!draft.targetTimebox.trim() || draft.targetTimebox === 'Chưa quyết định') missing.push('thời hạn')
+  if (!draft.primaryAudience.trim() || draft.primaryAudience === 'Chưa quyết định') missing.push('người dùng chính')
+  if (!draft.objectiveProfile.metrics.some(item => item.title.trim())) missing.push('ít nhất một thước đo')
+  if (!draft.features.some(item => item.selected && item.priority !== 'out_of_scope')) missing.push('ít nhất một chức năng trong phạm vi')
+  return missing
+}
+
+function canSubmitLaunchBriefDraft(brief: ProjectLaunchBrief) {
+  return launchBriefMissingFields(brief).length === 0
+}
+
+function applyLaunchBriefSuggestions(brief: ProjectLaunchBrief) {
+  const draft = launchBriefDraft(brief)
+  const next = {
+    ...draft,
+    targetTimebox: draft.targetTimebox || '8 tuần',
+  }
+  next.objectiveProfile = { ...next.objectiveProfile, primaryAudience: next.primaryAudience }
+  projectLaunchBriefDrafts.value = { ...projectLaunchBriefDrafts.value, [brief.briefId]: next }
+}
+
+async function submitLaunchBriefReview(brief: ProjectLaunchBrief) {
+  if (!canSubmitLaunchBriefDraft(brief) || isChatting.value) return
+  const draft = launchBriefDraft(brief)
+  const reviewedFeatures = draft.features.map(item => item.priority === 'out_of_scope'
+    ? { ...item, selected: false }
+    : item)
+  const payload = {
+    ...draft,
+    features: reviewedFeatures,
+    scope: reviewedFeatures.filter(item => item.selected).map(item => item.title).join('\n'),
+    successMeasures: draft.objectiveProfile.metrics.map(item => item.title).join('\n'),
+  }
+  await submitChat(
+    `Cập nhật Project Launch Brief revision ${brief.revision} bằng biểu mẫu đã review.`,
+    undefined,
+    `Đã cập nhật Launch Brief: ${draft.projectName}`,
+    undefined,
+    'project.launch.analyze.v1',
+    brief.organizationId,
+    [{
+      questionId: 'launch.brief_form',
+      value: JSON.stringify(payload),
+      label: `Launch Brief: ${draft.projectName}`,
+    }]
+  )
+}
+
+function recommendedRulebookRules(): OrganizationWorkRule[] {
+  return [
+    { ruleKey: 'active_membership_required', category: 'governance', enforcement: 'block', description: 'Chỉ thành viên đang hoạt động mới được tham gia phương án.', enabled: true },
+    { ruleKey: 'max_active_projects', category: 'portfolio_capacity', enforcement: 'block', description: 'Số dự án hoạt động tối đa của mỗi người.', numericValue: 3, unit: 'projects', enabled: true },
+    { ruleKey: 'max_utilization_percent', category: 'portfolio_capacity', enforcement: 'block', description: 'Mức sử dụng tối đa sau khi nhận dự án mới.', numericValue: 85, unit: 'percent', enabled: true },
+    { ruleKey: 'focus_reserve_percent', category: 'portfolio_capacity', enforcement: 'block', description: 'Phần thời gian dự phòng cho hỗ trợ và chuyển ngữ cảnh.', numericValue: 15, unit: 'percent', enabled: true },
+    { ruleKey: 'capacity_evidence_required', category: 'staffing', enforcement: 'block', description: 'Mỗi người phải có capacity và availability còn hiệu lực.', enabled: true },
+  ]
+}
+
+function startRecommendedRulebookReview(brief: ProjectLaunchBrief) {
+  rulebookReviewRules.value = {
+    ...rulebookReviewRules.value,
+    [brief.organizationId]: recommendedRulebookRules(),
+  }
+}
+
+function cancelRecommendedRulebookReview(organizationId: string) {
+  const next = { ...rulebookReviewRules.value }
+  delete next[organizationId]
+  rulebookReviewRules.value = next
+}
+
+function updateRulebookReviewRule(organizationId: string, ruleKey: string, field: 'enabled' | 'numericValue', event: Event) {
+  const input = event.target as HTMLInputElement
+  const rules = (rulebookReviewRules.value[organizationId] || []).map(rule => rule.ruleKey === ruleKey
+    ? { ...rule, [field]: field === 'enabled' ? input.checked : Number(input.value) }
+    : rule)
+  rulebookReviewRules.value = { ...rulebookReviewRules.value, [organizationId]: rules }
+}
+
+function rulebookRuleMin(ruleKey: string) {
+  return ruleKey === 'max_active_projects' ? 1 : ruleKey === 'max_utilization_percent' ? 10 : 0
+}
+
+function rulebookRuleMax(ruleKey: string) {
+  return ruleKey === 'max_active_projects' ? 50 : ruleKey === 'max_utilization_percent' ? 100 : 50
 }
 
 async function createRecommendedRulebookDraft(brief: ProjectLaunchBrief) {
+  const reviewedRules = rulebookReviewRules.value[brief.organizationId]
+  if (!reviewedRules?.length) {
+    startRecommendedRulebookReview(brief)
+    return
+  }
   launchActionBusy.value = `rulebook:${brief.organizationId}`
   try {
     const result = await apiResult<OrganizationWorkRuleSet>(
@@ -1943,28 +3207,7 @@ async function createRecommendedRulebookDraft(brief: ProjectLaunchBrief) {
         method: 'POST',
         body: JSON.stringify({
           effectiveFrom: new Date().toISOString(),
-          rules: [
-            {
-              ruleKey: 'active_membership_required',
-              category: 'governance',
-              enforcement: 'block',
-              description: 'Người yêu cầu phải là thành viên đang hoạt động của tổ chức.'
-            },
-            {
-              ruleKey: 'max_active_projects',
-              category: 'portfolio_capacity',
-              enforcement: 'block',
-              description: 'Giới hạn số dự án đang hoạt động để bảo vệ năng lực tổ chức.',
-              numericValue: 20,
-              unit: 'projects'
-            },
-            {
-              ruleKey: 'capacity_evidence_required',
-              category: 'staffing',
-              enforcement: 'block',
-              description: 'Mọi phân công phải có dữ liệu capacity và availability còn hiệu lực.'
-            }
-          ]
+          rules: reviewedRules
         })
       }
     )
@@ -1979,7 +3222,7 @@ async function createRecommendedRulebookDraft(brief: ProjectLaunchBrief) {
 
 async function activateRulebookAndResume(brief: ProjectLaunchBrief) {
   const draft = rulebookDrafts.value[brief.organizationId]
-  if (!draft || !window.confirm(`Kích hoạt Organization Rulebook v${draft.version} và tiếp tục Project Launch?`)) return
+  if (!draft || !window.confirm(`Áp dụng bộ quy tắc v${draft.version} vừa xem và tiếp tục lập phương án?`)) return
   launchActionBusy.value = `rulebook:${brief.organizationId}`
   try {
     await apiResult<OrganizationWorkRuleSet>(
@@ -2014,7 +3257,16 @@ async function createLaunchPlan(brief: ProjectLaunchBrief) {
   )
 }
 
+async function refreshCreatedProjectContext(plan: ProjectLaunchPlan) {
+  await loadDashboard()
+  const receipt = plan.executionReceipt
+  if (receipt?.internalTransactionCommitted && receipt.projectId) {
+    selectedTarget.value = receipt.projectId
+  }
+}
+
 async function confirmLaunchPlan(entry: ChatEntry, plan: ProjectLaunchPlan) {
+  if (launchActionBusy.value) return
   const scenarioId = selectedLaunchScenarioId(plan)
   const scenario = plan.staffingScenarios.find(item => item.scenarioId === scenarioId)
   if (!scenario?.feasible || scenario.blockingReasons.length || plan.blockingReasons.length) {
@@ -2030,9 +3282,38 @@ async function confirmLaunchPlan(entry: ChatEntry, plan: ProjectLaunchPlan) {
       body: JSON.stringify({ confirmed: true, expectedRevision: plan.rowRevision, selectedScenarioId: scenarioId })
     })
     entry.projectLaunchPlan = updated
-    showSuccess('Đã tạo Project và kiểm tra lại dữ liệu thành công.')
-    await loadDashboard()
+    if (updated.executionReceipt?.readBackVerified) {
+      showSuccess('Đã tạo Project và kiểm tra lại dữ liệu thành công.')
+    } else if (updated.state === 'verification_failed') {
+      showError('Project đã được tạo nhưng dữ liệu đọc lại chưa khớp phương án. Không tạo lại; hãy mở receipt để kiểm tra.')
+    } else {
+      showInfo('Project đã được commit và máy chủ đang xác minh dữ liệu. Nút xác nhận được khóa để tránh tạo trùng.')
+    }
+    await refreshCreatedProjectContext(updated)
   } catch (error) {
+    // A timeout can happen after the canonical graph was committed. Reconcile first,
+    // then report an error only if the server also says the launch did not complete.
+    let launchStillExecuting = false
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        const canonical = await apiResult<ProjectLaunchPlan>(`/api/ai/project-launch/plans/${plan.planId}`)
+        entry.projectLaunchPlan = canonical
+        if (canonical.executionReceipt?.readBackVerified) {
+          showSuccess('Project đã được tạo và đối chiếu lại dữ liệu thành công.')
+          await refreshCreatedProjectContext(canonical)
+          return
+        }
+        launchStillExecuting = canonical.state.toLowerCase() === 'executing'
+        if (!launchStillExecuting) break
+      } catch {
+        // Keep polling briefly; the write transaction may still be completing.
+      }
+      await new Promise(resolve => window.setTimeout(resolve, 500))
+    }
+    if (launchStillExecuting) {
+      showInfo('Project đang được máy chủ hoàn tất. Qaly đã khóa nút xác nhận để tránh tạo lặp; receipt sẽ xuất hiện khi đọc lại phiên.')
+      return
+    }
     showError(error instanceof Error ? error.message : 'Không thể xác nhận Project launch.')
   } finally {
     launchActionBusy.value = null
@@ -2085,6 +3366,184 @@ function openLaunchLink(path: string) {
   void router.push(path)
 }
 
+function nativeActionTitle(draft: AiNativeActionDraft) {
+  const labels: Record<string, string> = {
+    'task.acceptance_checklist.v1': 'Checklist nghiệm thu',
+    'task.breakdown.v1': 'Tách task thành các subtask',
+    'wiki.brief_task.v1': 'Brief và task từ Wiki',
+    'group.poll.create.v1': 'Poll của nhóm',
+    'project.digest.configure.v1': 'Lịch gửi tổng hợp dự án',
+    'meeting.actions.review.v1': 'Quyết định và action item cuộc họp',
+    'project.roadmap.adjust.v1': 'Điều chỉnh Roadmap/Sprint',
+    'task.skill_evidence.confirm.v1': 'Đóng góp và bằng chứng kỹ năng',
+  }
+  return labels[draft.capabilityId] || 'Thay đổi do AI đề xuất'
+}
+
+function nativeActionStatusLabel(draft: AiNativeActionDraft) {
+  if (draft.receipt || draft.status === 'confirmed') return 'Đã tạo'
+  if (draft.status === 'rejected') return 'Đã bỏ bản nháp'
+  return 'Chờ xác nhận'
+}
+
+function nativeActionReadOnly(draft: AiNativeActionDraft) {
+  return Boolean(draft.receipt) || draft.status !== 'pending_review'
+}
+
+function openNativeActionLink(path: string) {
+  if (!/^\/(?:projects|groups|tasks)(?:\/[0-9a-f-]{36})?(?:[/?#].*)?$/i.test(path)) return
+  void router.push(path)
+}
+
+async function confirmNativeAction(entry: ChatEntry, draft: AiNativeActionDraft) {
+  if (nativeActionBusy.value || draft.receipt || draft.status !== 'pending_review') return
+  nativeActionBusy.value = draft.draftId
+  try {
+    const receipt = await apiJson<AiNativeActionReceipt>(`/api/ai/native-actions/${draft.draftId}/confirm`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': `native-action:${draft.draftId}:${draft.rowVersion}` },
+      body: JSON.stringify({
+        expectedRevision: draft.revision,
+        rowVersion: draft.rowVersion,
+        payload: draft.payload,
+      })
+    })
+    entry.nativeActionDraft = { ...draft, status: 'confirmed', receipt }
+    showSuccess(receipt.replayed ? 'Thay đổi đã tồn tại; Qaly đã đọc lại receipt cũ.' : 'Đã tạo dữ liệu thật và đọc lại thành công.')
+    await loadDashboard()
+  } catch (error) {
+    try {
+      entry.nativeActionDraft = await apiJson<AiNativeActionDraft>(`/api/ai/native-actions/${draft.draftId}`)
+    } catch {
+      // Keep the reviewed draft visible when reconciliation is temporarily unavailable.
+    }
+    showError(error instanceof Error ? error.message : 'Không thể xác nhận thay đổi.')
+  } finally {
+    nativeActionBusy.value = null
+  }
+}
+
+async function saveNativeAction(entry: ChatEntry, draft: AiNativeActionDraft) {
+  if (nativeActionBusy.value || nativeActionReadOnly(draft)) return
+  nativeActionBusy.value = draft.draftId
+  try {
+    entry.nativeActionDraft = await apiJson<AiNativeActionDraft>(`/api/ai/native-actions/${draft.draftId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        expectedRevision: draft.revision,
+        rowVersion: draft.rowVersion,
+        payload: draft.payload,
+      })
+    })
+    showSuccess('Đã lưu bản nháp trên máy chủ; có thể tiếp tục sau khi tải lại hoặc đổi phiên.')
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Không thể lưu bản nháp.')
+  } finally {
+    nativeActionBusy.value = null
+  }
+}
+
+async function rejectNativeAction(entry: ChatEntry, draft: AiNativeActionDraft) {
+  if (nativeActionBusy.value || nativeActionReadOnly(draft)) return
+  nativeActionBusy.value = draft.draftId
+  try {
+    entry.nativeActionDraft = await apiJson<AiNativeActionDraft>(`/api/ai/native-actions/${draft.draftId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({
+        expectedRevision: draft.revision,
+        rowVersion: draft.rowVersion,
+      })
+    })
+    showSuccess('Đã bỏ bản nháp; không có dữ liệu domain nào được tạo.')
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Không thể bỏ bản nháp.')
+  } finally {
+    nativeActionBusy.value = null
+  }
+}
+
+function assignmentCandidateOptions(item: PortfolioScheduleProposalItem) {
+  const current = {
+    userId: item.proposedAssigneeId,
+    fullName: item.proposedAssigneeName,
+    skillCoveragePercent: item.skillCoveragePercent,
+    remainingHours: Math.max(0, item.capacityHours - item.loadBeforeHours),
+    tradeOff: 'Phương án Qaly đề xuất',
+    evidenceConfidence: item.evidenceConfidence,
+    loadBeforeHours: item.loadBeforeHours,
+    capacityHours: item.capacityHours,
+    blockingReasons: item.blockingReasons,
+  }
+  return [current, ...item.alternatives].filter((candidate, index, rows) =>
+    rows.findIndex(other => other.userId === candidate.userId) === index)
+}
+
+function changeAssignmentCandidate(item: PortfolioScheduleProposalItem, event: Event) {
+  const userId = (event.target as HTMLSelectElement).value
+  const candidate = assignmentCandidateOptions(item).find(option => option.userId === userId)
+  if (!candidate) return
+  const estimatedHours = Math.max(0, item.loadAfterHours - item.loadBeforeHours)
+  item.proposedAssigneeId = candidate.userId
+  item.proposedAssigneeName = candidate.fullName
+  item.skillCoveragePercent = candidate.skillCoveragePercent
+  item.evidenceConfidence = candidate.evidenceConfidence
+  item.loadBeforeHours = candidate.loadBeforeHours
+  item.capacityHours = candidate.capacityHours
+  item.loadAfterHours = candidate.loadBeforeHours + estimatedHours
+  item.blockingReasons = candidate.blockingReasons ?? []
+  item.selected = item.blockingReasons.length === 0
+}
+
+function toDateInput(value: string) {
+  return value ? new Date(value).toISOString().slice(0, 10) : ''
+}
+
+function changeAssignmentDate(item: PortfolioScheduleProposalItem, field: 'proposedStart' | 'proposedDue', event: Event) {
+  const value = (event.target as HTMLInputElement).value
+  if (!value) return
+  item[field] = new Date(`${value}T00:00:00.000Z`).toISOString()
+}
+
+async function confirmAssignmentProposal(entry: ChatEntry, proposal: PortfolioScheduleProposal) {
+  if (assignmentProposalBusy.value || proposal.status !== 'pending_review') return
+  const selectedItemIds = proposal.items.filter(item => item.selected).map(item => item.itemId)
+  if (!selectedItemIds.length) {
+    showError('Hãy chọn ít nhất một Task cần áp dụng.')
+    return
+  }
+  assignmentProposalBusy.value = proposal.draftId
+  try {
+    const reviewed = await apiResult<PortfolioScheduleProposal>(
+      `/api/projects/${proposal.projectId}/schedule-proposals/${proposal.draftId}`,
+      { method: 'PATCH', body: JSON.stringify({ items: proposal.items, rowVersion: proposal.rowVersion }) },
+    )
+    const key = `assistant-assignment-confirm:${proposal.draftId}`
+    const confirmed = await apiResult<PortfolioScheduleProposal>(
+      `/api/projects/${proposal.projectId}/schedule-proposals/${proposal.draftId}/confirm`,
+      {
+        method: 'POST',
+        headers: { 'Idempotency-Key': key },
+        body: JSON.stringify({ selectedItemIds, rowVersion: reviewed.rowVersion, idempotencyKey: key, confirmed: true }),
+      },
+    )
+    if (!confirmed.receipt?.readBackVerified) throw new Error('Qaly chưa đọc lại được Task canonical sau khi ghi.')
+    entry.portfolioScheduleProposal = normalizePortfolioScheduleProposal(confirmed)
+    showSuccess(`Đã áp dụng và đọc lại ${confirmed.receipt.appliedCount} Task.`)
+    await loadDashboard()
+  } catch (error) {
+    try {
+      entry.portfolioScheduleProposal = normalizePortfolioScheduleProposal(await apiResult<PortfolioScheduleProposal>(
+        `/api/projects/${proposal.projectId}/schedule-proposals/${proposal.draftId}`,
+      ))
+    } catch {
+      // Keep the reviewed card visible if a refresh is temporarily unavailable.
+    }
+    showError(error instanceof Error ? error.message : 'Không thể xác nhận phương án phân công.')
+  } finally {
+    assignmentProposalBusy.value = null
+  }
+}
+
 async function submitChat(
   explicitText?: string,
   _action?: string,
@@ -2118,10 +3577,14 @@ async function submitChat(
 
   try {
     await ensureAssistantSession()
+    // Capture and persist the exact visible Project before creating the turn.
+    // This closes the select-then-send race and keeps session scope, request
+    // context and the composer chip on the same Project.
+    const turnContext = assistantContextForCurrentRoute(requestedOrganizationId)
+    await queueAssistantSessionScope(turnContext.projectId)
     chatHistory.value.push({ role: 'assistant', text: '' })
     const lastIdx = chatHistory.value.length - 1
     const attachedFileContexts = filesToSend.length ? await parseAttachedFiles(filesToSend) : []
-    const projectId = selectedTarget.value === 'workspace' ? null : selectedTarget.value
     const clientTurnId = crypto.randomUUID()
     activeAssistantClientTurnId.value = clientTurnId
     let stopPolling = false
@@ -2136,15 +3599,7 @@ async function submitChat(
         },
         body: JSON.stringify({
           message: prompt || userText,
-          context: {
-            route: window.location.pathname,
-            module: projectId ? 'project' : 'workspace',
-            projectId,
-            entityType: projectId ? 'project' : null,
-            entityId: projectId,
-            organizationId: requestedOrganizationId || null,
-            selectionIds: [],
-          },
+          context: turnContext,
           mode: 'agent',
           language: 'vi',
           providerHint: selectedProviderHint.value,
@@ -2194,7 +3649,9 @@ async function submitChat(
       projectLaunchBrief: fastReply.projectLaunchBrief,
       projectLaunchPlan: fastReply.projectLaunchPlan,
       safeTestRunPreview: fastReply.safeTestRunPreview,
-      safeTestRunReport: fastReply.safeTestRunReport
+      safeTestRunReport: fastReply.safeTestRunReport,
+      nativeActionDraft: fastReply.nativeActionDraft,
+      portfolioScheduleProposal: fastReply.portfolioScheduleProposal
     }
     updateLatestConversationSnippet(fastReply.reply)
 
@@ -2247,8 +3704,8 @@ function exportAsMarkdown(projectName: string, text: string) {
 onMounted(async () => {
   syncViewportFlag()
   await restoreAssistantSession()
+  restoreProjectLaunchWorkingDrafts()
   await loadConversationHistory()
-  selectedTarget.value = 'workspace'
   applyRoutePrompt()
   refreshAnalyticsContext()
   refreshTimer = window.setInterval(refreshAnalyticsContext, 30000)
@@ -2263,12 +3720,23 @@ watch(selectedAiModel, value => {
   window.localStorage.setItem(AI_MODEL_STORAGE_KEY, value)
 })
 
+watch([projectLaunchBriefDrafts, projectLaunchPlanDrafts], persistProjectLaunchWorkingDrafts, { deep: true })
+
+let lastAppliedExternalPromptToken: number | null = null
 watch(
-  () => props.externalPromptToken,
+  () => [props.externalPromptToken, props.externalProjectId, projects.value.length] as const,
   () => {
+    if (lastAppliedExternalPromptToken === props.externalPromptToken) return
+    const externalProjectId = props.externalProjectId?.trim() || ''
+    // Project data can arrive after the launcher event. Wait until the target
+    // can be represented truthfully in the visible selector.
+    if (externalProjectId && !projects.value.some((project: { id: string }) => project.id === externalProjectId)) return
+    if (externalProjectId) selectedTarget.value = externalProjectId
+    lastAppliedExternalPromptToken = props.externalPromptToken
     if (props.externalPrompt.trim()) fillComposer(props.externalPrompt.trim())
     else nextTick(() => textareaRef.value?.focus())
   },
+  { immediate: true },
 )
 
 watch(
@@ -2281,6 +3749,7 @@ watch(
 onBeforeUnmount(() => {
   if (refreshTimer) window.clearInterval(refreshTimer)
   if (clarificationInputSaveTimer != null) window.clearTimeout(clarificationInputSaveTimer)
+  persistProjectLaunchWorkingDrafts()
   window.removeEventListener('resize', syncViewportFlag)
   window.removeEventListener('focus', refreshAnalyticsContext)
 })
@@ -2299,14 +3768,35 @@ onBeforeUnmount(() => {
 
     <!-- EMPTY STATE -->
     <div v-if="!isChatActive" class="chat-empty">
-      <button type="button" class="empty-session-history" data-testid="assistant-session-history" @click="openSessionHistory">
-        <Clock3 :size="16" aria-hidden="true" /> Phiên
-      </button>
+      <div class="empty-header-actions">
+        <button type="button" class="empty-session-history" data-testid="assistant-session-history" @click="openSessionHistory">
+          <Clock3 :size="16" aria-hidden="true" /> Phiên
+        </button>
+        <OverflowMenu
+          :items="headerMenuItems"
+          aria-label="Công cụ và tùy chọn Trợ lý AI"
+          trigger-title="Mở công cụ và tùy chọn"
+          @select="handleHeaderMenu"
+        />
+      </div>
       <div class="empty-inner">
         <div class="empty-avatar">
           <ChatbotAvatar size="medium" />
         </div>
-        <h1 class="empty-heading">Bạn muốn Qaly giúp gì?</h1>
+        <div class="empty-intro">
+          <h1 class="empty-heading">Bạn muốn Qaly giúp gì?</h1>
+          <p>Hỏi tự nhiên, xem phân tích hoặc chuẩn bị bản nháp có xác nhận.</p>
+          <div class="newcomer-shortcuts" aria-label="Bắt đầu nhanh">
+            <button
+              v-for="shortcut in newcomerShortcuts"
+              :key="shortcut.label"
+              type="button"
+              :title="shortcut.description"
+              @click="fillComposer(shortcut.prompt)"
+            >{{ shortcut.label }}</button>
+          </div>
+          <small>Gợi ý chỉ điền câu hỏi; bạn vẫn kiểm tra trước khi gửi.</small>
+        </div>
 
         <!-- Composer -->
         <div class="composer">
@@ -2418,8 +3908,8 @@ onBeforeUnmount(() => {
           </button>
           <OverflowMenu
             :items="headerMenuItems"
-            aria-label="Tùy chọn cuộc trò chuyện"
-            trigger-title="Tùy chọn"
+            aria-label="Công cụ và tùy chọn Trợ lý AI"
+            trigger-title="Mở công cụ và tùy chọn"
             @select="handleHeaderMenu"
           />
         </div>
@@ -2438,6 +3928,7 @@ onBeforeUnmount(() => {
             v-for="(msg, i) in chatHistory"
             :key="i"
             :class="['msg-row', `msg-${msg.role}`]"
+            :data-message-index="i"
           >
             <div v-if="msg.role === 'assistant'" class="msg-avatar">
               <ChatbotAvatar size="small" />
@@ -2508,7 +3999,8 @@ onBeforeUnmount(() => {
                         <span :class="`disposition-${msg.goalAnalysis.disposition}`">{{ goalDispositionLabel(msg.goalAnalysis.disposition) }}</span>
                         <span v-if="msg.goalAnalysis.usedFallback">Fallback giới hạn</span>
                         <span v-else-if="msg.model">{{ msg.model.label }}</span>
-                        <span v-else>{{ msg.goalAnalysis.actualProvider }} / {{ msg.goalAnalysis.actualModel }}</span>
+                        <span v-else-if="msg.goalAnalysis.actualProvider !== 'not_reached' && msg.goalAnalysis.actualModel !== 'not_reached'">{{ msg.goalAnalysis.actualProvider }} / {{ msg.goalAnalysis.actualModel }}</span>
+                        <span v-else>Qaly server · chưa gọi model</span>
                       </div>
                       <section v-if="msg.goalAnalysis.selectedSkills.length" class="assistant-selected-skill">
                         <span>Skill được chọn</span>
@@ -2536,6 +4028,199 @@ onBeforeUnmount(() => {
                       </details>
                     </article>
                   </details>
+
+                  <article
+                    v-if="msg.nativeActionDraft"
+                    class="project-launch-brief-card native-action-card"
+                    data-testid="native-action-draft"
+                  >
+                    <header class="project-launch-brief-header">
+                      <div>
+                        <span>AI Native · bản nháp có cấu trúc</span>
+                        <h3>{{ nativeActionTitle(msg.nativeActionDraft) }}</h3>
+                        <p>Kiểm tra và chỉnh trực tiếp. Chỉ tạo dữ liệu thật sau nút xác nhận bên dưới.</p>
+                      </div>
+                      <div class="project-launch-status">
+                        <strong>{{ nativeActionStatusLabel(msg.nativeActionDraft) }}</strong>
+                        <small>Revision {{ msg.nativeActionDraft.revision }}</small>
+                      </div>
+                    </header>
+
+                    <section v-if="msg.nativeActionDraft.capabilityId === 'task.acceptance_checklist.v1'" class="native-action-editor">
+                      <label v-for="(_item, index) in msg.nativeActionDraft.payload.items" :key="index">
+                        Tiêu chí {{ Number(index) + 1 }}
+                        <input v-model="msg.nativeActionDraft.payload.items[index]" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" />
+                      </label>
+                    </section>
+
+                    <section v-else-if="msg.nativeActionDraft.capabilityId === 'task.breakdown.v1'" class="native-action-editor">
+                      <label v-for="(item, index) in msg.nativeActionDraft.payload.subtasks" :key="index">
+                        Subtask {{ Number(index) + 1 }}
+                        <input v-model="item.title" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" />
+                        <textarea v-model="item.description" rows="2" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" />
+                        <span class="native-action-inline-fields">
+                          <label>Ưu tiên<select v-model="item.priority" :disabled="nativeActionReadOnly(msg.nativeActionDraft)"><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></label>
+                          <label>Ước lượng (giờ)<input v-model.number="item.estimatedHours" type="number" min="1" max="10000" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
+                        </span>
+                        <label>Kỹ năng bắt buộc
+                          <input :value="item.requiredSkillName || 'Chưa có kỹ năng phù hợp trong catalog'" disabled />
+                          <small>Kỹ năng lấy từ catalog của tổ chức và sẽ được lưu cùng subtask sau xác nhận.</small>
+                        </label>
+                        <span v-if="Number(index) > 0" class="native-action-check"><input v-model="item.dependsOnPrevious" type="checkbox" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /> Phụ thuộc subtask trước</span>
+                      </label>
+                    </section>
+
+                    <section v-else-if="msg.nativeActionDraft.capabilityId === 'wiki.brief_task.v1'" class="native-action-editor">
+                      <label>Tóm tắt có nguồn<textarea v-model="msg.nativeActionDraft.payload.summary" rows="4" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
+                      <small v-for="source in msg.nativeActionDraft.payload.sectionRefs" :key="source">Nguồn: {{ source }}</small>
+                      <template v-if="msg.nativeActionDraft.payload.taskCandidates?.length">
+                        <h4>Task tùy chọn (tối đa 3)</h4>
+                        <article v-for="(candidate, index) in msg.nativeActionDraft.payload.taskCandidates" :key="candidate.clientId" class="native-action-subcard">
+                          <label class="native-action-check"><input v-model="candidate.selected" type="checkbox" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /> Chọn Task {{ Number(index) + 1 }}</label>
+                          <label>Tiêu đề<input v-model="candidate.title" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
+                          <label>Mô tả<textarea v-model="candidate.description" rows="3" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
+                          <small>Nguồn: {{ candidate.sourceRef }}</small>
+                        </article>
+                      </template>
+                      <template v-else>
+                        <label class="native-action-check"><input v-model="msg.nativeActionDraft.payload.createTask" type="checkbox" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /> Tạo Task từ brief</label>
+                        <label v-if="msg.nativeActionDraft.payload.createTask">Tiêu đề Task<input v-model="msg.nativeActionDraft.payload.taskTitle" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
+                        <label v-if="msg.nativeActionDraft.payload.createTask">Mô tả Task<textarea v-model="msg.nativeActionDraft.payload.taskDescription" rows="3" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
+                      </template>
+                    </section>
+
+                    <section v-else-if="msg.nativeActionDraft.capabilityId === 'group.poll.create.v1'" class="native-action-editor">
+                      <label>Câu hỏi<input v-model="msg.nativeActionDraft.payload.question" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
+                      <label v-for="(_option, index) in msg.nativeActionDraft.payload.options" :key="index">Lựa chọn {{ Number(index) + 1 }}<input v-model="msg.nativeActionDraft.payload.options[index]" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
+                      <label class="native-action-check"><input v-model="msg.nativeActionDraft.payload.allowMultiple" type="checkbox" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /> Cho phép chọn nhiều</label>
+                      <label>Hạn bình chọn<input v-model="msg.nativeActionDraft.payload.expiredAt" type="datetime-local" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
+                    </section>
+
+                    <section v-else-if="msg.nativeActionDraft.capabilityId === 'project.digest.configure.v1'" class="native-action-editor native-action-grid">
+                      <label class="native-action-check"><input v-model="msg.nativeActionDraft.payload.isEnabled" type="checkbox" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /> Bật gửi tổng hợp</label>
+                      <label>Ngày gửi<select v-model.number="msg.nativeActionDraft.payload.dayOfWeek" :disabled="nativeActionReadOnly(msg.nativeActionDraft)"><option :value="1">Thứ Hai</option><option :value="2">Thứ Ba</option><option :value="3">Thứ Tư</option><option :value="4">Thứ Năm</option><option :value="5">Thứ Sáu</option><option :value="6">Thứ Bảy</option><option :value="0">Chủ Nhật</option></select></label>
+                      <label>Giờ gửi (phút từ 00:00)<input v-model.number="msg.nativeActionDraft.payload.localTimeMinutes" type="number" min="0" max="1439" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
+                      <label>Múi giờ<input v-model="msg.nativeActionDraft.payload.timeZoneId" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
+                    </section>
+
+                    <section v-else-if="msg.nativeActionDraft.capabilityId === 'meeting.actions.review.v1'" class="native-action-editor">
+                      <label>Tóm tắt có nguồn<textarea v-model="msg.nativeActionDraft.payload.summary" rows="3" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
+                      <div v-if="msg.nativeActionDraft.payload.decisions?.length" class="native-action-subcard"><strong>Quyết định</strong><ul><li v-for="decision in msg.nativeActionDraft.payload.decisions" :key="decision">{{ decision }}</li></ul></div>
+                      <div v-if="msg.nativeActionDraft.payload.blockers?.length" class="native-action-subcard"><strong>Blocker/rủi ro</strong><ul><li v-for="blocker in msg.nativeActionDraft.payload.blockers" :key="blocker">{{ blocker }}</li></ul></div>
+                      <article v-for="action in msg.nativeActionDraft.payload.actionItems" :key="action.itemIndex" class="native-action-subcard">
+                        <label>Action item<input v-model="action.title" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
+                        <label>Xử lý<select v-model="action.mappingMode" :disabled="nativeActionReadOnly(msg.nativeActionDraft)"><option value="none">Chưa map — không ghi</option><option value="existing_task">Map vào Task có sẵn</option><option value="new_task">Tạo bản nháp Task mới</option></select></label>
+                        <label v-if="action.mappingMode === 'existing_task'">Task có sẵn<select v-model="action.existingTaskId" :disabled="nativeActionReadOnly(msg.nativeActionDraft)"><option :value="null">Chọn Task…</option><option v-for="task in msg.nativeActionDraft.payload.existingTaskOptions" :key="task.taskId" :value="task.taskId">{{ task.title }}</option></select></label>
+                        <label v-if="action.mappingMode === 'new_task'">Mô tả Task<textarea v-model="action.description" rows="2" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
+                        <small>Nguồn transcript: {{ action.sourceEvidence || 'Đoạn nguồn đã lưu cùng extraction' }}</small>
+                      </article>
+                    </section>
+
+                    <section v-else-if="msg.nativeActionDraft.capabilityId === 'project.roadmap.adjust.v1'" class="native-action-editor">
+                      <p>{{ msg.nativeActionDraft.payload.summary }}</p>
+                      <article v-for="adjustment in msg.nativeActionDraft.payload.adjustments" :key="adjustment.sprintId || adjustment.sprintName" class="native-action-subcard">
+                        <label class="native-action-check"><input v-model="adjustment.selected" type="checkbox" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /> Áp dụng điều chỉnh này</label>
+                        <label>Tên Sprint<input v-model="adjustment.sprintName" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
+                        <div class="native-action-grid"><span><strong>Trước</strong><br />{{ adjustment.beforeStart }} → {{ adjustment.beforeEnd }}</span><span><strong>Sau</strong><br />{{ adjustment.afterStart }} → {{ adjustment.afterEnd }}</span></div>
+                        <label>Bắt đầu sau điều chỉnh<input v-model="adjustment.afterStart" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
+                        <label>Kết thúc sau điều chỉnh<input v-model="adjustment.afterEnd" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
+                        <small>{{ adjustment.reason }}</small>
+                      </article>
+                    </section>
+
+                    <section v-else-if="msg.nativeActionDraft.capabilityId === 'task.skill_evidence.confirm.v1'" class="native-action-editor">
+                      <div class="native-action-subcard"><strong>Acceptance đã xác nhận</strong><ul><li v-for="evidence in msg.nativeActionDraft.payload.acceptanceEvidence" :key="evidence">{{ evidence }}</li></ul></div>
+                      <div class="native-action-subcard"><strong>Kỹ năng từ catalog của Task</strong><ul><li v-for="skill in msg.nativeActionDraft.payload.skills" :key="skill.skillId">{{ skill.name }} · {{ skill.requiredLevel }}</li></ul></div>
+                      <label v-for="candidate in msg.nativeActionDraft.payload.contributors" :key="candidate.userId" class="native-action-check"><input v-model="candidate.selected" type="checkbox" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /> {{ candidate.name }}</label>
+                      <small>Không sử dụng label hoặc tin nhắn riêng làm bằng chứng.</small>
+                    </section>
+
+                    <section v-if="msg.nativeActionDraft.receipt" class="launch-receipt" data-testid="native-action-receipt">
+                      <h4>Receipt · read-back verified</h4>
+                      <button
+                        v-for="item in msg.nativeActionDraft.receipt.items"
+                        :key="`${item.entityType}-${item.entityId}`"
+                        type="button"
+                        @click="openNativeActionLink(item.url)"
+                      >{{ item.label }} →</button>
+                    </section>
+                    <div v-else-if="msg.nativeActionDraft.status === 'pending_review'" class="native-action-controls">
+                      <button
+                        type="button"
+                        class="secondary-button"
+                        :disabled="Boolean(nativeActionBusy)"
+                        data-testid="native-action-save"
+                        @click="saveNativeAction(msg, msg.nativeActionDraft)"
+                      >Lưu bản nháp</button>
+                      <button
+                        type="button"
+                        class="danger-button"
+                        :disabled="Boolean(nativeActionBusy)"
+                        data-testid="native-action-reject"
+                        @click="rejectNativeAction(msg, msg.nativeActionDraft)"
+                      >Bỏ bản nháp</button>
+                      <button
+                        type="button"
+                        class="launch-primary-action"
+                        :disabled="Boolean(nativeActionBusy)"
+                        data-testid="native-action-confirm"
+                        @click="confirmNativeAction(msg, msg.nativeActionDraft)"
+                      >{{ nativeActionBusy === msg.nativeActionDraft.draftId ? 'Đang xử lý…' : 'Xác nhận và tạo dữ liệu thật' }}</button>
+                    </div>
+                    <p v-else class="native-action-closed">Bản nháp đã được bỏ; không có dữ liệu domain nào được tạo.</p>
+                  </article>
+
+                  <article
+                    v-if="msg.portfolioScheduleProposal"
+                    class="project-launch-brief-card assignment-proposal-card"
+                    data-testid="assistant-assignment-proposal"
+                  >
+                    <header class="project-launch-brief-header">
+                      <div>
+                        <span>Phương án giao việc & lịch · dữ liệu thật</span>
+                        <h3>{{ msg.portfolioScheduleProposal.items[0]?.taskTitle }}</h3>
+                        <p>So khớp kỹ năng, bằng chứng đã xác nhận, capacity, lịch vắng, deadline và tải trên mọi dự án.</p>
+                      </div>
+                      <div class="project-launch-status">
+                        <strong>{{ msg.portfolioScheduleProposal.receipt?.readBackVerified ? 'Đã áp dụng' : 'Chưa ghi dữ liệu' }}</strong>
+                        <small>{{ msg.portfolioScheduleProposal.providerName }} / {{ msg.portfolioScheduleProposal.modelName }}</small>
+                      </div>
+                    </header>
+                    <section
+                      v-for="item in msg.portfolioScheduleProposal.items"
+                      :key="item.itemId"
+                      class="assignment-proposal-item"
+                    >
+                      <label class="native-action-check"><input v-model="item.selected" type="checkbox" :disabled="msg.portfolioScheduleProposal.status !== 'pending_review' || item.blockingReasons.length > 0" /> Áp dụng Task này</label>
+                      <div class="assignment-proposal-grid">
+                        <label>Người thực hiện
+                          <select :value="item.proposedAssigneeId" :disabled="msg.portfolioScheduleProposal.status !== 'pending_review'" @change="changeAssignmentCandidate(item, $event)">
+                            <option v-for="candidate in assignmentCandidateOptions(item)" :key="candidate.userId" :value="candidate.userId">
+                              {{ candidate.fullName }} · skill {{ candidate.skillCoveragePercent }}% · còn {{ candidate.remainingHours }}h
+                            </option>
+                          </select>
+                        </label>
+                        <label>Bắt đầu<input type="date" :value="toDateInput(item.proposedStart)" :disabled="msg.portfolioScheduleProposal.status !== 'pending_review'" @change="changeAssignmentDate(item, 'proposedStart', $event)" /></label>
+                        <label>Hạn hoàn thành<input type="date" :value="toDateInput(item.proposedDue)" :disabled="msg.portfolioScheduleProposal.status !== 'pending_review'" @change="changeAssignmentDate(item, 'proposedDue', $event)" /></label>
+                      </div>
+                      <div class="assignment-facts">
+                        <span>Skill match <strong>{{ item.skillCoveragePercent }}%</strong></span>
+                        <span>Evidence <strong>{{ Math.round(item.evidenceConfidence * 100) }}%</strong></span>
+                        <span>Tải <strong>{{ item.loadAfterHours }}/{{ item.capacityHours }}h</strong></span>
+                      </div>
+                      <details v-if="item.alternatives.length"><summary>Ứng viên thay thế ({{ item.alternatives.length }})</summary><ul><li v-for="candidate in item.alternatives" :key="candidate.userId"><strong>{{ candidate.fullName }}</strong> · {{ candidate.tradeOff }}</li></ul></details>
+                      <section v-if="item.blockingReasons.length" class="assignment-blockers" role="alert"><strong>Chưa thể xác nhận phương án này</strong><ul><li v-for="reason in item.blockingReasons" :key="reason">{{ reason }}</li></ul><small>Chọn ứng viên an toàn khác hoặc cập nhật capacity/availability rồi lập lại phương án.</small></section>
+                      <details v-if="item.deadlineRisks.length || item.dependencyConflicts.length"><summary>Cảnh báo cần xem ({{ item.deadlineRisks.length + item.dependencyConflicts.length }})</summary><ul><li v-for="warning in [...item.deadlineRisks, ...item.dependencyConflicts]" :key="warning">{{ warning }}</li></ul></details>
+                    </section>
+                    <section v-if="msg.portfolioScheduleProposal.receipt" class="launch-receipt" data-testid="assistant-assignment-receipt">
+                      <h4>Đã đọc lại dữ liệu canonical</h4>
+                      <button v-for="link in msg.portfolioScheduleProposal.receipt.readBackLinks" :key="link" type="button" @click="openNativeActionLink(link)">Mở Task →</button>
+                    </section>
+                    <footer v-else class="native-action-controls">
+                      <small>Bạn có thể đổi người hoặc ngày; một lần xác nhận sẽ lưu bản review rồi mới áp dụng.</small>
+                      <button type="button" class="launch-primary-action" :disabled="Boolean(assignmentProposalBusy) || !msg.portfolioScheduleProposal.items.some(item => item.selected && item.blockingReasons.length === 0)" data-testid="assistant-assignment-confirm" @click="confirmAssignmentProposal(msg, msg.portfolioScheduleProposal)">{{ assignmentProposalBusy === msg.portfolioScheduleProposal.draftId ? 'Đang kiểm tra và đọc lại…' : 'Xác nhận giao việc & lịch' }}</button>
+                    </footer>
+                  </article>
 
                   <article
                     v-if="msg.safeTestRunPreview"
@@ -2583,33 +4268,193 @@ onBeforeUnmount(() => {
                   >
                     <header class="project-launch-brief-header">
                       <div>
-                        <span>Project Launch Brief · chỉ xem lại</span>
+                        <span>Project Launch Brief · chỉnh sửa trước khi tạo</span>
                         <h3>{{ msg.projectLaunchBrief.proposedProjectName }}</h3>
                         <p>{{ msg.projectLaunchBrief.objective }}</p>
                       </div>
                       <div class="project-launch-status">
-                        <strong>{{ msg.projectLaunchBrief.state }}</strong>
-                        <small>Revision {{ msg.projectLaunchBrief.revision }}</small>
+                        <strong>{{ launchBriefStateLabel(msg.projectLaunchBrief.state) }}</strong>
+                        <small>Bản {{ msg.projectLaunchBrief.revision }}</small>
                         <small>{{ msg.projectLaunchBrief.organizationName }}</small>
                       </div>
                     </header>
+                    <section class="project-launch-review-form project-launch-workspace" aria-label="Chỉnh sửa Project Launch Brief">
+                      <nav class="launch-stepper" aria-label="Tiến trình khởi tạo dự án">
+                        <span class="active">1. Mục tiêu</span><span class="active">2. Phạm vi</span><span>3. Nhân sự</span><span>4. Sprint</span><span>5. Xác nhận</span>
+                      </nav>
+                      <div class="launch-simple-guide project-launch-form-field--wide">
+                        <strong>Bạn chỉ cần kiểm tra 4 mục</strong>
+                        <span>Tên dự án · kết quả cần đạt · thời hạn · người dùng chính.</span>
+                        <small>Cách đo, kỹ năng và tiêu chí chi tiết đã được AI soạn sẵn và có thể chỉnh sau.</small>
+                      </div>
+
+                      <div class="project-launch-form-field project-launch-form-field--wide">
+                        <label :for="`launch-name-${msg.projectLaunchBrief.briefId}`">Tên dự án <b>*</b></label>
+                        <input
+                          :id="`launch-name-${msg.projectLaunchBrief.briefId}`"
+                          type="text"
+                          :value="launchBriefDraft(msg.projectLaunchBrief).projectName"
+                          placeholder="Ví dụ: Nền tảng dịch vụ SPA"
+                          @input="updateLaunchBriefDraft(msg.projectLaunchBrief, 'projectName', $event)"
+                        >
+                      </div>
+
+                      <section class="launch-builder-block project-launch-form-field--wide">
+                        <header class="launch-friendly-header">
+                          <div><strong>Kết quả dự án cần đạt</strong><small>AI đã soạn bản nháp. Bạn chỉ cần đọc và sửa nếu chưa đúng ý.</small></div>
+                          <span>AI đề xuất</span>
+                        </header>
+                        <label class="project-launch-form-field project-launch-form-field--wide">Khi dự án hoàn thành, điều gì phải hoạt động? <b>*</b>
+                          <textarea rows="2" :value="launchBriefDraft(msg.projectLaunchBrief).objective" placeholder="Ví dụ: Khách hàng có thể tìm, đặt và thanh toán dịch vụ theo gói trên web." @input="updateLaunchBriefDraft(msg.projectLaunchBrief, 'objective', $event)" />
+                          <small class="launch-field-hint">Viết một câu về kết quả người dùng nhận được; không cần mô tả cách AI lập kế hoạch.</small>
+                        </label>
+                        <details class="launch-optional-goal-details">
+                          <summary>Mô tả thêm về vấn đề và giá trị mang lại <span>Không bắt buộc</span></summary>
+                          <div class="project-launch-form-more-grid">
+                            <label class="project-launch-form-field">Vấn đề hiện nay
+                              <textarea rows="2" :value="launchBriefDraft(msg.projectLaunchBrief).objectiveProfile.problemStatement" placeholder="Ví dụ: Khách phải liên hệ thủ công để biết gói còn trống." @input="updateLaunchObjectiveField(msg.projectLaunchBrief, 'problemStatement', $event)" />
+                            </label>
+                            <label class="project-launch-form-field">Giá trị mang lại
+                              <textarea rows="2" :value="launchBriefDraft(msg.projectLaunchBrief).objectiveProfile.businessValue" placeholder="Ví dụ: Đặt dịch vụ nhanh hơn và giảm thao tác xử lý thủ công." @input="updateLaunchObjectiveField(msg.projectLaunchBrief, 'businessValue', $event)" />
+                            </label>
+                          </div>
+                        </details>
+
+                        <details class="launch-metrics-review">
+                          <summary>
+                            <span><strong>{{ launchBriefDraft(msg.projectLaunchBrief).objectiveProfile.metrics.length }} cách kiểm tra thành công</strong><small>AI đã chọn cách đo và nguồn dữ liệu; chưa cần nhập con số.</small></span>
+                            <em>Xem hoặc chỉnh</em>
+                          </summary>
+                          <div class="launch-template-row"><span>Thêm mẫu phổ biến:</span><button v-for="item in launchMetricTemplates" :key="item.title" type="button" @click="addLaunchMetric(msg.projectLaunchBrief, item.title)">+ {{ item.title }}</button></div>
+                          <div class="launch-metric-grid">
+                            <article v-for="metric in launchBriefDraft(msg.projectLaunchBrief).objectiveProfile.metrics" :key="metric.metricId" class="launch-metric-card">
+                              <input :value="metric.title" aria-label="Tên thước đo" @input="updateLaunchMetric(msg.projectLaunchBrief, metric.metricId, 'title', $event)">
+                              <div class="launch-metric-simple-fields">
+                                <label>Hướng cải thiện
+                                  <select :value="metric.metricType" @change="updateLaunchMetric(msg.projectLaunchBrief, metric.metricId, 'metricType', $event)">
+                                    <option value="increase">Tăng lên</option><option value="decrease">Giảm xuống</option><option value="maintain">Duy trì ổn định</option><option value="delivery">Hoàn thành đúng cam kết</option>
+                                  </select>
+                                </label>
+                                <label>Đo ở đâu
+                                  <input :list="`launch-source-${msg.projectLaunchBrief.briefId}`" :value="metric.dataSource || ''" placeholder="Chọn hoặc nhập nguồn khác" @input="updateLaunchMetric(msg.projectLaunchBrief, metric.metricId, 'dataSource', $event)">
+                                </label>
+                              </div>
+                              <p class="launch-metric-summary">{{ launchMetricIntentLabel(metric.metricType) }} · kiểm tra trong {{ metric.measurementWindow || launchBriefDraft(msg.projectLaunchBrief).targetTimebox || 'timebox đã chọn' }}.</p>
+                              <details class="launch-metric-advanced">
+                                <summary>Thêm con số cụ thể và người phụ trách <span>Không bắt buộc</span></summary>
+                                <div><label>Giá trị hiện nay<input type="number" :value="metric.baseline ?? ''" :placeholder="launchMetricValueExample(metric.title, 'baseline')" @input="updateLaunchMetric(msg.projectLaunchBrief, metric.metricId, 'baseline', $event)"></label><label>Mục tiêu muốn đạt<input type="number" :value="metric.target ?? ''" :placeholder="launchMetricValueExample(metric.title, 'target')" @input="updateLaunchMetric(msg.projectLaunchBrief, metric.metricId, 'target', $event)"></label></div>
+                                <div><label>Đơn vị<input :list="`launch-units-${msg.projectLaunchBrief.briefId}`" :value="metric.unit || ''" placeholder="Chọn hoặc nhập đơn vị" @input="updateLaunchMetric(msg.projectLaunchBrief, metric.metricId, 'unit', $event)"></label><label>Người theo dõi<input :list="`launch-owners-${msg.projectLaunchBrief.briefId}`" :value="metric.owner || ''" placeholder="Chọn vai trò hoặc nhập tên" @input="updateLaunchMetric(msg.projectLaunchBrief, metric.metricId, 'owner', $event)"></label></div>
+                                <label>Thời điểm kiểm tra<input :value="metric.measurementWindow || ''" placeholder="Ví dụ: cuối mỗi Sprint" @input="updateLaunchMetric(msg.projectLaunchBrief, metric.metricId, 'measurementWindow', $event)"></label>
+                                <small>{{ metric.baseline == null || metric.target == null ? 'Có thể bổ sung sau khi đã có dữ liệu thật; Qaly không tự bịa số.' : 'Đã có giá trị để kiểm chứng.' }}</small>
+                              </details>
+                              <div class="launch-card-actions"><button type="button" @click="moveLaunchMetric(msg.projectLaunchBrief, metric.metricId, -1)">Lên</button><button type="button" @click="moveLaunchMetric(msg.projectLaunchBrief, metric.metricId, 1)">Xuống</button><button type="button" class="launch-link-danger" @click="removeLaunchMetric(msg.projectLaunchBrief, metric.metricId)">Bỏ</button></div>
+                            </article>
+                          </div>
+                          <datalist :id="`launch-source-${msg.projectLaunchBrief.briefId}`"><option value="Qaly Sprint / Task"/><option value="Product analytics"/><option value="Nhật ký hệ thống"/><option value="Monitoring"/><option value="Khảo sát người dùng"/></datalist>
+                          <datalist :id="`launch-units-${msg.projectLaunchBrief.briefId}`"><option value="%"/><option value="phút"/><option value="lượt"/><option value="lỗi/tháng"/><option value="điểm CSAT"/></datalist>
+                          <datalist :id="`launch-owners-${msg.projectLaunchBrief.briefId}`"><option value="Project Manager"/><option value="Product Owner"/><option value="Tech Lead"/><option value="QA Lead"/></datalist>
+                        </details>
+                      </section>
+
+                      <div class="project-launch-form-field">
+                        <label>Thời hạn <b>*</b></label>
+                        <div class="launch-choice-row"><button v-for="item in launchTimeboxOptions" :key="item" type="button" :class="{ selected: launchBriefDraft(msg.projectLaunchBrief).targetTimebox === item }" @click="setLaunchBriefChoice(msg.projectLaunchBrief, 'targetTimebox', item)">{{ item }}</button></div>
+                        <input :value="launchBriefDraft(msg.projectLaunchBrief).targetTimebox" placeholder="Khác, ví dụ: 10 tuần hoặc 30/11/2026" @input="updateLaunchBriefDraft(msg.projectLaunchBrief, 'targetTimebox', $event)">
+                        <small class="launch-field-hint">Chọn nhanh ở trên, hoặc nhập thời hạn riêng.</small>
+                      </div>
+                      <div class="project-launch-form-field">
+                        <label>Người dùng chính <b>*</b></label>
+                        <div class="launch-choice-row"><button v-for="item in launchAudienceOptions" :key="item" type="button" :class="{ selected: launchBriefDraft(msg.projectLaunchBrief).primaryAudience === item }" @click="setLaunchBriefChoice(msg.projectLaunchBrief, 'primaryAudience', item)">{{ item }}</button></div>
+                        <input :value="launchBriefDraft(msg.projectLaunchBrief).primaryAudience" placeholder="Khác, ví dụ: chủ spa hoặc khách đặt dịch vụ" @input="updateLaunchBriefDraft(msg.projectLaunchBrief, 'primaryAudience', $event)">
+                        <small class="launch-field-hint">Chọn nhóm sử dụng sản phẩm thường xuyên nhất.</small>
+                      </div>
+
+                      <section class="launch-builder-block project-launch-form-field--wide">
+                        <header><div><strong>Phạm vi và chức năng <b>*</b></strong><small>Những mục được chọn sẽ được truy vết sang Sprint, Task và kỹ năng.</small></div></header>
+                        <div class="launch-template-row launch-template-grid"><button v-for="item in launchFeatureTemplates" :key="item.title" type="button" :class="{ selected: launchBriefDraft(msg.projectLaunchBrief).features.some(feature => feature.title === item.title && feature.selected) }" @click="toggleLaunchFeatureTemplate(msg.projectLaunchBrief, item)">{{ item.title }}</button></div>
+                        <div class="launch-custom-add"><input :value="launchBriefDraft(msg.projectLaunchBrief).customFeatureTitle" placeholder="Thêm chức năng khác" @input="updateLaunchBriefDraft(msg.projectLaunchBrief, 'customFeatureTitle', $event)" @keydown.enter.prevent="addCustomLaunchFeature(msg.projectLaunchBrief)"><button type="button" @click="addCustomLaunchFeature(msg.projectLaunchBrief)">Thêm</button></div>
+                        <div class="launch-feature-list">
+                          <article v-for="feature in launchBriefDraft(msg.projectLaunchBrief).features.filter(item => item.selected)" :key="feature.featureId" class="launch-feature-card">
+                            <input :value="feature.title" aria-label="Tên chức năng" @input="updateLaunchFeature(msg.projectLaunchBrief, feature.featureId, 'title', $event)">
+                            <div><select :value="feature.priority" @change="updateLaunchFeature(msg.projectLaunchBrief, feature.featureId, 'priority', $event)"><option value="must_have">Bắt buộc</option><option value="should_have">Nên có</option><option value="could_have">Có thể thêm</option><option value="out_of_scope">Ngoài phạm vi</option></select><input :value="feature.category" aria-label="Nhóm chức năng" @input="updateLaunchFeature(msg.projectLaunchBrief, feature.featureId, 'category', $event)"></div>
+                            <details><summary>Mô tả và tiêu chí nghiệm thu</summary><div class="launch-feature-detail"><label>Mô tả<textarea rows="2" :value="feature.description" @input="updateLaunchFeature(msg.projectLaunchBrief, feature.featureId, 'description', $event)" /></label><label>Nhóm người dùng<input :value="feature.primaryAudience" @input="updateLaunchFeature(msg.projectLaunchBrief, feature.featureId, 'primaryAudience', $event)"></label><label>Tiêu chí nghiệm thu — mỗi dòng một ý<textarea rows="3" :value="feature.acceptanceCriteria.join('\n')" @input="updateLaunchFeature(msg.projectLaunchBrief, feature.featureId, 'acceptanceCriteria', $event)" /></label></div></details>
+                            <details><summary>Kỹ năng cần thiết ({{ feature.requiredSkillNames.length }})</summary><div class="launch-skill-options"><button v-for="skill in msg.projectLaunchBrief.skillCatalog || []" :key="skill.skillId" type="button" :class="{ selected: feature.requiredSkillNames.includes(skill.name) }" @click="toggleLaunchFeatureSkill(msg.projectLaunchBrief, feature.featureId, skill.name)">{{ skill.name }}</button></div><input class="launch-custom-skill" placeholder="Thêm kỹ năng chuyên sâu rồi nhấn Enter" @keydown.enter.prevent="addCustomLaunchFeatureSkill(msg.projectLaunchBrief, feature.featureId, $event)"><small>Kỹ năng chưa có trong catalog sẽ được giữ là khoảng trống cần xác minh, không gán giả cho thành viên.</small></details>
+                            <div class="launch-card-actions"><button type="button" @click="moveLaunchFeature(msg.projectLaunchBrief, feature.featureId, -1)">Lên</button><button type="button" @click="moveLaunchFeature(msg.projectLaunchBrief, feature.featureId, 1)">Xuống</button><button type="button" class="launch-link-danger" @click="toggleLaunchFeatureTemplate(msg.projectLaunchBrief, { title: feature.title, category: feature.category })">Bỏ chọn</button></div>
+                          </article>
+                        </div>
+                      </section>
+
+                      <details class="project-launch-form-more project-launch-form-field--wide">
+                        <summary>Giả định, ngoài phạm vi và tùy chỉnh nâng cao</summary>
+                        <div class="project-launch-form-more-grid"><label class="project-launch-form-field">Điều không được đánh đổi<textarea rows="3" :value="launchBriefDraft(msg.projectLaunchBrief).objectiveProfile.guardrails.join('\n')" placeholder="Mỗi dòng một guardrail" @input="updateLaunchObjectiveList(msg.projectLaunchBrief, 'guardrails', $event)" /></label><label class="project-launch-form-field">Giả định tạm thời<textarea rows="3" :value="launchBriefDraft(msg.projectLaunchBrief).objectiveProfile.assumptions.join('\n')" placeholder="Mỗi dòng một giả định" @input="updateLaunchObjectiveList(msg.projectLaunchBrief, 'assumptions', $event)" /></label><label class="project-launch-form-field">Không nằm trong mục tiêu<textarea rows="3" :value="launchBriefDraft(msg.projectLaunchBrief).objectiveProfile.nonGoals.join('\n')" placeholder="Mỗi dòng một non-goal" @input="updateLaunchObjectiveList(msg.projectLaunchBrief, 'nonGoals', $event)" /></label><label class="project-launch-form-field">Ngoài phạm vi kỹ thuật/tích hợp<textarea rows="3" :value="launchBriefDraft(msg.projectLaunchBrief).exclusions" @input="updateLaunchBriefDraft(msg.projectLaunchBrief, 'exclusions', $event)" /></label><p class="launch-help">Số liệu hiện tại hoặc mục tiêu còn thiếu được giữ ở trạng thái “Cần xác nhận”, không được biến thành dữ liệu thật.</p></div>
+                      </details>
+                      <div class="project-launch-form-actions project-launch-form-field--wide">
+                        <small v-if="launchBriefMissingFields(msg.projectLaunchBrief).length">Còn thiếu: {{ launchBriefMissingFields(msg.projectLaunchBrief).join(', ') }}.</small>
+                        <small v-else>Thông tin bắt buộc đã đủ; bạn vẫn có thể chỉnh mọi card trước khi lập phương án.</small>
+                        <button v-if="!launchBriefDraft(msg.projectLaunchBrief).targetTimebox" type="button" class="secondary-button" @click="applyLaunchBriefSuggestions(msg.projectLaunchBrief)">Gợi ý thời hạn 8 tuần</button>
+                        <button type="button" class="launch-primary-action" :disabled="isChatting || !canSubmitLaunchBriefDraft(msg.projectLaunchBrief)" data-testid="project-launch-brief-save" @click="submitLaunchBriefReview(msg.projectLaunchBrief)">Lưu và lập phương án</button>
+                      </div>
+                    </section>
                     <div class="project-launch-rulebook" :class="`status-${msg.projectLaunchBrief.rulebookStatus}`">
-                      <strong>Organization Rulebook</strong>
-                      <span v-if="msg.projectLaunchBrief.ruleSetVersion">v{{ msg.projectLaunchBrief.ruleSetVersion }} hiệu lực</span>
-                      <span v-else>Chưa có phiên bản hiệu lực · policy_missing</span>
+                      <strong>Quy tắc làm việc của tổ chức</strong>
+                      <span v-if="msg.projectLaunchBrief.ruleSetVersion">Bản {{ msg.projectLaunchBrief.ruleSetVersion }} đang áp dụng</span>
+                      <span v-else>Chưa có quy tắc đang áp dụng</span>
                       <button
-                        v-if="msg.projectLaunchBrief.rulebookStatus === 'policy_missing' && !rulebookDrafts[msg.projectLaunchBrief.organizationId]"
+                        v-if="canManageProjectLaunch(msg) && msg.projectLaunchBrief.rulebookStatus === 'policy_missing' && !rulebookDrafts[msg.projectLaunchBrief.organizationId] && !rulebookReviewRules[msg.projectLaunchBrief.organizationId]"
                         type="button"
                         :disabled="launchActionBusy === `rulebook:${msg.projectLaunchBrief.organizationId}`"
-                        @click="createRecommendedRulebookDraft(msg.projectLaunchBrief)"
-                      >Tạo bản nháp Rulebook đề xuất</button>
-                      <button
-                        v-else-if="rulebookDrafts[msg.projectLaunchBrief.organizationId]?.status === 'draft'"
-                        type="button"
-                        :disabled="launchActionBusy === `rulebook:${msg.projectLaunchBrief.organizationId}`"
-                        @click="activateRulebookAndResume(msg.projectLaunchBrief)"
-                      >Review và kích hoạt v{{ rulebookDrafts[msg.projectLaunchBrief.organizationId].version }}</button>
+                        @click="startRecommendedRulebookReview(msg.projectLaunchBrief)"
+                      >Xem và tùy chỉnh bộ quy tắc đề xuất</button>
+                      <section
+                        v-if="canManageProjectLaunch(msg) && rulebookReviewRules[msg.projectLaunchBrief.organizationId] && !rulebookDrafts[msg.projectLaunchBrief.organizationId]"
+                        class="rulebook-review-editor"
+                      >
+                        <p>Kiểm tra giới hạn trước khi lưu. Đây mới là bản review, chưa áp dụng vào tổ chức.</p>
+                        <label
+                          v-for="rule in rulebookReviewRules[msg.projectLaunchBrief.organizationId]"
+                          :key="rule.ruleKey"
+                          class="rulebook-review-rule"
+                        >
+                          <input type="checkbox" :checked="rule.enabled" @change="updateRulebookReviewRule(msg.projectLaunchBrief.organizationId, rule.ruleKey, 'enabled', $event)">
+                          <span><strong>{{ rule.description }}</strong><small>{{ rule.ruleKey }} · {{ rule.enforcement === 'block' ? 'Bắt buộc' : 'Cảnh báo' }}</small></span>
+                          <span v-if="rule.numericValue != null" class="rulebook-review-value">
+                            <input
+                              type="number"
+                              :min="rulebookRuleMin(rule.ruleKey)"
+                              :max="rulebookRuleMax(rule.ruleKey)"
+                              :value="rule.numericValue"
+                              :disabled="!rule.enabled"
+                              @input="updateRulebookReviewRule(msg.projectLaunchBrief.organizationId, rule.ruleKey, 'numericValue', $event)"
+                            >
+                            <small>{{ rule.unit === 'percent' ? '%' : 'dự án' }}</small>
+                          </span>
+                        </label>
+                        <div class="rulebook-review-actions">
+                          <button type="button" @click="cancelRecommendedRulebookReview(msg.projectLaunchBrief.organizationId)">Hủy</button>
+                          <button type="button" :disabled="launchActionBusy === `rulebook:${msg.projectLaunchBrief.organizationId}`" @click="createRecommendedRulebookDraft(msg.projectLaunchBrief)">Lưu bản nháp đã review</button>
+                        </div>
+                      </section>
+                      <details
+                        v-else-if="canManageProjectLaunch(msg) && rulebookDrafts[msg.projectLaunchBrief.organizationId]?.status === 'draft'"
+                        class="rulebook-draft-review"
+                      >
+                        <summary>Xem bản {{ rulebookDrafts[msg.projectLaunchBrief.organizationId].version }} trước khi áp dụng</summary>
+                        <ul>
+                          <li v-for="rule in rulebookDrafts[msg.projectLaunchBrief.organizationId].rules" :key="rule.ruleKey">
+                            <strong>{{ rule.description }}</strong>
+                            <span v-if="rule.numericValue != null">{{ rule.numericValue }} {{ rule.unit === 'percent' ? '%' : 'dự án' }}</span>
+                            <span v-else>{{ rule.enabled ? 'Bật' : 'Tắt' }}</span>
+                          </li>
+                        </ul>
+                        <button
+                          type="button"
+                          :disabled="launchActionBusy === `rulebook:${msg.projectLaunchBrief.organizationId}`"
+                          @click="activateRulebookAndResume(msg.projectLaunchBrief)"
+                        >Áp dụng bản đã review</button>
+                      </details>
                     </div>
+                    <details class="project-launch-summary-details">
+                      <summary>Tóm tắt phạm vi, thước đo và các điểm cần lưu ý</summary>
                     <div class="project-launch-columns">
                       <section>
                         <h4>Phạm vi đề xuất</h4>
@@ -2625,13 +4470,13 @@ onBeforeUnmount(() => {
                         <ul v-else><li v-for="item in msg.projectLaunchBrief.assumptions" :key="item">{{ item }}</li></ul>
                       </section>
                       <section>
-                        <h4>Unknowns</h4>
-                        <p v-if="!msg.projectLaunchBrief.unknowns.length">Không có unknown từ model.</p>
+                        <h4>Điểm cần làm rõ</h4>
+                        <p v-if="!msg.projectLaunchBrief.unknowns.length">Không còn điểm nào cần làm rõ.</p>
                         <ul v-else><li v-for="item in msg.projectLaunchBrief.unknowns" :key="item">{{ item }}</li></ul>
                       </section>
                     </div>
                     <details class="project-launch-decisions">
-                      <summary>Quyết định Rulebook ({{ msg.projectLaunchBrief.ruleDecisions.length }})</summary>
+                      <summary>Chi tiết kiểm tra quy tắc ({{ msg.projectLaunchBrief.ruleDecisions.length }})</summary>
                       <ul>
                         <li
                           v-for="decision in msg.projectLaunchBrief.ruleDecisions"
@@ -2644,19 +4489,20 @@ onBeforeUnmount(() => {
                         </li>
                       </ul>
                     </details>
+                    </details>
                     <footer>
-                      <span>{{ msg.projectLaunchBrief.actualProvider }} / {{ msg.projectLaunchBrief.actualModel }}</span>
-                      <span>{{ msg.projectLaunchBrief.promptVersion }}</span>
-                      <strong>Không tạo Project · không phân công</strong>
+                      <strong>Chưa tạo dự án hoặc phân công công việc</strong>
                       <button
                         class="launch-primary-action"
                         type="button"
-                        :disabled="isChatting || msg.projectLaunchBrief.rulebookStatus !== 'effective' || msg.projectLaunchBrief.questions.some(question => question.blocking)"
+                        :disabled="isChatting || !canManageProjectLaunch(msg) || msg.projectLaunchBrief.rulebookStatus !== 'effective' || msg.projectLaunchBrief.questions.some(question => question.blocking)"
                         data-testid="project-launch-plan-start"
                         @click="createLaunchPlan(msg.projectLaunchBrief)"
-                      >Lập staffing + delivery plan</button>
-                      <small v-if="msg.projectLaunchBrief.rulebookStatus !== 'effective'">Cần kích hoạt Rulebook trước khi staffing.</small>
-                      <small v-else-if="msg.projectLaunchBrief.questions.some(question => question.blocking)">Cần gửi đủ câu trả lời còn thiếu trước khi staffing.</small>
+                      >Lập phương án nhân sự và công việc</button>
+                      <small v-if="msg.projectLaunchBrief.rulebookStatus !== 'effective'">Cần áp dụng quy tắc làm việc trước khi chọn người và lịch.</small>
+                      <small v-else-if="!canManageProjectLaunch(msg)">Bạn có thể xem và hoàn thiện brief; chỉ Owner/Manager tổ chức mới được lập đội hình và tạo dự án.</small>
+                      <small v-else-if="msg.projectLaunchBrief.questions.some(question => question.blocking)">Cần gửi đủ câu trả lời ảnh hưởng trực tiếp đến phương án.</small>
+                      <details class="launch-technical-details"><summary>Thông tin kỹ thuật</summary><span>{{ msg.projectLaunchBrief.actualProvider }} / {{ msg.projectLaunchBrief.actualModel }}</span><span>{{ msg.projectLaunchBrief.promptVersion }}</span></details>
                     </footer>
                   </article>
 
@@ -2667,16 +4513,34 @@ onBeforeUnmount(() => {
                   >
                     <header class="project-launch-plan-header">
                       <div>
-                        <span>AI-native Project launch · {{ msg.projectLaunchPlan.schemaId }}</span>
+                        <span>Phương án khởi chạy dự án</span>
                         <h3>{{ msg.projectLaunchPlan.deliveryPlan.proposedProjectName }}</h3>
                         <p>{{ msg.projectLaunchPlan.deliveryPlan.objective }}</p>
                       </div>
                       <div class="project-launch-status">
-                        <strong>{{ msg.projectLaunchPlan.state }}</strong>
-                        <small>Plan rev {{ msg.projectLaunchPlan.rowRevision }}</small>
-                        <small>Rulebook v{{ msg.projectLaunchPlan.ruleSetVersion || 'missing' }}</small>
+                        <strong>{{ launchPlanStateLabel(msg.projectLaunchPlan.state) }}</strong>
+                        <small>Bản {{ msg.projectLaunchPlan.rowRevision }}</small>
+                        <small>Quy tắc làm việc bản {{ msg.projectLaunchPlan.ruleSetVersion || 'chưa có' }}</small>
                       </div>
                     </header>
+                    <nav class="launch-stepper launch-stepper--plan" aria-label="Tiến trình khởi tạo dự án">
+                      <span class="active">1. Mục tiêu</span><span class="active">2. Phạm vi</span><span class="active">3. Nhân sự</span><span class="active">4. Sprint</span><span :class="{ active: Boolean(msg.projectLaunchPlan.executionReceipt) }">5. Xác nhận</span>
+                    </nav>
+
+                    <section
+                      v-if="!msg.projectLaunchPlan.executionReceipt"
+                      class="launch-final-review-summary"
+                      data-testid="project-launch-final-review"
+                    >
+                      <header><strong>Tóm tắt trước khi xác nhận</strong><small>Chưa ghi dữ liệu</small></header>
+                      <dl>
+                        <div><dt>Project</dt><dd>{{ msg.projectLaunchPlan.deliveryPlan.proposedProjectName }}</dd></div>
+                        <div><dt>Manager / team</dt><dd>{{ launchReviewSummary(msg.projectLaunchPlan).manager }} · {{ launchReviewSummary(msg.projectLaunchPlan).memberCount }} người</dd></div>
+                        <div><dt>Sprint</dt><dd>{{ launchReviewSummary(msg.projectLaunchPlan).sprintCount }}</dd></div>
+                        <div><dt>Task</dt><dd>{{ launchReviewSummary(msg.projectLaunchPlan).taskCount }}</dd></div>
+                      </dl>
+                      <p>Mọi chỉnh sửa phải được lưu và kiểm tra lại trước khi nút xác nhận được mở.</p>
+                    </section>
 
                     <div v-if="msg.projectLaunchPlan.blockingReasons.length" class="launch-blocking-list">
                       <strong>Chưa thể xác nhận</strong>
@@ -2688,7 +4552,7 @@ onBeforeUnmount(() => {
                     </div>
 
                     <section class="launch-plan-section">
-                      <h4>1. Chọn staffing scenario</h4>
+                      <h4>1. Chọn phương án nhân sự</h4>
                       <div class="launch-scenario-list">
                         <article
                           v-for="scenario in msg.projectLaunchPlan.staffingScenarios"
@@ -2703,74 +4567,118 @@ onBeforeUnmount(() => {
                               :value="scenario.scenarioId"
                               :checked="selectedLaunchScenarioId(msg.projectLaunchPlan) === scenario.scenarioId"
                               :disabled="!scenario.feasible || Boolean(msg.projectLaunchPlan.executionReceipt)"
-                              @change="selectLaunchScenario(msg.projectLaunchPlan.planId, scenario.scenarioId)"
+                              @change="selectLaunchScenario(msg.projectLaunchPlan, scenario.scenarioId)"
                             >
-                            <span><strong>{{ scenario.title }}</strong><small>Score {{ scenario.score.toFixed(1) }} · {{ scenario.feasible ? 'khả thi' : 'blocked' }}</small></span>
+                            <span><strong>{{ scenario.title }}</strong><small>Điểm phù hợp {{ scenario.score.toFixed(1) }} · {{ scenario.feasible ? 'có thể áp dụng' : 'cần điều chỉnh' }}</small></span>
                           </label>
                           <p>{{ scenario.description }}</p>
-                          <p><strong>Manager:</strong> {{ scenario.managerName || 'chưa đủ điều kiện' }}</p>
+                          <p><strong>Người quản lý:</strong> {{ scenario.managerName || 'chưa đủ điều kiện' }}</p>
                           <ul class="launch-member-list">
                             <li v-for="member in scenario.members" :key="member.userId">
                               <strong>{{ member.displayName }}</strong>
-                              <span>{{ member.proposedRole }} · {{ member.proposedHours }}h · load {{ member.loadAfterPercent.toFixed(0) }}%</span>
-                              <small>Skills: {{ member.coveredSkills.join(', ') || 'chưa có evidence' }}</small>
+                              <span>{{ member.proposedRole }} · {{ member.proposedHours }} giờ · mức sử dụng {{ member.loadAfterPercent.toFixed(0) }}%</span>
+                              <small>Kỹ năng đã có bằng chứng: {{ member.coveredSkills.join(', ') || 'chưa có' }}</small>
                             </li>
                           </ul>
                           <details v-if="scenario.blockingReasons.length || scenario.managerCandidates.some(item => item.hardRejects.length)">
-                            <summary>Blocking / candidate rejects</summary>
+                            <summary>Vì sao chưa thể chọn một số người</summary>
                             <ul>
                               <li v-for="reason in scenario.blockingReasons" :key="reason">{{ reason }}</li>
                               <li v-for="candidate in scenario.managerCandidates.filter(item => item.hardRejects.length)" :key="candidate.userId">
-                                {{ candidate.displayName }}: {{ candidate.hardRejects.join(', ') }}
+                                {{ candidate.displayName }}: {{ candidate.hardRejects.map(staffingRejectLabel).join(', ') }}
                               </li>
                             </ul>
                           </details>
                         </article>
                       </div>
+                      <details v-if="!msg.projectLaunchPlan.executionReceipt" class="launch-plan-customizer">
+                        <summary>Tùy chỉnh đội hình</summary>
+                        <p>Thêm, thay người hoặc chỉnh số giờ. Qaly sẽ kiểm tra lại kỹ năng, lịch, tải đa dự án và quy tắc làm việc trước khi tạo dự án.</p>
+                        <div class="launch-staffing-editor">
+                          <article
+                            v-for="candidate in selectedLaunchCandidates(msg.projectLaunchPlan)"
+                            :key="candidate.userId"
+                            :class="{ rejected: !candidate.staffingEligible || candidate.hardRejects.length }"
+                          >
+                            <label><input type="checkbox" :checked="launchPlanDraft(msg.projectLaunchPlan).staffing.find(item => item.userId === candidate.userId)?.included" :disabled="!candidate.staffingEligible" @change="updateLaunchStaffing(msg.projectLaunchPlan, candidate.userId, 'included', $event)"> {{ candidate.displayName }}</label>
+                            <small>{{ candidate.organizationRole }} · còn {{ candidate.availableHours.toFixed(0) }}h · {{ candidate.activeProjectCount }} dự án</small>
+                            <label>Quản lý <input type="radio" :name="`custom-manager-${msg.projectLaunchPlan.planId}`" :checked="launchPlanDraft(msg.projectLaunchPlan).staffing.find(item => item.userId === candidate.userId)?.manager" :disabled="!candidate.managerEligible || !candidate.staffingEligible" @change="updateLaunchStaffing(msg.projectLaunchPlan, candidate.userId, 'manager', $event)"></label>
+                            <label>Vai trò<select :value="launchPlanDraft(msg.projectLaunchPlan).staffing.find(item => item.userId === candidate.userId)?.proposedRole || 'Member'" :disabled="!candidate.staffingEligible" @change="updateLaunchStaffing(msg.projectLaunchPlan, candidate.userId, 'proposedRole', $event)"><option value="Member">Thành viên</option><option value="Developer">Phát triển</option><option value="Tester">Kiểm thử</option><option value="Reviewer">Review</option></select></label>
+                            <label>Số giờ<input type="number" min="1" :max="candidate.availableHours" :value="launchPlanDraft(msg.projectLaunchPlan).staffing.find(item => item.userId === candidate.userId)?.proposedHours || 0" :disabled="!candidate.staffingEligible" @input="updateLaunchStaffing(msg.projectLaunchPlan, candidate.userId, 'proposedHours', $event)"></label>
+                            <small v-if="candidate.hardRejects.length">Chưa thể chọn: {{ candidate.hardRejects.map(staffingRejectLabel).join(', ') }}</small>
+                          </article>
+                        </div>
+                      </details>
                     </section>
 
                     <section class="launch-plan-section">
-                      <h4>2. Delivery plan thật sẽ được tạo</h4>
+                      <h4>2. Sprint và công việc sẽ được tạo</h4>
                       <p class="launch-plan-range">
                         {{ new Date(msg.projectLaunchPlan.deliveryPlan.startDate).toLocaleDateString('vi-VN') }}
                         → {{ new Date(msg.projectLaunchPlan.deliveryPlan.endDate).toLocaleDateString('vi-VN') }}
                       </p>
-                      <details
-                        v-for="sprint in msg.projectLaunchPlan.deliveryPlan.sprints.filter(item => item.selected)"
-                        :key="sprint.clientId"
-                        class="launch-sprint"
-                        open
-                      >
-                        <summary>{{ sprint.name }} · {{ sprint.tasks.filter(item => item.selected).length }} tasks</summary>
-                        <p>{{ sprint.objective }}</p>
-                        <ol>
-                          <li v-for="task in sprint.tasks.filter(item => item.selected)" :key="task.clientId">
-                            <strong>{{ task.title }}</strong>
-                            <span>{{ task.priority }} · {{ task.estimatedHours }}h</span>
-                            <small>Skills: {{ task.requiredSkillNames.join(', ') || 'general' }}</small>
-                            <small v-if="task.dependencyClientIds.length">Depends on: {{ task.dependencyClientIds.join(', ') }}</small>
+                      <div class="launch-autonomy-controls">
+                        <label>Cách phân công
+                          <select :value="launchPlanDraft(msg.projectLaunchPlan).assignmentMode" @change="updateLaunchPlanMode(msg.projectLaunchPlan, 'assignmentMode', $event)">
+                            <option value="auto_balance">Qaly tự cân bằng các việc chưa giao</option>
+                            <option value="preserve_assignments">Giữ đúng lựa chọn · cho phép backlog chưa giao</option>
+                          </select>
+                        </label>
+                        <label>Cấu trúc lịch
+                          <select :value="launchPlanDraft(msg.projectLaunchPlan).scheduleMode" @change="updateLaunchPlanMode(msg.projectLaunchPlan, 'scheduleMode', $event)">
+                            <option value="sequential_sprints">Sprint tuần tự</option>
+                            <option value="parallel_workstreams">Workstream song song</option>
+                          </select>
+                        </label>
+                        <small>Qaly chỉ tự thay người khi bạn chọn chế độ tự cân bằng. Các ràng buộc quyền, kỹ năng thật, capacity và dependency vẫn luôn được kiểm tra.</small>
+                      </div>
+                      <fieldset class="launch-editor-fieldset" :disabled="Boolean(msg.projectLaunchPlan.executionReceipt)">
+                      <button type="button" class="secondary-button launch-add-sprint" @click="addLaunchSprint(msg.projectLaunchPlan)">+ Thêm Sprint</button>
+                      <details v-for="sprint in launchPlanDraft(msg.projectLaunchPlan).sprints" :key="sprint.clientId" class="launch-sprint">
+                        <summary><input type="checkbox" :checked="sprint.selected" @click.stop @change="updateLaunchSprint(msg.projectLaunchPlan, sprint.clientId, 'selected', $event)"> {{ sprint.name }} · {{ sprint.tasks.filter(item => item.selected).length }} task</summary>
+                        <div class="launch-card-actions"><button type="button" @click="moveLaunchSprint(msg.projectLaunchPlan, sprint.clientId, -1)">Lên</button><button type="button" @click="moveLaunchSprint(msg.projectLaunchPlan, sprint.clientId, 1)">Xuống</button><button type="button" @click="addLaunchTask(msg.projectLaunchPlan, sprint.clientId)">+ Thêm công việc</button></div>
+                        <div class="launch-sprint-editor">
+                          <label>Tên Sprint<input :value="sprint.name" @input="updateLaunchSprint(msg.projectLaunchPlan, sprint.clientId, 'name', $event)"></label>
+                          <label>Mục tiêu Sprint<input :value="sprint.objective" @input="updateLaunchSprint(msg.projectLaunchPlan, sprint.clientId, 'objective', $event)"></label>
+                          <label>Bắt đầu<input type="date" :value="sprint.startDate.slice(0, 10)" @input="updateLaunchSprint(msg.projectLaunchPlan, sprint.clientId, 'startDate', $event)"></label>
+                          <label>Kết thúc<input type="date" :value="sprint.endDate.slice(0, 10)" @input="updateLaunchSprint(msg.projectLaunchPlan, sprint.clientId, 'endDate', $event)"></label>
+                        </div>
+                        <ol class="launch-task-editor">
+                          <li v-for="task in sprint.tasks" :key="task.clientId">
+                            <input type="checkbox" :checked="task.selected" @change="updateLaunchTask(msg.projectLaunchPlan, sprint.clientId, task.clientId, 'selected', $event)">
+                            <input class="launch-task-title" :value="task.title" @input="updateLaunchTask(msg.projectLaunchPlan, sprint.clientId, task.clientId, 'title', $event)">
+                            <label>Giờ<input type="number" min="1" max="1000" :value="task.estimatedHours" @input="updateLaunchTask(msg.projectLaunchPlan, sprint.clientId, task.clientId, 'estimatedHours', $event)"></label>
+                            <label>Người thực hiện<select :value="task.proposedAssigneeId || ''" @change="updateLaunchTask(msg.projectLaunchPlan, sprint.clientId, task.clientId, 'proposedAssigneeId', $event)"><option value="">{{ launchPlanDraft(msg.projectLaunchPlan).assignmentMode === 'auto_balance' ? 'Để Qaly cân bằng' : 'Chưa giao · đưa vào backlog' }}</option><option v-for="member in launchPlanDraft(msg.projectLaunchPlan).staffing.filter(item => item.included)" :key="member.userId" :value="member.userId">{{ (msg.projectLaunchPlan.staffingScenarios[0]?.managerCandidates || []).find(item => item.userId === member.userId)?.displayName || member.userId }}</option></select></label>
+                            <label>Người review<select :value="task.proposedReviewerId || ''" @change="updateLaunchTask(msg.projectLaunchPlan, sprint.clientId, task.clientId, 'proposedReviewerId', $event)"><option value="">{{ launchPlanDraft(msg.projectLaunchPlan).assignmentMode === 'auto_balance' ? 'Qaly chọn người phù hợp' : 'Chưa chọn reviewer' }}</option><option v-for="member in launchPlanDraft(msg.projectLaunchPlan).staffing.filter(item => item.included && item.userId !== task.proposedAssigneeId)" :key="member.userId" :value="member.userId">{{ (msg.projectLaunchPlan.staffingScenarios[0]?.managerCandidates || []).find(item => item.userId === member.userId)?.displayName || member.userId }}</option></select></label>
+                            <small>Kỹ năng: {{ task.requiredSkillNames.join(', ') || 'Chưa xác định' }}<template v-if="task.featureId"> · thuộc chức năng {{ launchFeatureTitle(msg.projectLaunchPlan, task.featureId) }}</template></small>
+                            <small v-if="task.dependencyClientIds.length">Phụ thuộc: {{ task.dependencyClientIds.join(', ') }}</small>
+                            <details class="launch-task-detail-editor">
+                              <summary>Mô tả, nghiệm thu, kỹ năng và liên kết</summary>
+                              <label>Mô tả<textarea rows="2" :value="task.description" @input="updateLaunchTaskDetail(msg.projectLaunchPlan, sprint.clientId, task.clientId, 'description', $event)" /></label>
+                              <label>Tiêu chí nghiệm thu — mỗi dòng một ý<textarea rows="3" :value="task.acceptanceCriteria.join('\n')" @input="updateLaunchTaskDetail(msg.projectLaunchPlan, sprint.clientId, task.clientId, 'acceptanceCriteria', $event)" /></label>
+                              <label>Hoàn thành khi — mỗi dòng một ý<textarea rows="3" :value="task.definitionOfDone.join('\n')" @input="updateLaunchTaskDetail(msg.projectLaunchPlan, sprint.clientId, task.clientId, 'definitionOfDone', $event)" /></label>
+                              <label>Thuộc chức năng<select :value="task.featureId || ''" @change="updateLaunchTaskDetail(msg.projectLaunchPlan, sprint.clientId, task.clientId, 'featureId', $event)"><option v-for="feature in (msg.projectLaunchPlan.deliveryPlan.features || []).filter(item => item.selected && item.priority !== 'out_of_scope')" :key="feature.featureId" :value="feature.featureId">{{ feature.title }}</option></select></label>
+                              <label>Kỹ năng cần thiết — mỗi dòng một kỹ năng<textarea rows="3" :value="task.requiredSkillNames.join('\n')" @input="updateLaunchTaskDetail(msg.projectLaunchPlan, sprint.clientId, task.clientId, 'requiredSkillNames', $event)" /></label>
+                              <div v-if="msg.projectLaunchPlan.deliveryPlan.objectiveMetrics?.length" class="launch-task-link-options"><strong>Thước đo mà công việc này đóng góp</strong><label v-for="metric in msg.projectLaunchPlan.deliveryPlan.objectiveMetrics" :key="metric.metricId"><input type="checkbox" :checked="task.objectiveMetricIds?.includes(metric.metricId)" @change="toggleLaunchTaskMetric(msg.projectLaunchPlan, sprint.clientId, task.clientId, metric.metricId)"> {{ metric.title }}</label></div>
+                              <div class="launch-task-link-options"><strong>Công việc phải hoàn thành trước</strong><label v-for="dependency in launchPlanDraft(msg.projectLaunchPlan).sprints.flatMap(item => item.tasks).filter(item => item.clientId !== task.clientId && item.selected)" :key="dependency.clientId"><input type="checkbox" :checked="task.dependencyClientIds.includes(dependency.clientId)" @change="toggleLaunchTaskDependency(msg.projectLaunchPlan, sprint.clientId, task.clientId, dependency.clientId)"> {{ dependency.title }}</label></div>
+                            </details>
+                            <span class="launch-task-order"><button type="button" @click="moveLaunchTask(msg.projectLaunchPlan, sprint.clientId, task.clientId, -1)">Lên</button><button type="button" @click="moveLaunchTask(msg.projectLaunchPlan, sprint.clientId, task.clientId, 1)">Xuống</button></span>
                           </li>
                         </ol>
                       </details>
+                      <button v-if="launchPlanDraft(msg.projectLaunchPlan).dirty" type="button" class="launch-primary-action" :disabled="Boolean(launchActionBusy)" @click="saveLaunchPlanReview(msg, msg.projectLaunchPlan)">{{ launchActionBusy === `review:${msg.projectLaunchPlan.planId}` ? 'Đang kiểm tra lại…' : 'Lưu thay đổi và kiểm tra lại' }}</button>
+                      </fieldset>
                       <details v-if="msg.projectLaunchPlan.deliveryPlan.externalDeferred.length" class="launch-external-deferred">
-                        <summary>External actions được hoãn có chủ đích</summary>
+                        <summary>Kết nối bên ngoài chưa được thực hiện</summary>
                         <ul><li v-for="item in msg.projectLaunchPlan.deliveryPlan.externalDeferred" :key="item">{{ item }}</li></ul>
                       </details>
                     </section>
 
                     <section v-if="msg.projectLaunchPlan.executionReceipt" class="launch-receipt" data-testid="project-launch-receipt">
-                      <h4>3. Execution receipt · {{ msg.projectLaunchPlan.executionReceipt.state }}</h4>
-                      <p>
-                        Transaction: <strong>{{ msg.projectLaunchPlan.executionReceipt.internalTransactionCommitted ? 'committed' : 'not committed' }}</strong>
-                        · Read-back: <strong>{{ msg.projectLaunchPlan.executionReceipt.readBackVerified ? 'verified' : 'failed' }}</strong>
-                      </p>
-                      <ul>
-                        <li v-for="command in msg.projectLaunchPlan.executionReceipt.commands" :key="command.commandId">
-                          <span><strong>{{ command.adapterId }}</strong> · {{ command.status }}</span>
-                          <small>{{ command.summary }}</small>
-                          <button v-if="command.deepLink" type="button" @click="openLaunchLink(command.deepLink)">Mở</button>
-                        </li>
-                      </ul>
+                      <h4>Dự án đã được tạo và đọc lại từ dữ liệu thật</h4>
+                      <p>Qaly chỉ báo thành công sau khi Project, thành viên, Sprint và Task đã được lưu và kiểm tra lại.</p>
+                      <div class="launch-receipt-links"><button v-for="link in msg.projectLaunchPlan.executionReceipt.createdEntityLinks" :key="link" type="button" @click="openLaunchLink(link)">{{ link.includes('tasks') ? 'Mở công việc' : link.includes('roadmap') ? 'Mở lộ trình' : 'Mở dự án' }}</button></div>
+                      <details><summary>Chi tiết biên nhận và kết nối chưa thực hiện</summary><p>Giao dịch: <strong>{{ msg.projectLaunchPlan.executionReceipt.internalTransactionCommitted ? 'đã lưu trọn vẹn' : 'chưa lưu' }}</strong> · Đọc lại: <strong>{{ msg.projectLaunchPlan.executionReceipt.readBackVerified ? 'đã xác minh' : 'không đạt' }}</strong></p><ul><li v-for="command in msg.projectLaunchPlan.executionReceipt.commands" :key="command.commandId"><span><strong>{{ command.summary }}</strong></span><button v-if="command.deepLink" type="button" @click="openLaunchLink(command.deepLink)">Mở</button></li></ul></details>
                     </section>
 
                     <section v-if="msg.projectLaunchPlan.latestReplanProposal" class="launch-replan" data-testid="project-replan-proposal">
@@ -2786,29 +4694,27 @@ onBeforeUnmount(() => {
                     </section>
 
                     <footer class="launch-plan-actions">
-                      <div>
-                        <span>{{ msg.projectLaunchPlan.actualProvider }} / {{ msg.projectLaunchPlan.actualModel }}</span>
-                        <small>{{ msg.projectLaunchPlan.scoringVersion }}</small>
-                      </div>
+                      <details class="launch-technical-details"><summary>Thông tin kỹ thuật</summary><span>{{ msg.projectLaunchPlan.actualProvider }} / {{ msg.projectLaunchPlan.actualModel }}</span><small>{{ msg.projectLaunchPlan.scoringVersion }}</small></details>
                       <button
                         v-if="!msg.projectLaunchPlan.executionReceipt"
                         type="button"
                         class="launch-primary-action"
-                        :disabled="Boolean(launchActionBusy) || Boolean(msg.projectLaunchPlan.blockingReasons.length)"
+                        :disabled="Boolean(launchActionBusy) || !canExecuteProjectLaunch(msg) || launchPlanDraft(msg.projectLaunchPlan).dirty || msg.projectLaunchPlan.state === 'executing' || Boolean(msg.projectLaunchPlan.blockingReasons.length)"
                         data-testid="project-launch-confirm"
                         @click="confirmLaunchPlan(msg, msg.projectLaunchPlan)"
-                      >{{ launchActionBusy === msg.projectLaunchPlan.planId ? 'Đang thực thi…' : 'Xác nhận tạo Project' }}</button>
-                      <template v-else>
-                        <button type="button" :disabled="Boolean(launchActionBusy)" data-testid="project-launch-monitor" @click="monitorLaunch(msg, msg.projectLaunchPlan)">Monitor ngay</button>
+                      >{{ launchActionBusy === msg.projectLaunchPlan.planId || msg.projectLaunchPlan.state === 'executing' ? 'Đang hoàn tất Project…' : 'Xác nhận tạo Project' }}</button>
+                      <small v-if="!msg.projectLaunchPlan.executionReceipt && launchPlanDraft(msg.projectLaunchPlan).dirty">Lưu và kiểm tra lại thay đổi trước khi tạo Project.</small>
+                      <template v-if="msg.projectLaunchPlan.executionReceipt">
+                        <button type="button" :disabled="Boolean(launchActionBusy)" data-testid="project-launch-monitor" @click="monitorLaunch(msg, msg.projectLaunchPlan)">Kiểm tra tình trạng</button>
                         <button
-                          v-if="msg.projectLaunchPlan.executionReceipt.rollbackAvailable"
+                          v-if="msg.projectLaunchPlan.executionReceipt?.rollbackAvailable"
                           type="button"
                           class="launch-danger-action"
                           :disabled="Boolean(launchActionBusy)"
                           data-testid="project-launch-rollback"
                           @click="rollbackLaunch(msg, msg.projectLaunchPlan)"
-                        >Rollback launch</button>
-                        <button type="button" @click="openLaunchLink(`/projects/${msg.projectLaunchPlan.executionReceipt.projectId}`)">Mở Project</button>
+                        >Hoàn tác lần tạo này</button>
+                        <button type="button" @click="openLaunchLink(`/projects/${msg.projectLaunchPlan.executionReceipt?.projectId || ''}`)">Mở dự án</button>
                       </template>
                     </footer>
                   </article>
@@ -2960,11 +4866,12 @@ onBeforeUnmount(() => {
                               >
                                 {{ column.label }}
                               </th>
+                              <th v-if="table.rowAction" class="align-right">Mở</th>
                             </tr>
                           </thead>
                           <tbody>
                             <tr v-if="!table.rows.length">
-                              <td :colspan="table.columns.length" class="empty-cell">Không có dữ liệu phù hợp</td>
+                              <td :colspan="table.columns.length + (table.rowAction ? 1 : 0)" class="empty-cell">Không có dữ liệu phù hợp</td>
                             </tr>
                             <tr v-for="(row, rowIndex) in table.rows" :key="rowIndex">
                               <td
@@ -2973,6 +4880,16 @@ onBeforeUnmount(() => {
                                 :class="`align-${column.align || 'left'}`"
                               >
                                 {{ tableCell(row, column.key) }}
+                              </td>
+                              <td v-if="table.rowAction" class="align-right">
+                                <button
+                                  type="button"
+                                  class="erumi-table-row-action"
+                                  :disabled="!row[table.rowAction.routeKey || 'route']"
+                                  @click="openTableRowAction(table, row)"
+                                >
+                                  {{ table.rowAction.label }}
+                                </button>
                               </td>
                             </tr>
                           </tbody>
@@ -3011,6 +4928,25 @@ onBeforeUnmount(() => {
                           </button>
                         </div>
                       </div>
+                      <div v-else-if="action.type === 'select_project_for_task_plan'" class="erumi-draft-card clarification-card">
+                        <strong>{{ action.label }}</strong>
+                        <p class="erumi-draft-text">Chọn Project thật để Qaly mở Task Composer đúng ngữ cảnh. Bước này chưa tạo task.</p>
+                        <div v-if="activeProjects.length" class="clarification-choices">
+                          <button
+                            v-for="project in activeProjects"
+                            :key="project.id"
+                            type="button"
+                            class="clarification-choice"
+                            @click="selectProjectForTaskPlan(project.id, action)"
+                          >
+                            <span>{{ project.name }}</span>
+                            <small>Mở phương án task trong Project này</small>
+                          </button>
+                        </div>
+                        <button v-else type="button" class="erumi-action-button" @click="openGuidanceRoute('/projects')">
+                          Mở danh sách Project
+                        </button>
+                      </div>
                       <div v-else-if="action.type === 'assistant_progressive_questions'" class="assistant-progressive-card">
                         <section class="assistant-progressive-questions">
                           <header>
@@ -3033,14 +4969,31 @@ onBeforeUnmount(() => {
                                 :aria-pressed="progressiveAnswer(question.id, action)?.value === reply.value"
                                 @click="answerProgressiveQuestion(question, reply, action)"
                               >{{ reply.label }}</button>
+                              <button
+                                v-if="question.allowFreeText"
+                                type="button"
+                                @click="answerProgressiveWithComposer(question, action)"
+                              >Khác…</button>
                             </div>
                             <div v-if="question.allowFreeText" class="assistant-free-answer">
+                              <textarea
+                                v-if="question.inputType === 'textarea'"
+                                :id="`clarification-${question.id}`"
+                                rows="3"
+                                :value="progressiveAnswerDisplay(question, action)"
+                                :aria-label="`Trả lời: ${question.text}`"
+                                :placeholder="question.placeholder || 'Nhập câu trả lời…'"
+                                @focus="answerProgressiveWithComposer(question, action)"
+                                @input="updateProgressiveFreeText(question, action, $event, false)"
+                                @change="updateProgressiveFreeText(question, action, $event, true)"
+                              />
                               <input
+                                v-else
                                 :id="`clarification-${question.id}`"
                                 type="text"
-                                :value="progressiveAnswer(question.id, action)?.value || ''"
+                                :value="progressiveAnswerDisplay(question, action)"
                                 :aria-label="`Trả lời: ${question.text}`"
-                                placeholder="Nhập câu trả lời…"
+                                :placeholder="question.placeholder || 'Nhập câu trả lời…'"
                                 @focus="answerProgressiveWithComposer(question, action)"
                                 @input="updateProgressiveFreeText(question, action, $event, false)"
                                 @change="updateProgressiveFreeText(question, action, $event, true)"
@@ -3137,7 +5090,7 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
 
-                <footer v-if="msg.text" class="assistant-meta">
+                <footer v-if="hasAssistantContent(msg)" class="assistant-meta">
                   <span class="assistant-mode" :class="msg.usedAi ? 'is-ai' : 'is-rule'">
                     {{ msg.usedAi ? 'Erumi AI' : 'Dữ liệu hệ thống' }}
                   </span>
@@ -3154,6 +5107,7 @@ onBeforeUnmount(() => {
                   </span>
                   <div class="assistant-actions">
                     <OverflowMenu
+                      v-if="messageMenuItems(msg).length"
                       :items="messageMenuItems(msg)"
                       aria-label="Tùy chọn phản hồi"
                       trigger-title="Tùy chọn phản hồi"
@@ -3298,7 +5252,47 @@ onBeforeUnmount(() => {
       @close="closeCockpitDrawer"
     >
       <div class="analytics-drawer-content">
-        <template v-if="activeDrawerTab === 'sources'">
+        <section v-if="activeDrawerTab === 'tools'" class="analytics-drawer-section assistant-tools-hub">
+          <div class="assistant-tools-scope">
+            <span>Phạm vi hiện tại</span>
+            <strong>{{ selectedTargetLabel }}</strong>
+          </div>
+          <div>
+            <h3>Bắt đầu nhanh</h3>
+            <p class="analytics-drawer-muted">Chọn một câu để điền vào ô chat; Qaly chưa tự gửi hoặc thay đổi dữ liệu.</p>
+          </div>
+          <div class="assistant-tools-grid">
+            <button
+              v-for="shortcut in newcomerShortcuts"
+              :key="shortcut.label"
+              type="button"
+              @click="choosePrompt(shortcut.prompt)"
+            >
+              <strong>{{ shortcut.label }}</strong>
+              <small>{{ shortcut.description }}</small>
+            </button>
+          </div>
+          <div>
+            <h3>Phân tích & kết quả</h3>
+            <p class="analytics-drawer-muted">Công cụ mở dữ liệu gần nhất hoặc chuẩn bị một câu hỏi có thể chỉnh sửa.</p>
+          </div>
+          <div class="assistant-tools-grid">
+            <button
+              v-for="tool in analysisTools"
+              :key="tool.key"
+              type="button"
+              @click="useAnalysisTool(tool)"
+            >
+              <span class="assistant-tool-title">
+                <strong>{{ tool.label }}</strong>
+                <em>{{ tool.behavior === 'open-drawer' ? 'Mở kết quả' : tool.isWriteLike ? 'Bản nháp' : 'Điền câu hỏi' }}</em>
+              </span>
+              <small>{{ tool.description }}</small>
+            </button>
+          </div>
+        </section>
+
+        <template v-else-if="activeDrawerTab === 'sources'">
           <p class="analytics-drawer-freshness">{{ freshnessLabel }}</p>
           <SourceRefsDrawer
             :sources="drawerSources"
@@ -3320,7 +5314,7 @@ onBeforeUnmount(() => {
         />
 
         <section v-else-if="activeDrawerTab === 'metrics'" class="analytics-drawer-section">
-          <p class="analytics-drawer-muted">Metrics được lấy từ phản hồi Erumi gần nhất, không gọi backend mới.</p>
+          <p class="analytics-drawer-muted">Dữ liệu được lấy từ phản hồi Erumi đang chọn, không gọi backend mới.</p>
           <div v-if="drawerMetrics.length" class="analytics-drawer-metric-list">
             <article v-for="metric in drawerMetrics" :key="metric.label" class="analytics-drawer-metric" :class="`tone-${metric.tone || 'neutral'}`">
               <span>{{ metric.label }}</span>
@@ -3328,9 +5322,14 @@ onBeforeUnmount(() => {
               <small v-if="metric.hint">{{ metric.hint }}</small>
             </article>
           </div>
-          <div v-else class="analytics-drawer-empty">
-            <strong>Chưa có metric</strong>
-            <span>Hãy hỏi Erumi về tiến độ, workload hoặc rủi ro để tạo metric.</span>
+          <div v-if="drawerTables.length || drawerCharts.length" class="analytics-drawer-table-note">
+            <strong>{{ drawerTables.length }} bảng · {{ drawerCharts.length }} biểu đồ</strong>
+            <span>Chi tiết vẫn nằm trong phản hồi gốc để giữ bảng công cụ này gọn.</span>
+          </div>
+          <div v-if="!drawerMetrics.length && !drawerTables.length && !drawerCharts.length" class="analytics-drawer-empty">
+            <strong>Chưa có dữ liệu có cấu trúc</strong>
+            <span>Hãy hỏi Erumi về tiến độ, tải công việc hoặc rủi ro.</span>
+            <button type="button" class="analytics-empty-action" @click="choosePrompt('Tóm tắt các số liệu quan trọng nhất trong phạm vi hiện tại và giải thích ngắn gọn.')">Hỏi về số liệu</button>
           </div>
         </section>
 
@@ -3357,21 +5356,23 @@ onBeforeUnmount(() => {
         </section>
 
         <section v-else-if="activeDrawerTab === 'actions'" class="analytics-drawer-section">
-          <p class="analytics-drawer-muted">Actions ở pass này chỉ là gợi ý hoặc prompt nháp, chưa thực thi ghi dữ liệu trực tiếp.</p>
+          <p class="analytics-drawer-muted">Mỗi action giữ đúng hành vi nghiệp vụ: điều hướng sẽ mở đúng trang, bản nháp sẽ mở composer và mutation vẫn cần xác nhận rõ ràng.</p>
           <div v-if="drawerActions.length" class="analytics-action-list">
             <button
               v-for="action in drawerActions"
-              :key="action.label"
+              :key="`${action.type}-${action.label}`"
               type="button"
               class="analytics-action-draft"
-              @click="fillComposer(action.label)"
+              @click="handleDrawerAction(action)"
             >
-              {{ action.label }}
+              <strong>{{ action.label }}</strong>
+              <small>{{ drawerActionHint(action) }}</small>
             </button>
           </div>
           <div v-else class="analytics-drawer-empty">
             <strong>Chưa có action</strong>
-            <span>Dùng công cụ phân tích trong nút + để điền prompt tạo đề xuất tiếp theo.</span>
+            <span>Mở Công cụ AI để chọn một câu hỏi hoặc chuẩn bị đề xuất tiếp theo.</span>
+            <button type="button" class="analytics-empty-action" @click="openCockpitDrawer('tools')">Mở Công cụ AI</button>
           </div>
         </section>
 
@@ -3460,7 +5461,7 @@ onBeforeUnmount(() => {
 }
 
 .empty-heading {
-  margin: 0 0 auto;
+  margin: 0;
   font-size: 26px;
   font-weight: 700;
   color: var(--text-strong);
@@ -3468,6 +5469,33 @@ onBeforeUnmount(() => {
   line-height: 1.25;
   text-align: center;
 }
+
+.empty-intro {
+  width: 100%;
+  margin-bottom: auto;
+  display: grid;
+  justify-items: center;
+  gap: 9px;
+  text-align: center;
+}
+
+.empty-intro > p,
+.empty-intro > small { margin: 0; color: var(--muted); }
+.empty-intro > p { font-size: 13px; }
+.empty-intro > small { font-size: 11px; }
+.newcomer-shortcuts { display: flex; justify-content: center; flex-wrap: wrap; gap: 7px; }
+.newcomer-shortcuts button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 7px 11px;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.newcomer-shortcuts button:hover,
+.newcomer-shortcuts button:focus-visible { border-color: var(--primary); color: var(--primary-strong); outline: none; }
 
 .chat-empty .composer {
   position: sticky;
@@ -3946,6 +5974,27 @@ onBeforeUnmount(() => {
   border-bottom: none;
 }
 
+.erumi-table-row-action {
+  border: 1px solid var(--primary-border, #bfdbfe);
+  border-radius: 8px;
+  background: var(--primary-soft, #eff6ff);
+  color: var(--primary, #1d4ed8);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 650;
+  padding: 6px 9px;
+  white-space: nowrap;
+}
+
+.erumi-table-row-action:hover:not(:disabled) {
+  border-color: var(--primary, #2563eb);
+}
+
+.erumi-table-row-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .align-left { text-align: left; }
 .align-right { text-align: right; }
 .align-center { text-align: center; }
@@ -4015,7 +6064,7 @@ onBeforeUnmount(() => {
 .empty-session-history { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--text); padding: 7px 10px; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
 .session-history-btn:hover,
 .empty-session-history:hover { border-color: color-mix(in srgb, var(--primary) 42%, var(--line)); color: var(--primary); }
-.empty-session-history { position: absolute; z-index: 6; top: 14px; right: 18px; }
+.empty-header-actions { position: absolute; z-index: 6; top: 14px; right: 18px; display: flex; align-items: center; gap: 6px; }
 
 .assistant-navigation-action {
   flex: 1 1 230px;
@@ -4679,11 +6728,61 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
+.analytics-action-draft strong,
+.analytics-action-draft small { display: block; }
+.analytics-action-draft small { margin-top: 4px; color: var(--muted); font-weight: 400; }
+
 .analytics-action-draft:hover,
 .analytics-action-draft:focus-visible {
   border-color: var(--primary);
   outline: none;
 }
+
+.assistant-tools-hub h3 { margin: 0 0 4px; color: var(--text-strong); font-size: 13px; }
+.assistant-tools-scope {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel-soft);
+  padding: 9px 10px;
+}
+.assistant-tools-scope span { color: var(--muted); font-size: 11px; }
+.assistant-tools-scope strong { min-width: 0; overflow: hidden; color: var(--text-strong); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-tools-grid { display: grid; gap: 7px; }
+.assistant-tools-grid > button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+.assistant-tools-grid > button:hover,
+.assistant-tools-grid > button:focus-visible { border-color: var(--primary); background: var(--primary-soft); outline: none; }
+.assistant-tools-grid strong { font-size: 12px; }
+.assistant-tools-grid small { color: var(--muted); font-size: 11px; line-height: 1.35; }
+.assistant-tool-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.assistant-tool-title em { border-radius: 999px; background: var(--panel-soft); color: var(--muted); padding: 2px 6px; font-size: 9px; font-style: normal; }
+.analytics-empty-action {
+  justify-self: start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--primary-strong);
+  padding: 7px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.analytics-empty-action:hover,
+.analytics-empty-action:focus-visible { border-color: var(--primary); background: var(--primary-soft); outline: none; }
 
 /* ============ DRAWER MODE (FloatingChatbot) ============ */
 .is-drawer-mode {
@@ -5049,12 +7148,96 @@ onBeforeUnmount(() => {
 .project-launch-rulebook button { margin-left: auto; border: 1px solid currentColor; border-radius: 8px; background: var(--surface); color: inherit; padding: 6px 9px; cursor: pointer; }
 .project-launch-rulebook button:disabled { opacity: .55; cursor: not-allowed; }
 .project-launch-rulebook.status-policy_missing { color: #b45309; background: #fffbeb; }
+.rulebook-review-editor, .rulebook-draft-review { flex: 1 0 100%; color: var(--text-primary); background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.rulebook-review-editor > p { margin: 0 0 10px; color: var(--text-secondary); }
+.rulebook-review-rule { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--border); }
+.rulebook-review-rule > span { display: grid; gap: 2px; }
+.rulebook-review-rule small { color: var(--text-secondary); font-weight: 500; }
+.rulebook-review-value { grid-template-columns: minmax(68px, 90px) auto !important; align-items: center; }
+.rulebook-review-value input { width: 100%; border: 1px solid var(--border); border-radius: 7px; padding: 6px 8px; }
+.rulebook-review-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.rulebook-review-actions button, .rulebook-draft-review button { margin-left: 0; }
+.rulebook-draft-review summary { cursor: pointer; font-weight: 700; }
+.rulebook-draft-review ul { display: grid; gap: 6px; margin: 10px 0; padding-left: 18px; }
+.rulebook-draft-review li { display: flex; justify-content: space-between; gap: 12px; }
+.project-launch-review-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; padding: 14px 16px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 96%, var(--primary) 4%); }
+.launch-autonomy-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin: 10px 0 12px; padding: 11px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--surface) 94%, var(--primary) 6%); }
+.launch-autonomy-controls label { display: grid; gap: 5px; color: var(--text-secondary); font-size: 12px; font-weight: 700; }
+.launch-autonomy-controls select { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 8px 9px; color: var(--text-primary); background: var(--surface); }
+.launch-autonomy-controls small { grid-column: 1 / -1; color: var(--text-secondary); line-height: 1.45; }
+.project-launch-form-field { min-width: 0; display: grid; gap: 6px; }
+.project-launch-form-field--wide { grid-column: 1 / -1; }
+.project-launch-form-field label { color: var(--text); font-size: 12px; font-weight: 750; }
+.project-launch-form-field input,
+.project-launch-form-field textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 9px; padding: 9px 10px; color: var(--text); background: var(--surface); font: inherit; }
+.project-launch-form-field textarea { resize: vertical; line-height: 1.45; }
+.project-launch-form-field input:focus,
+.project-launch-form-field textarea:focus { outline: 2px solid color-mix(in srgb, var(--primary) 28%, transparent); border-color: var(--primary); }
+.project-launch-form-more { border: 1px solid var(--border); border-radius: 10px; padding: 9px 10px; background: var(--surface); }
+.project-launch-form-more > summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 750; }
+.project-launch-form-more-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding-top: 10px; }
+.project-launch-form-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+.project-launch-form-actions small { margin-right: auto; color: var(--muted); }
+.launch-stepper { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.launch-stepper span { padding: 7px 8px; border-radius: 999px; background: var(--surface); color: var(--muted); text-align: center; font-size: 11px; font-weight: 750; }
+.launch-stepper span.active { background: color-mix(in srgb, var(--primary) 16%, var(--surface)); color: var(--primary); }
+.launch-simple-guide { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 3px 10px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border)); border-radius: 10px; background: color-mix(in srgb, var(--surface) 92%, var(--primary) 8%); font-size: 12px; }
+.launch-simple-guide strong { color: var(--primary); }
+.launch-simple-guide small { grid-column: 1 / -1; color: var(--muted); }
+.launch-field-hint { color: var(--muted); font-weight: 500; line-height: 1.4; }
+.launch-builder-block { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.launch-builder-block > header { display: flex; justify-content: space-between; gap: 10px; }
+.launch-builder-block > header div { display: grid; gap: 3px; }
+.launch-builder-block small, .launch-help { color: var(--muted); font-size: 11px; }
+.launch-friendly-header > span { align-self: start; border-radius: 999px; padding: 4px 8px; background: #ecfdf5; color: #047857; font-size: 10px; font-weight: 750; }
+.launch-optional-goal-details, .launch-metrics-review { border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--surface) 97%, var(--primary) 3%); }
+.launch-optional-goal-details > summary, .launch-metrics-review > summary { cursor: pointer; padding: 10px 11px; color: var(--text); font-size: 12px; font-weight: 750; }
+.launch-optional-goal-details > summary span, .launch-metric-advanced > summary span { margin-left: 6px; color: var(--muted); font-size: 10px; font-weight: 600; }
+.launch-optional-goal-details .project-launch-form-more-grid { padding: 0 11px 11px; }
+.launch-metrics-review > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.launch-metrics-review > summary > span { display: grid; gap: 2px; }
+.launch-metrics-review > summary small { color: var(--muted); font-weight: 500; }
+.launch-metrics-review > summary em { color: var(--primary); font-size: 10px; font-style: normal; white-space: nowrap; }
+.launch-metrics-review > .launch-template-row, .launch-metrics-review > .launch-metric-grid { margin: 0 11px 11px; }
+.launch-template-row, .launch-choice-row, .launch-skill-options { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.launch-template-row > span { color: var(--muted); font-size: 11px; }
+.launch-template-row button, .launch-choice-row button, .launch-skill-options button { border: 1px solid var(--border); border-radius: 999px; padding: 6px 9px; background: var(--surface); color: var(--text); cursor: pointer; font-size: 11px; }
+.launch-template-row button.selected, .launch-choice-row button.selected, .launch-skill-options button.selected { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 13%, var(--surface)); color: var(--primary); }
+.launch-template-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.launch-template-grid button { border-radius: 9px; text-align: left; }
+.launch-metric-grid, .launch-feature-list { display: grid; gap: 8px; }
+.launch-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.launch-metric-card, .launch-feature-card { display: grid; gap: 7px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--surface) 96%, var(--primary) 4%); }
+.launch-metric-card > div, .launch-feature-card > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.launch-metric-card label { display: grid; gap: 3px; color: var(--muted); font-size: 10px; }
+.launch-metric-card input, .launch-metric-card select, .launch-feature-card input, .launch-feature-card select, .launch-custom-add input { min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 7px 8px; background: var(--surface); color: var(--text); }
+.launch-metric-simple-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.launch-metric-summary { margin: 0; padding: 7px 8px; border-radius: 8px; background: color-mix(in srgb, var(--surface) 87%, #10b981 13%); color: #047857; font-size: 11px; font-weight: 650; }
+.launch-metric-advanced { border-top: 1px solid var(--border); padding-top: 6px; }
+.launch-metric-advanced > summary { cursor: pointer; color: var(--primary); font-size: 10px; font-weight: 700; }
+.launch-metric-advanced[open] { display: grid; gap: 7px; }
+.launch-metric-advanced > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.launch-metric-advanced > label { display: grid; gap: 3px; color: var(--muted); font-size: 10px; }
+.launch-feature-detail { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; padding-top: 7px; }
+.launch-feature-detail label { display: grid; gap: 4px; color: var(--muted); font-size: 10px; }
+.launch-feature-detail label:last-child { grid-column: 1 / -1; }
+.launch-feature-detail textarea, .launch-custom-skill { width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 8px; padding: 7px 8px; background: var(--surface); color: var(--text); font: inherit; }
+.launch-link-danger { justify-self: end; border: 0; background: none; color: #b91c1c; cursor: pointer; }
+.launch-card-actions { display: flex !important; justify-content: flex-end; gap: 6px; }
+.launch-card-actions button { border: 0; border-radius: 7px; padding: 4px 7px; background: var(--surface); color: var(--muted); cursor: pointer; font-size: 10px; }
+.launch-card-actions .launch-link-danger { color: #b91c1c; }
+.launch-custom-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+.launch-custom-add button { border: 1px solid var(--primary); border-radius: 8px; padding: 7px 11px; background: var(--primary); color: #fff; }
 .project-launch-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 14px 16px; }
 .project-launch-columns section { padding: 10px; border: 1px solid var(--border); border-radius: 10px; }
 .project-launch-columns h4,
 .project-launch-columns p,
 .project-launch-columns ul { margin: 0; }
 .project-launch-columns ul { padding-left: 18px; }
+.project-launch-summary-details { margin: 12px 16px; border: 1px solid var(--border); border-radius: 10px; }
+.project-launch-summary-details > summary { cursor: pointer; padding: 10px 12px; font-weight: 750; }
+.project-launch-summary-details .project-launch-columns { padding: 4px 12px 12px; }
+.project-launch-summary-details .project-launch-decisions { margin: 0 12px 12px; }
 .project-launch-decisions { margin: 0 16px 14px; }
 .project-launch-decisions summary { cursor: pointer; font-weight: 700; }
 .project-launch-decisions ul { display: grid; gap: 7px; list-style: none; padding: 8px 0 0; }
@@ -5063,6 +7246,35 @@ onBeforeUnmount(() => {
 .project-launch-decisions .decision-block { border-color: #fecaca; }
 .project-launch-decisions .decision-unknown { border-color: #fde68a; }
 .project-launch-brief-card > footer { display: flex; flex-wrap: wrap; gap: 8px 14px; padding: 10px 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 11px; }
+.native-action-editor { display: grid; gap: 10px; padding: 14px 16px; border-top: 1px solid var(--border); }
+.native-action-editor > label { display: grid; gap: 5px; font-size: 12px; font-weight: 700; }
+.native-action-editor input:not([type="checkbox"]),
+.native-action-editor textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 9px; padding: 9px 10px; background: var(--surface); color: var(--text); font: inherit; font-weight: 400; }
+.native-action-editor textarea { resize: vertical; }
+.native-action-editor .native-action-check { display: flex; align-items: center; gap: 8px; }
+.native-action-inline-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.native-action-inline-fields label { display: grid; gap: 5px; }
+.native-action-inline-fields select { border: 1px solid var(--border); border-radius: 9px; padding: 9px 10px; background: var(--surface); color: var(--text); }
+.native-action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.native-action-card > .launch-primary-action { display: flex; margin: 0 16px 14px auto; }
+.native-action-card > .launch-receipt { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.native-action-card > .launch-receipt h4 { flex-basis: 100%; }
+.native-action-controls { display: flex; justify-content: flex-end; gap: 8px; padding: 0 16px 14px; }
+.native-action-controls .launch-primary-action { margin: 0; }
+.native-action-controls .danger-button,
+.native-action-controls .secondary-button { border-radius: 9px; padding: 9px 13px; font-weight: 700; }
+.native-action-controls .secondary-button { border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.native-action-controls .danger-button { border: 1px solid #fecaca; background: #fff1f2; color: #b91c1c; }
+.assignment-proposal-item { padding: 14px 16px; border-top: 1px solid var(--border); display: grid; gap: 10px; }
+.assignment-proposal-grid { display: grid; grid-template-columns: minmax(220px, 1.5fr) repeat(2, minmax(150px, .75fr)); gap: 10px; }
+.assignment-proposal-grid label { display: grid; gap: 5px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.assignment-proposal-grid select,
+.assignment-proposal-grid input { width: 100%; min-height: 38px; border: 1px solid var(--border); border-radius: 9px; padding: 7px 9px; background: var(--surface); color: var(--text); }
+.assignment-facts { display: flex; flex-wrap: wrap; gap: 8px; }
+.assignment-facts span { border-radius: 999px; padding: 5px 9px; background: var(--surface-soft); color: var(--muted); font-size: 11px; }
+.assignment-proposal-card .native-action-controls { align-items: center; justify-content: space-between; padding-top: 12px; border-top: 1px solid var(--border); }
+@media (max-width: 760px) { .assignment-proposal-grid { grid-template-columns: 1fr; } }
+.native-action-closed { margin: 0 16px 14px; padding: 10px 12px; border-radius: 9px; background: var(--surface-muted); color: var(--text-muted); }
 .safe-test-suite-list { display: grid; gap: 8px; margin: 0; padding: 14px 16px; list-style: none; }
 .safe-test-suite-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 9px; }
 .safe-test-suite-list li div { display: grid; min-width: 0; }
@@ -5078,6 +7290,14 @@ onBeforeUnmount(() => {
 .project-launch-plan-header h3,
 .project-launch-plan-header p { margin: 3px 0 0; }
 .project-launch-plan-header span { color: var(--muted); font-size: 11px; }
+.launch-final-review-summary { display: grid; gap: 9px; padding: 12px 16px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 92%, var(--primary) 8%); }
+.launch-final-review-summary > header { display: flex; justify-content: space-between; gap: 12px; }
+.launch-final-review-summary > header small { color: #92400e; font-weight: 700; }
+.launch-final-review-summary dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.launch-final-review-summary dl > div { display: grid; gap: 3px; min-width: 0; padding: 8px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
+.launch-final-review-summary dt { color: var(--muted); font-size: 10px; }
+.launch-final-review-summary dd { margin: 0; overflow-wrap: anywhere; font-weight: 750; }
+.launch-final-review-summary p { margin: 0; color: var(--muted); font-size: 11px; }
 .launch-blocking-list,
 .launch-warning-list { padding: 10px 16px; border-top: 1px solid var(--border); font-size: 12px; }
 .launch-blocking-list { color: #b91c1c; background: #fef2f2; }
@@ -5091,6 +7311,14 @@ onBeforeUnmount(() => {
 .launch-receipt > h4,
 .launch-replan > h4 { margin: 0 0 10px; }
 .launch-scenario-list { display: grid; gap: 10px; }
+.launch-plan-customizer { margin-top: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; }
+.launch-plan-customizer > summary { cursor: pointer; font-weight: 750; }
+.launch-plan-customizer > p { color: var(--muted); font-size: 11px; }
+.launch-staffing-editor { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.launch-staffing-editor article { display: grid; gap: 5px; padding: 9px; border: 1px solid var(--border); border-radius: 9px; }
+.launch-staffing-editor article.rejected { opacity: .65; background: #fef2f2; }
+.launch-staffing-editor label { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }
+.launch-staffing-editor input[type="number"] { width: 78px; border: 1px solid var(--border); border-radius: 7px; padding: 5px 7px; }
 .launch-scenario { padding: 11px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--surface) 96%, var(--muted) 4%); }
 .launch-scenario.feasible { border-color: #86efac; }
 .launch-scenario.selected { box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 35%, transparent); }
@@ -5113,6 +7341,23 @@ onBeforeUnmount(() => {
 .launch-sprint li { padding-left: 3px; }
 .launch-sprint li span { float: right; margin-left: 10px; color: var(--muted); }
 .launch-sprint li small { display: block; }
+.launch-sprint-editor { display: grid; grid-template-columns: 1fr 2fr 1fr 1fr; gap: 7px; margin: 9px 0; }
+.launch-sprint-editor label, .launch-task-editor label { display: grid; gap: 3px; color: var(--muted); font-size: 10px; }
+.launch-sprint-editor input, .launch-task-editor input, .launch-task-editor select { min-width: 0; border: 1px solid var(--border); border-radius: 7px; padding: 6px 7px; background: var(--surface); color: var(--text); }
+.launch-task-editor { list-style: none; padding-left: 0 !important; }
+.launch-task-editor li { display: grid; grid-template-columns: auto minmax(180px, 2fr) 80px minmax(150px, 1fr); gap: 7px; align-items: center; padding: 8px !important; border: 1px solid var(--border); border-radius: 8px; }
+.launch-task-editor li small { grid-column: 2 / -1; }
+.launch-editor-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.launch-editor-fieldset:disabled { opacity: .78; }
+.launch-task-detail-editor { grid-column: 2 / -1; padding: 7px; border: 1px solid var(--border); border-radius: 8px; }
+.launch-task-detail-editor > summary { cursor: pointer; color: var(--primary); }
+.launch-task-detail-editor[open] { display: grid; gap: 8px; }
+.launch-task-detail-editor textarea { width: 100%; min-width: 0; resize: vertical; border: 1px solid var(--border); border-radius: 7px; padding: 7px; background: var(--surface); color: var(--text); }
+.launch-task-link-options { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 11px; }
+.launch-task-link-options strong { flex-basis: 100%; }
+.launch-task-link-options label { display: flex; grid-auto-flow: column; justify-content: flex-start; }
+.launch-task-order { grid-column: 2 / -1; display: flex; gap: 6px; }
+.launch-task-order button, .launch-add-sprint { border: 1px solid var(--border); border-radius: 7px; padding: 5px 8px; background: var(--surface); color: var(--text); cursor: pointer; }
 .launch-plan-range { color: var(--muted); }
 .launch-external-deferred { margin-top: 10px; color: var(--muted); }
 .launch-receipt > ul,
@@ -5123,9 +7368,17 @@ onBeforeUnmount(() => {
 .launch-replan li small,
 .launch-replan li p { grid-column: 1 / -1; margin: 0; }
 .launch-receipt button { border: 0; background: none; color: var(--primary); cursor: pointer; }
+.launch-stepper--plan { padding: 10px 16px; border-top: 1px solid var(--border); }
+.launch-receipt-links { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.launch-receipt-links button { border: 1px solid var(--primary); border-radius: 8px; padding: 7px 10px; }
+.launch-receipt details > summary { cursor: pointer; color: var(--muted); }
+.launch-receipt details ul { display: grid; gap: 7px; padding: 0; list-style: none; }
 .launch-replan { background: color-mix(in srgb, var(--surface) 90%, #f59e0b 10%); }
 .launch-plan-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
 .launch-plan-actions > div { display: grid; margin-right: auto; }
+.launch-technical-details { margin-right: auto; color: var(--muted); font-size: 11px; }
+.launch-technical-details summary { cursor: pointer; font-weight: 700; }
+.launch-technical-details[open] { display: grid; gap: 3px; }
 .launch-plan-actions button,
 .launch-primary-action { border: 1px solid var(--border); border-radius: 9px; padding: 8px 11px; background: var(--surface); color: var(--text); cursor: pointer; }
 .launch-plan-actions button:disabled,
@@ -5145,8 +7398,11 @@ onBeforeUnmount(() => {
 .assistant-quick-replies button.selected { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 14%, var(--surface)); color: var(--primary); }
 .assistant-free-text { margin-top: 7px; color: var(--primary); }
 .assistant-free-answer { display: flex; gap: 7px; margin-top: 8px; }
-.assistant-free-answer input { min-width: 0; flex: 1; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text); padding: 8px 10px; }
-.assistant-free-answer input:focus { outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent); border-color: var(--primary); }
+.assistant-free-answer input,
+.assistant-free-answer textarea { min-width: 0; flex: 1; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text); padding: 8px 10px; font: inherit; }
+.assistant-free-answer textarea { resize: vertical; line-height: 1.45; }
+.assistant-free-answer input:focus,
+.assistant-free-answer textarea:focus { outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent); border-color: var(--primary); }
 .assistant-free-answer button,
 .assistant-progressive-actions > button { border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text); padding: 7px 10px; cursor: pointer; }
 .assistant-progressive-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
@@ -5198,6 +7454,16 @@ onBeforeUnmount(() => {
     opacity: 1;
   }
 
-  .project-launch-columns { grid-template-columns: 1fr; }
+  .project-launch-columns,
+  .project-launch-review-form,
+  .project-launch-form-more-grid { grid-template-columns: 1fr; }
+  .launch-stepper, .launch-template-grid, .launch-metric-grid, .launch-metric-simple-fields, .launch-metric-advanced > div, .launch-staffing-editor, .launch-sprint-editor, .launch-final-review-summary dl { grid-template-columns: 1fr; }
+  .launch-simple-guide { grid-template-columns: 1fr; }
+  .launch-simple-guide small { grid-column: 1; }
+  .launch-task-editor li { grid-template-columns: auto minmax(0, 1fr); }
+  .launch-task-editor li label, .launch-task-editor li small { grid-column: 2; }
+  .project-launch-form-field--wide { grid-column: 1; }
+  .project-launch-form-actions { align-items: stretch; flex-direction: column; }
+  .project-launch-form-actions small { margin-right: 0; }
 }
 </style>

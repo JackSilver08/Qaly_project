@@ -37,10 +37,7 @@ export function usePermissions() {
   }
 
   const loadSystemPermissions = async (systemRole?: string) => {
-    const res = await apiResult<SystemPermission[]>(`/api/ProjectRoles/system-permissions?systemRole=${systemRole || ''}`)
-    if (res.isSuccess && res.data) {
-      systemPermissions.value = res.data
-    }
+    systemPermissions.value = await apiResult<SystemPermission[]>(`/api/ProjectRoles/system-permissions?systemRole=${systemRole || ''}`)
   }
 
   const canAccessModule = (moduleKey: string): boolean => {

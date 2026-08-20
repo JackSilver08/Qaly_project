@@ -179,7 +179,7 @@ test('TEST-TASK-DRAFT-E2E reload restores source-linked draft and selective conf
     const body = route.request().postDataJSON()
     submittedSourceIds = body.sources.map((source: { sourceEntityId: string }) => source.sourceEntityId)
     expect(body.projectId).toBe(project.id)
-    expect(body.providerHint).toBe('deepseek-v4-pro')
+    expect(body.providerHint).toBe('deepseek-chat')
     await route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify(envelope({ jobId, status: 'queued', isExisting: false })),

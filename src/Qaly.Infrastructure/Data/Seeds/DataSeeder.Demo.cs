@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Services;
 using Qaly.Domain.Entities;
@@ -1485,23 +1486,43 @@ public partial class DataSeeder
 
         var skillDefinitions = new (string NormalizedName, string Name, string Description)[]
         {
+            ("project-product-management", "Project / Product Management", "Xác định outcome, roadmap, ưu tiên, stakeholder, rủi ro và điều phối delivery theo dữ liệu."),
+            ("business-analysis", "Business Analysis", "Khảo sát nghiệp vụ, mô hình hóa quy trình, làm rõ rule và chuyển yêu cầu thành acceptance criteria."),
+            ("ux-research", "UX Research", "Nghiên cứu người dùng, phỏng vấn, usability test và tổng hợp insight có nguồn."),
+            ("ui-ux-design", "UI/UX Design", "Thiết kế information architecture, interaction, visual system và prototype có thể nghiệm thu."),
             ("frontend-vue", "Frontend / Vue 3", "Thiết kế component Vue 3, state, accessibility và hành vi UI có thể kiểm thử."),
             ("backend-dotnet", "Backend / .NET APIs", "Xây dựng API ASP.NET Core, service domain, authorization và xử lý lỗi có contract."),
             ("database-efcore-sql", "Database / EF Core & SQL Server", "Thiết kế truy vấn, mapping EF Core, migration và tính toàn vẹn dữ liệu SQL Server."),
+            ("qa-test-engineering", "QA / Test Engineering", "Thiết kế test strategy, acceptance, exploratory test và quản lý chất lượng theo rủi ro."),
             ("qa-playwright", "QA Automation / Playwright", "Thiết kế kiểm thử browser, regression và evidence lặp lại được bằng Playwright."),
             ("security-auth-privacy", "Security / Authorization & Privacy", "Authorization, tenant isolation, audit và xử lý dữ liệu riêng tư theo policy."),
             ("ai-structured-llm", "AI Integration / Structured LLM", "Thiết kế prompt, structured output, grounding, provider routing và failure handling cho LLM."),
             ("mobile-offline-sync", "Mobile / Offline Sync", "Đồng bộ mobile khi mất mạng, retry an toàn, conflict handling và evidence upload."),
             ("devops-observability", "DevOps / Observability", "Telemetry, webhook, latency, health signal và điều tra lỗi vận hành."),
-            ("data-retail-integration", "Data / Retail Integration", "Đối soát dữ liệu POS, master data, mapping SKU và chất lượng dữ liệu bán lẻ.")
+            ("data-analytics", "Data / Analytics", "Định nghĩa metric, pipeline dữ liệu, dashboard, kiểm soát chất lượng và phân tích quyết định."),
+            ("data-retail-integration", "Data / Retail Integration", "Đối soát dữ liệu POS, master data, mapping SKU và chất lượng dữ liệu bán lẻ."),
+            ("documentation-knowledge", "Documentation / Knowledge Management", "Viết tài liệu sản phẩm, runbook, quyết định kiến trúc và tổ chức knowledge base."),
+            ("communication-leadership", "Communication / Leadership", "Điều phối giao tiếp, facilitation, phản hồi, quản lý xung đột và dẫn dắt nhóm đa chức năng.")
         };
         var skills = await _context.OrganizationSkills
             .Where(item => item.OrganizationId == organization.Id)
             .ToDictionaryAsync(item => item.NormalizedName, StringComparer.OrdinalIgnoreCase);
         foreach (var definition in skillDefinitions)
         {
-            if (skills.ContainsKey(definition.NormalizedName))
+            var category = DemoSkillCategory(definition.NormalizedName);
+            var aliasesJson = JsonSerializer.Serialize(DemoSkillAliases(definition.NormalizedName));
+            if (skills.TryGetValue(definition.NormalizedName, out var existingSkill))
             {
+                if (existingSkill.Category != category || existingSkill.AliasesJson != aliasesJson ||
+                    existingSkill.DefaultRequiredLevel != "Intermediate" || !existingSkill.IsSystemSeed)
+                {
+                    existingSkill.Category = category;
+                    existingSkill.AliasesJson = aliasesJson;
+                    existingSkill.DefaultRequiredLevel = "Intermediate";
+                    existingSkill.IsSystemSeed = true;
+                    existingSkill.UpdatedAt = now;
+                    changed = true;
+                }
                 continue;
             }
 
@@ -1511,6 +1532,10 @@ public partial class DataSeeder
                 Name = definition.Name,
                 NormalizedName = definition.NormalizedName,
                 Description = definition.Description,
+                Category = category,
+                AliasesJson = aliasesJson,
+                DefaultRequiredLevel = "Intermediate",
+                IsSystemSeed = true,
                 IsActive = true,
                 CreatedAt = now.AddDays(-30)
             };
@@ -1720,6 +1745,45 @@ public partial class DataSeeder
 
         return changed;
     }
+
+    private static string DemoSkillCategory(string normalizedName)
+        => normalizedName switch
+        {
+            "project-product-management" or "business-analysis" => "Quản lý sản phẩm và dự án",
+            "ux-research" or "ui-ux-design" => "Trải nghiệm người dùng",
+            "frontend-vue" or "backend-dotnet" or "database-efcore-sql" or "mobile-offline-sync" => "Kỹ thuật phần mềm",
+            "qa-test-engineering" or "qa-playwright" => "Chất lượng phần mềm",
+            "security-auth-privacy" => "Bảo mật và tuân thủ",
+            "ai-structured-llm" => "AI/ML",
+            "devops-observability" => "DevOps/Cloud",
+            "data-analytics" or "data-retail-integration" => "Dữ liệu và phân tích",
+            "documentation-knowledge" => "Tài liệu và tri thức",
+            "communication-leadership" => "Giao tiếp và lãnh đạo",
+            _ => "Chuyên môn"
+        };
+
+    private static string[] DemoSkillAliases(string normalizedName)
+        => normalizedName switch
+        {
+            "project-product-management" => ["Project Management", "Product Management", "PM", "Delivery Management"],
+            "business-analysis" => ["BA", "Requirements Analysis", "Process Analysis"],
+            "ux-research" => ["User Research", "Usability Research", "UXR"],
+            "ui-ux-design" => ["Product Design", "Interaction Design", "UI Design"],
+            "frontend-vue" => ["Frontend", "Vue", "Vue.js", "Vue 3"],
+            "backend-dotnet" => ["Backend", ".NET", "ASP.NET Core", "API Development"],
+            "database-efcore-sql" => ["Database", "SQL Server", "EF Core", "Data Modeling"],
+            "qa-test-engineering" => ["QA", "Testing", "Test Engineering"],
+            "qa-playwright" => ["Test Automation", "E2E Testing", "Playwright"],
+            "security-auth-privacy" => ["Security", "Compliance", "Authorization", "Privacy"],
+            "ai-structured-llm" => ["AI/ML", "LLM", "Generative AI", "Prompt Engineering"],
+            "mobile-offline-sync" => ["Mobile", "Offline-first", "Synchronization"],
+            "devops-observability" => ["DevOps", "Cloud", "SRE", "Observability"],
+            "data-analytics" => ["Data Analytics", "BI", "Metrics", "Dashboard"],
+            "data-retail-integration" => ["Data Integration", "ETL", "Retail Data"],
+            "documentation-knowledge" => ["Technical Writing", "Documentation", "Knowledge Management"],
+            "communication-leadership" => ["Leadership", "Communication", "Facilitation"],
+            _ => []
+        };
 
     private static string ComputeDemoHash(string value)
         => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value)))

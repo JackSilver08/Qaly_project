@@ -24,19 +24,26 @@ public class IntegrationTestFactory : WebApplicationFactory<Program>
 {
     private readonly string _databaseName = $"QalyIntegrationTests-{Guid.NewGuid()}";
     private readonly bool _enableSafeTestOrchestrator;
+    private readonly string? _sqlServerConnectionString;
     public Guid TestUserId { get; } = Guid.Parse("B0000000-0000-0000-0000-000000000000");
 
     public IntegrationTestFactory() : this(false)
     {
     }
 
-    private IntegrationTestFactory(bool enableSafeTestOrchestrator)
+    private IntegrationTestFactory(
+        bool enableSafeTestOrchestrator,
+        string? sqlServerConnectionString = null)
     {
         _enableSafeTestOrchestrator = enableSafeTestOrchestrator;
+        _sqlServerConnectionString = sqlServerConnectionString;
     }
 
     public static IntegrationTestFactory CreateWithSafeTestOrchestrator()
         => new(true);
+
+    public static IntegrationTestFactory CreateWithSqlServer(string connectionString)
+        => new(false, connectionString);
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -46,7 +53,8 @@ public class IntegrationTestFactory : WebApplicationFactory<Program>
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["UseInMemoryDatabase"] = "true",
+                ["UseInMemoryDatabase"] = _sqlServerConnectionString == null ? "true" : "false",
+                ["ConnectionStrings:DefaultConnection"] = _sqlServerConnectionString,
                 ["Redis:ConnectionString"] = "localhost:6379", // Just to satisfy Program.cs
                 ["AiJobsV4:Enabled"] = "true",
                 ["AiJobsV4:WorkerEnabled"] = "false",
@@ -66,6 +74,7 @@ public class IntegrationTestFactory : WebApplicationFactory<Program>
                 ["AiJobsV4:ProjectLaunchExecutionEnabled"] = "true",
                 ["AiJobsV4:ProjectOperationMonitoringEnabled"] = "true",
                 ["AiJobsV4:SafeTestOrchestratorEnabled"] = _enableSafeTestOrchestrator ? "true" : "false",
+                ["AiJobsV4:NativeDomainActionsEnabled"] = "true",
                 ["PrivacyV4:Enabled"] = "true",
                 ["PrivacyV4:WorkerEnabled"] = "false",
                 ["PrivacyV4:EnforceSensitiveIngestion"] = "false"
@@ -88,7 +97,17 @@ public class IntegrationTestFactory : WebApplicationFactory<Program>
             services.RemoveAll<DbContextOptions<QalyDbContext>>();
             services.RemoveAll<Microsoft.EntityFrameworkCore.Storage.IDatabaseProvider>();
             services.AddDbContext<QalyDbContext>(options =>
-                options.UseInMemoryDatabase(_databaseName));
+            {
+                if (_sqlServerConnectionString == null)
+                {
+                    options.UseInMemoryDatabase(_databaseName);
+                }
+                else
+                {
+                    options.UseSqlServer(_sqlServerConnectionString, sql =>
+                        sql.MigrationsAssembly(typeof(QalyDbContext).Assembly.FullName));
+                }
+            });
 
             // Mock other heavy infrastructure
             services.AddSingleton(new Mock<IAiIngestionService>().Object);
@@ -544,7 +563,10 @@ public class IntegrationTestFactory : WebApplicationFactory<Program>
 
         private static async Task<AiResponse> DelayedTextAnswerAsync(CancellationToken cancellationToken)
         {
-            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+            // Keep the provider in flight long enough for the independent cancel
+            // request to be observed even when the full integration suite is
+            // running other web factories/SQL migrations in parallel.
+            await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
             return new AiResponse
             {
                 Content = JsonSerializer.Serialize(new

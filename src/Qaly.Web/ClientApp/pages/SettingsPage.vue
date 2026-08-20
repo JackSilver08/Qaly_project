@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   User, Settings, Bell, Palette, Key, Database, Shield, Lock, Check,
   Activity, Cloud, Save, RefreshCw, Terminal, Globe, UserCheck, ShieldAlert,
@@ -12,8 +13,11 @@ import AiUsageBudgetSettingsTab from '../components/settings/AiUsageBudgetSettin
 import { showSuccess, showError } from '../composables/use-toast'
 
 const { currentUser, displayRole, isLoading, loadDashboard, projects, selectedProject } = useDashboardContext()
+const route = useRoute()
+const router = useRouter()
 
 const activeTab = ref('profile')
+const settingsTabs = new Set(['profile', 'appearance', 'workflow', 'notifications', 'apikeys', 'privacy', 'ai-budget', 'logs'])
 const currentUserRole = computed(() => String(currentUser.value?.role || '').toLowerCase())
 const isSystemAdmin = computed(() => currentUserRole.value === 'admin')
 const selectedProjectMemberRole = computed(() => {
@@ -365,7 +369,7 @@ async function saveSettings() {
     const refreshed = await loadDashboard()
     if (!refreshed) {
       hadFailure = true
-      showError('KhÃ´ng thá»ƒ lÃ m má»›i dá»¯ liá»‡u sau khi lÆ°u.')
+      showError('Không thể làm mới dữ liệu sau khi lưu.')
     }
   } catch (e) {
     hadFailure = true
@@ -378,7 +382,20 @@ async function saveSettings() {
   }
 }
 
+function syncTabFromRoute(loadLogs = false) {
+  const requested = typeof route.query.tab === 'string' ? route.query.tab : ''
+  if (!settingsTabs.has(requested)) return
+  if (requested === 'workflow' && !canManageProjectWorkflow.value) {
+    activeTab.value = 'profile'
+    return
+  }
+  const changed = activeTab.value !== requested
+  activeTab.value = requested
+  if (loadLogs && changed && requested === 'logs') fetchAuditLogs()
+}
+
 onMounted(async () => {
+  syncTabFromRoute()
   await loadSettings()
   applyAccent(accentColor.value, currentTheme.value as 'light' | 'dark')
   if (activeTab.value === 'logs') {
@@ -391,10 +408,13 @@ function handleTabChange(tab: string) {
     return
   }
   activeTab.value = tab
+  void router.replace({ query: { ...route.query, tab } })
   if (tab === 'logs') {
     fetchAuditLogs()
   }
 }
+
+watch(() => route.query.tab, () => syncTabFromRoute(true))
 
 const userInitials = computed(() => {
   const n = currentUser.value?.fullName || currentUser.value?.email || 'Qaly user'

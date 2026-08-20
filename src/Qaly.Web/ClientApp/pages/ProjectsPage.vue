@@ -18,7 +18,6 @@ import ProjectToolbar from '../components/ProjectToolbar.vue'
 import PageStatePanel from '../components/PageStatePanel.vue'
 import ImportModal from '../components/import/ImportModal.vue'
 import ImportUndoBanner from '../components/import/ImportUndoBanner.vue'
-import AiPlannerModal from '../components/AiPlannerModal.vue'
 import { useDashboardContext } from '../composables/dashboard-context'
 import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
 import { showError, showSuccess } from '../composables/use-toast'
@@ -49,7 +48,6 @@ const {
 
 const isGridView = ref(true)
 const showImportModal = ref(false)
-const showAiPlanner = ref(false)
 const undoBannerData = ref<{
   importSessionId: string
   importedCount: number
@@ -65,9 +63,13 @@ const availableGroups = ref<
   { id: string; name: string; description: string | null; memberCount: number }[]
 >([])
 
-async function onPlannerCreated(newProjectId: string) {
-  await loadDashboard()
-  selectProject(newProjectId)
+function openNativeProjectPlanner() {
+  window.dispatchEvent(new CustomEvent('qaly:open-ai-assistant', {
+    detail: {
+      view: 'chat',
+      prompt: 'Hãy giúp tôi khởi chạy một dự án mới từ đầu đến cuối. Trước tiên hãy dùng Project Launch Brief, chỉ hỏi tối đa ba dữ kiện thực sự còn thiếu, sau đó lập staffing/delivery plan để tôi review và xác nhận một lần.',
+    },
+  }))
 }
 
 const activeProjectCount = computed(
@@ -422,7 +424,7 @@ async function handleUndoFromBanner() {
                 <FolderKanban :size="16" />
                 Tạo dự án mới
               </button>
-              <button class="btn-hero" type="button" @click="showAiPlanner = true">
+              <button class="btn-hero" type="button" @click="openNativeProjectPlanner">
                 <Sparkles :size="16" />
                 Lên kế hoạch AI
               </button>
@@ -550,7 +552,7 @@ async function handleUndoFromBanner() {
                 <FileUp :size="15" />
                 Nhập
               </button>
-              <button class="btn-toolbar btn-toolbar--accent" type="button" @click="showAiPlanner = true">
+              <button class="btn-toolbar btn-toolbar--accent" type="button" @click="openNativeProjectPlanner">
                 <Sparkles :size="15" />
                 Lên kế hoạch AI
               </button>
@@ -605,13 +607,6 @@ async function handleUndoFromBanner() {
       v-if="showImportModal"
       @close="showImportModal = false"
       @imported="onImported"
-    />
-
-    <AiPlannerModal
-      v-if="showAiPlanner"
-      :project-id="null"
-      @close="showAiPlanner = false"
-      @created="onPlannerCreated"
     />
 
     <ImportUndoBanner

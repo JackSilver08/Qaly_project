@@ -132,7 +132,7 @@ interface GroupAttachmentDto {
 
 const route = useRoute();
 const router = useRouter();
-const { currentUser, loadDashboard, selectProject } = useDashboardContext();
+const { currentUser, loadDashboard, selectProject, openChatWithPrompt } = useDashboardContext();
 
 const groups = ref<ChatGroupModel[]>([]);
 const groupDetails = ref<Record<string, GroupDto>>({});
@@ -171,6 +171,14 @@ const typingUsers = ref<Record<string, { name: string; timeoutId: number }>>({})
 let hubConnection: HubConnection | null = null;
 let localTypingTimer: number | undefined;
 let lastTypingState = false;
+
+function suggestPollWithAi() {
+  const seed = pollForm.value.question.trim();
+  const groupName = activeGroup.value?.name ?? "nhóm hiện tại";
+  openChatWithPrompt(
+    `Trong nhóm "${groupName}", hãy soạn một bình chọn ngắn, trung lập và dễ trả lời${seed ? ` về chủ đề: ${seed}` : " dựa trên ngữ cảnh trao đổi gần đây"}. Trả về card bình chọn có câu hỏi, 2-5 lựa chọn và tùy chọn chọn nhiều; chỉ tạo draft để tôi chỉnh và xác nhận, không tự đăng.`,
+  );
+}
 
 function analyzeSelectedMessages(action: "summary" | "task-draft", messageIds: string[]) {
   selectedAiRequest.value = { action, messageIds, nonce: Date.now() };
@@ -1722,6 +1730,9 @@ function formatMessageTime(value: string) {
                 </span>
               </label>
               <div class="group-poll-actions">
+                <button class="secondary-button" type="button" @click="suggestPollWithAi">
+                  <Sparkles :size="15" /> AI gợi ý poll
+                </button>
                 <button class="secondary-button" type="button" @click="addPollOption">
                   <Plus :size="15" /> Thêm lựa chọn
                 </button>

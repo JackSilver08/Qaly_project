@@ -18,6 +18,7 @@ public class ErumiRoadmapController : BaseApiController
     }
 
     [HttpPost("chat")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ChatAndPropose([FromBody] ErumiRoadmapChatRequestDto dto, CancellationToken ct)
     {
         var result = await _erumiService.ChatAndProposeRoadmapAsync(dto, ct);
@@ -25,6 +26,7 @@ public class ErumiRoadmapController : BaseApiController
     }
 
     [HttpPost("approve")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ApproveProposal([FromBody] ApproveErumiRoadmapProposalDto dto, CancellationToken ct)
     {
         var result = await _erumiService.ApproveRoadmapProposalAsync(dto, ct);
@@ -32,6 +34,7 @@ public class ErumiRoadmapController : BaseApiController
     }
 
     [HttpPost("rollback")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> RollbackSnapshot([FromBody] RollbackErumiRoadmapSnapshotDto dto, CancellationToken ct)
     {
         var result = await _erumiService.RollbackRoadmapSnapshotAsync(dto, ct);

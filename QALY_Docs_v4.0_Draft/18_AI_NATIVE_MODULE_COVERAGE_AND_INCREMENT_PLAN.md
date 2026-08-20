@@ -1074,6 +1074,7 @@ Primary request:
 }
 ```
 
+
 Rules:
 
 - `message` 1–4,000 characters after normalization; control-character and abuse/rate limits apply.
@@ -4118,3 +4119,627 @@ Verification evidence for this checkpoint:
 ```text
 Đặt một goal duy nhất và triển khai đến khi có evidence end-to-end: hoàn thiện Qaly AI Native thành trợ lý tự động hóa dùng dữ liệu thật, hội thoại tự nhiên và không dead-end. Với yêu cầu khởi chạy dự án, AI phải hiểu câu tự nhiên, chỉ hỏi tối đa ba unknown thực sự còn thiếu và lưu được nhiều câu trả lời qua reload; không hỏi lại dữ kiện người dùng đã nêu. Khi đủ dữ kiện, tự tạo Launch Brief, đối chiếu Organization Rulebook, kỹ năng/evidence, capacity, availability, lịch và tải đa dự án; lập các phương án manager/team có giải thích, phase/Sprint/Task/dependency/estimate/assignee; sau đúng một xác nhận rõ ràng phải tạo Project graph canonical thật, read-back và trả receipt/deep-link. Không được coi chỗ trống là capacity, không bịa skill/lịch, không báo thành công khi chưa đọc lại dữ liệu, không để provider/planner failure trở thành ngõ cụt; dùng fallback server có ích và ghi actual provider/model. Câu trả lời hiển thị kết quả trước, process/context/work-plan collapse mặc định. Rà cả business logic, navigation, history, model selection, multi-answer race, idempotency, stale-source, rollback và monitor/replan. Chỉ kết luận hoàn thành khi build/typecheck/unit/integration/Chromium PASS và integration chứng minh dữ liệu canonical đã persisted; phân biệt rõ internal-core complete với external adapters còn deferred.
 ```
+## 37. Corrective runtime audit — session, authorization and mutation integrity
+
+**Checkpoint date:** 2026-08-13 (Asia/Saigon)
+
+**Authority:** this section is the canonical current disposition when it conflicts with historical completion statements in §33–36. `NATIVE_COMPLETE` from an older checkpoint is not automatically promoted to `NATIVE_COMPLETE_VERIFIED`; current source, API/database and Chromium evidence are required.
+
+### 37.1 Reopened runtime gaps and ownership
+
+| Gap | Runtime contradiction | Owner | Current disposition |
+|---|---|---|---|
+| GAP-102 | Task review could call confirm without a canonical `rowVersion` or stable logical idempotency key and showed a combined, misleading error. | CAND-018 | Fixed: pre-confirm GET/rehydration, separate validation, stable retry key, stale review stop and lost-response reconciliation. |
+| GAP-103 | An explicit “10 task” request could degrade to a three-row fallback. | CAND-018 | Fixed: requested count is parsed, bounded to 20, enforced by output reconciliation and proven with exactly ten canonical Tasks. |
+| GAP-104 | §36 claimed durable history while the visible runtime did not prove a real session browser. | CAND-019 + CAND-021B | Reverified: server list/get/create/rename/archive/delete, transcript/artifact restoration and reload/switch Chromium evidence. |
+| GAP-105 | New system-role/user override/custom Project-role data was not a shared Assistant authorization boundary. | CAND-021C + CAND-018 + CAND-023C | Fixed through `IAiNativeAuthorizationService`; discovery and mutation recheck the same server-owned decision. |
+| GAP-106 | A model-authored Task option could select a member from workload-only evidence, which is not capacity/availability/skill proof. | CAND-006/017 + CAND-018 | Fixed boundary: model-authored Action Composer tasks are unassigned; only explicit reviewer selection is accepted, and active Project membership is rechecked immediately before commit. Automated staffing remains CAND-017/CAND-023 policy work. |
+| GAP-107 | EF model contained RBAC/custom-role entities without a matching latest migration, preventing a clean relational startup. | Platform prerequisite for all AI CAND | Fixed by P015; clean SQL Server migration and relational Task-confirm scenario pass. |
+| GAP-108 | Playwright launch-profile precedence could silently switch tests from isolated in-memory data to the developer SQL instance. | Release evidence | Fixed: test web server explicitly sets Development and selects in-memory unless `E2E_USE_SQL` is intentionally enabled. |
+
+No CAND-025 is added: these gaps belong to the existing CAND-018/019/021/023 contracts. Adding another session or mutation candidate would duplicate ownership.
+
+### 37.2 Canonical CAND-001…024 inventory
+
+Status vocabulary in this table is the vocabulary mandated by the corrective audit. “Source” means the currently checked-out implementation; “runtime” means evidence rerun on 2026-08-13.
+
+| CAND | Business outcome / architectural role | Action class | Plan/source disposition | Current runtime disposition | Gap / next priority |
+|---|---|---|---|---|---|
+| CAND-001 — Project Progress Summary | Grounded Project progress card; first canonical read artifact. | read/analysis | Source-complete historical capability. | `PRESENT_PARTIAL` | No fresh dedicated Chromium rerun in this checkpoint; retain, do not claim newly verified. |
+| CAND-002 — Sprint Progress Summary | Grounded Sprint progress and risk summary. | read/analysis | Source-complete historical capability. | `PRESENT_PARTIAL` | Same release-evidence gap as CAND-001. |
+| CAND-003 — Acceptance Checklist | Persisted structured acceptance checklist draft. | mutation draft/confirmed mutation | Domain/storage veto remains. | `MISSING_HIGH_VALUE` | Add canonical checklist model/migration before implementation. |
+| CAND-004 — Task Breakdown | Ordered parent/child task decomposition. | mutation draft/confirmed mutation | Parent/subtask domain veto remains. | `MISSING_HIGH_VALUE` | Define progress/dependency semantics and migration first. |
+| CAND-005 — AI Usage/Budget | Admin cost, warning and hard-stop controls. | admin AI control | Source-complete historical platform surface. | `PRESENT_PARTIAL` | Fresh role/concurrency Chromium evidence still required. |
+| CAND-006 — Assignee Recommendation | Explainable Project-local skill/evidence/workload recommendation. | analysis/artifact proposal | Source-complete historical bounded recommendation. | `PRESENT_PARTIAL` | Keep separate from assignment mutation; rerun fairness/private-source matrix. |
+| CAND-007 — Group Summary | Exact selected-message grounded summary. | read/analysis artifact | Source-complete historical capability. | `PRESENT_PARTIAL` | Dedicated current Chromium evidence not rerun. |
+| CAND-008 — Group → Task Draft | Source-linked selected-message Task draft. | mutation draft/confirmed mutation | Source-complete bounded flow. | `PRESENT_PARTIAL` | Reverify Group source-open and Task read-back on current shell. |
+| CAND-009 — Dashboard Strategic Brief | Server-snapshot executive brief. | read/analysis artifact | Source-complete historical capability. | `PRESENT_PARTIAL` | Dedicated current Chromium evidence not rerun. |
+| CAND-010 — Meeting Checknote | Privacy-gated transcript checknote. | read/artifact proposal | Source-complete bounded flow. | `PRESENT_PARTIAL` | Selective Task creation remains another capability. |
+| CAND-011 — Project Planner | Historical Project draft concept. | proposal | Subsumed by CAND-023. | `SUPERSEDED` | No separate implementation or coverage credit. |
+| CAND-012 — Wiki Brief / Task Draft | Grounded section-aware Wiki summary/draft. | read/artifact/mutation draft | Wiki CRUD exists; AI adapter remains deferred. | `MISSING_HIGH_VALUE` | Implement as a CAND-022D skill pack with exact section sources. |
+| CAND-013 — Weekly Digest | Persisted scheduled project digest. | read/external effect | Scheduler/preference/email contract absent. | `MISSING_HIGH_VALUE` | Do not present a localStorage toggle as delivery. |
+| CAND-014 — Task Hub AI Launcher | Shared Task hub entry for checklist/breakdown. | launcher/renderer | Blocked by CAND-003/004. | `MISSING_HIGH_VALUE` | Implement only after both domain capabilities exist. |
+| CAND-015 — Task Skill Taxonomy | Canonical required-skill identities and reviewed AI tags. | artifact proposal/confirmed mutation | Source-complete historical capability. | `PRESENT_PARTIAL` | Fresh full role/browser release matrix not rerun. |
+| CAND-016 — Member Skill Evidence | Evidence-backed member skill profile. | read/analysis | Source-complete historical capability. | `PRESENT_PARTIAL` | Retain unknown≠unskilled invariant; rerun privacy/fairness UI evidence. |
+| CAND-017 — Portfolio Assignment/Schedule Copilot | Capacity, availability, multi-Project load and schedule proposal. | analysis/artifact proposal/confirmed mutation | Source-complete bounded internal contract; external calendars deferred. | `PRESENT_PARTIAL` | Current browser matrix not rerun; external Google/Outlook adapters stay deferred. |
+| CAND-018 — Action Composer | Natural intent → editable Task plan → one confirm → atomic mutation/receipt. | mutation draft/confirmed mutation | Regression fixed in this checkpoint. | `NATIVE_COMPLETE_VERIFIED` for `task.create.v1` | Other domain tools require independent adapters. |
+| CAND-019 — Unified Assistant Workspace | One chat-first shell and routing boundary. | orchestration surface | Shared `ErumiChatPanel` and durable APIs. | `NATIVE_COMPLETE_VERIFIED` for registered capabilities | Keep legacy executors isolated. |
+| CAND-020 — Native Group Poll Draft | One editable, confirmed Group poll. | mutation draft/confirmed mutation | Contract remains backlog. | `MISSING_HIGH_VALUE` | Next bounded Group mutation; no fake multi-question form/quiz. |
+| CAND-021A–D — Assistant Foundation | Workspace, durable sessions, context/capability registry, grounded research. | platform read/artifact | Source-complete; authorization corrected. | `NATIVE_COMPLETE_VERIFIED` for bounded foundation | Repository/GitHub read adapters are separate skill packs. |
+| CAND-022A–D — Goal/Agent/Skill Platform | Goal discovery, bounded loop, safe test runner, skill packs. | orchestration/read/dev-test | A/B source-complete; C implemented and Dev/Test-gated; D incremental. | `PRESENT_PARTIAL` top-level | Add Chromium for 022C and finish 022D coverage of remaining main flows. |
+| CAND-023A–D — Governed Project Lifecycle | Brief → staffing/delivery → canonical Project graph → monitor/replan. | artifact + confirmed mutation | Internal core implemented; external effects honest. | `EXTERNAL_DEFERRED` overall; internal core reverified | Calendar/repository/invite/webhook/deploy need provider-specific outbox/compensation. |
+| CAND-024A–C — Open Conversation | Answer-first, progressive clarification, streaming/quality. | conversation/platform | A/B implemented; stream/metrics source exists but the complete C quality gate is not proven. | `PRESENT_PARTIAL` | Finish versioned eval set, latency/dead-end telemetry and Chromium streaming evidence. |
+
+Current top-level count: **3 `NATIVE_COMPLETE_VERIFIED`**, **13 `PRESENT_PARTIAL`**, **6 `MISSING_HIGH_VALUE`**, **1 `EXTERNAL_DEFERRED` with verified internal core**, and **1 `SUPERSEDED`**. Inventory coverage is 24/24; verified native product coverage is not 100%.
+
+### 37.3 One orchestration core: Analytics and Assistant
+
+`AnalyticsPage.vue` and the global Assistant both render the shared `ErumiChatPanel.vue`. The shared component owns model selection, session pointer, history browser, progressive clarification, artifact renderers and Action Composer handoff. The server owns session/turn state through `/api/ai/assistant/*`; localStorage is limited to presentation/model preference and the last session pointer, never the canonical history.
+
+Both surfaces therefore use the same:
+
+- Assistant session/turn endpoints and idempotency contract;
+- capability/context registry and `IAiNativeAuthorizationService`;
+- goal planning, bounded read loop and deterministic fallback;
+- model-profile request and actual provider/model response metadata;
+- progressive question draft persistence and batch submission;
+- artifact renderers and explicit-confirm mutation endpoints;
+- read-back receipts, activity events and error/degraded states.
+
+No page-specific write executor receives implementation credit. A legacy path is `LEGACY_OR_DUPLICATE` until removed or proven to delegate to the same registered capability.
+
+### 37.4 Server-owned session model
+
+Canonical entities remain distinct: `AssistantSession` groups context and turns; `AssistantTurn` stores each user/assistant exchange; `AiJob` stores execution; `AiGeneratedDraft`/launch artifacts store review state; execution receipts store committed outcomes. `GET /api/ai/assistant/sessions` is user-scoped and capped at 100 current items; `GET .../{sessionId}` restores ordered turns, drafts/artifacts/jobs/receipts. Create, rename, archive and soft-delete have real CSRF/concurrency-checked APIs. Project/session isolation returns not-found/deny without leaking hidden titles.
+
+### 37.5 Interaction inventory
+
+| Interaction | Real use case / persistence | Permission and states | Current evidence |
+|---|---|---|---|
+| Phiên/Lịch sử | List/get server sessions; switch and reload full transcript/artifacts. | Current user only; loading/empty/error/active/archived. | Integration session lifecycle + Chromium `SESSION-LIVE-01`. |
+| Cuộc trò chuyện mới | POST session; old sessions remain. | Authenticated user, CSRF. | Shared panel source + session integration. |
+| Rename/archive/delete | PATCH/POST/DELETE with expected version. | Session owner; conflict/deny handled. | `SessionHistory_CanListRenameArchiveAndSoftDeleteWithVersionChecks`. |
+| Nguồn dữ liệu | Render server-provided source disclosures/refs; no invented route. | Source authorization already applied; empty state. | Shared `SourceRefsDrawer`; context registry tests. |
+| Activity/process | Persisted safe job/turn stages, collapsed by default. | No chain-of-thought/private payload. | Action Composer Chromium + activity integration assertions. |
+| Continue/retry/cancel/resume | Durable turn control and linked resume. | Session owner, safe execution boundaries. | Turn API integration and bounded-loop Chromium. |
+| Export | Download latest answer as Markdown; Project export API remains a separate authorized route. | Disabled with clear error when no result. | Implemented source; dedicated Chromium still backlog. |
+| Settings/model selector | Request carries selected profile; response shows actual provider/model; settings navigates to real privacy controls. | Server privacy/budget/provider policy is authoritative. | Typecheck/build + shared component source. |
+| Quick reply/free text | Stores answer by stable question ID without implicit submit. | Max three questions; user explicitly submits the batch. | Progressive reload Chromium. |
+| Gửi tất cả/Xóa bản nháp | PUT/DELETE server clarification draft with version. | Owner/CSRF/concurrency; save-race protected. | Turn integration + loop Chromium. |
+| Open/close artifact | Opens canonical persisted draft/brief/plan/receipt renderer. | Capability/resource permission. | Action/launch Chromium. |
+| Confirm/reject | Exact reviewed payload, stable idempotency and row version. | Server rechecks feature, system tier, Project role and source freshness. | SQL integration + Action Composer Chromium. |
+| Receipt/deep-link | Read-back verified created IDs/links. | Only after commit/read-back succeeds. | Integration canonical assertions + Chromium receipt. |
+| Monitor/replan/rollback | Governed Project baseline controls; replan is review-only. | Organization/project manager, stale/impact checks. | Project-launch integration + Chromium B/C/D. |
+| Actions drawer suggestions | Prompt/draft suggestions only, explicitly labeled non-mutating. | No direct write event. | UI text prevents false success; real mutation opens a registered composer. |
+
+Any new interaction must add event → use case/API → authorization → persistence/reload → state handling → automated evidence before release. Otherwise it must be hidden or disabled with an explicit unavailable reason.
+
+### 37.6 AI permission matrix
+
+The backend resolves user-specific `SystemModulePermission` before system-role defaults, then resolves active custom Project roles to their built-in base role. Unknown/removed custom roles fail closed for writes. UI visibility is advisory only.
+
+| Actor / capability | Read/analysis | Artifact proposal | Mutation draft | Confirmed mutation | External/admin effect | Denial behavior |
+|---|---|---|---|---|---|---|
+| AI Hub `Restricted` user override | Deny | Deny | Deny | Deny | Deny | No capability/source materialization; safe reason only. |
+| AI Hub `SummaryOnly` | Authorized sources only | Read-only research/summary | Deny | Deny | Deny | Useful analysis remains available; no mutation card. |
+| Project Member / custom Member | Authorized Project/private boundary only | Personal/read-only proposal | Deny by default | Deny | Deny | Not-found/permission deny without hidden source titles. |
+| Project Manager / custom Manager | Authorized managed Project | Yes | Yes for registered adapters | One explicit confirm, concurrency/idempotency/read-back | No unless separately granted | 403/409 with draft retained for review. |
+| Organization Admin/Owner | Authorized Organization/Projects | Yes | Yes for registered admin adapters | Explicit confirmation for material mutation | Separate adapter/consent required | Tenant/privacy/audit boundaries cannot be bypassed. |
+| System Admin | Authorized administrative scope | Yes | Registered adapters only | Still confirmation/idempotency/audit controlled | `admin_ai_control` only | No unrestricted shell/SQL/tool authority. |
+
+Authorization is rechecked at discovery, source materialization, draft creation, immediately before mutation and read-back. The AI never has more authority than its caller.
+
+### 37.7 Task create and assignment integrity
+
+The canonical confirm sequence is now:
+
+1. GET the current draft and reconcile confirmed/pending/stale state.
+2. Require a non-empty server `rowVersion`; legacy drafts without it are invalidated with review guidance.
+3. Use one stable `action-confirm:{draftId}` key in header and body for the logical confirmation. `rowVersion` remains an optimistic-concurrency precondition, not part of the operation identity.
+4. Disable duplicate submit; stale version or source returns 409 and requires fresh review.
+5. Revalidate schema, exact selected commands, registered tool, system tier, custom/base Project role and current active assignee membership.
+6. Execute selected Task/assignment/skill rows atomically; persist activity, audit and receipt.
+7. Read back canonical Task identity, content, assignment, Sprint, estimate, priority, due date and skill rows before success.
+8. Replay/lost response returns the stored receipt and creates no duplicate.
+
+The Action Composer model is no longer allowed to assign from `workload_only` data. Model-authored Tasks are unassigned. A reviewer may explicitly select a current Project member; removal/deactivation before confirm produces a stale conflict and zero mutation. Explainable automatic staffing must use CAND-017/CAND-023, which owns skill evidence, declared availability, capacity, multi-Project load, focus cost, concurrency limit, fairness and Rulebook decisions.
+
+### 37.8 Persistence and migration correction
+
+Migration `20260812165330_P015AiRolePermissionPersistence` brings `ProjectCustomRoles`, `SystemModulePermissions` and `ProjectMemberRoleHistories` into the migration chain and fixes the active-role filtered index for SQL Server. `dotnet ef migrations has-pending-model-changes` returns no pending model change after the build. A clean isolated SQL Server LocalDB applies the full migration chain and executes the real Task confirmation path.
+
+### 37.9 Evidence matrix — 2026-08-13
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Release build | `dotnet build Qaly_project.slnx -c Release --no-restore`: PASS, 0 warnings, 0 errors. |
+| Frontend contract | `npm run typecheck`: PASS; `npm run build`: PASS, 3,998 modules. |
+| Unit | Full `Qaly.UnitTests`: 591/591 PASS, including system-tier/custom-role discovery and Action Composer contracts. |
+| Integration | Final full `Qaly.IntegrationTests`: 168/168 PASS, including isolated SQL Server migration/canonical persistence. |
+| Web features | Full `Qaly.WebFeatureTests`: 38/38 PASS. |
+| Session history | `AiAssistantTurnApiTests` session create/list/rename/archive/delete/draft/reload + Chromium `TEST-AI-NATIVE-SESSION-LIVE-01`: PASS. |
+| Task idempotency/count | `TEST-ACTION-COUNT-10`: draft contains 10 commands, confirm persists 10 unique Tasks, replay returns same IDs. |
+| Relational canonical persistence | `TEST-ACTION-SQL-COUNT-10`: clean isolated SQL Server migration + HTTP compose/confirm/replay + canonical Task count 10: PASS. |
+| Assignee freshness | `TEST-ACTION-ASSIGNEE-STALE-01`: removed member returns 409/source-stale and creates zero Task. |
+| Action UI | Chromium `TEST-ACTION-E2E`: progress, editable review, single confirm and receipt PASS. |
+| Durable launch conversation | Chromium `TEST-AI-NATIVE-LOOP-E2E`: reload, verified brief and progressive revision PASS. |
+| Governed Project lifecycle UI | Chromium `TEST-PL-BCD-E2E`: plan confirm/receipt/monitor/replan PASS; integration suite supplies the non-mock canonical graph proof. |
+| Runtime preview smoke | Release host with Development + isolated in-memory data returned HTTP 200 at `/health`. |
+
+### 37.10 Current completion boundary and next priorities
+
+- **Inventory coverage:** 24/24 CAND dispositioned.
+- **Verified native coverage:** not 100%; only rows explicitly marked `NATIVE_COMPLETE_VERIFIED` have fresh current evidence.
+- **Main-flow product completeness:** partial. Task-create and governed internal Project launch are verified; checklist/subtask, Wiki AI, digest and Group Poll remain material gaps.
+- **Internal Project-launch core:** verified complete within its bounded contract.
+- **External adapter completeness:** not complete; calendar, repository, invitation, webhook and deployment remain `EXTERNAL_DEFERRED`.
+
+Priority after this corrective checkpoint:
+
+1. Complete/reverify CAND-022D skill packs for all existing main read/proposal/mutation surfaces and add the missing 022C Chromium gate.
+2. Implement CAND-020 Group Poll Draft.
+3. Approve domain semantics and implement CAND-003 + CAND-004, then CAND-014.
+4. Implement CAND-012 Wiki adapter and CAND-013 persisted digest.
+5. Finish CAND-024C streaming/quality release evidence.
+6. Add external CAND-023 adapters one provider at a time with outbox, compensation and explicit authority.
+
+**Disposition:** the Task mutation regression, session-history proof gap, Analytics/Assistant split, current AI authorization gap and relational migration drift are closed by implementation and evidence in this checkpoint. The overall AI Native program is not labeled 100% complete; remaining internal skill/domain gaps and external adapters retain explicit dispositions above.
+
+## 38. Authoritative internal main-flow closure and non-browser release gate
+
+**Checkpoint date:** 2026-08-13 (Asia/Saigon)
+
+**Authority:** this section supersedes the runtime dispositions and verification policy in §37 whenever they conflict. Historical Chromium evidence remains historical only. By explicit Product Owner instruction, Chromium/Playwright is permanently excluded from this goal and from every future completion gate for this workstream. It must not be run, retried, or treated as missing evidence. Completion is decided once, after the full objective is implemented, by the non-browser gate in §38.5.
+
+### 38.1 One objective and one orchestration boundary
+
+The single objective is to close the complete internal Qaly AI Native main-flow surface before testing: natural conversation and durable sessions; authorized grounded reads; registered editable drafts; save/reject/one-confirm; canonical transactional mutation; read-back/receipt/deep-link; monitor/replan; and useful provider degradation. Analytics and the global Assistant continue to use the same `ErumiChatPanel`, server session APIs, capability/context registry, model policy, authorization boundary and artifact renderers.
+
+No legacy planner, autonomous approval endpoint, task-breakdown job or acceptance-checklist job may mutate or generate a competing review contract. Those legacy mutation paths return HTTP 410 and direct callers to the registered unified Assistant capability. Existing page-specific read/proposal surfaces remain valid only when they use canonical authorization and do not bypass a native confirmation boundary.
+
+### 38.2 Canonical CAND-001…024 disposition
+
+`NATIVE_COMPLETE_VERIFIED` below means the internal contract is source-complete and must pass the single §38.5 non-browser gate. It does not mean that a read-only feature gains an unnecessary mutation adapter, nor that an external provider integration is simulated.
+
+| CAND | Role in Qaly AI Native | Authoritative disposition |
+|---|---|---|
+| CAND-001 | Grounded Project progress summary and canonical source receipt. | `NATIVE_COMPLETE_VERIFIED` |
+| CAND-002 | Grounded Sprint progress/risk summary. | `NATIVE_COMPLETE_VERIFIED` |
+| CAND-003 | Editable acceptance-checklist draft, one confirm, canonical rows, Task Hub read-back and concurrency-safe completion toggle. | `NATIVE_COMPLETE_VERIFIED` |
+| CAND-004 | Exact-count ordered subtask/dependency graph with preserved estimate and leaf-only progress semantics. | `NATIVE_COMPLETE_VERIFIED` |
+| CAND-005 | Server-owned AI usage, budget, warning and hard-stop controls. | `NATIVE_COMPLETE_VERIFIED` |
+| CAND-006 | Explainable Project-local assignee recommendation; unknown skill/capacity is never fabricated. | `NATIVE_COMPLETE_VERIFIED` |
+| CAND-007 | Selected-message grounded Group summary. | `NATIVE_COMPLETE_VERIFIED` |
+| CAND-008 | Source-linked Group-to-Task reviewed draft. | `NATIVE_COMPLETE_VERIFIED` |
+| CAND-009 | Server-snapshot Dashboard strategic brief. | `NATIVE_COMPLETE_VERIFIED` |
+| CAND-010 | Privacy-gated Meeting checknote/action proposal. | `NATIVE_COMPLETE_VERIFIED` |
+| CAND-011 | Historical Project Planner concept replaced by CAND-023. | `SUPERSEDED_BY_CAND_023`; excluded from the active denominator |
+| CAND-012 | Section-grounded Wiki brief plus optional reviewed Task mutation. | `NATIVE_COMPLETE_VERIFIED` |
+| CAND-013 | Persisted per-user Project digest schedule, enable/disable intent, authorized delivery worker and delivery state. | `NATIVE_COMPLETE_VERIFIED` for the internal scheduler; configured email transport remains an environment dependency |
+| CAND-014 | Task Hub launchers plus canonical checklist read-back. | `NATIVE_COMPLETE_VERIFIED` |
+| CAND-015 | Canonical Task skill taxonomy and reviewed requirements. | `NATIVE_COMPLETE_VERIFIED` |
+| CAND-016 | Evidence-backed member skill profile; missing evidence remains unknown. | `NATIVE_COMPLETE_VERIFIED` |
+| CAND-017 | Portfolio capacity/availability/load-aware assignment and schedule proposal. | `NATIVE_COMPLETE_VERIFIED` for internal facts; external calendars remain deferred |
+| CAND-018 | Natural Task intent to editable exact-count draft, save/reject, stable idempotent confirm and canonical receipt. | `NATIVE_COMPLETE_VERIFIED` |
+| CAND-019 | Unified chat-first Assistant shell, real server session browser and navigation. | `NATIVE_COMPLETE_VERIFIED` |
+| CAND-020 | Editable native Group Poll draft, one confirm and canonical Poll/options read-back. | `NATIVE_COMPLETE_VERIFIED` |
+| CAND-021A–D | Durable sessions/turns, context registry, source disclosure, model selection and grounded research foundation. | `NATIVE_COMPLETE_VERIFIED` |
+| CAND-022A–D | Goal understanding, bounded read executor, Development/Test-only safe test capability and registered main-flow skill packs. | `NATIVE_COMPLETE_VERIFIED`; 022C never grants production shell/SQL/unregistered-tool authority |
+| CAND-023A–D | Rulebook → Launch Brief → deterministic staffing/delivery → confirmed canonical Project graph → monitor/replan. | `INTERNAL_CORE_COMPLETE_VERIFIED`; overall `EXTERNAL_DEFERRED` |
+| CAND-024A–C | Answer-first conversation, progressive multi-answer interaction, streaming deltas and versioned quality metrics/evaluation set. | `NATIVE_COMPLETE_VERIFIED` |
+
+Internal active coverage is therefore **23/23 active CAND IDs** (CAND-011 is superseded) with **zero `MISSING_HIGH_VALUE` and zero `PRESENT_PARTIAL` internal rows**, subject to the final gate. CAND-023 external repository, calendar, invitation, webhook and deployment adapters are deliberately outside this internal denominator and remain explicit rather than mocked.
+
+### 38.3 Business-logic closure
+
+- Intent classification prefers the action object actually requested. “Create Tasks for starting a Project” routes to Task Composer; “start a Project, then create Tasks” routes to Project Launch. Checklist, breakdown, Wiki Task, Group Poll and digest enable/disable have explicit registered routes and evaluation cases.
+- A Project Member/custom Member may use authorized grounded reads, summaries, Wiki/document analysis and session history, but cannot receive a mutation draft or confirm one. Full system AI tier and the canonical Project/Group role are rechecked at discovery, draft load/save/reject, confirm, read-back and scheduled delivery.
+- Native drafts are server-persisted and restored inside the owning Assistant turn. Edits increment revision; reject is durable; confirm requires the exact reviewed payload, source version, row version and one stable logical idempotency key. A different key cannot replay a committed draft.
+- Provider/model failure cannot become a conversational dead end or a false mutation success. The deterministic server fallback remains useful, actual provider/model is recorded, and canonical mutation success is claimed only after database read-back.
+- Exact requested Task/subtask counts are preserved within contract bounds. Breaking down a Task distributes its existing estimate instead of inventing capacity, makes the parent non-progress-contributing and keeps leaf subtasks progress-contributing, preventing Dashboard/Analytics double counting.
+- Acceptance checklist items are visible in Task Hub after confirmation and can be completed only by an authorized manager with a current concurrency token. Manual completion changes the source version, so any older AI draft becomes stale.
+- Digest enable/disable is inferred from natural language, persisted per user/Project, and delivered only after the worker rechecks current system tier and Project read access. Revoked access disables the subscription rather than leaking a later digest.
+- Process, source context and work-plan detail remain collapsed by default; the answer/result remains first. Session pointer/model preference may use local storage only as UI preference; transcript, drafts, artifacts, answers and receipts remain server canonical.
+
+### 38.4 Remaining boundary
+
+The internal goal does not authorize or claim provider-specific Google/Outlook calendar sync, repository creation, outbound invitation, webhook or deployment execution. Each requires its own credential/scope, outbox, compensation, receipt and authorization review. Until then, CAND-023 reports these operations as `EXTERNAL_DEFERRED` and never reports them successful.
+
+### 38.5 Single final verification gate — Chromium permanently excluded
+
+Run this gate only after implementation and documentation closure:
+
+1. solution Release build with no restore;
+2. frontend typecheck and production build;
+3. focused Unit tests for routing, capability/role discovery, conversation quality and digest delivery;
+4. focused API/relational Integration tests for exact-count Task creation, native draft confirmation, concurrency/idempotency, rollback and canonical read-back;
+5. EF pending-model-change check.
+
+Full Unit, Integration and WebFeature suites are not part of this gate unless a focused failure points to a shared-infrastructure regression. There is no Chromium/Playwright step, no browser replay substitute and no requirement to repeat previously historical browser evidence. At the time this section was written, the gate is `PENDING_FINAL_NON_BROWSER_GATE`; §38.6 records the one final result.
+
+### 38.6 Final non-browser evidence
+
+**Result:** `ACCEPTED_INTERNAL_CORE` with the external boundary in §38.4 still `EXTERNAL_DEFERRED`.
+
+The closure batch fixed five concrete gaps found by focused evidence: native breakdown phase labels are unique for exact-count drafts; Group Poll separates the question from its options; digest content is re-authorized and scoped to the reader's Project role; a concrete task route/launcher now takes precedence over a stale Project selection in the global Assistant; and the local/dev launcher now connects to the Docker SQL Server with the same port/database/credential settings instead of incorrectly attempting Windows Integrated Security.
+
+| Gate | Evidence actually run | Result |
+|---|---|---|
+| Focused Unit | Routing/goal planning, context/role discovery, conversation quality, launch contracts and digest worker; focused digest retry after its change | `58/58 PASS`; digest rerun `2/2 PASS` |
+| Native domain API | Checklist, exact 10-subtask graph, Wiki Task, Group Poll, digest, stale-source rollback, durable draft/reject, Member denial, streaming quality and legacy-path retirement | All affected cases pass after the duplicate-phase fix; exact 10-subtask and Group Poll cases were rerun directly |
+| Task Composer API | `ExplicitTenTaskRequest_ConfirmPersistsExactlyTenAndReplayCreatesNoDuplicate` | `1/1 PASS`; 10 reviewed commands, 10 canonical Tasks, stable replay |
+| Project Launch/session | Task-vs-Project disambiguation, durable follow-up context, atomic confirm/monitor/rollback/idempotency and stale-capacity zero-mutation | `4/4 PASS` |
+| Relational canonical read-back | Latest P016 migration plus checklist and exact 10-subtask persistence/read-back on SQL Server/LocalDB | `1/1 PASS` |
+| Schema consistency | EF `migrations has-pending-model-changes` for Infrastructure/Web Release artifacts | PASS, no pending model change |
+| Final build | `dotnet build Qaly_project.slnx -c Release --no-restore` | PASS, 0 warnings, 0 errors |
+| Frontend | `npm run typecheck`; `npm run build` | PASS; production bundle generated |
+| Local/dev runtime | `npm run dev:all:ai`, migrations/seed, `GET /health`, login surface and startup log | PASS; SQL/Redis/Seq/MailHog/Qdrant/Ollama healthy, migrations and seed complete, `/health` 200, no unhandled startup exception |
+
+Chromium/Playwright, full suites and duplicate WebFeature coverage were not run, by the explicit non-browser and high-signal verification policy in §38.5. Canonical internal data creation is accepted; repository/calendar/invitation/webhook/deployment providers remain honestly deferred until their credentialed adapters, outboxes and compensation receipts exist.
+
+### 38.7 Cross-surface business-flow acceptance — Analytics + global Assistant
+
+**Checkpoint:** 2026-08-13. This pass validates the user outcome, not merely whether each isolated branch compiles. Analytics and the global Assistant must produce the same canonical turn, preserve its Project/session context, render the artifact appropriate to the outcome and keep every visible control connected to a real use case.
+
+| User outcome | Required response artifact | Interaction / navigation contract | Acceptance disposition |
+|---|---|---|---|
+| Ask a grounded status, risk, workload or comparison question | Markdown answer plus server-grounded metric/table/chart/source disclosures as applicable | Suggested follow-ups remain editable chat prompts; sources open the source drawer | `ACCEPTED_INTERNAL` |
+| Ask what Qaly can do | Formatted capability summary plus navigation cards | Cards open only registered top-level Qaly routes | `ACCEPTED_INTERNAL` |
+| Create Tasks with a known Project | Task Composer handoff card, not a Project Launch Brief | Analytics and global Assistant both open the same persisted Action Composer; one confirm and receipt remain mandatory | `ACCEPTED_INTERNAL` |
+| Create Tasks without a Project | Real Project-choice card using authorized active Projects | Choosing a Project sets the conversation context and opens Task Composer directly; it no longer resubmits “Chọn dự án” as a looping prompt | `ACCEPTED_INTERNAL` |
+| Launch a new Project | Progressive multi-answer card → Launch Brief → staffing/delivery plan → one confirm → canonical receipt/deep-link | Answers persist by stable ID; Project launch is not confused with “create Tasks for an existing Project” | `ACCEPTED_INTERNAL` |
+| Run a registered native domain action | Capability-specific editable card plus save/reject/confirm states | Checklist, breakdown, Wiki Task, Group Poll and digest use server drafts, row version, idempotency, read-back and valid Project/Task/Wiki/Group routes | `ACCEPTED_INTERNAL` |
+| Research or compare options | Findings, unknowns, alternatives, recommendation and eligible action cards | An executable Task proposal opens Task Composer; non-executable proposals remain honestly read-only | `ACCEPTED_INTERNAL` |
+| Return to earlier work | Server session list and restored ordered turns/artifacts/drafts/receipts | Restored Project context is retained; component mount no longer resets it to workspace | `ACCEPTED_INTERNAL` |
+| Provider/planner degradation | Useful deterministic result or durable retry/resume card | No false mutation success and no privileged/dead action synthesized by the model | `ACCEPTED_INTERNAL` |
+
+Concrete gaps closed in this pass:
+
+1. `AnalyticsPage` now bridges `compose-action` to the same global Action Composer used by the floating Assistant; the prior Task card on Analytics was visually valid but behaviorally disconnected.
+2. A restored session keeps its canonical Project target instead of being overwritten to `workspace` after load.
+3. `select_project_for_task_plan` renders a Project selector and opens Task Composer with the original request; it no longer becomes another plain-text prompt.
+4. Card-only/structured turns count as the latest Assistant result, so the cockpit does not silently bind to an older text response.
+5. The Actions drawer preserves action semantics: navigation opens a route, composer opens the structured draft, resume calls the durable resume API, and complex clarification actions return the user to their interactive card.
+6. Provider-authored action types are normalized to non-privileged `suggested_action`. Only deterministic server code may issue navigation, resume, composer or mutation controls with validated payloads.
+7. Provider-authored file URLs are ignored. Download cards are issued only by Qaly's deterministic authorized export flow, preventing a model from showing a fake or unverified file.
+
+Focused evidence: frontend `npm run typecheck` PASS; three affected Erumi routing/clarification Unit contracts PASS; the provider-action/file trust-boundary Unit contract rerun PASS; five focused API integrations for Task-vs-Project routing, capability navigation, durable turn reload, session lifecycle and exact-ten-Task idempotent persistence PASS from the existing integration build while the local preview retained the Web DLL lock. No Chromium/Playwright or broad duplicate suite was run, per §38.5. Local `/health` remains HTTP 200 with SQL Server, Redis and vector outbox healthy.
+
+### 38.8 Compact newcomer QOL and contextual tool acceptance
+
+**Checkpoint:** 2026-08-13. This pass audits discoverability and interaction integrity across the shared Analytics/global-Assistant surface. It does not add another toolbar or duplicate the chat contract.
+
+Gaps closed:
+
+1. The header overflow menu is now a real contextual tool index: new session, server session history, compact AI tool hub, current structured data/actions when present, sources, model, text export when exportable, and direct AI privacy navigation. Empty/dead response-specific items are not rendered.
+2. The same overflow menu is available in the empty state. Three compact newcomer shortcuts explain common outcomes and only fill the composer; they never auto-send or mutate data.
+3. The AI tool hub shows the active Project/workspace scope, separates quick-start prompts from analysis/result tools, and labels whether a choice opens an existing result, fills an editable question or prepares a reviewed draft.
+4. Per-response overflow actions are scoped to the selected response. Data, actions and sources open that response rather than silently using the latest one; copy/export appears only when text exists. Card-only turns still show provider/confidence metadata without an empty overflow control.
+5. Complex interactive actions in the Actions drawer return to the exact originating message card. Navigation, durable resume and Task Composer actions keep their original semantics instead of degrading into a plain-text prompt.
+6. The data drawer now recognizes metrics, tables and charts. Empty drawers offer one useful editable prompt rather than becoming a dead end.
+7. Source follow-up closes the drawer and focuses an editable composer prompt. Labels across the `+` menu, tool hub and header now consistently use “Công cụ AI”, “Lịch sử phiên” and “Model AI”.
+8. `/settings?tab=privacy` is now a real deep link: Settings reads and maintains the requested tab instead of always opening Profile. This closes the prior behaviorally-wrong “Quyền riêng tư AI” navigation.
+9. Overflow groups have visual separators while retaining keyboard/menu semantics; process/context/work-plan detail remains collapsed by default so the answer/result stays first.
+
+Fresh focused evidence after the implementation: frontend `npm run typecheck` PASS; production `npm run build` PASS (3,995 modules); targeted `git diff --check` PASS. Chromium/Playwright and broad duplicate suites were not run, per §38.5.
+
+Remaining optional QOL, explicitly outside this compact closure: organization-curated/pinned prompt packs, cross-device persistence for purely presentational preferences, and a bundled export format for card-only structured artifacts. None blocks canonical analysis, reviewed mutation, session restore, navigation or the internal AI Native completion boundary; external CAND-023 adapters remain `EXTERNAL_DEFERRED` under §38.4.
+
+### 38.9 Live clarification/state-authority and editable Launch Brief correction
+
+**Checkpoint:** 2026-08-13. A live Assistant replay exposed three defects that the earlier contract-level acceptance did not catch:
+
+1. When a selected conversational provider failed during a grounded read, `AssistantPlannedTurnAsync` replaced the requested answer with a generic capability pitch and surfaced `not_reached / not_reached` as if it were a model identity. The corrected route retries through the deterministic canonical Qaly reader, returns the requested workspace/Project result when possible, records `Qaly / qaly-native`, and emits a specific degraded navigation card only when both provider and server reader fail.
+2. The client inferred whether Launch questions were answered by scanning arbitrary transcript text. This could hide the question card while the durable server Brief still contained blocking questions. The server is now the sole clarification-state authority; the client renders exactly the questions returned by the current durable turn.
+3. Project Launch was a read-only summary plus scattered question inputs. It is now a typed review form for Project name, objective, timebox/deadline, primary audience and must-have scope, with optional success measures and exclusions. The form sends one structured `launch.brief_form` reply, creates a durable Brief revision and proceeds to staffing only when all required review fields are valid. Model-proposed scope never counts as user confirmation. The canonical Project mutation still requires the existing explicit plan confirmation and read-back receipt.
+
+The clarification question contract now carries server-owned `inputType` and `placeholder` hints so select/text/textarea rendering follows the information type without client keyword routing. Launch Brief persistence also retains the reviewed `targetTimebox` and `primaryAudience`; later staffing/delivery uses the revised canonical Brief rather than the fallback baseline.
+
+Fresh focused evidence: solution Web build PASS with zero warnings/errors; frontend typecheck PASS; focused Unit `4/4 PASS` for capability menu and grounded provider-to-server fallback; focused Integration `5/5 PASS` for typed Launch review persistence/unlock, complete auto-plan, multi-answer reload, capability navigation and provider-failure Brief fallback. The typed-form integration read back revision 2 with the customized Project name/timebox/audience/scope, produced a staffing plan under an effective Rulebook, and verified zero Project rows before explicit confirmation. No Chromium/Playwright or broad duplicate suite was run, per §38.5.
+
+### 38.10 Structured Project planning and customization closure
+
+**Checkpoint:** 2026-08-13. A product-level replay showed that §38.9 closed the text-form dead end but did not yet make Project planning professionally structured. The Brief still treated objectives, KPI, features and customization mostly as strings; staffing alternatives were fixed renderings; Sprint edits had no durable revalidation route; and canonical Tasks did not retain an explicit Objective/Feature trace. This checkpoint corrects those gaps end to end rather than adding UI-only controls.
+
+No CAND-025 is introduced. Every change has an existing authoritative owner, so a new number would duplicate the inventory and hide responsibility:
+
+| Existing owner | Increment completed in this checkpoint | Completion boundary |
+|---|---|---|
+| CAND-023A | Structured `ObjectiveProfile`, KPI metrics with nullable baseline/target, guardrails/assumptions/non-goals, selected `Feature` objects and a typed review workspace. | Brief/review artifact only; zero early Project mutation. |
+| CAND-015 | Canonical skill catalog metadata: category, aliases, default proficiency and system-seed provenance; API create/update/search/read-back; P017 migration and idempotent realistic demo taxonomy. | Skill evidence remains separately verified by CAND-016; absence of evidence is not converted to absence of skill. |
+| CAND-017 + CAND-023B | Scope-dependent Lean/Balanced/Accelerated team sizing plus editable staffing allocation/manager/role, server revalidation and editable Sprint/Task plan. | Hard capacity/availability/concurrency/Rulebook constraints remain server-owned; editing never mutates canonical Project data. |
+| CAND-019/021/024 | Result-first Vietnamese renderer, structured cards/forms, compact details, explicit disabled reasons and real save/retry/navigation controls. | Provider/model, schema, scoring and decision trace remain collapsed technical metadata. |
+| CAND-018 + CAND-023C | One-confirm atomic execution retains idempotency/read-back/rollback and now persists `ProjectLaunchTaskTrace` rows from canonical Tasks to the reviewed Brief, Feature, KPI IDs and source refs through P018. | External repository/calendar/invitation/webhook/deployment effects remain `EXTERNAL_DEFERRED`. |
+| CAND-019/021 + CAND-023 | Server plan revisions persist staffing and Sprint/Task customization; GET/session artifact restoration returns the latest revision. | Local-only presentational preferences are not treated as business state. |
+
+#### 38.10.1 Structured business trace
+
+The durable flow is now:
+
+`Problem/Outcome → KPI → selected Feature → Sprint → Task/dependency → required OrganizationSkill → reviewed assignee → ProjectLaunchTaskTrace`.
+
+KPI baseline and target are nullable and explicitly labeled `needs_confirmation`/reviewed; the server never fills unknown numbers. Feature cards retain category, priority, audience, description, acceptance criteria and required skill names. Model skill names that do not resolve to an active Organization catalog row remain visible skill gaps and cannot become member evidence. Canonical Task skill rows are still created only for reviewed catalog IDs.
+
+#### 38.10.2 Customization and revalidation contract
+
+`PUT /api/ai/project-launch/plans/{planId}` accepts the exact expected revision, selected staffing scenario, included members/manager/role/allocation and the edited Sprint/Task graph. The server rejects stale source hashes, stale row revisions, invalid date windows, empty selections, duplicate Task IDs, missing dependencies, dependency cycles, unauthorized/ineligible members, unavailable hours, missing required-skill evidence, insufficient total allocation and Rulebook max-utilization violations. A successful save creates a new durable Plan revision only; the Project graph remains absent until the existing explicit confirm.
+
+The workspace supports KPI and Feature ordering, common templates plus custom values, rich Feature acceptance data and specialized skill gaps, Lean/Balanced/Accelerated comparison, member/manager/allocation/role changes, Sprint/Task add/disable/reorder, date/goal/title/estimate/assignee edits, and one “save and check again” action. The confirm control explains that edited data must first be saved and revalidated.
+
+#### 38.10.3 Flow × role × state × renderer × action × evidence matrix
+
+| Flow | Role / state | Renderer | Real action | Focused evidence |
+|---|---|---|---|---|
+| Natural launch request → reviewed Brief | Authorized organization manager; clarification or ready | Objective/KPI + Scope/Feature workspace | One structured reply creates Brief revision; zero Project rows | `TEST-AI-NATIVE-LAUNCH-FORM-01` |
+| Skill selection/customization | Organization manager; catalog active/inactive | Skill chips plus custom specialized skill input | Catalog POST/PATCH persists category/aliases/default level; unknown project skill remains a gap | `TEST-SKILL-01/09/11`; `RichDemoSeedTests` |
+| Staffing alternatives | Manager; feasible/blocked/stale | Three comparison cards plus customizer | PUT revalidates permission, evidence, capacity, availability, load and Rulebook | `TEST-AI-NATIVE-PLAN-CUSTOMIZE-01`; existing stale-capacity contract |
+| Sprint/Task customization | Manager; clean/dirty/invalid | Editable Sprint and Task cards | PUT saves one Plan revision; GET/session reload reads the same graph | `TEST-AI-NATIVE-PLAN-CUSTOMIZE-01` |
+| Create canonical Project graph | Authorized manager; pending review/executing/executed | Explicit confirm then receipt/deep links | Atomic Project/member/Sprint/Task/dependency/skill/trace write, read-back and stable replay | `TEST-PL-BCD-01` |
+| Read/analyze/propose | Member with source access | Short answer, metric/table/card as appropriate | Read/proposal only; mutation discovery and confirm remain denied | Existing CAND-021C/CAND-018 Member authorization evidence |
+| Provider degradation | Any authorized reader | Useful deterministic result plus compact limitation | Server fallback; no false mutation success | Existing provider-failure Brief and grounded-reader evidence |
+| Resume earlier work | Owning user/session | Server session browser and restored cards/forms | Latest Brief/Plan/draft/receipt reload; frontend does not infer server answer state | Existing session lifecycle plus Plan GET read-back evidence |
+
+#### 38.10.4 Acceptance disposition
+
+The internal structured planning slice is `NATIVE_COMPLETE_VERIFIED` inside its declared boundary. Fresh non-browser evidence on 2026-08-13 is exact and repeatable: `dotnet build Qaly_project.slnx -c Release --no-restore` PASS with 0 warnings/0 errors; frontend `npm run typecheck` PASS; frontend production `npm run build` PASS (3,995 modules); EF pending-model check PASS after applying P017/P018 to local/dev; focused `RichDemoSeedTests` PASS 2/2; structured Brief, durable Plan customization/read-back and canonical confirm/idempotency/read-back/rollback integrations PASS 4/4 in aggregate. The canonical execution integration persisted and read back the real Project/member/Sprint/Task/dependency/skill/`ProjectLaunchTaskTrace` graph before exercising audited rollback. `git diff --check` PASS. Chromium/Playwright remains excluded by §38.5 and was not run.
+
+External calendar/repository/invitation/webhook/deployment adapters are unchanged and remain `EXTERNAL_DEFERRED`; no simulated success is introduced. Optional higher-order UX such as drag-and-drop animation, automatic semantic merge of two user-authored Features and provider-specific calendar impact previews does not block the canonical structured flow and is not claimed as implemented.
+
+### 38.11 Project-launch business-integrity corrective closure
+
+**Checkpoint:** 2026-08-14. A second business-flow audit found cases where the implementation could compile and create rows while still violating the reviewed operating intent. These corrections remain owned by CAND-023A–D; no new CAND is introduced.
+
+| Existing owner | Business gap closed | Enforced outcome |
+|---|---|---|
+| CAND-023A | Rulebook drafts previously accepted arbitrary keys/values and the Assistant offered a one-click preset without a real review surface. | The server accepts only implemented rule schemas, validates units and bounded numeric ranges, and rejects unsupported rules. The Assistant now exposes a compact editable review, saves a draft, shows the saved rules and requires a separate activation action. |
+| CAND-023B | Aggregate team hours could pass while one member received more Task hours than their reviewed allocation; Sprint validation did not reject overlap, Project-timebox escape or a predecessor placed in a later Sprint. | Assignment is balanced and revalidated per person. Every selected Task has an eligible assignee; reviewer separation is enforced. Sprint/dependency temporal invariants fail closed before any Project mutation. |
+| CAND-023C | Reviewer selection was discarded; acceptance criteria and Definition of Done were flattened into Task description text; count-only read-back could miss semantically wrong fields; a session-projection failure after commit could make an already-created Project appear failed. | P019 persists `ReviewerId`, typed canonical checklist rows and stable Sprint/Task client trace IDs. Confirmation commits once, then performs semantic read-back over Project fields, roles, Sprints, Tasks, assignment rows, reviewer, skills, checklist/DoD, dependencies and Feature/KPI/source traces. Receipt state is `verification_pending` until this succeeds. Session synchronization is best-effort and cannot reverse or falsely fail a committed canonical graph; retry resumes verification through the same idempotency key. |
+| CAND-023D | Monitoring covered broad counts/status but could miss role, Sprint, assignment, skill, dependency and trace drift or newly invalid capacity/availability. | Replan detection now compares those semantic baselines and re-evaluates each selected member's declared capacity, availability reduction, cross-Project commitments and focus reserve. It only creates a review proposal; it never silently repairs canonical work. |
+
+Migration `P019ProjectLaunchSemanticIntegrity` is additive. Existing launch traces receive deterministic legacy client IDs before the new unique index is created, so upgrading a database with P018 data does not fail on duplicate empty defaults. Existing checklist rows are classified as acceptance items; reviewer remains optional for legacy Tasks.
+
+Fresh focused evidence: Release solution build PASS with 0 warnings/0 errors; frontend typecheck PASS; production build PASS with 3,995 modules; focused Project-launch/Rulebook Integration `6/6 PASS`; focused launch-contract Unit `10/10 PASS`; EF pending-model check PASS; focused diff check PASS. The canonical integration verifies stable idempotent replay, semantic receipt, reviewer and typed checklist/DoD persistence, stale-source zero mutation, per-person overload and Sprint-overlap rejection, Rulebook bounds, plus monitor detection for role/Sprint/assignment/dependency/trace drift. Chromium/Playwright was intentionally not run under §38.5.
+
+**Disposition:** CAND-023 remains `INTERNAL_CORE_COMPLETE_VERIFIED` for the governed internal flow with the stronger semantic contract above. Calendar, repository, invitation, webhook and deployment adapters remain `EXTERNAL_DEFERRED`; no external success is claimed or simulated.
+
+### 38.12 Unified runtime, recoverable customization and truthful Task confirmation
+
+**Checkpoint:** 2026-08-14. This follow-up closes the gaps where individually correct capabilities still produced an incoherent user flow. No new CAND is introduced; the changes extend the existing authoritative owners.
+
+| Existing owner | Gap closed | Enforced outcome |
+|---|---|---|
+| CAND-018/019/021 | `/analytics` could instantiate both the page assistant and the floating assistant against the same session/version. | Analytics now owns one primary conversation runtime. Global assistant actions focus that runtime while the shared Action Composer remains available as an artifact surface. |
+| CAND-019/021/024 | A confirmed Task draft could display successful command rows before canonical semantic read-back, and a retry could receive a new idempotency key after `rowVersion` changed. | Confirmation uses one stable key per draft. Receipt and every command remain verification-failed/pending until Tasks, assignment, Sprint, estimate, priority, due date and skill rows match canonical data. Retry re-runs read-back only and cannot create duplicates. |
+| CAND-019/021 | Action Composer customization could be lost on reload or a stale browser draft could overwrite a newer server revision. | Edits autosave with optimistic `rowVersion`; browser recovery is user-scoped. Newer server state wins by default and the local copy is offered explicitly as a recoverable alternative. |
+| CAND-017/023B | Automatic balancing was treated as the only valid workflow and overlapping Sprints were always rejected. | Review now separates hard invariants from preferences: `auto_balance` or `preserve_assignments`, and `sequential_sprints` or `parallel_workstreams`. Preserve mode permits an explicit unassigned backlog and never silently replaces a user selection; rights, skill evidence, capacity, availability and dependency order remain server-enforced. |
+| CAND-019/023A-D | Project Launch working edits had durable server revisions only after save; unsaved browser work had no recovery layer. | User-scoped browser recovery restores Brief and dirty Plan customization after reload. Canonical Project state is still mutated only by the reviewed server plan and explicit confirm. |
+| CAND-019/021/024 | Model selection was visible but Action Composer still used a fixed provider hint; explicit Task counts could be silently shortened. | Provider/model selection now reaches Action Composer routing and receipts retain actual provider/model. Numeric and Vietnamese/English word counts are honored through 20; larger batches are rejected with a split-batch instruction instead of silent truncation. |
+
+The hard boundary is explicit: permission, organization scope, stale source/revision, idempotency, skill evidence, legal/Rulebook limits, real capacity/availability, dependency correctness and canonical read-back are non-bypassable. Assignment strategy, backlog, staffing selection, reviewer choice, Sprint/workstream layout and editable content remain user-controlled within those invariants. Server revisions are authoritative business state; browser backup is recovery state only and never constitutes successful execution.
+
+Fresh focused evidence: frontend typecheck PASS; targeted diff check PASS; Action Composer Integration `7/7 PASS`; preserve-assignment/parallel-workstream canonical Project integration `1/1 PASS`; focused Action Composer contract Unit `16/16 PASS`; Release Web build PASS from the same checkpoint. Chromium/Playwright was intentionally not repeated under §38.5. The running Debug preview was not stopped; integration evidence was produced in Release to avoid replacing a loaded Debug assembly.
+
+**Disposition:** the internal unified assistant/customization/Task-confirmation slice is `INTERNAL_CORE_COMPLETE_VERIFIED` within the declared boundary. Time-phased weekly staffing and reviewer-overhead optimization remain a documented planning refinement. Calendar, repository, invitation, webhook and deployment adapters remain `EXTERNAL_DEFERRED`; no external success is claimed or simulated.
+
+## 39. Acceptance-driven reopening — Section 3 prompt coverage (P01–P28)
+
+**Checkpoint:** 2026-08-16. Product Owner accepts sections 1 and 2 of the full-project acceptance script as the operating instructions and surface inventory. This amendment is therefore scoped only to section 3, prompts P01–P28. It does not repeat the general inventory or the manual checklist.
+
+### 39.1 Corrected completion statement
+
+The historical `INTERNAL_CORE_COMPLETE_VERIFIED` dispositions in §38 remain useful implementation and integration evidence, but they are not sufficient evidence that the public Assistant prompt flow is complete. Runtime replay has shown that a capability can exist and its API tests can pass while the natural-language turn is routed to the wrong capability, receives the wrong source scope, renders as generic text, loses session scope, or never exposes the real confirm/read-back action.
+
+Until every row in §39.4 passes, the authoritative product disposition is:
+
+`INTERNAL_COMPONENTS_PRESENT / SECTION_3_ACCEPTANCE_REOPENED / AI_NATIVE_PRODUCT_NOT_YET_ACCEPTED`.
+
+No CAND-025 is introduced. The work reopens the existing CAND that owns each outcome. A prompt is not complete merely because its underlying endpoint, service, DTO, card shell or isolated integration test exists.
+
+### 39.2 Runtime evidence that forces the reopening
+
+1. **P02 wrong lane:** a workspace read request produced the hard-coded task-mutation limitation (“Trợ lý AI hiện chỉ hỗ trợ soạn bản nháp để tạo task mới…”). The same response is emitted by the generic write fallback in `ErumiChatService`. A noun such as Task inside a read/summary request must never be enough to select a mutation lane.
+2. **P03 scope loss:** the UI showed selected Project `Qaly Release 4.0`, but the response said no authorized Project context existed. The client sends both `projectId` and the current route entity. In `AiAssistantContextRegistry.ResolveAsync`, a grounded-read turn on a Group route is currently resolved as Group before the selected Project is resolved; the explicit Project selection is therefore ignored and only one unrelated source reaches the turn.
+3. **Session/scope mismatch:** selecting a Project while a workspace session is open is intentionally allowed without starting a new session, but the persisted session scope can remain workspace. Reload can consequently restore the transcript while losing the effective Project target. Conversation history and business scope must be persisted separately and restored together.
+4. **Renderer/action mismatch:** several implemented capabilities still reach the user as generic prose or a navigation hint. Presence of a native action service does not prove that the public prompt opens its editable artifact and reaches confirm/read-back.
+
+These are business-flow defects, not cosmetic test failures. They invalidate a blanket P01–P28 completion claim.
+
+### 39.3 One corrective goal and execution rules
+
+**Single goal:** make all P01–P28 in `19_FULL_PROJECT_AND_AI_NATIVE_ACCEPTANCE_SCRIPT.md` reach the correct authorized capability, preserve the intended workspace/Project/Task/Wiki/Group/Meeting scope across reload, render the appropriate compact interactive artifact, execute only through the governed confirmation path, and prove canonical read-back or an honest non-mutation/deferred result.
+
+Rules for this goal:
+
+1. Keep `routeEntity` and `selectedBusinessScope` as distinct server-owned concepts. A Group/Wiki/Task route may provide a source entity while an explicitly selected Project remains the analysis and session scope.
+2. Explicit user selection wins over ambient route inference for generic Project/workspace analysis. A capability-specific target wins only for an explicit Group Poll, Wiki, Meeting or Task action.
+3. Persist a scope change on the current session with optimistic concurrency; do not silently create a new session and do not discard the existing transcript. Reload must restore both the session and the selected scope.
+4. Classify by requested outcome and action object, not by isolated nouns. Read prompts that mention Task, Project or “việc cần chú ý” remain reads unless an explicit create/update/assign action is present.
+5. Every turn resolves to a registered tuple: `intent + capability + authorized sources + renderer + allowed actions + evidence contract`. Unknown tuples degrade to a useful read/fallback response; they never become a dead-end pitch.
+6. Structured outcomes use typed metrics, tables, forms, review cards, before/after cards or receipts. Long prose, provider trace and process details remain collapsed. Text remains valid only for a genuinely narrative answer.
+7. Mutation always follows `durable editable draft → one explicit confirm → idempotent execution → semantic read-back → receipt/deep-link`. A card or toast alone is not success.
+8. Hard constraints remain non-bypassable: authorization, tenant scope, skill evidence, declared capacity/availability, Rulebook/legal limits, dependency validity, stale source/version and idempotency. Preferences and editable content remain user-controlled.
+9. Do not run Chromium after every change. Use focused Unit/Integration tests per wave and one final targeted browser/manual replay for the interaction-heavy prompts. Re-run a broad suite only when a focused failure implicates shared infrastructure.
+
+### 39.4 P01–P28 ownership and concrete fix plan
+
+Status vocabulary:
+
+- `RUNTIME_FAIL`: reproduced product behavior contradicts the prompt contract.
+- `PARTIAL`: meaningful implementation exists, but prompt-to-artifact-to-evidence is incomplete.
+- `REVERIFY`: backend evidence exists; the exact public prompt still requires an acceptance fixture and replay.
+- `EXPECTED_DEFERRED`: the correct result is an honest deferred card, not an implemented external side effect.
+
+| Prompt | Current disposition | Existing owner reopened | Required corrective increment | Acceptance evidence required |
+|---|---|---|---|---|
+| P01 — capabilities by role | `PARTIAL` | CAND-019/021/024 | Build cards from server-discovered capabilities and authorization state; separate read, draft, confirm and unsupported; every visible navigation is server-registered. | Admin and Member fixtures show different cards; each button opens the declared route; no dead or privileged action. |
+| P02 — real workspace summary | `RUNTIME_FAIL` | CAND-001/009/019/021 | Add an explicit workspace-summary read intent; prevent Task nouns from entering write fallback; return canonical Project/task/workload metrics with source refs and typed blocks. | Exact P02 fixture matches Dashboard/API counts; renderer has metric/table/cards; no task-mutation limitation or `not_reached/100%`. |
+| P03 — selected Project analysis | `RUNTIME_FAIL` | CAND-001/002/019/021/024 | Make explicit selected Project precede ambient Group route for generic analysis; authorize Project sources independently from the surface entity; retain deep-links to canonical Task/Sprint rows. | On a Group route with Project chip selected, exact P03 reads that Project; source set contains the Project packs; private sources remain redacted. |
+| P04 — durable session memory | `PARTIAL` | CAND-021A/024B | Persist user-stated session facts as ordered durable turn/context data; restore after reload; do not confuse facts with instructions or Project mutation. | Two-turn MVP fixture passes before and after reload without asking for the three features again. |
+| P05 — session history/title | `PARTIAL` | CAND-021A/024B | Add/finish session title mutation with row version, real session list, resume and scope restoration. History must list sessions, not only old messages. | Rename, reload, list and resume the same session ID; summary and selected scope match; no duplicate session. |
+| P06 — structured unknowns | `REVERIFY` | CAND-023A/019/024B | Route launch intent to typed multi-answer form; at most three blocking unknowns; options plus “Khác”; no send-on-first-keystroke; server owns answered state. | Exact P06 renders the form, retains all answers across reload and creates no Project. |
+| P07 — unknown answers to Brief | `REVERIFY` | CAND-023A | Map timebox, audience, scope and quantitative success metrics into a new durable Brief revision; reuse supplied facts. | Read-back shows 12 weeks, target audience, four must-haves and all stated KPI/quality targets; no repeated question. |
+| P08 — staffing/delivery scenarios | `REVERIFY` | CAND-015/016/017/023B | Recompute scope-sized alternatives from verified skills, declared availability/capacity, cross-Project load and effective Rulebook; expose editable team/Sprint/Task controls and blocked reasons. | Three distinct scenarios with trade-offs; team size is scope-derived; invalid capacity cannot be confirmed; edits persist as a Plan revision. |
+| P09 — canonical Project graph | `REVERIFY` | CAND-018/023C | Connect the selected reviewed plan to one final review card and one confirm; persist Project, roles, Sprints, Tasks, dependencies, skill requirements and traces atomically; select the new Project in the same session. | Canonical DB/API read-back, semantic receipt and working deep-link after reload; no second Project on retry. |
+| P10 — idempotency | `REVERIFY` | CAND-018/023C | Reuse the execution idempotency key and resume verification rather than re-executing; expose stable receipt state. | Same key returns the same receipt and unchanged row counts for Project/Sprint/Task/dependency. |
+| P11 — exactly 10 Tasks | `REVERIFY` | CAND-018/019 | Preserve explicit count and named Task set through model/fallback normalization; open editable Action Composer rather than a three-item generic draft. | Exact P11 yields ten selectable commands; confirm creates exactly selected rows and replay creates zero duplicates. |
+| P12 — assignment schedule | `PARTIAL` | CAND-006/017/019/021 | Route to `task.assignment_schedule.v1` with the open Task ID; open editable candidate/date card; score verified skills, availability, capacity, deadline and portfolio load. | Intent, Project and Task IDs are exact; changing candidate/date revalidates; no Project Launch or Task-create artifact. |
+| P13 — assignment confirm | `PARTIAL` | CAND-017/018 | Supply rowVersion/idempotency internally from the durable draft; one confirm executes exactly one assignment and performs semantic read-back. | Receipt is `succeeded`, `readBackVerified=true`; exactly one canonical assignee/assignment; retry is stable. |
+| P14 — invalid capacity | `REVERIFY` | CAND-017/023B | Treat absent capacity/availability as unknown, not 40h; fail closed on unavailable/overloaded candidates and offer valid alternatives. | Exact negative fixture disables confirm, explains the binding constraint and performs zero mutation. |
+| P15 — stale source | `REVERIFY` | CAND-017/018/023B | Bind Task/project/capacity source revisions into the assignment draft and compare them at confirm. | Concurrent Task edit returns stale/conflict, preserves canonical state and offers regenerate/review. |
+| P16 — acceptance checklist | `PARTIAL` | CAND-003/018/019/022D | Register prompt handoff to native checklist draft; render exactly five editable rows; keep row version and Task scope. | Exact P16 creates five canonical typed checklist rows only after one confirm and reads all five back after reload. |
+| P17 — breakdown | `PARTIAL` | CAND-004/018/019/022D | Register prompt handoff to native breakdown artifact; preserve exact count, order, parent, dependencies, estimates and catalog skills. | Exact P17 creates four subtasks and the expected DAG; reload and receipt agree. |
+| P18 — Wiki brief/Tasks | `PARTIAL` | CAND-012/018/019/022D | Prefer explicit Wiki target, capture page revision and section anchors, render sourced brief plus at most three optional Task cards; create only checked Tasks. | Section links reopen the source; selected Tasks persist once; stale Wiki revision blocks confirm. |
+| P19 — Group Poll | `PARTIAL` | CAND-020/018/019/022D | Prefer explicit Group Poll capability on a Group route; render editable question, four options and deadline; connect confirm to native Poll action. | Poll and four options survive reload; duplicate confirm is idempotent; Member permissions are enforced. |
+| P20 — Meeting actions | `PARTIAL` | CAND-010/018/019/022D | Produce decision/blocker/action-item cards from authorized transcript; each action item can link to an existing Task or prepare a new Task draft; never auto-create. | Transcript revision/source shown; per-item mapping is editable; only confirmed mappings mutate canonical data. |
+| P21 — Roadmap/Sprint | `PARTIAL` | CAND-014/017/019/022D/023D | Add a durable before/after proposal using dependencies, capacity and deadline; expose Sprint edits and revalidation; no implicit save. | Exact P21 shows before/after; one confirm persists the reviewed revision; stale baseline blocks. |
+| P22 — weekly digest | `PARTIAL` | CAND-013/018/019/022D | Route to native digest preference draft; use organization timezone; review schedule/recipients/scope; confirm and read back subscription revision. | 09:00 Monday schedule and timezone survive reload; permission and duplicate-confirm tests pass. |
+| P23 — skill evidence | `PARTIAL` | CAND-015/016/019/022D | Build evidence proposal only from verified completion/acceptance provenance; expose attribution review; exclude labels/private chat as sole evidence. | Confirmed evidence links Task, acceptance item, reviewer and skill; invalid provenance is rejected. |
+| P24 — monitor/replan | `REVERIFY` | CAND-017/023D | Route exact prompt to baseline comparison; show scope/schedule/staffing/task drift in before/after cards; produce a review proposal only. | Drift fixture is detected with source revisions; zero canonical repair occurs before a later governed confirm flow. |
+| P25 — Member read-only | `PARTIAL` | CAND-019/021C/024 | Preserve useful grounded read and source navigation when mutation capability is denied; suppress confirm controls, not the answer. | Member sees only authorized sources and useful recommendations; mutation APIs/cards are absent or denied server-side. |
+| P26 — provider failure | `PARTIAL` | CAND-021/024A/C | Fall back to the deterministic grounded server reader/planner, record actual provider/model, retain the requested outcome and never emit false mutation success. | Forced provider failure returns useful scoped data or resumable draft; provider metadata is truthful; no dead-end capability pitch. |
+| P27 — renderer/navigation | `PARTIAL` | CAND-001/002/019/021/024 | Define typed metric/table/Task/Member/Sprint result blocks and validated per-row actions; avoid a long text dump; keep technical trace collapsed. | Exact P27 renders three overdue Tasks, three high-load members and at-risk Sprint with correct canonical links. |
+| P28 — external adapters | `EXPECTED_DEFERRED` | CAND-023 external boundary | Return an adapter-status card derived from real configuration/health/receipt state. Calendar, repository, invitation, webhook and deployment remain `EXTERNAL_DEFERRED` unless credentialed adapters perform read/write/read-back. | No simulated success. Each unavailable adapter is named and deferred; any available adapter must show a verifiable receipt. |
+
+### 39.5 Delivery waves and stop-the-line order
+
+The implementation must follow dependency order; later artifacts are not useful while context routing is wrong.
+
+| Wave | Prompts | Outcome | Exit gate |
+|---|---|---|---|
+| W0 — context/router blocker | P02, P03 | Separate selected Project scope from route entity; correct read-vs-write classification; persist scope. | Exact API fixtures for P02/P03 plus frontend typecheck. Do not continue if either returns generic mutation limitation or wrong source. |
+| W1 — conversation shell | P01, P04, P05, P25, P26, P27 | Role-aware cards, durable session/title/scope, useful fallback, typed renderers and navigation. | Focused Unit/Integration plus one manual reload/session replay. |
+| W2 — Project launch | P06–P10 | Structured unknowns through idempotent canonical Project graph. | Existing Project-launch integration extended with exact prompt fixtures and semantic DB read-back. |
+| W3 — Task operations | P11–P17 | Exact Task count, assignment schedule, invalid/stale protection, checklist and breakdown. | Focused Action Composer/native-action/assignment integrations; canonical count and DAG read-back. |
+| W4 — remaining native surfaces | P18–P24 | Wiki, Poll, Meeting, Roadmap, digest, skill evidence and monitor/replan become real prompt-reachable artifacts. | One focused integration per capability; route/source/revision/permission/confirm evidence. |
+| W5 — truth boundary | P28 and final matrix | Honest external status and final P01–P28 replay. | All rows PASS or explicitly `EXTERNAL_DEFERRED`; no `PARTIAL`, generic fallback or dead navigation remains. |
+
+W3 is the immediate next implementation slice after the verified W0–W2 checkpoints below. Task operations must reuse the corrected Project/session scope and governed confirmation contracts instead of introducing isolated keyword-only paths.
+
+### 39.6 Required acceptance fixture contract
+
+Each P01–P28 prompt becomes a versioned fixture with these assertions:
+
+1. exact normalized intent and selected capability;
+2. session ID, selected Project/surface entity and organization scope before and after reload;
+3. authorized source IDs, source revisions and redaction result;
+4. renderer type and required typed fields;
+5. visible action IDs, target routes and permission state;
+6. mutation mode (`none`, `draft_then_confirm`, or `external_deferred`);
+7. expected canonical count/semantic read-back for mutation prompts;
+8. idempotency, stale-source and provider-failure outcome where applicable;
+9. actual provider/model, never `not_reached/not_reached` with fabricated confidence;
+10. concise Vietnamese result first; process/context/trace collapsed by default.
+
+The fixture catalog is the release authority. Ad-hoc keyword tests, DTO existence, UI screenshots without action evidence and historical broad “complete” labels cannot close a row.
+
+### 39.7 Final gate for section 3
+
+Section 3 is accepted only when:
+
+- all P01–P27 fixtures pass end to end, with canonical read-back for every mutation;
+- P28 reports real adapter receipts or `EXTERNAL_DEFERRED` without simulated success;
+- the exact P02 and P03 regressions in §39.2 are covered by automated tests;
+- Member, stale-source, duplicate confirm and provider-failure cases cause no unauthorized or duplicate mutation;
+- frontend typecheck/build and focused affected backend tests pass;
+- one final targeted manual/browser replay covers session reload, multi-answer form, Project selection from a non-Project route, editable confirm cards and deep-link navigation.
+
+No repeated per-change Chromium run is required. The final report must list P01–P28 individually as `PASS`, `FAIL` or `EXTERNAL_DEFERRED`; aggregate percentages or CAND-level completion labels are not substitutes.
+
+### 39.8 W0 implementation checkpoint — P02/P03 router and source scope
+
+**Checkpoint:** 2026-08-16. The first stop-the-line slice is implemented and has focused automated evidence. This checkpoint closes the reproduced routing/source defects; it does not yet close the separate session-scope persistence requirement assigned to W1.
+
+| Prompt | Corrective result | Evidence | Disposition |
+|---|---|---|---|
+| P02 | Goal-planner reconciliation now prevents a model-ranked mutation capability from overriding a server-classified read/research request. Canonical workspace metric/table/chart requests are built by the deterministic server reader before provider prose can redirect the turn. | Exact prompt Unit plus API Integration; canonical Project/overdue-Task fixture; typed metrics, table and source assertions. | `AUTOMATED_W0_PASS / FINAL_REPLAY_PENDING` |
+| P03 | Explicit selected Project now wins over an ambient Group route for generic Project analysis. An explicit Group request still uses Group scope, preserving capability-specific targets without discarding user selection. Planner reconciliation also selects the authorized read route when the model proposed an unavailable mutation capability. | Exact prompt Goal-planner Unit, Context Registry Unit for both precedence branches, and API Integration asserting Project summary/tasks sources with no Group-source substitution. | `AUTOMATED_W0_PASS / FINAL_REPLAY_PENDING` |
+
+Focused evidence from the same working tree: Goal-planner/context Unit `4/4 PASS`; exact P02/P03 API Integration `2/2 PASS` in Release. Release output was used because the active preview legitimately held the Debug Web assemblies; the preview was not stopped. Existing analyzer warnings in `ErumiRoadmapAiService` are outside this focused slice and did not fail the run.
+
+### 39.9 W1 implementation checkpoint — conversation shell, role-aware fallback and typed navigation
+
+**Checkpoint:** 2026-08-16. W1 now has focused automated evidence for P01, P04, P05 and P25–P27. This closes the server/API and renderer contracts in this wave; one final manual session reload/navigation replay remains part of the section-level gate in §39.7.
+
+| Prompt | Corrective result | Evidence | Disposition |
+|---|---|---|---|
+| P01 | Capability overview is derived from the authorized server registry. Admin receives draft/confirm affordances; Member receives read-only capability and navigation cards without Task-create/assignment leakage. External adapters are labelled `EXTERNAL_DEFERRED`. | Exact API fixtures for Admin and Member `2/2 PASS`. | `AUTOMATED_W1_PASS / FINAL_REPLAY_PENDING` |
+| P04 | Session facts are acknowledged and recalled from canonical server history after reload; no workspace query or mutation is used for memory recall. | Exact Unit `1/1 PASS`; API reload/recall Integration `1/1 PASS`. | `AUTOMATED_W1_PASS / FINAL_REPLAY_PENDING` |
+| P05 | Project scope changes in place on the current session with optimistic concurrency. Transcript, title and clarification state are retained; stale updates return conflict instead of silently forking context. | Session scope/history/context Integration `3/3 PASS`; frontend typecheck PASS. | `AUTOMATED_W1_PASS / FINAL_REPLAY_PENDING` |
+| P25 | A read-only Member request cannot be misclassified as Task assignment merely because it describes denied mutation. The response still contains canonical Project metrics, three useful recommendations and source-navigation cards; no mutation/confirm artifact is rendered. | Exact P25 API Integration `1/1 PASS`. | `AUTOMATED_W1_PASS / FINAL_REPLAY_PENDING` |
+| P26 | Research-provider outage now degrades to the deterministic Project/workspace reader for retryable provider failures. The returned metadata states actual `Qaly / qaly-native`; no unpersisted action is reported as successful. Policy, consent and schema failures remain fail-closed. | Exact P26 provider-failure Unit `1/1 PASS`. | `AUTOMATED_W1_PASS / FINAL_REPLAY_PENDING` |
+| P27 | Table contract supports a validated per-row navigation action. The exact prompt returns bounded Task, member-workload and at-risk Sprint tables; each row carries a canonical internal route and the UI renderer displays its open button. | Exact P27 API Integration `1/1 PASS`; frontend typecheck PASS. | `AUTOMATED_W1_PASS / FINAL_REPLAY_PENDING` |
+
+W1 does not mark Section 3 complete. P06–P24 still require their wave-specific fixtures and canonical mutation read-back, and P28 remains `EXTERNAL_DEFERRED` unless real external adapters provide receipts. The next active slice is W2 (P06–P10): Project Launch brief → editable staffing/delivery proposal → one confirm → canonical graph read-back, including exact task counts, skill/capacity/availability checks and stale/duplicate safety.
+
+### 39.10 W2 implementation checkpoint — governed Project launch P06–P10
+
+**Checkpoint:** 2026-08-16. The complete Project-launch wave now has exact prompt routing plus canonical mutation evidence. This checkpoint does not close Section 3; W3–W5 remain open.
+
+| Prompt | Corrective result | Evidence | Disposition |
+|---|---|---|---|
+| P06 | Generic product wording no longer falsely satisfies detailed scope. The form asks at most three actual blockers, supplies common options plus `Khác…`, accepts free text and retains multi-answer server drafts. The quoted Project name is preserved by the deterministic fallback. | Exact P06/P07/P08/P09 API sequence `1/1 PASS`; existing clarification reload fixture; frontend typecheck PASS. | `AUTOMATED_W2_PASS / FINAL_REPLAY_PENDING` |
+| P07 | Natural Vietnamese timebox, individual-customer audience, four must-haves and quantitative E2E/p95/Critical targets update the durable Brief revision directly and do not re-ask answered facts. | Exact API assertions for Brief revision, scope and three typed metrics. | `AUTOMATED_W2_PASS / FINAL_REPLAY_PENDING` |
+| P08 | The exact staffing prompt routes to `project.staffing.plan.v1`, returns three scenarios and typed Sprint/Task/dependency/estimate/skill data. Missing skill catalog is now a hard blocker; missing capacity is never converted into availability. Editable staffing/Sprint/Task changes persist as a reviewed Plan revision. | Exact prompt integration plus focused customization, overload and Sprint validation regressions `3/3 PASS`. | `AUTOMATED_W2_PASS / FINAL_REPLAY_PENDING` |
+| P09 | The selected plan is returned again on the confirmation turn instead of pointing to an older chat message. The UI shows a compact final summary for Project, manager/team, Sprint count and Task count; the existing governed confirm remains the sole mutation action. | Exact P09 session/plan identity assertion; canonical confirm/read-back regression `2/2 PASS`; frontend typecheck PASS. | `AUTOMATED_W2_PASS / FINAL_REPLAY_PENDING` |
+| P10 | Retry with the same idempotency key returns the same receipt. The exact prompt routes to read-back monitoring and reports duplicate safety only when the canonical graph still matches the confirmed baseline. | Exact P10 Integration `1/1 PASS`, asserting unchanged Project/Sprint/Task/dependency row counts and stable receipt ID. | `AUTOMATED_W2_PASS / FINAL_REPLAY_PENDING` |
+
+Focused evidence from this working tree: P06–P09 exact sequence Integration `1/1 PASS`; P10 exact canonical/idempotency Integration `1/1 PASS`; P08–P10 intent Unit `3/3 PASS`; Plan customization/stale/capacity/confirm/monitor regression Integration `5/5 PASS`; frontend typecheck PASS; Release Infrastructure build PASS with only four pre-existing `ErumiRoadmapAiService` analyzer warnings. Chromium was intentionally not repeated under §39.3 rule 9.
+
+The next active wave is W3 (P11–P17): exact Task batch creation, assignment scheduling and its invalid/stale gates, then checklist and subtask DAG confirmation/read-back.
+
+### 39.11 W3 implementation checkpoint — Task graph, assignment and Task completion P11–P17
+
+**Checkpoint:** 2026-08-16. W3 is implemented through the same public Assistant contracts and canonical executors used by the manual Task/Kanban surfaces.
+
+| Prompt | Corrective result | Evidence | Disposition |
+|---|---|---|---|
+| P11 | An explicit request for ten Tasks produces exactly ten editable commands. Every command carries description, acceptance criteria, estimate, priority and required skill; the reviewed graph preserves dependencies. Confirmation persists exactly ten canonical Tasks and replay creates no duplicate. | Exact-count Action Composer Integration plus count/parser Contract Unit. | `AUTOMATED_W3_PASS / FINAL_REPLAY_PENDING` |
+| P12 | The opened Task is ranked against confirmed skill evidence, declared capacity, availability and multi-Project load. Alternatives and the proposed time window remain editable; no assignee or deadline is written while reviewing. | Exact P12/P13 Assistant Integration and portfolio scheduling Integration. | `AUTOMATED_W3_PASS / FINAL_REPLAY_PENDING` |
+| P13 | The same durable assignment proposal is reopened for final review. One confirmation writes exactly one `TaskAssignment`, reads it back and uses a stable idempotency key. | Assignment proposal/confirm/read-back and replay Integration. | `AUTOMATED_W3_PASS / FINAL_REPLAY_PENDING` |
+| P14 | Missing or insufficient declared capacity and unavailable windows are hard blockers. Qaly does not invent 40h capacity or treat an empty calendar minute as usable capacity; alternatives remain read-only. | `P14_NoDeclaredCapacityAvailable...` plus invalid-capacity portfolio fixtures. | `AUTOMATED_W3_PASS / FINAL_REPLAY_PENDING` |
+| P15 | Task/source changes after proposal cause stale-source conflict and zero partial mutation. The user must regenerate the proposal. | Cross-tenant/stale-source portfolio Integration. | `AUTOMATED_W3_PASS / FINAL_REPLAY_PENDING` |
+| P16 | The exact request creates five editable acceptance rows only after one confirmation and reads all five canonical rows back. | P16/P17 native-domain Integration. | `AUTOMATED_W3_PASS / FINAL_REPLAY_PENDING` |
+| P17 | The exact request creates four canonical subtasks with parent links, estimates, required skills and an ordered dependency graph; reload preserves the graph. | P16/P17 native-domain Integration. | `AUTOMATED_W3_PASS / FINAL_REPLAY_PENDING` |
+
+### 39.12 W4 implementation checkpoint — Wiki, Poll, Meeting, Roadmap, Digest, evidence and replan P18–P24
+
+**Checkpoint:** 2026-08-16. W4 replaces generic-text fallbacks with typed, server-persisted review cards and registered native action capabilities.
+
+| Prompt | Corrective result | Evidence | Disposition |
+|---|---|---|---|
+| P18 | Wiki brief is grounded to section references. Up to three Task candidates are editable and unchecked by default; confirmation creates only selected Tasks and reads them back. | Exact P18/P19/P22 native-domain Integration. | `AUTOMATED_W4_PASS / FINAL_REPLAY_PENDING` |
+| P19 | Poll draft contains exactly four clear options, editable question/options and a three-day expiry. A single confirm creates and reads back the canonical Poll. | Exact P18/P19/P22 native-domain Integration. | `AUTOMATED_W4_PASS / FINAL_REPLAY_PENDING` |
+| P20 | The open meeting transcript resolves to the canonical import/extraction. Decisions, blockers and action items are displayed; every action defaults to no mapping. Only selected existing-Task mappings or new Task drafts are persisted. | Exact P20/P21/P23 native-domain Integration. | `AUTOMATED_W4_PASS / FINAL_REPLAY_PENDING` |
+| P21 | Roadmap analysis compares dependency, capacity and deadline facts and renders selected Sprint changes as before/after rows. Only selected adjustments are applied and read back. | Exact P20/P21/P23 native-domain Integration. | `AUTOMATED_W4_PASS / FINAL_REPLAY_PENDING` |
+| P22 | Weekly Digest persists Monday 09:00 using the current user's Organization timezone and returns the canonical subscription state. Source version includes the timezone profile. | Exact P18/P19/P22 native-domain Integration. | `AUTOMATED_W4_PASS / FINAL_REPLAY_PENDING` |
+| P23 | Skill evidence is available only for a Done Task with completed confirmed acceptance, a real assignee/assignment and confirmed required skill. Confirmation delegates to the canonical evidence service; label and private chat are never evidence. | Exact P20/P21/P23 native-domain Integration. | `AUTOMATED_W4_PASS / FINAL_REPLAY_PENDING` |
+| P24 | Monitor compares the confirmed launch baseline with current scope, schedule, staffing, Task, dependency and trace facts. It returns meaningful drift rows with baseline/current and a review-only replan; no silent repair occurs. | Project launch confirm/monitor/rollback Integration with exact P24 prompt. | `AUTOMATED_W4_PASS / FINAL_REPLAY_PENDING` |
+
+Routing regressions found by the aggregate gate were fixed at the semantic boundary: a read request mentioning Sprint/dependency no longer becomes a Roadmap mutation draft; a Project launch request mentioning staffing still starts with the Launch Brief; staffing text mentioning skill evidence no longer becomes skill-attribution; and customization wording such as “thêm/bớt người ... sửa Task” no longer becomes Task creation. Exact P18–P24 intent fixtures now lock those distinctions.
+
+### 39.13 W5 checkpoint — truthful external-adapter status P28 and complete automated matrix
+
+**Checkpoint:** 2026-08-16. P28 now has a deterministic server-owned status route. It does not call a model and cannot expose a mutation action. The response contains exactly Calendar, Repository, Invitation, Webhook and Deployment; each row is `EXTERNAL_DEFERRED` because no provider-specific adapter currently has both a write receipt and provider read-back. Existing GitHub links or credentials do not count as an AI Native write/read-back adapter.
+
+Focused P28 Integration proves `UsedAi=false`, five deferred rows, internal navigation only and unchanged Project/Task counts. P28 therefore passes the truthfulness requirement as `EXTERNAL_DEFERRED_VERIFIED`; it is not counted as an implemented external integration.
+
+| Prompt | Automated disposition | Prompt | Automated disposition |
+|---|---|---|---|
+| P01 | PASS | P15 | PASS |
+| P02 | PASS | P16 | PASS |
+| P03 | PASS | P17 | PASS |
+| P04 | PASS | P18 | PASS |
+| P05 | PASS | P19 | PASS |
+| P06 | PASS | P20 | PASS |
+| P07 | PASS | P21 | PASS |
+| P08 | PASS | P22 | PASS |
+| P09 | PASS | P23 | PASS |
+| P10 | PASS | P24 | PASS |
+| P11 | PASS | P25 | PASS |
+| P12 | PASS | P26 | PASS |
+| P13 | PASS | P27 | PASS |
+| P14 | PASS | P28 | `EXTERNAL_DEFERRED_VERIFIED` |
+
+Fresh aggregate evidence from the same working tree: focused Section-3 Integration `22/22 PASS`; goal-planning/capability/coverage Unit `41/41 PASS`; Release Web build PASS; frontend typecheck PASS. Four existing `ErumiRoadmapAiService` analyzer warnings may appear on a non-incremental test-project build and are not hidden as product evidence. The aggregate suite caught and closed the semantic routing conflicts described above. Chromium/Playwright was intentionally not repeated, following §39.3 rule 9 and the Product Owner's cost constraint.
+
+**Authoritative state:** `SECTION_3_AUTOMATED_GATE_PASS / FINAL_TARGETED_MANUAL_REPLAY_PENDING`. The implementation goal has automated evidence for every P01–P27 outcome and truthful P28 deferral. This does not waive the one final manual/browser replay required by §39.7 for visual session reload, multi-answer editing, Project switching, card controls and deep-link navigation; until that replay is recorded, the broader product label remains pending rather than silently promoted to fully accepted.

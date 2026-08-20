@@ -26,6 +26,7 @@ const props = defineProps<{
   projectId?: string | null
   projects: ProjectOption[]
   openRequest?: AssistantOpenRequest | null
+  conversationRuntimeEnabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -42,6 +43,8 @@ const assistantPromptToken = ref(0)
 const assistantHistoryToken = ref(0)
 const assistantProjectId = ref<string | null>(props.projectId || null)
 const actionProjectId = ref<string | null>(props.projectId || null)
+const actionProviderHint = ref('auto')
+const actionModelProfile = ref('balanced')
 const actionComposerKey = ref(0)
 const artifactAvailable = ref(false)
 const drawerRef = ref<HTMLElement | null>(null)
@@ -51,6 +54,12 @@ const isResizing = ref(false)
 const hasSavedLayout = ref(false)
 
 function openAssistantHistory() {
+  if (props.conversationRuntimeEnabled === false) {
+    window.dispatchEvent(new CustomEvent('qaly:focus-ai-primary-runtime', {
+      detail: { openHistory: true },
+    }))
+    return
+  }
   activeView.value = 'chat'
   assistantHistoryToken.value++
 }
@@ -114,12 +123,14 @@ const showArtifactPane = computed(
 )
 
 const showConversationPane = computed(
-  () => activeView.value !== 'activity'
+  () => props.conversationRuntimeEnabled !== false
+    && activeView.value !== 'activity'
     && !(activeView.value === 'create' && compactArtifactWorkspace.value && !layout.artifactCollapsed),
 )
 
 const showArtifactSplitter = computed(
-  () => activeView.value === 'create'
+  () => props.conversationRuntimeEnabled !== false
+    && activeView.value === 'create'
     && !layout.artifactCollapsed
     && !compactArtifactWorkspace.value,
 )
@@ -362,6 +373,11 @@ function toggleDrawer() {
     return
   }
 
+  if (props.conversationRuntimeEnabled === false) {
+    window.dispatchEvent(new CustomEvent('qaly:focus-ai-primary-runtime'))
+    return
+  }
+
   isOpen.value = true
 }
 
@@ -379,6 +395,16 @@ function closeDrawer() {
 }
 
 function applyAssistantOpenRequest(detail?: Partial<AssistantOpenRequest> | null) {
+  if (props.conversationRuntimeEnabled === false && detail?.view !== 'activity') {
+    window.dispatchEvent(new CustomEvent('qaly:focus-ai-primary-runtime', {
+      detail: {
+        prompt: String(detail?.prompt || '').trim(),
+        projectId: String(detail?.projectId || props.projectId || '') || null,
+      },
+    }))
+    return
+  }
+
   isOpen.value = true
   activeView.value = detail?.view === 'activity' ? 'activity' : 'chat'
   assistantPrompt.value = String(detail?.prompt || '').trim()
@@ -395,7 +421,15 @@ function openActionComposer(event?: Event) {
   const detail = event instanceof CustomEvent ? event.detail : null
   actionProjectId.value = String(detail?.projectId || props.projectId || '') || null
   actionPrompt.value = String(detail?.message || detail?.prompt || '').trim()
+  actionProviderHint.value = String(detail?.providerHint || 'auto')
+  actionModelProfile.value = String(detail?.modelProfile || 'balanced')
   if (!actionProjectId.value || !actionPrompt.value) {
+    if (props.conversationRuntimeEnabled === false) {
+      window.dispatchEvent(new CustomEvent('qaly:focus-ai-primary-runtime', {
+        detail: { prompt: actionPrompt.value, projectId: actionProjectId.value },
+      }))
+      return
+    }
     isOpen.value = true
     activeView.value = 'chat'
     return
@@ -407,9 +441,11 @@ function openActionComposer(event?: Event) {
   ensureArtifactWorkspace()
 }
 
-function handleComposeAction(payload: { message: string; projectId: string }) {
+function handleComposeAction(payload: { message: string; projectId: string; providerHint: string; modelProfile: string }) {
   actionProjectId.value = payload.projectId
   actionPrompt.value = payload.message
+  actionProviderHint.value = payload.providerHint
+  actionModelProfile.value = payload.modelProfile
   actionComposerKey.value += 1
   artifactAvailable.value = true
   activeView.value = 'create'
@@ -429,7 +465,12 @@ function handleComposerStarted() {
 function handleSessionReset() {
   artifactAvailable.value = false
   actionPrompt.value = ''
-  activeView.value = 'chat'
+  if (props.conversationRuntimeEnabled === false) {
+    isOpen.value = false
+    window.dispatchEvent(new CustomEvent('qaly:focus-ai-primary-runtime'))
+  } else {
+    activeView.value = 'chat'
+  }
 }
 
 onMounted(() => {
@@ -578,7 +619,7 @@ watch(isOpen, async open => {
           }"
           :style="drawerBodyStyle"
         >
-          <section v-show="showConversationPane" class="assistant-conversation-pane">
+          <section v-if="showConversationPane" class="assistant-conversation-pane">
             <ErumiChatPanel
               :is-drawer="true"
               :external-prompt="assistantPrompt"
@@ -610,6 +651,8 @@ watch(isOpen, async open => {
               :initial-prompt="actionPrompt"
               :project-id="actionProjectId"
               :projects="projects"
+              :provider-hint="actionProviderHint"
+              :model-profile="actionModelProfile"
               @close="activeView = 'chat'"
               @completed="handleCompleted"
               @started="handleComposerStarted"

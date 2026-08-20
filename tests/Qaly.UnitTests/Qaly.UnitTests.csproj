@@ -27,6 +27,7 @@
   <ItemGroup>
     <None Include="Fixtures\ai-golden-dataset.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Fixtures\ai-native-conversation-quality.vi-v1.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Fixtures\ai-native-routing.vi-v2.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

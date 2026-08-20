@@ -33,6 +33,39 @@ public sealed class AiNativeConversationLaunchContractTests
             .Should().OnlyContain(operation => operation.Status == "native" ||
                 operation.Status == "existing_native_surface" || operation.Status == "guided");
     }
+
+    [Fact]
+    public void NativeDomainSkillPacks_DeclareCompleteRoutingAndExecutionContracts()
+    {
+        var capabilityIds = new[]
+        {
+            AiAssistantContextContract.AcceptanceChecklistCapability,
+            AiAssistantContextContract.TaskBreakdownCapability,
+            AiAssistantContextContract.WikiBriefTaskCapability,
+            AiAssistantContextContract.GroupPollCapability,
+            AiAssistantContextContract.ProjectDigestCapability,
+            AiAssistantContextContract.MeetingActionsCapability,
+            AiAssistantContextContract.RoadmapAdjustCapability,
+            AiAssistantContextContract.SkillEvidenceCapability
+        };
+
+        foreach (var capabilityId in capabilityIds)
+        {
+            AiAssistantCapabilityCatalog.TryGet(capabilityId, out var descriptor).Should().BeTrue();
+            descriptor.CapabilityId.Should().Be(capabilityId);
+            descriptor.Kind.Should().Be("mutation_draft");
+            descriptor.EntityTypes.Should().NotBeNullOrEmpty();
+            descriptor.UserJobs.Should().NotBeNullOrEmpty();
+            descriptor.ContextSources.Should().NotBeEmpty();
+            descriptor.RequiredScopes.Should().NotBeEmpty();
+            descriptor.InputSchemaId.Should().NotBeNullOrWhiteSpace();
+            descriptor.OutputSchemaId.Should().Be(AiNativeDomainActionContract.ReceiptSchemaId);
+            descriptor.RendererId.Should().Be(AiNativeDomainActionContract.RendererId);
+            descriptor.Executor.Should().Be("ai_native_action_executor");
+            descriptor.ConfirmationPolicy.Should().BeOneOf("explicit_single_confirm", "explicit_selective_confirm");
+            descriptor.VerificationPolicy.Should().NotBeNullOrWhiteSpace();
+        }
+    }
     private static readonly string[] ValidScope = ["Authentication", "Core workflow"];
     private static readonly string[] ValidSuccessMeasures = ["Acceptance flow passes"];
     private static readonly string[] ValidAssumptions = ["One product owner is available"];

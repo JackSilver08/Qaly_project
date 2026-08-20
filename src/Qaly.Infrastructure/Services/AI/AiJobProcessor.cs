@@ -744,15 +744,18 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
             prompt = $"{prompt ?? "Analyze only the selected messages."}\n\nAuthorized selected messages:\n{sourceContext}";
         }
 
+        var isTaskSkillSuggestion = string.Equals(job.JobType, TaskSkillAiContract.JobType, StringComparison.OrdinalIgnoreCase);
+        var useBoundedProvider = isNativeActionComposer || isTaskSkillSuggestion;
+
         return new AiRequest
         {
             JobId = job.Id,
             ProviderAttemptId = attemptId,
             JobType = job.JobType,
             ProviderHint = job.ProviderHint,
-            StrictProvider = isNativeActionComposer &&
+            StrictProvider = useBoundedProvider &&
                 !string.Equals(job.ProviderHint, "auto", StringComparison.OrdinalIgnoreCase),
-            ProviderTimeoutSeconds = isNativeActionComposer ? 35 : null,
+            ProviderTimeoutSeconds = useBoundedProvider ? 35 : null,
             SchemaRepairAttempts = isNativeActionComposer ? 0 : null,
             Prompt = prompt ?? "Generate a grounded result from the authorized source references.",
             SystemPrompt = systemPrompt ?? $"Return only valid JSON matching schema {job.SchemaId}. Do not execute domain mutations.",
