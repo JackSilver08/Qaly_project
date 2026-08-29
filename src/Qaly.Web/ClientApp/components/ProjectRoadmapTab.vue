@@ -1695,6 +1695,7 @@ const handleRollbackErumiSnapshot = async () => {
                 type="button"
                 class="btn btn-danger-ghost"
                 @click="handleDeleteMilestone(activeMilestone.id)"
+                aria-label="Xóa mốc"
                 title="Xóa mốc"
               >
                 <BootstrapIcon name="trash3" />
@@ -1918,6 +1919,7 @@ const handleRollbackErumiSnapshot = async () => {
               class="icon-button preset-close-button"
               @click="showPresetModal = false"
               aria-label="Đóng hộp thoại mẫu lộ trình"
+              title="Đóng"
             >
               <BootstrapIcon name="x-lg" />
             </button>
@@ -2012,6 +2014,7 @@ const handleRollbackErumiSnapshot = async () => {
               class="icon-button"
               @click="closeMilestoneModal()"
               aria-label="Đóng hộp thoại mốc tiến độ"
+              title="Đóng"
             >
               <BootstrapIcon name="x-lg" />
             </button>
@@ -2119,6 +2122,7 @@ const handleRollbackErumiSnapshot = async () => {
               class="icon-button"
               @click="closeTaskAssignModal()"
               aria-label="Đóng hộp thoại gán công việc vào mốc"
+              title="Đóng"
             >
               <BootstrapIcon name="x-lg" />
             </button>
@@ -2215,6 +2219,7 @@ const handleRollbackErumiSnapshot = async () => {
               class="icon-button"
               @click="closeQuickCreateTaskModal()"
               aria-label="Đóng hộp thoại tạo nhiệm vụ mới"
+              title="Đóng"
             >
               <BootstrapIcon name="x-lg" />
             </button>
@@ -2381,7 +2386,7 @@ const handleRollbackErumiSnapshot = async () => {
               <Sparkles :size="20" class="text-purple" />
               <h3>Báo Cáo Tiến Độ Lộ Trình (Executive Brief)</h3>
             </div>
-            <button type="button" class="btn-close" @click="showExecutiveBriefModal = false">
+            <button type="button" class="btn-close" aria-label="Đóng" title="Đóng" @click="showExecutiveBriefModal = false">
               <BootstrapIcon name="x-lg" />
             </button>
           </div>

@@ -637,7 +637,7 @@ async function handleUndoFromBanner() {
               <FolderKanban :size="20" />
               <h2>Tạo dự án mới</h2>
             </div>
-            <button class="icon-button" @click="createProjectOpen = false">
+            <button class="icon-button" type="button" aria-label="Đóng" title="Đóng" @click="createProjectOpen = false">
               <X :size="18" />
             </button>
           </div>
@@ -744,7 +744,7 @@ async function handleUndoFromBanner() {
               <Edit3 :size="20" />
               <h2>Chỉnh sửa dự án</h2>
             </div>
-            <button class="icon-button" @click="projectBeingEditedId = null">
+            <button class="icon-button" type="button" aria-label="Đóng" title="Đóng" @click="projectBeingEditedId = null">
               <X :size="18" />
             </button>
           </div>
