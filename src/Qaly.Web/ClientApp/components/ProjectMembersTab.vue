@@ -217,7 +217,7 @@ function canToggleTimeline(member: Member) {
       <p class="role-hint">{{ roleHintFor(selectedRole) }}</p>
     </div>
 
-    <div class="members-list space-y-3">
+    <div class="members-list">
       <article v-for="member in members" :key="member.id" class="member-item">
         <div class="member-avatar">{{ member.initials }}</div>
 
@@ -232,7 +232,7 @@ function canToggleTimeline(member: Member) {
           <small class="member-role-hint">{{ roleHintFor(member.role) }}</small>
         </div>
 
-        <div class="member-role-actions flex items-center space-x-2">
+        <div class="member-role-actions">
           <!-- Role Selector for Admin -->
           <div v-if="canManageMember(member)" class="role-selector">
             <select :value="member.role" @change="e => onRoleSelectChange(member, (e.target as HTMLSelectElement).value)">
@@ -251,7 +251,7 @@ function canToggleTimeline(member: Member) {
           <!-- Role History Button -->
           <button
             type="button"
-            class="text-xs bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 border border-purple-500/30 px-2.5 py-1 rounded-lg flex items-center gap-1 transition ms-2"
+            class="member-role-history"
             @click="openRoleHistory(member)"
             title="Xem lịch sử thay đổi vai trò qua các giai đoạn (Single Active Role)"
           >
@@ -261,9 +261,10 @@ function canToggleTimeline(member: Member) {
 
           <button 
             v-if="canManageMember(member)" 
-            class="icon-button icon-button--small" 
-            style="color: var(--peach-500); margin-left: 12px;" 
+            class="icon-button icon-button--small member-remove-button"
             type="button" 
+            :aria-label="`Xóa ${member.fullName} khỏi dự án`"
+            title="Xóa thành viên khỏi dự án"
             @click="$emit('remove', member.id)"
           >
             <Trash2 :size="16" />
@@ -297,9 +298,9 @@ function canToggleTimeline(member: Member) {
     <AssignRoleOverlapModal
       :show="showOverlapModal"
       :member-name="pendingRoleChange?.userName || ''"
-      :active-role-name="pendingRoleChange?.activeRole || 'Member'"
+      :active-role-name="roleLabelFor(pendingRoleChange?.activeRole || 'Member')"
       :active-role-start-date="new Date().toLocaleDateString('vi-VN')"
-      :new-role-name="pendingRoleChange?.newRole || ''"
+      :new-role-name="roleLabelFor(pendingRoleChange?.newRole || 'Member')"
       :new-role-start-date="new Date().toLocaleDateString('vi-VN')"
       @close="showOverlapModal = false"
       @confirm="confirmRoleChangeAfterOverlap"
@@ -308,7 +309,7 @@ function canToggleTimeline(member: Member) {
     <AssignRoleSystemConflictModal
       :show="showConflictModal"
       :member-name="pendingRoleChange?.userName || ''"
-      :new-role-name="pendingRoleChange?.newRole || ''"
+      :new-role-name="roleLabelFor(pendingRoleChange?.newRole || 'Member')"
       system-role-name="User (Restricted AI Tier)"
       system-ai-tier="SummaryOnly"
       @close="showConflictModal = false"
@@ -324,18 +325,79 @@ function canToggleTimeline(member: Member) {
 </template>
 
 <style scoped>
+.members-tab-content {
+  min-width: 0;
+  padding: 24px;
+  color: var(--text-strong);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-shell);
+}
+
+.panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.panel-heading h2 {
+  margin: 2px 0 0;
+  color: var(--text-strong);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.panel-heading > div > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.panel-heading .primary-button,
+.panel-heading .primary-button span {
+  flex: 0 0 auto;
+  color: #fff;
+  font-size: 13px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
 .add-member-form {
   padding: 20px;
   margin-bottom: 24px;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  box-shadow: none;
 }
-.members-list {
+
+.add-member-form h3 {
+  margin: 0 0 12px;
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.form-row {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 12px;
 }
 
+.members-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 20px;
+}
+
 .form-row select {
+  min-width: 0;
   flex: 1;
+  min-height: 40px;
   padding: 8px 12px;
   border-radius: var(--qaly-radius-lg);
   border: 1px solid var(--line);
@@ -344,8 +406,10 @@ function canToggleTimeline(member: Member) {
 }
 
 .role-selector select {
-  padding: 4px 8px;
-  border-radius: 6px;
+  min-width: 150px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: var(--qaly-radius-lg);
   border: 1px solid var(--line);
   font-size: 12px;
   font-weight: 600;
@@ -376,13 +440,204 @@ function canToggleTimeline(member: Member) {
   background: var(--panel);
 }
 
-.member-role-actions {
+.form-row select:focus,
+.role-selector select:focus {
+  border-color: var(--primary);
+  outline: 0;
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.member-item {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  grid-template-areas:
+    "avatar info actions"
+    "avatar info timeline";
+  align-items: center;
+  gap: 8px 16px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--qaly-radius-lg);
+  background: var(--bg-soft);
+}
+
+.member-avatar {
+  grid-area: avatar;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  align-self: start;
+  border-radius: var(--qaly-radius-lg);
+  color: #fff;
+  background: var(--primary);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.member-info {
+  grid-area: info;
+  min-width: 0;
+}
+
+.member-info > strong {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.member-meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  background: var(--panel);
+  gap: 16px;
+  margin-top: 3px;
+  color: var(--muted);
+}
+
+.member-email {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.member-role-actions {
+  grid-area: actions;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.role-badge {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--line));
+  border-radius: var(--qaly-radius-lg);
+  color: var(--primary-strong);
+  background: var(--primary-soft);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.member-role-history {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-shell);
+  border-radius: var(--qaly-radius-lg);
+  color: var(--text-strong);
+  background: var(--panel);
+  font-size: 12px;
+  font-weight: 700;
+  transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
+}
+
+.member-role-history:hover,
+.member-role-history:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--line));
+  color: var(--primary-strong);
+  background: var(--primary-soft);
+  outline: 0;
+}
+
+.member-remove-button {
+  margin-left: 4px;
+  color: var(--danger) !important;
+}
+
+.member-remove-button:hover,
+.member-remove-button:focus-visible {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line)) !important;
+  color: var(--danger) !important;
+  background: var(--danger-soft) !important;
+}
+
+.timeline-permission-toggle {
+  grid-area: timeline;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.timeline-permission-toggle input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--primary);
+}
+
+.members-list > .empty-state {
+  background: var(--bg-soft);
+}
+
+@media (max-width: 900px) {
+  .member-item {
+    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-areas:
+      "avatar info"
+      "actions actions"
+      "timeline timeline";
+  }
+
+  .member-role-actions,
+  .timeline-permission-toggle {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .members-tab-content {
+    padding: 16px;
+  }
+
+  .panel-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .panel-heading .primary-button {
+    align-self: flex-start;
+  }
+
+  .form-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .form-row .role-picker {
+    flex-basis: auto;
+  }
+
+  .member-role-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .role-selector select,
+  .member-role-history {
+    width: 100%;
+  }
+
+  .member-remove-button {
+    margin-left: 0;
+  }
 }
 </style>

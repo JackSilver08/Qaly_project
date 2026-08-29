@@ -11,39 +11,23 @@ import {
   Compass,
   CheckCircle2,
   Clock,
-  Plus,
   Sparkles,
   CalendarDays,
   Calendar,
-  Edit3,
-  Trash2,
-  FolderKanban,
   Navigation,
   AlertTriangle,
   Layers,
-  Flag,
-  X,
-  Check,
-  Eye,
   Link as LinkIcon,
   UserCheck,
   ShieldCheck,
   User,
-  Shield,
   RefreshCw,
-  ChevronRight,
-  PlayCircle,
-  Lock,
   ListTodo,
   CheckSquare,
   Users,
   Award,
   Zap,
-  LayoutGrid,
   Search,
-  Filter,
-  ArrowRight,
-  TrendingUp,
   Target,
 } from "lucide-vue-next";
 import { apiResult, apiCommand } from "../utils/api-client";
@@ -59,6 +43,7 @@ import type {
 import ProjectProgressAiCard from "./ProjectProgressAiCard.vue";
 import ErumiDiffPreviewModal from "./ErumiDiffPreviewModal.vue";
 import AiOnboardingGuideModal from "./AiOnboardingGuideModal.vue";
+import BootstrapIcon from "./BootstrapIcon.vue";
 import { useRoute, useRouter } from "vue-router";
 
 type RoadmapTask = DashboardTask & {
@@ -1043,10 +1028,11 @@ const handleRollbackErumiSnapshot = async () => {
           Stakeholders)
         </span>
         <span class="mode-text ms-2">
+          <BootstrapIcon :name="isClientViewMode ? 'eye' : 'sliders'" />
           {{
             isClientViewMode
-              ? "👀 Đang ở chế độ xem Khách hàng / Stakeholder"
-              : "⚙️ Đang ở chế độ xem Quản trị (Đầy đủ cấu hình & thao tác)"
+              ? "Đang ở chế độ xem Khách hàng / Stakeholder"
+              : "Đang ở chế độ xem Quản trị (đầy đủ cấu hình và thao tác)"
           }}
         </span>
       </div>
@@ -1058,7 +1044,7 @@ const handleRollbackErumiSnapshot = async () => {
           :class="{ 'is-active': !isClientViewMode }"
           @click="isClientViewMode = false"
         >
-          <LayoutGrid :size="14" />
+          <BootstrapIcon name="grid" />
           <span>Quản trị</span>
         </button>
         <button
@@ -1067,7 +1053,7 @@ const handleRollbackErumiSnapshot = async () => {
           :class="{ 'is-active': isClientViewMode }"
           @click="isClientViewMode = true"
         >
-          <Eye :size="14" />
+          <BootstrapIcon name="eye" />
           <span>Khách hàng</span>
         </button>
       </div>
@@ -1078,7 +1064,7 @@ const handleRollbackErumiSnapshot = async () => {
       <div class="ai-fastbar-header">
         <div class="ai-title-wrap">
           <span class="ai-glow-dot"></span>
-          <span class="ai-badge">✨ ERUMI AI ROADMAP CO-PILOT</span>
+          <span class="ai-badge"><BootstrapIcon name="stars" /> ERUMI AI ROADMAP CO-PILOT</span>
           <span class="ai-desc text-muted">Trợ lý Lộ Trình: Phân tích rủi ro, mở rộng Phase, cân bằng tải & dự báo</span>
         </div>
         <div class="ai-right-badges">
@@ -1089,7 +1075,8 @@ const handleRollbackErumiSnapshot = async () => {
             @click="handleRollbackErumiSnapshot"
             title="Hoàn tác Phase vừa sinh bởi AI trong 72 giờ"
           >
-            <RefreshCw :size="12" class="spin-hover" /> Hoàn Tác (Rollback AI Snapshot)
+            <BootstrapIcon name="arrow-counterclockwise" />
+            Hoàn tác AI snapshot
           </button>
         </div>
       </div>
@@ -1102,7 +1089,7 @@ const handleRollbackErumiSnapshot = async () => {
           :disabled="isExecutingFastAction"
           @click="triggerFastAction('ExpandPhase', 'Mở rộng tính năng và đề xuất chèn Phase mới')"
         >
-          <div class="ai-action-icon">🚀</div>
+          <span class="ai-action-icon"><BootstrapIcon name="arrows-angle-expand" /></span>
           <div class="ai-action-text">
             <strong>Mở Rộng Phase</strong>
             <span>Chèn Phase & Task mới</span>
@@ -1115,7 +1102,7 @@ const handleRollbackErumiSnapshot = async () => {
           :disabled="isExecutingFastAction"
           @click="triggerFastAction('AuditRisks')"
         >
-          <div class="ai-action-icon">⚡</div>
+          <span class="ai-action-icon"><BootstrapIcon name="shield-exclamation" /></span>
           <div class="ai-action-text">
             <strong>Quét Rủi Ro</strong>
             <span>Phát hiện Bottleneck</span>
@@ -1128,7 +1115,7 @@ const handleRollbackErumiSnapshot = async () => {
           :disabled="isExecutingFastAction"
           @click="triggerFastAction('AutoBalance')"
         >
-          <div class="ai-action-icon">✨</div>
+          <span class="ai-action-icon"><BootstrapIcon name="distribute-horizontal" /></span>
           <div class="ai-action-text">
             <strong>Cân Bằng Tải</strong>
             <span>Phân bổ &lt;40h/tuần</span>
@@ -1141,7 +1128,7 @@ const handleRollbackErumiSnapshot = async () => {
           :disabled="isExecutingFastAction"
           @click="triggerFastAction('BreakdownWBS')"
         >
-          <div class="ai-action-icon">🧩</div>
+          <span class="ai-action-icon"><BootstrapIcon name="diagram-3" /></span>
           <div class="ai-action-text">
             <strong>Tách Nhỏ WBS</strong>
             <span>Bóc tách mốc thành Task</span>
@@ -1154,7 +1141,7 @@ const handleRollbackErumiSnapshot = async () => {
           :disabled="isExecutingFastAction"
           @click="triggerFastAction('Forecast')"
         >
-          <div class="ai-action-icon">📊</div>
+          <span class="ai-action-icon"><BootstrapIcon name="graph-up-arrow" /></span>
           <div class="ai-action-text">
             <strong>Dự Báo Tiến Độ</strong>
             <span>Monte Carlo Forecast</span>
@@ -1167,7 +1154,7 @@ const handleRollbackErumiSnapshot = async () => {
           :disabled="isExecutingFastAction"
           @click="triggerFastAction('ExecutiveBrief')"
         >
-          <div class="ai-action-icon">📑</div>
+          <span class="ai-action-icon"><BootstrapIcon name="file-earmark-bar-graph" /></span>
           <div class="ai-action-text">
             <strong>Báo Cáo Sếp</strong>
             <span>Executive Client Brief</span>
@@ -1201,7 +1188,7 @@ const handleRollbackErumiSnapshot = async () => {
             :class="{ active: viewMode === 'journey' }"
             @click="viewMode = 'journey'"
           >
-            <LayoutGrid :size="14" />
+            <BootstrapIcon name="signpost-split" />
             <span>Journey View</span>
           </button>
           <button
@@ -1210,7 +1197,7 @@ const handleRollbackErumiSnapshot = async () => {
             :class="{ active: viewMode === 'timeline' }"
             @click="viewMode = 'timeline'"
           >
-            <CalendarDays :size="14" />
+            <BootstrapIcon name="calendar3" />
             <span>Timeline View</span>
           </button>
         </div>
@@ -1220,8 +1207,8 @@ const handleRollbackErumiSnapshot = async () => {
           class="secondary-button text-emerald-400 border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20"
           @click="showOnboardingGuideModal = true"
         >
-          <Compass :size="16" />
-          <span>🧭 Onboarding Guide</span>
+          <BootstrapIcon name="compass" />
+          <span>Hướng dẫn sử dụng</span>
         </button>
 
         <button
@@ -1230,8 +1217,8 @@ const handleRollbackErumiSnapshot = async () => {
           class="secondary-button text-rose-400 border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20"
           @click="handleRollbackErumiSnapshot"
         >
-          <RotateCcw :size="16" />
-          <span>🔄 Rollback AI Phase</span>
+          <BootstrapIcon name="arrow-counterclockwise" />
+          <span>Hoàn tác phase AI</span>
         </button>
 
         <button
@@ -1240,8 +1227,8 @@ const handleRollbackErumiSnapshot = async () => {
           class="primary-button btn-outsource-preset"
           @click="showPresetModal = true"
         >
-          <Sparkles :size="16" />
-          <span>Khởi Tạo Mẫu Lộ Trình</span>
+          <BootstrapIcon name="magic" />
+          <span>Khởi tạo từ mẫu</span>
         </button>
 
         <button
@@ -1250,7 +1237,7 @@ const handleRollbackErumiSnapshot = async () => {
           class="secondary-button"
           @click="showCreateModal = true"
         >
-          <Plus :size="16" />
+          <BootstrapIcon name="plus-lg" />
           <span>Thêm mốc mới</span>
         </button>
       </div>
@@ -1276,7 +1263,7 @@ const handleRollbackErumiSnapshot = async () => {
             class="primary-button primary-button--lg"
             @click="showPresetModal = true"
           >
-            <Sparkles :size="18" />
+            <BootstrapIcon name="magic" />
             <span>Chọn Bộ Mẫu Lộ Trình (Scrum / Outsource / Waterfall)</span>
           </button>
 
@@ -1285,7 +1272,7 @@ const handleRollbackErumiSnapshot = async () => {
             class="secondary-button secondary-button--lg ms-3"
             @click="showCreateModal = true"
           >
-            <Plus :size="18" />
+            <BootstrapIcon name="plus-lg" />
             <span>Tự nhập mốc thủ công</span>
           </button>
         </div>
@@ -1351,6 +1338,7 @@ const handleRollbackErumiSnapshot = async () => {
               :class="{ active: milestoneFilter === 'all' }"
               @click="milestoneFilter = 'all'"
             >
+              <BootstrapIcon name="list-ul" />
               Tất cả ({{ sprints.length }})
             </button>
             <button
@@ -1359,7 +1347,8 @@ const handleRollbackErumiSnapshot = async () => {
               :class="{ active: milestoneFilter === 'active' }"
               @click="milestoneFilter = 'active'"
             >
-              ⚡ Đang chạy
+              <BootstrapIcon name="lightning-charge" />
+              Đang chạy
             </button>
             <button
               type="button"
@@ -1367,7 +1356,8 @@ const handleRollbackErumiSnapshot = async () => {
               :class="{ active: milestoneFilter === 'overdue' }"
               @click="milestoneFilter = 'overdue'"
             >
-              ⚠️ Trễ hạn
+              <BootstrapIcon name="exclamation-triangle" />
+              Trễ hạn
             </button>
             <button
               type="button"
@@ -1375,7 +1365,8 @@ const handleRollbackErumiSnapshot = async () => {
               :class="{ active: milestoneFilter === 'completed' }"
               @click="milestoneFilter = 'completed'"
             >
-              ✓ Đã xong
+              <BootstrapIcon name="check-circle" />
+              Đã xong
             </button>
           </div>
         </div>
@@ -1429,19 +1420,19 @@ const handleRollbackErumiSnapshot = async () => {
                     <span
                       v-if="isCompletedMilestone(sprint)"
                       class="badge-tag tag-success"
-                      >✓ Đã nghiệm thu</span
+                      ><BootstrapIcon name="check-circle" /> Đã nghiệm thu</span
                     >
                     <span
                       v-else-if="isCurrentMilestone(sprint)"
                       class="badge-tag tag-primary"
-                      >⚡ Đang làm</span
+                      ><BootstrapIcon name="lightning-charge" /> Đang làm</span
                     >
                     <span
                       v-else-if="isOverdueMilestone(sprint)"
                       class="badge-tag tag-danger"
-                      >⚠️ Trễ hạn</span
+                      ><BootstrapIcon name="exclamation-triangle" /> Trễ hạn</span
                     >
-                    <span v-else class="badge-tag tag-muted">📅 Chưa tới</span>
+                    <span v-else class="badge-tag tag-muted"><BootstrapIcon name="calendar-event" /> Chưa tới</span>
                   </div>
 
                   <h5 class="node-title">{{ sprint.name }}</h5>
@@ -1564,9 +1555,10 @@ const handleRollbackErumiSnapshot = async () => {
         <!-- Fast Access Command Toolbar -->
         <div class="fast-access-toolbar mb-4">
           <div class="toolbar-left">
-            <span class="toolbar-title"
-              >⚡ Thao Tác Nhanh Cho Mốc "{{ activeMilestone.name }}"</span
-            >
+            <span class="toolbar-title">
+              <BootstrapIcon name="lightning-charge" />
+              Thao tác nhanh · {{ activeMilestone.name }}
+            </span>
           </div>
 
           <div class="toolbar-right">
@@ -1577,8 +1569,8 @@ const handleRollbackErumiSnapshot = async () => {
               class="toolbar-btn btn-primary-gradient"
               @click="showQuickCreateTaskModal = true"
             >
-              <Plus :size="14" />
-              <span>+ Tạo Task Mốc Này</span>
+              <BootstrapIcon name="plus-lg" />
+              <span>Tạo task trong mốc</span>
             </button>
 
             <!-- One-click Sign-off / Complete Milestone -->
@@ -1593,8 +1585,8 @@ const handleRollbackErumiSnapshot = async () => {
               @click="markMilestoneCompleted(activeMilestone)"
               title="Đánh dấu nghiệm thu hoàn thành mốc này"
             >
-              <CheckCircle2 :size="14" />
-              <span>Nghiệm Thu Mốc</span>
+              <BootstrapIcon name="check-circle" />
+              <span>Nghiệm thu mốc</span>
             </button>
 
             <!-- Quick Status Change dropdown -->
@@ -1613,8 +1605,8 @@ const handleRollbackErumiSnapshot = async () => {
                 "
               >
                 <option value="Planning">Trạng thái: Planning</option>
-                <option value="Active">Trạng thái: Active (⚡)</option>
-                <option value="Completed">Trạng thái: Completed (✓)</option>
+                <option value="Active">Trạng thái: Đang thực hiện</option>
+                <option value="Completed">Trạng thái: Hoàn thành</option>
                 <option value="Paused">Trạng thái: Paused</option>
               </select>
             </div>
@@ -1626,7 +1618,7 @@ const handleRollbackErumiSnapshot = async () => {
               class="toolbar-btn btn-outline"
               @click="openTaskAssignModal"
             >
-              <LinkIcon :size="14" />
+              <BootstrapIcon name="link-45deg" />
               <span>Gán/Gỡ Task ({{ milestoneTasks.length }})</span>
             </button>
 
@@ -1636,8 +1628,9 @@ const handleRollbackErumiSnapshot = async () => {
               class="toolbar-btn btn-kanban"
               @click="jumpToKanban(activeMilestone.id)"
             >
-              <FolderKanban :size="14" />
-              <span>Mở Bảng Kanban ➔</span>
+              <BootstrapIcon name="kanban" />
+              <span>Mở bảng Kanban</span>
+              <BootstrapIcon name="arrow-right" />
             </button>
           </div>
         </div>
@@ -1650,21 +1643,22 @@ const handleRollbackErumiSnapshot = async () => {
               <span
                 v-if="isCompletedMilestone(activeMilestone)"
                 class="badge-tag tag-success"
-                >✓ Nghiệm thu xong</span
+                ><BootstrapIcon name="check-circle" /> Nghiệm thu xong</span
               >
               <span
                 v-else-if="isOverdueMilestone(activeMilestone)"
                 class="badge-tag tag-danger"
-                >⚠️ Trễ hạn</span
+                ><BootstrapIcon name="exclamation-triangle" /> Trễ hạn</span
               >
               <span v-else class="badge-tag tag-primary"
-                >⚡ Đang triển khai</span
+                ><BootstrapIcon name="lightning-charge" /> Đang triển khai</span
               >
             </div>
 
             <h4>{{ activeMilestone.name }}</h4>
             <p v-if="activeMilestone.goal" class="detail-goal">
-              🎯 <strong>Mục tiêu & Hạng mục nghiệm thu:</strong>
+              <BootstrapIcon name="bullseye" />
+              <strong>Mục tiêu và hạng mục nghiệm thu:</strong>
               {{ activeMilestone.goal }}
             </p>
 
@@ -1694,7 +1688,7 @@ const handleRollbackErumiSnapshot = async () => {
                 @click="openEdit(activeMilestone)"
                 title="Chỉnh sửa tên, deadline, goal"
               >
-                <Edit3 :size="15" />
+                <BootstrapIcon name="pencil-square" />
                 <span>Sửa mốc</span>
               </button>
               <button
@@ -1703,7 +1697,7 @@ const handleRollbackErumiSnapshot = async () => {
                 @click="handleDeleteMilestone(activeMilestone.id)"
                 title="Xóa mốc"
               >
-                <Trash2 :size="15" />
+                <BootstrapIcon name="trash3" />
               </button>
             </template>
           </div>
@@ -1872,10 +1866,12 @@ const handleRollbackErumiSnapshot = async () => {
 
               <div class="task-item-footer">
                 <span v-if="task.assigneeName" class="task-item-assignee">
-                  👤 {{ task.assigneeName }}
+                  <BootstrapIcon name="person" />
+                  {{ task.assigneeName }}
                 </span>
                 <span v-else class="task-item-assignee text-muted">
-                  👤 Chưa giao
+                  <BootstrapIcon name="person-dash" />
+                  Chưa giao
                 </span>
 
                 <!-- Inline Status Selector (Allows Members to Update Task Status) -->
@@ -1923,7 +1919,7 @@ const handleRollbackErumiSnapshot = async () => {
               @click="showPresetModal = false"
               aria-label="Đóng hộp thoại mẫu lộ trình"
             >
-              <X :size="18" />
+              <BootstrapIcon name="x-lg" />
             </button>
           </div>
 
@@ -1948,7 +1944,7 @@ const handleRollbackErumiSnapshot = async () => {
                   Dành cho dự án khách hàng, có điểm kiểm soát và bàn giao rõ ràng.
                 </p>
                 <span class="preset-flow">Scope → Prototype → Dev → UAT → Go-live</span>
-                <span class="preset-card-action">Dùng mẫu Outsource <span>→</span></span>
+                <span class="preset-card-action">Dùng mẫu Outsource <BootstrapIcon name="arrow-right" /></span>
               </button>
 
               <button
@@ -1965,7 +1961,7 @@ const handleRollbackErumiSnapshot = async () => {
                   Phù hợp đội sản phẩm phát triển lặp, review và bàn giao liên tục.
                 </p>
                 <span class="preset-flow">Sprint 1 → Sprint 2 → Sprint 3 → Sprint 4</span>
-                <span class="preset-card-action">Dùng mẫu Scrum <span>→</span></span>
+                <span class="preset-card-action">Dùng mẫu Scrum <BootstrapIcon name="arrow-right" /></span>
               </button>
 
               <button
@@ -1982,7 +1978,7 @@ const handleRollbackErumiSnapshot = async () => {
                   Dành cho dự án tuyến tính, yêu cầu được chốt trước từng giai đoạn.
                 </p>
                 <span class="preset-flow">Khảo sát → Thiết kế → Phát triển → Bàn giao</span>
-                <span class="preset-card-action">Dùng mẫu Waterfall <span>→</span></span>
+                <span class="preset-card-action">Dùng mẫu Waterfall <BootstrapIcon name="arrow-right" /></span>
               </button>
             </div>
           </div>
@@ -2017,7 +2013,7 @@ const handleRollbackErumiSnapshot = async () => {
               @click="closeMilestoneModal()"
               aria-label="Đóng hộp thoại mốc tiến độ"
             >
-              <X :size="18" />
+              <BootstrapIcon name="x-lg" />
             </button>
           </div>
 
@@ -2124,7 +2120,7 @@ const handleRollbackErumiSnapshot = async () => {
               @click="closeTaskAssignModal()"
               aria-label="Đóng hộp thoại gán công việc vào mốc"
             >
-              <X :size="18" />
+              <BootstrapIcon name="x-lg" />
             </button>
           </div>
 
@@ -2211,7 +2207,7 @@ const handleRollbackErumiSnapshot = async () => {
         >
           <div class="modal-header">
             <h4 id="quick-task-modal-title">
-              <Plus :size="18" class="text-primary me-2" /> Tạo Nhiệm Vụ Mới
+              <BootstrapIcon name="plus-circle" class="text-primary me-2" /> Tạo Nhiệm Vụ Mới
               Thuộc Mốc: {{ activeMilestone?.name }}
             </h4>
             <button
@@ -2220,7 +2216,7 @@ const handleRollbackErumiSnapshot = async () => {
               @click="closeQuickCreateTaskModal()"
               aria-label="Đóng hộp thoại tạo nhiệm vụ mới"
             >
-              <X :size="18" />
+              <BootstrapIcon name="x-lg" />
             </button>
           </div>
 
@@ -2344,7 +2340,7 @@ const handleRollbackErumiSnapshot = async () => {
               class="btn btn--ghost"
               @click="confirmation = null"
             >
-              <X :size="16" /> Hủy
+              <BootstrapIcon name="x-lg" /> Hủy
             </button>
             <button
               type="button"
@@ -2354,8 +2350,8 @@ const handleRollbackErumiSnapshot = async () => {
               "
               @click="confirmMilestoneAction"
             >
-              <Trash2 v-if="confirmation.type === 'delete'" :size="16" />
-              <CheckCircle2 v-else :size="16" />
+              <BootstrapIcon v-if="confirmation.type === 'delete'" name="trash3" />
+              <BootstrapIcon v-else name="check-circle" />
               {{
                 confirmation.type === "delete"
                   ? "Xóa mốc"
@@ -2386,7 +2382,7 @@ const handleRollbackErumiSnapshot = async () => {
               <h3>Báo Cáo Tiến Độ Lộ Trình (Executive Brief)</h3>
             </div>
             <button type="button" class="btn-close" @click="showExecutiveBriefModal = false">
-              <X :size="18" />
+              <BootstrapIcon name="x-lg" />
             </button>
           </div>
           <div class="modal-body" v-if="isLoadingBrief">
@@ -2398,7 +2394,16 @@ const handleRollbackErumiSnapshot = async () => {
           <div class="modal-body" v-else-if="executiveBriefData">
             <div class="brief-health-card" :class="`health--${executiveBriefData.healthStatus?.toLowerCase()}`">
               <div class="health-header">
-                <strong>{{ executiveBriefData.healthStatus === 'Healthy' ? '🟢 TIẾN ĐỘ ỔN ĐỊNH (ON TRACK)' : '🟡 CẦN LƯU Ý ĐIỀU CHỈNH' }}</strong>
+                <strong class="health-status-label">
+                  <BootstrapIcon
+                    :name="executiveBriefData.healthStatus === 'Healthy'
+                      ? 'check-circle-fill'
+                      : 'exclamation-triangle-fill'"
+                  />
+                  {{ executiveBriefData.healthStatus === 'Healthy'
+                    ? 'TIẾN ĐỘ ỔN ĐỊNH (ON TRACK)'
+                    : 'CẦN LƯU Ý ĐIỀU CHỈNH' }}
+                </strong>
                 <span class="health-rate">Hoàn thành: <strong>{{ executiveBriefData.completionPercentage }}%</strong></span>
               </div>
             </div>
@@ -4562,11 +4567,11 @@ const handleRollbackErumiSnapshot = async () => {
   box-shadow: 0 7px 15px rgba(15, 82, 186, 0.18);
 }
 
-.preset-card-action > span {
+.preset-card-action > .bs-icon {
   transition: transform 0.3s ease-out;
 }
 
-.preset-option-card:hover .preset-card-action > span {
+.preset-option-card:hover .preset-card-action > .bs-icon {
   transform: translateX(3px);
 }
 
@@ -4950,6 +4955,568 @@ const handleRollbackErumiSnapshot = async () => {
   .confirmation-actions .btn {
     flex: 1;
     justify-content: center;
+  }
+}
+
+/* Professional light workspace — final visual layer */
+.project-roadmap-shell {
+  --rm-blue: #2563eb;
+  --rm-blue-dark: #1748a7;
+  --rm-blue-soft: #eff6ff;
+  --rm-cyan-soft: #ecfeff;
+  --rm-ink: #14233b;
+  --rm-muted: #65758d;
+  --rm-line: #dde6f1;
+  --rm-surface: #ffffff;
+  --rm-surface-soft: #f7faff;
+  --rm-shadow: 0 12px 32px rgba(44, 70, 105, 0.07);
+  gap: 18px;
+  padding: 2px;
+  color: var(--rm-ink);
+}
+
+.project-roadmap-shell button,
+.project-roadmap-shell select,
+.project-roadmap-shell input {
+  font: inherit;
+}
+
+.project-roadmap-shell button:focus-visible,
+.project-roadmap-shell select:focus-visible,
+.project-roadmap-shell input:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.18);
+  outline-offset: 2px;
+}
+
+.project-roadmap-shell .bs-icon,
+.roadmap-modal-shell .bs-icon,
+.confirmation-modal .bs-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.role-mode-bar,
+.roadmap-header,
+.roadmap-track-card,
+.milestone-detail-panel,
+.empty-roadmap-card {
+  background: var(--rm-surface);
+  border: 1px solid var(--rm-line);
+  box-shadow: var(--rm-shadow);
+}
+
+.role-mode-bar {
+  min-height: 48px;
+  padding: 7px 8px 7px 14px;
+  border-radius: 14px;
+}
+
+.role-badge-box,
+.mode-text,
+.role-chip {
+  display: flex;
+  align-items: center;
+}
+
+.role-badge-box {
+  min-width: 0;
+  gap: 10px;
+}
+
+.role-chip {
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+
+.mode-text {
+  min-width: 0;
+  gap: 6px;
+  margin-left: 0 !important;
+  color: var(--rm-muted);
+}
+
+.view-mode-toggle {
+  flex: 0 0 auto;
+  background: #f1f5fa;
+  border-color: #e0e7f0;
+}
+
+.toggle-btn {
+  min-height: 34px;
+  gap: 7px;
+}
+
+.toggle-btn.is-active {
+  color: var(--rm-blue-dark);
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(27, 59, 99, 0.1);
+}
+
+.roadmap-ai-fastbar {
+  position: relative;
+  isolation: isolate;
+  gap: 14px;
+  padding: 16px 18px 18px;
+  overflow: hidden;
+  color: var(--rm-ink);
+  background:
+    radial-gradient(circle at 8% -45%, rgba(96, 165, 250, 0.23), transparent 35%),
+    linear-gradient(135deg, #fbfdff 0%, #f4f8ff 58%, #f9f7ff 100%);
+  border: 1px solid #d8e5f5;
+  border-radius: 18px;
+  box-shadow: var(--rm-shadow);
+}
+
+.roadmap-ai-fastbar::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, #2563eb, #7c3aed, #06b6d4);
+}
+
+.ai-fastbar-header {
+  min-height: 28px;
+}
+
+.ai-title-wrap {
+  min-width: 0;
+  gap: 9px;
+}
+
+.ai-glow-dot {
+  width: 7px;
+  height: 7px;
+  background: #2563eb;
+  box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.1);
+}
+
+.ai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 25px;
+  padding: 4px 9px;
+  color: #5b21b6;
+  background: #f3e8ff;
+  border-color: #dfc7fb;
+  border-radius: 8px;
+}
+
+.ai-desc {
+  color: var(--rm-muted) !important;
+  line-height: 1.45;
+}
+
+.rollback-pill-btn {
+  min-height: 32px;
+  padding: 6px 11px;
+  color: #b4233b;
+  background: #fff4f5;
+  border-color: #fecdd3;
+  border-radius: 9px;
+}
+
+.rollback-pill-btn:hover {
+  color: #991b31;
+  background: #ffe9ec;
+  border-color: #fda4af;
+}
+
+.ai-fast-actions-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ai-action-card {
+  min-width: 0;
+  min-height: 68px;
+  gap: 11px;
+  padding: 11px 12px;
+  color: var(--rm-ink);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #dde6f1;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(38, 62, 94, 0.04);
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.ai-action-card:hover:not(:disabled) {
+  color: var(--rm-ink);
+  background: #fff;
+  border-color: #94b7ea;
+  box-shadow: 0 9px 20px rgba(34, 75, 128, 0.11);
+  transform: translateY(-2px);
+}
+
+.ai-action-card:disabled {
+  opacity: 0.55;
+}
+
+.ai-action-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  flex: 0 0 36px;
+  place-items: center;
+  color: #4f46e5;
+  background: #eef2ff;
+  border: 1px solid #dce2ff;
+  border-radius: 10px;
+  font-size: 17px;
+}
+
+.card-rose .ai-action-icon {
+  color: #be123c;
+  background: #fff1f2;
+  border-color: #ffe0e5;
+}
+.card-emerald .ai-action-icon {
+  color: #047857;
+  background: #ecfdf5;
+  border-color: #ccefe1;
+}
+.card-blue .ai-action-icon {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #d8e8ff;
+}
+.card-amber .ai-action-icon {
+  color: #b45309;
+  background: #fffbeb;
+  border-color: #fcebc2;
+}
+.card-cyan .ai-action-icon {
+  color: #0e7490;
+  background: #ecfeff;
+  border-color: #c9f2f6;
+}
+
+.ai-action-text {
+  min-width: 0;
+  gap: 3px;
+}
+
+.ai-action-text strong {
+  overflow: hidden;
+  color: var(--rm-ink);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-action-text span {
+  overflow: hidden;
+  color: var(--rm-muted);
+  font-size: 10.5px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roadmap-header {
+  min-height: 104px;
+  padding: 20px 22px;
+  overflow: visible;
+  border-radius: 18px;
+}
+
+.roadmap-header::after {
+  top: -80px;
+  right: 24%;
+  opacity: 0.7;
+}
+
+.title-with-icon {
+  gap: 14px;
+}
+
+.icon-glow-box {
+  width: 48px;
+  height: 48px;
+  flex-basis: 48px;
+  border-radius: 14px;
+  box-shadow: 0 9px 20px rgba(37, 99, 235, 0.22);
+}
+
+.roadmap-header h3 {
+  font-size: clamp(19px, 1.7vw, 24px);
+}
+
+.roadmap-header__actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.roadmap-header__view-switch {
+  background: #f2f6fb;
+  border-color: #dfe7f1;
+}
+
+.view-mode-pill,
+.primary-button,
+.secondary-button,
+.toolbar-btn,
+.filter-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.view-mode-pill {
+  min-height: 38px;
+}
+
+.view-mode-pill.active {
+  color: var(--rm-blue-dark);
+  background: #fff;
+  box-shadow: 0 2px 9px rgba(39, 67, 103, 0.1);
+}
+
+.roadmap-header__actions > .secondary-button {
+  color: #40526b;
+  background: #fff;
+  border-color: #d7e0ec;
+  box-shadow: 0 2px 7px rgba(39, 62, 92, 0.04);
+}
+
+.roadmap-header__actions > .secondary-button:hover {
+  color: var(--rm-blue-dark);
+  background: #f8fbff;
+  border-color: #91afe0;
+}
+
+.roadmap-track-card {
+  background: var(--rm-surface);
+  border-radius: 18px;
+}
+
+.roadmap-metrics-bar {
+  background: linear-gradient(180deg, #fff, #f9fbfe);
+}
+
+.metric-pill {
+  min-height: 88px;
+  padding: 16px 20px;
+}
+
+.metric-label {
+  letter-spacing: 0.02em;
+}
+
+.health-tag,
+.badge-tag,
+.filter-pill,
+.toolbar-title {
+  align-items: center;
+  gap: 5px;
+}
+
+.milestone-filter-group {
+  background: #f5f8fc;
+}
+
+.filter-pill {
+  min-height: 32px;
+}
+
+.roadmap-scroll-wrapper {
+  padding: 54px 24px 26px;
+  background:
+    linear-gradient(180deg, rgba(239, 246, 255, 0.55), transparent 62%),
+    #fff;
+}
+
+.milestone-node-card {
+  min-height: 164px;
+  background: rgba(255, 255, 255, 0.94);
+  border-color: #dce5ef;
+  box-shadow: 0 7px 18px rgba(40, 64, 95, 0.06);
+}
+
+.milestone-node:hover .milestone-node-card {
+  border-color: #aac4e8;
+  box-shadow: 0 11px 24px rgba(34, 74, 125, 0.1);
+}
+
+.milestone-node.is-selected .milestone-node-card {
+  border-color: #6f9fe5;
+  box-shadow: 0 12px 26px rgba(37, 99, 235, 0.14);
+}
+
+.milestone-detail-panel {
+  background: #fff;
+  border-radius: 18px;
+}
+
+.fast-access-toolbar {
+  min-height: 62px;
+  padding: 12px 20px;
+  background: linear-gradient(90deg, #eff6ff, #f8fbff 58%, #fff);
+  border-bottom-color: #d5e2f1;
+}
+
+.toolbar-title {
+  display: inline-flex;
+  font-size: 12.5px;
+}
+
+.toolbar-right {
+  justify-content: flex-end;
+}
+
+.toolbar-btn,
+.quick-status-select {
+  min-height: 38px;
+  border-radius: 9px;
+}
+
+.toolbar-btn {
+  padding: 7px 11px;
+}
+
+.toolbar-btn.btn-primary-gradient {
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.2);
+}
+
+.detail-header {
+  padding-top: 24px;
+}
+
+.detail-header h4 {
+  font-size: 20px;
+}
+
+.detail-goal {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.milestone-deliverables-box,
+.milestone-members-bar,
+.empty-tasks-box {
+  background: var(--rm-surface-soft);
+}
+
+.deliverable-item,
+.member-chip,
+.milestone-task-item {
+  background: #fff;
+}
+
+.milestone-task-item {
+  min-height: 124px;
+}
+
+.timeline-mode-card {
+  padding: 22px;
+}
+
+.timeline-frame {
+  background: #fff;
+  border-color: var(--rm-line);
+}
+
+.timeline-labels,
+.timeline-scroll {
+  background: #fff;
+}
+
+.health-status-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+@media (max-width: 1280px) {
+  .ai-fast-actions-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .roadmap-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .roadmap-header__actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 820px) {
+  .role-mode-bar,
+  .role-badge-box,
+  .roadmap-header__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .view-mode-toggle,
+  .roadmap-header__view-switch {
+    width: 100%;
+  }
+
+  .toggle-btn,
+  .view-mode-pill {
+    flex: 1;
+  }
+
+  .ai-fast-actions-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ai-desc {
+    flex-basis: 100%;
+  }
+
+  .roadmap-header__actions > button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .project-roadmap-shell {
+    gap: 14px;
+  }
+
+  .roadmap-ai-fastbar,
+  .roadmap-header {
+    padding: 15px;
+  }
+
+  .ai-fast-actions-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .roadmap-header__view-switch {
+    flex-direction: column;
+  }
+
+  .roadmap-metrics-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .metric-pill {
+    min-height: 72px;
+    padding: 14px 16px;
+  }
+
+  .fast-access-toolbar {
+    padding: 12px 14px;
   }
 }
 </style>
