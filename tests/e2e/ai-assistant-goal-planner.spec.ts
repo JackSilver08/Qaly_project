@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { adminEmail, adminPassword } from './support/credentials'
+import { openAssistantDisclosures } from './support/assistant-disclosures'
 
 async function login(page: Page) {
   await page.goto('/Account/Login', { waitUntil: 'domcontentloaded' })
@@ -89,6 +90,15 @@ test('TEST-GS-E2E reload renders goal, selected skill, work plan and safe activi
   await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
   await page.getByRole('button', { name: 'Mở Trợ lý AI' }).first().click()
   const dialog = page.getByRole('dialog', { name: 'Trợ lý AI' })
+  // Planning detail and the process trail ship collapsed so the answer stays primary. Open every
+  // disclosure the way a user would, then assert the restored content.
+  const planCount = await dialog.locator('details.assistant-work-plan-details').count()
+  expect(planCount, 'Phải khôi phục được khối chi tiết lập kế hoạch').toBeGreaterThan(0)
+  const processCount = await dialog.locator('details.assistant-process-disclosure').count()
+  expect(processCount, 'Phải khôi phục được các bước Trợ lý AI đã thực hiện').toBeGreaterThan(0)
+
+  await openAssistantDisclosures(dialog, ['assistant-work-plan-details', 'assistant-process-disclosure'])
+
   await expect(dialog.getByTestId('assistant-work-plan').first()).toBeVisible()
   await expect(dialog.getByText('Tra cứu có căn cứ', { exact: true })).toBeVisible()
   await expect(dialog.getByText('Đã hiểu mục tiêu và khoanh vùng skill')).toBeVisible()
@@ -97,7 +107,11 @@ test('TEST-GS-E2E reload renders goal, selected skill, work plan and safe activi
   await expect(dialog.getByText('Có thể tư vấn · chưa thể tự thao tác')).toBeVisible()
   await expect(dialog.getByText('DeepSeek / deepseek-v4-pro').last()).toBeVisible()
   const guidedPlan = dialog.getByTestId('assistant-work-plan').last()
-  await expect(dialog.locator('.assistant-body > .assistant-primary-answer + .assistant-work-plan-card').last()).toBeVisible()
+  // Answer-first ordering: the plan card lives in a disclosure that follows the primary answer
+  // (the process and context disclosures sit between them, so this is a general sibling match).
+  await expect(
+    dialog.locator('.assistant-body > .assistant-primary-answer ~ details.assistant-work-plan-details > .assistant-work-plan-card').last(),
+  ).toBeVisible()
   await expect(guidedPlan.locator('details.assistant-missing-skill')).not.toHaveAttribute('open', '')
   await expect(dialog.getByText('project.create.v1', { exact: true })).not.toBeVisible()
 })

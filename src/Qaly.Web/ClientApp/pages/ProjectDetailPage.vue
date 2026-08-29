@@ -269,6 +269,19 @@ const kanbanTasksByStatus = computed<Record<string, DashboardTask[]>>(() =>
     ]),
   ),
 );
+// Every tab pane that dereferences `selectedProject` must gate on it as well as on the tab id.
+// The `v-else` branch of the template also renders while the project is still loading
+// (`isLoading === true`, `selectedProject === null`), and "stats" is the default tab — so a tab
+// guarded only by its id threw "Cannot read properties of null (reading 'id')" on every open.
+const canShowStatsTab = computed(
+  () => activeProjectTab.value === "stats" && !!selectedProject.value,
+);
+const canShowRoadmapTab = computed(
+  () => activeProjectTab.value === "roadmap" && !!selectedProject.value,
+);
+const canShowMembersTab = computed(
+  () => activeProjectTab.value === "members" && !!selectedProject.value,
+);
 const canShowCapacityTab = computed(
   () => activeProjectTab.value === "capacity" && !!selectedProject.value,
 );
@@ -711,7 +724,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
           </button>
         </nav>
 
-        <div v-if="activeProjectTab === 'stats'" class="tab-pane reveal">
+        <div v-if="canShowStatsTab" class="tab-pane reveal">
           <ProjectStatsTab
             :project-id="selectedProject.id"
             :can-generate-ai="isProjectAdmin"
@@ -719,7 +732,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
           />
         </div>
 
-        <div v-if="activeProjectTab === 'roadmap'" class="tab-pane reveal">
+        <div v-if="canShowRoadmapTab" class="tab-pane reveal">
           <ProjectRoadmapTab
             :project-id="selectedProject.id"
             :project-name="selectedProject.name"
@@ -1675,7 +1688,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
           </Teleport>
         </div>
 
-        <div v-if="activeProjectTab === 'members'" class="tab-pane reveal">
+        <div v-if="canShowMembersTab" class="tab-pane reveal">
           <ProjectMembersTab
             :members="selectedProjectMembers"
             :users="users"

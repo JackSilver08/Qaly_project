@@ -12,7 +12,15 @@ defineEmits<{
 </script>
 
 <template>
-  <article class="task-list-item" @click="$emit('view', task.projectId, task.id)">
+  <article
+    class="task-list-item"
+    role="button"
+    tabindex="0"
+    :aria-label="`Mở nhiệm vụ ${task.title}`"
+    @click="$emit('view', task.projectId, task.id)"
+    @keydown.enter.prevent="$emit('view', task.projectId, task.id)"
+    @keydown.space.prevent="$emit('view', task.projectId, task.id)"
+  >
     <div class="task-list-item__main">
       <div class="task-list-item__title">
         <strong>{{ task.title }}</strong>

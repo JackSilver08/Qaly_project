@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { openSeededProject } from './support/seeded-project'
 
 const adminEmail = process.env.E2E_ADMIN_EMAIL ?? 'admin@qaly.dev'
 const adminPassword = process.env.E2E_ADMIN_PASSWORD ?? 'Admin@123456'
@@ -18,12 +19,10 @@ test('tab lộ trình dùng giao diện sáng và Bootstrap Icons nhất quán',
   await page.waitForURL(url => !url.pathname.startsWith('/Account/Login'))
   await page.locator('.welcome-overlay').waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => undefined)
 
-  await page.goto('/projects', { waitUntil: 'domcontentloaded' })
-  const projectCards = page.locator('.project-grid-card, .project-list-item')
-  const preferredProject = projectCards.filter({ hasText: 'Qaly Release 4.0' }).first()
-  const project = (await preferredProject.count()) > 0 ? preferredProject : projectCards.first()
-  await expect(project).toBeVisible()
-  await project.click()
+  // Resolve the seeded project by id: the /projects grid is paginated by recency, so projects
+  // created by tests running in parallel used to displace it and this spec silently asserted
+  // roadmap content against an empty project.
+  await openSeededProject(page)
   await page.locator('.project-tabs').getByRole('button', { name: 'Lộ Trình Dự Án' }).click()
 
   const roadmapHeader = page.locator('.roadmap-header')

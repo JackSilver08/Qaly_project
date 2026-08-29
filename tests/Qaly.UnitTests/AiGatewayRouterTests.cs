@@ -268,6 +268,46 @@ public class AiGatewayRouterTests : IDisposable
         response.ModelName.Should().Be("deepseek-v4-pro");
     }
 
+    [Theory]
+    [InlineData("deepseek-v4-pro")]
+    [InlineData("deepseek-v4")]
+    [InlineData("DeepSeek-V4-Pro")]
+    [InlineData("deepseek-reasoner")]
+    [InlineData("deepseek-chat")]
+    public async Task ExecuteAsync_WithPublishedDeepSeekModelId_SelectsDeepSeekProvider(string providerHint)
+    {
+        // The v4.0 UI catalogue and API docs publish `deepseek-v4-pro` as the strong model id.
+        // An unmapped hint used to fall through to the Ollama provider settings under a strict
+        // provider request, silently routing a cloud request at the local model.
+        var config = CreateConfiguration("Ollama");
+        var deepSeek = new Mock<IAiProvider>();
+        deepSeek.SetupGet(provider => provider.ProviderName).Returns("DeepSeek");
+        deepSeek.Setup(provider => provider.CompleteAsync(
+                It.IsAny<AiRequest>(),
+                It.IsAny<AiProviderSetting>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiResponse
+            {
+                Content = "DeepSeek response",
+                ProviderName = "DeepSeek",
+                ModelName = "deepseek-v4-pro"
+            });
+
+        var gateway = CreateGateway(config, new AiProviderFactory([deepSeek.Object]));
+        var response = await gateway.ExecuteAsync(new AiRequest
+        {
+            JobType = "test",
+            ProviderHint = providerHint,
+            StrictProvider = true,
+            SystemPrompt = "system",
+            Prompt = "prompt",
+            UseCache = false
+        });
+
+        response.IsSuccess.Should().BeTrue();
+        response.ProviderName.Should().Be("DeepSeek");
+    }
+
     [Fact]
     public async Task ExecuteAsync_WithStrictDeepSeekFailure_DoesNotUseFallbackProvider()
     {

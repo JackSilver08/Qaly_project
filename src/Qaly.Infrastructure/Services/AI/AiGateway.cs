@@ -736,7 +736,10 @@ public class AiGateway : IAiGateway
         {
             null or "" or "auto" => null,
             "local" => "Ollama",
-            "deepseek" or "deepseek-chat" or "deepseek-reasoner" => "DeepSeek",
+            // `deepseek-v4-pro` is the model id the v4.0 UI catalogue and API docs publish. Without
+            // it here an unknown hint falls through to the default branch, and a strict-provider
+            // request is then resolved against Ollama settings instead of DeepSeek.
+            "deepseek" or "deepseek-chat" or "deepseek-reasoner" or "deepseek-v4-pro" or "deepseek-v4" => "DeepSeek",
             "openai" => "OpenAI",
             "gemini" => "Gemini",
             "ollama" => "Ollama",
