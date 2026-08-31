@@ -142,7 +142,9 @@ tay**, chưa ai làm.
 | ☑ | Bình chọn trong nhóm | `qaly.smoke.spec.ts` |
 | ☑ | Wiki: xem trước và import tài liệu | `qaly.smoke.spec.ts` |
 | ☑ | Trang chi tiết nhóm không trắng màn hình | `browser-console.spec.ts` |
-| ☐ | Import biên bản họp → sinh checknote (kiểm tay) | Cần kiểm tay |
+| ☐ | Import biên bản họp → sinh checknote (kiểm tay) | Cần kiểm tay thủ công. Các bước: mở một cuộc họp có ≥ 1 đoạn transcript → vào tab "Checknote" trong `GroupMeetingPage` → bấm "Tạo biên bản AI" → xác nhận job trả về tóm tắt/quyết định/rủi ro/action items có trích dẫn nguồn, và sau khi reload trang vẫn đọc lại được kết quả đã lưu (`GET /api/meetings/{id}/auto-checknote`). Cần server + AI provider thật, chưa thực hiện được trong lần rà soát 2026-08-31 |
+
+> **Ghi chú 2026-08-31**: đã thử chạy lại `qaly.smoke.spec.ts` (4 test realtime chat/meeting/poll/wiki) để re-verify sau đợt sửa dark-theme/emoji/nhãn nút, nhưng môi trường rà soát này không có Docker/DB chạy sẵn nên `dotnet run` (webServer của Playwright) không lên được — lệnh bị treo chờ health-check và phải hủy. Chưa re-run được E2E ở đây; đề nghị người có môi trường đủ Docker/DB chạy `npx playwright test tests/e2e/qaly.smoke.spec.ts --workers=1` để xác nhận trước khi bàn giao.
 
 ### 3.7 Tích hợp GitHub
 
@@ -241,7 +243,7 @@ Khuyến nghị vận hành: khi cần kết quả tin cậy để nghiệm thu,
 | --- | --- | --- |
 | E2E phụ thuộc dữ liệu seed dùng chung, chạy song song dễ nhiễu | Cao | Đã giảm bằng `seeded-project.ts`; các spec tạo dự án mới nên dọn dẹp sau khi chạy |
 | `canAccessModule` **fail-open** khi thiếu quyền trong danh sách | Trung bình | Client chỉ là lớp hiển thị, server vẫn chặn. Cần giữ nguyên nguyên tắc "server là biên enforcement" |
-| Chưa có unit test cho `use-task-actions`, `use-project-actions`, `use-meeting-recovery` | Trung bình | Các composable này gọi API và có nhánh lỗi; nên bổ sung tiếp |
+| Chưa có unit test cho `use-task-actions`, `use-project-actions` | Trung bình | Các composable này gọi API và có nhánh lỗi; nên bổ sung tiếp. `use-meeting-recovery` đã có unit test từ 2026-08-31 (`tests/client/use-meeting-recovery.spec.ts`, 12 test) |
 | Chưa có kiểm thử tải/hiệu năng | Trung bình | Chưa nằm trong phạm vi bàn giao hiện tại |
 | `playwright-report/` bị commit vào git | Thấp | `.gitignore` đã bỏ qua `test-results/`, `TestResults/` nhưng **chưa có** `playwright-report/`, nên mỗi lần chạy E2E lại tạo hàng chục file thay đổi trong `git status`. Đề xuất: thêm `playwright-report/` vào `.gitignore` rồi `git rm -r --cached playwright-report` (chưa thực hiện vì đụng vào git index) |
 | Provider AI thật (DeepSeek) cần API key hợp lệ | Cao | Test dùng fixture/mock; luồng live chỉ chạy được khi có key và ngân sách |

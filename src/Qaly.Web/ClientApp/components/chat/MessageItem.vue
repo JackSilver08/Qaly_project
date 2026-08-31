@@ -967,6 +967,51 @@ function fileIcon(name: string, contentType?: string) {
   background: rgba(23, 32, 51, 0.9) !important;
 }
 
+:global(:root[data-theme='dark'] .team-message__avatar) {
+  color: var(--text-primary) !important;
+  background: var(--surface-muted) !important;
+}
+
+:global(:root[data-theme='dark'] .team-message-reference) {
+  color: var(--text-secondary) !important;
+  background: var(--surface-muted) !important;
+}
+
+:global(:root[data-theme='dark'] .team-message-reference > span) {
+  color: var(--primary-strong) !important;
+}
+
+:global(:root[data-theme='dark'] .team-message-reference--forwarded > span) {
+  color: #2dd4bf !important;
+}
+
+:global(:root[data-theme='dark'] .team-message__reactions button) {
+  border-color: var(--border) !important;
+  color: var(--text-secondary) !important;
+  background: var(--surface-muted) !important;
+}
+
+:global(:root[data-theme='dark'] .team-message__reactions button.is-active) {
+  border-color: rgba(96, 165, 250, 0.5) !important;
+  color: var(--primary-strong) !important;
+  background: var(--primary-soft) !important;
+}
+
+:global(:root[data-theme='dark'] .message-action-menu__divider) {
+  background: var(--border) !important;
+}
+
+:global(:root[data-theme='dark'] .message-attachment-image) {
+  border-color: var(--border) !important;
+  background: var(--surface-muted) !important;
+}
+
+:global(:root[data-theme='dark'] .message-attachment-icon),
+:global(:root[data-theme='dark'] .team-message__system-icon) {
+  color: var(--primary-strong) !important;
+  background: var(--primary-soft) !important;
+}
+
 @media (max-width: 720px) {
   .team-message {
     max-width: 88%;

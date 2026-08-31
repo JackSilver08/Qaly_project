@@ -12,10 +12,13 @@ import {
   LockKeyhole,
   Loader2,
   MessageCircle,
+  Mic,
+  MicOff,
   Moon,
   MonitorUp,
   PanelRightClose,
   PanelRightOpen,
+  Plus,
   ShieldCheck,
   Server,
   Sparkles,
@@ -1463,7 +1466,10 @@ function disconnectLiveKit() {
             </div>
             <footer class="gm-tile__label">
               <strong>Bạn</strong>
-              <span :class="{ 'gm-mic--off': micMuted }">{{ micMuted ? "🔇" : "🎤" }}</span>
+              <span :class="{ 'gm-mic--off': micMuted }">
+                <MicOff v-if="micMuted" :size="14" />
+                <Mic v-else :size="14" />
+              </span>
             </footer>
           </article>
 
@@ -1488,7 +1494,10 @@ function disconnectLiveKit() {
             </div>
             <footer class="gm-tile__label">
               <strong>{{ tile.name }}</strong>
-              <span :class="{ 'gm-mic--off': !tile.micOn }">{{ tile.micOn ? "🎤" : "🔇" }}</span>
+              <span :class="{ 'gm-mic--off': !tile.micOn }">
+                <Mic v-if="tile.micOn" :size="14" />
+                <MicOff v-else :size="14" />
+              </span>
             </footer>
           </article>
 
@@ -1609,7 +1618,8 @@ function disconnectLiveKit() {
                 <span>Chủ phòng</span>
               </div>
               <span :class="micMuted ? 'gm-mic-badge gm-mic-badge--off' : 'gm-mic-badge'">
-                {{ micMuted ? '🔇' : '🎤' }}
+                <MicOff v-if="micMuted" :size="12" />
+                <Mic v-else :size="12" />
               </span>
             </div>
             <!-- Remotes -->
@@ -1620,7 +1630,8 @@ function disconnectLiveKit() {
                 <span>{{ tile.micOn ? "Mic bật" : "Mic tắt" }} · {{ tile.cameraOn ? "Camera bật" : "Camera tắt" }}</span>
               </div>
               <span :class="tile.micOn ? 'gm-mic-badge' : 'gm-mic-badge gm-mic-badge--off'">
-                {{ tile.micOn ? '🎤' : '🔇' }}
+                <Mic v-if="tile.micOn" :size="12" />
+                <MicOff v-else :size="12" />
               </span>
             </div>
             <div v-if="remoteTiles.length === 0" class="gm-empty-state">
@@ -1766,7 +1777,7 @@ function disconnectLiveKit() {
             </div>
 
             <div class="gm-cn-section">
-              <h4>📋 Công việc cần làm ({{ checknoteResult.actionItems.length }})</h4>
+              <h4>Công việc cần làm ({{ checknoteResult.actionItems.length }})</h4>
               <div class="gm-cn-items">
                 <div
                   v-for="(item, idx) in checknoteResult.actionItems"
@@ -1782,7 +1793,7 @@ function disconnectLiveKit() {
                       placeholder="Tiêu đề công việc"
                       :disabled="item.mappingStatus === 'Linked'"
                     />
-                    <span v-if="item.mappingStatus === 'Linked'" class="gm-cn-linked-badge">✓ Đã tạo</span>
+                    <span v-if="item.mappingStatus === 'Linked'" class="gm-cn-linked-badge"><CheckCircle2 :size="12" /> Đã tạo</span>
                   </div>
                   <textarea
                     v-model="item.description"
@@ -1824,7 +1835,8 @@ function disconnectLiveKit() {
                       @click="createTaskFromCard(idx)"
                       :disabled="isCreatingTask === idx"
                     >
-                      {{ isCreatingTask === idx ? "Đang tạo..." : "➕ Tạo Task" }}
+                      <template v-if="isCreatingTask === idx">Đang tạo...</template>
+                      <template v-else><Plus :size="14" /> Tạo Task</template>
                     </button>
                   </div>
                 </div>
@@ -2533,7 +2545,8 @@ function disconnectLiveKit() {
 }
 
 .gm-mic-badge {
-  font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
   flex-shrink: 0;
 }
 
@@ -2986,6 +2999,9 @@ function disconnectLiveKit() {
 }
 
 .gm-cn-linked-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 3px 10px;
   border-radius: 9999px;
   background: rgba(16, 185, 129, 0.12);
@@ -3034,6 +3050,10 @@ function disconnectLiveKit() {
 }
 
 .gm-btn-create-task {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   padding: 7px 16px;
   border: 0;
   border-radius: var(--gm-radius-xs);

@@ -3316,6 +3316,132 @@ function formatMessageTime(value: string) {
   color: var(--text-primary) !important;
 }
 
+:global(:root[data-theme='dark'] .groups-workspace .team-chat-window__actions .icon-button:hover) {
+  color: var(--primary-strong) !important;
+  border-color: rgba(96, 165, 250, 0.36) !important;
+  background: var(--primary-soft) !important;
+}
+
+:global(:root[data-theme='dark'] .group-role-badge),
+:global(:root[data-theme='dark'] .group-detail-tabs button:hover > span),
+:global(:root[data-theme='dark'] .group-detail-tabs button.active > span),
+:global(:root[data-theme='dark'] .group-created-project-link),
+:global(:root[data-theme='dark'] .group-user-suggestions > button:hover),
+:global(:root[data-theme='dark'] .group-user-suggestions > button.is-selected),
+:global(:root[data-theme='dark'] .group-shared-block__title small),
+:global(:root[data-theme='dark'] .group-shared-file-icon),
+:global(:root[data-theme='dark'] .group-section-title small) {
+  background: var(--primary-soft) !important;
+  color: var(--primary-strong) !important;
+}
+
+:global(:root[data-theme='dark'] .group-created-project-link) {
+  border-color: rgba(96, 165, 250, 0.4) !important;
+}
+
+:global(:root[data-theme='dark'] .group-created-project-link:hover) {
+  background: rgba(96, 165, 250, 0.24) !important;
+  border-color: rgba(96, 165, 250, 0.55) !important;
+}
+
+:global(:root[data-theme='dark'] .group-detail-tabs button > span),
+:global(:root[data-theme='dark'] .group-user-search > button),
+:global(:root[data-theme='dark'] .group-member-role),
+:global(:root[data-theme='dark'] .group-poll-options button) {
+  background: var(--surface-muted) !important;
+  color: var(--text-secondary) !important;
+}
+
+:global(:root[data-theme='dark'] .group-tool-heading strong),
+:global(:root[data-theme='dark'] .group-user-suggestions > button),
+:global(:root[data-theme='dark'] .group-shared-heading strong),
+:global(:root[data-theme='dark'] .group-shared-block__title),
+:global(:root[data-theme='dark'] .group-shared-files strong),
+:global(:root[data-theme='dark'] .group-section-title span),
+:global(:root[data-theme='dark'] .group-poll-multiple strong) {
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .group-tool-heading span),
+:global(:root[data-theme='dark'] .group-user-suggestion__identity small),
+:global(:root[data-theme='dark'] .group-user-suggestions__empty),
+:global(:root[data-theme='dark'] .group-shared-heading span),
+:global(:root[data-theme='dark'] .group-shared-files article > div span),
+:global(:root[data-theme='dark'] .group-poll-multiple small) {
+  color: var(--text-secondary) !important;
+}
+
+:global(:root[data-theme='dark'] .group-inline-form input),
+:global(:root[data-theme='dark'] .group-inline-form select),
+:global(:root[data-theme='dark'] .group-stack-form input),
+:global(:root[data-theme='dark'] .group-stack-form textarea),
+:global(:root[data-theme='dark'] .group-modal input),
+:global(:root[data-theme='dark'] .group-modal textarea),
+:global(:root[data-theme='dark'] .group-user-search),
+:global(:root[data-theme='dark'] .group-user-suggestions),
+:global(:root[data-theme='dark'] .group-poll-composer input),
+:global(:root[data-theme='dark'] .group-poll-multiple) {
+  border-color: var(--border) !important;
+  background: var(--surface-muted) !important;
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .group-member-row:hover),
+:global(:root[data-theme='dark'] .group-pending-list article:hover),
+:global(:root[data-theme='dark'] .group-poll-item:hover) {
+  border-color: rgba(96, 165, 250, 0.36) !important;
+  background: var(--primary-soft) !important;
+}
+
+:global(:root[data-theme='dark'] .group-member-role--owner) {
+  background: var(--warning-soft) !important;
+  color: var(--warning-dark) !important;
+}
+
+:global(:root[data-theme='dark'] .group-member-role--admin) {
+  background: var(--primary-soft) !important;
+  color: var(--primary-strong) !important;
+}
+
+:global(:root[data-theme='dark'] .group-danger-zone) {
+  border-top-color: var(--danger-soft) !important;
+}
+
+:global(:root[data-theme='dark'] .group-danger-action) {
+  border-color: rgba(248, 113, 113, 0.32) !important;
+  background: var(--danger-soft) !important;
+  color: var(--qaly-danger) !important;
+}
+
+:global(:root[data-theme='dark'] .group-danger-action:hover) {
+  background: rgba(248, 113, 113, 0.24) !important;
+}
+
+:global(:root[data-theme='dark'] .group-shared-images article) {
+  background: var(--surface-muted) !important;
+}
+
+:global(:root[data-theme='dark'] .group-shared-actions a),
+:global(:root[data-theme='dark'] .group-shared-actions button),
+:global(:root[data-theme='dark'] .group-shared-files a),
+:global(:root[data-theme='dark'] .group-shared-files button) {
+  color: var(--text-primary) !important;
+  background: var(--surface) !important;
+}
+
+:global(:root[data-theme='dark'] .group-shared-files article) {
+  border-color: var(--border) !important;
+}
+
+:global(:root[data-theme='dark'] .group-shared-files button) {
+  color: var(--qaly-danger) !important;
+  background: var(--danger-soft) !important;
+}
+
+:global(:root[data-theme='dark'] .group-color-field) {
+  color: var(--text-secondary) !important;
+}
+
 @media (max-width: 1280px) {
   .groups-workspace {
     grid-template-columns: 250px minmax(0, 1fr);

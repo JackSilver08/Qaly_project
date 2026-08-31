@@ -553,13 +553,13 @@ function uploadBackground(event: Event) {
     </div>
 
     <div v-if="selectionMode" class="team-selection-toolbar">
-      <button type="button" :disabled="!selectedIds.size" title="Summarize selected messages" @click="analyzeSelected('summary')">
+      <button type="button" :disabled="!selectedIds.size" aria-label="Tóm tắt các tin nhắn đã chọn" @click="analyzeSelected('summary')">
         <Sparkles :size="16" /> Tóm tắt
       </button>
-      <button type="button" :disabled="!selectedIds.size" title="Create a task draft from selected messages" @click="analyzeSelected('task-draft')">
+      <button type="button" :disabled="!selectedIds.size" aria-label="Tạo bản nháp task từ các tin nhắn đã chọn" @click="analyzeSelected('task-draft')">
         <ListTodo :size="16" /> Tạo task
       </button>
-      <button type="button" class="selection-close" @click="exitSelectionMode"><X :size="18" /></button>
+      <button type="button" class="selection-close" aria-label="Thoát chế độ chọn" @click="exitSelectionMode"><X :size="18" /></button>
       <strong>{{ selectedIds.size }} tin nhắn đã chọn</strong>
       <button type="button" :disabled="!selectedIds.size" @click="copySelected">Sao chép</button>
       <button type="button" class="is-danger" :disabled="!selectedIds.size" @click="hideSelected">
@@ -645,7 +645,7 @@ function uploadBackground(event: Event) {
     <Teleport to="body">
       <div v-if="forwardingMessage" class="message-detail-backdrop" @click.self="forwardingMessage = null">
         <section class="message-detail-card team-forward-card">
-          <header><div><Forward :size="18" /><strong>Chuyển tiếp tin nhắn</strong></div><button type="button" @click="forwardingMessage = null"><X :size="18" /></button></header>
+          <header><div><Forward :size="18" /><strong>Chuyển tiếp tin nhắn</strong></div><button type="button" aria-label="Đóng" @click="forwardingMessage = null"><X :size="18" /></button></header>
           <p>{{ forwardingMessage.text || 'Ảnh hoặc tệp đính kèm' }}</p>
           <label>Chọn nhóm nhận
             <select v-model="forwardTargetGroupId">
@@ -724,7 +724,7 @@ function uploadBackground(event: Event) {
         <section class="message-detail-card">
           <header>
             <div><Info :size="18" /><strong>Chi tiết tin nhắn</strong></div>
-            <button type="button" @click="detailMessage = null"><X :size="18" /></button>
+            <button type="button" aria-label="Đóng" @click="detailMessage = null"><X :size="18" /></button>
           </header>
           <dl>
             <div><dt>Người gửi</dt><dd>{{ detailMessage.senderName }}</dd></div>
@@ -1591,6 +1591,44 @@ function uploadBackground(event: Event) {
 :global(:root[data-theme='dark'] .team-pinned-panel span),
 :global(:root[data-theme='dark'] .team-reply-banner span),
 :global(:root[data-theme='dark'] .message-detail-card dt) {
+  color: var(--text-secondary) !important;
+}
+
+:global(:root[data-theme='dark'] .team-selection-toolbar strong) {
+  color: #f8fafc !important;
+}
+
+:global(:root[data-theme='dark'] .team-selection-toolbar button) {
+  color: var(--primary-strong) !important;
+  background: rgba(96, 165, 250, 0.2) !important;
+}
+
+:global(:root[data-theme='dark'] .team-selection-toolbar button.is-danger) {
+  color: var(--qaly-danger) !important;
+  background: var(--danger-soft) !important;
+}
+
+:global(:root[data-theme='dark'] .team-selection-toolbar .selection-close) {
+  color: #bfdbfe !important;
+  background: rgba(96, 165, 250, 0.16) !important;
+}
+
+:global(:root[data-theme='dark'] .team-typing-indicator) {
+  border-color: var(--border) !important;
+  color: var(--text-secondary) !important;
+  background: var(--surface) !important;
+}
+
+:global(:root[data-theme='dark'] .team-mention-popover span) {
+  color: var(--primary-strong) !important;
+  background: var(--primary-soft) !important;
+}
+
+:global(:root[data-theme='dark'] .team-mention-popover small) {
+  color: var(--text-secondary) !important;
+}
+
+:global(:root[data-theme='dark'] .message-detail-card header button) {
   color: var(--text-secondary) !important;
 }
 

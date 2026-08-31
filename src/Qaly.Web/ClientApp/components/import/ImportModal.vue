@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Archive, ArrowLeft, Check, FileText, FileUp, X } from 'lucide-vue-next'
+import { AlertTriangle, Archive, ArrowLeft, Check, FileText, FileUp, X } from 'lucide-vue-next'
 import ImportUploadStep from './ImportUploadStep.vue'
 import ImportMappingStep from './ImportMappingStep.vue'
 import ImportConfirmStep from './ImportConfirmStep.vue'
@@ -642,7 +642,7 @@ onMounted(loadImportSessions)
 
           <!-- Unmapped statuses warning -->
           <div v-if="importResult.unmappedStatuses?.length" class="import-warning">
-            <span>⚠️</span>
+            <AlertTriangle :size="16" />
             <span>Các giá trị trạng thái không nhận diện được (đã đặt về Chưa làm): {{ importResult.unmappedStatuses.join(', ') }}</span>
           </div>
 
@@ -665,7 +665,7 @@ onMounted(loadImportSessions)
               Hoàn tác nhập dữ liệu
             </button>
             <button class="btn btn--primary" @click="finish">
-              Xong ✓
+              Xong
             </button>
           </div>
         </div>
@@ -1109,4 +1109,96 @@ onMounted(loadImportSessions)
 }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+:global(:root[data-theme='dark'] .import-modal) {
+  background: var(--surface) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border) !important;
+}
+
+:global(:root[data-theme='dark'] .import-header) {
+  border-bottom-color: var(--border) !important;
+}
+
+:global(:root[data-theme='dark'] .stepper-line) {
+  background: var(--border) !important;
+}
+
+:global(:root[data-theme='dark'] .stepper-dot) {
+  background: var(--surface-muted) !important;
+  color: var(--text-secondary) !important;
+}
+
+:global(:root[data-theme='dark'] .stepper-labels span) {
+  color: var(--text-secondary) !important;
+}
+
+:global(:root[data-theme='dark'] .stepper-labels span.active) {
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .import-preview-table-wrap),
+:global(:root[data-theme='dark'] .document-preview__blocks ul) {
+  border-color: var(--border) !important;
+}
+
+:global(:root[data-theme='dark'] .import-preview-table th) {
+  background: var(--surface-muted) !important;
+  color: var(--text-primary) !important;
+  border-bottom-color: var(--border) !important;
+}
+
+:global(:root[data-theme='dark'] .import-preview-table td),
+:global(:root[data-theme='dark'] .document-preview__blocks li) {
+  color: var(--text-secondary) !important;
+  border-bottom-color: var(--border) !important;
+}
+
+:global(:root[data-theme='dark'] .import-input),
+:global(:root[data-theme='dark'] .import-select) {
+  background: var(--surface-muted) !important;
+  border-color: var(--border-strong) !important;
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .import-select option) {
+  background: var(--surface) !important;
+}
+
+:global(:root[data-theme='dark'] .document-preview__hero),
+:global(:root[data-theme='dark'] .document-success) {
+  border-color: rgba(96, 165, 250, 0.34) !important;
+  background: var(--primary-soft) !important;
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .document-preview__stats div) {
+  border-color: var(--border) !important;
+  background: var(--surface-muted) !important;
+}
+
+:global(:root[data-theme='dark'] .document-preview__stats strong) {
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .document-description) {
+  border-left-color: rgba(96, 165, 250, 0.5) !important;
+  background: var(--surface-muted) !important;
+  color: var(--text-secondary) !important;
+}
+
+:global(:root[data-theme='dark'] .bundle-preview-list li) {
+  border-color: var(--border) !important;
+  background: var(--surface-muted) !important;
+}
+
+:global(:root[data-theme='dark'] .bundle-preview-list strong),
+:global(:root[data-theme='dark'] .zip-result-item strong) {
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .zip-result-item) {
+  border-color: rgba(96, 165, 250, 0.34) !important;
+  background: var(--primary-soft) !important;
+}
 </style>
