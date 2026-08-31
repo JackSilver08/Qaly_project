@@ -24,6 +24,33 @@ public sealed class AiNativeDomainActionsApiTests : IClassFixture<IntegrationTes
     }
 
     [Fact]
+    [Trait("TestId", "TEST-AI-NATIVE-P16-P17-CONVERSATION-ROUTE-01")]
+    public async Task P16P17_NaturalTaskPromptsWithoutRequestedCapability_ReturnTypedReviewCards()
+    {
+        var seeded = await SeedAsync();
+        var context = new AiAssistantClientContextDto(
+            $"/projects/{seeded.ProjectId}/tasks/{seeded.TaskId}", "task",
+            seeded.ProjectId, "task", seeded.TaskId);
+
+        var checklist = await PrepareFromNaturalPromptAsync(
+            AiNativeDomainActionContract.ChecklistCapability,
+            "Với Task đang mở, soạn 5 mục acceptance checklist kiểm chứng được, cho phép sửa từng mục và chờ một xác nhận trước khi lưu.",
+            context);
+        checklist.Payload.GetProperty("items").GetArrayLength().Should().Be(5);
+
+        var breakdown = await PrepareFromNaturalPromptAsync(
+            AiNativeDomainActionContract.BreakdownCapability,
+            "Tách Task đang mở thành 4 subtask theo thứ tự thực hiện, có dependency, estimate và required skill; mở card review trước khi tạo.",
+            context);
+        breakdown.Payload.GetProperty("subtasks").GetArrayLength().Should().Be(4);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        (await db.TaskAcceptanceChecklistItems.CountAsync(item => item.TaskId == seeded.TaskId)).Should().Be(0);
+        (await db.TaskItems.CountAsync(item => item.ParentTaskId == seeded.TaskId)).Should().Be(0);
+    }
+
+    [Fact]
     [Trait("TestId", "TEST-AI-NATIVE-DOMAIN-01")]
     public async Task P16P17_ChecklistAndFourSubtasks_ConfirmCanonicalRowsSkillsDependenciesReadBackAndReplay()
     {
@@ -690,6 +717,34 @@ public sealed class AiNativeDomainActionsApiTests : IClassFixture<IntegrationTes
         value.Disposition.Should().Be("native_action_draft");
         value.NativeActionDraft.Should().NotBeNull();
         value.NativeActionDraft!.RendererId.Should().Be(AiNativeDomainActionContract.RendererId);
+        return value.NativeActionDraft;
+    }
+
+    private async Task<AiNativeActionDraftDto> PrepareFromNaturalPromptAsync(
+        string expectedCapabilityId,
+        string prompt,
+        AiAssistantClientContextDto context)
+    {
+        var csrf = await CsrfAsync();
+        var sessionResponse = await SendAsync(HttpMethod.Post, "/api/ai/assistant/sessions",
+            new CreateAiAssistantSessionRequestDto(context, $"Natural route {expectedCapabilityId}"), csrf);
+        sessionResponse.StatusCode.Should().Be(HttpStatusCode.Created, await sessionResponse.Content.ReadAsStringAsync());
+        var session = (await sessionResponse.Content.ReadFromJsonAsync<AiAssistantSessionDto>(JsonOptions))!;
+        var turn = new AiAssistantTurnRequestDto(
+            prompt,
+            context,
+            SessionId: session.SessionId,
+            ExpectedVersion: session.Version,
+            ClientTurnId: Guid.NewGuid());
+        var turnResponse = await SendAsync(HttpMethod.Post, "/api/ai/assistant/turns", turn, csrf,
+            $"natural-turn-{Guid.NewGuid():N}");
+        turnResponse.StatusCode.Should().Be(HttpStatusCode.OK, await turnResponse.Content.ReadAsStringAsync());
+        var value = (await turnResponse.Content.ReadFromJsonAsync<AiAssistantTurnResponseDto>(JsonOptions))!;
+        value.Intent.Should().Be(expectedCapabilityId);
+        value.Disposition.Should().Be("native_action_draft");
+        value.NativeActionDraft.Should().NotBeNull();
+        value.NativeActionDraft!.CapabilityId.Should().Be(expectedCapabilityId);
+        value.NativeActionDraft.RendererId.Should().Be(AiNativeDomainActionContract.RendererId);
         return value.NativeActionDraft;
     }
 

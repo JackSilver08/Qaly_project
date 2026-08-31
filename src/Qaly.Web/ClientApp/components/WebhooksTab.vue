@@ -115,11 +115,11 @@ watch(() => props.projectId, fetchWebhooks, { immediate: true })
       <form v-if="showCreateForm" class="webhook-form glass-card" @submit.prevent="createWebhook">
         <div class="form-group">
           <label>URL nhận dữ liệu</label>
-          <input v-model="newWebhook.payloadUrl" type="url" placeholder="https://your-app.com/webhook" required />
+          <input v-model="newWebhook.payloadUrl" type="url" autocomplete="url" aria-label="URL nhận dữ liệu webhook" placeholder="https://your-app.com/webhook" required />
         </div>
         <div class="form-group">
           <label>Khóa bí mật (không bắt buộc)</label>
-          <input v-model="newWebhook.secret" type="password" placeholder="Khóa bí mật để xác thực webhook" />
+          <input v-model="newWebhook.secret" type="password" autocomplete="new-password" aria-label="Khóa bí mật webhook" placeholder="Khóa bí mật để xác thực webhook" />
         </div>
         <div class="form-group">
           <label>Sự kiện kích hoạt</label>

@@ -95,6 +95,7 @@ public static class AiActionComposerOutputContract
             {
                 return false;
             }
+            commands = ApplySafeSprintSchedule(snapshot, commands);
 
             canonicalOptions.Add(new AiActionOptionDto(
                 optionId,
@@ -227,13 +228,14 @@ public static class AiActionComposerOutputContract
                 intent,
                 fallbackSourceRefs));
         }
+        commands = ApplySafeSprintSchedule(snapshot, commands);
 
         var option = new AiActionOptionDto(
             "server-safe-plan",
             isVietnamese ? "Phương án an toàn để duyệt" : "Safe review plan",
             isVietnamese
-                ? "Qaly đã tạo bản nháp có thể chỉnh sửa từ đúng yêu cầu gốc; chưa tự gán người hoặc kỹ năng khi thiếu bằng chứng."
-                : "Qaly created an editable draft from the original request and did not assign people or skills without evidence.",
+                ? "Qaly đã lập hạn theo Sprint và chỉ đề xuất người khi có đủ bằng chứng kỹ năng, availability và capacity đa dự án; việc chưa đủ bằng chứng vẫn để chưa giao."
+                : "Qaly scheduled due dates within the Sprint and only suggested assignees backed by skill evidence, availability, and cross-project capacity; unverified work remains unassigned.",
             isVietnamese
                 ? ["Cần duyệt nội dung, Sprint, người phụ trách và kỹ năng trước khi xác nhận."]
                 : ["Review content, Sprint, assignees, and skills before confirmation."],
@@ -321,6 +323,10 @@ public static class AiActionComposerOutputContract
             }
         }
         if (!TryValidateCommandDependencies(selected, out error))
+        {
+            return false;
+        }
+        if (!TryValidateSystemSuggestedCapacity(selected, snapshot, out error))
         {
             return false;
         }
@@ -438,7 +444,7 @@ public static class AiActionComposerOutputContract
         {
             if (!allowedMembers.ContainsKey(command.AssigneeId.Value) ||
                 !allowUserSelected ||
-                assigneeMode != "user_selected")
+                assigneeMode is not ("user_selected" or "system_suggested"))
             {
                 error = allowUserSelected
                     ? "Assignee is outside the authorized project or was not explicitly selected by the reviewer."
@@ -511,6 +517,126 @@ public static class AiActionComposerOutputContract
             sourceRefs,
             dependencyCommandIds);
         return true;
+    }
+
+    private static List<AiActionTaskCommandDto> ApplySafeSprintSchedule(
+        AiActionContextSnapshotDto snapshot,
+        List<AiActionTaskCommandDto> commands)
+    {
+        if (snapshot.Sprint == null || commands.Count == 0)
+            return commands.ToList();
+
+        var today = DateTimeOffset.UtcNow.Date;
+        var windowStart = snapshot.Sprint.StartDate > today ? snapshot.Sprint.StartDate : today;
+        var windowEnd = snapshot.Sprint.EndDate;
+        if (windowEnd < windowStart)
+            return commands.ToList();
+
+        var remainingByMember = snapshot.Members.ToDictionary(
+            member => member.UserId,
+            member => member.RemainingCapacityHours ?? 0m);
+        var totalHours = Math.Max(1, commands.Sum(command => command.EstimatedHours ?? 1));
+        var elapsedHours = 0;
+        var dueByCommand = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
+        var scheduled = new List<AiActionTaskCommandDto>(commands.Count);
+
+        // Schedule in dependency order so a model may return cards in any visual order
+        // without allowing a successor to receive an earlier deadline than its blocker.
+        var commandById = commands.ToDictionary(command => command.CommandId, StringComparer.Ordinal);
+        var orderedCommands = new List<AiActionTaskCommandDto>(commands.Count);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        void AddWithDependencies(AiActionTaskCommandDto command)
+        {
+            if (!visited.Add(command.CommandId)) return;
+            foreach (var dependencyId in command.DependencyCommandIds ?? [])
+                AddWithDependencies(commandById[dependencyId]);
+            orderedCommands.Add(command);
+        }
+        foreach (var command in commands)
+            AddWithDependencies(command);
+
+        foreach (var command in orderedCommands)
+        {
+            elapsedHours += command.EstimatedHours ?? 1;
+            var ratio = Math.Clamp((double)elapsedHours / totalHours, 0d, 1d);
+            var spanDays = Math.Max(0, (windowEnd.Date - windowStart.Date).Days);
+            var due = MoveToBusinessDay(windowStart.Date.AddDays((int)Math.Round(spanDays * ratio)), windowEnd);
+            var predecessorDue = (command.DependencyCommandIds ?? [])
+                .Where(dueByCommand.ContainsKey)
+                .Select(id => dueByCommand[id])
+                .DefaultIfEmpty(windowStart)
+                .Max();
+            if (due < predecessorDue) due = predecessorDue;
+            if (due > windowEnd) due = windowEnd;
+            dueByCommand[command.CommandId] = due;
+
+            var estimate = command.EstimatedHours ?? 0;
+            var requiredSkills = (command.RequiredSkills ?? [])
+                .Select(skill => skill.SkillId)
+                .ToHashSet();
+            var candidate = snapshot.Members
+                .Where(member => IsDeclaredCapacity(member) && member.IsAvailableForSprint)
+                .Where(member => remainingByMember.GetValueOrDefault(member.UserId) >= estimate)
+                .Where(member => requiredSkills.IsSubsetOf((member.VerifiedSkillIds ?? []).ToHashSet()))
+                .OrderByDescending(member => remainingByMember.GetValueOrDefault(member.UserId))
+                .ThenBy(member => member.ActiveTaskCount)
+                .ThenBy(member => member.Name, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault();
+
+            if (candidate != null)
+                remainingByMember[candidate.UserId] -= estimate;
+
+            scheduled.Add(command with
+            {
+                DueDate = due,
+                AssigneeId = candidate?.UserId,
+                AssigneeMode = candidate == null ? "unassigned" : "system_suggested"
+            });
+        }
+
+        var scheduledById = scheduled.ToDictionary(command => command.CommandId, StringComparer.Ordinal);
+        return commands.Select(command => scheduledById[command.CommandId]).ToList();
+    }
+
+    private static bool TryValidateSystemSuggestedCapacity(
+        IReadOnlyList<AiActionTaskCommandDto> commands,
+        AiActionContextSnapshotDto snapshot,
+        out string? error)
+    {
+        var members = snapshot.Members.ToDictionary(member => member.UserId);
+        var consumed = new Dictionary<Guid, decimal>();
+        foreach (var command in commands.Where(command =>
+                     command.AssigneeId.HasValue && command.AssigneeMode == "system_suggested"))
+        {
+            var member = members[command.AssigneeId!.Value];
+            var requiredSkills = (command.RequiredSkills ?? []).Select(skill => skill.SkillId).ToHashSet();
+            if (!IsDeclaredCapacity(member) || !member.IsAvailableForSprint ||
+                !requiredSkills.IsSubsetOf((member.VerifiedSkillIds ?? []).ToHashSet()))
+            {
+                error = "A Qaly-suggested assignee no longer has declared capacity, Sprint availability, or verified skill evidence.";
+                return false;
+            }
+
+            consumed[member.UserId] = consumed.GetValueOrDefault(member.UserId) + (command.EstimatedHours ?? 0);
+            if (consumed[member.UserId] > (member.RemainingCapacityHours ?? 0m))
+            {
+                error = "A Qaly-suggested assignment exceeds the member's remaining cross-project capacity.";
+                return false;
+            }
+        }
+
+        error = null;
+        return true;
+    }
+
+    private static bool IsDeclaredCapacity(AiActionMemberContextDto member)
+        => member.CapacityState is "declared" or "declared_with_availability";
+
+    private static DateTimeOffset MoveToBusinessDay(DateTimeOffset candidate, DateTimeOffset windowEnd)
+    {
+        while (candidate.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday && candidate < windowEnd)
+            candidate = candidate.AddDays(1);
+        return candidate > windowEnd ? windowEnd : candidate;
     }
 
     private static List<AiActionTaskCommandDto>? BuildNamedTenTaskFallback(

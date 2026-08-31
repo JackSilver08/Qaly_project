@@ -66,10 +66,10 @@ function dismiss() {
         <strong>Bắt đầu với vai trò {{ guide.roleLabel }}</strong>
         <p>{{ guide.summary }}</p>
       </div>
-      <button class="icon-button" type="button" :title="expanded ? 'Thu gọn' : 'Mở rộng'" @click="expanded = !expanded">
+      <button class="icon-button" type="button" :title="expanded ? 'Thu gọn' : 'Mở rộng'" :aria-label="expanded ? 'Thu gọn hướng dẫn' : 'Mở rộng hướng dẫn'" @click="expanded = !expanded">
         <ChevronDown :size="16" :style="expanded ? 'transform: rotate(180deg)' : ''" />
       </button>
-      <button class="icon-button" type="button" title="Ẩn hướng dẫn" @click="dismiss">
+      <button class="icon-button" type="button" title="Ẩn hướng dẫn" aria-label="Ẩn hướng dẫn" @click="dismiss">
         <X :size="16" />
       </button>
     </header>

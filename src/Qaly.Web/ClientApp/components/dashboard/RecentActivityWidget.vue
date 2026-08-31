@@ -67,7 +67,7 @@ const getSparklineHeight = (count: number) => {
 
       <!-- Latest Activities Timeline -->
       <div class="activity-list" style="display: flex; flex-direction: column; gap: 16px;">
-        <div v-if="data.latestActivities.length === 0" style="text-align: center; color: #94a3b8; font-size: 13px;">
+        <div v-if="data.latestActivities.length === 0" style="text-align: center; color: #64748b; font-size: 13px;">
           Chưa có hoạt động nào gần đây
         </div>
         
@@ -89,7 +89,7 @@ const getSparklineHeight = (count: number) => {
               <strong style="color: #1f80ff;">{{ activity.actorName }}</strong> 
               {{ activity.title }}
             </div>
-            <div style="font-size: 11px; color: #94a3b8; font-weight: 500;">
+            <div style="font-size: 11px; color: #64748b; font-weight: 500;">
               {{ formatTimeAgo(activity.createdAt) }}
             </div>
           </div>

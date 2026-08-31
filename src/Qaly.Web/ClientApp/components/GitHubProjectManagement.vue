@@ -65,9 +65,6 @@ function openTask(taskId: string) {
   window.location.assign(taskHref(taskId))
 }
 
-function openExternal(url: string) {
-  window.open(url, '_blank', 'noopener,noreferrer')
-}
 </script>
 
 <template>
@@ -78,7 +75,7 @@ function openExternal(url: string) {
         <h3>Quản lý phát triển</h3>
         <p>PR, review, CI và release của toàn bộ repository trong dự án.</p>
       </div>
-      <button v-if="canManage" :disabled="syncing" @click="sync">
+      <button v-if="canManage" type="button" :disabled="syncing" @click="sync">
         <Loader2 v-if="syncing" class="spin" :size="16" />
         <RefreshCw v-else :size="16" />
         {{ syncing ? 'Đang đồng bộ...' : 'Đồng bộ ngay' }}
@@ -90,18 +87,18 @@ function openExternal(url: string) {
       Đang tải dữ liệu...
     </div>
 
-    <div v-else-if="loadError" class="state error">
+    <div v-else-if="loadError" class="state error" role="alert">
       <AlertCircle :size="20" />
       <span>{{ loadError }}</span>
-      <button @click="load">Thử lại</button>
+      <button type="button" @click="load">Thử lại</button>
     </div>
 
     <div v-else-if="!data || !hasActivity" class="state empty">
       <Package :size="24" />
       <strong>Chưa có hoạt động GitHub</strong>
       <p>Repository đã kết nối nhưng chưa có PR, workflow hoặc release nào để hiển thị.</p>
-      <button v-if="canManage" class="retry-button" @click="sync">Đồng bộ ngay</button>
-      <button v-else class="retry-button" @click="load">Làm mới</button>
+      <button v-if="canManage" class="retry-button" type="button" @click="sync">Đồng bộ ngay</button>
+      <button v-else class="retry-button" type="button" @click="load">Làm mới</button>
     </div>
 
     <template v-else>
@@ -130,17 +127,17 @@ function openExternal(url: string) {
 
       <div class="toolbar">
         <nav>
-          <button :class="{ active: tab === 'pulls' }" @click="switchTab('pulls')">Pull requests <b>{{ data.pullRequests.length }}</b></button>
-          <button :class="{ active: tab === 'workflows' }" @click="switchTab('workflows')">CI/CD <b>{{ data.workflows.length }}</b></button>
-          <button :class="{ active: tab === 'releases' }" @click="switchTab('releases')">Releases <b>{{ data.releases.length }}</b></button>
+          <button type="button" :class="{ active: tab === 'pulls' }" :aria-pressed="tab === 'pulls'" @click="switchTab('pulls')">Pull requests <b>{{ data.pullRequests.length }}</b></button>
+          <button type="button" :class="{ active: tab === 'workflows' }" :aria-pressed="tab === 'workflows'" @click="switchTab('workflows')">CI/CD <b>{{ data.workflows.length }}</b></button>
+          <button type="button" :class="{ active: tab === 'releases' }" :aria-pressed="tab === 'releases'" @click="switchTab('releases')">Releases <b>{{ data.releases.length }}</b></button>
         </nav>
-        <select v-if="tab === 'pulls'" v-model="filter">
+        <select v-if="tab === 'pulls'" v-model="filter" aria-label="Lọc pull request theo trạng thái">
           <option value="all">Tất cả trạng thái</option>
           <option value="open">Đang mở</option>
           <option value="merged">Đã merge</option>
           <option value="closed">Đã đóng</option>
         </select>
-        <select v-else-if="tab === 'workflows'" v-model="filter">
+        <select v-else-if="tab === 'workflows'" v-model="filter" aria-label="Lọc workflow theo kết quả">
           <option value="all">Tất cả kết quả</option>
           <option value="success">Thành công</option>
           <option value="failure">Thất bại</option>
@@ -149,10 +146,10 @@ function openExternal(url: string) {
       </div>
 
       <div v-if="tab === 'pulls'" class="items">
-        <article v-for="item in pulls" :key="item.id" class="item-card" @click="openExternal(item.url)">
+        <article v-for="item in pulls" :key="item.id" class="item-card">
           <i><GitPullRequest :size="17" /></i>
           <div class="item-body">
-            <strong>#{{ item.number }} {{ item.title }}</strong>
+            <a class="item-primary-link" :href="item.url" target="_blank" rel="noopener noreferrer">#{{ item.number }} {{ item.title }} <ExternalLink :size="13" /></a>
             <small>{{ item.repository }} · {{ item.headBranch }} → {{ item.baseBranch }} · {{ item.authorLogin || 'GitHub user' }}</small>
             <div class="task-tags">
               <button
@@ -171,18 +168,17 @@ function openExternal(url: string) {
             <CheckCircle2 :size="14" />
             {{ item.approvalCount ? `${item.approvalCount} duyệt` : item.isDraft ? 'Bản nháp' : 'Chờ duyệt' }}
           </em>
-          <ExternalLink :size="14" class="external-icon" />
         </article>
         <p v-if="!pulls.length">Chưa có pull request phù hợp.</p>
       </div>
 
       <div v-else-if="tab === 'workflows'" class="items">
-        <article v-for="item in workflows" :key="item.runId" class="item-card" @click="openExternal(item.url)">
+        <article v-for="item in workflows" :key="item.runId" class="item-card">
           <i :class="tone(item.conclusion)">
             <Workflow :size="17" />
           </i>
           <div class="item-body">
-            <strong>{{ item.title || item.name }}</strong>
+            <a class="item-primary-link" :href="item.url" target="_blank" rel="noopener noreferrer">{{ item.title || item.name }} <ExternalLink :size="13" /></a>
             <small>{{ item.repository }} · {{ item.branch }} · {{ date(item.startedAt) }}</small>
             <div class="task-tags">
               <button
@@ -198,20 +194,18 @@ function openExternal(url: string) {
             </div>
           </div>
           <em :class="tone(item.conclusion)">{{ item.conclusion || item.status }}</em>
-          <ExternalLink :size="14" class="external-icon" />
         </article>
         <p v-if="!workflows.length">Chưa có workflow run phù hợp.</p>
       </div>
 
       <div v-else class="items">
-        <article v-for="item in data.releases" :key="item.repository + item.tagName" class="item-card" @click="openExternal(item.url)">
+        <article v-for="item in data.releases" :key="item.repository + item.tagName" class="item-card">
           <i><Package :size="17" /></i>
           <div class="item-body">
-            <strong>{{ item.name || item.tagName }}</strong>
+            <a class="item-primary-link" :href="item.url" target="_blank" rel="noopener noreferrer">{{ item.name || item.tagName }} <ExternalLink :size="13" /></a>
             <small>{{ item.repository }} · {{ item.tagName }} · {{ date(item.publishedAt) }}</small>
           </div>
           <em v-if="item.isPrerelease" class="pending">Pre-release</em>
-          <ExternalLink :size="14" class="external-icon" />
         </article>
         <p v-if="!data.releases.length">Chưa có release.</p>
       </div>
@@ -389,13 +383,12 @@ function openExternal(url: string) {
   min-height: 66px;
   padding: 13px 18px;
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  grid-template-columns: auto 1fr auto;
   gap: 11px;
   align-items: center;
   background: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 14px;
-  cursor: pointer;
   transition: background-color .22s ease, padding-left .22s ease, box-shadow .22s ease;
 }
 
@@ -427,7 +420,7 @@ function openExternal(url: string) {
 }
 
 .item-card i.danger {
-  color: #d92d20;
+  color: #b42318;
   background: #fef3f2;
 }
 
@@ -441,6 +434,23 @@ function openExternal(url: string) {
 .item-body strong {
   color: #17243a;
   font-size: 13px;
+}
+
+.item-primary-link {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 5px;
+  color: #17243a;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.item-primary-link:hover {
+  color: #1358c8;
+  text-decoration: underline;
 }
 
 .item-body small {
@@ -475,7 +485,7 @@ function openExternal(url: string) {
 
 .task-tag--muted {
   cursor: default;
-  color: #71839a;
+  color: #475569;
   border-color: #e1e7ef;
   background: #f8fafc;
 }
@@ -554,7 +564,7 @@ function openExternal(url: string) {
 footer {
   padding: 12px 18px;
   text-align: right;
-  color: #76869a;
+  color: #475569;
   font-size: 11px;
   border-top: 1px solid #dbe4f0;
   background: #fff;

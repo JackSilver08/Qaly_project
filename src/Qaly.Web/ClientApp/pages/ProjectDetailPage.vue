@@ -765,13 +765,14 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
           @ask-ai="openChatWithPrompt"
         />
 
-        <nav class="project-tabs glass-card">
+        <nav class="project-tabs glass-card" aria-label="Khu vực dự án">
           <button
             v-for="tab in tabs"
             :key="tab.id"
             type="button"
             class="tab-link"
             :class="{ 'is-active': activeProjectTab === tab.id }"
+            :aria-current="activeProjectTab === tab.id ? 'page' : undefined"
             @click="selectProjectTab(tab.id)"
           >
             {{ tab.label }}
@@ -814,6 +815,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                   <input
                     v-model="taskSearchQuery"
                     type="text"
+                    aria-label="Tìm nhiệm vụ trong dự án"
                     placeholder="Tìm nhiệm vụ (N: mới)..."
                   />
                 </div>
@@ -827,6 +829,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                     type="button"
                     class="task-view-toggle__button"
                     :class="{ 'is-active': taskBoardView === 'kanban' }"
+                    :aria-pressed="taskBoardView === 'kanban'"
                     @click="taskBoardView = 'kanban'"
                   >
                     <LayoutGrid :size="15" />
@@ -836,6 +839,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                     type="button"
                     class="task-view-toggle__button"
                     :class="{ 'is-active': taskBoardView === 'list' }"
+                    :aria-pressed="taskBoardView === 'list'"
                     @click="taskBoardView = 'list'"
                   >
                     <List :size="15" />
@@ -875,12 +879,13 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                 v-if="createTaskOpen"
                 class="task-modal-backdrop"
                 @click.self="cancelTaskForm"
+                @keydown.esc="cancelTaskForm"
               >
-                <div class="task-modal">
+                <div class="task-modal" role="dialog" aria-modal="true" aria-labelledby="task-editor-title">
                   <div class="task-modal-header">
                     <div class="task-modal-title">
                       <CheckSquare :size="20" />
-                      <h2>
+                      <h2 id="task-editor-title">
                         {{
                           taskBeingEdited
                             ? "Chỉnh sửa nhiệm vụ"
@@ -891,7 +896,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                     <button
                       type="button"
                       class="icon-button"
-                      aria-label="Đóng"
+                      aria-label="Đóng biểu mẫu nhiệm vụ"
                       title="Đóng"
                       @click="cancelTaskForm"
                     >
@@ -905,6 +910,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                       <input
                         v-model="newTaskTitle"
                         type="text"
+                        aria-label="Tiêu đề nhiệm vụ"
                         placeholder="Nhập tiêu đề nhiệm vụ..."
                         required
                         class="modal-input"
@@ -915,6 +921,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                       <label>Mô tả chi tiết</label>
                       <textarea
                         v-model="newTaskDescription"
+                        aria-label="Mô tả chi tiết nhiệm vụ"
                         placeholder="Mô tả nhiệm vụ (không bắt buộc)..."
                         rows="3"
                         class="modal-input"
@@ -936,7 +943,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                             AI gợi ý
                           </button>
                         </div>
-                        <select v-model="newTaskPriority" class="modal-input">
+                        <select v-model="newTaskPriority" aria-label="Độ ưu tiên nhiệm vụ" class="modal-input">
                           <option
                             v-for="priority in priorities"
                             :key="priority"
@@ -957,7 +964,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                       </div>
                       <div class="form-group">
                         <label>Người thực hiện</label>
-                        <select v-model="newTaskAssigneeId" class="modal-input">
+                        <select v-model="newTaskAssigneeId" aria-label="Người thực hiện nhiệm vụ" class="modal-input">
                           <option value="">Chưa giao</option>
                           <option
                             v-for="user in selectedProjectMembers"
@@ -975,6 +982,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                       <input
                         v-model="newTaskDueDate"
                         type="date"
+                        aria-label="Hạn chót nhiệm vụ"
                         class="modal-input"
                       />
                     </div>
@@ -1069,7 +1077,12 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                     class="kanban-card draggable-item"
                     :class="{ 'is-selected': selectedTask?.id === task.id }"
                     :data-id="task.id"
+                    tabindex="0"
+                    role="button"
+                    :aria-label="`Mở chi tiết nhiệm vụ ${task.title}`"
                     @click="handleTaskCardClick(task.id)"
+                    @keydown.self.enter="handleTaskCardClick(task.id)"
+                    @keydown.self.space.prevent="handleTaskCardClick(task.id)"
                   >
                     <small v-if="task.key" class="task-key-chip">{{
                       task.key
@@ -1079,6 +1092,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                         v-if="taskBeingQuickEditedId === task.id"
                         v-model="quickEditTitle"
                         type="text"
+                        :aria-label="`Sửa nhanh tiêu đề nhiệm vụ ${task.title}`"
                         class="quick-edit-input"
                         @blur="saveQuickEdit"
                         @keyup.enter="saveQuickEdit"
@@ -1110,7 +1124,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                           <button
                             class="icon-button icon-button--small"
                             type="button"
-                            aria-label="Tùy chọn nhiệm vụ"
+                            :aria-label="`Mở thao tác cho nhiệm vụ ${task.title}`"
                             title="Tùy chọn nhiệm vụ"
                             @click.stop="toggleTaskMenu(task.id)"
                           >
@@ -1183,7 +1197,12 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                 :key="task.id"
                 class="task-list-row"
                 :class="{ 'is-selected': selectedTask?.id === task.id }"
+                tabindex="0"
+                role="button"
+                :aria-label="`Mở chi tiết nhiệm vụ ${task.title}`"
                 @click="handleTaskCardClick(task.id)"
+                @keydown.self.enter="handleTaskCardClick(task.id)"
+                @keydown.self.space.prevent="handleTaskCardClick(task.id)"
               >
                 <div class="task-list-row__main">
                   <strong>
@@ -1240,7 +1259,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                     <button
                       class="icon-button icon-button--small"
                       type="button"
-                      aria-label="Tùy chọn nhiệm vụ"
+                      :aria-label="`Mở thao tác cho nhiệm vụ ${task.title}`"
                       title="Tùy chọn nhiệm vụ"
                       @click.stop="toggleTaskMenu(task.id)"
                     >
@@ -1280,6 +1299,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                 v-if="selectedTask"
                 class="task-detail-backdrop"
                 @click.self="closeTaskDetails"
+                @keydown.esc="closeTaskDetails"
               >
                 <aside
                   class="task-detail-panel task-detail-drawer glass-card"
@@ -1360,6 +1380,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                       <p
                         v-else-if="assignmentInsightError"
                         class="assignment-note assignment-note--error"
+                        role="alert"
                       >
                         {{ assignmentInsightError }}
                       </p>
@@ -1491,7 +1512,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                             >Ghi giờ:
                             <strong>{{ activeTimer.taskTitle }}</strong></span
                           >
-                          <button
+                          <button type="button"
                             class="stop-pill"
                             @click="stopTimer(activeTimer.id)"
                           >
@@ -1499,13 +1520,13 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                           </button>
                         </div>
                         <div v-else class="timer-idle">
-                          <button
+                          <button type="button"
                             class="start-pill"
                             @click="startTimer(selectedTask.id)"
                           >
                             <Play :size="14" fill="currentColor" /> Bắt đầu
                           </button>
-                          <button
+                          <button type="button"
                             class="ghost-pill"
                             @click="showManualForm = !showManualForm"
                           >
@@ -1523,14 +1544,16 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                             <input
                               v-model.number="manualMinutes"
                               type="number"
+                              aria-label="Số phút làm việc thủ công"
                               placeholder="Phút"
                             />
                             <input
                               v-model="manualNote"
                               type="text"
+                              aria-label="Ghi chú thời gian làm việc"
                               placeholder="Ghi chú..."
                             />
-                            <button
+                            <button type="button"
                               class="primary-button primary-button--compact"
                               @click="submitManualEntry"
                             >
@@ -1659,7 +1682,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                                 v-if="canReviewEvidence(attachment)"
                                 class="manager-actions"
                               >
-                                <button
+                                <button type="button"
                                   class="approve-btn"
                                   title="Duyệt minh chứng"
                                   @click="
@@ -1668,7 +1691,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                                 >
                                   <Check :size="14" /> Duyệt
                                 </button>
-                                <button
+                                <button type="button"
                                   class="reject-btn"
                                   title="Từ chối"
                                   @click="rejectEvidence(attachment.id)"
@@ -1678,7 +1701,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                               </div>
                             </template>
 
-                            <button
+                            <button type="button"
                               class="icon-button icon-button--small icon-button--danger"
                               @click="deleteAttachment(attachment)"
                               aria-label="Xóa tệp"
@@ -1728,7 +1751,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                                 ></div>
                               </div>
                               <div class="chat-actions">
-                                <button
+                                <button type="button"
                                   v-if="
                                     isProjectAdmin ||
                                     comment.authorId === currentUser?.id
@@ -1754,13 +1777,14 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                             <input
                               v-model="newComment"
                               type="text"
+                              aria-label="Nội dung bình luận"
                               placeholder="Nhập tin nhắn..."
                             />
                             <button
                               class="chat-send-btn"
                               type="submit"
-                              aria-label="Gửi tin nhắn"
-                              title="Gửi tin nhắn"
+                              aria-label="Gửi bình luận"
+                              title="Gửi bình luận"
                               :disabled="!newComment.trim()"
                             >
                               <Send :size="16" />
@@ -2314,10 +2338,10 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
 }
 
 .task-detail-drawer {
-  width: min(620px, calc(100vw - 32px));
-  height: 100vh;
-  min-height: 100vh;
-  max-height: 100vh;
+  width: min(760px, calc(100vw - 24px));
+  height: 100dvh;
+  min-height: 100dvh;
+  max-height: 100dvh;
   min-width: 0;
   overflow-x: hidden;
   overflow-y: auto;
@@ -3338,7 +3362,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
 }
 
 .chat-bubble-meta span {
-  color: #94a3b8;
+  color: #64748b;
 }
 
 .chat-message--own .chat-bubble-meta {
@@ -3371,7 +3395,8 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
   transition: opacity 0.2s;
 }
 
-.chat-message:hover .chat-actions {
+.chat-message:hover .chat-actions,
+.chat-message:focus-within .chat-actions {
   opacity: 1;
 }
 

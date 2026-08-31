@@ -26,7 +26,7 @@ const userInitials = computed(() => {
           <div class="profile-avatar profile-page__avatar">{{ userInitials }}</div>
           <div>
             <span>Profile</span>
-            <h2>Trang cá nhân</h2>
+            <h1>Trang cá nhân</h1>
             <p>{{ user?.fullName || user?.email || 'Qaly user' }}</p>
           </div>
         </header>

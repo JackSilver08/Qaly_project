@@ -7,6 +7,7 @@ import {
   formatTime,
   formatTimeAgo,
   initials,
+  isTaskOpen,
   isTaskOverdue,
   statusTone,
 } from '@/utils/formatters'
@@ -109,6 +110,18 @@ describe('initials', () => {
   })
 })
 
+describe('isTaskOpen', () => {
+  it.each(['Todo', 'InProgress', 'InReview', 'OnHold', 'todo', ' inprogress '])(
+    'accepts canonical open status %s',
+    (status) => expect(isTaskOpen(status)).toBe(true),
+  )
+
+  it.each(['Done', 'Cancelled', 'Canceled', 'Completed', 'Closed', 'Unknown', '', null, undefined])(
+    'rejects terminal or unsupported status %s',
+    (status) => expect(isTaskOpen(status)).toBe(false),
+  )
+})
+
 describe('isTaskOverdue', () => {
   it('is false without a due date', () => {
     expect(isTaskOverdue({ dueDate: null, status: 'Todo' })).toBe(false)
@@ -132,6 +145,11 @@ describe('isTaskOverdue', () => {
     // cancelled past-due task must not inflate the client-side overdue badge.
     expect(isTaskOverdue({ dueDate: '2000-01-01T00:00:00.000Z', status: 'Cancelled' })).toBe(false)
   })
+
+  it.each(['Canceled', 'Completed', 'Closed', 'Unknown'])(
+    'does not count legacy or unsupported status %s as overdue',
+    (status) => expect(isTaskOverdue({ dueDate: '2000-01-01T00:00:00.000Z', status })).toBe(false),
+  )
 
   it('is false for an unparsable due date instead of reporting NaN as overdue', () => {
     expect(isTaskOverdue({ dueDate: 'not-a-date', status: 'Todo' })).toBe(false)

@@ -49,7 +49,7 @@ Runbook này chỉ thay cho **phần 3 — Prompt test AI Native**. Phần 1–2
 
 | ID | Trang bắt đầu | Tác dụng cần kiểm | Prompt để dán | PASS cần nhìn thấy |
 |---|---|---|---|---|
-| P11 | `/projects/{projectId}?tab=tasks` → Trợ lý AI, scope đúng Project | Tạo đúng số lượng Task và giữ đủ trường | **Trong Project đang chọn, soạn đúng 10 Task cho Sprint 1: khảo sát, user flow, UI kit, API contract, database, auth, booking, payment, test E2E và tài liệu vận hành. Mỗi Task có mô tả, acceptance criteria, estimate, dependency, priority và required skill. Mở bản nháp để tôi chỉnh; chưa ghi dữ liệu.** | Draft có đúng 10 card, không rút còn 3; mỗi card sửa/chọn được; một lần confirm tạo đúng số được tick; reload còn đủ trường. |
+| P11 | `/projects/{projectId}?tab=tasks` → Trợ lý AI, scope đúng Project | Tạo đúng số lượng Task, lập hạn theo Sprint và đề xuất người bằng dữ liệu thật | **Trong Project đang chọn, soạn đúng 10 Task cho Sprint 1: khảo sát, user flow, UI kit, API contract, database, auth, booking, payment, test E2E và tài liệu vận hành. Mỗi Task có mô tả, acceptance criteria, estimate, dependency, priority và required skill. Tự đặt hạn trong Sprint theo dependency; chỉ đề xuất người khi có đủ skill evidence, declared availability/capacity và tải đa Project, nếu thiếu thì để chưa giao và nói rõ. Mở bản nháp để tôi chỉnh; chưa ghi dữ liệu.** | Draft có đúng 10 card, không rút còn 3; hạn nằm trong Sprint và không sớm hơn dependency; assignee `system_suggested` có evidence/capacity thật hoặc để chưa giao trung thực; mỗi card sửa/chọn được; một lần confirm tạo đúng số được tick; reload còn đủ trường. |
 | P12 | `/projects/{projectId}/tasks/{taskId}` với D02 | Route đúng intent giao việc, không nhảy sang Project Launch | **Với Task đang mở, hãy lập phương án giao việc và lịch. Đối chiếu required skill, evidence đã xác nhận, capacity thật, availability, deadline và tải ở tất cả Project; cho tôi đổi ứng viên hoặc ngày trước khi xác nhận.** | Intent/capability là `task.assignment_schedule.v1`; card gắn đúng Task; có candidates/reason/schedule; đổi người/ngày được; không mở tạo Project/Task mới. |
 | P13 | Cùng Task và draft P12 | Xác nhận assignment canonical, idempotent | **Giữ phương án hiện tại và cho tôi card xác nhận cuối. Không ghi trước khi tôi bấm xác nhận.** | Sau một click có receipt succeeded/read-back; đúng một assignee/TaskAssignment; estimate, label, Sprint, actual hours không mất; retry không tạo lặp. |
 | P14 | Task detail D02; chọn ứng viên đang vắng/thiếu capacity | Business constraint chống overbooking | **Thử đề xuất giao Task này cho một người đang không sẵn sàng hoặc không đủ capacity trong cửa sổ hiện tại; giải thích ngắn phương án thay thế.** | Không cho confirm sai; không coi phút trống là capacity; chỉ ra blocker và ứng viên/lịch thay thế; DB không đổi. |
@@ -106,3 +106,46 @@ Chỉ đánh `PASS` cho từng dòng khi:
 6. Với lỗi provider/stale/capacity, hệ thống không ghi dở dang và đưa ra bước tiếp tục hữu ích.
 
 Trạng thái toàn runbook chỉ là `ACCEPTED` khi P01–P27 PASS và P28 PASS hoặc `EXTERNAL_DEFERRED` có bằng chứng trung thực. Không suy rộng kết quả unit/integration thành PASS cho UI thủ công chưa chạy.
+
+## 6. Phiếu nghiệm thu cuối — 2026-08-22
+
+Kết quả này dùng exact prompt/public API fixture cho từng dòng, canonical read-back cho mutation và final targeted browser replay cho session reload, multi-answer, Project scope, editable cards, permission gate, idempotent confirm, receipt và navigation. Không dùng toast hoặc text thành công làm bằng chứng độc lập.
+
+| ID | Kết quả | Bằng chứng chính |
+|---|---|---|
+| P01–P03 | `PASS` | Role cards, workspace/project scope, Assistant/Analytics canonical source and navigation fixtures; targeted capability/navigation replay. |
+| P04–P05 | `PASS` | Durable memory/history/scope Integration; real session switch and reload browser replay. |
+| P06–P10 | `PASS` | Multi-answer reload; reviewed staffing/delivery card; one-confirm canonical graph; lost-response reconciliation; stable receipt/read-back. |
+| P11–P17 | `PASS` | Exact Task count, assignment/capacity/stale gates, checklist/subtask canonical Integration; exact-count editable browser replay. |
+| P18–P24 | `PASS` | Native domain typed-artifact and canonical mutation/read-back Integration; review-only replan browser replay. |
+| P25–P27 | `PASS` | Member read-only, deterministic provider fallback and typed renderer/navigation public-flow fixtures. |
+| P28 | `EXTERNAL_DEFERRED_VERIFIED` | Five server-owned adapter states; no model mutation and no simulated write/read-back receipt; receipt UI shows `external_deferred`. |
+
+**Runbook disposition:** `ACCEPTED / PRODUCT_ACCEPTED`. External calendar/repository/invitation/webhook/deployment remain outside the implemented internal boundary until a credentialed adapter proves write and provider read-back.
+
+## 7. Regression gate P06–P28 — 2026-08-24
+
+Một lỗi runtime thật đã được tái hiện sau phiếu nghiệm thu 2026-08-22: bước xác nhận Project trả `409` trên SQL Server vì transaction được mở ngoài `SqlServerRetryingExecutionStrategy`. Vì evidence runtime mới luôn thắng trạng thái lịch sử, disposition hiện tại được cập nhật thành:
+
+`AUTOMATED_GATE_P06_P28_PASS / TARGETED_MANUAL_REPLAY_PENDING`
+
+Các hiệu chỉnh trong gate này:
+
+- P06–P08: một form Launch Brief duy nhất; câu trả lời clarification đã lưu được hydrate vào form chính, không render thêm khối “Mình cần biết thêm” trùng lặp.
+- Danh sách **Qaly đề cử** lấy từ scope/features đã phân tích trong prompt/Launch Brief. Catalog dài là mẫu seed có mô tả để bổ sung, không tự biến thành yêu cầu Project. Có thao tác nhanh giữ đề cử, chọn tất cả mẫu và bỏ chọn tất cả.
+- P08: blocker card dẫn tới đúng control nhân sự/Sprint cần sửa; đội hình, backlog chưa giao, assignee/reviewer và phương án phân công vẫn là dữ liệu reviewable trước khi lưu.
+- P09–P10: confirm/rollback transaction chạy bên trong SQL execution strategy; SQL integration chứng minh một confirm tạo canonical graph, retry trả cùng receipt và không tạo trùng.
+- P26: provider failure luôn có structured `Answer` dự phòng hữu ích và actual provider/model là `Qaly / qaly-native`, không để metadata DeepSeek giả khi DeepSeek không trả lời.
+- Session read query dùng split query để không tạo cảnh báo/lượng join nhiều collection không cần thiết.
+
+Evidence tự động hiện tại:
+
+| Phạm vi | Kết quả | Bằng chứng |
+|---|---|---|
+| P06–P28 internal capabilities | `PASS_AUTOMATED` | 69/69 focused Integration PASS cho Assistant, Action Composer, Native Domain Actions, Portfolio Schedule và Task Skill. Test session cancel/resume `TEST-RO-LOOP-02` thuộc P04–P05 không nằm trong slice này. |
+| P09–P10 SQL retry/transaction | `PASS_AUTOMATED` | `TEST-AI-P09-P10-SQL-RETRY-TRANSACTION-01`: 1/1 PASS trên SQL Server migration schema, có canonical read-back và idempotency. |
+| Frontend contract | `PASS_AUTOMATED` | Vue typecheck PASS; solution build không warning/error. |
+| P28 | `EXTERNAL_DEFERRED_VERIFIED` | Không có credentialed adapter write/read-back mới; không giả lập thành công. |
+| UI P06–P28 trên preview mới | `NOT_VERIFIED` | Cần người dùng chạy lại targeted prompt/card sau khi preview được restart; không suy rộng Integration thành manual PASS. |
+
+Không trả lại `PRODUCT_ACCEPTED` chỉ dựa vào bảng này. Cần targeted manual replay tối thiểu P06 → P10 trên preview mới, sau đó tiếp tục P11 → P28 theo các prompt ở mục 2.

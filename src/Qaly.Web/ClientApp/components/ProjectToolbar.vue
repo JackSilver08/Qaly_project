@@ -76,6 +76,7 @@ defineEmits<{
         <button
           class="layout-toggle-btn"
           type="button"
+          :aria-label="isGridView ? 'Chuyển sang dạng danh sách' : 'Chuyển sang dạng ô lưới'"
           :title="
             isGridView ? 'Chuyển sang dạng danh sách' : 'Chuyển sang dạng ô lưới'
           "

@@ -108,23 +108,28 @@ public sealed partial class ProjectLaunchOrchestratorService
                 409,
                 "project_launch_skill_stale");
 
-        IDbContextTransaction? transaction = null;
-        var transactionCommitted = false;
-        try
+        var executionStrategy = _db.Database.CreateExecutionStrategy();
+        return await executionStrategy.ExecuteAsync(ExecuteConfirmedMutationAsync);
+
+        async Task<Result<ProjectLaunchPlanDto>> ExecuteConfirmedMutationAsync()
         {
-            if (_db.Database.IsRelational()) transaction = await _db.Database.BeginTransactionAsync(ct);
-            var now = DateTimeOffset.UtcNow;
-            var project = new Project
+            IDbContextTransaction? transaction = null;
+            var transactionCommitted = false;
+            try
             {
-                Name = delivery.ProposedProjectName.Trim(),
-                Code = await GenerateUniqueProjectCodeAsync(delivery.ProposedProjectCode, ct),
-                Description = delivery.Objective,
-                Status = "Active",
-                StartDate = delivery.StartDate,
-                EndDate = delivery.EndDate,
-                OwnerId = userId,
-                OrganizationId = entity.OrganizationId
-            };
+                if (_db.Database.IsRelational()) transaction = await _db.Database.BeginTransactionAsync(ct);
+                var now = DateTimeOffset.UtcNow;
+                var project = new Project
+                {
+                    Name = delivery.ProposedProjectName.Trim(),
+                    Code = await GenerateUniqueProjectCodeAsync(delivery.ProposedProjectCode, ct),
+                    Description = delivery.Objective,
+                    Status = "Active",
+                    StartDate = delivery.StartDate,
+                    EndDate = delivery.EndDate,
+                    OwnerId = userId,
+                    OrganizationId = entity.OrganizationId
+                };
             _db.Projects.Add(project);
             var projectMembers = new Dictionary<Guid, ProjectMember>
             {
@@ -312,34 +317,35 @@ public sealed partial class ProjectLaunchOrchestratorService
             var mapped = await MapPlanAsync(entity, organizationName, ct);
             await UpdateAssistantResponseAsync(entity.AssistantTurnId, mapped, ct);
             return Result.Success(mapped);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            if (transactionCommitted)
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (transactionCommitted)
+                    return await GetPlanAsync(planId, ct);
+                if (transaction != null) await transaction.RollbackAsync(ct);
+                _db.ChangeTracker.Clear();
+                return Result.Failure<ProjectLaunchPlanDto>(
+                    "Project launch is already being confirmed. Reload the canonical receipt instead of submitting again.",
+                    409,
+                    "project_launch_confirmation_in_progress");
+            }
+            catch (Exception exception) when (exception is DbUpdateException or InvalidOperationException)
+            {
+                if (transactionCommitted)
+                    return await GetPlanAsync(planId, ct);
+                if (transaction != null) await transaction.RollbackAsync(ct);
+                _db.ChangeTracker.Clear();
+                return Result.Failure<ProjectLaunchPlanDto>(exception.Message, 409, "project_launch_execution_failed");
+            }
+            catch (Exception) when (transactionCommitted && !ct.IsCancellationRequested)
+            {
+                _db.ChangeTracker.Clear();
                 return await GetPlanAsync(planId, ct);
-            if (transaction != null) await transaction.RollbackAsync(ct);
-            _db.ChangeTracker.Clear();
-            return Result.Failure<ProjectLaunchPlanDto>(
-                "Project launch is already being confirmed. Reload the canonical receipt instead of submitting again.",
-                409,
-                "project_launch_confirmation_in_progress");
-        }
-        catch (Exception exception) when (exception is DbUpdateException or InvalidOperationException)
-        {
-            if (transactionCommitted)
-                return await GetPlanAsync(planId, ct);
-            if (transaction != null) await transaction.RollbackAsync(ct);
-            _db.ChangeTracker.Clear();
-            return Result.Failure<ProjectLaunchPlanDto>(exception.Message, 409, "project_launch_execution_failed");
-        }
-        catch (Exception) when (transactionCommitted && !ct.IsCancellationRequested)
-        {
-            _db.ChangeTracker.Clear();
-            return await GetPlanAsync(planId, ct);
-        }
-        finally
-        {
-            if (transaction != null) await transaction.DisposeAsync();
+            }
+            finally
+            {
+                if (transaction != null) await transaction.DisposeAsync();
+            }
         }
     }
 
@@ -419,13 +425,18 @@ public sealed partial class ProjectLaunchOrchestratorService
         if (hasUserWork)
             return Result.Failure<ProjectLaunchPlanDto>("Rollback is blocked because the launched Project has accrued user work. Use normal archive/replan controls.", 409, "project_launch_rollback_impact_blocked");
 
-        IDbContextTransaction? transaction = null;
-        var transactionCommitted = false;
-        try
+        var rollbackExecutionStrategy = _db.Database.CreateExecutionStrategy();
+        return await rollbackExecutionStrategy.ExecuteAsync(ExecuteRollbackMutationAsync);
+
+        async Task<Result<ProjectLaunchPlanDto>> ExecuteRollbackMutationAsync()
         {
-            if (_db.Database.IsRelational()) transaction = await _db.Database.BeginTransactionAsync(ct);
-            var now = DateTimeOffset.UtcNow;
-            var project = await _db.Projects.IgnoreQueryFilters().SingleAsync(item => item.Id == execution.ProjectId, ct);
+            IDbContextTransaction? transaction = null;
+            var transactionCommitted = false;
+            try
+            {
+                if (_db.Database.IsRelational()) transaction = await _db.Database.BeginTransactionAsync(ct);
+                var now = DateTimeOffset.UtcNow;
+                var project = await _db.Projects.IgnoreQueryFilters().SingleAsync(item => item.Id == execution.ProjectId, ct);
             project.IsDeleted = true;
             project.DeletedAt = now;
             project.UpdatedAt = now;
@@ -474,23 +485,24 @@ public sealed partial class ProjectLaunchOrchestratorService
             var mapped = await MapPlanAsync(execution.ProjectLaunchPlanArtifact, organizationName, ct);
             await UpdateAssistantResponseAsync(execution.ProjectLaunchPlanArtifact.AssistantTurnId, mapped, ct);
             return Result.Success(mapped);
-        }
-        catch (Exception exception) when (exception is DbUpdateException or InvalidOperationException)
-        {
-            if (transactionCommitted)
+            }
+            catch (Exception exception) when (exception is DbUpdateException or InvalidOperationException)
+            {
+                if (transactionCommitted)
+                    return await GetPlanAsync(execution.ProjectLaunchPlanArtifactId, ct);
+                if (transaction != null) await transaction.RollbackAsync(ct);
+                _db.ChangeTracker.Clear();
+                return Result.Failure<ProjectLaunchPlanDto>(exception.Message, 409, "project_launch_rollback_failed");
+            }
+            catch (Exception) when (transactionCommitted && !ct.IsCancellationRequested)
+            {
+                _db.ChangeTracker.Clear();
                 return await GetPlanAsync(execution.ProjectLaunchPlanArtifactId, ct);
-            if (transaction != null) await transaction.RollbackAsync(ct);
-            _db.ChangeTracker.Clear();
-            return Result.Failure<ProjectLaunchPlanDto>(exception.Message, 409, "project_launch_rollback_failed");
-        }
-        catch (Exception) when (transactionCommitted && !ct.IsCancellationRequested)
-        {
-            _db.ChangeTracker.Clear();
-            return await GetPlanAsync(execution.ProjectLaunchPlanArtifactId, ct);
-        }
-        finally
-        {
-            if (transaction != null) await transaction.DisposeAsync();
+            }
+            finally
+            {
+                if (transaction != null) await transaction.DisposeAsync();
+            }
         }
     }
 

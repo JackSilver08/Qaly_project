@@ -428,14 +428,14 @@ watch(
     </header>
 
     <div class="privacy-modes" role="tablist" aria-label="Privacy views">
-      <button :class="{ active: activeMode === 'consent' }" @click="activeMode = 'consent'"><LockKeyhole :size="16" /> Consent</button>
-      <button :class="{ active: activeMode === 'policies' }" @click="activeMode = 'policies'"><FileClock :size="16" /> Retention</button>
-      <button :class="{ active: activeMode === 'requests' }" @click="activeMode = 'requests'"><Download :size="16" /> Data requests</button>
-      <button v-if="canManage" :class="{ active: activeMode === 'holds' }" @click="activeMode = 'holds'"><Scale :size="16" /> Legal holds</button>
+      <button type="button" role="tab" :aria-selected="activeMode === 'consent'" :class="{ active: activeMode === 'consent' }" @click="activeMode = 'consent'"><LockKeyhole :size="16" /> Consent</button>
+      <button type="button" role="tab" :aria-selected="activeMode === 'policies'" :class="{ active: activeMode === 'policies' }" @click="activeMode = 'policies'"><FileClock :size="16" /> Retention</button>
+      <button type="button" role="tab" :aria-selected="activeMode === 'requests'" :class="{ active: activeMode === 'requests' }" @click="activeMode = 'requests'"><Download :size="16" /> Data requests</button>
+      <button type="button" role="tab" v-if="canManage" :aria-selected="activeMode === 'holds'" :class="{ active: activeMode === 'holds' }" @click="activeMode = 'holds'"><Scale :size="16" /> Legal holds</button>
     </div>
 
-    <div v-if="loadError" class="privacy-error"><AlertTriangle :size="17" />{{ loadError }}</div>
-    <div v-if="isLoading" class="privacy-loading"><Loader2 :size="20" class="spinning" /> Đang tải...</div>
+    <div v-if="loadError" class="privacy-error" role="alert"><AlertTriangle :size="17" />{{ loadError }}</div>
+    <div v-if="isLoading" class="privacy-loading" role="status" aria-live="polite"><Loader2 :size="20" class="spinning" /> Đang tải...</div>
 
     <template v-else-if="activeMode === 'consent'">
       <div class="privacy-editor">
@@ -462,7 +462,7 @@ watch(
           <input v-model="consentForm.accepted" type="checkbox" />
           <span>Tôi đồng ý xử lý dữ liệu cuộc họp để trích xuất action item theo policy đã chọn, trong thời hạn lưu trữ hiển thị và với provider đã chọn.</span>
         </label>
-        <button class="action-button" :disabled="isSubmitting || !activePolicies.length" @click="grantConsent">
+        <button type="button" class="action-button" :disabled="isSubmitting || !activePolicies.length" @click="grantConsent">
           <CheckCircle2 :size="17" /> Ghi nhận consent
         </button>
       </div>
@@ -475,7 +475,7 @@ watch(
             <span>{{ consent.providerClass }} · {{ consent.policyVersion }} · {{ formatDate(consent.grantedAt) }}</span>
           </div>
           <span class="state-tag" :class="`state-${consent.status}`">{{ statusLabel(consent.status) }}</span>
-          <button v-if="consent.status === 'granted'" class="icon-button danger" title="Thu hồi consent" @click="revokeConsent(consent)">
+          <button type="button" v-if="consent.status === 'granted'" class="icon-button danger" title="Thu hồi consent" @click="revokeConsent(consent)">
             <Trash2 :size="16" />
           </button>
         </div>
@@ -505,7 +505,7 @@ watch(
           <label><input v-model="policyForm.allowCloudProcessing" type="checkbox" /> Cloud</label>
           <label><input v-model="policyForm.requireExplicitConsent" type="checkbox" /> Bắt buộc consent</label>
         </div>
-        <button class="action-button" :disabled="isSubmitting" @click="createPolicy"><Plus :size="17" /> Tạo policy</button>
+        <button type="button" class="action-button" :disabled="isSubmitting" @click="createPolicy"><Plus :size="17" /> Tạo policy</button>
       </div>
 
       <div class="record-list">
@@ -516,7 +516,7 @@ watch(
             <span>{{ policy.defaultRetentionDays }} ngày · {{ policy.expiryAction }} · {{ policy.allowCloudProcessing ? 'cloud + local' : 'local' }}</span>
           </div>
           <span class="state-tag" :class="policy.isActive ? 'state-granted' : 'state-revoked'">{{ policy.isActive ? 'active' : 'inactive' }}</span>
-          <button v-if="canManage && policy.isActive" class="icon-button danger" title="Ngừng policy" @click="disablePolicy(policy)"><Ban :size="16" /></button>
+          <button type="button" v-if="canManage && policy.isActive" class="icon-button danger" title="Ngừng policy" @click="disablePolicy(policy)"><Ban :size="16" /></button>
         </div>
         <div v-if="!policies.length" class="empty-row">Chưa có retention policy.</div>
       </div>
@@ -530,7 +530,7 @@ watch(
         <label>Phạm vi
           <select v-model="requestForm.scope"><option value="all">Toàn tenant</option><option value="project">Dự án hiện tại</option><option value="meetings">Meeting</option><option value="ai">AI data</option></select>
         </label>
-        <button class="action-button" :disabled="isSubmitting" @click="submitDataRequest"><Plus :size="17" /> Gửi yêu cầu</button>
+        <button type="button" class="action-button" :disabled="isSubmitting" @click="submitDataRequest"><Plus :size="17" /> Gửi yêu cầu</button>
       </div>
 
       <div class="record-list">
@@ -541,7 +541,7 @@ watch(
             <span>{{ formatDate(request.requestedAt) }} · deadline {{ formatDate(request.deadlineAt) }}</span>
           </div>
           <span class="state-tag" :class="`state-${request.status}`">{{ statusLabel(request.status) }}</span>
-          <button v-if="request.requestType === 'export' && ['completed', 'partially_completed'].includes(request.status)" class="icon-button" title="Tải bản xuất" @click="downloadExport(request)"><Download :size="16" /></button>
+          <button type="button" v-if="request.requestType === 'export' && ['completed', 'partially_completed'].includes(request.status)" class="icon-button" title="Tải bản xuất" @click="downloadExport(request)"><Download :size="16" /></button>
         </div>
         <div v-if="!dataRequests.length" class="empty-row">Chưa có yêu cầu dữ liệu.</div>
       </div>
@@ -555,14 +555,14 @@ watch(
           <label>Entity ID<input v-model="holdForm.entityId" placeholder="UUID" /></label>
           <label>Lý do<input v-model="holdForm.reason" maxlength="1000" /></label>
         </div>
-        <button class="action-button" :disabled="isSubmitting" @click="createLegalHold"><Scale :size="17" /> Tạo legal hold</button>
+        <button type="button" class="action-button" :disabled="isSubmitting" @click="createLegalHold"><Scale :size="17" /> Tạo legal hold</button>
       </div>
       <div class="record-list">
         <div v-for="hold in legalHolds" :key="hold.id" class="record-row">
           <div class="record-icon"><Scale :size="17" /></div>
           <div class="record-main"><strong>{{ hold.entityType || 'Subject hold' }}</strong><span>{{ hold.reason }} · {{ formatDate(hold.heldAt) }}</span></div>
           <span class="state-tag" :class="hold.status === 'active' ? 'state-failed' : 'state-revoked'">{{ hold.status }}</span>
-          <button v-if="hold.status === 'active'" class="icon-button" title="Giải phóng legal hold" @click="releaseLegalHold(hold)"><CheckCircle2 :size="16" /></button>
+          <button type="button" v-if="hold.status === 'active'" class="icon-button" title="Giải phóng legal hold" @click="releaseLegalHold(hold)"><CheckCircle2 :size="16" /></button>
         </div>
         <div v-if="!legalHolds.length" class="empty-row">Không có legal hold.</div>
       </div>

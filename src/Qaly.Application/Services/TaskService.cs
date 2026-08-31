@@ -395,7 +395,7 @@ public class TaskService : ITaskService
                 s.EndDate,
                 tasks.Count(t => t.SprintId == s.Id),
                 tasks.Count(t => t.SprintId == s.Id && IsDone(t.Status)),
-                tasks.Count(t => t.SprintId == s.Id && t.DueDate.HasValue && t.DueDate.Value < now && !IsDone(t.Status)),
+                tasks.Count(t => TaskStatusRules.IsOverdue(t.Status, t.DueDate, now) && t.SprintId == s.Id),
                 tasks.Count(t => t.SprintId == s.Id && !IsClosed(t.Status)),
                 tasks.Where(t => t.SprintId == s.Id).Sum(t => Math.Max(1, t.EstimatedHours ?? 1))
             )).ToList();
@@ -422,7 +422,7 @@ public class TaskService : ITaskService
             tasks.Count,
             tasks.Count(task => !IsClosed(task.Status)),
             tasks.Count(task => IsDone(task.Status)),
-            tasks.Count(task => task.DueDate.HasValue && task.DueDate.Value < now && !IsDone(task.Status)),
+            tasks.Count(task => TaskStatusRules.IsOverdue(task.Status, task.DueDate, now)),
             blockedItems.Count(item => item.IsBlocked),
             buckets,
             blockedItems));
@@ -1466,7 +1466,7 @@ public class TaskService : ITaskService
                 bucketEnd,
                 bucketTasks.Count,
                 bucketTasks.Count(task => IsDone(task.Status)),
-                bucketTasks.Count(task => task.DueDate.HasValue && task.DueDate.Value < now && !IsDone(task.Status)),
+                bucketTasks.Count(task => TaskStatusRules.IsOverdue(task.Status, task.DueDate, now)),
                 bucketTasks.Count(task => !IsClosed(task.Status)),
                 bucketTasks.Sum(task => Math.Max(1, task.EstimatedHours ?? 1))));
 
@@ -1517,10 +1517,10 @@ public class TaskService : ITaskService
     }
 
     private static bool IsDone(string status)
-        => string.Equals(status, "Done", StringComparison.OrdinalIgnoreCase);
+        => TaskStatusRules.IsDone(status);
 
     private static bool IsClosed(string status)
-        => IsDone(status) || string.Equals(status, "Cancelled", StringComparison.OrdinalIgnoreCase);
+        => TaskStatusRules.IsClosed(status);
 
     private static bool RequiresApprovedEvidence(string oldStatus, string newStatus)
         => !string.Equals(oldStatus, "Done", StringComparison.OrdinalIgnoreCase) &&
@@ -1933,9 +1933,7 @@ public class TaskService : ITaskService
            !IsAttentionDone(task);
 
     private static bool IsAttentionDone(TaskItem task)
-        => IsAttentionStatus(task, "Done") ||
-           IsAttentionStatus(task, "Completed") ||
-           IsAttentionStatus(task, "Closed");
+        => TaskStatusRules.IsClosed(task.Status);
 
     private static bool IsAttentionStatus(TaskItem task, string status)
         => string.Equals(task.Status, status, StringComparison.OrdinalIgnoreCase);
@@ -2045,7 +2043,7 @@ public class TaskService : ITaskService
                 sprint.EndDate,
                 tasks.Count,
                 tasks.Count(task => IsDone(task.Status)),
-                tasks.Count(task => task.DueDate.HasValue && task.DueDate.Value < now && !IsDone(task.Status)),
+                tasks.Count(task => TaskStatusRules.IsOverdue(task.Status, task.DueDate, now)),
                 tasks.Count(task => !IsClosed(task.Status)),
                 tasks.Sum(task => Math.Max(1, task.EstimatedHours ?? 1)))
         };
@@ -2061,7 +2059,7 @@ public class TaskService : ITaskService
             tasks.Count,
             tasks.Count(task => !IsClosed(task.Status)),
             tasks.Count(task => IsDone(task.Status)),
-            tasks.Count(task => task.DueDate.HasValue && task.DueDate.Value < now && !IsDone(task.Status)),
+            tasks.Count(task => TaskStatusRules.IsOverdue(task.Status, task.DueDate, now)),
             blockedItems.Count(item => item.IsBlocked),
             buckets,
             blockedItems));

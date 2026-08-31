@@ -111,8 +111,44 @@ public sealed partial class ProjectLaunchOrchestratorService : IProjectLaunchOrc
             windowEnd,
             sourceVersionHash,
             ct);
-        var selectedScenario = staffing.Scenarios.FirstOrDefault(item => item.Feasible) ?? staffing.Scenarios[0];
-        var deliveryPlan = BuildDeliveryPlan(brief, skills, modelPlan.Output, selectedScenario, windowStart, windowEnd);
+        var reviewerCoordinationOverheadPercent = NumericRule(rules, "reviewer_coordination_overhead_percent", 10m);
+        var maxUtilizationPercent = NumericRule(rules, "max_utilization_percent", 85m);
+        var evaluatedOptions = staffing.Scenarios.Select(scenario =>
+        {
+            var proposedDelivery = BuildDeliveryPlan(brief, skills, modelPlan.Output, scenario, windowStart, windowEnd);
+            var assignmentResult = BalanceReviewedAssignments(
+                proposedDelivery.Sprints,
+                scenario.Members,
+                proposedDelivery.AssignmentMode,
+                scenario.ManagerUserId,
+                reviewerCoordinationOverheadPercent,
+                maxUtilizationPercent,
+                enforceAllocation: false);
+            var assignedSprints = assignmentResult.Sprints ?? proposedDelivery.Sprints;
+            var assignmentAwareScenario = assignmentResult.Error == null
+                ? scenario
+                : scenario with
+                {
+                    Feasible = false,
+                    BlockingReasons = scenario.BlockingReasons
+                        .Append(assignmentResult.Error)
+                        .Distinct(StringComparer.Ordinal)
+                        .ToArray()
+                };
+            var evaluatedScenario = EvaluateTimePhasedCapacity(
+                assignmentAwareScenario,
+                assignedSprints,
+                reviewerCoordinationOverheadPercent,
+                maxUtilizationPercent,
+                sourceVersionHash,
+                proposedDelivery.AssignmentMode);
+            return (Scenario: evaluatedScenario, Delivery: proposedDelivery with { Sprints = assignedSprints });
+        }).ToArray();
+        staffing = staffing with { Scenarios = evaluatedOptions.Select(item => item.Scenario).ToArray() };
+        var selectedOption = evaluatedOptions.FirstOrDefault(item => item.Scenario.Feasible);
+        if (selectedOption.Scenario == null) selectedOption = evaluatedOptions[0];
+        var selectedScenario = selectedOption.Scenario;
+        var deliveryPlan = selectedOption.Delivery;
 
         var blocking = new List<string>();
         blocking.AddRange(brief.RuleDecisions.Where(item => item.Result == "block").Select(item => item.Explanation));
@@ -243,6 +279,8 @@ featureId must reference one reviewed feature. objectiveMetricIds may contain on
                 JobType = "project_launch_delivery_plan",
                 ProviderHint = request.ProviderHint,
                 StrictProvider = !string.Equals(request.ProviderHint, "auto", StringComparison.OrdinalIgnoreCase),
+                ProviderTimeoutSeconds = 35,
+                SchemaRepairAttempts = 0,
                 Prompt = context,
                 SystemPrompt = systemPrompt,
                 ExpectedSchemaId = AiProjectOrchestrationContract.ModelPlanSchemaId,
@@ -261,8 +299,11 @@ featureId must reference one reviewed feature. objectiveMetricIds may contain on
             if (!response.IsSuccess)
             {
                 lastError = response.ErrorCode ?? response.ErrorMessage;
-                if (!response.Retryable) break;
-                continue;
+                // Gateway already exhausts the eligible provider route. A
+                // transport/config timeout has no response to repair, so do
+                // not spend a second interactive timeout before using the
+                // deterministic, reviewable delivery fallback.
+                break;
             }
             if (AiProjectLaunchPlanningOutputContract.TryParse(response.Content, out var output, out var validationError))
                 return new ModelPlanResult(output!, response.ProviderName, response.ModelName, false);
@@ -286,13 +327,15 @@ featureId must reference one reviewed feature. objectiveMetricIds may contain on
         var catalogNames = skills.Select(item => item.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         ProjectLaunchModelTaskDto BuildTask(string scope, int index)
         {
-            var featureSkills = selectedFeatures.ElementAtOrDefault(index)?.RequiredSkillNames
+            var feature = selectedFeatures.ElementAtOrDefault(index);
+            var featureSkills = feature?.RequiredSkillNames
                 .Where(catalogNames.Contains)
                 .ToArray() ?? [];
-            var requiredSkills = featureSkills.Length > 0
-                ? featureSkills
-                : skills.Select(item => item.Name).Take(3).ToArray();
-            var feature = selectedFeatures.ElementAtOrDefault(index);
+            var requiredSkills = featureSkills
+                .Concat(ResolveDeterministicFeatureSkills(scope, feature?.Category, skills))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(3)
+                .ToArray();
             var objectiveMetricIds = metricIds.Length == 0 ? [] : new[] { metricIds[index % metricIds.Length] };
             return new(
                 $"task-{index + 1}",
@@ -324,6 +367,55 @@ featureId must reference one reviewed feature. objectiveMetricIds may contain on
             ["Decomposition fallback là proposal; estimate phải được team review trước confirm."]);
     }
 
+    private static string[] ResolveDeterministicFeatureSkills(
+        string scope,
+        string? category,
+        IReadOnlyList<OrganizationSkill> skills)
+    {
+        var catalog = skills
+            .GroupBy(item => item.NormalizedName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First().Name, StringComparer.OrdinalIgnoreCase);
+        var signal = Normalize($"{scope} {category}");
+        string[] preferred = signal switch
+        {
+            var value when ContainsAny(value, "dang nhap", "phan quyen", "authorization", "authentication", "security")
+                => ["security-auth-privacy", "backend-dotnet"],
+            var value when ContainsAny(value, "thanh toan", "hoa don", "payment", "invoice", "checkout")
+                => ["backend-dotnet", "security-auth-privacy"],
+            var value when ContainsAny(value, "dat lich", "dieu phoi", "booking", "schedule", "appointment", "dat dich vu")
+                => ["backend-dotnet", "business-analysis"],
+            var value when ContainsAny(value, "dashboard", "bao cao", "analytics", "metric", "report")
+                => ["data-analytics", "frontend-vue"],
+            var value when ContainsAny(value, "cong thong tin", "khach hang", "profile", "portal", "giao dien")
+                => ["frontend-vue", "ui-ux-design"],
+            var value when ContainsAny(value, "thong bao", "notification", "webhook", "event")
+                => ["backend-dotnet", "devops-observability"],
+            var value when ContainsAny(value, "tim kiem", "noi dung", "search", "content")
+                => ["frontend-vue", "backend-dotnet"],
+            var value when ContainsAny(value, "nhat ky", "audit", "bao mat", "privacy")
+                => ["security-auth-privacy", "backend-dotnet"],
+            var value when ContainsAny(value, "tich hop", "integration", "dong bo", "sync")
+                => ["backend-dotnet", "devops-observability"],
+            var value when ContainsAny(value, "nhap", "xuat", "import", "export", "du lieu")
+                => ["data-analytics", "database-efcore-sql"],
+            var value when ContainsAny(value, "quan tri", "van hanh", "admin", "operation")
+                => ["business-analysis", "frontend-vue"],
+            _ => ["business-analysis", "frontend-vue"]
+        };
+
+        var resolved = preferred
+            .Select(item => catalog.GetValueOrDefault(item))
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Cast<string>()
+            .ToArray();
+        return resolved.Length > 0
+            ? resolved
+            : skills.OrderBy(item => item.NormalizedName).Take(2).Select(item => item.Name).ToArray();
+    }
+
+    private static bool ContainsAny(string value, params string[] terms)
+        => terms.Any(term => value.Contains(term, StringComparison.Ordinal));
+
     private static ProjectLaunchDeliveryPlanDto BuildDeliveryPlan(
         ProjectLaunchBriefDto brief,
         IReadOnlyList<OrganizationSkill> skills,
@@ -333,14 +425,12 @@ featureId must reference one reviewed feature. objectiveMetricIds may contain on
         DateTimeOffset windowEnd)
     {
         var skillMap = skills.ToDictionary(item => Normalize(item.Name), StringComparer.Ordinal);
-        var selectedMembers = scenario.Members.ToArray();
         var selectedFeatures = brief.Features?.Where(IsInScopeFeature).ToArray()
             ?? brief.Scope.Select((title, index) => new ProjectLaunchFeatureDto(
                 $"feature-{index + 1}", title, "Product flow", "must_have", title,
                 brief.PrimaryAudience ?? "Chưa quyết định", [], [], true)).ToArray();
         var metricIds = brief.ObjectiveProfile?.Metrics.Select(item => item.MetricId).ToArray() ?? [];
         var taskOrdinal = 0;
-        var assignedHours = selectedMembers.ToDictionary(item => item.UserId, _ => 0m);
         var sprints = model.Sprints.Select(sprint =>
         {
             var start = windowStart.AddDays((sprint.StartWeek - 1) * 7);
@@ -364,9 +454,6 @@ featureId must reference one reviewed feature. objectiveMetricIds may contain on
                     .Cast<OrganizationSkill>()
                     .DistinctBy(item => item.Id)
                     .ToArray();
-                var assignee = SelectBalancedAssignee(requiredSkillNames, task.EstimatedHours, selectedMembers, assignedHours);
-                if (assignee != null) assignedHours[assignee.UserId] += task.EstimatedHours;
-                var reviewer = SelectReviewer(selectedMembers, assignee?.UserId);
                 var explicitMetricIds = task.ObjectiveMetricIds?
                     .Where(metricIds.Contains)
                     .Distinct(StringComparer.Ordinal)
@@ -384,8 +471,8 @@ featureId must reference one reviewed feature. objectiveMetricIds may contain on
                     task.DefinitionOfDone,
                     task.Priority,
                     task.EstimatedHours,
-                    assignee?.UserId,
-                    reviewer?.UserId,
+                    null,
+                    null,
                     matchedSkills.Select(item => item.Id).ToArray(),
                     matchedSkills.Select(item => item.Name).ToArray(),
                     task.DependencyClientIds,

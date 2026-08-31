@@ -59,7 +59,8 @@ public class AnalyticsService : IAnalyticsService
         int totalTasks = tasks.Count;
         int doneTasks = tasks.Count(t => t.Status == "Done");
         int inProgressTasks = tasks.Count(t => t.Status == "InProgress");
-        int overdueTasks = tasks.Count(t => t.DueDate < DateTimeOffset.UtcNow && t.Status != "Done");
+        var now = DateTimeOffset.UtcNow;
+        int overdueTasks = tasks.Count(t => TaskStatusRules.IsOverdue(t.Status, t.DueDate, now));
 
         double totalEstimatedHours = tasks.Sum(t => t.EstimatedHours ?? 0);
         double totalActualHours = timeEntries.Sum(t => t.TotalMinutes) / 60.0;

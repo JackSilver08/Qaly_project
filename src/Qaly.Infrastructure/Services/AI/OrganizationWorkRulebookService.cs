@@ -17,7 +17,8 @@ public sealed class OrganizationWorkRulebookService : IOrganizationWorkRulebookS
         {
             ["max_active_projects"] = (1m, 50m, "projects"),
             ["max_utilization_percent"] = (10m, 100m, "percent"),
-            ["focus_reserve_percent"] = (0m, 50m, "percent")
+            ["focus_reserve_percent"] = (0m, 50m, "percent"),
+            ["reviewer_coordination_overhead_percent"] = (0m, 50m, "percent")
         };
     private static readonly HashSet<string> BooleanRuleKeys = new(StringComparer.Ordinal)
     {

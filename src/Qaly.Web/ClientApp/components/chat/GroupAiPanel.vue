@@ -954,6 +954,7 @@ function confidenceLabel(value: number) {
     <nav class="group-ai-tabs" aria-label="AI Tools Sub Navigation">
       <button 
         :class="{ active: subTab === 'summary' }" 
+        :aria-pressed="subTab === 'summary'"
         @click="subTab = 'summary'"
         type="button"
       >
@@ -962,6 +963,7 @@ function confidenceLabel(value: number) {
       </button>
       <button 
         :class="{ active: subTab === 'draft' }" 
+        :aria-pressed="subTab === 'draft'"
         @click="subTab = 'draft'"
         type="button"
       >
@@ -970,6 +972,7 @@ function confidenceLabel(value: number) {
       </button>
       <button 
         :class="{ active: subTab === 'action-items' }" 
+        :aria-pressed="subTab === 'action-items'"
         @click="subTab = 'action-items'"
         type="button"
       >
@@ -1002,7 +1005,7 @@ function confidenceLabel(value: number) {
             <button type="button" class="text-button text-button--danger" :disabled="nativeSummaryBusy" @click="cancelNativeSummary">Hủy job</button>
           </div>
 
-          <div v-if="nativeSummaryError" class="warnings-box native-error">
+          <div v-if="nativeSummaryError" class="warnings-box native-error" role="alert">
             <AlertTriangle :size="15" />
             <div>
               <strong>{{ nativeSummaryError }}</strong>
@@ -1165,7 +1168,7 @@ function confidenceLabel(value: number) {
             <button type="button" class="text-button text-button--danger" :disabled="nativeDraftBusy" @click="cancelNativeJob">Hủy job</button>
           </div>
 
-          <div v-if="nativeDraftError" class="warnings-box native-error">
+          <div v-if="nativeDraftError" class="warnings-box native-error" role="alert">
             <AlertTriangle :size="15" />
             <div>
               <strong>{{ nativeDraftError }}</strong>
@@ -1322,11 +1325,11 @@ function confidenceLabel(value: number) {
           <div class="draft-project-info glass-card">
             <div class="form-group">
               <label>Tên dự án dự kiến</label>
-              <input type="text" v-model="draftProjectName" class="premium-input font-bold" />
+              <input type="text" v-model="draftProjectName" aria-label="Tên dự án dự kiến" class="premium-input font-bold" />
             </div>
             <div class="form-group">
               <label>Mô tả dự án</label>
-              <textarea v-model="draftProjectDescription" rows="2" class="premium-textarea"></textarea>
+              <textarea v-model="draftProjectDescription" aria-label="Mô tả dự án" rows="2" class="premium-textarea"></textarea>
             </div>
           </div>
 
@@ -1352,6 +1355,7 @@ function confidenceLabel(value: number) {
                 <input 
                   type="text" 
                   v-model="task.title" 
+                  :aria-label="`Tiêu đề task dự thảo ${index + 1}`"
                   class="task-title-input" 
                   placeholder="Tiêu đề task"
                 />
@@ -1368,6 +1372,7 @@ function confidenceLabel(value: number) {
               <div class="draft-task-card__body">
                 <textarea 
                   v-model="task.description" 
+                  :aria-label="`Mô tả task dự thảo ${index + 1}`"
                   rows="2" 
                   class="task-desc-textarea" 
                   placeholder="Mô tả công việc chi tiết..."
@@ -1376,7 +1381,7 @@ function confidenceLabel(value: number) {
                 <div class="task-metadata-grid">
                   <div class="metadata-col">
                     <label>Độ ưu tiên</label>
-                    <select v-model="task.priority" class="metadata-select">
+                    <select v-model="task.priority" :aria-label="`Độ ưu tiên task ${index + 1}`" class="metadata-select">
                       <option value="Low">Thấp</option>
                       <option value="Medium">Trung bình</option>
                       <option value="High">Cao</option>
@@ -1388,6 +1393,7 @@ function confidenceLabel(value: number) {
                     <input 
                       type="number" 
                       v-model="task.estimateDays" 
+                      :aria-label="`Số ngày ước lượng task ${index + 1}`"
                       min="1" 
                       max="100" 
                       class="metadata-number-input"
@@ -1396,7 +1402,7 @@ function confidenceLabel(value: number) {
 
                   <div class="metadata-col">
                     <label>Người phụ trách</label>
-                    <select v-model="task.assigneeId" class="metadata-select">
+                    <select v-model="task.assigneeId" :aria-label="`Người phụ trách task ${index + 1}`" class="metadata-select">
                       <option :value="null">Chưa phân công</option>
                       <option 
                         v-for="m in members" 

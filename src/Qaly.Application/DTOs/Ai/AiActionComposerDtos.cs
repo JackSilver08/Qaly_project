@@ -82,7 +82,13 @@ public sealed record AiActionMemberContextDto(
     string Role,
     int ActiveTaskCount,
     int EstimatedHours,
-    string SourceRef);
+    string SourceRef,
+    decimal? WeeklyCapacityHours = null,
+    decimal? WindowCapacityHours = null,
+    decimal? RemainingCapacityHours = null,
+    string CapacityState = "unknown",
+    bool IsAvailableForSprint = false,
+    IReadOnlyList<Guid>? VerifiedSkillIds = null);
 
 public sealed record AiActionSkillContextDto(
     Guid SkillId,

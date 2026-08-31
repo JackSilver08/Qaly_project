@@ -23,12 +23,12 @@ onBeforeUnmount(() => { requestVersion += 1 })
 </script>
 
 <template>
-  <div class="evidence-backdrop" @click.self="emit('close')">
+  <div class="evidence-backdrop" @click.self="emit('close')" @keydown.esc="emit('close')">
     <aside class="evidence-drawer" role="dialog" aria-modal="true" :aria-label="subtitle">
       <header><div><span class="kicker"><ShieldCheck :size="15" /> Hồ sơ bằng chứng</span><h2>{{ props.memberName }}</h2><p>{{ subtitle }}</p></div><button class="icon" type="button" aria-label="Đóng" @click="emit('close')"><X :size="19" /></button></header>
       <div class="method"><BookOpenCheck :size="16" /><span>Band tính theo <strong>{{ profile?.evidenceMethodVersion ?? 'member-skill-evidence.v1' }}</strong>: chỉ task Done có contributor được manager xác nhận. Đây không phải điểm hiệu suất.</span></div>
       <div v-if="loading" class="state"><LoaderCircle :size="22" class="spin" /> Đang đối soát bằng chứng…</div>
-      <div v-else-if="error" class="state error"><AlertTriangle :size="22" /> {{ error }}</div>
+      <div v-else-if="error" class="state error" role="alert"><AlertTriangle :size="22" /> {{ error }}</div>
       <template v-else-if="profile">
         <div v-if="profile.pendingCorrectionCount" class="pending"><Clock3 :size="16" /> {{ profile.pendingCorrectionCount }} yêu cầu rà soát đang chờ manager xử lý; các record đó không được tính vào band.</div>
         <div v-if="!profile.skills.length" class="state"><ShieldCheck :size="22" /> {{ profile.emptyState }}</div>

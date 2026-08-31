@@ -47,7 +47,7 @@ tức là chậm và khó khoanh vùng. Lớp `tests/client/` lấp đúng kho�
 | Bộ test | Kết quả | Ghi chú |
 | --- | --- | --- |
 | Backend unit | **595 / 595 pass** | 590 sẵn có + 5 test mới cho routing provider AI |
-| Frontend unit | **155 / 155 pass** | 8 file spec mới |
+| Frontend unit | **244 / 244 pass** | 13 file spec; gồm action composable, task workspace, a11y và project archive controls |
 | Integration | **166 / 166 pass** | Chạy lại 29/08. Ngưỡng coverage CI: line ≥ 16% |
 | Web feature | **38 / 38 pass** | Chạy lại 29/08 |
 | E2E | **61 pass / 6 fail** (4 worker)<br>7/7 spec mục tiêu pass khi `--workers=1` | 25 spec, chromium. Xem mục 4.3 & 4.4 |
@@ -66,7 +66,7 @@ Ngưỡng coverage CI đang áp: unit ≥ **43%** line, integration ≥ **16%** 
 
 Ký hiệu: ☐ chưa kiểm · ☑ đã kiểm & đạt · ⚠ đạt nhưng có ghi chú · ✗ lỗi
 
-**Trạng thái ngày 29/08 — 42 ☑ đạt · 1 ⚠ · 16 ☐ (tổng 59):** các mục ☑ đã được **kiểm chứng bằng
+**Trạng thái cập nhật 31/08 — 48 ☑ đạt · 0 ⚠ · 11 ☐ (tổng 59):** các mục ☑ đã được **kiểm chứng bằng
 test tự động** — cột "Bằng chứng" ghi rõ file test nào chứng minh. Các mục ☐ cần **người thao tác
 tay**, chưa ai làm.
 
@@ -100,15 +100,21 @@ tay**, chưa ai làm.
 
 | | Hạng mục | Bằng chứng |
 | --- | --- | --- |
-| ☑ | **Số "quá hạn" Dashboard khớp trang Nhiệm vụ, task `Cancelled` không bị tính** | `tests/client/formatters.spec.ts` (QALY-UI-01) |
+| ☑ | **Số "quá hạn" Dashboard khớp trang Nhiệm vụ, task `Cancelled`/terminal legacy không bị tính** | `tests/client/formatters.spec.ts` · `TaskStatusRulesTests` · `DashboardSummaryServiceTests` (QALY-UI-01) |
 | ☑ | Concurrency: 2 người sửa cùng task → 409 | `TaskConcurrencyTests` |
 | ☑ | Gantt hiển thị ngày lấy từ database | `qaly.smoke.spec.ts` |
 | ☑ | Tìm task và mở chi tiết, hiển thị đủ trạng thái/ưu tiên/người phụ trách/hạn/bình luận | `demo-script-30-minutes.spec.ts` |
-| ☐ | Tạo/sửa/lưu trữ/khôi phục dự án | Cần kiểm tay |
-| ☐ | Kanban kéo thả đúng luồng chuyển trạng thái | Cần kiểm tay |
-| ☐ | Cột `OnHold` ẩn khi dự án tắt `enableOnHold` | Cần kiểm tay |
-| ☐ | Lọc task theo trạng thái / người phụ trách / ưu tiên / quá hạn | Cần kiểm tay |
-| ☐ | Đính kèm, evidence, lịch sử task | Cần kiểm tay |
+| ☑ | Tạo/sửa/lưu trữ/khôi phục dự án | `tests/e2e/project-lifecycle-acceptance.spec.ts`: thao tác bằng UI, reload và canonical GET read-back PASS |
+| ☑ | Kanban kéo thả đúng luồng chuyển trạng thái | `tests/e2e/task-workspace-acceptance.spec.ts`: kéo card thật `Todo → InProgress`, chờ PATCH 2xx, reload và canonical GET read-back PASS |
+| ☑ | Cột `OnHold` ẩn khi dự án tắt `enableOnHold` | `tests/client/task-workspace.spec.ts` — cờ `false` ẩn độc lập, thiếu cờ giữ workflow tương thích |
+| ☑ | Lọc task theo trạng thái / dự án / ưu tiên / quá hạn / focus / tìm kiếm | `tests/client/task-workspace.spec.ts`; `TasksPage.vue` dùng trực tiếp policy đã test |
+| ☑ | Đính kèm, evidence, lịch sử task | `tests/e2e/task-workspace-acceptance.spec.ts`: upload, đánh dấu evidence, ghi time history, reload và read-back PASS; `TaskCollaborationControllerPersistenceTests` xác minh persistence API |
+
+> **QB-6 — evidence 2026-08-31:** cổng cuối PASS (`244/244` frontend unit,
+> `47/47` backend unit tập trung, `8/8` integration project/task collaboration, typecheck và
+> production build). Hai replay mục tiêu đều PASS: `project-lifecycle-acceptance.spec.ts` (1/1)
+> và `task-workspace-acceptance.spec.ts` (1/1). Replay chỉ coi mutation hoàn tất sau response
+> 2xx và canonical read-back sau reload; không dùng toast làm bằng chứng.
 
 ### 3.4 Lộ trình & Sprint
 
@@ -167,7 +173,7 @@ tay**, chưa ai làm.
 | ☑ | Toast: tối đa 5, tự đóng, đóng thủ công được, lỗi dùng `role="alert"` | `tests/client/use-toast.spec.ts` · `tests/client/components.spec.ts` |
 | ☑ | Trạng thái rỗng/đang tải/lỗi có thông điệp tiếng Việt rõ ràng | `tests/client/components.spec.ts` · `qaly.smoke.spec.ts` — *honest empty state* |
 | ☑ | **Console trình duyệt sạch trên 12 route chính** | `browser-console.spec.ts` — 3/3 pass |
-| ⚠ | Bàn phím: phần tử bấm được phải tab tới và kích hoạt được | `TaskItem` đã đạt (`components.spec.ts`). **Còn ~22 chỗ khác chưa rà** — QB-5 |
+| ☑ | Bàn phím: phần tử bấm được phải tab tới và kích hoạt được | Đã rà source toàn bộ business click surfaces; bổ sung role/tabindex/Enter/Space, focus trap và Escape cho các điểm còn thiếu. `tests/client/components.spec.ts` (22 test) xác minh Project controls, Analytics drawer và Group Meeting keyboard flow |
 | ☐ | Nút icon có `aria-label` / `title` — ~46 nút trong 7 file | CK-3, VM-4, GL-5 |
 | ☐ | Bỏ emoji khỏi nút và nhãn — ~44 chỗ | CK-2, VM-3, GL-4 |
 

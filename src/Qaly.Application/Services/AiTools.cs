@@ -7,6 +7,7 @@ using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
+using Qaly.Application.Services.Tasks;
 
 namespace Qaly.Application.Services;
 
@@ -65,7 +66,8 @@ public class AiTools
         var total = tasks.Count;
         var done = tasks.Count(t => t.Status == "Done");
         var inProgress = tasks.Count(t => t.Status == "InProgress");
-        var overdue = tasks.Count(t => t.DueDate < DateTimeOffset.UtcNow && t.Status != "Done");
+        var now = DateTimeOffset.UtcNow;
+        var overdue = tasks.Count(t => TaskStatusRules.IsOverdue(t.Status, t.DueDate, now));
 
         return $"Dự án: {result.Data.Name}. Tổng số công việc: {total}. Hoàn thành: {done}. Đang làm: {inProgress}. Quá hạn: {overdue}. Mô tả: {result.Data.Description}";
     }
@@ -77,8 +79,9 @@ public class AiTools
         var tasksResult = await _taskService.GetByProjectAsync(projectId, pageSize: 1000);
         if (!tasksResult.IsSuccess) return "Không thể lấy danh sách công việc.";
 
+        var now = DateTimeOffset.UtcNow;
         var overdueTasks = tasksResult.Data!.Items
-            .Where(t => t.DueDate < DateTimeOffset.UtcNow && t.Status != "Done")
+            .Where(t => TaskStatusRules.IsOverdue(t.Status, t.DueDate, now))
             .Select(t => $"- {t.Title} (Hạn: {t.DueDate:dd/MM/yyyy}, Người làm: {t.AssigneeName ?? "Chưa phân công"})")
             .ToList();
 

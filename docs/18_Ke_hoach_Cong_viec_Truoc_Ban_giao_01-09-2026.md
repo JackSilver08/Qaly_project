@@ -294,12 +294,12 @@ Cập nhật cuối mỗi ngày. Trạng thái: ☐ chưa làm · ◐ đang làm
 | CK-4 | Chí Khang | Unit test AI composable | 31/08 | | ☐ | ☐ | |
 | CK-5 | Chí Khang | Checklist 3.5 | 31/08 | | | ☐ | |
 | CK-6 | Chí Khang | Verify QALY-BE-01 | 01/09 | | | | ☐ |
-| QB-1 | Quốc Bảo | Dark theme Tasks/App | 30/08 | ☐ | ☐ | | |
-| QB-2 | Quốc Bảo | Unit test use-task-actions | 30/08 | ☐ | ☐ | | |
-| QB-3 | Quốc Bảo | Unit test dashboard/project actions | 31/08 | | ☐ | ☐ | |
-| QB-4 | Quốc Bảo | Verify QALY-UI-01 | 30/08 | ☐ | ☐ | | |
-| QB-5 | Quốc Bảo | A11y bàn phím | 31/08 | | | ☐ | |
-| QB-6 | Quốc Bảo | Checklist 3.3 | 31/08 | | | ☐ | |
+| QB-1 | Quốc Bảo | Dark theme Tasks/App | 30/08 | ☐ | ◐ | ☑ | |
+| QB-2 | Quốc Bảo | Unit test use-task-actions | 30/08 | ☐ | ◐ | ☑ | |
+| QB-3 | Quốc Bảo | Unit test dashboard/project actions | 31/08 | | ◐ | ☑ | |
+| QB-4 | Quốc Bảo | Verify QALY-UI-01 | 30/08 | ☐ | ◐ | ☑ | |
+| QB-5 | Quốc Bảo | A11y bàn phím | 31/08 | | | ☑ | |
+| QB-6 | Quốc Bảo | Checklist 3.3 | 31/08 | | | ☑ | |
 | VM-1 | Viết Minh | Dark theme TeamsPage | 30/08 | ☐ | ☐ | | |
 | VM-2 | Viết Minh | Dark theme chat/poll/import | 31/08 | | ☐ | ☐ | |
 | VM-3 | Viết Minh | Bỏ emoji import/meeting | 30/08 | ☐ | ☐ | | |

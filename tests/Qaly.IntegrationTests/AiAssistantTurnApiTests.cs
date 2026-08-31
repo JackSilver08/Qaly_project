@@ -11,7 +11,7 @@ using Qaly.Infrastructure.Data;
 
 namespace Qaly.IntegrationTests;
 
-public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFactory>
+public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFactory>, IAsyncLifetime
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly IntegrationTestFactory _factory;
@@ -22,6 +22,20 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
         _factory = factory;
         _client = factory.CreateClient();
     }
+
+    public async Task InitializeAsync()
+    {
+        // This class intentionally verifies cross-project capacity. Each test must
+        // therefore start from an isolated portfolio; otherwise canonical projects
+        // created by an earlier test become real commitments for the next test and
+        // make otherwise feasible staffing scenarios fail for the wrong reason.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        await db.Database.EnsureDeletedAsync();
+        await db.Database.EnsureCreatedAsync();
+    }
+
+    public Task DisposeAsync() => Task.CompletedTask;
 
     [Fact]
     [Trait("TestId", "TEST-UA-04")]
@@ -456,6 +470,44 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
             var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
             var group = new WorkGroup { Name = "P03 ambient group", OwnerId = _factory.TestUserId };
             db.WorkGroups.Add(group);
+            db.ProjectMembers.Add(new ProjectMember
+            {
+                ProjectId = projectId,
+                UserId = _factory.TestUserId,
+                Role = "Manager"
+            });
+            db.TaskItems.AddRange(
+                new TaskItem
+                {
+                    ProjectId = projectId,
+                    ReporterId = _factory.TestUserId,
+                    AssigneeId = _factory.TestUserId,
+                    Title = "P03 completed fixture",
+                    Status = "Done",
+                    EstimatedHours = 4,
+                    DueDate = DateTimeOffset.UtcNow.AddDays(-3),
+                    UpdatedAt = DateTimeOffset.UtcNow.AddDays(-1)
+                },
+                new TaskItem
+                {
+                    ProjectId = projectId,
+                    ReporterId = _factory.TestUserId,
+                    AssigneeId = _factory.TestUserId,
+                    Title = "P03 in-progress fixture",
+                    Status = "InProgress",
+                    EstimatedHours = 8,
+                    DueDate = DateTimeOffset.UtcNow.AddDays(2)
+                },
+                new TaskItem
+                {
+                    ProjectId = projectId,
+                    ReporterId = _factory.TestUserId,
+                    AssigneeId = _factory.TestUserId,
+                    Title = "P03 overdue fixture",
+                    Status = "Todo",
+                    EstimatedHours = 3,
+                    DueDate = DateTimeOffset.UtcNow.AddDays(-1)
+                });
             await db.SaveChangesAsync();
             groupId = group.Id;
         }
@@ -480,6 +532,21 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
         turn.SourceDisclosures.Should().NotContain(item =>
             item.SourceId == AiAssistantContextContract.GroupContextSource && item.Status == "read");
         turn.AssistantMessage.Should().NotContain("chưa có dữ liệu Project cụ thể");
+        turn.AssistantMessage.Should().Contain("### Kết luận");
+        turn.AssistantMessage.Should().Contain("### Ba việc ưu tiên");
+        turn.Answer.Should().NotBeNull();
+        turn.Answer!.Intent.Should().Be("project_analysis");
+        turn.Answer.Metrics.Should().NotBeEmpty();
+        turn.Answer.Charts.Should().Contain(item => item.Title == "Task đang mở theo thành viên");
+        turn.Answer.Charts.Should().NotContain(item => item.Title == "Task theo trạng thái");
+        foreach (var chart in turn.Answer.Charts)
+        {
+            chart.Type.Should().BeOneOf("bar", "pie", "line");
+            chart.Labels.Should().NotBeEmpty();
+            chart.Labels.Count.Should().Be(chart.Values.Count);
+            chart.Values.Should().OnlyContain(value => double.IsFinite(value));
+            chart.Values.Should().Contain(value => value > 0);
+        }
     }
 
     [Fact]
@@ -573,6 +640,13 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
         var plan = await CreateProjectLaunchPlanAsync(organizationId);
         plan.State.Should().Be("pending_review");
         plan.StaffingScenarios.Should().Contain(item => item.Feasible);
+        var verifiedScenario = plan.StaffingScenarios.First(item => item.Feasible);
+        verifiedScenario.Members.Should().OnlyContain(item => item.WeeklyAllocation != null && item.WeeklyAllocation.Count > 0);
+        verifiedScenario.Members.Sum(item => item.ReviewerCoordinationHours).Should().BeGreaterThan(0m);
+        verifiedScenario.RuleDecisions.Should().Contain(item =>
+            item.RuleKey == "time_phased_weekly_capacity" && item.Result == "pass");
+        verifiedScenario.RuleDecisions.Should().Contain(item =>
+            item.RuleKey == "reviewer_coordination_overhead_percent" && item.Result == "pass");
         plan.DeliveryPlan.Sprints.SelectMany(item => item.Tasks).Should().HaveCount(2);
         plan.ExecutionReceipt.Should().BeNull();
 
@@ -767,7 +841,7 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
 
     [Fact]
     [Trait("TestId", "TEST-PL-REVIEW-BOUNDS-01")]
-    public async Task ProjectLaunchPlan_RejectsOverlappingSprintsAndIndividualOverload()
+    public async Task ProjectLaunchPlan_RejectsInvalidSprintAndPersistsActionableCapacityBlockers()
     {
         var organizationId = await SeedOwnedOrganizationWithRulebookAsync();
         var plan = await CreateProjectLaunchPlanAsync(organizationId);
@@ -791,14 +865,54 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
         var overloaded = plan.DeliveryPlan.Sprints.Select((sprint, sprintIndex) => sprint with
         {
             Tasks = sprint.Tasks.Select((task, taskIndex) => sprintIndex == 0 && taskIndex == 0
-                ? task with { EstimatedHours = impossibleTaskHours, ProposedAssigneeId = null }
+                ? task with { EstimatedHours = impossibleTaskHours, ProposedAssigneeId = scenario.ManagerUserId }
                 : task).ToArray()
         }).ToArray();
         var overloadResponse = await SendPlanUpdateResponseAsync(
             $"/api/ai/project-launch/plans/{plan.PlanId:D}",
-            new UpdateProjectLaunchPlanRequestDto(plan.RowRevision, scenario.ScenarioId, staffing, overloaded));
-        overloadResponse.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
-        (await overloadResponse.Content.ReadAsStringAsync()).Should().Contain("project_launch_assignment_capacity_invalid");
+            new UpdateProjectLaunchPlanRequestDto(
+                plan.RowRevision,
+                scenario.ScenarioId,
+                staffing,
+                overloaded,
+                ProjectLaunchAssignmentModes.PreserveAssignments,
+                ProjectLaunchScheduleModes.SequentialSprints));
+        overloadResponse.StatusCode.Should().Be(HttpStatusCode.OK, await overloadResponse.Content.ReadAsStringAsync());
+        using var overloadDocument = JsonDocument.Parse(await overloadResponse.Content.ReadAsStringAsync());
+        var savedOverload = overloadDocument.RootElement.GetProperty("data").Deserialize<ProjectLaunchPlanDto>(JsonOptions)!;
+        savedOverload.State.Should().Be("blocked");
+        savedOverload.BlockingReasons.Should().Contain(item => item.Contains("vượt allocation", StringComparison.Ordinal));
+
+        var compressedTasks = firstSprint.Tasks.Select(task => task with
+        {
+            EstimatedHours = 20,
+            ProposedAssigneeId = scenario.ManagerUserId,
+            ProposedReviewerId = null
+        }).ToArray();
+        ProjectLaunchSprintPlanDto[] concentrated =
+            [firstSprint with { EndDate = firstSprint.StartDate.AddDays(1), Tasks = compressedTasks }];
+        var weeklyStaffing = scenario.Members.Select(member => new ProjectStaffingOverrideDto(
+            member.UserId,
+            member.ProposedRole,
+            member.UserId == scenario.ManagerUserId ? 40m : Math.Max(1m, member.ProposedHours),
+            true,
+            member.UserId == scenario.ManagerUserId)).ToArray();
+        var weeklyResponse = await SendPlanUpdateResponseAsync(
+            $"/api/ai/project-launch/plans/{plan.PlanId:D}",
+            new UpdateProjectLaunchPlanRequestDto(
+                savedOverload.RowRevision,
+                scenario.ScenarioId,
+                weeklyStaffing,
+                concentrated,
+                ProjectLaunchAssignmentModes.PreserveAssignments,
+                ProjectLaunchScheduleModes.SequentialSprints));
+        weeklyResponse.StatusCode.Should().Be(HttpStatusCode.OK, await weeklyResponse.Content.ReadAsStringAsync());
+        using var weeklyDocument = JsonDocument.Parse(await weeklyResponse.Content.ReadAsStringAsync());
+        var savedWeekly = weeklyDocument.RootElement.GetProperty("data").Deserialize<ProjectLaunchPlanDto>(JsonOptions)!;
+        savedWeekly.State.Should().Be("blocked");
+        savedWeekly.BlockingReasons.Should().Contain(item =>
+            item.StartsWith("Capacity tuần ", StringComparison.Ordinal) ||
+            item.StartsWith("Ngưỡng sử dụng tuần ", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -823,6 +937,15 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
             ]));
         unsupported.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await unsupported.Content.ReadAsStringAsync()).Should().Contain("rulebook_rule_unsupported");
+
+        var excessiveReviewOverhead = await SendSessionCommandAsync(
+            HttpMethod.Post,
+            $"/api/organizations/{organizationId:D}/work-rulebook",
+            new CreateOrganizationWorkRuleSetRequestDto([
+                new OrganizationWorkRuleDto("reviewer_coordination_overhead_percent", "portfolio_capacity", "block", "Chi phí review", 75, "percent")
+            ]));
+        excessiveReviewOverhead.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await excessiveReviewOverhead.Content.ReadAsStringAsync()).Should().Contain("rulebook_value_out_of_range");
     }
 
     [Fact]
@@ -840,7 +963,9 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
         turn.ExecutionPolicy.Should().Be("analyze_only");
         turn.Artifact.Should().BeNull();
         turn.Answer.Should().NotBeNull();
-        turn.Answer!.Model!.Provider.Should().Be("DeepSeek");
+        turn.Answer!.Model.Should().NotBeNull();
+        turn.Answer.Model!.Provider.Should().Be(turn.ActualProvider,
+            "provider/model metadata must describe the response that was actually rendered, including server fallback");
         turn.AssistantMessage.Should().Contain("unit, integration và E2E");
         turn.AssistantMessage.Should().NotContain("adapter");
         turn.GoalAnalysis!.Objective.Should().Contain("test demo");
@@ -1121,9 +1246,23 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
             ExpectedVersion: session.Version,
             ClientTurnId: Guid.NewGuid());
 
-        var inFlight = SendTurnAsync(request, $"assistant-cancel-{Guid.NewGuid():N}");
+        // Fetch CSRF before starting the in-flight POST. Otherwise the async helper can
+        // still be waiting on the CSRF GET while this test polls for the durable turn,
+        // which makes a loaded gate look like a persistence failure.
+        var turnCsrf = (await _client.GetFromJsonAsync<CsrfResponse>("/api/security/csrf", JsonOptions))!.Token;
+        using var inFlightRequest = new HttpRequestMessage(HttpMethod.Post, "/api/ai/assistant/turns")
+        {
+            Content = JsonContent.Create(request)
+        };
+        inFlightRequest.Headers.Add("X-CSRF-TOKEN", turnCsrf);
+        inFlightRequest.Headers.Add("Idempotency-Key", $"assistant-cancel-{Guid.NewGuid():N}");
+        inFlightRequest.Headers.Add("X-Request-Id", request.ClientTurnId!.Value.ToString());
+        var inFlight = _client.SendAsync(inFlightRequest);
         AssistantTurn? running = null;
-        for (var attempt = 0; attempt < 80 && running == null; attempt++)
+        // Under the broad P06-P28 gate the test host may need several seconds to
+        // schedule this request. Keep polling beyond the normal 4s fast path so
+        // the assertion measures durable persistence, not thread-pool timing.
+        for (var attempt = 0; attempt < 300 && running == null; attempt++)
         {
             await Task.Delay(50);
             using var scope = _factory.Services.CreateScope();
@@ -1338,6 +1477,14 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
             task.AcceptanceCriteria.Count > 0 &&
             task.RequiredSkillNames.Count > 0);
         plannedTasks.Should().Contain(task => task.DependencyClientIds.Count > 0);
+        var selectedScenario = staffing.ProjectLaunchPlan.StaffingScenarios
+            .Single(item => item.ScenarioId == staffing.ProjectLaunchPlan.SelectedScenarioId);
+        if (selectedScenario.Feasible)
+        {
+            plannedTasks.Should().OnlyContain(task => task.ProposedAssigneeId.HasValue,
+                "auto-balance must return a real reviewed assignment instead of a wall of unassigned-task blockers");
+            plannedTasks.Should().OnlyContain(task => task.ProposedReviewerId != task.ProposedAssigneeId);
+        }
 
         const string p09 = "Dùng phương án đang chọn. Trước khi ghi hãy hiện một card review cuối gồm Project, manager/team, phase, Sprint và tổng số Task. Chờ đúng một xác nhận rõ ràng của tôi.";
         var reviewResponse = await SendTurnAsync(new AiAssistantTurnRequestDto(
@@ -1560,9 +1707,13 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
         var staffing = scenario.Members.Select(member => new ProjectStaffingOverrideDto(
             member.UserId,
             member.ProposedRole,
-            member.ProposedHours,
+            1m,
             Included: true,
             Manager: member.UserId == scenario.ManagerUserId)).ToArray();
+
+        staffing.Sum(item => item.ProposedHours).Should().BeLessThan(
+            reviewedSprints.SelectMany(item => item.Tasks.Where(task => task.Selected)).Sum(item => item.EstimatedHours),
+            "preserve mode must allow deliberately unassigned backlog even when the reviewed team does not cover every backlog hour");
 
         var updateResponse = await SendPlanUpdateResponseAsync(
             $"/api/ai/project-launch/plans/{plan.PlanId:D}",
@@ -1593,6 +1744,107 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
             .Where(item => item.ProjectId == confirmed.ExecutionReceipt.ProjectId)
             .ToListAsync();
         tasks.Should().NotBeEmpty().And.OnlyContain(item => item.AssigneeId == null && item.ReviewerId == null);
+    }
+
+    [Fact]
+    [Trait("TestId", "TEST-AI-NATIVE-PLAN-AUTOBALANCE-02")]
+    public async Task ProjectLaunchPlan_AutoBalance_ReplacesStaleDraftAssignmentsAcrossTheReviewedTeam()
+    {
+        var organizationId = await SeedOwnedOrganizationWithRulebookAsync();
+        using (var seedScope = _factory.Services.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+            var skills = await db.OrganizationSkills.Where(item => item.OrganizationId == organizationId).ToArrayAsync();
+            var evidenceProject = await db.Projects.SingleAsync(item => item.OrganizationId == organizationId && item.Code.StartsWith("EV-"));
+            var teammate = new User
+            {
+                FullName = "Auto Balance Teammate",
+                Email = $"{Guid.NewGuid():N}@assistant-autobalance.test",
+                PasswordHash = "not-used",
+                Role = "User",
+                IsActive = true
+            };
+            var evidenceTask = new TaskItem
+            {
+                ProjectId = evidenceProject.Id,
+                ReporterId = _factory.TestUserId,
+                AssigneeId = teammate.Id,
+                Title = "Confirmed teammate delivery baseline",
+                Description = "Canonical evidence for weekly auto-balance.",
+                Status = "Done",
+                Priority = "Medium",
+                EstimatedHours = 8,
+                ActualHours = 8,
+                DueDate = DateTimeOffset.UtcNow.AddDays(-2)
+            };
+            db.AddRange(
+                teammate,
+                new OrganizationMember { OrganizationId = organizationId, UserId = teammate.Id, Role = OrganizationRoleRules.Member },
+                new OrganizationMemberCapacityProfile { OrganizationId = organizationId, UserId = teammate.Id, WeeklyCapacityHours = 40, TimeZoneId = "Asia/Ho_Chi_Minh" },
+                evidenceTask);
+            db.TaskSkillRequirements.AddRange(skills.Select(skill => new TaskSkillRequirement
+            {
+                TaskItemId = evidenceTask.Id,
+                OrganizationSkillId = skill.Id,
+                RequiredLevel = "Intermediate",
+                Provenance = "MANUAL",
+                ConfirmedByUserId = _factory.TestUserId,
+                ConfirmedAt = DateTimeOffset.UtcNow.AddDays(-2)
+            }));
+            db.TaskCompletionAttributions.Add(new TaskCompletionAttribution
+            {
+                TaskItemId = evidenceTask.Id,
+                ContributorUserId = teammate.Id,
+                ConfirmedByUserId = _factory.TestUserId,
+                CompletedAt = DateTimeOffset.UtcNow.AddDays(-2),
+                ConfirmedAt = DateTimeOffset.UtcNow.AddDays(-1),
+                Status = TaskCompletionAttribution.Confirmed
+            });
+            await db.SaveChangesAsync();
+        }
+        var plan = await CreateProjectLaunchPlanAsync(organizationId);
+        var scenario = plan.StaffingScenarios.First(item => item.Feasible);
+        var eligibleCandidates = scenario.ManagerCandidates.Where(item => item.StaffingEligible).ToArray();
+        eligibleCandidates.Should().HaveCountGreaterThan(1);
+        var staleAssigneeId = scenario.ManagerUserId!.Value;
+        var staleAssignments = plan.DeliveryPlan.Sprints.Select(sprint => sprint with
+        {
+            Tasks = sprint.Tasks.Select(task => task with
+            {
+                ProposedAssigneeId = staleAssigneeId,
+                ProposedReviewerId = null
+            }).ToArray()
+        }).ToArray();
+        var staffing = eligibleCandidates.Select(candidate => new ProjectStaffingOverrideDto(
+            candidate.UserId,
+            candidate.UserId == scenario.ManagerUserId ? ProjectRoleRules.Manager : ProjectRoleRules.Member,
+            Math.Max(1m, candidate.ProposedHours),
+            Included: true,
+            Manager: candidate.UserId == scenario.ManagerUserId)).ToArray();
+
+        var response = await SendPlanUpdateResponseAsync(
+            $"/api/ai/project-launch/plans/{plan.PlanId:D}",
+            new UpdateProjectLaunchPlanRequestDto(
+                plan.RowRevision,
+                scenario.ScenarioId,
+                staffing,
+                staleAssignments,
+                ProjectLaunchAssignmentModes.AutoBalance,
+                ProjectLaunchScheduleModes.SequentialSprints));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var saved = document.RootElement.GetProperty("data").Deserialize<ProjectLaunchPlanDto>(JsonOptions)!;
+        var selectedTasks = saved.DeliveryPlan.Sprints
+            .Where(sprint => sprint.Selected)
+            .SelectMany(sprint => sprint.Tasks.Where(task => task.Selected))
+            .ToArray();
+        selectedTasks.Should().OnlyContain(task => task.ProposedAssigneeId.HasValue);
+        selectedTasks.Select(task => task.ProposedAssigneeId).Distinct().Should().HaveCountGreaterThan(1,
+            "auto-balance must not treat assignee ids left by an older scenario as immutable user choices");
+        saved.BlockingReasons.Should().NotContain(reason =>
+            reason.StartsWith("Capacity tuần ", StringComparison.Ordinal) ||
+            reason.StartsWith("Ngưỡng sử dụng tuần ", StringComparison.Ordinal));
     }
 
     [Fact]

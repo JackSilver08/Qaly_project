@@ -1411,11 +1411,12 @@ function formatMessageTime(value: string) {
 <template>
   <div class="dashboard-scroll dashboard-scroll--embedded no-scrollbar">
     <div class="dashboard-main project-home-main no-scrollbar">
+      <h1 class="sr-only">Nhóm và cộng tác</h1>
       <section
         class="team-chat-page groups-workspace"
         :class="{ 'groups-workspace--detail-collapsed': isDetailPanelCollapsed }"
       >
-        <div v-if="loadError" class="team-chat-banner team-chat-banner--error">
+        <div v-if="loadError" class="team-chat-banner team-chat-banner--error" role="alert">
           {{ loadError }}
         </div>
         <div v-else-if="isLoadingGroups" class="team-chat-banner">
@@ -1531,28 +1532,28 @@ function formatMessageTime(value: string) {
             </div>
           </header>
 
-          <nav class="group-detail-tabs" aria-label="Group tools">
-            <button :class="{ active: activeTab === 'members' }" @click="activeTab = 'members'">
+          <nav class="group-detail-tabs" aria-label="Công cụ nhóm">
+            <button type="button" :class="{ active: activeTab === 'members' }" :aria-pressed="activeTab === 'members'" @click="activeTab = 'members'">
               <span><Users :size="19" /></span>
               Thành viên
             </button>
-            <button :class="{ active: activeTab === 'invites' }" @click="activeTab = 'invites'">
+            <button type="button" :class="{ active: activeTab === 'invites' }" :aria-pressed="activeTab === 'invites'" @click="activeTab = 'invites'">
               <span><Mail :size="19" /></span>
               Lời mời
             </button>
-            <button :class="{ active: activeTab === 'polls' }" @click="activeTab = 'polls'">
+            <button type="button" :class="{ active: activeTab === 'polls' }" :aria-pressed="activeTab === 'polls'" @click="activeTab = 'polls'">
               <span><Vote :size="19" /></span>
               Bình chọn
             </button>
-            <button :class="{ active: activeTab === 'meeting' }" @click="activeTab = 'meeting'">
+            <button type="button" :class="{ active: activeTab === 'meeting' }" :aria-pressed="activeTab === 'meeting'" @click="activeTab = 'meeting'">
               <span><CalendarDays :size="19" /></span>
               Cuộc họp
             </button>
-            <button :class="{ active: activeTab === 'project' }" @click="activeTab = 'project'">
+            <button type="button" :class="{ active: activeTab === 'project' }" :aria-pressed="activeTab === 'project'" @click="activeTab = 'project'">
               <span><Settings :size="19" /></span>
               Dự án
             </button>
-            <button :class="{ active: activeTab === 'ai' }" @click="activeTab = 'ai'">
+            <button type="button" :class="{ active: activeTab === 'ai' }" :aria-pressed="activeTab === 'ai'" @click="activeTab = 'ai'">
               <span><Sparkles :size="19" /></span>
               AI
             </button>
@@ -1595,6 +1596,7 @@ function formatMessageTime(value: string) {
                     :key="user.id"
                     type="button"
                     :class="{ 'is-selected': user.id === addUserId }"
+                    :aria-pressed="user.id === addUserId"
                     @mousedown.prevent="selectAddUser(user)"
                   >
                     <span class="group-user-suggestion__avatar">{{ initials(user.fullName) }}</span>
@@ -1609,7 +1611,7 @@ function formatMessageTime(value: string) {
                   </div>
                 </div>
               </div>
-              <select v-model="addRole">
+              <select v-model="addRole" aria-label="Vai trò của thành viên được thêm">
                 <option value="Member">Thành viên</option>
                 <option value="Admin">Quản trị viên</option>
               </select>
@@ -1680,7 +1682,7 @@ function formatMessageTime(value: string) {
 
           <div v-else-if="activeTab === 'invites'" class="group-tool-body">
             <form v-if="canManageGroup" class="group-inline-form" @submit.prevent="inviteMember">
-              <input v-model="inviteEmail" type="email" placeholder="Email đã có tài khoản Qaly" />
+              <input v-model="inviteEmail" type="email" autocomplete="email" aria-label="Email người được mời" placeholder="Email đã có tài khoản Qaly" />
               <button class="primary-button primary-button--compact" type="submit">
                 <Mail :size="15" /> Mời
               </button>
@@ -1703,6 +1705,7 @@ function formatMessageTime(value: string) {
               <input
                 v-model="pollForm.question"
                 type="text"
+                aria-label="Câu hỏi bình chọn"
                 placeholder="Hỏi mọi người một câu..."
               />
               <div class="group-poll-options">
@@ -1786,9 +1789,9 @@ function formatMessageTime(value: string) {
 
           <div v-else class="group-tool-body">
             <form class="group-stack-form" @submit.prevent="createProjectFromGroup">
-              <input v-model="projectForm.name" type="text" placeholder="Tên project" />
-              <input v-model="projectForm.code" type="text" placeholder="Mã project" />
-              <textarea v-model="projectForm.description" rows="3" placeholder="Mô tả"></textarea>
+              <input v-model="projectForm.name" type="text" aria-label="Tên dự án" placeholder="Tên project" />
+              <input v-model="projectForm.code" type="text" aria-label="Mã dự án" placeholder="Mã project" />
+              <textarea v-model="projectForm.description" aria-label="Mô tả dự án" rows="3" placeholder="Mô tả"></textarea>
               <button class="primary-button" type="submit" :disabled="isCreatingProject">
                 <Loader2 v-if="isCreatingProject" :size="15" class="spin" />
                 <Check v-else :size="15" />
@@ -1902,13 +1905,24 @@ function formatMessageTime(value: string) {
       </section>
     </div>
 
-    <div v-if="showCreateModal" class="group-modal-backdrop" @click.self="showCreateModal = false">
-      <form class="group-modal glass-card" @submit.prevent="createGroup">
+    <div
+      v-if="showCreateModal"
+      class="group-modal-backdrop"
+      @click.self="showCreateModal = false"
+      @keydown.esc="showCreateModal = false"
+    >
+      <form
+        class="group-modal glass-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-group-title"
+        @submit.prevent="createGroup"
+      >
         <header>
-          <h2>Tạo nhóm chat</h2>
+          <h2 id="create-group-title">Tạo nhóm chat</h2>
           <button type="button" class="text-button" @click="showCreateModal = false">Đóng</button>
         </header>
-        <input v-model="createForm.name" type="text" placeholder="Tên nhóm" required />
+        <input v-model="createForm.name" type="text" aria-label="Tên nhóm" placeholder="Tên nhóm" required />
         <label class="group-color-field">
           Màu nhóm
           <input v-model="createForm.color" type="color" />
@@ -1997,7 +2011,7 @@ function formatMessageTime(value: string) {
   min-height: 180px;
   border: 1px dashed #cbd5e1;
   border-radius: var(--qaly-radius-lg);
-  color: #64748b;
+  color: #475569;
   text-align: center;
   padding: 18px;
 }
@@ -2046,7 +2060,7 @@ function formatMessageTime(value: string) {
   display: grid;
   place-items: center;
   color: #ffffff;
-  background: #1677ff;
+  background: #0f5dcc;
   font-weight: 800;
   letter-spacing: 0;
   overflow: hidden;
@@ -2414,7 +2428,7 @@ function formatMessageTime(value: string) {
 .group-detail-tabs button:hover {
   border-color: #bfdbfe;
   background: #f8fbff;
-  color: #1677ff;
+  color: #1e40af;
 }
 
 .group-detail-tabs button:hover > span,
@@ -2551,7 +2565,7 @@ function formatMessageTime(value: string) {
   border-radius: var(--qaly-radius-lg);
   display: grid;
   place-items: center;
-  color: #64748b;
+  color: #475569;
   background: #f1f5f9;
   cursor: pointer;
 }
@@ -2938,7 +2952,7 @@ function formatMessageTime(value: string) {
 }
 
 .group-shared-files button {
-  color: #dc2626;
+  color: #b91c1c;
   background: #fef2f2;
 }
 
@@ -2965,7 +2979,7 @@ function formatMessageTime(value: string) {
   border-radius: var(--qaly-radius-lg);
   display: grid;
   place-items: center;
-  background: #1677ff;
+  background: #0f5dcc;
   color: #fff;
   font-size: 0.75rem;
   font-weight: 800;
@@ -3077,7 +3091,7 @@ function formatMessageTime(value: string) {
   display: grid;
   place-items: center;
   border-radius: 999px;
-  background: #1677ff;
+  background: #0f5dcc;
   color: #fff;
   font-size: 0.78rem;
   font-weight: 900;

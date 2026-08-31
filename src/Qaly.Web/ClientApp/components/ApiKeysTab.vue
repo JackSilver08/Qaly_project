@@ -67,17 +67,17 @@ onMounted(fetchKeys)
         <p>Vì lý do bảo mật, chúng tôi chỉ hiển thị key này một lần duy nhất. Bạn sẽ không thể xem lại nó sau khi đóng thông báo này.</p>
         <div class="key-box">
           <code>{{ generatedKey }}</code>
-          <button @click="copyToClipboard" class="icon-button">
+          <button type="button" :aria-label="copied ? 'Đã sao chép API key' : 'Sao chép API key'" @click="copyToClipboard" class="icon-button">
             <Check v-if="copied" :size="16" color="var(--success)" />
             <Copy v-else :size="16" />
           </button>
         </div>
-        <button class="primary-button primary-button--compact" @click="generatedKey = null">Tôi đã lưu xong</button>
+        <button type="button" class="primary-button primary-button--compact" @click="generatedKey = null">Tôi đã lưu xong</button>
       </div>
     </div>
 
     <form @submit.prevent="createKey" class="create-key-form">
-      <input v-model="newKeyName" type="text" placeholder="Tên gợi nhớ (vd: CI/CD Pipeline)" required />
+      <input v-model="newKeyName" type="text" aria-label="Tên gợi nhớ cho API key" placeholder="Tên gợi nhớ (vd: CI/CD Pipeline)" required />
       <button type="submit" class="primary-button" :disabled="isLoading">
         {{ isLoading ? 'Đang tạo...' : 'Tạo Key mới' }}
       </button>
@@ -90,7 +90,7 @@ onMounted(fetchKeys)
           <span class="key-prefix">Prefix: <code>{{ key.keyPrefix }}...</code></span>
           <span class="key-date">Tạo ngày: {{ new Date(key.createdAt).toLocaleDateString() }}</span>
         </div>
-        <button @click="revokeKey(key.id)" class="revoke-button" title="Thu hồi">
+        <button type="button" @click="revokeKey(key.id)" class="revoke-button" title="Thu hồi">
           <Trash2 :size="16" />
         </button>
       </div>

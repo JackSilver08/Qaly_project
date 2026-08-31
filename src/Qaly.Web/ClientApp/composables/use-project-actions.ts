@@ -18,6 +18,7 @@ export function useProjectActions(
   const projectEndDate = ref('')
   const editProjectName = ref('')
   const editProjectDescription = ref('')
+  const isProjectMutationPending = ref(false)
 
   function openCreateProject() {
     createProjectOpen.value = true
@@ -33,8 +34,9 @@ export function useProjectActions(
 
   async function createProject() {
     const name = projectName.value.trim()
-    if (!name) return
+    if (!name || isProjectMutationPending.value) return
 
+    isProjectMutationPending.value = true
     try {
       const project = await apiResult<ProjectDto>('/api/projects', {
         method: 'POST',
@@ -46,14 +48,21 @@ export function useProjectActions(
         }),
       })
 
+      const canonical = await apiResult<ProjectDto>(`/api/projects/${project.id}`)
+      if (canonical.id !== project.id || canonical.name !== name) {
+        throw new Error('Máy chủ chưa xác nhận đúng dự án vừa tạo. Vui lòng tải lại trước khi thử lại.')
+      }
+
       clearProjectForm()
       createProjectOpen.value = false
       await loadDashboard()
-      activeProjectId.value = project.id
-      void router.push(`/projects/${project.id}`)
-      showSuccess(`Thêm dự án "${project.name}" thành công`)
+      activeProjectId.value = canonical.id
+      void router.push(`/projects/${canonical.id}`)
+      showSuccess(`Thêm dự án "${canonical.name}" thành công`)
     } catch (error) {
       showError(errorMessage(error, 'Không thể thêm dự án'))
+    } finally {
+      isProjectMutationPending.value = false
     }
   }
 
@@ -72,10 +81,11 @@ export function useProjectActions(
     const project = projects.value.find((item) => item.id === projectBeingEditedId.value)
     const name = editProjectName.value.trim()
 
-    if (!project || !name) return
+    if (!project || !name || isProjectMutationPending.value) return
 
+    isProjectMutationPending.value = true
     try {
-      await apiResult<ProjectDto>(`/api/projects/${project.id}`, {
+      const updated = await apiResult<ProjectDto>(`/api/projects/${project.id}`, {
         method: 'PUT',
         body: JSON.stringify({
           name,
@@ -85,6 +95,10 @@ export function useProjectActions(
           endDate: project.endDate,
         }),
       })
+      const canonical = await apiResult<ProjectDto>(`/api/projects/${project.id}`)
+      if (updated.id !== project.id || canonical.id !== project.id || canonical.name !== name) {
+        throw new Error('Máy chủ chưa xác nhận đầy đủ thay đổi Project; vui lòng tải lại trước khi thử lại.')
+      }
 
       projectBeingEditedId.value = null
       await loadDashboard()
@@ -92,20 +106,28 @@ export function useProjectActions(
       showSuccess(`Cập nhật dự án "${name}" thành công`)
     } catch (error) {
       showError(errorMessage(error, 'Không thể cập nhật dự án'))
+    } finally {
+      isProjectMutationPending.value = false
     }
   }
 
   async function deleteProject(projectId: string) {
     const project = projects.value.find((item) => item.id === projectId)
-    if (!project) return
+    if (!project || isProjectMutationPending.value) return
     if (!await confirmDialog({ tone:'danger', title:'Xóa dự án?', subject:project.name, message:'Dự án sẽ được chuyển vào thùng rác.', confirmLabel:'Xóa dự án' })) return
 
+    isProjectMutationPending.value = true
     try {
       await apiCommand(`/api/projects/${projectId}`, { method: 'DELETE' })
       await loadDashboard()
+      if (projects.value.some((item) => item.id === projectId)) {
+        throw new Error('Máy chủ chưa xác nhận dự án đã được xóa. Vui lòng tải lại trước khi thử lại.')
+      }
       showSuccess(`Xóa dự án "${project.name}" thành công`)
     } catch (error) {
       showError(errorMessage(error, 'Không thể xóa dự án'))
+    } finally {
+      isProjectMutationPending.value = false
     }
   }
 
@@ -116,9 +138,10 @@ export function useProjectActions(
 
   async function archiveProject(projectId: string) {
     const project = projects.value.find((item) => item.id === projectId)
-    if (!project) return
+    if (!project || isProjectMutationPending.value) return
     if (!await confirmDialog({ tone:'warning', title:'Lưu trữ dự án?', subject:project.name, message:'Dự án sẽ chuyển sang chế độ chỉ đọc và có thể khôi phục sau.', confirmLabel:'Lưu trữ' })) return
 
+    isProjectMutationPending.value = true
     try {
       await apiResult<ProjectDto>(`/api/projects/${projectId}`, {
         method: 'PUT',
@@ -130,18 +153,25 @@ export function useProjectActions(
           endDate: project.endDate,
         }),
       })
+      const canonical = await apiResult<ProjectDto>(`/api/projects/${projectId}`)
+      if (canonical.status !== 'Archived') {
+        throw new Error('Máy chủ chưa xác nhận Project đã được lưu trữ.')
+      }
       await loadDashboard()
       showSuccess(`Đã lưu trữ dự án "${project.name}"`)
     } catch (error) {
       showError(errorMessage(error, 'Không thể lưu trữ dự án'))
+    } finally {
+      isProjectMutationPending.value = false
     }
   }
 
   async function restoreProject(projectId: string) {
     const project = projects.value.find((item) => item.id === projectId)
-    if (!project) return
+    if (!project || isProjectMutationPending.value) return
     if (!await confirmDialog({ title:'Khôi phục dự án?', subject:project.name, message:'Dự án sẽ hoạt động trở lại.', confirmLabel:'Khôi phục' })) return
 
+    isProjectMutationPending.value = true
     try {
       await apiResult<ProjectDto>(`/api/projects/${projectId}`, {
         method: 'PUT',
@@ -153,10 +183,16 @@ export function useProjectActions(
           endDate: project.endDate,
         }),
       })
+      const canonical = await apiResult<ProjectDto>(`/api/projects/${projectId}`)
+      if (canonical.status !== 'Active') {
+        throw new Error('Máy chủ chưa xác nhận Project đã được khôi phục.')
+      }
       await loadDashboard()
       showSuccess(`Đã khôi phục dự án "${project.name}"`)
     } catch (error) {
       showError(errorMessage(error, 'Không thể khôi phục dự án'))
+    } finally {
+      isProjectMutationPending.value = false
     }
   }
 
@@ -168,6 +204,7 @@ export function useProjectActions(
     projectEndDate,
     editProjectName,
     editProjectDescription,
+    isProjectMutationPending,
     openCreateProject,
     createProject,
     beginEditProject,
@@ -178,4 +215,3 @@ export function useProjectActions(
     restoreProject,
   }
 }
-

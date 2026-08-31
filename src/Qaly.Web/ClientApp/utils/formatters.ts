@@ -48,19 +48,24 @@ export function initials(name: string | null | undefined) {
     .join('')
 }
 
-/**
- * Terminal statuses that stop the clock. Kept in sync with `DashboardSummaryService.OpenStatuses`
- * on the server, which counts overdue work only among Todo/InProgress/InReview/OnHold — without
- * `Cancelled` here the dashboard card and the task board report different overdue totals.
+/** Canonical statuses that still represent actionable work. Keep this list aligned with
+ * `TaskStatusRules.OpenStatuses` on the server so Dashboard and Tasks cannot drift.
  */
-const CLOSED_TASK_STATUSES = ['Done', 'Cancelled']
+const OPEN_TASK_STATUSES = new Set(['todo', 'inprogress', 'inreview', 'onhold'])
 
-export function isTaskOverdue(task: { dueDate: string | null | undefined; status: string | null | undefined }) {
+export function isTaskOpen(status: string | null | undefined) {
+  return OPEN_TASK_STATUSES.has((status ?? '').trim().toLowerCase())
+}
+
+export function isTaskOverdue(
+  task: { dueDate?: string | null; status?: string | null },
+  now = Date.now(),
+) {
   if (!task.dueDate) return false
-  if (CLOSED_TASK_STATUSES.includes(task.status ?? '')) return false
+  if (!isTaskOpen(task.status)) return false
 
   const dueAt = new Date(task.dueDate).getTime()
-  return Number.isFinite(dueAt) && dueAt < Date.now()
+  return Number.isFinite(dueAt) && dueAt < now
 }
 
 export function displayStatus(status: string | null | undefined) {

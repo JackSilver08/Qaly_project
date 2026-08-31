@@ -83,7 +83,7 @@ function confidenceLabel(value?: number) {
 }
 
 .ai-answer-meta-chip small {
-  color: #94a3b8;
+  color: #64748b;
   font-size: 10px;
   font-weight: 900;
   text-transform: uppercase;

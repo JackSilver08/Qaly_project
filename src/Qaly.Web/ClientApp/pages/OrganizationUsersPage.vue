@@ -250,7 +250,7 @@ onMounted(async () => {
           hệ thống.
         </p>
       </div>
-      <button
+      <button type="button"
         v-if="canManage && hasCapability('organization.users.invite')"
         class="primary"
         :disabled="isInitialLoad || !selectedId"
@@ -303,7 +303,7 @@ onMounted(async () => {
           <Search :size="18" />
           <input v-model="search" placeholder="Tìm theo tên hoặc email" />
         </label>
-        <button class="icon-button" :title="isLoadingMembers ? 'Đang tải' : 'Tải lại'" @click="loadMembers">
+        <button type="button" class="icon-button" :title="isLoadingMembers ? 'Đang tải' : 'Tải lại'" :aria-label="isLoadingMembers ? 'Đang tải thành viên' : 'Tải lại danh sách thành viên'" @click="loadMembers">
           <RefreshCw :size="18" :class="{ 'is-spinning': isLoadingMembers }" />
         </button>
       </section>
@@ -352,13 +352,13 @@ onMounted(async () => {
       </PageStatePanel>
 
       <div v-else class="table-wrap">
-        <table>
+        <table aria-label="Thành viên tổ chức">
           <thead>
             <tr>
-              <th>Thành viên</th>
-              <th>Vai trò tổ chức</th>
-              <th>Ngày tham gia</th>
-              <th><span class="sr-only">Thao tác</span></th>
+              <th scope="col">Thành viên</th>
+              <th scope="col">Vai trò tổ chức</th>
+              <th scope="col">Ngày tham gia</th>
+              <th scope="col"><span class="sr-only">Thao tác</span></th>
             </tr>
           </thead>
           <tbody>
@@ -379,6 +379,7 @@ onMounted(async () => {
                 <select
                   v-else-if="canManage && hasCapability('organization.users.update_role')"
                   :value="member.role"
+                  :aria-label="`Vai trò tổ chức của ${member.fullName}`"
                   :disabled="saving === member.userId"
                   @change="changeRole(member, ($event.target as HTMLSelectElement).value)"
                 >
@@ -398,7 +399,7 @@ onMounted(async () => {
                 >
                   <Award :size="17" />
                 </button>
-                <button
+                <button type="button"
                   v-if="canManage && member.role !== 'Owner' && hasCapability('organization.users.remove')"
                   class="remove"
                   :disabled="saving === member.userId"
@@ -414,9 +415,9 @@ onMounted(async () => {
       </div>
     </template>
 
-    <div v-if="inviteOpen" class="overlay" @click.self="inviteOpen = false">
-      <form class="modal" @submit.prevent="addMember">
-        <h2>Thêm thành viên</h2>
+    <div v-if="inviteOpen" class="overlay" @click.self="inviteOpen = false" @keydown.esc="inviteOpen = false">
+      <form class="modal" role="dialog" aria-modal="true" aria-labelledby="invite-member-title" @submit.prevent="addMember">
+        <h2 id="invite-member-title">Thêm thành viên</h2>
         <p>
           Nhập email của một tài khoản đang hoạt động. Người dùng chỉ được cấp quyền trong tổ chức
           này.
@@ -441,7 +442,7 @@ onMounted(async () => {
         </label>
         <div class="modal-actions">
           <button type="button" class="secondary" @click="inviteOpen = false">Hủy</button>
-          <button class="primary" :disabled="saving === 'invite'">Thêm thành viên</button>
+          <button type="submit" class="primary" :disabled="saving === 'invite'">Thêm thành viên</button>
         </div>
       </form>
     </div>

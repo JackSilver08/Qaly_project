@@ -26,9 +26,15 @@ interface ProjectMemberOption {
 interface ProjectOption {
   id: string
   name: string
+  organizationId?: string | null
   code?: string | null
   status?: string | null
   members?: ProjectMemberOption[]
+}
+
+interface OrganizationSkillOption {
+  id: string
+  name: string
 }
 
 interface AiJobCreated {
@@ -192,6 +198,7 @@ const draft = ref<AiDraftDetail | null>(null)
 const plan = ref<AiActionPlan | null>(null)
 const receipt = ref<AiActionReceipt | null>(null)
 const recoveryPlan = ref<AiActionPlan | null>(null)
+const skillCatalog = ref<OrganizationSkillOption[]>([])
 const activityEvents = ref<AiActivityEvent[]>([])
 const activityLastSequence = ref(0)
 const activityCancellable = ref(false)
@@ -250,6 +257,10 @@ watch(() => props.projectId, value => {
   if (!jobId.value && value) selectedProjectId.value = value
 })
 
+watch(selectedProjectId, value => {
+  void loadSkillCatalog(value)
+})
+
 watch(
   () => [props.projectId, props.initialPrompt, props.autoStart] as const,
   () => {
@@ -268,6 +279,7 @@ onMounted(() => {
   clockTimer = window.setInterval(() => { now.value = Date.now() }, 1000)
   if (!props.autoStart) restoreSession()
   void applyInitialRequest()
+  void loadSkillCatalog(selectedProjectId.value)
 })
 
 onBeforeUnmount(() => {
@@ -578,6 +590,27 @@ function memberName(id: string | null) {
   return memberOptions.value.find(member => memberId(member) === id)?.fullName || 'Thành viên dự án'
 }
 
+function skillName(id: string) {
+  return skillCatalog.value.find(skill => skill.id === id)?.name || `Kỹ năng ${id.slice(0, 6)}`
+}
+
+async function loadSkillCatalog(projectId: string) {
+  skillCatalog.value = []
+  if (!projectId) return
+  try {
+    let organizationId = props.projects.find(project => project.id === projectId)?.organizationId || null
+    if (!organizationId) {
+      const project = await apiResult<{ organizationId?: string | null }>(`/api/projects/${projectId}`)
+      organizationId = project.organizationId || null
+    }
+    if (!organizationId) return
+    skillCatalog.value = await apiResult<OrganizationSkillOption[]>(`/api/organizations/${organizationId}/skills`)
+  } catch {
+    // A missing catalog must not block review; the skill id remains visible as a truthful fallback.
+    skillCatalog.value = []
+  }
+}
+
 function updateAssignee(command: AiTaskCommand, value: string) {
   command.assigneeId = value || null
   command.assigneeMode = value ? 'user_selected' : 'unassigned'
@@ -843,7 +876,7 @@ function isInternalLink(value: string) {
             <span class="safety-note"><CheckCircle2 :size="15" /> Không thay đổi dữ liệu trước khi bạn xác nhận</span>
           </section>
 
-          <section v-else-if="isProcessing || isTerminalFailure" class="composer-progress">
+          <section v-else-if="isProcessing || isTerminalFailure" class="composer-progress" role="status" aria-live="polite">
             <div class="worked-chip"><Clock3 :size="16" /> Đã chạy {{ workedFor }} <ChevronRight :size="15" /></div>
             <div class="progress-heading">
               <div>
@@ -916,6 +949,7 @@ function isInternalLink(value: string) {
                 :key="option.optionId"
                 type="button"
                 :class="{ 'is-active': option.optionId === plan.review.selectedOptionId }"
+                :aria-pressed="option.optionId === plan.review.selectedOptionId"
                 @click="chooseOption(option)"
               >
                 <strong>{{ option.label }}</strong><small>{{ option.commands.length }} task</small>
@@ -945,10 +979,12 @@ function isInternalLink(value: string) {
                       <option value="">Chưa giao</option>
                       <option v-for="member in memberOptions" :key="memberId(member)" :value="memberId(member)">{{ member.fullName }}</option>
                     </select>
+                    <small v-if="command.assigneeMode === 'system_suggested'" class="assignment-hint">Qaly đề xuất từ kỹ năng đã xác nhận, lịch Sprint và capacity đa dự án.</small>
+                    <small v-else-if="!command.assigneeId" class="assignment-hint">Chưa đủ bằng chứng an toàn để tự giao; bạn vẫn có thể chọn người trước khi xác nhận.</small>
                   </label>
                 </div>
                 <div v-if="command.requiredSkills.length" class="skill-row">
-                  <span v-for="skill in command.requiredSkills" :key="skill.skillId">Skill {{ skill.skillId.slice(0, 6) }} · {{ skill.requiredLevel }}</span>
+                  <span v-for="skill in command.requiredSkills" :key="skill.skillId">{{ skillName(skill.skillId) }} · {{ skill.requiredLevel }}</span>
                 </div>
                 <div class="source-row">
                   <span>Nguồn:</span>
@@ -1102,6 +1138,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .command-fields textarea { resize: vertical; }
 .skill-row, .source-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .skill-row span { padding: 4px 7px; border-radius: 999px; color: #6d28d9; background: #ede9fe; font-size: 10px; font-weight: 800; }
+.assignment-hint { color: var(--muted); font-size: 9px; font-weight: 600; line-height: 1.35; }
 .source-row { color: var(--muted); font-size: 10px; }
 .source-row a { max-width: 230px; overflow: hidden; color: #2563eb; text-overflow: ellipsis; white-space: nowrap; }
 .activity-details { border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px; background: var(--panel-soft); }
@@ -1111,7 +1148,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .receipt-success h3 { color: var(--text); font-size: 19px; }
 .receipt-meta { justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 10px; color: var(--muted); background: var(--panel-soft); }
 .receipt-list { display: grid; gap: 9px; }
-.receipt-list article { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 12px; border: 1px solid #a7f3d0; border-radius: 11px; color: #059669; background: #ecfdf5; }
+.receipt-list article { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 12px; border: 1px solid #a7f3d0; border-radius: 11px; color: #047857; background: #ecfdf5; }
 .receipt-list article:not(.is-succeeded) { border-color: #fbbf24; color: #b45309; background: #fffbeb; }
 .receipt-list article > div { display: grid; gap: 2px; color: var(--text); }
 .receipt-list a { color: #2563eb; }

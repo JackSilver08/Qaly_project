@@ -355,7 +355,7 @@ onMounted(fetchGanttData)
           <h3>Công việc cần chú ý</h3>
           <p>Ưu tiên các việc quá hạn, chưa bắt đầu hoặc chưa được người nhận xem.</p>
         </div>
-        <button type="button" class="filter-toggle" :class="{ active: filtersOpen }" @click="filtersOpen = !filtersOpen">
+        <button type="button" class="filter-toggle" :class="{ active: filtersOpen }" :aria-expanded="filtersOpen" @click="filtersOpen = !filtersOpen">
           <Filter :size="16" />
           Bộ lọc
           <span v-if="activeFilterCount">{{ activeFilterCount }}</span>
@@ -364,16 +364,16 @@ onMounted(fetchGanttData)
       </div>
 
       <div class="attention-summary">
-        <button type="button" :class="{ selected: riskType === 'overdue' }" @click="riskType = 'overdue'; fetchGanttData()">
+        <button type="button" :class="{ selected: riskType === 'overdue' }" :aria-pressed="riskType === 'overdue'" @click="riskType = 'overdue'; fetchGanttData()">
           <span class="metric-dot danger"></span><strong>{{ summary.overdue }}</strong><small>Quá hạn</small>
         </button>
-        <button type="button" :class="{ selected: riskType === 'staletodo' }" @click="riskType = 'staletodo'; fetchGanttData()">
+        <button type="button" :class="{ selected: riskType === 'staletodo' }" :aria-pressed="riskType === 'staletodo'" @click="riskType = 'staletodo'; fetchGanttData()">
           <span class="metric-dot warning"></span><strong>{{ summary.staleTodo }}</strong><small>Chưa bắt đầu</small>
         </button>
-        <button type="button" :class="{ selected: riskType === 'unseen' }" @click="riskType = 'unseen'; fetchGanttData()">
+        <button type="button" :class="{ selected: riskType === 'unseen' }" :aria-pressed="riskType === 'unseen'" @click="riskType = 'unseen'; fetchGanttData()">
           <span class="metric-dot muted"></span><strong>{{ summary.unseen }}</strong><small>Chưa xem</small>
         </button>
-        <button type="button" :class="{ selected: riskType === 'all' }" @click="riskType = 'all'; fetchGanttData()">
+        <button type="button" :class="{ selected: riskType === 'all' }" :aria-pressed="riskType === 'all'" @click="riskType = 'all'; fetchGanttData()">
           <span class="metric-dot primary"></span><strong>{{ summary.total }}</strong><small>Tất cả cảnh báo</small>
         </button>
       </div>
@@ -390,7 +390,7 @@ onMounted(fetchGanttData)
         <button type="button" class="reset-button" @click="resetFilters"><RotateCcw :size="15" /> Đặt lại</button>
       </div>
 
-      <div v-if="isLoading" class="loading-state">Đang tải công việc...</div>
+      <div v-if="isLoading" class="loading-state" role="status" aria-live="polite">Đang tải công việc...</div>
       <div v-else-if="filteredAttentionItems.length" class="attention-list">
         <article v-for="item in filteredAttentionItems" :key="`${item.id}-${item.assigneeId ?? 'none'}`" class="attention-row">
           <span class="risk-rail" :class="{ overdue: item.isOverdue, warning: !item.isOverdue }"></span>
@@ -415,7 +415,7 @@ onMounted(fetchGanttData)
             <button type="button" class="open-button" aria-label="Mở chi tiết" @click="emit('openTask', item.id)"><ChevronRight :size="18" /></button>
           </div>
           <form v-if="commentTaskId === item.id" class="attention-comment" @submit.prevent="submitAttentionComment(item)">
-            <input v-model="commentText" type="text" placeholder="Nhập lý do hoặc cập nhật tiến độ..." autofocus />
+            <input v-model="commentText" type="text" aria-label="Lý do hoặc cập nhật tiến độ" placeholder="Nhập lý do hoặc cập nhật tiến độ..." autofocus />
             <button class="nudge-button" type="submit">Gửi</button>
           </form>
         </article>
@@ -440,7 +440,7 @@ onMounted(fetchGanttData)
         </div>
       </div>
 
-      <div v-if="isLoading" class="loading-state">Đang tải timeline...</div>
+      <div v-if="isLoading" class="loading-state" role="status" aria-live="polite">Đang tải timeline...</div>
       <div v-else-if="tasks.length === 0" class="empty-state"><AlertCircle :size="38" /><strong>Chưa có dữ liệu timeline</strong><p>Hãy thêm ngày bắt đầu hoặc hạn hoàn thành cho task.</p></div>
       <div v-else class="gantt-frame">
         <div class="gantt-labels">
@@ -531,7 +531,7 @@ onMounted(fetchGanttData)
 .attention-row:hover { border-color: rgba(37,99,235,.28); box-shadow: var(--qaly-shadow-md); }
 .risk-rail { position: absolute; inset: 0 auto 0 0; width: 4px; background: #f59e0b; }.risk-rail.overdue { background: #dc2626; }
 .attention-main { min-width: 0; }.reason-list { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
-.reason-chip { border-radius: 999px; padding: 3px 7px; color: #a16207; background: #fef3c7; font-size: 10px; font-weight: 900; }.reason-chip.danger { color: #b91c1c; background: #fee2e2; }
+.reason-chip { border-radius: 999px; padding: 3px 7px; color: #92400e; background: #fef3c7; font-size: 10px; font-weight: 900; }.reason-chip.danger { color: #b91c1c; background: #fee2e2; }
 .task-link { display: block; max-width: 100%; overflow: hidden; border: 0; padding: 0; color: var(--text-strong); background: transparent; font-size: 14px; font-weight: 850; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .task-link:hover { color: var(--primary); }
 .task-context { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 7px; color: var(--muted); font-size: 11px; }

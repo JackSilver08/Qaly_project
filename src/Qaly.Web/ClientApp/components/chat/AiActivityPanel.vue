@@ -320,27 +320,27 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
   <section class="ai-activity" aria-label="Hoạt động AI">
     <div class="activity-toolbar">
       <div class="activity-tabs" role="tablist">
-        <button :class="{ active: activeTab === 'jobs' }" role="tab" @click="selectTab('jobs')">Jobs <span>{{ jobs.length }}</span></button>
-        <button :class="{ active: activeTab === 'drafts' }" role="tab" @click="selectTab('drafts')">Bản nháp <span>{{ drafts.length }}</span></button>
+        <button type="button" :class="{ active: activeTab === 'jobs' }" role="tab" :aria-selected="activeTab === 'jobs'" @click="selectTab('jobs')">Jobs <span>{{ jobs.length }}</span></button>
+        <button type="button" :class="{ active: activeTab === 'drafts' }" role="tab" :aria-selected="activeTab === 'drafts'" @click="selectTab('drafts')">Bản nháp <span>{{ drafts.length }}</span></button>
       </div>
-      <button class="icon-button" title="Làm mới" :disabled="loading" @click="refresh()"><RefreshCw :size="16" :class="{ spinning: loading }" /></button>
+      <button type="button" class="icon-button" aria-label="Làm mới hoạt động AI" title="Làm mới" :disabled="loading" @click="refresh()"><RefreshCw :size="16" :class="{ spinning: loading }" /></button>
     </div>
     <div v-if="health" class="health-strip" :class="health.status"><span class="health-dot" /><span>{{ health.status === 'healthy' ? 'Worker sẵn sàng' : `Degraded: ${health.degradedReason}` }}</span><span class="health-count">{{ health.queueDepth }} chờ</span></div>
     <div v-if="error" class="activity-error" role="alert"><AlertTriangle :size="16" /><span>{{ error }}</span></div>
 
     <div v-if="selectedJob" class="activity-detail">
-      <header><button class="icon-button" title="Quay lại" @click="closeDetail()"><X :size="16" /></button><div><strong>{{ selectedJob.jobType }}</strong><span>{{ statusLabel(selectedJob.status) }} · lần {{ selectedJob.attemptCount }}/{{ selectedJob.maxAttempts }}</span></div></header>
+      <header><button type="button" class="icon-button" aria-label="Quay lại danh sách job" title="Quay lại" @click="closeDetail()"><X :size="16" /></button><div><strong>{{ selectedJob.jobType }}</strong><span>{{ statusLabel(selectedJob.status) }} · lần {{ selectedJob.attemptCount }}/{{ selectedJob.maxAttempts }}</span></div></header>
       <div class="progress-track"><span :style="{ width: `${selectedJob.progressPercent}%` }" /></div>
       <p v-if="selectedJob.lastErrorCode" class="detail-warning">{{ selectedJob.lastErrorCode }}</p>
       <pre v-if="selectedResult" class="job-result">{{ JSON.stringify(selectedResult.result, null, 2) }}</pre>
       <div class="detail-actions">
-        <button v-if="['queued', 'running', 'retrying'].includes(selectedJob.status)" class="secondary-action" :disabled="actionPending" @click="cancelJob(selectedJob)"><Ban :size="15" /> Hủy</button>
-        <button v-if="['failed', 'canceled'].includes(selectedJob.status)" class="primary-action" :disabled="actionPending" @click="retryJob(selectedJob)"><RotateCcw :size="15" /> Thử lại</button>
+        <button v-if="['queued', 'running', 'retrying'].includes(selectedJob.status)" type="button" class="secondary-action" :disabled="actionPending" @click="cancelJob(selectedJob)"><Ban :size="15" /> Hủy</button>
+        <button v-if="['failed', 'canceled'].includes(selectedJob.status)" type="button" class="primary-action" :disabled="actionPending" @click="retryJob(selectedJob)"><RotateCcw :size="15" /> Thử lại</button>
       </div>
     </div>
 
     <div v-else-if="selectedDraft" class="activity-detail draft-detail">
-      <header><button class="icon-button" title="Quay lại" @click="closeDetail()"><X :size="16" /></button><div><strong>{{ selectedDraft.draftType }}</strong><span>{{ statusLabel(selectedDraft.status) }}</span></div></header>
+      <header><button type="button" class="icon-button" aria-label="Quay lại danh sách bản nháp" title="Quay lại" @click="closeDetail()"><X :size="16" /></button><div><strong>{{ selectedDraft.draftType }}</strong><span>{{ statusLabel(selectedDraft.status) }}</span></div></header>
       <div class="draft-change-state" :class="{ changed: draftPayloadChanged }">
         {{ draftPayloadChanged ? 'Đã chỉnh sửa' : 'Chưa chỉnh sửa' }}
       </div>
@@ -370,20 +370,20 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
                 <div class="form-group-row">
                   <div class="form-group">
                     <label>Người nhận</label>
-                    <input type="text" v-model="act.recipientName" placeholder="Tên thành viên" />
+                    <input type="text" v-model="act.recipientName" aria-label="Tên người nhận" placeholder="Tên thành viên" />
                   </div>
                   <div class="form-group">
                     <label>Email</label>
-                    <input type="email" v-model="act.recipientEmail" placeholder="email@example.com" />
+                    <input type="email" v-model="act.recipientEmail" autocomplete="email" aria-label="Email người nhận" placeholder="email@example.com" />
                   </div>
                 </div>
                 <div class="form-group">
                   <label>Tiêu đề email</label>
-                  <input type="text" v-model="act.subject" />
+                  <input type="text" v-model="act.subject" aria-label="Tiêu đề email" />
                 </div>
                 <div class="form-group">
                   <label>Nội dung cảnh báo</label>
-                  <textarea v-model="act.message" rows="3"></textarea>
+                  <textarea v-model="act.message" aria-label="Nội dung cảnh báo" rows="3"></textarea>
                 </div>
               </template>
 
@@ -391,12 +391,12 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
               <template v-if="act.type === 'UpdateTask'">
                 <div class="form-group">
                   <label>Tên công việc</label>
-                  <input type="text" v-model="act.title" readonly class="readonly-input" />
+                  <input type="text" v-model="act.title" aria-label="Tên công việc" readonly class="readonly-input" />
                 </div>
                 <div class="form-group-row">
                   <div class="form-group">
                     <label>Trạng thái</label>
-                    <select v-model="act.status">
+                    <select v-model="act.status" aria-label="Trạng thái công việc">
                       <option value="Todo">Todo</option>
                       <option value="In Progress">In Progress</option>
                       <option value="In Review">In Review</option>
@@ -405,7 +405,7 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
                   </div>
                   <div class="form-group">
                     <label>Độ ưu tiên</label>
-                    <select v-model="act.priority">
+                    <select v-model="act.priority" aria-label="Độ ưu tiên công việc">
                       <option value="Low">Low</option>
                       <option value="Medium">Medium</option>
                       <option value="High">High</option>
@@ -415,7 +415,7 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
                 </div>
                 <div class="form-group">
                   <label>Hạn chót đề xuất</label>
-                  <input type="datetime-local" :value="formatDateTimeLocal(act.dueDate)" @input="act.dueDate = ($event.target as HTMLInputElement).value" />
+                  <input type="datetime-local" :value="formatDateTimeLocal(act.dueDate)" aria-label="Hạn chót đề xuất" @input="act.dueDate = ($event.target as HTMLInputElement).value" />
                 </div>
               </template>
             </div>
@@ -438,25 +438,25 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
           <textarea v-model="draftPayload" spellcheck="false" aria-label="Nội dung bản nháp" />
         </section>
       </div>
-      <input v-model="rejectionReason" type="text" placeholder="Lý do từ chối" />
+      <input v-model="rejectionReason" type="text" aria-label="Lý do từ chối bản nháp" placeholder="Lý do từ chối" />
       <div class="detail-actions">
-        <button class="secondary-action" :disabled="actionPending" @click="saveDraft"><Save :size="15" /> Lưu</button>
-        <button class="danger-action" :disabled="actionPending || !rejectionReason.trim()" @click="rejectDraft"><X :size="15" /> Từ chối</button>
-        <button class="primary-action" :disabled="actionPending" @click="confirmDraft"><Check :size="15" /> Xác nhận</button>
+        <button type="button" class="secondary-action" :disabled="actionPending" @click="saveDraft"><Save :size="15" /> Lưu</button>
+        <button type="button" class="danger-action" :disabled="actionPending || !rejectionReason.trim()" @click="rejectDraft"><X :size="15" /> Từ chối</button>
+        <button type="button" class="primary-action" :disabled="actionPending" @click="confirmDraft"><Check :size="15" /> Xác nhận</button>
       </div>
     </div>
 
     <div v-else class="ai-activity-list">
       <div v-if="loading && jobs.length === 0 && drafts.length === 0" class="empty-state"><LoaderCircle :size="22" class="spinning" /><span>Đang tải hoạt động AI...</span></div>
       <template v-else-if="activeTab === 'jobs'">
-        <button v-for="job in jobs" :key="job.jobId" class="activity-row" @click="openJob(job)">
+        <button v-for="job in jobs" :key="job.jobId" type="button" class="activity-row" @click="openJob(job)">
           <span class="row-icon" :class="job.status"><LoaderCircle v-if="['running', 'retrying'].includes(job.status)" :size="16" class="spinning" /><Clock3 v-else-if="job.status === 'queued'" :size="16" /><Check v-else-if="job.status === 'succeeded'" :size="16" /><AlertTriangle v-else-if="job.status === 'failed'" :size="16" /><Ban v-else :size="16" /></span>
           <span class="row-copy"><strong>{{ job.jobType }}</strong><small>{{ statusLabel(job.status) }} · {{ formatTime(job.createdAt) }}</small></span><ChevronRight :size="16" />
         </button>
         <div v-if="!loading && jobs.length === 0" class="empty-state"><Clock3 :size="22" /><span>Chưa có AI job.</span></div>
       </template>
       <template v-else>
-        <button v-for="draft in drafts" :key="draft.draftId" class="activity-row" @click="openDraft(draft)"><span class="row-icon pending_review"><FileCheck2 :size="16" /></span><span class="row-copy"><strong>{{ draft.draftType }}</strong><small>{{ statusLabel(draft.status) }} · {{ formatTime(draft.createdAt) }}</small></span><ChevronRight :size="16" /></button>
+        <button v-for="draft in drafts" :key="draft.draftId" type="button" class="activity-row" @click="openDraft(draft)"><span class="row-icon pending_review"><FileCheck2 :size="16" /></span><span class="row-copy"><strong>{{ draft.draftType }}</strong><small>{{ statusLabel(draft.status) }} · {{ formatTime(draft.createdAt) }}</small></span><ChevronRight :size="16" /></button>
         <div v-if="!loading && drafts.length === 0" class="empty-state"><FileCheck2 :size="22" /><span>Không có bản nháp chờ duyệt.</span></div>
       </template>
     </div>
@@ -554,7 +554,7 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
 }
 .action-type-badge.updatetask {
   background: #fffbeb;
-  color: #d97706;
+  color: #92400e;
   border: 1px solid #fde68a;
 }
 .action-card-body {

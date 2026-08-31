@@ -190,6 +190,54 @@ public sealed class AiActionComposerApiTests : IClassFixture<IntegrationTestFact
                 IsActive = true
             }));
             await catalogDb.SaveChangesAsync();
+
+            var verifiedSkills = await catalogDb.OrganizationSkills
+                .Where(item => item.OrganizationId == scope.OrganizationId && item.IsActive)
+                .ToListAsync();
+            var evidenceProject = new Project
+            {
+                OrganizationId = scope.OrganizationId,
+                Name = "Action Composer verified skill baseline",
+                Code = $"EV-{Guid.NewGuid():N}"[..12],
+                OwnerId = DefaultUserId,
+                Status = "Archived"
+            };
+            var evidenceTask = new TaskItem
+            {
+                ProjectId = evidenceProject.Id,
+                ReporterId = DefaultUserId,
+                AssigneeId = DefaultUserId,
+                Title = "Verified delivery baseline",
+                Status = "Done",
+                Priority = "Medium",
+                EstimatedHours = 8,
+                ActualHours = 8,
+                DueDate = DateTimeOffset.UtcNow.AddDays(-2)
+            };
+            catalogDb.AddRange(evidenceProject, evidenceTask);
+            catalogDb.TaskSkillRequirements.AddRange(verifiedSkills.Select(skill => new TaskSkillRequirement
+            {
+                TaskItemId = evidenceTask.Id,
+                OrganizationSkillId = skill.Id,
+                RequiredLevel = "Proficient",
+                Provenance = TaskSkillService.ProvenanceManual,
+                ConfirmedByUserId = DefaultUserId,
+                ConfirmedAt = DateTimeOffset.UtcNow.AddDays(-2)
+            }));
+            var eligibleMemberIds = await catalogDb.ProjectMembers
+                .Where(item => item.ProjectId == scope.ProjectId)
+                .Select(item => item.UserId)
+                .ToListAsync();
+            catalogDb.TaskCompletionAttributions.AddRange(eligibleMemberIds.Select(memberId => new TaskCompletionAttribution
+            {
+                TaskItemId = evidenceTask.Id,
+                ContributorUserId = memberId,
+                ConfirmedByUserId = DefaultUserId,
+                CompletedAt = DateTimeOffset.UtcNow.AddDays(-2),
+                ConfirmedAt = DateTimeOffset.UtcNow.AddDays(-1),
+                Status = TaskCompletionAttribution.Confirmed
+            }));
+            await catalogDb.SaveChangesAsync();
         }
         var csrf = await GetCsrfTokenAsync(_client);
         var compose = await ComposeAsync(
@@ -218,7 +266,8 @@ public sealed class AiActionComposerApiTests : IClassFixture<IntegrationTestFact
         plan.Options.Single().Commands.Select(item => item.Title).Should().Contain(title => title.Contains("vận hành"));
         plan.Options.Single().Commands.Should().OnlyContain(item =>
             !string.IsNullOrWhiteSpace(item.Description) && item.AcceptanceCriteria.Count >= 2 &&
-            item.EstimatedHours > 0 && item.RequiredSkills.Count > 0);
+            item.EstimatedHours > 0 && item.RequiredSkills.Count > 0 &&
+            item.DueDate.HasValue && item.AssigneeId.HasValue && item.AssigneeMode == "system_suggested");
         plan.Options.Single().Commands.SelectMany(item => item.DependencyCommandIds).Should().NotBeEmpty();
 
         var confirmKey = $"ten-confirm-{Guid.NewGuid():N}";
@@ -251,6 +300,8 @@ public sealed class AiActionComposerApiTests : IClassFixture<IntegrationTestFact
             item.ProjectId == scope.ProjectId && item.SprintId == scope.SprintId)).Should().Be(10);
         var taskIds = await db.TaskItems.Where(item => item.ProjectId == scope.ProjectId && item.SprintId == scope.SprintId)
             .Select(item => item.Id).ToListAsync();
+        (await db.TaskItems.CountAsync(item => taskIds.Contains(item.Id) &&
+            item.DueDate != null && item.AssigneeId != null)).Should().Be(10);
         (await db.TaskSkillRequirements.CountAsync(item => taskIds.Contains(item.TaskItemId))).Should().BeGreaterThanOrEqualTo(10);
         (await db.TaskDependencies.CountAsync(item =>
             taskIds.Contains(item.PredecessorId) && taskIds.Contains(item.SuccessorId))).Should().Be(14);
@@ -444,7 +495,19 @@ public sealed class AiActionComposerApiTests : IClassFixture<IntegrationTestFact
             StartDate = DateTimeOffset.UtcNow.AddDays(-2),
             EndDate = DateTimeOffset.UtcNow.AddDays(12)
         };
-        db.AddRange(organization, project, skill, sprint);
+        var contributorId = Guid.NewGuid();
+        await EnsureUserAsync(db, contributorId, "Action Composer Contributor");
+        db.AddRange(
+            organization,
+            project,
+            skill,
+            sprint,
+            new OrganizationMember { OrganizationId = organization.Id, UserId = DefaultUserId, Role = OrganizationRoleRules.Owner },
+            new OrganizationMember { OrganizationId = organization.Id, UserId = contributorId, Role = OrganizationRoleRules.Member },
+            new OrganizationMemberCapacityProfile { OrganizationId = organization.Id, UserId = DefaultUserId, WeeklyCapacityHours = 40, TimeZoneId = "Asia/Ho_Chi_Minh" },
+            new OrganizationMemberCapacityProfile { OrganizationId = organization.Id, UserId = contributorId, WeeklyCapacityHours = 40, TimeZoneId = "Asia/Ho_Chi_Minh" },
+            new ProjectMember { ProjectId = project.Id, UserId = DefaultUserId, Role = ProjectRoleRules.Manager },
+            new ProjectMember { ProjectId = project.Id, UserId = contributorId, Role = ProjectRoleRules.Member });
         if (viewerId.HasValue)
         {
             db.ProjectMembers.Add(new ProjectMember

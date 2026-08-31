@@ -4,7 +4,7 @@ import { Plus, AlertTriangle, TrendingUp, CheckCircle2, Activity, ChevronRight, 
 import { useRouter } from 'vue-router'
 import { useDashboardContext } from '../composables/dashboard-context'
 import { apiJson } from '../utils/api-client'
-import { formatTimeAgo } from '../utils/formatters'
+import { formatTimeAgo, isTaskOpen, isTaskOverdue } from '../utils/formatters'
 import AttentionRiskCard from '../components/dashboard/AttentionRiskCard.vue'
 import RecentActivityWidget from '../components/dashboard/RecentActivityWidget.vue'
 import StrategicOverviewAI from '../components/dashboard/StrategicOverviewAI.vue'
@@ -62,11 +62,8 @@ const totalTasksCount = computed(() => {
 })
 
 const allTasks = computed<DashboardTask[]>(() => projects.value.flatMap(project => project.tasks || []))
-const openTasksCount = computed(() => allTasks.value.filter(task => !['done', 'cancelled'].includes(task.status.toLowerCase())).length)
-const overdueTasksCount = computed(() => allTasks.value.filter(task => {
-  if (!task.dueDate || ['done', 'cancelled'].includes(task.status.toLowerCase())) return false
-  return new Date(task.dueDate).getTime() < Date.now()
-}).length)
+const openTasksCount = computed(() => allTasks.value.filter(task => isTaskOpen(task.status)).length)
+const overdueTasksCount = computed(() => allTasks.value.filter(task => isTaskOverdue(task)).length)
 const newProjectsThisMonth = computed(() => {
   const now = new Date()
   return projects.value.filter(project => {
@@ -75,7 +72,7 @@ const newProjectsThisMonth = computed(() => {
   }).length
 })
 const nextDueTask = computed(() => allTasks.value
-  .filter(task => task.dueDate && !['done', 'cancelled'].includes(task.status.toLowerCase()))
+  .filter(task => task.dueDate && isTaskOpen(task.status))
   .sort((left, right) => new Date(left.dueDate!).getTime() - new Date(right.dueDate!).getTime())[0] ?? null)
 const nextTaskDetail = computed(() => {
   if (!nextDueTask.value?.dueDate) return 'Chưa có nhiệm vụ mở nào có hạn'
@@ -117,10 +114,13 @@ const chartProjects = computed(() =>
   projects.value.filter(project => project.status !== 'Archived').slice(0, 5),
 )
 
+const normalizedProgress = (value: number | null | undefined) =>
+  Math.min(100, Math.max(0, Number.isFinite(Number(value)) ? Number(value) : 0))
+
 const splinePoints = computed(() => {
   return chartProjects.value.map((project, i) => {
     const x = 65 + i * 90 + 16
-    const progress = Math.min(100, Math.max(0, project.progressPercentage || 0))
+    const progress = normalizedProgress(project.progressPercentage)
     const y = 280 - (progress / 100) * 240
     return { x, y }
   })
@@ -144,11 +144,11 @@ const splinePath = computed(() => {
   return path
 })
 
-const handleMouseEnter = (index: number, event: MouseEvent) => {
+const handleMouseEnter = (index: number) => {
   hoveredIndex.value = index
-  const project = projects.value[index]
+  const project = chartProjects.value[index]
   if (project) {
-    const barHeight = (project.progressPercentage / 100) * 240
+    const barHeight = (normalizedProgress(project.progressPercentage) / 100) * 240
     if (chartMode.value === '3D') {
       tooltipX.value = 65 + index * 90 + 16 + 7
       tooltipY.value = 280 - barHeight - 5 - 15
@@ -283,16 +283,20 @@ const hoveredProject = computed(() => {
         <!-- Project Statistics Chart Card -->
         <section class="custom-chart-card">
           <div class="custom-chart-header">
-            <h3>Thống kê tiến độ Dự án</h3>
+            <h2>Thống kê tiến độ Dự án</h2>
             <div class="chart-pills">
               <button 
                 class="chart-pill" 
                 :class="{ active: chartMode === '2D' }" 
+                type="button"
+                :aria-pressed="chartMode === '2D'"
                 @click="chartMode = '2D'"
               >Biểu đồ 2D</button>
               <button 
                 class="chart-pill" 
                 :class="{ active: chartMode === '3D' }" 
+                type="button"
+                :aria-pressed="chartMode === '3D'"
                 @click="chartMode = '3D'"
               >Biểu đồ 3D</button>
             </div>
@@ -304,6 +308,8 @@ const hoveredProject = computed(() => {
             <div 
               v-if="hoveredProject" 
               class="chart-tooltip-glass" 
+              role="status"
+              aria-live="polite"
               :style="tooltipStyle"
               style="
                 background: rgba(255, 255, 255, 0.95);
@@ -328,7 +334,7 @@ const hoveredProject = computed(() => {
                   <span style="width: 6px; height: 6px; border-radius: 50%; background: #2563eb; display: inline-block;"></span>
                   Tiến độ
                 </span>
-                <strong style="color: #0f172a; font-weight: 800;">{{ hoveredProject.progressPercentage }}%</strong>
+                <strong style="color: #0f172a; font-weight: 800;">{{ normalizedProgress(hoveredProject.progressPercentage) }}%</strong>
               </div>
               <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
                 <span style="color: #64748b; display: flex; align-items: center; gap: 6px;">
@@ -348,7 +354,7 @@ const hoveredProject = computed(() => {
 
             <!-- SVG 2D Combo Chart -->
             <div v-if="chartMode === '2D'" class="custom-chart-body" style="height: 340px; border-bottom: none; overflow: visible; display: flex; justify-content: center; align-items: center; padding: 0; position: relative;">
-              <svg viewBox="0 0 540 320" style="width: 100%; height: 100%; overflow: visible;" class="svg-modern-chart">
+              <svg viewBox="0 0 540 320" style="width: 100%; height: 100%; overflow: visible;" class="svg-modern-chart" role="img" aria-label="Tiến độ các dự án đang hoạt động">
                 <!-- Gradients Definitions -->
                 <defs>
                   <linearGradient id="bar-grad" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -375,31 +381,38 @@ const hoveredProject = computed(() => {
                 <!-- Y-Axis Grid Lines and Labels -->
                 <g class="grid-lines" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="4,4">
                   <!-- 100% -->
-                  <text x="35" y="44" text-anchor="end" fill="#94a3b8" font-size="10" font-weight="600" stroke="none">100%</text>
+                  <text x="35" y="44" text-anchor="end" fill="#64748b" font-size="10" font-weight="600" stroke="none">100%</text>
                   <line x1="45" y1="40" x2="520" y2="40" />
 
                   <!-- 75% -->
-                  <text x="35" y="104" text-anchor="end" fill="#94a3b8" font-size="10" font-weight="600" stroke="none">75%</text>
+                  <text x="35" y="104" text-anchor="end" fill="#64748b" font-size="10" font-weight="600" stroke="none">75%</text>
                   <line x1="45" y1="100" x2="520" y2="100" />
 
                   <!-- 50% -->
-                  <text x="35" y="164" text-anchor="end" fill="#94a3b8" font-size="10" font-weight="600" stroke="none">50%</text>
+                  <text x="35" y="164" text-anchor="end" fill="#64748b" font-size="10" font-weight="600" stroke="none">50%</text>
                   <line x1="45" y1="160" x2="520" y2="160" />
 
                   <!-- 25% -->
-                  <text x="35" y="224" text-anchor="end" fill="#94a3b8" font-size="10" font-weight="600" stroke="none">25%</text>
+                  <text x="35" y="224" text-anchor="end" fill="#64748b" font-size="10" font-weight="600" stroke="none">25%</text>
                   <line x1="45" y1="220" x2="520" y2="220" />
 
                   <!-- 0% -->
-                  <text x="35" y="284" text-anchor="end" fill="#94a3b8" font-size="10" font-weight="600" stroke="none">0%</text>
+                  <text x="35" y="284" text-anchor="end" fill="#64748b" font-size="10" font-weight="600" stroke="none">0%</text>
                 </g>
                 
                 <!-- Columns (Bars) Group -->
                 <g v-for="(project, i) in chartProjects" :key="'bar-' + project.id"
                    class="svg-bar-group" 
                    style="cursor: pointer;"
+                   role="link"
+                   tabindex="0"
+                   :aria-label="`Mở dự án ${project.name}, tiến độ ${normalizedProgress(project.progressPercentage)}%`"
                    @click="selectProject(project.id)"
-                   @mouseenter="handleMouseEnter(i, $event)"
+                   @keydown.enter="selectProject(project.id)"
+                   @keydown.space.prevent="selectProject(project.id)"
+                   @focus="handleMouseEnter(i)"
+                   @blur="handleMouseLeave"
+                   @mouseenter="handleMouseEnter(i)"
                    @mouseleave="handleMouseLeave"
                 >
                   <!-- Background Bar Track -->
@@ -415,9 +428,9 @@ const hoveredProject = computed(() => {
                   <!-- Progress Bar Capsule -->
                   <rect 
                     :x="65 + i * 90" 
-                    :y="280 - (project.progressPercentage / 100) * 240" 
+                    :y="280 - (normalizedProgress(project.progressPercentage) / 100) * 240"
                     width="32" 
-                    :height="Math.max((project.progressPercentage / 100) * 240, 8)" 
+                    :height="Math.max((normalizedProgress(project.progressPercentage) / 100) * 240, 8)"
                     :fill="hoveredIndex === i ? 'url(#bar-grad-hover)' : 'url(#bar-grad)'" 
                     rx="6"
                     :filter="hoveredIndex === i ? 'url(#shadow-glow)' : 'none'"
@@ -428,9 +441,9 @@ const hoveredProject = computed(() => {
                   <rect 
                     v-if="hoveredIndex === i"
                     :x="63 + i * 90" 
-                    :y="278 - (project.progressPercentage / 100) * 240" 
+                    :y="278 - (normalizedProgress(project.progressPercentage) / 100) * 240"
                     width="36" 
-                    :height="Math.max((project.progressPercentage / 100) * 240 + 4, 12)" 
+                    :height="Math.max((normalizedProgress(project.progressPercentage) / 100) * 240 + 4, 12)"
                     fill="none"
                     stroke="#3b82f6"
                     stroke-width="1.5"
@@ -441,14 +454,14 @@ const hoveredProject = computed(() => {
                   <!-- Project progress percentage label on top of the bar -->
                   <text 
                     :x="65 + i * 90 + 16" 
-                    :y="280 - (project.progressPercentage / 100) * 240 - 8" 
+                    :y="280 - (normalizedProgress(project.progressPercentage) / 100) * 240 - 8"
                     text-anchor="middle" 
                     :fill="hoveredIndex === i ? 'var(--primary)' : '#64748b'" 
                     font-size="10" 
                     font-weight="700"
                     style="transition: fill 0.2s;"
                   >
-                    {{ project.progressPercentage }}%
+                    {{ normalizedProgress(project.progressPercentage) }}%
                   </text>
                   
                   <!-- X-Axis Labels below the base line -->
@@ -487,7 +500,7 @@ const hoveredProject = computed(() => {
                     stroke-width="2.5"
                     style="cursor: pointer; transition: all 0.2s;"
                     :style="{ transform: hoveredIndex === i ? 'scale(1.4)' : 'none', transformOrigin: `${pt.x}px ${pt.y}px` }"
-                    @mouseenter="handleMouseEnter(i, $event)"
+                    @mouseenter="handleMouseEnter(i)"
                     @mouseleave="handleMouseLeave"
                   />
                   <circle 
@@ -507,7 +520,7 @@ const hoveredProject = computed(() => {
 
             <!-- SVG 3D Bar Chart -->
             <div v-else-if="chartMode === '3D'" class="custom-chart-body" style="height: 340px; border-bottom: none; overflow: visible; display: flex; justify-content: center; align-items: center; padding: 0; position: relative;">
-              <svg viewBox="0 0 540 320" style="width: 100%; height: 100%; overflow: visible;" class="svg-3d-chart">
+              <svg viewBox="0 0 540 320" style="width: 100%; height: 100%; overflow: visible;" class="svg-3d-chart" role="img" aria-label="Biểu đồ khối tiến độ các dự án đang hoạt động">
                 <!-- Gradients Definitions -->
                 <defs>
                   <linearGradient id="grad-3d-front" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -531,23 +544,23 @@ const hoveredProject = computed(() => {
                 <!-- Y-Axis Grid lines background -->
                 <g stroke="#e2e8f0" stroke-width="1" stroke-dasharray="4,4">
                   <!-- 100% -->
-                  <text x="35" y="44" text-anchor="end" fill="#94a3b8" font-size="10" font-weight="600" stroke="none">100%</text>
+                  <text x="35" y="44" text-anchor="end" fill="#64748b" font-size="10" font-weight="600" stroke="none">100%</text>
                   <line x1="45" y1="40" x2="520" y2="40" />
 
                   <!-- 75% -->
-                  <text x="35" y="104" text-anchor="end" fill="#94a3b8" font-size="10" font-weight="600" stroke="none">75%</text>
+                  <text x="35" y="104" text-anchor="end" fill="#64748b" font-size="10" font-weight="600" stroke="none">75%</text>
                   <line x1="45" y1="100" x2="520" y2="100" />
 
                   <!-- 50% -->
-                  <text x="35" y="164" text-anchor="end" fill="#94a3b8" font-size="10" font-weight="600" stroke="none">50%</text>
+                  <text x="35" y="164" text-anchor="end" fill="#64748b" font-size="10" font-weight="600" stroke="none">50%</text>
                   <line x1="45" y1="160" x2="520" y2="160" />
 
                   <!-- 25% -->
-                  <text x="35" y="224" text-anchor="end" fill="#94a3b8" font-size="10" font-weight="600" stroke="none">25%</text>
+                  <text x="35" y="224" text-anchor="end" fill="#64748b" font-size="10" font-weight="600" stroke="none">25%</text>
                   <line x1="45" y1="220" x2="520" y2="220" />
 
                   <!-- 0% -->
-                  <text x="35" y="284" text-anchor="end" fill="#94a3b8" font-size="10" font-weight="600" stroke="none">0%</text>
+                  <text x="35" y="284" text-anchor="end" fill="#64748b" font-size="10" font-weight="600" stroke="none">0%</text>
                 </g>
                 
                 <!-- 3D Bars Loop -->
@@ -555,16 +568,23 @@ const hoveredProject = computed(() => {
                    class="svg-bar-group" 
                    style="cursor: pointer; transition: transform 0.2s ease-in-out; transform-origin: center bottom;"
                    :style="{ transform: hoveredIndex === i ? 'translateY(-6px)' : 'none' }"
+                   role="link"
+                   tabindex="0"
+                   :aria-label="`Mở dự án ${project.name}, tiến độ ${normalizedProgress(project.progressPercentage)}%`"
                    @click="selectProject(project.id)"
-                   @mouseenter="handleMouseEnter(i, $event)"
+                   @keydown.enter="selectProject(project.id)"
+                   @keydown.space.prevent="selectProject(project.id)"
+                   @focus="handleMouseEnter(i)"
+                   @blur="handleMouseLeave"
+                   @mouseenter="handleMouseEnter(i)"
                    @mouseleave="handleMouseLeave"
                 >
                   <!-- Front Face -->
                   <rect 
                     :x="65 + i * 90" 
-                    :y="280 - (project.progressPercentage / 100) * 240" 
+                    :y="280 - (normalizedProgress(project.progressPercentage) / 100) * 240"
                     width="32" 
-                    :height="Math.max((project.progressPercentage / 100) * 240, 5)" 
+                    :height="Math.max((normalizedProgress(project.progressPercentage) / 100) * 240, 5)"
                     fill="url(#grad-3d-front)" 
                     rx="1"
                     :filter="hoveredIndex === i ? 'url(#shadow-3d)' : 'none'"
@@ -573,8 +593,8 @@ const hoveredProject = computed(() => {
                   <!-- Right Face (3D depth) -->
                   <polygon 
                     :points="
-                      (65 + i * 90 + 32) + ',' + (280 - (project.progressPercentage / 100) * 240) + ' ' + 
-                      (65 + i * 90 + 32 + 14) + ',' + (280 - (project.progressPercentage / 100) * 240 - 10) + ' ' + 
+                      (65 + i * 90 + 32) + ',' + (280 - (normalizedProgress(project.progressPercentage) / 100) * 240) + ' ' +
+                      (65 + i * 90 + 32 + 14) + ',' + (280 - (normalizedProgress(project.progressPercentage) / 100) * 240 - 10) + ' ' +
                       (65 + i * 90 + 32 + 14) + ',' + (280 - 10) + ' ' + 
                       (65 + i * 90 + 32) + ',' + '280'
                     " 
@@ -584,10 +604,10 @@ const hoveredProject = computed(() => {
                   <!-- Top Face (3D lid) -->
                   <polygon 
                     :points="
-                      (65 + i * 90) + ',' + (280 - (project.progressPercentage / 100) * 240) + ' ' + 
-                      (65 + i * 90 + 14) + ',' + (280 - (project.progressPercentage / 100) * 240 - 10) + ' ' + 
-                      (65 + i * 90 + 32 + 14) + ',' + (280 - (project.progressPercentage / 100) * 240 - 10) + ' ' + 
-                      (65 + i * 90 + 32) + ',' + (280 - (project.progressPercentage / 100) * 240)
+                      (65 + i * 90) + ',' + (280 - (normalizedProgress(project.progressPercentage) / 100) * 240) + ' ' +
+                      (65 + i * 90 + 14) + ',' + (280 - (normalizedProgress(project.progressPercentage) / 100) * 240 - 10) + ' ' +
+                      (65 + i * 90 + 32 + 14) + ',' + (280 - (normalizedProgress(project.progressPercentage) / 100) * 240 - 10) + ' ' +
+                      (65 + i * 90 + 32) + ',' + (280 - (normalizedProgress(project.progressPercentage) / 100) * 240)
                     " 
                     fill="url(#grad-3d-top)" 
                   />
@@ -595,13 +615,13 @@ const hoveredProject = computed(() => {
                   <!-- Value text centered on top of the bar -->
                   <text 
                     :x="65 + i * 90 + 22" 
-                    :y="280 - (project.progressPercentage / 100) * 240 - 16" 
+                    :y="280 - (normalizedProgress(project.progressPercentage) / 100) * 240 - 16"
                     text-anchor="middle" 
                     :fill="hoveredIndex === i ? 'var(--primary)' : '#64748b'" 
                     font-size="10" 
                     font-weight="850"
                   >
-                    {{ project.progressPercentage }}%
+                    {{ normalizedProgress(project.progressPercentage) }}%
                   </text>
                   
                   <!-- Label text below the base line -->

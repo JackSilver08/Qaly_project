@@ -1323,7 +1323,8 @@ function disconnectLiveKit() {
 
 <template>
   <div class="gm" :class="{ 'gm--light': isLightTheme }">
-    <div v-if="showPrivacyGate" class="gm-privacy-overlay" role="presentation" @click.self="closePrivacyGate">
+    <h1 class="sr-only">Cuộc họp nhóm Qaly</h1>
+    <div v-if="showPrivacyGate" class="gm-privacy-overlay" role="presentation" @click.self="closePrivacyGate" @keydown.esc="closePrivacyGate">
       <section class="gm-privacy-dialog" role="dialog" aria-modal="true" aria-labelledby="meeting-privacy-title">
         <header class="gm-privacy-dialog__header">
           <div class="gm-privacy-dialog__title">
@@ -1375,10 +1376,10 @@ function disconnectLiveKit() {
           <div class="gm-privacy-field">
             <span>Provider</span>
             <div class="gm-privacy-segmented">
-              <button type="button" :class="{ active: privacyProcessingMode === 'local_only' }" @click="privacyProcessingMode = 'local_only'">
+              <button type="button" :class="{ active: privacyProcessingMode === 'local_only' }" :aria-pressed="privacyProcessingMode === 'local_only'" @click="privacyProcessingMode = 'local_only'">
                 <Server :size="16" /> Local only
               </button>
-              <button type="button" :disabled="!selectedPrivacyPolicy?.allowCloudProcessing" :class="{ active: privacyProcessingMode === 'cloud_allowed' }" @click="privacyProcessingMode = 'cloud_allowed'">
+              <button type="button" :disabled="!selectedPrivacyPolicy?.allowCloudProcessing" :class="{ active: privacyProcessingMode === 'cloud_allowed' }" :aria-pressed="privacyProcessingMode === 'cloud_allowed'" @click="privacyProcessingMode = 'cloud_allowed'">
                 <Cloud :size="16" /> Cloud allowed
               </button>
             </div>
@@ -1400,7 +1401,7 @@ function disconnectLiveKit() {
             <span>Tôi đồng ý ghi nhận và xử lý nội dung cuộc họp để tạo phụ đề, tóm tắt và action item theo policy, provider và thời hạn đã chọn.</span>
           </label>
 
-          <div v-if="privacyError" class="gm-privacy-error"><AlertTriangle :size="16" />{{ privacyError }}</div>
+          <div v-if="privacyError" class="gm-privacy-error" role="alert"><AlertTriangle :size="16" />{{ privacyError }}</div>
         </div>
 
         <footer class="gm-privacy-dialog__footer">
@@ -1431,14 +1432,14 @@ function disconnectLiveKit() {
           <span class="gm-status__dot"></span>
           {{ meetingConnectionLabel }}
         </div>
-        <button class="gm-topbar-btn" type="button" @click="toggleTheme" :title="isLightTheme ? 'Giao diện tối' : 'Giao diện sáng'">
+        <button class="gm-topbar-btn" type="button" @click="toggleTheme" :title="isLightTheme ? 'Giao diện tối' : 'Giao diện sáng'" :aria-label="isLightTheme ? 'Chuyển sang giao diện tối' : 'Chuyển sang giao diện sáng'">
           <Moon v-if="isLightTheme" :size="16" />
           <Sun v-else :size="16" />
         </button>
-        <button class="gm-topbar-btn" type="button" @click="copyMeetingLink" title="Sao chép link phòng họp">
+        <button class="gm-topbar-btn" type="button" @click="copyMeetingLink" title="Sao chép link phòng họp" aria-label="Sao chép link phòng họp">
           <Copy :size="16" />
         </button>
-        <button class="gm-topbar-btn" type="button" @click="sidebarOpen = !sidebarOpen" :title="sidebarOpen ? 'Ẩn Sidebar' : 'Hiện Sidebar'">
+        <button class="gm-topbar-btn" type="button" @click="sidebarOpen = !sidebarOpen" :title="sidebarOpen ? 'Ẩn Sidebar' : 'Hiện Sidebar'" :aria-label="sidebarOpen ? 'Ẩn thanh bên cuộc họp' : 'Hiện thanh bên cuộc họp'">
           <PanelRightClose v-if="sidebarOpen" :size="16" />
           <PanelRightOpen v-else :size="16" />
         </button>
@@ -1506,7 +1507,7 @@ function disconnectLiveKit() {
             <span class="gm-dot gm-dot--green"></span>
             {{ participantCount }} người tham gia
           </div>
-          <div v-if="meetingError" class="gm-grid__error">
+          <div v-if="meetingError" class="gm-grid__error" role="alert">
             <AlertTriangle :size="16" />
             {{ meetingError }}
           </div>
@@ -1541,7 +1542,7 @@ function disconnectLiveKit() {
 
         <!-- Speech Error Banner -->
         <Transition name="caption-fade">
-          <div v-if="speechError" class="gm-speech-error">
+          <div v-if="speechError" class="gm-speech-error" role="alert">
             <AlertTriangle :size="14" />
             <span>{{ speechError }}</span>
             <button type="button" @click="speechRec.stop(); speechRec.start();" class="gm-speech-error__retry">Thử lại</button>
@@ -1569,27 +1570,33 @@ function disconnectLiveKit() {
       <!-- ── Sidebar ── -->
       <aside v-show="sidebarOpen" class="gm-sidebar">
         <!-- Tab Switcher -->
-        <nav class="gm-tabs">
-          <button
+        <nav class="gm-tabs" role="tablist" aria-label="Nội dung cuộc họp">
+          <button type="button"
             class="gm-tab"
             :class="{ 'gm-tab--active': activeSidebarTab === 'participants' }"
+            role="tab"
+            :aria-selected="activeSidebarTab === 'participants'"
             @click="activeSidebarTab = 'participants'"
           >
             <Users :size="15" />
             <span>Thành viên</span>
           </button>
-          <button
+          <button type="button"
             class="gm-tab"
             :class="{ 'gm-tab--active': activeSidebarTab === 'transcript' }"
+            role="tab"
+            :aria-selected="activeSidebarTab === 'transcript'"
             @click="activeSidebarTab = 'transcript'"
           >
             <Captions :size="15" />
             <span>Phụ đề</span>
             <span v-if="transcriptList.length > 0" class="gm-tab__badge">{{ transcriptList.length }}</span>
           </button>
-          <button
+          <button type="button"
             class="gm-tab"
             :class="{ 'gm-tab--active': activeSidebarTab === 'checknote' }"
+            role="tab"
+            :aria-selected="activeSidebarTab === 'checknote'"
             @click="activeSidebarTab = 'checknote'"
           >
             <Sparkles :size="15" />
@@ -1674,8 +1681,13 @@ function disconnectLiveKit() {
                 <div
                   class="gm-bubble__text"
                   @dblclick="editTranscriptMessage(idx)"
+                  @keydown.enter="editTranscriptMessage(idx)"
+                  @keydown.space.prevent="editTranscriptMessage(idx)"
                   v-if="editingTranscriptIdx !== idx"
-                  title="Nhấp đúp để chỉnh sửa"
+                  role="button"
+                  tabindex="0"
+                  :aria-label="`Chỉnh sửa phụ đề của ${log.senderName}`"
+                  title="Nhấp đúp hoặc nhấn Enter để chỉnh sửa"
                 >
                   {{ log.text }}
                 </div>
@@ -1683,6 +1695,7 @@ function disconnectLiveKit() {
                   v-else
                   type="text"
                   v-model="editingTranscriptText"
+                  aria-label="Chỉnh sửa nội dung phụ đề"
                   class="gm-bubble__edit"
                   @blur="saveTranscriptMessage(idx)"
                   @keyup.enter="saveTranscriptMessage(idx)"
@@ -1709,14 +1722,14 @@ function disconnectLiveKit() {
             </div>
 
             <label class="gm-field-label">Dự án đích</label>
-            <select v-model="selectedProjectId" class="gm-select">
+            <select v-model="selectedProjectId" aria-label="Dự án đích của biên bản" class="gm-select">
               <option value="">-- Chọn dự án --</option>
               <option v-for="proj in projects" :key="proj.id" :value="proj.id">
                 {{ proj.name }}
               </option>
             </select>
 
-            <button
+            <button type="button"
               class="gm-btn-generate"
               @click="generateChecknote"
               :disabled="!selectedProjectId || transcriptList.length === 0"
@@ -1730,7 +1743,7 @@ function disconnectLiveKit() {
           </div>
 
           <!-- Loading -->
-          <div v-else-if="isGeneratingChecknote" class="gm-checknote-loading">
+          <div v-else-if="isGeneratingChecknote" class="gm-checknote-loading" role="status" aria-live="polite">
             <div class="gm-pulse-ring"></div>
             <Sparkles :size="24" class="gm-pulse-icon" />
             <span>{{ checknoteProgressStep || 'Đang phân tích cuộc họp bằng AI...' }}</span>
@@ -1789,6 +1802,7 @@ function disconnectLiveKit() {
                     <input
                       type="text"
                       v-model="item.title"
+                      :aria-label="`Tiêu đề công việc ${idx + 1}`"
                       class="gm-cn-card__title"
                       placeholder="Tiêu đề công việc"
                       :disabled="item.mappingStatus === 'Linked'"
@@ -1797,6 +1811,7 @@ function disconnectLiveKit() {
                   </div>
                   <textarea
                     v-model="item.description"
+                    :aria-label="`Mô tả công việc ${idx + 1}`"
                     class="gm-cn-card__desc"
                     placeholder="Mô tả..."
                     :disabled="item.mappingStatus === 'Linked'"
@@ -1807,7 +1822,7 @@ function disconnectLiveKit() {
                   <div class="gm-cn-card__meta">
                     <div class="gm-cn-field">
                       <label>Ưu tiên</label>
-                      <select v-model="item.priority" :disabled="item.mappingStatus === 'Linked'">
+                      <select v-model="item.priority" :aria-label="`Ưu tiên công việc ${idx + 1}`" :disabled="item.mappingStatus === 'Linked'">
                         <option value="Low">Thấp</option>
                         <option value="Medium">Trung bình</option>
                         <option value="High">Cao</option>
@@ -1815,13 +1830,13 @@ function disconnectLiveKit() {
                     </div>
                     <div class="gm-cn-field">
                       <label>Hạn chót</label>
-                      <input type="date" v-model="item.dueDateFormatted" :disabled="item.mappingStatus === 'Linked'" />
+                      <input type="date" v-model="item.dueDateFormatted" :aria-label="`Hạn chót công việc ${idx + 1}`" :disabled="item.mappingStatus === 'Linked'" />
                     </div>
                   </div>
                   <div class="gm-cn-card__meta">
                     <div class="gm-cn-field" style="flex:1">
                       <label>Gán cho</label>
-                      <select v-model="item.assigneeId" :disabled="item.mappingStatus === 'Linked'">
+                      <select v-model="item.assigneeId" :aria-label="`Người phụ trách công việc ${idx + 1}`" :disabled="item.mappingStatus === 'Linked'">
                         <option value="">-- Chọn --</option>
                         <option v-for="m in projectMembers" :key="m.userId" :value="m.userId">
                           {{ m.fullName }}
@@ -1830,7 +1845,7 @@ function disconnectLiveKit() {
                     </div>
                   </div>
                   <div v-if="item.mappingStatus !== 'Linked'" class="gm-cn-card__actions">
-                    <button
+                    <button type="button"
                       class="gm-btn-create-task"
                       @click="createTaskFromCard(idx)"
                       :disabled="isCreatingTask === idx"
@@ -1843,7 +1858,7 @@ function disconnectLiveKit() {
               </div>
             </div>
 
-            <button class="gm-btn-reset" @click="resetChecknote">
+            <button type="button" class="gm-btn-reset" @click="resetChecknote">
               Phân tích lại
             </button>
           </div>

@@ -56,7 +56,11 @@ public partial class TaskAttentionSignalWorker : BackgroundService
             .Include(task => task.Project)
             .Include(task => task.Assignees)
             .Include(task => task.ViewEvents)
+            .AsSplitQuery()
             .Where(task => task.Status != "Done" && (task.AssigneeId != null || task.Assignees.Any()))
+            .OrderBy(task => task.DueDate)
+            .ThenBy(task => task.CreatedAt)
+            .ThenBy(task => task.Id)
             .Take(500)
             .ToListAsync(ct);
 

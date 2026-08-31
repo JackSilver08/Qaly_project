@@ -791,8 +791,8 @@ onBeforeUnmount(clearPoll)
           @submit.prevent="createCatalogSkill"
         >
           <strong>Thêm vào catalog tổ chức</strong>
-          <input v-model="newSkillName" maxlength="100" placeholder="Ví dụ: Vue.js, ASP.NET Core…" required />
-          <input v-model="newSkillDescription" maxlength="500" placeholder="Mô tả ngắn (không bắt buộc)" />
+          <input v-model="newSkillName" aria-label="Tên kỹ năng mới" maxlength="100" placeholder="Ví dụ: Vue.js, ASP.NET Core…" required />
+          <input v-model="newSkillDescription" aria-label="Mô tả kỹ năng mới" maxlength="500" placeholder="Mô tả ngắn (không bắt buộc)" />
           <button type="submit" class="secondary-button" :disabled="catalogSaving || !newSkillName.trim()">
             <LoaderCircle v-if="catalogSaving" :size="15" class="spin" />
             <Plus v-else :size="15" />
@@ -852,7 +852,7 @@ onBeforeUnmount(clearPoll)
           AI đang ở chế độ tắt/degraded; luồng gắn thủ công phía trên vẫn dùng được.
         </div>
 
-        <div v-if="isActive" class="progress-state" data-testid="task-skill-ai-running">
+        <div v-if="isActive" class="progress-state" role="status" aria-live="polite" data-testid="task-skill-ai-running">
           <div class="progress-track"><span :style="{ width: `${Math.max(job?.progressPercent ?? 5, 5)}%` }" /></div>
           <small>{{ statusLabel }} · lần {{ job?.attemptCount ?? 0 }}/{{ job?.maxAttempts ?? 0 }}</small>
         </div>
@@ -885,7 +885,7 @@ onBeforeUnmount(clearPoll)
                 <small>Độ tin cậy {{ confidenceLabel(suggestion.confidence) }}</small>
               </span>
             </label>
-            <select v-model="suggestion.requiredLevel" :disabled="!suggestion.selected">
+            <select v-model="suggestion.requiredLevel" :aria-label="`Mức yêu cầu cho kỹ năng ${suggestion.canonicalName}`" :disabled="!suggestion.selected">
               <option v-for="level in levels" :key="level" :value="level">
                 {{ levelLabel(level) }}
               </option>

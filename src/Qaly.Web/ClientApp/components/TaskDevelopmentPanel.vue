@@ -57,7 +57,7 @@ function workflowLabel(value: string | null, status: string) {
       <button class="refresh-button" type="button" title="Làm mới" :disabled="loading" @click="load"><Loader2 v-if="loading" class="spin" :size="15" /><RefreshCw v-else :size="15" /></button>
     </header>
     <div v-if="loading && !development" class="development-state"><Loader2 class="spin" :size="18" /> Đang tải dữ liệu GitHub...</div>
-    <div v-else-if="loadError" class="development-state is-error"><span>{{ loadError }}</span><button @click="load">Thử lại</button></div>
+    <div v-else-if="loadError" class="development-state is-error" role="alert"><span>{{ loadError }}</span><button type="button" @click="load">Thử lại</button></div>
     <div v-else-if="!development || activityCount === 0" class="development-empty"><CircleDot :size="20" /><div><strong>Chưa có hoạt động GitHub</strong><p>Đặt mã task vào branch, commit hoặc PR, ví dụ <code>QALY-284</code>.</p></div></div>
     <template v-else>
       <div :class="['delivery-message', deliveryStatus.tone]" role="status">
@@ -82,8 +82,8 @@ function workflowLabel(value: string | null, status: string) {
 
       <button v-if="activityCount > 3" class="show-more" type="button" @click="expanded = !expanded">{{ expanded ? 'Thu gọn' : `Xem toàn bộ ${activityCount} hoạt động` }}</button>
       <div v-if="expanded" class="activity-history">
-        <a v-for="commit in development.commits.slice(1)" :key="commit.sha" :href="commit.url" target="_blank"><GitCommit :size="14" /><span>{{ commit.message }}</span><small>{{ commit.sha.slice(0, 7) }}</small></a>
-        <a v-for="release in development.releases" :key="release.tagName" :href="release.url" target="_blank"><PackageCheck :size="14" /><span>{{ release.name || release.tagName }}</span><small>{{ date(release.publishedAt) }}</small></a>
+        <a v-for="commit in development.commits.slice(1)" :key="commit.sha" :href="commit.url" target="_blank" rel="noopener noreferrer"><GitCommit :size="14" /><span>{{ commit.message }}</span><small>{{ commit.sha.slice(0, 7) }}</small></a>
+        <a v-for="release in development.releases" :key="release.tagName" :href="release.url" target="_blank" rel="noopener noreferrer"><PackageCheck :size="14" /><span>{{ release.name || release.tagName }}</span><small>{{ date(release.publishedAt) }}</small></a>
       </div>
     </template>
   </section>

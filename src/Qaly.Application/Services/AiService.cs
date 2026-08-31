@@ -856,7 +856,7 @@ Yêu cầu:
     }
 
     private static bool IsDone(TaskItem task)
-        => IsStatus(task, "Done");
+        => TaskStatusRules.IsDone(task.Status);
 
     private static bool IsStatus(TaskItem task, string status)
         => string.Equals(task.Status, status, StringComparison.OrdinalIgnoreCase);
@@ -874,9 +874,7 @@ Yêu cầu:
         => task.AssigneeId == userId || task.Assignees.Any(assignment => assignment.UserId == userId);
 
     private static bool IsClosedForAssignment(string? status)
-        => string.Equals(status, "Done", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(status, "Cancelled", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(status, "Canceled", StringComparison.OrdinalIgnoreCase);
+        => TaskStatusRules.IsClosed(status);
 
     private static int SkillLevelRank(string value)
         => value switch
@@ -893,7 +891,7 @@ Yêu cầu:
         => rowVersion.Length == 0 ? string.Empty : Convert.ToBase64String(rowVersion);
 
     private static bool IsTaskOverdue(TaskItem task)
-        => task.DueDate.HasValue && task.DueDate.Value < DateTimeOffset.UtcNow && !IsDone(task);
+        => TaskStatusRules.IsOverdue(task.Status, task.DueDate, DateTimeOffset.UtcNow);
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Warning, Message = "Unauthorized AI summary request for project {ProjectId} by user {UserId}")]
     private static partial void LogUnauthorizedSummaryRequest(ILogger logger, Guid projectId, Guid userId);

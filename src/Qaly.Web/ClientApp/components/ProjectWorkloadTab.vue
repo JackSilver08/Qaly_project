@@ -455,7 +455,7 @@ watch(
             <details v-if="item.alternatives.length"><summary>Phương án khác</summary><p v-for="alternative in item.alternatives" :key="alternative.userId"><strong>{{ alternative.fullName }}</strong> — {{ alternative.tradeOff }}</p></details>
             <div class="source-links">
               <template v-for="key in item.sourceRefs" :key="key">
-                <a v-if="sourceByKey.get(key)?.url" :href="sourceByKey.get(key)?.url ?? '#'" target="_blank"><Link2 :size="12" />{{ sourceByKey.get(key)?.label }}</a>
+                <a v-if="sourceByKey.get(key)?.url" :href="sourceByKey.get(key)?.url ?? '#'" target="_blank" rel="noopener noreferrer"><Link2 :size="12" />{{ sourceByKey.get(key)?.label }}</a>
                 <span v-else><ShieldCheck :size="12" />{{ sourceByKey.get(key)?.label ?? key }}</span>
               </template>
             </div>
@@ -471,17 +471,17 @@ watch(
       </section>
     </template>
 
-    <div v-if="editingMember" class="modal-backdrop" @click.self="editingMember = null">
+    <div v-if="editingMember" class="modal-backdrop" @click.self="editingMember = null" @keydown.esc="editingMember = null">
       <section class="capacity-modal" role="dialog" aria-modal="true" aria-label="Cập nhật capacity">
-        <header><div><span class="eyebrow">Capacity khai báo</span><h3>{{ editingMember.fullName }}</h3></div><button type="button" class="icon-button" @click="editingMember = null"><X :size="18" /></button></header>
+        <header><div><span class="eyebrow">Capacity khai báo</span><h3>{{ editingMember.fullName }}</h3></div><button type="button" class="icon-button" aria-label="Đóng cửa sổ capacity" @click="editingMember = null"><X :size="18" /></button></header>
         <label>Giờ làm việc mỗi tuần <input v-model.number="capacityHours" type="number" min="1" max="168" step="0.5" /></label>
         <div class="availability-heading"><strong>Khoảng không sẵn sàng / giảm capacity</strong><button type="button" class="text-button" @click="addAvailabilityWindow"><Plus :size="14" />Thêm khoảng</button></div>
         <article v-for="(item, index) in availabilityWindows" :key="item.id ?? index" class="availability-row">
-          <select v-model="item.kind"><option value="Unavailable">Không sẵn sàng</option><option value="ReducedCapacity">Giảm capacity</option></select>
-          <input type="datetime-local" :value="windowDateTime(item.startsAt)" @input="updateWindowDate(index, 'startsAt', ($event.target as HTMLInputElement).value)" />
-          <input type="datetime-local" :value="windowDateTime(item.endsAt)" @input="updateWindowDate(index, 'endsAt', ($event.target as HTMLInputElement).value)" />
-          <input v-if="item.kind === 'ReducedCapacity'" v-model.number="item.availableHours" type="number" min="0" placeholder="Giờ còn lại" />
-          <button type="button" class="icon-button danger" @click="availabilityWindows.splice(index, 1)"><Trash2 :size="15" /></button>
+          <select v-model="item.kind" :aria-label="`Loại điều chỉnh capacity ${index + 1}`"><option value="Unavailable">Không sẵn sàng</option><option value="ReducedCapacity">Giảm capacity</option></select>
+          <input type="datetime-local" :value="windowDateTime(item.startsAt)" :aria-label="`Bắt đầu khoảng ${index + 1}`" @input="updateWindowDate(index, 'startsAt', ($event.target as HTMLInputElement).value)" />
+          <input type="datetime-local" :value="windowDateTime(item.endsAt)" :aria-label="`Kết thúc khoảng ${index + 1}`" @input="updateWindowDate(index, 'endsAt', ($event.target as HTMLInputElement).value)" />
+          <input v-if="item.kind === 'ReducedCapacity'" v-model.number="item.availableHours" type="number" min="0" placeholder="Giờ còn lại" :aria-label="`Số giờ còn lại của khoảng ${index + 1}`" />
+          <button type="button" class="icon-button danger" :aria-label="`Xóa khoảng capacity ${index + 1}`" @click="availabilityWindows.splice(index, 1)"><Trash2 :size="15" /></button>
         </article>
         <p class="modal-note">Thông tin này chỉ dùng cho capacity. Không nhập lý do nghỉ hoặc dữ liệu nhạy cảm.</p>
         <footer><button type="button" class="ghost-button" @click="editingMember = null">Hủy</button><button type="button" class="primary-button" :disabled="proposalBusy" @click="saveCapacity"><Save :size="15" />Xác nhận lưu</button></footer>

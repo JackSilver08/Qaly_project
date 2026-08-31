@@ -188,7 +188,7 @@ onBeforeUnmount(() => { pollToken++ })
         <select v-if="organizationScopes.length > 1" v-model="selectedOrganizationId" class="scope-select" aria-label="Chọn tổ chức cho Strategic Brief">
           <option v-for="scope in organizationScopes" :key="scope.id" :value="scope.id">{{ scope.name }}</option>
         </select>
-        <button
+        <button type="button"
           @click="generateAiInsight" 
           class="ai-button"
           :disabled="!canGenerateAiInsight"
@@ -200,7 +200,7 @@ onBeforeUnmount(() => { pollToken++ })
       </div>
     </div>
 
-    <div v-if="isLoadingStats" class="strategy-loading">
+    <div v-if="isLoadingStats" class="strategy-loading" role="status" aria-live="polite">
       Đang tải dữ liệu chiến lược...
     </div>
     
@@ -246,7 +246,7 @@ onBeforeUnmount(() => { pollToken++ })
       <!-- Right side: AI Insights -->
       <div class="strategy-ai-insight">
         
-        <div v-if="isLoadingAi" class="ai-loading">
+        <div v-if="isLoadingAi" class="ai-loading" role="status" aria-live="polite">
           <BrainCircuit class="spin-icon" :size="32" />
           <strong>{{ statusLabel(aiJob?.status) }}</strong>
           <p>Kiểm tenant/quyền → dựng snapshot server → gọi model → kiểm schema/nguồn → lưu read-back</p>
@@ -273,7 +273,7 @@ onBeforeUnmount(() => { pollToken++ })
             <Server :size="14" />
             {{ statusLabel(aiJob?.status) }} · {{ aiJob?.selectedProvider || 'provider chưa xác định' }} · {{ aiJob?.selectedModel || 'model chưa xác định' }}
           </div>
-          <div v-if="aiData.sourceStale" class="ai-error compact-error">Nguồn đã thay đổi sau lúc tạo. Hãy phân tích lại.</div>
+          <div v-if="aiData.sourceStale" class="ai-error compact-error" role="alert">Nguồn đã thay đổi sau lúc tạo. Hãy phân tích lại.</div>
           <div class="ai-summary" v-for="(item, index) in aiData.result.summaryPoints" :key="`${index}-${item.text}`">
             <strong>Nhận định:</strong> {{ item.text }}
             <div class="grounding-links">

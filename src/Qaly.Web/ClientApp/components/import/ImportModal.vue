@@ -327,15 +327,15 @@ onMounted(loadImportSessions)
 
 <template>
   <Teleport to="body">
-    <div class="import-backdrop" @click.self="$emit('close')">
-      <div class="import-modal glass-card">
+    <div class="import-backdrop" @click.self="$emit('close')" @keydown.esc="$emit('close')">
+      <div class="import-modal glass-card" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
         <!-- Header -->
         <div class="import-header">
           <div class="import-header__left">
             <FileUp :size="22" />
-            <h2>Nhập dữ liệu</h2>
+            <h2 id="import-modal-title">Nhập dữ liệu</h2>
           </div>
-          <button class="icon-button" @click="$emit('close')"><X :size="18" /></button>
+          <button type="button" class="icon-button" aria-label="Đóng cửa sổ nhập dữ liệu" @click="$emit('close')"><X :size="18" /></button>
         </div>
 
         <!-- Stepper -->
@@ -383,7 +383,7 @@ onMounted(loadImportSessions)
 
           <div class="import-field">
             <label>Tiêu đề trang</label>
-            <input v-model="documentTitle" class="import-input" type="text" />
+            <input v-model="documentTitle" class="import-input" type="text" aria-label="Tiêu đề trang Wiki sẽ nhập" />
           </div>
 
           <div class="document-preview__stats">
@@ -520,7 +520,7 @@ onMounted(loadImportSessions)
 
           <div class="import-actions">
             <button class="btn btn--ghost" type="button" @click="step = 2"><ArrowLeft :size="16" /> Quay lại</button>
-            <button class="btn btn--primary btn--import-confirm" :disabled="isLoading" @click="executeImport">
+            <button type="button" class="btn btn--primary btn--import-confirm" :disabled="isLoading" @click="executeImport">
               <template v-if="isLoading">Đang nhập...</template>
               <template v-else>Tạo trang Wiki <Check :size="16" /></template>
             </button>
@@ -558,7 +558,7 @@ onMounted(loadImportSessions)
 
           <div class="import-actions">
             <button class="btn btn--ghost" type="button" @click="step = 2"><ArrowLeft :size="16" /> Quay lại</button>
-            <button class="btn btn--primary btn--import-confirm" :disabled="isLoading" @click="executeImport">
+            <button type="button" class="btn btn--primary btn--import-confirm" :disabled="isLoading" @click="executeImport">
               <template v-if="isLoading">Đang nhập...</template>
               <template v-else>Tạo các trang Wiki <Check :size="16" /></template>
             </button>
@@ -661,11 +661,11 @@ onMounted(loadImportSessions)
           </div>
 
           <div class="import-actions">
-            <button v-if="importMode === 'table'" class="btn btn--ghost btn--danger" @click="undoImport" :disabled="isLoading">
+            <button type="button" v-if="importMode === 'table'" class="btn btn--ghost btn--danger" @click="undoImport" :disabled="isLoading">
               Hoàn tác nhập dữ liệu
             </button>
-            <button class="btn btn--primary" @click="finish">
-              Xong
+            <button type="button" class="btn btn--primary" @click="finish">
+              Xong ✓
             </button>
           </div>
         </div>
@@ -720,7 +720,7 @@ onMounted(loadImportSessions)
   width: 34px; height: 34px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   font-size: .8rem; font-weight: 700;
-  background: #f3f4f6; color: #9ca3af;
+  background: #f3f4f6; color: #334155;
   transition: all .35s cubic-bezier(.22,1,.36,1);
   position: relative; z-index: 1;
 }

@@ -102,13 +102,36 @@ public sealed class RichDemoSeedTests
         skillCatalog.Should().Contain(item => item.NormalizedName == "project-product-management" && item.Category == "Quản lý sản phẩm và dự án");
         skillCatalog.Should().Contain(item => item.NormalizedName == "security-auth-privacy" && item.Category == "Bảo mật và tuân thủ");
         skillCatalog.Should().Contain(item => item.NormalizedName == "communication-leadership" && item.Category == "Giao tiếp và lãnh đạo");
-        (await db.TaskSkillRequirements.CountAsync()).Should().Be(20);
-        (await db.TaskCompletionAttributions.CountAsync(item => item.Status == TaskCompletionAttribution.Confirmed)).Should().Be(5);
+        (await db.TaskSkillRequirements.CountAsync()).Should().BeGreaterThanOrEqualTo(59);
+        (await db.TaskCompletionAttributions.CountAsync(item => item.Status == TaskCompletionAttribution.Confirmed)).Should().BeGreaterThanOrEqualTo(18);
+        var activeMemberIds = await db.OrganizationMembers
+            .Where(item => item.OrganizationId == organization.Id)
+            .Select(item => item.UserId)
+            .Distinct()
+            .ToListAsync();
+        var contributorsWithConfirmedEvidence = await db.TaskCompletionAttributions
+            .Where(item => item.Status == TaskCompletionAttribution.Confirmed &&
+                           item.TaskItem.Project.OrganizationId == organization.Id &&
+                           item.TaskItem.SkillRequirements.Any())
+            .Select(item => item.ContributorUserId)
+            .Distinct()
+            .ToListAsync();
+        contributorsWithConfirmedEvidence.Should().Contain(activeMemberIds,
+            "mọi thành viên demo cần ít nhất một Task canonical đã hoàn thành để Project Launch có thể kiểm tra skill evidence");
+        (await db.TaskItems.CountAsync(item => item.Title.StartsWith("Evidence:") && item.Status == "Done"))
+            .Should().Be(11);
         (await db.OrganizationMemberCapacityProfiles.CountAsync(item => item.OrganizationId == organization.Id)).Should().Be(12);
         (await db.MemberAvailabilityWindows.CountAsync()).Should().Be(5);
         (await db.OrganizationWorkRuleSets.CountAsync(item =>
             item.OrganizationId == organization.Id && item.Status == "active")).Should().Be(1);
         (await db.TaskItems.CountAsync(item => item.Title == "Xác nhận dữ liệu POS Wave 1" && item.Status == "Done")).Should().Be(1);
+        (await db.WikiPages.CountAsync(item => item.Project.OrganizationId == organization.Id)).Should().BeGreaterThanOrEqualTo(3);
+        (await db.GroupPolls.CountAsync(item => item.Group.OrganizationId == organization.Id)).Should().BeGreaterThanOrEqualTo(1);
+        (await db.GroupMeetingSessions.CountAsync(item => item.WorkGroup.OrganizationId == organization.Id)).Should().BeGreaterThanOrEqualTo(1);
+        (await db.MeetingImports.CountAsync(item => item.Project.OrganizationId == organization.Id)).Should().BeGreaterThanOrEqualTo(1);
+        (await db.GitHubPullRequests.CountAsync(item => item.OrganizationId == organization.Id)).Should().BeGreaterThanOrEqualTo(2);
+        (await db.GitHubReleases.CountAsync(item => item.OrganizationId == organization.Id)).Should().BeGreaterThanOrEqualTo(1);
+        (await db.ProjectDigestSubscriptions.CountAsync(item => item.Project.OrganizationId == organization.Id)).Should().BeGreaterThanOrEqualTo(1);
 
         var countsBeforeSecondSeed = new
         {

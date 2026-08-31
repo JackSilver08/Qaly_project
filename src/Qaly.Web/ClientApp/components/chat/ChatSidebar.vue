@@ -46,6 +46,7 @@ function initials(name: string) {
       class="team-chat-group"
       :data-group-id="group.id"
       :class="{ 'is-active': group.id === activeGroupId }"
+      :aria-current="group.id === activeGroupId ? 'true' : undefined"
       @click="$emit('select', group.id)"
     >
       <span class="team-chat-group__avatar">

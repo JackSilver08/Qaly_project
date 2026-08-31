@@ -4743,3 +4743,55 @@ Focused P28 Integration proves `UsedAi=false`, five deferred rows, internal navi
 Fresh aggregate evidence from the same working tree: focused Section-3 Integration `22/22 PASS`; goal-planning/capability/coverage Unit `41/41 PASS`; Release Web build PASS; frontend typecheck PASS. Four existing `ErumiRoadmapAiService` analyzer warnings may appear on a non-incremental test-project build and are not hidden as product evidence. The aggregate suite caught and closed the semantic routing conflicts described above. Chromium/Playwright was intentionally not repeated, following §39.3 rule 9 and the Product Owner's cost constraint.
 
 **Authoritative state:** `SECTION_3_AUTOMATED_GATE_PASS / FINAL_TARGETED_MANUAL_REPLAY_PENDING`. The implementation goal has automated evidence for every P01–P27 outcome and truthful P28 deferral. This does not waive the one final manual/browser replay required by §39.7 for visual session reload, multi-answer editing, Project switching, card controls and deep-link navigation; until that replay is recorded, the broader product label remains pending rather than silently promoted to fully accepted.
+
+### 39.14 Final targeted replay and product acceptance
+
+**Acceptance checkpoint:** 2026-08-22. The pending interaction gate from §39.13 has been replayed against the running local product. This checkpoint does not reopen historical `PARTIAL` rows or invent external adapters; it combines the exact public Assistant/API fixtures already authoritative in §39.8–§39.13 with one bounded browser replay of the interaction-heavy contracts required by §39.7.
+
+The replay proved:
+
+- Project selection changes business scope in the existing session; session history/switch/reload restores the same durable session rather than a message-only transcript.
+- the multi-answer Launch Brief retains answers through reload and does not submit on a single keystroke;
+- capability/navigation cards open registered routes and the exact-count Task flow preserves ten editable items;
+- Project Launch renders an editable staffing/Sprint/Task card, weekly capacity, reviewer/coordination overhead and honest external-deferred information;
+- one confirmation uses a stable idempotency key; a simulated lost response reconciles the already-committed canonical graph, produces a verified read-back receipt and does not execute a second mutation;
+- monitoring produces a review-only replan proposal;
+- legacy/durable launch payloads that omit newer optional arrays no longer blank the entire Assistant renderer.
+
+The final targeted browser set produced eight immediate passes and one renderer failure. The renderer root cause was an older durable Project Launch payload missing `acceptanceCriteria`/`definitionOfDone`; direct `.join()` calls crashed the card. Backward-compatible defaults were added, the permission fixture was corrected to retain the real `project.launch.execute.v1` gate, and only that failed spec was replayed. The focused replay then passed. Aggregate interaction disposition: `9/9 PASS`; no broad per-change Chromium loop was run.
+
+| Prompt | Final disposition | Prompt | Final disposition |
+|---|---|---|---|
+| P01 | `PASS` | P15 | `PASS` |
+| P02 | `PASS` | P16 | `PASS` |
+| P03 | `PASS` | P17 | `PASS` |
+| P04 | `PASS` | P18 | `PASS` |
+| P05 | `PASS` | P19 | `PASS` |
+| P06 | `PASS` | P20 | `PASS` |
+| P07 | `PASS` | P21 | `PASS` |
+| P08 | `PASS` | P22 | `PASS` |
+| P09 | `PASS` | P23 | `PASS` |
+| P10 | `PASS` | P24 | `PASS` |
+| P11 | `PASS` | P25 | `PASS` |
+| P12 | `PASS` | P26 | `PASS` |
+| P13 | `PASS` | P27 | `PASS` |
+| P14 | `PASS` | P28 | `EXTERNAL_DEFERRED_VERIFIED` |
+
+Additional business refinements closed at this checkpoint:
+
+1. staffing capacity is evaluated per week over the whole Project window after the actual Sprint/Task assignment, not only as an aggregate-period estimate;
+2. reviewer/coordination overhead is governed by the effective Rulebook (default recommendation 10%, bounded 0–50%) and contributes to weekly load;
+3. internal declared availability/capacity is shown separately from external calendar state; no calendar, repository, invitation, webhook or deployment success is simulated;
+4. task-attention queries use stable ordering before row limiting and split-query behavior for multiple collections;
+5. local VAPID is explicitly disabled when push is outside this acceptance scope, avoiding repeated misleading warnings.
+
+Fresh evidence from the same working tree:
+
+- focused Assistant Goal Planning/Context/Erumi Unit: `77/77 PASS`;
+- authoritative Section-3/AI Native Integration: `24/24 PASS`;
+- weekly capacity, reviewer overhead and Rulebook bounds: `3/3 PASS`;
+- final targeted browser interaction outcomes: `9/9 PASS` after replaying only the failed Project Launch case;
+- frontend typecheck: `PASS`; production frontend build: `PASS` (`4000` modules); solution build: `PASS`, `0 warnings`, `0 errors`;
+- runtime after the corrected restart contains no new EF unordered row-limit or multiple-collection warning; push is logged once per process as explicitly disabled.
+
+**Authoritative state:** `PRODUCT_ACCEPTED`. P01–P27 have exact public-flow/canonical evidence plus the final targeted interaction replay required by §39.7. P28 remains truthfully `EXTERNAL_DEFERRED_VERIFIED`; it is not represented as an implemented external integration. No commit or push was performed.

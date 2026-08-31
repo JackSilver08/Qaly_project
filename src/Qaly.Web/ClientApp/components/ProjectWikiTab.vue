@@ -143,6 +143,7 @@ function navigateToWiki(page: WikiPageDto) {
         <input
           v-model="newPageTitle"
           type="text"
+          aria-label="Tiêu đề trang Wiki"
           placeholder="Tiêu đề trang..."
           @keyup.enter="handleCreate"
         />
@@ -155,7 +156,7 @@ function navigateToWiki(page: WikiPageDto) {
         
         <div class="wiki-editor__footer">
           <label class="wiki-visibility-toggle">
-            <select v-model="newPageVisibility">
+            <select v-model="newPageVisibility" aria-label="Phạm vi hiển thị trang Wiki">
               <option value="public">Công khai</option>
               <option value="customer_safe">Cho khách hàng</option>
               <option value="internal">Nội bộ</option>
@@ -184,6 +185,7 @@ function navigateToWiki(page: WikiPageDto) {
         <input
           v-model="wikiSearch"
           type="text"
+          aria-label="Tìm kiếm trang Wiki"
           placeholder="Tìm kiếm trang Wiki..."
         />
       </div>
@@ -192,7 +194,11 @@ function navigateToWiki(page: WikiPageDto) {
         v-for="page in filteredWikiPages"
         :key="page.id"
         class="wiki-item wiki-item--clickable"
+        role="link"
+        tabindex="0"
         @click="navigateToWiki(page)"
+        @keydown.enter="navigateToWiki(page)"
+        @keydown.space.prevent="navigateToWiki(page)"
       >
         <div class="wiki-item__icon">
           <FileText :size="20" />

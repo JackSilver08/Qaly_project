@@ -847,11 +847,19 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
         var allTasks = await _tasks.GetQueryable()
             .AsNoTracking()
             .Include(item => item.Assignees)
-            .Where(item => projectIds.Contains(item.ProjectId) && !IsClosedStatus(item.Status))
+            .Where(item => projectIds.Contains(item.ProjectId) &&
+                           item.Status != "Done" &&
+                           item.Status != "Completed" &&
+                           item.Status != "Cancelled" &&
+                           item.Status != "Canceled")
             .ToListAsync(ct);
         var visibleIds = await _taskAccessPolicy.ApplyVisibilityFilter(_tasks.GetQueryable())
             .AsNoTracking()
-            .Where(item => projectIds.Contains(item.ProjectId) && !IsClosedStatus(item.Status))
+            .Where(item => projectIds.Contains(item.ProjectId) &&
+                           item.Status != "Done" &&
+                           item.Status != "Completed" &&
+                           item.Status != "Cancelled" &&
+                           item.Status != "Canceled")
             .Select(item => item.Id)
             .ToHashSetAsync(ct);
 

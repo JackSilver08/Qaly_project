@@ -40,6 +40,7 @@ const onChangeMember = (e: Event) => {
         <span class="text-slate-400">Chuyển View:</span>
         <select
           v-model="selectedMemberId"
+          aria-label="Chọn thành viên để xem mô phỏng"
           @change="onChangeMember"
           class="bg-slate-900 border border-slate-700 text-slate-200 text-xs px-2.5 py-1 rounded-md focus:outline-none focus:border-amber-500"
         >
@@ -48,7 +49,7 @@ const onChangeMember = (e: Event) => {
           </option>
         </select>
 
-        <button
+        <button type="button"
           @click="stopSimulation"
           class="bg-rose-600 hover:bg-rose-500 text-white font-semibold px-3 py-1 rounded-md transition flex items-center gap-1"
         >

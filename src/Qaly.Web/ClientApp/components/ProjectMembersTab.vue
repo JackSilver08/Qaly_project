@@ -194,7 +194,7 @@ function canToggleTimeline(member: Member) {
     <div v-if="showAddForm" class="add-member-form glass-card reveal">
       <h3>Thêm thành viên mới</h3>
       <div class="form-row">
-        <select v-model="selectedUserId">
+        <select v-model="selectedUserId" aria-label="Người dùng cần thêm">
           <option value="" disabled>Chọn người dùng...</option>
           <option
             v-for="user in users.filter(u => !members.some(m => m.id === u.id))"
@@ -204,7 +204,7 @@ function canToggleTimeline(member: Member) {
             {{ user.fullName }} ({{ user.email }})
           </option>
         </select>
-        <select v-model="selectedRole" class="role-picker">
+        <select v-model="selectedRole" aria-label="Vai trò trong dự án" class="role-picker">
           <optgroup v-for="group in roleGroups" :key="group.group" :label="group.group">
             <option v-for="option in group.options" :key="option.value" :value="option.value">
               {{ option.label }}
@@ -235,7 +235,7 @@ function canToggleTimeline(member: Member) {
         <div class="member-role-actions">
           <!-- Role Selector for Admin -->
           <div v-if="canManageMember(member)" class="role-selector">
-            <select :value="member.role" @change="e => onRoleSelectChange(member, (e.target as HTMLSelectElement).value)">
+            <select :value="member.role" :aria-label="`Vai trò của ${member.fullName}`" @change="e => onRoleSelectChange(member, (e.target as HTMLSelectElement).value)">
               <optgroup v-for="group in roleGroups" :key="group.group" :label="group.group">
                 <option v-for="option in group.options" :key="option.value" :value="option.value">
                   {{ option.label }}

@@ -12,6 +12,11 @@ export function useDashboard() {
   const isLoading = ref(true)
   const usingFallback = ref(true)
   const loadError = ref<string | null>(null)
+  const identityLoadError = ref<string | null>(null)
+  const usersLoadError = ref<string | null>(null)
+  let dashboardRequestVersion = 0
+  let meRequestVersion = 0
+  let usersRequestVersion = 0
 
   const projects = computed(() => dashboard.value.projects)
   const team = computed(() => dashboard.value.team)
@@ -49,39 +54,60 @@ export function useDashboard() {
   ])
 
   async function loadDashboard() {
+    const requestVersion = ++dashboardRequestVersion
     isLoading.value = true
     try {
       const normalized = normalizeDashboard(await apiJson<DashboardResponse>('/api/dashboard/overview'))
+      if (requestVersion !== dashboardRequestVersion) return false
       dashboard.value = normalized
       usingFallback.value = false
       loadError.value = null
       return true
     } catch (error) {
+      if (requestVersion !== dashboardRequestVersion) return false
       console.warn('Could not load dashboard data.', error)
       dashboard.value = createEmptyDashboard()
       usingFallback.value = true
       loadError.value = 'Không thể tải dữ liệu bảng điều khiển. Qaly đang hiển thị trạng thái trống, không phải dữ liệu mẫu.'
       return false
     } finally {
-      isLoading.value = false
+      if (requestVersion === dashboardRequestVersion) isLoading.value = false
     }
   }
 
   async function loadMe() {
+    const requestVersion = ++meRequestVersion
     try {
-      currentUser.value = await apiResult<UserDto>('/api/auth/me')
+      const user = await apiResult<UserDto>('/api/auth/me')
+      if (requestVersion !== meRequestVersion) return false
+      currentUser.value = user
+      identityLoadError.value = null
+      return true
     } catch (error) {
+      if (requestVersion !== meRequestVersion) return false
       console.warn('Could not load current user.', error)
+      currentUser.value = null
+      identityLoadError.value = 'Không thể xác minh người dùng hiện tại.'
+      return false
     } finally {
-      currentUserLoaded.value = true
+      if (requestVersion === meRequestVersion) currentUserLoaded.value = true
     }
   }
 
   async function loadUsers() {
+    const requestVersion = ++usersRequestVersion
     try {
-      users.value = await apiResult<UserDto[]>('/api/users')
+      const loadedUsers = await apiResult<UserDto[]>('/api/users')
+      if (requestVersion !== usersRequestVersion) return false
+      users.value = Array.isArray(loadedUsers) ? loadedUsers : []
+      usersLoadError.value = null
+      return true
     } catch (error) {
+      if (requestVersion !== usersRequestVersion) return false
       console.warn('Could not load users.', error)
+      users.value = []
+      usersLoadError.value = 'Không thể tải danh sách thành viên.'
+      return false
     }
   }
 
@@ -93,6 +119,8 @@ export function useDashboard() {
     isLoading,
     usingFallback,
     loadError,
+    identityLoadError,
+    usersLoadError,
     projects,
     team,
     activeProjectsCount,

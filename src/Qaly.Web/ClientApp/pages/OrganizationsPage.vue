@@ -206,7 +206,7 @@ onMounted(load)
           Tạo tổ chức, chỉ định chủ sở hữu và quản lý vòng đời của từng không gian làm việc.
         </p>
       </div>
-      <button class="primary" :disabled="isInitialLoad || !owners.length" @click="openCreate">
+      <button type="button" class="primary" :disabled="isInitialLoad || !owners.length" @click="openCreate">
         <Plus :size="18" /> Tạo tổ chức
       </button>
     </header>
@@ -245,7 +245,7 @@ onMounted(load)
           <option value="inactive">Đã vô hiệu hóa</option>
           <option value="all">Mọi trạng thái</option>
         </select>
-        <button class="icon-button" :title="isRefreshing ? 'Đang tải lại' : 'Tải lại'" @click="load({ refreshing: true })">
+        <button type="button" class="icon-button" :title="isRefreshing ? 'Đang tải lại' : 'Tải lại'" :aria-label="isRefreshing ? 'Đang tải lại tổ chức' : 'Tải lại danh sách tổ chức'" @click="load({ refreshing: true })">
           <RefreshCw :size="18" :class="{ 'is-spinning': isRefreshing }" />
         </button>
       </section>
@@ -271,14 +271,14 @@ onMounted(load)
       </PageStatePanel>
 
       <div v-else class="table-wrap">
-        <table>
+        <table aria-label="Danh sách tổ chức">
           <thead>
             <tr>
-              <th>Tổ chức</th>
-              <th>Chủ sở hữu</th>
-              <th>Quy mô</th>
-              <th>Trạng thái</th>
-              <th><span class="sr-only">Thao tác</span></th>
+              <th scope="col">Tổ chức</th>
+              <th scope="col">Chủ sở hữu</th>
+              <th scope="col">Quy mô</th>
+              <th scope="col">Trạng thái</th>
+              <th scope="col"><span class="sr-only">Thao tác</span></th>
             </tr>
           </thead>
           <tbody>
@@ -303,7 +303,7 @@ onMounted(load)
                 </span>
               </td>
               <td class="actions">
-                <button
+                <button type="button"
                   class="action-button"
                   title="Quản lý thành viên"
                   :disabled="!item.isActive"
@@ -311,10 +311,10 @@ onMounted(load)
                 >
                   <Users :size="17" />
                 </button>
-                <button class="action-button" title="Chỉnh sửa" @click="openEdit(item)">
+                <button type="button" class="action-button" title="Chỉnh sửa" @click="openEdit(item)">
                   <Pencil :size="17" />
                 </button>
-                <button
+                <button type="button"
                   v-if="item.isActive"
                   class="action-button danger"
                   title="Vô hiệu hóa"
@@ -329,10 +329,10 @@ onMounted(load)
       </div>
     </template>
 
-    <div v-if="editorOpen" class="overlay" @click.self="editorOpen = false">
-      <form class="modal" @submit.prevent="save">
+    <div v-if="editorOpen" class="overlay" @click.self="editorOpen = false" @keydown.esc="editorOpen = false">
+      <form class="modal" role="dialog" aria-modal="true" aria-labelledby="organization-editor-title" @submit.prevent="save">
         <div>
-          <h2>{{ editingId ? 'Chỉnh sửa tổ chức' : 'Tạo tổ chức' }}</h2>
+          <h2 id="organization-editor-title">{{ editingId ? 'Chỉnh sửa tổ chức' : 'Tạo tổ chức' }}</h2>
           <p>Chủ sở hữu sẽ nhận toàn quyền quản lý trong tổ chức này.</p>
         </div>
         <label>
@@ -363,7 +363,7 @@ onMounted(load)
         </label>
         <div class="modal-actions">
           <button type="button" class="secondary" @click="editorOpen = false">Hủy</button>
-          <button class="primary" :disabled="saving || !form.name || !form.ownerId">
+          <button type="submit" class="primary" :disabled="saving || !form.name || !form.ownerId">
             {{ saving ? 'Đang lưu...' : editingId ? 'Lưu thay đổi' : 'Tạo và thêm thành viên' }}
           </button>
         </div>

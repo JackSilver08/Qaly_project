@@ -40,6 +40,12 @@ public sealed partial class ProjectLaunchOrchestratorService
         if (!ProjectLaunchAssignmentModes.IsValid(assignmentMode) || !ProjectLaunchScheduleModes.IsValid(scheduleMode))
             return Result.Failure<ProjectLaunchPlanDto>(
                 "Chế độ phân công hoặc cấu trúc lịch không được hỗ trợ.", 422, "project_launch_review_mode_invalid");
+        var explicitlyPinnedTaskIds = string.Equals(
+                assignmentMode,
+                ProjectLaunchAssignmentModes.AutoBalance,
+                StringComparison.Ordinal)
+            ? FindExplicitlyPinnedTaskIds(delivery.Sprints, request.Sprints)
+            : new HashSet<string>(StringComparer.Ordinal);
         delivery = delivery with { AssignmentMode = assignmentMode, ScheduleMode = scheduleMode };
         var sprintError = ValidateSprints(delivery, request.Sprints);
         if (sprintError != null)
@@ -99,20 +105,44 @@ public sealed partial class ProjectLaunchOrchestratorService
             ? Array.Empty<OrganizationWorkRuleDto>()
             : JsonSerializer.Deserialize<OrganizationWorkRuleDto[]>(ruleSet.RulesJson, JsonOptions) ?? [];
         var maxUtilizationPercent = NumericRule(rules, "max_utilization_percent", 85m);
+        var reviewerCoordinationOverheadPercent = NumericRule(rules, "reviewer_coordination_overhead_percent", 10m);
 
         var selectedScenario = BuildCustomizedScenario(
             baseScenario,
             normalizedOverrides,
             normalizedSprints,
-            maxUtilizationPercent);
-        var updatedScenarios = scenarios.Where(item => item.ScenarioId != "custom").Append(selectedScenario).ToArray();
+            maxUtilizationPercent,
+            delivery.AssignmentMode);
         var assignmentResult = BalanceReviewedAssignments(
             normalizedSprints,
             selectedScenario.Members,
-            delivery.AssignmentMode);
+            delivery.AssignmentMode,
+            selectedScenario.ManagerUserId,
+            reviewerCoordinationOverheadPercent,
+            maxUtilizationPercent,
+            explicitlyPinnedTaskIds,
+            enforceAllocation: string.Equals(
+                delivery.AssignmentMode,
+                ProjectLaunchAssignmentModes.PreserveAssignments,
+                StringComparison.Ordinal));
         if (assignmentResult.Error != null)
-            return Result.Failure<ProjectLaunchPlanDto>(assignmentResult.Error, 422, "project_launch_assignment_capacity_invalid");
-        var updatedSprints = assignmentResult.Sprints!;
+            selectedScenario = selectedScenario with
+            {
+                Feasible = false,
+                BlockingReasons = selectedScenario.BlockingReasons
+                    .Append(assignmentResult.Error)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray()
+            };
+        var updatedSprints = assignmentResult.Sprints ?? normalizedSprints;
+        selectedScenario = EvaluateTimePhasedCapacity(
+            selectedScenario,
+            updatedSprints,
+            reviewerCoordinationOverheadPercent,
+            maxUtilizationPercent,
+            entity.SourceVersionHash,
+            delivery.AssignmentMode);
+        var updatedScenarios = scenarios.Where(item => item.ScenarioId != "custom").Append(selectedScenario).ToArray();
         delivery = delivery with
         {
             Sprints = updatedSprints,
@@ -215,7 +245,8 @@ public sealed partial class ProjectLaunchOrchestratorService
         ProjectStaffingScenarioDto source,
         IReadOnlyList<ProjectStaffingOverrideDto> overrides,
         IReadOnlyList<ProjectLaunchSprintPlanDto> sprints,
-        decimal maxUtilizationPercent)
+        decimal maxUtilizationPercent,
+        string assignmentMode)
     {
         var candidates = source.ManagerCandidates.ToDictionary(item => item.UserId);
         var selected = overrides.Where(item => item.Included).DistinctBy(item => item.UserId).ToArray();
@@ -224,9 +255,6 @@ public sealed partial class ProjectLaunchOrchestratorService
             .SelectMany(item => item.RequiredSkillNames)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var totalHours = sprints.Where(item => item.Selected)
-            .SelectMany(item => item.Tasks.Where(task => task.Selected))
-            .Sum(item => item.EstimatedHours);
         var blocking = new List<string>();
         var managerOverrides = selected.Where(item => item.Manager).ToArray();
         if (managerOverrides.Length != 1)
@@ -244,8 +272,11 @@ public sealed partial class ProjectLaunchOrchestratorService
                 blocking.Add($"{candidate.DisplayName} chưa vượt kiểm tra lịch, capacity hoặc giới hạn đa dự án.");
             if (item.Manager && !candidate.ManagerEligible)
                 blocking.Add($"{candidate.DisplayName} không có vai trò phù hợp để quản lý dự án.");
-            if (item.ProposedHours <= 0 || item.ProposedHours > candidate.AvailableHours)
-                blocking.Add($"Số giờ của {candidate.DisplayName} phải lớn hơn 0 và không vượt {candidate.AvailableHours:0.#} giờ khả dụng.");
+            if ((string.Equals(assignmentMode, ProjectLaunchAssignmentModes.PreserveAssignments, StringComparison.Ordinal) && item.ProposedHours <= 0) ||
+                item.ProposedHours > candidate.AvailableHours)
+                blocking.Add(string.Equals(assignmentMode, ProjectLaunchAssignmentModes.PreserveAssignments, StringComparison.Ordinal)
+                    ? $"Số giờ của {candidate.DisplayName} phải lớn hơn 0 và không vượt {candidate.AvailableHours:0.#} giờ khả dụng."
+                    : $"Số giờ của {candidate.DisplayName} không được vượt {candidate.AvailableHours:0.#} giờ khả dụng; chế độ tự cân bằng sẽ tính lại allocation thực tế.");
 
             var normalizedEvidence = candidate.EvidenceSkills.Select(Normalize).ToHashSet(StringComparer.Ordinal);
             var covered = requiredSkills.Where(skill => normalizedEvidence.Contains(Normalize(skill))).ToArray();
@@ -261,7 +292,9 @@ public sealed partial class ProjectLaunchOrchestratorService
                 covered,
                 missing,
                 loadAfter,
-                ["user_reviewed", "capacity_revalidated", covered.Length > 0 ? "confirmed_skill_evidence" : "capacity_support"]));
+                ["user_reviewed", "capacity_revalidated", covered.Length > 0 ? "confirmed_skill_evidence" : "capacity_support"],
+                0m,
+                candidate.WeeklyCapacity));
         }
 
         if (members.Count == 0) blocking.Add("Cần chọn ít nhất một thành viên.");
@@ -269,8 +302,10 @@ public sealed partial class ProjectLaunchOrchestratorService
             !member.CoveredSkills.Contains(skill, StringComparer.OrdinalIgnoreCase))).ToArray();
         if (uncovered.Length > 0)
             blocking.Add($"Chưa đủ bằng chứng kỹ năng: {string.Join(", ", uncovered)}.");
-        if (members.Sum(item => item.ProposedHours) < totalHours)
-            blocking.Add($"Phương án còn thiếu {Math.Ceiling(totalHours - members.Sum(item => item.ProposedHours))} giờ so với khối lượng đã chọn.");
+        // Allocation is derived from the reviewed Task graph in auto-balance
+        // mode, while preserve mode may deliberately keep work in backlog.
+        // A raw sum check here would therefore either block a valid automatic
+        // rebalance or silently undo the user's backlog choice.
         if (members.Any(item => item.LoadAfterPercent > maxUtilizationPercent))
             blocking.Add($"Một hoặc nhiều thành viên vượt ngưỡng sử dụng {maxUtilizationPercent:0.#}% theo quy tắc làm việc.");
 
@@ -301,10 +336,16 @@ public sealed partial class ProjectLaunchOrchestratorService
     private static AssignmentBalanceResult BalanceReviewedAssignments(
         IReadOnlyList<ProjectLaunchSprintPlanDto> sprints,
         IReadOnlyList<ProjectStaffingMemberDto> members,
-        string assignmentMode)
+        string assignmentMode,
+        Guid? managerUserId,
+        decimal reviewerCoordinationOverheadPercent,
+        decimal maxUtilizationPercent,
+        HashSet<string>? explicitlyPinnedTaskIds = null,
+        bool enforceAllocation = true)
     {
         var memberIds = members.Select(item => item.UserId).ToHashSet();
         var assignedHours = members.ToDictionary(item => item.UserId, _ => 0m);
+        var weeklyAllocations = BuildMutableWeeklyAllocations(members);
         var normalized = new List<ProjectLaunchSprintPlanDto>();
         foreach (var sprint in sprints)
         {
@@ -318,32 +359,72 @@ public sealed partial class ProjectLaunchOrchestratorService
                 }
 
                 ProjectStaffingMemberDto? assignee = null;
-                if (task.ProposedAssigneeId.HasValue && memberIds.Contains(task.ProposedAssigneeId.Value))
+                ProjectStaffingMemberDto? reviewer = null;
+                if (string.Equals(assignmentMode, ProjectLaunchAssignmentModes.AutoBalance, StringComparison.Ordinal))
+                {
+                    // Auto-balance is an explicit instruction to recompute the
+                    // whole selected graph. Assignee ids in the submitted draft
+                    // may be leftovers from an older scenario/revision and must
+                    // not pin every Task to that person. A reviewer chosen by the
+                    // user is only a preference; hard skill and weekly-capacity
+                    // constraints still win.
+                    var assignment = SelectTimePhasedAssignment(
+                        sprint,
+                        task,
+                        members,
+                        weeklyAllocations,
+                        reviewerCoordinationOverheadPercent,
+                        maxUtilizationPercent,
+                        managerUserId,
+                        requiredAssigneeId: explicitlyPinnedTaskIds?.Contains(task.ClientId) == true
+                            ? task.ProposedAssigneeId
+                            : null,
+                        preferredReviewerId: task.ProposedReviewerId);
+                    assignee = assignment?.Assignee;
+                    reviewer = assignment?.Reviewer;
+                }
+                else if (task.ProposedAssigneeId.HasValue && memberIds.Contains(task.ProposedAssigneeId.Value))
+                {
                     assignee = members.Single(item => item.UserId == task.ProposedAssigneeId.Value);
-                else if (string.Equals(assignmentMode, ProjectLaunchAssignmentModes.AutoBalance, StringComparison.Ordinal))
-                    assignee = SelectBalancedAssignee(task.RequiredSkillNames, task.EstimatedHours, members, assignedHours);
+                    reviewer = task.ProposedReviewerId.HasValue && memberIds.Contains(task.ProposedReviewerId.Value) &&
+                               task.ProposedReviewerId != assignee.UserId
+                        ? members.Single(item => item.UserId == task.ProposedReviewerId.Value)
+                        : null;
+                }
                 else if (task.ProposedAssigneeId.HasValue)
                     return new(null, $"Người được chọn cho Task '{task.Title}' không còn thuộc đội hình. Hãy chọn lại hoặc để chưa giao.");
 
-                if (assignee == null && string.Equals(assignmentMode, ProjectLaunchAssignmentModes.AutoBalance, StringComparison.Ordinal))
-                    return new(null, $"Không còn thành viên có đủ allocation để nhận Task '{task.Title}'. Hãy tăng giờ, đổi người hoặc giảm phạm vi.");
+                if (string.Equals(assignmentMode, ProjectLaunchAssignmentModes.AutoBalance, StringComparison.Ordinal) &&
+                    (assignee == null || !CombinedSkillsCover(task.RequiredSkillNames, assignee, reviewer)))
+                    return new(null, $"Chưa có cặp người thực hiện/reviewer vừa phủ đủ kỹ năng vừa còn capacity ở đúng các tuần của Task '{task.Title}'. Hãy thêm người có bằng chứng kỹ năng, đổi lịch Sprint, giảm estimate hoặc chuyển việc này sang backlog chưa giao.");
 
                 if (assignee != null)
                 {
                     assignedHours[assignee.UserId] += task.EstimatedHours;
-                    if (assignedHours[assignee.UserId] > assignee.ProposedHours)
+                    if (enforceAllocation && assignedHours[assignee.UserId] > assignee.ProposedHours)
                         return new(null, $"Task đã giao cho {assignee.DisplayName} cần {assignedHours[assignee.UserId]:0.##} giờ, vượt allocation {assignee.ProposedHours:0.##} giờ đã review.");
                 }
 
-                var reviewerId = task.ProposedReviewerId.HasValue && memberIds.Contains(task.ProposedReviewerId.Value) &&
-                    task.ProposedReviewerId != assignee?.UserId
-                    ? task.ProposedReviewerId
-                    : string.Equals(assignmentMode, ProjectLaunchAssignmentModes.AutoBalance, StringComparison.Ordinal)
-                        ? SelectReviewer(members, assignee?.UserId)?.UserId
-                        : null;
+                var reviewerId = reviewer?.UserId ??
+                    (task.ProposedReviewerId.HasValue && memberIds.Contains(task.ProposedReviewerId.Value) &&
+                     task.ProposedReviewerId != assignee?.UserId
+                        ? task.ProposedReviewerId
+                        : string.Equals(assignmentMode, ProjectLaunchAssignmentModes.AutoBalance, StringComparison.Ordinal)
+                             ? SelectReviewerForAssignee(task.RequiredSkillNames, assignee, members)?.UserId
+                             : null);
                 if (task.ProposedReviewerId.HasValue && reviewerId == null &&
                     string.Equals(assignmentMode, ProjectLaunchAssignmentModes.PreserveAssignments, StringComparison.Ordinal))
                     return new(null, $"Người review của Task '{task.Title}' không hợp lệ hoặc trùng người thực hiện.");
+                if (string.Equals(assignmentMode, ProjectLaunchAssignmentModes.AutoBalance, StringComparison.Ordinal) && assignee != null)
+                {
+                    ReserveTimePhasedAssignment(
+                        sprint,
+                        task,
+                        assignee.UserId,
+                        reviewerId ?? managerUserId ?? assignee.UserId,
+                        weeklyAllocations,
+                        reviewerCoordinationOverheadPercent);
+                }
                 tasks.Add(task with { ProposedAssigneeId = assignee?.UserId, ProposedReviewerId = reviewerId });
             }
             normalized.Add(sprint with { Tasks = tasks });
@@ -351,27 +432,96 @@ public sealed partial class ProjectLaunchOrchestratorService
         return new(normalized, null);
     }
 
-    private static ProjectStaffingMemberDto? SelectBalancedAssignee(
+    private static HashSet<string> FindExplicitlyPinnedTaskIds(
+        IReadOnlyList<ProjectLaunchSprintPlanDto> current,
+        IReadOnlyList<ProjectLaunchSprintPlanDto> submitted)
+    {
+        var currentTasks = current.SelectMany(item => item.Tasks)
+            .ToDictionary(item => item.ClientId, StringComparer.Ordinal);
+        var selected = submitted.SelectMany(item => item.Tasks).Where(item => item.Selected).ToArray();
+        var changed = selected.Where(item => currentTasks.TryGetValue(item.ClientId, out var prior) &&
+                                             item.ProposedAssigneeId.HasValue &&
+                                             (item.ProposedAssigneeId != prior.ProposedAssigneeId ||
+                                              item.ProposedReviewerId != prior.ProposedReviewerId))
+            .ToArray();
+
+        // A single assignment copied over the whole graph is scenario/default
+        // state, not an instruction to defeat auto-balance. A bounded subset is
+        // treated as an intentional user pin and remains stable on save.
+        if (changed.Length == 0 ||
+            (changed.Length == selected.Length &&
+             changed.Select(item => item.ProposedAssigneeId).Distinct().Count() == 1 &&
+             changed.Select(item => item.ProposedReviewerId).Distinct().Count() <= 1))
+            return new HashSet<string>(StringComparer.Ordinal);
+
+        return changed.Select(item => item.ClientId).ToHashSet(StringComparer.Ordinal);
+    }
+
+    private static AssignmentSelection? SelectBalancedAssignment(
         IReadOnlyList<string> requiredSkills,
         decimal taskHours,
         IReadOnlyList<ProjectStaffingMemberDto> members,
-        IReadOnlyDictionary<Guid, decimal> assignedHours)
+        IReadOnlyDictionary<Guid, decimal> assignedHours,
+        bool enforceAllocation = true)
     {
-        return members
-            .Select(member => new
-            {
-                Member = member,
-                Remaining = member.ProposedHours - assignedHours.GetValueOrDefault(member.UserId),
-                SkillMatches = requiredSkills.Count(required => member.CoveredSkills.Any(skill => Normalize(skill) == Normalize(required)))
-            })
-            .Where(item => item.Remaining >= taskHours)
-            .OrderByDescending(item => requiredSkills.Count == 0 || item.SkillMatches == requiredSkills.Count)
-            .ThenByDescending(item => item.SkillMatches)
+        var choices = members.SelectMany(assignee =>
+            members.Where(item => item.UserId != assignee.UserId)
+                .Cast<ProjectStaffingMemberDto?>()
+                .Append(null)
+                .Select(reviewer => new
+                {
+                    Assignee = assignee,
+                    Reviewer = reviewer,
+                    Remaining = enforceAllocation
+                        ? assignee.ProposedHours - assignedHours.GetValueOrDefault(assignee.UserId)
+                        : assignee.ProposedHours,
+                    Assigned = assignedHours.GetValueOrDefault(assignee.UserId),
+                    AssigneeSkillMatches = requiredSkills.Count(required =>
+                        assignee.CoveredSkills.Any(skill => Normalize(skill) == Normalize(required))),
+                    CoversAll = CombinedSkillsCover(requiredSkills, assignee, reviewer)
+                }));
+        var selected = choices
+            .Where(item => (!enforceAllocation || item.Remaining >= taskHours) && item.CoversAll)
+            .OrderByDescending(item => item.AssigneeSkillMatches)
+            .ThenBy(item => item.Assigned)
             .ThenByDescending(item => item.Remaining)
-            .ThenBy(item => item.Member.UserId)
-            .Select(item => item.Member)
+            .ThenBy(item => item.Reviewer == null ? 1 : 0)
+            .ThenByDescending(item => string.Equals(item.Reviewer?.ProposedRole, ProjectRoleRules.Reviewer, StringComparison.Ordinal))
+            .ThenBy(item => item.Assignee.UserId)
+            .FirstOrDefault();
+        return selected == null ? null : new AssignmentSelection(selected.Assignee, selected.Reviewer);
+    }
+
+    private static ProjectStaffingMemberDto? SelectReviewerForAssignee(
+        IReadOnlyList<string> requiredSkills,
+        ProjectStaffingMemberDto? assignee,
+        IReadOnlyList<ProjectStaffingMemberDto> members)
+    {
+        if (assignee == null) return null;
+        return members
+            .Where(item => item.UserId != assignee.UserId && CombinedSkillsCover(requiredSkills, assignee, item))
+            .OrderByDescending(item => string.Equals(item.ProposedRole, ProjectRoleRules.Reviewer, StringComparison.Ordinal))
+            .ThenBy(item => item.LoadAfterPercent)
+            .ThenBy(item => item.UserId)
             .FirstOrDefault();
     }
+
+    private static bool CombinedSkillsCover(
+        IReadOnlyList<string> requiredSkills,
+        ProjectStaffingMemberDto assignee,
+        ProjectStaffingMemberDto? reviewer)
+    {
+        if (requiredSkills.Count == 0) return true;
+        var covered = assignee.CoveredSkills
+            .Concat(reviewer?.CoveredSkills ?? [])
+            .Select(Normalize)
+            .ToHashSet(StringComparer.Ordinal);
+        return requiredSkills.All(skill => covered.Contains(Normalize(skill)));
+    }
+
+    private sealed record AssignmentSelection(
+        ProjectStaffingMemberDto Assignee,
+        ProjectStaffingMemberDto? Reviewer);
 
     private static ProjectStaffingMemberDto? SelectReviewer(
         IReadOnlyList<ProjectStaffingMemberDto> members,

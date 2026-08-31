@@ -217,7 +217,7 @@ const statusLabels: Record<string, string> = {
 
     <div class="import-actions">
       <button class="btn btn--ghost" type="button" @click="emit('back')"><ArrowLeft :size="16" /> Quay lại</button>
-      <button class="btn btn--primary btn--import-confirm" :disabled="isLoading" @click="emit('confirm')">
+      <button type="button" class="btn btn--primary btn--import-confirm" :disabled="isLoading" @click="emit('confirm')">
         <template v-if="isLoading">
           <span class="spinner"></span> Đang nhập...
         </template>
@@ -301,7 +301,7 @@ const statusLabels: Record<string, string> = {
 .confirm-section-title .hint {
   font-weight: 400;
   font-size: .72rem;
-  color: #9ca3af;
+  color: #64748b;
 }
 
 .dist-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }

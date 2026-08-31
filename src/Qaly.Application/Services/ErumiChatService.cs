@@ -13,6 +13,7 @@ using Qaly.Domain.Interfaces;
 using Qaly.Application.DTOs.Project;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Qaly.Application.Services.Tasks;
 
 namespace Qaly.Application.Services;
 
@@ -31,7 +32,6 @@ public sealed class ErumiChatService : IErumiChatService
     private static readonly string[] UploadedFileSources = { "UploadedFile", "ImportService" };
     private static readonly string[] AutonomousTaskSources = { "Microsoft Agent Framework", "AI workflow", "Project context" };
     private static readonly string[] WorkspaceChartLabels = { "Task hoàn thành", "Giờ đã log" };
-    private static readonly string[] StatusChartLabels = { "Hoàn thành", "Đang làm", "Khác/chưa bắt đầu" };
 
     private sealed record WorkspaceProjectSnapshot(
         ProjectDto Project,
@@ -597,6 +597,9 @@ public sealed class ErumiChatService : IErumiChatService
             if (!advisory.IsSuccess || advisory.Data == null)
             {
                 var fallbackMessage = BuildAdvisoryProviderFallback(planning.GoalAnalysis.Objective, limitation);
+                var serverFallbackAnswer = BuildAdvisoryProviderFallbackAnswer(
+                    fallbackMessage,
+                    executionContext.Sources.Select(source => source.SourceRef).ToArray());
                 return Result.Success(Attach(new AiAssistantTurnResponseDto(
                     AiAssistantTurnContract.SchemaId,
                     "guided_answer",
@@ -604,7 +607,9 @@ public sealed class ErumiChatService : IErumiChatService
                     "analyze_only",
                     fallbackMessage,
                     Math.Min(planning.GoalAnalysis.Confidence, 0.55),
-                    null, null, [])));
+                    null, null, serverFallbackAnswer.Sources, serverFallbackAnswer,
+                    ActualProvider: "Qaly",
+                    ActualModel: "qaly-native")));
             }
 
             var answer = advisory.Data;
@@ -1059,6 +1064,9 @@ public sealed class ErumiChatService : IErumiChatService
         if (!fallbackAdvisory.IsSuccess || fallbackAdvisory.Data == null)
         {
             var fallbackMessage = BuildAdvisoryProviderFallback(planning.GoalAnalysis.Objective, executionLimitation);
+            var serverFallbackAnswer = BuildAdvisoryProviderFallbackAnswer(
+                fallbackMessage,
+                executionContext.Sources.Select(source => source.SourceRef).ToArray());
             return Result.Success(Attach(new AiAssistantTurnResponseDto(
                 AiAssistantTurnContract.SchemaId,
                 "guided_answer",
@@ -1066,7 +1074,9 @@ public sealed class ErumiChatService : IErumiChatService
                 "analyze_only",
                 fallbackMessage,
                 Math.Min(planning.GoalAnalysis.Confidence, 0.55),
-                null, null, [])));
+                null, null, serverFallbackAnswer.Sources, serverFallbackAnswer,
+                ActualProvider: "Qaly",
+                ActualModel: "qaly-native")));
         }
 
         var fallbackAnswer = fallbackAdvisory.Data;
@@ -1609,7 +1619,7 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
     {
         if (request.AuthorizedContext != null)
         {
-            return await ExecuteAuthorizedProjectAiChatAsync(request, project, sw, ct);
+            return await ExecuteAuthorizedProjectAiChatAsync(request, project, data, sw, ct);
         }
 
         var tasksResult = await _taskService.GetByProjectAsync(project.Id, pageSize: 100, ct: ct);
@@ -1708,17 +1718,20 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
 
         var intent = ClassifyProjectIntent(Normalize(request.Message));
 
-        return Result.Success(ParseStructuredAiResponse(
+        var response = ParseStructuredAiResponse(
             aiResponse,
             intent,
             sw,
             ProjectSources,
-            request.ProviderHint));
+            request.ProviderHint);
+
+        return Result.Success(ReconcileProjectAiPresentation(response, project.Name, data, intent));
     }
 
     private async Task<Result<ErumiChatResponseDto>> ExecuteAuthorizedProjectAiChatAsync(
         ErumiChatRequestDto request,
         ProjectDto project,
+        ProjectAnalyticsDto data,
         Stopwatch sw,
         CancellationToken ct)
     {
@@ -1761,12 +1774,15 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
                 503);
         }
 
-        return Result.Success(ParseStructuredAiResponse(
+        var intent = ClassifyProjectIntent(Normalize(request.Message));
+        var response = ParseStructuredAiResponse(
             aiResponse,
-            ClassifyProjectIntent(Normalize(request.Message)),
+            intent,
             sw,
             request.AuthorizedContext?.Sources?.Select(source => source.SourceRef).ToArray() ?? [],
-            request.ProviderHint));
+            request.ProviderHint);
+
+        return Result.Success(ReconcileProjectAiPresentation(response, project.Name, data, intent));
     }
 
     private async Task<Result<ErumiChatResponseDto>> ExecuteAuthorizedWorkspaceAiChatAsync(
@@ -2080,8 +2096,30 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
         var normalizedObjective = string.IsNullOrWhiteSpace(objective)
             ? "yêu cầu của bạn"
             : objective.Trim();
-        return $"Mình đã ghi nhận mục tiêu: **{normalizedObjective}**. Phần trả lời chuyên sâu đang tạm thời không khả dụng, nhưng bạn có thể tiếp tục bằng luồng thủ công tương ứng trong Qaly hoặc gửi thêm bối cảnh để mình chuẩn bị phương án cho lượt tiếp theo.\n\n> {limitation}";
+        var normalized = Normalize(normalizedObjective);
+        var usefulFallback = ContainsAny(normalized, "test", "demo", "cand", "kiem thu", "regression")
+            ? "Mình vẫn có thể chuẩn bị kế hoạch kiểm chứng theo ba lớp **unit, integration và E2E**: unit cho luật/contract, integration cho mutation/read-back/idempotency, và E2E cho luồng người dùng/navigation. Nên chạy smoke theo capability bị ảnh hưởng trước, sau đó mới chạy regression rộng."
+            : "Bạn vẫn có thể tiếp tục bằng luồng Qaly tương ứng hoặc bổ sung bối cảnh để mình chuẩn bị phương án cho lượt tiếp theo.";
+        return $"Mình đã ghi nhận mục tiêu: **{normalizedObjective}**. Provider đang tạm thời không phản hồi nên Qaly dùng hướng dẫn dự phòng trên máy chủ; chưa có dữ liệu nào được thay đổi. {usefulFallback}\n\n> {limitation}";
     }
+
+    private static ErumiChatResponseDto BuildAdvisoryProviderFallbackAnswer(
+        string message,
+        IReadOnlyList<string> sourceRefs)
+        => new(
+            message,
+            [],
+            [],
+            [],
+            [new ErumiActionDto("suggested_action", "Chọn capability cần kiểm chứng trước")],
+            [],
+            sourceRefs,
+            0.55,
+            UsedAi: false,
+            AiAssistantTurnContract.GuidedAnswerIntent,
+            LatencyMs: 0,
+            ConfidenceReason: "Provider không phản hồi; đây là hướng dẫn dự phòng xác định của Qaly, không phải kết quả mutation.",
+            Model: new AiModelMetadataDto("qaly-native", "Qaly Native", "Qaly", "server_fallback"));
 
     private static AiAssistantConversationTurnDto BuildConversationTurn(
         AiAssistantTurnResponseDto response,
@@ -2360,7 +2398,7 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
                 {
                     foreach (var el in chartsProp.EnumerateArray())
                     {
-                        string type = el.TryGetProperty("type", out var t) ? t.GetString() ?? "bar" : "bar";
+                        string type = NormalizeChartType(el.TryGetProperty("type", out var t) ? t.GetString() : null);
                         string title = el.TryGetProperty("title", out var tit) ? tit.GetString() ?? "" : "";
                         string? unit = el.TryGetProperty("unit", out var u) ? u.GetString() : null;
                         var labels = new List<string>();
@@ -2381,7 +2419,12 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
                                 {
                                     values.Add(valEl.GetDouble());
                                 }
-                                else if (valEl.ValueKind == System.Text.Json.JsonValueKind.String && double.TryParse(valEl.GetString(), out var dVal))
+                                else if (valEl.ValueKind == System.Text.Json.JsonValueKind.String
+                                         && double.TryParse(
+                                             valEl.GetString(),
+                                             NumberStyles.Float,
+                                             CultureInfo.InvariantCulture,
+                                             out var dVal))
                                 {
                                     values.Add(dVal);
                                 }
@@ -2400,7 +2443,12 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
                                     if (dataItem.TryGetProperty("value", out var vp))
                                     {
                                         if (vp.ValueKind == System.Text.Json.JsonValueKind.Number) v = vp.GetDouble();
-                                        else if (vp.ValueKind == System.Text.Json.JsonValueKind.String && double.TryParse(vp.GetString(), out var parsedV)) v = parsedV;
+                                        else if (vp.ValueKind == System.Text.Json.JsonValueKind.String
+                                                 && double.TryParse(
+                                                     vp.GetString(),
+                                                     NumberStyles.Float,
+                                                     CultureInfo.InvariantCulture,
+                                                     out var parsedV)) v = parsedV;
                                     }
                                     if (!string.IsNullOrEmpty(l))
                                     {
@@ -2411,9 +2459,24 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
                             }
                         }
 
-                        if (!string.IsNullOrEmpty(title))
+                        var pairCount = Math.Min(labels.Count, values.Count);
+                        var validPairs = Enumerable.Range(0, pairCount)
+                            .Where(index => !string.IsNullOrWhiteSpace(labels[index])
+                                            && double.IsFinite(values[index])
+                                            && values[index] >= 0)
+                            .Select(index => (Label: labels[index].Trim(), Value: values[index]))
+                            .ToArray();
+
+                        if (!string.IsNullOrWhiteSpace(title)
+                            && validPairs.Length > 0
+                            && validPairs.Any(pair => pair.Value > 0))
                         {
-                            charts.Add(new ErumiChartDto(type, title, labels, values, unit));
+                            charts.Add(new ErumiChartDto(
+                                type,
+                                title.Trim(),
+                                validPairs.Select(pair => pair.Label).ToArray(),
+                                validPairs.Select(pair => pair.Value).ToArray(),
+                                unit));
                         }
                     }
                 }
@@ -3053,6 +3116,8 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
     private static List<ErumiMetricDto> BuildProjectMetrics(ProjectAnalyticsDto data)
     {
         var progress = Percent(data.DoneTasks, data.TotalTasks);
+        var openTasks = Math.Max(0, data.TotalTasks - data.DoneTasks);
+        var otherOpenTasks = Math.Max(0, openTasks - data.InProgressTasks);
         var overdueTone = data.OverdueTasks > 0 ? "danger" : "good";
         var hourRatio = data.TotalEstimatedHours <= 0
             ? 0
@@ -3060,43 +3125,45 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
 
         return new List<ErumiMetricDto>
         {
-            new("Tổng task", data.TotalTasks.ToString(CultureInfo.InvariantCulture), "neutral"),
+            new("Tổng task", data.TotalTasks.ToString(CultureInfo.InvariantCulture), "neutral", $"{data.DoneTasks} hoàn thành + {data.InProgressTasks} đang làm + {otherOpenTasks} chưa bắt đầu/khác"),
             new("Hoàn thành", $"{data.DoneTasks} ({progress:0.#}%)", "good"),
-            new("Đang làm", data.InProgressTasks.ToString(CultureInfo.InvariantCulture), "neutral"),
-            new("Quá hạn", data.OverdueTasks.ToString(CultureInfo.InvariantCulture), overdueTone),
+            new("Task đang mở", openTasks.ToString(CultureInfo.InvariantCulture), "neutral", $"{data.InProgressTasks} đang làm + {otherOpenTasks} chưa bắt đầu/khác"),
+            new("Đang làm", data.InProgressTasks.ToString(CultureInfo.InvariantCulture), "neutral", $"Nằm trong {openTasks} task đang mở"),
+            new("Quá hạn", data.OverdueTasks.ToString(CultureInfo.InvariantCulture), overdueTone, $"Là tập con của {openTasks} task đang mở, không cộng riêng"),
             new("Giờ thực tế", $"{data.TotalActualHours:0.##}h", "neutral", data.TotalEstimatedHours > 0 ? $"{hourRatio:0.#}% so với ước tính" : null)
         };
     }
 
     private static List<ErumiChartDto> BuildProjectCharts(ProjectAnalyticsDto data)
     {
-        var otherOpenTasks = Math.Max(0, data.TotalTasks - data.DoneTasks - data.InProgressTasks);
         var memberRows = data.MemberProductivity
-            .OrderByDescending(item => item.AssignedTasks)
+            .OrderByDescending(item => Math.Max(0, item.AssignedTasks - item.DoneTasks))
+            .ThenBy(item => item.FullName)
             .Take(8)
             .ToList();
 
-        return new List<ErumiChartDto>
+        var charts = new List<ErumiChartDto>();
+        if (memberRows.Any(item => item.AssignedTasks - item.DoneTasks > 0))
         {
-            new(
-                "pie",
-                "Phân bố trạng thái task",
-                StatusChartLabels,
-                new[] { (double)data.DoneTasks, data.InProgressTasks, otherOpenTasks },
-                "task"),
-            new(
+            charts.Add(new ErumiChartDto(
                 "bar",
-                "Workload theo thành viên",
+                "Task đang mở theo thành viên",
                 memberRows.Select(item => item.FullName).ToArray(),
-                memberRows.Select(item => (double)item.AssignedTasks).ToArray(),
-                "task"),
-            new(
+                memberRows.Select(item => (double)Math.Max(0, item.AssignedTasks - item.DoneTasks)).ToArray(),
+                "task đang mở"));
+        }
+
+        if (data.DailyProductivity.Any(item => item.CompletedTasks > 0))
+        {
+            charts.Add(new ErumiChartDto(
                 "line",
                 "Task hoàn thành 14 ngày gần nhất",
                 data.DailyProductivity.Select(item => item.Date.ToString("dd/MM", CultureInfo.InvariantCulture)).ToArray(),
                 data.DailyProductivity.Select(item => (double)item.CompletedTasks).ToArray(),
-                "task")
-        };
+                "task"));
+        }
+
+        return charts;
     }
 
     private static ErumiChatResponseDto BuildWorkspaceSummaryResponse(
@@ -3777,8 +3844,115 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
     private static string BuildProjectAnalysisReply(string projectName, ProjectAnalyticsDto data)
     {
         var progress = Percent(data.DoneTasks, data.TotalTasks);
-        return $"Mình đã phân tích tổng quan dự án **{projectName}** từ dữ liệu task, workload và time log. Hiện dự án hoàn thành **{data.DoneTasks}/{data.TotalTasks} task** (**{progress:0.#}%**), có **{data.InProgressTasks} task đang làm** và **{data.OverdueTasks} task quá hạn**. Các biểu đồ bên dưới thể hiện phân bổ trạng thái, workload thành viên và nhịp hoàn thành 14 ngày gần nhất.";
+        var risk = ProjectRiskLabel(data).ToLowerInvariant();
+        var openTasks = Math.Max(0, data.TotalTasks - data.DoneTasks);
+        var busiest = data.MemberProductivity
+            .Select(item => new
+            {
+                item.FullName,
+                OpenTasks = Math.Max(0, item.AssignedTasks - item.DoneTasks)
+            })
+            .OrderByDescending(item => item.OpenTasks)
+            .ThenBy(item => item.FullName)
+            .FirstOrDefault();
+
+        var priorities = new List<string>();
+        if (data.OverdueTasks > 0)
+        {
+            priorities.Add($"**Xử lý {data.OverdueTasks} task quá hạn trước**; chốt người chịu trách nhiệm và ngày hoàn thành mới cho từng task.");
+        }
+        else
+        {
+            priorities.Add("**Giữ nhịp giao hàng hiện tại** và rà các task gần hạn trước khi chúng chuyển thành quá hạn.");
+        }
+
+        if (busiest is { OpenTasks: > 0 })
+        {
+            priorities.Add($"**Cân lại workload của {busiest.FullName}** đang giữ {busiest.OpenTasks} task mở; chỉ chuyển việc sau khi kiểm tra kỹ năng và capacity thực.");
+        }
+        else
+        {
+            priorities.Add("**Xác nhận assignee và dependency của các task mở** để tránh công việc bị kẹt mà không có người chịu trách nhiệm.");
+        }
+
+        if (data.TotalEstimatedHours > 0 && data.TotalActualHours > data.TotalEstimatedHours)
+        {
+            priorities.Add($"**Rà lại phạm vi/ước lượng** vì đã log {data.TotalActualHours:0.##}h, vượt kế hoạch {data.TotalEstimatedHours:0.##}h.");
+        }
+        else
+        {
+            priorities.Add("**Rà Sprint và dependency gần nhất**; giữ task Critical/High trong phạm vi, dời phần chưa bắt buộc nếu deadline có nguy cơ.");
+        }
+
+        return $"""
+            ### Kết luận
+            **{projectName} đang ở mức rủi ro {risk}** — hoàn thành **{data.DoneTasks}/{data.TotalTasks} task ({progress:0.#}%)**, còn **{openTasks} task mở**, trong đó **{data.OverdueTasks} task quá hạn**.
+
+            ### Ba việc ưu tiên
+            1. {priorities[0]}
+            2. {priorities[1]}
+            3. {priorities[2]}
+            """;
     }
+
+    private static ErumiChatResponseDto ReconcileProjectAiPresentation(
+        ErumiChatResponseDto response,
+        string projectName,
+        ProjectAnalyticsDto data,
+        string intent)
+    {
+        var sanitized = response with
+        {
+            Charts = SanitizeCharts(response.Charts)
+        };
+
+        if (!string.Equals(intent, "project_analysis", StringComparison.OrdinalIgnoreCase))
+        {
+            return sanitized;
+        }
+
+        return sanitized with
+        {
+            Reply = BuildProjectAnalysisReply(projectName, data),
+            Metrics = BuildProjectMetrics(data),
+            Charts = BuildProjectCharts(data),
+            Actions = SuggestedActions("Liệt kê task quá hạn", "Xem workload thành viên", "Rà Sprint có nguy cơ"),
+            Confidence = ProjectDataConfidence(data),
+            ConfidenceReason = BuildRealtimeReason()
+        };
+    }
+
+    private static ErumiChartDto[] SanitizeCharts(IEnumerable<ErumiChartDto> charts)
+        => charts
+            .Select(chart =>
+            {
+                var pairCount = Math.Min(chart.Labels.Count, chart.Values.Count);
+                var pairs = Enumerable.Range(0, pairCount)
+                    .Where(index => !string.IsNullOrWhiteSpace(chart.Labels[index])
+                                    && double.IsFinite(chart.Values[index])
+                                    && chart.Values[index] >= 0)
+                    .Select(index => (Label: chart.Labels[index].Trim(), Value: chart.Values[index]))
+                    .ToArray();
+                return new ErumiChartDto(
+                    NormalizeChartType(chart.Type),
+                    chart.Title.Trim(),
+                    pairs.Select(pair => pair.Label).ToArray(),
+                    pairs.Select(pair => pair.Value).ToArray(),
+                    chart.Unit);
+            })
+            .Where(chart => !string.IsNullOrWhiteSpace(chart.Title)
+                            && chart.Labels.Count > 0
+                            && chart.Labels.Count == chart.Values.Count
+                            && chart.Values.Any(value => value > 0))
+            .ToArray();
+
+    private static string NormalizeChartType(string? type)
+        => type?.Trim().ToLowerInvariant() switch
+        {
+            "line" => "line",
+            "pie" or "doughnut" or "donut" => "pie",
+            _ => "bar"
+        };
 
     private static async Task<Result<ErumiChatResponseDto>> BuildWriteConfirmationResponseAsync(
         string message,
@@ -3967,6 +4141,14 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
 
     private static string ClassifyProjectIntent(string normalized)
     {
+        // A broad, explicitly selected Project analysis can mention risks and
+        // workload as dimensions. Route it to the complete analysis contract
+        // before considering those narrower sub-intents.
+        if (ContainsAny(normalized, "phan tich du an", "phan tich project", "bao cao phan tich", "dashboard du an", "bieu do", "chart", "visual"))
+        {
+            return "project_analysis";
+        }
+
         if (ContainsAny(normalized, "rui ro", "qua han", "tre han", "cham tien do", "deadline", "risk"))
         {
             return "risk";
@@ -3980,11 +4162,6 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
         if (IsTeamQuestion(normalized))
         {
             return "project_team";
-        }
-
-        if (ContainsAny(normalized, "phan tich du an", "phan tich project", "bao cao phan tich", "dashboard du an", "bieu do", "chart", "visual"))
-        {
-            return "project_analysis";
         }
 
         return "project_summary";
@@ -4376,7 +4553,7 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
         };
 
     private static bool IsDoneStatus(string? status)
-        => string.Equals(status, "Done", StringComparison.OrdinalIgnoreCase);
+        => TaskStatusRules.IsClosed(status);
 
     private static string[] ConcatSources(IReadOnlyList<string> baseSources, params string[] extraSources)
         => baseSources.Concat(extraSources).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();

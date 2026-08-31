@@ -49,7 +49,7 @@ async function end() {
     >
       <MicOff v-if="micMuted" :size="20" />
       <Mic v-else :size="20" />
-      <span class="mc-tooltip">{{ micMuted ? 'Bật Mic' : 'Tắt Mic' }}</span>
+      <span class="mc-tooltip" role="tooltip">{{ micMuted ? 'Bật Mic' : 'Tắt Mic' }}</span>
     </button>
 
     <!-- Camera -->
@@ -62,7 +62,7 @@ async function end() {
     >
       <VideoOff v-if="cameraMuted" :size="20" />
       <Video v-else :size="20" />
-      <span class="mc-tooltip">{{ cameraMuted ? 'Bật Camera' : 'Tắt Camera' }}</span>
+      <span class="mc-tooltip" role="tooltip">{{ cameraMuted ? 'Bật Camera' : 'Tắt Camera' }}</span>
     </button>
 
     <div class="mc-separator"></div>
@@ -74,10 +74,11 @@ async function end() {
       :class="{ 'mc-btn--transcript-active': speechActive }"
       type="button"
       :aria-label="speechActive ? 'Tắt phụ đề AI' : 'Bật phụ đề AI'"
+      :aria-pressed="speechActive"
       @click="$emit('toggleSpeech')"
     >
       <Captions :size="20" />
-      <span class="mc-tooltip">{{ speechActive ? 'Tắt Phụ đề' : 'Bật Phụ đề' }}</span>
+      <span class="mc-tooltip" role="tooltip">{{ speechActive ? 'Tắt Phụ đề' : 'Bật Phụ đề' }}</span>
       <span v-if="speechActive" class="mc-recording-dot"></span>
     </button>
 
@@ -89,7 +90,7 @@ async function end() {
       @click="$emit('share')"
     >
       <MonitorUp :size="20" />
-      <span class="mc-tooltip">Chia sẻ</span>
+      <span class="mc-tooltip" role="tooltip">Chia sẻ</span>
     </button>
 
     <div class="mc-separator"></div>
@@ -113,7 +114,7 @@ async function end() {
       @click="end"
     >
       <PhoneOff :size="20" />
-      <span class="mc-tooltip">Rời phòng</span>
+      <span class="mc-tooltip" role="tooltip">Rời phòng</span>
     </button>
   </div>
 </template>
@@ -325,7 +326,8 @@ async function end() {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
-.mc-btn:hover .mc-tooltip {
+.mc-btn:hover .mc-tooltip,
+.mc-btn:focus-visible .mc-tooltip {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }

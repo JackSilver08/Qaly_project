@@ -124,7 +124,7 @@ onBeforeUnmount(() => { requestVersion += 1 })
     </header>
 
     <div v-if="loading && !state" class="state-row"><LoaderCircle :size="20" class="spin" /> Đang tải attribution…</div>
-    <div v-else-if="error && !state" class="state-row state-row--error"><AlertTriangle :size="20" /> {{ error }}</div>
+    <div v-else-if="error && !state" class="state-row state-row--error" role="alert"><AlertTriangle :size="20" /> {{ error }}</div>
     <template v-else-if="state">
       <div v-if="state.notice" class="notice"><AlertTriangle :size="16" /> {{ state.notice }}</div>
       <div v-else-if="state.canManage" class="contributor-options">
@@ -149,8 +149,8 @@ onBeforeUnmount(() => { requestVersion += 1 })
     </template>
 
     <div v-if="correctionFor" class="correction" role="dialog" aria-label="Yêu cầu rà soát attribution">
-      <div class="correction__head"><strong>Rà soát đóng góp của {{ correctionFor.contributorName }}</strong><button class="icon-button" type="button" @click="correctionFor = null"><X :size="16" /></button></div>
-      <textarea v-model="correctionReason" rows="3" maxlength="500" placeholder="Nêu lý do cần rà soát (không ghi dữ liệu nhạy cảm)…" />
+      <div class="correction__head"><strong>Rà soát đóng góp của {{ correctionFor.contributorName }}</strong><button class="icon-button" type="button" aria-label="Đóng yêu cầu rà soát" @click="correctionFor = null"><X :size="16" /></button></div>
+      <textarea v-model="correctionReason" aria-label="Lý do cần rà soát attribution" rows="3" maxlength="500" placeholder="Nêu lý do cần rà soát (không ghi dữ liệu nhạy cảm)…" />
       <div><button class="secondary-button" type="button" @click="correctionFor = null">Hủy</button><button class="save-button" type="button" :disabled="saving || correctionReason.trim().length < 3" @click="submitCorrection"><CheckCircle2 :size="16" /> Gửi yêu cầu</button></div>
     </div>
   </section>

@@ -31,8 +31,21 @@ public static class AiProjectOrchestrationContract
     public const string ReplanSchemaId = "project_replan_proposal.v1";
     public const string PlanRendererId = "project-launch-plan.v1";
     public const string PromptVersion = "project_launch_delivery_plan@1.0.0";
-    public const string ScoringVersion = "project-staffing-deterministic@1.0.0";
+    public const string ScoringVersion = "project-staffing-deterministic@1.1.0";
 }
+
+public sealed record ProjectWeeklyCapacityDto(
+    string WeekKey,
+    DateTimeOffset StartsAt,
+    DateTimeOffset EndsAt,
+    decimal DeclaredCapacityHours,
+    decimal AvailabilityReductionHours,
+    decimal ExistingCommittedHours,
+    decimal FocusReserveHours,
+    decimal EffectiveAvailableHours,
+    decimal ProposedDeliveryHours,
+    decimal ReviewerCoordinationHours,
+    decimal LoadAfterPercent);
 
 public sealed record ProjectStaffingCandidateDto(
     Guid UserId,
@@ -53,7 +66,8 @@ public sealed record ProjectStaffingCandidateDto(
     int ActiveProjectCount,
     string TimeZoneId,
     string CapacityState,
-    IReadOnlyList<string> SourceRefs);
+    IReadOnlyList<string> SourceRefs,
+    IReadOnlyList<ProjectWeeklyCapacityDto>? WeeklyCapacity = null);
 
 public sealed record ProjectStaffingMemberDto(
     Guid UserId,
@@ -63,7 +77,9 @@ public sealed record ProjectStaffingMemberDto(
     IReadOnlyList<string> CoveredSkills,
     IReadOnlyList<string> MissingSkills,
     decimal LoadAfterPercent,
-    IReadOnlyList<string> DecisionReasons);
+    IReadOnlyList<string> DecisionReasons,
+    decimal ReviewerCoordinationHours = 0m,
+    IReadOnlyList<ProjectWeeklyCapacityDto>? WeeklyAllocation = null);
 
 public sealed record ProjectStaffingScenarioDto(
     string ScenarioId,

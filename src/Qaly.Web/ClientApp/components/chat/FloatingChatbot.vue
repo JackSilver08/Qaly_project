@@ -20,6 +20,7 @@ interface AssistantOpenRequest {
   view: 'chat' | 'activity'
   prompt?: string
   projectId?: string | null
+  requestedCapabilityId?: string | null
 }
 
 const props = defineProps<{
@@ -42,6 +43,7 @@ const assistantPrompt = ref('')
 const assistantPromptToken = ref(0)
 const assistantHistoryToken = ref(0)
 const assistantProjectId = ref<string | null>(props.projectId || null)
+const assistantRequestedCapabilityId = ref<string | null>(null)
 const actionProjectId = ref<string | null>(props.projectId || null)
 const actionProviderHint = ref('auto')
 const actionModelProfile = ref('balanced')
@@ -409,6 +411,7 @@ function applyAssistantOpenRequest(detail?: Partial<AssistantOpenRequest> | null
   activeView.value = detail?.view === 'activity' ? 'activity' : 'chat'
   assistantPrompt.value = String(detail?.prompt || '').trim()
   assistantProjectId.value = String(detail?.projectId || props.projectId || '') || null
+  assistantRequestedCapabilityId.value = String(detail?.requestedCapabilityId || '').trim() || null
   assistantPromptToken.value += 1
 }
 
@@ -527,9 +530,11 @@ watch(isOpen, async open => {
   <div class="global-erumi-chatbot-widget">
     <!-- Floating Bubble Trigger -->
     <button 
+      type="button"
       class="erumi-bubble-trigger" 
       :class="{ 'is-active': isOpen }" 
       aria-label="Mở Trợ lý AI"
+      :aria-expanded="isOpen"
       @click="toggleDrawer"
     >
       <ChatbotAvatar size="medium" />
@@ -593,19 +598,21 @@ watch(isOpen, async open => {
             </div>
           </div>
           <div class="drawer-header-actions">
-            <button class="drawer-icon-btn" :class="{ active: activeView === 'chat' }" title="Trò chuyện" @click="activeView = 'chat'"><MessageSquare :size="17" /></button>
+            <button type="button" class="drawer-icon-btn" :class="{ active: activeView === 'chat' }" :aria-pressed="activeView === 'chat'" title="Trò chuyện" aria-label="Mở trò chuyện" @click="activeView = 'chat'"><MessageSquare :size="17" /></button>
             <button
               v-if="artifactAvailable"
+              type="button"
               class="drawer-icon-btn"
               :class="{ active: activeView === 'create' && !layout.artifactCollapsed }"
               :title="activeView === 'create' && !layout.artifactCollapsed ? 'Thu gọn bản nháp AI' : 'Mở bản nháp AI'"
               :aria-label="activeView === 'create' && !layout.artifactCollapsed ? 'Thu gọn bản nháp AI' : 'Mở bản nháp AI'"
+              :aria-pressed="activeView === 'create' && !layout.artifactCollapsed"
               @click="toggleArtifactPane"
             ><ListChecks :size="17" /></button>
-            <button class="drawer-icon-btn" :class="{ active: activeView === 'activity' }" title="Hoạt động AI" @click="activeView = 'activity'"><Activity :size="17" /></button>
-            <button class="drawer-icon-btn" title="Lịch sử phiên Trợ lý AI" aria-label="Lịch sử phiên Trợ lý AI" data-testid="assistant-session-history-toolbar" @click="openAssistantHistory"><Clock3 :size="17" /></button>
-            <button class="drawer-icon-btn reset-layout-btn" title="Đặt lại kích thước" aria-label="Đặt lại kích thước Trợ lý AI" @click="resetAssistantLayout"><RotateCcw :size="17" /></button>
-            <button class="drawer-close-btn" @click="closeDrawer" aria-label="Đóng"><X :size="20" /></button>
+            <button type="button" class="drawer-icon-btn" :class="{ active: activeView === 'activity' }" :aria-pressed="activeView === 'activity'" title="Hoạt động AI" aria-label="Mở hoạt động AI" @click="activeView = 'activity'"><Activity :size="17" /></button>
+            <button type="button" class="drawer-icon-btn" title="Lịch sử phiên Trợ lý AI" aria-label="Lịch sử phiên Trợ lý AI" data-testid="assistant-session-history-toolbar" @click="openAssistantHistory"><Clock3 :size="17" /></button>
+            <button type="button" class="drawer-icon-btn reset-layout-btn" title="Đặt lại kích thước" aria-label="Đặt lại kích thước Trợ lý AI" @click="resetAssistantLayout"><RotateCcw :size="17" /></button>
+            <button type="button" class="drawer-close-btn" @click="closeDrawer" aria-label="Đóng Trợ lý AI"><X :size="20" /></button>
           </div>
         </header>
         
@@ -626,6 +633,7 @@ watch(isOpen, async open => {
               :external-prompt-token="assistantPromptToken"
               :external-history-token="assistantHistoryToken"
               :external-project-id="assistantProjectId"
+              :external-requested-capability-id="assistantRequestedCapabilityId"
               @compose-action="handleComposeAction"
             />
           </section>

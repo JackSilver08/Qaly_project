@@ -463,6 +463,18 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
                     planningResult.Error ?? "Assistant goal could not be analysed.",
                     planningResult.StatusCode, planningResult.ErrorCode);
             planning = planningResult.Data;
+
+            // Native mutation capabilities have server-owned contracts and typed renderers.
+            // Re-assert that route at the durable session boundary so a provider/custom
+            // planner cannot downgrade a valid P16-P24 action into prose-only guidance.
+            // Authorization still comes exclusively from discoveryContext; this never
+            // grants a capability the current role/project did not already have.
+            if (AiAssistantGoalPlanningOutputContract.TryCreateAuthorizedExecutionPlan(
+                    requestWithMemory, discoveryResult.Data, out var serverExecutionPlan) &&
+                serverExecutionPlan != null)
+            {
+                planning = serverExecutionPlan;
+            }
             contextResult = string.IsNullOrWhiteSpace(planning.SelectedCapabilityId)
                 ? Result.Success(planning.GoalAnalysis.Disposition == "policy_blocked"
                     ? discoveryResult.Data with
@@ -1412,6 +1424,7 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
 
     private IQueryable<AssistantSession> SessionQuery()
         => _db.AssistantSessions
+            .AsSplitQuery()
             .Include(item => item.Turns)
                 .ThenInclude(turn => turn.ProcessEvents)
             .Include(item => item.Turns)

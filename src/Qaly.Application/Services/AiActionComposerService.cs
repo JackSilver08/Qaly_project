@@ -22,6 +22,8 @@ public sealed class AiActionComposerService : IAiActionComposerService
     private readonly IRepository<OrganizationSkill> _skills;
     private readonly IRepository<OrganizationMember> _organizationMembers;
     private readonly IRepository<User> _users;
+    private readonly IPortfolioScheduleService _portfolioSchedule;
+    private readonly IMemberSkillEvidenceService _skillEvidence;
     private readonly ICurrentUserService _currentUser;
     private readonly IAiWorkflowService _workflow;
     private readonly IAiJobActivityService _activity;
@@ -36,6 +38,8 @@ public sealed class AiActionComposerService : IAiActionComposerService
         IRepository<OrganizationSkill> skills,
         IRepository<OrganizationMember> organizationMembers,
         IRepository<User> users,
+        IPortfolioScheduleService portfolioSchedule,
+        IMemberSkillEvidenceService skillEvidence,
         ICurrentUserService currentUser,
         IAiWorkflowService workflow,
         IAiJobActivityService activity,
@@ -49,6 +53,8 @@ public sealed class AiActionComposerService : IAiActionComposerService
         _skills = skills;
         _organizationMembers = organizationMembers;
         _users = users;
+        _portfolioSchedule = portfolioSchedule;
+        _skillEvidence = skillEvidence;
         _currentUser = currentUser;
         _workflow = workflow;
         _activity = activity;
@@ -209,27 +215,65 @@ public sealed class AiActionComposerService : IAiActionComposerService
         var owner = await _users.GetQueryable().AsNoTracking()
             .FirstOrDefaultAsync(item => item.Id == project.OwnerId && item.IsActive, ct);
 
-        var memberContexts = memberRows.Select(member =>
+        var planningStart = targetSprint == null
+            ? DateTimeOffset.UtcNow.Date
+            : (targetSprint.StartDate > DateTimeOffset.UtcNow.Date
+                ? targetSprint.StartDate
+                : DateTimeOffset.UtcNow.Date);
+        var planningEnd = targetSprint?.EndDate ?? planningStart.AddDays(14);
+        var capacityResult = await _portfolioSchedule.GetCapacityAsync(project.Id, planningStart, planningEnd, ct);
+        var capacityByMember = capacityResult.IsSuccess && capacityResult.Data != null
+            ? capacityResult.Data.Members.ToDictionary(item => item.UserId)
+            : [];
+        var verifiedSkillsByMember = new Dictionary<Guid, IReadOnlyList<Guid>>();
+        if (project.OrganizationId.HasValue)
         {
-            var assignments = openTasks.Where(task => task.AssigneeId == member.UserId).ToList();
+            foreach (var memberId in memberRows.Select(item => item.UserId)
+                         .Append(project.OwnerId)
+                         .Distinct())
+            {
+                var profile = await _skillEvidence.GetMemberSkillProfileAsync(
+                    project.OrganizationId.Value, memberId, ct);
+                verifiedSkillsByMember[memberId] = profile.IsSuccess && profile.Data != null
+                    ? profile.Data.Skills
+                        .Where(item => item.VerifiedTaskCount > 0 && !item.IsStale)
+                        .Select(item => item.SkillId)
+                        .Distinct()
+                        .ToList()
+                    : [];
+            }
+        }
+
+        AiActionMemberContextDto BuildMemberContext(Guid memberId, string name, string role)
+        {
+            var assignments = openTasks.Where(task => task.AssigneeId == memberId).ToList();
+            capacityByMember.TryGetValue(memberId, out var capacity);
+            var isAvailableForSprint = capacity != null &&
+                capacity.RemainingHours > 0m &&
+                !capacity.AvailabilityWindows.Any(window =>
+                    string.Equals(window.Kind, MemberAvailabilityWindow.Unavailable, StringComparison.OrdinalIgnoreCase) &&
+                    window.EndsAt > planningStart && window.StartsAt < planningEnd);
             return new AiActionMemberContextDto(
-                member.UserId,
-                member.User.FullName,
-                member.Role,
+                memberId,
+                name,
+                role,
                 assignments.Count,
                 assignments.Sum(task => task.EstimatedHours ?? 0),
-                $"/projects/{project.Id:D}/members/{member.UserId:D}");
-        }).ToList();
+                $"/projects/{project.Id:D}/members/{memberId:D}",
+                capacity?.WeeklyCapacityHours,
+                capacity?.WindowCapacityHours,
+                capacity?.RemainingHours,
+                capacity?.CapacityState ?? "unknown",
+                isAvailableForSprint,
+                verifiedSkillsByMember.GetValueOrDefault(memberId, []));
+        }
+
+        var memberContexts = memberRows
+            .Select(member => BuildMemberContext(member.UserId, member.User.FullName, member.Role))
+            .ToList();
         if (owner != null && memberContexts.All(item => item.UserId != owner.Id))
         {
-            var assignments = openTasks.Where(task => task.AssigneeId == owner.Id).ToList();
-            memberContexts.Insert(0, new AiActionMemberContextDto(
-                owner.Id,
-                owner.FullName,
-                "Owner",
-                assignments.Count,
-                assignments.Sum(task => task.EstimatedHours ?? 0),
-                $"/projects/{project.Id:D}/members/{owner.Id:D}"));
+            memberContexts.Insert(0, BuildMemberContext(owner.Id, owner.FullName, "Owner"));
         }
 
         var skillRows = project.OrganizationId.HasValue

@@ -328,7 +328,7 @@ onMounted(() => {
         <header class="archive-header">
           <div class="title-group">
             <span class="badge-primary"><FolderArchive :size="14" /> Archive Center</span>
-            <h2>Lưu trữ & Dung lượng hệ thống</h2>
+            <h1>Lưu trữ & Dung lượng hệ thống</h1>
             <p>Giải phóng tài nguyên và quản lý vòng đời dữ liệu dự án theo mô hình Jira & Notion.</p>
           </div>
           <div class="saved-metric">
@@ -413,7 +413,7 @@ onMounted(() => {
               </label>
               <div class="policy-input-group">
                 <span>Lưu trữ thùng rác</span>
-                <select v-model="trashRetention" class="policy-select">
+                <select v-model="trashRetention" aria-label="Thời gian lưu trữ thùng rác" class="policy-select">
                   <option :value="15">15 ngày</option>
                   <option :value="30">30 ngày</option>
                   <option :value="90">90 ngày</option>
@@ -435,11 +435,11 @@ onMounted(() => {
           <div class="title-with-icon">
             <Sparkles :size="20" class="icon-ai" />
             <div>
-              <h3>Trình tối ưu hóa dung lượng lưu trữ</h3>
+              <h2>Trình tối ưu hóa dung lượng lưu trữ</h2>
               <p>Phân tích content hash để phát hiện các tệp tin đính kèm trùng lặp trong hệ thống.</p>
             </div>
           </div>
-          <button 
+          <button type="button"
             v-if="duplicatesList.length > 0" 
             class="ai-btn" 
             @click="runDeduplicator" 
@@ -456,13 +456,13 @@ onMounted(() => {
             <AlertTriangle :size="18" />
             <span>Phát hiện <strong>{{ duplicatesList.length }} tệp trùng lặp</strong>. Hệ thống sẽ hợp nhất các bản sao này thành các liên kết trỏ tới cùng một tệp vật lý để giải phóng dung lượng.</span>
           </div>
-          <table class="duplicates-table">
+          <table class="duplicates-table" aria-label="Dự án trùng lặp được phát hiện">
             <thead>
               <tr>
-                <th>Tên tệp bản sao</th>
-                <th>Dung lượng</th>
-                <th>Là bản sao của tệp gốc</th>
-                <th>Đường dẫn lưu trữ</th>
+                <th scope="col">Tên tệp bản sao</th>
+                <th scope="col">Dung lượng</th>
+                <th scope="col">Là bản sao của tệp gốc</th>
+                <th scope="col">Đường dẫn lưu trữ</th>
               </tr>
             </thead>
             <tbody>
@@ -490,7 +490,7 @@ onMounted(() => {
         <div class="panel-section-header">
           <Trash2 :size="20" class="icon-danger" />
           <div>
-            <h3>Thùng rác dự án (Project Trash Bin - Notion Style)</h3>
+            <h2>Thùng rác dự án (Project Trash Bin - Notion Style)</h2>
             <p>Các dự án đã bị xóa sẽ được tạm lưu tại đây trong <strong>{{ trashRetention }} ngày</strong> trước khi bị xóa vĩnh viễn khỏi máy chủ vật lý.</p>
           </div>
         </div>
@@ -500,16 +500,16 @@ onMounted(() => {
             <div class="trash-project-meta">
               <span class="project-code">{{ tp.code }}</span>
               <div class="trash-project-info">
-                <h4>{{ tp.name }}</h4>
+                <h3>{{ tp.name }}</h3>
                 <p>Kích thước: <strong>{{ tp.size }}</strong> &bull; Sẽ bị xóa vĩnh viễn sau <strong class="text-danger">{{ tp.daysLeft }} ngày nữa</strong>.</p>
               </div>
             </div>
             <div class="trash-actions">
-              <button class="action-btn restore-btn" @click="restoreTrashProject(tp.id)">
+              <button type="button" class="action-btn restore-btn" @click="restoreTrashProject(tp.id)">
                 <ArrowUpRight :size="14" />
                 <span>Khôi phục dự án</span>
               </button>
-              <button class="action-btn delete-btn" @click="deleteTrashProject(tp.id)">
+              <button type="button" class="action-btn delete-btn" @click="deleteTrashProject(tp.id)">
                 <Trash2 :size="14" />
                 <span>Xóa vĩnh viễn</span>
               </button>
@@ -525,6 +525,7 @@ onMounted(() => {
 
       <!-- Main workspace -->
       <section class="project-workspace glass-card mt-24">
+        <h2 class="sr-only">Dự án đã lưu trữ</h2>
         
         <!-- Toolbar Filters -->
         <div class="archive-toolbar">
@@ -533,6 +534,7 @@ onMounted(() => {
             <input 
               v-model="searchQ" 
               type="text" 
+              aria-label="Tìm dự án đã lưu trữ"
               placeholder="Tìm theo tên dự án, mô tả hoặc lý do lưu trữ..." 
               class="toolbar-search-input" 
             />
@@ -541,7 +543,7 @@ onMounted(() => {
           <div class="filter-actions">
             <div class="sort-selector">
               <ArrowUpDown :size="16" />
-              <select v-model="sortBy" class="toolbar-select">
+              <select v-model="sortBy" aria-label="Sắp xếp dự án đã lưu trữ" class="toolbar-select">
                 <option value="date">Ngày lưu trữ</option>
                 <option value="name">Tên dự án</option>
                 <option value="size">Dung lượng ổ đĩa</option>
@@ -604,7 +606,7 @@ onMounted(() => {
 
             <!-- Hover / Active actions -->
             <footer class="card-actions">
-              <button 
+              <button type="button"
                 class="action-btn restore" 
                 @click="restoreProject(project.id)"
                 title="Khôi phục dự án về trạng thái hoạt động"
@@ -612,7 +614,7 @@ onMounted(() => {
                 <ArrowUpRight :size="16" />
                 <span>Khôi phục</span>
               </button>
-              <button 
+              <button type="button"
                 class="action-btn export" 
                 @click="exportProjectData(project)"
                 title="Xuất dữ liệu dự án ra tệp JSON"
@@ -620,7 +622,7 @@ onMounted(() => {
                 <Download :size="16" />
                 <span>Tải dữ liệu</span>
               </button>
-              <button 
+              <button type="button"
                 class="action-btn delete" 
                 @click="deleteProject(project.id)"
                 title="Xóa vĩnh viễn dự án cùng toàn bộ tệp đính kèm"
@@ -644,7 +646,7 @@ onMounted(() => {
 
         <!-- Pagination Controls -->
         <div v-if="totalPages > 1" class="archive-toolbar" style="border-top: 1px solid var(--line-light); border-bottom: none; justify-content: center; gap: 8px;">
-          <button 
+          <button type="button"
             class="action-btn" 
             :disabled="currentPage === 1"
             @click="changePage(currentPage - 1)"
@@ -654,7 +656,7 @@ onMounted(() => {
           <span style="font-size: 13px; color: var(--muted); align-self: center;">
             Trang {{ currentPage }} / {{ totalPages }} ({{ totalCount }} dự án)
           </span>
-          <button 
+          <button type="button"
             class="action-btn" 
             :disabled="currentPage === totalPages"
             @click="changePage(currentPage + 1)"
@@ -702,7 +704,7 @@ onMounted(() => {
   text-transform: uppercase;
 }
 
-.title-group h2 {
+.title-group h1 {
   font-size: 24px;
   font-weight: 800;
   color: var(--text-strong);
@@ -952,7 +954,7 @@ onMounted(() => {
   align-items: flex-start;
 }
 
-.title-with-icon h3 {
+.title-with-icon h2 {
   font-size: 16px;
   font-weight: 800;
   color: var(--text-strong);
@@ -1090,7 +1092,7 @@ onMounted(() => {
   margin-bottom: 20px;
 }
 
-.panel-section-header h3 {
+.panel-section-header h2 {
   font-size: 16px;
   font-weight: 800;
   color: var(--text-strong);
@@ -1137,7 +1139,7 @@ onMounted(() => {
   align-items: center;
 }
 
-.trash-project-info h4 {
+.trash-project-info h3 {
   font-size: 14.5px;
   font-weight: 800;
   color: var(--text-strong);

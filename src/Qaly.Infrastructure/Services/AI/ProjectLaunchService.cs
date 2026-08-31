@@ -372,6 +372,8 @@ public sealed class ProjectLaunchService : IProjectLaunchService
                 JobType = "project_launch_brief",
                 ProviderHint = request.ProviderHint,
                 StrictProvider = !string.Equals(request.ProviderHint, "auto", StringComparison.OrdinalIgnoreCase),
+                ProviderTimeoutSeconds = 35,
+                SchemaRepairAttempts = 0,
                 Prompt = prompt,
                 SystemPrompt = systemPrompt + (attempt == 1 ? string.Empty : "\nThe previous JSON failed schema validation. Repair it exactly."),
                 ExpectedSchemaId = AiProjectLaunchContract.BriefSchemaId,
@@ -390,12 +392,14 @@ public sealed class ProjectLaunchService : IProjectLaunchService
             }, ct);
             if (!response.IsSuccess)
             {
-                if (!response.Retryable || attempt == MaxProviderAttempts)
-                    return Result.Failure<(AiProjectLaunchModelOutput?, string, string)>(
-                        response.ErrorMessage ?? "Project Launch provider unavailable.",
-                        response.Retryable ? 503 : 422,
-                        response.ErrorCode ?? "project_launch_provider_failed");
-                continue;
+                // Gateway already tried every eligible provider. Only an
+                // actual JSON response may enter the schema-repair loop;
+                // retrying an unavailable endpoint blocks the Launch form
+                // without adding any new evidence.
+                return Result.Failure<(AiProjectLaunchModelOutput?, string, string)>(
+                    response.ErrorMessage ?? "Project Launch provider unavailable.",
+                    response.Retryable ? 503 : 422,
+                    response.ErrorCode ?? "project_launch_provider_failed");
             }
             if (AiProjectLaunchOutputContract.TryParse(response.Content, out var output, out lastError))
                 return Result.Success((output, response.ProviderName, response.ModelName));

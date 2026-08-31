@@ -106,7 +106,13 @@ public class IntegrationTestFactory : WebApplicationFactory<Program>
                 else
                 {
                     options.UseSqlServer(_sqlServerConnectionString, sql =>
-                        sql.MigrationsAssembly(typeof(QalyDbContext).Assembly.FullName));
+                    {
+                        sql.MigrationsAssembly(typeof(QalyDbContext).Assembly.FullName);
+                        sql.EnableRetryOnFailure(
+                            maxRetryCount: 5,
+                            maxRetryDelay: TimeSpan.FromSeconds(5),
+                            errorNumbersToAdd: null);
+                    });
                 }
             });
 

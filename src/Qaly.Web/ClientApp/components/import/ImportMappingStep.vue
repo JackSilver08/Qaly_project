@@ -69,6 +69,7 @@ function updateMappingField(index: number, targetField: string) {
       <label>Chọn Sheet</label>
       <select
         :value="selectedSheet"
+        aria-label="Chọn sheet cần nhập"
         class="import-select"
         @change="emit('update:selectedSheet', ($event.target as HTMLSelectElement).value)"
       >
@@ -115,6 +116,7 @@ function updateMappingField(index: number, targetField: string) {
         <label>Người phụ trách mặc định</label>
         <select
           :value="defaultAssigneeId || ''"
+          aria-label="Người phụ trách mặc định"
           class="import-select"
           @change="emit('update:defaultAssigneeId', ($event.target as HTMLSelectElement).value || null)"
         >
@@ -129,6 +131,7 @@ function updateMappingField(index: number, targetField: string) {
         <label>Cột Kanban mặc định (trạng thái)</label>
         <select
           :value="defaultStatus || ''"
+          aria-label="Trạng thái Kanban mặc định"
           class="import-select"
           @change="emit('update:defaultStatus', ($event.target as HTMLSelectElement).value || null)"
         >
@@ -146,6 +149,7 @@ function updateMappingField(index: number, targetField: string) {
         <label>Mức ưu tiên mặc định</label>
         <select
           :value="defaultPriority || ''"
+          aria-label="Mức ưu tiên mặc định"
           class="import-select"
           @change="emit('update:defaultPriority', ($event.target as HTMLSelectElement).value || null)"
         >
@@ -174,10 +178,10 @@ function updateMappingField(index: number, targetField: string) {
     <div class="import-preview-wrap">
       <p class="import-preview-title">Xem trước dữ liệu ({{ parseResult.totalRowCount }} dòng)</p>
       <div class="import-preview-table-wrap">
-        <table class="import-preview-table">
+        <table class="import-preview-table" aria-label="Xem trước dữ liệu import">
           <thead>
             <tr>
-              <th v-for="(h, i) in parseResult.headers" :key="i">{{ h }}</th>
+              <th v-for="(h, i) in parseResult.headers" :key="i" scope="col">{{ h }}</th>
             </tr>
           </thead>
           <tbody>
@@ -197,6 +201,7 @@ function updateMappingField(index: number, targetField: string) {
         <ArrowRight :size="16" class="mapping-arrow" />
         <select
           :value="m.targetField"
+          :aria-label="`Ánh xạ cột ${parseResult.headers[m.columnIndex]}`"
           class="import-select mapping-target"
           @change="updateMappingField(i, ($event.target as HTMLSelectElement).value)"
         >
@@ -217,7 +222,7 @@ function updateMappingField(index: number, targetField: string) {
 
     <div class="import-actions">
       <button class="btn btn--ghost" type="button" @click="emit('back')"><ArrowLeft :size="16" /> Quay lại</button>
-      <button class="btn btn--primary" :disabled="!hasTitleMapping || duplicateMappedFields.length > 0" @click="emit('next')">
+      <button type="button" class="btn btn--primary" :disabled="!hasTitleMapping || duplicateMappedFields.length > 0" @click="emit('next')">
         Tiếp tục <ArrowRight :size="16" />
       </button>
     </div>

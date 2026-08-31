@@ -135,6 +135,18 @@ public static class AiAssistantGoalPlanningOutputContract
         // Explicit requested capabilities and server-recognized actions retain their route.
         var serverInferredCapabilityId = AiAssistantCapabilityIntentClassifier.Infer(context.Message);
         var modelReadRouteWasCorrected = false;
+        var modelActionRouteWasCorrected = false;
+        if (string.IsNullOrWhiteSpace(context.RequestedCapabilityId) &&
+            IsServerOwnedActionCapability(serverInferredCapabilityId) &&
+            available.TryGetValue(serverInferredCapabilityId, out var serverActionDescriptor) &&
+            !string.Equals(selected?.SkillId, serverInferredCapabilityId, StringComparison.Ordinal))
+        {
+            selected = ToSelection(
+                serverActionDescriptor,
+                "Máy chủ nhận diện action target rõ ràng và giữ đúng capability đã đăng ký; model không được đổi Task Assignment thành tư vấn chung hoặc Project Launch.",
+                1);
+            modelActionRouteWasCorrected = true;
+        }
         if (string.IsNullOrWhiteSpace(context.RequestedCapabilityId) &&
             serverInferredCapabilityId is AiAssistantContextContract.GroundedReadCapability or
                 AiAssistantContextContract.ResearchPlanCapability &&
@@ -183,6 +195,8 @@ public static class AiAssistantGoalPlanningOutputContract
             .ToList();
         if (modelReadRouteWasCorrected)
             warnings.Add("Model-selected or unavailable mutation route was replaced by the server-owned read-only route.");
+        if (modelActionRouteWasCorrected)
+            warnings.Add("Model-selected route was replaced by the server-owned registered action capability.");
         if (selected == null) warnings.Add("Không có skill đã authorize phù hợp; chưa thực hiện mutation hoặc tool call.");
 
         var analysis = new AiAssistantGoalAnalysisDto(
@@ -209,6 +223,24 @@ public static class AiAssistantGoalPlanningOutputContract
         result = new AiAssistantGoalPlanningResultDto(analysis, plan, selected?.SkillId, false);
         return true;
     }
+
+    private static bool IsServerOwnedActionCapability(string capabilityId)
+        => capabilityId is
+            AiAssistantContextContract.TaskCreateCapability or
+            AiAssistantContextContract.TaskAssignmentScheduleCapability or
+            AiAssistantContextContract.ProjectLaunchCapability or
+            AiAssistantContextContract.ProjectStaffingPlanCapability or
+            AiAssistantContextContract.ProjectLaunchExecuteCapability or
+            AiAssistantContextContract.ProjectOperationMonitorCapability or
+            AiAssistantContextContract.SafeTestRunCapability or
+            AiAssistantContextContract.AcceptanceChecklistCapability or
+            AiAssistantContextContract.TaskBreakdownCapability or
+            AiAssistantContextContract.WikiBriefTaskCapability or
+            AiAssistantContextContract.GroupPollCapability or
+            AiAssistantContextContract.ProjectDigestCapability or
+            AiAssistantContextContract.MeetingActionsCapability or
+            AiAssistantContextContract.RoadmapAdjustCapability or
+            AiAssistantContextContract.SkillEvidenceCapability;
 
     public static AiAssistantGoalPlanningResultDto CreateDeterministicFallback(
         AiAssistantTurnRequestDto request,

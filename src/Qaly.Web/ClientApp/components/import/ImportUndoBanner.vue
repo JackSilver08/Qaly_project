@@ -60,10 +60,10 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="undo-banner__right">
-          <button class="btn btn--undo" @click="emit('undo')">
+          <button type="button" class="btn btn--undo" @click="emit('undo')">
             <Undo2 :size="14" /> Hoàn tác
           </button>
-          <button class="btn-dismiss" @click="emit('dismiss')">
+          <button type="button" class="btn-dismiss" aria-label="Ẩn thông báo hoàn tác" @click="emit('dismiss')">
             <X :size="14" />
           </button>
         </div>
