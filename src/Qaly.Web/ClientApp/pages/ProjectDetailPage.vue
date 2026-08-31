@@ -22,6 +22,7 @@ import {
   Lock,
   Sparkles,
   LoaderCircle,
+  ChevronUp,
 } from "lucide-vue-next";
 // @ts-ignore
 import { VueDraggable } from "../utils/vendor/vue-draggable-plus.js";
@@ -310,6 +311,19 @@ const kanbanTasksByStatus = computed<Record<string, DashboardTask[]>>(() =>
       tasksByStatus(status),
     ]),
   ),
+);
+// Every tab pane that dereferences `selectedProject` must gate on it as well as on the tab id.
+// The `v-else` branch of the template also renders while the project is still loading
+// (`isLoading === true`, `selectedProject === null`), and "stats" is the default tab — so a tab
+// guarded only by its id threw "Cannot read properties of null (reading 'id')" on every open.
+const canShowStatsTab = computed(
+  () => activeProjectTab.value === "stats" && !!selectedProject.value,
+);
+const canShowRoadmapTab = computed(
+  () => activeProjectTab.value === "roadmap" && !!selectedProject.value,
+);
+const canShowMembersTab = computed(
+  () => activeProjectTab.value === "members" && !!selectedProject.value,
 );
 const canShowCapacityTab = computed(
   () => activeProjectTab.value === "capacity" && !!selectedProject.value,
@@ -764,7 +778,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
           </button>
         </nav>
 
-        <div v-if="activeProjectTab === 'stats'" class="tab-pane reveal">
+        <div v-if="canShowStatsTab" class="tab-pane reveal">
           <ProjectStatsTab
             :project-id="selectedProject.id"
             :can-generate-ai="isProjectAdmin"
@@ -772,7 +786,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
           />
         </div>
 
-        <div v-if="activeProjectTab === 'roadmap'" class="tab-pane reveal">
+        <div v-if="canShowRoadmapTab" class="tab-pane reveal">
           <ProjectRoadmapTab
             :project-id="selectedProject.id"
             :project-name="selectedProject.name"
@@ -877,6 +891,8 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                     <button
                       type="button"
                       class="icon-button"
+                      aria-label="Đóng"
+                      title="Đóng"
                       @click="cancelTaskForm"
                     >
                       <X :size="18" />
@@ -1094,6 +1110,8 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                           <button
                             class="icon-button icon-button--small"
                             type="button"
+                            aria-label="Tùy chọn nhiệm vụ"
+                            title="Tùy chọn nhiệm vụ"
                             @click.stop="toggleTaskMenu(task.id)"
                           >
                             <MoreHorizontal :size="14" />
@@ -1133,7 +1151,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                         {{ task.commentCount }}</span
                       >
                       <span class="meta-item"
-                        >▲ {{ task.upvoteCount || 0 }}</span
+                        ><ChevronUp :size="12" /> {{ task.upvoteCount || 0 }}</span
                       >
                       <span v-if="isTaskOverdue(task)" class="overdue-tag"
                         >Quá hạn</span
@@ -1211,7 +1229,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                   <span class="meta-item"
                     ><MessageSquare :size="12" /> {{ task.commentCount }}</span
                   >
-                  <span class="meta-item">▲ {{ task.upvoteCount || 0 }}</span>
+                  <span class="meta-item"><ChevronUp :size="12" /> {{ task.upvoteCount || 0 }}</span>
                   <span v-if="isTaskOverdue(task)" class="overdue-tag"
                     >Quá hạn</span
                   >
@@ -1222,6 +1240,8 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                     <button
                       class="icon-button icon-button--small"
                       type="button"
+                      aria-label="Tùy chọn nhiệm vụ"
+                      title="Tùy chọn nhiệm vụ"
                       @click.stop="toggleTaskMenu(task.id)"
                     >
                       <MoreHorizontal :size="14" />
@@ -1661,6 +1681,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                             <button
                               class="icon-button icon-button--small icon-button--danger"
                               @click="deleteAttachment(attachment)"
+                              aria-label="Xóa tệp"
                               title="Xóa tệp"
                             >
                               <X :size="14" />
@@ -1738,6 +1759,8 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                             <button
                               class="chat-send-btn"
                               type="submit"
+                              aria-label="Gửi tin nhắn"
+                              title="Gửi tin nhắn"
                               :disabled="!newComment.trim()"
                             >
                               <Send :size="16" />
@@ -1763,7 +1786,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
           </Teleport>
         </div>
 
-        <div v-if="activeProjectTab === 'members'" class="tab-pane reveal">
+        <div v-if="canShowMembersTab" class="tab-pane reveal">
           <ProjectMembersTab
             :members="selectedProjectMembers"
             :users="users"

@@ -71,7 +71,25 @@ test("public authentication pages have no browser errors", async ({ page }) => {
 test("main authenticated routes have no browser errors", async ({ page }) => {
     await login(page);
 
-    for (const route of ["/dashboard", "/projects", "/tasks", "/teams", "/analytics"]) {
+    // Every route reachable from the sidebar plus the account pages. The original five left the
+    // admin, organisation and settings screens unchecked, which is where a handover regression
+    // would sit unnoticed.
+    const routes = [
+        "/dashboard",
+        "/projects",
+        "/projects/archived",
+        "/tasks",
+        "/teams",
+        "/analytics",
+        "/organizations",
+        "/organizations/users",
+        "/admin/users",
+        "/admin/moderators",
+        "/settings",
+        "/profile",
+    ];
+
+    for (const route of routes) {
         const routePage = await page.context().newPage();
         const problems = collectBrowserProblems(routePage);
 

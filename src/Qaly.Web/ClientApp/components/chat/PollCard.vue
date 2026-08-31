@@ -763,4 +763,105 @@ onBeforeUnmount(async () => {
 button:disabled {
   cursor: default;
 }
+
+:global(:root[data-theme='dark'] .poll-card) {
+  border-color: var(--border) !important;
+  color: var(--text-primary) !important;
+  background: linear-gradient(180deg, var(--surface), var(--surface-muted)) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-card button) {
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .deleted-poll),
+:global(:root[data-theme='dark'] .poll-closed) {
+  background: var(--surface-muted) !important;
+  color: var(--text-secondary) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-actions button:hover) {
+  background: var(--surface-hover) !important;
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-actions button.text-danger:hover) {
+  background: var(--danger-soft) !important;
+  color: var(--qaly-danger) !important;
+}
+
+:global(:root[data-theme='dark'] .edit-header strong) {
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .input-text) {
+  border-color: var(--border-strong) !important;
+  color: var(--text-primary) !important;
+  background: var(--surface-muted) !important;
+}
+
+:global(:root[data-theme='dark'] .btn-add-option) {
+  background: var(--surface-muted) !important;
+  border-color: var(--border-strong) !important;
+  color: var(--primary-strong) !important;
+}
+
+:global(:root[data-theme='dark'] .btn-add-option:hover) {
+  background: var(--surface-hover) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-header span) {
+  background: var(--primary-soft) !important;
+  color: var(--primary-strong) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-header strong) {
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-header small),
+:global(:root[data-theme='dark'] .poll-option small),
+:global(:root[data-theme='dark'] .poll-summary) {
+  color: var(--text-secondary) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-option) {
+  border-color: var(--border) !important;
+  background: var(--surface-muted) !important;
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-option.is-selected) {
+  border-color: rgba(96, 165, 250, 0.6) !important;
+  background: linear-gradient(135deg, var(--primary-soft), rgba(96, 165, 250, 0.16)) !important;
+}
+
+:global(:root[data-theme='dark'] .option-check) {
+  border-color: var(--border-strong) !important;
+  background: var(--surface) !important;
+  color: var(--surface) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-option.is-selected .option-check) {
+  border-color: var(--primary) !important;
+  background: var(--primary) !important;
+  color: var(--primary) !important;
+}
+
+:global(:root[data-theme='dark'] .option-label) {
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .percent) {
+  background: var(--surface-muted) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-voter-list) {
+  border-top-color: var(--border) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-voter-list > div > span) {
+  background: var(--primary-soft) !important;
+  color: var(--primary-strong) !important;
+}
 </style>

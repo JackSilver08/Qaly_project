@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { adminEmail, adminPassword } from './support/credentials'
+import { resolveSeededProjectId } from './support/seeded-project'
 
 async function login(page: Page) {
   await page.goto('/Account/Login', { waitUntil: 'domcontentloaded' })
@@ -16,16 +17,29 @@ function envelope<T>(data: T, statusCode = 200) {
 }
 
 test('TEST-ACTION-E2E unified AI assistant shows real progress, editable review and execution receipt', async ({ page }) => {
+  // Long journey: login → assistant turn → job progress → draft edit → confirm → reload read-back.
+  // The default 30s budget only held on an idle machine; with the suite's four workers the
+  // artifact pane re-renders slowly enough that the run ran out of time mid-flow. The sibling
+  // live-worker test already raises its own budget for the same reason.
+  test.setTimeout(90_000)
   await login(page)
+
+  // The assistant always opens in `workspace` scope, so a turn sent from the dashboard carries
+  // `context.projectId === null`. A registered task action must name a real project or the
+  // composer renders its waiting state and never starts a job — bind the artifact to a seeded
+  // project instead of echoing the (empty) request context back.
+  const projectId = await resolveSeededProjectId(page)
   await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
 
   const jobId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
   const draftId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
   const taskId = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
-  let projectId = ''
-  let jobPolls = 0
   let confirmed = false
   let confirmRequests = 0
+  // The drawer polls every 900ms, so letting the mock succeed on the second poll left the
+  // "running" UI on screen for under a second — the progress assertions below then lost the race
+  // whenever the workers were busy. Hold the job running until the test has seen that state.
+  let releaseJobCompletion = false
   const assistantSessionId = 'dddddddd-dddd-dddd-dddd-dddddddddddd'
 
   await page.route('**/api/security/csrf', async route => {
@@ -62,7 +76,6 @@ test('TEST-ACTION-E2E unified AI assistant shows real progress, editable review 
     expect(body.expectedVersion).toBe(0)
     expect(body.clientTurnId).toBeTruthy()
     expect(route.request().headers()['idempotency-key']).toContain(assistantSessionId)
-    projectId = body.context.projectId || '12121212-1212-1212-1212-121212121212'
     await route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({
@@ -98,8 +111,7 @@ test('TEST-ACTION-E2E unified AI assistant shows real progress, editable review 
   })
 
   await page.route('**/api/ai/actions/compose', async route => {
-    const body = route.request().postDataJSON()
-    projectId = body.context.projectId
+    expect(route.request().postDataJSON().context.projectId).toBe(projectId)
     await route.fulfill({
       status: 202,
       contentType: 'application/json',
@@ -108,8 +120,7 @@ test('TEST-ACTION-E2E unified AI assistant shows real progress, editable review 
   })
 
   await page.route(`**/api/ai/jobs/${jobId}`, async route => {
-    jobPolls += 1
-    const succeeded = jobPolls > 1
+    const succeeded = releaseJobCompletion
     await route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({
@@ -148,11 +159,13 @@ test('TEST-ACTION-E2E unified AI assistant shows real progress, editable review 
       contentType: 'application/json',
       body: JSON.stringify(envelope({
         jobId,
-        jobStatus: confirmed ? 'succeeded' : (jobPolls > 1 ? 'succeeded' : 'running'),
+        // Kept in step with the job endpoint so the activity trail never reports a finished job
+        // while the job itself is still running.
+        jobStatus: confirmed || releaseJobCompletion ? 'succeeded' : 'running',
         startedAt: new Date(Date.now() - 2_000).toISOString(),
-        finishedAt: jobPolls > 1 ? new Date().toISOString() : null,
+        finishedAt: releaseJobCompletion ? new Date().toISOString() : null,
         lastSequence: confirmed ? 6 : 3,
-        cancellable: jobPolls <= 1,
+        cancellable: !releaseJobCompletion,
         events,
       })),
     })
@@ -237,6 +250,9 @@ test('TEST-ACTION-E2E unified AI assistant shows real progress, editable review 
   await page.getByRole('button', { name: 'Mở phương án task' }).click()
 
   await expect(page.getByText(/Đã chạy \d+ giây/)).toBeVisible()
+  await expect(page.getByText('Đang định tuyến DeepSeek V4 Pro')).toBeVisible()
+
+  releaseJobCompletion = true
   await expect(page.getByText('Đã soạn xong — chưa thay đổi dữ liệu')).toBeVisible({ timeout: 10_000 })
 
   const artifactSplitter = page.getByRole('separator', { name: 'Thay đổi độ rộng hội thoại và bản nháp' })

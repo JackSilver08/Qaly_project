@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { adminEmail, adminPassword } from './support/credentials'
+import { openAssistantDisclosures } from './support/assistant-disclosures'
 
 async function login(page: Page) {
   await page.goto('/Account/Login', { waitUntil: 'domcontentloaded' })
@@ -193,9 +194,9 @@ test('TEST-AS-E2E reload restores the canonical turn and safe process steps from
   const assistant = await openAssistant(page)
   await expect(assistant.getByText('Tóm tắt workspace của tôi')).toBeVisible()
   await expect(assistant.getByText('Đây là phản hồi đã được khôi phục từ session máy chủ.')).toBeVisible()
-  const processDisclosure = assistant.locator('details.assistant-process-disclosure')
-  await expect(processDisclosure).not.toHaveAttribute('open', '')
-  await processDisclosure.locator('summary').click()
+  // The process trail ships collapsed so the answer stays the primary content; open it the way
+  // a user would before asserting the restored step labels.
+  await openAssistantDisclosures(assistant, ['assistant-process-disclosure'])
   await expect(assistant.getByText('Đã xác định ngữ cảnh được phép')).toBeVisible()
   await assistant.getByText('Ngữ cảnh đã kiểm tra · 1 nguồn').click()
   await expect(assistant.getByText('grounded.read.v1')).toBeVisible()

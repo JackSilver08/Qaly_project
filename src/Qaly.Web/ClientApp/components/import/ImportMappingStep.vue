@@ -31,15 +31,15 @@ const emit = defineEmits<{
 }>()
 
 const targetFields = [
-  { value: 'Title', label: '📝 Tiêu đề (Title)', required: true },
-  { value: 'Description', label: '📋 Mô tả' },
-  { value: 'Status', label: '📊 Trạng thái (Cột Kanban)' },
-  { value: 'Priority', label: '🔥 Độ ưu tiên' },
-  { value: 'DueDate', label: '📅 Hạn chót' },
-  { value: 'EstimatedHours', label: '⏱️ Giờ ước tính' },
-  { value: 'Labels', label: '🏷️ Nhãn (Labels)' },
-  { value: 'Assignee', label: '👤 Người thực hiện' },
-  { value: 'Skip', label: '⏭️ Bỏ qua' },
+  { value: 'Title', label: 'Tiêu đề (Title)', required: true },
+  { value: 'Description', label: 'Mô tả' },
+  { value: 'Status', label: 'Trạng thái (Cột Kanban)' },
+  { value: 'Priority', label: 'Độ ưu tiên' },
+  { value: 'DueDate', label: 'Hạn chót' },
+  { value: 'EstimatedHours', label: 'Giờ ước tính' },
+  { value: 'Labels', label: 'Nhãn (Labels)' },
+  { value: 'Assignee', label: 'Người thực hiện' },
+  { value: 'Skip', label: 'Bỏ qua' },
 ]
 
 const hasTitleMapping = computed(() =>
