@@ -97,7 +97,7 @@ function handleSubmitReview() {
           </div>
           <div>
             <div class="text-white font-extrabold text-base flex items-center gap-2">
-              <span>✨ AI Roadmap Proposal (Diff Preview)</span>
+              <span>AI Roadmap Proposal (Diff Preview)</span>
               <span
                 v-if="proposal.confidenceScore"
                 class="bg-emerald-500/10 text-emerald-400 text-[10px] font-mono px-2 py-0.5 rounded-full border border-emerald-500/30"
@@ -127,7 +127,10 @@ function handleSubmitReview() {
 
           <button
             @click="emit('close')"
+            type="button"
             class="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition"
+            aria-label="Đóng bản thảo đề xuất"
+            title="Đóng"
           >
             <X class="w-5 h-5" />
           </button>
@@ -226,7 +229,7 @@ function handleSubmitReview() {
         <div class="space-y-2 pt-1">
           <div class="text-blue-400 font-bold flex items-center gap-1.5">
             <Activity class="w-4 h-4" />
-            <span>📊 Đánh Giá Năng Lực & Tải Của Đội Ngũ (Workload Capacity):</span>
+            <span>Đánh Giá Năng Lực & Tải Của Đội Ngũ (Workload Capacity):</span>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5">

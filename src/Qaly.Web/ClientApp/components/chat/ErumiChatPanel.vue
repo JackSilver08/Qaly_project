@@ -1776,10 +1776,10 @@ function getFallbackChatAnswer(prompt: string) {
     return getFallbackTeamAnswer(p)
   }
   if (p.includes('hiệu suất') || p.includes('năng suất') || p.includes('productivity') || p.includes('báo cáo')) {
-    return `### 📊 Đánh giá hiệu suất làm việc tuần qua\n\n- **Tiến độ**: Các dự án trong Workspace hoạt động đúng tiến độ đạt **75%**. Tổng số nhiệm vụ đã hoàn tất trong tuần là **8 nhiệm vụ**.\n- **Thời gian**: Toàn nhóm đã ghi nhận **32 giờ chấm công thực tế**.\n- **Nhận xét**: Năng suất duy trì ở mức ổn định. Điểm sáng là sự tập trung cao độ ở các task thuộc luồng quan trọng.`
+    return `### Đánh giá hiệu suất làm việc tuần qua\n\n- **Tiến độ**: Các dự án trong Workspace hoạt động đúng tiến độ đạt **75%**. Tổng số nhiệm vụ đã hoàn tất trong tuần là **8 nhiệm vụ**.\n- **Thời gian**: Toàn nhóm đã ghi nhận **32 giờ chấm công thực tế**.\n- **Nhận xét**: Năng suất duy trì ở mức ổn định. Điểm sáng là sự tập trung cao độ ở các task thuộc luồng quan trọng.`
   }
   if (p.includes('rủi ro') || p.includes('chậm') || p.includes('risk') || p.includes('quá hạn')) {
-    return `### ⚠️ Đánh giá rủi ro toàn Workspace\n\n- **Nhiệm vụ trễ hạn**: Phát hiện dự án đang có **1 nhiệm vụ quá hạn** cần xử lý.\n- **Dự án chịu ảnh hưởng**: Dự án DATN đang có tỉ lệ quá hạn nhẹ.\n- **Giải pháp**: Nhắc nhở người thực hiện trực tiếp hoặc phân bổ thêm thành viên hỗ trợ để tháo gỡ điểm nghẽn.`
+    return `### Đánh giá rủi ro toàn Workspace\n\n- **Nhiệm vụ trễ hạn**: Phát hiện dự án đang có **1 nhiệm vụ quá hạn** cần xử lý.\n- **Dự án chịu ảnh hưởng**: Dự án DATN đang có tỉ lệ quá hạn nhẹ.\n- **Giải pháp**: Nhắc nhở người thực hiện trực tiếp hoặc phân bổ thêm thành viên hỗ trợ để tháo gỡ điểm nghẽn.`
   }
   return `Chào bạn! Mình là Erumi. Hiện tại mô hình AI cục bộ đang ở trạng thái ngoại tuyến.\n\nTuy nhiên, bạn có thể chọn các dự án cụ thể trong menu ngữ cảnh và dùng nút **+** để mở các câu hỏi gợi ý hay công cụ phân tích để mình trích xuất báo cáo thông minh trực tiếp từ dữ liệu hệ thống nhé!`
 }
@@ -5048,7 +5048,7 @@ onBeforeUnmount(() => {
 .project-launch-rulebook { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 9px 16px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); font-size: 12px; }
 .project-launch-rulebook button { margin-left: auto; border: 1px solid currentColor; border-radius: 8px; background: var(--surface); color: inherit; padding: 6px 9px; cursor: pointer; }
 .project-launch-rulebook button:disabled { opacity: .55; cursor: not-allowed; }
-.project-launch-rulebook.status-policy_missing { color: #b45309; background: #fffbeb; }
+.project-launch-rulebook.status-policy_missing { color: #d97706; background: color-mix(in srgb, #f59e0b 15%, var(--surface)); }
 .project-launch-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 14px 16px; }
 .project-launch-columns section { padding: 10px; border: 1px solid var(--border); border-radius: 10px; }
 .project-launch-columns h4,
@@ -5060,8 +5060,8 @@ onBeforeUnmount(() => {
 .project-launch-decisions ul { display: grid; gap: 7px; list-style: none; padding: 8px 0 0; }
 .project-launch-decisions li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 10px; padding: 9px; border: 1px solid var(--border); border-radius: 9px; }
 .project-launch-decisions li p { grid-column: 1 / -1; margin: 0; color: var(--muted); }
-.project-launch-decisions .decision-block { border-color: #fecaca; }
-.project-launch-decisions .decision-unknown { border-color: #fde68a; }
+.project-launch-decisions .decision-block { border-color: color-mix(in srgb, #ef4444 35%, var(--border)); }
+.project-launch-decisions .decision-unknown { border-color: color-mix(in srgb, #f59e0b 35%, var(--border)); }
 .project-launch-brief-card > footer { display: flex; flex-wrap: wrap; gap: 8px 14px; padding: 10px 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 11px; }
 .safe-test-suite-list { display: grid; gap: 8px; margin: 0; padding: 14px 16px; list-style: none; }
 .safe-test-suite-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 9px; }
@@ -5069,8 +5069,8 @@ onBeforeUnmount(() => {
 .safe-test-suite-list small,
 .safe-test-suite-list span { color: var(--muted); font-size: 11px; }
 .safe-test-events { padding-top: 0; }
-.safe-test-events .status-passed { border-color: #86efac; }
-.safe-test-events .status-failed { border-color: #fca5a5; }
+.safe-test-events .status-passed { border-color: #10b981; }
+.safe-test-events .status-failed { border-color: #ef4444; }
 .safe-test-summary { margin: 0; padding: 0 16px 12px; }
 .safe-test-confirm { margin: 0 16px 14px auto; display: flex; }
 .project-launch-plan-card { border: 1px solid color-mix(in srgb, var(--primary) 40%, var(--border)); border-radius: 14px; background: var(--surface); overflow: hidden; }
@@ -5080,8 +5080,8 @@ onBeforeUnmount(() => {
 .project-launch-plan-header span { color: var(--muted); font-size: 11px; }
 .launch-blocking-list,
 .launch-warning-list { padding: 10px 16px; border-top: 1px solid var(--border); font-size: 12px; }
-.launch-blocking-list { color: #b91c1c; background: #fef2f2; }
-.launch-warning-list { color: #92400e; background: #fffbeb; }
+.launch-blocking-list { color: #dc2626; background: color-mix(in srgb, #ef4444 15%, var(--surface)); }
+.launch-warning-list { color: #d97706; background: color-mix(in srgb, #f59e0b 15%, var(--surface)); }
 .launch-blocking-list ul,
 .launch-warning-list ul { margin: 5px 0 0; padding-left: 18px; }
 .launch-plan-section,

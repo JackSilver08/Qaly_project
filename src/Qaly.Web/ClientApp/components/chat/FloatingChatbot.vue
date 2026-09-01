@@ -488,7 +488,9 @@ watch(isOpen, async open => {
     <button 
       class="erumi-bubble-trigger" 
       :class="{ 'is-active': isOpen }" 
+      type="button"
       aria-label="Mở Trợ lý AI"
+      title="Mở Trợ lý AI"
       @click="toggleDrawer"
     >
       <ChatbotAvatar size="medium" />
@@ -552,19 +554,20 @@ watch(isOpen, async open => {
             </div>
           </div>
           <div class="drawer-header-actions">
-            <button class="drawer-icon-btn" :class="{ active: activeView === 'chat' }" title="Trò chuyện" @click="activeView = 'chat'"><MessageSquare :size="17" /></button>
+            <button class="drawer-icon-btn" :class="{ active: activeView === 'chat' }" type="button" title="Trò chuyện" aria-label="Trò chuyện" @click="activeView = 'chat'"><MessageSquare :size="17" /></button>
             <button
               v-if="artifactAvailable"
               class="drawer-icon-btn"
               :class="{ active: activeView === 'create' && !layout.artifactCollapsed }"
+              type="button"
               :title="activeView === 'create' && !layout.artifactCollapsed ? 'Thu gọn bản nháp AI' : 'Mở bản nháp AI'"
               :aria-label="activeView === 'create' && !layout.artifactCollapsed ? 'Thu gọn bản nháp AI' : 'Mở bản nháp AI'"
               @click="toggleArtifactPane"
             ><ListChecks :size="17" /></button>
-            <button class="drawer-icon-btn" :class="{ active: activeView === 'activity' }" title="Hoạt động AI" @click="activeView = 'activity'"><Activity :size="17" /></button>
-            <button class="drawer-icon-btn" title="Lịch sử phiên Trợ lý AI" aria-label="Lịch sử phiên Trợ lý AI" data-testid="assistant-session-history-toolbar" @click="openAssistantHistory"><Clock3 :size="17" /></button>
-            <button class="drawer-icon-btn reset-layout-btn" title="Đặt lại kích thước" aria-label="Đặt lại kích thước Trợ lý AI" @click="resetAssistantLayout"><RotateCcw :size="17" /></button>
-            <button class="drawer-close-btn" @click="closeDrawer" aria-label="Đóng"><X :size="20" /></button>
+            <button class="drawer-icon-btn" :class="{ active: activeView === 'activity' }" type="button" title="Hoạt động AI" aria-label="Hoạt động AI" @click="activeView = 'activity'"><Activity :size="17" /></button>
+            <button class="drawer-icon-btn" type="button" title="Lịch sử phiên Trợ lý AI" aria-label="Lịch sử phiên Trợ lý AI" data-testid="assistant-session-history-toolbar" @click="openAssistantHistory"><Clock3 :size="17" /></button>
+            <button class="drawer-icon-btn reset-layout-btn" type="button" title="Đặt lại kích thước" aria-label="Đặt lại kích thước Trợ lý AI" @click="resetAssistantLayout"><RotateCcw :size="17" /></button>
+            <button class="drawer-close-btn" type="button" title="Đóng Trợ lý AI" aria-label="Đóng Trợ lý AI" @click="closeDrawer"><X :size="20" /></button>
           </div>
         </header>
         
