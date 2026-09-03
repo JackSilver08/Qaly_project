@@ -5,6 +5,8 @@
 > **Updated:** 02/09/2026
 > This model describes the current working tree. It is not a penetration-test certificate and does not make an unconfigured external adapter production-ready.
 
+The repository runs CodeQL for C# and JavaScript/TypeScript and retains SARIF as a GitHub Actions artifact. Direct upload to the GitHub Code Scanning UI remains disabled until the private repository enables that platform feature; the workflow does not treat an unavailable upload endpoint as a successful platform integration.
+
 ## 1. Scope and production assumptions
 
 In scope: browser/Razor/Vue entry points, cookie and API-key authentication, three-layer RBAC, view-as, AI source/action authorization, SQL/Redis state, imports, realtime, workers and configured external adapters.
