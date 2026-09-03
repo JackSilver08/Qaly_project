@@ -179,6 +179,7 @@ onBeforeUnmount(() => {
         :class="{ 'is-active': activeTab === action.tab }"
         type="button"
         :aria-label="action.label"
+        :aria-pressed="activeTab === action.tab"
         :title="action.description || action.label"
         @click="handleSelect(action)"
       >
@@ -207,6 +208,7 @@ onBeforeUnmount(() => {
         :class="{ 'is-active': activeTab === 'history' }"
         type="button"
         aria-label="Mở lịch sử trò chuyện"
+        :aria-pressed="activeTab === 'history'"
         title="Lịch sử"
         @click="handleSelect(utilityActions[0])"
       >

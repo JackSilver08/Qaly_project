@@ -27,6 +27,8 @@ public static class DependencyInjection
         services.AddScoped<IProjectRoleService, ProjectRoleService>();
         services.AddScoped<IErumiRoadmapAiService, ErumiRoadmapAiService>();
         services.AddScoped<IProjectRoleCatalog, ProjectRoleCatalog>();
+        services.AddScoped<ISystemModuleAuthorizationService, SystemModuleAuthorizationService>();
+        services.AddScoped<IAiNativeAuthorizationService, AiNativeAuthorizationService>();
         services.AddScoped<IProjectRoleDefinitionService, ProjectRoleDefinitionService>();
         services.AddScoped<IGitHubAccessGuard, GitHubAccessGuard>();
         services.AddScoped<IGitHubRepositoryConnectionService, GitHubRepositoryConnectionService>();
@@ -38,6 +40,7 @@ public static class DependencyInjection
         services.AddScoped<ITaskService, TaskService>();
         services.AddScoped<ITaskSkillService, TaskSkillService>();
         services.AddScoped<IMemberSkillEvidenceService, MemberSkillEvidenceService>();
+        services.AddScoped<IProfessionalProfileService, ProfessionalProfileService>();
         services.AddScoped<IPortfolioScheduleService, PortfolioScheduleService>();
         services.AddScoped<ITaskAccessPolicy, TaskAccessPolicy>();
         services.AddScoped<ICommentService, CommentService>();

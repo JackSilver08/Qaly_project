@@ -25,6 +25,7 @@ public class ErumiRoadmapController : BaseApiController
     /// Free-form chat interaction with Erumi AI to discuss roadmap ideas and get proposal diffs.
     /// </summary>
     [HttpPost("chat")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ChatAndPropose([FromBody] ErumiRoadmapChatRequestDto dto, CancellationToken ct)
     {
         var result = await _erumiService.ChatAndProposeRoadmapAsync(dto, ct);
@@ -66,6 +67,7 @@ public class ErumiRoadmapController : BaseApiController
     /// Strictly restricted to Project Owners and authorized Project Managers.
     /// </summary>
     [HttpPost("approve")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ApproveProposal([FromBody] ApproveErumiRoadmapProposalDto dto, CancellationToken ct)
     {
         var result = await _erumiService.ApproveRoadmapProposalAsync(dto, ct);
@@ -77,6 +79,7 @@ public class ErumiRoadmapController : BaseApiController
     /// Strictly restricted to Project Owners and authorized Project Managers.
     /// </summary>
     [HttpPost("rollback")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> RollbackSnapshot([FromBody] RollbackErumiRoadmapSnapshotDto dto, CancellationToken ct)
     {
         var result = await _erumiService.RollbackRoadmapSnapshotAsync(dto, ct);

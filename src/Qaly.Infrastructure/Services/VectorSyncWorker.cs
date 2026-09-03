@@ -1,22 +1,26 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Domain.Entities;
-using Qaly.Domain.Interfaces;
-using System.Text.Json;
 
 namespace Qaly.Infrastructure.Services;
 
-public partial class VectorSyncWorker : BackgroundService
+public sealed partial class VectorSyncWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IOptionsMonitor<VectorSyncOptions> _options;
     private readonly ILogger<VectorSyncWorker> _logger;
+    private readonly string _workerId = $"{Environment.MachineName}:{Guid.NewGuid():N}";
 
-    public VectorSyncWorker(IServiceScopeFactory scopeFactory, ILogger<VectorSyncWorker> logger)
+    public VectorSyncWorker(
+        IServiceScopeFactory scopeFactory,
+        IOptionsMonitor<VectorSyncOptions> options,
+        ILogger<VectorSyncWorker> logger)
     {
         _scopeFactory = scopeFactory;
+        _options = options;
         _logger = logger;
     }
 
@@ -28,105 +32,238 @@ public partial class VectorSyncWorker : BackgroundService
         {
             try
             {
-                await ProcessOutboxMessagesAsync(stoppingToken);
+                var processed = await ProcessBatchAsync(stoppingToken);
+                if (processed == 0) await DelayAsync(stoppingToken);
             }
-            catch (Exception ex)
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
-                ErrorProcessingVectorSyncOutbox(_logger, ex);
+                break;
             }
-
-            await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+            catch (Exception exception)
+            {
+                ErrorProcessingVectorSyncOutbox(_logger, exception);
+                await DelayAsync(stoppingToken);
+            }
         }
 
         VectorSyncWorkerStopping(_logger);
     }
 
-    private async Task ProcessOutboxMessagesAsync(CancellationToken ct)
+    internal async Task<int> ProcessBatchAsync(CancellationToken ct)
     {
-        using var scope = _scopeFactory.CreateScope();
-        var outboxRepo = scope.ServiceProvider.GetRequiredService<IRepository<VectorSyncOutbox>>();
-        var ingestionService = scope.ServiceProvider.GetRequiredService<IAiIngestionService>();
-        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var options = _options.CurrentValue;
+        var leaseDuration = TimeSpan.FromSeconds(Math.Clamp(options.LeaseSeconds, 30, 900));
+        var heartbeatInterval = TimeSpan.FromSeconds(Math.Clamp(
+            options.HeartbeatSeconds,
+            5,
+            Math.Max(5, (int)leaseDuration.TotalSeconds / 2)));
+        var baseRetryDelay = TimeSpan.FromSeconds(Math.Clamp(options.BaseRetrySeconds, 1, 300));
+        var processed = 0;
 
-        var messages = await outboxRepo.GetQueryable()
-            .Where(m => m.ProcessedAt == null && m.RetryCount < 5)
-            .OrderBy(m => m.CreatedAt)
-            .Take(20)
-            .ToListAsync(ct);
-
-        if (messages.Count == 0) return;
-
-        foreach (var message in messages)
+        for (var index = 0; index < Math.Clamp(options.BatchSize, 1, 100); index++)
         {
-            try
-            {
-                await ProcessMessageAsync(message, ingestionService);
-                message.ProcessedAt = DateTimeOffset.UtcNow;
-                message.ErrorMessage = null;
-            }
-            catch (Exception ex)
-            {
-                FailedToProcessOutboxMessage(_logger, ex, message.Id);
-                message.RetryCount++;
-                message.ErrorMessage = ex.Message;
-            }
+            using var scope = _scopeFactory.CreateScope();
+            var store = scope.ServiceProvider.GetRequiredService<IVectorSyncOutboxStore>();
+            var ingestion = scope.ServiceProvider.GetRequiredService<IAiIngestionService>();
+            var item = await store.ClaimNextAsync(
+                _workerId,
+                leaseDuration,
+                Math.Clamp(options.MaxAttempts, 1, 20),
+                ct);
+            if (item == null) break;
+
+            await ProcessClaimAsync(
+                item,
+                store,
+                ingestion,
+                leaseDuration,
+                heartbeatInterval,
+                baseRetryDelay,
+                Math.Clamp(options.MaxAttempts, 1, 20),
+                ct);
+            processed++;
         }
 
-        await unitOfWork.SaveChangesAsync(ct);
+        return processed;
     }
 
-    private async Task ProcessMessageAsync(VectorSyncOutbox message, IAiIngestionService ingestionService)
+    private async Task ProcessClaimAsync(
+        VectorSyncOutbox item,
+        IVectorSyncOutboxStore store,
+        IAiIngestionService ingestion,
+        TimeSpan leaseDuration,
+        TimeSpan heartbeatInterval,
+        TimeSpan baseRetryDelay,
+        int maxAttempts,
+        CancellationToken ct)
     {
-        var payload = JsonSerializer.Deserialize<JsonElement>(message.Payload);
-        var id = payload.GetProperty("Id").GetGuid();
+        using var processing = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var stopHeartbeat = new CancellationTokenSource();
+        var heartbeatTask = MaintainLeaseAsync(
+            item.Id,
+            leaseDuration,
+            heartbeatInterval,
+            processing,
+            stopHeartbeat.Token);
+        Exception? processingFailure = null;
+        var hostCanceled = false;
 
-        switch (message.EventType)
+        try
         {
-            case "TaskCreated":
-            case "TaskUpdated":
-                await ingestionService.SyncTaskAsync(id);
-                break;
-            case "TaskDeleted":
-                await ingestionService.DeleteTaskAsync(id);
-                break;
-            case "CommentAdded":
-                await ingestionService.SyncCommentAsync(id);
-                break;
-            case "CommentDeleted":
-                await ingestionService.DeleteCommentAsync(id);
-                break;
-            case "TaskAttachmentCreated":
-            case "TaskAttachmentUpdated":
-                await ingestionService.SyncAttachmentAsync(id);
-                break;
-            case "TaskAttachmentDeleted":
-                await ingestionService.DeleteAttachmentAsync(id);
-                break;
-            case "ProjectCreated":
-            case "ProjectUpdated":
-                await ingestionService.SyncProjectAsync(id);
-                break;
-            case "ProjectDeleted":
-                await ingestionService.DeleteProjectAsync(id);
-                break;
-            default:
-                UnknownEventType(_logger, message.EventType);
-                break;
+            await ProcessMessageAsync(item, ingestion, processing.Token);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            hostCanceled = true;
+        }
+        catch (OperationCanceledException) when (processing.IsCancellationRequested)
+        {
+            // Lease heartbeat canceled processing because ownership is uncertain.
+        }
+        catch (Exception exception)
+        {
+            processingFailure = exception;
+        }
+
+        stopHeartbeat.Cancel();
+        var heartbeat = await heartbeatTask;
+
+        if (hostCanceled)
+        {
+            await TryReleaseClaimAsync(item.Id);
+            throw new OperationCanceledException(ct);
+        }
+
+        if (!heartbeat.LeaseRetained)
+        {
+            LeaseOwnershipLost(_logger, item.Id, heartbeat.Error);
+            return;
+        }
+
+        if (processingFailure != null)
+        {
+            await store.RecordFailureAsync(
+                item,
+                _workerId,
+                processingFailure.Message,
+                maxAttempts,
+                baseRetryDelay,
+                ct);
+            FailedToProcessOutboxMessage(
+                _logger,
+                item.Id,
+                item.RetryCount,
+                item.DeadLetteredAt != null,
+                processingFailure);
+            return;
+        }
+
+        await store.CompleteAsync(item, _workerId, ct);
+    }
+
+    private static Task ProcessMessageAsync(
+        VectorSyncOutbox item,
+        IAiIngestionService ingestion,
+        CancellationToken ct)
+        => item.EventType switch
+        {
+            VectorSyncEventTypes.TaskCreated or VectorSyncEventTypes.TaskUpdated
+                => ingestion.SyncTaskAsync(item.AggregateId, ct),
+            VectorSyncEventTypes.TaskDeleted
+                => ingestion.DeleteTaskAsync(item.AggregateId, ct),
+            VectorSyncEventTypes.CommentAdded or VectorSyncEventTypes.CommentUpdated
+                => ingestion.SyncCommentAsync(item.AggregateId, ct),
+            VectorSyncEventTypes.CommentDeleted
+                => ingestion.DeleteCommentAsync(item.AggregateId, ct),
+            VectorSyncEventTypes.TaskAttachmentCreated or VectorSyncEventTypes.TaskAttachmentUpdated
+                => ingestion.SyncAttachmentAsync(item.AggregateId, ct),
+            VectorSyncEventTypes.TaskAttachmentDeleted
+                => ingestion.DeleteAttachmentAsync(item.AggregateId, ct),
+            VectorSyncEventTypes.ProjectCreated or VectorSyncEventTypes.ProjectUpdated
+                => ingestion.SyncProjectAsync(item.AggregateId, ct),
+            VectorSyncEventTypes.ProjectDeleted
+                => ingestion.DeleteProjectAsync(item.AggregateId, ct),
+            _ => throw new InvalidOperationException($"Unsupported vector sync event '{item.EventType}'.")
+        };
+
+    private async Task<HeartbeatResult> MaintainLeaseAsync(
+        Guid outboxId,
+        TimeSpan leaseDuration,
+        TimeSpan heartbeatInterval,
+        CancellationTokenSource processing,
+        CancellationToken stopToken)
+    {
+        using var timer = new PeriodicTimer(heartbeatInterval);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stopToken))
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var store = scope.ServiceProvider.GetRequiredService<IVectorSyncOutboxStore>();
+                if (await store.RenewLeaseAsync(outboxId, _workerId, leaseDuration, stopToken)) continue;
+
+                processing.Cancel();
+                return new HeartbeatResult(false, null);
+            }
+        }
+        catch (OperationCanceledException) when (stopToken.IsCancellationRequested)
+        {
+            return new HeartbeatResult(true, null);
+        }
+        catch (Exception exception)
+        {
+            processing.Cancel();
+            return new HeartbeatResult(false, exception);
+        }
+
+        return new HeartbeatResult(true, null);
+    }
+
+    private async Task TryReleaseClaimAsync(Guid outboxId)
+    {
+        try
+        {
+            using var recoveryTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            using var scope = _scopeFactory.CreateScope();
+            var store = scope.ServiceProvider.GetRequiredService<IVectorSyncOutboxStore>();
+            await store.ReleaseLeaseAsync(outboxId, _workerId, recoveryTimeout.Token);
+        }
+        catch (Exception exception)
+        {
+            ClaimReleaseFailed(_logger, outboxId, exception);
         }
     }
 
-    [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Vector Sync Worker is starting.")]
+    private Task DelayAsync(CancellationToken ct)
+        => Task.Delay(
+            TimeSpan.FromMilliseconds(Math.Clamp(
+                _options.CurrentValue.PollIntervalMilliseconds,
+                100,
+                60000)),
+            ct);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Vector sync worker is starting.")]
     private static partial void VectorSyncWorkerStarting(ILogger logger);
 
-    [LoggerMessage(EventId = 2, Level = LogLevel.Error, Message = "Error occurred while processing vector sync outbox.")]
+    [LoggerMessage(Level = LogLevel.Error, Message = "Vector sync worker loop failed.")]
     private static partial void ErrorProcessingVectorSyncOutbox(ILogger logger, Exception exception);
 
-    [LoggerMessage(EventId = 3, Level = LogLevel.Information, Message = "Vector Sync Worker is stopping.")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Vector sync worker is stopping.")]
     private static partial void VectorSyncWorkerStopping(ILogger logger);
 
-    [LoggerMessage(EventId = 4, Level = LogLevel.Error, Message = "Failed to process outbox message {MessageId}")]
-    private static partial void FailedToProcessOutboxMessage(ILogger logger, Exception exception, Guid messageId);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Vector sync outbox {OutboxId} failed on attempt {Attempt}; dead-lettered: {DeadLettered}.")]
+    private static partial void FailedToProcessOutboxMessage(
+        ILogger logger,
+        Guid outboxId,
+        int attempt,
+        bool deadLettered,
+        Exception exception);
 
-    [LoggerMessage(EventId = 5, Level = LogLevel.Warning, Message = "Unknown event type: {EventType}")]
-    private static partial void UnknownEventType(ILogger logger, string eventType);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Vector sync outbox {OutboxId} stopped because its durable lease could not be renewed or was lost.")]
+    private static partial void LeaseOwnershipLost(ILogger logger, Guid outboxId, Exception? exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not release canceled vector sync claim {OutboxId}; operator recovery may be required.")]
+    private static partial void ClaimReleaseFailed(ILogger logger, Guid outboxId, Exception exception);
+
+    private sealed record HeartbeatResult(bool LeaseRetained, Exception? Error);
 }

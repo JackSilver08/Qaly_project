@@ -22,6 +22,11 @@ public interface IAiAssistantSessionService
         UpdateAiAssistantSessionRequestDto request,
         CancellationToken ct = default);
 
+    Task<Result<AiAssistantSessionDto>> UpdateScopeAsync(
+        Guid sessionId,
+        UpdateAiAssistantSessionScopeRequestDto request,
+        CancellationToken ct = default);
+
     Task<Result<AiAssistantSessionDto>> ArchiveAsync(
         Guid sessionId,
         long expectedVersion,

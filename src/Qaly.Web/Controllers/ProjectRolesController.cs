@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Qaly.Application.DTOs.Project;
 using Qaly.Application.Services;
+using Qaly.Domain.Interfaces;
 
 namespace Qaly.Web.Controllers;
 
@@ -11,10 +12,17 @@ namespace Qaly.Web.Controllers;
 public class ProjectRolesController : BaseApiController
 {
     private readonly IProjectRoleService _roleService;
+    private readonly ISystemModuleAuthorizationService _systemAuthorization;
+    private readonly ICurrentUserService _currentUser;
 
-    public ProjectRolesController(IProjectRoleService roleService)
+    public ProjectRolesController(
+        IProjectRoleService roleService,
+        ISystemModuleAuthorizationService systemAuthorization,
+        ICurrentUserService currentUser)
     {
         _roleService = roleService;
+        _systemAuthorization = systemAuthorization;
+        _currentUser = currentUser;
     }
 
     [HttpGet("projects/{projectId:guid}/roles")]
@@ -60,6 +68,25 @@ public class ProjectRolesController : BaseApiController
     {
         var result = await _roleService.GetSystemModulePermissionsAsync(systemRole, userId, ct);
         return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("effective-system-permissions")]
+    public async Task<IActionResult> GetEffectiveSystemPermissions(CancellationToken ct)
+    {
+        if (!_currentUser.UserId.HasValue)
+        {
+            return Unauthorized();
+        }
+
+        var effective = await _systemAuthorization.ResolveAllAsync(
+            _currentUser.UserId.Value,
+            _currentUser.Role,
+            ct);
+        return Ok(effective.Select(item => new EffectiveSystemModuleAccessDto(
+            item.ModuleKey,
+            item.IsAllowed,
+            SystemModulePermissionRules.FormatTier(item.AiTier),
+            item.Source)));
     }
 
     [HttpPut("system-permissions")]

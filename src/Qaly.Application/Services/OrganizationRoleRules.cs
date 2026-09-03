@@ -21,12 +21,28 @@ public static class OrganizationRoleRules
 
     public static bool TryNormalizeAssignableRole(string? role, out string normalized)
     {
-        normalized = Normalize(role);
+        normalized = string.Empty;
+        if (string.IsNullOrWhiteSpace(role) || !TryNormalizeKnownRole(role, out var known))
+        {
+            return false;
+        }
+        normalized = known;
         return string.Equals(normalized, OrganizationAdmin, StringComparison.Ordinal)
                || string.Equals(normalized, PrivacyOperator, StringComparison.Ordinal)
                || string.Equals(normalized, BillingAdmin, StringComparison.Ordinal)
                || (string.Equals(normalized, Member, StringComparison.Ordinal)
-                   && (string.IsNullOrWhiteSpace(role) || string.Equals(role.Trim(), Member, StringComparison.OrdinalIgnoreCase)));
+                   && string.Equals(role.Trim(), Member, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Read-path normalization accepts only the two documented migration aliases. Unknown stored
+    /// values fail closed instead of being silently treated as an Organization Member.
+    /// External users belong to Project-scoped Viewer/Customer roles, not an Organization Guest role.
+    /// </summary>
+    public static bool TryNormalizeKnownRole(string? role, out string normalized)
+    {
+        normalized = Normalize(role);
+        return normalized.Length > 0;
     }
 
     public static string Normalize(string? role)
@@ -38,6 +54,7 @@ public static class OrganizationRoleRules
             || string.Equals(value, "Manager", StringComparison.OrdinalIgnoreCase)) return OrganizationAdmin;
         if (string.Equals(value, PrivacyOperator, StringComparison.OrdinalIgnoreCase)) return PrivacyOperator;
         if (string.Equals(value, BillingAdmin, StringComparison.OrdinalIgnoreCase)) return BillingAdmin;
-        return Member;
+        if (string.Equals(value, Member, StringComparison.OrdinalIgnoreCase)) return Member;
+        return string.Empty;
     }
 }

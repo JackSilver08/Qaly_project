@@ -45,11 +45,11 @@ public class TimeTrackingService : ITimeTrackingService
         if (task == null) return Result.NotFound<TimeEntryDto>();
         if (task.Project == null) return Result.NotFound<TimeEntryDto>();
 
-        if (!await _accessPolicy.CanAccessTaskAsync(task, ct)) return Result.Forbidden<TimeEntryDto>();
+        if (!await _accessPolicy.CanContributeToTaskAsync(task, ct)) return Result.Forbidden<TimeEntryDto>();
 
         // Stop existing timers for this user
         var activeTimers = await _timeRepo.GetQueryable()
-            .Where(te => te.UserId == userId.Value && te.EndedAt == null)
+            .Where(te => te.UserId == userId.Value && te.EndedAt == null && te.ManualMinutes == null)
             .ToListAsync(ct);
 
         foreach (var timer in activeTimers)
@@ -99,6 +99,22 @@ public class TimeTrackingService : ITimeTrackingService
         var userId = _currentUserService.UserId;
         if (userId == null) return Result.Forbidden<TimeEntryDto>();
 
+        var now = DateTimeOffset.UtcNow;
+        if (dto.StartedAt > now.AddMinutes(5))
+            return Result.Failure<TimeEntryDto>("Manual time cannot start in the future.", 400);
+        if (dto.ManualMinutes is null && dto.EndedAt is null)
+            return Result.Failure<TimeEntryDto>("Manual minutes or an end time is required.", 400);
+        if (dto.ManualMinutes is <= 0 or > 1440)
+            return Result.Failure<TimeEntryDto>("Manual minutes must be between 1 and 1,440.", 400);
+        if (dto.ManualMinutes.HasValue && dto.EndedAt.HasValue)
+            return Result.Failure<TimeEntryDto>("Use manual minutes or an end time, not both.", 400);
+        if (dto.EndedAt.HasValue && dto.EndedAt.Value < dto.StartedAt)
+            return Result.Failure<TimeEntryDto>("End time cannot be before start time.", 400);
+        if (dto.EndedAt > now.AddMinutes(5))
+            return Result.Failure<TimeEntryDto>("Manual time cannot end in the future.", 400);
+        if (dto.Note?.Trim().Length > 500)
+            return Result.Failure<TimeEntryDto>("Note cannot exceed 500 characters.", 400);
+
         var task = await _taskRepo.GetQueryable()
             .Include(t => t.Project)
             .Include(t => t.Assignees)
@@ -106,7 +122,7 @@ public class TimeTrackingService : ITimeTrackingService
         if (task == null) return Result.NotFound<TimeEntryDto>();
         if (task.Project == null) return Result.NotFound<TimeEntryDto>();
 
-        if (!await _accessPolicy.CanAccessTaskAsync(task, ct)) return Result.Forbidden<TimeEntryDto>();
+        if (!await _accessPolicy.CanContributeToTaskAsync(task, ct)) return Result.Forbidden<TimeEntryDto>();
 
         var entry = new TimeEntry
         {
@@ -115,7 +131,7 @@ public class TimeTrackingService : ITimeTrackingService
             StartedAt = dto.StartedAt,
             EndedAt = dto.EndedAt,
             ManualMinutes = dto.ManualMinutes,
-            Note = dto.Note
+            Note = string.IsNullOrWhiteSpace(dto.Note) ? null : dto.Note.Trim()
         };
 
         await _timeRepo.AddAsync(entry, ct);
@@ -137,7 +153,8 @@ public class TimeTrackingService : ITimeTrackingService
         if (task == null) return Result.NotFound<List<TimeEntryDto>>();
         if (task.Project == null) return Result.NotFound<List<TimeEntryDto>>();
 
-        if (!await _accessPolicy.CanAccessTaskAsync(task, ct))
+        if (!await _accessPolicy.CanAccessTaskAsync(task, ct) ||
+            !await _accessPolicy.CanViewProjectWorkloadAsync(task.ProjectId, task.Project.OwnerId, ct))
             return Result.Forbidden<List<TimeEntryDto>>();
 
         var entries = await _timeRepo.GetQueryable()
@@ -154,13 +171,15 @@ public class TimeTrackingService : ITimeTrackingService
     {
         var userId = _currentUserService.UserId;
         if (userId == null) return Result.Forbidden<List<TimeEntryDto>>();
+        if (from.HasValue && endAt.HasValue && from.Value > endAt.Value)
+            return Result.Failure<List<TimeEntryDto>>("The start of the range cannot be after its end.", 400);
 
         var project = await _projectRepo.GetQueryable()
             .AsNoTracking()
             .FirstOrDefaultAsync(item => item.Id == projectId, ct);
         if (project == null) return Result.NotFound<List<TimeEntryDto>>();
 
-        if (!await _accessPolicy.CanAccessProjectAsync(projectId, project.OwnerId, ct))
+        if (!await _accessPolicy.CanViewProjectWorkloadAsync(projectId, project.OwnerId, ct))
             return Result.Forbidden<List<TimeEntryDto>>();
 
         var visibleTaskIds = _accessPolicy.ApplyVisibilityFilter(_taskRepo.GetQueryable())

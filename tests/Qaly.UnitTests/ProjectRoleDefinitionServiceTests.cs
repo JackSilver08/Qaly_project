@@ -4,6 +4,7 @@ using Moq;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.DTOs.Project;
 using Qaly.Application.Services;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 using Qaly.Infrastructure.Data;
@@ -129,7 +130,13 @@ public sealed class ProjectRoleDefinitionServiceTests : IDisposable
             _catalog,
             new UnitOfWork(_db),
             _currentUser.Object,
-            _audit.Object);
+            _audit.Object,
+            new TaskAccessPolicy(
+                _currentUser.Object,
+                new GenericRepository<Project>(_db),
+                new GenericRepository<ProjectMember>(_db),
+                new GenericRepository<OrganizationMember>(_db),
+                _catalog));
 
     public void Dispose()
     {

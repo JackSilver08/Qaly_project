@@ -35,6 +35,7 @@ test('TEST-ACTION-E2E unified AI assistant shows real progress, editable review 
   const draftId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
   const taskId = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
   let confirmed = false
+  let confirmRequests = 0
   // The drawer polls every 900ms, so letting the mock succeed on the second poll left the
   // "running" UI on screen for under a second — the progress assertions below then lost the race
   // whenever the workers were busy. Hold the job running until the test has seen that state.
@@ -229,16 +230,15 @@ test('TEST-ACTION-E2E unified AI assistant shows real progress, editable review 
     })
   })
   await page.route(`**/api/ai/drafts/${draftId}/confirm`, async route => {
+    confirmRequests += 1
     confirmed = true
+    expect(route.request().headers()['idempotency-key']).toBe(`action-confirm:${draftId}`)
     const edited = JSON.parse(route.request().postDataJSON().editedPayloadJson)
     expect(edited.options[0].commands[0].title).toBe('Reviewed task from browser')
     await route.fulfill({
+      status: 502,
       contentType: 'application/json',
-      body: JSON.stringify(envelope({
-        status: 'confirmed',
-        createdTaskCount: 1,
-        actionReceipt: receipt(projectId, taskId),
-      })),
+      body: JSON.stringify({ error: 'Simulated response loss after canonical commit.' }),
     })
   })
 
@@ -247,6 +247,7 @@ test('TEST-ACTION-E2E unified AI assistant shows real progress, editable review 
   await expect(page.getByText('Bạn muốn Qaly chuẩn bị việc gì?')).toHaveCount(0)
   await page.getByLabel('Nhập yêu cầu cho Trợ lý AI').fill('Tạo task frontend có tiêu chí nghiệm thu.')
   await page.getByRole('button', { name: 'Gửi câu hỏi' }).click()
+  await page.getByRole('button', { name: 'Mở phương án task' }).click()
 
   await expect(page.getByText(/Đã chạy \d+ giây/)).toBeVisible()
   await expect(page.getByText('Đang định tuyến DeepSeek V4 Pro')).toBeVisible()
@@ -270,6 +271,7 @@ test('TEST-ACTION-E2E unified AI assistant shows real progress, editable review 
   await expect(page.getByText('Đã thực hiện sau khi bạn xác nhận')).toBeVisible()
   await expect(page.getByText('Reviewed task from browser')).toBeVisible()
   await expect(page.getByText('Đã đọc lại kết quả')).toBeVisible()
+  expect(confirmRequests).toBe(1)
 
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.locator('.welcome-overlay').waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => undefined)

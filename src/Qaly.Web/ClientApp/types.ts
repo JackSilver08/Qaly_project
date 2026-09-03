@@ -198,6 +198,16 @@ export interface UserDto {
     createdAt: string;
 }
 
+/** Tenant-scoped collaborator picker row; platform role is disclosed only to System Admin. */
+export interface UserDirectoryDto {
+    id: string;
+    fullName: string;
+    email: string;
+    isActive: boolean;
+    avatarUrl: string | null;
+    systemRole: string | null;
+}
+
 /**
  * What the signed-in user may do inside a project, resolved by the server.
  * Render controls from this instead of re-deriving permissions from the role string.
@@ -271,6 +281,11 @@ export interface TaskItemDto {
     rowVersion: string;
     number: number;
     key: string | null;
+    parentTaskId: string | null;
+    subtaskCount: number;
+    completedSubtaskCount: number;
+    subtaskProgressPercentage: number;
+    sprintId: string | null;
 }
 
 export interface KanbanBoardDto {
@@ -468,6 +483,9 @@ export interface PortfolioScheduleAlternativeDto {
     skillCoveragePercent: number;
     remainingHours: number;
     tradeOff: string;
+    evidenceConfidence: number;
+    loadBeforeHours: number;
+    capacityHours: number;
 }
 
 export interface PortfolioScheduleProposalItemDto {
@@ -511,6 +529,9 @@ export interface PortfolioScheduleReceiptDto {
     appliedTaskIds: string[];
     readBackLinks: string[];
     confirmedAt: string;
+    status: string;
+    readBackVerified: boolean;
+    verificationErrors: string[];
 }
 
 export interface PortfolioScheduleProposalDto {
@@ -801,4 +822,3 @@ export interface ErumiRoadmapExecutiveBriefDto {
   formattedMarkdownSummary: string
   generatedAt: string
 }
-

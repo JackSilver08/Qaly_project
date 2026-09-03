@@ -9,8 +9,6 @@ namespace Qaly.Application.Services;
 
 public sealed class DashboardSummaryService : IDashboardSummaryService
 {
-    private static readonly string[] OpenStatuses = ["Todo", "InProgress", "InReview", "OnHold"];
-
     private readonly IProjectDashboardSummaryRepository _repository;
     private readonly ITaskAccessPolicy _taskAccessPolicy;
 
@@ -56,17 +54,17 @@ public sealed class DashboardSummaryService : IDashboardSummaryService
             .Select(group => new MetricAggregate
             {
                 TotalTasks = group.Count(),
-                OpenTasks = group.Count(task => OpenStatuses.Contains(task.Status)),
+                OpenTasks = group.Count(task => TaskStatusRules.OpenStatuses.Contains(task.Status)),
                 BacklogTasks = group.Count(task => task.Status == "Todo"),
                 InProgressTasks = group.Count(task => task.Status == "InProgress"),
                 DoneTasks = group.Count(task => task.Status == "Done"),
                 CancelledTasks = group.Count(task => task.Status == "Cancelled"),
                 OverdueTasks = group.Count(task =>
-                    OpenStatuses.Contains(task.Status) &&
+                    TaskStatusRules.OpenStatuses.Contains(task.Status) &&
                     task.DueDate.HasValue &&
                     task.DueDate.Value < now),
                 DueSoon24h = group.Count(task =>
-                    OpenStatuses.Contains(task.Status) &&
+                    TaskStatusRules.OpenStatuses.Contains(task.Status) &&
                     task.DueDate.HasValue &&
                     task.DueDate.Value >= now &&
                     task.DueDate.Value < dueSoonThreshold),
@@ -77,10 +75,10 @@ public sealed class DashboardSummaryService : IDashboardSummaryService
                     task.ContributesToProgress &&
                     task.Status != "Cancelled"),
                 MissingDueDateOpen = group.Count(task =>
-                    OpenStatuses.Contains(task.Status) &&
+                    TaskStatusRules.OpenStatuses.Contains(task.Status) &&
                     task.DueDate == null),
                 MissingAssigneeOpen = group.Count(task =>
-                    OpenStatuses.Contains(task.Status) &&
+                    TaskStatusRules.OpenStatuses.Contains(task.Status) &&
                     task.AssigneeId == null &&
                     task.Assignees.Count == 0)
             })

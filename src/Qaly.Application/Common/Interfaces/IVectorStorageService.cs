@@ -5,27 +5,27 @@ public interface IVectorStorageService
     /// <summary>
     /// Upsert a point into the vector database.
     /// </summary>
-    Task UpsertAsync(Guid id, float[] vector, Dictionary<string, object> payload, string collectionName);
+    Task UpsertAsync(Guid id, float[] vector, Dictionary<string, object> payload, string collectionName, CancellationToken ct = default);
 
     /// <summary>
     /// Search for the most relevant points in the vector database with mandatory filtering.
     /// </summary>
-    Task<List<VectorSearchResult>> SearchAsync(float[] queryVector, string collectionName, VectorFilter filter, int limit = 5);
+    Task<List<VectorSearchResult>> SearchAsync(float[] queryVector, string collectionName, VectorFilter filter, int limit = 5, CancellationToken ct = default);
 
     /// <summary>
     /// Delete a point by ID.
     /// </summary>
-    Task DeleteAsync(Guid id, string collectionName);
+    Task DeleteAsync(Guid id, string collectionName, CancellationToken ct = default);
 
     /// <summary>
     /// Delete points by filter.
     /// </summary>
-    Task DeleteByFilterAsync(VectorFilter filter, string collectionName);
+    Task DeleteByFilterAsync(VectorFilter filter, string collectionName, CancellationToken ct = default);
 
     /// <summary>
     /// Ensure a collection exists in the vector database.
     /// </summary>
-    Task EnsureCollectionExistsAsync(string collectionName, ulong vectorSize);
+    Task EnsureCollectionExistsAsync(string collectionName, ulong vectorSize, CancellationToken ct = default);
 }
 
 public record VectorSearchResult(Guid Id, float Score, Dictionary<string, object> Payload);

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   User, Settings, Bell, Palette, Key, Database, Shield, Lock, Check,
   Activity, Cloud, Save, RefreshCw, Terminal, Globe, UserCheck, ShieldAlert,
@@ -11,10 +12,14 @@ import ApiKeysTab from '../components/ApiKeysTab.vue'
 import PrivacySettingsTab from '../components/settings/PrivacySettingsTab.vue'
 import AiUsageBudgetSettingsTab from '../components/settings/AiUsageBudgetSettingsTab.vue'
 import { showSuccess, showError } from '../composables/use-toast'
+import { apiFetch } from '../utils/api-client'
 
 const { currentUser, displayRole, isLoading, loadDashboard, projects, selectedProject } = useDashboardContext()
+const route = useRoute()
+const router = useRouter()
 
 const activeTab = ref('profile')
+const settingsTabs = new Set(['profile', 'appearance', 'workflow', 'notifications', 'apikeys', 'privacy', 'ai-budget', 'logs'])
 const currentUserRole = computed(() => String(currentUser.value?.role || '').toLowerCase())
 const isSystemAdmin = computed(() => currentUserRole.value === 'admin')
 const selectedProjectMemberRole = computed(() => {
@@ -110,7 +115,7 @@ async function loadOrganizations() {
   }
 
   try {
-    const res = await fetch('/api/organizations')
+    const res = await apiFetch('/api/organizations')
     if (res.ok) {
       const payload = await res.json()
       organizations.value = payload.data?.items || []
@@ -234,7 +239,7 @@ function applyAccent(color: string, theme: 'light' | 'dark') {
 async function fetchAuditLogs() {
   isLoadingLogs.value = true
   try {
-    const res = await fetch('/api/audit-logs/mine?pageSize=15')
+    const res = await apiFetch('/api/audit-logs/mine?pageSize=15')
     if (res.ok) {
       const data = await res.json()
       auditLogs.value = data.data?.items || []
@@ -254,7 +259,7 @@ async function changePassword() {
   
   isSavingPassword.value = true
   try {
-    const res = await fetch('/api/auth/change-password', {
+    const res = await apiFetch('/api/auth/change-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(passwordForm.value)
@@ -298,7 +303,7 @@ async function saveSettings() {
   // Call API to save name/profile changes if modified
   if (name.value.trim() && currentUser.value && name.value.trim() !== currentUser.value.fullName) {
     try {
-      const res = await fetch('/api/auth/profile', {
+      const res = await apiFetch('/api/auth/profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fullName: name.value.trim(), avatarUrl: currentUser.value.avatarUrl })
@@ -321,7 +326,7 @@ async function saveSettings() {
     const org = organizations.value.find((o: any) => o.id === selectedOrgId.value)
     if (org) {
       try {
-        const res = await fetch(`/api/organizations/${selectedOrgId.value}`, {
+        const res = await apiFetch(`/api/organizations/${selectedOrgId.value}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -351,7 +356,7 @@ async function saveSettings() {
     const proj = projects.value.find((p: any) => p.id === selectedProjectId.value)
     if (proj) {
       try {
-        const res = await fetch(`/api/projects/${selectedProjectId.value}`, {
+        const res = await apiFetch(`/api/projects/${selectedProjectId.value}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -385,7 +390,7 @@ async function saveSettings() {
     const refreshed = await loadDashboard()
     if (!refreshed) {
       hadFailure = true
-      showError('KhÃ´ng thá»ƒ lÃ m má»›i dá»¯ liá»‡u sau khi lÆ°u.')
+      showError('Không thể làm mới dữ liệu sau khi lưu.')
     }
   } catch (e) {
     hadFailure = true
@@ -398,7 +403,20 @@ async function saveSettings() {
   }
 }
 
+function syncTabFromRoute(loadLogs = false) {
+  const requested = typeof route.query.tab === 'string' ? route.query.tab : ''
+  if (!settingsTabs.has(requested)) return
+  if (requested === 'workflow' && !canManageProjectWorkflow.value) {
+    activeTab.value = 'profile'
+    return
+  }
+  const changed = activeTab.value !== requested
+  activeTab.value = requested
+  if (loadLogs && changed && requested === 'logs') fetchAuditLogs()
+}
+
 onMounted(async () => {
+  syncTabFromRoute()
   await loadSettings()
   applyAccent(accentColor.value, currentTheme.value as 'light' | 'dark')
   if (activeTab.value === 'logs') {
@@ -411,10 +429,13 @@ function handleTabChange(tab: string) {
     return
   }
   activeTab.value = tab
+  void router.replace({ query: { ...route.query, tab } })
   if (tab === 'logs') {
     fetchAuditLogs()
   }
 }
+
+watch(() => route.query.tab, () => syncTabFromRoute(true))
 
 const userInitials = computed(() => {
   const n = currentUser.value?.fullName || currentUser.value?.email || 'Qaly user'
@@ -438,11 +459,11 @@ const userInitials = computed(() => {
             <div class="profile-avatar settings-avatar">{{ userInitials }}</div>
             <div class="profile-meta">
               <span>Settings Portal</span>
-              <h2>Cấu hình & Tùy chỉnh</h2>
+              <h1>Cấu hình & Tùy chỉnh</h1>
               <p>{{ currentUser?.fullName || currentUser?.email || 'Qaly User' }} &mdash; <strong class="role-badge">{{ displayRole(currentUser?.role) }}</strong></p>
             </div>
           </div>
-          <button class="primary-button" @click="saveSettings" :disabled="isSaving || !isSettingsReady">
+          <button type="button" class="primary-button" @click="saveSettings" :disabled="isSaving || !isSettingsReady">
             <Save :size="16" />
             <span>{{ isSaving ? 'Đang lưu...' : !isSettingsReady ? 'Đang tải...' : 'Lưu cài đặt' }}</span>
           </button>
@@ -452,66 +473,74 @@ const userInitials = computed(() => {
         <div class="settings-body">
           <!-- Sidebar Tabs -->
           <nav class="settings-nav glass-card" aria-label="Settings sections">
-            <button 
+            <button type="button"
               class="settings-nav-item" 
               :class="{ 'is-active': activeTab === 'profile' }" 
+              :aria-current="activeTab === 'profile' ? 'page' : undefined"
               @click="handleTabChange('profile')"
             >
               <User :size="18" />
               <span>Hồ sơ cá nhân</span>
             </button>
-            <button 
+            <button type="button"
               class="settings-nav-item" 
               :class="{ 'is-active': activeTab === 'appearance' }" 
+              :aria-current="activeTab === 'appearance' ? 'page' : undefined"
               @click="handleTabChange('appearance')"
             >
               <Palette :size="18" />
               <span>Giao diện & Chủ đề</span>
             </button>
-            <button 
+            <button type="button"
               v-if="canManageProjectWorkflow"
               class="settings-nav-item" 
               :class="{ 'is-active': activeTab === 'workflow' }" 
+              :aria-current="activeTab === 'workflow' ? 'page' : undefined"
               @click="handleTabChange('workflow')"
             >
               <Sliders :size="18" />
               <span>Bảng công việc (Jira Board)</span>
             </button>
-            <button 
+            <button type="button"
               class="settings-nav-item" 
               :class="{ 'is-active': activeTab === 'notifications' }" 
+              :aria-current="activeTab === 'notifications' ? 'page' : undefined"
               @click="handleTabChange('notifications')"
             >
               <Bell :size="18" />
               <span>Thông báo</span>
             </button>
-            <button 
+            <button type="button"
               class="settings-nav-item" 
               :class="{ 'is-active': activeTab === 'apikeys' }" 
+              :aria-current="activeTab === 'apikeys' ? 'page' : undefined"
               @click="handleTabChange('apikeys')"
             >
               <Key :size="18" />
               <span>API Keys & Tích hợp</span>
             </button>
-            <button 
+            <button type="button"
               class="settings-nav-item" 
               :class="{ 'is-active': activeTab === 'privacy' }"
+              :aria-current="activeTab === 'privacy' ? 'page' : undefined"
               @click="handleTabChange('privacy')"
             >
               <Shield :size="18" />
               <span>Quyền riêng tư & dữ liệu</span>
             </button>
-            <button
+            <button type="button"
               class="settings-nav-item"
               :class="{ 'is-active': activeTab === 'ai-budget' }"
+              :aria-current="activeTab === 'ai-budget' ? 'page' : undefined"
               @click="handleTabChange('ai-budget')"
             >
               <Database :size="18" />
               <span>AI Usage & Budget</span>
             </button>
-            <button
+            <button type="button"
               class="settings-nav-item"
               :class="{ 'is-active': activeTab === 'logs' }" 
+              :aria-current="activeTab === 'logs' ? 'page' : undefined"
               @click="handleTabChange('logs')"
             >
               <Activity :size="18" />
@@ -526,7 +555,7 @@ const userInitials = computed(() => {
             <section v-if="activeTab === 'profile'" class="settings-panel glass-card reveal">
               <div class="panel-section-header">
                 <User :size="20" class="icon-primary" />
-                <h3>Thông tin tài khoản</h3>
+                <h2>Thông tin tài khoản</h2>
               </div>
               <div class="input-grid">
                 <div class="form-group">
@@ -535,7 +564,7 @@ const userInitials = computed(() => {
                 </div>
                 <div class="form-group">
                   <label for="profile-email">Địa chỉ Email</label>
-                  <input id="profile-email" :value="email" type="email" disabled title="Không thể thay đổi email" />
+                  <input id="profile-email" :value="email" type="email" autocomplete="email" disabled title="Không thể thay đổi email" />
                   <span class="help-text">Email được khóa cố định theo tài khoản hệ thống.</span>
                 </div>
                 <div class="form-group">
@@ -598,6 +627,7 @@ const userInitials = computed(() => {
                       <button 
                         class="cover-opt sunset" 
                         :class="{ 'is-active': workspaceCover === 'sunset' }" 
+                        :aria-pressed="workspaceCover === 'sunset'"
                         @click="workspaceCover = 'sunset'"
                         type="button"
                       >
@@ -606,6 +636,7 @@ const userInitials = computed(() => {
                       <button 
                         class="cover-opt emerald-sea" 
                         :class="{ 'is-active': workspaceCover === 'emerald-sea' }" 
+                        :aria-pressed="workspaceCover === 'emerald-sea'"
                         @click="workspaceCover = 'emerald-sea'"
                         type="button"
                       >
@@ -614,6 +645,7 @@ const userInitials = computed(() => {
                       <button 
                         class="cover-opt deep-ocean" 
                         :class="{ 'is-active': workspaceCover === 'deep-ocean' }" 
+                        :aria-pressed="workspaceCover === 'deep-ocean'"
                         @click="workspaceCover = 'deep-ocean'"
                         type="button"
                       >
@@ -622,6 +654,7 @@ const userInitials = computed(() => {
                       <button 
                         class="cover-opt amethyst-nebula" 
                         :class="{ 'is-active': workspaceCover === 'amethyst-nebula' }" 
+                        :aria-pressed="workspaceCover === 'amethyst-nebula'"
                         @click="workspaceCover = 'amethyst-nebula'"
                         type="button"
                       >
@@ -641,15 +674,15 @@ const userInitials = computed(() => {
                 <form @submit.prevent="changePassword" class="password-form-inputs">
                   <div class="form-group">
                     <label for="curr-password">Mật khẩu hiện tại</label>
-                    <input id="curr-password" v-model="passwordForm.currentPassword" type="password" required />
+                    <input id="curr-password" v-model="passwordForm.currentPassword" type="password" autocomplete="current-password" required />
                   </div>
                   <div class="form-group">
                     <label for="new-password">Mật khẩu mới</label>
-                    <input id="new-password" v-model="passwordForm.newPassword" type="password" required />
+                    <input id="new-password" v-model="passwordForm.newPassword" type="password" autocomplete="new-password" required />
                   </div>
                   <div class="form-group">
                     <label for="confirm-new-password">Xác nhận mật khẩu mới</label>
-                    <input id="confirm-new-password" v-model="passwordForm.confirmNewPassword" type="password" required />
+                    <input id="confirm-new-password" v-model="passwordForm.confirmNewPassword" type="password" autocomplete="new-password" required />
                   </div>
                   <div class="form-actions" style="margin-top: 16px;">
                     <button type="submit" class="primary-button primary-button--compact" :disabled="isSavingPassword">
@@ -665,7 +698,7 @@ const userInitials = computed(() => {
             <section v-if="activeTab === 'appearance'" class="settings-panel glass-card reveal">
               <div class="panel-section-header">
                 <Palette :size="20" class="icon-primary" />
-                <h3>Giao diện & Màu sắc</h3>
+                <h2>Giao diện & Màu sắc</h2>
               </div>
               <p class="panel-desc">Cá nhân hóa không gian làm việc của bạn để nâng cao năng suất và giảm mỏi mắt.</p>
 
@@ -675,7 +708,7 @@ const userInitials = computed(() => {
                   <strong>Chế độ tối (Dark Mode)</strong>
                   <p>Tự động điều chỉnh giao diện dựa trên tùy chọn hệ thống hoặc ép buộc giao diện.</p>
                 </div>
-                <button class="theme-toggle-btn" @click="toggleTheme">
+                <button type="button" class="theme-toggle-btn" @click="toggleTheme">
                   <Sun v-if="currentTheme === 'dark'" :size="18" />
                   <Moon v-else :size="18" />
                   <span>{{ currentTheme === 'dark' ? 'Chế độ Sáng' : 'Chế độ Tối' }}</span>
@@ -689,9 +722,10 @@ const userInitials = computed(() => {
                   <p>Chọn màu sắc hiển thị cho các nút bấm, liên kết và trạng thái active trong toàn bộ hệ thống.</p>
                 </div>
                 <div class="color-picker-grid">
-                  <button 
+                  <button type="button"
                     class="color-option sapphire" 
                     :class="{ 'is-selected': accentColor === 'sapphire' }" 
+                    :aria-pressed="accentColor === 'sapphire'"
                     @click="selectAccent('sapphire')"
                     title="Sapphire Blue"
                   >
@@ -699,9 +733,10 @@ const userInitials = computed(() => {
                     <span>Sapphire Blue</span>
                     <Check v-if="accentColor === 'sapphire'" :size="14" class="selected-check" />
                   </button>
-                  <button 
+                  <button type="button"
                     class="color-option emerald" 
                     :class="{ 'is-selected': accentColor === 'emerald' }" 
+                    :aria-pressed="accentColor === 'emerald'"
                     @click="selectAccent('emerald')"
                     title="Pine Emerald"
                   >
@@ -709,9 +744,10 @@ const userInitials = computed(() => {
                     <span>Pine Emerald</span>
                     <Check v-if="accentColor === 'emerald'" :size="14" class="selected-check" />
                   </button>
-                  <button 
+                  <button type="button"
                     class="color-option amethyst" 
                     :class="{ 'is-selected': accentColor === 'amethyst' }" 
+                    :aria-pressed="accentColor === 'amethyst'"
                     @click="selectAccent('amethyst')"
                     title="Amethyst Purple"
                   >
@@ -719,9 +755,10 @@ const userInitials = computed(() => {
                     <span>Amethyst Purple</span>
                     <Check v-if="accentColor === 'amethyst'" :size="14" class="selected-check" />
                   </button>
-                  <button 
+                  <button type="button"
                     class="color-option rose" 
                     :class="{ 'is-selected': accentColor === 'rose' }" 
+                    :aria-pressed="accentColor === 'rose'"
                     @click="selectAccent('rose')"
                     title="Crimson Rose"
                   >
@@ -729,9 +766,10 @@ const userInitials = computed(() => {
                     <span>Crimson Rose</span>
                     <Check v-if="accentColor === 'rose'" :size="14" class="selected-check" />
                   </button>
-                  <button 
+                  <button type="button"
                     class="color-option amber" 
                     :class="{ 'is-selected': accentColor === 'amber' }" 
+                    :aria-pressed="accentColor === 'amber'"
                     @click="selectAccent('amber')"
                     title="Sunset Amber"
                   >
@@ -747,7 +785,7 @@ const userInitials = computed(() => {
             <section v-if="activeTab === 'workflow' && canManageProjectWorkflow" class="settings-panel glass-card reveal">
               <div class="panel-section-header">
                 <Sliders :size="20" class="icon-primary" />
-                <h3>Cấu hình Bảng công việc & Workflow (Jira style)</h3>
+                <h2>Cấu hình Bảng công việc & Workflow (Jira style)</h2>
               </div>
               <p class="panel-desc">Điều chỉnh các cột trạng thái trên bảng Kanban và thiết lập luật di chuyển thẻ (State Transitions).</p>
 
@@ -812,7 +850,7 @@ const userInitials = computed(() => {
             <section v-if="activeTab === 'notifications'" class="settings-panel glass-card reveal">
               <div class="panel-section-header">
                 <Bell :size="20" class="icon-primary" />
-                <h3>Tùy chỉnh thông báo</h3>
+                <h2>Tùy chỉnh thông báo</h2>
               </div>
               <p class="panel-desc">Kiểm soát các loại thông báo bạn nhận được qua email hoặc ứng dụng.</p>
 
@@ -882,26 +920,26 @@ const userInitials = computed(() => {
             <section v-if="activeTab === 'logs'" class="settings-panel glass-card reveal">
               <div class="panel-section-header">
                 <Activity :size="20" class="icon-primary" />
-                <h3>Nhật ký hoạt động cá nhân</h3>
+                <h2>Nhật ký hoạt động cá nhân</h2>
               </div>
               <p class="panel-desc">Xem toàn bộ lịch sử các thao tác thay đổi dữ liệu, đăng nhập và tác vụ bạn đã thực hiện trong thời gian qua.</p>
 
               <!-- Loading spinner -->
-              <div v-if="isLoadingLogs" class="logs-loading">
+              <div v-if="isLoadingLogs" class="logs-loading" role="status" aria-live="polite">
                 <RefreshCw class="animate-spin text-primary" :size="28" />
                 <span>Đang tải lịch sử hoạt động...</span>
               </div>
 
               <!-- Logs table -->
               <div v-else class="logs-table-wrapper">
-                <table class="logs-table">
+                <table class="logs-table" aria-label="Nhật ký hoạt động">
                   <thead>
                     <tr>
-                      <th>Thời gian</th>
-                      <th>Thao tác</th>
-                      <th>Loại dữ liệu</th>
-                      <th>Đối tượng (ID)</th>
-                      <th>Địa chỉ IP</th>
+                      <th scope="col">Thời gian</th>
+                      <th scope="col">Thao tác</th>
+                      <th scope="col">Loại dữ liệu</th>
+                      <th scope="col">Đối tượng (ID)</th>
+                      <th scope="col">Địa chỉ IP</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -985,7 +1023,7 @@ const userInitials = computed(() => {
   font-weight: 700;
 }
 
-.profile-meta h2 {
+.profile-meta h1 {
   font-size: 22px;
   font-weight: 800;
   margin: 2px 0;
@@ -1071,6 +1109,7 @@ const userInitials = computed(() => {
   margin-bottom: 24px;
 }
 
+.panel-section-header h2,
 .panel-section-header h3 {
   font-size: 16px;
   font-weight: 800;

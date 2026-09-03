@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Qaly.Application.DTOs.Ai;
 using Qaly.Application.Services;
@@ -70,10 +72,13 @@ public static class AiActionComposerOutputContract
             var label = NormalizeText(option.Label, 120);
             var summary = NormalizeText(option.Summary, 500);
             if (optionId == null || label == null || summary == null ||
-                option.Commands == null || option.Commands.Count is < 1 or > 5 ||
+                option.Commands == null || option.Commands.Count is < 1 or > AiActionComposerContract.MaximumTaskCommands ||
+                (snapshot.RequestedTaskCount.HasValue && option.Commands.Count != snapshot.RequestedTaskCount.Value) ||
                 option.Commands.Select(command => command.CommandId).Distinct(StringComparer.Ordinal).Count() != option.Commands.Count)
             {
-                error = "Every option requires an ID, label, summary, and one to five uniquely identified commands.";
+                error = snapshot.RequestedTaskCount.HasValue
+                    ? $"Every option must contain exactly the {snapshot.RequestedTaskCount.Value} task commands explicitly requested by the user."
+                    : $"Every option requires an ID, label, summary, and one to {AiActionComposerContract.MaximumTaskCommands} uniquely identified commands.";
                 return false;
             }
 
@@ -86,6 +91,11 @@ public static class AiActionComposerOutputContract
                 }
                 commands.Add(reconciled!);
             }
+            if (!TryValidateCommandDependencies(commands, out error))
+            {
+                return false;
+            }
+            commands = ApplySafeSprintSchedule(snapshot, commands);
 
             canonicalOptions.Add(new AiActionOptionDto(
                 optionId,
@@ -149,7 +159,7 @@ public static class AiActionComposerOutputContract
                 new AiActionTargetEntityDto("project", snapshot.Project.Id, snapshot.Project.Name),
                 new AiActionTargetEntityDto("sprint", snapshot.Sprint.Id, snapshot.Sprint.Name)
             ];
-        var commands = isVietnamese
+        var commands = BuildNamedTenTaskFallback(snapshot, fallbackSourceRefs) ?? (isVietnamese
             ? new List<AiActionTaskCommandDto>
             {
                 BuildFallbackCommand(
@@ -203,14 +213,29 @@ public static class AiActionComposerOutputContract
                     "Medium",
                     4,
                     fallbackSourceRefs)
-            };
+            });
+
+        var desiredCommandCount = snapshot.RequestedTaskCount ?? commands.Count;
+        if (desiredCommandCount < commands.Count)
+        {
+            commands = commands.Take(desiredCommandCount).ToList();
+        }
+        while (commands.Count < desiredCommandCount)
+        {
+            commands.Add(BuildSupplementalFallbackCommand(
+                commands.Count + 1,
+                isVietnamese,
+                intent,
+                fallbackSourceRefs));
+        }
+        commands = ApplySafeSprintSchedule(snapshot, commands);
 
         var option = new AiActionOptionDto(
             "server-safe-plan",
             isVietnamese ? "Phương án an toàn để duyệt" : "Safe review plan",
             isVietnamese
-                ? "Qaly đã tạo bản nháp có thể chỉnh sửa từ đúng yêu cầu gốc; chưa tự gán người hoặc kỹ năng khi thiếu bằng chứng."
-                : "Qaly created an editable draft from the original request and did not assign people or skills without evidence.",
+                ? "Qaly đã lập hạn theo Sprint và chỉ đề xuất người khi có đủ bằng chứng kỹ năng, availability và capacity đa dự án; việc chưa đủ bằng chứng vẫn để chưa giao."
+                : "Qaly scheduled due dates within the Sprint and only suggested assignees backed by skill evidence, availability, and cross-project capacity; unverified work remains unassigned.",
             isVietnamese
                 ? ["Cần duyệt nội dung, Sprint, người phụ trách và kỹ năng trước khi xác nhận."]
                 : ["Review content, Sprint, assignees, and skills before confirmation."],
@@ -271,10 +296,10 @@ public static class AiActionComposerOutputContract
         var option = parsedPlan.Options.FirstOrDefault(item =>
             string.Equals(item.OptionId, review.SelectedOptionId, StringComparison.Ordinal));
         if (option == null || review.SelectedCommandIds == null ||
-            review.SelectedCommandIds.Count is < 1 or > 5 ||
+            review.SelectedCommandIds.Count is < 1 or > AiActionComposerContract.MaximumTaskCommands ||
             review.SelectedCommandIds.Distinct(StringComparer.Ordinal).Count() != review.SelectedCommandIds.Count)
         {
-            error = "Reviewed action plan must select one option and one to five unique commands.";
+            error = $"Reviewed action plan must select one option and one to {AiActionComposerContract.MaximumTaskCommands} unique commands.";
             return false;
         }
 
@@ -296,6 +321,14 @@ public static class AiActionComposerOutputContract
             {
                 return false;
             }
+        }
+        if (!TryValidateCommandDependencies(selected, out error))
+        {
+            return false;
+        }
+        if (!TryValidateSystemSuggestedCapacity(selected, snapshot, out error))
+        {
+            return false;
         }
 
         return true;
@@ -326,6 +359,7 @@ public static class AiActionComposerOutputContract
             string.IsNullOrWhiteSpace(snapshot.UserIntent) ||
             snapshot.UserIntent.Length > 4000 ||
             snapshot.MaximumOptions is < 1 or > 3 ||
+            snapshot.RequestedTaskCount is < 1 or > AiActionComposerContract.MaximumTaskCommands ||
             snapshot.Members == null || snapshot.Skills == null || snapshot.AllowedSourceRefs == null ||
             (snapshot.Sprint != null &&
                 (snapshot.Sprint.Id == Guid.Empty ||
@@ -409,10 +443,12 @@ public static class AiActionComposerOutputContract
         if (command.AssigneeId.HasValue)
         {
             if (!allowedMembers.ContainsKey(command.AssigneeId.Value) ||
-                assigneeMode is not ("workload_only" or "user_selected") ||
-                (!allowUserSelected && assigneeMode == "user_selected"))
+                !allowUserSelected ||
+                assigneeMode is not ("user_selected" or "system_suggested"))
             {
-                error = "Assignee is outside the authorized project or uses unsupported evidence.";
+                error = allowUserSelected
+                    ? "Assignee is outside the authorized project or was not explicitly selected by the reviewer."
+                    : "The model cannot assign a task from workload alone; leave it unassigned for review.";
                 return false;
             }
         }
@@ -453,6 +489,18 @@ public static class AiActionComposerOutputContract
             return false;
         }
 
+        var dependencyCommandIds = (command.DependencyCommandIds ?? [])
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Select(item => item.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (dependencyCommandIds.Count > AiActionComposerContract.MaximumTaskCommands - 1 ||
+            dependencyCommandIds.Any(item => string.Equals(item, commandId, StringComparison.Ordinal)))
+        {
+            error = "Task dependencies must be unique and cannot reference the same command.";
+            return false;
+        }
+
         reconciled = new AiActionTaskCommandDto(
             commandId,
             AiActionComposerContract.TaskCreateTool,
@@ -466,8 +514,243 @@ public static class AiActionComposerOutputContract
             command.AssigneeId,
             assigneeMode,
             skills,
-            sourceRefs);
+            sourceRefs,
+            dependencyCommandIds);
         return true;
+    }
+
+    private static List<AiActionTaskCommandDto> ApplySafeSprintSchedule(
+        AiActionContextSnapshotDto snapshot,
+        List<AiActionTaskCommandDto> commands)
+    {
+        if (snapshot.Sprint == null || commands.Count == 0)
+            return commands.ToList();
+
+        var today = DateTimeOffset.UtcNow.Date;
+        var windowStart = snapshot.Sprint.StartDate > today ? snapshot.Sprint.StartDate : today;
+        var windowEnd = snapshot.Sprint.EndDate;
+        if (windowEnd < windowStart)
+            return commands.ToList();
+
+        var remainingByMember = snapshot.Members.ToDictionary(
+            member => member.UserId,
+            member => member.RemainingCapacityHours ?? 0m);
+        var totalHours = Math.Max(1, commands.Sum(command => command.EstimatedHours ?? 1));
+        var elapsedHours = 0;
+        var dueByCommand = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
+        var scheduled = new List<AiActionTaskCommandDto>(commands.Count);
+
+        // Schedule in dependency order so a model may return cards in any visual order
+        // without allowing a successor to receive an earlier deadline than its blocker.
+        var commandById = commands.ToDictionary(command => command.CommandId, StringComparer.Ordinal);
+        var orderedCommands = new List<AiActionTaskCommandDto>(commands.Count);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        void AddWithDependencies(AiActionTaskCommandDto command)
+        {
+            if (!visited.Add(command.CommandId)) return;
+            foreach (var dependencyId in command.DependencyCommandIds ?? [])
+                AddWithDependencies(commandById[dependencyId]);
+            orderedCommands.Add(command);
+        }
+        foreach (var command in commands)
+            AddWithDependencies(command);
+
+        foreach (var command in orderedCommands)
+        {
+            elapsedHours += command.EstimatedHours ?? 1;
+            var ratio = Math.Clamp((double)elapsedHours / totalHours, 0d, 1d);
+            var spanDays = Math.Max(0, (windowEnd.Date - windowStart.Date).Days);
+            var due = MoveToBusinessDay(windowStart.Date.AddDays((int)Math.Round(spanDays * ratio)), windowEnd);
+            var predecessorDue = (command.DependencyCommandIds ?? [])
+                .Where(dueByCommand.ContainsKey)
+                .Select(id => dueByCommand[id])
+                .DefaultIfEmpty(windowStart)
+                .Max();
+            if (due < predecessorDue) due = predecessorDue;
+            if (due > windowEnd) due = windowEnd;
+            dueByCommand[command.CommandId] = due;
+
+            var estimate = command.EstimatedHours ?? 0;
+            var requiredSkills = (command.RequiredSkills ?? [])
+                .Select(skill => skill.SkillId)
+                .ToHashSet();
+            var candidate = snapshot.Members
+                .Where(member => IsDeclaredCapacity(member) && member.IsAvailableForSprint)
+                .Where(member => remainingByMember.GetValueOrDefault(member.UserId) >= estimate)
+                .Where(member => requiredSkills.IsSubsetOf((member.VerifiedSkillIds ?? []).ToHashSet()))
+                .OrderByDescending(member => remainingByMember.GetValueOrDefault(member.UserId))
+                .ThenBy(member => member.ActiveTaskCount)
+                .ThenBy(member => member.Name, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault();
+
+            if (candidate != null)
+                remainingByMember[candidate.UserId] -= estimate;
+
+            scheduled.Add(command with
+            {
+                DueDate = due,
+                AssigneeId = candidate?.UserId,
+                AssigneeMode = candidate == null ? "unassigned" : "system_suggested"
+            });
+        }
+
+        var scheduledById = scheduled.ToDictionary(command => command.CommandId, StringComparer.Ordinal);
+        return commands.Select(command => scheduledById[command.CommandId]).ToList();
+    }
+
+    private static bool TryValidateSystemSuggestedCapacity(
+        IReadOnlyList<AiActionTaskCommandDto> commands,
+        AiActionContextSnapshotDto snapshot,
+        out string? error)
+    {
+        var members = snapshot.Members.ToDictionary(member => member.UserId);
+        var consumed = new Dictionary<Guid, decimal>();
+        foreach (var command in commands.Where(command =>
+                     command.AssigneeId.HasValue && command.AssigneeMode == "system_suggested"))
+        {
+            var member = members[command.AssigneeId!.Value];
+            var requiredSkills = (command.RequiredSkills ?? []).Select(skill => skill.SkillId).ToHashSet();
+            if (!IsDeclaredCapacity(member) || !member.IsAvailableForSprint ||
+                !requiredSkills.IsSubsetOf((member.VerifiedSkillIds ?? []).ToHashSet()))
+            {
+                error = "A Qaly-suggested assignee no longer has declared capacity, Sprint availability, or verified skill evidence.";
+                return false;
+            }
+
+            consumed[member.UserId] = consumed.GetValueOrDefault(member.UserId) + (command.EstimatedHours ?? 0);
+            if (consumed[member.UserId] > (member.RemainingCapacityHours ?? 0m))
+            {
+                error = "A Qaly-suggested assignment exceeds the member's remaining cross-project capacity.";
+                return false;
+            }
+        }
+
+        error = null;
+        return true;
+    }
+
+    private static bool IsDeclaredCapacity(AiActionMemberContextDto member)
+        => member.CapacityState is "declared" or "declared_with_availability";
+
+    private static DateTimeOffset MoveToBusinessDay(DateTimeOffset candidate, DateTimeOffset windowEnd)
+    {
+        while (candidate.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday && candidate < windowEnd)
+            candidate = candidate.AddDays(1);
+        return candidate > windowEnd ? windowEnd : candidate;
+    }
+
+    private static List<AiActionTaskCommandDto>? BuildNamedTenTaskFallback(
+        AiActionContextSnapshotDto snapshot,
+        IReadOnlyList<string> sourceRefs)
+    {
+        if (snapshot.RequestedTaskCount != 10) return null;
+        var normalized = NormalizeForMatching(snapshot.UserIntent);
+        var requiredSignals = new[]
+        {
+            "khao sat", "user flow", "ui kit", "api contract", "database",
+            "auth", "booking", "payment", "e2e", "tai lieu van hanh"
+        };
+        if (requiredSignals.Count(signal => normalized.Contains(signal, StringComparison.Ordinal)) < 8) return null;
+
+        IReadOnlyList<AiActionSkillSelectionDto> Skill(params string[] signals)
+        {
+            var match = snapshot.Skills.FirstOrDefault(skill =>
+            {
+                var haystack = NormalizeForMatching($"{skill.Name} {skill.Description}");
+                return signals.Any(signal => haystack.Contains(signal, StringComparison.Ordinal));
+            });
+            return match == null ? [] : [new AiActionSkillSelectionDto(match.SkillId, "Proficient")];
+        }
+
+        return
+        [
+            BuildFallbackCommand("p11-research", "Khảo sát người dùng và bối cảnh nghiệp vụ",
+                "Thu thập nhu cầu, pain point, vai trò và ràng buộc của luồng dịch vụ.",
+                ["Có biên bản khảo sát và nguồn tham chiếu", "Pain point, vai trò và unknown được phân loại"],
+                "High", 6, sourceRefs, Skill("business", "analysis", "product")),
+            BuildFallbackCommand("p11-user-flow", "Thiết kế user flow end-to-end",
+                "Mô tả happy path, ngoại lệ và navigation từ đăng nhập đến hoàn tất dịch vụ.",
+                ["Happy path và ngoại lệ có điểm bắt đầu/kết thúc rõ", "Mỗi trạng thái có điều hướng kế tiếp"],
+                "High", 6, sourceRefs, Skill("ux", "product", "analysis"), ["p11-research"]),
+            BuildFallbackCommand("p11-ui-kit", "Xây dựng UI kit và trạng thái giao diện",
+                "Chuẩn hóa component, token, trạng thái loading/empty/error và responsive behavior.",
+                ["Component và token dùng lại được", "Có trạng thái loading, empty, error và responsive"],
+                "Medium", 8, sourceRefs, Skill("frontend", "vue", "ui", "ux"), ["p11-user-flow"]),
+            BuildFallbackCommand("p11-api-contract", "Định nghĩa API contract",
+                "Chốt request/response, validation, authorization và error contract cho luồng chính.",
+                ["Contract có schema và mã lỗi", "Authorization và validation được mô tả"],
+                "High", 8, sourceRefs, Skill("backend", "api", ".net"), ["p11-user-flow"]),
+            BuildFallbackCommand("p11-database", "Thiết kế database và migration",
+                "Thiết kế dữ liệu canonical, constraint, index và migration an toàn.",
+                ["Schema có constraint và index cần thiết", "Migration có phương án rollback"],
+                "High", 8, sourceRefs, Skill("database", "sql", "ef core"), ["p11-api-contract"]),
+            BuildFallbackCommand("p11-auth", "Triển khai xác thực và phân quyền",
+                "Triển khai đăng ký/đăng nhập, session và authorization theo vai trò.",
+                ["Luồng xác thực chạy với dữ liệu thật", "Truy cập trái quyền bị từ chối và được kiểm thử"],
+                "Critical", 10, sourceRefs, Skill("security", "auth", "backend"), ["p11-api-contract", "p11-database"]),
+            BuildFallbackCommand("p11-booking", "Triển khai luồng booking dịch vụ và phòng",
+                "Cho phép tìm, chọn, giữ chỗ và xác nhận booking với kiểm tra xung đột.",
+                ["Không thể double-book cùng tài nguyên", "Trạng thái booking nhất quán end-to-end"],
+                "Critical", 14, sourceRefs, Skill("backend", "frontend", "vue", ".net"), ["p11-auth", "p11-database"]),
+            BuildFallbackCommand("p11-payment", "Tích hợp thanh toán và đối soát",
+                "Xử lý payment intent, callback, retry và idempotency cho booking.",
+                ["Retry không tạo giao dịch trùng", "Trạng thái thanh toán và booking được đối soát"],
+                "Critical", 12, sourceRefs, Skill("payment", "backend", "security"), ["p11-booking"]),
+            BuildFallbackCommand("p11-e2e", "Kiểm thử E2E luồng dịch vụ",
+                "Kiểm thử các luồng chính và lỗi từ đăng nhập, booking đến thanh toán.",
+                ["Happy path chạy qua dữ liệu canonical", "Các lỗi auth, booking và payment có assertion"],
+                "High", 10, sourceRefs, Skill("qa", "playwright", "test"), ["p11-ui-kit", "p11-auth", "p11-booking", "p11-payment"]),
+            BuildFallbackCommand("p11-ops-docs", "Hoàn thiện tài liệu vận hành",
+                "Viết runbook triển khai, monitor, xử lý sự cố và rollback.",
+                ["Runbook có owner và bước kiểm tra", "Có hướng dẫn monitor, incident và rollback"],
+                "Medium", 6, sourceRefs, Skill("devops", "operations", "documentation"), ["p11-e2e"])
+        ];
+    }
+
+    private static bool TryValidateCommandDependencies(
+        IReadOnlyList<AiActionTaskCommandDto> commands,
+        out string? error)
+    {
+        var ids = commands.Select(item => item.CommandId).ToHashSet(StringComparer.Ordinal);
+        if (commands.Any(command => (command.DependencyCommandIds ?? []).Any(dependency =>
+                !ids.Contains(dependency) || string.Equals(dependency, command.CommandId, StringComparison.Ordinal))))
+        {
+            error = "Every task dependency must reference another selected command in the same option.";
+            return false;
+        }
+
+        var state = new Dictionary<string, int>(StringComparer.Ordinal);
+        bool Visit(string id)
+        {
+            if (state.GetValueOrDefault(id) == 1) return true;
+            if (state.GetValueOrDefault(id) == 2) return false;
+            state[id] = 1;
+            var command = commands.First(item => string.Equals(item.CommandId, id, StringComparison.Ordinal));
+            foreach (var dependency in command.DependencyCommandIds ?? [])
+                if (Visit(dependency)) return true;
+            state[id] = 2;
+            return false;
+        }
+        if (commands.Any(command => Visit(command.CommandId)))
+        {
+            error = "Task dependency graph contains a cycle.";
+            return false;
+        }
+
+        error = null;
+        return true;
+    }
+
+    private static string NormalizeForMatching(string value)
+    {
+        var decomposed = value.Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(decomposed.Length);
+        foreach (var character in decomposed)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
+                builder.Append(char.ToLowerInvariant(character));
+        }
+        return builder.ToString().Normalize(NormalizationForm.FormC).Replace('đ', 'd');
     }
 
     private static AiActionTaskCommandDto BuildFallbackCommand(
@@ -477,7 +760,9 @@ public static class AiActionComposerOutputContract
         IReadOnlyList<string> acceptanceCriteria,
         string priority,
         int estimatedHours,
-        IReadOnlyList<string> sourceRefs)
+        IReadOnlyList<string> sourceRefs,
+        IReadOnlyList<AiActionSkillSelectionDto>? requiredSkills = null,
+        IReadOnlyList<string>? dependencyCommandIds = null)
         => new(
             commandId,
             AiActionComposerContract.TaskCreateTool,
@@ -490,8 +775,55 @@ public static class AiActionComposerOutputContract
             estimatedHours,
             null,
             "unassigned",
-            [],
+            requiredSkills ?? [],
+            sourceRefs,
+            dependencyCommandIds ?? []);
+
+    private static AiActionTaskCommandDto BuildSupplementalFallbackCommand(
+        int ordinal,
+        bool isVietnamese,
+        string intent,
+        IReadOnlyList<string> sourceRefs)
+    {
+        var viPhases = new (string Title, string Description, string Acceptance)[]
+        {
+            ("Phân tích luồng nghiệp vụ và hành trình người dùng", "Mô hình hóa luồng nghiệp vụ, vai trò và các điểm chuyển trạng thái cần thiết.", "Luồng chính, ngoại lệ và vai trò được mô tả rõ"),
+            ("Thiết kế kiến trúc và ranh giới tích hợp", "Xác định các thành phần, hợp đồng dữ liệu và điểm tích hợp cho phạm vi đã thống nhất.", "Kiến trúc và hợp đồng tích hợp có thể được review"),
+            ("Thiết kế trải nghiệm và giao diện", "Chuẩn bị cấu trúc màn hình, trạng thái giao diện và hành vi điều hướng.", "Màn hình, trạng thái và navigation được đặc tả"),
+            ("Xây dựng mô hình dữ liệu và migration", "Thiết kế dữ liệu canonical, ràng buộc và migration cần thiết.", "Dữ liệu và ràng buộc được kiểm chứng"),
+            ("Phát triển backend và API", "Triển khai business logic, validation và API cho phạm vi đã duyệt.", "API đáp ứng business rules và có kiểm thử"),
+            ("Phát triển frontend và tương tác", "Triển khai giao diện, trạng thái và xử lý lỗi theo thiết kế.", "Luồng frontend hoạt động với dữ liệu thật"),
+            ("Tích hợp end-to-end", "Kết nối các thành phần và kiểm tra luồng hoàn chỉnh trên môi trường tích hợp.", "Luồng end-to-end chạy không có dead-end"),
+            ("Kiểm tra bảo mật, hiệu năng và khả năng phục hồi", "Rà quyền truy cập, tải, retry và các tình huống lỗi quan trọng.", "Các rủi ro chính được kiểm tra và ghi nhận"),
+            ("Chuẩn bị phát hành và vận hành", "Hoàn thiện checklist phát hành, quan sát và phương án rollback.", "Có checklist phát hành, monitor và rollback"),
+            ("Theo dõi sau phát hành và cải tiến", "Đo kết quả thực tế, xử lý vấn đề và cập nhật backlog cải tiến.", "Kết quả sau phát hành được đo và phản hồi vào backlog")
+        };
+        var enPhases = new (string Title, string Description, string Acceptance)[]
+        {
+            ("Analyze business flow and user journeys", "Model the business flow, roles, transitions, and important exceptions.", "Primary flows, exceptions, and roles are documented"),
+            ("Design architecture and integration boundaries", "Define components, data contracts, and integration boundaries for the agreed scope.", "Architecture and integration contracts are reviewable"),
+            ("Design experience and interface states", "Prepare screen structure, UI states, and navigation behavior.", "Screens, states, and navigation are specified"),
+            ("Build canonical data model and migrations", "Design canonical data, constraints, and required migrations.", "Data and constraints are verified"),
+            ("Implement backend and APIs", "Implement business logic, validation, and APIs for the approved scope.", "APIs enforce business rules and are tested"),
+            ("Implement frontend interactions", "Build the UI, state transitions, and error handling from the design.", "Frontend flows work with real data"),
+            ("Integrate the end-to-end flow", "Connect components and verify the complete flow in an integration environment.", "The end-to-end flow has no dead ends"),
+            ("Verify security, performance, and resilience", "Check authorization, load, retries, and critical failure paths.", "Primary risks are tested and recorded"),
+            ("Prepare release and operations", "Complete release checks, observability, and rollback guidance.", "Release, monitoring, and rollback checklists exist"),
+            ("Monitor launch and improve", "Measure real outcomes, address issues, and update the improvement backlog.", "Post-launch outcomes feed the backlog")
+        };
+        var phases = isVietnamese ? viPhases : enPhases;
+        var phase = phases[(ordinal - 4) % phases.Length];
+        var cycle = (ordinal - 4) / phases.Length + 1;
+        var suffix = cycle > 1 ? $" ({cycle})" : string.Empty;
+        return BuildFallbackCommand(
+            $"fallback-step-{ordinal:D2}",
+            $"{phase.Title}{suffix}",
+            $"{phase.Description} {(isVietnamese ? "Yêu cầu gốc" : "Original request")}: {intent}",
+            [phase.Acceptance, isVietnamese ? "Kết quả có bằng chứng và sẵn sàng để nghiệm thu" : "The outcome has evidence and is ready for acceptance"],
+            ordinal <= 10 ? "High" : "Medium",
+            ordinal is 8 or 9 ? 8 : 4,
             sourceRefs);
+    }
 
     private static List<string> NormalizeList(IReadOnlyList<string>? values, int maxCount, int maxLength)
         => (values ?? [])

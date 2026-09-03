@@ -166,6 +166,8 @@ public record PrivacyHealthDto(
     long FailedRetentionActions,
     long PendingDataSubjectRequests,
     long FailedDataSubjectRequests,
+    long ExpiredLeases,
+    long OverdueDataSubjectRequests,
     DateTimeOffset? OldestAvailableWorkAt);
 
 public record PrivacyWorkerRunResultDto(

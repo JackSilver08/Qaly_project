@@ -258,6 +258,58 @@ public class TaskTimelineAttentionTests : IDisposable
         result.Data.BlockedItems.Should().Contain(item => item.TaskId == task2Id && item.IsBlocked);
     }
 
+    [Fact]
+    public async Task GetByProjectAsync_UsesCanonicalVisibilityFilterWithoutLeakingPrivateRows()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var publicTaskId = Guid.NewGuid();
+        var privateTaskId = Guid.NewGuid();
+
+        SeedUsers(ownerId, memberId);
+        _context.Projects.Add(new Project { Id = projectId, Name = "Scoped tasks", Code = "scoped-tasks", OwnerId = ownerId });
+        _context.ProjectMembers.Add(new ProjectMember
+        {
+            ProjectId = projectId,
+            UserId = memberId,
+            Role = ProjectRoleRules.Member
+        });
+        _context.TaskItems.AddRange(
+            new TaskItem
+            {
+                Id = publicTaskId,
+                ProjectId = projectId,
+                ReporterId = ownerId,
+                Title = "Visible task"
+            },
+            new TaskItem
+            {
+                Id = privateTaskId,
+                ProjectId = projectId,
+                ReporterId = ownerId,
+                Title = "Owner private task",
+                IsPrivate = true
+            });
+        await _context.SaveChangesAsync();
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+        _currentUser.SetupGet(user => user.Role).Returns(SystemRoleRules.Member);
+
+        var service = CreateService();
+
+        var page = await service.GetByProjectAsync(projectId);
+        var board = await service.GetKanbanAsync(projectId);
+        var privateRead = await service.GetByIdAsync(privateTaskId);
+
+        page.IsSuccess.Should().BeTrue(page.Error);
+        page.Data!.Items.Should().ContainSingle(item => item.Id == publicTaskId && !item.IsRestricted);
+        page.Data.Items.Should().NotContain(item => item.Id == privateTaskId);
+        board.IsSuccess.Should().BeTrue(board.Error);
+        board.Data!.Columns.SelectMany(column => column.Tasks)
+            .Should().ContainSingle(item => item.Id == publicTaskId && !item.IsRestricted);
+        privateRead.StatusCode.Should().Be(403);
+    }
+
     private void SeedUsers(Guid ownerId, Guid assigneeId)
     {
         _context.Users.Add(new User { Id = ownerId, FullName = "PM", Email = "pm@qaly.dev", Role = "User", IsActive = true });
@@ -269,7 +321,8 @@ public class TaskTimelineAttentionTests : IDisposable
         var projectRepo = new GenericRepository<Project>(_context);
         var memberRepo = new GenericRepository<ProjectMember>(_context);
         var organizationMemberRepo = new GenericRepository<OrganizationMember>(_context);
-        var accessPolicy = new TaskAccessPolicy(_currentUser.Object, projectRepo, memberRepo, organizationMemberRepo);
+        var accessPolicy = new TaskAccessPolicy(_currentUser.Object, projectRepo, memberRepo, organizationMemberRepo,
+            new ProjectRoleCatalog(new GenericRepository<ProjectRoleDefinition>(_context)));
         return new TaskService(
             new GenericRepository<TaskItem>(_context),
             new GenericRepository<TaskDependency>(_context),
@@ -283,12 +336,12 @@ public class TaskTimelineAttentionTests : IDisposable
             new GenericRepository<ProjectLabel>(_context),
             new GenericRepository<Sprint>(_context),
             new GenericRepository<VectorSyncOutbox>(_context),
+            new GenericRepository<WebhookOutboxMessage>(_context),
             new UnitOfWork(_context),
             accessPolicy,
             Mock.Of<INotificationService>(),
             Mock.Of<IAuditLogService>(),
             Mock.Of<ITaskPrioritySuggestionService>(),
-            Mock.Of<IWebhookPublisher>(),
             _currentUser.Object);
     }
 }

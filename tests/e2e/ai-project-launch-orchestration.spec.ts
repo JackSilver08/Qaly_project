@@ -35,14 +35,36 @@ function launchPlan(executed: boolean, monitored: boolean) {
     organizationName: 'Qaly Studio',
     ruleSetId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
     ruleSetVersion: 3,
-    scoringVersion: 'project-staffing-deterministic@1.0.0',
+    scoringVersion: 'project-staffing-deterministic@1.1.0',
     sourceVersionHash: 'source-hash',
     staffingScenarios: [{
       scenarioId: 'balanced', title: 'Cân bằng', description: 'Hard gates trước, trade-off sau.', feasible: true, score: 92,
       managerUserId: userId, managerName: 'Qaly Owner',
-      members: [{ userId, displayName: 'Qaly Owner', proposedRole: 'Manager', proposedHours: 24, coveredSkills: [], missingSkills: [], loadAfterPercent: 30, decisionReasons: ['declared_capacity'] }],
-      managerCandidates: [{ userId, displayName: 'Qaly Owner', hardRejects: [], loadAfterPercent: 30, capacityState: 'declared' }],
-      missingSkills: [], blockingReasons: [], risks: [], assumptions: [], ruleDecisions: [], sourceRefs: [], scoringVersion: 'project-staffing-deterministic@1.0.0',
+      members: [{
+        userId, displayName: 'Qaly Owner', proposedRole: 'Manager', proposedHours: 24,
+        coveredSkills: [], missingSkills: [], loadAfterPercent: 30,
+        decisionReasons: ['declared_capacity'], reviewerCoordinationHours: 2.4,
+        weeklyAllocation: [{
+          weekKey: 'W01', startsAt: now, endsAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+          declaredCapacityHours: 40, availabilityReductionHours: 0, existingCommittedHours: 4,
+          focusReserveHours: 6, effectiveAvailableHours: 30, proposedDeliveryHours: 12,
+          reviewerCoordinationHours: 1.2, loadAfterPercent: 43,
+        }],
+      }],
+      managerCandidates: [{
+        userId, displayName: 'Qaly Owner', organizationRole: 'Owner', managerEligible: true,
+        staffingEligible: true, hardRejects: [], evidenceSkills: [], evidenceConfidence: 0.9,
+        weeklyCapacityHours: 40, windowCapacityHours: 320, existingCommittedHours: 4,
+        focusReserveHours: 48, availableHours: 268, proposedHours: 24,
+        loadAfterPercent: 30, activeProjectCount: 1, timeZoneId: 'Asia/Ho_Chi_Minh',
+        capacityState: 'declared', sourceRefs: [], weeklyCapacity: [{
+          weekKey: 'W01', startsAt: now, endsAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+          declaredCapacityHours: 40, availabilityReductionHours: 0, existingCommittedHours: 4,
+          focusReserveHours: 6, effectiveAvailableHours: 30, proposedDeliveryHours: 0,
+          reviewerCoordinationHours: 0, loadAfterPercent: 10,
+        }],
+      }],
+      missingSkills: [], blockingReasons: [], risks: [], assumptions: [], ruleDecisions: [], sourceRefs: [], scoringVersion: 'project-staffing-deterministic@1.1.0',
     }],
     selectedScenarioId: executed ? 'balanced' : null,
     deliveryPlan: {
@@ -51,8 +73,8 @@ function launchPlan(executed: boolean, monitored: boolean) {
       scope: ['Authentication', 'Dashboard'], skillGaps: [], scheduleRisks: [],
       externalDeferred: ['Repository and deployment require separate scoped adapters.'],
       sprints: [{ clientId: 'sprint-1', name: 'Foundation', objective: 'Deliver a vertical slice.', startDate: now, endDate: new Date(Date.now() + 14 * 86_400_000).toISOString(), selected: true, tasks: [
-        { clientId: 'task-1', title: 'Build vertical slice', priority: 'High', estimatedHours: 16, proposedAssigneeId: userId, requiredSkillNames: [], dependencyClientIds: [], selected: true },
-        { clientId: 'task-2', title: 'Verify operations', priority: 'Medium', estimatedHours: 8, proposedAssigneeId: userId, requiredSkillNames: [], dependencyClientIds: ['task-1'], selected: true },
+        { clientId: 'task-1', title: 'Build vertical slice', description: 'Build the reviewed vertical slice.', acceptanceCriteria: ['The vertical slice is verifiable.'], definitionOfDone: ['Read-back succeeds.'], priority: 'High', estimatedHours: 16, proposedAssigneeId: userId, proposedReviewerId: null, requiredSkillIds: [], requiredSkillNames: [], dependencyClientIds: [], objectiveMetricIds: [], sourceRefs: [], selected: true },
+        { clientId: 'task-2', title: 'Verify operations', description: 'Verify the operational path.', acceptanceCriteria: ['The operational path is verified.'], definitionOfDone: ['Evidence is recorded.'], priority: 'Medium', estimatedHours: 8, proposedAssigneeId: userId, proposedReviewerId: null, requiredSkillIds: [], requiredSkillNames: [], dependencyClientIds: ['task-1'], objectiveMetricIds: [], sourceRefs: [], selected: true },
       ] }],
     },
     blockingReasons: [], warnings: [], sourceRefs: [], actualProvider: 'DeepSeek', actualModel: 'deepseek-v4-pro',
@@ -82,13 +104,18 @@ function assistantResponse(plan: ReturnType<typeof launchPlan>) {
     executionPolicy: 'read_only_proposal', assistantMessage: 'Review the staffing and delivery plan before confirmation.', confidence: 0.92,
     clarification: null, artifact: null, sourceRefs: [], answer: null, sessionId, turnId, clientTurnId, sequence: 1,
     sessionVersion: 1, turnStatus: 'completed', correlationId: 'e2e-launch', replayed: false, processEvents: [],
-    capabilities: [], sourceDisclosures: [], conversation: null, projectLaunchPlan: plan,
+    capabilities: [
+      { capabilityId: 'project.staffing.plan.v1' },
+      { capabilityId: 'project.launch.execute.v1' },
+    ],
+    sourceDisclosures: [], conversation: null, projectLaunchPlan: plan,
   }
 }
 
 test('TEST-PL-BCD-E2E review card confirms with idempotency receipt then produces review-only replan', async ({ page }) => {
   await login(page)
   let currentPlan = launchPlan(false, false)
+  let confirmRequests = 0
   const now = new Date().toISOString()
   const session = () => ({
     sessionId, title: 'AI-native Project launch', status: 'active', version: 1, projectId: null, createdAt: now, updatedAt: now,
@@ -98,12 +125,15 @@ test('TEST-PL-BCD-E2E review card confirms with idempotency receipt then produce
   await page.route('**/api/ai/assistant/sessions/recent', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(session()) }))
   await page.route(`**/api/ai/assistant/sessions/${sessionId}`, route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(session()) }))
   await page.route(`**/api/ai/project-launch/plans/${planId}/confirm`, async route => {
+    confirmRequests += 1
     const body = route.request().postDataJSON()
     expect(body).toEqual({ confirmed: true, expectedRevision: 1, selectedScenarioId: 'balanced' })
     expect(route.request().headers()['idempotency-key']).toContain(`project-launch:${planId}:1:balanced`)
     currentPlan = launchPlan(true, false)
-    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(currentPlan)) })
+    await route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'Simulated response loss after commit.' }) })
   })
+  await page.route(`**/api/ai/project-launch/plans/${planId}`, route =>
+    route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(currentPlan)) }))
   await page.route(`**/api/ai/project-launch/executions/${receiptId}/monitor`, async route => {
     expect(route.request().postDataJSON()).toEqual({ expectedRevision: 1 })
     currentPlan = launchPlan(true, true)
@@ -117,13 +147,17 @@ test('TEST-PL-BCD-E2E review card confirms with idempotency receipt then produce
   const card = assistant.getByTestId('project-launch-plan')
   await expect(card).toContainText('Customer Portal SPA')
   await expect(card).toContainText('Qaly Owner')
-  await expect(card).toContainText('Foundation · 2 tasks')
-  await expect(card).toContainText('External actions được hoãn có chủ đích')
+  await expect(card).toContainText('2.4h review')
+  await expect(card.getByText('Xem capacity theo từng tuần')).toBeVisible()
+  await expect(card.getByText('W01')).toBeHidden()
+  await expect(card).toContainText('Foundation · 2 task')
+  await expect(card).toContainText('Kết nối bên ngoài chưa được thực hiện')
 
   page.once('dialog', dialog => dialog.accept())
   await card.getByTestId('project-launch-confirm').click()
-  await expect(card.getByTestId('project-launch-receipt')).toContainText('Read-back: verified')
+  await expect(card.getByTestId('project-launch-receipt')).toContainText('Đọc lại: đã xác minh')
   await expect(card.getByTestId('project-launch-receipt')).toContainText('external_deferred')
+  expect(confirmRequests).toBe(1)
 
   await card.getByTestId('project-launch-monitor').click()
   const proposal = card.getByTestId('project-replan-proposal')

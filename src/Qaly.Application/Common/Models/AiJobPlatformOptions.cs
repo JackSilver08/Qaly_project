@@ -22,6 +22,7 @@ public sealed class AiJobPlatformOptions
     public bool ProjectLaunchExecutionEnabled { get; set; }
     public bool ProjectOperationMonitoringEnabled { get; set; }
     public bool SafeTestOrchestratorEnabled { get; set; }
+    public bool NativeDomainActionsEnabled { get; set; }
     public int SafeTestTimeoutSeconds { get; set; } = 900;
     public int PollIntervalMilliseconds { get; set; } = 1000;
     public int LeaseSeconds { get; set; } = 120;

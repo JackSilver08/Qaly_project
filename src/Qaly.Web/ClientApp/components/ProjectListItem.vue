@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CalendarDays, CheckCircle2, Eye, Pencil, Trash2, UserRound } from 'lucide-vue-next'
+import { Archive, CalendarDays, CheckCircle2, Eye, Pencil, Trash2, UserRound } from 'lucide-vue-next'
 import type { ProjectCardModel } from './dashboard-models'
 
 defineProps<{
@@ -11,6 +11,7 @@ defineProps<{
 defineEmits<{
   view: [projectId: string]
   edit: [projectId: string]
+  archive: [projectId: string]
   delete: [projectId: string]
 }>()
 </script>
@@ -67,6 +68,9 @@ defineEmits<{
         </button>
         <button v-if="!readOnly" type="button" aria-label="Sửa dự án" @click="$emit('edit', project.id)">
           <Pencil :size="16" />
+        </button>
+        <button v-if="!readOnly" type="button" aria-label="Lưu trữ dự án" @click="$emit('archive', project.id)">
+          <Archive :size="16" />
         </button>
         <button v-if="!readOnly" type="button" aria-label="Xóa dự án" @click="$emit('delete', project.id)">
           <Trash2 :size="16" />

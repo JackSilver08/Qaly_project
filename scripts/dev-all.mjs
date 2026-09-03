@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { createConnection } from 'node:net'
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
@@ -10,6 +10,20 @@ const certPassword = 'qaly-local-dev'
 const children = []
 let stopping = false
 const startupTimeoutMs = Number.parseInt(process.env.QALY_DEV_STARTUP_TIMEOUT_MS ?? '300000', 10)
+
+function localSetting(name, fallback) {
+  if (process.env[name]?.trim()) return process.env[name].trim()
+  const envPath = resolve(root, '.env')
+  if (!existsSync(envPath)) return fallback
+  const prefix = `${name}=`
+  const line = readFileSync(envPath, 'utf8')
+    .split(/\r?\n/)
+    .map(value => value.trim())
+    .find(value => value.startsWith(prefix))
+  if (!line) return fallback
+  const value = line.slice(prefix.length).trim()
+  return value.replace(/^(['"])(.*)\1$/, '$2') || fallback
+}
 
 if (!Number.isFinite(startupTimeoutMs) || startupTimeoutMs < 30000) {
   throw new Error('QALY_DEV_STARTUP_TIMEOUT_MS phải là số nguyên >= 30000.')
@@ -142,6 +156,11 @@ async function main() {
 
   console.log('[Qaly] Đang khởi động frontend và backend...')
 
+  const sqlServerPort = localSetting('SQLSERVER_PORT', '1434')
+  const sqlServerDatabase = localSetting('SQLSERVER_DATABASE', 'QalyDb')
+  const sqlServerPassword = localSetting('SQLSERVER_SA_PASSWORD', 'Qaly@Dev2026!')
+  const redisPort = localSetting('REDIS_PORT', '6380')
+
   const vite = start('Vite', 'node', ['./node_modules/vite/dist/node/cli.js', '--configLoader', 'runner'], {
     QALY_VITE_DEV: '1', QALY_VITE_CERT_PASSWORD: certPassword,
   })
@@ -149,7 +168,15 @@ async function main() {
     DOTNET_WATCH_SUPPRESS_BROWSER_REFRESH: '1',
     ASPNETCORE_URLS: 'https://localhost:5005',
     Vite__DevServerUrl: 'https://localhost:5173',
-    AI_JOB_V4_WORKER_ENABLED: includeAi ? 'true' : 'false',
+    // Local SQL Server is bound to localhost only. Keep transport encryption off
+    // here because some Windows dev hosts cannot negotiate the container TLS
+    // certificate; production connection strings remain unaffected.
+    ConnectionStrings__DefaultConnection: `Server=localhost,${sqlServerPort};Database=${sqlServerDatabase};User Id=sa;Password=${sqlServerPassword};Encrypt=False;TrustServerCertificate=True;MultipleActiveResultSets=True`,
+    Redis__ConnectionString: `localhost:${redisPort}`,
+    // Cloud-backed canonical jobs also need the worker. --ai only controls the
+    // optional local Ollama/Qdrant services; it must not leave every AI draft
+    // permanently queued in a normal preview.
+    AI_JOB_V4_WORKER_ENABLED: 'true',
     PRIVACY_V4_WORKER_ENABLED: 'false',
     GitHub__WorkerEnabled: 'false',
     'Serilog__MinimumLevel__Override__Microsoft.EntityFrameworkCore.Database.Command': 'Warning',

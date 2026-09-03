@@ -40,6 +40,55 @@ public sealed class AiAssistantGoalPlanningContractTests
     }
 
     [Fact]
+    public void BuildResult_P02WorkspaceRead_CannotBeEscalatedByModelToTaskMutation()
+    {
+        const string prompt = "Tóm tắt workspace hiện tại: số Project đang hoạt động, tiến độ, task quá hạn, workload cao và ba việc cần chú ý. Dùng metric/table/card phù hợp, có link nguồn; phần quy trình collapse mặc định.";
+        AiAssistantCapabilityCatalog.TryGet(AiAssistantContextContract.GroundedReadCapability, out var read).Should().BeTrue();
+        AiAssistantCapabilityCatalog.TryGet(AiAssistantContextContract.TaskCreateCapability, out var taskCreate).Should().BeTrue();
+        var context = new AiAssistantGoalPlanningValidationContextDto(
+            prompt,
+            new AiAssistantClientContextDto("/dashboard", "workspace"),
+            null,
+            [read!, taskCreate!]);
+
+        var ok = AiAssistantGoalPlanningOutputContract.TryBuildResult(
+            ModelJson(prompt, taskCreate!.CapabilityId),
+            JsonSerializer.Serialize(context, JsonOptions),
+            "DeepSeek", "deepseek-v4-pro",
+            out var result, out var error);
+
+        ok.Should().BeTrue(error);
+        result!.SelectedCapabilityId.Should().Be(AiAssistantContextContract.GroundedReadCapability);
+        result.GoalAnalysis.Disposition.Should().Be("answerable");
+        result.GoalAnalysis.RequiresConfirmation.Should().BeFalse();
+        result.WorkPlan.Steps.Should().NotContain(step => step.MutationClass != "none");
+    }
+
+    [Fact]
+    public void BuildResult_P03ProjectRead_UsesAuthorizedReadWhenModelMutationIsUnavailable()
+    {
+        const string prompt = "Phân tích Project đang chọn: mục tiêu, tiến độ Sprint, task nghẽn, dependency, workload, rủi ro deadline và ba hành động ưu tiên. Chỉ dùng dữ liệu tôi được phép xem.";
+        AiAssistantCapabilityCatalog.TryGet(AiAssistantContextContract.GroundedReadCapability, out var read).Should().BeTrue();
+        var context = new AiAssistantGoalPlanningValidationContextDto(
+            prompt,
+            new AiAssistantClientContextDto("/groups/group-id", "groups", Guid.NewGuid(), "group", Guid.NewGuid()),
+            null,
+            [read!]);
+
+        var ok = AiAssistantGoalPlanningOutputContract.TryBuildResult(
+            ModelJson(prompt, AiAssistantContextContract.TaskCreateCapability),
+            JsonSerializer.Serialize(context, JsonOptions),
+            "DeepSeek", "deepseek-v4-pro",
+            out var result, out var error);
+
+        ok.Should().BeTrue(error);
+        result!.SelectedCapabilityId.Should().Be(AiAssistantContextContract.GroundedReadCapability);
+        result.GoalAnalysis.Disposition.Should().Be("answerable");
+        result.GoalAnalysis.RequiresConfirmation.Should().BeFalse();
+        result.WorkPlan.Steps.Should().NotContain(step => step.MutationClass != "none");
+    }
+
+    [Fact]
     public void BuildResult_ModelInventedSkill_IsReportedButNeverSelected()
     {
         AiAssistantCapabilityCatalog.TryGet(AiAssistantContextContract.GroundedReadCapability, out var read).Should().BeTrue();
@@ -131,6 +180,41 @@ public sealed class AiAssistantGoalPlanningContractTests
         capability.Should().Be(AiAssistantContextContract.TaskCreateCapability);
     }
 
+    [Theory]
+    [InlineData("Soan acceptance checklist nghiem thu cho task nay", AiAssistantContextContract.AcceptanceChecklistCapability)]
+    [InlineData("Tach task nay thanh 10 subtask", AiAssistantContextContract.TaskBreakdownCapability)]
+    [InlineData("Tu wiki nay tao task theo doi", AiAssistantContextContract.WikiBriefTaskCapability)]
+    [InlineData("Tao poll binh chon trong group", AiAssistantContextContract.GroupPollCapability)]
+    [InlineData("Tat weekly digest cho du an", AiAssistantContextContract.ProjectDigestCapability)]
+    public void IntentClassifier_NativeDomainActions_SelectExactCapability(string message, string expectedCapability)
+    {
+        AiAssistantCapabilityIntentClassifier.Infer(message).Should().Be(expectedCapability);
+    }
+
+    [Fact]
+    public void IntentClassifier_P28ExternalAdapters_UsesDeterministicReadOnlyStatusPath()
+    {
+        const string prompt = "Kiem tra kha nang dong bo calendar, repository, invitation, webhook va deployment cho Project nay. " +
+                              "Chi danh dau hoan thanh neu adapter that da doc/ghi va read-back; phan chua co phai ghi EXTERNAL_DEFERRED.";
+
+        AiAssistantCapabilityIntentClassifier.IsExternalAdapterStatusQuery(prompt).Should().BeTrue();
+        AiAssistantCapabilityIntentClassifier.Infer(prompt)
+            .Should().Be(AiAssistantContextContract.GroundedReadCapability);
+    }
+
+    [Theory]
+    [InlineData("Tom tat Wiki dang mo thanh brief co link section nguon; de xuat toi da 3 Task tuy chon, chi tao cac Task toi tick chon.", AiAssistantContextContract.WikiBriefTaskCapability)]
+    [InlineData("Trong Group dang mo, soan Poll voi 4 option ro rang, deadline 3 ngay va cho sua truoc khi xac nhan.", AiAssistantContextContract.GroupPollCapability)]
+    [InlineData("Tu transcript cuoc hop dang mo, trich quyet dinh, blocker va action item; map sang Task co san hoac Task moi.", AiAssistantContextContract.MeetingActionsCapability)]
+    [InlineData("Danh gia roadmap Project hien tai va de xuat dieu chinh Sprint theo dependency, capacity va deadline; hien before/after.", AiAssistantContextContract.RoadmapAdjustCapability)]
+    [InlineData("Cau hinh weekly digest cho Project nay vao 09:00 thu Hai theo timezone cua to chuc.", AiAssistantContextContract.ProjectDigestCapability)]
+    [InlineData("Voi Task vua hoan tat, de xuat attribution va skill evidence theo tieu chi nghiem thu da xac nhan.", AiAssistantContextContract.SkillEvidenceCapability)]
+    [InlineData("So sanh Project hien tai voi baseline da xac nhan, chi ra drift va de xuat replan before/after.", AiAssistantContextContract.ProjectOperationMonitorCapability)]
+    public void IntentClassifier_P18ToP24_SelectsExactCapability(string message, string expectedCapability)
+    {
+        AiAssistantCapabilityIntentClassifier.Infer(message).Should().Be(expectedCapability);
+    }
+
     [Fact]
     public void IntentClassifier_ProjectLaunchBeforeTaskBreakdown_SelectsProjectLaunch()
     {
@@ -138,6 +222,23 @@ public sealed class AiAssistantGoalPlanningContractTests
             "khoi tao du an web SPA, sau do tao task chi tiet theo sprint");
 
         capability.Should().Be(AiProjectLaunchContract.CapabilityId);
+    }
+
+    [Theory]
+    [InlineData(
+        "Lập ba phương án manager/team dựa trên skill evidence, capacity đã khai báo, lịch vắng và tải đa dự án. Sau đó chia phase, Sprint, Task, dependency, estimate, required skill và assignee.",
+        AiProjectOrchestrationContract.StaffingCapabilityId)]
+    [InlineData(
+        "Dùng phương án đang chọn. Trước khi ghi hãy hiện một card review cuối gồm Project, manager/team, phase, Sprint và tổng số Task. Chờ đúng một xác nhận của tôi.",
+        AiProjectOrchestrationContract.ExecuteCapabilityId)]
+    [InlineData(
+        "Mở lại kết quả thực thi Project vừa rồi và kiểm tra xem retry cùng yêu cầu có tạo trùng Project, Sprint hoặc Task không. Chỉ báo theo dữ liệu đọc lại.",
+        AiProjectOrchestrationContract.MonitorCapabilityId)]
+    public void IntentClassifier_P08ToP10_SelectsExactProjectOrchestrationCapability(
+        string message,
+        string expectedCapability)
+    {
+        AiAssistantCapabilityIntentClassifier.Infer(message).Should().Be(expectedCapability);
     }
 
     [Fact]

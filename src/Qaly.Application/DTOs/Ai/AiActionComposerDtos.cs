@@ -12,6 +12,7 @@ public static class AiActionComposerContract
     public const string DraftType = "AiActionPlan";
     public const string ConfirmAction = "execute_action_set";
     public const string TaskCreateTool = "task.create.v1";
+    public const int MaximumTaskCommands = 20;
 }
 
 public static class AiActionActivityStages
@@ -40,6 +41,13 @@ public static class AiActionActivityStatuses
     public const string Skipped = "skipped";
 }
 
+public static class AiActionReceiptStatuses
+{
+    public const string VerificationPending = "verification_pending";
+    public const string Succeeded = "succeeded";
+    public const string VerificationFailed = "verification_failed";
+}
+
 public sealed record AiActionClientContextDto(
     string? Route = null,
     string? Module = null,
@@ -55,7 +63,8 @@ public sealed record AiActionComposeRequestDto(
     string ModelProfile = "action_composer_strong",
     int MaximumOptions = 3,
     decimal? MaximumEstimatedCostUsd = 0.08m,
-    string CacheMode = "bypass");
+    string CacheMode = "bypass",
+    string ProviderHint = "auto");
 
 public sealed record AiActionProjectContextDto(
     Guid Id,
@@ -73,7 +82,13 @@ public sealed record AiActionMemberContextDto(
     string Role,
     int ActiveTaskCount,
     int EstimatedHours,
-    string SourceRef);
+    string SourceRef,
+    decimal? WeeklyCapacityHours = null,
+    decimal? WindowCapacityHours = null,
+    decimal? RemainingCapacityHours = null,
+    string CapacityState = "unknown",
+    bool IsAvailableForSprint = false,
+    IReadOnlyList<Guid>? VerifiedSkillIds = null);
 
 public sealed record AiActionSkillContextDto(
     Guid SkillId,
@@ -99,7 +114,8 @@ public sealed record AiActionContextSnapshotDto(
     IReadOnlyList<AiActionMemberContextDto> Members,
     IReadOnlyList<AiActionSkillContextDto> Skills,
     IReadOnlyList<string> AllowedSourceRefs,
-    AiActionSprintContextDto? Sprint = null);
+    AiActionSprintContextDto? Sprint = null,
+    int? RequestedTaskCount = null);
 
 public sealed record AiActionTargetEntityDto(
     string Type,
@@ -123,7 +139,8 @@ public sealed record AiActionTaskCommandDto(
     Guid? AssigneeId,
     string AssigneeMode,
     IReadOnlyList<AiActionSkillSelectionDto> RequiredSkills,
-    IReadOnlyList<string> SourceRefs);
+    IReadOnlyList<string> SourceRefs,
+    IReadOnlyList<string> DependencyCommandIds);
 
 public sealed record AiActionOptionDto(
     string OptionId,

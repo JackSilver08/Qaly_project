@@ -26,7 +26,7 @@ public sealed class ProjectOperationMonitorWorker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromMinutes(5));
-        do
+        while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
@@ -42,7 +42,15 @@ public sealed class ProjectOperationMonitorWorker : BackgroundService
             {
                 MonitorFailed(_logger, exception);
             }
+
+            try
+            {
+                if (!await timer.WaitForNextTickAsync(stoppingToken)) break;
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
         }
-        while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 }

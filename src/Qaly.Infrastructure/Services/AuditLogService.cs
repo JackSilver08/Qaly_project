@@ -12,7 +12,7 @@ namespace Qaly.Infrastructure.Services;
 public class AuditLogService : IAuditLogService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private const int RecentWorkspaceActivityScanLimit = 500;
+    private const int RecentWorkspaceActivityBatchSize = 200;
 
     private readonly QalyDbContext _context;
     private readonly ICurrentUserService _currentUserService;
@@ -24,6 +24,12 @@ public class AuditLogService : IAuditLogService
     }
 
     public async Task LogAsync(string action, string entityType, string entityId, object? changes = null, CancellationToken ct = default)
+    {
+        await StageAsync(action, entityType, entityId, changes, ct);
+        await _context.SaveChangesAsync(ct);
+    }
+
+    public async Task StageAsync(string action, string entityType, string entityId, object? changes = null, CancellationToken ct = default)
     {
         JsonNode? changesNode = changes == null ? null : JsonSerializer.SerializeToNode(changes, JsonOptions);
         var projectId = await InferProjectIdAsync(entityType, entityId, changesNode, ct);
@@ -43,7 +49,6 @@ public class AuditLogService : IAuditLogService
         };
 
         await _context.AuditLogs.AddAsync(log, ct);
-        await _context.SaveChangesAsync(ct);
     }
 
     public async Task<Result<PagedResult<AuditLogDto>>> GetByEntityAsync(string entityType, string entityId, int page = 1, int pageSize = 20, CancellationToken ct = default)
@@ -79,17 +84,35 @@ public class AuditLogService : IAuditLogService
         }
 
         var isAdmin = string.Equals(_currentUserService.Role, "Admin", StringComparison.OrdinalIgnoreCase);
-        var recentLogs = await AuditLogQuery()
-            .OrderByDescending(log => log.Timestamp)
-            .Take(isAdmin ? limit : RecentWorkspaceActivityScanLimit)
-            .ToListAsync(ct);
-
-        if (!isAdmin)
+        if (isAdmin)
         {
-            var accessibleLogs = new List<AuditLog>(limit);
-            foreach (var log in recentLogs)
+            var recentLogs = await AuditLogQuery()
+                .OrderByDescending(log => log.Timestamp)
+                .ThenByDescending(log => log.Id)
+                .Take(limit)
+                .ToListAsync(ct);
+            return await PageAsync(recentLogs.AsQueryable(), 1, limit, ct);
+        }
+
+        var accessibleLogs = new List<AuditLog>(limit);
+        var offset = 0;
+        while (accessibleLogs.Count < limit)
+        {
+            var candidates = await AuditLogQuery()
+                .OrderByDescending(log => log.Timestamp)
+                .ThenByDescending(log => log.Id)
+                .Skip(offset)
+                .Take(RecentWorkspaceActivityBatchSize)
+                .ToListAsync(ct);
+            if (candidates.Count == 0)
             {
-                if (await CanSeeRecentLogAsync(log, currentUserId.Value, ct))
+                break;
+            }
+
+            var visibleIds = await ResolveVisibleLogIdsAsync(candidates, currentUserId.Value, ct);
+            foreach (var log in candidates)
+            {
+                if (visibleIds.Contains(log.Id))
                 {
                     accessibleLogs.Add(log);
                 }
@@ -100,16 +123,20 @@ public class AuditLogService : IAuditLogService
                 }
             }
 
-            return Result.Success(new PagedResult<AuditLogDto>
+            offset += candidates.Count;
+            if (candidates.Count < RecentWorkspaceActivityBatchSize)
             {
-                Items = accessibleLogs.Select(ToDto).ToList(),
-                TotalCount = accessibleLogs.Count,
-                PageNumber = 1,
-                PageSize = limit
-            });
+                break;
+            }
         }
 
-        return await PageAsync(recentLogs.AsQueryable(), 1, limit, ct);
+        return Result.Success(new PagedResult<AuditLogDto>
+        {
+            Items = accessibleLogs.Select(ToDto).ToList(),
+            TotalCount = accessibleLogs.Count,
+            PageNumber = 1,
+            PageSize = limit
+        });
     }
 
     private IQueryable<AuditLog> AuditLogQuery()
@@ -168,52 +195,157 @@ public class AuditLogService : IAuditLogService
         return null;
     }
 
-    private async Task<bool> CanSeeRecentLogAsync(AuditLog log, Guid currentUserId, CancellationToken ct)
+    private async Task<HashSet<long>> ResolveVisibleLogIdsAsync(
+        IReadOnlyList<AuditLog> logs,
+        Guid currentUserId,
+        CancellationToken ct)
     {
-        if (log.UserId == currentUserId)
+        var visibleLogIds = logs
+            .Where(log => log.UserId == currentUserId)
+            .Select(log => log.Id)
+            .ToHashSet();
+        var unresolved = logs
+            .Where(log => log.UserId != currentUserId)
+            .Select(log => new AuditLogTarget(log, TryParseChanges(log.ChangesJson)))
+            .ToList();
+
+        var taskIds = new HashSet<Guid>();
+        var sprintIds = new HashSet<Guid>();
+        var projectByLogId = new Dictionary<long, Guid>();
+        foreach (var target in unresolved)
         {
-            return true;
+            if (TryGetDirectProjectId(target.Log, target.Changes, out var projectId))
+            {
+                projectByLogId[target.Log.Id] = projectId;
+                continue;
+            }
+
+            if (target.Log.EntityType == nameof(TaskItem) && Guid.TryParse(target.Log.EntityId, out var taskId))
+            {
+                taskIds.Add(taskId);
+                continue;
+            }
+
+            if ((target.Log.EntityType == nameof(TaskComment) || target.Log.EntityType == nameof(TaskAttachment)) &&
+                target.Changes is not null &&
+                (TryReadGuid(target.Changes, "taskItemId", out taskId) || TryReadGuid(target.Changes, "TaskItemId", out taskId)))
+            {
+                taskIds.Add(taskId);
+                continue;
+            }
+
+            if (target.Log.EntityType == nameof(Sprint) && target.Changes is not null &&
+                (TryReadGuid(target.Changes, "sprintId", out var sprintId) || TryReadGuid(target.Changes, "SprintId", out sprintId)))
+            {
+                sprintIds.Add(sprintId);
+            }
         }
 
-        var projectId = await InferProjectIdAsync(log.EntityType, log.EntityId, log.ChangesJson is null ? null : JsonNode.Parse(log.ChangesJson), ct);
-        if (!projectId.HasValue)
+        var taskProjects = taskIds.Count == 0
+            ? new Dictionary<Guid, Guid>()
+            : await _context.TaskItems
+                .AsNoTracking()
+                .Where(task => taskIds.Contains(task.Id))
+                .Select(task => new { task.Id, task.ProjectId })
+                .ToDictionaryAsync(task => task.Id, task => task.ProjectId, ct);
+        var sprintProjects = sprintIds.Count == 0
+            ? new Dictionary<Guid, Guid>()
+            : await _context.Set<Sprint>()
+                .AsNoTracking()
+                .Where(sprint => sprintIds.Contains(sprint.Id))
+                .Select(sprint => new { sprint.Id, sprint.ProjectId })
+                .ToDictionaryAsync(sprint => sprint.Id, sprint => sprint.ProjectId, ct);
+
+        foreach (var target in unresolved.Where(target => !projectByLogId.ContainsKey(target.Log.Id)))
         {
-            return false;
+            if (target.Log.EntityType == nameof(TaskItem) && Guid.TryParse(target.Log.EntityId, out var taskId) &&
+                taskProjects.TryGetValue(taskId, out var taskProjectId))
+            {
+                projectByLogId[target.Log.Id] = taskProjectId;
+            }
+            else if ((target.Log.EntityType == nameof(TaskComment) || target.Log.EntityType == nameof(TaskAttachment)) &&
+                target.Changes is not null &&
+                (TryReadGuid(target.Changes, "taskItemId", out taskId) || TryReadGuid(target.Changes, "TaskItemId", out taskId)) &&
+                taskProjects.TryGetValue(taskId, out taskProjectId))
+            {
+                projectByLogId[target.Log.Id] = taskProjectId;
+            }
+            else if (target.Log.EntityType == nameof(Sprint) && target.Changes is not null &&
+                (TryReadGuid(target.Changes, "sprintId", out var sprintId) || TryReadGuid(target.Changes, "SprintId", out sprintId)) &&
+                sprintProjects.TryGetValue(sprintId, out var sprintProjectId))
+            {
+                projectByLogId[target.Log.Id] = sprintProjectId;
+            }
         }
 
-        return await CanAccessProjectAsync(projectId.Value, currentUserId, ct);
+        var projectIds = projectByLogId.Values.ToHashSet();
+        if (projectIds.Count == 0)
+        {
+            return visibleLogIds;
+        }
+
+        var projects = await _context.Projects
+            .AsNoTracking()
+            .Include(project => project.Organization)
+                .ThenInclude(organization => organization!.Members)
+            .Include(project => project.Members)
+            .Where(project => projectIds.Contains(project.Id))
+            .ToListAsync(ct);
+        var accessibleProjectIds = projects
+            .Where(project => CanAccessProject(project, currentUserId))
+            .Select(project => project.Id)
+            .ToHashSet();
+
+        foreach (var (logId, projectId) in projectByLogId)
+        {
+            if (accessibleProjectIds.Contains(projectId))
+            {
+                visibleLogIds.Add(logId);
+            }
+        }
+
+        return visibleLogIds;
     }
 
-    private async Task<bool> CanAccessProjectAsync(Guid projectId, Guid currentUserId, CancellationToken ct)
+    private static bool TryGetDirectProjectId(AuditLog log, JsonObject? changes, out Guid projectId)
     {
-        var project = await _context.Projects
-            .AsNoTracking()
-            .Include(item => item.Organization)
-                .ThenInclude(item => item!.Members)
-            .Include(item => item.Members)
-            .FirstOrDefaultAsync(item => item.Id == projectId, ct);
-
-        if (project == null)
-        {
-            return false;
-        }
-
-        if (project.OwnerId == currentUserId)
+        if (log.EntityType == nameof(Project) && Guid.TryParse(log.EntityId, out projectId))
         {
             return true;
         }
 
-        if (project.Members.Any(member => member.UserId == currentUserId))
+        if (changes is not null &&
+            (TryReadGuid(changes, "projectId", out projectId) || TryReadGuid(changes, "ProjectId", out projectId)))
         {
             return true;
         }
 
-        if (project.OrganizationId == null || project.Organization == null)
+        projectId = Guid.Empty;
+        return false;
+    }
+
+    private static JsonObject? TryParseChanges(string? changesJson)
+    {
+        if (string.IsNullOrWhiteSpace(changesJson)) return null;
+        try
         {
-            return false;
+            return JsonNode.Parse(changesJson) as JsonObject;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static bool CanAccessProject(Project project, Guid currentUserId)
+    {
+        if (!project.OrganizationId.HasValue)
+        {
+            return project.OwnerId == currentUserId ||
+                project.Members.Any(member => member.UserId == currentUserId);
         }
 
-        if (!project.Organization.IsActive)
+        if (project.Organization == null || !project.Organization.IsActive)
         {
             return false;
         }
@@ -223,8 +355,17 @@ public class AuditLogService : IAuditLogService
             return true;
         }
 
-        return project.Organization.Members.Any(member => member.UserId == currentUserId);
+        var organizationRole = project.Organization.Members
+            .Where(member => member.UserId == currentUserId)
+            .Select(member => member.Role)
+            .FirstOrDefault();
+        return !string.IsNullOrWhiteSpace(organizationRole) &&
+            (OrganizationRoleRules.CanManageOrganization(organizationRole) ||
+             project.OwnerId == currentUserId ||
+             project.Members.Any(member => member.UserId == currentUserId));
     }
+
+    private sealed record AuditLogTarget(AuditLog Log, JsonObject? Changes);
 
     private static bool TryReadGuid(JsonObject obj, string propertyName, out Guid value)
     {
@@ -254,6 +395,7 @@ public class AuditLogService : IAuditLogService
         var totalCount = await query.CountAsync(ct);
         var items = await query
             .OrderByDescending(log => log.Timestamp)
+            .ThenByDescending(log => log.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(ct);

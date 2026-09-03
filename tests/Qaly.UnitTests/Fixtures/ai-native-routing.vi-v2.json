@@ -1,0 +1,17 @@
+[
+  { "id": "route-project-launch", "category": "intent_routing", "prompt": "Khởi chạy dự án web SPA, chọn manager và lập sprint", "expectedCapability": "project.launch.analyze.v1" },
+  { "id": "route-project-task", "category": "task_project_disambiguation", "prompt": "Tạo 10 task cho sprint 1 của dự án hiện tại", "expectedCapability": "task.create.v1", "expectedCount": 10 },
+  { "id": "route-purpose-clause", "category": "task_project_disambiguation", "prompt": "Tạo các task khảo sát để khởi tạo dự án", "expectedCapability": "task.create.v1" },
+  { "id": "route-checklist", "category": "intent_routing", "prompt": "Soạn acceptance checklist nghiệm thu cho task này", "expectedCapability": "task.acceptance_checklist.v1" },
+  { "id": "route-breakdown", "category": "exact_requested_count", "prompt": "Tách task này thành đúng 10 subtask", "expectedCapability": "task.breakdown.v1", "expectedCount": 10 },
+  { "id": "route-wiki", "category": "intent_routing", "prompt": "Tóm tắt wiki này và tạo task theo dõi", "expectedCapability": "wiki.brief_task.v1" },
+  { "id": "route-poll", "category": "intent_routing", "prompt": "Tạo poll bình chọn trong nhóm", "expectedCapability": "group.poll.create.v1" },
+  { "id": "route-digest", "category": "intent_routing", "prompt": "Bật báo cáo hàng tuần cho dự án", "expectedCapability": "project.digest.configure.v1" },
+  { "id": "follow-up-launch", "category": "follow_up_context", "prompt": "thử luôn", "historyUser": "Tôi muốn tự động tạo dự án web SPA", "historyAssistant": "Mình sẽ lập Project Launch Brief để bạn review.", "expectedCapability": "project.launch.analyze.v1" },
+  { "id": "follow-up-wiki", "category": "follow_up_context", "prompt": "tạo task từ đó", "historyUser": "Hãy tóm tắt wiki kiến trúc", "historyAssistant": "Mình đã đọc Wiki và giữ nguồn section-level.", "expectedCapability": "wiki.brief_task.v1" },
+  { "id": "fallback-useful", "category": "provider_fallback", "prompt": "Phân tích tiến độ khi provider timeout", "expectedBehavior": "useful_fallback" },
+  { "id": "deny-member", "category": "permission_denial", "prompt": "Member yêu cầu tạo task cho người khác", "expectedBehavior": "deny_zero_mutation" },
+  { "id": "single-confirm", "category": "mutation_confirmation", "prompt": "Xác nhận tạo dữ liệu từ bản nháp", "expectedBehavior": "one_explicit_confirm" },
+  { "id": "no-repeat", "category": "no_repeat_questions", "prompt": "Deadline 12 tuần và người dùng là khách hàng", "expectedBehavior": "do_not_ask_known_fields" }
+  ,{ "id": "route-digest-disable", "category": "intent_routing", "prompt": "Tat weekly digest cho du an", "expectedCapability": "project.digest.configure.v1" }
+]

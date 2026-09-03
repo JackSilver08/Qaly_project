@@ -34,30 +34,39 @@ onMounted(async()=>{try{me.value=await apiResult<UserDto>('/api/auth/me');await 
   <div class="admin-page">
     <header class="page-head">
       <div><span class="kicker"><ShieldCheck :size="16"/> Kiểm soát truy cập</span><h1>Quản lý người dùng</h1><p>Quản lý tài khoản, Moderator và phạm vi dự án. Hệ thống chỉ cho phép một Admin duy nhất.</p></div>
-      <button v-if="isAdmin" class="primary" @click="createOpen=true"><UserPlus :size="18"/> Tạo người dùng</button>
+      <button type="button" v-if="isAdmin" class="primary" @click="createOpen=true"><UserPlus :size="18"/> Tạo người dùng</button>
     </header>
     <section class="toolbar" aria-label="Bộ lọc người dùng">
       <label class="search"><Search :size="18"/><input v-model="search" placeholder="Tìm theo tên hoặc email"/></label>
       <select v-model="role" aria-label="Lọc vai trò"><option value="">Mọi vai trò</option><option>Admin</option><option>Moderator</option><option>Member</option></select>
       <select v-model="status" aria-label="Lọc trạng thái"><option value="">Mọi trạng thái</option><option value="true">Đang hoạt động</option><option value="false">Đã khóa</option></select>
-      <button class="icon-btn" title="Tải lại" @click="loadUsers"><RefreshCw :size="18"/></button>
+      <button type="button" class="icon-btn" title="Tải lại" @click="loadUsers"><RefreshCw :size="18"/></button>
     </section>
     <div v-if="loading" class="loading" aria-live="polite"><div v-for="i in 6" :key="i" class="skeleton"/></div>
-    <div v-else-if="users.length" class="table-wrap"><table><thead><tr><th>Người dùng</th><th>Vai trò</th><th>Trạng thái</th><th>Sở hữu</th><th>Tham gia</th><th>Ngày tạo</th></tr></thead><tbody>
-      <tr v-for="user in users" :key="user.id" tabindex="0" @click="selectUser(user)" @keydown.enter="selectUser(user)">
+    <div v-else-if="users.length" class="table-wrap"><table aria-label="Danh sách người dùng"><thead><tr><th scope="col">Người dùng</th><th scope="col">Vai trò</th><th scope="col">Trạng thái</th><th scope="col">Sở hữu</th><th scope="col">Tham gia</th><th scope="col">Ngày tạo</th></tr></thead><tbody>
+      <tr
+        v-for="user in users"
+        :key="user.id"
+        tabindex="0"
+        role="button"
+        :aria-label="`Mở chi tiết người dùng ${user.fullName}`"
+        @click="selectUser(user)"
+        @keydown.enter="selectUser(user)"
+        @keydown.space.prevent="selectUser(user)"
+      >
         <td><div class="user-cell"><span class="avatar">{{ user.fullName.slice(0,1).toUpperCase() }}</span><span><strong>{{ user.fullName }}</strong><small>{{ user.email }}</small></span></div></td>
         <td><span class="role" :data-role="user.role.toLowerCase()">{{ user.role }}</span></td><td><span class="status" :class="{inactive:!user.isActive}">{{ user.isActive?'Đang hoạt động':'Đã khóa' }}</span></td><td>{{ user.ownedProjectCount }}</td><td>{{ user.membershipProjectCount }}</td><td>{{ dateLabel(user.createdAt) }}</td>
       </tr></tbody></table></div>
     <section v-else class="empty"><UserRoundCog :size="36"/><h2>Không tìm thấy người dùng</h2><p>Thử thay đổi từ khóa hoặc bộ lọc.</p></section>
-    <footer class="pagination"><span>{{ totalItems }} người dùng</span><div><button :disabled="page<=1" @click="page--">Trước</button><span>{{ page }} / {{ totalPages }}</span><button :disabled="page>=totalPages" @click="page++">Sau</button></div></footer>
+    <footer class="pagination"><span>{{ totalItems }} người dùng</span><div><button type="button" :disabled="page<=1" @click="page--">Trước</button><span>{{ page }} / {{ totalPages }}</span><button type="button" :disabled="page>=totalPages" @click="page++">Sau</button></div></footer>
 
-    <div v-if="selected" class="overlay" @click.self="selected=null"><aside class="drawer" role="dialog" aria-modal="true" aria-label="Chi tiết người dùng">
-      <button class="close" @click="selected=null"><X :size="20"/></button><div class="drawer-title"><span class="avatar large">{{ selected.fullName.slice(0,1).toUpperCase() }}</span><div><h2>{{ selected.fullName }}</h2><p>{{ selected.email }}</p></div></div>
+    <div v-if="selected" class="overlay" @click.self="selected=null" @keydown.esc="selected=null"><aside class="drawer" role="dialog" aria-modal="true" aria-label="Chi tiết người dùng">
+      <button type="button" class="close" aria-label="Đóng chi tiết người dùng" @click="selected=null"><X :size="20"/></button><div class="drawer-title"><span class="avatar large">{{ selected.fullName.slice(0,1).toUpperCase() }}</span><div><h2>{{ selected.fullName }}</h2><p>{{ selected.email }}</p></div></div>
       <div class="form-grid"><label>Họ tên<input v-model="selected.fullName" :disabled="!canEditSelected"/></label><label>Vai trò<select v-model="selected.role" :disabled="!isAdmin||selected.role==='Admin'"><option>Member</option><option>Moderator</option><option v-if="selected.role==='Admin'">Admin</option></select></label><label class="switch"><input v-model="selected.isActive" type="checkbox" :disabled="!canEditSelected"/> Tài khoản đang hoạt động</label></div>
-      <div class="actions"><button class="primary" :disabled="saving||!canEditSelected" @click="saveUser">Lưu thay đổi</button><button class="secondary" :disabled="!canEditSelected" @click="revokeSessions"><LogOut :size="17"/> Thu hồi phiên</button><button v-if="isAdmin&&selected.role==='Moderator'" class="danger" :disabled="saving" @click="transferAdmin">Chuyển quyền Admin</button></div>
-      <section class="projects"><h3><FolderKanban :size="18"/> Dự án của người dùng</h3><p v-if="projectsLoading">Đang tải dự án...</p><p v-else-if="!projects.length" class="muted">Người dùng chưa có dự án.</p><div v-for="project in projects" :key="project.id" class="project-row"><div><strong>{{ project.name }}</strong><small>{{ project.code }} · {{ project.taskCount }} nhiệm vụ</small></div><span v-if="project.isOwner" class="role" data-role="admin">Owner</span><select v-else :value="project.role" @change="updateProjectRole(project,($event.target as HTMLSelectElement).value)"><option v-for="item in ['Manager','ScrumMaster','Developer','Tester','Reviewer','Member','Viewer','Customer']" :key="item">{{ item }}</option></select></div></section>
+      <div class="actions"><button type="button" class="primary" :disabled="saving||!canEditSelected" @click="saveUser">Lưu thay đổi</button><button type="button" class="secondary" :disabled="!canEditSelected" @click="revokeSessions"><LogOut :size="17"/> Thu hồi phiên</button><button type="button" v-if="isAdmin&&selected.role==='Moderator'" class="danger" :disabled="saving" @click="transferAdmin">Chuyển quyền Admin</button></div>
+      <section class="projects"><h3><FolderKanban :size="18"/> Dự án của người dùng</h3><p v-if="projectsLoading">Đang tải dự án...</p><p v-else-if="!projects.length" class="muted">Người dùng chưa có dự án.</p><div v-for="project in projects" :key="project.id" class="project-row"><div><strong>{{ project.name }}</strong><small>{{ project.code }} · {{ project.taskCount }} nhiệm vụ</small></div><span v-if="project.isOwner" class="role" data-role="admin">Owner</span><select v-else :value="project.role" :aria-label="`Vai trò của người dùng trong dự án ${project.name}`" @change="updateProjectRole(project,($event.target as HTMLSelectElement).value)"><option v-for="item in ['Manager','ScrumMaster','Developer','Tester','Reviewer','Member','Viewer','Customer']" :key="item">{{ item }}</option></select></div></section>
     </aside></div>
-    <div v-if="createOpen" class="overlay center" @click.self="createOpen=false"><form class="modal" @submit.prevent="createUser"><button type="button" class="close" @click="createOpen=false"><X :size="20"/></button><h2>Tạo người dùng</h2><p>Admin không thể được tạo từ biểu mẫu này.</p><label>Họ tên<input v-model="form.fullName" required/></label><label>Email<input v-model="form.email" type="email" required/></label><label>Mật khẩu tạm<input v-model="form.password" type="password" minlength="8" required/></label><label>Vai trò<select v-model="form.role"><option>Member</option><option>Moderator</option></select></label><button class="primary" :disabled="saving">Tạo tài khoản</button></form></div>
+    <div v-if="createOpen" class="overlay center" @click.self="createOpen=false" @keydown.esc="createOpen=false"><form class="modal" role="dialog" aria-modal="true" aria-labelledby="create-user-title" @submit.prevent="createUser"><button type="button" class="close" aria-label="Đóng cửa sổ tạo người dùng" @click="createOpen=false"><X :size="20"/></button><h2 id="create-user-title">Tạo người dùng</h2><p>Admin không thể được tạo từ biểu mẫu này.</p><label>Họ tên<input v-model="form.fullName" autocomplete="name" required/></label><label>Email<input v-model="form.email" type="email" autocomplete="email" required/></label><label>Mật khẩu tạm<input v-model="form.password" type="password" autocomplete="new-password" minlength="8" required/></label><label>Vai trò<select v-model="form.role"><option>Member</option><option>Moderator</option></select></label><button type="submit" class="primary" :disabled="saving">Tạo tài khoản</button></form></div>
   </div>
 </template>
 

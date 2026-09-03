@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, Check, AlertTriangle } from 'lucide-vue-next'
+import { ArrowLeft, Check, AlertTriangle, FileText } from 'lucide-vue-next'
 import { computed } from 'vue'
 
 const props = defineProps<{
@@ -125,14 +125,6 @@ const previewSummary = computed(() => {
   }
 })
 
-const statusIcons: Record<string, string> = {
-  'Todo': '📌',
-  'InProgress': '🔄',
-  'OnHold': '⏸️',
-  'InReview': '👀',
-  'Done': '✅',
-}
-
 const statusLabels: Record<string, string> = {
   'Todo': 'Cần làm',
   'InProgress': 'Đang làm',
@@ -145,7 +137,7 @@ const statusLabels: Record<string, string> = {
 <template>
   <div class="import-step">
     <div class="confirm-hero">
-      <div class="confirm-icon">📋</div>
+      <div class="confirm-icon"><FileText :size="36" /></div>
       <h3>Xác nhận nhập dữ liệu</h3>
       <p class="confirm-subtitle">
         Kiểm tra thông tin trước khi nhập vào
@@ -177,7 +169,7 @@ const statusLabels: Record<string, string> = {
     <div v-if="Object.keys(previewSummary.statusDistribution).length" class="confirm-distribution">
       <p class="confirm-section-title">Phân bố theo cột Kanban <span class="hint">(ước lượng từ {{ previewSummary.previewRowCount }} dòng xem trước)</span></p>
       <div v-for="(count, status) in previewSummary.statusDistribution" :key="status" class="dist-row">
-        <span class="dist-status">{{ statusIcons[status as string] || '📌' }} {{ statusLabels[status as string] || status }}</span>
+        <span class="dist-status">{{ statusLabels[status as string] || status }}</span>
         <div class="dist-bar-wrap">
           <div class="dist-bar" :style="{ width: (count / previewSummary.previewRowCount * 100) + '%' }"></div>
         </div>
@@ -206,7 +198,7 @@ const statusLabels: Record<string, string> = {
       <span v-if="assignToMeIfEmpty" class="option-badge">Giao cho tôi (nếu trống)</span>
       <span v-if="defaultPriority" class="option-badge">Ưu tiên mặc định: {{ defaultPriority }}</span>
       <span v-if="defaultStatus" class="option-badge">Cột mặc định: {{ defaultStatus }}</span>
-      <span v-if="enableAiCategorization" class="option-badge option-badge--ai">✨ Dùng AI phân loại</span>
+      <span v-if="enableAiCategorization" class="option-badge option-badge--ai">Dùng AI phân loại</span>
 
       <span v-if="isNewProject" class="option-badge option-badge--new">+ Tạo dự án mới</span>
       <span v-else class="option-badge option-badge--merge">Gộp vào dự án có sẵn</span>
@@ -214,7 +206,7 @@ const statusLabels: Record<string, string> = {
 
     <!-- Safety notice -->
     <div class="confirm-notice">
-      <span>⚠️</span>
+      <AlertTriangle :size="16" />
       <p>Thẻ cũ không bị thay đổi. Bạn có thể hoàn tác trong vòng 30 phút sau khi nhập.</p>
     </div>
 
@@ -225,7 +217,7 @@ const statusLabels: Record<string, string> = {
 
     <div class="import-actions">
       <button class="btn btn--ghost" type="button" @click="emit('back')"><ArrowLeft :size="16" /> Quay lại</button>
-      <button class="btn btn--primary btn--import-confirm" :disabled="isLoading" @click="emit('confirm')">
+      <button type="button" class="btn btn--primary btn--import-confirm" :disabled="isLoading" @click="emit('confirm')">
         <template v-if="isLoading">
           <span class="spinner"></span> Đang nhập...
         </template>
@@ -243,7 +235,9 @@ const statusLabels: Record<string, string> = {
   padding: 16px 0 12px;
 }
 .confirm-icon {
-  font-size: 2.5rem;
+  display: flex;
+  justify-content: center;
+  color: var(--primary);
   margin-bottom: 6px;
   animation: bounceIn .5s ease;
 }
@@ -307,7 +301,7 @@ const statusLabels: Record<string, string> = {
 .confirm-section-title .hint {
   font-weight: 400;
   font-size: .72rem;
-  color: #9ca3af;
+  color: #64748b;
 }
 
 .dist-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }

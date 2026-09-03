@@ -20,12 +20,14 @@ interface AssistantOpenRequest {
   view: 'chat' | 'activity'
   prompt?: string
   projectId?: string | null
+  requestedCapabilityId?: string | null
 }
 
 const props = defineProps<{
   projectId?: string | null
   projects: ProjectOption[]
   openRequest?: AssistantOpenRequest | null
+  conversationRuntimeEnabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -41,7 +43,10 @@ const assistantPrompt = ref('')
 const assistantPromptToken = ref(0)
 const assistantHistoryToken = ref(0)
 const assistantProjectId = ref<string | null>(props.projectId || null)
+const assistantRequestedCapabilityId = ref<string | null>(null)
 const actionProjectId = ref<string | null>(props.projectId || null)
+const actionProviderHint = ref('auto')
+const actionModelProfile = ref('balanced')
 const actionComposerKey = ref(0)
 const artifactAvailable = ref(false)
 const drawerRef = ref<HTMLElement | null>(null)
@@ -51,6 +56,12 @@ const isResizing = ref(false)
 const hasSavedLayout = ref(false)
 
 function openAssistantHistory() {
+  if (props.conversationRuntimeEnabled === false) {
+    window.dispatchEvent(new CustomEvent('qaly:focus-ai-primary-runtime', {
+      detail: { openHistory: true },
+    }))
+    return
+  }
   activeView.value = 'chat'
   assistantHistoryToken.value++
 }
@@ -114,12 +125,14 @@ const showArtifactPane = computed(
 )
 
 const showConversationPane = computed(
-  () => activeView.value !== 'activity'
+  () => props.conversationRuntimeEnabled !== false
+    && activeView.value !== 'activity'
     && !(activeView.value === 'create' && compactArtifactWorkspace.value && !layout.artifactCollapsed),
 )
 
 const showArtifactSplitter = computed(
-  () => activeView.value === 'create'
+  () => props.conversationRuntimeEnabled !== false
+    && activeView.value === 'create'
     && !layout.artifactCollapsed
     && !compactArtifactWorkspace.value,
 )
@@ -362,6 +375,11 @@ function toggleDrawer() {
     return
   }
 
+  if (props.conversationRuntimeEnabled === false) {
+    window.dispatchEvent(new CustomEvent('qaly:focus-ai-primary-runtime'))
+    return
+  }
+
   isOpen.value = true
 }
 
@@ -379,10 +397,21 @@ function closeDrawer() {
 }
 
 function applyAssistantOpenRequest(detail?: Partial<AssistantOpenRequest> | null) {
+  if (props.conversationRuntimeEnabled === false && detail?.view !== 'activity') {
+    window.dispatchEvent(new CustomEvent('qaly:focus-ai-primary-runtime', {
+      detail: {
+        prompt: String(detail?.prompt || '').trim(),
+        projectId: String(detail?.projectId || props.projectId || '') || null,
+      },
+    }))
+    return
+  }
+
   isOpen.value = true
   activeView.value = detail?.view === 'activity' ? 'activity' : 'chat'
   assistantPrompt.value = String(detail?.prompt || '').trim()
   assistantProjectId.value = String(detail?.projectId || props.projectId || '') || null
+  assistantRequestedCapabilityId.value = String(detail?.requestedCapabilityId || '').trim() || null
   assistantPromptToken.value += 1
 }
 
@@ -395,7 +424,15 @@ function openActionComposer(event?: Event) {
   const detail = event instanceof CustomEvent ? event.detail : null
   actionProjectId.value = String(detail?.projectId || props.projectId || '') || null
   actionPrompt.value = String(detail?.message || detail?.prompt || '').trim()
+  actionProviderHint.value = String(detail?.providerHint || 'auto')
+  actionModelProfile.value = String(detail?.modelProfile || 'balanced')
   if (!actionProjectId.value || !actionPrompt.value) {
+    if (props.conversationRuntimeEnabled === false) {
+      window.dispatchEvent(new CustomEvent('qaly:focus-ai-primary-runtime', {
+        detail: { prompt: actionPrompt.value, projectId: actionProjectId.value },
+      }))
+      return
+    }
     isOpen.value = true
     activeView.value = 'chat'
     return
@@ -407,9 +444,11 @@ function openActionComposer(event?: Event) {
   ensureArtifactWorkspace()
 }
 
-function handleComposeAction(payload: { message: string; projectId: string }) {
+function handleComposeAction(payload: { message: string; projectId: string; providerHint: string; modelProfile: string }) {
   actionProjectId.value = payload.projectId
   actionPrompt.value = payload.message
+  actionProviderHint.value = payload.providerHint
+  actionModelProfile.value = payload.modelProfile
   actionComposerKey.value += 1
   artifactAvailable.value = true
   activeView.value = 'create'
@@ -429,7 +468,12 @@ function handleComposerStarted() {
 function handleSessionReset() {
   artifactAvailable.value = false
   actionPrompt.value = ''
-  activeView.value = 'chat'
+  if (props.conversationRuntimeEnabled === false) {
+    isOpen.value = false
+    window.dispatchEvent(new CustomEvent('qaly:focus-ai-primary-runtime'))
+  } else {
+    activeView.value = 'chat'
+  }
 }
 
 onMounted(() => {
@@ -486,9 +530,12 @@ watch(isOpen, async open => {
   <div class="global-erumi-chatbot-widget">
     <!-- Floating Bubble Trigger -->
     <button 
+      type="button"
       class="erumi-bubble-trigger" 
       :class="{ 'is-active': isOpen }" 
       aria-label="Mở Trợ lý AI"
+      title="Mở Trợ lý AI"
+      :aria-expanded="isOpen"
       @click="toggleDrawer"
     >
       <ChatbotAvatar size="medium" />
@@ -552,19 +599,21 @@ watch(isOpen, async open => {
             </div>
           </div>
           <div class="drawer-header-actions">
-            <button class="drawer-icon-btn" :class="{ active: activeView === 'chat' }" title="Trò chuyện" @click="activeView = 'chat'"><MessageSquare :size="17" /></button>
+            <button type="button" class="drawer-icon-btn" :class="{ active: activeView === 'chat' }" :aria-pressed="activeView === 'chat'" title="Trò chuyện" aria-label="Mở trò chuyện" @click="activeView = 'chat'"><MessageSquare :size="17" /></button>
             <button
               v-if="artifactAvailable"
+              type="button"
               class="drawer-icon-btn"
               :class="{ active: activeView === 'create' && !layout.artifactCollapsed }"
               :title="activeView === 'create' && !layout.artifactCollapsed ? 'Thu gọn bản nháp AI' : 'Mở bản nháp AI'"
               :aria-label="activeView === 'create' && !layout.artifactCollapsed ? 'Thu gọn bản nháp AI' : 'Mở bản nháp AI'"
+              :aria-pressed="activeView === 'create' && !layout.artifactCollapsed"
               @click="toggleArtifactPane"
             ><ListChecks :size="17" /></button>
-            <button class="drawer-icon-btn" :class="{ active: activeView === 'activity' }" title="Hoạt động AI" @click="activeView = 'activity'"><Activity :size="17" /></button>
-            <button class="drawer-icon-btn" title="Lịch sử phiên Trợ lý AI" aria-label="Lịch sử phiên Trợ lý AI" data-testid="assistant-session-history-toolbar" @click="openAssistantHistory"><Clock3 :size="17" /></button>
-            <button class="drawer-icon-btn reset-layout-btn" title="Đặt lại kích thước" aria-label="Đặt lại kích thước Trợ lý AI" @click="resetAssistantLayout"><RotateCcw :size="17" /></button>
-            <button class="drawer-close-btn" @click="closeDrawer" aria-label="Đóng"><X :size="20" /></button>
+            <button type="button" class="drawer-icon-btn" :class="{ active: activeView === 'activity' }" :aria-pressed="activeView === 'activity'" title="Hoạt động AI" aria-label="Mở hoạt động AI" @click="activeView = 'activity'"><Activity :size="17" /></button>
+            <button type="button" class="drawer-icon-btn" title="Lịch sử phiên Trợ lý AI" aria-label="Lịch sử phiên Trợ lý AI" data-testid="assistant-session-history-toolbar" @click="openAssistantHistory"><Clock3 :size="17" /></button>
+            <button type="button" class="drawer-icon-btn reset-layout-btn" title="Đặt lại kích thước" aria-label="Đặt lại kích thước Trợ lý AI" @click="resetAssistantLayout"><RotateCcw :size="17" /></button>
+            <button type="button" class="drawer-close-btn" title="Đóng Trợ lý AI" @click="closeDrawer" aria-label="Đóng Trợ lý AI"><X :size="20" /></button>
           </div>
         </header>
         
@@ -578,13 +627,14 @@ watch(isOpen, async open => {
           }"
           :style="drawerBodyStyle"
         >
-          <section v-show="showConversationPane" class="assistant-conversation-pane">
+          <section v-if="showConversationPane" class="assistant-conversation-pane">
             <ErumiChatPanel
               :is-drawer="true"
               :external-prompt="assistantPrompt"
               :external-prompt-token="assistantPromptToken"
               :external-history-token="assistantHistoryToken"
               :external-project-id="assistantProjectId"
+              :external-requested-capability-id="assistantRequestedCapabilityId"
               @compose-action="handleComposeAction"
             />
           </section>
@@ -610,6 +660,8 @@ watch(isOpen, async open => {
               :initial-prompt="actionPrompt"
               :project-id="actionProjectId"
               :projects="projects"
+              :provider-hint="actionProviderHint"
+              :model-profile="actionModelProfile"
               @close="activeView = 'chat'"
               @completed="handleCompleted"
               @started="handleComposerStarted"

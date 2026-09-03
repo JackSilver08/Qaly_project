@@ -11,6 +11,8 @@ namespace Qaly.Application.Services;
 
 public partial class NotificationService : INotificationService
 {
+    private const int NotificationResolutionBatchSize = 100;
+    private const int UnreadResolutionBatchSize = 250;
     private readonly IRepository<Notification> _notificationRepo;
     private readonly IRepository<PushSubscription> _pushRepo;
     private readonly IUnitOfWork _unitOfWork;
@@ -57,18 +59,29 @@ public partial class NotificationService : INotificationService
             query = query.Where(notification => !notification.IsRead);
         }
 
-        var candidates = await query
-            .OrderByDescending(notification => notification.CreatedAt)
-            .Take(100)
-            .ToListAsync(ct);
-
         var notifications = new List<NotificationDto>();
-        foreach (var notification in candidates)
+        var offset = 0;
+        while (notifications.Count < 50)
         {
-            var target = await _targetResolver.ResolveAsync(notification, userId, ct);
-            if (!target.IsVisible) continue;
-            notifications.Add(ToDto(notification, target.TargetUrl));
-            if (notifications.Count == 50) break;
+            var candidates = await query
+                .OrderByDescending(notification => notification.CreatedAt)
+                .ThenByDescending(notification => notification.Id)
+                .Skip(offset)
+                .Take(NotificationResolutionBatchSize)
+                .ToListAsync(ct);
+            if (candidates.Count == 0) break;
+
+            var targets = await _targetResolver.ResolveManyAsync(candidates, userId, ct);
+            for (var index = 0; index < candidates.Count && notifications.Count < 50; index++)
+            {
+                var notification = candidates[index];
+                var target = targets[index];
+                if (!target.IsVisible) continue;
+                notifications.Add(ToDto(notification, target.TargetUrl));
+            }
+
+            offset += candidates.Count;
+            if (candidates.Count < NotificationResolutionBatchSize) break;
         }
 
         return Result.Success<IReadOnlyList<NotificationDto>>(notifications);
@@ -113,14 +126,24 @@ public partial class NotificationService : INotificationService
 
     public async Task<Result<int>> GetUnreadCountAsync(Guid userId, CancellationToken ct = default)
     {
-        var candidates = await _notificationRepo.GetQueryable()
-            .AsNoTracking()
-            .Where(notification => notification.UserId == userId && !notification.IsRead)
-            .ToListAsync(ct);
         var count = 0;
-        foreach (var notification in candidates)
+        var offset = 0;
+        while (true)
         {
-            if ((await _targetResolver.ResolveAsync(notification, userId, ct)).IsVisible) count++;
+            var candidates = await _notificationRepo.GetQueryable()
+                .AsNoTracking()
+                .Where(notification => notification.UserId == userId && !notification.IsRead)
+                .OrderBy(notification => notification.CreatedAt)
+                .ThenBy(notification => notification.Id)
+                .Skip(offset)
+                .Take(UnreadResolutionBatchSize)
+                .ToListAsync(ct);
+            if (candidates.Count == 0) break;
+
+            var targets = await _targetResolver.ResolveManyAsync(candidates, userId, ct);
+            count += targets.Count(target => target.IsVisible);
+            offset += candidates.Count;
+            if (candidates.Count < UnreadResolutionBatchSize) break;
         }
 
         return Result.Success(count);
@@ -215,44 +238,92 @@ public partial class NotificationService : INotificationService
 
     public async Task<Result> SubscribePushAsync(Guid userId, string endpoint, string p256dh, string auth)
     {
+        var validation = ValidatePushSubscription(endpoint, p256dh, auth);
+        if (!validation.IsSuccess) return validation;
+
+        var normalizedEndpoint = endpoint.Trim();
         var subscription = await _pushRepo.GetQueryable()
-            .FirstOrDefaultAsync(s => s.Endpoint == endpoint);
+            .FirstOrDefaultAsync(s => s.Endpoint == normalizedEndpoint);
 
         if (subscription == null)
         {
             subscription = new PushSubscription
             {
                 UserId = userId,
-                Endpoint = endpoint,
-                P256dh = p256dh,
-                Auth = auth
+                Endpoint = normalizedEndpoint,
+                P256dh = p256dh.Trim(),
+                Auth = auth.Trim()
             };
             await _pushRepo.AddAsync(subscription);
         }
         else
         {
-            subscription.UserId = userId;
-            subscription.P256dh = p256dh;
-            subscription.Auth = auth;
+            if (subscription.UserId != userId)
+                return Result.Failure(
+                    "This push endpoint is already registered to another account.",
+                    409,
+                    "push_endpoint_owned_by_another_user");
+
+            subscription.P256dh = p256dh.Trim();
+            subscription.Auth = auth.Trim();
             subscription.LastUsedAt = DateTimeOffset.UtcNow;
             await _pushRepo.UpdateAsync(subscription);
         }
 
-        await _unitOfWork.SaveChangesAsync();
+        try
+        {
+            await _unitOfWork.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            return Result.Failure(
+                "The push subscription changed concurrently. Reload and try again.",
+                409,
+                "push_subscription_conflict");
+        }
         return Result.Success();
     }
 
-    public Task SendPushNotificationAsync(Guid userId, string title, string message)
+    public async Task SendPushNotificationAsync(Guid userId, string title, string message)
     {
         try
         {
-            return _pushSender.SendAsync(userId, title, message, null, CancellationToken.None);
+            await _pushSender.SendAsync(userId, title, message, null, CancellationToken.None);
         }
         catch (Exception ex)
         {
             LogFailedSendPush(_logger, ex, userId);
-            return Task.CompletedTask;
         }
+    }
+
+    private static Result ValidatePushSubscription(string? endpoint, string? p256dh, string? auth)
+    {
+        if (string.IsNullOrWhiteSpace(endpoint) || endpoint.Length > 2048 ||
+            !Uri.TryCreate(endpoint.Trim(), UriKind.Absolute, out var endpointUri) ||
+            !string.Equals(endpointUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            return Result.Failure(
+                "Push endpoint must be an absolute HTTPS URL no longer than 2048 characters.",
+                400,
+                "push_endpoint_invalid");
+        }
+
+        if (!IsValidPushKey(p256dh) || !IsValidPushKey(auth))
+        {
+            return Result.Failure(
+                "Push encryption keys are required and must be valid base64url values.",
+                400,
+                "push_key_invalid");
+        }
+
+        return Result.Success();
+    }
+
+    private static bool IsValidPushKey(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 1024) return false;
+        return value.All(character =>
+            char.IsLetterOrDigit(character) || character is '-' or '_' or '=');
     }
 
     private static NotificationDto ToDto(Notification notification, string? targetUrl = null)

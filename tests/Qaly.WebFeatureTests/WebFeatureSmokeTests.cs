@@ -14,6 +14,7 @@ using Qaly.Application.DTOs.Task;
 using Qaly.Application.DTOs.User;
 using Qaly.Application.DTOs.Wiki;
 using Qaly.Application.Services;
+using Qaly.Application.DTOs.Webhook;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Enums;
 using Qaly.Infrastructure.Data;
@@ -97,12 +98,17 @@ public sealed class WebFeatureSmokeTests : IDisposable
             await db.SaveChangesAsync();
         }
 
-        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        var csrf = (await _client.GetFromJsonAsync<CsrfResponse>("/api/security/csrf", JsonOptions))!.Token;
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/Account/Login")
         {
-            ["Email"] = email,
-            ["Password"] = password
-        });
-        var response = await _client.PostAsync("/Account/Login", form);
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["Email"] = email,
+                ["Password"] = password
+            })
+        };
+        request.Headers.Add("X-CSRF-TOKEN", csrf);
+        var response = await _client.SendAsync(request);
         var html = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -116,6 +122,48 @@ public sealed class WebFeatureSmokeTests : IDisposable
     }
 
     [Test]
+    public async Task Correlation_id_accepts_one_safe_value_and_returns_one_canonical_header()
+    {
+        const string expected = "demo-run_2026.09.02";
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/health/live");
+        request.Headers.Add("X-Correlation-Id", expected);
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.GetValues("X-Correlation-Id").Should().Equal(expected);
+    }
+
+    [TestCase("contains@personal.example")]
+    [TestCase("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    public async Task Correlation_id_rejects_unsafe_or_oversized_client_values(string supplied)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/health/live");
+        request.Headers.TryAddWithoutValidation("X-Correlation-Id", supplied).Should().BeTrue();
+
+        var response = await _client.SendAsync(request);
+        var returned = response.Headers.GetValues("X-Correlation-Id").Should().ContainSingle().Subject;
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        returned.Should().NotBe(supplied);
+        Guid.TryParseExact(returned, "N", out _).Should().BeTrue();
+    }
+
+    [Test]
+    public async Task Correlation_id_rejects_multiple_client_values()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/health/live");
+        request.Headers.TryAddWithoutValidation("X-Correlation-Id", ["first", "second"]).Should().BeTrue();
+
+        var response = await _client.SendAsync(request);
+        var returned = response.Headers.GetValues("X-Correlation-Id").Should().ContainSingle().Subject;
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        returned.Should().NotBe("first").And.NotBe("second");
+        Guid.TryParseExact(returned, "N", out _).Should().BeTrue();
+    }
+
+    [Test]
     public void In_memory_health_check_does_not_register_external_sql_or_redis()
     {
         var options = _factory.Services
@@ -123,7 +171,92 @@ public sealed class WebFeatureSmokeTests : IDisposable
             .Value;
 
         options.Registrations.Select(registration => registration.Name)
-            .Should().BeEquivalentTo("vector_outbox");
+            .Should().BeEquivalentTo(
+                "self",
+                "vector_outbox",
+                "webhook_outbox",
+                "ai_job_queue",
+                "privacy_work_queue");
+    }
+
+    [TestCase("/health/live", new[] { "self" })]
+    [TestCase("/health/ready", new[] { "self", "vector_outbox", "webhook_outbox", "ai_job_queue", "privacy_work_queue" })]
+    [TestCase("/health", new[] { "self", "vector_outbox", "webhook_outbox", "ai_job_queue", "privacy_work_queue" })]
+    public async Task Health_endpoints_are_anonymous_scoped_and_do_not_leak_details(
+        string path,
+        string[] expectedChecks)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.Add("X-Test-Auth", "None");
+
+        var response = await _client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/health+json");
+        response.Headers.CacheControl?.NoStore.Should().BeTrue();
+        response.Headers.GetValues("X-Content-Type-Options").Should().ContainSingle("nosniff");
+        response.Headers.GetValues("X-Frame-Options").Should().ContainSingle("DENY");
+        response.Headers.GetValues("Referrer-Policy").Should().ContainSingle("strict-origin-when-cross-origin");
+        response.Headers.GetValues("Content-Security-Policy").Single()
+            .Should().Contain("frame-ancestors 'none'");
+        response.Headers.Server.Should().BeEmpty();
+        var normalizedBody = body.ToLowerInvariant();
+        normalizedBody.Should().NotContain("exception");
+        normalizedBody.Should().NotContain("description");
+        normalizedBody.Should().NotContain("connection");
+
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.GetProperty("status").GetString().Should().Be("healthy");
+        document.RootElement.GetProperty("checks")
+            .EnumerateArray()
+            .Select(check => check.GetProperty("name").GetString())
+            .Should().BeEquivalentTo(expectedChecks);
+    }
+
+    [TestCase("/Account/Login", 30)]
+    [TestCase("/Account/Register", 10)]
+    public async Task Anonymous_account_pages_fail_closed_after_configured_request_limit(
+        string path,
+        int permitLimit)
+    {
+        for (var attempt = 0; attempt < permitLimit; attempt++)
+        {
+            var allowed = await _client.GetAsync(path);
+            allowed.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        var rejected = await _client.GetAsync(path);
+        var body = await rejected.Content.ReadAsStringAsync();
+
+        rejected.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        rejected.Headers.RetryAfter.Should().NotBeNull();
+        body.Should().Contain("Quá nhiều yêu cầu");
+    }
+
+    [Test]
+    public async Task Direct_mode_ignores_spoofed_forwarded_client_addresses_for_account_throttling()
+    {
+        const int permitLimit = 30;
+        for (var attempt = 0; attempt < permitLimit; attempt++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/Account/Login");
+            request.Headers.TryAddWithoutValidation(
+                "X-Forwarded-For",
+                $"203.0.113.{attempt + 1}");
+            request.Headers.TryAddWithoutValidation("X-Forwarded-Proto", "http");
+
+            var allowed = await _client.SendAsync(request);
+            allowed.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        using var rejectedRequest = new HttpRequestMessage(HttpMethod.Get, "/Account/Login");
+        rejectedRequest.Headers.TryAddWithoutValidation("X-Forwarded-For", "198.51.100.25");
+        rejectedRequest.Headers.TryAddWithoutValidation("X-Forwarded-Proto", "http");
+        var rejected = await _client.SendAsync(rejectedRequest);
+
+        rejected.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        rejected.Headers.RetryAfter.Should().NotBeNull();
     }
 
     [Test]
@@ -138,8 +271,9 @@ public sealed class WebFeatureSmokeTests : IDisposable
             DateTimeOffset.UtcNow.Date,
             DateTimeOffset.UtcNow.Date.AddDays(21));
 
-        var createResponse = await _client.PostAsJsonAsync("/api/projects", create, JsonOptions);
-        createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var createResponse = await PostWithCsrfAsync("/api/projects", create);
+        var createBody = await createResponse.Content.ReadAsStringAsync();
+        createResponse.StatusCode.Should().Be(HttpStatusCode.OK, createBody);
         var created = await ReadApiResultAsync<ProjectDto>(createResponse);
         created.IsSuccess.Should().BeTrue(created.Error);
         created.Data.Should().NotBeNull();
@@ -193,11 +327,11 @@ public sealed class WebFeatureSmokeTests : IDisposable
         analytics.IsSuccess.Should().BeTrue(analytics.Error);
         analytics.Data!.TotalTasks.Should().Be(3);
 
-        var erumiResponse = await _client.PostAsJsonAsync(
+        var erumiResponse = await PostWithCsrfAsync(
             "/api/ai/chat/fast",
-            new ErumiChatRequestDto("Tom tat ngan gon, khong can bieu do", seed.ProjectId),
-            JsonOptions);
-        erumiResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            new ErumiChatRequestDto("Tom tat ngan gon, khong can bieu do", seed.ProjectId));
+        var erumiBody = await erumiResponse.Content.ReadAsStringAsync();
+        erumiResponse.StatusCode.Should().Be(HttpStatusCode.OK, erumiBody);
         var erumi = await erumiResponse.Content.ReadFromJsonAsync<ErumiChatResponseDto>(JsonOptions);
         erumi.Should().NotBeNull();
         erumi!.UsedAi.Should().BeFalse();
@@ -250,7 +384,9 @@ public sealed class WebFeatureSmokeTests : IDisposable
     public async Task Users_feature_returns_active_users_for_mentions_and_assignment_controls()
     {
         await EnsureUserExistsAsync(_factory.TestUserId, "Feature Owner", "owner@qaly.test");
-        await EnsureUserExistsAsync(Guid.NewGuid(), "Active Team Member", "member@qaly.test");
+        var memberId = Guid.NewGuid();
+        await EnsureUserExistsAsync(memberId, "Active Team Member", "member@qaly.test");
+        await SeedCollaboratorProjectAsync(memberId);
 
         var response = await _client.GetAsync("/api/users");
 
@@ -259,6 +395,130 @@ public sealed class WebFeatureSmokeTests : IDisposable
         users.IsSuccess.Should().BeTrue(users.Error);
         users.Data!.Should().Contain(user => user.Email == "owner@qaly.test");
         users.Data.Should().Contain(user => user.Email == "member@qaly.test");
+    }
+
+    [Test]
+    public async Task Webhook_operator_can_inspect_and_idempotently_replay_dead_letter_without_exposing_payloads()
+    {
+        await EnsureUserExistsAsync(_factory.TestUserId, "Webhook Owner", "webhook-owner@qaly.test");
+        var projectId = Guid.NewGuid();
+        var webhookId = Guid.NewGuid();
+        var outboxId = Guid.NewGuid();
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+            db.Projects.Add(new Project
+            {
+                Id = projectId,
+                Name = "Webhook operator project",
+                Code = $"webhook-ops-{Guid.NewGuid():N}",
+                OwnerId = _factory.TestUserId,
+                Status = "Active"
+            });
+            db.WebhookSubscriptions.Add(new WebhookSubscription
+            {
+                Id = webhookId,
+                ProjectId = projectId,
+                PayloadUrl = "https://example.test/hook",
+                Secret = "never-return-this-secret",
+                Events = "[\"task.updated\"]"
+            });
+            db.WebhookDeliveryLogs.Add(new WebhookDeliveryLog
+            {
+                WebhookId = webhookId,
+                EventType = "task.updated",
+                RequestPayload = "{\"private\":\"never-return-this-payload\"}",
+                ResponseBody = "never-return-this-response",
+                ResponseStatusCode = 503,
+                AttemptCount = 3,
+                DurationMs = 125,
+                IsSuccess = false
+            });
+            db.WebhookOutboxMessages.Add(new WebhookOutboxMessage
+            {
+                Id = outboxId,
+                ProjectId = projectId,
+                EventType = "task.updated",
+                Payload = "{\"private\":\"never-return-this-outbox-payload\"}",
+                RetryCount = 5,
+                NextAttemptAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+                DeadLetteredAt = DateTimeOffset.UtcNow,
+                ErrorMessage = "remote endpoint returned 503"
+            });
+            await db.SaveChangesAsync();
+        }
+
+        using var outsiderRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/api/projects/{projectId}/webhooks/operations");
+        outsiderRequest.Headers.Add("X-Test-UserId", Guid.NewGuid().ToString());
+        var outsiderResponse = await _client.SendAsync(outsiderRequest);
+        outsiderResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var operationsResponse = await _client.GetAsync($"/api/projects/{projectId}/webhooks/operations");
+        var operationsBody = await operationsResponse.Content.ReadAsStringAsync();
+        operationsResponse.StatusCode.Should().Be(HttpStatusCode.OK, operationsBody);
+        operationsBody.Should().NotContain("never-return-this-secret");
+        operationsBody.Should().NotContain("never-return-this-payload");
+        operationsBody.Should().NotContain("never-return-this-response");
+        operationsBody.Should().NotContain("never-return-this-outbox-payload");
+        var operations = await ReadApiResultAsync<WebhookOperationsDto>(operationsResponse);
+        operations.Data!.PendingCount.Should().Be(0);
+        operations.Data.DeadLetterCount.Should().Be(1);
+        operations.Data.RecentOutbox.Should().ContainSingle(item => item.Id == outboxId && item.Status == "dead_letter");
+
+        var replayResponse = await PostWithCsrfAsync(
+            $"/api/projects/{projectId}/webhooks/outbox/{outboxId}/replay",
+            new { });
+        var replay = await ReadApiResultAsync<WebhookOutboxReplayResultDto>(replayResponse);
+        replayResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        replay.Data!.ReplayQueued.Should().BeTrue();
+        replay.Data.Item.Status.Should().Be("pending");
+
+        var duplicateReplayResponse = await PostWithCsrfAsync(
+            $"/api/projects/{projectId}/webhooks/outbox/{outboxId}/replay",
+            new { });
+        var duplicateReplay = await ReadApiResultAsync<WebhookOutboxReplayResultDto>(duplicateReplayResponse);
+        duplicateReplay.Data!.ReplayQueued.Should().BeFalse();
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        var canonical = await verifyDb.WebhookOutboxMessages.AsNoTracking().SingleAsync(item => item.Id == outboxId);
+        canonical.DeadLetteredAt.Should().BeNull();
+        canonical.RetryCount.Should().Be(0);
+        canonical.ErrorMessage.Should().BeNull();
+        (await verifyDb.AuditLogs.CountAsync(log =>
+            log.Action == "ReplayWebhookDeadLetter" && log.EntityId == outboxId.ToString()))
+            .Should().Be(1, "an idempotent retry must not append duplicate replay audits");
+    }
+
+    private async Task SeedCollaboratorProjectAsync(Guid memberId)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        var project = new Project
+        {
+            Name = "User directory collaborator boundary",
+            Code = $"directory-{Guid.NewGuid():N}",
+            OwnerId = _factory.TestUserId,
+            Status = "Active"
+        };
+        db.Projects.Add(project);
+        db.ProjectMembers.AddRange(
+            new ProjectMember { ProjectId = project.Id, UserId = _factory.TestUserId, Role = "Owner" },
+            new ProjectMember { ProjectId = project.Id, UserId = memberId, Role = "Member" });
+        await db.SaveChangesAsync();
+    }
+
+    private async Task<HttpResponseMessage> PostWithCsrfAsync<T>(string url, T body)
+    {
+        var csrf = (await _client.GetFromJsonAsync<CsrfResponse>("/api/security/csrf", JsonOptions))!.Token;
+        using var request = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = JsonContent.Create(body, options: JsonOptions)
+        };
+        request.Headers.Add("X-CSRF-TOKEN", csrf);
+        return await _client.SendAsync(request);
     }
 
     private async Task EnsureUserExistsAsync(Guid userId, string fullName, string email)
@@ -466,6 +726,8 @@ public sealed class WebFeatureSmokeTests : IDisposable
     }
 
     private sealed record ApiResult<T>(bool IsSuccess, T? Data, string? Error, int StatusCode);
+
+    private sealed record CsrfResponse(string Token);
 
     private sealed record SeededProject(Guid ProjectId, Guid OverdueTaskId);
 

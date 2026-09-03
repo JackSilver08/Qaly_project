@@ -15,6 +15,35 @@ public static class SystemRoleRules
     public static bool CanManageUsers(string? role)
         => IsAdmin(role);
 
+    /// <summary>
+    /// Normalizes roles already stored on a user. "User" is retained as a read-compatible alias
+    /// for databases created before the system role was renamed to Member. Unknown roles fail.
+    /// </summary>
+    public static bool TryNormalizeKnownRole(string? role, out string normalized)
+    {
+        if (IsAdmin(role))
+        {
+            normalized = Admin;
+            return true;
+        }
+
+        if (IsModerator(role))
+        {
+            normalized = Moderator;
+            return true;
+        }
+
+        if (string.Equals(role, Member, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(role, "User", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = Member;
+            return true;
+        }
+
+        normalized = string.Empty;
+        return false;
+    }
+
     public static bool TryNormalizeAssignableRole(string? role, out string normalized)
     {
         if (IsModerator(role))

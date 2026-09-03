@@ -52,7 +52,7 @@ import type {
 import { useDashboardContext } from "../composables/dashboard-context";
 import { showError, showSuccess } from "../composables/use-toast";
 import { confirmDialog } from "../composables/use-confirm-dialog";
-import type { PagedResult, UserDto } from "../types";
+import type { PagedResult, UserDirectoryDto } from "../types";
 import { apiCommand, apiResult, errorMessage } from "../utils/api-client";
 
 interface GroupDto {
@@ -132,12 +132,12 @@ interface GroupAttachmentDto {
 
 const route = useRoute();
 const router = useRouter();
-const { currentUser, loadDashboard, selectProject } = useDashboardContext();
+const { currentUser, loadDashboard, selectProject, openChatWithPrompt } = useDashboardContext();
 
 const groups = ref<ChatGroupModel[]>([]);
 const groupDetails = ref<Record<string, GroupDto>>({});
 const members = ref<GroupMemberDto[]>([]);
-const users = ref<UserDto[]>([]);
+const users = ref<UserDirectoryDto[]>([]);
 const invitations = ref<GroupInvitationDto[]>([]);
 const messages = ref<TeamChatMessage[]>([]);
 const activeGroupId = ref("");
@@ -171,6 +171,14 @@ const typingUsers = ref<Record<string, { name: string; timeoutId: number }>>({})
 let hubConnection: HubConnection | null = null;
 let localTypingTimer: number | undefined;
 let lastTypingState = false;
+
+function suggestPollWithAi() {
+  const seed = pollForm.value.question.trim();
+  const groupName = activeGroup.value?.name ?? "nhóm hiện tại";
+  openChatWithPrompt(
+    `Trong nhóm "${groupName}", hãy soạn một bình chọn ngắn, trung lập và dễ trả lời${seed ? ` về chủ đề: ${seed}` : " dựa trên ngữ cảnh trao đổi gần đây"}. Trả về card bình chọn có câu hỏi, 2-5 lựa chọn và tùy chọn chọn nhiều; chỉ tạo draft để tôi chỉnh và xác nhận, không tự đăng.`,
+  );
+}
 
 function analyzeSelectedMessages(action: "summary" | "task-draft", messageIds: string[]) {
   selectedAiRequest.value = { action, messageIds, nonce: Date.now() };
@@ -346,7 +354,7 @@ async function loadGroupDetail(groupId: string) {
 
 async function loadUsers() {
   try {
-    users.value = await apiResult<UserDto[]>("/api/users");
+    users.value = await apiResult<UserDirectoryDto[]>("/api/users");
   } catch (error) {
     showError(errorMessage(error, "Không thể tải danh sách tài khoản."));
   }
@@ -490,6 +498,10 @@ async function connectRealtime() {
     if (groupId && groupId === activeGroupId.value) await loadMessages(groupId);
   });
   hubConnection.on("meetingEnded", async (payload: { groupId?: string }) => {
+    const groupId = payload?.groupId;
+    if (groupId && groupId === activeGroupId.value) await loadMessages(groupId);
+  });
+  hubConnection.on("groupPollCreated", async (payload: { groupId?: string }) => {
     const groupId = payload?.groupId;
     if (groupId && groupId === activeGroupId.value) await loadMessages(groupId);
   });
@@ -765,9 +777,8 @@ async function createPanelPoll() {
   }
 
   isCreatingPoll.value = true;
-  let createdPollId = "";
   try {
-    const poll = await apiResult<any>(`/api/groups/${activeGroupId.value}/polls`, {
+    await apiResult<unknown>(`/api/groups/${activeGroupId.value}/polls`, {
       method: "POST",
       body: JSON.stringify({
         question,
@@ -775,32 +786,10 @@ async function createPanelPoll() {
         allowMultiple: pollForm.value.allowMultiple,
       }),
     });
-    createdPollId = poll.id ?? poll.Id;
-
-    const sent = await sendMessage({
-      text: "",
-      attachments: [],
-      poll: {
-        id: createdPollId,
-        question,
-        options,
-      },
-    });
-    if (!sent) {
-      await apiCommand(`/api/groups/${activeGroupId.value}/polls/${createdPollId}`, {
-        method: "DELETE",
-      }).catch(() => undefined);
-      return;
-    }
-
+    await loadMessages(activeGroupId.value);
     pollForm.value = { question: "", options: ["", ""], allowMultiple: false };
     showSuccess("Đã tạo bình chọn trong nhóm");
   } catch (error) {
-    if (createdPollId) {
-      await apiCommand(`/api/groups/${activeGroupId.value}/polls/${createdPollId}`, {
-        method: "DELETE",
-      }).catch(() => undefined);
-    }
     showError(errorMessage(error, "Không thể tạo bình chọn."));
   } finally {
     isCreatingPoll.value = false;
@@ -1194,7 +1183,7 @@ function updateAddUserSearch(value: string) {
   showAddUserSuggestions.value = true;
 }
 
-function selectAddUser(user: UserDto) {
+function selectAddUser(user: UserDirectoryDto) {
   addUserId.value = user.id;
   addUserSearch.value = user.email;
   showAddUserSuggestions.value = false;
@@ -1403,11 +1392,12 @@ function formatMessageTime(value: string) {
 <template>
   <div class="dashboard-scroll dashboard-scroll--embedded no-scrollbar">
     <div class="dashboard-main project-home-main no-scrollbar">
+      <h1 class="sr-only">Nhóm và cộng tác</h1>
       <section
         class="team-chat-page groups-workspace"
         :class="{ 'groups-workspace--detail-collapsed': isDetailPanelCollapsed }"
       >
-        <div v-if="loadError" class="team-chat-banner team-chat-banner--error">
+        <div v-if="loadError" class="team-chat-banner team-chat-banner--error" role="alert">
           {{ loadError }}
         </div>
         <div v-else-if="isLoadingGroups" class="team-chat-banner">
@@ -1523,28 +1513,28 @@ function formatMessageTime(value: string) {
             </div>
           </header>
 
-          <nav class="group-detail-tabs" aria-label="Group tools">
-            <button :class="{ active: activeTab === 'members' }" @click="activeTab = 'members'">
+          <nav class="group-detail-tabs" aria-label="Công cụ nhóm">
+            <button type="button" :class="{ active: activeTab === 'members' }" :aria-pressed="activeTab === 'members'" @click="activeTab = 'members'">
               <span><Users :size="19" /></span>
               Thành viên
             </button>
-            <button :class="{ active: activeTab === 'invites' }" @click="activeTab = 'invites'">
+            <button type="button" :class="{ active: activeTab === 'invites' }" :aria-pressed="activeTab === 'invites'" @click="activeTab = 'invites'">
               <span><Mail :size="19" /></span>
               Lời mời
             </button>
-            <button :class="{ active: activeTab === 'polls' }" @click="activeTab = 'polls'">
+            <button type="button" :class="{ active: activeTab === 'polls' }" :aria-pressed="activeTab === 'polls'" @click="activeTab = 'polls'">
               <span><Vote :size="19" /></span>
               Bình chọn
             </button>
-            <button :class="{ active: activeTab === 'meeting' }" @click="activeTab = 'meeting'">
+            <button type="button" :class="{ active: activeTab === 'meeting' }" :aria-pressed="activeTab === 'meeting'" @click="activeTab = 'meeting'">
               <span><CalendarDays :size="19" /></span>
               Cuộc họp
             </button>
-            <button :class="{ active: activeTab === 'project' }" @click="activeTab = 'project'">
+            <button type="button" :class="{ active: activeTab === 'project' }" :aria-pressed="activeTab === 'project'" @click="activeTab = 'project'">
               <span><Settings :size="19" /></span>
               Dự án
             </button>
-            <button :class="{ active: activeTab === 'ai' }" @click="activeTab = 'ai'">
+            <button type="button" :class="{ active: activeTab === 'ai' }" :aria-pressed="activeTab === 'ai'" @click="activeTab = 'ai'">
               <span><Sparkles :size="19" /></span>
               AI
             </button>
@@ -1587,6 +1577,7 @@ function formatMessageTime(value: string) {
                     :key="user.id"
                     type="button"
                     :class="{ 'is-selected': user.id === addUserId }"
+                    :aria-pressed="user.id === addUserId"
                     @mousedown.prevent="selectAddUser(user)"
                   >
                     <span class="group-user-suggestion__avatar">{{ initials(user.fullName) }}</span>
@@ -1601,7 +1592,7 @@ function formatMessageTime(value: string) {
                   </div>
                 </div>
               </div>
-              <select v-model="addRole">
+              <select v-model="addRole" aria-label="Vai trò của thành viên được thêm">
                 <option value="Member">Thành viên</option>
                 <option value="Admin">Quản trị viên</option>
               </select>
@@ -1672,7 +1663,7 @@ function formatMessageTime(value: string) {
 
           <div v-else-if="activeTab === 'invites'" class="group-tool-body">
             <form v-if="canManageGroup" class="group-inline-form" @submit.prevent="inviteMember">
-              <input v-model="inviteEmail" type="email" placeholder="Email đã có tài khoản Qaly" />
+              <input v-model="inviteEmail" type="email" autocomplete="email" aria-label="Email người được mời" placeholder="Email đã có tài khoản Qaly" />
               <button class="primary-button primary-button--compact" type="submit">
                 <Mail :size="15" /> Mời
               </button>
@@ -1695,6 +1686,7 @@ function formatMessageTime(value: string) {
               <input
                 v-model="pollForm.question"
                 type="text"
+                aria-label="Câu hỏi bình chọn"
                 placeholder="Hỏi mọi người một câu..."
               />
               <div class="group-poll-options">
@@ -1722,6 +1714,9 @@ function formatMessageTime(value: string) {
                 </span>
               </label>
               <div class="group-poll-actions">
+                <button class="secondary-button" type="button" @click="suggestPollWithAi">
+                  <Sparkles :size="15" /> AI gợi ý poll
+                </button>
                 <button class="secondary-button" type="button" @click="addPollOption">
                   <Plus :size="15" /> Thêm lựa chọn
                 </button>
@@ -1775,9 +1770,9 @@ function formatMessageTime(value: string) {
 
           <div v-else class="group-tool-body">
             <form class="group-stack-form" @submit.prevent="createProjectFromGroup">
-              <input v-model="projectForm.name" type="text" placeholder="Tên project" />
-              <input v-model="projectForm.code" type="text" placeholder="Mã project" />
-              <textarea v-model="projectForm.description" rows="3" placeholder="Mô tả"></textarea>
+              <input v-model="projectForm.name" type="text" aria-label="Tên dự án" placeholder="Tên project" />
+              <input v-model="projectForm.code" type="text" aria-label="Mã dự án" placeholder="Mã project" />
+              <textarea v-model="projectForm.description" aria-label="Mô tả dự án" rows="3" placeholder="Mô tả"></textarea>
               <button class="primary-button" type="submit" :disabled="isCreatingProject">
                 <Loader2 v-if="isCreatingProject" :size="15" class="spin" />
                 <Check v-else :size="15" />
@@ -1891,13 +1886,24 @@ function formatMessageTime(value: string) {
       </section>
     </div>
 
-    <div v-if="showCreateModal" class="group-modal-backdrop" @click.self="showCreateModal = false">
-      <form class="group-modal glass-card" @submit.prevent="createGroup">
+    <div
+      v-if="showCreateModal"
+      class="group-modal-backdrop"
+      @click.self="showCreateModal = false"
+      @keydown.esc="showCreateModal = false"
+    >
+      <form
+        class="group-modal glass-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-group-title"
+        @submit.prevent="createGroup"
+      >
         <header>
-          <h2>Tạo nhóm chat</h2>
+          <h2 id="create-group-title">Tạo nhóm chat</h2>
           <button type="button" class="text-button" @click="showCreateModal = false">Đóng</button>
         </header>
-        <input v-model="createForm.name" type="text" placeholder="Tên nhóm" required />
+        <input v-model="createForm.name" type="text" aria-label="Tên nhóm" placeholder="Tên nhóm" required />
         <label class="group-color-field">
           Màu nhóm
           <input v-model="createForm.color" type="color" />
@@ -1986,7 +1992,7 @@ function formatMessageTime(value: string) {
   min-height: 180px;
   border: 1px dashed #cbd5e1;
   border-radius: var(--qaly-radius-lg);
-  color: #64748b;
+  color: #475569;
   text-align: center;
   padding: 18px;
 }
@@ -2035,7 +2041,7 @@ function formatMessageTime(value: string) {
   display: grid;
   place-items: center;
   color: #ffffff;
-  background: #1677ff;
+  background: #0f5dcc;
   font-weight: 800;
   letter-spacing: 0;
   overflow: hidden;
@@ -2403,7 +2409,7 @@ function formatMessageTime(value: string) {
 .group-detail-tabs button:hover {
   border-color: #bfdbfe;
   background: #f8fbff;
-  color: #1677ff;
+  color: #1e40af;
 }
 
 .group-detail-tabs button:hover > span,
@@ -2540,7 +2546,7 @@ function formatMessageTime(value: string) {
   border-radius: var(--qaly-radius-lg);
   display: grid;
   place-items: center;
-  color: #64748b;
+  color: #475569;
   background: #f1f5f9;
   cursor: pointer;
 }
@@ -2927,7 +2933,7 @@ function formatMessageTime(value: string) {
 }
 
 .group-shared-files button {
-  color: #dc2626;
+  color: #b91c1c;
   background: #fef2f2;
 }
 
@@ -2954,7 +2960,7 @@ function formatMessageTime(value: string) {
   border-radius: var(--qaly-radius-lg);
   display: grid;
   place-items: center;
-  background: #1677ff;
+  background: #0f5dcc;
   color: #fff;
   font-size: 0.75rem;
   font-weight: 800;
@@ -3066,7 +3072,7 @@ function formatMessageTime(value: string) {
   display: grid;
   place-items: center;
   border-radius: 999px;
-  background: #1677ff;
+  background: #0f5dcc;
   color: #fff;
   font-size: 0.78rem;
   font-weight: 900;
@@ -3314,6 +3320,132 @@ function formatMessageTime(value: string) {
   border-color: var(--border) !important;
   background: var(--surface-muted) !important;
   color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .groups-workspace .team-chat-window__actions .icon-button:hover) {
+  color: var(--primary-strong) !important;
+  border-color: rgba(96, 165, 250, 0.36) !important;
+  background: var(--primary-soft) !important;
+}
+
+:global(:root[data-theme='dark'] .group-role-badge),
+:global(:root[data-theme='dark'] .group-detail-tabs button:hover > span),
+:global(:root[data-theme='dark'] .group-detail-tabs button.active > span),
+:global(:root[data-theme='dark'] .group-created-project-link),
+:global(:root[data-theme='dark'] .group-user-suggestions > button:hover),
+:global(:root[data-theme='dark'] .group-user-suggestions > button.is-selected),
+:global(:root[data-theme='dark'] .group-shared-block__title small),
+:global(:root[data-theme='dark'] .group-shared-file-icon),
+:global(:root[data-theme='dark'] .group-section-title small) {
+  background: var(--primary-soft) !important;
+  color: var(--primary-strong) !important;
+}
+
+:global(:root[data-theme='dark'] .group-created-project-link) {
+  border-color: rgba(96, 165, 250, 0.4) !important;
+}
+
+:global(:root[data-theme='dark'] .group-created-project-link:hover) {
+  background: rgba(96, 165, 250, 0.24) !important;
+  border-color: rgba(96, 165, 250, 0.55) !important;
+}
+
+:global(:root[data-theme='dark'] .group-detail-tabs button > span),
+:global(:root[data-theme='dark'] .group-user-search > button),
+:global(:root[data-theme='dark'] .group-member-role),
+:global(:root[data-theme='dark'] .group-poll-options button) {
+  background: var(--surface-muted) !important;
+  color: var(--text-secondary) !important;
+}
+
+:global(:root[data-theme='dark'] .group-tool-heading strong),
+:global(:root[data-theme='dark'] .group-user-suggestions > button),
+:global(:root[data-theme='dark'] .group-shared-heading strong),
+:global(:root[data-theme='dark'] .group-shared-block__title),
+:global(:root[data-theme='dark'] .group-shared-files strong),
+:global(:root[data-theme='dark'] .group-section-title span),
+:global(:root[data-theme='dark'] .group-poll-multiple strong) {
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .group-tool-heading span),
+:global(:root[data-theme='dark'] .group-user-suggestion__identity small),
+:global(:root[data-theme='dark'] .group-user-suggestions__empty),
+:global(:root[data-theme='dark'] .group-shared-heading span),
+:global(:root[data-theme='dark'] .group-shared-files article > div span),
+:global(:root[data-theme='dark'] .group-poll-multiple small) {
+  color: var(--text-secondary) !important;
+}
+
+:global(:root[data-theme='dark'] .group-inline-form input),
+:global(:root[data-theme='dark'] .group-inline-form select),
+:global(:root[data-theme='dark'] .group-stack-form input),
+:global(:root[data-theme='dark'] .group-stack-form textarea),
+:global(:root[data-theme='dark'] .group-modal input),
+:global(:root[data-theme='dark'] .group-modal textarea),
+:global(:root[data-theme='dark'] .group-user-search),
+:global(:root[data-theme='dark'] .group-user-suggestions),
+:global(:root[data-theme='dark'] .group-poll-composer input),
+:global(:root[data-theme='dark'] .group-poll-multiple) {
+  border-color: var(--border) !important;
+  background: var(--surface-muted) !important;
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .group-member-row:hover),
+:global(:root[data-theme='dark'] .group-pending-list article:hover),
+:global(:root[data-theme='dark'] .group-poll-item:hover) {
+  border-color: rgba(96, 165, 250, 0.36) !important;
+  background: var(--primary-soft) !important;
+}
+
+:global(:root[data-theme='dark'] .group-member-role--owner) {
+  background: var(--warning-soft) !important;
+  color: var(--warning-dark) !important;
+}
+
+:global(:root[data-theme='dark'] .group-member-role--admin) {
+  background: var(--primary-soft) !important;
+  color: var(--primary-strong) !important;
+}
+
+:global(:root[data-theme='dark'] .group-danger-zone) {
+  border-top-color: var(--danger-soft) !important;
+}
+
+:global(:root[data-theme='dark'] .group-danger-action) {
+  border-color: rgba(248, 113, 113, 0.32) !important;
+  background: var(--danger-soft) !important;
+  color: var(--qaly-danger) !important;
+}
+
+:global(:root[data-theme='dark'] .group-danger-action:hover) {
+  background: rgba(248, 113, 113, 0.24) !important;
+}
+
+:global(:root[data-theme='dark'] .group-shared-images article) {
+  background: var(--surface-muted) !important;
+}
+
+:global(:root[data-theme='dark'] .group-shared-actions a),
+:global(:root[data-theme='dark'] .group-shared-actions button),
+:global(:root[data-theme='dark'] .group-shared-files a),
+:global(:root[data-theme='dark'] .group-shared-files button) {
+  color: var(--text-primary) !important;
+  background: var(--surface) !important;
+}
+
+:global(:root[data-theme='dark'] .group-shared-files article) {
+  border-color: var(--border) !important;
+}
+
+:global(:root[data-theme='dark'] .group-shared-files button) {
+  color: var(--qaly-danger) !important;
+  background: var(--danger-soft) !important;
+}
+
+:global(:root[data-theme='dark'] .group-color-field) {
+  color: var(--text-secondary) !important;
 }
 
 @media (max-width: 1280px) {

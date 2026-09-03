@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Qaly.Application.Services;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Infrastructure.Data;
 
@@ -10,6 +11,7 @@ namespace Qaly.Infrastructure.Services;
 
 public partial class TaskAttentionSignalWorker : BackgroundService
 {
+    private const int ScanBatchSize = 500;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<TaskAttentionSignalWorker> _logger;
 
@@ -38,84 +40,112 @@ public partial class TaskAttentionSignalWorker : BackgroundService
                 LogScanFailed(_logger, ex);
             }
 
-            await Task.Delay(TimeSpan.FromMinutes(15), stoppingToken);
+            try
+            {
+                await Task.Delay(TimeSpan.FromMinutes(15), stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
         }
     }
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Warning, Message = "Khong the quet canh bao timeline task.")]
     private static partial void LogScanFailed(ILogger logger, Exception exception);
 
-    private async Task ScanAsync(CancellationToken ct)
+    internal async Task ScanAsync(CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
         var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
         var now = DateTimeOffset.UtcNow;
-
-        var tasks = await db.TaskItems
-            .Include(task => task.Project)
-            .Include(task => task.Assignees)
-            .Include(task => task.ViewEvents)
-            .Where(task => task.Status != "Done" && (task.AssigneeId != null || task.Assignees.Any()))
-            .Take(500)
-            .ToListAsync(ct);
-
-        foreach (var task in tasks)
+        var offset = 0;
+        while (true)
         {
-            var recipients = task.Assignees.Select(assignment => assignment.UserId).ToHashSet();
-            if (task.AssigneeId.HasValue)
+            var tasks = await db.TaskItems
+                .Include(task => task.Project)
+                .Include(task => task.Assignees)
+                .Include(task => task.ViewEvents)
+                .AsSplitQuery()
+                .Where(task => TaskStatusRules.OpenStatuses.Contains(task.Status) &&
+                    (task.AssigneeId != null || task.Assignees.Any()))
+                .OrderBy(task => task.DueDate)
+                .ThenBy(task => task.CreatedAt)
+                .ThenBy(task => task.Id)
+                .Skip(offset)
+                .Take(ScanBatchSize)
+                .ToListAsync(ct);
+            if (tasks.Count == 0)
             {
-                recipients.Add(task.AssigneeId.Value);
+                break;
             }
 
-            foreach (var userId in recipients)
+            foreach (var task in tasks)
             {
-                foreach (var detected in DetectSignals(task, userId, now))
+                var recipients = task.Assignees.Select(assignment => assignment.UserId).ToHashSet();
+                if (task.AssigneeId.HasValue)
                 {
-                    var signal = await db.TaskAttentionSignals
-                        .FirstOrDefaultAsync(item =>
-                            item.TaskItemId == task.Id &&
-                            item.UserId == userId &&
-                            item.SignalType == detected.SignalType,
-                            ct);
-
-                    if (signal == null)
-                    {
-                        signal = new TaskAttentionSignal
-                        {
-                            TaskItemId = task.Id,
-                            UserId = userId,
-                            SignalType = detected.SignalType,
-                            FirstDetectedAt = now,
-                            CooldownHours = detected.CooldownHours
-                        };
-                        db.TaskAttentionSignals.Add(signal);
-                    }
-                    else if (signal.ResolvedAt.HasValue)
-                    {
-                        signal.ResolvedAt = null;
-                        signal.FirstDetectedAt = now;
-                    }
-
-                    if (!ShouldSend(signal, now))
-                    {
-                        continue;
-                    }
-
-                    await notifications.CreateAsync(
-                        userId,
-                        detected.Message,
-                        detected.SignalType,
-                        task.Id,
-                        nameof(TaskItem),
-                        ct);
-                    signal.LastSentAt = now;
+                    recipients.Add(task.AssigneeId.Value);
                 }
+
+                foreach (var userId in recipients)
+                {
+                    foreach (var detected in DetectSignals(task, userId, now))
+                    {
+                        var signal = await db.TaskAttentionSignals
+                            .FirstOrDefaultAsync(item =>
+                                item.TaskItemId == task.Id &&
+                                item.UserId == userId &&
+                                item.SignalType == detected.SignalType,
+                                ct);
+
+                        if (signal == null)
+                        {
+                            signal = new TaskAttentionSignal
+                            {
+                                TaskItemId = task.Id,
+                                UserId = userId,
+                                SignalType = detected.SignalType,
+                                FirstDetectedAt = now,
+                                CooldownHours = detected.CooldownHours
+                            };
+                            db.TaskAttentionSignals.Add(signal);
+                        }
+                        else if (signal.ResolvedAt.HasValue)
+                        {
+                            signal.ResolvedAt = null;
+                            signal.FirstDetectedAt = now;
+                        }
+
+                        if (!ShouldSend(signal, now))
+                        {
+                            continue;
+                        }
+
+                        await notifications.CreateAsync(
+                            userId,
+                            detected.Message,
+                            detected.SignalType,
+                            task.Id,
+                            nameof(TaskItem),
+                            ct);
+                        signal.LastSentAt = now;
+                    }
+                }
+            }
+
+            await ResolveInactiveSignalsAsync(db, tasks, now, ct);
+            await db.SaveChangesAsync(ct);
+
+            offset += tasks.Count;
+            if (tasks.Count < ScanBatchSize)
+            {
+                break;
             }
         }
 
-        await ResolveInactiveSignalsAsync(db, tasks, now, ct);
-        await db.SaveChangesAsync(ct);
+        await ResolveClosedOrUnassignedSignalsAsync(db, now, ct);
     }
 
     private static IEnumerable<DetectedSignal> DetectSignals(TaskItem task, Guid userId, DateTimeOffset now)
@@ -179,6 +209,38 @@ public partial class TaskAttentionSignalWorker : BackgroundService
             {
                 signal.ResolvedAt = now;
             }
+        }
+    }
+
+    private static async Task ResolveClosedOrUnassignedSignalsAsync(
+        QalyDbContext db,
+        DateTimeOffset now,
+        CancellationToken ct)
+    {
+        while (true)
+        {
+            var staleSignals = await db.TaskAttentionSignals
+                .IgnoreQueryFilters()
+                .Where(signal => signal.ResolvedAt == null &&
+                    (signal.TaskItem.IsDeleted ||
+                        !TaskStatusRules.OpenStatuses.Contains(signal.TaskItem.Status) ||
+                        (signal.TaskItem.AssigneeId != signal.UserId &&
+                            !signal.TaskItem.Assignees.Any(assignment => assignment.UserId == signal.UserId))))
+                .OrderBy(signal => signal.CreatedAt)
+                .ThenBy(signal => signal.Id)
+                .Take(ScanBatchSize)
+                .ToListAsync(ct);
+            if (staleSignals.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var signal in staleSignals)
+            {
+                signal.ResolvedAt = now;
+            }
+
+            await db.SaveChangesAsync(ct);
         }
     }
 

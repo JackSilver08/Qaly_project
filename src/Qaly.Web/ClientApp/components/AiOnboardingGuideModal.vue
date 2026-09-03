@@ -66,21 +66,23 @@ const askWikiRAG = async () => {
       <div class="flex items-center justify-between border-b border-slate-800 pb-3">
         <div class="flex items-center gap-2 text-emerald-400 font-bold text-base">
           <Compass class="w-5 h-5" />
-          <span>🧭 Interactive AI Onboarding Guide • {{ roleTitle }}</span>
+          <span>Interactive AI Onboarding Guide • {{ roleTitle }}</span>
         </div>
-        <button @click="emit('close')" class="text-slate-400 hover:text-white transition">
+        <button type="button" aria-label="Đóng hướng dẫn" title="Đóng hướng dẫn" @click="emit('close')" class="text-slate-400 hover:text-white transition">
           <X class="w-5 h-5" />
         </button>
       </div>
 
       <!-- Step Cards Grid -->
       <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
-        <div
+        <button
           v-for="item in steps"
           :key="item.step"
+          type="button"
           @click="currentStep = item.step"
-          class="p-3.5 rounded-xl border transition cursor-pointer relative"
+          class="p-3.5 rounded-xl border transition cursor-pointer relative text-left"
           :class="currentStep === item.step ? 'bg-emerald-500/10 border-emerald-500/60 ring-2 ring-emerald-500/20' : 'bg-slate-950 border-slate-800 hover:border-slate-700'"
+          :aria-current="currentStep === item.step ? 'step' : undefined"
         >
           <span
             class="text-[10px] font-bold px-2 py-0.5 rounded-full mb-2 inline-block"
@@ -90,7 +92,7 @@ const askWikiRAG = async () => {
           </span>
           <div class="text-white font-bold text-xs mb-1">{{ item.title }}</div>
           <p class="text-slate-400 text-[11px] leading-relaxed">{{ item.desc }}</p>
-        </div>
+        </button>
       </div>
 
       <!-- RAG Wiki Q&A Assistant -->
@@ -98,7 +100,7 @@ const askWikiRAG = async () => {
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2 text-purple-300 font-semibold">
             <Bot class="w-4 h-4 text-purple-400" />
-            <span>💬 Trợ Lý AI RAG Wiki Q&A (Hỏi Đáp Quy Trình Dự Án)</span>
+            <span>Trợ Lý AI RAG Wiki Q&A (Hỏi Đáp Quy Trình Dự Án)</span>
           </div>
           <span class="text-[10px] text-slate-500">Tìm kiếm trên Qdrant Vector DB Wiki</span>
         </div>
@@ -106,11 +108,13 @@ const askWikiRAG = async () => {
         <div class="flex items-center space-x-2">
           <input
             v-model="userQuestion"
+            aria-label="Câu hỏi về Wiki dự án"
             @keyup.enter="askWikiRAG"
             placeholder="Ví dụ: Quy trình nộp evidence duyệt task như thế nào?"
             class="bg-slate-900 border border-slate-700 text-slate-200 text-xs px-3 py-2 rounded-lg w-full focus:outline-none focus:border-purple-500"
           />
           <button
+            type="button"
             @click="askWikiRAG"
             :disabled="isAskingWiki"
             class="bg-purple-600 hover:bg-purple-500 text-white font-semibold px-4 py-2 rounded-lg transition flex items-center gap-1 flex-shrink-0"
@@ -132,6 +136,7 @@ const askWikiRAG = async () => {
 
       <div class="flex items-center justify-end pt-2 border-t border-slate-800">
         <button
+          type="button"
           @click="emit('close')"
           class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-5 py-2 rounded-lg transition"
         >

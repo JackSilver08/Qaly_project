@@ -15,7 +15,7 @@ public class QdrantVectorStorageService : IVectorStorageService, IDisposable
         _client = new QdrantClient(new Uri(url));
     }
 
-    public async Task UpsertAsync(Guid id, float[] vector, Dictionary<string, object> payload, string collectionName)
+    public async Task UpsertAsync(Guid id, float[] vector, Dictionary<string, object> payload, string collectionName, CancellationToken ct = default)
     {
         var point = new PointStruct
         {
@@ -28,10 +28,10 @@ public class QdrantVectorStorageService : IVectorStorageService, IDisposable
             point.Payload.Add(kvp.Key, ToValue(kvp.Value));
         }
 
-        await _client.UpsertAsync(collectionName, new[] { point });
+        await _client.UpsertAsync(collectionName, new[] { point }, cancellationToken: ct);
     }
 
-    public async Task<List<VectorSearchResult>> SearchAsync(float[] queryVector, string collectionName, VectorFilter filter, int limit = 5)
+    public async Task<List<VectorSearchResult>> SearchAsync(float[] queryVector, string collectionName, VectorFilter filter, int limit = 5, CancellationToken ct = default)
     {
         var qdrantFilter = BuildSearchFilter(filter);
 
@@ -39,7 +39,8 @@ public class QdrantVectorStorageService : IVectorStorageService, IDisposable
             collectionName: collectionName,
             vector: queryVector,
             filter: qdrantFilter,
-            limit: (ulong)limit);
+            limit: (ulong)limit,
+            cancellationToken: ct);
 
         return results.Select(r => new VectorSearchResult(
             Guid.Parse(r.Id.Uuid),
@@ -48,17 +49,17 @@ public class QdrantVectorStorageService : IVectorStorageService, IDisposable
         )).ToList();
     }
 
-    public async Task DeleteAsync(Guid id, string collectionName)
+    public async Task DeleteAsync(Guid id, string collectionName, CancellationToken ct = default)
     {
-        await _client.DeleteAsync(collectionName, id);
+        await _client.DeleteAsync(collectionName, id, cancellationToken: ct);
     }
 
-    public async Task DeleteByFilterAsync(VectorFilter filter, string collectionName)
+    public async Task DeleteByFilterAsync(VectorFilter filter, string collectionName, CancellationToken ct = default)
     {
         var qdrantFilter = BuildFilter(filter);
         if (qdrantFilter == null) return;
 
-        await _client.DeleteAsync(collectionName, qdrantFilter);
+        await _client.DeleteAsync(collectionName, qdrantFilter, cancellationToken: ct);
     }
 
     private static Filter? BuildFilter(VectorFilter? filter)
@@ -199,16 +200,16 @@ public class QdrantVectorStorageService : IVectorStorageService, IDisposable
         };
     }
 
-    public async Task EnsureCollectionExistsAsync(string collectionName, ulong vectorSize)
+    public async Task EnsureCollectionExistsAsync(string collectionName, ulong vectorSize, CancellationToken ct = default)
     {
-        var collections = await _client.ListCollectionsAsync();
+        var collections = await _client.ListCollectionsAsync(cancellationToken: ct);
         if (!collections.Contains(collectionName))
         {
             await _client.CreateCollectionAsync(collectionName, new VectorParams
             {
                 Size = vectorSize,
                 Distance = Distance.Cosine
-            });
+            }, cancellationToken: ct);
         }
     }
 

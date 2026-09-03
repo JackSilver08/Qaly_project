@@ -136,6 +136,7 @@ function fileIcon(name: string, contentType?: string) {
       :class="{ 'is-checked': selected }"
       type="button"
       :aria-label="selected ? 'Bỏ chọn tin nhắn' : 'Chọn tin nhắn'"
+      :aria-pressed="selected"
       @click="$emit('toggleSelect', message.id)"
     >
       <Check v-if="selected" :size="14" />
@@ -170,6 +171,7 @@ function fileIcon(name: string, contentType?: string) {
         <button
           v-if="message.forwardedFrom.attachments[0]?.kind === 'image'"
           type="button"
+          aria-label="Mở ảnh được chuyển tiếp"
           @click="$emit('openImage', message.id, message.forwardedFrom.attachments[0]?.id)"
         >
           <img :src="message.forwardedFrom.attachments[0]?.url" alt="Ảnh được chuyển tiếp" />
@@ -188,6 +190,7 @@ function fileIcon(name: string, contentType?: string) {
             v-if="file.kind === 'image' && file.url"
             class="message-attachment-image"
             type="button"
+            :aria-label="`Mở ảnh ${file.name}`"
             @click="$emit('openImage', message.id, file.id)"
           >
             <img :src="file.url" :alt="file.name" loading="lazy" />
@@ -260,6 +263,7 @@ function fileIcon(name: string, contentType?: string) {
           :key="reaction.emoji"
           type="button"
           :class="{ 'is-active': reaction.reactedByCurrentUser }"
+          :aria-pressed="reaction.reactedByCurrentUser"
           @click="$emit('react', message.id, reaction.emoji)"
         >
           <span>{{ reaction.emoji }}</span>
@@ -911,7 +915,7 @@ function fileIcon(name: string, contentType?: string) {
   border-radius: 999px;
   padding: 8px 12px;
   color: #fff;
-  background: #1677ff;
+  background: #0f5dcc;
   font-weight: 800;
   cursor: pointer;
 }
@@ -965,6 +969,51 @@ function fileIcon(name: string, contentType?: string) {
 :global(:root[data-theme='dark'] .message-attachment-card) {
   border-color: var(--border) !important;
   background: rgba(23, 32, 51, 0.9) !important;
+}
+
+:global(:root[data-theme='dark'] .team-message__avatar) {
+  color: var(--text-primary) !important;
+  background: var(--surface-muted) !important;
+}
+
+:global(:root[data-theme='dark'] .team-message-reference) {
+  color: var(--text-secondary) !important;
+  background: var(--surface-muted) !important;
+}
+
+:global(:root[data-theme='dark'] .team-message-reference > span) {
+  color: var(--primary-strong) !important;
+}
+
+:global(:root[data-theme='dark'] .team-message-reference--forwarded > span) {
+  color: #2dd4bf !important;
+}
+
+:global(:root[data-theme='dark'] .team-message__reactions button) {
+  border-color: var(--border) !important;
+  color: var(--text-secondary) !important;
+  background: var(--surface-muted) !important;
+}
+
+:global(:root[data-theme='dark'] .team-message__reactions button.is-active) {
+  border-color: rgba(96, 165, 250, 0.5) !important;
+  color: var(--primary-strong) !important;
+  background: var(--primary-soft) !important;
+}
+
+:global(:root[data-theme='dark'] .message-action-menu__divider) {
+  background: var(--border) !important;
+}
+
+:global(:root[data-theme='dark'] .message-attachment-image) {
+  border-color: var(--border) !important;
+  background: var(--surface-muted) !important;
+}
+
+:global(:root[data-theme='dark'] .message-attachment-icon),
+:global(:root[data-theme='dark'] .team-message__system-icon) {
+  color: var(--primary-strong) !important;
+  background: var(--primary-soft) !important;
 }
 
 @media (max-width: 720px) {

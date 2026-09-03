@@ -25,15 +25,18 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
     private readonly QalyDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly AiJobPlatformOptions _options;
+    private readonly IAiNativeAuthorizationService _authorization;
 
     public AiAssistantContextRegistry(
         QalyDbContext db,
         ICurrentUserService currentUser,
-        IOptions<AiJobPlatformOptions> options)
+        IOptions<AiJobPlatformOptions> options,
+        IAiNativeAuthorizationService authorization)
     {
         _db = db;
         _currentUser = currentUser;
         _options = options.Value;
+        _authorization = authorization;
     }
 
     public async Task<Result<AiAssistantExecutionContextDto>> DiscoverAsync(
@@ -55,12 +58,39 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
 
         var isAdmin = ProjectRoleRules.IsSystemAdmin(_currentUser.Role) ||
             await _db.Users.AsNoTracking().AnyAsync(
-                user => user.Id == userId && user.Role == ProjectRoleRules.SystemAdmin, ct);
+                user => user.Id == userId && user.IsActive && user.Role == ProjectRoleRules.SystemAdmin, ct);
+        var systemTier = await ResolveSystemTierAsync(userId, ct);
+        if (systemTier == AiNativeSystemTier.Restricted)
+        {
+            return RestrictedContext();
+        }
         var canUseProjectLaunch = _options.ProjectLaunchBriefEnabled &&
             await HasReadableOrganizationAsync(userId, isAdmin, ct);
         var canManageOrganization = canUseProjectLaunch &&
             await HasManageableOrganizationAsync(userId, isAdmin, ct);
         var projectId = ResolveProjectId(request.Context);
+        if (!projectId.HasValue &&
+            string.Equals(request.Context?.EntityType, "meeting", StringComparison.OrdinalIgnoreCase) &&
+            request.Context?.EntityId is Guid meetingEntityId)
+        {
+            projectId = await ResolveMeetingProjectIdAsync(meetingEntityId, ct);
+        }
+        if (string.Equals(request.Context?.EntityType, "group", StringComparison.OrdinalIgnoreCase) &&
+            request.Context?.EntityId is Guid discoveredGroupId)
+        {
+            var group = await _db.WorkGroups.AsNoTracking().Include(item => item.Members)
+                .SingleOrDefaultAsync(item => item.Id == discoveredGroupId && !item.IsDeleted, ct);
+            if (group == null) return Result.NotFound<AiAssistantExecutionContextDto>();
+            var role = group.OwnerId == userId
+                ? Qaly.Application.Services.Groups.GroupRoleRules.Owner
+                : group.Members.FirstOrDefault(item => item.UserId == userId)?.Role;
+            if (role == null) return Result.NotFound<AiAssistantExecutionContextDto>();
+            var capabilities = AuthorizedCapabilities(false, canUseProjectLaunch, canManageOrganization, systemTier);
+            if (_options.NativeDomainActionsEnabled && systemTier == AiNativeSystemTier.Full &&
+                Qaly.Application.Services.Groups.GroupRoleRules.CanCreatePoll(role))
+                AddCapability(capabilities, AiAssistantContextContract.GroupPollCapability);
+            return Result.Success(new AiAssistantExecutionContextDto(capabilities, [], []));
+        }
         if (projectId.HasValue)
         {
             var project = await _db.Projects.AsNoTracking()
@@ -69,11 +99,13 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
                 .SingleOrDefaultAsync(item => item.Id == projectId.Value && !item.IsDeleted, ct);
             if (project == null || !CanReadProject(project, userId, isAdmin))
                 return Result.NotFound<AiAssistantExecutionContextDto>();
+            var authorization = await ResolveProjectAuthorizationAsync(project, userId, isAdmin, ct);
             return Result.Success(new AiAssistantExecutionContextDto(
                 AuthorizedCapabilities(
-                    CanManageProject(project, userId, isAdmin),
+                    authorization.CanManage,
                     canUseProjectLaunch,
-                    canManageOrganization), [], []));
+                    canManageOrganization,
+                    systemTier), [], []));
         }
 
         var projects = await _db.Projects.AsNoTracking()
@@ -82,11 +114,21 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
             .Where(item => !item.IsDeleted && item.ArchivedAt == null)
             .ToListAsync(ct);
         var authorized = projects.Where(project => CanReadProject(project, userId, isAdmin)).ToList();
+        var canManageAny = false;
+        foreach (var project in authorized)
+        {
+            if ((await ResolveProjectAuthorizationAsync(project, userId, isAdmin, ct)).CanManage)
+            {
+                canManageAny = true;
+                break;
+            }
+        }
         return Result.Success(new AiAssistantExecutionContextDto(
             AuthorizedCapabilities(
-                authorized.Any(project => CanManageProject(project, userId, isAdmin)),
+                canManageAny,
                 canUseProjectLaunch,
-                canManageOrganization), [], []));
+                canManageOrganization,
+                systemTier), [], []));
     }
 
     public async Task<Result<AiAssistantExecutionContextDto>> ResolveAsync(
@@ -125,16 +167,44 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
         }
 
         var projectId = ResolveProjectId(request.Context);
+        if (!projectId.HasValue &&
+            string.Equals(request.Context?.EntityType, "meeting", StringComparison.OrdinalIgnoreCase) &&
+            request.Context?.EntityId is Guid meetingEntityId)
+        {
+            projectId = await ResolveMeetingProjectIdAsync(meetingEntityId, ct);
+        }
         var isAdmin = ProjectRoleRules.IsSystemAdmin(_currentUser.Role) ||
             await _db.Users.AsNoTracking().AnyAsync(
-                user => user.Id == userId && user.Role == ProjectRoleRules.SystemAdmin,
+                user => user.Id == userId && user.IsActive && user.Role == ProjectRoleRules.SystemAdmin,
                 ct);
+        var systemTier = await ResolveSystemTierAsync(userId, ct);
+        if (systemTier == AiNativeSystemTier.Restricted)
+        {
+            return RestrictedContext();
+        }
 
         if (selectedCapabilityId is AiAssistantContextContract.ProjectLaunchCapability or
             AiAssistantContextContract.ProjectStaffingPlanCapability or
             AiAssistantContextContract.ProjectLaunchExecuteCapability)
         {
-            return await ResolveOrganizationLaunchAsync(request, userId, isAdmin, selectedCapabilityId, ct);
+            return await ResolveOrganizationLaunchAsync(
+                request, userId, isAdmin, selectedCapabilityId, systemTier, ct);
+        }
+
+        if (selectedCapabilityId == AiAssistantContextContract.GroupPollCapability &&
+            string.Equals(request.Context?.EntityType, "group", StringComparison.OrdinalIgnoreCase) &&
+            request.Context?.EntityId is Guid groupId)
+        {
+            return await ResolveGroupPollAsync(request, groupId, userId, systemTier, ct);
+        }
+
+        if ((selectedCapabilityId is AiAssistantContextContract.GroundedReadCapability or
+                AiAssistantContextContract.ResearchPlanCapability) &&
+            string.Equals(request.Context?.EntityType, "group", StringComparison.OrdinalIgnoreCase) &&
+            request.Context?.EntityId is Guid readableGroupId &&
+            (!projectId.HasValue || IsExplicitGroupReadRequest(request.Message)))
+        {
+            return await ResolveGroupReadAsync(readableGroupId, userId, selectedCapabilityId, systemTier, ct);
         }
 
         if (!projectId.HasValue)
@@ -159,10 +229,12 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
             return Result.NotFound<AiAssistantExecutionContextDto>();
         }
 
-        var canManage = CanManageProject(project, userId, isAdmin);
+        var projectAuthorization = await ResolveProjectAuthorizationAsync(project, userId, isAdmin, ct);
+        var canManage = projectAuthorization.CanManage;
         var capabilities = AuthorizedCapabilities(
             canManage,
-            _options.ProjectLaunchBriefEnabled && project.OrganizationId.HasValue);
+            _options.ProjectLaunchBriefEnabled && project.OrganizationId.HasValue,
+            systemTier: systemTier);
         if (!capabilities.Any(item => item.CapabilityId == selectedCapabilityId))
         {
             return Result.Success(new AiAssistantExecutionContextDto(
@@ -237,12 +309,26 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
         var authorizedProjects = projects
             .Where(project => CanReadProject(project, userId, isAdmin))
             .ToList();
-        var canManageAny = authorizedProjects.Any(project => CanManageProject(project, userId, isAdmin));
+        var systemTier = await ResolveSystemTierAsync(userId, ct);
+        if (systemTier == AiNativeSystemTier.Restricted)
+        {
+            return RestrictedContext();
+        }
+        var canManageAny = false;
+        foreach (var project in authorizedProjects)
+        {
+            if ((await ResolveProjectAuthorizationAsync(project, userId, isAdmin, ct)).CanManage)
+            {
+                canManageAny = true;
+                break;
+            }
+        }
         var canManageOrganization = await HasManageableOrganizationAsync(userId, isAdmin, ct);
         var capabilities = AuthorizedCapabilities(
             canManageAny,
             _options.ProjectLaunchBriefEnabled && await HasReadableOrganizationAsync(userId, isAdmin, ct),
-            canManageOrganization);
+            canManageOrganization,
+            systemTier);
 
         if (!capabilities.Any(item => item.CapabilityId == selectedCapabilityId))
         {
@@ -274,8 +360,14 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
     private List<AiAssistantCapabilityDescriptorDto> AuthorizedCapabilities(
         bool canManageProject,
         bool canUseProjectLaunch,
-        bool? canManageOrganization = null)
+        bool? canManageOrganization = null,
+        AiNativeSystemTier systemTier = AiNativeSystemTier.Full)
     {
+        if (systemTier == AiNativeSystemTier.Restricted)
+        {
+            return [];
+        }
+
         var canManageLaunch = canManageOrganization ?? canManageProject;
         var result = new List<AiAssistantCapabilityDescriptorDto>();
         if (AiAssistantCapabilityCatalog.TryGet(
@@ -293,12 +385,33 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
             result.Add(researchPlan);
         }
 
+        if (systemTier == AiNativeSystemTier.SummaryOnly)
+        {
+            return result;
+        }
+
         if (canManageProject && _options.ActionComposerEnabled && _options.ActionComposerTaskCreateEnabled &&
             AiAssistantCapabilityCatalog.TryGet(
                 AiAssistantContextContract.TaskCreateCapability,
                 out var taskCreate))
         {
             result.Add(taskCreate);
+        }
+
+        if (canManageProject && _options.ActionComposerEnabled)
+        {
+            AddCapability(result, AiAssistantContextContract.TaskAssignmentScheduleCapability);
+        }
+
+        if (canManageProject && _options.NativeDomainActionsEnabled)
+        {
+            AddCapability(result, AiAssistantContextContract.AcceptanceChecklistCapability);
+            AddCapability(result, AiAssistantContextContract.TaskBreakdownCapability);
+            AddCapability(result, AiAssistantContextContract.WikiBriefTaskCapability);
+            AddCapability(result, AiAssistantContextContract.ProjectDigestCapability);
+            AddCapability(result, AiAssistantContextContract.MeetingActionsCapability);
+            AddCapability(result, AiAssistantContextContract.RoadmapAdjustCapability);
+            AddCapability(result, AiAssistantContextContract.SkillEvidenceCapability);
         }
 
         if (canUseProjectLaunch &&
@@ -344,11 +457,106 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
         return result;
     }
 
+    private static void AddCapability(List<AiAssistantCapabilityDescriptorDto> target, string capabilityId)
+    {
+        if (AiAssistantCapabilityCatalog.TryGet(capabilityId, out var descriptor)) target.Add(descriptor);
+    }
+
+    private async Task<Result<AiAssistantExecutionContextDto>> ResolveGroupPollAsync(
+        AiAssistantTurnRequestDto request,
+        Guid groupId,
+        Guid userId,
+        AiNativeSystemTier systemTier,
+        CancellationToken ct)
+    {
+        var group = await _db.WorkGroups.AsNoTracking().Include(item => item.Members)
+            .SingleOrDefaultAsync(item => item.Id == groupId && !item.IsDeleted, ct);
+        if (group == null) return Result.NotFound<AiAssistantExecutionContextDto>();
+        var role = group.OwnerId == userId
+            ? Qaly.Application.Services.Groups.GroupRoleRules.Owner
+            : group.Members.FirstOrDefault(item => item.UserId == userId)?.Role;
+        if (role == null) return Result.NotFound<AiAssistantExecutionContextDto>();
+
+        var capabilities = AuthorizedCapabilities(false, false, systemTier: systemTier);
+        if (_options.NativeDomainActionsEnabled && systemTier == AiNativeSystemTier.Full &&
+            Qaly.Application.Services.Groups.GroupRoleRules.CanCreatePoll(role))
+            AddCapability(capabilities, AiAssistantContextContract.GroupPollCapability);
+        if (!capabilities.Any(item => item.CapabilityId == AiAssistantContextContract.GroupPollCapability))
+            return Result.Success(new AiAssistantExecutionContextDto(capabilities, [],
+                [new AiAssistantSourceDisclosureDto("capability.context", "denied",
+                    "Bạn có thể đọc nhóm nhưng không có quyền tạo Poll.", ReasonCode: "capability_not_authorized")]));
+
+        var facts = new Dictionary<string, object?>
+        {
+            ["group_id"] = group.Id,
+            ["name"] = group.Name,
+            ["status"] = group.Status,
+            ["member_count"] = group.Members.Count,
+            ["current_user_role"] = role
+        };
+        var source = Envelope(AiAssistantContextContract.GroupContextSource, $"/groups/{group.Id}", "group",
+            group.Name, group.UpdatedAt ?? group.CreatedAt, "canonical", "group_member", facts, "ef_core_group_context");
+        return Result.Success(new AiAssistantExecutionContextDto(capabilities, [source], [ToDisclosure(source)]));
+    }
+
+    private async Task<Result<AiAssistantExecutionContextDto>> ResolveGroupReadAsync(
+        Guid groupId,
+        Guid userId,
+        string selectedCapabilityId,
+        AiNativeSystemTier systemTier,
+        CancellationToken ct)
+    {
+        var group = await _db.WorkGroups.AsNoTracking().Include(item => item.Members)
+            .SingleOrDefaultAsync(item => item.Id == groupId && !item.IsDeleted, ct);
+        if (group == null) return Result.NotFound<AiAssistantExecutionContextDto>();
+        var role = group.OwnerId == userId
+            ? Qaly.Application.Services.Groups.GroupRoleRules.Owner
+            : group.Members.FirstOrDefault(item => item.UserId == userId)?.Role;
+        if (role == null) return Result.NotFound<AiAssistantExecutionContextDto>();
+
+        var capabilities = AuthorizedCapabilities(false, false, systemTier: systemTier);
+        if (!capabilities.Any(item => item.CapabilityId == selectedCapabilityId))
+            return Result.Success(new AiAssistantExecutionContextDto(capabilities, [],
+                [new AiAssistantSourceDisclosureDto("capability.context", "denied",
+                    "Quyền AI hiện tại không cho phép đọc hoặc phân tích Group.", ReasonCode: "capability_not_authorized")]));
+
+        var recentMessages = await _db.GroupMessages.AsNoTracking()
+            .Where(item => item.WorkGroupId == groupId && !item.IsDeleted)
+            .OrderByDescending(item => item.CreatedAt)
+            .Take(100)
+            .Select(item => new
+            {
+                id = item.Id,
+                userId = item.UserId,
+                content = item.Content,
+                messageType = item.MessageType,
+                createdAt = item.CreatedAt,
+                editedAt = item.EditedAt,
+                isPinned = item.IsPinned
+            })
+            .ToListAsync(ct);
+        recentMessages.Reverse();
+        var facts = new Dictionary<string, object?>
+        {
+            ["group_id"] = group.Id,
+            ["name"] = group.Name,
+            ["status"] = group.Status,
+            ["member_count"] = group.Members.Count,
+            ["current_user_role"] = role,
+            ["recent_messages"] = recentMessages
+        };
+        var source = Envelope(AiAssistantContextContract.GroupContextSource, $"/groups/{group.Id}", "group",
+            group.Name, group.UpdatedAt ?? group.CreatedAt, "canonical", "group_member", facts,
+            "ef_core_authorized_group_message_snapshot");
+        return Result.Success(new AiAssistantExecutionContextDto(capabilities, [source], [ToDisclosure(source)]));
+    }
+
     private async Task<Result<AiAssistantExecutionContextDto>> ResolveOrganizationLaunchAsync(
         AiAssistantTurnRequestDto request,
         Guid userId,
         bool isAdmin,
         string selectedCapabilityId,
+        AiNativeSystemTier systemTier,
         CancellationToken ct)
     {
         if (!_options.ProjectLaunchBriefEnabled ||
@@ -387,7 +595,8 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
         var capabilities = AuthorizedCapabilities(
             canManageProject: false,
             canUseProjectLaunch: readable.Count > 0,
-            canManageOrganization);
+            canManageOrganization,
+            systemTier);
         if (organization == null)
         {
             var reason = readable.Count == 0 ? "organization_not_authorized" : "organization_scope_required";
@@ -429,6 +638,7 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
         var skills = await _db.OrganizationSkills.AsNoTracking()
             .Where(item => item.OrganizationId == organization.Id && item.IsActive)
             .OrderBy(item => item.Name)
+            .ThenBy(item => item.Id)
             .Select(item => new { item.Id, item.Name, item.Description, item.UpdatedAt, item.CreatedAt })
             .Take(MaxSkillFacts + 1)
             .ToListAsync(ct);
@@ -516,8 +726,41 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
             AiAssistantContextContract.ProjectMembersSource when canManage => await BuildProjectMembersSourceAsync(project, ct),
             AiAssistantContextContract.ProjectSkillsSource when canManage => await BuildProjectSkillsSourceAsync(project, ct),
             AiAssistantContextContract.TaskDetailSource => await BuildTaskDetailSourceAsync(project, context, userId, isAdmin, ct),
+            AiAssistantContextContract.WikiPageSource => await BuildWikiPageSourceAsync(project, context, userId, isAdmin, ct),
             _ => null
         };
+
+    private async Task<AiAssistantContextSourceEnvelopeDto?> BuildWikiPageSourceAsync(
+        Project project,
+        AiAssistantClientContextDto? context,
+        Guid userId,
+        bool isAdmin,
+        CancellationToken ct)
+    {
+        if (!string.Equals(context?.EntityType, "wiki", StringComparison.OrdinalIgnoreCase) || context?.EntityId is not Guid wikiId)
+            return null;
+        var page = await _db.WikiPages.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == wikiId && item.ProjectId == project.Id, ct);
+        if (page == null) return null;
+        if (!isAdmin && page.Visibility == "private" && page.AuthorId != userId) return null;
+        var sections = page.Content.Split('\n')
+            .Select((line, index) => new { line = line.Trim(), index })
+            .Where(item => item.line.StartsWith('#'))
+            .Take(30)
+            .Select(item => new { heading = item.line.TrimStart('#', ' '), line = item.index + 1 })
+            .ToArray();
+        var facts = new Dictionary<string, object?>
+        {
+            ["wiki_id"] = page.Id,
+            ["title"] = page.Title,
+            ["visibility"] = page.Visibility,
+            ["sections"] = sections,
+            ["content"] = page.Content.Length <= 12000 ? page.Content : page.Content[..12000]
+        };
+        return Envelope(AiAssistantContextContract.WikiPageSource,
+            $"/projects/{project.Id}/wiki/{page.Id}", "wiki_page", page.Title, page.UpdatedAt,
+            "canonical", page.Visibility, facts, "ef_core_wiki_section_snapshot");
+    }
 
     private async Task<AiAssistantContextSourceEnvelopeDto> BuildProjectSummarySourceAsync(
         Project project,
@@ -662,6 +905,7 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
         var members = await _db.ProjectMembers.AsNoTracking()
             .Where(item => item.ProjectId == project.Id && item.User.IsActive)
             .OrderBy(item => item.User.FullName)
+            .ThenBy(item => item.UserId)
             .Select(item => new
             {
                 item.UserId,
@@ -695,6 +939,7 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
             ? await _db.OrganizationSkills.AsNoTracking()
                 .Where(item => item.OrganizationId == project.OrganizationId.Value && item.IsActive)
                 .OrderBy(item => item.Name)
+                .ThenBy(item => item.Id)
                 .Select(item => new { item.Id, item.Name, item.Description, item.UpdatedAt, item.CreatedAt })
                 .Take(MaxSkillFacts + 1)
                 .ToListAsync(ct)
@@ -835,6 +1080,22 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
             "deterministic");
     }
 
+    private static AiAssistantContextSourceEnvelopeDto Envelope(
+        string sourceId,
+        string sourceRef,
+        string sourceType,
+        string title,
+        DateTimeOffset freshness,
+        string trustClass,
+        string privacyClass,
+        IReadOnlyDictionary<string, object?> facts,
+        string retrievalMethod)
+    {
+        var hash = ComputeHash(facts);
+        return new AiAssistantContextSourceEnvelopeDto(sourceId, sourceRef, sourceType, title, freshness,
+            trustClass, privacyClass, hash, facts, [], retrievalMethod);
+    }
+
     private static AiAssistantContextSourceEnvelopeDto BuildOrganizationEnvelope(
         string sourceId,
         Organization organization,
@@ -876,10 +1137,21 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
             source.Redactions.Count == 0 ? null : "source_redacted");
 
     private static bool CanReadProject(Project project, Guid userId, bool isAdmin)
-        => isAdmin || project.OwnerId == userId ||
-           project.Members.Any(member => member.UserId == userId) ||
-           project.Organization?.OwnerId == userId ||
-           project.Organization?.Members.Any(member => member.UserId == userId) == true;
+    {
+        if (isAdmin) return true;
+        if (project.OrganizationId.HasValue)
+        {
+            if (project.Organization == null || !project.Organization.IsActive) return false;
+            if (project.Organization.OwnerId == userId) return true;
+            var organizationRole = project.Organization.Members
+                .Where(member => member.UserId == userId)
+                .Select(member => member.Role)
+                .FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(organizationRole)) return false;
+            if (OrganizationRoleRules.CanManageOrganization(organizationRole)) return true;
+        }
+        return project.OwnerId == userId || project.Members.Any(member => member.UserId == userId);
+    }
 
     private static bool CanReadOrganization(Organization organization, Guid userId, bool isAdmin)
         => isAdmin || organization.OwnerId == userId ||
@@ -890,20 +1162,47 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
            organization.Members.Any(member => member.UserId == userId &&
                OrganizationRoleRules.CanManageOrganization(member.Role));
 
-    private static bool CanManageProject(Project project, Guid userId, bool isAdmin)
-        => isAdmin || project.OwnerId == userId ||
-           project.Members.Any(member => member.UserId == userId && ProjectRoleRules.CanManageProject(member.Role)) ||
-           project.Organization?.OwnerId == userId ||
-           project.Organization?.Members.Any(member =>
-               member.UserId == userId &&
-               (string.Equals(member.Role, "Owner", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(member.Role, "Admin", StringComparison.OrdinalIgnoreCase))) == true;
+    private Task<AiNativeSystemTier> ResolveSystemTierAsync(Guid userId, CancellationToken ct)
+        => _authorization.ResolveSystemTierAsync(userId, _currentUser.Role, ct);
+
+    private Task<AiNativeProjectAuthorization> ResolveProjectAuthorizationAsync(
+        Project project,
+        Guid userId,
+        bool isAdmin,
+        CancellationToken ct)
+        => _authorization.ResolveProjectAsync(project, userId, isAdmin, ct);
+
+    private static Result<AiAssistantExecutionContextDto> RestrictedContext()
+        => Result.Success(new AiAssistantExecutionContextDto(
+            [],
+            [],
+            [new AiAssistantSourceDisclosureDto(
+                "capability.context",
+                "denied",
+                "Quyền sử dụng Trợ lý AI đã bị giới hạn bởi quản trị viên hệ thống.",
+                ReasonCode: "ai_hub_restricted")]));
 
     private static Guid? ResolveProjectId(AiAssistantClientContextDto? context)
         => context?.ProjectId ??
            (string.Equals(context?.EntityType, "project", StringComparison.OrdinalIgnoreCase)
                ? context?.EntityId
                : null);
+
+    private Task<Guid?> ResolveMeetingProjectIdAsync(Guid meetingEntityId, CancellationToken ct)
+        => _db.MeetingImports.AsNoTracking()
+            .Where(item => item.Id == meetingEntityId || item.SourceId == meetingEntityId.ToString())
+            .OrderByDescending(item => item.CreatedAt)
+            .Select(item => (Guid?)item.ProjectId)
+            .FirstOrDefaultAsync(ct);
+
+    private static bool IsExplicitGroupReadRequest(string message)
+    {
+        var hasGroupTarget = message.Contains("group", StringComparison.OrdinalIgnoreCase) ||
+                             message.Contains("nhóm", StringComparison.OrdinalIgnoreCase);
+        var hasProjectTarget = message.Contains("project", StringComparison.OrdinalIgnoreCase) ||
+                               message.Contains("dự án", StringComparison.OrdinalIgnoreCase);
+        return hasGroupTarget && !hasProjectTarget;
+    }
 
     private static List<string> SelectProjectSources(
         string capabilityId,
@@ -918,6 +1217,18 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
                 AiAssistantContextContract.ProjectSkillsSource,
                 AiAssistantContextContract.ProjectWorkloadSource
             }
+            : capabilityId == AiAssistantContextContract.WikiBriefTaskCapability
+                ? new List<string> { AiAssistantContextContract.WikiPageSource }
+            : capabilityId is AiAssistantContextContract.AcceptanceChecklistCapability or AiAssistantContextContract.TaskBreakdownCapability
+                ? new List<string> { AiAssistantContextContract.TaskDetailSource, AiAssistantContextContract.ProjectTasksSource }
+            : capabilityId == AiAssistantContextContract.ProjectDigestCapability
+                ? new List<string> { AiAssistantContextContract.ProjectSummarySource, AiAssistantContextContract.ProjectTasksSource }
+            : capabilityId == AiAssistantContextContract.MeetingActionsCapability
+                ? new List<string> { AiAssistantContextContract.ProjectTasksSource }
+            : capabilityId == AiAssistantContextContract.RoadmapAdjustCapability
+                ? new List<string> { AiAssistantContextContract.ProjectSummarySource, AiAssistantContextContract.ProjectTasksSource, AiAssistantContextContract.ProjectWorkloadSource }
+            : capabilityId == AiAssistantContextContract.SkillEvidenceCapability
+                ? new List<string> { AiAssistantContextContract.TaskDetailSource, AiAssistantContextContract.ProjectSkillsSource }
             : new List<string>
             {
                 AiAssistantContextContract.ProjectSummarySource,
@@ -928,6 +1239,11 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
             context?.EntityId.HasValue == true)
         {
             sourceIds.Add(AiAssistantContextContract.TaskDetailSource);
+        }
+        if (string.Equals(context?.EntityType, "wiki", StringComparison.OrdinalIgnoreCase) &&
+            context?.EntityId.HasValue == true)
+        {
+            sourceIds.Add(AiAssistantContextContract.WikiPageSource);
         }
 
         foreach (var requestedSourceId in requestedSourceIds)

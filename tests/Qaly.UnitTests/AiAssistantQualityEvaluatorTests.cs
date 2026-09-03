@@ -8,6 +8,42 @@ namespace Qaly.UnitTests;
 public sealed class AiAssistantQualityEvaluatorTests
 {
     [Fact]
+    public void VietnameseRoutingEvalV2_CoversRequiredCategories_AndMeetsAccuracyGate()
+    {
+        var file = Path.Combine(AppContext.BaseDirectory, "Fixtures", "ai-native-routing.vi-v2.json");
+        var cases = JsonSerializer.Deserialize<List<RoutingEvalCase>>(
+            File.ReadAllText(file), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        var requiredCategories = new[]
+        {
+            "intent_routing", "task_project_disambiguation", "exact_requested_count", "follow_up_context",
+            "provider_fallback", "permission_denial", "mutation_confirmation", "no_repeat_questions"
+        };
+
+        cases.Select(item => item.Category).Should().Contain(requiredCategories);
+        var routingCases = cases.Where(item => !string.IsNullOrWhiteSpace(item.ExpectedCapability)).ToList();
+        routingCases.Should().NotBeEmpty();
+
+        var routed = routingCases.Select(item =>
+        {
+            var history = new List<AiChatMessageDto>();
+            if (!string.IsNullOrWhiteSpace(item.HistoryUser)) history.Add(new("user", item.HistoryUser));
+            if (!string.IsNullOrWhiteSpace(item.HistoryAssistant)) history.Add(new("assistant", item.HistoryAssistant));
+            var actual = AiAssistantCapabilityIntentClassifier.Infer(item.Prompt, history);
+            return new { Case = item, Actual = actual };
+        }).ToList();
+        var mismatches = routed.Where(item =>
+            !string.Equals(item.Actual, item.Case.ExpectedCapability, StringComparison.Ordinal)).ToList();
+
+        ((double)(routingCases.Count - mismatches.Count) / routingCases.Count).Should().BeGreaterThanOrEqualTo(
+            AiAssistantQualityContract.MinimumRoutingAccuracy,
+            string.Join(", ", mismatches.Select(item =>
+                $"{item.Case.Id}: expected {item.Case.ExpectedCapability}, actual {item.Actual}")));
+        AiAssistantQualityContract.MaximumDeadEndRate.Should().BeLessThanOrEqualTo(0.01);
+        AiAssistantQualityContract.MinimumFallbackQualityPassRate.Should().BeGreaterThanOrEqualTo(0.90);
+        AiAssistantQualityContract.MaximumInteractiveLatencyMs.Should().Be(10_000);
+    }
+
+    [Fact]
     public void VersionedVietnameseEvalSet_EnforcesUsefulAndDeadEndContracts()
     {
         var file = Path.Combine(AppContext.BaseDirectory, "Fixtures", "ai-native-conversation-quality.vi-v1.json");
@@ -74,4 +110,14 @@ public sealed class AiAssistantQualityEvaluatorTests
                 "deterministic-failsoft-v1"));
 
     private sealed record EvalCase(string Id, string Prompt, string Expect);
+
+    private sealed record RoutingEvalCase(
+        string Id,
+        string Category,
+        string Prompt,
+        string? ExpectedCapability = null,
+        int? ExpectedCount = null,
+        string? HistoryUser = null,
+        string? HistoryAssistant = null,
+        string? ExpectedBehavior = null);
 }

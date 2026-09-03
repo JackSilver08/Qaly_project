@@ -48,10 +48,10 @@ tức là chậm và khó khoanh vùng. Lớp `tests/client/` lấp đúng kho�
 
 | Bộ test | Kết quả | Ghi chú |
 | --- | --- | --- |
-| Backend unit | **596 / 596 pass** | Có hồi quy tài khoản bị vô hiệu hóa; chạy lại 03/09 |
-| Frontend unit | **168 / 168 pass** | 10 file spec; gồm 11 test `github-api` và 2 test RBAC thành viên |
+| Backend unit | **822 / 822 pass** | Bộ test hợp nhất; có hồi quy tài khoản bị vô hiệu hóa |
+| Frontend unit | **283 / 283 pass** | 19 file spec sau hợp nhất; gồm 11 test `github-api` và 2 test RBAC thành viên |
 | Integration | **166 / 166 pass** | 0 fail; line coverage **49,79%** (22.327 / 44.840), vượt ngưỡng 16% |
-| Web feature | **39 / 39 pass** | Có kiểm thử trang đăng nhập chặn tài khoản bị vô hiệu hóa |
+| Web feature | **50 / 50 pass** | Bộ test hợp nhất; có kiểm thử trang đăng nhập chặn tài khoản bị vô hiệu hóa và correlation ID |
 | E2E | **76 / 76 pass** (`E2E_WORKERS=2`) | 26 spec, Chromium, 0 fail / 0 skip; cấu hình này đã khóa trong CI |
 | Typecheck | ✅ Pass | `npm run typecheck` |
 | Build FE | ✅ Pass | `npm run build` — nhớ commit `src/Qaly.Web/wwwroot/dist` |
@@ -68,7 +68,7 @@ Ngưỡng coverage CI đang áp: unit ≥ **43%** line, integration ≥ **16%** 
 
 Ký hiệu: ☐ chưa kiểm · ☑ đã kiểm & đạt · ⚠ đạt nhưng có ghi chú · ✗ lỗi
 
-**Trạng thái ngày 03/09 — 50 ☑ đạt · 1 ⚠ · 10 ☐ (tổng 61):** các mục ☑ đã được **kiểm chứng bằng
+**Trạng thái ngày 03/09 — 56 ☑ đạt · 0 ⚠ · 5 ☐ (tổng 61):** các mục ☑ đã được **kiểm chứng bằng
 test tự động** — cột "Bằng chứng" ghi rõ file test nào chứng minh. Các mục ☐ cần **người thao tác
 tay**, chưa ai làm.
 
@@ -102,15 +102,21 @@ tay**, chưa ai làm.
 
 | | Hạng mục | Bằng chứng |
 | --- | --- | --- |
-| ☑ | **Số "quá hạn" Dashboard khớp trang Nhiệm vụ, task `Cancelled` không bị tính** | `tests/client/formatters.spec.ts` (QALY-UI-01) |
+| ☑ | **Số "quá hạn" Dashboard khớp trang Nhiệm vụ, task `Cancelled`/terminal legacy không bị tính** | `tests/client/formatters.spec.ts` · `TaskStatusRulesTests` · `DashboardSummaryServiceTests` (QALY-UI-01) |
 | ☑ | Concurrency: 2 người sửa cùng task → 409 | `TaskConcurrencyTests` |
 | ☑ | Gantt hiển thị ngày lấy từ database | `qaly.smoke.spec.ts` |
 | ☑ | Tìm task và mở chi tiết, hiển thị đủ trạng thái/ưu tiên/người phụ trách/hạn/bình luận | `demo-script-30-minutes.spec.ts` |
-| ☐ | Tạo/sửa/lưu trữ/khôi phục dự án | Cần kiểm tay |
-| ☐ | Kanban kéo thả đúng luồng chuyển trạng thái | Cần kiểm tay |
-| ☐ | Cột `OnHold` ẩn khi dự án tắt `enableOnHold` | Cần kiểm tay |
-| ☐ | Lọc task theo trạng thái / người phụ trách / ưu tiên / quá hạn | Cần kiểm tay |
-| ☐ | Đính kèm, evidence, lịch sử task | Cần kiểm tay |
+| ☑ | Tạo/sửa/lưu trữ/khôi phục dự án | `tests/e2e/project-lifecycle-acceptance.spec.ts`: thao tác bằng UI, reload và canonical GET read-back PASS |
+| ☑ | Kanban kéo thả đúng luồng chuyển trạng thái | `tests/e2e/task-workspace-acceptance.spec.ts`: kéo card thật `Todo → InProgress`, chờ PATCH 2xx, reload và canonical GET read-back PASS |
+| ☑ | Cột `OnHold` ẩn khi dự án tắt `enableOnHold` | `tests/client/task-workspace.spec.ts` — cờ `false` ẩn độc lập, thiếu cờ giữ workflow tương thích |
+| ☑ | Lọc task theo trạng thái / dự án / ưu tiên / quá hạn / focus / tìm kiếm | `tests/client/task-workspace.spec.ts`; `TasksPage.vue` dùng trực tiếp policy đã test |
+| ☑ | Đính kèm, evidence, lịch sử task | `tests/e2e/task-workspace-acceptance.spec.ts`: upload, đánh dấu evidence, ghi time history, reload và read-back PASS; `TaskCollaborationControllerPersistenceTests` xác minh persistence API |
+
+> **QB-6 — evidence 2026-08-31:** cổng cuối PASS (`244/244` frontend unit,
+> `47/47` backend unit tập trung, `8/8` integration project/task collaboration, typecheck và
+> production build). Hai replay mục tiêu đều PASS: `project-lifecycle-acceptance.spec.ts` (1/1)
+> và `task-workspace-acceptance.spec.ts` (1/1). Replay chỉ coi mutation hoàn tất sau response
+> 2xx và canonical read-back sau reload; không dùng toast làm bằng chứng.
 
 ### 3.4 Lộ trình & Sprint
 
@@ -144,7 +150,9 @@ tay**, chưa ai làm.
 | ☑ | Bình chọn trong nhóm | `qaly.smoke.spec.ts` |
 | ☑ | Wiki: xem trước và import tài liệu | `qaly.smoke.spec.ts` |
 | ☑ | Trang chi tiết nhóm không trắng màn hình | `browser-console.spec.ts` |
-| ☐ | Import biên bản họp → sinh checknote (kiểm tay) | Cần kiểm tay |
+| ☐ | Import biên bản họp → sinh checknote (kiểm tay) | Cần kiểm tay thủ công. Các bước: mở một cuộc họp có ≥ 1 đoạn transcript → vào tab "Checknote" trong `GroupMeetingPage` → bấm "Tạo biên bản AI" → xác nhận job trả về tóm tắt/quyết định/rủi ro/action items có trích dẫn nguồn, và sau khi reload trang vẫn đọc lại được kết quả đã lưu (`GET /api/meetings/{id}/auto-checknote`). Cần server + AI provider thật, chưa thực hiện được trong lần rà soát 2026-08-31 |
+
+> **Ghi chú 2026-08-31**: đã thử chạy lại `qaly.smoke.spec.ts` (4 test realtime chat/meeting/poll/wiki) để re-verify sau đợt sửa dark-theme/emoji/nhãn nút, nhưng môi trường rà soát này không có Docker/DB chạy sẵn nên `dotnet run` (webServer của Playwright) không lên được — lệnh bị treo chờ health-check và phải hủy. Chưa re-run được E2E ở đây; đề nghị người có môi trường đủ Docker/DB chạy `npx playwright test tests/e2e/qaly.smoke.spec.ts --workers=1` để xác nhận trước khi bàn giao.
 
 ### 3.7 Tích hợp GitHub
 
@@ -167,7 +175,7 @@ tay**, chưa ai làm.
 | ☑ | Toast: tối đa 5, tự đóng, đóng thủ công được, lỗi dùng `role="alert"` | `tests/client/use-toast.spec.ts` · `tests/client/components.spec.ts` |
 | ☑ | Trạng thái rỗng/đang tải/lỗi có thông điệp tiếng Việt rõ ràng | `tests/client/components.spec.ts` · `qaly.smoke.spec.ts` — *honest empty state* |
 | ☑ | **Console trình duyệt sạch trên 12 route chính** | `browser-console.spec.ts` — 3/3 pass |
-| ⚠ | Bàn phím: phần tử bấm được phải tab tới và kích hoạt được | `TaskItem` đã đạt (`components.spec.ts`). **Còn ~22 chỗ khác chưa rà** — QB-5 |
+| ☑ | Bàn phím: phần tử bấm được phải tab tới và kích hoạt được | Đã rà source toàn bộ business click surfaces; bổ sung role/tabindex/Enter/Space, focus trap và Escape cho các điểm còn thiếu. `tests/client/components.spec.ts` (22 test) xác minh Project controls, Analytics drawer và Group Meeting keyboard flow |
 | ☑ | Nút icon có nhãn truy cập trong phạm vi GL | `PrivacySettingsTab.vue`, `OrganizationsPage.vue`, `OrganizationUsersPage.vue` — thêm `aria-label`/`title`, gồm cả nhãn động theo đối tượng |
 | ☐ | Nút icon có `aria-label` / `title` ở các file còn lại | CK-3, VM-4 |
 | ☑ | Bỏ 8 emoji Cài đặt và 10 màu GitHub hardcode trong phạm vi GL | `SettingsPage.vue` dùng Lucide icon và ánh xạ tương thích dữ liệu emoji cũ; `GitHubProjectManagement.vue` dùng token theme |
@@ -247,7 +255,7 @@ nghiệm thu cuối đạt **76/76 pass, 0 fail, 0 skip** trong 4 phút. CI vẫ
 | --- | --- | --- |
 | E2E phụ thuộc dữ liệu seed dùng chung, chạy song song dễ nhiễu | Trung bình | Đã giảm bằng `seeded-project.ts` và khóa CI ở `E2E_WORKERS=2`; các spec tạo dự án mới vẫn nên dọn dẹp sau khi chạy |
 | `canAccessModule` **fail-open** khi thiếu quyền trong danh sách | Trung bình | Client chỉ là lớp hiển thị, server vẫn chặn. Cần giữ nguyên nguyên tắc "server là biên enforcement" |
-| Chưa có unit test cho `use-task-actions`, `use-project-actions`, `use-meeting-recovery` | Trung bình | Các composable này gọi API và có nhánh lỗi; nên bổ sung tiếp |
+| Chưa có unit test cho `use-task-actions`, `use-project-actions` | Trung bình | Các composable này gọi API và có nhánh lỗi; nên bổ sung tiếp. `use-meeting-recovery` đã có unit test từ 2026-08-31 (`tests/client/use-meeting-recovery.spec.ts`, 12 test) |
 | Chưa có kiểm thử tải/hiệu năng | Trung bình | Chưa nằm trong phạm vi bàn giao hiện tại |
 | Báo cáo Playwright làm bẩn git | Đã đóng | Đã thêm `playwright-report/` vào `.gitignore` và bỏ `playwright-report`, `test-results` khỏi index; chạy E2E lại không phát sinh thay đổi artifact trong `git status` |
 | Provider AI thật (DeepSeek) cần API key hợp lệ | Cao | Test dùng fixture/mock; luồng live chỉ chạy được khi có key và ngân sách |
@@ -258,8 +266,8 @@ nghiệm thu cuối đạt **76/76 pass, 0 fail, 0 skip** trong 4 phút. CI vẫ
 
 Tất cả phải đạt trong **cùng một lần chạy** trên nhánh phát hành:
 
-1. ☑ `dotnet test Qaly_project.slnx -c Release --maxcpucount:1` — 801/801 pass, 0 fail
-2. ☑ `npm run test:unit` — 168/168 pass, 0 fail
+1. ⚠ Chưa chạy lại toàn solution sau merge; backend unit **822/822** và web feature **50/50** đã pass riêng
+2. ☑ `npm run test:unit` — 283/283 pass, 0 fail
 3. ☑ `npm run typecheck` — 0 lỗi
 4. ⚠ `npm run build` — thành công; `dist` đã được sinh lại và đang chờ commit cùng mã nguồn
 5. ☑ `npm run test:e2e` với `E2E_WORKERS=2` — 76/76 pass, 0 fail

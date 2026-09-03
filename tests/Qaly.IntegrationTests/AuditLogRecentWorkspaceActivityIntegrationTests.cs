@@ -2,10 +2,12 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Qaly.Application.Common.Models;
 using Qaly.Application.Services;
 using Qaly.Domain.Entities;
+using Qaly.Domain.Interfaces;
 using Qaly.Infrastructure.Data;
 
 namespace Qaly.IntegrationTests;
@@ -101,6 +103,15 @@ public class AuditLogRecentWorkspaceActivityIntegrationTests : IClassFixture<Int
                 new AuditLog
                 {
                     Action = "Update",
+                    EntityType = nameof(TaskComment),
+                    EntityId = Guid.NewGuid().ToString(),
+                    UserId = memberBId,
+                    ChangesJson = "{not-valid-json",
+                    Timestamp = now.AddSeconds(-30)
+                },
+                new AuditLog
+                {
+                    Action = "Update",
                     EntityType = nameof(Organization),
                     EntityId = organizationBId.ToString(),
                     UserId = ownerBId,
@@ -163,6 +174,99 @@ public class AuditLogRecentWorkspaceActivityIntegrationTests : IClassFixture<Int
         responseForB.Body.Data.Items.Should().NotContain(item => item.EntityId == organizationAId.ToString());
         responseForB.Body.Data.Items.Should().NotContain(item => item.EntityId == projectAId.ToString());
         responseForB.Body.Data.Items.Should().NotContain(item => item.ChangesJson != null && item.ChangesJson.Contains(projectAId.ToString(), StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task GetRecentWorkspaceActivity_ScansPastLargeHiddenTenantBatch()
+    {
+        var visibleOwnerId = Guid.NewGuid();
+        var hiddenOwnerId = Guid.NewGuid();
+        var visibleProjectId = Guid.NewGuid();
+        var hiddenProjectId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow.AddYears(5);
+
+        await EnsureUserExists(visibleOwnerId, "Visible Owner", $"visible-{Guid.NewGuid():N}@qaly.dev");
+        await EnsureUserExists(hiddenOwnerId, "Hidden Owner", $"hidden-{Guid.NewGuid():N}@qaly.dev");
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+            db.Projects.AddRange(
+                new Project
+                {
+                    Id = visibleProjectId,
+                    Name = "Visible older project",
+                    Code = $"visible-{Guid.NewGuid():N}",
+                    OwnerId = visibleOwnerId
+                },
+                new Project
+                {
+                    Id = hiddenProjectId,
+                    Name = "Hidden recent project",
+                    Code = $"hidden-{Guid.NewGuid():N}",
+                    OwnerId = hiddenOwnerId
+                });
+
+            db.AuditLogs.AddRange(Enumerable.Range(0, 520).Select(index => new AuditLog
+            {
+                Action = "Update",
+                EntityType = nameof(Project),
+                EntityId = hiddenProjectId.ToString(),
+                UserId = hiddenOwnerId,
+                Timestamp = now.AddSeconds(-index)
+            }));
+            db.AuditLogs.AddRange(
+                new AuditLog
+                {
+                    Action = "Update",
+                    EntityType = nameof(Project),
+                    EntityId = visibleProjectId.ToString(),
+                    UserId = hiddenOwnerId,
+                    Timestamp = now.AddHours(-2)
+                },
+                new AuditLog
+                {
+                    Action = "Create",
+                    EntityType = nameof(Project),
+                    EntityId = visibleProjectId.ToString(),
+                    UserId = hiddenOwnerId,
+                    Timestamp = now.AddHours(-3)
+                });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await SendRecentActivityRequestAsync(visibleOwnerId, limit: 2);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Body!.Data!.Items.Should().HaveCount(2);
+        response.Body.Data.Items.Should().OnlyContain(item => item.EntityId == visibleProjectId.ToString());
+    }
+
+    [Fact]
+    public async Task StageAsync_PersistsOnlyWithSharedUnitOfWorkCommit()
+    {
+        var entityId = Guid.NewGuid().ToString();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var audit = scope.ServiceProvider.GetRequiredService<IAuditLogService>();
+            var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+            await audit.StageAsync("AtomicStage", nameof(Project), entityId, new { projectId = entityId });
+
+            using (var beforeScope = _factory.Services.CreateScope())
+            {
+                var beforeDb = beforeScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+                (await beforeDb.AuditLogs.AnyAsync(log => log.EntityId == entityId)).Should().BeFalse();
+            }
+
+            await unitOfWork.SaveChangesAsync();
+        }
+
+        using var afterScope = _factory.Services.CreateScope();
+        var afterDb = afterScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        (await afterDb.AuditLogs.AnyAsync(log => log.EntityId == entityId && log.Action == "AtomicStage"))
+            .Should().BeTrue();
     }
 
     private async Task<(HttpStatusCode StatusCode, ResultEnvelope<PagedResult<AuditLogDto>>? Body)> SendRecentActivityRequestAsync(Guid userId, int limit)

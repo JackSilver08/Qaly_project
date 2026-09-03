@@ -118,11 +118,10 @@ public class GroupAiService : IGroupAiService
         catch (Exception ex)
         {
             AiExtractionFailed(_logger, groupId, ex);
-            return Result.Success(new GroupAiActionItemsResponseDto(
-                groupId,
-                source,
-                Array.Empty<GroupAiActionItemDto>(),
-                [.. context.Warnings, "AI extraction failed. Please try again later."]));
+            return Result.Failure<GroupAiActionItemsResponseDto>(
+                "AI extraction failed. Please try again later.",
+                503,
+                AiErrorCodes.ProviderUnavailable);
         }
     }
 
@@ -143,8 +142,10 @@ public class GroupAiService : IGroupAiService
                 .Include(message => message.User)
                 .Where(message => message.WorkGroupId == groupId)
                 .OrderByDescending(message => message.CreatedAt)
+                .ThenByDescending(message => message.Id)
                 .Take(limit)
                 .OrderBy(message => message.CreatedAt)
+                .ThenBy(message => message.Id)
                 .ToListAsync(ct);
 
             if (messages.Count == 0)
@@ -390,11 +391,25 @@ Source:
             return Result.NotFound<GroupMeetingSessionDto>("Group meeting session was not found.");
         }
 
+        var currentUserId = _currentUserService.UserId;
+        var canManageGroup = await _groupsService.CanManageGroupAsync(groupId, ct);
+        if (currentUserId == null ||
+            (meeting.StartedByUserId != currentUserId.Value && !canManageGroup))
+        {
+            return Result.Forbidden<GroupMeetingSessionDto>();
+        }
+
         meeting.Summary = summary;
         meeting.TranscriptSourceId = transcriptSourceId;
 
         await _meetingSessionRepo.UpdateAsync(meeting, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "MEETING_SUMMARY_LINKED",
+            "GroupMeetingSession",
+            meetingId.ToString(),
+            new { SummaryLength = summary?.Length, TranscriptSourceId = transcriptSourceId },
+            ct);
 
         var dto = new GroupMeetingSessionDto(
             meeting.Id,
@@ -408,8 +423,6 @@ Source:
             meeting.EndedAt,
             meeting.TranscriptSourceId,
             meeting.Summary);
-
-        await _auditLogService.LogAsync("MEETING_SUMMARY_LINKED", "GroupMeetingSession", meetingId.ToString(), new { SummaryLength = summary?.Length, TranscriptSourceId = transcriptSourceId }, ct);
 
         return Result.Success(dto);
     }
@@ -430,8 +443,10 @@ Source:
             .Include(m => m.User)
             .Where(m => m.WorkGroupId == groupId)
             .OrderByDescending(m => m.CreatedAt)
+            .ThenByDescending(m => m.Id)
             .Take(msgLimit)
             .OrderBy(m => m.CreatedAt)
+            .ThenBy(m => m.Id)
             .ToListAsync(ct);
 
         if (messages.Count == 0)
@@ -502,12 +517,10 @@ Source:
 
             if (string.IsNullOrWhiteSpace(json))
             {
-                return Result.Success(new GroupAiSummaryResponseDto(
-                    groupId,
-                    "AI summary generation did not return a valid response.",
-                    Array.Empty<string>(),
-                    Array.Empty<string>(),
-                    ["AI failed to output valid JSON summary."]));
+                return Result.Failure<GroupAiSummaryResponseDto>(
+                    "AI summary output did not match the required schema.",
+                    422,
+                    AiErrorCodes.SchemaInvalid);
             }
 
             using var document = JsonDocument.Parse(json);
@@ -529,12 +542,10 @@ Source:
         catch (Exception ex)
         {
             DiscussionSummaryFailed(_logger, groupId, ex);
-            return Result.Success(new GroupAiSummaryResponseDto(
-                groupId,
-                "Failed to summarize the discussion due to an internal AI error.",
-                Array.Empty<string>(),
-                Array.Empty<string>(),
-                ["AI summary call failed. please try again."]));
+            return Result.Failure<GroupAiSummaryResponseDto>(
+                "AI summary call failed. Please try again later.",
+                503,
+                AiErrorCodes.ProviderUnavailable);
         }
     }
 
@@ -586,12 +597,10 @@ Source:
 
             if (string.IsNullOrWhiteSpace(json))
             {
-                return Result.Success(new GroupAiDraftProjectResponseDto(
-                    groupId,
-                    "Draft Project",
-                    "No discussion available to draft a project from.",
-                    Array.Empty<GroupAiDraftTaskDto>(),
-                    ["AI failed to output valid JSON draft project payload."]));
+                return Result.Failure<GroupAiDraftProjectResponseDto>(
+                    "AI draft output did not match the required schema.",
+                    422,
+                    AiErrorCodes.SchemaInvalid);
             }
 
             using var document = JsonDocument.Parse(json);
@@ -631,12 +640,10 @@ Source:
         catch (Exception ex)
         {
             DraftProjectPayloadGenerationFailed(_logger, groupId, ex);
-            return Result.Success(new GroupAiDraftProjectResponseDto(
-                groupId,
-                "Draft Project",
-                "Draft generation failed.",
-                Array.Empty<GroupAiDraftTaskDto>(),
-                ["AI draft generation failed due to an error."]));
+            return Result.Failure<GroupAiDraftProjectResponseDto>(
+                "AI draft generation failed. Please try again later.",
+                503,
+                AiErrorCodes.ProviderUnavailable);
         }
     }
 

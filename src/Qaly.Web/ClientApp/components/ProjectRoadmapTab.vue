@@ -39,6 +39,7 @@ import type {
   GanttTaskDto,
   ErumiRoadmapChatResponseDto,
   ErumiRoadmapDiffProposalDto,
+  ErumiTaskProposalDto,
 } from "../types";
 import ProjectProgressAiCard from "./ProjectProgressAiCard.vue";
 import ErumiDiffPreviewModal from "./ErumiDiffPreviewModal.vue";
@@ -70,11 +71,12 @@ const router = useRouter();
 
 // Erumi AI Assistant & Onboarding Guide State
 const showErumiDiffModal = ref(false)
+const showErumiAiPanel = ref(false)
 const showOnboardingGuideModal = ref(false)
 const erumiProposal = ref<ErumiRoadmapDiffProposalDto | null>(null)
 const isAskingErumi = ref(false)
 const erumiUserMessage = ref('')
-const erumiChatMessages = ref<Array<{ sender: 'user' | 'erumi'; text: string; proposal?: any }>>([])
+const erumiChatMessages = ref<Array<{ sender: 'user' | 'erumi'; text: string; proposal?: ErumiRoadmapDiffProposalDto | null }>>([])
 const activeSnapshotId = ref<string | null>(null)
 
 // Sprint list & loading state
@@ -899,6 +901,7 @@ const askErumiAI = async () => {
     })
     if (res.hasRoadmapProposal && res.proposal) {
       erumiProposal.value = res.proposal
+      showErumiDiffModal.value = true
     }
   } catch (e) {
     showError('Lỗi kết nối Erumi AI.')
@@ -960,7 +963,7 @@ const openExecutiveBriefModal = async () => {
   }
 }
 
-const handleApproveErumiProposal = async (approvedTasks: any[]) => {
+const handleApproveErumiProposal = async (approvedTasks: ErumiTaskProposalDto[]) => {
   if (!erumiProposal.value) return
   if (!approvedTasks || approvedTasks.length === 0) {
     showError('Vui lòng chọn ít nhất 1 task để phê duyệt.')
@@ -1042,6 +1045,7 @@ const handleRollbackErumiSnapshot = async () => {
           type="button"
           class="toggle-btn"
           :class="{ 'is-active': !isClientViewMode }"
+          :aria-pressed="!isClientViewMode"
           @click="isClientViewMode = false"
         >
           <BootstrapIcon name="grid" />
@@ -1051,6 +1055,7 @@ const handleRollbackErumiSnapshot = async () => {
           type="button"
           class="toggle-btn"
           :class="{ 'is-active': isClientViewMode }"
+          :aria-pressed="isClientViewMode"
           @click="isClientViewMode = true"
         >
           <BootstrapIcon name="eye" />
@@ -1186,6 +1191,7 @@ const handleRollbackErumiSnapshot = async () => {
             type="button"
             class="view-mode-pill"
             :class="{ active: viewMode === 'journey' }"
+            :aria-pressed="viewMode === 'journey'"
             @click="viewMode = 'journey'"
           >
             <BootstrapIcon name="signpost-split" />
@@ -1195,12 +1201,23 @@ const handleRollbackErumiSnapshot = async () => {
             type="button"
             class="view-mode-pill"
             :class="{ active: viewMode === 'timeline' }"
+            :aria-pressed="viewMode === 'timeline'"
             @click="viewMode = 'timeline'"
           >
             <BootstrapIcon name="calendar3" />
             <span>Timeline View</span>
           </button>
         </div>
+
+        <button
+          v-if="canGenerateAi && isProjectAdmin && !isClientViewMode"
+          type="button"
+          class="secondary-button roadmap-ai-button"
+          @click="showErumiAiPanel = !showErumiAiPanel"
+        >
+          <Sparkles :size="16" />
+          <span>AI đề xuất lộ trình</span>
+        </button>
 
         <button
           type="button"
@@ -1242,6 +1259,47 @@ const handleRollbackErumiSnapshot = async () => {
         </button>
       </div>
     </div>
+
+    <section
+      v-if="showErumiAiPanel && canGenerateAi && isProjectAdmin && !isClientViewMode"
+      class="roadmap-ai-panel glass-card"
+      data-testid="roadmap-ai-proposal-entry"
+    >
+      <div>
+        <strong>Đề xuất Roadmap/Sprint/mốc theo dữ liệu Project</strong>
+        <p>AI chỉ tạo phương án có thể chỉnh. Sprint và task chỉ được ghi sau khi bạn duyệt bản so sánh.</p>
+      </div>
+      <textarea
+        v-model="erumiUserMessage"
+        aria-label="Yêu cầu điều chỉnh Roadmap bằng AI"
+        rows="2"
+        placeholder="Ví dụ: Chia phần còn lại thành 2 Sprint, ưu tiên luồng thanh toán và nghiệm thu trước 30/9…"
+        @keydown.ctrl.enter="askErumiAI"
+      />
+      <div class="roadmap-ai-panel__actions">
+        <button
+          v-if="erumiProposal"
+          type="button"
+          class="secondary-button"
+          @click="showErumiDiffModal = true"
+        >
+          Xem lại phương án gần nhất
+        </button>
+        <button
+          type="button"
+          class="primary-button"
+          :disabled="isAskingErumi || !erumiUserMessage.trim()"
+          @click="askErumiAI"
+        >
+          <RefreshCw v-if="isAskingErumi" :size="15" class="spin" />
+          <Sparkles v-else :size="15" />
+          {{ isAskingErumi ? 'Đang lập phương án…' : 'Tạo phương án để duyệt' }}
+        </button>
+      </div>
+      <p v-if="erumiChatMessages.length" class="roadmap-ai-panel__reply">
+        {{ erumiChatMessages[erumiChatMessages.length - 1].text }}
+      </p>
+    </section>
 
     <!-- Empty State if no milestones exist -->
     <div
@@ -1336,6 +1394,7 @@ const handleRollbackErumiSnapshot = async () => {
               type="button"
               class="filter-pill"
               :class="{ active: milestoneFilter === 'all' }"
+              :aria-pressed="milestoneFilter === 'all'"
               @click="milestoneFilter = 'all'"
             >
               <BootstrapIcon name="list-ul" />
@@ -1345,6 +1404,7 @@ const handleRollbackErumiSnapshot = async () => {
               type="button"
               class="filter-pill"
               :class="{ active: milestoneFilter === 'active' }"
+              :aria-pressed="milestoneFilter === 'active'"
               @click="milestoneFilter = 'active'"
             >
               <BootstrapIcon name="lightning-charge" />
@@ -1354,6 +1414,7 @@ const handleRollbackErumiSnapshot = async () => {
               type="button"
               class="filter-pill"
               :class="{ active: milestoneFilter === 'overdue' }"
+              :aria-pressed="milestoneFilter === 'overdue'"
               @click="milestoneFilter = 'overdue'"
             >
               <BootstrapIcon name="exclamation-triangle" />
@@ -1363,6 +1424,7 @@ const handleRollbackErumiSnapshot = async () => {
               type="button"
               class="filter-pill"
               :class="{ active: milestoneFilter === 'completed' }"
+              :aria-pressed="milestoneFilter === 'completed'"
               @click="milestoneFilter = 'completed'"
             >
               <BootstrapIcon name="check-circle" />
@@ -1388,6 +1450,9 @@ const handleRollbackErumiSnapshot = async () => {
                 v-for="(sprint, index) in filteredSprints"
                 :key="sprint.id"
                 class="milestone-node"
+                role="button"
+                tabindex="0"
+                :aria-label="`Chọn mốc ${sprint.name}`"
                 :class="{
                   'is-completed': isCompletedMilestone(sprint),
                   'is-current': isCurrentMilestone(sprint),
@@ -1395,6 +1460,8 @@ const handleRollbackErumiSnapshot = async () => {
                   'is-selected': selectedSprintId === sprint.id,
                 }"
                 @click="selectedSprintId = sprint.id"
+                @keydown.enter="selectedSprintId = sprint.id"
+                @keydown.space.prevent="selectedSprintId = sprint.id"
               >
                 <!-- Node Icon & Badge -->
                 <div class="node-circle">
@@ -1596,6 +1663,7 @@ const handleRollbackErumiSnapshot = async () => {
             >
               <select
                 class="quick-status-select"
+                aria-label="Trạng thái mốc"
                 :value="activeMilestone.status || 'Planning'"
                 @change="
                   quickChangeMilestoneStatus(
@@ -1695,6 +1763,7 @@ const handleRollbackErumiSnapshot = async () => {
                 type="button"
                 class="btn btn-danger-ghost"
                 @click="handleDeleteMilestone(activeMilestone.id)"
+                aria-label="Xóa mốc"
                 title="Xóa mốc"
               >
                 <BootstrapIcon name="trash3" />
@@ -1811,12 +1880,14 @@ const handleRollbackErumiSnapshot = async () => {
                 <input
                   v-model="milestoneTaskSearch"
                   type="text"
+                  aria-label="Tìm nhiệm vụ trong mốc"
                   placeholder="Lọc task mốc..."
                   class="task-search-input"
                 />
               </div>
               <select
                 v-model="milestoneTaskStatusFilter"
+                aria-label="Lọc nhiệm vụ trong mốc theo trạng thái"
                 class="task-status-filter"
               >
                 <option value="all">Tất cả trạng thái</option>
@@ -1877,6 +1948,7 @@ const handleRollbackErumiSnapshot = async () => {
                 <!-- Inline Status Selector (Allows Members to Update Task Status) -->
                 <select
                   class="task-inline-status-select"
+                  :aria-label="`Trạng thái nhiệm vụ ${task.title}`"
                   :value="task.status"
                   @change="
                     updateTaskStatusInline(
@@ -1918,6 +1990,7 @@ const handleRollbackErumiSnapshot = async () => {
               class="icon-button preset-close-button"
               @click="showPresetModal = false"
               aria-label="Đóng hộp thoại mẫu lộ trình"
+              title="Đóng"
             >
               <BootstrapIcon name="x-lg" />
             </button>
@@ -2012,6 +2085,7 @@ const handleRollbackErumiSnapshot = async () => {
               class="icon-button"
               @click="closeMilestoneModal()"
               aria-label="Đóng hộp thoại mốc tiến độ"
+              title="Đóng"
             >
               <BootstrapIcon name="x-lg" />
             </button>
@@ -2029,6 +2103,7 @@ const handleRollbackErumiSnapshot = async () => {
                 ref="milestoneTitleInput"
                 v-model="milestoneName"
                 type="text"
+                aria-label="Tên mốc hoặc giai đoạn"
                 placeholder="Ví dụ: Mốc 1: Scope Alignment & Prototype UI..."
                 required
                 class="modal-input"
@@ -2042,6 +2117,7 @@ const handleRollbackErumiSnapshot = async () => {
                 <input
                   v-model="milestoneStartDate"
                   type="date"
+                  aria-label="Ngày bắt đầu mốc"
                   required
                   class="modal-input"
                 />
@@ -2051,6 +2127,7 @@ const handleRollbackErumiSnapshot = async () => {
                 <input
                   v-model="milestoneEndDate"
                   type="date"
+                  aria-label="Ngày kết thúc mốc"
                   required
                   class="modal-input"
                 />
@@ -2059,7 +2136,7 @@ const handleRollbackErumiSnapshot = async () => {
 
             <div v-if="showEditModal" class="form-group">
               <label>Trạng thái mốc</label>
-              <select v-model="milestoneStatus" class="modal-input">
+              <select v-model="milestoneStatus" aria-label="Trạng thái mốc" class="modal-input">
                 <option value="Planning">Planning (Lên kế hoạch)</option>
                 <option value="Active">Active (Đang thực hiện)</option>
                 <option value="Completed">Completed (Hoàn thành)</option>
@@ -2071,6 +2148,7 @@ const handleRollbackErumiSnapshot = async () => {
               <label>Mục tiêu nghiệm thu của mốc (Goal Statement)</label>
               <textarea
                 v-model="milestoneGoal"
+                aria-label="Mục tiêu nghiệm thu của mốc"
                 rows="3"
                 placeholder="Mô tả cụ thể tiêu chí để nghiệm thu hoàn thành mốc này..."
                 class="modal-input"
@@ -2119,6 +2197,7 @@ const handleRollbackErumiSnapshot = async () => {
               class="icon-button"
               @click="closeTaskAssignModal()"
               aria-label="Đóng hộp thoại gán công việc vào mốc"
+              title="Đóng"
             >
               <BootstrapIcon name="x-lg" />
             </button>
@@ -2215,6 +2294,7 @@ const handleRollbackErumiSnapshot = async () => {
               class="icon-button"
               @click="closeQuickCreateTaskModal()"
               aria-label="Đóng hộp thoại tạo nhiệm vụ mới"
+              title="Đóng"
             >
               <BootstrapIcon name="x-lg" />
             </button>
@@ -2227,6 +2307,7 @@ const handleRollbackErumiSnapshot = async () => {
                 ref="quickTaskTitleInput"
                 v-model="quickTaskTitle"
                 type="text"
+                aria-label="Tiêu đề nhiệm vụ mới"
                 placeholder="Nhập tiêu đề nhiệm vụ mới..."
                 required
                 class="modal-input"
@@ -2237,7 +2318,7 @@ const handleRollbackErumiSnapshot = async () => {
             <div class="form-row">
               <div class="form-group">
                 <label>Mức độ ưu tiên</label>
-                <select v-model="quickTaskPriority" class="modal-input">
+                <select v-model="quickTaskPriority" aria-label="Mức độ ưu tiên nhiệm vụ" class="modal-input">
                   <option value="Low">Low</option>
                   <option value="Medium">Medium</option>
                   <option value="High">High</option>
@@ -2250,6 +2331,7 @@ const handleRollbackErumiSnapshot = async () => {
                 <input
                   v-model="quickTaskDueDate"
                   type="date"
+                  aria-label="Hạn chót nhiệm vụ"
                   class="modal-input"
                 />
               </div>
@@ -2257,7 +2339,7 @@ const handleRollbackErumiSnapshot = async () => {
 
             <div class="form-group">
               <label>Người phụ trách</label>
-              <select v-model="quickTaskAssigneeId" class="modal-input">
+              <select v-model="quickTaskAssigneeId" aria-label="Người phụ trách nhiệm vụ" class="modal-input">
                 <option value="">Chưa giao</option>
                 <option
                   v-for="user in selectedProject?.members || []"
@@ -2286,14 +2368,6 @@ const handleRollbackErumiSnapshot = async () => {
       </div>
     </Teleport>
 
-    <!-- Erumi AI Diff Preview Modal -->
-    <ErumiDiffPreviewModal
-      :show="showErumiDiffModal"
-      :proposal="erumiProposal"
-      @close="showErumiDiffModal = false"
-      @approve="handleApproveErumiProposal"
-    />
-
     <!-- Interactive AI Onboarding Guide Modal -->
     <AiOnboardingGuideModal
       :show="showOnboardingGuideModal"
@@ -2305,12 +2379,14 @@ const handleRollbackErumiSnapshot = async () => {
         v-if="confirmation"
         class="modal-backdrop confirm-backdrop"
         @click.self="confirmation = null"
+        @keydown.esc="confirmation = null"
       >
         <div
           ref="confirmationModalRoot"
           class="confirmation-modal"
           role="alertdialog"
           aria-modal="true"
+          aria-labelledby="roadmap-confirmation-title"
           tabindex="-1"
         >
           <div class="confirmation-icon" :class="`is-${confirmation.type}`">
@@ -2318,7 +2394,7 @@ const handleRollbackErumiSnapshot = async () => {
             <AlertTriangle v-else :size="26" />
           </div>
           <div class="confirmation-content">
-            <h4>
+            <h4 id="roadmap-confirmation-title">
               {{
                 confirmation.type === "complete"
                   ? "Xác nhận nghiệm thu mốc"
@@ -2374,14 +2450,24 @@ const handleRollbackErumiSnapshot = async () => {
       />
 
       <!-- Executive Brief Modal for Client/Stakeholder Presentation -->
-      <div v-if="showExecutiveBriefModal" class="modal-backdrop">
-        <div class="roadmap-modal-shell executive-brief-shell">
+      <div
+        v-if="showExecutiveBriefModal"
+        class="modal-backdrop"
+        @click.self="showExecutiveBriefModal = false"
+        @keydown.esc="showExecutiveBriefModal = false"
+      >
+        <div
+          class="roadmap-modal-shell executive-brief-shell"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="executive-brief-title"
+        >
           <div class="modal-header">
             <div class="modal-title">
               <Sparkles :size="20" class="text-purple" />
-              <h3>Báo Cáo Tiến Độ Lộ Trình (Executive Brief)</h3>
+              <h3 id="executive-brief-title">Báo Cáo Tiến Độ Lộ Trình (Executive Brief)</h3>
             </div>
-            <button type="button" class="btn-close" @click="showExecutiveBriefModal = false">
+            <button type="button" class="btn-close" aria-label="Đóng báo cáo tiến độ" title="Đóng" @click="showExecutiveBriefModal = false">
               <BootstrapIcon name="x-lg" />
             </button>
           </div>
@@ -4670,6 +4756,51 @@ const handleRollbackErumiSnapshot = async () => {
 .toolbar-btn.btn-primary-gradient:hover {
   background: linear-gradient(135deg, #0f55c4, #093b8f);
   color: #fff;
+}
+
+.roadmap-ai-button {
+  color: #4f46e5;
+  border-color: rgba(99, 102, 241, 0.28);
+  background: rgba(238, 242, 255, 0.9);
+}
+
+.roadmap-ai-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid rgba(99, 102, 241, 0.22);
+}
+
+.roadmap-ai-panel p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.roadmap-ai-panel textarea {
+  width: 100%;
+  min-height: 72px;
+  padding: 10px 12px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: inherit;
+  background: var(--surface, #fff);
+  font: inherit;
+}
+
+.roadmap-ai-panel__actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.roadmap-ai-panel__reply {
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: rgba(238, 242, 255, 0.72);
 }
 
 .modal-backdrop {

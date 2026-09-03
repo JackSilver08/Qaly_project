@@ -3,6 +3,7 @@ using Qaly.Application.Common.Mappings;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Comment;
 using Qaly.Application.Services.Notifications;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 using System.Text.Json;
@@ -19,6 +20,7 @@ public class CommentService : ICommentService
     private readonly ICurrentUserService _currentUserService;
     private readonly INotificationService _notificationService;
     private readonly IAuditLogService _auditLogService;
+    private readonly ITaskAccessPolicy _taskAccessPolicy;
 
     public CommentService(
         IRepository<TaskComment> commentRepo,
@@ -28,7 +30,8 @@ public class CommentService : ICommentService
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
         INotificationService notificationService,
-        IAuditLogService auditLogService)
+        IAuditLogService auditLogService,
+        ITaskAccessPolicy taskAccessPolicy)
     {
         _commentRepo = commentRepo;
         _taskRepo = taskRepo;
@@ -38,6 +41,7 @@ public class CommentService : ICommentService
         _currentUserService = currentUserService;
         _notificationService = notificationService;
         _auditLogService = auditLogService;
+        _taskAccessPolicy = taskAccessPolicy;
     }
 
     public async Task<Result<IReadOnlyList<CommentDto>>> GetByTaskAsync(Guid taskItemId, CancellationToken ct = default)
@@ -77,13 +81,23 @@ public class CommentService : ICommentService
             return Result.Failure<CommentDto>("Comment content is required.");
         }
 
+        if (dto.Content.Trim().Length > 10_000)
+        {
+            return Result.Failure<CommentDto>("Bình luận không được vượt quá 10.000 ký tự.", 400);
+        }
+
+        if ((dto.MentionedUserIds?.Distinct().Count() ?? 0) > 50)
+        {
+            return Result.Failure<CommentDto>("Một bình luận không thể nhắc quá 50 người.", 400);
+        }
+
         var task = await LoadTaskAsync(dto.TaskItemId, ct);
         if (task == null)
         {
             return Result.NotFound<CommentDto>();
         }
 
-        if (!await CanAccessTaskAsync(task, ct))
+        if (!await _taskAccessPolicy.CanContributeToTaskAsync(task, ct))
         {
             return Result.Forbidden<CommentDto>();
         }
@@ -108,8 +122,13 @@ public class CommentService : ICommentService
 
         await _commentRepo.AddAsync(comment, ct);
         await AddToOutboxAsync("CommentAdded", new { Id = comment.Id }, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("Create", nameof(TaskComment), comment.Id.ToString(), new { dto.TaskItemId }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "Create",
+            nameof(TaskComment),
+            comment.Id.ToString(),
+            new { dto.TaskItemId },
+            ct);
 
         await NotifyParticipantsAsync(task, comment.Id, currentUserId.Value, dto.MentionedUserIds, ct);
 
@@ -138,15 +157,32 @@ public class CommentService : ICommentService
             return Result.Failure("Comment was not found.", 404);
         }
 
-        if (comment.AuthorId != currentUserId && !IsAdmin())
+        var task = await LoadTaskAsync(comment.TaskItemId, ct);
+        if (task == null || !await _taskAccessPolicy.CanAccessTaskAsync(task, ct))
+        {
+            return Result.Failure("Access denied.", 403);
+        }
+
+        var canDeleteOwn = comment.AuthorId == currentUserId &&
+            await _taskAccessPolicy.CanContributeToTaskAsync(task, ct);
+        var canModerateProject = await _taskAccessPolicy.CanManageProjectAsync(
+            task.ProjectId,
+            task.Project.OwnerId,
+            ct);
+        if (!canDeleteOwn && !canModerateProject)
         {
             return Result.Failure("Access denied.", 403);
         }
 
         await _commentRepo.DeleteAsync(comment, ct);
         await AddToOutboxAsync("CommentDeleted", new { Id = comment.Id }, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("Delete", nameof(TaskComment), id.ToString(), new { comment.TaskItemId }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "Delete",
+            nameof(TaskComment),
+            id.ToString(),
+            new { comment.TaskItemId },
+            ct);
 
         return Result.Success();
     }
@@ -169,39 +205,7 @@ public class CommentService : ICommentService
             .FirstOrDefaultAsync(task => task.Id == taskItemId, ct);
 
     private async Task<bool> CanAccessTaskAsync(TaskItem task, CancellationToken ct)
-    {
-        var currentUserId = _currentUserService.UserId;
-        if (currentUserId == null)
-        {
-            return false;
-        }
-
-        if (task.Project == null)
-        {
-            return false;
-        }
-
-        if (task.Project.Organization != null && !task.Project.Organization.IsActive)
-        {
-            return false;
-        }
-
-        if (IsAdmin() ||
-            task.ReporterId == currentUserId ||
-            task.AssigneeId == currentUserId ||
-            task.Project.OwnerId == currentUserId)
-        {
-            return true;
-        }
-
-        if (task.IsPrivate)
-        {
-            return false;
-        }
-
-        return await _memberRepo.GetQueryable()
-            .AnyAsync(member => member.ProjectId == task.ProjectId && member.UserId == currentUserId, ct);
-    }
+        => await _taskAccessPolicy.CanAccessTaskAsync(task, ct);
 
     private async Task NotifyParticipantsAsync(
         TaskItem task,
@@ -215,19 +219,34 @@ public class CommentService : ICommentService
             .Distinct()
             .ToHashSet();
 
+        var activeProjectMemberIds = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(member => member.ProjectId == task.ProjectId)
+            .Select(member => member.UserId)
+            .ToHashSetAsync(ct);
+
+        bool IsCurrentProjectParticipant(Guid userId)
+            => task.Project.OwnerId == userId || activeProjectMemberIds.Contains(userId);
+
+        bool CanReceivePrivateTaskNotification(Guid userId)
+            => !task.IsPrivate ||
+               task.Project.OwnerId == userId ||
+               task.ReporterId == userId ||
+               task.AssigneeId == userId ||
+               task.Assignees.Any(assignment => assignment.UserId == userId);
+
         var recipients = new[] { task.ReporterId }
             .Concat(task.AssigneeId.HasValue ? [task.AssigneeId.Value] : [])
             .Concat(task.Assignees.Select(assignment => assignment.UserId))
             .Where(userId => userId != currentUserId && !mentionedIds.Contains(userId))
+            .Where(IsCurrentProjectParticipant)
+            .Where(CanReceivePrivateTaskNotification)
             .Distinct()
             .ToList();
 
         foreach (var mentionedUserId in mentionedIds)
         {
-            var isProjectMember = task.Project.OwnerId == mentionedUserId ||
-                await _memberRepo.GetQueryable()
-                    .AnyAsync(member => member.ProjectId == task.ProjectId && member.UserId == mentionedUserId, ct);
-            if (isProjectMember)
+            if (IsCurrentProjectParticipant(mentionedUserId) && CanReceivePrivateTaskNotification(mentionedUserId))
             {
                 var template = NotificationTemplates.Mentioned(task.Id, commentId, task.Title, mentionedUserId);
                 await _notificationService.CreateAsync(
@@ -257,6 +276,4 @@ public class CommentService : ICommentService
         }
     }
 
-    private bool IsAdmin()
-        => string.Equals(_currentUserService.Role, "Admin", StringComparison.OrdinalIgnoreCase);
 }

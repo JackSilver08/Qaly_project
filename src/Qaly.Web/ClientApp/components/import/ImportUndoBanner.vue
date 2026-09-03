@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Undo2, X } from 'lucide-vue-next'
+import { CheckCircle2, Undo2, X } from 'lucide-vue-next'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps<{
@@ -49,7 +49,7 @@ onUnmounted(() => {
       <div class="undo-banner__progress" :style="{ width: progressPercent + '%' }"></div>
       <div class="undo-banner__content">
         <div class="undo-banner__left">
-          <span class="undo-badge">✅</span>
+          <span class="undo-badge"><CheckCircle2 :size="20" /></span>
           <div>
             <p class="undo-text">
               Đã import <strong>{{ importedCount }}</strong> task thành công
@@ -60,10 +60,10 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="undo-banner__right">
-          <button class="btn btn--undo" @click="emit('undo')">
+          <button type="button" class="btn btn--undo" @click="emit('undo')">
             <Undo2 :size="14" /> Hoàn tác
           </button>
-          <button class="btn-dismiss" @click="emit('dismiss')">
+          <button type="button" class="btn-dismiss" aria-label="Ẩn thông báo hoàn tác" @click="emit('dismiss')">
             <X :size="14" />
           </button>
         </div>
@@ -113,7 +113,8 @@ onUnmounted(() => {
 }
 
 .undo-badge {
-  font-size: 1.3rem;
+  display: inline-flex;
+  color: #22c55e;
 }
 
 .undo-text {

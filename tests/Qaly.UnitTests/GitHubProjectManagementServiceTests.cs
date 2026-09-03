@@ -1,7 +1,9 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
+using Qaly.Application.Services;
 using Qaly.Application.Services.GitHub;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Entities.GitHub;
 using Qaly.Domain.Interfaces;
@@ -37,7 +39,13 @@ public sealed class GitHubProjectManagementServiceTests : IDisposable
             new GenericRepository<Project>(_db),
             new GenericRepository<ProjectMember>(_db),
             new GenericRepository<OrganizationMember>(_db),
-            _currentUser.Object);
+            _currentUser.Object,
+            new TaskAccessPolicy(
+                _currentUser.Object,
+                new GenericRepository<Project>(_db),
+                new GenericRepository<ProjectMember>(_db),
+                new GenericRepository<OrganizationMember>(_db),
+                new ProjectRoleCatalog(new GenericRepository<ProjectRoleDefinition>(_db))));
 
         _service = new GitHubProjectManagementService(_db, guard, Mock.Of<IGitHubAppClient>());
     }

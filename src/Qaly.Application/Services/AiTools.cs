@@ -7,6 +7,7 @@ using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
+using Qaly.Application.Services.Tasks;
 
 namespace Qaly.Application.Services;
 
@@ -65,7 +66,8 @@ public class AiTools
         var total = tasks.Count;
         var done = tasks.Count(t => t.Status == "Done");
         var inProgress = tasks.Count(t => t.Status == "InProgress");
-        var overdue = tasks.Count(t => t.DueDate < DateTimeOffset.UtcNow && t.Status != "Done");
+        var now = DateTimeOffset.UtcNow;
+        var overdue = tasks.Count(t => TaskStatusRules.IsOverdue(t.Status, t.DueDate, now));
 
         return $"Dự án: {result.Data.Name}. Tổng số công việc: {total}. Hoàn thành: {done}. Đang làm: {inProgress}. Quá hạn: {overdue}. Mô tả: {result.Data.Description}";
     }
@@ -77,8 +79,9 @@ public class AiTools
         var tasksResult = await _taskService.GetByProjectAsync(projectId, pageSize: 1000);
         if (!tasksResult.IsSuccess) return "Không thể lấy danh sách công việc.";
 
+        var now = DateTimeOffset.UtcNow;
         var overdueTasks = tasksResult.Data!.Items
-            .Where(t => t.DueDate < DateTimeOffset.UtcNow && t.Status != "Done")
+            .Where(t => TaskStatusRules.IsOverdue(t.Status, t.DueDate, now))
             .Select(t => $"- {t.Title} (Hạn: {t.DueDate:dd/MM/yyyy}, Người làm: {t.AssigneeName ?? "Chưa phân công"})")
             .ToList();
 
@@ -194,17 +197,31 @@ public class AiTools
     public async Task<string> GetMemberWorkload(
         [Description("ID của dự án")] Guid projectId)
     {
+        var projectResult = await _projectService.GetByIdAsync(projectId);
+        if (!projectResult.IsSuccess)
+        {
+            return "Không tìm thấy dự án hoặc bạn không có quyền truy cập.";
+        }
+
+        var taskResult = await _taskService.GetByProjectAsync(projectId, pageSize: 1000);
+        if (!taskResult.IsSuccess)
+        {
+            return "Không thể lấy workload trong phạm vi được cấp quyền.";
+        }
+
         var members = await _memberRepo.GetQueryable()
             .Include(m => m.User)
-            .Where(m => m.ProjectId == projectId)
+            .Where(m => m.ProjectId == projectId && m.User.IsActive)
             .ToListAsync();
 
-        var tasks = await _taskRepo.GetQueryable()
-            .Where(t => t.ProjectId == projectId && t.Status != "Done" && t.Status != "Cancelled")
-            .ToListAsync();
+        var tasks = taskResult.Data!.Items
+            .Where(task => task.Status is not "Done" and not "Completed" and not "Cancelled")
+            .ToList();
 
         var report = members.Select(m => {
-            var count = tasks.Count(t => t.AssigneeId == m.UserId);
+            var count = tasks.Count(task =>
+                task.AssigneeId == m.UserId ||
+                task.Assignees.Any(assignment => assignment.UserId == m.UserId));
             return $"- {m.User.FullName}: {count} công việc đang thực hiện.";
         });
 
@@ -232,13 +249,20 @@ public class AiTools
             return "Please select a project before searching project knowledge.";
         }
 
+        var projectResult = await _projectService.GetByIdAsync(projectId.Value);
+        if (!projectResult.IsSuccess)
+        {
+            return "Không tìm thấy dự án hoặc bạn không có quyền tìm kiếm trong dự án này.";
+        }
+
         var queryEmbedding = await _embeddingGenerator.GenerateAsync(new[] { query });
         var vector = queryEmbedding[0].Vector.ToArray();
 
         var filter = new VectorFilter
         {
             ProjectId = projectId.Value,
-            OwnerId = _currentUserService.UserId
+            OwnerId = _currentUserService.UserId,
+            IsPrivate = false
         };
 
         var results = await _vectorStorage.SearchAsync(vector, CollectionName, filter, limit: 5);
@@ -252,13 +276,10 @@ public class AiTools
     public async Task<string> GenerateExcelReport(
         [Description("ID của dự án")] Guid projectId)
     {
-        var project = await _projectRepo.GetQueryable()
-            .Include(p => p.Tasks)
-            .FirstOrDefaultAsync(p => p.Id == projectId);
-
-        if (project != null)
+        var projectResult = await _projectService.GetByIdAsync(projectId);
+        if (!projectResult.IsSuccess)
         {
-            await _exportService.ExportProjectToExcelAsync(project);
+            return "Không tìm thấy dự án hoặc bạn không có quyền xuất báo cáo.";
         }
 
         return $"Báo cáo Excel đã sẵn sàng. Bạn có thể tải tại đây: [📥 Tải báo cáo Excel](/api/ai/export/{projectId}?format=excel)";
@@ -268,13 +289,10 @@ public class AiTools
     public async Task<string> GenerateWordReport(
         [Description("ID của dự án")] Guid projectId)
     {
-        var project = await _projectRepo.GetQueryable()
-            .Include(p => p.Tasks)
-            .FirstOrDefaultAsync(p => p.Id == projectId);
-
-        if (project != null)
+        var projectResult = await _projectService.GetByIdAsync(projectId);
+        if (!projectResult.IsSuccess)
         {
-            await _exportService.ExportProjectToWordAsync(project);
+            return "Không tìm thấy dự án hoặc bạn không có quyền xuất báo cáo.";
         }
 
         return $"Báo cáo Word đã sẵn sàng. Bạn có thể tải tại đây: [📥 Tải báo cáo Word](/api/ai/export/{projectId}?format=word)";
@@ -327,22 +345,39 @@ public class AiTools
         [Description("ID của dự án")] Guid projectId)
     {
         var taskResult = await _taskService.GetByIdAsync(taskId);
-        if (!taskResult.IsSuccess) return "Không tìm thấy công việc.";
+        if (!taskResult.IsSuccess || taskResult.Data!.ProjectId != projectId)
+        {
+            return "Không tìm thấy công việc trong dự án hoặc bạn không có quyền truy cập.";
+        }
+
+        var projectResult = await _projectService.GetByIdAsync(projectId);
+        if (!projectResult.IsSuccess)
+        {
+            return "Không tìm thấy dự án hoặc bạn không có quyền truy cập.";
+        }
+
+        var tasksResult = await _taskService.GetByProjectAsync(projectId, pageSize: 1000);
+        if (!tasksResult.IsSuccess)
+        {
+            return "Không thể phân tích workload trong phạm vi được cấp quyền.";
+        }
 
         var members = await _memberRepo.GetQueryable()
-            .Where(m => m.ProjectId == projectId)
+            .Where(m => m.ProjectId == projectId && m.User.IsActive)
             .Include(m => m.User)
             .ToListAsync();
 
-        var activeTasks = await _taskRepo.GetQueryable()
-            .Where(t => t.ProjectId == projectId && t.Status != "Done" && t.Status != "Cancelled" && t.AssigneeId != null)
-            .ToListAsync();
+        var activeTasks = tasksResult.Data!.Items
+            .Where(task => task.Status is not "Done" and not "Completed" and not "Cancelled")
+            .ToList();
 
         var workload = members.Select(m => new
         {
             m.User.FullName,
             m.Role,
-            ActiveCount = activeTasks.Count(t => t.AssigneeId == m.UserId)
+            ActiveCount = activeTasks.Count(task =>
+                task.AssigneeId == m.UserId ||
+                task.Assignees.Any(assignment => assignment.UserId == m.UserId))
         }).ToList();
 
         var membersContext = string.Join("\n", workload.Select(w => $"- {w.FullName} (Vai trò: {w.Role}): Đang có {w.ActiveCount} task(s) chưa hoàn thành."));

@@ -1,5 +1,6 @@
 using System.Data;
 using Microsoft.EntityFrameworkCore;
+using Qaly.Application.Common.Models;
 using Qaly.Domain.Entities;
 using Qaly.Infrastructure.Data;
 
@@ -17,6 +18,7 @@ public interface IAiJobDispatchStore
     Task<AiJobLease?> ClaimNextAsync(string workerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default);
     Task<bool> RenewLeaseAsync(Guid dispatchId, string workerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default);
     Task AbandonLeaseAsync(Guid dispatchId, string workerId, string errorCode, string errorMessage, CancellationToken cancellationToken = default);
+    Task<bool> ReleaseLeaseAsync(Guid dispatchId, string workerId, CancellationToken cancellationToken = default);
 }
 
 public sealed class AiJobDispatchStore : IAiJobDispatchStore
@@ -62,7 +64,7 @@ public sealed class AiJobDispatchStore : IAiJobDispatchStore
                       AND dispatch.[AvailableAt] <= {{now}}
                       AND (dispatch.[LeaseExpiresAt] IS NULL OR dispatch.[LeaseExpiresAt] <= {{now}})
                       AND job.[Status] IN (N'queued', N'retrying')
-                    ORDER BY dispatch.[Priority], dispatch.[AvailableAt], dispatch.[CreatedAt]
+                    ORDER BY dispatch.[Priority], dispatch.[AvailableAt], dispatch.[CreatedAt], dispatch.[Id]
                     """)
                 .AsTracking()
                 .ToListAsync(cancellationToken);
@@ -79,6 +81,8 @@ public sealed class AiJobDispatchStore : IAiJobDispatchStore
                     (item.AiJob.Status == AiJobStatuses.Queued || item.AiJob.Status == AiJobStatuses.Retrying))
                 .OrderBy(item => item.Priority)
                 .ThenBy(item => item.AvailableAt)
+                .ThenBy(item => item.CreatedAt)
+                .ThenBy(item => item.Id)
                 .FirstOrDefaultAsync(cancellationToken);
         }
 
@@ -139,11 +143,31 @@ public sealed class AiJobDispatchStore : IAiJobDispatchStore
         CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
+        if (_db.Database.IsRelational())
+        {
+            return await _db.AiJobDispatches
+                .Where(item =>
+                    item.Id == dispatchId &&
+                    item.LeaseOwner == workerId &&
+                    item.CompletedAt == null &&
+                    item.LeaseExpiresAt != null &&
+                    item.LeaseExpiresAt > now)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(
+                        item => item.LeaseExpiresAt,
+                        now.Add(leaseDuration)),
+                    cancellationToken) == 1;
+        }
+
         var dispatch = await _db.AiJobDispatches.FirstOrDefaultAsync(
-            item => item.Id == dispatchId && item.LeaseOwner == workerId && item.CompletedAt == null,
+            item =>
+                item.Id == dispatchId &&
+                item.LeaseOwner == workerId &&
+                item.CompletedAt == null &&
+                item.LeaseExpiresAt != null &&
+                item.LeaseExpiresAt > now,
             cancellationToken);
         if (dispatch == null) return false;
-
         dispatch.LeaseExpiresAt = now.Add(leaseDuration);
         await _db.SaveChangesAsync(cancellationToken);
         return true;
@@ -163,7 +187,7 @@ public sealed class AiJobDispatchStore : IAiJobDispatchStore
                       AND dispatch.[LeaseExpiresAt] IS NOT NULL
                       AND dispatch.[LeaseExpiresAt] <= {{now}}
                       AND job.[Status] = N'running'
-                    ORDER BY dispatch.[LeaseExpiresAt]
+                    ORDER BY dispatch.[LeaseExpiresAt], dispatch.[Id]
                     """)
                 .AsTracking()
                 .ToListAsync(ct);
@@ -179,6 +203,7 @@ public sealed class AiJobDispatchStore : IAiJobDispatchStore
                     item.LeaseExpiresAt <= now &&
                     item.AiJob.Status == AiJobStatuses.Running)
                 .OrderBy(item => item.LeaseExpiresAt)
+                .ThenBy(item => item.Id)
                 .FirstOrDefaultAsync(ct);
         }
 
@@ -273,6 +298,63 @@ public sealed class AiJobDispatchStore : IAiJobDispatchStore
         }
 
         await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<bool> ReleaseLeaseAsync(
+        Guid dispatchId,
+        string workerId,
+        CancellationToken cancellationToken = default)
+    {
+        var dispatch = await _db.AiJobDispatches
+            .Include(item => item.AiJob)
+            .FirstOrDefaultAsync(
+                item =>
+                    item.Id == dispatchId &&
+                    item.CompletedAt == null &&
+                    item.LeaseOwner == workerId,
+                cancellationToken);
+        if (dispatch == null)
+        {
+            return false;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var job = dispatch.AiJob;
+        var attempt = await _db.AiProviderAttempts.FirstOrDefaultAsync(
+            item => item.AiJobId == job.Id && item.AttemptNumber == job.AttemptCount,
+            cancellationToken);
+        if (attempt is { Status: AiAttemptStatuses.Running })
+        {
+            attempt.Status = AiAttemptStatuses.Canceled;
+            attempt.FinishedAt = now;
+            attempt.ErrorCode = AiErrorCodes.WorkerPaused;
+            attempt.ErrorMessage = "The host stopped before a terminal result was committed.";
+            attempt.Retryable = true;
+        }
+
+        dispatch.LeaseOwner = null;
+        dispatch.LeaseExpiresAt = null;
+        dispatch.AvailableAt = now;
+        dispatch.LastDispatchErrorCode = AiErrorCodes.WorkerPaused;
+        dispatch.LastDispatchError = "The host stopped before a terminal result was committed.";
+        job.Status = AiJobStatuses.Retrying;
+        job.AvailableAt = now;
+        job.NextRetryAt = now;
+        job.FinishedAt = null;
+        job.LastErrorCode = AiErrorCodes.WorkerPaused;
+        job.LastErrorMessage = dispatch.LastDispatchError;
+        job.LastErrorRetryable = true;
+
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            _db.ChangeTracker.Clear();
+            return false;
+        }
     }
 
     private static string Truncate(string value, int maxLength)

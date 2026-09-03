@@ -12,6 +12,20 @@ namespace Qaly.Infrastructure.Services.AI;
 public sealed class OrganizationWorkRulebookService : IOrganizationWorkRulebookService
 {
     private const int MaxRules = 50;
+    private static readonly Dictionary<string, (decimal Min, decimal Max, string Unit)> NumericRuleBounds =
+        new Dictionary<string, (decimal, decimal, string)>(StringComparer.Ordinal)
+        {
+            ["max_active_projects"] = (1m, 50m, "projects"),
+            ["max_utilization_percent"] = (10m, 100m, "percent"),
+            ["focus_reserve_percent"] = (0m, 50m, "percent"),
+            ["reviewer_coordination_overhead_percent"] = (0m, 50m, "percent")
+        };
+    private static readonly HashSet<string> BooleanRuleKeys = new(StringComparer.Ordinal)
+    {
+        "active_membership_required",
+        "capacity_evidence_required"
+    };
+    private const string ManagerRolesRuleKey = "manager_roles";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly QalyDbContext _db;
     private readonly ICurrentUserService _currentUser;
@@ -120,7 +134,8 @@ public sealed class OrganizationWorkRulebookService : IOrganizationWorkRulebookS
             .SingleOrDefaultAsync(item => item.Id == organizationId && item.IsActive, ct);
         if (organization == null) return Result.NotFound();
         var isSystemAdmin = ProjectRoleRules.IsSystemAdmin(_currentUser.Role) ||
-            await _db.Users.AsNoTracking().AnyAsync(item => item.Id == userId && item.Role == ProjectRoleRules.SystemAdmin, ct);
+            await _db.Users.AsNoTracking().AnyAsync(item =>
+                item.Id == userId && item.IsActive && item.Role == ProjectRoleRules.SystemAdmin, ct);
         var membership = organization.Members.FirstOrDefault(item => item.UserId == userId);
         var readable = isSystemAdmin || organization.OwnerId == userId || membership != null;
         var manageable = isSystemAdmin || organization.OwnerId == userId || OrganizationRoleRules.CanManageOrganization(membership?.Role);
@@ -136,9 +151,43 @@ public sealed class OrganizationWorkRulebookService : IOrganizationWorkRulebookS
         var keys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var rule in request.Rules)
         {
-            if (string.IsNullOrWhiteSpace(rule.RuleKey) || rule.RuleKey.Length > 100 || !keys.Add(rule.RuleKey.Trim()) ||
+            var key = rule.RuleKey?.Trim() ?? string.Empty;
+            if (key.Length == 0 || key.Length > 100 || !keys.Add(key) ||
                 rule.Enforcement is not ("block" or "warn") || string.IsNullOrWhiteSpace(rule.Category))
                 return Result.Failure<OrganizationWorkRuleSetDto>("Rulebook contains an invalid or duplicate rule.", 400, "rulebook_invalid");
+
+            if (NumericRuleBounds.TryGetValue(key, out var bounds))
+            {
+                if (!rule.NumericValue.HasValue || rule.NumericValue.Value < bounds.Min || rule.NumericValue.Value > bounds.Max ||
+                    !string.Equals(rule.Unit, bounds.Unit, StringComparison.Ordinal))
+                    return Result.Failure<OrganizationWorkRuleSetDto>(
+                        $"Rule '{key}' must be between {bounds.Min:0.##} and {bounds.Max:0.##} {bounds.Unit}.",
+                        400,
+                        "rulebook_value_out_of_range");
+                if (rule.Values is { Count: > 0 })
+                    return Result.Failure<OrganizationWorkRuleSetDto>($"Rule '{key}' cannot contain role values.", 400, "rulebook_invalid");
+                continue;
+            }
+
+            if (BooleanRuleKeys.Contains(key))
+            {
+                if (rule.NumericValue.HasValue || rule.Values is { Count: > 0 })
+                    return Result.Failure<OrganizationWorkRuleSetDto>($"Rule '{key}' does not accept a numeric or role value.", 400, "rulebook_invalid");
+                continue;
+            }
+
+            if (key == ManagerRolesRuleKey)
+            {
+                var roles = rule.Values?.Where(item => !string.IsNullOrWhiteSpace(item)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray() ?? [];
+                if (roles.Length == 0 || roles.Length > 10 || rule.NumericValue.HasValue)
+                    return Result.Failure<OrganizationWorkRuleSetDto>("Rule 'manager_roles' requires 1-10 role values.", 400, "rulebook_invalid");
+                continue;
+            }
+
+            return Result.Failure<OrganizationWorkRuleSetDto>(
+                $"Rule '{key}' is not implemented by the current staffing engine.",
+                400,
+                "rulebook_rule_unsupported");
         }
         return null;
     }

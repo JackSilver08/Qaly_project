@@ -10,6 +10,7 @@ namespace Qaly.Web.Controllers;
 public sealed class SecurityController : ControllerBase
 {
     [HttpGet("csrf")]
+    [AllowAnonymous]
     public IActionResult GetCsrfToken([FromServices] IAntiforgery antiforgery)
     {
         var tokens = antiforgery.GetAndStoreTokens(HttpContext);

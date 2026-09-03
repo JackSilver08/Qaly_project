@@ -56,6 +56,12 @@ public record SystemModulePermissionDto(
     string AiTier,
     DateTimeOffset CreatedAt);
 
+public record EffectiveSystemModuleAccessDto(
+    string ModuleKey,
+    bool IsAllowed,
+    string AiTier,
+    string Source);
+
 public record UpdateSystemModulePermissionDto(
     string ModuleKey,
     bool IsAllowed,

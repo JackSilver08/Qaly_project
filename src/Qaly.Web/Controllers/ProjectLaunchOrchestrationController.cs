@@ -22,6 +22,17 @@ public sealed class ProjectLaunchOrchestrationController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpPut("plans/{planId:guid}")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdatePlan(
+        Guid planId,
+        UpdateProjectLaunchPlanRequestDto request,
+        CancellationToken ct)
+    {
+        var result = await _service.UpdatePlanAsync(planId, request, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpPost("plans/{planId:guid}/confirm")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Confirm(

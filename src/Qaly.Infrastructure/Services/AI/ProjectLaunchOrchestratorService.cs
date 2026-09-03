@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Ai;
@@ -21,17 +22,20 @@ public sealed partial class ProjectLaunchOrchestratorService : IProjectLaunchOrc
     private readonly ICurrentUserService _currentUser;
     private readonly IAiGateway _gateway;
     private readonly AiJobPlatformOptions _options;
+    private readonly ILogger<ProjectLaunchOrchestratorService> _logger;
 
     public ProjectLaunchOrchestratorService(
         QalyDbContext db,
         ICurrentUserService currentUser,
         IAiGateway gateway,
-        IOptions<AiJobPlatformOptions> options)
+        IOptions<AiJobPlatformOptions> options,
+        ILogger<ProjectLaunchOrchestratorService> logger)
     {
         _db = db;
         _currentUser = currentUser;
         _gateway = gateway;
         _options = options.Value;
+        _logger = logger;
     }
 
     public async Task<Result<ProjectLaunchPlanDto>> GeneratePlanAsync(
@@ -76,6 +80,12 @@ public sealed partial class ProjectLaunchOrchestratorService : IProjectLaunchOrc
         catch (JsonException) { brief = null; }
         if (brief == null)
             return Result.Failure<ProjectLaunchPlanDto>("The Project Launch Brief payload is invalid.", 422, "project_launch_brief_invalid");
+        if (!string.Equals(brief.State, "BRIEF_READY", StringComparison.Ordinal) ||
+            brief.Questions.Any(item => item.Blocking))
+            return Result.Failure<ProjectLaunchPlanDto>(
+                "Complete the blocking Launch Brief fields before staffing and delivery planning.",
+                409,
+                "project_launch_brief_incomplete");
 
         var organization = await _db.Organizations.AsNoTracking().SingleAsync(item => item.Id == briefEntity.OrganizationId, ct);
         var ruleSet = briefEntity.RuleSetId.HasValue
@@ -105,12 +115,50 @@ public sealed partial class ProjectLaunchOrchestratorService : IProjectLaunchOrc
             windowEnd,
             sourceVersionHash,
             ct);
-        var selectedScenario = staffing.Scenarios.FirstOrDefault(item => item.Feasible) ?? staffing.Scenarios[0];
-        var deliveryPlan = BuildDeliveryPlan(brief, skills, modelPlan.Output, selectedScenario, windowStart, windowEnd);
+        var reviewerCoordinationOverheadPercent = NumericRule(rules, "reviewer_coordination_overhead_percent", 10m);
+        var maxUtilizationPercent = NumericRule(rules, "max_utilization_percent", 85m);
+        var evaluatedOptions = staffing.Scenarios.Select(scenario =>
+        {
+            var proposedDelivery = BuildDeliveryPlan(brief, skills, modelPlan.Output, scenario, windowStart, windowEnd);
+            var assignmentResult = BalanceReviewedAssignments(
+                proposedDelivery.Sprints,
+                scenario.Members,
+                proposedDelivery.AssignmentMode,
+                scenario.ManagerUserId,
+                reviewerCoordinationOverheadPercent,
+                maxUtilizationPercent,
+                enforceAllocation: false);
+            var assignedSprints = assignmentResult.Sprints ?? proposedDelivery.Sprints;
+            var assignmentAwareScenario = assignmentResult.Error == null
+                ? scenario
+                : scenario with
+                {
+                    Feasible = false,
+                    BlockingReasons = scenario.BlockingReasons
+                        .Append(assignmentResult.Error)
+                        .Distinct(StringComparer.Ordinal)
+                        .ToArray()
+                };
+            var evaluatedScenario = EvaluateTimePhasedCapacity(
+                assignmentAwareScenario,
+                assignedSprints,
+                reviewerCoordinationOverheadPercent,
+                maxUtilizationPercent,
+                sourceVersionHash,
+                proposedDelivery.AssignmentMode);
+            return (Scenario: evaluatedScenario, Delivery: proposedDelivery with { Sprints = assignedSprints });
+        }).ToArray();
+        staffing = staffing with { Scenarios = evaluatedOptions.Select(item => item.Scenario).ToArray() };
+        var selectedOption = evaluatedOptions.FirstOrDefault(item => item.Scenario.Feasible);
+        if (selectedOption.Scenario == null) selectedOption = evaluatedOptions[0];
+        var selectedScenario = selectedOption.Scenario;
+        var deliveryPlan = selectedOption.Delivery;
 
         var blocking = new List<string>();
         blocking.AddRange(brief.RuleDecisions.Where(item => item.Result == "block").Select(item => item.Explanation));
         blocking.AddRange(selectedScenario.BlockingReasons);
+        if (skills.Count == 0)
+            blocking.Add("Organization chưa có skill catalog; Qaly không thể gán required skill hoặc xác minh staffing mà không bịa dữ liệu.");
         if (ruleSet == null) blocking.Add("Organization chưa có Rulebook hiệu lực.");
         var state = selectedScenario.Feasible && blocking.Count == 0 ? "pending_review" : "blocked";
         var warnings = new List<string>(staffing.Warnings);
@@ -162,6 +210,26 @@ public sealed partial class ProjectLaunchOrchestratorService : IProjectLaunchOrc
         return Result.Success(await MapPlanAsync(entity, organizationName, ct));
     }
 
+    public async Task<Result<ProjectLaunchPlanDto>> GetLatestPlanForSessionAsync(
+        Guid sessionId,
+        CancellationToken ct = default)
+    {
+        var entity = await _db.ProjectLaunchPlanArtifacts.AsNoTracking()
+            .Where(item => item.AssistantSessionId == sessionId)
+            .OrderByDescending(item => item.CreatedAt)
+            .ThenByDescending(item => item.Revision)
+            .FirstOrDefaultAsync(ct);
+        if (entity == null) return Result.NotFound<ProjectLaunchPlanDto>();
+        var access = await AuthorizeOrganizationAsync(entity.OrganizationId, manage: true, ct);
+        if (!access.IsSuccess)
+            return Result.Failure<ProjectLaunchPlanDto>(access.Error!, access.StatusCode, access.ErrorCode);
+        var organizationName = await _db.Organizations.AsNoTracking()
+            .Where(item => item.Id == entity.OrganizationId)
+            .Select(item => item.Name)
+            .SingleAsync(ct);
+        return Result.Success(await MapPlanAsync(entity, organizationName, ct));
+    }
+
     private async Task<ModelPlanResult> GenerateModelPlanAsync(
         ProjectLaunchBriefDto brief,
         IReadOnlyList<OrganizationSkill> skills,
@@ -178,6 +246,16 @@ public sealed partial class ProjectLaunchOrchestratorService : IProjectLaunchOrc
                 brief.Scope,
                 brief.Exclusions,
                 brief.SuccessMeasures,
+                brief.ObjectiveProfile,
+                features = brief.Features?.Where(IsInScopeFeature).Select(item => new
+                {
+                    item.FeatureId,
+                    item.Title,
+                    item.Category,
+                    item.Priority,
+                    item.AcceptanceCriteria,
+                    item.RequiredSkillNames
+                }),
                 brief.Facts,
                 brief.Assumptions,
                 brief.Unknowns
@@ -194,7 +272,8 @@ Decompose the reviewed scope into a practical delivery proposal. Use only skill 
 Use stable ASCII clientId values. Dependencies must reference existing task clientIds and remain acyclic. Do not select people, claim capacity, create data, invent facts, or emit tool calls.
 Return these exact root fields and no others: architectureProposal, sprints, criticalPathClientIds, collaborationProposal, externalDeferred, assumptions.
 Each sprint: clientId,name,objective,startWeek,durationWeeks,exitCriteria,tasks.
-Each task: clientId,title,description,acceptanceCriteria,definitionOfDone,priority,estimatedHours,requiredSkillNames,dependencyClientIds.
+Each task: clientId,title,description,acceptanceCriteria,definitionOfDone,priority,estimatedHours,requiredSkillNames,dependencyClientIds,featureId,objectiveMetricIds.
+featureId must reference one reviewed feature. objectiveMetricIds may contain only reviewed metric IDs and must describe the outcome that task actually advances; do not attach every metric to every task.
 """;
         string? lastError = null;
         for (var attempt = 1; attempt <= 2; attempt++)
@@ -204,6 +283,8 @@ Each task: clientId,title,description,acceptanceCriteria,definitionOfDone,priori
                 JobType = "project_launch_delivery_plan",
                 ProviderHint = request.ProviderHint,
                 StrictProvider = !string.Equals(request.ProviderHint, "auto", StringComparison.OrdinalIgnoreCase),
+                ProviderTimeoutSeconds = 35,
+                SchemaRepairAttempts = 0,
                 Prompt = context,
                 SystemPrompt = systemPrompt,
                 ExpectedSchemaId = AiProjectOrchestrationContract.ModelPlanSchemaId,
@@ -222,8 +303,11 @@ Each task: clientId,title,description,acceptanceCriteria,definitionOfDone,priori
             if (!response.IsSuccess)
             {
                 lastError = response.ErrorCode ?? response.ErrorMessage;
-                if (!response.Retryable) break;
-                continue;
+                // Gateway already exhausts the eligible provider route. A
+                // transport/config timeout has no response to repair, so do
+                // not spend a second interactive timeout before using the
+                // deterministic, reviewable delivery fallback.
+                break;
             }
             if (AiProjectLaunchPlanningOutputContract.TryParse(response.Content, out var output, out var validationError))
                 return new ModelPlanResult(output!, response.ProviderName, response.ModelName, false);
@@ -238,11 +322,26 @@ Each task: clientId,title,description,acceptanceCriteria,definitionOfDone,priori
         ProjectLaunchBriefDto brief,
         IReadOnlyList<OrganizationSkill> skills)
     {
-        var scopes = brief.Scope.Count > 0 ? brief.Scope.Take(12).ToArray() : [brief.Objective];
+        var selectedFeatures = brief.Features?.Where(IsInScopeFeature).Take(12).ToArray() ?? [];
+        var metricIds = brief.ObjectiveProfile?.Metrics.Select(item => item.MetricId).ToArray() ?? [];
+        var scopes = selectedFeatures.Length > 0
+            ? selectedFeatures.Select(item => item.Title).ToArray()
+            : brief.Scope.Count > 0 ? brief.Scope.Take(12).ToArray() : [brief.Objective];
         var midpoint = Math.Max(1, (int)Math.Ceiling(scopes.Length / 2m));
-        var normalizedSkills = skills.Select(item => item.Name).Take(3).ToArray();
+        var catalogNames = skills.Select(item => item.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         ProjectLaunchModelTaskDto BuildTask(string scope, int index)
-            => new(
+        {
+            var feature = selectedFeatures.ElementAtOrDefault(index);
+            var featureSkills = feature?.RequiredSkillNames
+                .Where(catalogNames.Contains)
+                .ToArray() ?? [];
+            var requiredSkills = featureSkills
+                .Concat(ResolveDeterministicFeatureSkills(scope, feature?.Category, skills))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(3)
+                .ToArray();
+            var objectiveMetricIds = metricIds.Length == 0 ? [] : new[] { metricIds[index % metricIds.Length] };
+            return new(
                 $"task-{index + 1}",
                 scope.Length <= 160 ? scope : scope[..160],
                 $"Triển khai và kiểm chứng phạm vi: {scope}",
@@ -250,8 +349,11 @@ Each task: clientId,title,description,acceptanceCriteria,definitionOfDone,priori
                 ["Code được review", "Acceptance test pass", "Không còn blocker mức critical"],
                 index == 0 ? "High" : "Medium",
                 24,
-                normalizedSkills,
-                index == 0 ? [] : [$"task-{index}"]);
+                requiredSkills,
+                index == 0 ? [] : [$"task-{index}"],
+                feature?.FeatureId,
+                objectiveMetricIds);
+        }
         var first = scopes.Take(midpoint).Select(BuildTask).ToArray();
         var second = scopes.Skip(midpoint).Select((scope, index) => BuildTask(scope, midpoint + index)).ToArray();
         var sprints = new List<ProjectLaunchModelSprintDto>
@@ -269,6 +371,55 @@ Each task: clientId,title,description,acceptanceCriteria,definitionOfDone,priori
             ["Decomposition fallback là proposal; estimate phải được team review trước confirm."]);
     }
 
+    private static string[] ResolveDeterministicFeatureSkills(
+        string scope,
+        string? category,
+        IReadOnlyList<OrganizationSkill> skills)
+    {
+        var catalog = skills
+            .GroupBy(item => item.NormalizedName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First().Name, StringComparer.OrdinalIgnoreCase);
+        var signal = Normalize($"{scope} {category}");
+        string[] preferred = signal switch
+        {
+            var value when ContainsAny(value, "dang nhap", "phan quyen", "authorization", "authentication", "security")
+                => ["security-auth-privacy", "backend-dotnet"],
+            var value when ContainsAny(value, "thanh toan", "hoa don", "payment", "invoice", "checkout")
+                => ["backend-dotnet", "security-auth-privacy"],
+            var value when ContainsAny(value, "dat lich", "dieu phoi", "booking", "schedule", "appointment", "dat dich vu")
+                => ["backend-dotnet", "business-analysis"],
+            var value when ContainsAny(value, "dashboard", "bao cao", "analytics", "metric", "report")
+                => ["data-analytics", "frontend-vue"],
+            var value when ContainsAny(value, "cong thong tin", "khach hang", "profile", "portal", "giao dien")
+                => ["frontend-vue", "ui-ux-design"],
+            var value when ContainsAny(value, "thong bao", "notification", "webhook", "event")
+                => ["backend-dotnet", "devops-observability"],
+            var value when ContainsAny(value, "tim kiem", "noi dung", "search", "content")
+                => ["frontend-vue", "backend-dotnet"],
+            var value when ContainsAny(value, "nhat ky", "audit", "bao mat", "privacy")
+                => ["security-auth-privacy", "backend-dotnet"],
+            var value when ContainsAny(value, "tich hop", "integration", "dong bo", "sync")
+                => ["backend-dotnet", "devops-observability"],
+            var value when ContainsAny(value, "nhap", "xuat", "import", "export", "du lieu")
+                => ["data-analytics", "database-efcore-sql"],
+            var value when ContainsAny(value, "quan tri", "van hanh", "admin", "operation")
+                => ["business-analysis", "frontend-vue"],
+            _ => ["business-analysis", "frontend-vue"]
+        };
+
+        var resolved = preferred
+            .Select(item => catalog.GetValueOrDefault(item))
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Cast<string>()
+            .ToArray();
+        return resolved.Length > 0
+            ? resolved
+            : skills.OrderBy(item => item.NormalizedName).Take(2).Select(item => item.Name).ToArray();
+    }
+
+    private static bool ContainsAny(string value, params string[] terms)
+        => terms.Any(term => value.Contains(term, StringComparison.Ordinal));
+
     private static ProjectLaunchDeliveryPlanDto BuildDeliveryPlan(
         ProjectLaunchBriefDto brief,
         IReadOnlyList<OrganizationSkill> skills,
@@ -278,7 +429,12 @@ Each task: clientId,title,description,acceptanceCriteria,definitionOfDone,priori
         DateTimeOffset windowEnd)
     {
         var skillMap = skills.ToDictionary(item => Normalize(item.Name), StringComparer.Ordinal);
-        var selectedMembers = scenario.Members.ToArray();
+        var selectedFeatures = brief.Features?.Where(IsInScopeFeature).ToArray()
+            ?? brief.Scope.Select((title, index) => new ProjectLaunchFeatureDto(
+                $"feature-{index + 1}", title, "Product flow", "must_have", title,
+                brief.PrimaryAudience ?? "Chưa quyết định", [], [], true)).ToArray();
+        var metricIds = brief.ObjectiveProfile?.Metrics.Select(item => item.MetricId).ToArray() ?? [];
+        var taskOrdinal = 0;
         var sprints = model.Sprints.Select(sprint =>
         {
             var start = windowStart.AddDays((sprint.StartWeek - 1) * 7);
@@ -286,16 +442,31 @@ Each task: clientId,title,description,acceptanceCriteria,definitionOfDone,priori
             if (end > windowEnd) end = windowEnd;
             var tasks = sprint.Tasks.Select(task =>
             {
-                var matchedSkills = task.RequiredSkillNames
+                var explicitFeature = selectedFeatures.FirstOrDefault(item =>
+                    string.Equals(item.FeatureId, task.FeatureId, StringComparison.Ordinal));
+                var feature = explicitFeature ?? selectedFeatures.FirstOrDefault(item =>
+                        task.Title.Contains(item.Title, StringComparison.OrdinalIgnoreCase) ||
+                        task.Description.Contains(item.Title, StringComparison.OrdinalIgnoreCase))
+                    ?? selectedFeatures.ElementAtOrDefault(taskOrdinal % Math.Max(1, selectedFeatures.Length));
+                var requiredSkillNames = task.RequiredSkillNames
+                    .Concat(feature?.RequiredSkillNames ?? [])
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+                var matchedSkills = requiredSkillNames
                     .Select(name => skillMap.GetValueOrDefault(Normalize(name)))
                     .Where(item => item != null)
                     .Cast<OrganizationSkill>()
                     .DistinctBy(item => item.Id)
                     .ToArray();
-                var assignee = selectedMembers.FirstOrDefault(member =>
-                    matchedSkills.Length == 0 || member.CoveredSkills.Any(skill => matchedSkills.Any(required =>
-                        Normalize(required.Name) == Normalize(skill))));
-                var reviewer = selectedMembers.FirstOrDefault(member => member.UserId != assignee?.UserId);
+                var explicitMetricIds = task.ObjectiveMetricIds?
+                    .Where(metricIds.Contains)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray() ?? [];
+                var featureIndex = feature == null ? taskOrdinal : Array.FindIndex(selectedFeatures, item => item.FeatureId == feature.FeatureId);
+                var linkedMetricIds = explicitMetricIds.Length > 0
+                    ? explicitMetricIds
+                    : metricIds.Length == 0 ? [] : [metricIds[Math.Max(0, featureIndex) % metricIds.Length]];
+                taskOrdinal++;
                 return new ProjectLaunchTaskPlanDto(
                     task.ClientId,
                     task.Title,
@@ -304,13 +475,15 @@ Each task: clientId,title,description,acceptanceCriteria,definitionOfDone,priori
                     task.DefinitionOfDone,
                     task.Priority,
                     task.EstimatedHours,
-                    assignee?.UserId,
-                    reviewer?.UserId,
+                    null,
+                    null,
                     matchedSkills.Select(item => item.Id).ToArray(),
                     matchedSkills.Select(item => item.Name).ToArray(),
                     task.DependencyClientIds,
                     brief.SourceRefs,
-                    true);
+                    true,
+                    feature?.FeatureId,
+                    linkedMetricIds);
             }).ToArray();
             return new ProjectLaunchSprintPlanDto(
                 sprint.ClientId,
@@ -324,6 +497,7 @@ Each task: clientId,title,description,acceptanceCriteria,definitionOfDone,priori
         }).ToArray();
         var knownNames = skillMap.Keys.ToHashSet(StringComparer.Ordinal);
         var skillGaps = model.Sprints.SelectMany(item => item.Tasks).SelectMany(item => item.RequiredSkillNames)
+            .Concat(selectedFeatures.SelectMany(item => item.RequiredSkillNames))
             .Where(name => !knownNames.Contains(Normalize(name)))
             .Concat(scenario.MissingSkills)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -350,7 +524,10 @@ Each task: clientId,title,description,acceptanceCriteria,definitionOfDone,priori
             scheduleRisks,
             model.CollaborationProposal,
             model.ExternalDeferred,
-            model.Assumptions);
+            model.Assumptions,
+            selectedFeatures,
+            brief.ObjectiveProfile?.Metrics ?? [],
+            scenario.Members.Count);
     }
 
     private async Task<ProjectLaunchPlanDto> MapPlanAsync(
@@ -411,7 +588,10 @@ Each task: clientId,title,description,acceptanceCriteria,definitionOfDone,priori
             .Include(item => item.Members)
             .SingleOrDefaultAsync(item => item.Id == organizationId && item.IsActive, ct);
         if (organization == null) return Result.NotFound();
-        var userRole = await _db.Users.AsNoTracking().Where(item => item.Id == userId).Select(item => item.Role).SingleOrDefaultAsync(ct);
+        var userRole = await _db.Users.AsNoTracking()
+            .Where(item => item.Id == userId && item.IsActive)
+            .Select(item => item.Role)
+            .SingleOrDefaultAsync(ct);
         var isAdmin = ProjectRoleRules.IsSystemAdmin(_currentUser.Role) || ProjectRoleRules.IsSystemAdmin(userRole);
         var membership = organization.Members.FirstOrDefault(item => item.UserId == userId);
         var readable = isAdmin || organization.OwnerId == userId || membership != null;
@@ -424,7 +604,7 @@ Each task: clientId,title,description,acceptanceCriteria,definitionOfDone,priori
         var members = await _db.OrganizationMembers.AsNoTracking()
             .Where(item => item.OrganizationId == organizationId)
             .OrderBy(item => item.UserId)
-            .Select(item => new { item.UserId, item.Role, item.JoinedAt })
+            .Select(item => new { item.UserId, item.Role, item.JoinedAt, item.User.IsActive })
             .ToArrayAsync(ct);
         var profiles = await _db.OrganizationMemberCapacityProfiles.AsNoTracking()
             .Where(item => item.OrganizationId == organizationId)
@@ -443,18 +623,67 @@ Each task: clientId,title,description,acceptanceCriteria,definitionOfDone,priori
             .Select(item => new { item.Id, item.Status, item.StartDate, item.EndDate, item.IsDeleted, item.UpdatedAt })
             .ToArrayAsync(ct);
         var projectIds = projects.Select(item => item.Id).ToArray();
+        var memberUserIds = members.Select(item => item.UserId).ToArray();
+        var portfolioProjects = await _db.ProjectMembers.AsNoTracking()
+            .Where(item => memberUserIds.Contains(item.UserId) && !item.Project.IsDeleted && item.Project.Status != "Archived")
+            .OrderBy(item => item.UserId).ThenBy(item => item.ProjectId)
+            .Select(item => new { item.UserId, item.ProjectId, item.Project.Status, item.Project.StartDate, item.Project.EndDate, item.Project.UpdatedAt })
+            .ToArrayAsync(ct);
         var tasks = await _db.TaskItems.IgnoreQueryFilters().AsNoTracking()
-            .Where(item => projectIds.Contains(item.ProjectId))
+            .Where(item => projectIds.Contains(item.ProjectId) ||
+                (item.AssigneeId.HasValue && memberUserIds.Contains(item.AssigneeId.Value) && !item.Project.IsDeleted))
             .OrderBy(item => item.Id)
             .Select(item => new { item.Id, item.ProjectId, item.AssigneeId, item.Status, item.StartDate, item.DueDate, item.EstimatedHours, item.IsDeleted, item.RowVersion })
+            .ToArrayAsync(ct);
+        var skills = await _db.OrganizationSkills.AsNoTracking()
+            .Where(item => item.OrganizationId == organizationId)
+            .OrderBy(item => item.Id)
+            .Select(item => new
+            {
+                item.Id,
+                item.Name,
+                item.NormalizedName,
+                item.Description,
+                item.Category,
+                item.AliasesJson,
+                item.DefaultRequiredLevel,
+                item.IsActive,
+                item.RowVersion
+            })
+            .ToArrayAsync(ct);
+        var taskIds = tasks.Select(item => item.Id).ToArray();
+        var skillRequirements = await _db.TaskSkillRequirements.AsNoTracking()
+            .Where(item => taskIds.Contains(item.TaskItemId))
+            .OrderBy(item => item.TaskItemId).ThenBy(item => item.OrganizationSkillId)
+            .Select(item => new { item.TaskItemId, item.OrganizationSkillId, item.RequiredLevel, item.Provenance, item.ConfirmedAt, item.RowVersion })
+            .ToArrayAsync(ct);
+        var completionEvidence = await _db.TaskCompletionAttributions.AsNoTracking()
+            .Where(item => taskIds.Contains(item.TaskItemId))
+            .OrderBy(item => item.TaskItemId).ThenBy(item => item.ContributorUserId)
+            .Select(item => new { item.TaskItemId, item.ContributorUserId, item.Status, item.CompletedAt, item.ConfirmedAt, item.RowVersion })
             .ToArrayAsync(ct);
         var rule = await _db.OrganizationWorkRuleSets.AsNoTracking()
             .Where(item => item.OrganizationId == organizationId && item.Status == "active")
             .OrderByDescending(item => item.Version)
             .Select(item => new { item.Id, item.Version, item.Revision, item.RulesJson })
             .FirstOrDefaultAsync(ct);
-        return Hash(JsonSerializer.Serialize(new { members, profiles, windows, projects, tasks, rule }, JsonOptions));
+        return Hash(JsonSerializer.Serialize(new
+        {
+            members,
+            profiles,
+            windows,
+            projects,
+            portfolioProjects,
+            tasks,
+            skills,
+            skillRequirements,
+            completionEvidence,
+            rule
+        }, JsonOptions));
     }
+
+    private static bool IsInScopeFeature(ProjectLaunchFeatureDto item)
+        => item.Selected && !string.Equals(item.Priority, "out_of_scope", StringComparison.OrdinalIgnoreCase);
 
     private static int ResolveDurationWeeks(string message, ProjectLaunchBriefDto brief)
     {

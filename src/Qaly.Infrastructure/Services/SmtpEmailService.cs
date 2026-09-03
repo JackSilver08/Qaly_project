@@ -47,7 +47,8 @@ public partial class SmtpEmailService : IEmailService
         }
         catch (SmtpException ex)
         {
-            LogEmailSendFailed(_logger, ex, recipientEmail);
+            LogEmailSendFailed(_logger, ex);
+            throw;
         }
     }
 
@@ -57,6 +58,6 @@ public partial class SmtpEmailService : IEmailService
     public Task SendDueDateReminderAsync(string recipientEmail, string taskTitle, DateTimeOffset dueDate)
         => SendAsync(recipientEmail, $"Task due soon: {taskTitle}", $"'{taskTitle}' is due at {dueDate:yyyy-MM-dd HH:mm}.");
 
-    [LoggerMessage(EventId = 1, Level = LogLevel.Warning, Message = "Could not send email to {RecipientEmail}")]
-    private static partial void LogEmailSendFailed(ILogger logger, Exception exception, string recipientEmail);
+    [LoggerMessage(EventId = 1, Level = LogLevel.Warning, Message = "Could not send email through the configured SMTP provider.")]
+    private static partial void LogEmailSendFailed(ILogger logger, Exception exception);
 }

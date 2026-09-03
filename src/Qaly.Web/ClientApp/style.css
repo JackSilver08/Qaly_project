@@ -203,37 +203,81 @@
 }
 
 * {
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.52) transparent;
   scrollbar-gutter: auto;
-  -ms-overflow-style: none;
 }
 
 *::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
+  width: 9px;
+  height: 9px;
 }
 
 *::-webkit-scrollbar-track,
-*::-webkit-scrollbar-thumb,
 *::-webkit-scrollbar-corner {
-  border: 0;
   background: transparent;
 }
 
+*::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.48);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(71, 85, 105, 0.72);
+  background-clip: padding-box;
+}
+
 .no-scrollbar,
-.scrollbar-hidden,
-.scrollbar-soft {
+.scrollbar-hidden {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 
 .no-scrollbar::-webkit-scrollbar,
-.scrollbar-hidden::-webkit-scrollbar,
-.scrollbar-soft::-webkit-scrollbar {
+.scrollbar-hidden::-webkit-scrollbar {
   width: 0;
   height: 0;
   display: none;
+}
+
+.scrollbar-soft {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.42) transparent;
+}
+
+html body :is(a, button, input, select, textarea, summary, [role='button'], [role='link'], [tabindex]):focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.62) !important;
+  outline-offset: 2px !important;
+}
+
+:where(input, select, textarea) {
+  min-width: 0;
+}
+
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 html,
@@ -2283,7 +2327,7 @@ p {
   font-weight: 800;
 }
 
-.profile-page__header h2 {
+.profile-page__header h1 {
   font-size: 26px;
   line-height: 1.15;
 }
@@ -3321,7 +3365,7 @@ p {
     height: 58px;
   }
 
-  .profile-page__header h2 {
+  .profile-page__header h1 {
     font-size: 22px;
   }
 
@@ -4808,7 +4852,7 @@ textarea::placeholder {
 .priority--high,
 .priority--critical {
   border: 1px solid #fca5a5 !important;
-  color: #dc2626 !important;
+  color: #b91c1c !important;
   background: #fee2e2 !important;
 }
 
@@ -5219,12 +5263,12 @@ textarea::placeholder {
 }
 .project-grid-card__badge--planned {
   background: #eff6ff !important;
-  color: #3b82f6 !important;
+  color: #1d4ed8 !important;
 }
 .project-grid-card__badge--archived,
 .project-grid-card__badge--neutral {
   background: #f1f5f9 !important;
-  color: #64748b !important;
+  color: #475569 !important;
 }
 
 .project-grid-card__progress-wrap {
@@ -5302,7 +5346,7 @@ textarea::placeholder {
 
 .team-avatar--more {
   background: #f1f5f9 !important;
-  color: #64748b !important;
+  color: #475569 !important;
 }
 
 .project-grid-card__tasks-count {
@@ -5470,7 +5514,7 @@ textarea::placeholder {
   margin-bottom: 28px;
 }
 
-.custom-chart-header h3 {
+.custom-chart-header h2 {
   font-size: 16px;
   font-weight: 700;
   color: var(--text-strong);
@@ -6433,7 +6477,7 @@ textarea::placeholder {
 }
 
 .project-grid-card__risk {
-  color: #d94747 !important;
+  color: #b91c1c !important;
   background: #fff0f0 !important;
 }
 
@@ -6445,17 +6489,17 @@ textarea::placeholder {
 
 .team-avatar:nth-child(2) {
   background: #edf8f6 !important;
-  color: #287f78 !important;
+  color: #0f766e !important;
 }
 
 .team-avatar:nth-child(3) {
   background: #f2efff !important;
-  color: #7060c7 !important;
+  color: #5b21b6 !important;
 }
 
 .team-avatar--more {
   background: #f1f5f9 !important;
-  color: #64748b !important;
+  color: #475569 !important;
 }
 
 .project-grid-card__actions button {
@@ -6512,7 +6556,7 @@ textarea::placeholder {
 }
 
 :root[data-theme='dark'] .dashboard-welcome-banner h1,
-:root[data-theme='dark'] .custom-chart-header h3,
+:root[data-theme='dark'] .custom-chart-header h2,
 :root[data-theme='dark'] .activity-card-header,
 :root[data-theme='dark'] .activity-card-header h3,
 :root[data-theme='dark'] .summary-card__value-row strong,

@@ -10,8 +10,10 @@ using WebPush;
 
 namespace Qaly.Infrastructure.Services;
 
-    public partial class WebPushSender : IPushSender
+public partial class WebPushSender : IPushSender
 {
+    private static int _disabledNoticeLogged;
+    private static int _missingKeyWarningLogged;
     private readonly IRepository<DomainPushSubscription> _pushRepo;
     private readonly ILogger<WebPushSender> _logger;
     private readonly VapidDetails? _vapid;
@@ -24,14 +26,22 @@ namespace Qaly.Infrastructure.Services;
         _unitOfWork = unitOfWork;
         _logger = logger;
 
+        var pushEnabled = configuration.GetValue<bool?>("Push:Enabled") ?? true;
         var subject = configuration["Push:Subject"] ?? "mailto:admin@example.com";
         var publicKey = configuration["Push:VapidPublicKey"];
         var privateKey = configuration["Push:VapidPrivateKey"];
-        if (!string.IsNullOrWhiteSpace(publicKey) && !string.IsNullOrWhiteSpace(privateKey))
+        if (!pushEnabled)
+        {
+            if (Interlocked.Exchange(ref _disabledNoticeLogged, 1) == 0)
+            {
+                LogPushDisabled(_logger);
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(publicKey) && !string.IsNullOrWhiteSpace(privateKey))
         {
             _vapid = new VapidDetails(subject, publicKey, privateKey);
         }
-        else
+        else if (Interlocked.Exchange(ref _missingKeyWarningLogged, 1) == 0)
         {
             LogVapidNotConfigured(_logger);
         }
@@ -54,6 +64,12 @@ namespace Qaly.Infrastructure.Services;
 
     [LoggerMessage(EventId = 6, Level = LogLevel.Warning, Message = "Failed to persist push subscription updates")]
     private static partial void LogFailedPersistPushUpdates(ILogger logger, Exception ex);
+
+    [LoggerMessage(EventId = 7, Level = LogLevel.Information, Message = "Web push is explicitly disabled for this environment.")]
+    private static partial void LogPushDisabled(ILogger logger);
+
+    [LoggerMessage(EventId = 8, Level = LogLevel.Warning, Message = "Failed to remove expired push subscription {Endpoint}.")]
+    private static partial void LogFailedRemoveExpiredSubscription(ILogger logger, Exception ex, string endpoint);
 
     public async Task SendAsync(System.Guid userId, string title, string message, object? data = null, CancellationToken ct = default)
     {
@@ -97,7 +113,10 @@ namespace Qaly.Infrastructure.Services;
                     {
                         await _pushRepo.DeleteAsync(sub, ct);
                     }
-                    catch { }
+                    catch (Exception deleteException)
+                    {
+                        LogFailedRemoveExpiredSubscription(_logger, deleteException, sub.Endpoint);
+                    }
                 }
             }
             catch (Exception ex)

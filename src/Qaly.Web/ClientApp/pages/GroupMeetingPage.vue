@@ -12,10 +12,13 @@ import {
   LockKeyhole,
   Loader2,
   MessageCircle,
+  Mic,
+  MicOff,
   Moon,
   MonitorUp,
   PanelRightClose,
   PanelRightOpen,
+  Plus,
   ShieldCheck,
   Server,
   Sparkles,
@@ -44,7 +47,7 @@ import {
 } from "livekit-client";
 import ScreenSharePanel from "../components/meeting/ScreenSharePanel.vue";
 import MeetingControls from "../components/meeting/MeetingControls.vue";
-import { apiResult } from "../utils/api-client";
+import { apiResult, errorMessage } from "../utils/api-client";
 import { showError, showSuccess } from "../composables/use-toast";
 import { useRoute, useRouter } from "vue-router";
 import { useSpeechRecognition } from "../composables/use-speech-recognition";
@@ -57,7 +60,10 @@ const groupId = route.params.groupId as string;
 
 const active = ref(false);
 const isStarting = ref(false);
+const endingMeeting = ref(false);
 const meetingId = ref<string | null>((route.query.meetingId as string | undefined) ?? null);
+const meetingStartedByUserId = ref<string | null>(null);
+const currentGroupRole = ref<string | null>(null);
 const joinUrl = ref<string | null>(null);
 const roomName = ref<string | null>(null);
 const liveKitUrl = ref<string | null>(null);
@@ -175,6 +181,20 @@ type LinkedProject = {
   isAccessible: boolean;
   requiresAction: boolean;
 };
+type GroupAccessDto = {
+  currentUserRole: string;
+};
+type GroupMeetingSessionDto = {
+  id: string;
+  startedByUserId: string;
+  status: string;
+  endedAt: string | null;
+  roomId: string;
+  joinUrl: string | null;
+  providerUrl?: string | null;
+  accessToken?: string | null;
+  accessTokenExpiresAt?: string | null;
+};
 const showPrivacyGate = ref(false);
 const privacyAction = ref<PrivacyAction | null>(null);
 const privacyPolicies = ref<MeetingPrivacyPolicy[]>([]);
@@ -204,11 +224,17 @@ function showRemoteCameraOff(tile: any) {
   return !tile.cameraOn || !tile.videoTrack;
 }
 
-const { saveBuffer, getBuffer, clearBuffer } = useMeetingRecovery();
+const { saveBuffer, getBuffer } = useMeetingRecovery();
 const { currentUser, projects: dashboardProjects } = useDashboardContext();
 
 const currentUserName = computed(() => {
   return currentUser.value?.fullName || currentUser.value?.email || "Thành viên";
+});
+const canEndMeeting = computed(() => {
+  const currentUserId = String(currentUser.value?.id ?? "").toLowerCase();
+  const starterId = String(meetingStartedByUserId.value ?? "").toLowerCase();
+  return Boolean(currentUserId && starterId && currentUserId === starterId)
+    || ["Owner", "Admin"].includes(currentGroupRole.value ?? "");
 });
 
 const projects = computed(() => {
@@ -723,8 +749,18 @@ async function loadLinkedMeetingProjects() {
   }
 }
 
+async function loadGroupAccess() {
+  try {
+    const group = await apiResult<GroupAccessDto>(`/api/groups/${groupId}`);
+    currentGroupRole.value = group.currentUserRole;
+  } catch (error) {
+    console.warn("Could not load meeting group access", error);
+    currentGroupRole.value = null;
+  }
+}
+
 onMounted(async () => {
-  await loadLinkedMeetingProjects();
+  await Promise.all([loadLinkedMeetingProjects(), loadGroupAccess()]);
   if (meetingId.value) {
     await joinExistingMeeting(meetingId.value);
     // Load recovery transcript from IndexedDB
@@ -854,8 +890,10 @@ async function connectRealtime() {
 
   hubConnection.on("meetingEnded", (payload: any) => {
     if (payload?.meetingId === meetingId.value) {
-      showSuccess("Cuộc họp đã kết thúc bởi chủ phòng.");
-      endMeeting();
+      if (endingMeeting.value) return;
+      void leaveMeetingLocally().then(() => {
+        showSuccess("Cuộc họp đã kết thúc bởi chủ phòng.");
+      });
     }
   });
 
@@ -887,23 +925,15 @@ async function leaveRealtimeGroups() {
   await hubConnection.invoke("LeaveGroup", groupId).catch(() => undefined);
 }
 
-async function endMeeting() {
+async function leaveMeetingLocally() {
   speechRec.stop();
-  if (meetingId.value) {
-    clearBuffer(meetingId.value);
-  }
-  const endingMeetingId = meetingId.value;
-  if (endingMeetingId) {
-    await apiResult(`/api/groups/${groupId}/meetings/${endingMeetingId}/end`, {
-      method: "POST",
-    }).catch(() => undefined);
-  }
-
   if (hubConnection && hubConnection.state === HubConnectionState.Connected) {
     try {
       await leaveRealtimeGroups();
       await hubConnection.stop();
-    } catch {}
+    } catch (error) {
+      console.warn("Could not leave realtime meeting groups cleanly", error);
+    }
     hubConnection = null;
   }
 
@@ -911,6 +941,7 @@ async function endMeeting() {
   participants.value = [];
   remoteTiles.value = [];
   meetingId.value = null;
+  meetingStartedByUserId.value = null;
   joinUrl.value = null;
   roomName.value = null;
   liveKitUrl.value = null;
@@ -921,6 +952,46 @@ async function endMeeting() {
   micMuted.value = false;
   cameraMuted.value = false;
   disconnectLiveKit();
+}
+
+
+async function leaveMeeting() {
+  await leaveMeetingLocally();
+  showSuccess("Đã rời phòng. Cuộc họp vẫn tiếp tục với những người còn lại.");
+}
+
+async function endMeeting() {
+  const endingMeetingId = meetingId.value;
+  if (!endingMeetingId || endingMeeting.value) return;
+
+  if (!canEndMeeting.value) {
+    meetingError.value = "Chỉ chủ phiên, Owner hoặc Admin của nhóm được kết thúc cuộc họp cho tất cả.";
+    showError(meetingError.value);
+    return;
+  }
+
+  endingMeeting.value = true;
+  meetingError.value = null;
+  try {
+    const receipt = await apiResult<GroupMeetingSessionDto>(
+      `/api/groups/${groupId}/meetings/${endingMeetingId}/end`,
+      { method: "POST" },
+    );
+    if (receipt.status !== "Ended" || !receipt.endedAt) {
+      throw new Error("Máy chủ chưa xác nhận trạng thái kết thúc của cuộc họp.");
+    }
+
+    await leaveMeetingLocally();
+    showSuccess("Cuộc họp đã kết thúc cho tất cả người tham gia.");
+  } catch (error) {
+    meetingError.value = errorMessage(
+      error,
+      "Không thể kết thúc cuộc họp. Phiên và transcript vẫn được giữ để bạn thử lại.",
+    );
+    showError(meetingError.value);
+  } finally {
+    endingMeeting.value = false;
+  }
 }
 
 async function copyMeetingLink() {
@@ -1012,8 +1083,9 @@ onBeforeUnmount(async () => {
   disconnectLiveKit();
 });
 
-function applyMeetingDto(dto: any, fallbackMeetingId: string | null = null) {
+function applyMeetingDto(dto: GroupMeetingSessionDto | any, fallbackMeetingId: string | null = null) {
   meetingId.value = dto?.id ?? dto?.Id ?? fallbackMeetingId;
+  meetingStartedByUserId.value = dto?.startedByUserId ?? dto?.StartedByUserId ?? null;
   joinUrl.value = dto?.joinUrl ?? dto?.JoinUrl ?? null;
   roomName.value = dto?.roomId ?? dto?.RoomId ?? `qaly-${groupId}`;
   liveKitUrl.value = dto?.providerUrl ?? dto?.ProviderUrl ?? null;
@@ -1320,7 +1392,8 @@ function disconnectLiveKit() {
 
 <template>
   <div class="gm" :class="{ 'gm--light': isLightTheme }">
-    <div v-if="showPrivacyGate" class="gm-privacy-overlay" role="presentation" @click.self="closePrivacyGate">
+    <h1 class="sr-only">Cuộc họp nhóm Qaly</h1>
+    <div v-if="showPrivacyGate" class="gm-privacy-overlay" role="presentation" @click.self="closePrivacyGate" @keydown.esc="closePrivacyGate">
       <section class="gm-privacy-dialog" role="dialog" aria-modal="true" aria-labelledby="meeting-privacy-title">
         <header class="gm-privacy-dialog__header">
           <div class="gm-privacy-dialog__title">
@@ -1372,10 +1445,10 @@ function disconnectLiveKit() {
           <div class="gm-privacy-field">
             <span>Provider</span>
             <div class="gm-privacy-segmented">
-              <button type="button" :class="{ active: privacyProcessingMode === 'local_only' }" @click="privacyProcessingMode = 'local_only'">
+              <button type="button" :class="{ active: privacyProcessingMode === 'local_only' }" :aria-pressed="privacyProcessingMode === 'local_only'" @click="privacyProcessingMode = 'local_only'">
                 <Server :size="16" /> Local only
               </button>
-              <button type="button" :disabled="!selectedPrivacyPolicy?.allowCloudProcessing" :class="{ active: privacyProcessingMode === 'cloud_allowed' }" @click="privacyProcessingMode = 'cloud_allowed'">
+              <button type="button" :disabled="!selectedPrivacyPolicy?.allowCloudProcessing" :class="{ active: privacyProcessingMode === 'cloud_allowed' }" :aria-pressed="privacyProcessingMode === 'cloud_allowed'" @click="privacyProcessingMode = 'cloud_allowed'">
                 <Cloud :size="16" /> Cloud allowed
               </button>
             </div>
@@ -1397,7 +1470,7 @@ function disconnectLiveKit() {
             <span>Tôi đồng ý ghi nhận và xử lý nội dung cuộc họp để tạo phụ đề, tóm tắt và action item theo policy, provider và thời hạn đã chọn.</span>
           </label>
 
-          <div v-if="privacyError" class="gm-privacy-error"><AlertTriangle :size="16" />{{ privacyError }}</div>
+          <div v-if="privacyError" class="gm-privacy-error" role="alert"><AlertTriangle :size="16" />{{ privacyError }}</div>
         </div>
 
         <footer class="gm-privacy-dialog__footer">
@@ -1428,14 +1501,14 @@ function disconnectLiveKit() {
           <span class="gm-status__dot"></span>
           {{ meetingConnectionLabel }}
         </div>
-        <button class="gm-topbar-btn" type="button" @click="toggleTheme" :title="isLightTheme ? 'Giao diện tối' : 'Giao diện sáng'">
+        <button class="gm-topbar-btn" type="button" @click="toggleTheme" :title="isLightTheme ? 'Giao diện tối' : 'Giao diện sáng'" :aria-label="isLightTheme ? 'Chuyển sang giao diện tối' : 'Chuyển sang giao diện sáng'">
           <Moon v-if="isLightTheme" :size="16" />
           <Sun v-else :size="16" />
         </button>
-        <button class="gm-topbar-btn" type="button" @click="copyMeetingLink" title="Sao chép link phòng họp">
+        <button class="gm-topbar-btn" type="button" @click="copyMeetingLink" title="Sao chép link phòng họp" aria-label="Sao chép link phòng họp">
           <Copy :size="16" />
         </button>
-        <button class="gm-topbar-btn" type="button" @click="sidebarOpen = !sidebarOpen" :title="sidebarOpen ? 'Ẩn Sidebar' : 'Hiện Sidebar'">
+        <button class="gm-topbar-btn" type="button" @click="sidebarOpen = !sidebarOpen" :title="sidebarOpen ? 'Ẩn Sidebar' : 'Hiện Sidebar'" :aria-label="sidebarOpen ? 'Ẩn thanh bên cuộc họp' : 'Hiện thanh bên cuộc họp'">
           <PanelRightClose v-if="sidebarOpen" :size="16" />
           <PanelRightOpen v-else :size="16" />
         </button>
@@ -1463,7 +1536,10 @@ function disconnectLiveKit() {
             </div>
             <footer class="gm-tile__label">
               <strong>Bạn</strong>
-              <span :class="{ 'gm-mic--off': micMuted }">{{ micMuted ? "🔇" : "🎤" }}</span>
+              <span :class="{ 'gm-mic--off': micMuted }">
+                <MicOff v-if="micMuted" :size="14" />
+                <Mic v-else :size="14" />
+              </span>
             </footer>
           </article>
 
@@ -1488,7 +1564,10 @@ function disconnectLiveKit() {
             </div>
             <footer class="gm-tile__label">
               <strong>{{ tile.name }}</strong>
-              <span :class="{ 'gm-mic--off': !tile.micOn }">{{ tile.micOn ? "🎤" : "🔇" }}</span>
+              <span :class="{ 'gm-mic--off': !tile.micOn }">
+                <Mic v-if="tile.micOn" :size="14" />
+                <MicOff v-else :size="14" />
+              </span>
             </footer>
           </article>
 
@@ -1497,7 +1576,7 @@ function disconnectLiveKit() {
             <span class="gm-dot gm-dot--green"></span>
             {{ participantCount }} người tham gia
           </div>
-          <div v-if="meetingError" class="gm-grid__error">
+          <div v-if="meetingError" class="gm-grid__error" role="alert">
             <AlertTriangle :size="16" />
             {{ meetingError }}
           </div>
@@ -1532,7 +1611,7 @@ function disconnectLiveKit() {
 
         <!-- Speech Error Banner -->
         <Transition name="caption-fade">
-          <div v-if="speechError" class="gm-speech-error">
+          <div v-if="speechError" class="gm-speech-error" role="alert">
             <AlertTriangle :size="14" />
             <span>{{ speechError }}</span>
             <button type="button" @click="speechRec.stop(); speechRec.start();" class="gm-speech-error__retry">Thử lại</button>
@@ -1543,11 +1622,14 @@ function disconnectLiveKit() {
         <div class="gm-dock-wrapper">
           <MeetingControls
             :active="active"
+            :can-end-meeting="canEndMeeting"
+            :ending-meeting="endingMeeting"
             :mic-muted="micMuted"
             :camera-muted="cameraMuted"
             :speech-active="isSpeechListening"
             :light="isLightTheme"
             @start="startMeeting"
+            @leave="leaveMeeting"
             @end="endMeeting"
             @share="openScreenShare"
             @toggle-mic="toggleMic"
@@ -1560,27 +1642,33 @@ function disconnectLiveKit() {
       <!-- ── Sidebar ── -->
       <aside v-show="sidebarOpen" class="gm-sidebar">
         <!-- Tab Switcher -->
-        <nav class="gm-tabs">
-          <button
+        <nav class="gm-tabs" role="tablist" aria-label="Nội dung cuộc họp">
+          <button type="button"
             class="gm-tab"
             :class="{ 'gm-tab--active': activeSidebarTab === 'participants' }"
+            role="tab"
+            :aria-selected="activeSidebarTab === 'participants'"
             @click="activeSidebarTab = 'participants'"
           >
             <Users :size="15" />
             <span>Thành viên</span>
           </button>
-          <button
+          <button type="button"
             class="gm-tab"
             :class="{ 'gm-tab--active': activeSidebarTab === 'transcript' }"
+            role="tab"
+            :aria-selected="activeSidebarTab === 'transcript'"
             @click="activeSidebarTab = 'transcript'"
           >
             <Captions :size="15" />
             <span>Phụ đề</span>
             <span v-if="transcriptList.length > 0" class="gm-tab__badge">{{ transcriptList.length }}</span>
           </button>
-          <button
+          <button type="button"
             class="gm-tab"
             :class="{ 'gm-tab--active': activeSidebarTab === 'checknote' }"
+            role="tab"
+            :aria-selected="activeSidebarTab === 'checknote'"
             @click="activeSidebarTab = 'checknote'"
           >
             <Sparkles :size="15" />
@@ -1609,7 +1697,8 @@ function disconnectLiveKit() {
                 <span>Chủ phòng</span>
               </div>
               <span :class="micMuted ? 'gm-mic-badge gm-mic-badge--off' : 'gm-mic-badge'">
-                {{ micMuted ? '🔇' : '🎤' }}
+                <MicOff v-if="micMuted" :size="12" />
+                <Mic v-else :size="12" />
               </span>
             </div>
             <!-- Remotes -->
@@ -1620,7 +1709,8 @@ function disconnectLiveKit() {
                 <span>{{ tile.micOn ? "Mic bật" : "Mic tắt" }} · {{ tile.cameraOn ? "Camera bật" : "Camera tắt" }}</span>
               </div>
               <span :class="tile.micOn ? 'gm-mic-badge' : 'gm-mic-badge gm-mic-badge--off'">
-                {{ tile.micOn ? '🎤' : '🔇' }}
+                <Mic v-if="tile.micOn" :size="12" />
+                <MicOff v-else :size="12" />
               </span>
             </div>
             <div v-if="remoteTiles.length === 0" class="gm-empty-state">
@@ -1663,8 +1753,13 @@ function disconnectLiveKit() {
                 <div
                   class="gm-bubble__text"
                   @dblclick="editTranscriptMessage(idx)"
+                  @keydown.enter="editTranscriptMessage(idx)"
+                  @keydown.space.prevent="editTranscriptMessage(idx)"
                   v-if="editingTranscriptIdx !== idx"
-                  title="Nhấp đúp để chỉnh sửa"
+                  role="button"
+                  tabindex="0"
+                  :aria-label="`Chỉnh sửa phụ đề của ${log.senderName}`"
+                  title="Nhấp đúp hoặc nhấn Enter để chỉnh sửa"
                 >
                   {{ log.text }}
                 </div>
@@ -1672,6 +1767,7 @@ function disconnectLiveKit() {
                   v-else
                   type="text"
                   v-model="editingTranscriptText"
+                  aria-label="Chỉnh sửa nội dung phụ đề"
                   class="gm-bubble__edit"
                   @blur="saveTranscriptMessage(idx)"
                   @keyup.enter="saveTranscriptMessage(idx)"
@@ -1698,14 +1794,14 @@ function disconnectLiveKit() {
             </div>
 
             <label class="gm-field-label">Dự án đích</label>
-            <select v-model="selectedProjectId" class="gm-select">
+            <select v-model="selectedProjectId" aria-label="Dự án đích của biên bản" class="gm-select">
               <option value="">-- Chọn dự án --</option>
               <option v-for="proj in projects" :key="proj.id" :value="proj.id">
                 {{ proj.name }}
               </option>
             </select>
 
-            <button
+            <button type="button"
               class="gm-btn-generate"
               @click="generateChecknote"
               :disabled="!selectedProjectId || transcriptList.length === 0"
@@ -1719,7 +1815,7 @@ function disconnectLiveKit() {
           </div>
 
           <!-- Loading -->
-          <div v-else-if="isGeneratingChecknote" class="gm-checknote-loading">
+          <div v-else-if="isGeneratingChecknote" class="gm-checknote-loading" role="status" aria-live="polite">
             <div class="gm-pulse-ring"></div>
             <Sparkles :size="24" class="gm-pulse-icon" />
             <span>{{ checknoteProgressStep || 'Đang phân tích cuộc họp bằng AI...' }}</span>
@@ -1766,7 +1862,7 @@ function disconnectLiveKit() {
             </div>
 
             <div class="gm-cn-section">
-              <h4>📋 Công việc cần làm ({{ checknoteResult.actionItems.length }})</h4>
+              <h4>Công việc cần làm ({{ checknoteResult.actionItems.length }})</h4>
               <div class="gm-cn-items">
                 <div
                   v-for="(item, idx) in checknoteResult.actionItems"
@@ -1778,14 +1874,16 @@ function disconnectLiveKit() {
                     <input
                       type="text"
                       v-model="item.title"
+                      :aria-label="`Tiêu đề công việc ${idx + 1}`"
                       class="gm-cn-card__title"
                       placeholder="Tiêu đề công việc"
                       :disabled="item.mappingStatus === 'Linked'"
                     />
-                    <span v-if="item.mappingStatus === 'Linked'" class="gm-cn-linked-badge">✓ Đã tạo</span>
+                    <span v-if="item.mappingStatus === 'Linked'" class="gm-cn-linked-badge"><CheckCircle2 :size="12" /> Đã tạo</span>
                   </div>
                   <textarea
                     v-model="item.description"
+                    :aria-label="`Mô tả công việc ${idx + 1}`"
                     class="gm-cn-card__desc"
                     placeholder="Mô tả..."
                     :disabled="item.mappingStatus === 'Linked'"
@@ -1796,7 +1894,7 @@ function disconnectLiveKit() {
                   <div class="gm-cn-card__meta">
                     <div class="gm-cn-field">
                       <label>Ưu tiên</label>
-                      <select v-model="item.priority" :disabled="item.mappingStatus === 'Linked'">
+                      <select v-model="item.priority" :aria-label="`Ưu tiên công việc ${idx + 1}`" :disabled="item.mappingStatus === 'Linked'">
                         <option value="Low">Thấp</option>
                         <option value="Medium">Trung bình</option>
                         <option value="High">Cao</option>
@@ -1804,13 +1902,13 @@ function disconnectLiveKit() {
                     </div>
                     <div class="gm-cn-field">
                       <label>Hạn chót</label>
-                      <input type="date" v-model="item.dueDateFormatted" :disabled="item.mappingStatus === 'Linked'" />
+                      <input type="date" v-model="item.dueDateFormatted" :aria-label="`Hạn chót công việc ${idx + 1}`" :disabled="item.mappingStatus === 'Linked'" />
                     </div>
                   </div>
                   <div class="gm-cn-card__meta">
                     <div class="gm-cn-field" style="flex:1">
                       <label>Gán cho</label>
-                      <select v-model="item.assigneeId" :disabled="item.mappingStatus === 'Linked'">
+                      <select v-model="item.assigneeId" :aria-label="`Người phụ trách công việc ${idx + 1}`" :disabled="item.mappingStatus === 'Linked'">
                         <option value="">-- Chọn --</option>
                         <option v-for="m in projectMembers" :key="m.userId" :value="m.userId">
                           {{ m.fullName }}
@@ -1819,19 +1917,20 @@ function disconnectLiveKit() {
                     </div>
                   </div>
                   <div v-if="item.mappingStatus !== 'Linked'" class="gm-cn-card__actions">
-                    <button
+                    <button type="button"
                       class="gm-btn-create-task"
                       @click="createTaskFromCard(idx)"
                       :disabled="isCreatingTask === idx"
                     >
-                      {{ isCreatingTask === idx ? "Đang tạo..." : "➕ Tạo Task" }}
+                      <template v-if="isCreatingTask === idx">Đang tạo...</template>
+                      <template v-else><Plus :size="14" /> Tạo Task</template>
                     </button>
                   </div>
                 </div>
               </div>
             </div>
 
-            <button class="gm-btn-reset" @click="resetChecknote">
+            <button type="button" class="gm-btn-reset" @click="resetChecknote">
               Phân tích lại
             </button>
           </div>
@@ -2533,7 +2632,8 @@ function disconnectLiveKit() {
 }
 
 .gm-mic-badge {
-  font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
   flex-shrink: 0;
 }
 
@@ -2986,6 +3086,9 @@ function disconnectLiveKit() {
 }
 
 .gm-cn-linked-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 3px 10px;
   border-radius: 9999px;
   background: rgba(16, 185, 129, 0.12);
@@ -3034,6 +3137,10 @@ function disconnectLiveKit() {
 }
 
 .gm-btn-create-task {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   padding: 7px 16px;
   border: 0;
   border-radius: var(--gm-radius-xs);

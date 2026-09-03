@@ -21,7 +21,14 @@ public partial class ProjectTrashCleanupWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken);
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            return;
+        }
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -67,11 +74,18 @@ public partial class ProjectTrashCleanupWorker : BackgroundService
                 LogCleanupFailed(ex);
             }
 
-            await Task.Delay(TimeSpan.FromHours(24), stoppingToken);
+            try
+            {
+                await Task.Delay(TimeSpan.FromHours(24), stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
         }
     }
 
-    private async Task HardDeleteProjectAttachmentsAsync(
+    internal async Task HardDeleteProjectAttachmentsAsync(
         QalyDbContext dbContext,
         IFileStorageService fileStorage,
         Guid projectId,
@@ -109,9 +123,17 @@ public partial class ProjectTrashCleanupWorker : BackgroundService
             {
                 await fileStorage.DeleteAsync(physicalFile.FilePath, ct);
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 LogPhysicalFileDeleteFailed(ex, physicalFile.Id, physicalFile.FilePath);
+                // Keep both the physical-file metadata and the trashed Project so a later
+                // cleanup pass can retry. Deleting the canonical row here would turn a
+                // transient storage failure into an untracked orphan that cannot recover.
+                throw;
             }
 
             dbContext.PhysicalFiles.Remove(physicalFile);

@@ -73,7 +73,7 @@ const chartOptions = {
       <h3 style="font-weight: 700; color: #0f172a; margin: 0; font-size: 16px;">Cần chú ý</h3>
     </div>
     
-    <div v-if="isLoading" class="attention-loading" style="padding: 20px; text-align: center; color: var(--text-muted)">
+    <div v-if="isLoading" class="attention-loading" role="status" aria-live="polite" style="padding: 20px; text-align: center; color: var(--text-muted)">
       Đang tải dữ liệu...
     </div>
     <div v-else-if="data" class="attention-content" style="display: flex; flex-direction: column; gap: 16px;">
@@ -123,7 +123,7 @@ const chartOptions = {
         </ul>
       </div>
 
-      <button 
+      <button type="button"
         @click="router.push('/tasks')" 
         class="attention-view-all" 
         style="width: 100%; margin-top: 8px; padding: 10px; border-radius: var(--qaly-radius-lg); border: 1px solid rgba(15, 82, 186, 0.2); background: rgba(15, 82, 186, 0.05); color: #1f80ff; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;"

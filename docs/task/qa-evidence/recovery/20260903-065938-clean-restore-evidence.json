@@ -1,0 +1,21 @@
+{
+  "task": "T1-LG-01",
+  "scenario": "Clean SQL Server restore from backup",
+  "startedAt": "2026-09-03T06:59:38.9147093+07:00",
+  "finishedAt": "2026-09-03T06:59:40.1847697+07:00",
+  "operator": "codex-production-readiness",
+  "server": "(localdb)\\MSSQLLocalDB",
+  "backupFile": "C:\\Users\\Lenovo\\Documents\\Qaly\\Qaly_project\\.backups\\QalyMigrationRehearsal_20260903065913-20260903-065938.bak",
+  "sqlServerBackupPath": "C:\\Users\\Lenovo\\Documents\\Qaly\\Qaly_project\\.backups\\QalyMigrationRehearsal_20260903065913-20260903-065938.bak",
+  "backupSha256": "9FC7AC6CB31234281737A2836CBEDC8C0E4D6A6DCFA9D047782997E6D1430229",
+  "targetDatabase": "QalyRestoreRehearsal_20260903065913",
+  "verifyOnly": "passed",
+  "restore": "passed",
+  "checkDb": "passed",
+  "smoke": "passed",
+  "cleanup": "dropped-restored-database",
+  "rtoSeconds": 1.27,
+  "success": true,
+  "errors": [],
+  "smokeOutput": "TableCount  AppliedMigrations\r\n----------- -----------------\r\n         95                59"
+}

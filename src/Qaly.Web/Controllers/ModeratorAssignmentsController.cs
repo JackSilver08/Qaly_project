@@ -39,6 +39,7 @@ public sealed class ModeratorAssignmentsController : BaseApiController
     }
 
     [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Grant(GrantModeratorAssignmentsRequest request, CancellationToken ct)
     {
         var capabilities = request.Capabilities.Distinct(StringComparer.Ordinal).ToArray();
@@ -80,22 +81,23 @@ public sealed class ModeratorAssignmentsController : BaseApiController
             }
         }
 
-        await _db.SaveChangesAsync(ct);
-        await _auditLog.LogAsync("GrantModeratorScope", nameof(ModeratorAssignment), request.ModeratorUserId.ToString(),
+        await _auditLog.StageAsync("GrantModeratorScope", nameof(ModeratorAssignment), request.ModeratorUserId.ToString(),
             new { request.OrganizationId, Capabilities = capabilities, request.ExpiresAt }, ct);
+        await _db.SaveChangesAsync(ct);
         return Ok(new { granted = capabilities.Length });
     }
 
     [HttpDelete("{id:guid}")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Revoke(Guid id, CancellationToken ct)
     {
         var assignment = await _db.ModeratorAssignments.SingleOrDefaultAsync(item => item.Id == id, ct);
         if (assignment == null) return NotFound();
         assignment.IsActive = false;
         assignment.RevokedAt = DateTimeOffset.UtcNow;
-        await _db.SaveChangesAsync(ct);
-        await _auditLog.LogAsync("RevokeModeratorScope", nameof(ModeratorAssignment), id.ToString(),
+        await _auditLog.StageAsync("RevokeModeratorScope", nameof(ModeratorAssignment), id.ToString(),
             new { assignment.ModeratorUserId, assignment.OrganizationId, assignment.Capability }, ct);
+        await _db.SaveChangesAsync(ct);
         return NoContent();
     }
 }

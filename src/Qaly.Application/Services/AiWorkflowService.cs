@@ -6,6 +6,7 @@ using Qaly.Application.DTOs.Meeting;
 using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
+using System.Data.Common;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -49,10 +50,12 @@ public class AiWorkflowService : IAiWorkflowService
     private readonly ITaskAccessPolicy? _taskAccessPolicy;
     private readonly IRepository<OrganizationSkill>? _organizationSkillRepo;
     private readonly IRepository<TaskSkillRequirement>? _taskSkillRequirementRepo;
+    private readonly IRepository<TaskDependency>? _taskDependencyRepo;
     private readonly IAiActionPlanValidator? _actionPlanValidator;
     private readonly IAiJobActivityService? _activityService;
     private readonly IRepository<AiUsageLedger>? _usageLedgerRepo;
     private readonly IRepository<AiJobActivityEvent>? _activityEventRepo;
+    private readonly IAiNativeAuthorizationService _authorization;
 
     public AiWorkflowService(
         IRepository<Project> projectRepo,
@@ -69,6 +72,7 @@ public class AiWorkflowService : IAiWorkflowService
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
         IAuditLogService auditLogService,
+        IAiNativeAuthorizationService authorization,
         ITaskService? taskService = null,
         ICommentService? commentService = null,
         ITimeTrackingService? timeTrackingService = null,
@@ -87,7 +91,8 @@ public class AiWorkflowService : IAiWorkflowService
         IAiActionPlanValidator? actionPlanValidator = null,
         IAiJobActivityService? activityService = null,
         IRepository<AiUsageLedger>? usageLedgerRepo = null,
-        IRepository<AiJobActivityEvent>? activityEventRepo = null)
+        IRepository<AiJobActivityEvent>? activityEventRepo = null,
+        IRepository<TaskDependency>? taskDependencyRepo = null)
     {
         _projectRepo = projectRepo;
         _projectMemberRepo = projectMemberRepo;
@@ -118,10 +123,12 @@ public class AiWorkflowService : IAiWorkflowService
         _taskAccessPolicy = taskAccessPolicy;
         _organizationSkillRepo = organizationSkillRepo;
         _taskSkillRequirementRepo = taskSkillRequirementRepo;
+        _authorization = authorization;
         _actionPlanValidator = actionPlanValidator;
         _activityService = activityService;
         _usageLedgerRepo = usageLedgerRepo;
         _activityEventRepo = activityEventRepo;
+        _taskDependencyRepo = taskDependencyRepo;
     }
 
     public Task<Result<AiJobCreatedDto>> CreateJobAsync(
@@ -243,9 +250,9 @@ public class AiWorkflowService : IAiWorkflowService
         var options = JsonSerializer.SerializeToElement(new
         {
             prompt = language == "vi"
-                ? "Chỉ chọn các kỹ năng thực sự cần cho task từ catalog được cấp. Không tạo skill hoặc ID mới. Trả JSON có schemaId, taskId, sourceVersion, dataState, suggestions, unmappedTerms và generatedAt. Mỗi suggestion phải có skillId, canonicalName, requiredLevel, confidence, rationale và sourceRefs."
-                : "Select only skills genuinely required by the task from the supplied catalog. Never invent a skill or ID. Return JSON with schemaId, taskId, sourceVersion, dataState, suggestions, unmappedTerms, and generatedAt. Every suggestion requires skillId, canonicalName, requiredLevel, confidence, rationale, and sourceRefs.",
-            systemPrompt = $"Return only valid JSON matching {TaskSkillAiContract.SchemaId}. Use only authorized catalog IDs. Do not mutate the task or create taxonomy entries."
+                ? "Chỉ chọn các kỹ năng thực sự cần cho task từ catalog được cấp. Không tạo skill hoặc ID mới. Trả JSON có schemaId, taskId, sourceVersion, dataState, suggestions, unmappedTerms và generatedAt. Mỗi suggestion phải có skillId, canonicalName, requiredLevel, confidence, rationale và sourceRefs. requiredLevel bắt buộc là một chuỗi JSON và chỉ được là Familiar, Proficient hoặc Expert."
+                : "Select only skills genuinely required by the task from the supplied catalog. Never invent a skill or ID. Return JSON with schemaId, taskId, sourceVersion, dataState, suggestions, unmappedTerms, and generatedAt. Every suggestion requires skillId, canonicalName, requiredLevel, confidence, rationale, and sourceRefs. requiredLevel must be a JSON string exactly equal to Familiar, Proficient, or Expert.",
+            systemPrompt = $"Return only valid JSON matching {TaskSkillAiContract.SchemaId}. Use only authorized catalog IDs. requiredLevel MUST be a string: \"Familiar\", \"Proficient\", or \"Expert\"; never return an object or number for it. Do not mutate the task or create taxonomy entries."
         }, JsonOptions);
 
         return await CreateJobAsync(
@@ -954,6 +961,16 @@ public class AiWorkflowService : IAiWorkflowService
                 AiErrorCodes.PlatformDisabled);
         }
 
+        if (_platformOptions != null &&
+            !_platformOptions.CurrentValue.WorkerEnabled &&
+            !_platformOptions.CurrentValue.AllowEnqueueWhenWorkerDisabled)
+        {
+            return Result.Failure<AiJobCreatedDto>(
+                "AI worker is unavailable, so this request was not queued.",
+                503,
+                AiErrorCodes.WorkerPaused);
+        }
+
         if (string.IsNullOrWhiteSpace(dto.JobType))
         {
             return Result.Failure<AiJobCreatedDto>("job_type is required.", 400);
@@ -1200,7 +1217,13 @@ public class AiWorkflowService : IAiWorkflowService
         }, ct);
         try
         {
-            await _unitOfWork.SaveChangesAsync(ct);
+            await _unitOfWork.SaveChangesWithAuditAsync(
+                _auditLogService,
+                "EnqueueAiJob",
+                nameof(AiJob),
+                job.Id.ToString(),
+                new { job.JobType, job.ProjectId, job.SchemaId, job.RequestHash, job.IdempotencyKey, requestId },
+                ct);
         }
         catch (DbUpdateException)
         {
@@ -1221,13 +1244,6 @@ public class AiWorkflowService : IAiWorkflowService
 
             return Result.Accepted(ToCreatedDto(concurrentJob, requestId));
         }
-
-        await _auditLogService.LogAsync(
-            "EnqueueAiJob",
-            nameof(AiJob),
-            job.Id.ToString(),
-            new { job.JobType, job.ProjectId, job.SchemaId, job.RequestHash, job.IdempotencyKey, requestId },
-            ct);
 
         return Result.Accepted(ToCreatedDto(job, requestId));
     }
@@ -1283,6 +1299,7 @@ public class AiWorkflowService : IAiWorkflowService
 
         var jobs = await query
             .OrderByDescending(job => job.CreatedAt)
+            .ThenBy(job => job.Id)
             .Take(200)
             .ToListAsync(ct);
 
@@ -1489,8 +1506,13 @@ public class AiWorkflowService : IAiWorkflowService
         dispatch.LastDispatchErrorCode = null;
         dispatch.LastDispatchError = null;
 
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("RetryAiJob", nameof(AiJob), job.Id.ToString(), new { job.AttemptCount, job.ProviderHint }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "RetryAiJob",
+            nameof(AiJob),
+            job.Id.ToString(),
+            new { job.AttemptCount, job.ProviderHint },
+            ct);
         return Result.Success(ToJobDetailDto(job));
     }
 
@@ -1534,8 +1556,13 @@ public class AiWorkflowService : IAiWorkflowService
             job.Dispatch.CompletedAt = now;
         }
 
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("CancelAiJob", nameof(AiJob), job.Id.ToString(), new { dto.Reason }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "CancelAiJob",
+            nameof(AiJob),
+            job.Id.ToString(),
+            new { dto.Reason },
+            ct);
         return Result.Success(ToJobDetailDto(job));
     }
 
@@ -1567,7 +1594,11 @@ public class AiWorkflowService : IAiWorkflowService
             query = query.Where(draft => draft.Status == normalized);
         }
 
-        var candidates = await query.OrderByDescending(draft => draft.CreatedAt).Take(200).ToListAsync(ct);
+        var candidates = await query
+            .OrderByDescending(draft => draft.CreatedAt)
+            .ThenBy(draft => draft.Id)
+            .Take(200)
+            .ToListAsync(ct);
         var visible = new List<AiDraftSummaryDto>();
         foreach (var draft in candidates)
         {
@@ -1687,8 +1718,13 @@ public class AiWorkflowService : IAiWorkflowService
 
         draft.WorkingPayloadJson = workingPayloadJson;
         draft.PayloadJson = draft.WorkingPayloadJson;
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("EditAiDraft", nameof(AiGeneratedDraft), draft.Id.ToString(), new { draft.AiJobId }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "EditAiDraft",
+            nameof(AiGeneratedDraft),
+            draft.Id.ToString(),
+            new { draft.AiJobId },
+            ct);
         return Result.Success(ToDraftDetailDto(draft));
     }
 
@@ -1745,8 +1781,13 @@ public class AiWorkflowService : IAiWorkflowService
         draft.RejectedAt = now;
         draft.RejectionReason = dto.Reason.Trim();
         draft.ConfirmationIdempotencyKey = NormalizeOptional(dto.IdempotencyKey);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("RejectAiDraft", nameof(AiGeneratedDraft), draft.Id.ToString(), new { dto.Reason }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "RejectAiDraft",
+            nameof(AiGeneratedDraft),
+            draft.Id.ToString(),
+            new { dto.Reason },
+            ct);
         return Result.Success(ToDraftDetailDto(draft));
     }
 
@@ -1795,7 +1836,17 @@ public class AiWorkflowService : IAiWorkflowService
                 !string.IsNullOrWhiteSpace(draft.ConfirmationResultJson))
             {
                 var completed = JsonSerializer.Deserialize<AiDraftConfirmResultDto>(draft.ConfirmationResultJson, JsonOptions);
-                if (completed != null) return Result.Success(completed);
+                if (completed != null)
+                {
+                    if (string.Equals(completed.ConfirmAction, AiActionComposerContract.ConfirmAction, StringComparison.Ordinal) &&
+                        completed.ActionReceipt != null &&
+                        !string.Equals(completed.ActionReceipt.Status, AiActionReceiptStatuses.Succeeded, StringComparison.Ordinal))
+                    {
+                        completed = await CompleteActionComposerReadBackAsync(draft, completed, ct);
+                    }
+
+                    return Result.Success(completed);
+                }
             }
 
             return Result.Failure<AiDraftConfirmResultDto>(
@@ -2063,7 +2114,13 @@ public class AiWorkflowService : IAiWorkflowService
             draft.ConfirmationIdempotencyKey = confirmationKey;
 
             await _aiDraftRepo.UpdateAsync(draft, ct);
-            await _unitOfWork.SaveChangesAsync(ct);
+            await _unitOfWork.SaveChangesWithAuditAsync(
+                _auditLogService,
+                "RejectAiDraft",
+                nameof(AiGeneratedDraft),
+                draft.Id.ToString(),
+                new { draft.ProjectId, draft.ConfirmAction },
+                ct);
 
             if (_complianceService != null)
             {
@@ -2079,13 +2136,6 @@ public class AiWorkflowService : IAiWorkflowService
                     ct
                 );
             }
-
-            await _auditLogService.LogAsync(
-                "RejectAiDraft",
-                nameof(AiGeneratedDraft),
-                draft.Id.ToString(),
-                new { draft.ProjectId, draft.ConfirmAction },
-                ct);
 
             return Result.Success(new AiDraftConfirmResultDto(
                 draft.Id,
@@ -2395,6 +2445,35 @@ public class AiWorkflowService : IAiWorkflowService
             var selectedCommands = selectedOption.Commands
                 .Where(command => selectedIds.Contains(command.CommandId))
                 .ToList();
+            var selectedAssigneeIds = selectedCommands
+                .Where(command => command.AssigneeId.HasValue)
+                .Select(command => command.AssigneeId!.Value)
+                .Distinct()
+                .ToList();
+            if (selectedAssigneeIds.Count > 0)
+            {
+                var activeUsers = await _userRepo.GetQueryable()
+                    .Where(user => selectedAssigneeIds.Contains(user.Id) && user.IsActive)
+                    .Select(user => user.Id)
+                    .ToListAsync(ct);
+                var currentMembers = await _projectMemberRepo.GetQueryable()
+                    .Where(member => member.ProjectId == draft.ProjectId && selectedAssigneeIds.Contains(member.UserId))
+                    .Select(member => member.UserId)
+                    .ToListAsync(ct);
+                if (selectedAssigneeIds.Contains(draft.Project.OwnerId))
+                {
+                    currentMembers.Add(draft.Project.OwnerId);
+                }
+
+                if (activeUsers.Distinct().Count() != selectedAssigneeIds.Count ||
+                    currentMembers.Distinct().Count() != selectedAssigneeIds.Count)
+                {
+                    return Result.Failure<AiDraftConfirmResultDto>(
+                        "An assignee is no longer an active member of this Project. Reload and review the draft before confirming.",
+                        409,
+                        AiErrorCodes.SourceStale);
+                }
+            }
             var now = DateTimeOffset.UtcNow;
             var commandResults = new List<AiActionCommandResultDto>(selectedCommands.Count);
             var nextActivitySequence = _activityEventRepo == null
@@ -2475,6 +2554,22 @@ public class AiWorkflowService : IAiWorkflowService
                     command.RequiredSkills.Count));
             }
 
+            var taskIdByCommandId = commandResults
+                .Where(item => item.EntityId.HasValue)
+                .ToDictionary(item => item.CommandId, item => item.EntityId!.Value, StringComparer.Ordinal);
+            foreach (var command in selectedCommands)
+            {
+                foreach (var dependencyCommandId in command.DependencyCommandIds ?? [])
+                {
+                    await RequireTaskDependencyRepository().AddAsync(new TaskDependency
+                    {
+                        PredecessorId = taskIdByCommandId[dependencyCommandId],
+                        SuccessorId = taskIdByCommandId[command.CommandId],
+                        DependencyType = "FinishToStart"
+                    }, ct);
+                }
+            }
+
             var usageLedgerId = _usageLedgerRepo == null
                 ? null
                 : await _usageLedgerRepo.GetQueryable()
@@ -2489,7 +2584,7 @@ public class AiWorkflowService : IAiWorkflowService
                 selectedOption.OptionId,
                 selectedCommands.Select(command => command.CommandId).ToList(),
                 commandResults,
-                "succeeded",
+                AiActionReceiptStatuses.VerificationPending,
                 draft.AiJob.SelectedProvider,
                 draft.AiJob.SelectedModel,
                 usageLedgerId,
@@ -2535,12 +2630,12 @@ public class AiWorkflowService : IAiWorkflowService
                     AiJobId = draft.AiJobId,
                     Sequence = nextActivitySequence + 3,
                     Stage = AiActionActivityStages.ReadBack,
-                    Status = AiActionActivityStatuses.Succeeded,
-                    PublicLabel = "Đã hoàn tất và có thể xem lại",
-                    SafeDetailJson = JsonSerializer.Serialize(new { links = actionReceipt.ReadBackLinks }),
+                    Status = AiActionActivityStatuses.Running,
+                    PublicLabel = "Đang đối chiếu dữ liệu đã tạo",
+                    SafeDetailJson = JsonSerializer.Serialize(new { taskIds = createdTaskIds }),
                     Attempt = 1,
                     StartedAt = now,
-                    CompletedAt = DateTimeOffset.UtcNow,
+                    Retryable = true,
                     ReceiptLink = $"/api/ai/drafts/{draft.Id:D}"
                 }, ct);
             }
@@ -2738,7 +2833,20 @@ public class AiWorkflowService : IAiWorkflowService
         await _aiDraftRepo.UpdateAsync(draft, ct);
         try
         {
-            await _unitOfWork.SaveChangesAsync(ct);
+            await _unitOfWork.SaveChangesWithAuditAsync(
+                _auditLogService,
+                "ConfirmAiDraft",
+                nameof(AiGeneratedDraft),
+                draft.Id.ToString(),
+                new
+                {
+                    draft.ProjectId,
+                    draft.ConfirmAction,
+                    createdTaskIds.Count,
+                    appliedSkillCount = taskSkillPlan?.Selections.Count ?? actionAppliedSkillCount,
+                    actionExecutionId = actionReceipt?.ExecutionId
+                },
+                ct);
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -2755,6 +2863,13 @@ public class AiWorkflowService : IAiWorkflowService
                 "The task skill selection conflicts with the current organization catalog.",
                 409,
                 AiErrorCodes.SkillCatalogConflict);
+        }
+
+        if (string.Equals(normalizedAction, AiActionComposerContract.ConfirmAction, StringComparison.Ordinal) &&
+            confirmationResult.ActionReceipt != null)
+        {
+            confirmationResult = await CompleteActionComposerReadBackAsync(draft, confirmationResult, ct);
+            actionReceipt = confirmationResult.ActionReceipt;
         }
 
         if (_complianceService != null)
@@ -2790,21 +2905,209 @@ public class AiWorkflowService : IAiWorkflowService
             );
         }
 
-        await _auditLogService.LogAsync(
-            "ConfirmAiDraft",
-            nameof(AiGeneratedDraft),
-            draft.Id.ToString(),
-            new
-            {
-                draft.ProjectId,
-                draft.ConfirmAction,
-                createdTaskIds.Count,
-                appliedSkillCount = taskSkillPlan?.Selections.Count ?? actionAppliedSkillCount,
-                actionExecutionId = actionReceipt?.ExecutionId
-            },
-            ct);
-
         return Result.Success(confirmationResult);
+    }
+
+    private async Task<AiDraftConfirmResultDto> CompleteActionComposerReadBackAsync(
+        AiGeneratedDraft draft,
+        AiDraftConfirmResultDto confirmationResult,
+        CancellationToken ct)
+    {
+        var receipt = confirmationResult.ActionReceipt;
+        if (receipt == null ||
+            string.Equals(receipt.Status, AiActionReceiptStatuses.Succeeded, StringComparison.Ordinal))
+        {
+            return confirmationResult;
+        }
+
+        var verified = false;
+        var verificationError = "Canonical task read-back did not match the reviewed action plan.";
+        var verifiedCommandResults = new List<AiActionCommandResultDto>();
+
+        try
+        {
+            var payloadJson = string.IsNullOrWhiteSpace(draft.WorkingPayloadJson)
+                ? draft.PayloadJson
+                : draft.WorkingPayloadJson;
+            AiActionPlanDto? plan = null;
+            AiActionContextSnapshotDto? snapshot = null;
+            var planIsValid = _actionPlanValidator != null &&
+                TryReadJobSourceText(draft.AiJob.RequestJson, out var snapshotJson) &&
+                _actionPlanValidator.TryValidateReviewedPlan(
+                    payloadJson,
+                    snapshotJson,
+                    out plan,
+                    out snapshot,
+                    out _);
+            if (!planIsValid || plan == null || snapshot == null)
+            {
+                throw new InvalidOperationException("The reviewed action plan or its source snapshot is unavailable.");
+            }
+            var selectedOption = plan?.Options.FirstOrDefault(option =>
+                string.Equals(option.OptionId, plan.Review.SelectedOptionId, StringComparison.Ordinal));
+            var selectedIds = plan?.Review.SelectedCommandIds.ToHashSet(StringComparer.Ordinal)
+                ?? new HashSet<string>(StringComparer.Ordinal);
+            var selectedCommands = selectedOption?.Commands
+                .Where(command => selectedIds.Contains(command.CommandId))
+                .ToList() ?? [];
+
+            var taskIds = receipt.CommandResults
+                .Where(item => item.EntityId.HasValue)
+                .Select(item => item.EntityId!.Value)
+                .Distinct()
+                .ToList();
+            var tasks = await _taskRepo.GetQueryable()
+                .AsNoTracking()
+                .Where(item => taskIds.Contains(item.Id) && item.ProjectId == draft.ProjectId && !item.IsDeleted)
+                .ToDictionaryAsync(item => item.Id, ct);
+            var assignments = await _taskAssignmentRepo.GetQueryable()
+                .AsNoTracking()
+                .Where(item => taskIds.Contains(item.TaskItemId))
+                .ToListAsync(ct);
+            var skills = await RequireTaskSkillRequirementRepository().GetQueryable()
+                .AsNoTracking()
+                .Where(item => taskIds.Contains(item.TaskItemId))
+                .ToListAsync(ct);
+            var dependencies = await RequireTaskDependencyRepository().GetQueryable()
+                .AsNoTracking()
+                .Where(item => taskIds.Contains(item.SuccessorId) && taskIds.Contains(item.PredecessorId))
+                .ToListAsync(ct);
+            var receiptByCommand = receipt.CommandResults.ToDictionary(item => item.CommandId, StringComparer.Ordinal);
+            var taskIdByCommand = receipt.CommandResults
+                .Where(item => item.EntityId.HasValue)
+                .ToDictionary(item => item.CommandId, item => item.EntityId!.Value, StringComparer.Ordinal);
+
+            foreach (var command in selectedCommands)
+            {
+                var commandVerified = receiptByCommand.TryGetValue(command.CommandId, out var original) &&
+                    original.EntityId.HasValue &&
+                    tasks.TryGetValue(original.EntityId.Value, out var task) &&
+                    string.Equals(task.Title, command.Title.Trim(), StringComparison.Ordinal) &&
+                    string.Equals(task.Description, BuildActionTaskDescription(command), StringComparison.Ordinal) &&
+                    string.Equals(task.Priority, TaskStatusRules.NormalizePriority(command.Priority), StringComparison.Ordinal) &&
+                    task.DueDate == command.DueDate &&
+                    task.EstimatedHours == command.EstimatedHours &&
+                    task.AssigneeId == command.AssigneeId &&
+                    task.SprintId == snapshot?.Sprint?.Id;
+
+                if (commandVerified && original!.EntityId.HasValue)
+                {
+                    var taskAssignments = assignments
+                        .Where(item => item.TaskItemId == original.EntityId.Value)
+                        .ToList();
+                    commandVerified = command.AssigneeId.HasValue
+                        ? taskAssignments.Count == 1 && taskAssignments[0].UserId == command.AssigneeId.Value
+                        : taskAssignments.Count == 0;
+
+                    var taskSkills = skills
+                        .Where(item => item.TaskItemId == original.EntityId.Value)
+                        .ToList();
+                    commandVerified = commandVerified &&
+                        taskSkills.Count == command.RequiredSkills.Count &&
+                        command.RequiredSkills.All(required => taskSkills.Any(actual =>
+                            actual.OrganizationSkillId == required.SkillId &&
+                            string.Equals(actual.RequiredLevel, required.RequiredLevel, StringComparison.Ordinal) &&
+                            string.Equals(actual.Provenance, TaskSkillService.ProvenanceAiConfirmed, StringComparison.Ordinal)));
+
+                    if (commandVerified)
+                    {
+                        var expectedPredecessors = (command.DependencyCommandIds ?? [])
+                            .Select(item => taskIdByCommand[item])
+                            .OrderBy(item => item)
+                            .ToList();
+                        var actualPredecessors = dependencies
+                            .Where(item => item.SuccessorId == original.EntityId.Value &&
+                                string.Equals(item.DependencyType, "FinishToStart", StringComparison.Ordinal))
+                            .Select(item => item.PredecessorId)
+                            .OrderBy(item => item)
+                            .ToList();
+                        commandVerified = expectedPredecessors.SequenceEqual(actualPredecessors);
+                    }
+                }
+
+                verifiedCommandResults.Add(original == null
+                    ? new AiActionCommandResultDto(
+                        command.CommandId,
+                        AiActionComposerContract.TaskCreateTool,
+                        AiActionReceiptStatuses.VerificationFailed,
+                        null,
+                        command.Title,
+                        null,
+                        "canonical_readback_missing",
+                        verificationError,
+                        0)
+                    : original with
+                    {
+                        Status = commandVerified
+                            ? AiActionReceiptStatuses.Succeeded
+                            : AiActionReceiptStatuses.VerificationFailed,
+                        ErrorCode = commandVerified ? null : "canonical_readback_mismatch",
+                        ErrorMessage = commandVerified ? null : verificationError
+                    });
+            }
+
+            verified = selectedCommands.Count > 0 &&
+                selectedCommands.Count == receipt.ConfirmedCommandIds.Count &&
+                selectedCommands.Count == confirmationResult.CreatedTaskIds.Distinct().Count() &&
+                verifiedCommandResults.All(item => string.Equals(item.Status, AiActionReceiptStatuses.Succeeded, StringComparison.Ordinal));
+        }
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException or DbException)
+        {
+            verificationError = $"Canonical read-back is temporarily unavailable: {exception.GetType().Name}.";
+        }
+
+        var finalCommandResults = verifiedCommandResults.Count > 0
+            ? verifiedCommandResults
+            : receipt.CommandResults.Select(item => item with
+            {
+                Status = AiActionReceiptStatuses.VerificationFailed,
+                ErrorCode = "canonical_readback_unavailable",
+                ErrorMessage = verificationError ?? "Canonical read-back did not complete."
+            }).ToList();
+
+        var updatedReceipt = receipt with
+        {
+            CommandResults = finalCommandResults,
+            Status = verified
+                ? AiActionReceiptStatuses.Succeeded
+                : AiActionReceiptStatuses.VerificationFailed,
+            ReadBackLinks = verified
+                ? finalCommandResults.Where(item => item.EntityUrl != null).Select(item => item.EntityUrl!).ToList()
+                : []
+        };
+        var updatedResult = confirmationResult with { ActionReceipt = updatedReceipt };
+        draft.ConfirmationResultJson = JsonSerializer.Serialize(updatedResult, JsonOptions);
+        await _aiDraftRepo.UpdateAsync(draft, ct);
+
+        if (_activityEventRepo != null)
+        {
+            var readBackEvent = await _activityEventRepo.GetQueryable()
+                .Where(item => item.AiJobId == draft.AiJobId && item.Stage == AiActionActivityStages.ReadBack)
+                .OrderByDescending(item => item.Sequence)
+                .FirstOrDefaultAsync(ct);
+            if (readBackEvent != null)
+            {
+                readBackEvent.Status = verified
+                    ? AiActionActivityStatuses.Succeeded
+                    : AiActionActivityStatuses.Failed;
+                readBackEvent.PublicLabel = verified
+                    ? "Đã đối chiếu dữ liệu thật"
+                    : "Dữ liệu đã ghi nhưng chưa đối chiếu được";
+                object readBackDetail = verified
+                    ? new { links = updatedReceipt.ReadBackLinks }
+                    : new { errorCode = "canonical_readback_mismatch", message = verificationError };
+                readBackEvent.SafeDetailJson = JsonSerializer.Serialize(readBackDetail);
+                readBackEvent.CompletedAt = DateTimeOffset.UtcNow;
+                readBackEvent.DurationMs = checked((int)Math.Min(
+                    int.MaxValue,
+                    Math.Max(0, (readBackEvent.CompletedAt.Value - readBackEvent.StartedAt).TotalMilliseconds)));
+                readBackEvent.Retryable = !verified;
+                await _activityEventRepo.UpdateAsync(readBackEvent, ct);
+            }
+        }
+
+        await _unitOfWork.SaveChangesAsync(ct);
+        return updatedResult;
     }
 
     private async Task<Result<AiJob>> GetVisibleJobAsync(
@@ -2895,8 +3198,14 @@ public class AiWorkflowService : IAiWorkflowService
         if (job.Project != null && await CanAccessProjectAsync(job.Project, currentUserId, ct)) return true;
         if (!job.TenantId.HasValue) return false;
 
-        return await _organizationMemberRepo.GetQueryable()
-            .AnyAsync(member => member.OrganizationId == job.TenantId.Value && member.UserId == currentUserId, ct);
+        var organizationRole = await _organizationMemberRepo.GetQueryable()
+            .Where(member =>
+                member.OrganizationId == job.TenantId.Value &&
+                member.UserId == currentUserId &&
+                member.Organization.IsActive)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+        return OrganizationRoleRules.CanManageOrganization(organizationRole);
     }
 
     private static AiJobCreatedDto ToCreatedDto(AiJob job, string? requestId)
@@ -3182,6 +3491,9 @@ public class AiWorkflowService : IAiWorkflowService
     private IRepository<TaskSkillRequirement> RequireTaskSkillRequirementRepository()
         => _taskSkillRequirementRepo ?? throw new InvalidOperationException("Task skill requirement repository is not registered.");
 
+    private IRepository<TaskDependency> RequireTaskDependencyRepository()
+        => _taskDependencyRepo ?? throw new InvalidOperationException("Task dependency repository is not registered.");
+
     private static string ComputeHash(string value)
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 
@@ -3246,6 +3558,7 @@ public class AiWorkflowService : IAiWorkflowService
                 var existingTasks = await _taskRepo.GetQueryable()
                     .Where(task => task.ProjectId == project.Id)
                     .OrderByDescending(task => task.CreatedAt)
+                    .ThenBy(task => task.Id)
                     .Take(30)
                     .Select(task => new { task.Title, task.Status, task.Priority, task.DueDate })
                     .ToListAsync(ct);
@@ -3557,64 +3870,28 @@ Rules: create 1-8 non-duplicate tasks; use concise action titles; include accept
 
     private async Task<bool> CanAccessProjectAsync(Project project, Guid currentUserId, CancellationToken ct)
     {
-        if (IsAdmin() || project.OwnerId == currentUserId)
-        {
-            return true;
-        }
-
-        var isProjectMember = await _projectMemberRepo.GetQueryable()
-            .AnyAsync(member => member.ProjectId == project.Id && member.UserId == currentUserId, ct);
-        if (isProjectMember)
-        {
-            return true;
-        }
-
-        if (!project.OrganizationId.HasValue)
+        var systemTier = await _authorization.ResolveSystemTierAsync(
+            currentUserId,
+            _currentUserService.Role,
+            ct);
+        if (systemTier == AiNativeSystemTier.Restricted)
         {
             return false;
         }
-
-        if (project.Organization?.OwnerId == currentUserId)
-        {
-            return true;
-        }
-
-        return await _organizationMemberRepo.GetQueryable()
-            .AnyAsync(member => member.OrganizationId == project.OrganizationId.Value && member.UserId == currentUserId, ct);
+        return (await _authorization.ResolveProjectAsync(project, currentUserId, IsAdmin(), ct)).CanRead;
     }
 
     private async Task<bool> CanManageProjectAsync(Project project, Guid currentUserId, CancellationToken ct)
     {
-        if (IsAdmin() || project.OwnerId == currentUserId)
-        {
-            return true;
-        }
-
-        var projectRole = await _projectMemberRepo.GetQueryable()
-            .Where(member => member.ProjectId == project.Id && member.UserId == currentUserId)
-            .Select(member => member.Role)
-            .FirstOrDefaultAsync(ct);
-        if (ProjectRoleRules.CanManageProject(projectRole))
-        {
-            return true;
-        }
-
-        if (!project.OrganizationId.HasValue)
+        var systemTier = await _authorization.ResolveSystemTierAsync(
+            currentUserId,
+            _currentUserService.Role,
+            ct);
+        if (systemTier != AiNativeSystemTier.Full)
         {
             return false;
         }
-
-        if (project.Organization?.OwnerId == currentUserId)
-        {
-            return true;
-        }
-
-        var organizationRole = await _organizationMemberRepo.GetQueryable()
-            .Where(member => member.OrganizationId == project.OrganizationId.Value && member.UserId == currentUserId)
-            .Select(member => member.Role)
-            .FirstOrDefaultAsync(ct);
-
-        return OrganizationRoleRules.CanManageOrganization(organizationRole);
+        return (await _authorization.ResolveProjectAsync(project, currentUserId, IsAdmin(), ct)).CanManage;
     }
 
     /// <summary>
@@ -3627,43 +3904,23 @@ Rules: create 1-8 non-duplicate tasks; use concise action titles; include accept
         Guid currentUserId,
         CancellationToken ct)
     {
-        if (IsAdmin() || project.OwnerId == currentUserId)
-        {
-            return AiCapabilityTier.Full;
-        }
-
-        var projectRole = await _projectMemberRepo.GetQueryable()
-            .Where(member => member.ProjectId == project.Id && member.UserId == currentUserId)
-            .Select(member => member.Role)
-            .FirstOrDefaultAsync(ct);
-
-        if (projectRole != null)
-        {
-            return AiCapabilityRules.ResolveTier(projectRole);
-        }
-
-        // Organization managers keep full reach over their organization's projects.
-        if (!project.OrganizationId.HasValue)
+        var systemTier = await _authorization.ResolveSystemTierAsync(
+            currentUserId,
+            _currentUserService.Role,
+            ct);
+        if (systemTier == AiNativeSystemTier.Restricted)
         {
             return AiCapabilityTier.None;
         }
-
-        if (project.Organization?.OwnerId == currentUserId)
-        {
-            return AiCapabilityTier.Full;
-        }
-
-        var organizationRole = await _organizationMemberRepo.GetQueryable()
-            .Where(member => member.OrganizationId == project.OrganizationId.Value && member.UserId == currentUserId)
-            .Select(member => member.Role)
-            .FirstOrDefaultAsync(ct);
-
-        if (OrganizationRoleRules.CanManageOrganization(organizationRole))
-        {
-            return AiCapabilityTier.Full;
-        }
-
-        return organizationRole != null ? AiCapabilityTier.ReadOnly : AiCapabilityTier.None;
+        var projectAuthorization = await _authorization.ResolveProjectAsync(
+            project,
+            currentUserId,
+            IsAdmin(),
+            ct);
+        return systemTier == AiNativeSystemTier.SummaryOnly &&
+               projectAuthorization.CapabilityTier > AiCapabilityTier.ReadOnly
+            ? AiCapabilityTier.ReadOnly
+            : projectAuthorization.CapabilityTier;
     }
 
     private async Task<Result> ValidateExecuteActionAsync(
@@ -3771,29 +4028,10 @@ Rules: create 1-8 non-duplicate tasks; use concise action titles; include accept
 
     private async Task<bool> IsProjectUserAsync(Project project, Guid userId, CancellationToken ct)
     {
-        if (project.OwnerId == userId)
-        {
-            return true;
-        }
-
-        if (await _projectMemberRepo.GetQueryable()
-            .AnyAsync(member => member.ProjectId == project.Id && member.UserId == userId, ct))
-        {
-            return true;
-        }
-
-        if (!project.OrganizationId.HasValue)
-        {
-            return false;
-        }
-
-        if (project.Organization?.OwnerId == userId)
-        {
-            return true;
-        }
-
-        return await _organizationMemberRepo.GetQueryable()
-            .AnyAsync(member => member.OrganizationId == project.OrganizationId.Value && member.UserId == userId, ct);
+        var isSystemAdmin = await _userRepo.GetQueryable()
+            .AsNoTracking()
+            .AnyAsync(user => user.Id == userId && user.IsActive && user.Role == ProjectRoleRules.SystemAdmin, ct);
+        return (await _authorization.ResolveProjectAsync(project, userId, isSystemAdmin, ct)).CanRead;
     }
 
     private bool IsAdmin()

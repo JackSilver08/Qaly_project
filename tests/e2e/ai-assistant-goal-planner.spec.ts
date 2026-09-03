@@ -110,7 +110,7 @@ test('TEST-GS-E2E reload renders goal, selected skill, work plan and safe activi
   // Answer-first ordering: the plan card lives in a disclosure that follows the primary answer
   // (the process and context disclosures sit between them, so this is a general sibling match).
   await expect(
-    dialog.locator('.assistant-body > .assistant-primary-answer ~ details.assistant-work-plan-details > .assistant-work-plan-card').last(),
+     dialog.locator('.assistant-body > .assistant-primary-answer ~ details.assistant-work-plan-details > .assistant-work-plan-card').last(),
   ).toBeVisible()
   await expect(guidedPlan.locator('details.assistant-missing-skill')).not.toHaveAttribute('open', '')
   await expect(dialog.getByText('project.create.v1', { exact: true })).not.toBeVisible()

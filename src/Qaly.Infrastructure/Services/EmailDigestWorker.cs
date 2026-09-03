@@ -1,8 +1,12 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Services;
+using Qaly.Application.Services.Tasks;
+using Qaly.Domain.Entities;
+using Qaly.Infrastructure.Data;
 using System.Text;
 
 namespace Qaly.Infrastructure.Services;
@@ -24,122 +28,205 @@ public partial class EmailDigestWorker : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            var now = DateTime.Now;
-            var nextRun = now.Date.AddDays(1).AddHours(7); // Next run at 7:00 AM tomorrow
-            
-            // If it's already past 7:00 AM today, the next run is tomorrow.
-            // If it's before 7:00 AM today, the next run should be today at 7:00 AM.
-            if (now.Hour < 7)
-            {
-                nextRun = now.Date.AddHours(7);
-            }
-
-            var delay = nextRun - now;
-            LogNextRun(_logger, nextRun, delay);
-
-            try
-            {
-                await Task.Delay(delay, stoppingToken);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-
             try
             {
                 await SendDigestsAsync(stoppingToken);
             }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
             catch (Exception ex)
             {
                 LogErrorSendingDigests(_logger, ex);
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
             }
         }
 
         LogWorkerStopping(_logger);
     }
 
-    private async Task SendDigestsAsync(CancellationToken ct)
+    internal async Task SendDigestsAsync(CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();
-        var userService = scope.ServiceProvider.GetRequiredService<IUserService>();
-        var taskService = scope.ServiceProvider.GetRequiredService<ITaskService>();
-        var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
+        var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
         var emailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
+        var authorization = scope.ServiceProvider.GetRequiredService<IAiNativeAuthorizationService>();
+        var now = DateTimeOffset.UtcNow;
+        var staleClaim = now.AddMinutes(-30);
 
-        var usersResult = await userService.GetActiveAsync(ct);
-        if (!usersResult.IsSuccess)
-        {
-            LogFetchUsersWarning(_logger, usersResult.Error ?? "Unknown error");
-            return;
-        }
+        var dueIds = await db.ProjectDigestSubscriptions.AsNoTracking()
+            .Where(item => item.IsEnabled && item.NextDeliveryAt != null && item.NextDeliveryAt <= now &&
+                (item.LastDeliveryStatus != "sending" || item.LastAttemptAt == null || item.LastAttemptAt < staleClaim))
+            .OrderBy(item => item.NextDeliveryAt)
+            .ThenBy(item => item.Id)
+            .Select(item => item.Id)
+            .Take(100)
+            .ToListAsync(ct);
 
-        if (usersResult.Data is not { } users)
+        foreach (var subscriptionId in dueIds)
         {
-            return;
-        }
+            var subscription = await db.ProjectDigestSubscriptions
+                .Include(item => item.User)
+                .Include(item => item.Project).ThenInclude(project => project.Organization)
+                .SingleOrDefaultAsync(item => item.Id == subscriptionId, ct);
+            if (subscription == null || !subscription.IsEnabled || subscription.NextDeliveryAt is not { } scheduledAt || scheduledAt > DateTimeOffset.UtcNow)
+                continue;
 
-        foreach (var user in users)
-        {
-            var digestContent = await BuildDigestContentAsync(user.Id, taskService, notificationService, ct);
-            if (!string.IsNullOrEmpty(digestContent))
+            var systemTier = subscription.User.IsActive
+                ? await authorization.ResolveSystemTierAsync(subscription.UserId, subscription.User.Role, ct)
+                : AiNativeSystemTier.Restricted;
+            var projectPermission = subscription.User.IsActive
+                ? await authorization.ResolveProjectAsync(
+                    subscription.Project,
+                    subscription.UserId,
+                    ProjectRoleRules.IsSystemAdmin(subscription.User.Role),
+                    ct)
+                : new AiNativeProjectAuthorization(false, false, false, AiCapabilityTier.None);
+            if (!subscription.User.IsActive || systemTier == AiNativeSystemTier.Restricted || !projectPermission.CanRead)
             {
-                await emailService.SendAsync(user.Email, "Qaly daily digest", digestContent, ct);
-                LogSentDigest(_logger, user.Email);
+                // A scheduled external effect must re-check the same authorization
+                // boundary as interactive reads. Removing a member or restricting AI
+                // access therefore stops future delivery instead of leaking stale data.
+                subscription.IsEnabled = false;
+                subscription.NextDeliveryAt = null;
+                subscription.LastDeliveryStatus = "access_revoked";
+                subscription.LastError = "Digest delivery stopped because current access no longer permits this Project.";
+                subscription.LastAttemptAt = DateTimeOffset.UtcNow;
+                subscription.Revision++;
+                await db.SaveChangesAsync(ct);
+                continue;
+            }
+
+            var deliveryKey = subscription.LastDeliveryStatus == "retry" && !string.IsNullOrWhiteSpace(subscription.LastDeliveryKey)
+                ? subscription.LastDeliveryKey
+                : $"project-digest:{subscription.Id}:{scheduledAt.UtcTicks}";
+            subscription.LastDeliveryKey = deliveryKey;
+            subscription.LastDeliveryStatus = "sending";
+            subscription.LastAttemptAt = DateTimeOffset.UtcNow;
+            subscription.LastError = null;
+            subscription.Revision++;
+            try
+            {
+                await db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                db.ChangeTracker.Clear();
+                continue;
+            }
+
+            try
+            {
+                var isSystemAdmin = ProjectRoleRules.IsSystemAdmin(subscription.User.Role);
+                var digestContent = await BuildDigestContentAsync(
+                    db,
+                    subscription,
+                    projectPermission.CanManage,
+                    isSystemAdmin,
+                    ct);
+                await emailService.SendAsync(subscription.User.Email,
+                    $"Qaly weekly digest · {subscription.Project.Name}", digestContent, ct);
+                subscription.LastDeliveryAt = DateTimeOffset.UtcNow;
+                subscription.LastDeliveryStatus = "delivered";
+                subscription.LastError = null;
+                subscription.ConsecutiveFailureCount = 0;
+                subscription.NextDeliveryAt = NextScheduledDelivery(subscription, DateTimeOffset.UtcNow);
+                subscription.Revision++;
+                await db.SaveChangesAsync(ct);
+                LogSentDigest(_logger, subscription.Id);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                subscription.LastDeliveryStatus = "retry";
+                subscription.LastError = ex.Message.Length > 1000 ? ex.Message[..1000] : ex.Message;
+                subscription.ConsecutiveFailureCount++;
+                var retryMinutes = Math.Min(60, 5 * (1 << Math.Min(4, subscription.ConsecutiveFailureCount - 1)));
+                subscription.NextDeliveryAt = DateTimeOffset.UtcNow.AddMinutes(retryMinutes);
+                subscription.Revision++;
+                await db.SaveChangesAsync(ct);
+                LogDigestRetry(_logger, subscription.Id, deliveryKey, retryMinutes, ex.Message);
             }
         }
     }
 
-    private static async Task<string?> BuildDigestContentAsync(Guid userId, ITaskService taskService, INotificationService notificationService, CancellationToken ct)
+    private static async Task<string> BuildDigestContentAsync(
+        QalyDbContext db,
+        ProjectDigestSubscription subscription,
+        bool canManageProject,
+        bool isSystemAdmin,
+        CancellationToken ct)
     {
         var sb = new StringBuilder();
-        var hasContent = false;
+        var tasks = await db.TaskItems.AsNoTracking()
+            .Where(task => task.ProjectId == subscription.ProjectId &&
+                (canManageProject || task.AssigneeId == subscription.UserId ||
+                    task.Assignees.Any(item => item.UserId == subscription.UserId)) &&
+                (!task.IsPrivate ||
+                    isSystemAdmin ||
+                    subscription.Project.OwnerId == subscription.UserId ||
+                    task.ReporterId == subscription.UserId ||
+                    task.AssigneeId == subscription.UserId ||
+                    task.Assignees.Any(item => item.UserId == subscription.UserId)))
+            .OrderBy(task => task.DueDate)
+            .ThenBy(task => task.Id)
+            .Take(100)
+            .Select(task => new { task.Id, task.Title, task.Status, task.DueDate })
+            .ToListAsync(ct);
+        var now = DateTimeOffset.UtcNow;
+        var open = tasks.Where(task => TaskStatusRules.IsOpen(task.Status)).ToList();
+        var overdue = open.Where(task => task.DueDate < now).ToList();
 
-        // 1. Tasks: Overdue or due in next 2 days
-        var tasksResult = await taskService.GetByAssigneeAsync(userId, page: 1, pageSize: 100, ct: ct);
-        if (tasksResult.IsSuccess && tasksResult.Data is { } tasks)
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"Project: {subscription.Project.Name}");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+            $"Assigned tasks: {tasks.Count}; open: {open.Count}; overdue: {overdue.Count}.");
+        if (open.Count > 0)
         {
-            var now = DateTimeOffset.Now;
-            var threshold = now.AddDays(2);
-            var relevantTasks = tasks.Items
-                .Where(t => t.DueDate.HasValue && (t.DueDate.Value < threshold) && t.Status != "Done" && t.Status != "Completed")
-                .ToList();
-
-            if (relevantTasks.Count > 0)
+            sb.AppendLine();
+            sb.AppendLine("Tasks requiring attention:");
+            foreach (var task in open.Take(20))
             {
-                hasContent = true;
-                sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"Tasks requiring attention:");
-                foreach (var task in relevantTasks)
-                {
-                    if (task.DueDate is not { } dueDate)
-                    {
-                        continue;
-                    }
-
-                    var status = dueDate < now ? "[OVERDUE]" : "[UPCOMING]";
-                    sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- {status} {task.Title} (Due: {dueDate:yyyy-MM-dd HH:mm})");
-                }
+                var due = task.DueDate.HasValue
+                    ? task.DueDate.Value.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
+                    : "no deadline";
+                sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+                    $"- [{task.Status}] {task.Title} · {due} · /projects/{subscription.ProjectId}/tasks/{task.Id}");
             }
         }
+        sb.AppendLine();
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"Open Project: /projects/{subscription.ProjectId}");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"Delivery key: {subscription.LastDeliveryKey}");
+        return sb.ToString();
+    }
 
-        // 2. Unread Notifications
-        var notificationsResult = await notificationService.GetByUserAsync(userId, unreadOnly: true, ct: ct);
-        if (notificationsResult.IsSuccess && notificationsResult.Data is { Count: > 0 } notifications)
+    private static DateTimeOffset NextScheduledDelivery(ProjectDigestSubscription subscription, DateTimeOffset after)
+    {
+        TimeZoneInfo zone;
+        try
         {
-            if (hasContent) sb.AppendLine();
-            hasContent = true;
-            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"Recent unread notifications:");
-            foreach (var notification in notifications.Take(5))
-            {
-                sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- {notification.Message} ({notification.CreatedAt:yyyy-MM-dd HH:mm})");
-            }
-            if (notifications.Count > 5)
-            {
-                sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- ... and {notifications.Count - 5} more.");
-            }
+            zone = TimeZoneInfo.FindSystemTimeZoneById(subscription.TimeZoneId);
         }
-
-        return hasContent ? sb.ToString() : null;
+        catch
+        {
+            zone = TimeZoneInfo.CreateCustomTimeZone("Qaly-SE-Asia", TimeSpan.FromHours(7), "Qaly SE Asia", "Qaly SE Asia");
+        }
+        var local = TimeZoneInfo.ConvertTime(after, zone);
+        var days = (subscription.DayOfWeek - (int)local.DayOfWeek + 7) % 7;
+        var candidate = local.Date.AddDays(days).AddMinutes(subscription.LocalTimeMinutes);
+        if (candidate <= local.DateTime) candidate = candidate.AddDays(7);
+        return TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(candidate, DateTimeKind.Unspecified), zone);
     }
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Email Digest Worker is starting.")]
@@ -157,6 +244,9 @@ public partial class EmailDigestWorker : BackgroundService
     [LoggerMessage(EventId = 5, Level = LogLevel.Warning, Message = "Could not fetch active users for email digest: {Message}")]
     private static partial void LogFetchUsersWarning(ILogger logger, string message);
 
-    [LoggerMessage(EventId = 6, Level = LogLevel.Information, Message = "Sent Email Digest to {Email}")]
-    private static partial void LogSentDigest(ILogger logger, string email);
+    [LoggerMessage(EventId = 6, Level = LogLevel.Information, Message = "Sent email digest for subscription {SubscriptionId}.")]
+    private static partial void LogSentDigest(ILogger logger, Guid subscriptionId);
+
+    [LoggerMessage(EventId = 7, Level = LogLevel.Warning, Message = "Digest {SubscriptionId} ({DeliveryKey}) will retry in {RetryMinutes} minutes: {Message}")]
+    private static partial void LogDigestRetry(ILogger logger, Guid subscriptionId, string deliveryKey, int retryMinutes, string message);
 }

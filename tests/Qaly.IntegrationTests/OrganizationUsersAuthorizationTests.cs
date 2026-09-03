@@ -102,13 +102,13 @@ public class OrganizationUsersAuthorizationTests : IClassFixture<IntegrationTest
 
         HttpResponseMessage response = operation switch
         {
-            "invite" => await client.PostAsJsonAsync(
+            "invite" => await SendWithCsrfAsync(client, HttpMethod.Post,
                 $"/api/organizations/{setup.OrganizationId}/users",
                 new { email = setup.TargetEmail, role = OrganizationRoleRules.Member }),
-            "update" => await client.PatchAsJsonAsync(
+            "update" => await SendWithCsrfAsync(client, HttpMethod.Patch,
                 $"/api/organizations/{setup.OrganizationId}/users/{setup.TargetId}",
                 new { role = OrganizationRoleRules.BillingAdmin }),
-            "remove" => await client.DeleteAsync(
+            "remove" => await SendWithCsrfAsync(client, HttpMethod.Delete,
                 $"/api/organizations/{setup.OrganizationId}/users/{setup.TargetId}"),
             _ => throw new InvalidOperationException($"Unknown operation {operation}.")
         };
@@ -123,7 +123,7 @@ public class OrganizationUsersAuthorizationTests : IClassFixture<IntegrationTest
         var setup = await SeedModeratorScenarioAsync(ModeratorCapabilities.UsersView, addTargetAsMember: false);
         using var client = CreateModeratorClient(setup.ModeratorId);
 
-        var response = await client.PostAsJsonAsync(
+        var response = await SendWithCsrfAsync(client, HttpMethod.Post,
             $"/api/organizations/{setup.OrganizationId}/users",
             new { email = setup.TargetEmail, role = OrganizationRoleRules.Member });
 
@@ -168,7 +168,7 @@ public class OrganizationUsersAuthorizationTests : IClassFixture<IntegrationTest
         }
 
         using var client = CreateModeratorClient(setup.ModeratorId);
-        var response = await client.PostAsJsonAsync(
+        var response = await SendWithCsrfAsync(client, HttpMethod.Post,
             $"/api/organizations/{otherOrganizationId}/users",
             new { email = setup.TargetEmail, role = OrganizationRoleRules.Member });
 
@@ -237,6 +237,21 @@ public class OrganizationUsersAuthorizationTests : IClassFixture<IntegrationTest
         return client;
     }
 
+    private static async Task<HttpResponseMessage> SendWithCsrfAsync(
+        HttpClient client,
+        HttpMethod method,
+        string url,
+        object? body = null)
+    {
+        var csrf = (await client.GetFromJsonAsync<CsrfResponse>("/api/security/csrf"))!.Token;
+        using var request = new HttpRequestMessage(method, url)
+        {
+            Content = body == null ? null : JsonContent.Create(body)
+        };
+        request.Headers.Add("X-CSRF-TOKEN", csrf);
+        return await client.SendAsync(request);
+    }
+
     private static User NewUser(Guid id, string email) => new()
     {
         Id = id,
@@ -252,4 +267,5 @@ public class OrganizationUsersAuthorizationTests : IClassFixture<IntegrationTest
         Guid OrganizationId,
         Guid TargetId,
         string TargetEmail);
+    private sealed record CsrfResponse(string Token);
 }

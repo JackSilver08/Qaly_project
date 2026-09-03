@@ -122,14 +122,137 @@ public class TaskConcurrencyTests : IDisposable
         tasks[0].SortOrder.Should().Be(1000);
         tasks[1].SortOrder.Should().Be(2000);
         tasks[2].SortOrder.Should().Be(3000);
+        var webhookEvents = await _context.WebhookOutboxMessages
+            .AsNoTracking()
+            .OrderBy(message => message.CreatedAt)
+            .ToListAsync();
+        webhookEvents.Should().HaveCount(2);
+        webhookEvents.Should().OnlyContain(message =>
+            message.ProjectId == projectId && message.EventType == "task.updated");
     }
 
-    private TaskService CreateService()
+    [Fact]
+    public async Task BatchUpdateStatus_WhenAnyTaskIsUnauthorized_IsAtomic()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var ownTaskId = Guid.NewGuid();
+        var protectedTaskId = Guid.NewGuid();
+        _context.Users.AddRange(
+            new User { Id = ownerId, FullName = "Owner", Email = "batch-owner@qaly.dev", IsActive = true },
+            new User { Id = memberId, FullName = "Member", Email = "batch-member@qaly.dev", IsActive = true });
+        _context.Projects.Add(new Project { Id = projectId, Name = "Batch project", OwnerId = ownerId });
+        _context.ProjectMembers.Add(new ProjectMember
+        {
+            ProjectId = projectId,
+            UserId = memberId,
+            Role = ProjectRoleRules.Member
+        });
+        _context.TaskItems.AddRange(
+            new TaskItem { Id = ownTaskId, ProjectId = projectId, ReporterId = memberId, Title = "Own task", Status = "Todo" },
+            new TaskItem { Id = protectedTaskId, ProjectId = projectId, ReporterId = ownerId, Title = "Protected task", Status = "Todo" });
+        await _context.SaveChangesAsync();
+
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+        var result = await CreateService().BatchUpdateStatusAsync(
+            [ownTaskId, protectedTaskId],
+            "InProgress");
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+        (await _context.TaskItems.AsNoTracking().SingleAsync(task => task.Id == ownTaskId)).Status.Should().Be("Todo");
+        (await _context.TaskItems.AsNoTracking().SingleAsync(task => task.Id == protectedTaskId)).Status.Should().Be("Todo");
+        (await _context.WebhookOutboxMessages.AsNoTracking().CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task BatchDelete_WhenAnyTaskIsMissing_DoesNotDeleteExistingTask()
+    {
+        var ownerId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var existingTaskId = Guid.NewGuid();
+        _context.Users.Add(new User { Id = ownerId, FullName = "Owner", Email = "delete-owner@qaly.dev", IsActive = true });
+        _context.Projects.Add(new Project { Id = projectId, Name = "Delete project", OwnerId = ownerId });
+        _context.TaskItems.Add(new TaskItem
+        {
+            Id = existingTaskId,
+            ProjectId = projectId,
+            ReporterId = ownerId,
+            Title = "Must survive",
+            Status = "Todo"
+        });
+        await _context.SaveChangesAsync();
+
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+        var result = await CreateService().BatchDeleteAsync([existingTaskId, Guid.NewGuid()]);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(404);
+        (await _context.TaskItems.AsNoTracking().AnyAsync(task => task.Id == existingTaskId)).Should().BeTrue();
+        (await _context.WebhookOutboxMessages.AsNoTracking().CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WhenAuditStagingFails_DoesNotCommitTaskOrIntegrationSignals()
+    {
+        var ownerId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        _context.Users.Add(new User
+        {
+            Id = ownerId,
+            FullName = "Owner",
+            Email = "task-audit-failure@qaly.dev",
+            IsActive = true
+        });
+        _context.Projects.Add(new Project
+        {
+            Id = projectId,
+            Name = "Atomic task project",
+            OwnerId = ownerId
+        });
+        await _context.SaveChangesAsync();
+
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+        var auditLogService = new Mock<IAuditLogService>();
+        auditLogService
+            .Setup(service => service.StageAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<object?>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("simulated audit staging failure"));
+        var countingUnitOfWork = new CountingUnitOfWork(_context);
+        var request = new CreateTaskDto(
+            "Must roll back",
+            "The whole canonical graph must remain uncommitted.",
+            "High",
+            DateTimeOffset.UtcNow.AddDays(1),
+            4,
+            projectId,
+            null);
+
+        var action = () => CreateService(countingUnitOfWork, auditLogService.Object).CreateAsync(request);
+
+        await action.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("simulated audit staging failure");
+        countingUnitOfWork.SaveCount.Should().Be(0);
+        _context.ChangeTracker.Clear();
+        (await _context.TaskItems.CountAsync()).Should().Be(0);
+        (await _context.VectorSyncOutbox.CountAsync()).Should().Be(0);
+        (await _context.WebhookOutboxMessages.CountAsync()).Should().Be(0);
+    }
+
+    private TaskService CreateService(
+        IUnitOfWork? unitOfWork = null,
+        IAuditLogService? auditLogService = null)
     {
         var projectRepo = new GenericRepository<Project>(_context);
         var memberRepo = new GenericRepository<ProjectMember>(_context);
         var organizationMemberRepo = new GenericRepository<OrganizationMember>(_context);
-        var accessPolicy = new TaskAccessPolicy(_currentUser.Object, projectRepo, memberRepo, organizationMemberRepo);
+        var accessPolicy = new TaskAccessPolicy(_currentUser.Object, projectRepo, memberRepo, organizationMemberRepo,
+            new ProjectRoleCatalog(new GenericRepository<ProjectRoleDefinition>(_context)));
         
         return new TaskService(
             new GenericRepository<TaskItem>(_context),
@@ -144,12 +267,27 @@ public class TaskConcurrencyTests : IDisposable
             new GenericRepository<ProjectLabel>(_context),
             new GenericRepository<Sprint>(_context),
             new GenericRepository<VectorSyncOutbox>(_context),
-            new UnitOfWork(_context),
+            new GenericRepository<WebhookOutboxMessage>(_context),
+            unitOfWork ?? new UnitOfWork(_context),
             accessPolicy,
             Mock.Of<INotificationService>(),
-            Mock.Of<IAuditLogService>(),
+            auditLogService ?? Mock.Of<IAuditLogService>(),
             Mock.Of<ITaskPrioritySuggestionService>(),
-            Mock.Of<IWebhookPublisher>(),
             _currentUser.Object);
+    }
+
+    private sealed class CountingUnitOfWork(QalyDbContext context) : IUnitOfWork
+    {
+        public int SaveCount { get; private set; }
+
+        public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            SaveCount++;
+            return await context.SaveChangesAsync(cancellationToken);
+        }
+
+        public void Dispose()
+        {
+        }
     }
 }

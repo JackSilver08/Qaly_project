@@ -253,6 +253,7 @@ async function remove(definition: RoleDefinition) {
             type="button"
             :disabled="saving || definition.memberCount > 0"
             :title="definition.memberCount > 0 ? 'Còn thành viên đang dùng vai trò này' : 'Xóa vai trò'"
+            :aria-label="definition.memberCount > 0 ? `Không thể xóa vai trò ${definition.displayName} vì đang được sử dụng` : `Xóa vai trò ${definition.displayName}`"
             @click="remove(definition)"
           >
             <Trash2 :size="15" />

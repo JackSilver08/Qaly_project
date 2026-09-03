@@ -130,29 +130,31 @@ onBeforeUnmount(async () => {
     <p class="text-sm text-slate-500 mb-6">Group: {{ groupId }}</p>
 
     <section class="glass-card p-4 mb-6">
-      <h3 class="font-medium">Tạo poll</h3>
+      <h2 class="font-medium">Tạo poll</h2>
       <input
         v-model="question"
+        aria-label="Câu hỏi bình chọn"
         placeholder="Câu hỏi"
         class="w-full mt-2 p-2 border rounded"
       />
       <div class="mt-2" v-for="(opt, idx) in options" :key="idx">
         <input
           v-model="options[idx]"
+          :aria-label="`Lựa chọn ${idx + 1}`"
           :placeholder="`Lựa chọn ${idx + 1}`"
           class="w-full p-2 border rounded mt-1"
         />
       </div>
-      <button class="text-button mt-3" @click="options.push('')">
+      <button type="button" class="text-button mt-3" @click="options.push('')">
         Thêm lựa chọn
       </button>
       <div class="mt-3">
-        <button class="primary-button" @click="createPoll">Tạo poll</button>
+        <button type="button" class="primary-button" @click="createPoll">Tạo poll</button>
       </div>
     </section>
 
     <section v-if="results" class="glass-card p-4">
-      <h3 class="font-medium">Kết quả</h3>
+      <h2 class="font-medium">Kết quả</h2>
       <div
         v-for="opt in results.options"
         :key="opt.id || opt.optionId || opt.optionId"
@@ -162,7 +164,7 @@ onBeforeUnmount(async () => {
           <div>{{ opt.content || opt.Content || opt.content }}</div>
           <div class="flex items-center gap-3">
             <div>{{ opt.voteCount ?? opt.voteCount ?? 0 }} votes</div>
-            <button
+            <button type="button"
               v-if="canVote"
               class="primary-button"
               @click="vote(opt.optionId || opt.id || opt.optionId)"
@@ -173,7 +175,7 @@ onBeforeUnmount(async () => {
         </div>
       </div>
       <div class="mt-4">
-        <button class="text-button" @click="closePoll">Đóng poll</button>
+        <button type="button" class="text-button" @click="closePoll">Đóng poll</button>
       </div>
     </section>
   </div>

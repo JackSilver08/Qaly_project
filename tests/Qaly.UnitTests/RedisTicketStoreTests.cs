@@ -12,9 +12,22 @@ namespace Qaly.UnitTests;
 #pragma warning disable CA1707
 
 /// <summary>
+/// Wall-clock timeout assertions must not compete with the rest of the unit
+/// suite for worker threads. Coverage instrumentation on a two-core runner can
+/// otherwise delay the test continuation well beyond the 250 ms product
+/// timeout even though the Redis fallback completed correctly.
+/// </summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class RedisTicketStoreTimingDefinition
+{
+    public const string Name = "Redis ticket store timing";
+}
+
+/// <summary>
 /// T1-DH-02: Fault injection and circuit breaker tests for RedisTicketStore.
 /// Maps: REQ-P0-01, REQ-NFR-04, GAP-021 (Redis-unavailable bounded ≤1s).
 /// </summary>
+[Collection(RedisTicketStoreTimingDefinition.Name)]
 public class RedisTicketStoreTests
 {
     private static AuthenticationTicket CreateTicket(string userId = "user-test-01")

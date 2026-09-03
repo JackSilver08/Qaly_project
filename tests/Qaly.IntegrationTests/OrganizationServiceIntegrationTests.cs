@@ -51,7 +51,8 @@ public class OrganizationServiceIntegrationTests : IClassFixture<IntegrationTest
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Test-UserId", ownerId.ToString());
 
-        var response = await client.PostAsJsonAsync($"/api/organizations/{organizationId}/members", new AddOrganizationMemberRequest(memberId, "Member"));
+        var response = await SendWithCsrfAsync(client, HttpMethod.Post,
+            $"/api/organizations/{organizationId}/members", new AddOrganizationMemberRequest(memberId, "Member"));
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
@@ -85,7 +86,8 @@ public class OrganizationServiceIntegrationTests : IClassFixture<IntegrationTest
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Test-UserId", ownerId.ToString());
 
-        var response = await client.DeleteAsync($"/api/organizations/{organizationId}/members/{ownerId}");
+        var response = await SendWithCsrfAsync(client, HttpMethod.Delete,
+            $"/api/organizations/{organizationId}/members/{ownerId}");
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
@@ -122,7 +124,8 @@ public class OrganizationServiceIntegrationTests : IClassFixture<IntegrationTest
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Test-UserId", ownerId.ToString());
 
-        var response = await client.PatchAsJsonAsync($"/api/organizations/{organizationId}/users/{memberId}", new UpdateOrganizationUserRoleRequest("BillingAdmin"));
+        var response = await SendWithCsrfAsync(client, HttpMethod.Patch,
+            $"/api/organizations/{organizationId}/users/{memberId}", new UpdateOrganizationUserRoleRequest("BillingAdmin"));
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -169,7 +172,8 @@ public class OrganizationServiceIntegrationTests : IClassFixture<IntegrationTest
         ownerClient.DefaultRequestHeaders.Add("X-Test-UserId", ownerId.ToString());
 
         // Deactivate Org
-        var deactResponse = await ownerClient.DeleteAsync($"/api/organizations/{organizationId}");
+        var deactResponse = await SendWithCsrfAsync(ownerClient, HttpMethod.Delete,
+            $"/api/organizations/{organizationId}");
         deactResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // Verify member cannot access project in deactivated org
@@ -179,4 +183,21 @@ public class OrganizationServiceIntegrationTests : IClassFixture<IntegrationTest
         var getProjResponse = await memberClient.GetAsync($"/api/projects/{projectId}");
         getProjResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
+
+    private static async Task<HttpResponseMessage> SendWithCsrfAsync(
+        HttpClient client,
+        HttpMethod method,
+        string url,
+        object? body = null)
+    {
+        var csrf = (await client.GetFromJsonAsync<CsrfResponse>("/api/security/csrf"))!.Token;
+        using var request = new HttpRequestMessage(method, url)
+        {
+            Content = body == null ? null : JsonContent.Create(body)
+        };
+        request.Headers.Add("X-CSRF-TOKEN", csrf);
+        return await client.SendAsync(request);
+    }
+
+    private sealed record CsrfResponse(string Token);
 }

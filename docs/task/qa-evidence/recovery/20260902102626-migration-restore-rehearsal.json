@@ -1,0 +1,19 @@
+{
+  "scenario": "Full EF migration chain, backup, clean restore and integrity check",
+  "startedAt": "2026-09-02T10:26:26.3000742+07:00",
+  "finishedAt": "2026-09-02T10:27:47.0719468+07:00",
+  "operator": "codex-local-rehearsal",
+  "server": "(localdb)\\MSSQLLocalDB",
+  "sourceDatabase": "QalyMigrationRehearsal_20260902102626",
+  "targetDatabase": "QalyRestoreRehearsal_20260902102626",
+  "migration": "passed",
+  "appliedMigrations": 57,
+  "latestMigration": "20260901185518_P024WebhookOutboxReliability",
+  "backup": "passed",
+  "cleanRestore": "passed",
+  "sourceCleanup": "dropped-rehearsal-database",
+  "durationSeconds": 80.77,
+  "success": true,
+  "error": null,
+  "backupSha256": "25380D14C521A98250DC2B49348A0EA5A8EA14F058EA4D7B0D048BEC033888D1"
+}

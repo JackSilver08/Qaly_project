@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Ai;
 using Qaly.Application.Services;
 using Qaly.Domain.Entities;
@@ -105,6 +106,7 @@ public class GroupAiServiceTests : IDisposable
         var groupId = Guid.NewGuid();
         var meetingId = Guid.NewGuid();
         var userId = Guid.NewGuid();
+        _currentUserService.SetupGet(service => service.UserId).Returns(userId);
         _groupsService
             .Setup(service => service.CanAccessGroupAsync(groupId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
@@ -131,6 +133,48 @@ public class GroupAiServiceTests : IDisposable
         var updated = await _context.GroupMeetingSessions.FindAsync(meetingId);
         updated!.Summary.Should().Be("New Summary");
         updated.TranscriptSourceId.Should().Be("new-source-id");
+    }
+
+    [Fact]
+    public async Task LinkMeetingSummaryAndTranscriptAsync_OrdinaryMemberCannotOverwriteAnotherUsersMeeting()
+    {
+        var groupId = Guid.NewGuid();
+        var meetingId = Guid.NewGuid();
+        var starterId = Guid.NewGuid();
+        var currentUserId = Guid.NewGuid();
+        _currentUserService.SetupGet(service => service.UserId).Returns(currentUserId);
+        _groupsService
+            .Setup(service => service.CanAccessGroupAsync(groupId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _groupsService
+            .Setup(service => service.CanManageGroupAsync(groupId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        await SeedGroupAsync(groupId, starterId);
+        await _context.GroupMeetingSessions.AddAsync(new GroupMeetingSession
+        {
+            Id = meetingId,
+            WorkGroupId = groupId,
+            StartedByUserId = starterId,
+            Provider = "Jitsi",
+            RoomId = "room-protected",
+            Summary = "Canonical summary",
+            TranscriptSourceId = "canonical-source"
+        });
+        await _context.SaveChangesAsync();
+
+        var result = await CreateService().LinkMeetingSummaryAndTranscriptAsync(
+            groupId,
+            meetingId,
+            "Overwritten summary",
+            "foreign-source");
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+        var unchanged = await _context.GroupMeetingSessions.FindAsync(meetingId);
+        unchanged!.Summary.Should().Be("Canonical summary");
+        unchanged.TranscriptSourceId.Should().Be("canonical-source");
+        _unitOfWork.Verify(service => service.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -263,6 +307,42 @@ public class GroupAiServiceTests : IDisposable
         result.Data.DraftTasks[0].SuggestedOwnerName.Should().Be("Bob");
     }
 
+    [Fact]
+    public async Task SummarizeGroupDiscussionAsync_InvalidProviderPayload_IsNotReportedAsSuccess()
+    {
+        var groupId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        _groupsService.Setup(service => service.CanAccessGroupAsync(groupId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        await SeedGroupMessageAsync(groupId, userId, "Source discussion");
+        _aiGateway.Setup(gateway => gateway.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiResponse { Content = "not-json" });
+
+        var result = await CreateService().SummarizeGroupDiscussionAsync(groupId, new GroupAiSummaryRequest());
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(422);
+        result.ErrorCode.Should().Be(AiErrorCodes.SchemaInvalid);
+    }
+
+    [Fact]
+    public async Task GenerateDraftProjectPayloadAsync_ProviderException_IsNotReportedAsDraft()
+    {
+        var groupId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        _groupsService.Setup(service => service.CanAccessGroupAsync(groupId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        await SeedGroupMessageAsync(groupId, userId, "Source discussion");
+        _aiGateway.Setup(gateway => gateway.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("provider unavailable"));
+
+        var result = await CreateService().GenerateDraftProjectPayloadAsync(groupId, new GroupAiDraftProjectRequest());
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(503);
+        result.ErrorCode.Should().Be(AiErrorCodes.ProviderUnavailable);
+    }
+
     private GroupAiService CreateService()
         => new(
             _aiGateway.Object,
@@ -285,6 +365,19 @@ public class GroupAiServiceTests : IDisposable
         };
         var group = new WorkGroup { Id = groupId, Name = "Test Group", OwnerId = userId };
         await _context.AddRangeAsync(user, group);
+        await _context.SaveChangesAsync();
+    }
+
+    private async Task SeedGroupMessageAsync(Guid groupId, Guid userId, string content)
+    {
+        await SeedGroupAsync(groupId, userId);
+        await _context.GroupMessages.AddAsync(new GroupMessage
+        {
+            WorkGroupId = groupId,
+            UserId = userId,
+            Content = content,
+            MessageType = "Text"
+        });
         await _context.SaveChangesAsync();
     }
 

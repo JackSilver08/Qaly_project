@@ -13,14 +13,18 @@ namespace Qaly.Application.Services;
 public class ApiKeyService : IApiKeyService
 {
     private readonly IRepository<ApiKey> _apiKeyRepo;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
     private const string KeyPrefix = "qaly_sk_";
+    private const int MaxActiveKeysPerUser = 20;
 
     public ApiKeyService(
         IRepository<ApiKey> apiKeyRepo,
+        IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService)
     {
         _apiKeyRepo = apiKeyRepo;
+        _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
     }
 
@@ -29,21 +33,50 @@ public class ApiKeyService : IApiKeyService
         var userId = _currentUserService.UserId;
         if (userId == null) return Result.Forbidden<ApiKeyCreatedDto>();
 
+        var name = dto.Name?.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+            return Result.Failure<ApiKeyCreatedDto>("Tên API Key là bắt buộc.");
+        if (name.Length > 100)
+            return Result.Failure<ApiKeyCreatedDto>("Tên API Key không được vượt quá 100 ký tự.");
+        if (dto.ExpiresAt.HasValue && dto.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+            return Result.Failure<ApiKeyCreatedDto>("Thời điểm hết hạn phải ở tương lai.");
+
+        var scopes = ApiKeyScopeCatalog.Normalize(dto.Scopes);
+        if (scopes.Count == 0)
+            return Result.Failure<ApiKeyCreatedDto>("Phải chọn ít nhất một phạm vi truy cập.");
+
+        var unsupportedScopes = scopes
+            .Where(scope => !ApiKeyScopeCatalog.Supported.Contains(scope))
+            .ToArray();
+        if (unsupportedScopes.Length > 0)
+        {
+            return Result.Failure<ApiKeyCreatedDto>(
+                $"Phạm vi chưa được hỗ trợ: {string.Join(", ", unsupportedScopes)}.");
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var activeKeyCount = await _apiKeyRepo.GetQueryable()
+            .CountAsync(key =>
+                key.UserId == userId.Value &&
+                !key.IsRevoked &&
+                (!key.ExpiresAt.HasValue || key.ExpiresAt.Value > now), ct);
+        if (activeKeyCount >= MaxActiveKeysPerUser)
+        {
+            return Result.Failure<ApiKeyCreatedDto>(
+                $"Bạn đã đạt giới hạn {MaxActiveKeysPerUser} API Key đang hoạt động. Hãy thu hồi key không còn dùng.",
+                409);
+        }
+
         // Generate a cryptographically secure random key
-        var randomBytes = RandomNumberGenerator.GetBytes(24);
-        var randomPart = Convert.ToBase64String(randomBytes)
-            .Replace("+", "")
-            .Replace("/", "")
-            .Replace("=", "")[..32];
+        var randomPart = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(24));
         var fullKey = $"{KeyPrefix}{randomPart}";
 
-        var scopes = dto.Scopes ?? ["tasks:read", "projects:read"];
         var keyHash = HashKey(fullKey);
 
         var entity = new ApiKey
         {
             UserId = userId.Value,
-            Name = dto.Name,
+            Name = name,
             KeyHash = keyHash,
             Prefix = fullKey[..16], // "qaly_sk_" + first 8 chars of random
             Scopes = JsonSerializer.Serialize(scopes),
@@ -52,6 +85,7 @@ public class ApiKeyService : IApiKeyService
         };
 
         await _apiKeyRepo.AddAsync(entity, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
 
         return Result.Created(new ApiKeyCreatedDto(
             entity.Id,
@@ -77,7 +111,7 @@ public class ApiKeyService : IApiKeyService
             k.Id,
             k.Name,
             k.Prefix,
-            JsonSerializer.Deserialize<List<string>>(k.Scopes) ?? [],
+            DeserializeScopes(k.Scopes),
             k.ExpiresAt,
             k.LastUsedAt,
             k.IsRevoked,
@@ -93,11 +127,14 @@ public class ApiKeyService : IApiKeyService
         if (userId == null) return Result.Forbidden();
 
         var key = await _apiKeyRepo.GetByIdAsync(keyId, ct);
-        if (key == null) return Result.NotFound("Không tìm thấy API Key.");
-        if (key.UserId != userId) return Result.Forbidden("Bạn không sở hữu API Key này.");
+        if (key == null || key.UserId != userId)
+            return Result.NotFound("Không tìm thấy API Key.");
+        if (key.IsRevoked) return Result.Success();
 
         key.IsRevoked = true;
+        key.UpdatedAt = DateTimeOffset.UtcNow;
         await _apiKeyRepo.UpdateAsync(key, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
 
         return Result.Success();
     }
@@ -118,5 +155,22 @@ public class ApiKeyService : IApiKeyService
     internal static bool VerifyKey(string key, string storedHash)
     {
         return string.Equals(HashKey(key), storedHash, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static List<string> DeserializeScopes(string? serializedScopes)
+    {
+        if (string.IsNullOrWhiteSpace(serializedScopes)) return [];
+
+        try
+        {
+            return ApiKeyScopeCatalog.Normalize(
+                    JsonSerializer.Deserialize<List<string>>(serializedScopes))
+                .Where(ApiKeyScopeCatalog.Supported.Contains)
+                .ToList();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
     }
 }

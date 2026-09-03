@@ -1,13 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { Award, Building2, MailPlus, RefreshCw, Search, ShieldCheck, Trash2, Users } from 'lucide-vue-next'
+import { Award, BriefcaseBusiness, Building2, MailPlus, RefreshCw, Search, ShieldCheck, Trash2, Users } from 'lucide-vue-next'
 import MemberSkillEvidenceDrawer from '../components/MemberSkillEvidenceDrawer.vue'
+import MemberProfessionalProfileDrawer from '../components/MemberProfessionalProfileDrawer.vue'
 import PageStatePanel from '../components/PageStatePanel.vue'
 import type { UserDto } from '../types'
 import { confirmDialog } from '../composables/use-confirm-dialog'
 import { showError, showSuccess } from '../composables/use-toast'
 import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
+import {
+  canManageOrganizationUsers,
+  canUseOrganizationCapability,
+  canViewProfessionalProfiles,
+  type OrganizationActorContext,
+} from '../utils/organization-access'
 
 interface Organization {
   id: string
@@ -46,6 +53,7 @@ const loadingError = ref('')
 const saving = ref<string | null>(null)
 const inviteOpen = ref(false)
 const evidenceMember = ref<OrganizationMember | null>(null)
+const professionalProfileMember = ref<OrganizationMember | null>(null)
 const invite = ref({ email: '', role: 'Member' })
 const moderatorCapabilities = ref<string[]>([])
 
@@ -66,22 +74,20 @@ const visibleMembers = computed(() => {
 
 const myMembership = computed(() => members.value.find((item) => item.userId === me.value?.id))
 
-const canManage = computed(() => {
-  if (me.value?.role === 'Admin') return true
-  if (selectedOrganization.value?.ownerId === me.value?.id) return true
+const accessContext = computed<OrganizationActorContext>(() => ({
+  systemRole: me.value?.role,
+  actorId: me.value?.id,
+  ownerId: selectedOrganization.value?.ownerId,
+  membershipRole: myMembership.value?.role,
+  hasMembership: !!myMembership.value,
+  moderatorCapabilities: moderatorCapabilities.value,
+}))
 
-  const membershipRole = myMembership.value?.role ?? ''
-  if (['Owner', 'OrganizationAdmin', 'Admin', 'Manager'].includes(membershipRole)) {
-    return true
-  }
-
-  return hasCapability('organization.users.invite') ||
-    hasCapability('organization.users.update_role') ||
-    hasCapability('organization.users.remove')
-})
+const canManage = computed(() => canManageOrganizationUsers(accessContext.value))
+const canViewProfessionalProfile = computed(() => canViewProfessionalProfiles(accessContext.value))
 
 function hasCapability(permission: string) {
-  return moderatorCapabilities.value.length === 0 || moderatorCapabilities.value.includes(permission)
+  return canUseOrganizationCapability(accessContext.value, permission)
 }
 
 const hasOrganizations = computed(() => organizations.value.length > 0)
@@ -250,11 +256,12 @@ onMounted(async () => {
           hệ thống.
         </p>
       </div>
-      <button
+      <button type="button"
         v-if="canManage && hasCapability('organization.users.invite')"
         class="primary"
         aria-label="Thêm thành viên tổ chức"
         :disabled="isInitialLoad || !selectedId"
+        :title="isInitialLoad ? 'Đang xác định tổ chức hiện tại' : !selectedId ? 'Chọn một tổ chức trước khi thêm thành viên' : 'Thêm tài khoản đang hoạt động vào tổ chức này'"
         @click="inviteOpen = true"
       >
         <MailPlus :size="18" /> Thêm thành viên
@@ -304,7 +311,7 @@ onMounted(async () => {
           <Search :size="18" />
           <input v-model="search" placeholder="Tìm theo tên hoặc email" />
         </label>
-        <button class="icon-button" :title="isLoadingMembers ? 'Đang tải' : 'Tải lại'" :aria-label="isLoadingMembers ? 'Đang tải lại danh sách thành viên' : 'Tải lại danh sách thành viên'" @click="loadMembers">
+        <button type="button" class="icon-button" :title="isLoadingMembers ? 'Đang tải' : 'Tải lại'" :aria-label="isLoadingMembers ? 'Đang tải lại danh sách thành viên' : 'Tải lại danh sách thành viên'" @click="loadMembers">
           <RefreshCw :size="18" :class="{ 'is-spinning': isLoadingMembers }" />
         </button>
       </section>
@@ -354,13 +361,13 @@ onMounted(async () => {
       </PageStatePanel>
 
       <div v-else class="table-wrap">
-        <table>
+        <table aria-label="Thành viên tổ chức">
           <thead>
             <tr>
-              <th>Thành viên</th>
-              <th>Vai trò tổ chức</th>
-              <th>Ngày tham gia</th>
-              <th><span class="sr-only">Thao tác</span></th>
+              <th scope="col">Thành viên</th>
+              <th scope="col">Vai trò tổ chức</th>
+              <th scope="col">Ngày tham gia</th>
+              <th scope="col"><span class="sr-only">Thao tác</span></th>
             </tr>
           </thead>
           <tbody>
@@ -381,6 +388,7 @@ onMounted(async () => {
                 <select
                   v-else-if="canManage && hasCapability('organization.users.update_role')"
                   :value="member.role"
+                  :aria-label="`Vai trò tổ chức của ${member.fullName}`"
                   :disabled="saving === member.userId"
                   @change="changeRole(member, ($event.target as HTMLSelectElement).value)"
                 >
@@ -393,6 +401,16 @@ onMounted(async () => {
               <td>{{ joinedLabel(member.joinedAt) }}</td>
               <td class="row-action">
                 <button
+                  v-if="canViewProfessionalProfile"
+                  class="professional-profile"
+                  type="button"
+                  :aria-label="`Xem hồ sơ nghề nghiệp ${member.fullName}`"
+                  title="Hồ sơ nghề nghiệp — không cấp quyền truy cập"
+                  @click="professionalProfileMember = member"
+                >
+                  <BriefcaseBusiness :size="17" />
+                </button>
+                <button
                   class="evidence"
                   type="button"
                   title="Xem bằng chứng kỹ năng"
@@ -401,7 +419,7 @@ onMounted(async () => {
                 >
                   <Award :size="17" />
                 </button>
-                <button
+                <button type="button"
                   v-if="canManage && member.role !== 'Owner' && hasCapability('organization.users.remove')"
                   class="remove"
                   :disabled="saving === member.userId"
@@ -418,9 +436,9 @@ onMounted(async () => {
       </div>
     </template>
 
-    <div v-if="inviteOpen" class="overlay" @click.self="inviteOpen = false">
-      <form class="modal" @submit.prevent="addMember">
-        <h2>Thêm thành viên</h2>
+    <div v-if="inviteOpen" class="overlay" @click.self="inviteOpen = false" @keydown.esc="inviteOpen = false">
+      <form class="modal" role="dialog" aria-modal="true" aria-labelledby="invite-member-title" @submit.prevent="addMember">
+        <h2 id="invite-member-title">Thêm thành viên</h2>
         <p>
           Nhập email của một tài khoản đang hoạt động. Người dùng chỉ được cấp quyền trong tổ chức
           này.
@@ -445,7 +463,7 @@ onMounted(async () => {
         </label>
         <div class="modal-actions">
           <button type="button" class="secondary" @click="inviteOpen = false">Hủy</button>
-          <button class="primary" :disabled="saving === 'invite'">Thêm thành viên</button>
+          <button type="submit" class="primary" :disabled="saving === 'invite'" :title="saving === 'invite' ? 'Đang lưu và đọc lại thành viên' : 'Nhập email hợp lệ; trình duyệt sẽ đưa bạn tới trường còn thiếu'">Thêm thành viên</button>
         </div>
       </form>
     </div>
@@ -456,6 +474,13 @@ onMounted(async () => {
       :member-id="evidenceMember.userId"
       :member-name="evidenceMember.fullName"
       @close="evidenceMember = null"
+    />
+    <MemberProfessionalProfileDrawer
+      v-if="professionalProfileMember && selectedId"
+      :organization-id="selectedId"
+      :member-id="professionalProfileMember.userId"
+      :member-name="professionalProfileMember.fullName"
+      @close="professionalProfileMember = null"
     />
   </main>
 </template>
@@ -674,6 +699,22 @@ th {
   background: transparent;
   color: #0f766e;
   cursor: pointer;
+}
+
+.professional-profile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: #1d4ed8;
+  cursor: pointer;
+}
+
+.professional-profile:hover {
+  background: #eff6ff;
 }
 
 .evidence:hover {

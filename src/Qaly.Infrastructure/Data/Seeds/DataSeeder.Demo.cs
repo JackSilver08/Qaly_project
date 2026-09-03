@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Services;
 using Qaly.Domain.Entities;
@@ -23,7 +24,8 @@ public partial class DataSeeder
         {
             var presentationSeedChanged = await EnsurePresentationDemoSeedAsync();
             var aiEvidenceChanged = await EnsureAiNativeDemoEvidenceAsync();
-            return presentationSeedChanged || aiEvidenceChanged;
+            var professionalProfilesChanged = await EnsureProfessionalProfileDemoSeedAsync();
+            return presentationSeedChanged || aiEvidenceChanged || professionalProfilesChanged;
         }
 
         var isDatabaseEmpty =
@@ -45,6 +47,7 @@ public partial class DataSeeder
 
         await SeedRichDemoDataAsync();
         await EnsureAiNativeDemoEvidenceAsync();
+        await EnsureProfessionalProfileDemoSeedAsync();
         return true;
     }
 
@@ -98,6 +101,7 @@ public partial class DataSeeder
         await SaveIfChangedAsync();
 
         await RemoveEntitiesAsync(_context.Votes);
+        await RemoveEntitiesAsync(_context.ProjectDigestSubscriptions);
         await RemoveEntitiesAsync(_context.MemberAvailabilityWindows);
         await RemoveEntitiesAsync(_context.OrganizationMemberCapacityProfiles);
         await RemoveEntitiesAsync(_context.TaskCompletionAttributions);
@@ -137,6 +141,8 @@ public partial class DataSeeder
         await RemoveEntitiesAsync(_context.WorkGroups.IgnoreQueryFilters());
         await RemoveEntitiesAsync(_context.OrganizationWorkRuleDecisions);
         await RemoveEntitiesAsync(_context.OrganizationWorkRuleSets);
+        await RemoveEntitiesAsync(_context.OrganizationMemberProfessionalProfiles);
+        await RemoveEntitiesAsync(_context.ProfessionalProfileDefinitions);
         await RemoveEntitiesAsync(_context.OrganizationSkills);
         await RemoveEntitiesAsync(_context.OrganizationMembers);
         await RemoveEntitiesAsync(_context.Organizations);
@@ -1359,8 +1365,26 @@ public partial class DataSeeder
         });
 
         await _context.VectorSyncOutbox.AddRangeAsync(
-            new VectorSyncOutbox { EventType = "TaskUpdated", Payload = $$"""{"id":"{{tasks["erumi-db-snapshot"].Id}}","projectCode":"erumi-local-analytics"}""", RetryCount = 0, ProcessedAt = now.AddHours(-2), CreatedAt = now.AddHours(-3) },
-            new VectorSyncOutbox { EventType = "WikiPageCreated", Payload = $$"""{"title":"{{DemoSeedMarkerTitle}}","projectCode":"qaly-workos-demo"}""", RetryCount = 1, ErrorMessage = "Vector sync disabled in local demo", CreatedAt = now.AddHours(-1) });
+            new VectorSyncOutbox
+            {
+                EventType = VectorSyncEventTypes.TaskUpdated,
+                AggregateType = VectorSyncAggregateTypes.Task,
+                AggregateId = tasks["erumi-db-snapshot"].Id,
+                Payload = $$"""{"Id":"{{tasks["erumi-db-snapshot"].Id}}","projectCode":"erumi-local-analytics"}""",
+                RetryCount = 0,
+                ProcessedAt = now.AddHours(-2),
+                CreatedAt = now.AddHours(-3)
+            },
+            new VectorSyncOutbox
+            {
+                EventType = VectorSyncEventTypes.TaskUpdated,
+                AggregateType = VectorSyncAggregateTypes.Task,
+                AggregateId = tasks["workos-kpi-dashboard"].Id,
+                Payload = $$"""{"Id":"{{tasks["workos-kpi-dashboard"].Id}}","projectCode":"qaly-workos-demo"}""",
+                RetryCount = 1,
+                ErrorMessage = "Vector sync disabled in local demo",
+                CreatedAt = now.AddHours(-1)
+            });
 
         await _context.AuditLogs.AddRangeAsync(
             new AuditLog { Action = "Create", EntityType = "ApiKey", EntityId = "Demo Integration Key", UserId = U("admin@qaly.dev").Id, ChangesJson = """{"scopes":["tasks:read","tasks:write"]}""", IpAddress = "127.0.0.1", Timestamp = now.AddDays(-6) },
@@ -1485,23 +1509,49 @@ public partial class DataSeeder
 
         var skillDefinitions = new (string NormalizedName, string Name, string Description)[]
         {
+            ("project-product-management", "Project / Product Management", "Xác định outcome, roadmap, ưu tiên, stakeholder, rủi ro và điều phối delivery theo dữ liệu."),
+            ("business-analysis", "Business Analysis", "Khảo sát nghiệp vụ, mô hình hóa quy trình, làm rõ rule và chuyển yêu cầu thành acceptance criteria."),
+            ("ux-research", "UX Research", "Nghiên cứu người dùng, phỏng vấn, usability test và tổng hợp insight có nguồn."),
+            ("ui-ux-design", "UI/UX Design", "Thiết kế information architecture, interaction, visual system và prototype có thể nghiệm thu."),
             ("frontend-vue", "Frontend / Vue 3", "Thiết kế component Vue 3, state, accessibility và hành vi UI có thể kiểm thử."),
             ("backend-dotnet", "Backend / .NET APIs", "Xây dựng API ASP.NET Core, service domain, authorization và xử lý lỗi có contract."),
             ("database-efcore-sql", "Database / EF Core & SQL Server", "Thiết kế truy vấn, mapping EF Core, migration và tính toàn vẹn dữ liệu SQL Server."),
+            ("qa-test-engineering", "QA / Test Engineering", "Thiết kế test strategy, acceptance, exploratory test và quản lý chất lượng theo rủi ro."),
             ("qa-playwright", "QA Automation / Playwright", "Thiết kế kiểm thử browser, regression và evidence lặp lại được bằng Playwright."),
             ("security-auth-privacy", "Security / Authorization & Privacy", "Authorization, tenant isolation, audit và xử lý dữ liệu riêng tư theo policy."),
             ("ai-structured-llm", "AI Integration / Structured LLM", "Thiết kế prompt, structured output, grounding, provider routing và failure handling cho LLM."),
             ("mobile-offline-sync", "Mobile / Offline Sync", "Đồng bộ mobile khi mất mạng, retry an toàn, conflict handling và evidence upload."),
             ("devops-observability", "DevOps / Observability", "Telemetry, webhook, latency, health signal và điều tra lỗi vận hành."),
-            ("data-retail-integration", "Data / Retail Integration", "Đối soát dữ liệu POS, master data, mapping SKU và chất lượng dữ liệu bán lẻ.")
+            ("data-analytics", "Data / Analytics", "Định nghĩa metric, pipeline dữ liệu, dashboard, kiểm soát chất lượng và phân tích quyết định."),
+            ("data-retail-integration", "Data / Retail Integration", "Đối soát dữ liệu POS, master data, mapping SKU và chất lượng dữ liệu bán lẻ."),
+            ("documentation-knowledge", "Documentation / Knowledge Management", "Viết tài liệu sản phẩm, runbook, quyết định kiến trúc và tổ chức knowledge base."),
+            ("communication-leadership", "Communication / Leadership", "Điều phối giao tiếp, facilitation, phản hồi, quản lý xung đột và dẫn dắt nhóm đa chức năng.")
         };
         var skills = await _context.OrganizationSkills
             .Where(item => item.OrganizationId == organization.Id)
             .ToDictionaryAsync(item => item.NormalizedName, StringComparer.OrdinalIgnoreCase);
         foreach (var definition in skillDefinitions)
         {
-            if (skills.ContainsKey(definition.NormalizedName))
+            var category = DemoSkillCategory(definition.NormalizedName);
+            var aliasesJson = JsonSerializer.Serialize(DemoSkillAliases(definition.NormalizedName));
+            if (skills.TryGetValue(definition.NormalizedName, out var existingSkill))
             {
+                if (existingSkill.Name != definition.Name ||
+                    existingSkill.Description != definition.Description ||
+                    existingSkill.Category != category || existingSkill.AliasesJson != aliasesJson ||
+                    existingSkill.DefaultRequiredLevel != "Intermediate" || !existingSkill.IsSystemSeed ||
+                    !existingSkill.IsActive)
+                {
+                    existingSkill.Name = definition.Name;
+                    existingSkill.Description = definition.Description;
+                    existingSkill.Category = category;
+                    existingSkill.AliasesJson = aliasesJson;
+                    existingSkill.DefaultRequiredLevel = "Intermediate";
+                    existingSkill.IsSystemSeed = true;
+                    existingSkill.IsActive = true;
+                    existingSkill.UpdatedAt = now;
+                    changed = true;
+                }
                 continue;
             }
 
@@ -1511,11 +1561,80 @@ public partial class DataSeeder
                 Name = definition.Name,
                 NormalizedName = definition.NormalizedName,
                 Description = definition.Description,
+                Category = category,
+                AliasesJson = aliasesJson,
+                DefaultRequiredLevel = "Intermediate",
+                IsSystemSeed = true,
                 IsActive = true,
                 CreatedAt = now.AddDays(-30)
             };
             skills[definition.NormalizedName] = skill;
             await _context.OrganizationSkills.AddAsync(skill);
+            changed = true;
+        }
+        await SaveIfChangedAsync();
+
+        // Canonical acceptance evidence for staffing tests. These are ordinary
+        // completed Tasks with requirements, assignments and confirmed completion
+        // attribution; no skill is granted from a profile label or seed-only flag.
+        var acceptanceEvidenceDefinitions = new (string Email, string Title, string[] Skills)[]
+        {
+            ("minh.anh@qaly.dev", "Evidence: điều phối discovery và chốt phạm vi", ["project-product-management", "business-analysis", "communication-leadership"]),
+            ("bao.ngoc@qaly.dev", "Evidence: review roadmap và trải nghiệm vận hành", ["project-product-management", "ui-ux-design", "communication-leadership"]),
+            ("mai.phuong@qaly.dev", "Evidence: kiểm thử regression luồng khách hàng", ["qa-test-engineering", "qa-playwright", "ux-research"]),
+            ("gia.khang@qaly.dev", "Evidence: triển khai giao diện đặt dịch vụ", ["frontend-vue", "ui-ux-design", "qa-test-engineering"]),
+            ("thanh.tam@qaly.dev", "Evidence: hardening bảo mật và runbook vận hành", ["security-auth-privacy", "devops-observability", "documentation-knowledge"]),
+            ("yen.nhi@qaly.dev", "Evidence: phân tích dashboard và tiêu chí nghiệp vụ", ["data-analytics", "business-analysis", "documentation-knowledge"]),
+            ("tuan.kiet@qaly.dev", "Evidence: tự động hóa E2E cho mobile sync", ["qa-test-engineering", "qa-playwright", "mobile-offline-sync"]),
+            ("quoc.huy@qaly.dev", "Evidence: đối soát dữ liệu và quan sát tích hợp", ["data-retail-integration", "data-analytics", "devops-observability"]),
+            ("viet.long@qaly.dev", "Evidence: tối ưu API và truy vấn dữ liệu", ["backend-dotnet", "database-efcore-sql", "devops-observability"]),
+            ("thu.ha@qaly.dev", "Evidence: nghiên cứu người dùng và tài liệu bàn giao", ["ux-research", "documentation-knowledge", "communication-leadership"]),
+            ("linh.chi@qaly.dev", "Evidence: structured LLM với read-back dữ liệu", ["ai-structured-llm", "backend-dotnet", "database-efcore-sql"])
+        };
+        var acceptanceEvidenceProject = projects["ops-compliance-readiness"];
+        var acceptanceEvidenceTitles = acceptanceEvidenceDefinitions.Select(item => item.Title).ToHashSet(StringComparer.Ordinal);
+        var existingAcceptanceEvidenceTitles = await _context.TaskItems
+            .IgnoreQueryFilters()
+            .Where(item => item.ProjectId == acceptanceEvidenceProject.Id &&
+                           !item.IsDeleted && acceptanceEvidenceTitles.Contains(item.Title))
+            .Select(item => item.Title)
+            .ToHashSetAsync(StringComparer.Ordinal);
+        var evidenceOrdinal = 0;
+        foreach (var definition in acceptanceEvidenceDefinitions)
+        {
+            evidenceOrdinal++;
+            if (existingAcceptanceEvidenceTitles.Contains(definition.Title) ||
+                !users.TryGetValue(definition.Email, out var contributor))
+                continue;
+
+            var completedAt = now.AddDays(-35 - evidenceOrdinal);
+            var task = new TaskItem
+            {
+                ProjectId = acceptanceEvidenceProject.Id,
+                Title = definition.Title,
+                Description = "Task demo canonical đã hoàn thành và được người quản lý xác nhận; dùng làm bằng chứng quan hệ cho matching kỹ năng, không phải nhãn hồ sơ tự khai.",
+                Status = "Done",
+                Priority = evidenceOrdinal % 3 == 0 ? "High" : "Medium",
+                AssigneeId = contributor.Id,
+                ReporterId = acceptanceEvidenceProject.OwnerId,
+                StartDate = completedAt.AddDays(-4),
+                DueDate = completedAt,
+                EstimatedHours = 12,
+                ActualHours = 11 + evidenceOrdinal % 3,
+                SortOrder = 200 + evidenceOrdinal,
+                CreatedAt = completedAt.AddDays(-4),
+                UpdatedAt = completedAt
+            };
+            await _context.TaskItems.AddAsync(task);
+            await _context.TaskAssignments.AddAsync(new TaskAssignment
+            {
+                TaskItemId = task.Id,
+                UserId = contributor.Id,
+                AssignedByUserId = acceptanceEvidenceProject.OwnerId,
+                AssignedAt = task.CreatedAt,
+                CreatedAt = task.CreatedAt
+            });
+            existingAcceptanceEvidenceTitles.Add(definition.Title);
             changed = true;
         }
         await SaveIfChangedAsync();
@@ -1532,6 +1651,12 @@ public partial class DataSeeder
         {
             ("qaly-workos-demo", "Rà soát matrix phân quyền cho manager và viewer", "security-auth-privacy", "Advanced"),
             ("qaly-workos-demo", "Rà soát matrix phân quyền cho manager và viewer", "qa-playwright", "Working"),
+            ("qaly-workos-demo", "Rà soát matrix phân quyền cho manager và viewer", "qa-test-engineering", "Advanced"),
+            ("qaly-workos-demo", "Chốt API contract Release 4.0", "project-product-management", "Advanced"),
+            ("qaly-workos-demo", "Chốt API contract Release 4.0", "business-analysis", "Advanced"),
+            ("qaly-workos-demo", "Chốt API contract Release 4.0", "backend-dotnet", "Working"),
+            ("qaly-workos-demo", "Kiểm thử phân quyền Manager và Member", "qa-test-engineering", "Advanced"),
+            ("qaly-workos-demo", "Kiểm thử phân quyền Manager và Member", "business-analysis", "Working"),
             ("erumi-local-analytics", "Phân loại intent câu hỏi Erumi", "ai-structured-llm", "Advanced"),
             ("erumi-local-analytics", "Phân loại intent câu hỏi Erumi", "backend-dotnet", "Working"),
             ("nova-retail-pilot", novaEvidenceTitle, "data-retail-integration", "Advanced"),
@@ -1550,7 +1675,12 @@ public partial class DataSeeder
             ("field-ops-mobile", "Xử lý hàng đợi đồng bộ offline", "backend-dotnet", "Working"),
             ("ops-compliance-readiness", "Bổ sung audit log cho thao tác nhạy cảm", "security-auth-privacy", "Advanced"),
             ("ops-compliance-readiness", "Bổ sung audit log cho thao tác nhạy cảm", "backend-dotnet", "Working")
-        };
+        }.Concat(acceptanceEvidenceDefinitions.SelectMany(definition =>
+            definition.Skills.Select(skill => (
+                ProjectCode: "ops-compliance-readiness",
+                TaskTitle: definition.Title,
+                Skill: skill,
+                Level: "Working")))).ToArray();
         var requirementTaskIds = requirementDefinitions
             .Select(item => FindTask(item.ProjectCode, item.TaskTitle)?.Id)
             .Where(item => item.HasValue)
@@ -1594,11 +1724,16 @@ public partial class DataSeeder
         var evidenceDefinitions = new (string ProjectCode, string TaskTitle, string ContributorEmail)[]
         {
             ("qaly-workos-demo", "Rà soát matrix phân quyền cho manager và viewer", "admin@qaly.dev"),
+            ("qaly-workos-demo", "Chốt API contract Release 4.0", "admin@qaly.dev"),
+            ("qaly-workos-demo", "Kiểm thử phân quyền Manager và Member", "minh.anh@qaly.dev"),
             ("erumi-local-analytics", "Phân loại intent câu hỏi Erumi", "linh.chi@qaly.dev"),
             ("nova-retail-pilot", novaEvidenceTitle, "quoc.huy@qaly.dev"),
             ("field-ops-mobile", "Nén ảnh evidence trước khi upload", "gia.khang@qaly.dev"),
             ("ops-compliance-readiness", "Tạo webhook demo cho sự kiện task.updated", "viet.long@qaly.dev")
-        };
+        }.Concat(acceptanceEvidenceDefinitions.Select(definition => (
+            ProjectCode: "ops-compliance-readiness",
+            TaskTitle: definition.Title,
+            ContributorEmail: definition.Email))).ToArray();
         var evidenceTaskIds = evidenceDefinitions
             .Select(item => FindTask(item.ProjectCode, item.TaskTitle)?.Id)
             .Where(item => item.HasValue)
@@ -1662,8 +1797,21 @@ public partial class DataSeeder
             .ToDictionaryAsync(item => item.UserId);
         foreach (var (email, weeklyHours) in weeklyCapacityByEmail)
         {
-            if (!users.TryGetValue(email, out var user) || capacityProfiles.ContainsKey(user.Id))
+            if (!users.TryGetValue(email, out var user))
             {
+                continue;
+            }
+
+            if (capacityProfiles.TryGetValue(user.Id, out var existingProfile))
+            {
+                if (existingProfile.WeeklyCapacityHours != weeklyHours ||
+                    existingProfile.TimeZoneId != "Asia/Ho_Chi_Minh")
+                {
+                    existingProfile.WeeklyCapacityHours = weeklyHours;
+                    existingProfile.TimeZoneId = "Asia/Ho_Chi_Minh";
+                    existingProfile.UpdatedAt = now;
+                    changed = true;
+                }
                 continue;
             }
 
@@ -1697,17 +1845,25 @@ public partial class DataSeeder
         foreach (var definition in availabilityDefinitions)
         {
             if (!users.TryGetValue(definition.Email, out var user) ||
-                !capacityProfiles.TryGetValue(user.Id, out var profile) ||
-                profile.AvailabilityWindows.Count > 0)
+                !capacityProfiles.TryGetValue(user.Id, out var profile))
             {
                 continue;
             }
 
+
+            var startsAt = nextMonday.AddDays(definition.StartDay);
+            var endsAt = nextMonday.AddDays(definition.EndDay);
+            var hasCurrentWindow = profile.AvailabilityWindows.Any(item =>
+                item.Kind == definition.Kind &&
+                item.StartsAt == startsAt &&
+                item.EndsAt == endsAt);
+            if (hasCurrentWindow) continue;
+
             var window = new MemberAvailabilityWindow
             {
                 OrganizationMemberCapacityProfileId = profile.Id,
-                StartsAt = nextMonday.AddDays(definition.StartDay),
-                EndsAt = nextMonday.AddDays(definition.EndDay),
+                StartsAt = startsAt,
+                EndsAt = endsAt,
                 Kind = definition.Kind,
                 AvailableHours = definition.Hours,
                 CreatedAt = now.AddDays(-2)
@@ -1718,8 +1874,79 @@ public partial class DataSeeder
         }
         await SaveIfChangedAsync();
 
+        // P22 uses an ordinary server-owned subscription as its canonical demo
+        // source. Keep the initial state honest: it is scheduled for a future
+        // delivery and has never been delivered, rather than simulating an
+        // external email adapter success.
+        if (users.TryGetValue("admin@qaly.dev", out var digestOwner) &&
+            projects.TryGetValue("qaly-workos-demo", out var digestProject))
+        {
+            var hasDigestSubscription = await _context.ProjectDigestSubscriptions.AnyAsync(item =>
+                item.UserId == digestOwner.Id && item.ProjectId == digestProject.Id);
+            if (!hasDigestSubscription)
+            {
+                await _context.ProjectDigestSubscriptions.AddAsync(new ProjectDigestSubscription
+                {
+                    UserId = digestOwner.Id,
+                    ProjectId = digestProject.Id,
+                    IsEnabled = true,
+                    Cadence = "weekly",
+                    DayOfWeek = (int)DayOfWeek.Monday,
+                    LocalTimeMinutes = 9 * 60,
+                    TimeZoneId = "Asia/Saigon",
+                    NextDeliveryAt = now.AddDays(7),
+                    LastDeliveryStatus = "scheduled",
+                    ConsecutiveFailureCount = 0,
+                    Revision = 1,
+                    CreatedAt = now.AddDays(-2),
+                    UpdatedAt = now.AddDays(-2)
+                });
+                changed = true;
+                await SaveIfChangedAsync();
+            }
+        }
+
         return changed;
     }
+
+    private static string DemoSkillCategory(string normalizedName)
+        => normalizedName switch
+        {
+            "project-product-management" or "business-analysis" => "Quản lý sản phẩm và dự án",
+            "ux-research" or "ui-ux-design" => "Trải nghiệm người dùng",
+            "frontend-vue" or "backend-dotnet" or "database-efcore-sql" or "mobile-offline-sync" => "Kỹ thuật phần mềm",
+            "qa-test-engineering" or "qa-playwright" => "Chất lượng phần mềm",
+            "security-auth-privacy" => "Bảo mật và tuân thủ",
+            "ai-structured-llm" => "AI/ML",
+            "devops-observability" => "DevOps/Cloud",
+            "data-analytics" or "data-retail-integration" => "Dữ liệu và phân tích",
+            "documentation-knowledge" => "Tài liệu và tri thức",
+            "communication-leadership" => "Giao tiếp và lãnh đạo",
+            _ => "Chuyên môn"
+        };
+
+    private static string[] DemoSkillAliases(string normalizedName)
+        => normalizedName switch
+        {
+            "project-product-management" => ["Project Management", "Product Management", "PM", "Delivery Management"],
+            "business-analysis" => ["BA", "Requirements Analysis", "Process Analysis"],
+            "ux-research" => ["User Research", "Usability Research", "UXR"],
+            "ui-ux-design" => ["Product Design", "Interaction Design", "UI Design"],
+            "frontend-vue" => ["Frontend", "Vue", "Vue.js", "Vue 3"],
+            "backend-dotnet" => ["Backend", ".NET", "ASP.NET Core", "API Development"],
+            "database-efcore-sql" => ["Database", "SQL Server", "EF Core", "Data Modeling"],
+            "qa-test-engineering" => ["QA", "Testing", "Test Engineering"],
+            "qa-playwright" => ["Test Automation", "E2E Testing", "Playwright"],
+            "security-auth-privacy" => ["Security", "Compliance", "Authorization", "Privacy"],
+            "ai-structured-llm" => ["AI/ML", "LLM", "Generative AI", "Prompt Engineering"],
+            "mobile-offline-sync" => ["Mobile", "Offline-first", "Synchronization"],
+            "devops-observability" => ["DevOps", "Cloud", "SRE", "Observability"],
+            "data-analytics" => ["Data Analytics", "BI", "Metrics", "Dashboard"],
+            "data-retail-integration" => ["Data Integration", "ETL", "Retail Data"],
+            "documentation-knowledge" => ["Technical Writing", "Documentation", "Knowledge Management"],
+            "communication-leadership" => ["Leadership", "Communication", "Facilitation"],
+            _ => []
+        };
 
     private static string ComputeDemoHash(string value)
         => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value)))

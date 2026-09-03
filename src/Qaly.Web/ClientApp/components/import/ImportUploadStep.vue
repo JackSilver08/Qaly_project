@@ -105,8 +105,8 @@ function fileKindLabel(name: string) {
     </div>
 
     <div class="import-tabs" role="tablist" aria-label="Các chế độ nhập dữ liệu">
-      <button type="button" :class="{ active: activeTab === 'discover' }" @click="activeTab = 'discover'">Khám phá</button>
-      <button type="button" :class="{ active: activeTab === 'completed' }" @click="activeTab = 'completed'">Đã hoàn tất</button>
+      <button type="button" role="tab" :aria-selected="activeTab === 'discover'" :class="{ active: activeTab === 'discover' }" @click="activeTab = 'discover'">Khám phá</button>
+      <button type="button" role="tab" :aria-selected="activeTab === 'completed'" :class="{ active: activeTab === 'completed' }" @click="activeTab = 'completed'">Đã hoàn tất</button>
     </div>
 
     <template v-if="activeTab === 'discover'">
@@ -181,6 +181,7 @@ function fileKindLabel(name: string) {
         <input
           :value="newProjectName"
           type="text"
+          aria-label="Tên dự án mới khi nhập dữ liệu"
           placeholder="Nhập tên dự án..."
           class="import-input"
           @input="emit('update:newProjectName', ($event.target as HTMLInputElement).value)"
@@ -221,7 +222,7 @@ function fileKindLabel(name: string) {
 
     <div class="import-actions">
       <button class="btn btn--ghost" type="button" @click="emit('cancel')">Hủy</button>
-      <button class="btn btn--primary" :disabled="!file || isLoading" @click="emit('next')">
+      <button type="button" class="btn btn--primary" :disabled="!file || isLoading" @click="emit('next')">
         <template v-if="isLoading">Đang đọc...</template>
         <template v-else>Tiếp tục</template>
       </button>

@@ -494,7 +494,7 @@ function uploadBackground(event: Event) {
 
     <div v-if="showSearch" class="team-chat-search">
       <Search :size="16" />
-      <input v-model="searchQuery" type="search" placeholder="Tìm nội dung hoặc người gửi..." autofocus />
+      <input v-model="searchQuery" type="search" aria-label="Tìm nội dung hoặc người gửi" placeholder="Tìm nội dung hoặc người gửi..." autofocus />
       <span>{{ filteredMessages.length }} kết quả</span>
       <button type="button" aria-label="Đóng tìm kiếm" @click="showSearch = false; searchQuery = ''"><X :size="16" /></button>
     </div>
@@ -553,13 +553,13 @@ function uploadBackground(event: Event) {
     </div>
 
     <div v-if="selectionMode" class="team-selection-toolbar">
-      <button type="button" :disabled="!selectedIds.size" title="Summarize selected messages" @click="analyzeSelected('summary')">
+      <button type="button" :disabled="!selectedIds.size" aria-label="Tóm tắt các tin nhắn đã chọn" @click="analyzeSelected('summary')">
         <Sparkles :size="16" /> Tóm tắt
       </button>
-      <button type="button" :disabled="!selectedIds.size" title="Create a task draft from selected messages" @click="analyzeSelected('task-draft')">
+      <button type="button" :disabled="!selectedIds.size" aria-label="Tạo bản nháp task từ các tin nhắn đã chọn" @click="analyzeSelected('task-draft')">
         <ListTodo :size="16" /> Tạo task
       </button>
-      <button type="button" class="selection-close" @click="exitSelectionMode"><X :size="18" /></button>
+      <button type="button" class="selection-close" aria-label="Thoát chế độ chọn tin nhắn" @click="exitSelectionMode"><X :size="18" /></button>
       <strong>{{ selectedIds.size }} tin nhắn đã chọn</strong>
       <button type="button" :disabled="!selectedIds.size" @click="copySelected">Sao chép</button>
       <button type="button" class="is-danger" :disabled="!selectedIds.size" @click="hideSelected">
@@ -609,6 +609,7 @@ function uploadBackground(event: Event) {
         <textarea
           ref="textareaRef"
           v-model="draft"
+          aria-label="Nội dung tin nhắn"
           rows="1"
           :disabled="canSend === false"
           :placeholder="editingMessage ? 'Chỉnh sửa nội dung...' : 'Nhập tin nhắn...'"
@@ -643,9 +644,9 @@ function uploadBackground(event: Event) {
     </div>
 
     <Teleport to="body">
-      <div v-if="forwardingMessage" class="message-detail-backdrop" @click.self="forwardingMessage = null">
-        <section class="message-detail-card team-forward-card">
-          <header><div><Forward :size="18" /><strong>Chuyển tiếp tin nhắn</strong></div><button type="button" @click="forwardingMessage = null"><X :size="18" /></button></header>
+      <div v-if="forwardingMessage" class="message-detail-backdrop" @click.self="forwardingMessage = null" @keydown.esc="forwardingMessage = null">
+        <section class="message-detail-card team-forward-card" role="dialog" aria-modal="true" aria-label="Chuyển tiếp tin nhắn">
+          <header><div><Forward :size="18" /><strong>Chuyển tiếp tin nhắn</strong></div><button type="button" aria-label="Đóng cửa sổ chuyển tiếp" @click="forwardingMessage = null"><X :size="18" /></button></header>
           <p>{{ forwardingMessage.text || 'Ảnh hoặc tệp đính kèm' }}</p>
           <label>Chọn nhóm nhận
             <select v-model="forwardTargetGroupId">
@@ -659,7 +660,7 @@ function uploadBackground(event: Event) {
     </Teleport>
 
     <Teleport to="body">
-      <div v-if="activeGalleryImage" class="team-gallery-backdrop" @click.self="galleryIndex = -1">
+      <div v-if="activeGalleryImage" class="team-gallery-backdrop" role="dialog" aria-modal="true" aria-label="Thư viện ảnh" @click.self="galleryIndex = -1" @keydown.esc="galleryIndex = -1">
         <button type="button" class="team-gallery-close" aria-label="Đóng thư viện" @click="galleryIndex = -1"><X :size="24" /></button>
         <button type="button" class="team-gallery-nav is-prev" aria-label="Ảnh trước" @click="moveGallery(-1)">‹</button>
         <figure><img :src="activeGalleryImage.url" :alt="activeGalleryImage.name" /><figcaption>{{ activeGalleryImage.name }} · {{ galleryIndex + 1 }}/{{ galleryImages.length }}</figcaption></figure>
@@ -668,13 +669,24 @@ function uploadBackground(event: Event) {
     </Teleport>
 
     <Teleport to="body">
-      <div v-if="showBackgroundMenu" class="chat-customize-backdrop" @click.self="showBackgroundMenu = false">
-        <section class="chat-customize-sheet" @click.stop>
+      <div
+        v-if="showBackgroundMenu"
+        class="chat-customize-backdrop"
+        @click.self="showBackgroundMenu = false"
+        @keydown.esc="showBackgroundMenu = false"
+      >
+        <section
+          class="chat-customize-sheet"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="chat-customize-title"
+          @click.stop
+        >
           <header class="chat-customize-header">
             <button type="button" aria-label="Quay lại" @click="showBackgroundMenu = false">
               <ArrowLeft :size="24" />
             </button>
-            <h2>Tùy chỉnh</h2>
+            <h2 id="chat-customize-title">Tùy chỉnh</h2>
             <button type="button" aria-label="Đóng" @click="showBackgroundMenu = false">
               <X :size="22" />
             </button>
@@ -705,6 +717,7 @@ function uploadBackground(event: Event) {
               type="button"
               class="chat-theme-card"
               :class="{ 'is-active': !backgroundImage && backgroundTheme === option.id }"
+              :aria-pressed="!backgroundImage && backgroundTheme === option.id"
               @click="selectBackground(option.id)"
             >
               <span class="chat-theme-card__preview" :class="option.previewClass">
@@ -720,11 +733,11 @@ function uploadBackground(event: Event) {
     </Teleport>
 
     <Teleport to="body">
-      <div v-if="detailMessage" class="message-detail-backdrop" @click.self="detailMessage = null">
-        <section class="message-detail-card">
+      <div v-if="detailMessage" class="message-detail-backdrop" @click.self="detailMessage = null" @keydown.esc="detailMessage = null">
+        <section class="message-detail-card" role="dialog" aria-modal="true" aria-label="Chi tiết tin nhắn">
           <header>
             <div><Info :size="18" /><strong>Chi tiết tin nhắn</strong></div>
-            <button type="button" @click="detailMessage = null"><X :size="18" /></button>
+            <button type="button" aria-label="Đóng chi tiết tin nhắn" @click="detailMessage = null"><X :size="18" /></button>
           </header>
           <dl>
             <div><dt>Người gửi</dt><dd>{{ detailMessage.senderName }}</dd></div>
@@ -904,7 +917,7 @@ function uploadBackground(event: Event) {
 }
 
 .team-selection-toolbar button.is-danger {
-  color: #dc2626;
+  color: #b91c1c;
   background: #fef2f2;
 }
 
@@ -1591,6 +1604,44 @@ function uploadBackground(event: Event) {
 :global(:root[data-theme='dark'] .team-pinned-panel span),
 :global(:root[data-theme='dark'] .team-reply-banner span),
 :global(:root[data-theme='dark'] .message-detail-card dt) {
+  color: var(--text-secondary) !important;
+}
+
+:global(:root[data-theme='dark'] .team-selection-toolbar strong) {
+  color: #f8fafc !important;
+}
+
+:global(:root[data-theme='dark'] .team-selection-toolbar button) {
+  color: var(--primary-strong) !important;
+  background: rgba(96, 165, 250, 0.2) !important;
+}
+
+:global(:root[data-theme='dark'] .team-selection-toolbar button.is-danger) {
+  color: var(--qaly-danger) !important;
+  background: var(--danger-soft) !important;
+}
+
+:global(:root[data-theme='dark'] .team-selection-toolbar .selection-close) {
+  color: #bfdbfe !important;
+  background: rgba(96, 165, 250, 0.16) !important;
+}
+
+:global(:root[data-theme='dark'] .team-typing-indicator) {
+  border-color: var(--border) !important;
+  color: var(--text-secondary) !important;
+  background: var(--surface) !important;
+}
+
+:global(:root[data-theme='dark'] .team-mention-popover span) {
+  color: var(--primary-strong) !important;
+  background: var(--primary-soft) !important;
+}
+
+:global(:root[data-theme='dark'] .team-mention-popover small) {
+  color: var(--text-secondary) !important;
+}
+
+:global(:root[data-theme='dark'] .message-detail-card header button) {
   color: var(--text-secondary) !important;
 }
 

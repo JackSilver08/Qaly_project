@@ -11,8 +11,9 @@ import type { WikiPageDto } from '../types';
 const route = useRoute();
 const router = useRouter();
 
-const { wikiPages, updateWikiPage, formatDate } = useDashboardContext() as {
+const { wikiPages, updateWikiPage, formatDate, projectPermissions } = useDashboardContext() as {
   wikiPages: Ref<WikiPageDto[]>;
+  projectPermissions: Ref<{ canWriteWiki: boolean } | null>;
   updateWikiPage: (
     wikiId: string,
     title: string,
@@ -29,6 +30,14 @@ const currentPage = computed(() => {
   return wikiPages.value.find((p: WikiPageDto) => p.id === wikiId.value);
 });
 const showWikiSidebar = computed(() => !isEditing.value && !!currentPage.value?.content);
+const canWriteWiki = computed(() => projectPermissions.value?.canWriteWiki ?? false);
+
+function visibilityLabel(visibility?: string) {
+  if (visibility === 'public') return 'Công khai';
+  if (visibility === 'customer_safe') return 'Cho khách hàng';
+  if (visibility === 'private') return 'Riêng tư';
+  return 'Nội bộ';
+}
 
 const isEditing = ref(false);
 const editTitle = ref("");
@@ -72,15 +81,15 @@ async function saveEdit() {
   <div class="wiki-detail-page">
     <div class="wiki-detail-container" :class="{ 'editing-mode': isEditing }">
       <div class="wiki-top-nav">
-        <button class="back-btn" @click="goBack">
+        <button type="button" class="back-btn" @click="goBack">
           <ChevronLeft :size="18" /> Quay lại danh sách
         </button>
       </div>
 
       <div v-if="!currentPage" class="wiki-not-found">
-        <h2>Không tìm thấy trang Wiki</h2>
+        <h1>Không tìm thấy trang Wiki</h1>
         <p>Trang Wiki này không tồn tại hoặc đã bị xóa.</p>
-        <button class="primary-button" @click="goBack">Quay lại</button>
+        <button type="button" class="primary-button" @click="goBack">Quay lại</button>
       </div>
 
       <div v-else class="wiki-layout">
@@ -92,10 +101,10 @@ async function saveEdit() {
               <div class="wiki-meta">
                 <span class="wiki-author">Cập nhật bởi {{ currentPage.authorName }} vào {{ formatDate(currentPage.updatedAt) }}</span>
                 <span class="wiki-badge" :class="`badge-${currentPage.visibility || 'internal'}`">
-                  {{ currentPage.visibility === 'public' ? 'Công khai' : (currentPage.visibility === 'customer_safe' ? 'Cho khách hàng' : 'Nội bộ') }}
+                  {{ visibilityLabel(currentPage.visibility) }}
                 </span>
               </div>
-              <button class="primary-button edit-btn" @click="startEdit">
+              <button v-if="canWriteWiki" type="button" class="primary-button edit-btn" @click="startEdit">
                 <Pencil :size="16" /> Sửa trang
               </button>
             </div>
@@ -111,7 +120,7 @@ async function saveEdit() {
 
           <div v-else class="wiki-edit-mode">
             <div class="edit-header">
-              <input v-model="editTitle" type="text" class="edit-title-input" placeholder="Tiêu đề trang..." />
+              <input v-model="editTitle" type="text" class="edit-title-input" aria-label="Tiêu đề trang Wiki" placeholder="Tiêu đề trang..." />
             </div>
 
             <div class="markdown-editor-wrapper">
@@ -128,13 +137,14 @@ async function saveEdit() {
                   <option value="public">Công khai</option>
                   <option value="customer_safe">Cho khách hàng</option>
                   <option value="internal">Nội bộ</option>
+                  <option value="private">Riêng tư — chỉ tôi và quản lý</option>
                 </select>
               </label>
               <div class="edit-actions">
-                <button class="primary-button" @click="saveEdit" :disabled="!editTitle.trim()">
+                <button type="button" class="primary-button" @click="saveEdit" :disabled="!editTitle.trim()">
                   <Check :size="16" /> Lưu thay đổi
                 </button>
-                <button class="secondary-button" @click="cancelEdit">
+                <button type="button" class="secondary-button" @click="cancelEdit">
                   <X :size="16" /> Hủy
                 </button>
               </div>
@@ -145,7 +155,7 @@ async function saveEdit() {
         <!-- Table of Contents Sidebar -->
         <div v-if="showWikiSidebar" class="wiki-sidebar">
           <div class="toc-container glass-card">
-            <h3 class="toc-title">Mục lục</h3>
+            <h2 class="toc-title">Mục lục</h2>
             <MdCatalog editorId="wiki-preview" :scrollElement="scrollElement" />
           </div>
         </div>

@@ -47,6 +47,23 @@ async function csrfToken() {
 }
 
 export async function apiJson<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const response = await apiFetch(url, options)
+  const text = await response.text()
+  const payload = parseApiPayload(text)
+
+  if (!response.ok) {
+    throw new ApiError(apiPayloadError(payload, response.status), response.status, payload)
+  }
+
+  return payload as T
+}
+
+/**
+ * Canonical browser transport for Qaly API requests that still need the raw Response
+ * (uploads, downloads and legacy envelope handling). It applies the exact same cookie,
+ * view-as and CSRF contract as apiJson so components cannot accidentally bypass it.
+ */
+export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const headers = new Headers(options.headers)
   const method = (options.method ?? 'GET').toUpperCase()
 
@@ -55,6 +72,16 @@ export async function apiJson<T>(url: string, options: RequestInit = {}): Promis
   }
 
   headers.set('Accept', 'application/json')
+
+  if (typeof window !== 'undefined') {
+    try {
+      const simulatedUserId = window.sessionStorage.getItem('qaly-simulated-user-id')
+      if (simulatedUserId) headers.set('X-Simulate-User-Id', simulatedUserId)
+    } catch {
+      // Storage can be unavailable in hardened browser contexts. The request then runs as the
+      // signed-in principal rather than silently inventing a simulation identity.
+    }
+  }
 
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && !headers.has('X-CSRF-TOKEN')) {
     headers.set('X-CSRF-TOKEN', await csrfToken())
@@ -75,14 +102,7 @@ export async function apiJson<T>(url: string, options: RequestInit = {}): Promis
     throw new Error('Bạn cần đăng nhập để tiếp tục.')
   }
 
-  const text = await response.text()
-  const payload = parseApiPayload(text)
-
-  if (!response.ok) {
-    throw new ApiError(apiPayloadError(payload, response.status), response.status, payload)
-  }
-
-  return payload as T
+  return response
 }
 
 export async function apiResult<T>(url: string, options: RequestInit = {}): Promise<T> {

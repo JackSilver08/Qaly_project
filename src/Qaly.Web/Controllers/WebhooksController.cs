@@ -62,6 +62,23 @@ public class WebhooksController : BaseApiController
         var result = await _webhookService.TriggerTestAsync(projectId, id, ct);
         return StatusCode(result.StatusCode, result);
     }
+
+    [HttpGet("operations")]
+    public async Task<IActionResult> GetOperations(Guid projectId, CancellationToken ct)
+    {
+        var result = await _webhookService.GetOperationsAsync(projectId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("outbox/{outboxId:guid}/replay")]
+    public async Task<IActionResult> ReplayDeadLetter(
+        Guid projectId,
+        Guid outboxId,
+        CancellationToken ct)
+    {
+        var result = await _webhookService.ReplayDeadLetterAsync(projectId, outboxId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
 }
 
 public sealed record CreateWebhookRequest(string PayloadUrl, string Secret, string[] Events);

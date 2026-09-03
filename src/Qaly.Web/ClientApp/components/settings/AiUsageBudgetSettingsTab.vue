@@ -342,7 +342,7 @@ onMounted(loadScopes)
           và không tự thay đổi policy.
         </p>
       </div>
-      <button
+      <button type="button"
         class="secondary-button"
         :disabled="isLoadingScopes || isLoadingSnapshot"
         data-testid="refresh-ai-budget"
@@ -364,11 +364,11 @@ onMounted(loadScopes)
       <p>Chỉ System Admin, Organization Owner/Admin/Billing Admin hoặc Project Owner/Manager được xem dữ liệu này.</p>
     </div>
 
-    <div v-else-if="loadError && !budget" class="state-panel state-panel--error" data-testid="ai-budget-error">
+    <div v-else-if="loadError && !budget" class="state-panel state-panel--error" role="alert" data-testid="ai-budget-error">
       <AlertTriangle :size="28" />
       <strong>Không thể tải dữ liệu AI platform.</strong>
       <p>{{ loadError }}</p>
-      <button class="secondary-button" @click="loadSnapshot">Thử lại</button>
+      <button type="button" class="secondary-button" @click="loadSnapshot">Thử lại</button>
     </div>
 
     <template v-else>
@@ -552,7 +552,7 @@ onMounted(loadScopes)
                 <span><strong>Cho phép cloud với dữ liệu sensitive</strong><small>Chỉ bật khi privacy/consent/provider policy tương ứng đã được phê duyệt.</small></span>
               </label>
             </div>
-            <button
+            <button type="button"
               class="primary-button"
               :disabled="!budget.canEdit || !budget.editingEnabled"
               data-testid="review-ai-budget-policy"
@@ -569,7 +569,7 @@ onMounted(loadScopes)
               <span>Human confirmation</span>
               <h4>Xác nhận AI budget policy</h4>
             </div>
-            <button class="icon-button" aria-label="Đóng xác nhận" @click="resetReview"><X :size="18" /></button>
+            <button type="button" class="icon-button" aria-label="Đóng xác nhận" @click="resetReview"><X :size="18" /></button>
           </div>
           <dl>
             <div><dt>Daily</dt><dd>{{ formatUsd(budget.dailyBudgetUsd) }} → {{ formatUsd(policyForm.dailyBudgetUsd) }}</dd></div>
@@ -583,7 +583,7 @@ onMounted(loadScopes)
             Tôi đã kiểm tra phạm vi, giới hạn, hard-stop và tác động privacy; xác nhận ghi policy này.
           </label>
           <p v-if="conflictMessage" class="conflict-message" data-testid="ai-budget-conflict">{{ conflictMessage }}</p>
-          <button class="primary-button" :disabled="!canSubmit" data-testid="confirm-ai-budget-policy" @click="savePolicy">
+          <button type="button" class="primary-button" :disabled="!canSubmit" data-testid="confirm-ai-budget-policy" @click="savePolicy">
             <Check :size="16" /> {{ isSaving ? 'Đang lưu…' : 'Xác nhận và lưu' }}
           </button>
         </div>

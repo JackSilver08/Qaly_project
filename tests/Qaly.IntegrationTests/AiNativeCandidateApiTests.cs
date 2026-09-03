@@ -116,6 +116,41 @@ public sealed class AiNativeCandidateApiTests : IClassFixture<IntegrationTestFac
         legacy.StatusCode.Should().Be(HttpStatusCode.Gone);
     }
 
+    [Fact]
+    [Trait("TestId", "TEST-CAND-010-MEETING-SOURCE-BOUNDARY")]
+    public async Task MeetingChecknote_RequiresRealLinkedSessionAndGroupParticipation()
+    {
+        var data = await SeedAsync(_factory.Services);
+        const string transcript = "[09:00] Test User: Hoàn thành API trước thứ sáu.";
+
+        using var projectOnlyMember = _factory.CreateClient();
+        projectOnlyMember.DefaultRequestHeaders.Add("X-Test-UserId", data.ProjectOnlyMemberId.ToString());
+        var memberCsrf = await GetCsrfTokenAsync(projectOnlyMember);
+        var forbidden = await SendWithCsrfAsync(
+            projectOnlyMember,
+            HttpMethod.Post,
+            $"/api/meetings/{data.MeetingId:D}/auto-checknote",
+            new AutoChecknoteRequest(data.ProjectId, "Unauthorized source", transcript, ["Project member"]),
+            memberCsrf);
+        forbidden.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        using var owner = _factory.CreateClient();
+        var ownerCsrf = await GetCsrfTokenAsync(owner);
+        var missing = await SendWithCsrfAsync(
+            owner,
+            HttpMethod.Post,
+            $"/api/meetings/{Guid.NewGuid():D}/auto-checknote",
+            new AutoChecknoteRequest(data.ProjectId, "Missing source", transcript, ["Test User"]),
+            ownerCsrf);
+        missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        (await db.MeetingImports.CountAsync(item =>
+            item.ProjectId == data.ProjectId &&
+            (item.Title == "Unauthorized source" || item.Title == "Missing source"))).Should().Be(0);
+    }
+
     [Theory]
     [InlineData("FORCE_PROVIDER_FAILURE", HttpStatusCode.ServiceUnavailable, AiErrorCodes.ProviderUnavailable, true)]
     [InlineData("FORCE_SCHEMA_INVALID", HttpStatusCode.UnprocessableEntity, AiErrorCodes.SchemaInvalid, false)]

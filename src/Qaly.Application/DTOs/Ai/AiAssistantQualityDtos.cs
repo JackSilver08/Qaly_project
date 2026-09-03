@@ -3,7 +3,11 @@ namespace Qaly.Application.DTOs.Ai;
 public static class AiAssistantQualityContract
 {
     public const string SchemaId = "assistant_quality_evaluation.v1";
-    public const string EvaluationSetVersion = "vi-native-eval@1.0.0";
+    public const string EvaluationSetVersion = "vi-native-eval@2.0.0";
+    public const double MinimumRoutingAccuracy = 0.95;
+    public const double MaximumDeadEndRate = 0.01;
+    public const double MinimumFallbackQualityPassRate = 0.90;
+    public const int MaximumInteractiveLatencyMs = 10_000;
 }
 
 public sealed record AiAssistantQualityEvaluationDto(

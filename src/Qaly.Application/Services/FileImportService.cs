@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
+using Microsoft.Extensions.Logging;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Import;
@@ -24,11 +25,18 @@ public partial class FileImportService : IFileImportService
         ".md", ".markdown", ".txt", ".html", ".htm", ".docx"
     };
 
-    private readonly IWikiService _wikiService;
+    private const int MaxZipEntries = 100;
+    private const long MaxZipEntryBytes = 5 * 1024 * 1024;
+    private const long MaxZipExpandedBytes = 20 * 1024 * 1024;
+    private const double MaxZipCompressionRatio = 200;
 
-    public FileImportService(IWikiService wikiService)
+    private readonly IWikiService _wikiService;
+    private readonly ILogger<FileImportService> _logger;
+
+    public FileImportService(IWikiService wikiService, ILogger<FileImportService> logger)
     {
         _wikiService = wikiService;
+        _logger = logger;
     }
 
     public async Task<Result<DocumentImportPreviewResult>> PreviewDocumentAsync(
@@ -105,7 +113,7 @@ public partial class FileImportService : IFileImportService
         return Result.Success(parsed.Data!);
     }
 
-    private static async Task<Result<ParsedDocument>> ParseDocumentAsync(
+    private async Task<Result<ParsedDocument>> ParseDocumentAsync(
         Stream fileStream,
         string fileName,
         CancellationToken ct)
@@ -135,7 +143,7 @@ public partial class FileImportService : IFileImportService
         };
     }
 
-    private static async Task<Result<ZipBundlePreviewResult>> PreviewZipBundleAsyncInternal(
+    private async Task<Result<ZipBundlePreviewResult>> PreviewZipBundleAsyncInternal(
         Stream fileStream,
         string fileName,
         CancellationToken ct)
@@ -210,7 +218,7 @@ public partial class FileImportService : IFileImportService
             warnings));
     }
 
-    private static async Task<Result<ZipBundleBundleData>> ReadZipBundleAsync(
+    private async Task<Result<ZipBundleBundleData>> ReadZipBundleAsync(
         Stream fileStream,
         string fileName,
         CancellationToken ct)
@@ -227,6 +235,33 @@ public partial class FileImportService : IFileImportService
 
             if (entries.Count == 0)
                 return Result.Failure<ZipBundleBundleData>("ZIP khong co file con hop le de import.", 400);
+            if (entries.Count > MaxZipEntries)
+                return Result.Failure<ZipBundleBundleData>(
+                    $"ZIP vượt quá giới hạn {MaxZipEntries} file.",
+                    400);
+
+            long declaredExpandedBytes = 0;
+            foreach (var entry in entries)
+            {
+                if (entry.Length > MaxZipEntryBytes)
+                    return Result.Failure<ZipBundleBundleData>(
+                        $"File '{entry.FullName}' vượt quá giới hạn giải nén 5 MB.",
+                        400);
+
+                declaredExpandedBytes += entry.Length;
+                if (declaredExpandedBytes > MaxZipExpandedBytes)
+                    return Result.Failure<ZipBundleBundleData>(
+                        "Tổng dữ liệu giải nén của ZIP vượt quá giới hạn 20 MB.",
+                        400);
+
+                var ratio = entry.CompressedLength == 0
+                    ? entry.Length == 0 ? 1 : double.PositiveInfinity
+                    : entry.Length / (double)entry.CompressedLength;
+                if (ratio > MaxZipCompressionRatio)
+                    return Result.Failure<ZipBundleBundleData>(
+                        $"File '{entry.FullName}' có tỷ lệ nén bất thường và đã bị từ chối.",
+                        400);
+            }
 
             var entriesData = new List<ZipBundleEntryData>();
             var warnings = new List<string>();
@@ -243,7 +278,11 @@ public partial class FileImportService : IFileImportService
 
                 await using var entryStream = entry.Open();
                 await using var memoryStream = new MemoryStream();
-                await entryStream.CopyToAsync(memoryStream, ct);
+                var copyResult = await CopyWithLimitAsync(entryStream, memoryStream, MaxZipEntryBytes, ct);
+                if (!copyResult)
+                    return Result.Failure<ZipBundleBundleData>(
+                        $"File '{entry.FullName}' vượt quá giới hạn giải nén 5 MB.",
+                        400);
                 memoryStream.Position = 0;
 
                 var parsed = await ParseDocumentAsync(memoryStream, entry.Name, ct);
@@ -281,9 +320,38 @@ public partial class FileImportService : IFileImportService
         {
             return Result.Failure<ZipBundleBundleData>("File ZIP khong hop le.", 400);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            return Result.Failure<ZipBundleBundleData>($"Không thể đọc tệp ZIP: {ex.Message}", 400);
+            LogZipReadFailed(_logger, ex, fileName);
+            return Result.Failure<ZipBundleBundleData>(
+                "Không thể đọc tệp ZIP. Hãy kiểm tra tệp không bị hỏng hoặc được mã hóa.",
+                400);
+        }
+    }
+
+    private static async Task<bool> CopyWithLimitAsync(
+        Stream source,
+        Stream destination,
+        long maxBytes,
+        CancellationToken ct)
+    {
+        var buffer = new byte[81920];
+        long total = 0;
+        while (true)
+        {
+            var read = await source.ReadAsync(buffer, ct);
+            if (read == 0)
+                return true;
+
+            total += read;
+            if (total > maxBytes)
+                return false;
+
+            await destination.WriteAsync(buffer.AsMemory(0, read), ct);
         }
     }
 
@@ -359,7 +427,7 @@ public partial class FileImportService : IFileImportService
             []);
     }
 
-    private static Result<ParsedDocument> ParseDocx(Stream stream, string fileName)
+    private Result<ParsedDocument> ParseDocx(Stream stream, string fileName)
     {
         try
         {
@@ -416,9 +484,16 @@ public partial class FileImportService : IFileImportService
                 parsedBlocks.Take(8).ToList(),
                 warnings));
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            return Result.Failure<ParsedDocument>($"Không thể đọc tệp DOCX: {ex.Message}", 400);
+            LogDocumentReadFailed(_logger, ex, fileName);
+            return Result.Failure<ParsedDocument>(
+                "Không thể đọc tệp DOCX. Hãy kiểm tra tệp không bị hỏng hoặc được mã hóa.",
+                400);
         }
     }
 
@@ -582,4 +657,10 @@ public partial class FileImportService : IFileImportService
         int BlockCount,
         List<string> PreviewBlocks,
         List<string> Warnings);
+
+    [LoggerMessage(1, LogLevel.Warning, "Failed to read ZIP import file {FileName}")]
+    private static partial void LogZipReadFailed(ILogger logger, Exception exception, string fileName);
+
+    [LoggerMessage(2, LogLevel.Warning, "Failed to read document import file {FileName}")]
+    private static partial void LogDocumentReadFailed(ILogger logger, Exception exception, string fileName);
 }

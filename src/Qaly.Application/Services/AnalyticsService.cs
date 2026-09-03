@@ -59,7 +59,8 @@ public class AnalyticsService : IAnalyticsService
         int totalTasks = tasks.Count;
         int doneTasks = tasks.Count(t => t.Status == "Done");
         int inProgressTasks = tasks.Count(t => t.Status == "InProgress");
-        int overdueTasks = tasks.Count(t => t.DueDate < DateTimeOffset.UtcNow && t.Status != "Done");
+        var now = DateTimeOffset.UtcNow;
+        int overdueTasks = tasks.Count(t => TaskStatusRules.IsOverdue(t.Status, t.DueDate, now));
 
         double totalEstimatedHours = tasks.Sum(t => t.EstimatedHours ?? 0);
         double totalActualHours = timeEntries.Sum(t => t.TotalMinutes) / 60.0;
@@ -113,15 +114,23 @@ public class AnalyticsService : IAnalyticsService
         var currentUserId = _currentUserService.UserId;
         if (currentUserId == null) return Result.Forbidden<WorkspaceAnalyticsDto>();
 
+        var isSystemAdmin = ProjectRoleRules.IsSystemAdmin(_currentUserService.Role);
         var allProjectIds = await _projectRepo.GetQueryable()
-            .Where(project =>
-                (project.OwnerId == currentUserId ||
-                 project.Members.Any(member => member.UserId == currentUserId)) &&
-                (project.OrganizationId == null ||
-                 (project.Organization != null &&
-                  project.Organization.IsActive &&
-                  (project.Organization.OwnerId == currentUserId ||
-                   project.Organization.Members.Any(member => member.UserId == currentUserId)))))
+            .Where(project => isSystemAdmin ||
+                (project.OrganizationId == null
+                    ? project.OwnerId == currentUserId ||
+                      project.Members.Any(member => member.UserId == currentUserId)
+                    : project.Organization != null &&
+                      project.Organization.IsActive &&
+                      (project.Organization.OwnerId == currentUserId ||
+                       project.Organization.Members.Any(member =>
+                           member.UserId == currentUserId &&
+                           (member.Role == OrganizationRoleRules.OrganizationAdmin ||
+                            member.Role == "Admin" ||
+                            member.Role == "Manager")) ||
+                       ((project.OwnerId == currentUserId ||
+                         project.Members.Any(member => member.UserId == currentUserId)) &&
+                        project.Organization.Members.Any(member => member.UserId == currentUserId)))))
             .Select(p => p.Id)
             .ToListAsync(ct);
 

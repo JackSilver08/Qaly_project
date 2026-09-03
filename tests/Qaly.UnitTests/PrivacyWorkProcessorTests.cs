@@ -30,7 +30,10 @@ public sealed class PrivacyWorkProcessorTests : IDisposable
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options);
         _vector
-            .Setup(service => service.DeleteByFilterAsync(It.IsAny<VectorFilter>(), "qaly_context"))
+            .Setup(service => service.DeleteByFilterAsync(
+                It.IsAny<VectorFilter>(),
+                "qaly_context",
+                It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
     }
 
@@ -53,7 +56,53 @@ public sealed class PrivacyWorkProcessorTests : IDisposable
         (await _db.AiPromptCache.CountAsync()).Should().Be(0);
         _vector.Verify(service => service.DeleteByFilterAsync(
             It.Is<VectorFilter>(filter => filter.ProjectId == fixture.ProjectId && filter.OwnerId == fixture.UserId),
-            "qaly_context"), Times.Once);
+            "qaly_context",
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ExpiredRetentionLease_DoesNotMutateCanonicalData()
+    {
+        var fixture = await SeedMeetingRetentionAsync();
+        var lease = Claim(fixture.Action);
+        fixture.Action.LeaseExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-1);
+        await _db.SaveChangesAsync();
+
+        await CreateProcessor().ProcessAsync(lease, "privacy-test");
+
+        fixture.Action.Status.Should().Be(PrivacyWorkerStatuses.Running);
+        fixture.Meeting.TranscriptText.Should().Be("sensitive transcript");
+        _vector.Verify(service => service.DeleteByFilterAsync(
+            It.IsAny<VectorFilter>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_LeaseLostDuringVectorInvalidation_DiscardsStaleDatabaseMutation()
+    {
+        var fixture = await SeedMeetingRetentionAsync();
+        var lease = Claim(fixture.Action);
+        _vector
+            .Setup(service => service.DeleteByFilterAsync(
+                It.IsAny<VectorFilter>(),
+                "qaly_context",
+                It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                fixture.Action.LeaseOwner = "privacy-new-owner";
+                fixture.Action.LeaseExpiresAt = DateTimeOffset.UtcNow.AddMinutes(2);
+                await _db.SaveChangesAsync();
+            });
+
+        await CreateProcessor().ProcessAsync(lease, "privacy-test");
+
+        var persistedAction = await _db.PrivacyRetentionActions.AsNoTracking()
+            .SingleAsync(item => item.Id == fixture.Action.Id);
+        var persistedMeeting = await _db.MeetingImports.AsNoTracking()
+            .SingleAsync(item => item.Id == fixture.Meeting.Id);
+        persistedAction.Status.Should().Be(PrivacyWorkerStatuses.Running);
+        persistedAction.LeaseOwner.Should().Be("privacy-new-owner");
+        persistedMeeting.TranscriptText.Should().Be("sensitive transcript");
+        persistedMeeting.PrivacyState.Should().Be(MeetingPrivacyStates.Active);
     }
 
     [Fact]
@@ -78,7 +127,7 @@ public sealed class PrivacyWorkProcessorTests : IDisposable
         fixture.Meeting.PrivacyState.Should().Be(MeetingPrivacyStates.LegalHold);
         fixture.Meeting.TranscriptText.Should().Be("sensitive transcript");
         _vector.Verify(service => service.DeleteByFilterAsync(
-            It.IsAny<VectorFilter>(), It.IsAny<string>()), Times.Never);
+            It.IsAny<VectorFilter>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -101,6 +150,23 @@ public sealed class PrivacyWorkProcessorTests : IDisposable
         plaintext.Should().Contain("subject@qaly.dev");
         plaintext.Should().NotContain("PasswordHash");
         plaintext.Should().NotContain("password-hash");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ExpiredDsarLease_DoesNotPublishExportArtifact()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var request = await SeedDataSubjectRequestAsync(tenantId, userId, DataSubjectRequestTypes.Export);
+        request.LeaseExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-1);
+        await _db.SaveChangesAsync();
+
+        await CreateProcessor().ProcessAsync(
+            new PrivacyWorkLease(PrivacyWorkKinds.DataSubjectRequest, request.Id, 1, DateTimeOffset.UtcNow.AddMinutes(2)),
+            "privacy-test");
+
+        request.Status.Should().Be(DataSubjectRequestStatuses.Collecting);
+        request.EncryptedResultPayload.Should().BeNull();
     }
 
     [Fact]
@@ -137,7 +203,8 @@ public sealed class PrivacyWorkProcessorTests : IDisposable
         user.Email.Should().EndWith("@invalid.local");
         _vector.Verify(service => service.DeleteByFilterAsync(
             It.Is<VectorFilter>(filter => filter.ProjectId == fixture.ProjectId && filter.OwnerId == fixture.UserId),
-            "qaly_context"), Times.AtLeastOnce);
+            "qaly_context",
+            It.IsAny<CancellationToken>()), Times.AtLeastOnce);
     }
 
     public void Dispose()
@@ -149,12 +216,13 @@ public sealed class PrivacyWorkProcessorTests : IDisposable
     private PrivacyWorkProcessor CreateProcessor()
         => new(_db, _protector, _vector.Object, Options.Create(_options));
 
-    private static PrivacyWorkLease Claim(PrivacyRetentionAction action)
+    private PrivacyWorkLease Claim(PrivacyRetentionAction action)
     {
         action.Status = PrivacyWorkerStatuses.Running;
         action.LeaseOwner = "privacy-test";
         action.LeaseExpiresAt = DateTimeOffset.UtcNow.AddMinutes(2);
         action.AttemptCount = 1;
+        _db.SaveChanges();
         return new PrivacyWorkLease(
             PrivacyWorkKinds.Retention,
             action.Id,

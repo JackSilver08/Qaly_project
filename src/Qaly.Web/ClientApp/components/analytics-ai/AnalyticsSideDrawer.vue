@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -13,6 +13,9 @@ const emit = defineEmits<{
 }>()
 
 const titleId = computed(() => `analytics-drawer-title-${props.title.replace(/\W+/g, '-').toLowerCase()}`)
+const panel = ref<HTMLElement | null>(null)
+const closeButton = ref<HTMLButtonElement | null>(null)
+let previousFocus: HTMLElement | null = null
 
 function close() {
   emit('close')
@@ -20,17 +23,37 @@ function close() {
 
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape' && props.open) {
+    event.preventDefault()
     close()
+    return
+  }
+  if (event.key !== 'Tab' || !panel.value) return
+  const focusable = Array.from(panel.value.querySelectorAll<HTMLElement>(
+    'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+  ))
+  if (!focusable.length) return
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
   }
 }
 
 watch(
   () => props.open,
-  (open) => {
+  async (open) => {
     if (open) {
+      previousFocus = document.activeElement as HTMLElement | null
       document.addEventListener('keydown', handleKeydown)
+      await nextTick()
+      closeButton.value?.focus()
     } else {
       document.removeEventListener('keydown', handleKeydown)
+      requestAnimationFrame(() => previousFocus?.focus())
     }
   },
   { immediate: true }
@@ -38,6 +61,7 @@ watch(
 
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', handleKeydown)
+  previousFocus?.focus()
 })
 </script>
 
@@ -45,7 +69,7 @@ onBeforeUnmount(() => {
   <Transition name="analytics-drawer-shell">
     <div v-if="open" class="analytics-drawer-shell">
       <button class="analytics-drawer-overlay" type="button" aria-label="Đóng bảng phụ" @click="close"></button>
-      <aside class="analytics-drawer-panel" role="dialog" aria-modal="true" :aria-labelledby="titleId">
+      <aside ref="panel" class="analytics-drawer-panel" role="dialog" aria-modal="true" :aria-labelledby="titleId">
         <header class="analytics-drawer-header">
           <div class="analytics-drawer-heading">
             <strong :id="titleId">{{ title }}</strong>
@@ -53,7 +77,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="analytics-drawer-header-actions">
             <slot name="header-actions"></slot>
-            <button class="analytics-drawer-close" type="button" aria-label="Đóng bảng phụ" @click="close">
+            <button ref="closeButton" class="analytics-drawer-close" type="button" aria-label="Đóng bảng phụ" @click="close">
               <X :size="17" aria-hidden="true" />
             </button>
           </div>

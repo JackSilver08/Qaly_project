@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Project;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 
@@ -19,6 +20,8 @@ public class ProjectRoleService : IProjectRoleService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditLogService _auditLogService;
+    private readonly ISystemModuleAuthorizationService _systemAuthorization;
+    private readonly ITaskAccessPolicy _taskAccessPolicy;
 
     public ProjectRoleService(
         IRepository<ProjectCustomRole> roleRepo,
@@ -30,7 +33,9 @@ public class ProjectRoleService : IProjectRoleService
         IProjectRoleCatalog roleCatalog,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
-        IAuditLogService auditLogService)
+        IAuditLogService auditLogService,
+        ITaskAccessPolicy taskAccessPolicy,
+        ISystemModuleAuthorizationService? systemAuthorization = null)
     {
         _roleRepo = roleRepo;
         _historyRepo = historyRepo;
@@ -42,6 +47,8 @@ public class ProjectRoleService : IProjectRoleService
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
         _auditLogService = auditLogService;
+        _taskAccessPolicy = taskAccessPolicy;
+        _systemAuthorization = systemAuthorization ?? new SystemModuleAuthorizationService(systemPermRepo);
     }
 
     public async Task<Result<List<ProjectCustomRoleDto>>> GetCustomRolesAsync(Guid projectId, CancellationToken ct = default)
@@ -93,8 +100,13 @@ public class ProjectRoleService : IProjectRoleService
         };
 
         await _roleRepo.AddAsync(role, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("CreateCustomRole", nameof(ProjectCustomRole), role.Id.ToString(), new { role.Name }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "CreateCustomRole",
+            nameof(ProjectCustomRole),
+            role.Id.ToString(),
+            new { role.Name },
+            ct);
 
         return Result.Created(new ProjectCustomRoleDto(
             role.Id, role.ProjectId, role.Name, role.Description, role.ColorCode, role.IsSystemDefault, role.PermissionMatrixJson, role.CreatedAt
@@ -124,10 +136,14 @@ public class ProjectRoleService : IProjectRoleService
 
         // Check System Role Conflict
         var userSystemRole = member.User?.Role ?? "User";
-        var systemPerm = await _systemPermRepo.GetQueryable()
-            .FirstOrDefaultAsync(p => p.SystemRole == userSystemRole && p.ModuleKey == "AiHub", ct);
+        var systemAccess = await _systemAuthorization.ResolveAsync(
+            member.UserId,
+            userSystemRole,
+            SystemModulePermissionRules.AiHub,
+            ct);
 
-        bool hasSystemConflict = systemPerm != null && (!systemPerm.IsAllowed || systemPerm.AiTier == "Restricted");
+        var hasSystemConflict = !systemAccess.IsAllowed ||
+            systemAccess.AiTier == AiNativeSystemTier.Restricted;
 
         var result = new RoleAssignConflictCheckResultDto(
             hasOverlap,
@@ -135,7 +151,7 @@ public class ProjectRoleService : IProjectRoleService
             activeStartDate,
             hasSystemConflict,
             userSystemRole,
-            systemPerm?.AiTier ?? "Full",
+            SystemModulePermissionRules.FormatTier(systemAccess.AiTier),
             hasOverlap || hasSystemConflict ? "Requires user confirmation" : "No conflicts"
         );
 
@@ -194,8 +210,13 @@ public class ProjectRoleService : IProjectRoleService
         member.Role = role.Name;
         await _memberRepo.UpdateAsync(member, ct);
 
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("AssignMemberRole", nameof(ProjectMemberRoleHistory), newHistory.Id.ToString(), new { memberId, role.Name, dto.PhaseName }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "AssignMemberRole",
+            nameof(ProjectMemberRoleHistory),
+            newHistory.Id.ToString(),
+            new { memberId, role.Name, dto.PhaseName },
+            ct);
 
         var assigner = await _userRepo.GetByIdAsync(currentUserId.Value, ct);
 
@@ -291,32 +312,78 @@ public class ProjectRoleService : IProjectRoleService
     {
         if (!IsAdmin()) return Result.Forbidden<SystemModulePermissionDto>();
 
-        var existing = await _systemPermRepo.GetQueryable()
-            .FirstOrDefaultAsync(p => (systemRole != null && p.SystemRole == systemRole && p.ModuleKey == dto.ModuleKey) ||
-                                       (userId != null && p.UserId == userId && p.ModuleKey == dto.ModuleKey), ct);
+        var hasRole = !string.IsNullOrWhiteSpace(systemRole);
+        if (hasRole == userId.HasValue)
+        {
+            return Result.Failure<SystemModulePermissionDto>(
+                "Chọn đúng một phạm vi cấu hình: systemRole hoặc userId.",
+                400);
+        }
+
+        string? normalizedRole = null;
+        if (hasRole && !SystemRoleRules.TryNormalizeKnownRole(systemRole, out normalizedRole))
+        {
+            return Result.Failure<SystemModulePermissionDto>("System role không hợp lệ.", 400);
+        }
+
+        if (userId.HasValue && !await _userRepo.GetQueryable()
+                .AsNoTracking()
+                .AnyAsync(user => user.Id == userId.Value && user.IsActive, ct))
+        {
+            return Result.NotFound<SystemModulePermissionDto>("Không tìm thấy người dùng đang hoạt động.");
+        }
+
+        var normalizedModule = SystemModulePermissionRules.NormalizeModule(dto.ModuleKey);
+        if (normalizedModule == null)
+        {
+            return Result.Failure<SystemModulePermissionDto>("Module hệ thống không hợp lệ.", 400);
+        }
+
+        if (!SystemModulePermissionRules.TryNormalizeTier(dto.AiTier, out var normalizedTier))
+        {
+            return Result.Failure<SystemModulePermissionDto>("AI tier không hợp lệ.", 400);
+        }
+
+        if (!dto.IsAllowed)
+        {
+            normalizedTier = SystemModulePermissionRules.FormatTier(AiNativeSystemTier.Restricted);
+        }
+
+        var query = _systemPermRepo.GetQueryable()
+            .Where(permission => permission.ModuleKey == normalizedModule);
+        var existing = userId.HasValue
+            ? await query.FirstOrDefaultAsync(permission =>
+                permission.UserId == userId.Value && permission.SystemRole == null, ct)
+            : await query.FirstOrDefaultAsync(permission =>
+                permission.UserId == null && permission.SystemRole == normalizedRole, ct);
 
         if (existing == null)
         {
             existing = new SystemModulePermission
             {
-                SystemRole = systemRole,
+                SystemRole = normalizedRole,
                 UserId = userId,
-                ModuleKey = dto.ModuleKey,
+                ModuleKey = normalizedModule,
                 IsAllowed = dto.IsAllowed,
-                AiTier = dto.AiTier
+                AiTier = normalizedTier
             };
             await _systemPermRepo.AddAsync(existing, ct);
         }
         else
         {
             existing.IsAllowed = dto.IsAllowed;
-            existing.AiTier = dto.AiTier;
+            existing.AiTier = normalizedTier;
             existing.UpdatedAt = DateTimeOffset.UtcNow;
             await _systemPermRepo.UpdateAsync(existing, ct);
         }
 
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("UpdateSystemModulePermission", nameof(SystemModulePermission), existing.Id.ToString(), new { systemRole, userId, dto.ModuleKey, dto.IsAllowed }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "UpdateSystemModulePermission",
+            nameof(SystemModulePermission),
+            existing.Id.ToString(),
+            new { systemRole = normalizedRole, userId, moduleKey = normalizedModule, dto.IsAllowed, aiTier = normalizedTier },
+            ct);
 
         return Result.Success(new SystemModulePermissionDto(
             existing.Id, existing.SystemRole, existing.UserId, existing.ModuleKey, existing.IsAllowed, existing.AiTier, existing.CreatedAt
@@ -325,56 +392,24 @@ public class ProjectRoleService : IProjectRoleService
 
     private async Task<bool> CanAccessProjectAsync(Guid projectId, CancellationToken ct)
     {
-        var currentUserId = _currentUserService.UserId;
-        if (currentUserId == null)
-        {
-            return false;
-        }
-
-        if (IsAdmin())
-        {
-            return true;
-        }
-
-        return await _projectRepo.GetQueryable().AnyAsync(
-            project => project.Id == projectId
-                && (project.OwnerId == currentUserId
-                    || project.Members.Any(member => member.UserId == currentUserId)),
-            ct);
+        var ownerId = await _projectRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(project => project.Id == projectId)
+            .Select(project => (Guid?)project.OwnerId)
+            .FirstOrDefaultAsync(ct);
+        return ownerId.HasValue &&
+            await _taskAccessPolicy.CanAccessProjectAsync(projectId, ownerId.Value, ct);
     }
 
     private async Task<bool> CanManageProjectAsync(Guid projectId, CancellationToken ct)
     {
-        var currentUserId = _currentUserService.UserId;
-        if (currentUserId == null)
-        {
-            return false;
-        }
-
-        if (IsAdmin())
-        {
-            return true;
-        }
-
-        var project = await _projectRepo.GetQueryable()
+        var ownerId = await _projectRepo.GetQueryable()
             .AsNoTracking()
-            .FirstOrDefaultAsync(item => item.Id == projectId, ct);
-        if (project == null)
-        {
-            return false;
-        }
-
-        if (project.OwnerId == currentUserId)
-        {
-            return true;
-        }
-
-        var role = await _memberRepo.GetQueryable()
-            .Where(member => member.ProjectId == projectId && member.UserId == currentUserId)
-            .Select(member => member.Role)
+            .Where(project => project.Id == projectId)
+            .Select(project => (Guid?)project.OwnerId)
             .FirstOrDefaultAsync(ct);
-        var resolvedRole = await _roleCatalog.ResolveAsync(role, project.OrganizationId, ct);
-        return resolvedRole != null && ProjectRoleRules.CanManageProject(resolvedRole.BaseRole);
+        return ownerId.HasValue &&
+            await _taskAccessPolicy.CanManageProjectAsync(projectId, ownerId.Value, ct);
     }
 
     private bool IsAdmin() => ProjectRoleRules.IsSystemAdmin(_currentUserService.Role);

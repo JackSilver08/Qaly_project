@@ -40,6 +40,48 @@ public sealed record CreateOrganizationWorkRuleSetRequestDto(
 
 public sealed record ActivateOrganizationWorkRuleSetRequestDto(long Revision);
 
+public sealed record ProjectObjectiveMetricDto(
+    string MetricId,
+    string Title,
+    string MetricType,
+    decimal? Baseline,
+    decimal? Target,
+    string? Unit,
+    string? MeasurementWindow,
+    string? DataSource,
+    string? Owner,
+    string Status = "needs_confirmation");
+
+public sealed record ProjectLaunchObjectiveProfileDto(
+    string ProblemStatement,
+    string PrimaryAudience,
+    string DesiredOutcome,
+    string BusinessValue,
+    IReadOnlyList<ProjectObjectiveMetricDto> Metrics,
+    IReadOnlyList<string> Guardrails,
+    IReadOnlyList<string> Assumptions,
+    IReadOnlyList<string> NonGoals);
+
+public sealed record ProjectLaunchFeatureDto(
+    string FeatureId,
+    string Title,
+    string Category,
+    string Priority,
+    string Description,
+    string PrimaryAudience,
+    IReadOnlyList<string> AcceptanceCriteria,
+    IReadOnlyList<string> RequiredSkillNames,
+    bool Selected = true,
+    bool Custom = false);
+
+public sealed record ProjectLaunchSkillOptionDto(
+    Guid SkillId,
+    string Name,
+    string Category,
+    string DefaultRequiredLevel,
+    bool OrganizationDefined,
+    IReadOnlyList<string>? Aliases = null);
+
 public sealed record OrganizationWorkRuleDecisionDto(
     string SchemaId,
     Guid? RuleSetId,
@@ -76,4 +118,9 @@ public sealed record ProjectLaunchBriefDto(
     string ActualProvider,
     string ActualModel,
     string PromptVersion,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? TargetTimebox = null,
+    string? PrimaryAudience = null,
+    ProjectLaunchObjectiveProfileDto? ObjectiveProfile = null,
+    IReadOnlyList<ProjectLaunchFeatureDto>? Features = null,
+    IReadOnlyList<ProjectLaunchSkillOptionDto>? SkillCatalog = null);

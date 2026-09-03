@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Archive, ArrowLeft, Check, FileText, FileUp, X } from 'lucide-vue-next'
+import { AlertTriangle, Archive, ArrowLeft, Check, FileText, FileUp, X } from 'lucide-vue-next'
 import ImportUploadStep from './ImportUploadStep.vue'
 import ImportMappingStep from './ImportMappingStep.vue'
 import ImportConfirmStep from './ImportConfirmStep.vue'
 import { showSuccess, showError } from '../../composables/use-toast'
 import { confirmDialog } from '../../composables/use-confirm-dialog'
+import { apiFetch } from '../../utils/api-client'
 
 const props = defineProps<{
   projectId?: string
@@ -68,7 +69,7 @@ async function loadImportSessions() {
   if (!props.projectId) return
   isLoadingImportSessions.value = true
   try {
-    const res = await fetch(`/api/import/sessions/${props.projectId}`)
+    const res = await apiFetch(`/api/import/sessions/${props.projectId}`)
     const data = await res.json()
     importSessions.value = data.isSuccess ? (data.data ?? []) : []
   } catch {
@@ -102,7 +103,7 @@ async function parseFile(sheetName?: string | null) {
     formData.append('file', file.value)
 
     if (importMode.value === 'document') {
-      const res = await fetch('/api/import/documents/preview', {
+      const res = await apiFetch('/api/import/documents/preview', {
         method: 'POST',
         body: formData,
       })
@@ -120,7 +121,7 @@ async function parseFile(sheetName?: string | null) {
     }
 
     if (importMode.value === 'zip') {
-      const res = await fetch('/api/import/documents/zip/preview', {
+      const res = await apiFetch('/api/import/documents/zip/preview', {
         method: 'POST',
         body: formData,
       })
@@ -139,7 +140,7 @@ async function parseFile(sheetName?: string | null) {
     if (sheetName) formData.append('sheetName', sheetName)
     formData.append('firstRowIsHeader', String(firstRowIsHeader.value))
 
-    const res = await fetch('/api/import/parse', {
+    const res = await apiFetch('/api/import/parse', {
       method: 'POST',
       body: formData,
     })
@@ -209,7 +210,7 @@ async function executeImport() {
       formData.append('projectId', props.projectId)
       formData.append('title', documentTitle.value)
 
-      const res = await fetch('/api/import/documents/execute', {
+      const res = await apiFetch('/api/import/documents/execute', {
         method: 'POST',
         body: formData,
       })
@@ -234,7 +235,7 @@ async function executeImport() {
 
       formData.append('projectId', props.projectId)
 
-      const res = await fetch('/api/import/documents/zip/execute', {
+      const res = await apiFetch('/api/import/documents/zip/execute', {
         method: 'POST',
         body: formData,
       })
@@ -265,7 +266,7 @@ async function executeImport() {
       defaultStatus: defaultStatus.value,
     }))
 
-    const res = await fetch('/api/import/execute', {
+    const res = await apiFetch('/api/import/execute', {
       method: 'POST',
       body: formData,
     })
@@ -300,7 +301,7 @@ async function undoImport() {
 
   isLoading.value = true
   try {
-    const res = await fetch(`/api/import/sessions/${importResult.value.importSessionId}`, {
+    const res = await apiFetch(`/api/import/sessions/${importResult.value.importSessionId}`, {
       method: 'DELETE',
     })
     const data = await res.json()
@@ -327,15 +328,15 @@ onMounted(loadImportSessions)
 
 <template>
   <Teleport to="body">
-    <div class="import-backdrop" @click.self="$emit('close')">
-      <div class="import-modal glass-card">
+    <div class="import-backdrop" @click.self="$emit('close')" @keydown.esc="$emit('close')">
+      <div class="import-modal glass-card" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
         <!-- Header -->
         <div class="import-header">
           <div class="import-header__left">
             <FileUp :size="22" />
-            <h2>Nhập dữ liệu</h2>
+            <h2 id="import-modal-title">Nhập dữ liệu</h2>
           </div>
-          <button class="icon-button" @click="$emit('close')"><X :size="18" /></button>
+          <button type="button" class="icon-button" aria-label="Đóng cửa sổ nhập dữ liệu" @click="$emit('close')"><X :size="18" /></button>
         </div>
 
         <!-- Stepper -->
@@ -383,7 +384,7 @@ onMounted(loadImportSessions)
 
           <div class="import-field">
             <label>Tiêu đề trang</label>
-            <input v-model="documentTitle" class="import-input" type="text" />
+            <input v-model="documentTitle" class="import-input" type="text" aria-label="Tiêu đề trang Wiki sẽ nhập" />
           </div>
 
           <div class="document-preview__stats">
@@ -520,7 +521,7 @@ onMounted(loadImportSessions)
 
           <div class="import-actions">
             <button class="btn btn--ghost" type="button" @click="step = 2"><ArrowLeft :size="16" /> Quay lại</button>
-            <button class="btn btn--primary btn--import-confirm" :disabled="isLoading" @click="executeImport">
+            <button type="button" class="btn btn--primary btn--import-confirm" :disabled="isLoading" @click="executeImport">
               <template v-if="isLoading">Đang nhập...</template>
               <template v-else>Tạo trang Wiki <Check :size="16" /></template>
             </button>
@@ -558,7 +559,7 @@ onMounted(loadImportSessions)
 
           <div class="import-actions">
             <button class="btn btn--ghost" type="button" @click="step = 2"><ArrowLeft :size="16" /> Quay lại</button>
-            <button class="btn btn--primary btn--import-confirm" :disabled="isLoading" @click="executeImport">
+            <button type="button" class="btn btn--primary btn--import-confirm" :disabled="isLoading" @click="executeImport">
               <template v-if="isLoading">Đang nhập...</template>
               <template v-else>Tạo các trang Wiki <Check :size="16" /></template>
             </button>
@@ -642,8 +643,12 @@ onMounted(loadImportSessions)
 
           <!-- Unmapped statuses warning -->
           <div v-if="importResult.unmappedStatuses?.length" class="import-warning">
-            <span>⚠️</span>
+            <AlertTriangle :size="16" />
             <span>Các giá trị trạng thái không nhận diện được (đã đặt về Chưa làm): {{ importResult.unmappedStatuses.join(', ') }}</span>
+          </div>
+          <div v-if="importResult.unmappedPriorities?.length" class="import-warning">
+            <i class="bi bi-exclamation-triangle"></i>
+            <span>Các giá trị ưu tiên không nhận diện được (đã đặt về Trung bình): {{ importResult.unmappedPriorities.join(', ') }}</span>
           </div>
 
           <!-- Skipped Rows Detail -->
@@ -661,10 +666,10 @@ onMounted(loadImportSessions)
           </div>
 
           <div class="import-actions">
-            <button v-if="importMode === 'table'" class="btn btn--ghost btn--danger" @click="undoImport" :disabled="isLoading">
+            <button type="button" v-if="importMode === 'table'" class="btn btn--ghost btn--danger" @click="undoImport" :disabled="isLoading">
               Hoàn tác nhập dữ liệu
             </button>
-            <button class="btn btn--primary" @click="finish">
+            <button type="button" class="btn btn--primary" @click="finish">
               Xong ✓
             </button>
           </div>
@@ -720,7 +725,7 @@ onMounted(loadImportSessions)
   width: 34px; height: 34px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   font-size: .8rem; font-weight: 700;
-  background: #f3f4f6; color: #9ca3af;
+  background: #f3f4f6; color: #334155;
   transition: all .35s cubic-bezier(.22,1,.36,1);
   position: relative; z-index: 1;
 }
@@ -1109,4 +1114,96 @@ onMounted(loadImportSessions)
 }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+:global(:root[data-theme='dark'] .import-modal) {
+  background: var(--surface) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border) !important;
+}
+
+:global(:root[data-theme='dark'] .import-header) {
+  border-bottom-color: var(--border) !important;
+}
+
+:global(:root[data-theme='dark'] .stepper-line) {
+  background: var(--border) !important;
+}
+
+:global(:root[data-theme='dark'] .stepper-dot) {
+  background: var(--surface-muted) !important;
+  color: var(--text-secondary) !important;
+}
+
+:global(:root[data-theme='dark'] .stepper-labels span) {
+  color: var(--text-secondary) !important;
+}
+
+:global(:root[data-theme='dark'] .stepper-labels span.active) {
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .import-preview-table-wrap),
+:global(:root[data-theme='dark'] .document-preview__blocks ul) {
+  border-color: var(--border) !important;
+}
+
+:global(:root[data-theme='dark'] .import-preview-table th) {
+  background: var(--surface-muted) !important;
+  color: var(--text-primary) !important;
+  border-bottom-color: var(--border) !important;
+}
+
+:global(:root[data-theme='dark'] .import-preview-table td),
+:global(:root[data-theme='dark'] .document-preview__blocks li) {
+  color: var(--text-secondary) !important;
+  border-bottom-color: var(--border) !important;
+}
+
+:global(:root[data-theme='dark'] .import-input),
+:global(:root[data-theme='dark'] .import-select) {
+  background: var(--surface-muted) !important;
+  border-color: var(--border-strong) !important;
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .import-select option) {
+  background: var(--surface) !important;
+}
+
+:global(:root[data-theme='dark'] .document-preview__hero),
+:global(:root[data-theme='dark'] .document-success) {
+  border-color: rgba(96, 165, 250, 0.34) !important;
+  background: var(--primary-soft) !important;
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .document-preview__stats div) {
+  border-color: var(--border) !important;
+  background: var(--surface-muted) !important;
+}
+
+:global(:root[data-theme='dark'] .document-preview__stats strong) {
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .document-description) {
+  border-left-color: rgba(96, 165, 250, 0.5) !important;
+  background: var(--surface-muted) !important;
+  color: var(--text-secondary) !important;
+}
+
+:global(:root[data-theme='dark'] .bundle-preview-list li) {
+  border-color: var(--border) !important;
+  background: var(--surface-muted) !important;
+}
+
+:global(:root[data-theme='dark'] .bundle-preview-list strong),
+:global(:root[data-theme='dark'] .zip-result-item strong) {
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .zip-result-item) {
+  border-color: rgba(96, 165, 250, 0.34) !important;
+  background: var(--primary-soft) !important;
+}
 </style>

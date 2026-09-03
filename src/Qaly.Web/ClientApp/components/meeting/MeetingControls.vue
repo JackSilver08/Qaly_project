@@ -5,6 +5,7 @@ import {
   MonitorUp,
   Phone,
   PhoneOff,
+  Square,
   Video,
   VideoOff,
   Captions,
@@ -17,9 +18,12 @@ defineProps<{
   cameraMuted?: boolean;
   speechActive?: boolean;
   light?: boolean;
+  canEndMeeting?: boolean;
+  endingMeeting?: boolean;
 }>();
 const emit = defineEmits<{
   start: [];
+  leave: [];
   end: [];
   share: [];
   toggleMic: [];
@@ -35,6 +39,11 @@ async function end() {
   if (!await confirmDialog({ tone:"warning", title:"Kết thúc cuộc họp?", message:"Cuộc họp sẽ kết thúc với tất cả người tham gia.", confirmLabel:"Kết thúc" })) return;
   emit("end");
 }
+
+async function leave() {
+  if (!await confirmDialog({ tone:"warning", title:"Rời phòng họp?", message:"Cuộc họp vẫn tiếp tục với những người còn lại và transcript cục bộ được giữ để phục hồi.", confirmLabel:"Rời phòng" })) return;
+  emit("leave");
+}
 </script>
 
 <template>
@@ -49,7 +58,7 @@ async function end() {
     >
       <MicOff v-if="micMuted" :size="20" />
       <Mic v-else :size="20" />
-      <span class="mc-tooltip">{{ micMuted ? 'Bật Mic' : 'Tắt Mic' }}</span>
+      <span class="mc-tooltip" role="tooltip">{{ micMuted ? 'Bật Mic' : 'Tắt Mic' }}</span>
     </button>
 
     <!-- Camera -->
@@ -62,7 +71,7 @@ async function end() {
     >
       <VideoOff v-if="cameraMuted" :size="20" />
       <Video v-else :size="20" />
-      <span class="mc-tooltip">{{ cameraMuted ? 'Bật Camera' : 'Tắt Camera' }}</span>
+      <span class="mc-tooltip" role="tooltip">{{ cameraMuted ? 'Bật Camera' : 'Tắt Camera' }}</span>
     </button>
 
     <div class="mc-separator"></div>
@@ -74,10 +83,11 @@ async function end() {
       :class="{ 'mc-btn--transcript-active': speechActive }"
       type="button"
       :aria-label="speechActive ? 'Tắt phụ đề AI' : 'Bật phụ đề AI'"
+      :aria-pressed="speechActive"
       @click="$emit('toggleSpeech')"
     >
       <Captions :size="20" />
-      <span class="mc-tooltip">{{ speechActive ? 'Tắt Phụ đề' : 'Bật Phụ đề' }}</span>
+      <span class="mc-tooltip" role="tooltip">{{ speechActive ? 'Tắt Phụ đề' : 'Bật Phụ đề' }}</span>
       <span v-if="speechActive" class="mc-recording-dot"></span>
     </button>
 
@@ -89,7 +99,7 @@ async function end() {
       @click="$emit('share')"
     >
       <MonitorUp :size="20" />
-      <span class="mc-tooltip">Chia sẻ</span>
+      <span class="mc-tooltip" role="tooltip">Chia sẻ</span>
     </button>
 
     <div class="mc-separator"></div>
@@ -109,11 +119,24 @@ async function end() {
       v-else
       class="mc-btn mc-btn--leave"
       type="button"
-      :aria-label="'Kết thúc cuộc họp'"
-      @click="end"
+      aria-label="Rời phòng họp"
+      :disabled="endingMeeting"
+      @click="leave"
     >
       <PhoneOff :size="20" />
-      <span class="mc-tooltip">Rời phòng</span>
+      <span class="mc-tooltip" role="tooltip">Rời phòng</span>
+    </button>
+    <button
+      v-if="active && canEndMeeting"
+      class="mc-btn mc-btn--end"
+      type="button"
+      :aria-label="endingMeeting ? 'Đang kết thúc cuộc họp' : 'Kết thúc cuộc họp cho tất cả'"
+      :aria-busy="endingMeeting"
+      :disabled="endingMeeting"
+      @click="end"
+    >
+      <Square :size="18" />
+      <span class="mc-tooltip" role="tooltip">{{ endingMeeting ? 'Đang kết thúc…' : 'Kết thúc cho tất cả' }}</span>
     </button>
   </div>
 </template>
@@ -177,6 +200,12 @@ async function end() {
 
 .mc-btn:active {
   transform: scale(0.95);
+}
+
+.mc-btn:disabled {
+  cursor: wait;
+  opacity: 0.65;
+  transform: none;
 }
 
 .mc-dock--light .mc-btn {
@@ -290,11 +319,21 @@ async function end() {
 /* --- Leave --- */
 .mc-btn--leave {
   width: 56px;
-  background: linear-gradient(135deg, #dc2626, #ef4444);
+  background: rgba(100, 116, 139, 0.78);
   color: #fff;
 }
 
 .mc-btn--leave:hover {
+  background: rgba(71, 85, 105, 0.95);
+}
+
+.mc-btn--end {
+  width: 56px;
+  background: linear-gradient(135deg, #dc2626, #ef4444);
+  color: #fff;
+}
+
+.mc-btn--end:hover {
   background: linear-gradient(135deg, #b91c1c, #dc2626);
   box-shadow: 0 4px 16px rgba(220, 38, 38, 0.35);
 }
@@ -325,7 +364,8 @@ async function end() {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
-.mc-btn:hover .mc-tooltip {
+.mc-btn:hover .mc-tooltip,
+.mc-btn:focus-visible .mc-tooltip {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }

@@ -47,10 +47,13 @@ public static class DependencyInjection
                 }
 
                 options.UseSqlServer(defaultConnection, sqlServer =>
+                {
+                    sqlServer.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
                     sqlServer.EnableRetryOnFailure(
                         maxRetryCount: 5,
                         maxRetryDelay: TimeSpan.FromSeconds(5),
-                        errorNumbersToAdd: null));
+                        errorNumbersToAdd: null);
+                });
             }
 
             options.AddInterceptors(sp.GetRequiredService<VectorSyncInterceptor>());
@@ -71,12 +74,15 @@ public static class DependencyInjection
         services.AddScoped<IAiExportService, AiExportService>();
         services.AddScoped<ISessionService, RedisSessionService>();
         services.AddScoped<IWebhookPublisher, WebhookPublisher>();
+        services.AddScoped<WebhookOutboxProcessor>();
+        services.AddScoped<WebhookOperationsRetentionService>();
         services.AddSingleton<IWebhookDnsResolver, SystemWebhookDnsResolver>();
         services.AddSingleton<IWebhookEndpointPolicy, WebhookEndpointPolicy>();
         services.AddScoped<Qaly.Application.Common.Interfaces.IPushSender, WebPushSender>();
         services.Configure<GitHubIntegrationOptions>(configuration.GetSection(GitHubIntegrationOptions.SectionName));
         services.AddScoped<IGitHubWebhookReceiver, GitHubWebhookReceiver>();
         services.AddScoped<IGitHubWebhookProcessor, GitHubWebhookProcessor>();
+        services.AddScoped<IGitHubWebhookInboxStore, GitHubWebhookInboxStore>();
         services.AddHttpClient<IGitHubAppClient, GitHubAppClient>();
         services.AddScoped<IGitHubInstallationService, GitHubInstallationService>();
         services.AddScoped<IGitHubProjectManagementService, GitHubProjectManagementService>();
@@ -103,8 +109,10 @@ public static class DependencyInjection
             if (bool.TryParse(configuration["AI_PROJECT_LAUNCH_EXECUTION_ENABLED"], out var projectLaunchExecutionEnabled)) options.ProjectLaunchExecutionEnabled = projectLaunchExecutionEnabled;
             if (bool.TryParse(configuration["AI_PROJECT_OPERATION_MONITORING_ENABLED"], out var projectOperationMonitoringEnabled)) options.ProjectOperationMonitoringEnabled = projectOperationMonitoringEnabled;
             if (bool.TryParse(configuration["AI_SAFE_TEST_ORCHESTRATOR_ENABLED"], out var safeTestOrchestratorEnabled)) options.SafeTestOrchestratorEnabled = safeTestOrchestratorEnabled;
+            if (bool.TryParse(configuration["AI_NATIVE_DOMAIN_ACTIONS_ENABLED"], out var nativeDomainActionsEnabled)) options.NativeDomainActionsEnabled = nativeDomainActionsEnabled;
         });
         services.Configure<PrivacyV4Options>(configuration.GetSection(PrivacyV4Options.SectionName));
+        services.Configure<VectorSyncOptions>(configuration.GetSection(VectorSyncOptions.SectionName));
         services.PostConfigure<PrivacyV4Options>(options =>
         {
             if (bool.TryParse(configuration["PRIVACY_V4_ENABLED"], out var enabled)) options.Enabled = enabled;
@@ -123,6 +131,7 @@ public static class DependencyInjection
         services.AddScoped<IAiActionPlanValidator, AiActionPlanValidator>();
         services.AddScoped<IAiAssistantSessionService, AiAssistantSessionService>();
         services.AddScoped<IAiAssistantContextRegistry, AiAssistantContextRegistry>();
+        services.AddScoped<IAiNativeActionService, AiNativeActionService>();
         services.AddScoped<IOrganizationWorkRulebookService, OrganizationWorkRulebookService>();
         services.AddScoped<IProjectLaunchService, ProjectLaunchService>();
         services.AddScoped<IProjectLaunchOrchestratorService, ProjectLaunchOrchestratorService>();
@@ -164,6 +173,7 @@ public static class DependencyInjection
             services.AddSingleton<IVectorStorageService, NullVectorStorageService>();
         }
         services.AddScoped<IAiIngestionService, AiIngestionService>();
+        services.AddScoped<IVectorSyncOutboxStore, VectorSyncOutboxStore>();
         services.AddScoped<AiTools>();
         services.AddScoped<ToolParameterGuard>();
         
@@ -181,6 +191,8 @@ public static class DependencyInjection
         services.AddHostedService<PrivacyWorker>();
         services.AddHostedService<GitHubWebhookWorker>();
         services.AddHostedService<ProjectOperationMonitorWorker>();
+        services.AddHostedService<WebhookOutboxWorker>();
+        services.AddHostedService<WebhookOperationsRetentionWorker>();
 
         return services;
     }

@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Privacy;
 using Qaly.Application.Services;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 using Qaly.Infrastructure.Data;
@@ -19,6 +20,7 @@ public sealed partial class PrivacyService : IPrivacyService
     private readonly QalyDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IAiComplianceService _compliance;
+    private readonly ITaskAccessPolicy _taskAccessPolicy;
     private readonly IPrivacyPayloadProtector _payloadProtector;
     private readonly PrivacyV4Options _options;
 
@@ -26,12 +28,14 @@ public sealed partial class PrivacyService : IPrivacyService
         QalyDbContext db,
         ICurrentUserService currentUser,
         IAiComplianceService compliance,
+        ITaskAccessPolicy taskAccessPolicy,
         IPrivacyPayloadProtector payloadProtector,
         IOptions<PrivacyV4Options> options)
     {
         _db = db;
         _currentUser = currentUser;
         _compliance = compliance;
+        _taskAccessPolicy = taskAccessPolicy;
         _payloadProtector = payloadProtector;
         _options = options.Value;
     }
@@ -509,6 +513,7 @@ public sealed partial class PrivacyService : IPrivacyService
             return Result.Forbidden<PrivacyHealthDto>();
         }
 
+        var now = DateTimeOffset.UtcNow;
         var pendingRetention = await _db.PrivacyRetentionActions.LongCountAsync(
             action => action.Status == PrivacyWorkerStatuses.Pending || action.Status == PrivacyWorkerStatuses.Running,
             ct);
@@ -521,6 +526,22 @@ public sealed partial class PrivacyService : IPrivacyService
         var failedDsar = await _db.DataSubjectRequests.LongCountAsync(
             request => request.Status == DataSubjectRequestStatuses.Failed,
             ct);
+        var expiredRetentionLeases = await _db.PrivacyRetentionActions.LongCountAsync(
+            action => action.Status == PrivacyWorkerStatuses.Running &&
+                action.LeaseExpiresAt != null &&
+                action.LeaseExpiresAt <= now,
+            ct);
+        var expiredDsarLeases = await _db.DataSubjectRequests.LongCountAsync(
+            request => request.Status == DataSubjectRequestStatuses.Collecting &&
+                request.LeaseExpiresAt != null &&
+                request.LeaseExpiresAt <= now,
+            ct);
+        var overdueDsar = await _db.DataSubjectRequests.LongCountAsync(
+            request => (request.Status == DataSubjectRequestStatuses.Accepted ||
+                request.Status == DataSubjectRequestStatuses.Collecting) &&
+                request.DeadlineAt != null &&
+                request.DeadlineAt <= now,
+            ct);
         var oldestRetention = await _db.PrivacyRetentionActions
             .Where(action => action.Status == PrivacyWorkerStatuses.Pending)
             .MinAsync(action => (DateTimeOffset?)action.AvailableAt, ct);
@@ -528,13 +549,18 @@ public sealed partial class PrivacyService : IPrivacyService
             .Where(request => request.Status == DataSubjectRequestStatuses.Accepted)
             .MinAsync(request => (DateTimeOffset?)request.AvailableAt, ct);
         var oldest = new[] { oldestRetention, oldestDsar }.Where(value => value.HasValue).Min();
+        var expiredLeases = expiredRetentionLeases + expiredDsarLeases;
         var status = !_options.Enabled
             ? "disabled"
-            : !_options.WorkerEnabled && (pendingRetention > 0 || pendingDsar > 0)
+            : !_options.WorkerEnabled
                 ? "degraded_worker_disabled"
                 : failedRetention > 0 || failedDsar > 0
                     ? "degraded_failures"
-                    : "healthy";
+                    : overdueDsar > 0
+                        ? "degraded_overdue_dsar"
+                        : expiredLeases > 0
+                            ? "degraded_expired_leases"
+                            : "healthy";
 
         return Result.Success(new PrivacyHealthDto(
             _options.Enabled,
@@ -545,6 +571,8 @@ public sealed partial class PrivacyService : IPrivacyService
             failedRetention,
             pendingDsar,
             failedDsar,
+            expiredLeases,
+            overdueDsar,
             oldest));
     }
 
@@ -631,19 +659,10 @@ public sealed partial class PrivacyService : IPrivacyService
 
     private async Task<bool> CanAccessProjectAsync(Project project, Guid userId, CancellationToken ct)
     {
-        if (ProjectRoleRules.IsSystemAdmin(_currentUser.Role) || project.OwnerId == userId || project.Organization?.OwnerId == userId)
-        {
-            return true;
-        }
-
-        if (await _db.ProjectMembers.AnyAsync(member => member.ProjectId == project.Id && member.UserId == userId, ct))
-        {
-            return true;
-        }
-
-        return project.OrganizationId.HasValue && await _db.OrganizationMembers.AnyAsync(
-            member => member.OrganizationId == project.OrganizationId.Value && member.UserId == userId,
-            ct);
+        // Privacy endpoints run as the current principal. Reuse the canonical Project policy so
+        // an ordinary Organization member cannot inspect an unrelated Project's policies/DSARs.
+        return _taskAccessPolicy.CurrentUserId == userId &&
+            await _taskAccessPolicy.CanAccessProjectAsync(project.Id, project.OwnerId, ct);
     }
 
     private async Task<bool> CanAccessTenantAsync(Guid tenantId, Guid? projectId, Guid userId, CancellationToken ct)
@@ -663,11 +682,18 @@ public sealed partial class PrivacyService : IPrivacyService
                 await CanAccessProjectAsync(project, userId, ct);
         }
 
-        return await _db.Organizations.AnyAsync(organization => organization.Id == tenantId && organization.OwnerId == userId, ct) ||
-            await _db.OrganizationMembers.AnyAsync(member => member.OrganizationId == tenantId && member.UserId == userId, ct) ||
-            await _db.Projects.AnyAsync(project => (project.OrganizationId ?? project.Id) == tenantId && project.OwnerId == userId, ct) ||
-            await _db.ProjectMembers.AnyAsync(member => member.UserId == userId &&
-                (member.Project.OrganizationId ?? member.ProjectId) == tenantId, ct);
+        return await _db.Organizations.AnyAsync(
+                organization => organization.Id == tenantId && organization.IsActive && organization.OwnerId == userId,
+                ct) ||
+            await _db.OrganizationMembers.AnyAsync(
+                member => member.OrganizationId == tenantId && member.UserId == userId && member.Organization.IsActive,
+                ct) ||
+            await _db.Projects.AnyAsync(
+                project => project.OrganizationId == null && project.Id == tenantId && project.OwnerId == userId,
+                ct) ||
+            await _db.ProjectMembers.AnyAsync(
+                member => member.UserId == userId && member.Project.OrganizationId == null && member.ProjectId == tenantId,
+                ct);
     }
 
     private async Task<bool> CanManageTenantAsync(Guid tenantId, Guid? projectId, Guid userId, CancellationToken ct)
@@ -687,25 +713,19 @@ public sealed partial class PrivacyService : IPrivacyService
                 return false;
             }
 
-            if (project.OwnerId == userId || project.Organization?.OwnerId == userId)
-            {
-                return true;
-            }
-
-            var projectRole = await _db.ProjectMembers
-                .Where(member => member.ProjectId == project.Id && member.UserId == userId)
-                .Select(member => member.Role)
-                .FirstOrDefaultAsync(ct);
-            return ProjectRoleRules.CanManageProject(projectRole);
+            return _taskAccessPolicy.CurrentUserId == userId &&
+                await _taskAccessPolicy.CanManageProjectAsync(project.Id, project.OwnerId, ct);
         }
 
-        if (await _db.Organizations.AnyAsync(organization => organization.Id == tenantId && organization.OwnerId == userId, ct))
+        if (await _db.Organizations.AnyAsync(
+            organization => organization.Id == tenantId && organization.IsActive && organization.OwnerId == userId,
+            ct))
         {
             return true;
         }
 
         var organizationRole = await _db.OrganizationMembers
-            .Where(member => member.OrganizationId == tenantId && member.UserId == userId)
+            .Where(member => member.OrganizationId == tenantId && member.UserId == userId && member.Organization.IsActive)
             .Select(member => member.Role)
             .FirstOrDefaultAsync(ct);
         return OrganizationRoleRules.CanManageOrganization(organizationRole) ||

@@ -121,6 +121,12 @@ public sealed class MeetingPrivacyEnforcementTests : IDisposable
             new UnitOfWork(_db),
             _currentUser.Object,
             _audit.Object,
+            new TaskAccessPolicy(
+                _currentUser.Object,
+                new GenericRepository<Project>(_db),
+                new GenericRepository<ProjectMember>(_db),
+                new GenericRepository<OrganizationMember>(_db),
+                new ProjectRoleCatalog(new GenericRepository<ProjectRoleDefinition>(_db))),
             compliance,
             new GenericRepository<PrivacyRetentionAction>(_db),
             new GenericRepository<AiAuditEvent>(_db),

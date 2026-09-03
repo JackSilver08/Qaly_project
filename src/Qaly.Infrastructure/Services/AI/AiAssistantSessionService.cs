@@ -1,10 +1,12 @@
 using System.Security.Cryptography;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Models;
+using Qaly.Application.Common.Telemetry;
 using Qaly.Application.DTOs.Ai;
 using Qaly.Application.Services;
 using Qaly.Domain.Entities;
@@ -155,6 +157,7 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
 
         var sessions = await query
             .OrderByDescending(item => item.UpdatedAt ?? item.CreatedAt)
+            .ThenBy(item => item.Id)
             .Select(item => new AiAssistantSessionSummaryDto(
                 item.Id,
                 item.Title,
@@ -186,6 +189,60 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
         session.Version++;
         session.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
+        return Result.Success(MapSession(session));
+    }
+
+    public async Task<Result<AiAssistantSessionDto>> UpdateScopeAsync(
+        Guid sessionId,
+        UpdateAiAssistantSessionScopeRequestDto request,
+        CancellationToken ct = default)
+    {
+        var enabled = EnsureEnabled<AiAssistantSessionDto>();
+        if (enabled != null) return enabled;
+        var sessionResult = await GetOwnedMutableSessionAsync(sessionId, request.ExpectedVersion, ct);
+        if (!sessionResult.IsSuccess || sessionResult.Data == null)
+            return Result.Failure<AiAssistantSessionDto>(
+                sessionResult.Error ?? "Assistant session not found.",
+                sessionResult.StatusCode,
+                sessionResult.ErrorCode);
+
+        var session = sessionResult.Data;
+        Guid? tenantId = null;
+        if (request.ProjectId.HasValue)
+        {
+            var projectResult = await _projectService.GetByIdAsync(request.ProjectId.Value, ct);
+            if (!projectResult.IsSuccess || projectResult.Data == null)
+                return Result.NotFound<AiAssistantSessionDto>();
+            tenantId = projectResult.Data.OrganizationId;
+        }
+
+        if (session.ProjectId == request.ProjectId && session.TenantId == tenantId)
+            return Result.Success(MapSession(session));
+
+        session.ProjectId = request.ProjectId;
+        session.TenantId = tenantId;
+        session.Version++;
+        session.UpdatedAt = DateTimeOffset.UtcNow;
+        _db.AiAuditEvents.Add(BuildAudit(
+            session.OwnerUserId,
+            session.TenantId,
+            session.ProjectId,
+            "assistant_session.scope_changed",
+            "AssistantSession",
+            session.Id,
+            "accepted"));
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Result.Failure<AiAssistantSessionDto>(
+                "The assistant session changed. Reload before updating its scope.",
+                409,
+                "assistant_session_stale");
+        }
+
         return Result.Success(MapSession(session));
     }
 
@@ -284,6 +341,7 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
         string correlationId,
         CancellationToken ct = default)
     {
+        var requestStartedTimestamp = Stopwatch.GetTimestamp();
         var enabled = EnsureEnabled<AiAssistantTurnResponseDto>();
         if (enabled != null) return enabled;
         if (_currentUser.UserId is not Guid userId)
@@ -409,6 +467,18 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
                     planningResult.Error ?? "Assistant goal could not be analysed.",
                     planningResult.StatusCode, planningResult.ErrorCode);
             planning = planningResult.Data;
+
+            // Native mutation capabilities have server-owned contracts and typed renderers.
+            // Re-assert that route at the durable session boundary so a provider/custom
+            // planner cannot downgrade a valid P16-P24 action into prose-only guidance.
+            // Authorization still comes exclusively from discoveryContext; this never
+            // grants a capability the current role/project did not already have.
+            if (AiAssistantGoalPlanningOutputContract.TryCreateAuthorizedExecutionPlan(
+                    requestWithMemory, discoveryResult.Data, out var serverExecutionPlan) &&
+                serverExecutionPlan != null)
+            {
+                planning = serverExecutionPlan;
+            }
             contextResult = string.IsNullOrWhiteSpace(planning.SelectedCapabilityId)
                 ? Result.Success(planning.GoalAnalysis.Disposition == "policy_blocked"
                     ? discoveryResult.Data with
@@ -569,6 +639,16 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
                 "assistant_turn_conflict");
         }
 
+        var telemetryCapabilityId = planning?.SelectedCapabilityId;
+        var telemetryProjectScoped = session.ProjectId.HasValue;
+        QalyAiTelemetry.RecordFirstProgress(
+            Stopwatch.GetElapsedTime(requestStartedTimestamp),
+            telemetryCapabilityId,
+            telemetryProjectScoped);
+        using var telemetryActivity = QalyAiTelemetry.StartTurn(
+            telemetryCapabilityId,
+            telemetryProjectScoped);
+
         var routingStartedAt = now;
         Result<AiAssistantTurnResponseDto> coreResult;
         try
@@ -665,6 +745,17 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
                 turn.SafeErrorCode));
             await _db.SaveChangesAsync(ct);
 
+            QalyAiTelemetry.RecordTerminal(
+                Stopwatch.GetElapsedTime(requestStartedTimestamp),
+                answerAvailable: false,
+                outcome: turn.Status,
+                telemetryCapabilityId,
+                planning?.GoalAnalysis.ActualProvider,
+                usedFallback: false,
+                telemetryProjectScoped,
+                turn.SafeErrorCode,
+                telemetryActivity);
+
             return Result.Failure<AiAssistantTurnResponseDto>(
                 coreResult.Error ?? "Không thể hoàn tất lượt trợ lý AI.",
                 coreResult.StatusCode,
@@ -687,12 +778,14 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
                 coreResult.Data.ProjectLaunchBrief?.ActualProvider ??
                 coreResult.Data.Conversation?.ActualProvider ??
                 coreResult.Data.Answer?.Model?.Provider ??
+                (coreResult.Data.NativeActionDraft != null ? coreResult.Data.ActualProvider : null) ??
                 planning?.GoalAnalysis.ActualProvider ?? "not_reached",
             ActualModel = coreResult.Data.ResearchPlan?.ActualModel ??
                 coreResult.Data.ProjectLaunchPlan?.ActualModel ??
                 coreResult.Data.ProjectLaunchBrief?.ActualModel ??
                 coreResult.Data.Conversation?.ActualModel ??
                 coreResult.Data.Answer?.Model?.Id ??
+                (coreResult.Data.NativeActionDraft != null ? coreResult.Data.ActualModel : null) ??
                 planning?.GoalAnalysis.ActualModel ?? "not_reached",
             GoalAnalysis = planning?.GoalAnalysis ?? coreResult.Data.GoalAnalysis,
             Conversation = _options.AssistantProgressiveInteractionEnabled
@@ -732,6 +825,27 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
                 response.ActualProvider.Contains("Fallback", StringComparison.OrdinalIgnoreCase)
         };
 
+        // Completion and cancellation race on two independent HTTP requests. The
+        // relational claim is performed together with the final durable response below,
+        // inside the provider execution strategy, so SQL Server retry-on-failure can
+        // replay the whole transaction safely.
+        if (!_db.Database.IsRelational() &&
+            (turn.Status != "running" || await IsCancellationRequestedAsync(turn.Id, ct)))
+        {
+            QalyAiTelemetry.RecordTerminal(
+                Stopwatch.GetElapsedTime(requestStartedTimestamp),
+                answerAvailable: false,
+                outcome: "canceled",
+                telemetryCapabilityId,
+                response.ActualProvider,
+                quality.UsedFallback,
+                telemetryProjectScoped,
+                "assistant_turn_canceled",
+                telemetryActivity);
+            return Result.Failure<AiAssistantTurnResponseDto>(
+                "The assistant turn was canceled safely.", 409, "assistant_turn_canceled");
+        }
+
         turn.Status = "completed";
         turn.Disposition = response.Disposition;
         turn.Intent = response.Intent;
@@ -743,14 +857,19 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
         turn.CompletedAt = completedAt;
 
         var hasArtifact = response.Artifact != null || response.ResearchPlan != null ||
-            response.ProjectLaunchBrief != null || response.ProjectLaunchPlan != null;
+            response.ProjectLaunchBrief != null || response.ProjectLaunchPlan != null ||
+            response.SafeTestRunPreview != null || response.NativeActionDraft != null;
         var finalEvent = new AssistantProcessEvent
         {
             TurnId = turn.Id,
             Sequence = turn.ProcessEvents.Max(item => item.Sequence) + 1,
             Stage = hasArtifact ? "artifact" : "answer",
             Status = "completed",
-            PublicLabel = response.ProjectLaunchPlan != null
+            PublicLabel = response.NativeActionDraft != null
+                ? "Native action draft is ready for review"
+                : response.SafeTestRunPreview != null
+                ? "Safe test manifest is ready for review"
+                : response.ProjectLaunchPlan != null
                 ? "Project launch plan is ready for review"
                 : response.ResearchPlan != null
                 ? "Đã chuẩn bị Research Plan có nguồn để bạn xem lại"
@@ -826,6 +945,19 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
             turn.ArtifactRefs.Add(testArtifactRef);
             _db.AssistantArtifactRefs.Add(testArtifactRef);
         }
+        if (response.NativeActionDraft != null)
+        {
+            var nativeArtifactRef = new AssistantArtifactRef
+            {
+                TurnId = turn.Id,
+                SchemaId = response.NativeActionDraft.SchemaId,
+                SchemaVersion = "v1",
+                RendererId = AiNativeDomainActionContract.RendererId,
+                DraftId = response.NativeActionDraft.DraftId
+            };
+            turn.ArtifactRefs.Add(nativeArtifactRef);
+            _db.AssistantArtifactRefs.Add(nativeArtifactRef);
+        }
 
         response = response with { ProcessEvents = MapEvents(turn.ProcessEvents) };
         turn.ResponseJson = JsonSerializer.Serialize(response with { ProcessEvents = null }, JsonOptions);
@@ -863,7 +995,87 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
             quality.UsedFallback
         }, JsonOptions);
         _db.AiAuditEvents.Add(qualityAudit);
-        await _db.SaveChangesAsync(ct);
+        if (_db.Database.IsRelational())
+        {
+            var completionSucceeded = false;
+            var executionStrategy = _db.Database.CreateExecutionStrategy();
+            await executionStrategy.ExecuteAsync(async () =>
+            {
+                await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+                var completionClaimed = await _db.AssistantTurns
+                    .Where(item => item.Id == turn.Id &&
+                        item.Status == "running" &&
+                        item.CancellationRequestedAt == null)
+                    .ExecuteUpdateAsync(setters => setters
+                        .SetProperty(item => item.Status, "completed")
+                        .SetProperty(item => item.CompletedAt, completedAt)
+                        .SetProperty(item => item.UpdatedAt, completedAt), ct);
+
+                if (completionClaimed != 1)
+                {
+                    // A transient failure can be reported after COMMIT reached the
+                    // server. Treat our already-completed durable row as success instead
+                    // of replaying inserts and creating duplicate artifacts.
+                    completionSucceeded = await _db.AssistantTurns.AsNoTracking()
+                        .AnyAsync(item => item.Id == turn.Id &&
+                            item.Status == "completed" &&
+                            item.CancellationRequestedAt == null &&
+                            item.ResponseJson != null, ct);
+                    await transaction.RollbackAsync(ct);
+                    return;
+                }
+
+                // Keep entity states retryable until COMMIT succeeds. If the provider
+                // retries after a rolled-back SaveChanges, the same graph is persisted
+                // again without rebuilding or duplicating it.
+                await _db.SaveChangesAsync(acceptAllChangesOnSuccess: false, ct);
+                await transaction.CommitAsync(ct);
+                completionSucceeded = true;
+            });
+
+            if (!completionSucceeded)
+            {
+                _db.ChangeTracker.Clear();
+                var terminal = await _db.AssistantTurns.AsNoTracking()
+                    .Where(item => item.Id == turn.Id)
+                    .Select(item => new { item.Status, item.CancellationRequestedAt })
+                    .SingleAsync(ct);
+                var canceled = terminal.Status == "canceled" || terminal.CancellationRequestedAt.HasValue;
+                QalyAiTelemetry.RecordTerminal(
+                    Stopwatch.GetElapsedTime(requestStartedTimestamp),
+                    answerAvailable: false,
+                    outcome: canceled ? "canceled" : "state_changed",
+                    telemetryCapabilityId,
+                    response.ActualProvider,
+                    quality.UsedFallback,
+                    telemetryProjectScoped,
+                    canceled ? "assistant_turn_canceled" : "assistant_turn_state_changed",
+                    telemetryActivity);
+                return Result.Failure<AiAssistantTurnResponseDto>(
+                    canceled
+                        ? "The assistant turn was canceled safely."
+                        : "The assistant turn changed while its result was being finalized.",
+                    409,
+                    canceled ? "assistant_turn_canceled" : "assistant_turn_state_changed");
+            }
+
+            _db.ChangeTracker.AcceptAllChanges();
+        }
+        else
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+
+        QalyAiTelemetry.RecordTerminal(
+            Stopwatch.GetElapsedTime(requestStartedTimestamp),
+            answerAvailable: true,
+            outcome: "completed",
+            telemetryCapabilityId,
+            response.ActualProvider,
+            quality.UsedFallback,
+            telemetryProjectScoped,
+            safeErrorCode: null,
+            telemetryActivity);
 
         return Result.Success(response);
     }
@@ -876,6 +1088,7 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
         var rows = await _db.AiAuditEvents.AsNoTracking()
             .Where(item => item.ActorUserId == userId && item.EventType == "assistant_quality.evaluated")
             .OrderByDescending(item => item.CreatedAt)
+            .ThenBy(item => item.Id)
             .Take(500)
             .Select(item => new { item.Outcome, item.FailureCode, item.AfterJson })
             .ToListAsync(ct);
@@ -1023,18 +1236,119 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
         var enabled = EnsureEnabled<AiAssistantSessionDto>();
         if (enabled != null) return enabled;
         if (_currentUser.UserId is not Guid userId) return Result.Forbidden<AiAssistantSessionDto>();
-        var session = await SessionQuery().SingleOrDefaultAsync(
-            item => item.OwnerUserId == userId && item.Turns.Any(turn => turn.Id == turnId), ct);
-        if (session == null) return Result.NotFound<AiAssistantSessionDto>();
-        if (session.Version != expectedVersion)
+        var state = await _db.AssistantTurns.AsNoTracking()
+            .Where(item => item.Id == turnId && item.Session.OwnerUserId == userId)
+            .Select(item => new
+            {
+                item.SessionId,
+                item.Status,
+                item.Session.Version,
+                item.Session.TenantId,
+                item.Session.ProjectId,
+                item.CorrelationId
+            })
+            .SingleOrDefaultAsync(ct);
+        if (state == null) return Result.NotFound<AiAssistantSessionDto>();
+        if (state.Version != expectedVersion)
             return Result.Failure<AiAssistantSessionDto>(
                 "The assistant session changed. Reload before canceling.", 409, "assistant_session_stale");
-        var turn = session.Turns.Single(item => item.Id == turnId);
-        if (turn.Status is "completed" or "failed" or "canceled") return Result.Success(MapSession(session));
-        turn.CancellationRequestedAt = DateTimeOffset.UtcNow;
-        turn.UpdatedAt = turn.CancellationRequestedAt;
-        await _db.SaveChangesAsync(ct);
-        return Result.Success(MapSession(session));
+        if (state.Status == "canceled")
+        {
+            var alreadyCanceled = await SessionQuery().AsNoTracking()
+                .SingleAsync(item => item.Id == state.SessionId, ct);
+            return Result.Success(MapSession(alreadyCanceled));
+        }
+        if (state.Status != "running")
+            return Result.Failure<AiAssistantSessionDto>(
+                "Only a running assistant turn can be canceled.", 409, "assistant_turn_not_cancelable");
+
+        var now = DateTimeOffset.UtcNow;
+        if (_db.Database.IsRelational())
+        {
+            var cancellationSucceeded = false;
+            AiAuditEvent? cancellationAudit = null;
+            var executionStrategy = _db.Database.CreateExecutionStrategy();
+            await executionStrategy.ExecuteAsync(async () =>
+            {
+                await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+                var canceled = await _db.AssistantTurns
+                    .Where(item => item.Id == turnId &&
+                        item.Status == "running" &&
+                        item.CancellationRequestedAt == null)
+                    .ExecuteUpdateAsync(setters => setters
+                        .SetProperty(item => item.Status, "canceled")
+                        .SetProperty(item => item.CancellationRequestedAt, now)
+                        .SetProperty(item => item.CompletedAt, now)
+                        .SetProperty(item => item.SafeErrorCode, "assistant_turn_canceled")
+                        .SetProperty(item => item.UpdatedAt, now), ct);
+                if (canceled == 1)
+                {
+                    await _db.AssistantProcessEvents
+                        .Where(item => item.TurnId == turnId && item.Status == "queued")
+                        .ExecuteUpdateAsync(setters => setters
+                            .SetProperty(item => item.Status, "skipped")
+                            .SetProperty(item => item.CompletedAt, now)
+                            .SetProperty(item => item.DurationMs, 0)
+                            .SetProperty(item => item.SafeErrorCode, "assistant_turn_canceled"), ct);
+                    await _db.AssistantProcessEvents
+                        .Where(item => item.TurnId == turnId && item.Status == "running")
+                        .ExecuteUpdateAsync(setters => setters
+                            .SetProperty(item => item.Status, "blocked")
+                            .SetProperty(item => item.CompletedAt, now)
+                            .SetProperty(item => item.SafeErrorCode, "assistant_turn_canceled"), ct);
+                    cancellationAudit ??= BuildAudit(
+                        userId,
+                        state.TenantId,
+                        state.ProjectId,
+                        "assistant_turn.canceled",
+                        "AssistantTurn",
+                        turnId,
+                        "canceled",
+                        state.CorrelationId,
+                        "assistant_turn_canceled");
+                    if (_db.Entry(cancellationAudit).State == EntityState.Detached)
+                        _db.AiAuditEvents.Add(cancellationAudit);
+                    await _db.SaveChangesAsync(acceptAllChangesOnSuccess: false, ct);
+                    await transaction.CommitAsync(ct);
+                    cancellationSucceeded = true;
+                    return;
+                }
+
+                cancellationSucceeded = await _db.AssistantTurns.AsNoTracking()
+                    .AnyAsync(item => item.Id == turnId &&
+                        item.Status == "canceled" &&
+                        item.CancellationRequestedAt != null, ct);
+                await transaction.RollbackAsync(ct);
+            });
+
+            if (cancellationSucceeded)
+            {
+                _db.ChangeTracker.AcceptAllChanges();
+            }
+        }
+        else
+        {
+            var turn = await _db.AssistantTurns.SingleAsync(item => item.Id == turnId, ct);
+            if (turn.Status == "running" && !turn.CancellationRequestedAt.HasValue)
+            {
+                turn.Status = "canceled";
+                turn.CancellationRequestedAt = now;
+                turn.CompletedAt = now;
+                turn.SafeErrorCode = "assistant_turn_canceled";
+                await _db.SaveChangesAsync(ct);
+            }
+        }
+
+        _db.ChangeTracker.Clear();
+        var session = await SessionQuery().AsNoTracking()
+            .SingleAsync(item => item.Id == state.SessionId, ct);
+        var finalTurn = session.Turns.Single(item => item.Id == turnId);
+        return finalTurn.Status == "canceled"
+            ? Result.Success(MapSession(session))
+            : Result.Failure<AiAssistantSessionDto>(
+                "The assistant turn finished before cancellation could be applied.",
+                409,
+                "assistant_turn_not_cancelable");
     }
 
     public async Task<Result<AiAssistantTurnResponseDto>> ResumeTurnAsync(
@@ -1221,6 +1535,20 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
                     return coreResult ?? Result.Failure<AiAssistantTurnResponseDto>(
                         "Read-only analysis failed after bounded retries.", 503, processEvent.SafeErrorCode);
                 }
+                // Cancellation can arrive while the provider call is in flight.
+                // Recheck before accepting its answer so a fast final step cannot
+                // turn an acknowledged cancel into a completed HTTP 200 response.
+                if (await IsCancellationRequestedAsync(turn.Id, ct))
+                {
+                    processEvent.Status = "blocked";
+                    processEvent.CompletedAt = DateTimeOffset.UtcNow;
+                    processEvent.DurationMs = SafeDurationMilliseconds(processEvent.StartedAt, processEvent.CompletedAt.Value);
+                    processEvent.SafeErrorCode = "assistant_turn_canceled";
+                    SkipRemainingLoopEvents(eventByStep.Values, processEvent.Sequence, processEvent.SafeErrorCode);
+                    await _db.SaveChangesAsync(ct);
+                    return Result.Failure<AiAssistantTurnResponseDto>(
+                        "The assistant turn was canceled safely.", 409, processEvent.SafeErrorCode);
+                }
                 processEvent.SafeDetailJson = SerializeLoopDetail(
                     step.StepId,
                     ReadAttempt(processEvent.SafeDetailJson),
@@ -1324,6 +1652,7 @@ public sealed class AiAssistantSessionService : IAiAssistantSessionService
 
     private IQueryable<AssistantSession> SessionQuery()
         => _db.AssistantSessions
+            .AsSplitQuery()
             .Include(item => item.Turns)
                 .ThenInclude(turn => turn.ProcessEvents)
             .Include(item => item.Turns)

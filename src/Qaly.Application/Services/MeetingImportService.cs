@@ -31,6 +31,7 @@ public partial class MeetingImportService : IMeetingImportService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditLogService _auditLogService;
+    private readonly ITaskAccessPolicy _taskAccessPolicy;
     private readonly IAiComplianceService? _complianceService;
     private readonly IRepository<PrivacyRetentionAction>? _retentionActionRepo;
     private readonly IRepository<AiAuditEvent>? _aiAuditRepo;
@@ -51,6 +52,7 @@ public partial class MeetingImportService : IMeetingImportService
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
         IAuditLogService auditLogService,
+        ITaskAccessPolicy taskAccessPolicy,
         IAiComplianceService? complianceService = null,
         IRepository<PrivacyRetentionAction>? retentionActionRepo = null,
         IRepository<AiAuditEvent>? aiAuditRepo = null,
@@ -70,6 +72,7 @@ public partial class MeetingImportService : IMeetingImportService
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
         _auditLogService = auditLogService;
+        _taskAccessPolicy = taskAccessPolicy;
         _complianceService = complianceService;
         _retentionActionRepo = retentionActionRepo;
         _aiAuditRepo = aiAuditRepo;
@@ -98,7 +101,7 @@ public partial class MeetingImportService : IMeetingImportService
             return Result.NotFound<MeetilyImportResult>("Project was not found.");
         }
 
-        if (!await CanAccessProjectAsync(project, currentUserId.Value, ct))
+        if (!await _taskAccessPolicy.CanContributeToProjectAsync(project.Id, project.OwnerId, ct))
         {
             return Result.Forbidden<MeetilyImportResult>();
         }
@@ -271,9 +274,8 @@ public partial class MeetingImportService : IMeetingImportService
 
         await _meetingImportRepo.AddAsync(meetingImport, ct);
         await AddPrivacyRetentionAndAuditAsync(meetingImport, privacyDecision, currentUserId.Value, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-
-        await _auditLogService.LogAsync(
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
             "ImportMeetilyMeeting",
             nameof(MeetingImport),
             meetingImport.Id.ToString(),
@@ -470,6 +472,14 @@ public partial class MeetingImportService : IMeetingImportService
             return Result.Failure<MeetingActionItemTaskLinkDto>(meetingImportResult.Error!, meetingImportResult.StatusCode);
         }
 
+        if (!await _taskAccessPolicy.CanCreateTaskAsync(
+                meetingImportResult.Data.ProjectId,
+                meetingImportResult.Data.Project.OwnerId,
+                ct))
+        {
+            return Result.Forbidden<MeetingActionItemTaskLinkDto>();
+        }
+
         var extractionResult = ParseExtractionPayload(meetingImportResult.Data.AiDraft?.PayloadJson);
         if (!extractionResult.IsSuccess || extractionResult.Data == null)
         {
@@ -519,8 +529,8 @@ public partial class MeetingImportService : IMeetingImportService
         };
 
         await _mappingRepo.AddAsync(mapping, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync(
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
             "LinkMeetingActionItemToExistingTask",
             nameof(MeetingActionItemMapping),
             mapping.Id.ToString(),
@@ -610,7 +620,10 @@ public partial class MeetingImportService : IMeetingImportService
             return Result.NotFound<TaskItemDto>("Meeting import not found.");
         }
 
-        if (!await CanAccessProjectAsync(meetingImport.Project, currentUserId.Value, ct))
+        if (!await _taskAccessPolicy.CanCreateTaskAsync(
+                meetingImport.ProjectId,
+                meetingImport.Project.OwnerId,
+                ct))
         {
             return Result.Forbidden<TaskItemDto>();
         }
@@ -705,8 +718,8 @@ public partial class MeetingImportService : IMeetingImportService
             await _mappingRepo.AddAsync(mapping, ct);
         }
 
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync(
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
             "LinkMeetingActionItemToTask",
             nameof(MeetingActionItemMapping),
             mapping.Id.ToString(),
@@ -726,6 +739,7 @@ public partial class MeetingImportService : IMeetingImportService
 
         var task = await _taskRepo.GetQueryable()
             .Include(item => item.Project)
+            .Include(item => item.Assignees)
             .FirstOrDefaultAsync(item => item.Id == taskId, ct);
 
         if (task == null)
@@ -738,7 +752,8 @@ public partial class MeetingImportService : IMeetingImportService
             return Result.NotFound<TaskMeetingSourceDto>("Task not found.");
         }
 
-        if (!await CanAccessProjectAsync(task.Project, currentUserId.Value, ct))
+        if (!await _taskAccessPolicy.CanAccessTaskAsync(task, ct) ||
+            !await _taskAccessPolicy.CanReadInternalWikiAsync(task.ProjectId, task.Project.OwnerId, ct))
         {
             return Result.Forbidden<TaskMeetingSourceDto>();
         }
@@ -813,7 +828,10 @@ public partial class MeetingImportService : IMeetingImportService
             return Result.NotFound<MeetingImport>("Meeting import not found.");
         }
 
-        if (!await CanAccessProjectAsync(meetingImport.Project, currentUserId, ct))
+        if (!await _taskAccessPolicy.CanReadInternalWikiAsync(
+                meetingImport.ProjectId,
+                meetingImport.Project.OwnerId,
+                ct))
         {
             return Result.Forbidden<MeetingImport>();
         }
@@ -921,56 +939,6 @@ public partial class MeetingImportService : IMeetingImportService
     private static string CleanupActionTitle(string value)
         => ActionPrefixPattern().Replace(value.Trim(), string.Empty).Trim();
 
-    private async Task<bool> CanAccessProjectAsync(Project project, Guid currentUserId, CancellationToken ct)
-    {
-        if (IsAdmin())
-        {
-            return true;
-        }
-
-        var projectInfo = await _projectRepo.GetQueryable()
-            .AsNoTracking()
-            .Where(item => item.Id == project.Id)
-            .Select(item => new
-            {
-                item.OrganizationId,
-                OrganizationIsActive = item.Organization == null || item.Organization.IsActive,
-                OrganizationOwnerId = item.Organization != null ? (Guid?)item.Organization.OwnerId : null
-            })
-            .FirstOrDefaultAsync(ct);
-
-        if (projectInfo != null && projectInfo.OrganizationId.HasValue && !projectInfo.OrganizationIsActive)
-        {
-            return false;
-        }
-
-        if (project.OwnerId == currentUserId)
-        {
-            return true;
-        }
-
-        if (await _projectMemberRepo.GetQueryable().AnyAsync(member => member.ProjectId == project.Id && member.UserId == currentUserId, ct))
-        {
-            return true;
-        }
-
-        if (projectInfo != null && projectInfo.OrganizationId.HasValue)
-        {
-            if (projectInfo.OrganizationOwnerId.HasValue && projectInfo.OrganizationOwnerId.Value == currentUserId)
-            {
-                return true;
-            }
-
-            return await _organizationMemberRepo.GetQueryable()
-                .AnyAsync(member => member.OrganizationId == projectInfo.OrganizationId.Value && member.UserId == currentUserId, ct);
-        }
-
-        return false;
-    }
-
-    private bool IsAdmin()
-        => ProjectRoleRules.IsSystemAdmin(_currentUserService.Role);
-
     [GeneratedRegex(@"\b(todo|action|follow up|fix|implement|review|prepare|update|create|assign|deadline|làm|sửa|cập nhật|chuẩn bị|xử lý)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ActionLinePattern();
 
@@ -1012,9 +980,54 @@ public partial class MeetingImportService : IMeetingImportService
             return Result.NotFound<AutoChecknoteResponseDto>("Không tìm thấy dự án.");
         }
 
-        if (!await CanAccessProjectAsync(project, currentUserId.Value, ct))
+        if (!await _taskAccessPolicy.CanContributeToProjectAsync(project.Id, project.OwnerId, ct))
         {
             return Result.Forbidden<AutoChecknoteResponseDto>();
+        }
+
+        if (meetingSessionId == Guid.Empty)
+        {
+            return Result.Failure<AutoChecknoteResponseDto>("Meeting session is required.", 400);
+        }
+
+        // A checknote is grounded in a real Qaly group meeting. Project access alone must not
+        // authorize a caller to attach an arbitrary/foreign meeting id to the Project record.
+        var meetingSession = await _meetingSessionRepo.GetQueryable()
+            .Include(session => session.WorkGroup)
+                .ThenInclude(group => group.Members)
+            .Include(session => session.WorkGroup)
+                .ThenInclude(group => group.Organization)
+                    .ThenInclude(organization => organization!.Members)
+            .FirstOrDefaultAsync(session => session.Id == meetingSessionId, ct);
+        if (meetingSession == null)
+        {
+            return Result.NotFound<AutoChecknoteResponseDto>("Meeting session was not found.");
+        }
+
+        var sourceGroup = meetingSession.WorkGroup;
+        var isSystemAdmin = SystemRoleRules.IsAdmin(_currentUserService.Role);
+        var isGroupParticipant = sourceGroup.OwnerId == currentUserId.Value ||
+                                 sourceGroup.Members.Any(member => member.UserId == currentUserId.Value);
+        var isOrganizationParticipant = sourceGroup.OrganizationId == null ||
+                                        (sourceGroup.Organization is { IsActive: true } organization &&
+                                         (organization.OwnerId == currentUserId.Value ||
+                                          organization.Members.Any(member => member.UserId == currentUserId.Value)));
+        if (!isSystemAdmin && (!isGroupParticipant || !isOrganizationParticipant))
+        {
+            return Result.Forbidden<AutoChecknoteResponseDto>();
+        }
+
+        if (sourceGroup.IsDeleted ||
+            string.Equals(sourceGroup.Status, "Dissolved", StringComparison.OrdinalIgnoreCase))
+        {
+            return Result.Failure<AutoChecknoteResponseDto>("The meeting group is no longer active.", 409);
+        }
+
+        if (project.SourceGroupId != meetingSession.WorkGroupId)
+        {
+            return Result.Failure<AutoChecknoteResponseDto>(
+                "The selected Project is not linked to this meeting group.",
+                400);
         }
 
         var tenantId = project.OrganizationId ?? project.Id;
@@ -1355,20 +1368,15 @@ public partial class MeetingImportService : IMeetingImportService
         await _meetingImportRepo.AddAsync(meetingImport, ct);
         await AddPrivacyRetentionAndAuditAsync(meetingImport, privacyDecision, currentUserId.Value, ct);
 
-        // 7. Update Meeting Session if exists
-        var meetingSession = await _meetingSessionRepo.GetByIdAsync(meetingSessionId, ct);
-        if (meetingSession != null)
-        {
-            meetingSession.Summary = summary;
-            meetingSession.TranscriptSourceId = meetingImport.Id.ToString();
-            meetingSession.Status = "Ended";
-            meetingSession.EndedAt = DateTimeOffset.UtcNow;
-            await _meetingSessionRepo.UpdateAsync(meetingSession, ct);
-        }
+        // 7. The validated source session is part of the same atomic read-back graph.
+        meetingSession.Summary = summary;
+        meetingSession.TranscriptSourceId = meetingImport.Id.ToString();
+        meetingSession.Status = "Ended";
+        meetingSession.EndedAt = DateTimeOffset.UtcNow;
+        await _meetingSessionRepo.UpdateAsync(meetingSession, ct);
 
-        await _unitOfWork.SaveChangesAsync(ct);
-
-        await _auditLogService.LogAsync(
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
             "AutoChecknoteImport",
             nameof(MeetingImport),
             meetingImport.Id.ToString(),
@@ -1421,7 +1429,10 @@ public partial class MeetingImportService : IMeetingImportService
             .OrderByDescending(item => item.CreatedAt)
             .FirstOrDefaultAsync(ct);
         if (meetingImport == null ||
-            !await CanAccessProjectAsync(meetingImport.Project, currentUserId.Value, ct) ||
+            !await _taskAccessPolicy.CanReadInternalWikiAsync(
+                meetingImport.ProjectId,
+                meetingImport.Project.OwnerId,
+                ct) ||
             (IsPrivacyEnforced && meetingImport.PrivacyState != MeetingPrivacyStates.Active))
         {
             return Result.NotFound<AutoChecknoteResponseDto>();

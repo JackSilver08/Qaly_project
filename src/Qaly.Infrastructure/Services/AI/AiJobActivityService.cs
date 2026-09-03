@@ -54,11 +54,16 @@ public sealed class AiJobActivityService : IAiJobActivityService
 
     private readonly QalyDbContext _db;
     private readonly ICurrentUserService _currentUser;
+    private readonly IAiNativeAuthorizationService _authorization;
 
-    public AiJobActivityService(QalyDbContext db, ICurrentUserService currentUser)
+    public AiJobActivityService(
+        QalyDbContext db,
+        ICurrentUserService currentUser,
+        IAiNativeAuthorizationService authorization)
     {
         _db = db;
         _currentUser = currentUser;
+        _authorization = authorization;
     }
 
     public async Task AppendAsync(Guid jobId, AppendAiActionActivityDto dto, CancellationToken ct = default)
@@ -161,21 +166,16 @@ public sealed class AiJobActivityService : IAiJobActivityService
 
     private async Task<bool> CanReadJobAsync(AiJob job, Guid userId, CancellationToken ct)
     {
-        if (job.RequestedById == userId ||
-            await _db.Users.AnyAsync(user => user.Id == userId && user.Role == "Admin", ct))
+        if (job.RequestedById == userId)
         {
             return true;
         }
         if (!job.ProjectId.HasValue) return false;
-        if (job.Project?.OwnerId == userId ||
-            await _db.ProjectMembers.AnyAsync(member => member.ProjectId == job.ProjectId && member.UserId == userId, ct))
-        {
-            return true;
-        }
-        return job.Project?.OrganizationId.HasValue == true &&
-            (job.Project.Organization?.OwnerId == userId ||
-             await _db.OrganizationMembers.AnyAsync(member =>
-                 member.OrganizationId == job.Project.OrganizationId && member.UserId == userId, ct));
+        if (job.Project == null) return false;
+        var isSystemAdmin = await _db.Users.AsNoTracking().AnyAsync(
+            user => user.Id == userId && user.IsActive && user.Role == ProjectRoleRules.SystemAdmin,
+            ct);
+        return (await _authorization.ResolveProjectAsync(job.Project, userId, isSystemAdmin, ct)).CanRead;
     }
 
     private static AiActionActivityEventDto ToDto(AiJobActivityEvent item)

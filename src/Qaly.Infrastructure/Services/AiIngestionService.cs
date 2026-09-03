@@ -37,9 +37,9 @@ public class AiIngestionService : IAiIngestionService
         _vectorSize = configuration.GetValue<int>("Ai:VectorSize", 768);
     }
 
-    public async Task SyncProjectAsync(Guid projectId)
+    public async Task SyncProjectAsync(Guid projectId, CancellationToken ct = default)
     {
-        var project = await _projectRepo.GetByIdAsync(projectId);
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
         if (project == null) return;
 
         var text = $"Dự án: {project.Name}. Mô tả: {project.Description}. Trạng thái: {project.Status}.";
@@ -54,23 +54,23 @@ public class AiIngestionService : IAiIngestionService
             { "created_at", project.CreatedAt.ToString("O") }
         };
 
-        await UpsertToVectorDb(project.Id, project.Name, text, metadata);
+        await UpsertToVectorDb(project.Id, project.Name, text, metadata, ct);
     }
 
-    public async Task DeleteProjectAsync(Guid projectId)
+    public async Task DeleteProjectAsync(Guid projectId, CancellationToken ct = default)
     {
         // Delete project entry
-        await _vectorStorage.DeleteAsync(projectId, CollectionName);
+        await _vectorStorage.DeleteAsync(projectId, CollectionName, ct);
         
         // Delete all items related to this project
-        await _vectorStorage.DeleteByFilterAsync(new VectorFilter { ProjectId = projectId }, CollectionName);
+        await _vectorStorage.DeleteByFilterAsync(new VectorFilter { ProjectId = projectId }, CollectionName, ct);
     }
 
-    public async Task SyncTaskAsync(Guid taskId)
+    public async Task SyncTaskAsync(Guid taskId, CancellationToken ct = default)
     {
         var task = await _taskRepo.GetQueryable()
             .Include(t => t.Project)
-            .FirstOrDefaultAsync(t => t.Id == taskId);
+            .FirstOrDefaultAsync(t => t.Id == taskId, ct);
             
         if (task == null) return;
 
@@ -87,21 +87,21 @@ public class AiIngestionService : IAiIngestionService
             { "created_at", task.CreatedAt.ToString("O") }
         };
 
-        await UpsertToVectorDb(task.Id, task.Title, text, metadata);
+        await UpsertToVectorDb(task.Id, task.Title, text, metadata, ct);
     }
 
-    public async Task DeleteTaskAsync(Guid taskId)
+    public async Task DeleteTaskAsync(Guid taskId, CancellationToken ct = default)
     {
-        await _vectorStorage.DeleteAsync(taskId, CollectionName);
-        await _vectorStorage.DeleteByFilterAsync(new VectorFilter { TaskId = taskId }, CollectionName);
+        await _vectorStorage.DeleteAsync(taskId, CollectionName, ct);
+        await _vectorStorage.DeleteByFilterAsync(new VectorFilter { TaskId = taskId }, CollectionName, ct);
     }
 
-    public async Task SyncCommentAsync(Guid commentId)
+    public async Task SyncCommentAsync(Guid commentId, CancellationToken ct = default)
     {
         var comment = await _commentRepo.GetQueryable()
             .Include(c => c.TaskItem)
             .ThenInclude(t => t.Project)
-            .FirstOrDefaultAsync(c => c.Id == commentId);
+            .FirstOrDefaultAsync(c => c.Id == commentId, ct);
             
         if (comment == null) return;
 
@@ -118,20 +118,20 @@ public class AiIngestionService : IAiIngestionService
             { "created_at", comment.CreatedAt.ToString("O") }
         };
 
-        await UpsertToVectorDb(comment.Id, comment.TaskItem.Title, text, metadata);
+        await UpsertToVectorDb(comment.Id, comment.TaskItem.Title, text, metadata, ct);
     }
 
-    public async Task DeleteCommentAsync(Guid commentId)
+    public async Task DeleteCommentAsync(Guid commentId, CancellationToken ct = default)
     {
-        await _vectorStorage.DeleteAsync(commentId, CollectionName);
+        await _vectorStorage.DeleteAsync(commentId, CollectionName, ct);
     }
 
-    public async Task SyncAttachmentAsync(Guid attachmentId)
+    public async Task SyncAttachmentAsync(Guid attachmentId, CancellationToken ct = default)
     {
         var attachment = await _attachmentRepo.GetQueryable()
             .Include(a => a.TaskItem)
             .Include(a => a.Project)
-            .FirstOrDefaultAsync(a => a.Id == attachmentId);
+            .FirstOrDefaultAsync(a => a.Id == attachmentId, ct);
             
         if (attachment == null) return;
 
@@ -152,47 +152,48 @@ public class AiIngestionService : IAiIngestionService
             { "created_at", attachment.CreatedAt.ToString("O") }
         };
 
-        await UpsertToVectorDb(attachment.Id, attachment.FileName, text, metadata);
+        await UpsertToVectorDb(attachment.Id, attachment.FileName, text, metadata, ct);
     }
 
-    public async Task DeleteAttachmentAsync(Guid attachmentId)
+    public async Task DeleteAttachmentAsync(Guid attachmentId, CancellationToken ct = default)
     {
-        await _vectorStorage.DeleteAsync(attachmentId, CollectionName);
+        await _vectorStorage.DeleteAsync(attachmentId, CollectionName, ct);
     }
 
-    public async Task SyncAllDataAsync()
+    public async Task SyncAllDataAsync(CancellationToken ct = default)
     {
-        await _vectorStorage.EnsureCollectionExistsAsync(CollectionName, (ulong)_vectorSize);
+        await _vectorStorage.EnsureCollectionExistsAsync(CollectionName, (ulong)_vectorSize, ct);
 
-        var projects = await _projectRepo.GetAllAsync();
-        foreach (var p in projects) await SyncProjectAsync(p.Id);
+        var projects = await _projectRepo.GetAllAsync(ct);
+        foreach (var p in projects) await SyncProjectAsync(p.Id, ct);
 
-        var tasks = await _taskRepo.GetAllAsync();
-        foreach (var t in tasks) await SyncTaskAsync(t.Id);
+        var tasks = await _taskRepo.GetAllAsync(ct);
+        foreach (var t in tasks) await SyncTaskAsync(t.Id, ct);
 
-        var comments = await _commentRepo.GetAllAsync();
-        foreach (var c in comments) await SyncCommentAsync(c.Id);
+        var comments = await _commentRepo.GetAllAsync(ct);
+        foreach (var c in comments) await SyncCommentAsync(c.Id, ct);
 
-        var attachments = await _attachmentRepo.GetAllAsync();
-        foreach (var a in attachments) await SyncAttachmentAsync(a.Id);
+        var attachments = await _attachmentRepo.GetAllAsync(ct);
+        foreach (var a in attachments) await SyncAttachmentAsync(a.Id, ct);
     }
 
-    private async Task UpsertToVectorDb(Guid id, string title, string content, Dictionary<string, object> metadata)
+    private async Task UpsertToVectorDb(
+        Guid id,
+        string title,
+        string content,
+        Dictionary<string, object> metadata,
+        CancellationToken ct)
     {
-        try 
-        {
-            var embeddings = await _embeddingGenerator.GenerateAsync(new[] { content });
-            var vector = embeddings[0].Vector.ToArray();
+        var embeddings = await _embeddingGenerator.GenerateAsync([content], cancellationToken: ct);
+        var vector = embeddings[0].Vector.ToArray();
 
-            metadata["Title"] = title;
-            metadata["Content"] = content;
-            metadata["LastUpdated"] = DateTime.UtcNow.ToString("O");
+        metadata["Title"] = title;
+        metadata["Content"] = content;
+        metadata["LastUpdated"] = DateTime.UtcNow.ToString("O");
 
-            await _vectorStorage.UpsertAsync(id, vector, metadata, CollectionName);
-        }
-        catch (Exception)
-        {
-            // Log error
-        }
+        // Propagate provider/storage failures. The outbox worker must see the error
+        // so it can retry, and the administrative full-sync endpoint must not return
+        // a false success when no canonical vector record was written.
+        await _vectorStorage.UpsertAsync(id, vector, metadata, CollectionName, ct);
     }
 }

@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -97,6 +99,135 @@ public class AuthBoundaryIntegrationTests : IClassFixture<IntegrationTestFactory
     }
 
     [Fact]
+    [Trait("TestId", "TEST-RBAC-AI-GLOBAL-SYNC-01")]
+    public async Task GlobalAiSync_WhenAuthenticatedAsMember_ReturnsForbidden()
+    {
+        await EnsureUserExists(_factory.TestUserId, "Member User", $"member-{Guid.NewGuid():N}@qaly.dev");
+        using var client = _factory.CreateClient();
+        var csrf = (await client.GetFromJsonAsync<CsrfResponse>("/api/security/csrf"))!.Token;
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/ai/sync");
+        request.Headers.Add("X-Test-Role", "Member");
+        request.Headers.Add("X-CSRF-TOKEN", csrf);
+
+        using var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    [Trait("TestId", "TEST-RBAC-AI-GLOBAL-SYNC-02")]
+    public async Task GlobalAiSync_WhenAuthenticatedAsSystemAdmin_IsAllowed()
+    {
+        await EnsureUserExists(_factory.TestUserId, "System Admin", $"admin-{Guid.NewGuid():N}@qaly.dev");
+        using var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Test-Role", "Admin");
+        var csrf = (await client.GetFromJsonAsync<CsrfResponse>("/api/security/csrf"))!.Token;
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/ai/sync");
+        request.Headers.Add("X-CSRF-TOKEN", csrf);
+
+        using var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task ViewAs_WhenAdminReadsIdentity_UsesTargetIdAndRoleBeforeAuthorization()
+    {
+        var targetId = Guid.NewGuid();
+        await EnsureUserExists(targetId, "Simulated Member", $"sim-{Guid.NewGuid():N}@qaly.dev");
+
+        using var client = _factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/auth/me");
+        request.Headers.Add("X-Test-Role", "Admin");
+        request.Headers.Add("X-Simulate-User-Id", targetId.ToString());
+
+        using var response = await client.SendAsync(request);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.GetValues("X-Simulation-Active").Should().ContainSingle("true");
+        response.Headers.GetValues("X-Simulation-Read-Only").Should().ContainSingle("true");
+        json.RootElement.GetProperty("data").GetProperty("id").GetGuid().Should().Be(targetId);
+        json.RootElement.GetProperty("data").GetProperty("role").GetString().Should().Be("Member");
+    }
+
+    [Fact]
+    public async Task ViewAs_WhenTargetIsMember_CannotReachAdminEndpoint()
+    {
+        var targetId = Guid.NewGuid();
+        await EnsureUserExists(targetId, "Simulated Member", $"sim-{Guid.NewGuid():N}@qaly.dev");
+
+        using var client = _factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/admin/users");
+        request.Headers.Add("X-Test-Role", "Admin");
+        request.Headers.Add("X-Simulate-User-Id", targetId.ToString());
+
+        using var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task ViewAs_WhenRequestMutates_IsRejectedBeforeDomainExecution()
+    {
+        var targetId = Guid.NewGuid();
+        await EnsureUserExists(targetId, "Simulated Member", $"sim-{Guid.NewGuid():N}@qaly.dev");
+
+        using var client = _factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/projects");
+        request.Headers.Add("X-Test-Role", "Admin");
+        request.Headers.Add("X-Simulate-User-Id", targetId.ToString());
+        request.Content = JsonContent.Create(new { name = "Must not be created" });
+
+        using var response = await client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        body.Should().Contain("read-only");
+    }
+
+    [Fact]
+    public async Task EffectiveSystemPermissions_ReturnServerDefaultsAndUserDeny()
+    {
+        await EnsureUserExists(_factory.TestUserId, "Member User", $"member-{Guid.NewGuid():N}@qaly.dev");
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+            var oldRows = await db.SystemModulePermissions
+                .Where(item => item.UserId == _factory.TestUserId && item.ModuleKey == "AiHub")
+                .ToListAsync();
+            db.SystemModulePermissions.RemoveRange(oldRows);
+            db.SystemModulePermissions.Add(new SystemModulePermission
+            {
+                UserId = _factory.TestUserId,
+                ModuleKey = "AiHub",
+                IsAllowed = false,
+                AiTier = "Full"
+            });
+            await db.SaveChangesAsync();
+        }
+
+        using var client = _factory.CreateClient();
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/api/ProjectRoles/effective-system-permissions");
+        request.Headers.Add("X-Test-Role", "Member");
+
+        using var response = await client.SendAsync(request);
+        var rows = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        rows.GetArrayLength().Should().BeGreaterThan(5);
+        var aiHub = rows.EnumerateArray().Single(item => item.GetProperty("moduleKey").GetString() == "AiHub");
+        aiHub.GetProperty("isAllowed").GetBoolean().Should().BeFalse();
+        aiHub.GetProperty("aiTier").GetString().Should().Be("Restricted");
+        aiHub.GetProperty("source").GetString().Should().Be("user_override");
+        var userManagement = rows.EnumerateArray().Single(item => item.GetProperty("moduleKey").GetString() == "UserManagement");
+        userManagement.GetProperty("isAllowed").GetBoolean().Should().BeFalse();
+        userManagement.GetProperty("source").GetString().Should().Be("role_default");
+    }
+
+    [Fact]
     public async Task MarkNotificationAsRead_WhenUserDoesNotOwnNotification_ReturnsForbidden()
     {
         var ownerId = Guid.NewGuid();
@@ -122,8 +253,10 @@ public class AuthBoundaryIntegrationTests : IClassFixture<IntegrationTestFactory
         }
 
         using var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Test-UserId", attackerId.ToString());
+        var csrf = (await client.GetFromJsonAsync<CsrfResponse>("/api/security/csrf"))!.Token;
         using var request = new HttpRequestMessage(HttpMethod.Patch, $"/api/notifications/{notificationId}/read");
-        request.Headers.Add("X-Test-UserId", attackerId.ToString());
+        request.Headers.Add("X-CSRF-TOKEN", csrf);
 
         var response = await client.SendAsync(request);
 
@@ -151,5 +284,7 @@ public class AuthBoundaryIntegrationTests : IClassFixture<IntegrationTestFactory
             await db.SaveChangesAsync();
         }
     }
+
+    private sealed record CsrfResponse(string Token);
 }
 #pragma warning restore CA1707

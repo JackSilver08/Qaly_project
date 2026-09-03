@@ -267,12 +267,12 @@ onBeforeUnmount(async () => {
         <button type="button" @click="isEditing = false" class="btn-cancel">Hủy</button>
       </div>
       
-      <input v-model="editQuestion" type="text" class="input-text" placeholder="Câu hỏi" />
+      <input v-model="editQuestion" type="text" class="input-text" aria-label="Câu hỏi bình chọn" placeholder="Câu hỏi" />
       
       <div class="edit-options">
         <div v-for="(opt, idx) in editOptions" :key="opt.id" class="edit-option-row">
-          <input v-model="opt.text" type="text" class="input-text" placeholder="Lựa chọn" />
-          <button type="button" @click="removeOption(idx)" class="btn-icon">
+          <input v-model="opt.text" type="text" class="input-text" :aria-label="`Nội dung lựa chọn ${idx + 1}`" placeholder="Lựa chọn" />
+          <button type="button" :aria-label="`Xóa lựa chọn ${idx + 1}`" @click="removeOption(idx)" class="btn-icon">
             <X :size="16" />
           </button>
         </div>
@@ -312,6 +312,7 @@ onBeforeUnmount(async () => {
           :class="{
             'is-selected': selectedOptionIds.includes(opt.optionId || opt.id),
           }"
+          :aria-pressed="selectedOptionIds.includes(opt.optionId || opt.id)"
           :disabled="loading || !isOpen"
           @click="selectOption(opt.optionId || opt.id)"
         >
@@ -333,6 +334,7 @@ onBeforeUnmount(async () => {
             tabindex="0"
             @click.stop="toggleVoters(opt.optionId || opt.id)"
             @keydown.enter.stop="toggleVoters(opt.optionId || opt.id)"
+            @keydown.space.stop.prevent="toggleVoters(opt.optionId || opt.id)"
           >
             <span
               v-for="voter in (opt.voters || opt.Voters || []).slice(0, 4)"
@@ -407,7 +409,7 @@ onBeforeUnmount(async () => {
   display: flex;
   justify-content: center;
   align-items: center;
-  color: #94a3b8;
+  color: #64748b;
   font-size: 0.9rem;
   font-style: italic;
   padding: 20px;
@@ -437,7 +439,7 @@ onBeforeUnmount(async () => {
 }
 .poll-actions button.text-danger:hover {
   background: #fee2e2;
-  color: #ef4444;
+  color: #b91c1c;
 }
 .poll-edit-mode {
   display: grid;
@@ -492,7 +494,7 @@ onBeforeUnmount(async () => {
   border: 1px dashed #cbd5e1;
   padding: 8px;
   border-radius: var(--qaly-radius-lg);
-  color: #3b82f6;
+  color: #1d4ed8;
   cursor: pointer;
 }
 .btn-add-option:hover {
@@ -539,7 +541,7 @@ onBeforeUnmount(async () => {
 
 .poll-header small,
 .poll-option small {
-  color: #64748b;
+  color: #475569;
   font-size: 0.75rem;
   font-weight: 700;
 }
@@ -754,7 +756,7 @@ onBeforeUnmount(async () => {
   padding: 9px;
   border-radius: var(--qaly-radius-lg);
   background: #f1f5f9;
-  color: #64748b;
+  color: #475569;
   text-align: center;
   font-size: 0.78rem;
   font-weight: 800;
@@ -762,5 +764,106 @@ onBeforeUnmount(async () => {
 
 button:disabled {
   cursor: default;
+}
+
+:global(:root[data-theme='dark'] .poll-card) {
+  border-color: var(--border) !important;
+  color: var(--text-primary) !important;
+  background: linear-gradient(180deg, var(--surface), var(--surface-muted)) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-card button) {
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .deleted-poll),
+:global(:root[data-theme='dark'] .poll-closed) {
+  background: var(--surface-muted) !important;
+  color: var(--text-secondary) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-actions button:hover) {
+  background: var(--surface-hover) !important;
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-actions button.text-danger:hover) {
+  background: var(--danger-soft) !important;
+  color: var(--qaly-danger) !important;
+}
+
+:global(:root[data-theme='dark'] .edit-header strong) {
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .input-text) {
+  border-color: var(--border-strong) !important;
+  color: var(--text-primary) !important;
+  background: var(--surface-muted) !important;
+}
+
+:global(:root[data-theme='dark'] .btn-add-option) {
+  background: var(--surface-muted) !important;
+  border-color: var(--border-strong) !important;
+  color: var(--primary-strong) !important;
+}
+
+:global(:root[data-theme='dark'] .btn-add-option:hover) {
+  background: var(--surface-hover) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-header span) {
+  background: var(--primary-soft) !important;
+  color: var(--primary-strong) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-header strong) {
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-header small),
+:global(:root[data-theme='dark'] .poll-option small),
+:global(:root[data-theme='dark'] .poll-summary) {
+  color: var(--text-secondary) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-option) {
+  border-color: var(--border) !important;
+  background: var(--surface-muted) !important;
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-option.is-selected) {
+  border-color: rgba(96, 165, 250, 0.6) !important;
+  background: linear-gradient(135deg, var(--primary-soft), rgba(96, 165, 250, 0.16)) !important;
+}
+
+:global(:root[data-theme='dark'] .option-check) {
+  border-color: var(--border-strong) !important;
+  background: var(--surface) !important;
+  color: var(--surface) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-option.is-selected .option-check) {
+  border-color: var(--primary) !important;
+  background: var(--primary) !important;
+  color: var(--primary) !important;
+}
+
+:global(:root[data-theme='dark'] .option-label) {
+  color: var(--text-primary) !important;
+}
+
+:global(:root[data-theme='dark'] .percent) {
+  background: var(--surface-muted) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-voter-list) {
+  border-top-color: var(--border) !important;
+}
+
+:global(:root[data-theme='dark'] .poll-voter-list > div > span) {
+  background: var(--primary-soft) !important;
+  color: var(--primary-strong) !important;
 }
 </style>

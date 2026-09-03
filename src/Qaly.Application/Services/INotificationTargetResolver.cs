@@ -10,4 +10,9 @@ public interface INotificationTargetResolver
         Notification notification,
         Guid userId,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<NotificationTargetAccess>> ResolveManyAsync(
+        IReadOnlyList<Notification> notifications,
+        Guid userId,
+        CancellationToken cancellationToken = default);
 }

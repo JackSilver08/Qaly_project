@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Qaly.Application.DTOs.Project;
 using Qaly.Application.DTOs.Task;
 using Qaly.Application.DTOs.Ai;
+using Qaly.Application.DTOs.Organization;
 using Qaly.Application.Services;
 
 namespace Qaly.Web.Controllers;
@@ -16,17 +17,20 @@ public class OrganizationsController : BaseApiController
     private readonly ITaskSkillService _taskSkillService;
     private readonly IMemberSkillEvidenceService _memberSkillEvidenceService;
     private readonly IPortfolioScheduleService _portfolioScheduleService;
+    private readonly IProfessionalProfileService _professionalProfileService;
 
     public OrganizationsController(
         IOrganizationService organizationService,
         ITaskSkillService taskSkillService,
         IMemberSkillEvidenceService memberSkillEvidenceService,
-        IPortfolioScheduleService portfolioScheduleService)
+        IPortfolioScheduleService portfolioScheduleService,
+        IProfessionalProfileService professionalProfileService)
     {
         _organizationService = organizationService;
         _taskSkillService = taskSkillService;
         _memberSkillEvidenceService = memberSkillEvidenceService;
         _portfolioScheduleService = portfolioScheduleService;
+        _professionalProfileService = professionalProfileService;
     }
 
     [HttpGet]
@@ -44,6 +48,7 @@ public class OrganizationsController : BaseApiController
     }
 
     [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Create(CreateOrganizationDto dto, CancellationToken ct = default)
     {
         var result = await _organizationService.CreateAsync(dto, ct);
@@ -51,6 +56,7 @@ public class OrganizationsController : BaseApiController
     }
 
     [HttpPut("{id:guid}")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Update(Guid id, UpdateOrganizationDto dto, CancellationToken ct = default)
     {
         var result = await _organizationService.UpdateAsync(id, dto, ct);
@@ -58,6 +64,7 @@ public class OrganizationsController : BaseApiController
     }
 
     [HttpDelete("{id:guid}")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Deactivate(Guid id, CancellationToken ct = default)
     {
         var result = await _organizationService.DeactivateAsync(id, ct);
@@ -72,6 +79,7 @@ public class OrganizationsController : BaseApiController
     }
 
     [HttpPost("{id:guid}/members")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> AddMember(Guid id, AddOrganizationMemberRequest request, CancellationToken ct = default)
     {
         var result = await _organizationService.AddMemberAsync(id, request.UserId, request.Role, ct);
@@ -79,6 +87,7 @@ public class OrganizationsController : BaseApiController
     }
 
     [HttpPost("{id:guid}/users")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> AddUser(Guid id, AddOrganizationUserRequest request, CancellationToken ct = default)
     {
         var result = await _organizationService.AddMemberByEmailAsync(id, request.Email, request.Role, ct);
@@ -86,6 +95,7 @@ public class OrganizationsController : BaseApiController
     }
 
     [HttpPatch("{id:guid}/users/{userId:guid}")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateUserRole(Guid id, Guid userId, UpdateOrganizationUserRoleRequest request, CancellationToken ct = default)
     {
         var result = await _organizationService.UpdateMemberRoleAsync(id, userId, request.Role, ct);
@@ -104,6 +114,7 @@ public class OrganizationsController : BaseApiController
     }
 
     [HttpDelete("{id:guid}/members/{userId:guid}")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> RemoveMember(Guid id, Guid userId, CancellationToken ct = default)
     {
         var result = await _organizationService.RemoveMemberAsync(id, userId, ct);
@@ -111,6 +122,7 @@ public class OrganizationsController : BaseApiController
     }
 
     [HttpDelete("{id:guid}/users/{userId:guid}")]
+    [ValidateAntiForgeryToken]
     public Task<IActionResult> RemoveUser(Guid id, Guid userId, CancellationToken ct = default)
         => RemoveMember(id, userId, ct);
 
@@ -167,6 +179,61 @@ public class OrganizationsController : BaseApiController
         CancellationToken ct = default)
     {
         var result = await _memberSkillEvidenceService.GetMemberSkillProfileAsync(id, memberId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("{id:guid}/professional-profiles")]
+    public async Task<IActionResult> GetProfessionalProfiles(
+        Guid id,
+        [FromQuery] bool includeInactive = false,
+        CancellationToken ct = default)
+    {
+        var result = await _professionalProfileService.GetDefinitionsAsync(id, includeInactive, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPost("{id:guid}/professional-profiles")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateProfessionalProfile(
+        Guid id,
+        CreateProfessionalProfileDefinitionDto dto,
+        CancellationToken ct = default)
+    {
+        var result = await _professionalProfileService.CreateDefinitionAsync(id, dto, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPut("{id:guid}/professional-profiles/{profileId:guid}")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateProfessionalProfile(
+        Guid id,
+        Guid profileId,
+        UpdateProfessionalProfileDefinitionDto dto,
+        CancellationToken ct = default)
+    {
+        var result = await _professionalProfileService.UpdateDefinitionAsync(id, profileId, dto, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("{id:guid}/members/{userId:guid}/professional-profiles")]
+    public async Task<IActionResult> GetMemberProfessionalProfiles(
+        Guid id,
+        Guid userId,
+        CancellationToken ct = default)
+    {
+        var result = await _professionalProfileService.GetMemberProfilesAsync(id, userId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpPut("{id:guid}/members/{userId:guid}/professional-profiles")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ReplaceMemberProfessionalProfiles(
+        Guid id,
+        Guid userId,
+        ReplaceMemberProfessionalProfilesDto dto,
+        CancellationToken ct = default)
+    {
+        var result = await _professionalProfileService.ReplaceMemberProfilesAsync(id, userId, dto, ct);
         return StatusCode(result.StatusCode, result);
     }
 }

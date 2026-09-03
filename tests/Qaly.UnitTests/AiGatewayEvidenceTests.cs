@@ -299,7 +299,7 @@ public class AiGatewayEvidenceTests : IDisposable
     }
 
     [Fact]
-    public async Task ExecuteAsync_WithCustomTimeoutAndRetry_AppliesConfiguration()
+    public async Task ExecuteAsync_WhenProviderTimesOut_DoesNotSpendSchemaRepairRetriesOnTransportFailure()
     {
         var mockProvider = CreateMockProvider("Ollama");
         mockProvider.Setup(p => p.CompleteAsync(It.IsAny<AiRequest>(), It.IsAny<AiProviderSetting>(), It.IsAny<CancellationToken>()))
@@ -322,7 +322,7 @@ public class AiGatewayEvidenceTests : IDisposable
 
         var response = await gateway.ExecuteAsync(request);
 
-        mockProvider.Verify(p => p.CompleteAsync(It.IsAny<AiRequest>(), It.IsAny<AiProviderSetting>(), It.IsAny<CancellationToken>()), Times.Exactly(4));
+        mockProvider.Verify(p => p.CompleteAsync(It.IsAny<AiRequest>(), It.IsAny<AiProviderSetting>(), It.IsAny<CancellationToken>()), Times.Once);
         response.IsMock.Should().BeTrue();
         response.ProviderName.Should().Be("ProviderDegradedMock");
     }

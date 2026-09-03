@@ -5,7 +5,7 @@ namespace Qaly.Domain.Entities;
 /// <summary>
 /// Quản lý phân quyền hiển thị Module & AI Access ở Tầng Hệ Thống (System-Level)
 /// </summary>
-[SuppressMessage("Naming", "CA1711:Identifiers should not have incorrect suffix", Justification = "Permission is the established domain term for this persisted access-control entity.")]
+[SuppressMessage("Naming", "CA1711:Identifiers should not have incorrect suffix", Justification = "Permission is the established persisted domain term and renaming it would break the public model and migration history.")]
 public class SystemModulePermission : BaseEntity
 {
     /// <summary>

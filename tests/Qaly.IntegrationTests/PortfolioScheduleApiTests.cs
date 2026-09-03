@@ -36,6 +36,8 @@ public sealed class PortfolioScheduleApiTests : IClassFixture<IntegrationTestFac
             $"/api/projects/{data.ProjectId}/portfolio-capacity?from={Uri.EscapeDataString(start.ToString("O"))}&to={Uri.EscapeDataString(end.ToString("O"))}");
         capacity.VisibilityState.Should().Be("partial_private_aggregate");
         capacity.ScoringVersion.Should().Be(PortfolioScheduleService.ScoringVersion);
+        capacity.Members.Should().NotContain(item => item.UserId == data.InactiveMemberId,
+            "inactive Organization members must never be treated as staffing capacity");
         capacity.Members.Single(item => item.UserId == data.ContributorId).HasRestrictedLoad.Should().BeTrue();
         capacity.Members.SelectMany(item => item.ProjectLoads).Should().NotContain(item => item.ProjectName == data.PrivateProjectName && !item.SourcesRestricted);
 
@@ -88,6 +90,9 @@ public sealed class PortfolioScheduleApiTests : IClassFixture<IntegrationTestFac
         confirmed.Status.Should().Be(AiDraftStatuses.Confirmed);
         confirmed.Receipt.Should().NotBeNull();
         confirmed.Receipt!.AppliedTaskIds.Should().Equal(data.TargetTaskId);
+        confirmed.Receipt.Status.Should().Be(AiActionReceiptStatuses.Succeeded);
+        confirmed.Receipt.ReadBackVerified.Should().BeTrue();
+        confirmed.Receipt.VerificationErrors.Should().BeEmpty();
 
         var confirmReplay = await SendWithCsrfAsync(manager, HttpMethod.Post,
             $"/api/projects/{data.ProjectId}/schedule-proposals/{proposal.DraftId}/confirm",
@@ -151,17 +156,66 @@ public sealed class PortfolioScheduleApiTests : IClassFixture<IntegrationTestFac
         unchanged.AssigneeId.Should().BeNull();
     }
 
+    [Fact]
+    [Trait("TestId", "TEST-AI-P14-CAPACITY-BLOCK-01")]
+    public async Task P14_NoDeclaredCapacityAvailable_ReturnsBlockedAlternativesAndCannotMutate()
+    {
+        var data = await SeedAsync();
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+            var profiles = await db.OrganizationMemberCapacityProfiles
+                .Where(item => item.OrganizationId == data.OrganizationId)
+                .ToListAsync();
+            profiles.Should().NotBeEmpty();
+            foreach (var profile in profiles) profile.WeeklyCapacityHours = 0m;
+            await db.SaveChangesAsync();
+        }
+
+        using var manager = CreateClient(data.ManagerId);
+        var csrf = await GetCsrfTokenAsync(manager);
+        var start = DateTimeOffset.UtcNow.Date;
+        var end = start.AddDays(14);
+        var create = await SendWithCsrfAsync(manager, HttpMethod.Post,
+            $"/api/projects/{data.ProjectId}/schedule-proposals",
+            new CreatePortfolioScheduleProposalDto([data.TargetTaskId], start, end), csrf,
+            new Dictionary<string, string> { ["Idempotency-Key"] = $"p14-{Guid.NewGuid():N}" });
+        create.StatusCode.Should().Be(HttpStatusCode.OK, await create.Content.ReadAsStringAsync());
+        var proposal = await ReadResultAsync<PortfolioScheduleProposalDto>(create);
+        var item = proposal.Items.Should().ContainSingle().Subject;
+        item.Selected.Should().BeFalse();
+        item.BlockingReasons.Should().Contain(reason => reason.Contains("capacity", StringComparison.OrdinalIgnoreCase));
+        item.Alternatives.Should().NotBeEmpty();
+        proposal.Warnings.Should().Contain(warning => warning.Contains("phương án", StringComparison.OrdinalIgnoreCase));
+
+        var confirmKey = $"p14-confirm-{Guid.NewGuid():N}";
+        var confirm = await SendWithCsrfAsync(manager, HttpMethod.Post,
+            $"/api/projects/{data.ProjectId}/schedule-proposals/{proposal.DraftId}/confirm",
+            new ConfirmPortfolioScheduleProposalDto([item.ItemId], proposal.RowVersion, confirmKey, Confirmed: true), csrf,
+            new Dictionary<string, string> { ["Idempotency-Key"] = confirmKey });
+        confirm.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        (await verifyDb.TaskItems.AsNoTracking().SingleAsync(value => value.Id == data.TargetTaskId))
+            .AssigneeId.Should().BeNull();
+        (await verifyDb.TaskAssignments.CountAsync(value => value.TaskItemId == data.TargetTaskId)).Should().Be(0);
+    }
+
     private async Task<SeededData> SeedAsync()
     {
         var managerId = Guid.NewGuid();
         var contributorId = Guid.NewGuid();
+        var inactiveMemberId = Guid.NewGuid();
         var outsiderId = Guid.NewGuid();
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
         await EnsureUserAsync(db, OwnerId, "Portfolio Owner");
         await EnsureUserAsync(db, managerId, "Portfolio Manager");
         await EnsureUserAsync(db, contributorId, "Portfolio Contributor");
+        await EnsureUserAsync(db, inactiveMemberId, "Inactive Portfolio Member");
         await EnsureUserAsync(db, outsiderId, "Portfolio Outsider");
+        db.Users.Local.Single(item => item.Id == inactiveMemberId).IsActive = false;
 
         var organization = new Organization
         {
@@ -212,18 +266,42 @@ public sealed class PortfolioScheduleApiTests : IClassFixture<IntegrationTestFac
         db.AddRange(organization, project, privateProject, targetTask, privateLoad);
         db.OrganizationMembers.AddRange(
             new OrganizationMember { OrganizationId = organization.Id, UserId = managerId, Role = OrganizationRoleRules.OrganizationAdmin },
-            new OrganizationMember { OrganizationId = organization.Id, UserId = contributorId, Role = OrganizationRoleRules.Member });
+            new OrganizationMember { OrganizationId = organization.Id, UserId = contributorId, Role = OrganizationRoleRules.Member },
+            new OrganizationMember { OrganizationId = organization.Id, UserId = inactiveMemberId, Role = OrganizationRoleRules.Member });
         db.ProjectMembers.AddRange(
             new ProjectMember { ProjectId = project.Id, UserId = managerId, Role = ProjectRoleRules.Manager },
-            new ProjectMember { ProjectId = project.Id, UserId = contributorId, Role = ProjectRoleRules.Member });
+            new ProjectMember { ProjectId = project.Id, UserId = contributorId, Role = ProjectRoleRules.Member },
+            new ProjectMember { ProjectId = project.Id, UserId = inactiveMemberId, Role = ProjectRoleRules.Member });
         db.TaskAssignments.Add(new TaskAssignment
         {
             TaskItemId = privateLoad.Id,
             UserId = contributorId,
             AssignedByUserId = OwnerId
         });
+        db.OrganizationMemberCapacityProfiles.AddRange(
+            new OrganizationMemberCapacityProfile
+            {
+                OrganizationId = organization.Id,
+                UserId = OwnerId,
+                WeeklyCapacityHours = 40m,
+                TimeZoneId = "Asia/Ho_Chi_Minh"
+            },
+            new OrganizationMemberCapacityProfile
+            {
+                OrganizationId = organization.Id,
+                UserId = managerId,
+                WeeklyCapacityHours = 40m,
+                TimeZoneId = "Asia/Ho_Chi_Minh"
+            },
+            new OrganizationMemberCapacityProfile
+            {
+                OrganizationId = organization.Id,
+                UserId = inactiveMemberId,
+                WeeklyCapacityHours = 168m,
+                TimeZoneId = "Asia/Ho_Chi_Minh"
+            });
         await db.SaveChangesAsync();
-        return new SeededData(organization.Id, project.Id, targetTask.Id, contributorId, managerId, outsiderId, privateProjectName);
+        return new SeededData(organization.Id, project.Id, targetTask.Id, contributorId, inactiveMemberId, managerId, outsiderId, privateProjectName);
     }
 
     private HttpClient CreateClient(Guid userId)
@@ -286,6 +364,7 @@ public sealed class PortfolioScheduleApiTests : IClassFixture<IntegrationTestFac
         Guid ProjectId,
         Guid TargetTaskId,
         Guid ContributorId,
+        Guid InactiveMemberId,
         Guid ManagerId,
         Guid OutsiderId,
         string PrivateProjectName);

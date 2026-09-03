@@ -146,18 +146,18 @@ function formatSync(value: string | null) {
     </header>
 
     <div v-if="loading" class="github-state"><Loader2 class="spin" :size="22" /><span>Đang kiểm tra kết nối...</span></div>
-    <div v-else-if="loadError" class="github-state is-error"><p>{{ loadError }}</p><button class="ghost-button" @click="loadAll"><RefreshCw :size="15" /> Thử lại</button></div>
+    <div v-else-if="loadError" class="github-state is-error" role="alert"><p>{{ loadError }}</p><button type="button" class="ghost-button" @click="loadAll"><RefreshCw :size="15" /> Thử lại</button></div>
     <div v-else-if="serverUnavailableForSetup" class="github-empty">
       <Github :size="38" /><h3>{{ integrationStatus?.state === 'disabled' ? 'GitHub đang bị tắt' : 'GitHub App chưa được cấu hình' }}</h3>
       <p>{{ integrationStatus?.message }}</p>
     </div>
-    <div v-else-if="hasConnectionProblem" class="github-state is-error">
+    <div v-else-if="hasConnectionProblem" class="github-state is-error" role="alert">
       <Github :size="38" /><h3>Không thể xác minh kết nối GitHub</h3><p>{{ integrationStatus?.message }}</p>
-      <button class="ghost-button" @click="loadAll"><RefreshCw :size="15" /> Kiểm tra lại</button>
+      <button type="button" class="ghost-button" @click="loadAll"><RefreshCw :size="15" /> Kiểm tra lại</button>
     </div>
     <div v-else-if="!hasVerifiedConnection" class="github-empty">
       <Github :size="38" /><h3>Chưa kết nối GitHub</h3><p>Quản trị viên cài Qaly GitHub App, chọn đúng repository và Qaly sẽ tự nhận hoạt động kỹ thuật.</p>
-      <button v-if="canManage" class="primary-button" @click="connectGitHub">Bắt đầu kết nối</button>
+      <button type="button" v-if="canManage" class="primary-button" @click="connectGitHub">Bắt đầu kết nối</button>
       <small v-else>Liên hệ quản trị viên project để kết nối.</small>
     </div>
     <template v-else>
@@ -181,7 +181,7 @@ function formatSync(value: string | null) {
         <article v-for="connection in activeConnections" :key="connection.id" class="repo-card">
           <div class="repo-icon"><Lock v-if="connection.isPrivate" :size="15" /><Github v-else :size="16" /></div>
           <div class="repo-copy"><strong>{{ connection.fullName }}</strong><span>Nhánh mặc định: {{ connection.defaultBranch }} · {{ formatSync(connection.lastSyncedAt) }}</span></div>
-          <button v-if="canManage" class="icon-button danger" title="Ngắt kết nối" @click="disconnect(connection)"><Trash2 :size="15" /></button>
+          <button type="button" v-if="canManage" class="icon-button danger" title="Ngắt kết nối" @click="disconnect(connection)"><Trash2 :size="15" /></button>
         </article>
         <div v-if="activeConnections.length === 0" class="repo-empty">GitHub App đã cài đặt. Hãy chọn repository bên dưới.</div>
       </div>
@@ -190,19 +190,19 @@ function formatSync(value: string | null) {
 
       <button v-if="canManage && !isCachedSnapshot && !pickerOpen" class="add-repository" type="button" @click="pickerOpen = true"><Plus :size="16" /><span><strong>Thêm repository</strong><small>Chỉ chọn những repository thuộc project này</small></span><ChevronDown :size="16" /></button>
       <section v-if="canManage && !isCachedSnapshot && pickerOpen" class="repo-picker">
-        <div class="picker-head"><div><span>Thêm repository</span><strong>Chọn nơi Qaly được phép đọc</strong></div><button class="ghost-button" @click="loadAvailableRepositories"><RefreshCw :size="14" /> Làm mới</button></div>
+        <div class="picker-head"><div><span>Thêm repository</span><strong>Chọn nơi Qaly được phép đọc</strong></div><button type="button" class="ghost-button" @click="loadAvailableRepositories"><RefreshCw :size="14" /> Làm mới</button></div>
         <div class="privacy-note"><ShieldCheck :size="17" /><span><strong>An toàn theo mặc định</strong><small>Qaly không sao chép source code và không yêu cầu quyền ghi.</small></span></div>
         <label v-if="installations.length > 1" class="field"><span>Tài khoản GitHub</span><select v-model="selectedInstallationId"><option v-for="item in installations" :key="item.id" :value="item.id">{{ item.accountLogin }}</option></select></label>
         <label class="repo-search"><Search :size="16" /><input v-model="query" placeholder="Tìm repository..." /></label>
         <div class="repo-options">
-          <button v-for="repository in visibleRepositories" :key="repository.id" type="button" class="repo-option" :class="{ selected: selectedRepositoryIds.includes(repository.id) }" @click="toggleRepository(repository.id)">
+          <button v-for="repository in visibleRepositories" :key="repository.id" type="button" class="repo-option" :class="{ selected: selectedRepositoryIds.includes(repository.id) }" :aria-pressed="selectedRepositoryIds.includes(repository.id)" @click="toggleRepository(repository.id)">
             <span class="check-box"><Check v-if="selectedRepositoryIds.includes(repository.id)" :size="14" /></span>
             <span><strong>{{ repository.fullName }}</strong><small>{{ repository.isPrivate ? 'Private' : 'Public' }} · {{ repository.defaultBranch }}</small></span>
             <ExternalLink :size="14" />
           </button>
           <p v-if="visibleRepositories.length === 0" class="repo-empty">Không còn repository phù hợp hoặc GitHub App chưa được cấp quyền.</p>
         </div>
-        <div class="picker-footer"><button class="ghost-button" type="button" @click="pickerOpen = false">Đóng</button><span>{{ selectedRepositoryIds.length }} repository đã chọn</span><button class="primary-button" :disabled="saving || selectedRepositoryIds.length === 0" @click="saveRepositories"><Loader2 v-if="saving" class="spin" :size="15" /> Kết nối repository</button></div>
+        <div class="picker-footer"><button class="ghost-button" type="button" @click="pickerOpen = false">Đóng</button><span>{{ selectedRepositoryIds.length }} repository đã chọn</span><button type="button" class="primary-button" :disabled="saving || selectedRepositoryIds.length === 0" @click="saveRepositories"><Loader2 v-if="saving" class="spin" :size="15" /> Kết nối repository</button></div>
       </section>
     </template>
   </section>

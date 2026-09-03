@@ -211,8 +211,8 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
             }, ct);
         }
 
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _audit.LogAsync(
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _audit,
             "UpdateMemberCapacityProfile",
             nameof(OrganizationMemberCapacityProfile),
             profile.Id.ToString(),
@@ -369,17 +369,40 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
             .ThenBy(item => item.Candidate.FullName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-            var winner = ranked.First();
             var estimate = task.EstimatedHours ?? MissingEstimateFallbackHours;
-            var dailyHours = Math.Max(1m, winner.Capacity.WeeklyCapacityHours / 5m);
             var predecessorDates = task.PredecessorDependencies
                 .Where(item => !IsClosed(item.Predecessor))
                 .Select(item => item.Predecessor.DueDate)
                 .ToList();
             var start = predecessorDates.Where(item => item.HasValue).Select(item => item!.Value).Append(window.Data.Start).Max();
             if (start < window.Data.Start) start = window.Data.Start;
-            var workDays = Math.Max(1, (int)Math.Ceiling(estimate / dailyHours));
-            var due = AddBusinessDays(start, workDays - 1);
+            var candidatePlans = ranked.Select((candidate, rank) =>
+            {
+                var dailyHours = Math.Max(1m, candidate.Capacity.WeeklyCapacityHours / 5m);
+                var workDays = Math.Max(1, (int)Math.Ceiling(estimate / dailyHours));
+                var candidateDue = AddBusinessDays(start, workDays - 1);
+                var additionalHours = IsAssignedTo(task, candidate.Candidate.UserId) ? 0m : estimate;
+                var blockers = new List<string>();
+                if (candidate.Capacity.CapacityState == "assumed_default")
+                    blockers.Add("Chưa có capacity được khai báo; không dùng mặc định 40h để tự giao việc");
+                if (additionalHours > candidate.Capacity.RemainingHours)
+                    blockers.Add($"Không đủ capacity: còn {candidate.Capacity.RemainingHours:0.#}h, cần thêm {additionalHours:0.#}h");
+                if (candidate.Capacity.AvailabilityWindows.Any(availability =>
+                        string.Equals(availability.Kind, MemberAvailabilityWindow.Unavailable, StringComparison.OrdinalIgnoreCase) &&
+                        availability.EndsAt > start && availability.StartsAt < candidateDue))
+                    blockers.Add("Có lịch không sẵn sàng trùng khoảng thực hiện đề xuất");
+                if (requiredSkills.Count > 0 && candidate.Coverage == 0)
+                    blockers.Add("Chưa có evidence đã xác nhận cho required skill của Task");
+                if (candidateDue > window.Data.End)
+                    blockers.Add("Không thể xếp trọn Task trong cửa sổ hiện tại");
+                return new CandidateSchedulePlan(candidate, rank, candidateDue, additionalHours, blockers);
+            })
+            .OrderBy(item => item.BlockingReasons.Count > 0)
+            .ThenBy(item => item.Rank)
+            .ToList();
+            var winnerPlan = candidatePlans.First();
+            var winner = winnerPlan.Candidate;
+            var due = winnerPlan.Due;
             var dependencyConflicts = task.PredecessorDependencies
                 .Where(item => !IsClosed(item.Predecessor) && !item.Predecessor.DueDate.HasValue)
                 .Select(item => $"Task phụ thuộc {item.Predecessor.Title} chưa có hạn hoàn thành")
@@ -387,7 +410,7 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
             var risks = new List<string>();
             if (!task.EstimatedHours.HasValue) risks.Add($"Thiếu estimate; dùng fallback {MissingEstimateFallbackHours}h");
             if (winner.Capacity.CapacityState == "assumed_default") risks.Add("Capacity đang dùng mặc định 40h/tuần");
-            if (winner.Capacity.AssignedHours + estimate > winner.Capacity.WindowCapacityHours) risks.Add("Đề xuất làm vượt capacity trong cửa sổ");
+            if (winner.Capacity.AssignedHours + winnerPlan.AdditionalHours > winner.Capacity.WindowCapacityHours) risks.Add("Đề xuất làm vượt capacity trong cửa sổ");
             if (task.DueDate.HasValue && due > task.DueDate.Value) risks.Add("Lịch khả thi muộn hơn deadline hiện tại");
             if (due > window.Data.End) risks.Add("Không thể xếp trọn trong cửa sổ đã chọn");
 
@@ -435,24 +458,30 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
                 winner.Coverage,
                 winner.Confidence,
                 winner.Capacity.AssignedHours,
-                winner.Capacity.AssignedHours + estimate,
+                winner.Capacity.AssignedHours + winnerPlan.AdditionalHours,
                 winner.Capacity.WindowCapacityHours,
                 dependencyConflicts,
                 risks,
-                ranked.Skip(1).Take(3).Select(item => new PortfolioScheduleAlternativeDto(
-                    item.Candidate.UserId,
-                    item.Candidate.FullName,
-                    item.Coverage,
-                    item.Capacity.RemainingHours,
-                    BuildTradeOff(item, requiredSkills.Count))).ToList(),
+                candidatePlans.Skip(1).Take(3).Select(item => new PortfolioScheduleAlternativeDto(
+                    item.Candidate.Candidate.UserId,
+                    item.Candidate.Candidate.FullName,
+                    item.Candidate.Coverage,
+                    item.Candidate.Capacity.RemainingHours,
+                    BuildTradeOff(item.Candidate, requiredSkills.Count),
+                    item.Candidate.Confidence,
+                    item.Candidate.Capacity.AssignedHours,
+                    item.Candidate.Capacity.WindowCapacityHours,
+                    item.BlockingReasons)).ToList(),
                 sourceKeys.Distinct(StringComparer.Ordinal).ToList(),
                 EncodeRowVersion(task.RowVersion),
-                true));
+                winnerPlan.BlockingReasons.Count == 0,
+                winnerPlan.BlockingReasons));
         }
 
         var warnings = new List<string>();
         if (capacity.HasRestrictedLoad) warnings.Add("Một phần tải công việc riêng tư chỉ được dùng dưới dạng tổng hợp, không hiển thị nội dung task.");
         if (items.Any(item => item.DeadlineRisks.Count > 0)) warnings.Add("Có đề xuất cần người quản lý xử lý cảnh báo trước khi xác nhận.");
+        if (items.Any(item => item.BlockingReasons?.Count > 0)) warnings.Add("Không có phương án tự giao an toàn cho một hoặc nhiều Task; hãy chọn phương án thay thế hoặc cập nhật capacity/availability.");
         var payload = new StoredProposalPayload(
             SchemaId,
             ScoringVersion,
@@ -554,8 +583,13 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
             PromptHash = requestHash,
             ResponseHash = resultHash
         }, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _audit.LogAsync("CreatePortfolioScheduleProposal", nameof(AiGeneratedDraft), draft.Id.ToString(), new { projectId, taskCount = items.Count, schemaId = SchemaId }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _audit,
+            "CreatePortfolioScheduleProposal",
+            nameof(AiGeneratedDraft),
+            draft.Id.ToString(),
+            new { projectId, taskCount = items.Count, schemaId = SchemaId },
+            ct);
         return await GetProposalAsync(projectId, draft.Id, ct);
     }
 
@@ -564,6 +598,26 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
         var draft = await LoadProposalAsync(projectId, draftId, tracking: false, ct);
         if (draft == null) return Result.NotFound<PortfolioScheduleProposalDto>();
         return Result.Success(ToDto(draft));
+    }
+
+    public async Task<Result<PortfolioScheduleProposalDto>> GetLatestProposalForTaskAsync(
+        Guid projectId,
+        Guid taskId,
+        CancellationToken ct = default)
+    {
+        if (!_currentUser.UserId.HasValue) return Result.NotFound<PortfolioScheduleProposalDto>();
+        var draftId = await _drafts.GetQueryable()
+            .AsNoTracking()
+            .Where(item => item.ProjectId == projectId &&
+                item.DraftType == DraftType &&
+                item.AiJob.RequestedById == _currentUser.UserId.Value &&
+                item.AiJob.SourceId == taskId.ToString("D"))
+            .OrderByDescending(item => item.CreatedAt)
+            .Select(item => (Guid?)item.Id)
+            .FirstOrDefaultAsync(ct);
+        return draftId.HasValue
+            ? await GetProposalAsync(projectId, draftId.Value, ct)
+            : Result.NotFound<PortfolioScheduleProposalDto>();
     }
 
     public async Task<Result<PortfolioScheduleProposalDto>> UpdateProposalAsync(
@@ -587,8 +641,13 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
         payload = payload with { Items = dto.Items.ToList() };
         draft.WorkingPayloadJson = JsonSerializer.Serialize(payload, JsonOptions);
         draft.PayloadJson = draft.WorkingPayloadJson;
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _audit.LogAsync("UpdatePortfolioScheduleProposal", nameof(AiGeneratedDraft), draft.Id.ToString(), new { projectId, itemCount = dto.Items.Count }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _audit,
+            "UpdatePortfolioScheduleProposal",
+            nameof(AiGeneratedDraft),
+            draft.Id.ToString(),
+            new { projectId, itemCount = dto.Items.Count },
+            ct);
         return Result.Success(ToDto(draft));
     }
 
@@ -619,10 +678,15 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
         var selected = payload.Items.Where(item => selectedIds.Contains(item.ItemId)).ToList();
         if (selected.Count == 0 || selected.Count != selectedIds.Count)
             return Result.Failure<PortfolioScheduleProposalDto>("Select at least one valid proposal item.", 400, AiErrorCodes.InvalidRequest);
+        if (selected.Any(item => item.BlockingReasons?.Count > 0))
+            return Result.Failure<PortfolioScheduleProposalDto>(
+                "The reviewed proposal still has capacity, availability, skill-evidence, or planning-window blockers. Choose a safe alternative or regenerate it.",
+                409, AiErrorCodes.SourceStale);
 
         var tasks = await _tasks.GetQueryable()
             .Include(item => item.Project)
             .Include(item => item.Assignees)
+            .Include(item => item.SkillRequirements).ThenInclude(item => item.OrganizationSkill)
             .Where(item => selected.Select(selection => selection.TaskId).Contains(item.Id))
             .ToListAsync(ct);
         if (tasks.Count != selected.Count)
@@ -643,23 +707,26 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
                 return Result.Failure<PortfolioScheduleProposalDto>("A proposed assignee is no longer a project member.", 409, AiErrorCodes.SourceStale);
         }
 
+        var currentConstraints = await ValidateCurrentExecutionConstraintsAsync(payload, selected, tasks, ct);
+        if (!currentConstraints.IsSuccess)
+            return Result.Failure<PortfolioScheduleProposalDto>(currentConstraints.Error!, currentConstraints.StatusCode, currentConstraints.ErrorCode);
+
         foreach (var item in selected)
         {
             var task = tasks.First(candidate => candidate.Id == item.TaskId);
+            foreach (var existing in task.Assignees.ToList())
+                await _assignments.HardDeleteAsync(existing, ct);
             task.AssigneeId = item.ProposedAssigneeId;
             task.StartDate = item.ProposedStart;
             task.DueDate = item.ProposedDue;
             task.UpdatedAt = DateTimeOffset.UtcNow;
-            if (task.Assignees.All(assignment => assignment.UserId != item.ProposedAssigneeId))
+            await _assignments.AddAsync(new TaskAssignment
             {
-                await _assignments.AddAsync(new TaskAssignment
-                {
-                    TaskItemId = task.Id,
-                    UserId = item.ProposedAssigneeId,
-                    AssignedAt = DateTimeOffset.UtcNow,
-                    AssignedByUserId = _currentUser.UserId
-                }, ct);
-            }
+                TaskItemId = task.Id,
+                UserId = item.ProposedAssigneeId,
+                AssignedAt = DateTimeOffset.UtcNow,
+                AssignedByUserId = _currentUser.UserId
+            }, ct);
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -669,7 +736,10 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
             selected.Count,
             selected.Select(item => item.TaskId).ToList(),
             selected.Select(item => $"/projects/{item.CurrentProjectId}/tasks/{item.TaskId}").ToList(),
-            now);
+            now,
+            AiActionReceiptStatuses.VerificationPending,
+            false,
+            []);
         draft.Status = AiDraftStatuses.Confirmed;
         draft.ConfirmedById = _currentUser.UserId;
         draft.ConfirmedAt = now;
@@ -677,7 +747,46 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
         draft.ConfirmationIdempotencyKey = dto.IdempotencyKey.Trim();
         draft.ConfirmationResultJson = JsonSerializer.Serialize(receipt, JsonOptions);
         await _unitOfWork.SaveChangesAsync(ct);
-        await _audit.LogAsync("ConfirmPortfolioScheduleProposal", nameof(AiGeneratedDraft), draft.Id.ToString(), new { projectId, receipt.AppliedCount, receipt.AppliedTaskIds }, ct);
+
+        var readBack = await _tasks.GetQueryable()
+            .AsNoTracking()
+            .Include(item => item.Assignees)
+            .Where(item => receipt.AppliedTaskIds.Contains(item.Id))
+            .ToListAsync(ct);
+        var verificationErrors = new List<string>();
+        foreach (var item in selected)
+        {
+            var task = readBack.FirstOrDefault(candidate => candidate.Id == item.TaskId);
+            if (task == null)
+            {
+                verificationErrors.Add($"Task {item.TaskId:D} không còn tồn tại sau khi ghi.");
+                continue;
+            }
+            if (task.AssigneeId != item.ProposedAssigneeId ||
+                task.StartDate != item.ProposedStart ||
+                task.DueDate != item.ProposedDue ||
+                task.Assignees.Count != 1 ||
+                task.Assignees.Single().UserId != item.ProposedAssigneeId)
+                verificationErrors.Add($"Task {item.TaskId:D} không khớp người phụ trách/lịch đã xác nhận.");
+        }
+        receipt = receipt with
+        {
+            Status = verificationErrors.Count == 0
+                ? AiActionReceiptStatuses.Succeeded
+                : AiActionReceiptStatuses.VerificationFailed,
+            ReadBackVerified = verificationErrors.Count == 0,
+            VerificationErrors = verificationErrors
+        };
+        draft.ConfirmationResultJson = JsonSerializer.Serialize(receipt, JsonOptions);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _audit,
+            "ConfirmPortfolioScheduleProposal",
+            nameof(AiGeneratedDraft),
+            draft.Id.ToString(),
+            new { projectId, receipt.AppliedCount, receipt.AppliedTaskIds },
+            ct);
+        if (!receipt.ReadBackVerified)
+            return Result.Failure<PortfolioScheduleProposalDto>("Canonical task read-back did not match the confirmed assignment.", 500, "canonical_readback_failed");
         return Result.Success(ToDto(draft));
     }
 
@@ -701,8 +810,13 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
         draft.RejectedAt = DateTimeOffset.UtcNow;
         draft.RejectionReason = dto.Reason.Trim();
         draft.ConfirmationIdempotencyKey = dto.IdempotencyKey.Trim();
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _audit.LogAsync("RejectPortfolioScheduleProposal", nameof(AiGeneratedDraft), draft.Id.ToString(), new { projectId, reason = dto.Reason.Trim() }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _audit,
+            "RejectPortfolioScheduleProposal",
+            nameof(AiGeneratedDraft),
+            draft.Id.ToString(),
+            new { projectId, reason = dto.Reason.Trim() },
+            ct);
         return Result.Success(ToDto(draft));
     }
 
@@ -734,10 +848,12 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
         var memberships = await _organizationMembers.GetQueryable()
             .AsNoTracking()
             .Include(item => item.User)
-            .Where(item => item.OrganizationId == scope.OrganizationId)
+            .Where(item => item.OrganizationId == scope.OrganizationId && item.User.IsActive)
             .ToListAsync(ct);
         var people = memberships.Select(item => new CandidateUser(item.UserId, item.User.FullName, item.User.AvatarUrl))
-            .Append(new CandidateUser(organization.OwnerId, organization.Owner.FullName, organization.Owner.AvatarUrl))
+            .Concat(organization.Owner.IsActive
+                ? [new CandidateUser(organization.OwnerId, organization.Owner.FullName, organization.Owner.AvatarUrl)]
+                : [])
             .DistinctBy(item => item.UserId)
             .ToList();
         var profiles = await _profiles.GetQueryable()
@@ -753,11 +869,19 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
         var allTasks = await _tasks.GetQueryable()
             .AsNoTracking()
             .Include(item => item.Assignees)
-            .Where(item => projectIds.Contains(item.ProjectId) && !IsClosedStatus(item.Status))
+            .Where(item => projectIds.Contains(item.ProjectId) &&
+                           item.Status != "Done" &&
+                           item.Status != "Completed" &&
+                           item.Status != "Cancelled" &&
+                           item.Status != "Canceled")
             .ToListAsync(ct);
         var visibleIds = await _taskAccessPolicy.ApplyVisibilityFilter(_tasks.GetQueryable())
             .AsNoTracking()
-            .Where(item => projectIds.Contains(item.ProjectId) && !IsClosedStatus(item.Status))
+            .Where(item => projectIds.Contains(item.ProjectId) &&
+                           item.Status != "Done" &&
+                           item.Status != "Completed" &&
+                           item.Status != "Cancelled" &&
+                           item.Status != "Canceled")
             .Select(item => item.Id)
             .ToHashSetAsync(ct);
 
@@ -839,10 +963,87 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
             if (item.TaskId != source.TaskId || item.CurrentProjectId != source.CurrentProjectId || item.TaskRowVersion != source.TaskRowVersion ||
                 item.ProposedDue < item.ProposedStart)
                 return Result.Failure("Immutable task/source fields or dates are invalid.", 422, AiErrorCodes.SchemaInvalid);
+            var reviewedCandidateIds = source.Alternatives.Select(candidate => candidate.UserId)
+                .Append(source.ProposedAssigneeId)
+                .ToHashSet();
+            if (!reviewedCandidateIds.Contains(item.ProposedAssigneeId))
+                return Result.Failure("Choose a reviewed candidate or generate a new proposal with current evidence.", 422, AiErrorCodes.SchemaInvalid);
             var eligible = await _projectMembers.GetQueryable().AnyAsync(member =>
                 member.ProjectId == item.CurrentProjectId && member.UserId == item.ProposedAssigneeId, ct) ||
                 await _projects.GetQueryable().AnyAsync(project => project.Id == item.CurrentProjectId && project.OwnerId == item.ProposedAssigneeId, ct);
             if (!eligible) return Result.Failure("Proposed assignee is not a project member.", 422, AiErrorCodes.SchemaInvalid);
+            var reviewedBlockingReasons = item.ProposedAssigneeId == source.ProposedAssigneeId
+                ? source.BlockingReasons ?? []
+                : source.Alternatives.Single(candidate => candidate.UserId == item.ProposedAssigneeId).BlockingReasons ?? [];
+            if (!(item.BlockingReasons ?? []).OrderBy(value => value, StringComparer.Ordinal)
+                .SequenceEqual(reviewedBlockingReasons.OrderBy(value => value, StringComparer.Ordinal), StringComparer.Ordinal))
+                return Result.Failure("Candidate blocking reasons are server-owned; regenerate the proposal after constraints change.", 422, AiErrorCodes.SchemaInvalid);
+        }
+        return Result.Success();
+    }
+
+    private async Task<Result> ValidateCurrentExecutionConstraintsAsync(
+        StoredProposalPayload payload,
+        List<PortfolioScheduleProposalItemDto> selected,
+        IReadOnlyList<TaskItem> tasks,
+        CancellationToken ct)
+    {
+        var snapshot = await BuildCapacityAsync(
+            new ManagedPortfolioScope(selected[0].CurrentProjectId, payload.OrganizationId, Guid.Empty),
+            payload.WindowStart,
+            payload.WindowEnd,
+            ct);
+        var additionalByMember = new Dictionary<Guid, decimal>();
+        foreach (var item in selected)
+        {
+            if (item.ProposedStart < payload.WindowStart || item.ProposedDue > payload.WindowEnd)
+                return Result.Failure("Lịch đã sửa nằm ngoài cửa sổ kế hoạch; hãy lập lại phương án.", 409, AiErrorCodes.SourceStale);
+            var member = snapshot.Members.FirstOrDefault(candidate => candidate.UserId == item.ProposedAssigneeId);
+            if (member == null)
+                return Result.Failure("Người được chọn không còn thuộc Organization.", 409, AiErrorCodes.SourceStale);
+            if (member.CapacityState == "assumed_default")
+                return Result.Failure($"{member.FullName} chưa khai báo capacity thật; không thể tự giao dựa trên mặc định 40h.", 409, AiErrorCodes.SourceStale);
+            if (member.AvailabilityWindows.Any(window =>
+                    string.Equals(window.Kind, MemberAvailabilityWindow.Unavailable, StringComparison.OrdinalIgnoreCase) &&
+                    window.EndsAt > item.ProposedStart && window.StartsAt < item.ProposedDue))
+                return Result.Failure($"{member.FullName} có lịch không sẵn sàng trùng phương án.", 409, AiErrorCodes.SourceStale);
+
+            var task = tasks.First(candidate => candidate.Id == item.TaskId);
+            var requiredSkillIds = task.SkillRequirements
+                .Where(requirement => requirement.OrganizationSkill.IsActive)
+                .Select(requirement => requirement.OrganizationSkillId)
+                .Distinct()
+                .ToArray();
+            if (requiredSkillIds.Length > 0)
+            {
+                var matchedSkillCount = await _tasks.GetQueryable()
+                    .AsNoTracking()
+                    .Where(evidence => evidence.Status == "Done" &&
+                        evidence.Project.OrganizationId == payload.OrganizationId &&
+                        evidence.CompletionAttributions.Any(attribution =>
+                            attribution.ContributorUserId == item.ProposedAssigneeId &&
+                            attribution.Status == TaskCompletionAttribution.Confirmed))
+                    .SelectMany(evidence => evidence.SkillRequirements)
+                    .Where(requirement => requiredSkillIds.Contains(requirement.OrganizationSkillId))
+                    .Select(requirement => requirement.OrganizationSkillId)
+                    .Distinct()
+                    .CountAsync(ct);
+                if (matchedSkillCount == 0)
+                    return Result.Failure(
+                        $"{member.FullName} chưa có evidence đã xác nhận cho required skill của Task.",
+                        409, AiErrorCodes.SourceStale);
+            }
+            var extra = IsAssignedTo(task, item.ProposedAssigneeId)
+                ? 0m
+                : task.EstimatedHours ?? MissingEstimateFallbackHours;
+            additionalByMember[item.ProposedAssigneeId] = additionalByMember.GetValueOrDefault(item.ProposedAssigneeId) + extra;
+        }
+
+        foreach (var (userId, extra) in additionalByMember)
+        {
+            var member = snapshot.Members.First(candidate => candidate.UserId == userId);
+            if (extra > member.RemainingHours)
+                return Result.Failure($"{member.FullName} không còn đủ capacity ({member.RemainingHours:0.#}h còn lại, cần thêm {extra:0.#}h).", 409, AiErrorCodes.SourceStale);
         }
         return Result.Success();
     }
@@ -880,7 +1081,8 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
     private async Task<bool> CanManageOrganizationAsync(Guid organizationId, Guid userId, CancellationToken ct)
     {
         if (ProjectRoleRules.IsSystemAdmin(_currentUser.Role)) return true;
-        var organization = await _organizations.GetQueryable().AsNoTracking().FirstOrDefaultAsync(item => item.Id == organizationId, ct);
+        var organization = await _organizations.GetQueryable().AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == organizationId && item.IsActive, ct);
         if (organization?.OwnerId == userId) return true;
         var role = await _organizationMembers.GetQueryable().AsNoTracking()
             .Where(item => item.OrganizationId == organizationId && item.UserId == userId)
@@ -1012,6 +1214,12 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
         int Coverage,
         decimal Confidence,
         IReadOnlyList<TaskItem> MatchedEvidenceTasks);
+    private sealed record CandidateSchedulePlan(
+        RankedCandidate Candidate,
+        int Rank,
+        DateTimeOffset Due,
+        decimal AdditionalHours,
+        IReadOnlyList<string> BlockingReasons);
     private sealed record StoredProposalPayload(
         string SchemaId,
         string ScoringVersion,

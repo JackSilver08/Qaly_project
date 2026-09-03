@@ -15,8 +15,9 @@ public class ApiKeyConfiguration : IEntityTypeConfiguration<ApiKey>
         builder.Property(k => k.Prefix).IsRequired().HasMaxLength(16);
         builder.Property(k => k.Scopes).HasMaxLength(1000);
 
-        // Index on Prefix for fast lookup (avoid full table scan)
+        // Prefix narrows lookup while the unique hash guarantees one canonical key row.
         builder.HasIndex(k => k.Prefix);
+        builder.HasIndex(k => k.KeyHash).IsUnique();
 
         // Index on UserId for listing user's keys
         builder.HasIndex(k => k.UserId);

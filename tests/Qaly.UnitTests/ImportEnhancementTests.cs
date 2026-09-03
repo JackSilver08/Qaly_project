@@ -359,6 +359,44 @@ public class ImportEnhancementTests : IDisposable
     }
 
     [Fact]
+    public async Task UndoImportAsync_WhenProjectManagementWasRevoked_DoesNotDeleteImportedTasks()
+    {
+        var importerId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        _currentUser.SetupGet(user => user.UserId).Returns(importerId);
+        _taskAccessPolicy
+            .Setup(policy => policy.CanManageProjectAsync(projectId, importerId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        _context.Users.Add(new User { Id = importerId, FullName = "Former importer", Email = "former-importer@qaly.dev", IsActive = true });
+        _context.Projects.Add(new Project { Id = projectId, Name = "Revoked project", Code = "REVOKED-IMPORT", OwnerId = importerId });
+        _context.ImportSessions.Add(new ImportSession
+        {
+            Id = sessionId,
+            ProjectId = projectId,
+            UserId = importerId,
+            FileName = "tasks.csv",
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        _context.TaskItems.Add(new TaskItem
+        {
+            ProjectId = projectId,
+            ReporterId = importerId,
+            ImportSessionId = sessionId,
+            Title = "Must remain after revoked undo",
+            Status = "Todo"
+        });
+        await _context.SaveChangesAsync();
+
+        var result = await CreateService().UndoImportAsync(sessionId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(403);
+        (await _context.TaskItems.CountAsync(task => task.ImportSessionId == sessionId)).Should().Be(1);
+    }
+
+    [Fact]
     public async Task ExecuteImportAsync_AppendsTasksUsingKanbanSortOrderSpacing()
     {
         var importerId = Guid.NewGuid();
@@ -705,6 +743,35 @@ public class ImportEnhancementTests : IDisposable
         result.Data.Pages.Should().Contain(page => page.SourceFileName.Contains("docs/strategy.docx", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public async Task PreviewZipBundleAsync_WithSuspiciousCompressionRatio_IsRejectedBeforeParsing()
+    {
+        var service = CreateFileImportService();
+        await using var stream = CreateCompressedBombLikeZipStream();
+
+        var result = await service.PreviewZipBundleAsync(stream, "suspicious.zip");
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+        result.Error.Should().Contain("tỷ lệ nén bất thường");
+        _wikiService.Verify(
+            wiki => wiki.CreateAsync(It.IsAny<Guid>(), It.IsAny<CreateWikiPageDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task PreviewZipBundleAsync_WithTooManyEntries_IsRejected()
+    {
+        var service = CreateFileImportService();
+        await using var stream = CreateManyEntryZipStream(101);
+
+        var result = await service.PreviewZipBundleAsync(stream, "too-many.zip");
+
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(400);
+        result.Error.Should().Contain("100 file");
+    }
+
     private ImportService CreateService()
         => new(
             new GenericRepository<Project>(_context),
@@ -720,7 +787,7 @@ public class ImportEnhancementTests : IDisposable
             _taskAccessPolicy.Object);
 
     private FileImportService CreateFileImportService()
-        => new(_wikiService.Object);
+        => new(_wikiService.Object, Mock.Of<ILogger<FileImportService>>());
 
     private static MemoryStream CreateDocxStream()
     {
@@ -813,6 +880,38 @@ public class ImportEnhancementTests : IDisposable
             using (var docxStream = CreateDocxStream())
             {
                 docxStream.CopyTo(entryStream);
+            }
+        }
+
+        stream.Position = 0;
+        return stream;
+    }
+
+    private static MemoryStream CreateCompressedBombLikeZipStream()
+    {
+        var stream = new MemoryStream();
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var entry = archive.CreateEntry("repeated.txt", CompressionLevel.SmallestSize);
+            using var entryStream = entry.Open();
+            var repeated = new byte[1024 * 1024];
+            entryStream.Write(repeated, 0, repeated.Length);
+        }
+
+        stream.Position = 0;
+        return stream;
+    }
+
+    private static MemoryStream CreateManyEntryZipStream(int count)
+    {
+        var stream = new MemoryStream();
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            for (var index = 0; index < count; index++)
+            {
+                var entry = archive.CreateEntry($"entry-{index}.txt");
+                using var writer = new StreamWriter(entry.Open(), Encoding.UTF8, leaveOpen: false);
+                writer.Write($"Entry {index}");
             }
         }
 

@@ -63,8 +63,10 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
         var running = Job(project, AiJobStatuses.Running, now);
         var retrying = Job(project, AiJobStatuses.Retrying, now);
         var failed = Job(project, AiJobStatuses.Failed, now);
-        var earlierThisMonth = now.AddDays(-1);
-        var expectedDailyUsage = 1.25m;
+        // Keep the fixture inside the current month. On day 1 there is no earlier
+        // calendar day in that month, so both entries correctly contribute to today.
+        var earlierThisMonth = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
+        var expectedDailyUsage = now.Day == 1 ? 4m : 1.25m;
         failed.FinishedAt = now.AddHours(-1);
         _db.AddRange(user, project, running, retrying, failed);
         _db.AiJobDispatches.Add(new AiJobDispatch
@@ -129,7 +131,7 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
         updated.Data!.DailyBudgetUsd.Should().Be(5m);
         updated.Data.MonthlyBudgetUsd.Should().Be(50m);
         updated.Data.Version.Should().NotBe(originalVersion);
-        _auditLog.Verify(audit => audit.LogAsync(
+        _auditLog.Verify(audit => audit.StageAsync(
             "UpdateAiBudgetPolicy",
             nameof(AiBudgetPolicy),
             It.IsAny<string>(),
@@ -175,6 +177,74 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
         (await service.GetHealthAsync()).StatusCode.Should().Be(403);
         (await service.GetUsageAsync(null, null, null, null)).StatusCode.Should().Be(403);
         (await service.GetBudgetAsync(null, Guid.NewGuid())).StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task Health_OrdinaryOrganizationMemberDoesNotSeeUnrelatedProjectJobs()
+    {
+        _currentUser.SetupGet(current => current.Role).Returns("User");
+        var ownerId = Guid.NewGuid();
+        var owner = new User
+        {
+            Id = ownerId,
+            FullName = "Foreign owner",
+            Email = "foreign-owner@qaly.test",
+            PasswordHash = "test"
+        };
+        var current = new User
+        {
+            Id = _userId,
+            FullName = "Ordinary member",
+            Email = "ordinary-member@qaly.test",
+            PasswordHash = "test"
+        };
+        var organization = new Organization
+        {
+            Id = _tenantId,
+            Name = "Shared tenant",
+            Code = "SHARED-TENANT",
+            OwnerId = ownerId,
+            Owner = owner,
+            IsActive = true
+        };
+        var project = new Project
+        {
+            Id = _projectId,
+            OrganizationId = _tenantId,
+            Organization = organization,
+            OwnerId = ownerId,
+            Owner = owner,
+            Name = "Unrelated project",
+            Code = "UNRELATED"
+        };
+        var foreignJob = new AiJob
+        {
+            TenantId = _tenantId,
+            ProjectId = _projectId,
+            Project = project,
+            RequestedById = ownerId,
+            JobType = "analysis",
+            SourceType = "project",
+            SchemaId = "analysis-v4",
+            RequestHash = Guid.NewGuid().ToString("N"),
+            IdempotencyKey = Guid.NewGuid().ToString("N"),
+            Status = AiJobStatuses.Running,
+            AvailableAt = DateTimeOffset.UtcNow
+        };
+        _db.AddRange(current, owner, organization, project, foreignJob);
+        _db.OrganizationMembers.Add(new OrganizationMember
+        {
+            OrganizationId = _tenantId,
+            UserId = _userId,
+            Role = OrganizationRoleRules.Member
+        });
+        await _db.SaveChangesAsync();
+
+        var health = await CreateService().GetHealthAsync();
+
+        health.IsSuccess.Should().BeTrue(health.Error);
+        health.Data!.RunningCount.Should().Be(0);
+        health.Data.QueueDepth.Should().Be(0);
     }
 
     [Fact]
@@ -294,6 +364,88 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task BudgetScopes_IncludeStandaloneOwnerAndCustomRoleInheritingManager()
+    {
+        _currentUser.SetupGet(current => current.Role).Returns("User");
+        var organizationOwnerId = Guid.NewGuid();
+        var customProjectId = Guid.NewGuid();
+        var standaloneProjectId = Guid.NewGuid();
+        var customRoleKey = $"budget-manager-{Guid.NewGuid():N}";
+        var current = new User
+        {
+            Id = _userId,
+            FullName = "Custom budget manager",
+            Email = "custom-budget-manager@qaly.test",
+            PasswordHash = "test",
+            IsActive = true
+        };
+        var organizationOwner = new User
+        {
+            Id = organizationOwnerId,
+            FullName = "Organization owner",
+            Email = "budget-owner@qaly.test",
+            PasswordHash = "test",
+            IsActive = true
+        };
+        var organization = new Organization
+        {
+            Id = _tenantId,
+            Name = "Custom budget tenant",
+            Code = "CUSTOM-BUDGET",
+            OwnerId = organizationOwnerId,
+            IsActive = true
+        };
+        _db.AddRange(
+            current,
+            organizationOwner,
+            organization,
+            new Project
+            {
+                Id = customProjectId,
+                OrganizationId = _tenantId,
+                OwnerId = organizationOwnerId,
+                Name = "Custom managed budget project",
+                Code = "CUSTOM-BUDGET-PROJECT"
+            },
+            new Project
+            {
+                Id = standaloneProjectId,
+                OwnerId = _userId,
+                Name = "Standalone owner budget project",
+                Code = "STANDALONE-BUDGET"
+            });
+        _db.OrganizationMembers.Add(new OrganizationMember
+        {
+            OrganizationId = _tenantId,
+            UserId = _userId,
+            Role = OrganizationRoleRules.Member
+        });
+        _db.ProjectMembers.Add(new ProjectMember
+        {
+            ProjectId = customProjectId,
+            UserId = _userId,
+            Role = customRoleKey
+        });
+        _db.ProjectRoleDefinitions.Add(new ProjectRoleDefinition
+        {
+            OrganizationId = _tenantId,
+            Key = customRoleKey,
+            DisplayName = "AI Budget Manager",
+            BaseRole = ProjectRoleRules.Manager,
+            CreatedByUserId = organizationOwnerId,
+            IsActive = true
+        });
+        await _db.SaveChangesAsync();
+
+        var scopes = await CreateService().GetBudgetScopesAsync();
+
+        scopes.IsSuccess.Should().BeTrue(scopes.Error);
+        scopes.Data.Should().Contain(item => item.ScopeType == "project" && item.ScopeId == customProjectId);
+        scopes.Data.Should().Contain(item => item.ScopeType == "project" && item.ScopeId == standaloneProjectId);
+        scopes.Data.Should().NotContain(item => item.ScopeType == "organization" && item.ScopeId == _tenantId);
+    }
+
+    [Fact]
     public async Task BudgetEditingFeatureDisabled_PreservesReadOnlySnapshotAndRejectsMutation()
     {
         _options.SetupGet(monitor => monitor.CurrentValue).Returns(new AiJobPlatformOptions
@@ -365,7 +517,8 @@ public sealed class AiPlatformQueryServiceTests : IDisposable
             _currentUser.Object,
             _options.Object,
             _unitOfWork.Object,
-            _auditLog.Object);
+            _auditLog.Object,
+            new ProjectRoleCatalog(new GenericRepository<ProjectRoleDefinition>(_db)));
 
     private AiJob Job(Project project, string status, DateTimeOffset now)
         => new()

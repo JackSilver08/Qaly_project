@@ -117,6 +117,12 @@ public class GroupsController : BaseApiController
     public async Task<IActionResult> CreatePoll(Guid id, [FromBody] CreateGroupPollRequest request, CancellationToken ct)
     {
         var result = await _groupsService.CreatePollAsync(id, request, ct);
+        if (result.IsSuccess && result.Data != null)
+        {
+            await _groupHub.Clients
+                .Group(GroupHub.WorkGroup(id))
+                .SendAsync("groupPollCreated", new { groupId = id, pollId = result.Data.Id }, ct);
+        }
         return StatusCode(result.StatusCode, result);
     }
 

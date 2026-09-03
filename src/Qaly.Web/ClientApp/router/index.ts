@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { usePermissions } from "../composables/use-permissions";
 
 const ArchivedProjectsPage = () => import("../pages/ArchivedProjectsPage.vue");
 const DashboardPage = () => import("../pages/DashboardPage.vue");
@@ -22,28 +23,32 @@ export const router = createRouter({
     history: createWebHistory(),
     routes: [
         { path: "/", redirect: "/dashboard" },
-        { path: "/dashboard", name: "dashboard", component: DashboardPage },
-        { path: "/profile", name: "profile", component: ProfilePage },
-        { path: "/projects", name: "projects", component: ProjectsPage },
+        { path: "/dashboard", name: "dashboard", component: DashboardPage, meta: { moduleKey: "Dashboard" } },
+        { path: "/profile", name: "profile", component: ProfilePage, meta: { moduleKey: "Settings" } },
+        { path: "/projects", name: "projects", component: ProjectsPage, meta: { moduleKey: "Projects" } },
         {
             path: "/projects/archived",
             name: "projects-archived",
             component: ArchivedProjectsPage,
+            meta: { moduleKey: "Projects" },
         },
         {
             path: `/projects/:projectId(${guidPattern})`,
             name: "project-detail",
             component: ProjectDetailPage,
+            meta: { moduleKey: "Projects" },
         },
         {
             path: `/projects/:projectId(${guidPattern})/tasks/:taskId(${guidPattern})`,
             name: "project-task",
             component: ProjectDetailPage,
+            meta: { moduleKey: "Tasks" },
         },
         {
             path: `/projects/:projectId(${guidPattern})/wiki/:wikiId(${guidPattern})`,
             name: "project-wiki-detail",
             component: () => import("../pages/WikiDetailPage.vue"),
+            meta: { moduleKey: "Wiki" },
         },
         {
             path: "/projects/:projectId/tasks/:taskId",
@@ -63,37 +68,42 @@ export const router = createRouter({
                 message: "Project URL sai định dạng hoặc đã bị thay đổi.",
             },
         },
-        { path: "/tasks", name: "tasks", component: TasksPage },
-        { path: "/teams", name: "teams", component: TeamsPage },
-        { path: "/analytics", name: "analytics", component: AnalyticsPage },
-        { path: "/admin/users", name: "admin-users", component: AdminUsersPage },
-        { path: "/organizations/users", name: "organization-users", component: OrganizationUsersPage },
-        { path: "/organizations", name: "organizations", component: OrganizationsPage },
-        { path: "/admin/moderators", name: "admin-moderators", component: ModeratorAssignmentsPage },
+        { path: "/tasks", name: "tasks", component: TasksPage, meta: { moduleKey: "Tasks" } },
+        { path: "/teams", name: "teams", component: TeamsPage, meta: { moduleKey: "WorkGroups" } },
+        { path: "/analytics", name: "analytics", component: AnalyticsPage, meta: { moduleKey: "Analytics" } },
+        { path: "/admin/users", name: "admin-users", component: AdminUsersPage, meta: { moduleKey: "UserManagement" } },
+        { path: "/organizations/users", name: "organization-users", component: OrganizationUsersPage, meta: { moduleKey: "OrganizationMembers" } },
+        { path: "/organizations", name: "organizations", component: OrganizationsPage, meta: { moduleKey: "OrganizationManagement" } },
+        { path: "/admin/moderators", name: "admin-moderators", component: ModeratorAssignmentsPage, meta: { moduleKey: "ModeratorAssignments" } },
         {
             path: "/groups",
             name: "groups",
             component: () => import("../pages/TeamsPage.vue"),
+            meta: { moduleKey: "WorkGroups" },
         },
         {
             path: `/groups/:groupId(${guidPattern})`,
             name: "group-detail",
             component: () => import("../pages/TeamsPage.vue"),
+            meta: { moduleKey: "WorkGroups" },
         },
         {
             path: `/groups/:groupId(${guidPattern})/meeting`,
             name: "group-meeting",
             component: () => import("../pages/GroupMeetingPage.vue"),
+            meta: { moduleKey: "WorkGroups" },
         },
         {
             path: `/groups/:groupId(${guidPattern})/polls`,
             name: "group-polls",
             component: () => import("../pages/GroupPollPage.vue"),
+            meta: { moduleKey: "WorkGroups" },
         },
         {
             path: `/groups/:groupId(${guidPattern})/polls/:pollId(${guidPattern})`,
             name: "group-poll-detail",
             component: () => import("../pages/GroupPollPage.vue"),
+            meta: { moduleKey: "WorkGroups" },
         },
         {
             path: "/groups/:groupId/:rest(.*)*",
@@ -104,7 +114,16 @@ export const router = createRouter({
                 message: "Group link sai định dạng hoặc đã hết hiệu lực.",
             },
         },
-        { path: "/settings", name: "settings", component: SettingsPage },
+        { path: "/settings", name: "settings", component: SettingsPage, meta: { moduleKey: "Settings" } },
+        {
+            path: "/access-denied",
+            name: "access-denied",
+            component: RouteErrorPage,
+            props: {
+                title: "Bạn không có quyền mở trang này",
+                message: "Qaly đã kiểm tra quyền hiệu lực từ máy chủ. Hãy quay lại trang được cấp quyền hoặc liên hệ quản trị viên.",
+            },
+        },
         {
             path: "/:pathMatch(.*)*",
             name: "route-not-found",
@@ -118,4 +137,19 @@ export const router = createRouter({
     scrollBehavior() {
         return { top: 0 };
     },
+});
+
+router.beforeEach(async to => {
+    if (to.name === "access-denied") return true;
+    const moduleKey = typeof to.meta.moduleKey === "string" ? to.meta.moduleKey : null;
+    if (!moduleKey) return true;
+
+    const permissions = usePermissions();
+    if (permissions.permissionLoadState.value !== "loaded") {
+        await permissions.loadSystemPermissions();
+    }
+
+    return permissions.canAccessModule(moduleKey)
+        ? true
+        : { name: "access-denied", query: { from: to.fullPath } };
 });

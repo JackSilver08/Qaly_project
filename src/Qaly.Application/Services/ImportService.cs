@@ -32,10 +32,19 @@ public partial class ImportService : IImportService
     private const int MaxRows = 2000;
     private const int PreviewRowCount = 5;
     private const int SortOrderStep = 1000;
+    private const int MaxTaskTitleLength = 300;
+    private const int MaxProjectNameLength = 200;
+    private const int MaxLabelNameLength = 80;
+    private const int MaxImportFileNameLength = 256;
+    private const int MaxHours = 100000;
 
     private static readonly string[] ValidExtensions = [".csv", ".xlsx", ".tsv", ".txt", ".dsv", ".psv", ".json"];
     private static readonly string[] ValidStatuses = ["Todo", "InProgress", "OnHold", "InReview", "Done", "Cancelled"];
     private static readonly string[] ValidPriorities = ["Low", "Medium", "High", "Critical"];
+    private static readonly HashSet<string> ValidTargetFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Title", "Description", "Status", "Priority", "DueDate", "EstimatedHours", "Labels", "Assignee", "Skip"
+    };
 
     // Auto-suggest mapping keywords (Vietnamese + English)
     private static readonly Dictionary<string, string[]> FieldKeywords = new(StringComparer.OrdinalIgnoreCase)
@@ -108,7 +117,11 @@ public partial class ImportService : IImportService
 
     public async Task<Result<ParsedFileResult>> ParseFileAsync(Stream fileStream, string fileName, string? sheetName = null, bool firstRowIsHeader = true, CancellationToken ct = default)
     {
-        var ext = Path.GetExtension(fileName).ToLowerInvariant();
+        var safeFileName = NormalizeClientFileName(fileName);
+        if (safeFileName.Length > MaxImportFileNameLength)
+            return Result.Failure<ParsedFileResult>("Tên file vượt quá giới hạn 256 ký tự.", 400);
+
+        var ext = Path.GetExtension(safeFileName).ToLowerInvariant();
         if (!ValidExtensions.Contains(ext))
             return Result.Failure<ParsedFileResult>($"Định dạng file không hỗ trợ. Chỉ chấp nhận: {string.Join(", ", ValidExtensions)}");
 
@@ -142,7 +155,7 @@ public partial class ImportService : IImportService
             var suggestions = AutoSuggestMappings(headers);
 
             return Result.Success(new ParsedFileResult(
-                FileName: fileName,
+                FileName: safeFileName,
                 Headers: headers,
                 PreviewRows: previewRows,
                 TotalRowCount: allRows.Count,
@@ -150,17 +163,27 @@ public partial class ImportService : IImportService
                 SheetNames: sheetNames
             ));
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            LogParseFileFailed(_logger, ex, fileName);
-            return Result.Failure<ParsedFileResult>($"Lỗi khi đọc file: {ex.Message}");
+            LogParseFileFailed(_logger, ex, safeFileName);
+            return Result.Failure<ParsedFileResult>(
+                "Không thể đọc file. Hãy kiểm tra định dạng, nội dung và thử lại.",
+                400);
         }
     }
 
     public async Task<Result<ImportResult>> ExecuteImportAsync(
         Stream fileStream, string fileName, ImportRequest request, CancellationToken ct = default)
     {
-        var ext = Path.GetExtension(fileName).ToLowerInvariant();
+        var safeFileName = NormalizeClientFileName(fileName);
+        if (safeFileName.Length > MaxImportFileNameLength)
+            return Result.Failure<ImportResult>("Tên file vượt quá giới hạn 256 ký tự.", 400);
+
+        var ext = Path.GetExtension(safeFileName).ToLowerInvariant();
         if (!ValidExtensions.Contains(ext))
             return Result.Failure<ImportResult>("Định dạng file không hỗ trợ.");
 
@@ -184,7 +207,9 @@ public partial class ImportService : IImportService
             // Flow 1: Create new project
             var projectName = request.NewProjectName?.Trim();
             if (string.IsNullOrWhiteSpace(projectName))
-                projectName = Path.GetFileNameWithoutExtension(fileName);
+                projectName = Path.GetFileNameWithoutExtension(safeFileName);
+            if (projectName.Length > MaxProjectNameLength)
+                return Result.Failure<ImportResult>("Tên Project không được vượt quá 200 ký tự.", 400);
 
             var newProject = new Project
             {
@@ -226,14 +251,28 @@ public partial class ImportService : IImportService
                 (headers, allRows) = ParseCsv(fileStream, delimiter, request.FirstRowIsHeader);
             }
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             LogImportParseFailed(_logger, ex);
-            return Result.Failure<ImportResult>($"Lỗi khi đọc file: {ex.Message}");
+            return Result.Failure<ImportResult>(
+                "Không thể đọc file. Hãy kiểm tra định dạng, nội dung và thử lại.",
+                400);
         }
 
         if (allRows.Count > MaxRows)
             return Result.Failure<ImportResult>($"File vượt quá giới hạn {MaxRows} dòng. Hiện có {allRows.Count} dòng.");
+
+        if (request.Mappings is not { Count: > 0 })
+            return Result.Failure<ImportResult>("Phải cấu hình mapping cột trước khi import.", 400);
+
+        var unknownTargetField = request.Mappings.FirstOrDefault(mapping =>
+            string.IsNullOrWhiteSpace(mapping.TargetField) || !ValidTargetFields.Contains(mapping.TargetField));
+        if (unknownTargetField != null)
+            return Result.Failure<ImportResult>("Mapping chứa field đích không được hỗ trợ.", 400);
 
         var activeMappings = request.Mappings
             .Where(m => m.TargetField != "Skip")
@@ -279,7 +318,7 @@ public partial class ImportService : IImportService
         {
             ProjectId = projectId,
             UserId = userId,
-            FileName = fileName,
+            FileName = safeFileName,
             TotalRows = allRows.Count,
         };
         await _sessionRepo.AddAsync(session, ct);
@@ -323,6 +362,7 @@ public partial class ImportService : IImportService
         int duplicateSkippedCount = 0;
         int newLabelsCreated = 0;
         var unmappedStatuses = new HashSet<string>();
+        var unmappedPriorities = new HashSet<string>();
         var statusDistribution = new Dictionary<string, int>();
         var skippedRowsList = new List<SkippedRowDto>();
         var tasksToInsert = new List<TaskItem>();
@@ -417,6 +457,16 @@ public partial class ImportService : IImportService
                 skippedRowsList.Add(new SkippedRowDto(rowIndex, "Thiếu tiêu đề (Title)", "Failed"));
                 continue;
             }
+            if (title.Length > MaxTaskTitleLength)
+            {
+                skippedCount++;
+                failedCount++;
+                skippedRowsList.Add(new SkippedRowDto(
+                    rowIndex,
+                    $"Tiêu đề vượt quá {MaxTaskTitleLength} ký tự",
+                    "Failed"));
+                continue;
+            }
 
             // Duplicate check
             if (request.SkipDuplicates && existingTitles!.Contains(NormalizeTitle(title)))
@@ -443,8 +493,8 @@ public partial class ImportService : IImportService
 
             // Normalize priority
             var priority = string.IsNullOrWhiteSpace(rawPriority) && !string.IsNullOrWhiteSpace(request.DefaultPriority)
-                ? NormalizePriority(request.DefaultPriority)
-                : NormalizePriority(rawPriority);
+                ? NormalizePriority(request.DefaultPriority, unmappedPriorities)
+                : NormalizePriority(rawPriority, unmappedPriorities);
 
             // Apply AI classification if applicable
             var aiLabels = new List<string>();
@@ -454,7 +504,7 @@ public partial class ImportService : IImportService
                     status = NormalizeStatus(aiResult.Status, unmappedStatuses);
                     
                 if (string.IsNullOrWhiteSpace(rawPriority) && !string.IsNullOrWhiteSpace(aiResult.Priority))
-                    priority = NormalizePriority(aiResult.Priority);
+                    priority = NormalizePriority(aiResult.Priority, unmappedPriorities);
                     
                 if (aiResult.Labels != null && aiResult.Labels.Length > 0)
                 {
@@ -464,11 +514,30 @@ public partial class ImportService : IImportService
 
             // Parse due date
             DateTimeOffset? dueDate = ParseDate(rawDueDate);
+            if (!string.IsNullOrWhiteSpace(rawDueDate) && dueDate == null)
+            {
+                skippedCount++;
+                failedCount++;
+                skippedRowsList.Add(new SkippedRowDto(rowIndex, "Hạn chót không đúng định dạng ngày", "Failed"));
+                continue;
+            }
 
             // Parse estimated hours
             int? estimatedHours = null;
-            if (int.TryParse(rawHours, out var hours))
+            if (!string.IsNullOrWhiteSpace(rawHours))
+            {
+                if (!int.TryParse(rawHours, out var hours) || hours is < 0 or > MaxHours)
+                {
+                    skippedCount++;
+                    failedCount++;
+                    skippedRowsList.Add(new SkippedRowDto(
+                        rowIndex,
+                        $"Giờ ước tính phải là số từ 0 đến {MaxHours:N0}",
+                        "Failed"));
+                    continue;
+                }
                 estimatedHours = hours;
+            }
 
             // Map Assignee
             Guid? assigneeId = null;
@@ -517,12 +586,13 @@ public partial class ImportService : IImportService
             {
                 var csvLabels = rawLabels.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries)
                     .Select(l => l.Trim())
-                    .Where(l => !string.IsNullOrEmpty(l));
+                    .Where(l => !string.IsNullOrEmpty(l) && l.Length <= MaxLabelNameLength);
                 foreach (var l in csvLabels) labelNames.Add(l);
             }
             foreach (var al in aiLabels)
             {
-                if (!string.IsNullOrWhiteSpace(al)) labelNames.Add(al.Trim());
+                if (!string.IsNullOrWhiteSpace(al) && al.Trim().Length <= MaxLabelNameLength)
+                    labelNames.Add(al.Trim());
             }
 
             if (labelNames.Count > 0)
@@ -585,6 +655,7 @@ public partial class ImportService : IImportService
             DuplicateSkippedCount: duplicateSkippedCount,
             NewLabelsCreated: newLabelsCreated,
             UnmappedStatuses: unmappedStatuses.ToList(),
+            UnmappedPriorities: unmappedPriorities.ToList(),
             StatusDistribution: statusDistribution,
             SkippedRows: skippedRowsList
         ));
@@ -596,8 +667,15 @@ public partial class ImportService : IImportService
         if (session == null)
             return Result.Failure<int>("Không tìm thấy phiên import.");
 
+        var project = await _projectRepo.GetByIdAsync(session.ProjectId, ct);
+        if (project == null)
+            return Result.Failure<int>("Không tìm thấy dự án của phiên import.", 404);
+
+        if (!await _taskAccessPolicy.CanManageProjectAsync(project.Id, project.OwnerId, ct))
+            return Result.Forbidden<int>("Bạn không còn quyền quản lý dự án của phiên import này.");
+
         if (session.UserId != _currentUserService.UserId)
-            return Result.Failure<int>("Bạn không có quyền undo phiên import này.");
+            return Result.Forbidden<int>("Bạn không có quyền undo phiên import này.");
 
         if (session.IsUndone)
             return Result.Failure<int>("Phiên import này đã được undo rồi.");
@@ -1003,7 +1081,7 @@ public partial class ImportService : IImportService
         return "Todo";
     }
 
-    private static string NormalizePriority(string? rawPriority)
+    private static string NormalizePriority(string? rawPriority, HashSet<string> unmappedPriorities)
     {
         if (string.IsNullOrWhiteSpace(rawPriority))
             return "Medium";
@@ -1016,6 +1094,7 @@ public partial class ImportService : IImportService
         if (PriorityAliases.TryGetValue(trimmed, out var mapped))
             return mapped;
 
+        unmappedPriorities.Add(trimmed);
         return "Medium";
     }
 
@@ -1048,6 +1127,13 @@ public partial class ImportService : IImportService
             return null;
         var value = row[index];
         return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private static string NormalizeClientFileName(string? fileName)
+    {
+        var normalized = (fileName ?? string.Empty).Replace('\\', '/');
+        var safeName = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+        return string.IsNullOrWhiteSpace(safeName) ? "import" : safeName.Trim();
     }
 
     private static string GenerateProjectCode(string name)

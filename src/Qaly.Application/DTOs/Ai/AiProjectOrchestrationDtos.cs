@@ -1,5 +1,21 @@
 namespace Qaly.Application.DTOs.Ai;
 
+public static class ProjectLaunchAssignmentModes
+{
+    public const string AutoBalance = "auto_balance";
+    public const string PreserveAssignments = "preserve_assignments";
+
+    public static bool IsValid(string? value) => value is AutoBalance or PreserveAssignments;
+}
+
+public static class ProjectLaunchScheduleModes
+{
+    public const string SequentialSprints = "sequential_sprints";
+    public const string ParallelWorkstreams = "parallel_workstreams";
+
+    public static bool IsValid(string? value) => value is SequentialSprints or ParallelWorkstreams;
+}
+
 public static class AiProjectOrchestrationContract
 {
     public const string StaffingCapabilityId = "project.staffing.plan.v1";
@@ -15,8 +31,21 @@ public static class AiProjectOrchestrationContract
     public const string ReplanSchemaId = "project_replan_proposal.v1";
     public const string PlanRendererId = "project-launch-plan.v1";
     public const string PromptVersion = "project_launch_delivery_plan@1.0.0";
-    public const string ScoringVersion = "project-staffing-deterministic@1.0.0";
+    public const string ScoringVersion = "project-staffing-deterministic@1.1.0";
 }
+
+public sealed record ProjectWeeklyCapacityDto(
+    string WeekKey,
+    DateTimeOffset StartsAt,
+    DateTimeOffset EndsAt,
+    decimal DeclaredCapacityHours,
+    decimal AvailabilityReductionHours,
+    decimal ExistingCommittedHours,
+    decimal FocusReserveHours,
+    decimal EffectiveAvailableHours,
+    decimal ProposedDeliveryHours,
+    decimal ReviewerCoordinationHours,
+    decimal LoadAfterPercent);
 
 public sealed record ProjectStaffingCandidateDto(
     Guid UserId,
@@ -37,7 +66,8 @@ public sealed record ProjectStaffingCandidateDto(
     int ActiveProjectCount,
     string TimeZoneId,
     string CapacityState,
-    IReadOnlyList<string> SourceRefs);
+    IReadOnlyList<string> SourceRefs,
+    IReadOnlyList<ProjectWeeklyCapacityDto>? WeeklyCapacity = null);
 
 public sealed record ProjectStaffingMemberDto(
     Guid UserId,
@@ -47,7 +77,9 @@ public sealed record ProjectStaffingMemberDto(
     IReadOnlyList<string> CoveredSkills,
     IReadOnlyList<string> MissingSkills,
     decimal LoadAfterPercent,
-    IReadOnlyList<string> DecisionReasons);
+    IReadOnlyList<string> DecisionReasons,
+    decimal ReviewerCoordinationHours = 0m,
+    IReadOnlyList<ProjectWeeklyCapacityDto>? WeeklyAllocation = null);
 
 public sealed record ProjectStaffingScenarioDto(
     string ScenarioId,
@@ -81,7 +113,9 @@ public sealed record ProjectLaunchTaskPlanDto(
     IReadOnlyList<string> RequiredSkillNames,
     IReadOnlyList<string> DependencyClientIds,
     IReadOnlyList<string> SourceRefs,
-    bool Selected = true);
+    bool Selected = true,
+    string? FeatureId = null,
+    IReadOnlyList<string>? ObjectiveMetricIds = null);
 
 public sealed record ProjectLaunchSprintPlanDto(
     string ClientId,
@@ -110,7 +144,27 @@ public sealed record ProjectLaunchDeliveryPlanDto(
     IReadOnlyList<string> ScheduleRisks,
     IReadOnlyList<string> CollaborationProposal,
     IReadOnlyList<string> ExternalDeferred,
-    IReadOnlyList<string> Assumptions);
+    IReadOnlyList<string> Assumptions,
+    IReadOnlyList<ProjectLaunchFeatureDto>? Features = null,
+    IReadOnlyList<ProjectObjectiveMetricDto>? ObjectiveMetrics = null,
+    int SuggestedTeamSize = 0,
+    string AssignmentMode = ProjectLaunchAssignmentModes.AutoBalance,
+    string ScheduleMode = ProjectLaunchScheduleModes.SequentialSprints);
+
+public sealed record ProjectStaffingOverrideDto(
+    Guid UserId,
+    string ProposedRole,
+    decimal ProposedHours,
+    bool Included = true,
+    bool Manager = false);
+
+public sealed record UpdateProjectLaunchPlanRequestDto(
+    long ExpectedRevision,
+    string SelectedScenarioId,
+    IReadOnlyList<ProjectStaffingOverrideDto> Staffing,
+    IReadOnlyList<ProjectLaunchSprintPlanDto> Sprints,
+    string? AssignmentMode = null,
+    string? ScheduleMode = null);
 
 public sealed record ProjectLaunchCommandReceiptDto(
     string CommandId,
@@ -219,7 +273,9 @@ public sealed record ProjectLaunchModelTaskDto(
     string Priority,
     int EstimatedHours,
     IReadOnlyList<string> RequiredSkillNames,
-    IReadOnlyList<string> DependencyClientIds);
+    IReadOnlyList<string> DependencyClientIds,
+    string? FeatureId = null,
+    IReadOnlyList<string>? ObjectiveMetricIds = null);
 
 public sealed record ProjectLaunchModelSprintDto(
     string ClientId,

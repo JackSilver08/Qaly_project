@@ -12,6 +12,7 @@ defineProps<{
 defineEmits<{
   view: [projectId: string]
   edit: [projectId: string]
+  archive: [projectId: string]
   delete: [projectId: string]
   create: []
 }>()
@@ -27,6 +28,7 @@ defineEmits<{
       :read-only="readOnly"
       @view="$emit('view', $event)"
       @edit="$emit('edit', $event)"
+      @archive="$emit('archive', $event)"
       @delete="$emit('delete', $event)"
     />
 

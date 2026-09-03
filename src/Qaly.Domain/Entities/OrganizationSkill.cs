@@ -6,6 +6,10 @@ public sealed class OrganizationSkill : BaseEntity
     public string Name { get; set; } = string.Empty;
     public string NormalizedName { get; set; } = string.Empty;
     public string? Description { get; set; }
+    public string Category { get; set; } = "Chuyên môn";
+    public string AliasesJson { get; set; } = "[]";
+    public string DefaultRequiredLevel { get; set; } = "Intermediate";
+    public bool IsSystemSeed { get; set; }
     public bool IsActive { get; set; } = true;
     public byte[] RowVersion { get; set; } = [];
 

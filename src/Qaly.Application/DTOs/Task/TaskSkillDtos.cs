@@ -7,17 +7,27 @@ public sealed record OrganizationSkillDto(
     string NormalizedName,
     string? Description,
     bool IsActive,
-    string RowVersion);
+    string RowVersion,
+    string Category = "Chuyên môn",
+    IReadOnlyList<string>? Aliases = null,
+    string DefaultRequiredLevel = "Intermediate",
+    bool IsSystemSeed = false);
 
 public sealed record CreateOrganizationSkillDto(
     string Name,
-    string? Description = null);
+    string? Description = null,
+    string Category = "Chuyên môn",
+    IReadOnlyList<string>? Aliases = null,
+    string DefaultRequiredLevel = "Intermediate");
 
 public sealed record UpdateOrganizationSkillDto(
     string Name,
     string? Description,
     bool IsActive,
-    string RowVersion);
+    string RowVersion,
+    string Category = "Chuyên môn",
+    IReadOnlyList<string>? Aliases = null,
+    string DefaultRequiredLevel = "Intermediate");
 
 public sealed record TaskSkillSelectionDto(
     Guid SkillId,

@@ -135,6 +135,14 @@ public class TasksController : BaseApiController
         return StatusCode(result.StatusCode, result);
     }
 
+    [HttpPost("priority-suggestion")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SuggestPriority(SuggestTaskPriorityDto dto, CancellationToken ct)
+    {
+        var result = await _taskService.SuggestPriorityAsync(dto, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(Guid id, UpdateTaskDto dto, CancellationToken ct)
     {
@@ -194,7 +202,14 @@ public class TasksController : BaseApiController
     [HttpDelete("{id}/dependencies/{dependencyId:guid}")]
     public async Task<IActionResult> RemoveDependency(Guid id, Guid dependencyId, CancellationToken ct)
     {
-        var result = await _taskService.RemoveDependencyAsync(dependencyId, ct);
+        var result = await _taskService.RemoveDependencyAsync(id, dependencyId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("{id}/dependencies")]
+    public async Task<IActionResult> GetDependencies(Guid id, CancellationToken ct)
+    {
+        var result = await _taskService.GetDependenciesAsync(id, ct);
         return StatusCode(result.StatusCode, result);
     }
 

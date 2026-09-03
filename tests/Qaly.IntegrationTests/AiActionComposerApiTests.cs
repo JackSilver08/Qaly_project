@@ -163,6 +163,151 @@ public sealed class AiActionComposerApiTests : IClassFixture<IntegrationTestFact
     }
 
     [Fact]
+    [Trait("TestId", "TEST-ACTION-COUNT-10")]
+    public async Task ExplicitTenTaskRequest_ConfirmPersistsExactlyTenAndReplayCreatesNoDuplicate()
+    {
+        var scope = await SeedScopeAsync(includeViewer: false);
+        using (var catalogScope = _factory.Services.CreateScope())
+        {
+            var catalogDb = catalogScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+            var skills = new[]
+            {
+                ("Business Analysis", "business analysis product discovery"),
+                ("UX Design", "ux user flow interface design"),
+                ("Backend / .NET APIs", "backend api .net"),
+                ("Database / EF Core SQL", "database ef core sql"),
+                ("Security / Auth", "security authentication authorization"),
+                ("Payments", "payment integration reconciliation"),
+                ("QA / Playwright", "qa e2e test playwright"),
+                ("DevOps / Operations", "devops operations documentation")
+            };
+            catalogDb.OrganizationSkills.AddRange(skills.Select(item => new OrganizationSkill
+            {
+                OrganizationId = scope.OrganizationId,
+                Name = item.Item1,
+                NormalizedName = item.Item1.ToLowerInvariant(),
+                Description = item.Item2,
+                IsActive = true
+            }));
+            await catalogDb.SaveChangesAsync();
+
+            var verifiedSkills = await catalogDb.OrganizationSkills
+                .Where(item => item.OrganizationId == scope.OrganizationId && item.IsActive)
+                .ToListAsync();
+            var evidenceProject = new Project
+            {
+                OrganizationId = scope.OrganizationId,
+                Name = "Action Composer verified skill baseline",
+                Code = $"EV-{Guid.NewGuid():N}"[..12],
+                OwnerId = DefaultUserId,
+                Status = "Archived"
+            };
+            var evidenceTask = new TaskItem
+            {
+                ProjectId = evidenceProject.Id,
+                ReporterId = DefaultUserId,
+                AssigneeId = DefaultUserId,
+                Title = "Verified delivery baseline",
+                Status = "Done",
+                Priority = "Medium",
+                EstimatedHours = 8,
+                ActualHours = 8,
+                DueDate = DateTimeOffset.UtcNow.AddDays(-2)
+            };
+            catalogDb.AddRange(evidenceProject, evidenceTask);
+            catalogDb.TaskSkillRequirements.AddRange(verifiedSkills.Select(skill => new TaskSkillRequirement
+            {
+                TaskItemId = evidenceTask.Id,
+                OrganizationSkillId = skill.Id,
+                RequiredLevel = "Proficient",
+                Provenance = TaskSkillService.ProvenanceManual,
+                ConfirmedByUserId = DefaultUserId,
+                ConfirmedAt = DateTimeOffset.UtcNow.AddDays(-2)
+            }));
+            var eligibleMemberIds = await catalogDb.ProjectMembers
+                .Where(item => item.ProjectId == scope.ProjectId)
+                .Select(item => item.UserId)
+                .ToListAsync();
+            catalogDb.TaskCompletionAttributions.AddRange(eligibleMemberIds.Select(memberId => new TaskCompletionAttribution
+            {
+                TaskItemId = evidenceTask.Id,
+                ContributorUserId = memberId,
+                ConfirmedByUserId = DefaultUserId,
+                CompletedAt = DateTimeOffset.UtcNow.AddDays(-2),
+                ConfirmedAt = DateTimeOffset.UtcNow.AddDays(-1),
+                Status = TaskCompletionAttribution.Confirmed
+            }));
+            await catalogDb.SaveChangesAsync();
+        }
+        var csrf = await GetCsrfTokenAsync(_client);
+        var compose = await ComposeAsync(
+            _client,
+            scope.ProjectId,
+            csrf,
+            $"ten-compose-{Guid.NewGuid():N}",
+            scope.SprintId,
+            "Trong Project đang chọn, soạn đúng 10 Task cho Sprint 1: khảo sát, user flow, UI kit, API contract, database, auth, booking, payment, test E2E và tài liệu vận hành. Mỗi Task có mô tả, acceptance criteria, estimate, dependency, priority và required skill. Mở bản nháp để tôi chỉnh; chưa ghi dữ liệu.");
+        compose.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var created = await ReadResultAsync<AiJobCreatedDto>(compose);
+        var draftId = await CompleteActionJobAsync(created.JobId);
+        var draft = await GetResultAsync<AiDraftDetailDto>(_client, $"/api/ai/drafts/{draftId}");
+        var plan = draft.WorkingPayload.Deserialize<AiActionPlanDto>(JsonOptions)!;
+        plan.Options.Single().Commands.Should().HaveCount(10);
+        plan.Review.SelectedCommandIds.Should().HaveCount(10);
+        plan.Options.Single().Commands.Select(item => item.Title).Should().Contain(title => title.Contains("Khảo sát"));
+        plan.Options.Single().Commands.Select(item => item.Title).Should().Contain(title => title.Contains("user flow"));
+        plan.Options.Single().Commands.Select(item => item.Title).Should().Contain(title => title.Contains("UI kit"));
+        plan.Options.Single().Commands.Select(item => item.Title).Should().Contain(title => title.Contains("API contract"));
+        plan.Options.Single().Commands.Select(item => item.Title).Should().Contain(title => title.Contains("database"));
+        plan.Options.Single().Commands.Select(item => item.Title).Should().Contain(title => title.Contains("xác thực"));
+        plan.Options.Single().Commands.Select(item => item.Title).Should().Contain(title => title.Contains("booking"));
+        plan.Options.Single().Commands.Select(item => item.Title).Should().Contain(title => title.Contains("thanh toán"));
+        plan.Options.Single().Commands.Select(item => item.Title).Should().Contain(title => title.Contains("E2E"));
+        plan.Options.Single().Commands.Select(item => item.Title).Should().Contain(title => title.Contains("vận hành"));
+        plan.Options.Single().Commands.Should().OnlyContain(item =>
+            !string.IsNullOrWhiteSpace(item.Description) && item.AcceptanceCriteria.Count >= 2 &&
+            item.EstimatedHours > 0 && item.RequiredSkills.Count > 0 &&
+            item.DueDate.HasValue && item.AssigneeId.HasValue && item.AssigneeMode == "system_suggested");
+        plan.Options.Single().Commands.SelectMany(item => item.DependencyCommandIds).Should().NotBeEmpty();
+
+        var confirmKey = $"ten-confirm-{Guid.NewGuid():N}";
+        var confirmedResponse = await ConfirmAsync(
+            _client,
+            draftId,
+            draft.WorkingPayload.GetRawText(),
+            draft.RowVersion,
+            confirmKey,
+            csrf);
+        confirmedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var confirmed = await ReadResultAsync<AiDraftConfirmResultDto>(confirmedResponse);
+        confirmed.CreatedTaskCount.Should().Be(10);
+        confirmed.CreatedTaskIds.Should().HaveCount(10).And.OnlyHaveUniqueItems();
+
+        var replay = await ConfirmAsync(
+            _client,
+            draftId,
+            draft.WorkingPayload.GetRawText(),
+            draft.RowVersion,
+            confirmKey,
+            csrf);
+        replay.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await ReadResultAsync<AiDraftConfirmResultDto>(replay)).CreatedTaskIds
+            .Should().BeEquivalentTo(confirmed.CreatedTaskIds);
+
+        using var assertScope = _factory.Services.CreateScope();
+        var db = assertScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        (await db.TaskItems.CountAsync(item =>
+            item.ProjectId == scope.ProjectId && item.SprintId == scope.SprintId)).Should().Be(10);
+        var taskIds = await db.TaskItems.Where(item => item.ProjectId == scope.ProjectId && item.SprintId == scope.SprintId)
+            .Select(item => item.Id).ToListAsync();
+        (await db.TaskItems.CountAsync(item => taskIds.Contains(item.Id) &&
+            item.DueDate != null && item.AssigneeId != null)).Should().Be(10);
+        (await db.TaskSkillRequirements.CountAsync(item => taskIds.Contains(item.TaskItemId))).Should().BeGreaterThanOrEqualTo(10);
+        (await db.TaskDependencies.CountAsync(item =>
+            taskIds.Contains(item.PredecessorId) && taskIds.Contains(item.SuccessorId))).Should().Be(14);
+    }
+
+    [Fact]
     [Trait("TestId", "TEST-ACTION-03")]
     public async Task ViewerAndForeignProject_ComposeAreDeniedWithoutCreatingJobs()
     {
@@ -230,6 +375,54 @@ public sealed class AiActionComposerApiTests : IClassFixture<IntegrationTestFact
         (await assertDb.TaskItems.CountAsync(item => item.ProjectId == scope.ProjectId)).Should().Be(0);
         (await assertDb.AiGeneratedDrafts.SingleAsync(item => item.Id == draftId)).Status
             .Should().Be(AiDraftStatuses.PendingReview);
+    }
+
+    [Fact]
+    [Trait("TestId", "TEST-ACTION-ASSIGNEE-STALE-01")]
+    public async Task AssigneeRemovedAfterReview_ConfirmationFailsClosedWithoutMutation()
+    {
+        var scope = await SeedScopeAsync(includeViewer: true);
+        var csrf = await GetCsrfTokenAsync(_client);
+        var compose = await ComposeAsync(
+            _client,
+            scope.ProjectId,
+            csrf,
+            $"assignee-stale-compose-{Guid.NewGuid():N}");
+        var created = await ReadResultAsync<AiJobCreatedDto>(compose);
+        var draftId = await CompleteActionJobAsync(created.JobId);
+        var draft = await GetResultAsync<AiDraftDetailDto>(_client, $"/api/ai/drafts/{draftId}");
+        var plan = draft.WorkingPayload.Deserialize<AiActionPlanDto>(JsonOptions)!;
+        var option = plan.Options.Single();
+        var command = option.Commands.Single() with
+        {
+            AssigneeId = scope.ViewerId,
+            AssigneeMode = "user_selected"
+        };
+        plan = plan with { Options = [option with { Commands = [command] }] };
+
+        using (var updateScope = _factory.Services.CreateScope())
+        {
+            var db = updateScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+            var membership = await db.ProjectMembers.SingleAsync(item =>
+                item.ProjectId == scope.ProjectId && item.UserId == scope.ViewerId);
+            db.ProjectMembers.Remove(membership);
+            await db.SaveChangesAsync();
+        }
+
+        var response = await ConfirmAsync(
+            _client,
+            draftId,
+            JsonSerializer.Serialize(plan, JsonOptions),
+            draft.RowVersion,
+            $"assignee-stale-confirm-{Guid.NewGuid():N}",
+            csrf);
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await ReadEnvelopeAsync<AiDraftConfirmResultDto>(response)).ErrorCode
+            .Should().Be(AiErrorCodes.SourceStale);
+
+        using var assertScope = _factory.Services.CreateScope();
+        var assertDb = assertScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        (await assertDb.TaskItems.CountAsync(item => item.ProjectId == scope.ProjectId)).Should().Be(0);
     }
 
     [Fact]
@@ -302,7 +495,19 @@ public sealed class AiActionComposerApiTests : IClassFixture<IntegrationTestFact
             StartDate = DateTimeOffset.UtcNow.AddDays(-2),
             EndDate = DateTimeOffset.UtcNow.AddDays(12)
         };
-        db.AddRange(organization, project, skill, sprint);
+        var contributorId = Guid.NewGuid();
+        await EnsureUserAsync(db, contributorId, "Action Composer Contributor");
+        db.AddRange(
+            organization,
+            project,
+            skill,
+            sprint,
+            new OrganizationMember { OrganizationId = organization.Id, UserId = DefaultUserId, Role = OrganizationRoleRules.Owner },
+            new OrganizationMember { OrganizationId = organization.Id, UserId = contributorId, Role = OrganizationRoleRules.Member },
+            new OrganizationMemberCapacityProfile { OrganizationId = organization.Id, UserId = DefaultUserId, WeeklyCapacityHours = 40, TimeZoneId = "Asia/Ho_Chi_Minh" },
+            new OrganizationMemberCapacityProfile { OrganizationId = organization.Id, UserId = contributorId, WeeklyCapacityHours = 40, TimeZoneId = "Asia/Ho_Chi_Minh" },
+            new ProjectMember { ProjectId = project.Id, UserId = DefaultUserId, Role = ProjectRoleRules.Manager },
+            new ProjectMember { ProjectId = project.Id, UserId = contributorId, Role = ProjectRoleRules.Member });
         if (viewerId.HasValue)
         {
             db.ProjectMembers.Add(new ProjectMember
@@ -324,7 +529,7 @@ public sealed class AiActionComposerApiTests : IClassFixture<IntegrationTestFact
         using var request = JsonDocument.Parse(job.RequestJson);
         var snapshotJson = request.RootElement.GetProperty("sourceText").GetString()!;
         var snapshot = JsonSerializer.Deserialize<AiActionContextSnapshotDto>(snapshotJson, JsonOptions)!;
-        var skill = snapshot.Skills.Single();
+        var skill = snapshot.Skills[0];
         var sourceRefs = new List<string> { snapshot.Project.SourceRef, skill.SourceRef };
         if (snapshot.Sprint != null) sourceRefs.Add(snapshot.Sprint.SourceRef);
         var command = new AiActionTaskCommandDto(
@@ -340,7 +545,8 @@ public sealed class AiActionComposerApiTests : IClassFixture<IntegrationTestFact
             null,
             "unassigned",
             [new AiActionSkillSelectionDto(skill.SkillId, "Proficient")],
-            sourceRefs);
+            sourceRefs,
+            []);
         var model = new AiActionPlanDto(
             AiActionComposerContract.SchemaId,
             "1.0",
@@ -356,11 +562,23 @@ public sealed class AiActionComposerApiTests : IClassFixture<IntegrationTestFact
             [new AiActionOptionDto("balanced", "Cân bằng", "Một task có thể duyệt.", [], [command])],
             new AiActionReviewSelectionDto("ignored", []),
             DateTimeOffset.UtcNow);
-        AiActionComposerOutputContract.TryBuildResult(
-            JsonSerializer.Serialize(model, JsonOptions),
-            snapshotJson,
-            out var resultJson,
-            out var error).Should().BeTrue(error);
+        string resultJson;
+        string? error;
+        if (snapshot.RequestedTaskCount is > 1)
+        {
+            AiActionComposerOutputContract.TryBuildDeterministicFallback(
+                snapshotJson,
+                out resultJson,
+                out error).Should().BeTrue(error);
+        }
+        else
+        {
+            AiActionComposerOutputContract.TryBuildResult(
+                JsonSerializer.Serialize(model, JsonOptions),
+                snapshotJson,
+                out resultJson,
+                out error).Should().BeTrue(error);
+        }
 
         job.Status = AiJobStatuses.Succeeded;
         job.ProgressPercent = 100;
@@ -398,12 +616,13 @@ public sealed class AiActionComposerApiTests : IClassFixture<IntegrationTestFact
         Guid projectId,
         string csrf,
         string idempotencyKey,
-        Guid? sprintId = null)
+        Guid? sprintId = null,
+        string? prompt = null)
     {
         var message = new HttpRequestMessage(HttpMethod.Post, "/api/ai/actions/compose")
         {
             Content = JsonContent.Create(new AiActionComposeRequestDto(
-                "Tạo một task frontend có skill và tiêu chí nghiệm thu.",
+                prompt ?? "Tạo một task frontend có skill và tiêu chí nghiệm thu.",
                 new AiActionClientContextDto(
                     sprintId.HasValue ? $"/projects/test#milestone-{sprintId:D}" : "/projects/test",
                     "project_tasks",

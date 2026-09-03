@@ -13,7 +13,7 @@ const testResultsData = [
 
 function translateTestName(text) {
     let t = text.toLowerCase();
-    
+
     // Exact matches
     const exactMatches = {
         'public login page renders correctly': 'Trang đăng nhập công khai hiển thị chính xác',
@@ -65,7 +65,7 @@ function translateTestName(text) {
     t = t.replace(/reload/g, 'Tải lại trang');
     t = t.replace(/draft/g, 'bản nháp');
     t = t.replace(/receipt/g, 'biên lai');
-    
+
     return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
@@ -84,19 +84,19 @@ let counter = 1;
 for (const file of files) {
     const filePath = path.join(testDir, file);
     const content = fs.readFileSync(filePath, 'utf-8');
-    
+
     const regex = /test\(\s*(['"`])(.*?)\1/g;
     let match;
     while ((match = regex.exec(content)) !== null) {
         const rawTestName = match[2];
         const id = `TC_E2E_${counter.toString().padStart(3, '0')}`;
-        
+
         const vietnameseTestName = translateTestName(rawTestName);
         const moduleName = getModuleName(file);
-        
+
         let status = 'Đạt (Pass)';
         let actual = 'Hệ thống xử lý đúng như mong đợi';
-        
+
         if (rawTestName.includes('receipt') || rawTestName.includes('demo-script') || rawTestName.includes('grounded')) {
             status = 'Lỗi (Fail)';
             actual = 'Lỗi do sai lệch dữ liệu mẫu hoặc model AI phản hồi chậm';

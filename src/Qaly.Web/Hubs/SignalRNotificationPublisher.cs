@@ -3,7 +3,6 @@ using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Services;
 using System.Text.Json;
 using StackExchange.Redis;
-using Microsoft.Extensions.Caching.Distributed;
 
 namespace Qaly.Web.Hubs;
 
@@ -51,69 +50,51 @@ public partial class SignalRNotificationPublisher : INotificationPublisher
             ct);
     }
 
-    public Task BroadcastToProjectAsync(Guid projectId, string message, string eventType, object? payload = null, CancellationToken ct = default)
+    public async Task BroadcastToProjectAsync(Guid projectId, string message, string eventType, object? payload = null, CancellationToken ct = default)
     {
-        _ = Task.Run(async () =>
+        ct.ThrowIfCancellationRequested();
+        var eventKey = BuildRealtimeKey("projectUpdated", projectId, eventType, message, payload);
+        if (await IsDuplicateAsync(eventKey))
         {
-            var eventKey = BuildRealtimeKey("projectUpdated", projectId, eventType, message, payload);
-            if (await IsDuplicateAsync(eventKey))
-            {
-                LogSkippedDuplicateProjectEvent(_logger, eventType, projectId);
-                return;
-            }
+            LogSkippedDuplicateProjectEvent(_logger, eventType, projectId);
+            return;
+        }
 
-            var delivered = await SendWithRetryAsync(
-                () => _hubContext.Clients
-                    .Group(NotificationHub.ProjectGroup(projectId.ToString()))
-                    .SendAsync("projectUpdated", new { eventId = eventKey, message, eventType, projectId, payload }, CancellationToken.None),
-                "projectUpdated",
-                eventKey,
-                CancellationToken.None);
-            
-            if (!delivered)
-            {
-                try
-                {
-                    var db = _redis.GetDatabase();
-                    await db.KeyDeleteAsync(eventKey);
-                }
-                catch { }
-            }
-        }, CancellationToken.None);
+        var delivered = await SendWithRetryAsync(
+            () => _hubContext.Clients
+                .Group(NotificationHub.ProjectGroup(projectId.ToString()))
+                .SendAsync("projectUpdated", new { eventId = eventKey, message, eventType, projectId, payload }, ct),
+            "projectUpdated",
+            eventKey,
+            ct);
 
-        return Task.CompletedTask;
+        if (!delivered)
+        {
+            await ReleaseDeduplicationKeyAsync(eventKey);
+        }
     }
 
-    public Task BroadcastToAllAsync(string message, string eventType, object? payload = null, CancellationToken ct = default)
+    public async Task BroadcastToAllAsync(string message, string eventType, object? payload = null, CancellationToken ct = default)
     {
-        _ = Task.Run(async () =>
+        ct.ThrowIfCancellationRequested();
+        var eventKey = BuildRealtimeKey("systemUpdate", null, eventType, message, payload);
+        if (await IsDuplicateAsync(eventKey))
         {
-            var eventKey = BuildRealtimeKey("systemUpdate", null, eventType, message, payload);
-            if (await IsDuplicateAsync(eventKey))
-            {
-                LogSkippedDuplicateSystemEvent(_logger, eventType);
-                return;
-            }
+            LogSkippedDuplicateSystemEvent(_logger, eventType);
+            return;
+        }
 
-            var delivered = await SendWithRetryAsync(
-                () => _hubContext.Clients.All
-                    .SendAsync("systemUpdate", new { eventId = eventKey, message, eventType, payload }, CancellationToken.None),
-                "systemUpdate",
-                eventKey,
-                CancellationToken.None);
-            
-            if (!delivered)
-            {
-                try
-                {
-                    var db = _redis.GetDatabase();
-                    await db.KeyDeleteAsync(eventKey);
-                }
-                catch { }
-            }
-        }, CancellationToken.None);
+        var delivered = await SendWithRetryAsync(
+            () => _hubContext.Clients.All
+                .SendAsync("systemUpdate", new { eventId = eventKey, message, eventType, payload }, ct),
+            "systemUpdate",
+            eventKey,
+            ct);
 
-        return Task.CompletedTask;
+        if (!delivered)
+        {
+            await ReleaseDeduplicationKeyAsync(eventKey);
+        }
     }
 
     private async Task<bool> SendWithRetryAsync(Func<Task> send, string eventName, string eventKey, CancellationToken ct)
@@ -142,11 +123,6 @@ public partial class SignalRNotificationPublisher : INotificationPublisher
         return false;
     }
 
-    private static bool IsDuplicate(string eventKey)
-    {
-        throw new NotSupportedException();
-    }
-
     private async Task<bool> IsDuplicateAsync(string eventKey)
     {
         try
@@ -160,6 +136,18 @@ public partial class SignalRNotificationPublisher : INotificationPublisher
         {
             LogDedupeCheckFailed(_logger, ex);
             return false;
+        }
+    }
+
+    private async Task ReleaseDeduplicationKeyAsync(string eventKey)
+    {
+        try
+        {
+            await _redis.GetDatabase().KeyDeleteAsync(eventKey);
+        }
+        catch (Exception ex)
+        {
+            LogDedupeCheckFailed(_logger, ex);
         }
     }
 

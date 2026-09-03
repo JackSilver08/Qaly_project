@@ -13,7 +13,14 @@ using Qaly.Web.Middleware;
 using StackExchange.Redis;
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Mvc;
 using Qaly.Infrastructure.Data;
+using Qaly.Web.Configuration;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.HttpOverrides;
+using System.Net;
 
 namespace Qaly.Web.Extensions;
 
@@ -23,6 +30,9 @@ public static class QalyWebServiceExtensions
     {
         var services = builder.Services;
         var configuration = builder.Configuration;
+        ProductionReadinessValidator.ThrowIfInvalid(configuration, builder.Environment);
+        builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
+        services.AddQalyHostLifecycle(configuration);
         var cookieSecurePolicy = builder.Environment.IsDevelopment()
             ? CookieSecurePolicy.SameAsRequest
             : CookieSecurePolicy.Always;
@@ -30,7 +40,9 @@ public static class QalyWebServiceExtensions
         var useInMemoryDistributedCache =
             configuration.GetValue<bool>("UseInMemoryDatabase");
 
-        services.AddQalyDataProtection(builder.Environment);
+        services.AddQalyDataProtection(builder.Environment, configuration);
+        services.AddQalyForwardedHeaders(configuration);
+        builder.AddQalyTelemetry();
         services.AddQalyRedis(redisConnection, useInMemoryDistributedCache);
         services.AddQalySession(cookieSecurePolicy);
         services.Configure<InvitationLinkOptions>(configuration.GetSection(InvitationLinkOptions.SectionName));
@@ -42,6 +54,7 @@ public static class QalyWebServiceExtensions
         services.AddExceptionHandler<CustomExceptionHandler>();
         services.AddProblemDetails();
         services.AddScoped<DataSeeder>();
+        services.AddQalyRateLimiting(configuration);
 
         services.AddQalyRazorPages();
         services.AddQalyAuthentication(cookieSecurePolicy);
@@ -58,7 +71,13 @@ public static class QalyWebServiceExtensions
             options.Cookie.SameSite = SameSiteMode.Strict;
             options.Cookie.SecurePolicy = cookieSecurePolicy;
         });
-        services.AddControllers();
+        services.AddControllers(options =>
+        {
+            // Qaly authenticates browser requests with cookies, so every unsafe MVC action
+            // must fail closed unless it carries the antiforgery token. External callbacks
+            // such as the signed GitHub webhook opt out explicitly with IgnoreAntiforgeryToken.
+            options.Filters.Add<ApiAwareAntiforgeryFilter>();
+        });
 
         services.AddSignalR();
         services.AddSingleton<INotificationPublisher, SignalRNotificationPublisher>();
@@ -67,21 +86,67 @@ public static class QalyWebServiceExtensions
         services.AddSingleton<GroupMeetingPresenceTracker>();
 
         services.AddOpenApi();
+        var readyTags = new[] { "ready" };
         var healthChecks = services.AddHealthChecks()
-            .AddCheck<OutboxHealthCheck>("vector_outbox");
+            .AddCheck(
+                "self",
+                () => HealthCheckResult.Healthy(),
+                tags: ["live", "ready"])
+            .AddCheck<OutboxHealthCheck>(
+                "vector_outbox",
+                failureStatus: HealthStatus.Unhealthy,
+                tags: readyTags)
+            .AddCheck<WebhookOutboxHealthCheck>(
+                "webhook_outbox",
+                failureStatus: HealthStatus.Unhealthy,
+                tags: readyTags)
+            .AddCheck<AiJobQueueHealthCheck>(
+                "ai_job_queue",
+                failureStatus: HealthStatus.Unhealthy,
+                tags: readyTags)
+            .AddCheck<PrivacyWorkQueueHealthCheck>(
+                "privacy_work_queue",
+                failureStatus: HealthStatus.Unhealthy,
+                tags: readyTags);
         if (!useInMemoryDistributedCache)
         {
             healthChecks
-                .AddSqlServer(configuration.GetConnectionString("DefaultConnection")!)
-                .AddRedis(redisConnection);
+                .AddSqlServer(
+                    configuration.GetConnectionString("DefaultConnection")!,
+                    name: "sqlserver",
+                    failureStatus: HealthStatus.Unhealthy,
+                    tags: readyTags)
+                .AddRedis(
+                    redisConnection,
+                    name: "redis",
+                    failureStatus: HealthStatus.Unhealthy,
+                    tags: readyTags);
         }
 
         return builder;
     }
 
-    private static void AddQalyDataProtection(this IServiceCollection services, IWebHostEnvironment environment)
+    public static IServiceCollection AddQalyHostLifecycle(
+        this IServiceCollection services,
+        IConfiguration configuration)
     {
-        var dataProtectionKeysPath = Path.Combine(environment.ContentRootPath, "dp-keys");
+        var shutdownTimeoutSeconds = configuration.GetValue("Hosting:ShutdownTimeoutSeconds", 30);
+        services.Configure<HostOptions>(options =>
+        {
+            options.ShutdownTimeout = TimeSpan.FromSeconds(shutdownTimeoutSeconds);
+        });
+        return services;
+    }
+
+    private static void AddQalyDataProtection(
+        this IServiceCollection services,
+        IWebHostEnvironment environment,
+        ConfigurationManager configuration)
+    {
+        var configuredPath = configuration["DataProtection:KeysPath"];
+        var dataProtectionKeysPath = string.IsNullOrWhiteSpace(configuredPath)
+            ? Path.Combine(environment.ContentRootPath, "dp-keys")
+            : Path.GetFullPath(configuredPath);
         Directory.CreateDirectory(dataProtectionKeysPath);
 
         // One application name and one durable key ring keep auth/session/CSRF
@@ -124,6 +189,90 @@ public static class QalyWebServiceExtensions
         });
     }
 
+    private static void AddQalyRateLimiting(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        var loginLimit = configuration.GetValue("Security:LoginRequestsPerMinute", 30);
+        var registrationLimit = configuration.GetValue("Security:RegistrationRequestsPerHour", 10);
+
+        services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.OnRejected = async (context, cancellationToken) =>
+            {
+                context.HttpContext.Response.Headers.RetryAfter = "60";
+                context.HttpContext.Response.ContentType = "text/plain; charset=utf-8";
+                await context.HttpContext.Response.WriteAsync(
+                    "Quá nhiều yêu cầu. Vui lòng chờ rồi thử lại.",
+                    cancellationToken);
+            };
+            options.AddPolicy("account-login", context => FixedWindowPartition(
+                context,
+                "login",
+                loginLimit,
+                TimeSpan.FromMinutes(1)));
+            options.AddPolicy("account-register", context => FixedWindowPartition(
+                context,
+                "register",
+                registrationLimit,
+                TimeSpan.FromHours(1)));
+        });
+    }
+
+    private static RateLimitPartition<string> FixedWindowPartition(
+        HttpContext context,
+        string scope,
+        int permitLimit,
+        TimeSpan window)
+        => RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: $"{scope}:{context.Connection.RemoteIpAddress?.ToString() ?? "unknown"}",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = permitLimit,
+                Window = window,
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
+
+    private static void AddQalyForwardedHeaders(
+        this IServiceCollection services,
+        ConfigurationManager configuration)
+    {
+        if (!string.Equals(
+                configuration["ReverseProxy:Mode"],
+                "trusted-proxy",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var knownProxies = configuration
+            .GetSection("ReverseProxy:KnownProxies")
+            .Get<string[]>() ?? [];
+        var forwardLimit = Math.Clamp(
+            configuration.GetValue("ReverseProxy:ForwardLimit", 1),
+            1,
+            5);
+        services.Configure<ForwardedHeadersOptions>(options =>
+        {
+            options.ForwardedHeaders =
+                ForwardedHeaders.XForwardedFor |
+                ForwardedHeaders.XForwardedProto;
+            options.ForwardLimit = forwardLimit;
+            options.RequireHeaderSymmetry = true;
+            options.KnownIPNetworks.Clear();
+            options.KnownProxies.Clear();
+            foreach (var proxy in knownProxies)
+            {
+                if (IPAddress.TryParse(proxy, out var address))
+                {
+                    options.KnownProxies.Add(address);
+                }
+            }
+        });
+    }
+
     private static void AddQalyRazorPages(this IServiceCollection services)
     {
         services.AddRazorPages(options =>
@@ -161,6 +310,13 @@ public static class QalyWebServiceExtensions
             .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
             .AddCookie(options =>
             {
+                options.ForwardDefaultSelector = context =>
+                {
+                    var authorization = context.Request.Headers.Authorization.ToString();
+                    return authorization.StartsWith("Bearer qaly_sk_", StringComparison.OrdinalIgnoreCase)
+                        ? ApiKeyDefaults.AuthenticationScheme
+                        : null;
+                };
                 options.Cookie.Name = "Qaly.Auth";
                 options.Cookie.HttpOnly = true;
                 options.Cookie.SecurePolicy = cookieSecurePolicy;

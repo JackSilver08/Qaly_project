@@ -113,14 +113,19 @@ public sealed record PortfolioScheduleProposalItemDto(
     IReadOnlyList<PortfolioScheduleAlternativeDto> Alternatives,
     IReadOnlyList<string> SourceRefs,
     string TaskRowVersion,
-    bool Selected = true);
+    bool Selected = true,
+    IReadOnlyList<string>? BlockingReasons = null);
 
 public sealed record PortfolioScheduleAlternativeDto(
     Guid UserId,
     string FullName,
     int SkillCoveragePercent,
     decimal RemainingHours,
-    string TradeOff);
+    string TradeOff,
+    decimal EvidenceConfidence = 0m,
+    decimal LoadBeforeHours = 0m,
+    decimal CapacityHours = 0m,
+    IReadOnlyList<string>? BlockingReasons = null);
 
 public sealed record PortfolioScheduleSourceDto(
     string Key,
@@ -136,4 +141,7 @@ public sealed record PortfolioScheduleReceiptDto(
     int AppliedCount,
     IReadOnlyList<Guid> AppliedTaskIds,
     IReadOnlyList<string> ReadBackLinks,
-    DateTimeOffset ConfirmedAt);
+    DateTimeOffset ConfirmedAt,
+    string Status = AiActionReceiptStatuses.VerificationPending,
+    bool ReadBackVerified = false,
+    IReadOnlyList<string>? VerificationErrors = null);

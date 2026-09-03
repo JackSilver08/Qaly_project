@@ -1,5 +1,7 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Qaly.Application.Services;
 using Qaly.Domain.Entities;
 using Qaly.Infrastructure.Data;
@@ -28,6 +30,22 @@ public class SystemRoleRulesTests
         result.Should().Be(normalized);
     }
 
+    [Theory]
+    [InlineData("Admin", true, "Admin")]
+    [InlineData("Moderator", true, "Moderator")]
+    [InlineData("Member", true, "Member")]
+    [InlineData("User", true, "Member")]
+    [InlineData("Owner", false, "")]
+    [InlineData(null, false, "")]
+    public void TryNormalizeKnownRole_FailsClosedForUnknownStoredRoles(
+        string? role,
+        bool expected,
+        string normalized)
+    {
+        SystemRoleRules.TryNormalizeKnownRole(role, out var result).Should().Be(expected);
+        result.Should().Be(normalized);
+    }
+
     [Fact]
     public void UserModel_ShouldContainFilteredUniqueIndexForSingleAdmin()
     {
@@ -41,5 +59,28 @@ public class SystemRoleRulesTests
 
         index.IsUnique.Should().BeTrue();
         index.GetFilter().Should().Be("[Role] = 'Admin'");
+    }
+
+    [Fact]
+    public void SystemModulePermissionModel_ShouldEnforceOneUniqueScope()
+    {
+        var options = new DbContextOptionsBuilder<QalyDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        using var context = new QalyDbContext(options);
+
+        var entity = context.GetService<IDesignTimeModel>().Model
+            .FindEntityType(typeof(SystemModulePermission))!;
+        var roleIndex = entity.GetIndexes().Single(index =>
+            index.GetDatabaseName() == "IX_SystemModulePermissions_SystemRole_ModuleKey");
+        var userIndex = entity.GetIndexes().Single(index =>
+            index.GetDatabaseName() == "IX_SystemModulePermissions_UserId_ModuleKey");
+
+        roleIndex.IsUnique.Should().BeTrue();
+        roleIndex.GetFilter().Should().Be("[SystemRole] IS NOT NULL AND [UserId] IS NULL");
+        userIndex.IsUnique.Should().BeTrue();
+        userIndex.GetFilter().Should().Be("[UserId] IS NOT NULL AND [SystemRole] IS NULL");
+        entity.GetCheckConstraints().Should().ContainSingle(constraint =>
+            constraint.Name == "CK_SystemModulePermissions_ExactlyOneScope");
     }
 }

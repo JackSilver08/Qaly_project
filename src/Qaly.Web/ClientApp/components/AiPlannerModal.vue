@@ -250,7 +250,7 @@ async function handleCreatePlan() {
             <p v-else>Khởi tạo dự án mới và sơ đồ công việc tự động từ yêu cầu tự nhiên</p>
           </div>
         </div>
-        <button class="icon-button" @click="emit('close')">
+        <button class="icon-button" type="button" aria-label="Đóng cửa sổ" title="Đóng" @click="emit('close')">
           <X :size="18" />
         </button>
       </div>
@@ -289,6 +289,7 @@ async function handleCreatePlan() {
               :key="index"
               type="button"
               class="suggestion-item"
+              :aria-label="`Kịch bản gợi ý: ${s.tag}`"
               @click="useSuggestion(s.prompt)"
             >
               <span class="suggestion-tag">{{ s.tag }}</span>
@@ -298,10 +299,11 @@ async function handleCreatePlan() {
         </div>
 
         <div class="ai-planner-actions">
-          <button class="btn btn--ghost" type="button" @click="emit('close')">Hủy</button>
+          <button class="btn btn--ghost" type="button" aria-label="Hủy thao tác" @click="emit('close')">Hủy</button>
           <button
             class="btn btn--ai-primary"
             type="button"
+            aria-label="Lên kế hoạch với AI"
             :disabled="!promptText.trim()"
             @click="handleGeneratePlan"
           >
@@ -353,7 +355,7 @@ async function handleCreatePlan() {
         <div class="tasks-review-section">
           <div class="tasks-review-header">
             <h3 class="section-title">Danh sách công việc đề xuất ({{ tasks.length }})</h3>
-            <button class="btn-add-task-inline" type="button" @click="addTask">
+            <button class="btn-add-task-inline" type="button" aria-label="Thêm công việc mới" title="Thêm việc" @click="addTask">
               <Plus :size="14" /> Thêm việc
             </button>
           </div>
@@ -368,12 +370,14 @@ async function handleCreatePlan() {
                     type="text"
                     class="task-title-input"
                     placeholder="Tên công việc..."
+                    aria-label="Tên công việc"
                     required
                   />
                 </div>
                 <button
                   type="button"
                   class="task-delete-btn"
+                  aria-label="Xóa công việc này"
                   title="Xóa công việc này"
                   @click="removeTask(index)"
                 >
@@ -1039,32 +1043,32 @@ async function handleCreatePlan() {
   outline: none;
 }
 
-/* Milk white + sapphire theme */
+/* Standard Theme Variables Integration */
 .ai-planner-backdrop {
-  background: rgba(15, 35, 68, 0.48);
+  background: rgba(15, 23, 42, 0.65);
   backdrop-filter: blur(10px) saturate(110%);
 }
 
 .ai-planner-modal {
-  background: #fffdf7;
-  border: 1px solid rgba(15, 82, 186, 0.22);
-  box-shadow: 0 28px 70px rgba(15, 42, 82, 0.24), 0 4px 16px rgba(15, 82, 186, 0.08);
-  color: #17233b;
+  background: var(--panel, #ffffff);
+  border: 1px solid var(--line, rgba(15, 82, 186, 0.22));
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.35), 0 4px 16px rgba(0, 0, 0, 0.1);
+  color: var(--text-strong, #17233b);
 }
 
 .ai-planner-header {
-  background: linear-gradient(135deg, #fffdf7 0%, #f3f7ff 100%);
-  border-bottom-color: rgba(15, 82, 186, 0.12);
+  background: color-mix(in srgb, var(--panel, #ffffff) 92%, var(--primary, #0f52ba) 8%);
+  border-bottom-color: var(--line, rgba(15, 82, 186, 0.12));
 }
 
 .ai-sparkle-icon {
-  background: linear-gradient(135deg, #0f52ba 0%, #2774dc 100%);
-  box-shadow: 0 8px 20px rgba(15, 82, 186, 0.25);
+  background: linear-gradient(135deg, var(--primary, #0f52ba) 0%, #3b82f6 100%);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--primary, #0f52ba) 25%, transparent);
 }
 
 .ai-planner-title h2 {
   background: none;
-  color: #123568;
+  color: var(--text-strong, #123568);
   -webkit-text-fill-color: currentColor;
 }
 
@@ -1073,35 +1077,35 @@ async function handleCreatePlan() {
 .metric-label,
 .meta-item label,
 .ai-loading-overlay p {
-  color: #64748b;
+  color: var(--muted, #64748b);
 }
 
 .icon-button {
   width: 38px;
   height: 38px;
-  background: #ffffff;
-  border: 1px solid #dbe5f4;
-  color: #52647d;
-  box-shadow: 0 3px 10px rgba(15, 42, 82, 0.08);
+  background: var(--panel, #ffffff);
+  border: 1px solid var(--line, #dbe5f4);
+  color: var(--muted, #52647d);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
 }
 
 .icon-button:hover {
-  background: #edf4ff;
-  border-color: #aac7ef;
-  color: #0f52ba;
+  background: var(--bg-soft, #edf4ff);
+  border-color: var(--line, #aac7ef);
+  color: var(--primary, #0f52ba);
 }
 
 .input-section-label,
 .ai-loading-overlay h3,
 .section-title,
 .metric-value {
-  color: #17233b;
+  color: var(--text-strong, #17233b);
 }
 
 .label-icon,
 .metric-icon,
 .ai-spinning-sparkle {
-  color: #0f52ba;
+  color: var(--primary, #0f52ba);
 }
 
 .prompt-textarea,
@@ -1109,17 +1113,17 @@ async function handleCreatePlan() {
 .task-desc-input,
 .meta-select,
 .date-input-container {
-  background: #ffffff;
-  border-color: #d9e2ef;
-  color: #17233b;
-  box-shadow: inset 0 1px 2px rgba(15, 42, 82, 0.03);
+  background: var(--panel, #ffffff);
+  border-color: var(--line, #d9e2ef);
+  color: var(--text-strong, #17233b);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 .prompt-textarea::placeholder,
 .modal-input::placeholder,
 .task-desc-input::placeholder,
 .task-title-input::placeholder {
-  color: #94a3b8;
+  color: var(--muted, #94a3b8);
 }
 
 .prompt-textarea:focus,
@@ -1127,126 +1131,126 @@ async function handleCreatePlan() {
 .task-desc-input:focus,
 .meta-select:focus,
 .date-input-container:focus-within {
-  border-color: #2b6fd3;
-  box-shadow: 0 0 0 3px rgba(15, 82, 186, 0.12);
+  border-color: var(--primary, #2b6fd3);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary, #0f52ba) 15%, transparent);
   outline: none;
 }
 
 .suggestion-item {
-  background: #fffaf0;
-  border-color: #dce5f1;
-  color: #263954;
-  box-shadow: 0 2px 8px rgba(15, 42, 82, 0.04);
+  background: var(--bg-soft, #fffaf0);
+  border-color: var(--line, #dce5f1);
+  color: var(--text, #263954);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .suggestion-item:hover {
-  background: #edf4ff;
-  border-color: #8db4e8;
-  box-shadow: 0 7px 18px rgba(15, 82, 186, 0.11);
+  background: color-mix(in srgb, var(--primary, #0f52ba) 10%, var(--panel, #ffffff));
+  border-color: var(--line, #8db4e8);
+  box-shadow: 0 7px 18px rgba(0, 0, 0, 0.08);
 }
 
 .suggestion-tag {
-  color: #0f52ba;
+  color: var(--primary, #0f52ba);
 }
 
 .suggestion-text {
-  color: #5d6c82;
+  color: var(--muted, #5d6c82);
 }
 
 .btn--ghost {
-  background: #ffffff;
-  border-color: #cbd7e6;
-  color: #40516a;
+  background: var(--panel, #ffffff);
+  border-color: var(--line, #cbd7e6);
+  color: var(--text, #40516a);
 }
 
 .btn--ghost:hover {
-  background: #f1f5f9;
-  border-color: #aebed2;
+  background: var(--bg-soft, #f1f5f9);
+  border-color: var(--line, #aebed2);
 }
 
 .btn--ai-primary,
 .btn--ai-success {
-  background: linear-gradient(135deg, #0f52ba 0%, #246bd1 100%);
+  background: linear-gradient(135deg, var(--primary, #0f52ba) 0%, #2563eb 100%);
   color: #ffffff;
-  box-shadow: 0 8px 18px rgba(15, 82, 186, 0.25);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--primary, #0f52ba) 25%, transparent);
 }
 
 .btn--ai-primary:hover:not(:disabled),
 .btn--ai-success:hover {
   opacity: 1;
   transform: translateY(-1px);
-  box-shadow: 0 10px 24px rgba(15, 82, 186, 0.32);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--primary, #0f52ba) 35%, transparent);
 }
 
 .btn--ai-primary:disabled {
-  background: #dce5f1;
-  color: #8b9bb0;
+  background: var(--line, #dce5f1);
+  color: var(--muted, #8b9bb0);
   opacity: 1;
 }
 
 .ai-pulse-glow {
-  background: rgba(15, 82, 186, 0.12);
+  background: color-mix(in srgb, var(--primary, #0f52ba) 15%, transparent);
 }
 
 .review-intro {
-  background: #eef5ff;
-  border-color: #bdd3f1;
-  color: #174b91;
+  background: color-mix(in srgb, var(--primary, #0f52ba) 12%, var(--panel, #ffffff));
+  border-color: var(--line, #bdd3f1);
+  color: var(--primary, #174b91);
 }
 
 .plan-metrics-bar,
 .project-info-review,
 .task-review-card {
-  background: #fffaf0;
-  border-color: #dce5f1;
+  background: var(--bg-soft, #fffaf0);
+  border-color: var(--line, #dce5f1);
 }
 
 .section-title {
-  border-left-color: #0f52ba;
+  border-left-color: var(--primary, #0f52ba);
 }
 
 .btn-add-task-inline,
 .task-category-badge {
-  background: #e9f2ff;
-  border-color: #b9d1ef;
-  color: #0f52ba;
+  background: color-mix(in srgb, var(--primary, #0f52ba) 12%, var(--panel, #ffffff));
+  border-color: var(--line, #b9d1ef);
+  color: var(--primary, #0f52ba);
 }
 
 .btn-add-task-inline:hover {
-  background: #dceaff;
-  color: #0b438f;
+  background: color-mix(in srgb, var(--primary, #0f52ba) 20%, var(--panel, #ffffff));
+  color: var(--primary, #0b438f);
 }
 
 .task-review-card:hover {
-  border-color: #8db4e8;
+  border-color: var(--primary, #8db4e8);
 }
 
 .task-title-input,
 .meta-select-inner,
 .meta-date-input {
-  color: #17233b;
+  color: var(--text-strong, #17233b);
 }
 
 .task-title-input:focus {
-  border-color: #2b6fd3;
+  border-color: var(--primary, #2b6fd3);
 }
 
 .meta-select option,
 .meta-select-inner option {
-  background: #ffffff;
-  color: #17233b;
+  background: var(--panel, #ffffff);
+  color: var(--text-strong, #17233b);
 }
 
 .ai-planner-body.has-scroll::-webkit-scrollbar-track {
-  background: #edf2f7;
+  background: var(--bg-soft, #edf2f7);
 }
 
 .ai-planner-body.has-scroll::-webkit-scrollbar-thumb {
-  background: #9bbce6;
+  background: var(--line, #9bbce6);
 }
 
 .ai-planner-body.has-scroll::-webkit-scrollbar-thumb:hover {
-  background: #5f91d3;
+  background: var(--muted, #5f91d3);
 }
 
 .btn:focus-visible,
@@ -1254,7 +1258,7 @@ async function handleCreatePlan() {
 .suggestion-item:focus-visible,
 .btn-add-task-inline:focus-visible,
 .task-delete-btn:focus-visible {
-  outline: 3px solid rgba(15, 82, 186, 0.24);
+  outline: 3px solid color-mix(in srgb, var(--primary, #0f52ba) 30%, transparent);
   outline-offset: 2px;
 }
 

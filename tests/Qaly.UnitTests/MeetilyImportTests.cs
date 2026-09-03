@@ -7,6 +7,7 @@ using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Ai;
 using Qaly.Application.DTOs.Meeting;
 using Qaly.Application.Services;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 using Qaly.Infrastructure.Data;
@@ -284,7 +285,13 @@ public class MeetilyImportTests : IDisposable
             _taskService.Object,
             new UnitOfWork(_context),
             _currentUser.Object,
-            _auditLog.Object);
+            _auditLog.Object,
+            new TaskAccessPolicy(
+                _currentUser.Object,
+                new GenericRepository<Project>(_context),
+                new GenericRepository<ProjectMember>(_context),
+                new GenericRepository<OrganizationMember>(_context),
+                new ProjectRoleCatalog(new GenericRepository<ProjectRoleDefinition>(_context))));
 
     private AiWorkflowService CreateAiWorkflowService()
         => new(
@@ -302,6 +309,12 @@ public class MeetilyImportTests : IDisposable
             new UnitOfWork(_context),
             _currentUser.Object,
             _auditLog.Object,
+            new AiNativeAuthorizationService(
+                new GenericRepository<SystemModulePermission>(_context),
+                new GenericRepository<ProjectMember>(_context),
+                new GenericRepository<OrganizationMember>(_context),
+                new GenericRepository<Organization>(_context),
+                new ProjectRoleCatalog(new GenericRepository<ProjectRoleDefinition>(_context))),
             complianceService: _complianceServiceMock.Object);
 }
 #pragma warning restore CA1707

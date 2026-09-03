@@ -320,34 +320,34 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
   <section class="ai-activity" aria-label="Hoạt động AI">
     <div class="activity-toolbar">
       <div class="activity-tabs" role="tablist">
-        <button :class="{ active: activeTab === 'jobs' }" role="tab" @click="selectTab('jobs')">Jobs <span>{{ jobs.length }}</span></button>
-        <button :class="{ active: activeTab === 'drafts' }" role="tab" @click="selectTab('drafts')">Bản nháp <span>{{ drafts.length }}</span></button>
+        <button type="button" :class="{ active: activeTab === 'jobs' }" role="tab" :aria-selected="activeTab === 'jobs'" @click="selectTab('jobs')">Jobs <span>{{ jobs.length }}</span></button>
+        <button type="button" :class="{ active: activeTab === 'drafts' }" role="tab" :aria-selected="activeTab === 'drafts'" @click="selectTab('drafts')">Bản nháp <span>{{ drafts.length }}</span></button>
       </div>
-      <button class="icon-button" title="Làm mới" :disabled="loading" @click="refresh()"><RefreshCw :size="16" :class="{ spinning: loading }" /></button>
+      <button type="button" class="icon-button" aria-label="Làm mới hoạt động AI" title="Làm mới" :disabled="loading" @click="refresh()"><RefreshCw :size="16" :class="{ spinning: loading }" /></button>
     </div>
     <div v-if="health" class="health-strip" :class="health.status"><span class="health-dot" /><span>{{ health.status === 'healthy' ? 'Worker sẵn sàng' : `Degraded: ${health.degradedReason}` }}</span><span class="health-count">{{ health.queueDepth }} chờ</span></div>
     <div v-if="error" class="activity-error" role="alert"><AlertTriangle :size="16" /><span>{{ error }}</span></div>
 
     <div v-if="selectedJob" class="activity-detail">
-      <header><button class="icon-button" title="Quay lại" @click="closeDetail()"><X :size="16" /></button><div><strong>{{ selectedJob.jobType }}</strong><span>{{ statusLabel(selectedJob.status) }} · lần {{ selectedJob.attemptCount }}/{{ selectedJob.maxAttempts }}</span></div></header>
+      <header><button type="button" class="icon-button" aria-label="Quay lại danh sách job" title="Quay lại" @click="closeDetail()"><X :size="16" /></button><div><strong>{{ selectedJob.jobType }}</strong><span>{{ statusLabel(selectedJob.status) }} · lần {{ selectedJob.attemptCount }}/{{ selectedJob.maxAttempts }}</span></div></header>
       <div class="progress-track"><span :style="{ width: `${selectedJob.progressPercent}%` }" /></div>
       <p v-if="selectedJob.lastErrorCode" class="detail-warning">{{ selectedJob.lastErrorCode }}</p>
       <pre v-if="selectedResult" class="job-result">{{ JSON.stringify(selectedResult.result, null, 2) }}</pre>
       <div class="detail-actions">
-        <button v-if="['queued', 'running', 'retrying'].includes(selectedJob.status)" class="secondary-action" :disabled="actionPending" @click="cancelJob(selectedJob)"><Ban :size="15" /> Hủy</button>
-        <button v-if="['failed', 'canceled'].includes(selectedJob.status)" class="primary-action" :disabled="actionPending" @click="retryJob(selectedJob)"><RotateCcw :size="15" /> Thử lại</button>
+        <button v-if="['queued', 'running', 'retrying'].includes(selectedJob.status)" type="button" class="secondary-action" :disabled="actionPending" @click="cancelJob(selectedJob)"><Ban :size="15" /> Hủy</button>
+        <button v-if="['failed', 'canceled'].includes(selectedJob.status)" type="button" class="primary-action" :disabled="actionPending" @click="retryJob(selectedJob)"><RotateCcw :size="15" /> Thử lại</button>
       </div>
     </div>
 
     <div v-else-if="selectedDraft" class="activity-detail draft-detail">
-      <header><button class="icon-button" title="Quay lại" @click="closeDetail()"><X :size="16" /></button><div><strong>{{ selectedDraft.draftType }}</strong><span>{{ statusLabel(selectedDraft.status) }}</span></div></header>
+      <header><button type="button" class="icon-button" aria-label="Quay lại danh sách bản nháp" title="Quay lại" @click="closeDetail()"><X :size="16" /></button><div><strong>{{ selectedDraft.draftType }}</strong><span>{{ statusLabel(selectedDraft.status) }}</span></div></header>
       <div class="draft-change-state" :class="{ changed: draftPayloadChanged }">
         {{ draftPayloadChanged ? 'Đã chỉnh sửa' : 'Chưa chỉnh sửa' }}
       </div>
       <!-- Custom visual editor for ProjectDelayResolution -->
       <div v-if="selectedDraft.draftType === 'ProjectDelayResolution' && !showRawJson" class="visual-draft-editor">
         <div class="visual-editor-header">
-          <span>📋 Đề xuất xử lý tiến độ (AI)</span>
+          <span>Đề xuất xử lý tiến độ (AI)</span>
           <button class="toggle-raw-btn" type="button" @click="showRawJson = true">
             Xem JSON gốc
           </button>
@@ -359,7 +359,7 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
               <label class="checkbox-container">
                 <input type="checkbox" v-model="act.checked" />
                 <span class="action-type-badge" :class="act.type.toLowerCase()">
-                  {{ act.type === 'SendNotification' ? '📧 Gửi thông báo' : '📝 Cập nhật Task' }}
+                  {{ act.type === 'SendNotification' ? 'Gửi thông báo' : 'Cập nhật Task' }}
                 </span>
               </label>
             </div>
@@ -370,20 +370,20 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
                 <div class="form-group-row">
                   <div class="form-group">
                     <label>Người nhận</label>
-                    <input type="text" v-model="act.recipientName" placeholder="Tên thành viên" />
+                    <input type="text" v-model="act.recipientName" aria-label="Tên người nhận" placeholder="Tên thành viên" />
                   </div>
                   <div class="form-group">
                     <label>Email</label>
-                    <input type="email" v-model="act.recipientEmail" placeholder="email@example.com" />
+                    <input type="email" v-model="act.recipientEmail" autocomplete="email" aria-label="Email người nhận" placeholder="email@example.com" />
                   </div>
                 </div>
                 <div class="form-group">
                   <label>Tiêu đề email</label>
-                  <input type="text" v-model="act.subject" />
+                  <input type="text" v-model="act.subject" aria-label="Tiêu đề email" />
                 </div>
                 <div class="form-group">
                   <label>Nội dung cảnh báo</label>
-                  <textarea v-model="act.message" rows="3"></textarea>
+                  <textarea v-model="act.message" aria-label="Nội dung cảnh báo" rows="3"></textarea>
                 </div>
               </template>
 
@@ -391,12 +391,12 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
               <template v-if="act.type === 'UpdateTask'">
                 <div class="form-group">
                   <label>Tên công việc</label>
-                  <input type="text" v-model="act.title" readonly class="readonly-input" />
+                  <input type="text" v-model="act.title" aria-label="Tên công việc" readonly class="readonly-input" />
                 </div>
                 <div class="form-group-row">
                   <div class="form-group">
                     <label>Trạng thái</label>
-                    <select v-model="act.status">
+                    <select v-model="act.status" aria-label="Trạng thái công việc">
                       <option value="Todo">Todo</option>
                       <option value="In Progress">In Progress</option>
                       <option value="In Review">In Review</option>
@@ -405,7 +405,7 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
                   </div>
                   <div class="form-group">
                     <label>Độ ưu tiên</label>
-                    <select v-model="act.priority">
+                    <select v-model="act.priority" aria-label="Độ ưu tiên công việc">
                       <option value="Low">Low</option>
                       <option value="Medium">Medium</option>
                       <option value="High">High</option>
@@ -415,7 +415,7 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
                 </div>
                 <div class="form-group">
                   <label>Hạn chót đề xuất</label>
-                  <input type="datetime-local" :value="formatDateTimeLocal(act.dueDate)" @input="act.dueDate = ($event.target as HTMLInputElement).value" />
+                  <input type="datetime-local" :value="formatDateTimeLocal(act.dueDate)" aria-label="Hạn chót đề xuất" @input="act.dueDate = ($event.target as HTMLInputElement).value" />
                 </div>
               </template>
             </div>
@@ -438,25 +438,25 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
           <textarea v-model="draftPayload" spellcheck="false" aria-label="Nội dung bản nháp" />
         </section>
       </div>
-      <input v-model="rejectionReason" type="text" placeholder="Lý do từ chối" />
+      <input v-model="rejectionReason" type="text" aria-label="Lý do từ chối bản nháp" placeholder="Lý do từ chối" />
       <div class="detail-actions">
-        <button class="secondary-action" :disabled="actionPending" @click="saveDraft"><Save :size="15" /> Lưu</button>
-        <button class="danger-action" :disabled="actionPending || !rejectionReason.trim()" @click="rejectDraft"><X :size="15" /> Từ chối</button>
-        <button class="primary-action" :disabled="actionPending" @click="confirmDraft"><Check :size="15" /> Xác nhận</button>
+        <button type="button" class="secondary-action" :disabled="actionPending" @click="saveDraft"><Save :size="15" /> Lưu</button>
+        <button type="button" class="danger-action" :disabled="actionPending || !rejectionReason.trim()" @click="rejectDraft"><X :size="15" /> Từ chối</button>
+        <button type="button" class="primary-action" :disabled="actionPending" @click="confirmDraft"><Check :size="15" /> Xác nhận</button>
       </div>
     </div>
 
     <div v-else class="ai-activity-list">
       <div v-if="loading && jobs.length === 0 && drafts.length === 0" class="empty-state"><LoaderCircle :size="22" class="spinning" /><span>Đang tải hoạt động AI...</span></div>
       <template v-else-if="activeTab === 'jobs'">
-        <button v-for="job in jobs" :key="job.jobId" class="activity-row" @click="openJob(job)">
+        <button v-for="job in jobs" :key="job.jobId" type="button" class="activity-row" @click="openJob(job)">
           <span class="row-icon" :class="job.status"><LoaderCircle v-if="['running', 'retrying'].includes(job.status)" :size="16" class="spinning" /><Clock3 v-else-if="job.status === 'queued'" :size="16" /><Check v-else-if="job.status === 'succeeded'" :size="16" /><AlertTriangle v-else-if="job.status === 'failed'" :size="16" /><Ban v-else :size="16" /></span>
           <span class="row-copy"><strong>{{ job.jobType }}</strong><small>{{ statusLabel(job.status) }} · {{ formatTime(job.createdAt) }}</small></span><ChevronRight :size="16" />
         </button>
         <div v-if="!loading && jobs.length === 0" class="empty-state"><Clock3 :size="22" /><span>Chưa có AI job.</span></div>
       </template>
       <template v-else>
-        <button v-for="draft in drafts" :key="draft.draftId" class="activity-row" @click="openDraft(draft)"><span class="row-icon pending_review"><FileCheck2 :size="16" /></span><span class="row-copy"><strong>{{ draft.draftType }}</strong><small>{{ statusLabel(draft.status) }} · {{ formatTime(draft.createdAt) }}</small></span><ChevronRight :size="16" /></button>
+        <button v-for="draft in drafts" :key="draft.draftId" type="button" class="activity-row" @click="openDraft(draft)"><span class="row-icon pending_review"><FileCheck2 :size="16" /></span><span class="row-copy"><strong>{{ draft.draftType }}</strong><small>{{ statusLabel(draft.status) }} · {{ formatTime(draft.createdAt) }}</small></span><ChevronRight :size="16" /></button>
         <div v-if="!loading && drafts.length === 0" class="empty-state"><FileCheck2 :size="22" /><span>Không có bản nháp chờ duyệt.</span></div>
       </template>
     </div>
@@ -464,21 +464,21 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
 </template>
 
 <style scoped>
-.ai-activity{height:100%;display:flex;flex-direction:column;background:#fff;color:#17202a}.activity-toolbar{min-height:48px;padding:7px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e4e7eb}.activity-tabs{display:flex;gap:4px}.activity-tabs button{height:32px;padding:0 10px;border:0;border-bottom:2px solid transparent;background:transparent;color:#59636e;font:inherit;font-size:13px;cursor:pointer}.activity-tabs button.active{color:#17202a;border-bottom-color:#24735b;font-weight:700}.activity-tabs span{margin-left:4px;color:#7b8490;font-size:11px}.icon-button{width:32px;height:32px;display:inline-grid;place-items:center;border:1px solid transparent;background:transparent;color:#59636e;cursor:pointer}.icon-button:hover{border-color:#d7dce1;background:#f6f7f8}.health-strip{min-height:34px;padding:0 14px;display:flex;align-items:center;gap:8px;background:#eef7f2;color:#285c49;font-size:12px}.health-strip.degraded{background:#fff7e8;color:#7a4d0b}.health-dot{width:7px;height:7px;border-radius:50%;background:#31866a}.degraded .health-dot{background:#c47a10}.health-count{margin-left:auto}.activity-error{padding:10px 14px;display:flex;gap:8px;background:#fff0f0;color:#a33535;font-size:12px}.ai-activity-list{flex:1;min-height:0;overflow-y:auto}.activity-row{width:100%;min-height:62px;padding:10px 14px;display:grid;grid-template-columns:32px minmax(0,1fr) 18px;gap:10px;align-items:center;border:0;border-bottom:1px solid #edf0f2;background:#fff;color:inherit;text-align:left;cursor:pointer}.activity-row:hover{background:#f7f9f8}.row-icon{width:30px;height:30px;display:grid;place-items:center;border-radius:6px;background:#eef2f4;color:#53606c}.row-icon.running,.row-icon.retrying,.row-icon.queued{background:#edf3fa;color:#35638b}.row-icon.succeeded,.row-icon.pending_review{background:#eaf6f0;color:#24735b}.row-icon.failed{background:#fff0f0;color:#aa3c3c}.row-copy{min-width:0;display:flex;flex-direction:column;gap:4px}.row-copy strong,.row-copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row-copy strong{font-size:13px}.row-copy small{color:#737d87;font-size:11px}.activity-detail{flex:1;min-height:0;padding:12px 14px;display:flex;flex-direction:column;gap:12px;overflow-y:auto}.activity-detail header{display:grid;grid-template-columns:32px minmax(0,1fr);gap:8px;align-items:center}.activity-detail header div{min-width:0;display:flex;flex-direction:column;gap:3px}.activity-detail header strong{overflow-wrap:anywhere;font-size:14px}.activity-detail header span{color:#737d87;font-size:11px}.progress-track{height:5px;overflow:hidden;background:#e9edef}.progress-track span{display:block;height:100%;background:#31866a}.detail-warning{margin:0;padding:8px 10px;background:#fff7e8;color:#7a4d0b;font-size:12px;overflow-wrap:anywhere}.activity-detail pre{flex:1;min-height:180px;margin:0;padding:12px;overflow:auto;background:#f5f7f8;border:1px solid #e0e4e7;font:11px/1.5 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere}.draft-detail textarea{flex:1;min-height:260px;resize:vertical;padding:10px;border:1px solid #cfd5da;font:11px/1.5 ui-monospace,monospace}.draft-detail input{min-height:36px;padding:0 10px;border:1px solid #cfd5da;font:inherit;font-size:12px}.detail-actions{display:flex;justify-content:flex-end;gap:7px;flex-wrap:wrap}.detail-actions button{min-height:34px;padding:0 10px;display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;font:inherit;font-size:12px;cursor:pointer}.primary-action{background:#24735b;color:#fff}.secondary-action{background:#fff;border-color:#cfd5da!important;color:#39434d}.danger-action{background:#fff0f0;color:#a33535}.detail-actions button:disabled,.icon-button:disabled{opacity:.5;cursor:not-allowed}.empty-state{min-height:180px;display:grid;place-content:center;justify-items:center;gap:8px;color:#7a838d;font-size:12px}.spinning{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
-.draft-change-state{align-self:flex-start;padding:3px 7px;background:#eef2f4;color:#59636e;font-size:11px;font-weight:700}.draft-change-state.changed{background:#fff7e8;color:#7a4d0b}.draft-compare{display:grid;gap:12px}.draft-compare section{display:grid;gap:6px;min-width:0}.draft-compare section>strong{font-size:12px}.draft-compare pre{flex:none;min-height:96px;max-height:160px;padding:10px}.draft-compare textarea{flex:none;min-height:210px;width:100%;box-sizing:border-box}.job-result{min-height:180px}
+.ai-activity{height:100%;display:flex;flex-direction:column;background:var(--panel, #ffffff);color:var(--text, #17202a)}.activity-toolbar{min-height:48px;padding:7px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line, #e4e7eb)}.activity-tabs{display:flex;gap:4px}.activity-tabs button{height:32px;padding:0 10px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted, #59636e);font:inherit;font-size:13px;cursor:pointer}.activity-tabs button.active{color:var(--text-strong, #17202a);border-bottom-color:var(--primary, #24735b);font-weight:700}.activity-tabs span{margin-left:4px;color:var(--muted, #7b8490);font-size:11px}.icon-button{width:32px;height:32px;display:inline-grid;place-items:center;border:1px solid transparent;background:transparent;color:var(--muted, #59636e);cursor:pointer}.icon-button:hover{border-color:var(--line, #d7dce1);background:var(--bg-soft, #f6f7f8)}.health-strip{min-height:34px;padding:0 14px;display:flex;align-items:center;gap:8px;background:color-mix(in srgb, #10b981 12%, var(--panel, #ffffff));color:#059669;font-size:12px}.health-strip.degraded{background:color-mix(in srgb, #f59e0b 12%, var(--panel, #ffffff));color:#d97706}.health-dot{width:7px;height:7px;border-radius:50%;background:#10b981}.degraded .health-dot{background:#f59e0b}.health-count{margin-left:auto}.activity-error{padding:10px 14px;display:flex;gap:8px;background:color-mix(in srgb, #ef4444 12%, var(--panel, #ffffff));color:#dc2626;font-size:12px}.ai-activity-list{flex:1;min-height:0;overflow-y:auto}.activity-row{width:100%;min-height:62px;padding:10px 14px;display:grid;grid-template-columns:32px minmax(0,1fr) 18px;gap:10px;align-items:center;border:0;border-bottom:1px solid var(--line, #edf0f2);background:var(--panel, #ffffff);color:inherit;text-align:left;cursor:pointer}.activity-row:hover{background:var(--bg-soft, #f7f9f8)}.row-icon{width:30px;height:30px;display:grid;place-items:center;border-radius:6px;background:var(--bg-soft, #eef2f4);color:var(--muted, #53606c)}.row-icon.running,.row-icon.retrying,.row-icon.queued{background:color-mix(in srgb, var(--primary, #2563eb) 12%, transparent);color:var(--primary, #35638b)}.row-icon.succeeded,.row-icon.pending_review{background:color-mix(in srgb, #10b981 12%, transparent);color:#10b981}.row-icon.failed{background:color-mix(in srgb, #ef4444 12%, transparent);color:#ef4444}.row-copy{min-width:0;display:flex;flex-direction:column;gap:4px}.row-copy strong,.row-copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row-copy strong{font-size:13px;color:var(--text-strong, inherit)}.row-copy small{color:var(--muted, #737d87);font-size:11px}.activity-detail{flex:1;min-height:0;padding:12px 14px;display:flex;flex-direction:column;gap:12px;overflow-y:auto}.activity-detail header{display:grid;grid-template-columns:32px minmax(0,1fr);gap:8px;align-items:center}.activity-detail header div{min-width:0;display:flex;flex-direction:column;gap:3px}.activity-detail header strong{overflow-wrap:anywhere;font-size:14px;color:var(--text-strong, inherit)}.activity-detail header span{color:var(--muted, #737d87);font-size:11px}.progress-track{height:5px;overflow:hidden;background:var(--bg-soft, #e9edef)}.progress-track span{display:block;height:100%;background:#10b981}.detail-warning{margin:0;padding:8px 10px;background:color-mix(in srgb, #f59e0b 15%, var(--panel, #ffffff));color:#d97706;font-size:12px;overflow-wrap:anywhere}.activity-detail pre{flex:1;min-height:180px;margin:0;padding:12px;overflow:auto;background:var(--bg-soft, #f5f7f8);border:1px solid var(--line, #e0e4e7);color:var(--text, inherit);font:11px/1.5 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere}.draft-detail textarea{flex:1;min-height:260px;resize:vertical;padding:10px;border:1px solid var(--line, #cfd5da);background:var(--panel, #ffffff);color:var(--text-strong, inherit);font:11px/1.5 ui-monospace,monospace}.draft-detail input{min-height:36px;padding:0 10px;border:1px solid var(--line, #cfd5da);background:var(--panel, #ffffff);color:var(--text-strong, inherit);font:inherit;font-size:12px}.detail-actions{display:flex;justify-content:flex-end;gap:7px;flex-wrap:wrap}.detail-actions button{min-height:34px;padding:0 10px;display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;font:inherit;font-size:12px;cursor:pointer;border-radius:6px}.primary-action{background:#10b981;color:#fff}.secondary-action{background:var(--panel, #ffffff);border-color:var(--line, #cfd5da)!important;color:var(--text, #39434d)}.danger-action{background:color-mix(in srgb, #ef4444 15%, var(--panel, #ffffff));color:#dc2626}.detail-actions button:disabled,.icon-button:disabled{opacity:.5;cursor:not-allowed}.empty-state{min-height:180px;display:grid;place-content:center;justify-items:center;gap:8px;color:var(--muted, #7a838d);font-size:12px}.spinning{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+.draft-change-state{align-self:flex-start;padding:3px 7px;background:var(--bg-soft, #eef2f4);color:var(--muted, #59636e);font-size:11px;font-weight:700;border-radius:4px}.draft-change-state.changed{background:color-mix(in srgb, #f59e0b 15%, var(--panel, #ffffff));color:#d97706}.draft-compare{display:grid;gap:12px}.draft-compare section{display:grid;gap:6px;min-width:0}.draft-compare section>strong{font-size:12px;color:var(--text-strong, inherit)}.draft-compare pre{flex:none;min-height:96px;max-height:160px;padding:10px}.draft-compare textarea{flex:none;min-height:210px;width:100%;box-sizing:border-box}.job-result{min-height:180px}
 
 /* Rich Visual Editor Styles */
 .visual-draft-editor {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  background: #f8fafc;
-  border: 1px solid #cbd5e1;
+  background: var(--bg-soft, #f8fafc);
+  border: 1px solid var(--line, #cbd5e1);
   border-radius: 8px;
   padding: 12px;
   max-height: 480px;
   overflow-y: auto;
-  color: #334155;
+  color: var(--text, #334155);
 }
 .visual-editor-header {
   display: flex;
@@ -486,14 +486,14 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
   align-items: center;
   font-weight: 700;
   font-size: 13px;
-  color: #0f172a;
-  border-bottom: 1px solid #cbd5e1;
+  color: var(--text-strong, #0f172a);
+  border-bottom: 1px solid var(--line, #cbd5e1);
   padding-bottom: 8px;
 }
 .toggle-raw-btn {
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-  color: #1d4ed8;
+  background: color-mix(in srgb, var(--primary, #2563eb) 12%, var(--panel, #ffffff));
+  border: 1px solid var(--line, #bfdbfe);
+  color: var(--primary, #1d4ed8);
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
@@ -502,8 +502,7 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
   transition: all 0.2s;
 }
 .toggle-raw-btn:hover {
-  background: #dbeafe;
-  border-color: #93c5fd;
+  background: color-mix(in srgb, var(--primary, #2563eb) 20%, var(--panel, #ffffff));
 }
 .actions-list {
   display: flex;
@@ -511,8 +510,8 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
   gap: 10px;
 }
 .action-card {
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
+  background: var(--panel, #ffffff);
+  border: 1px solid var(--line, #cbd5e1);
   border-radius: 8px;
   padding: 12px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.05);
@@ -520,8 +519,8 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
 }
 .action-card.is-unchecked {
   opacity: 0.5;
-  background: #f8fafc;
-  border-color: #e2e8f0;
+  background: var(--bg-soft, #f8fafc);
+  border-color: var(--line, #e2e8f0);
 }
 .action-card-header {
   display: flex;
@@ -536,7 +535,7 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
   gap: 10px;
   font-size: 12px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--text-strong, #0f172a);
   cursor: pointer;
 }
 .action-type-badge {
@@ -548,20 +547,20 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
   letter-spacing: 0.025em;
 }
 .action-type-badge.sendnotification {
-  background: #eff6ff;
-  color: #1d4ed8;
-  border: 1px solid #bfdbfe;
+  background: color-mix(in srgb, var(--primary, #2563eb) 12%, transparent);
+  color: var(--primary, #1d4ed8);
+  border: 1px solid color-mix(in srgb, var(--primary, #2563eb) 30%, transparent);
 }
 .action-type-badge.updatetask {
-  background: #fffbeb;
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
   color: #d97706;
-  border: 1px solid #fde68a;
+  border: 1px solid color-mix(in srgb, #f59e0b 30%, transparent);
 }
 .action-card-body {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  border-top: 1px dashed #cbd5e1;
+  border-top: 1px dashed var(--line, #cbd5e1);
   padding-top: 10px;
   margin-top: 10px;
 }
@@ -573,20 +572,20 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
 .form-group label {
   font-size: 11px;
   font-weight: 700;
-  color: #475569;
+  color: var(--muted, #475569);
 }
 .form-group input, .form-group textarea, .form-group select {
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--line, #cbd5e1);
   border-radius: 6px;
   padding: 6px 10px;
   font-size: 12px;
-  color: #0f172a;
-  background: #ffffff;
+  color: var(--text-strong, #0f172a);
+  background: var(--panel, #ffffff);
   width: 100%;
   box-sizing: border-box;
 }
 .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
-  border-color: #3b82f6;
+  border-color: var(--primary, #3b82f6);
   outline: none;
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
 }
@@ -596,8 +595,8 @@ onBeforeUnmount(() => { if (pollTimer != null) window.clearInterval(pollTimer) }
   gap: 10px;
 }
 .readonly-input {
-  background: #f1f5f9 !important;
-  color: #475569 !important;
+  background: var(--bg-soft, #f1f5f9) !important;
+  color: var(--muted, #475569) !important;
   cursor: not-allowed;
 }
 </style>

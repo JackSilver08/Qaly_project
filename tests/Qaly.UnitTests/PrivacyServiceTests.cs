@@ -6,6 +6,7 @@ using Moq;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Privacy;
 using Qaly.Application.Services;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 using Qaly.Infrastructure.Data;
@@ -18,6 +19,7 @@ public sealed class PrivacyServiceTests : IDisposable
     private readonly QalyDbContext _db;
     private readonly Mock<ICurrentUserService> _currentUser = new();
     private readonly Mock<IAiComplianceService> _compliance = new();
+    private readonly Mock<ITaskAccessPolicy> _taskAccessPolicy = new();
     private readonly TestPayloadProtector _protector = new();
     private readonly Guid _userId = Guid.NewGuid();
     private readonly Guid _projectId = Guid.NewGuid();
@@ -30,6 +32,13 @@ public sealed class PrivacyServiceTests : IDisposable
         _currentUser.SetupGet(service => service.UserId).Returns(_userId);
         _currentUser.SetupGet(service => service.Role).Returns(ProjectRoleRules.SystemAdmin);
         _currentUser.SetupGet(service => service.IsAuthenticated).Returns(true);
+        _taskAccessPolicy.SetupGet(service => service.CurrentUserId).Returns(_userId);
+        _taskAccessPolicy.Setup(service => service.CanAccessProjectAsync(
+                It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _taskAccessPolicy.Setup(service => service.CanManageProjectAsync(
+                It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
 
         var user = new User
         {
@@ -146,7 +155,50 @@ public sealed class PrivacyServiceTests : IDisposable
         var health = await service.GetHealthAsync();
         health.Data!.Status.Should().Be("degraded_worker_disabled");
         health.Data.PendingRetentionActions.Should().Be(1);
+        health.Data.ExpiredLeases.Should().Be(0);
+        health.Data.OverdueDataSubjectRequests.Should().Be(0);
         (await _db.AiAuditEvents.CountAsync()).Should().BeGreaterThanOrEqualTo(6);
+    }
+
+    [Fact]
+    public async Task Health_ReportsExpiredLeasesAndOverdueDataSubjectRequests()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _db.PrivacyRetentionActions.Add(new PrivacyRetentionAction
+        {
+            TenantId = _projectId,
+            ProjectId = _projectId,
+            RetentionPolicyId = Guid.NewGuid(),
+            EntityType = "meeting",
+            EntityId = Guid.NewGuid(),
+            Status = PrivacyWorkerStatuses.Running,
+            DueAt = now.AddHours(-2),
+            AvailableAt = now.AddHours(-2),
+            LeaseOwner = "retired-worker",
+            LeaseExpiresAt = now.AddMinutes(-10)
+        });
+        _db.DataSubjectRequests.Add(new DataSubjectRequest
+        {
+            TenantId = _projectId,
+            ProjectId = _projectId,
+            RequesterUserId = _userId,
+            SubjectUserId = _userId,
+            RequestType = DataSubjectRequestTypes.Export,
+            ScopeJson = "{\"scope\":\"all\"}",
+            Status = DataSubjectRequestStatuses.Collecting,
+            RequestedAt = now.AddDays(-31),
+            AvailableAt = now.AddDays(-31),
+            DeadlineAt = now.AddDays(-1),
+            LeaseOwner = "retired-worker",
+            LeaseExpiresAt = now.AddMinutes(-5)
+        });
+        await _db.SaveChangesAsync();
+
+        var health = await CreateService(workerEnabled: true).GetHealthAsync();
+
+        health.Data!.Status.Should().Be("degraded_overdue_dsar");
+        health.Data.ExpiredLeases.Should().Be(2);
+        health.Data.OverdueDataSubjectRequests.Should().Be(1);
     }
 
     [Fact]
@@ -267,22 +319,39 @@ public sealed class PrivacyServiceTests : IDisposable
         (await service.GetDataSubjectRequestAsync(Guid.NewGuid())).StatusCode.Should().Be(403);
     }
 
+    [Fact]
+    public async Task ProjectScopedPrivacy_DelegatesToCanonicalProjectPolicy()
+    {
+        _currentUser.SetupGet(service => service.Role).Returns("User");
+        _taskAccessPolicy.Setup(service => service.CanAccessProjectAsync(
+                _projectId, _userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        var service = CreateService();
+
+        var result = await service.ListPoliciesAsync(_projectId, _projectId);
+
+        result.StatusCode.Should().Be(403);
+        _taskAccessPolicy.Verify(service => service.CanAccessProjectAsync(
+            _projectId, _userId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     public void Dispose()
     {
         _db.Dispose();
         GC.SuppressFinalize(this);
     }
 
-    private PrivacyService CreateService()
+    private PrivacyService CreateService(bool workerEnabled = false)
         => new(
             _db,
             _currentUser.Object,
             _compliance.Object,
+            _taskAccessPolicy.Object,
             _protector,
             Options.Create(new PrivacyV4Options
             {
                 Enabled = true,
-                WorkerEnabled = false,
+                WorkerEnabled = workerEnabled,
                 EnforceSensitiveIngestion = true,
                 AllowedRetentionDays = [7, 30, 90],
                 MaxAttempts = 3,

@@ -23,6 +23,7 @@ import { useDashboardContext } from '../composables/dashboard-context'
 import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
 import { showError, showSuccess } from '../composables/use-toast'
 import { confirmDialog } from '../composables/use-confirm-dialog'
+import { isTaskDueSoon, matchesTaskFilters, type TaskFocus } from '../utils/task-workspace'
 import TaskDevelopmentPanel from '../components/TaskDevelopmentPanel.vue'
 import PageStatePanel from '../components/PageStatePanel.vue'
 import type {
@@ -39,7 +40,6 @@ import type {
 
 type TaskScope = 'mine' | 'all'
 type TaskSort = 'risk' | 'dueDate' | 'priority' | 'status' | 'project' | 'alpha'
-type TaskFocus = 'all' | 'overdue' | 'dueSoon' | 'pinned' | 'high' | 'blocked'
 type WorkflowStage = 'needsOwner' | 'todo' | 'inProgress' | 'inReview' | 'blocked' | 'done'
 type WorkflowMiniStage = 'todo' | 'inProgress' | 'inReview' | 'done'
 type SavedTaskView = {
@@ -67,6 +67,15 @@ type HubTask = DashboardTask & {
 
 type TaskSummary = HubTask | TaskAttentionDto
 type TaskDisplay = TaskItemDto | TaskSummary
+
+type TaskAcceptanceChecklistItem = {
+  id: string
+  taskId: string
+  text: string
+  sortOrder: number
+  isCompleted: boolean
+  rowVersion: string
+}
 
 type WorkflowTask = {
   id: string
@@ -112,6 +121,7 @@ const selectedTaskAttachments = ref<AttachmentDto[]>([])
 const selectedTaskTimeEntries = ref<TimeEntryDto[]>([])
 const selectedTaskTimeEntriesError = ref('')
 const selectedTaskMeetingSource = ref<TaskMeetingSourceDto | null>(null)
+const selectedTaskChecklist = ref<TaskAcceptanceChecklistItem[]>([])
 const selectedTaskLoading = ref(false)
 const taskDetailCache = ref(new Map<string, TaskItemDto>())
 
@@ -207,30 +217,14 @@ const savedTaskViewLookup = computed(() => {
 const activeSavedTaskView = computed(() => savedTaskViewLookup.value.get(currentTaskViewSignature.value) ?? null)
 
 const filteredTasks = computed(() => {
-  const query = searchQuery.value.trim().toLowerCase()
-
   return visibleTaskBase.value
-    .filter((task) => {
-      if (projectFilter.value !== 'all' && task.projectId !== projectFilter.value) return false
-      if (statusFilter.value !== 'all' && task.status !== statusFilter.value) return false
-      if (priorityFilter.value !== 'all' && task.priority !== priorityFilter.value) return false
-      if (focusFilter.value !== 'all' && !matchesFocus(task, focusFilter.value)) return false
-      if (!query) return true
-
-      return [
-        task.title,
-        task.projectName,
-        task.reporterName,
-        task.assigneeName,
-        task.status,
-        task.priority,
-        task.projectCode,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(query)
-    })
+    .filter((task) => matchesTaskFilters(task, {
+      project: projectFilter.value,
+      status: statusFilter.value,
+      priority: priorityFilter.value,
+      focus: focusFilter.value,
+      query: searchQuery.value,
+    }))
     .sort(compareTasks)
 })
 
@@ -239,7 +233,7 @@ const taskSummary = computed(() => {
   return {
     total: tasks.length,
     overdue: tasks.filter((task) => isTaskOverdue(task)).length,
-    dueSoon: tasks.filter((task) => isDueSoon(task)).length,
+    dueSoon: tasks.filter((task) => isTaskDueSoon(task)).length,
   }
 })
 
@@ -263,6 +257,14 @@ const selectedTaskSummary = computed(() => {
 })
 
 const selectedTaskDisplay = computed<TaskDisplay | null>(() => selectedTaskDetail.value ?? selectedTaskSummary.value)
+const canUseTaskAiMutation = computed(() => {
+  // Permission visibility must be anchored to the dashboard task selected by the
+  // user. The detail request is asynchronous and may briefly be null/stale while
+  // switching projects, which previously made the AI launchers disappear.
+  const task = selectedTaskSummary.value ?? selectedTaskDisplay.value
+  const project = task ? projects.value.find((item: DashboardProject) => item.id === task.projectId) : null
+  return project?.permissions?.aiTier === 'Full' && Boolean(project.permissions.canManageAllTasks)
+})
 
 const selectedTaskProjectLine = computed(() => {
   const task = selectedTaskDisplay.value
@@ -492,7 +494,7 @@ function taskSmartSignals(task: HubTask) {
 
   if (isTaskOverdue(task)) {
     signals.push({ label: 'Quá hạn', tone: 'danger' })
-  } else if (isDueSoon(task)) {
+  } else if (isTaskDueSoon(task)) {
     signals.push({ label: 'Sắp đến hạn', tone: 'warning' })
   }
 
@@ -521,7 +523,7 @@ function priorityLabel(priority: string) {
 function riskRank(task: HubTask) {
   let score = 0
   if (isTaskOverdue(task)) score -= 100
-  if (isDueSoon(task)) score -= 40
+  if (isTaskDueSoon(task)) score -= 40
   if (task.isPinned) score -= 15
   if (['High', 'Critical'].includes(task.priority)) score -= 10
   if (task.status === 'OnHold') score -= 6
@@ -532,22 +534,6 @@ function riskRank(task: HubTask) {
 function dueDateRank(task: HubTask) {
   const raw = task.dueDate ? new Date(task.dueDate).getTime() : Number.POSITIVE_INFINITY
   return Number.isNaN(raw) ? Number.POSITIVE_INFINITY : raw
-}
-
-function isDueSoon(task: HubTask) {
-  if (!task.dueDate || isTaskOverdue(task) || task.status === 'Done' || task.status === 'Cancelled') return false
-  const due = new Date(task.dueDate).getTime()
-  const now = Date.now()
-  return due > now && due - now <= 1000 * 60 * 60 * 48
-}
-
-function matchesFocus(task: HubTask, focus: TaskFocus) {
-  if (focus === 'overdue') return isTaskOverdue(task)
-  if (focus === 'dueSoon') return isDueSoon(task)
-  if (focus === 'pinned') return task.isPinned
-  if (focus === 'high') return ['High', 'Critical'].includes(task.priority)
-  if (focus === 'blocked') return ['Blocked', 'OnHold'].includes(task.status)
-  return true
 }
 
 function selectScope(scope: TaskScope) {
@@ -740,6 +726,7 @@ async function loadTaskDetail(taskId: string) {
     selectedTaskTimeEntries.value = []
     selectedTaskTimeEntriesError.value = ''
     selectedTaskMeetingSource.value = null
+    selectedTaskChecklist.value = []
 
     void loadTaskDetailExtras(taskId)
   } catch (error) {
@@ -750,6 +737,7 @@ async function loadTaskDetail(taskId: string) {
     selectedTaskTimeEntries.value = []
     selectedTaskTimeEntriesError.value = ''
     selectedTaskMeetingSource.value = null
+    selectedTaskChecklist.value = []
   } finally {
     selectedTaskLoading.value = false
   }
@@ -757,11 +745,12 @@ async function loadTaskDetail(taskId: string) {
 
 async function loadTaskDetailExtras(taskId: string) {
   try {
-    const [commentsResult, attachmentsResult, timeEntriesResult, meetingSourceResult] = await Promise.allSettled([
+    const [commentsResult, attachmentsResult, timeEntriesResult, meetingSourceResult, checklistResult] = await Promise.allSettled([
       apiResult<CommentDto[]>(`/api/comments/task/${taskId}`),
       apiResult<AttachmentDto[]>(`/api/attachments/task/${taskId}`),
       apiResult<TimeEntryDto[]>(`/api/tasks/${taskId}/time-entries`),
       apiResult<TaskMeetingSourceDto>(`/api/tasks/${taskId}/meeting-source`),
+      apiResult<TaskAcceptanceChecklistItem[]>(`/api/ai/native-actions/tasks/${taskId}/acceptance-checklist`),
     ])
 
     if (selectedTaskId.value !== taskId) return
@@ -773,6 +762,7 @@ async function loadTaskDetailExtras(taskId: string) {
       ? errorMessage(timeEntriesResult.reason, 'Không thể tải dữ liệu thời gian của nhiệm vụ.')
       : ''
     selectedTaskMeetingSource.value = meetingSourceResult.status === 'fulfilled' ? meetingSourceResult.value : null
+    selectedTaskChecklist.value = checklistResult.status === 'fulfilled' ? checklistResult.value ?? [] : []
   } catch (error) {
     if (selectedTaskId.value !== taskId) return
   }
@@ -798,20 +788,19 @@ function resetTaskDrawer() {
   selectedTaskTimeEntries.value = []
   selectedTaskTimeEntriesError.value = ''
   selectedTaskMeetingSource.value = null
+  selectedTaskChecklist.value = []
   selectedTaskLoading.value = false
 }
 
 function openTaskDrawer(task: TaskSummary) {
-  openTask(task.projectId, task.id)
+  selectedTaskId.value = task.id
+  selectedTaskDetail.value = taskDetailCache.value.get(task.id) ?? null
+  void loadTaskDetail(task.id)
 }
 
 function closeTaskDrawer() {
-  const projectId = selectedTaskSummary.value?.projectId
   selectedTaskId.value = null
   resetTaskDrawer()
-  if (projectId) {
-    void router.replace(`/projects/${projectId}`)
-  }
 }
 
 function taskActionLabel(status: string) {
@@ -877,6 +866,44 @@ async function nudgeTask(task: HubTask | TaskAttentionDto) {
 
 function openProjectTask(task: HubTask | TaskAttentionDto) {
   openTask(task.projectId, task.id)
+}
+
+async function toggleChecklistItem(item: TaskAcceptanceChecklistItem) {
+  if (!canUseTaskAiMutation.value) return
+  try {
+    const updated = await apiResult<TaskAcceptanceChecklistItem>(
+      `/api/ai/native-actions/acceptance-checklist/${item.id}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ isCompleted: !item.isCompleted, rowVersion: item.rowVersion }),
+      },
+    )
+    selectedTaskChecklist.value = selectedTaskChecklist.value.map(current =>
+      current.id === updated.id ? updated : current,
+    )
+  } catch (error) {
+    showError(errorMessage(error, 'Không thể cập nhật tiêu chí nghiệm thu. Hãy tải lại task rồi thử lại.'))
+    if (selectedTaskId.value) void loadTaskDetailExtras(selectedTaskId.value)
+  }
+}
+
+async function openTaskAiNative(capability: 'checklist' | 'breakdown') {
+  const task = selectedTaskDisplay.value
+  if (!task || !canUseTaskAiMutation.value) return
+  await router.push(`/projects/${task.projectId}/tasks/${task.id}`)
+  const prompt = capability === 'checklist'
+    ? `Soạn acceptance checklist nghiệm thu cho task "${task.title}" để tôi review và xác nhận tạo.`
+    : `Tách task "${task.title}" thành các subtask theo thứ tự và dependency hợp lý để tôi review và xác nhận tạo.`
+  window.dispatchEvent(new CustomEvent('qaly:open-ai-assistant', {
+    detail: {
+      view: 'chat',
+      prompt,
+      projectId: task.projectId,
+      requestedCapabilityId: capability === 'checklist'
+        ? 'task.acceptance_checklist.v1'
+        : 'task.breakdown.v1',
+    }
+  }))
 }
 
 function showQuickStatusButtons(task: DashboardTask) {
@@ -994,16 +1021,16 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
       <section class="tasks-hero glass-card reveal">
         <div class="tasks-hero__copy">
           <span>Trung tâm nhiệm vụ</span>
-          <h2>Nhiệm vụ của tôi</h2>
+          <h1>Nhiệm vụ của tôi</h1>
           <p>Một nơi để lọc nhanh, xem task quan trọng và mở chi tiết chỉ khi bạn thực sự cần.</p>
         </div>
 
         <div class="tasks-hero__actions">
           <div class="tasks-hero__segmented">
-            <button class="pill-button" type="button" :class="{ 'is-active': taskScope === 'mine' }" @click="selectScope('mine')">
+            <button class="pill-button" type="button" :class="{ 'is-active': taskScope === 'mine' }" :aria-pressed="taskScope === 'mine'" @click="selectScope('mine')">
               Của tôi
             </button>
-            <button class="pill-button" type="button" :class="{ 'is-active': taskScope === 'all' }" @click="selectScope('all')">
+            <button class="pill-button" type="button" :class="{ 'is-active': taskScope === 'all' }" :aria-pressed="taskScope === 'all'" @click="selectScope('all')">
               Tất cả
             </button>
           </div>
@@ -1060,7 +1087,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
         <div class="panel-head panel-head--split">
           <div class="panel-head__title">
             <span>Bộ lọc</span>
-            <h3>Tìm nhanh và thu hẹp danh sách</h3>
+            <h2>Tìm nhanh và thu hẹp danh sách</h2>
             <p>Giữ mọi thứ gọn hơn bằng một hàng điều khiển ngắn, rõ, dễ quét.</p>
           </div>
           <div class="panel-head__meta">
@@ -1079,6 +1106,8 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
             role="button"
             tabindex="0"
             @click="applySavedTaskView(view)"
+            @keydown.enter="applySavedTaskView(view)"
+            @keydown.space.prevent="applySavedTaskView(view)"
           >
             <span>{{ view.name }}</span>
             <button
@@ -1152,7 +1181,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
         <div class="panel-head">
           <div>
             <span>Danh sách</span>
-            <h3>{{ filteredTasks.length }} nhiệm vụ đang hiển thị</h3>
+            <h2>{{ filteredTasks.length }} nhiệm vụ đang hiển thị</h2>
           </div>
           <div class="panel-head__meta">
             <label class="select-all">
@@ -1273,17 +1302,24 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
       </section>
     </div>
 
-    <aside v-if="selectedTaskId" class="task-detail-drawer glass-card">
+    <aside
+      v-if="selectedTaskId"
+      class="task-detail-drawer glass-card"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="task-detail-title"
+      @keydown.esc="closeTaskDrawer"
+    >
       <div class="task-detail">
         <div class="task-detail__header">
           <div>
             <span>Chi tiết task</span>
-            <h2>{{ selectedTaskDisplay?.title || 'Đang tải...' }}</h2>
+            <h2 id="task-detail-title">{{ selectedTaskDisplay?.title || 'Đang tải...' }}</h2>
             <p v-if="selectedTaskDisplay">
               {{ selectedTaskProjectLine }}
             </p>
           </div>
-          <button class="icon-button" type="button" @click="closeTaskDrawer">
+          <button class="icon-button" type="button" aria-label="Đóng chi tiết nhiệm vụ" @click="closeTaskDrawer">
             <X :size="16" />
           </button>
         </div>
@@ -1373,6 +1409,12 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
               <button class="pill-button pill-button--ghost" type="button" @click="openProjectTask({ ...selectedTaskSummary, ...selectedTaskDisplay } as HubTask)">
                 Mở project
               </button>
+              <button v-if="canUseTaskAiMutation" class="pill-button" type="button" data-testid="task-ai-checklist-launcher" @click="openTaskAiNative('checklist')">
+                AI checklist
+              </button>
+              <button v-if="canUseTaskAiMutation" class="pill-button" type="button" data-testid="task-ai-breakdown-launcher" @click="openTaskAiNative('breakdown')">
+                AI tách subtask
+              </button>
             </div>
           </div>
 
@@ -1407,6 +1449,8 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
                 role="button"
                 tabindex="0"
                 @click="setWorkflowStage(stage.key)"
+                @keydown.enter="setWorkflowStage(stage.key)"
+                @keydown.space.prevent="setWorkflowStage(stage.key)"
               >
                 <span v-if="index < workflowDetailStages.length - 1" class="workflow-track__rail" aria-hidden="true">
                   <span class="workflow-track__rail-flow"></span>
@@ -1427,6 +1471,33 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
               </div>
             </div>
           </div>
+        </section>
+
+        <section v-if="selectedTaskDisplay && selectedTaskChecklist.length > 0" class="task-checklist-readback" data-testid="task-acceptance-checklist-readback">
+          <div class="task-checklist-readback__header">
+            <div>
+              <span>Acceptance checklist</span>
+              <h3>Tiêu chí nghiệm thu đã lưu</h3>
+            </div>
+            <strong>{{ selectedTaskChecklist.filter((item) => item.isCompleted).length }}/{{ selectedTaskChecklist.length }}</strong>
+          </div>
+          <ol>
+            <li v-for="item in selectedTaskChecklist" :key="item.id" :class="{ 'is-complete': item.isCompleted }">
+              <button
+                v-if="canUseTaskAiMutation"
+                class="task-checklist-readback__toggle"
+                type="button"
+                :aria-label="item.isCompleted ? 'Đánh dấu chưa hoàn thành' : 'Đánh dấu hoàn thành'"
+                @click="toggleChecklistItem(item)"
+              >
+                <CheckSquare2 v-if="item.isCompleted" :size="16" />
+                <Circle v-else :size="16" />
+              </button>
+              <CheckSquare2 v-else-if="item.isCompleted" :size="16" />
+              <Circle v-else :size="16" />
+              <span>{{ item.text }}</span>
+            </li>
+          </ol>
         </section>
 
         <TaskDevelopmentPanel v-if="selectedTaskDisplay" :task-id="selectedTaskDisplay.id" />
@@ -1489,7 +1560,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 }
 
 .tasks-page.has-detail {
-  grid-template-columns: minmax(0, 1fr) 368px;
+  grid-template-columns: minmax(0, 1fr) minmax(460px, 540px);
 }
 
 .tasks-main {
@@ -1552,7 +1623,8 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   text-transform: uppercase;
 }
 
-.tasks-hero__copy h2,
+.tasks-hero__copy h1,
+.panel-head h2,
 .panel-head h3,
 .task-detail__header h2 {
   color: var(--text-strong);
@@ -3070,7 +3142,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 }
 
 .workflow-track__step {
-  color: #94a3b8;
+  color: #64748b;
   font-size: 11px;
   font-weight: 900;
   letter-spacing: 0.08em;
@@ -3084,7 +3156,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
 }
 
 .workflow-track__body small {
-  color: #94a3b8;
+  color: #64748b;
   font-size: 12px;
   line-height: 1.45;
 }
@@ -3462,6 +3534,76 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   }
 }
 
+.task-checklist-readback {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(240, 253, 244, 0.88), rgba(255, 255, 255, 0.98));
+}
+
+.task-checklist-readback__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.task-checklist-readback__header span {
+  color: #15803d;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.task-checklist-readback__header h3 {
+  margin-top: 3px;
+  color: var(--text-strong);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.task-checklist-readback__header strong {
+  color: #15803d;
+  font-size: 13px;
+}
+
+.task-checklist-readback ol {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-checklist-readback li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  color: #334155;
+  line-height: 1.45;
+}
+
+.task-checklist-readback li.is-complete {
+  color: #15803d;
+  text-decoration: line-through;
+}
+
+.task-checklist-readback__toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3661,7 +3803,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   gap: 4px;
 }
 
-.tasks-hero__copy h2 {
+.tasks-hero__copy h1 {
   font-size: clamp(26px, 2.2vw, 32px);
   font-weight: 800;
   letter-spacing: -0.03em;
@@ -3779,6 +3921,7 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   gap: 2px;
 }
 
+.panel-head h2,
 .panel-head h3 {
   font-size: clamp(20px, 1.8vw, 24px);
   font-weight: 800;
@@ -4219,7 +4362,8 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   background: linear-gradient(90deg, #2563eb, #38bdf8, #16a34a) !important;
 }
 
-.tasks-hero__copy h2,
+.tasks-hero__copy h1,
+.panel-head h2,
 .panel-head h3,
 .task-detail__header h2 {
   color: var(--text-strong) !important;
@@ -4360,5 +4504,59 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
   .panel-card {
     padding: 16px !important;
   }
+}
+
+/* This final visual refinement follows the canonical theme tokens. It stays
+   after the light refinement because that preceding block uses !important. */
+:global(:root[data-theme='dark']) .tasks-page {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(59, 130, 246, 0.12), transparent 22%),
+    radial-gradient(circle at 86% 4%, rgba(34, 197, 94, 0.07), transparent 18%),
+    var(--bg) !important;
+}
+
+:global(:root[data-theme='dark']) .tasks-hero,
+:global(:root[data-theme='dark']) .tasks-hero__summary,
+:global(:root[data-theme='dark']) .stat-card,
+:global(:root[data-theme='dark']) .panel-card,
+:global(:root[data-theme='dark']) .task-card,
+:global(:root[data-theme='dark']) .task-detail-drawer,
+:global(:root[data-theme='dark']) .task-detail__summary,
+:global(:root[data-theme='dark']) .task-detail__facts div,
+:global(:root[data-theme='dark']) .detail-block,
+:global(:root[data-theme='dark']) .workflow-mini,
+:global(:root[data-theme='dark']) .skeleton-hero {
+  border-color: var(--line) !important;
+  background: var(--panel) !important;
+  color: var(--text) !important;
+  box-shadow: var(--shadow-soft) !important;
+}
+
+:global(:root[data-theme='dark']) .tasks-hero__segmented,
+:global(:root[data-theme='dark']) .saved-view-chip,
+:global(:root[data-theme='dark']) .field,
+:global(:root[data-theme='dark']) .panel-head .link-button,
+:global(:root[data-theme='dark']) .pill-button,
+:global(:root[data-theme='dark']) .task-card__peek {
+  border-color: var(--line) !important;
+  background: var(--panel-soft) !important;
+  color: var(--text) !important;
+  box-shadow: none !important;
+}
+
+:global(:root[data-theme='dark']) .task-card:hover {
+  border-color: var(--border-strong) !important;
+  background: var(--surface-hover) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+:global(:root[data-theme='dark']) .task-card__progress {
+  background: var(--line) !important;
+}
+
+:global(:root[data-theme='dark']) .skeleton-line,
+:global(:root[data-theme='dark']) .skeleton-card,
+:global(:root[data-theme='dark']) .skeleton-track__dot {
+  background: linear-gradient(90deg, var(--panel-soft), var(--surface-hover), var(--panel-soft)) !important;
 }
 </style>

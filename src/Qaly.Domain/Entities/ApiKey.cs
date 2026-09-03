@@ -15,13 +15,13 @@ public class ApiKey : BaseEntity
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
-    /// BCrypt hash của key — tuyệt đối không lưu plaintext.
+    /// SHA-256 hash của secret ngẫu nhiên entropy cao — tuyệt đối không lưu plaintext.
     /// </summary>
     [MaxLength(200)]
     public string KeyHash { get; set; } = string.Empty;
 
     /// <summary>
-    /// 8 ký tự đầu để hiển thị trong UI (e.g. "qaly_sk_").
+    /// Prefix không nhạy cảm dùng để nhận diện key trong UI và thu hẹp truy vấn.
     /// </summary>
     [MaxLength(16)]
     public string Prefix { get; set; } = string.Empty;

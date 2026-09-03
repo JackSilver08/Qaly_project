@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Qaly.Application.DTOs.Attachment;
 using Qaly.Application.DTOs.Comment;
+using Qaly.Application.DTOs.Task;
 using Qaly.Application.Services;
 using Qaly.Domain.Entities;
 using Qaly.Infrastructure.Data;
@@ -28,13 +29,14 @@ public class TaskCollaborationControllerPersistenceTests : IClassFixture<Integra
         var seed = await SeedWorkspaceAsync();
         using var ownerClient = ClientFor(seed.OwnerId);
         using var assigneeClient = ClientFor(seed.AssigneeId);
+        var ownerCsrf = await GetCsrfTokenAsync(ownerClient);
 
-        var commentResponse = await ownerClient.PostAsJsonAsync("/api/comments", new
+        var commentResponse = await SendWithCsrfAsync(ownerClient, HttpMethod.Post, "/api/comments", JsonContent.Create(new
         {
             taskItemId = seed.TaskId,
             content = "T1-TR-02 persisted comment",
             mentionedUserIds = new[] { seed.AssigneeId }
-        });
+        }), ownerCsrf);
 
         commentResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var comment = (await commentResponse.Content.ReadFromJsonAsync<ApiResult<CommentDto>>())!.Data!;
@@ -46,7 +48,8 @@ public class TaskCollaborationControllerPersistenceTests : IClassFixture<Integra
             "file",
             "t1-tr-02-evidence.txt");
 
-        var attachmentResponse = await ownerClient.PostAsync($"/api/attachments/task/{seed.TaskId}", attachmentContent);
+        var attachmentResponse = await SendWithCsrfAsync(ownerClient, HttpMethod.Post,
+            $"/api/attachments/task/{seed.TaskId}", attachmentContent, ownerCsrf);
         attachmentResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var attachment = (await attachmentResponse.Content.ReadFromJsonAsync<ApiResult<TaskAttachmentDto>>())!.Data!;
         attachment.FileName.Should().Be("t1-tr-02-evidence.txt");
@@ -88,11 +91,13 @@ public class TaskCollaborationControllerPersistenceTests : IClassFixture<Integra
     {
         var seed = await SeedWorkspaceAsync();
         using var forbiddenClient = ClientFor(Guid.Parse("c0000000-0000-0000-0000-000000000403"));
+        var csrf = await GetCsrfTokenAsync(forbiddenClient);
 
         using var content = new MultipartFormDataContent();
         content.Add(new ByteArrayContent(Encoding.UTF8.GetBytes("forbidden")), "file", "forbidden.txt");
 
-        var response = await forbiddenClient.PostAsync($"/api/attachments/task/{seed.TaskId}", content);
+        var response = await SendWithCsrfAsync(forbiddenClient, HttpMethod.Post,
+            $"/api/attachments/task/{seed.TaskId}", content, csrf);
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
@@ -102,17 +107,73 @@ public class TaskCollaborationControllerPersistenceTests : IClassFixture<Integra
     {
         var seed = await SeedWorkspaceAsync();
         using var ownerClient = ClientFor(seed.OwnerId);
+        var csrf = await GetCsrfTokenAsync(ownerClient);
 
-        var badComment = await ownerClient.PostAsJsonAsync("/api/comments", new
+        var badComment = await SendWithCsrfAsync(ownerClient, HttpMethod.Post, "/api/comments", JsonContent.Create(new
         {
             taskItemId = seed.TaskId,
             content = ""
-        });
+        }), csrf);
         badComment.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         using var emptyAttachment = new MultipartFormDataContent();
-        var badAttachment = await ownerClient.PostAsync($"/api/attachments/task/{seed.TaskId}", emptyAttachment);
+        var badAttachment = await SendWithCsrfAsync(ownerClient, HttpMethod.Post,
+            $"/api/attachments/task/{seed.TaskId}", emptyAttachment, csrf);
         badAttachment.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Dependencies_DoNotExposePrivateCounterpartToUnrelatedProjectMember()
+    {
+        var seed = await SeedDependencyWorkspaceAsync(createDependency: true);
+        using var memberClient = ClientFor(seed.MemberId);
+
+        var response = await memberClient.GetAsync($"/api/tasks/{seed.PublicTaskId}/dependencies");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<ApiResult<List<TaskDependencyDto>>>();
+        payload!.Data.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AddDependency_DeniesRelationToPrivateTaskOutsideActorsVisibility()
+    {
+        var seed = await SeedDependencyWorkspaceAsync(createDependency: false);
+        using var memberClient = ClientFor(seed.MemberId);
+        var csrf = await GetCsrfTokenAsync(memberClient);
+
+        var response = await SendWithCsrfAsync(
+            memberClient,
+            HttpMethod.Post,
+            $"/api/tasks/{seed.PublicTaskId}/dependencies",
+            JsonContent.Create(new { predecessorId = seed.PrivateTaskId, type = "FinishToStart" }),
+            csrf);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        (await db.TaskDependencies.AnyAsync(item =>
+            item.PredecessorId == seed.PrivateTaskId && item.SuccessorId == seed.PublicTaskId)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RemoveDependency_RequiresDependencyToBelongToRouteTask()
+    {
+        var seed = await SeedDependencyWorkspaceAsync(createDependency: true);
+        using var ownerClient = ClientFor(seed.OwnerId);
+        var csrf = await GetCsrfTokenAsync(ownerClient);
+
+        var response = await SendWithCsrfAsync(
+            ownerClient,
+            HttpMethod.Delete,
+            $"/api/tasks/{seed.PrivateTaskId}/dependencies/{seed.DependencyId}",
+            new StringContent(string.Empty),
+            csrf);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        (await db.TaskDependencies.AnyAsync(item => item.Id == seed.DependencyId)).Should().BeTrue();
     }
 
     private HttpClient ClientFor(Guid userId, string role = "User")
@@ -195,7 +256,78 @@ public class TaskCollaborationControllerPersistenceTests : IClassFixture<Integra
         return new SeededWorkspace(ownerId, assigneeId, projectId, taskId, taskTitle);
     }
 
+    private async Task<DependencyWorkspace> SeedDependencyWorkspaceAsync(bool createDependency)
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var publicTaskId = Guid.NewGuid();
+        var privateTaskId = Guid.NewGuid();
+        var dependencyId = Guid.NewGuid();
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        db.Users.AddRange(
+            new User { Id = ownerId, FullName = "Dependency owner", Email = $"{ownerId:N}@qaly.test", Role = "Member", IsActive = true },
+            new User { Id = memberId, FullName = "Dependency member", Email = $"{memberId:N}@qaly.test", Role = "Member", IsActive = true });
+        db.Projects.Add(new Project { Id = projectId, Name = "Dependency privacy", Code = $"D{Guid.NewGuid():N}"[..10], OwnerId = ownerId });
+        db.ProjectMembers.Add(new ProjectMember { ProjectId = projectId, UserId = memberId, Role = ProjectRoleRules.Member });
+        db.TaskItems.AddRange(
+            new TaskItem
+            {
+                Id = publicTaskId,
+                ProjectId = projectId,
+                ReporterId = memberId,
+                AssigneeId = memberId,
+                Title = "Visible successor",
+                Status = "Todo"
+            },
+            new TaskItem
+            {
+                Id = privateTaskId,
+                ProjectId = projectId,
+                ReporterId = ownerId,
+                Title = "Private predecessor",
+                Status = "Todo",
+                IsPrivate = true
+            });
+        if (createDependency)
+        {
+            db.TaskDependencies.Add(new TaskDependency
+            {
+                Id = dependencyId,
+                PredecessorId = privateTaskId,
+                SuccessorId = publicTaskId,
+                DependencyType = "FinishToStart"
+            });
+        }
+        await db.SaveChangesAsync();
+        return new DependencyWorkspace(ownerId, memberId, projectId, publicTaskId, privateTaskId, dependencyId);
+    }
+
+    private static async Task<HttpResponseMessage> SendWithCsrfAsync(
+        HttpClient client,
+        HttpMethod method,
+        string url,
+        HttpContent content,
+        string csrf)
+    {
+        using var request = new HttpRequestMessage(method, url) { Content = content };
+        request.Headers.Add("X-CSRF-TOKEN", csrf);
+        return await client.SendAsync(request);
+    }
+
+    private static async Task<string> GetCsrfTokenAsync(HttpClient client)
+        => (await client.GetFromJsonAsync<CsrfResponse>("/api/security/csrf"))!.Token;
+
     private sealed record SeededWorkspace(Guid OwnerId, Guid AssigneeId, Guid ProjectId, Guid TaskId, string TaskTitle);
+    private sealed record DependencyWorkspace(
+        Guid OwnerId,
+        Guid MemberId,
+        Guid ProjectId,
+        Guid PublicTaskId,
+        Guid PrivateTaskId,
+        Guid DependencyId);
+    private sealed record CsrfResponse(string Token);
     private sealed record ApiResult<T>(bool IsSuccess, T? Data, string? Error, int StatusCode);
 }
 #pragma warning restore CA1707

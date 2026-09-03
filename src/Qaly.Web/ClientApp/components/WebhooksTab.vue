@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { Webhook, Trash2, Plus, Activity, ShieldCheck } from 'lucide-vue-next'
+import { Webhook, Trash2, Plus, Activity, ShieldCheck, RefreshCw, AlertTriangle } from 'lucide-vue-next'
 import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
 import { showError, showSuccess } from '../composables/use-toast'
 import { confirmDialog } from '../composables/use-confirm-dialog'
@@ -19,10 +19,59 @@ interface WebhookDto {
   createdAt: string
 }
 
+interface WebhookTestResult {
+  deliveryStatus: string
+  isDelivered: boolean
+  attemptCount: number
+  responseStatusCode: number | null
+  deliveryLogId: string | null
+}
+
+interface WebhookOutboxItem {
+  id: string
+  projectId: string
+  eventType: string
+  status: 'pending' | 'retry_scheduled' | 'delivering' | 'dead_letter' | 'delivered'
+  retryCount: number
+  createdAt: string
+  nextAttemptAt: string
+  deadLetteredAt: string | null
+  errorSummary: string | null
+}
+
+interface WebhookDeliveryLog {
+  id: string
+  webhookId: string
+  eventType: string
+  isSuccess: boolean
+  attemptCount: number
+  responseStatusCode: number | null
+  durationMs: number
+  createdAt: string
+}
+
+interface WebhookOperations {
+  projectId: string
+  pendingCount: number
+  deadLetterCount: number
+  recentOutbox: WebhookOutboxItem[]
+  recentDeliveries: WebhookDeliveryLog[]
+}
+
+interface WebhookReplayResult {
+  item: WebhookOutboxItem
+  replayQueued: boolean
+}
+
 const webhooks = ref<WebhookDto[]>([])
 const showCreateForm = ref(false)
 const isLoading = ref(false)
 const isFetching = ref(false)
+const testingWebhookId = ref<string | null>(null)
+const lastTest = ref<Record<string, WebhookTestResult>>({})
+const operations = ref<WebhookOperations | null>(null)
+const isFetchingOperations = ref(false)
+const replayingOutboxId = ref<string | null>(null)
 
 const newWebhook = ref({
   payloadUrl: '',
@@ -34,8 +83,7 @@ const availableEvents = [
   { id: 'task.created', label: 'Đã tạo nhiệm vụ' },
   { id: 'task.updated', label: 'Đã cập nhật nhiệm vụ' },
   { id: 'task.deleted', label: 'Đã xóa nhiệm vụ' },
-  { id: 'comment.added', label: 'Đã thêm bình luận' },
-  { id: 'project.updated', label: 'Đã cập nhật dự án' }
+  { id: '*', label: 'Tất cả event task hiện được hỗ trợ' }
 ]
 
 async function fetchWebhooks() {
@@ -48,6 +96,22 @@ async function fetchWebhooks() {
   } finally {
     isFetching.value = false
   }
+}
+
+async function fetchOperations() {
+  isFetchingOperations.value = true
+  try {
+    operations.value = await apiResult<WebhookOperations>(`/api/projects/${props.projectId}/webhooks/operations`)
+  } catch (e) {
+    operations.value = null
+    showError(errorMessage(e, 'Không thể tải trạng thái giao webhook.'))
+  } finally {
+    isFetchingOperations.value = false
+  }
+}
+
+async function refreshAll() {
+  await Promise.all([fetchWebhooks(), fetchOperations()])
 }
 
 async function createWebhook() {
@@ -63,7 +127,7 @@ async function createWebhook() {
 
     showCreateForm.value = false
     newWebhook.value = { payloadUrl: '', secret: '', events: ['task.created', 'task.updated'] }
-    await fetchWebhooks()
+    await refreshAll()
     showSuccess('Đã tạo webhook thành công.')
   } catch (e) {
     showError(errorMessage(e, 'Không thể tạo webhook.'))
@@ -79,7 +143,7 @@ async function deleteWebhook(id: string) {
   try {
     await apiCommand(`/api/projects/${props.projectId}/webhooks/${id}`, { method: 'DELETE' })
 
-    await fetchWebhooks()
+    await refreshAll()
     showSuccess('Đã xóa webhook.')
   } catch (e) {
     showError(errorMessage(e, 'Không thể xóa webhook.'))
@@ -87,16 +151,66 @@ async function deleteWebhook(id: string) {
 }
 
 async function testWebhook(id: string) {
+  if (testingWebhookId.value) return
+  testingWebhookId.value = id
   try {
-    await apiCommand(`/api/projects/${props.projectId}/webhooks/${id}/test`, { method: 'POST' })
+    const receipt = await apiResult<WebhookTestResult>(`/api/projects/${props.projectId}/webhooks/${id}/test`, { method: 'POST' })
+    lastTest.value[id] = receipt
 
-    showSuccess('Đã gửi dữ liệu kiểm thử thành công!')
+    showSuccess(`Endpoint đã xác nhận HTTP ${receipt.responseStatusCode ?? 200} sau ${receipt.attemptCount} lần gửi.`)
   } catch (e) {
     showError(errorMessage(e, 'Không thể gửi webhook test.'))
+  } finally {
+    testingWebhookId.value = null
   }
 }
 
-watch(() => props.projectId, fetchWebhooks, { immediate: true })
+async function replayDeadLetter(item: WebhookOutboxItem) {
+  if (replayingOutboxId.value) return
+  const confirmed = await confirmDialog({
+    tone: 'warning',
+    title: 'Gửi lại webhook lỗi?',
+    subject: item.eventType,
+    message: 'Qaly sẽ đưa đúng occurrence này về hàng đợi. Idempotency key cũ vẫn được giữ để endpoint không nhận trùng.',
+    confirmLabel: 'Đưa vào hàng đợi'
+  })
+  if (!confirmed) return
+
+  replayingOutboxId.value = item.id
+  try {
+    const result = await apiResult<WebhookReplayResult>(
+      `/api/projects/${props.projectId}/webhooks/outbox/${item.id}/replay`,
+      { method: 'POST' }
+    )
+    await fetchOperations()
+    showSuccess(result.replayQueued
+      ? 'Đã đưa occurrence lỗi vào hàng đợi và lưu audit.'
+      : 'Occurrence này đã nằm trong hàng đợi; không tạo thêm bản sao.')
+  } catch (e) {
+    showError(errorMessage(e, 'Không thể đưa webhook vào hàng đợi.'))
+  } finally {
+    replayingOutboxId.value = null
+  }
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat('vi-VN', {
+    dateStyle: 'short',
+    timeStyle: 'short'
+  }).format(new Date(value))
+}
+
+function outboxStatusLabel(status: WebhookOutboxItem['status']) {
+  return {
+    pending: 'Đang chờ',
+    retry_scheduled: 'Chờ thử lại',
+    delivering: 'Đang gửi',
+    dead_letter: 'Cần xử lý',
+    delivered: 'Đã giao'
+  }[status]
+}
+
+watch(() => props.projectId, refreshAll, { immediate: true })
 </script>
 
 <template>
@@ -115,11 +229,11 @@ watch(() => props.projectId, fetchWebhooks, { immediate: true })
       <form v-if="showCreateForm" class="webhook-form glass-card" @submit.prevent="createWebhook">
         <div class="form-group">
           <label>URL nhận dữ liệu</label>
-          <input v-model="newWebhook.payloadUrl" type="url" placeholder="https://your-app.com/webhook" required />
+          <input v-model="newWebhook.payloadUrl" type="url" autocomplete="url" aria-label="URL nhận dữ liệu webhook" placeholder="https://your-app.com/webhook" required />
         </div>
         <div class="form-group">
           <label>Khóa bí mật (không bắt buộc)</label>
-          <input v-model="newWebhook.secret" type="password" placeholder="Khóa bí mật để xác thực webhook" />
+          <input v-model="newWebhook.secret" type="password" autocomplete="new-password" aria-label="Khóa bí mật webhook" placeholder="Khóa bí mật để xác thực webhook" />
         </div>
         <div class="form-group">
           <label>Sự kiện kích hoạt</label>
@@ -149,9 +263,12 @@ watch(() => props.projectId, fetchWebhooks, { immediate: true })
           <div class="hook-events">
             <span v-for="ev in hook.events" :key="ev" class="event-tag">{{ ev }}</span>
           </div>
+          <div v-if="lastTest[hook.id]" class="test-receipt" role="status">
+            Đã xác nhận · HTTP {{ lastTest[hook.id].responseStatusCode ?? '2xx' }} · {{ lastTest[hook.id].attemptCount }} lần gửi · log {{ lastTest[hook.id].deliveryLogId?.slice(0, 8) }}
+          </div>
         </div>
         <div class="hook-actions">
-          <button type="button" @click="testWebhook(hook.id)" class="icon-button" title="Kiểm tra kết nối">
+          <button type="button" @click="testWebhook(hook.id)" class="icon-button" title="Kiểm tra kết nối" :disabled="testingWebhookId === hook.id">
             <Activity :size="16" />
           </button>
           <button type="button" @click="deleteWebhook(hook.id)" class="revoke-button" title="Xóa">
@@ -162,6 +279,61 @@ watch(() => props.projectId, fetchWebhooks, { immediate: true })
       <div v-if="isFetching" class="empty-state">Đang tải danh sách webhook...</div>
       <div v-else-if="webhooks.length === 0" class="empty-state">Chưa có webhook nào được cấu hình cho dự án này.</div>
     </div>
+
+    <section class="operations-panel" aria-labelledby="webhook-operations-title">
+      <div class="operations-header">
+        <div>
+          <h4 id="webhook-operations-title">Vận hành giao sự kiện</h4>
+          <p>Hiển thị dữ liệu canonical của outbox; nút gửi lại chỉ mở cho occurrence đã dead-letter.</p>
+        </div>
+        <button type="button" class="ghost-button operations-refresh" :disabled="isFetchingOperations" @click="fetchOperations">
+          <RefreshCw :size="15" :class="{ spinning: isFetchingOperations }" /> Làm mới
+        </button>
+      </div>
+
+      <div v-if="operations" class="operations-summary" aria-live="polite">
+        <span><strong>{{ operations.pendingCount }}</strong> đang chờ</span>
+        <span :class="{ 'summary-danger': operations.deadLetterCount > 0 }">
+          <AlertTriangle :size="14" /> <strong>{{ operations.deadLetterCount }}</strong> cần xử lý
+        </span>
+      </div>
+
+      <div v-if="isFetchingOperations && !operations" class="empty-state">Đang tải trạng thái giao sự kiện...</div>
+      <div v-else-if="operations && operations.recentOutbox.length" class="outbox-list">
+        <article v-for="item in operations.recentOutbox" :key="item.id" class="outbox-row" :class="`outbox-row--${item.status}`">
+          <div class="outbox-main">
+            <div class="outbox-title">
+              <strong>{{ item.eventType }}</strong>
+              <span class="outbox-status">{{ outboxStatusLabel(item.status) }}</span>
+            </div>
+            <p>{{ formatDate(item.createdAt) }} · thử lại {{ item.retryCount }} lần · occurrence {{ item.id.slice(0, 8) }}</p>
+            <p v-if="item.errorSummary" class="outbox-error">{{ item.errorSummary }}</p>
+          </div>
+          <button
+            v-if="item.status === 'dead_letter'"
+            type="button"
+            class="ghost-button"
+            :disabled="replayingOutboxId === item.id"
+            @click="replayDeadLetter(item)"
+          >
+            {{ replayingOutboxId === item.id ? 'Đang xếp lại...' : 'Gửi lại occurrence' }}
+          </button>
+        </article>
+      </div>
+      <div v-else-if="operations" class="empty-state">Chưa có occurrence webhook nào trong dự án này.</div>
+
+      <details v-if="operations?.recentDeliveries.length" class="delivery-history">
+        <summary>Lịch sử giao gần đây ({{ operations.recentDeliveries.length }})</summary>
+        <div class="delivery-list">
+          <div v-for="delivery in operations.recentDeliveries" :key="delivery.id" class="delivery-row">
+            <span><strong>{{ delivery.eventType }}</strong> · {{ formatDate(delivery.createdAt) }}</span>
+            <span :class="delivery.isSuccess ? 'delivery-ok' : 'delivery-failed'">
+              {{ delivery.isSuccess ? 'Đã giao' : 'Thất bại' }} · HTTP {{ delivery.responseStatusCode ?? '—' }} · {{ delivery.durationMs }}ms
+            </span>
+          </div>
+        </div>
+      </details>
+    </section>
   </div>
 </template>
 
@@ -341,6 +513,8 @@ watch(() => props.projectId, fetchWebhooks, { immediate: true })
   gap: 6px;
 }
 
+.test-receipt { color: var(--success); font-size: 12px; }
+
 .event-tag {
   padding: 3px 8px;
   border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--line));
@@ -393,6 +567,112 @@ watch(() => props.projectId, fetchWebhooks, { immediate: true })
   text-align: center;
 }
 
+.operations-panel {
+  display: grid;
+  gap: 14px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.operations-header,
+.operations-summary,
+.outbox-row,
+.delivery-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.operations-header h4,
+.operations-header p,
+.outbox-row p {
+  margin: 0;
+}
+
+.operations-header p,
+.outbox-row p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.operations-refresh {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.operations-summary {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.operations-summary span,
+.outbox-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--bg-soft);
+  font-size: 12px;
+}
+
+.operations-summary .summary-danger,
+.outbox-row--dead_letter .outbox-status,
+.outbox-error {
+  color: var(--danger);
+}
+
+.outbox-list,
+.delivery-list {
+  display: grid;
+  gap: 8px;
+}
+
+.outbox-row,
+.delivery-row {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--qaly-radius-lg);
+  background: var(--bg-soft);
+}
+
+.outbox-main {
+  min-width: 0;
+}
+
+.outbox-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.outbox-error {
+  overflow-wrap: anywhere;
+}
+
+.delivery-history summary {
+  color: var(--text-strong);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.delivery-list {
+  margin-top: 10px;
+}
+
+.delivery-ok { color: var(--success); }
+.delivery-failed { color: var(--danger); }
+.spinning { animation: spin 0.8s linear infinite; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
 .ghost-button {
   min-height: 42px;
   padding: 0 14px;
@@ -440,6 +720,13 @@ watch(() => props.projectId, fetchWebhooks, { immediate: true })
   .form-actions {
     align-items: stretch;
     flex-direction: column-reverse;
+  }
+
+  .operations-header,
+  .outbox-row,
+  .delivery-row {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 </style>

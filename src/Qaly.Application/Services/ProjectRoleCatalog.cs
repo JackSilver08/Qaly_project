@@ -21,6 +21,12 @@ public sealed record ResolvedProjectRole(
 
 public interface IProjectRoleCatalog
 {
+    /// <summary>
+    /// Query source used by authorization filters that must remain server-translatable. Callers
+    /// still compare only inherited built-in capabilities, never a custom role key by itself.
+    /// </summary>
+    IQueryable<ProjectRoleDefinition> GetDefinitionsQuery();
+
     /// <summary>Every role assignable in an organization: the built-ins plus its active custom roles.</summary>
     Task<IReadOnlyList<ResolvedProjectRole>> GetAssignableRolesAsync(Guid? organizationId, CancellationToken ct = default);
 
@@ -42,6 +48,9 @@ public class ProjectRoleCatalog : IProjectRoleCatalog
     {
         _definitionRepo = definitionRepo;
     }
+
+    public IQueryable<ProjectRoleDefinition> GetDefinitionsQuery()
+        => _definitionRepo.GetQueryable().AsNoTracking();
 
     public async Task<IReadOnlyList<ResolvedProjectRole>> GetAssignableRolesAsync(
         Guid? organizationId,

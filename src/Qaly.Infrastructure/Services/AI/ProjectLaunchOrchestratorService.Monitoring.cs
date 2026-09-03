@@ -1,8 +1,11 @@
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Ai;
+using Qaly.Application.Services;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 
 namespace Qaly.Infrastructure.Services.AI;
@@ -73,20 +76,41 @@ public sealed partial class ProjectLaunchOrchestratorService
     {
         if (!_options.ProjectOperationMonitoringEnabled) return;
         var now = DateTimeOffset.UtcNow;
-        var dueIds = await _db.ProjectLaunchExecutions.AsNoTracking()
+        // Monitoring is an operational read: it must still observe executions whose
+        // Project was soft-deleted so that deletion becomes an explicit replan signal.
+        var dueIds = await _db.ProjectLaunchExecutions.IgnoreQueryFilters().AsNoTracking()
             .Where(item => item.Status == "executed" && item.MonitoringEnabled &&
                 (!item.NextMonitorAt.HasValue || item.NextMonitorAt <= now))
             .OrderBy(item => item.NextMonitorAt)
+            .ThenBy(item => item.Id)
             .Select(item => item.Id)
             .Take(25)
             .ToArrayAsync(ct);
 
         foreach (var executionId in dueIds)
         {
-            var execution = await _db.ProjectLaunchExecutions
-                .Include(item => item.ProjectLaunchPlanArtifact)
-                .SingleOrDefaultAsync(item => item.Id == executionId, ct);
-            if (execution != null) await EvaluateExecutionAsync(execution, null, ct);
+            try
+            {
+                var execution = await _db.ProjectLaunchExecutions.IgnoreQueryFilters()
+                    .Include(item => item.ProjectLaunchPlanArtifact)
+                    .SingleOrDefaultAsync(item => item.Id == executionId, ct);
+                if (execution != null) await EvaluateExecutionAsync(execution, null, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (DbUpdateConcurrencyException exception)
+            {
+                _db.ChangeTracker.Clear();
+                MonitorExecutionChanged(_logger, executionId, exception);
+            }
+            catch (Exception exception)
+            {
+                _db.ChangeTracker.Clear();
+                await DeferFailedMonitorAsync(executionId, now.AddMinutes(30), ct);
+                MonitorExecutionFailed(_logger, executionId, exception);
+            }
         }
     }
 
@@ -107,17 +131,55 @@ public sealed partial class ProjectLaunchOrchestratorService
 
         var project = await _db.Projects.IgnoreQueryFilters().AsNoTracking()
             .SingleOrDefaultAsync(item => item.Id == execution.ProjectId, ct);
-        var tasks = await _db.TaskItems.IgnoreQueryFilters().AsNoTracking()
+        var rawTasks = await _db.TaskItems.IgnoreQueryFilters().AsNoTracking()
             .Where(item => item.ProjectId == execution.ProjectId)
             .OrderBy(item => item.Id)
-            .Select(item => new MonitorTaskFact(
-                item.Id, item.Title, item.Status, item.AssigneeId, item.DueDate,
-                item.EstimatedHours, item.ActualHours, item.IsDeleted, item.UpdatedAt))
+            .Select(item => new
+            {
+                item.Id, item.Title, item.Status, item.AssigneeId, item.ReviewerId, item.SprintId,
+                item.DueDate, item.EstimatedHours, item.ActualHours, item.IsDeleted, item.UpdatedAt
+            })
             .ToArrayAsync(ct);
-        var memberIds = await _db.ProjectMembers.AsNoTracking()
+        var rawTraces = await _db.ProjectLaunchTaskTraces.AsNoTracking()
+            .Where(item => item.ProjectLaunchBriefId == plan.ProjectLaunchBriefId && item.TaskItem.ProjectId == execution.ProjectId)
+            .Select(item => new
+            {
+                item.TaskItemId, item.TaskClientId, item.SprintClientId, item.FeatureId,
+                item.ObjectiveMetricIdsJson, item.SourceRefsJson
+            })
+            .ToArrayAsync(ct);
+        var taskIds = rawTasks.Select(item => item.Id).ToArray();
+        var skillRows = await _db.TaskSkillRequirements.AsNoTracking()
+            .Where(item => taskIds.Contains(item.TaskItemId))
+            .Select(item => new { item.TaskItemId, item.OrganizationSkillId })
+            .ToArrayAsync(ct);
+        var dependencyRows = await _db.TaskDependencies.AsNoTracking()
+            .Where(item => taskIds.Contains(item.PredecessorId) || taskIds.Contains(item.SuccessorId))
+            .Select(item => new { item.PredecessorId, item.SuccessorId })
+            .ToArrayAsync(ct);
+        var traceByTaskId = rawTraces.ToDictionary(item => item.TaskItemId);
+        var clientIdByTaskId = rawTraces.ToDictionary(item => item.TaskItemId, item => item.TaskClientId);
+        var tasks = rawTasks.Select(item =>
+        {
+            traceByTaskId.TryGetValue(item.Id, out var trace);
+            return new MonitorTaskFact(
+                item.Id, item.Title, item.Status, item.AssigneeId, item.ReviewerId, item.SprintId, item.DueDate,
+                item.EstimatedHours, item.ActualHours, item.IsDeleted, item.UpdatedAt,
+                trace?.TaskClientId, trace?.SprintClientId, trace?.FeatureId,
+                trace == null ? [] : ReadStringArray(trace.ObjectiveMetricIdsJson),
+                trace == null ? [] : ReadStringArray(trace.SourceRefsJson),
+                skillRows.Where(row => row.TaskItemId == item.Id).Select(row => row.OrganizationSkillId).ToArray(),
+                dependencyRows.Where(row => row.SuccessorId == item.Id && clientIdByTaskId.ContainsKey(row.PredecessorId))
+                    .Select(row => clientIdByTaskId[row.PredecessorId]).ToArray());
+        }).ToArray();
+        var memberRoles = await _db.ProjectMembers.AsNoTracking()
             .Where(item => item.ProjectId == execution.ProjectId)
             .OrderBy(item => item.UserId)
-            .Select(item => item.UserId)
+            .ToDictionaryAsync(item => item.UserId, item => item.Role, ct);
+        var sprints = await _db.Set<Sprint>().AsNoTracking()
+            .Where(item => item.ProjectId == execution.ProjectId)
+            .OrderBy(item => item.StartDate).ThenBy(item => item.Name)
+            .Select(item => new MonitorSprintFact(item.Id, item.Name, item.Goal, item.StartDate, item.EndDate, item.Status))
             .ToArrayAsync(ct);
         var effectiveRule = await ResolveEffectiveRuleSetAsync(execution.OrganizationId, ct);
 
@@ -125,12 +187,8 @@ public sealed partial class ProjectLaunchOrchestratorService
             .SelectMany(item => item.Tasks)
             .Where(item => item.Selected)
             .ToArray();
-        var plannedMemberIds = scenario.Members.Select(item => item.UserId)
-            .Append(scenario.ManagerUserId.GetValueOrDefault())
-            .Append(execution.ExecutedByUserId)
-            .Distinct()
-            .OrderBy(item => item)
-            .ToArray();
+        var plannedRoles = BuildExpectedMemberRoles(scenario, execution.ExecutedByUserId);
+        var plannedMemberIds = plannedRoles.Keys.OrderBy(item => item).ToArray();
         var baseline = new
         {
             projectId = execution.ProjectId,
@@ -149,14 +207,16 @@ public sealed partial class ProjectLaunchOrchestratorService
             project?.StartDate,
             project?.EndDate,
             tasks,
-            memberIds,
+            memberRoles,
+            sprints,
             ruleSetId = effectiveRule?.Id,
             ruleVersion = effectiveRule?.Version,
             observedAt = DateTimeOffset.UtcNow
         };
         var baselineHash = Hash(JsonSerializer.Serialize(baseline, JsonOptions));
         var currentHash = Hash(JsonSerializer.Serialize(current, JsonOptions));
-        var changes = BuildReplanChanges(project, delivery, selectedTasks, tasks, plannedMemberIds, memberIds, plan.RuleSetId, effectiveRule);
+        var changes = BuildReplanChanges(project, delivery, selectedTasks, tasks, sprints, plannedRoles, memberRoles, plan.RuleSetId, effectiveRule);
+        changes.AddRange(await BuildCapacityAndAvailabilityChangesAsync(execution, delivery, scenario, ct));
 
         var now = DateTimeOffset.UtcNow;
         if (changes.Count > 0)
@@ -182,6 +242,9 @@ public sealed partial class ProjectLaunchOrchestratorService
                         $"project:{execution.ProjectId}",
                         $"project_tasks:{execution.ProjectId}",
                         $"project_members:{execution.ProjectId}",
+                        $"project_sprints:{execution.ProjectId}",
+                        $"project_dependencies:{execution.ProjectId}",
+                        $"organization_capacity:{execution.OrganizationId}",
                         $"organization_rulebook:{execution.OrganizationId}"
                     }, JsonOptions),
                     BaselineHash = baselineHash,
@@ -221,8 +284,9 @@ public sealed partial class ProjectLaunchOrchestratorService
         ProjectLaunchDeliveryPlanDto delivery,
         ProjectLaunchTaskPlanDto[] selectedTasks,
         IReadOnlyCollection<MonitorTaskFact> tasks,
-        IReadOnlyCollection<Guid> plannedMemberIds,
-        IReadOnlyCollection<Guid> currentMemberIds,
+        IReadOnlyCollection<MonitorSprintFact> sprints,
+        Dictionary<Guid, string> plannedRoles,
+        Dictionary<Guid, string> currentRoles,
         Guid? plannedRuleSetId,
         OrganizationWorkRuleSet? currentRule)
     {
@@ -239,17 +303,64 @@ public sealed partial class ProjectLaunchOrchestratorService
         if (activeTasks.Length != selectedTasks.Length)
             changes.Add(new("task_scope_changed", "warning", "The current task count differs from the confirmed launch scope.", selectedTasks.Length.ToString(CultureInfo.InvariantCulture), activeTasks.Length.ToString(CultureInfo.InvariantCulture), "Review added, removed or archived tasks and update the delivery baseline explicitly."));
 
-        var plannedMembers = plannedMemberIds.OrderBy(item => item).ToArray();
-        var currentMembers = currentMemberIds.OrderBy(item => item).ToArray();
-        if (!plannedMembers.SequenceEqual(currentMembers))
-            changes.Add(new("staffing_changed", "warning", "Project membership differs from the confirmed staffing scenario.", plannedMembers.Length.ToString(CultureInfo.InvariantCulture), currentMembers.Length.ToString(CultureInfo.InvariantCulture), "Recheck role coverage, capacity and separation-of-duties before reassigning work."));
+        var membershipChanged = plannedRoles.Count != currentRoles.Count ||
+            plannedRoles.Any(item => !currentRoles.TryGetValue(item.Key, out var role) || role != item.Value);
+        if (membershipChanged)
+            changes.Add(new("staffing_or_role_changed", "critical", "Thành viên hoặc vai trò Project đã khác phương án được duyệt.", DescribeRoles(plannedRoles), DescribeRoles(currentRoles), "Kiểm tra lại quyền, vai trò quản lý và khả năng phân tách người làm/người review trước khi tiếp tục."));
+
+        var expectedSprints = delivery.Sprints.Where(item => item.Selected)
+            .OrderBy(item => item.StartDate).ThenBy(item => item.Name, StringComparer.Ordinal).ToArray();
+        var actualSprints = sprints.OrderBy(item => item.StartDate).ThenBy(item => item.Name, StringComparer.Ordinal).ToArray();
+        var sprintChanged = expectedSprints.Length != actualSprints.Length;
+        if (!sprintChanged)
+        {
+            for (var index = 0; index < expectedSprints.Length; index++)
+            {
+                var expected = expectedSprints[index];
+                var actual = actualSprints[index];
+                if (expected.Name != actual.Name || expected.Objective != actual.Goal || expected.StartDate != actual.StartDate ||
+                    expected.EndDate != actual.EndDate || actual.Status != "Planning")
+                {
+                    sprintChanged = true;
+                    break;
+                }
+            }
+        }
+        if (sprintChanged)
+            changes.Add(new("sprint_baseline_changed", "critical", "Sprint hiện tại không còn khớp timebox/mục tiêu đã duyệt.", $"{expectedSprints.Length} Sprint theo baseline", $"{actualSprints.Length} Sprint hiện tại", "Review lại thứ tự, mốc thời gian và dependency; không tự dời lịch."));
+
+        var expectedByClientId = delivery.Sprints.Where(item => item.Selected)
+            .SelectMany(sprint => sprint.Tasks.Where(item => item.Selected).Select(task => (Sprint: sprint, Task: task)))
+            .ToDictionary(item => item.Task.ClientId, StringComparer.Ordinal);
+        var actualByClientId = activeTasks.Where(item => !string.IsNullOrWhiteSpace(item.TaskClientId))
+            .ToDictionary(item => item.TaskClientId!, StringComparer.Ordinal);
+        foreach (var (clientId, expected) in expectedByClientId)
+        {
+            if (!actualByClientId.TryGetValue(clientId, out var actual))
+            {
+                changes.Add(new("task_trace_missing", "critical", $"Không còn tìm thấy dấu vết canonical của task '{expected.Task.Title}'.", clientId, "missing", "Khôi phục trace hoặc review lại phạm vi; không tự tạo task thay thế."));
+                continue;
+            }
+            if (actual.AssigneeId != expected.Task.ProposedAssigneeId || actual.ReviewerId != expected.Task.ProposedReviewerId)
+                changes.Add(new("task_assignment_changed", "warning", $"Người thực hiện/review của '{expected.Task.Title}' đã thay đổi.", $"{expected.Task.ProposedAssigneeId}/{expected.Task.ProposedReviewerId}", $"{actual.AssigneeId}/{actual.ReviewerId}", "Kiểm tra lại kỹ năng, tải, lịch và nguyên tắc người review khác người thực hiện."));
+            if (actual.SprintClientId != expected.Sprint.ClientId)
+                changes.Add(new("task_sprint_changed", "warning", $"Task '{expected.Task.Title}' đã chuyển sang Sprint khác baseline.", expected.Sprint.Name, actual.SprintClientId ?? "none", "Kiểm tra critical path và thời gian của dependency trước khi chấp nhận thay đổi."));
+            if (!SameSet(actual.RequiredSkillIds, expected.Task.RequiredSkillIds))
+                changes.Add(new("task_skill_changed", "warning", $"Kỹ năng bắt buộc của '{expected.Task.Title}' đã thay đổi.", string.Join(",", expected.Task.RequiredSkillIds), string.Join(",", actual.RequiredSkillIds), "Đối chiếu catalog và skill evidence thật trước khi phân lại việc."));
+            if (!SameSet(actual.DependencyClientIds, expected.Task.DependencyClientIds))
+                changes.Add(new("task_dependency_changed", "critical", $"Dependency của '{expected.Task.Title}' đã khác graph được duyệt.", string.Join(",", expected.Task.DependencyClientIds), string.Join(",", actual.DependencyClientIds), "Kiểm tra chu trình và thứ tự Sprint trước khi cập nhật kế hoạch."));
+            if (actual.FeatureId != (expected.Task.FeatureId ?? string.Empty) ||
+                !SameSet(actual.ObjectiveMetricIds, expected.Task.ObjectiveMetricIds ?? []) ||
+                !SameSet(actual.SourceRefs, expected.Task.SourceRefs))
+                changes.Add(new("task_traceability_changed", "warning", $"Liên kết Feature/KPI/nguồn của '{expected.Task.Title}' đã thay đổi.", "trace theo Launch Brief", "trace hiện tại khác baseline", "Review lại khả năng truy vết từ mục tiêu → Feature → Sprint → Task trước khi báo tiến độ."));
+        }
 
         var now = DateTimeOffset.UtcNow;
-        var overdue = activeTasks.Where(item => item.DueDate < now && !CompletedTaskStates.Contains(item.Status)).ToArray();
+        var overdue = activeTasks.Where(item => TaskStatusRules.IsOverdue(item.Status, item.DueDate, now)).ToArray();
         if (overdue.Length > 0)
             changes.Add(new("tasks_overdue", "critical", $"{overdue.Length} task(s) are overdue.", "0", overdue.Length.ToString(CultureInfo.InvariantCulture), "Review blockers and propose a new dependency-aware schedule; do not silently move due dates."));
 
-        var unassigned = activeTasks.Count(item => !item.AssigneeId.HasValue && !CompletedTaskStates.Contains(item.Status));
+        var unassigned = activeTasks.Count(item => !item.AssigneeId.HasValue && TaskStatusRules.IsOpen(item.Status));
         if (unassigned > 0)
             changes.Add(new("tasks_unassigned", "warning", $"{unassigned} active task(s) have no assignee.", "0", unassigned.ToString(CultureInfo.InvariantCulture), "Propose eligible assignees using current skills, capacity and focus reserve."));
 
@@ -263,11 +374,108 @@ public sealed partial class ProjectLaunchOrchestratorService
         }
 
         var estimated = activeTasks.Sum(item => item.EstimatedHours ?? 0);
-        var actual = activeTasks.Sum(item => item.ActualHours ?? 0);
-        if (estimated > 0 && actual > estimated * 1.2m)
-            changes.Add(new("effort_overrun", "warning", "Recorded effort exceeds the current estimate by more than 20%.", estimated.ToString(CultureInfo.InvariantCulture), actual.ToString(CultureInfo.InvariantCulture), "Re-estimate remaining work from observed effort and keep historical actuals unchanged."));
+        var actualEffort = activeTasks.Sum(item => item.ActualHours ?? 0);
+        if (estimated > 0 && actualEffort > estimated * 1.2m)
+            changes.Add(new("effort_overrun", "warning", "Recorded effort exceeds the current estimate by more than 20%.", estimated.ToString(CultureInfo.InvariantCulture), actualEffort.ToString(CultureInfo.InvariantCulture), "Re-estimate remaining work from observed effort and keep historical actuals unchanged."));
         return changes;
     }
+
+    private async Task<IReadOnlyList<ProjectReplanChangeDto>> BuildCapacityAndAvailabilityChangesAsync(
+        ProjectLaunchExecution execution,
+        ProjectLaunchDeliveryPlanDto delivery,
+        ProjectStaffingScenarioDto scenario,
+        CancellationToken ct)
+    {
+        var selectedIds = scenario.Members.Select(item => item.UserId)
+            .Append(scenario.ManagerUserId.GetValueOrDefault())
+            .Where(item => item != Guid.Empty)
+            .Distinct().ToArray();
+        var profiles = await _db.OrganizationMemberCapacityProfiles.AsNoTracking()
+            .Include(item => item.AvailabilityWindows)
+            .Where(item => item.OrganizationId == execution.OrganizationId && selectedIds.Contains(item.UserId))
+            .ToDictionaryAsync(item => item.UserId, ct);
+        var commitments = await _db.TaskItems.AsNoTracking()
+            .Where(item => item.AssigneeId.HasValue && selectedIds.Contains(item.AssigneeId.Value) &&
+                !item.Project.IsDeleted && !item.IsDeleted && TaskStatusRules.OpenStatuses.Contains(item.Status) &&
+                (!item.StartDate.HasValue || item.StartDate < delivery.EndDate) && (!item.DueDate.HasValue || item.DueDate >= delivery.StartDate))
+            .GroupBy(item => item.AssigneeId!.Value)
+            .Select(group => new { UserId = group.Key, Hours = group.Sum(item => (decimal)(item.EstimatedHours ?? 8)) })
+            .ToDictionaryAsync(item => item.UserId, item => item.Hours, ct);
+        var changes = new List<ProjectReplanChangeDto>();
+        var weeks = Math.Max(1m, decimal.Ceiling(Math.Max(1m, (decimal)(delivery.EndDate - delivery.StartDate).TotalDays) / 7m));
+        foreach (var userId in selectedIds)
+        {
+            var baseline = scenario.ManagerCandidates.FirstOrDefault(item => item.UserId == userId);
+            if (baseline == null || !profiles.TryGetValue(userId, out var profile))
+            {
+                changes.Add(new("capacity_evidence_missing", "critical", "Một thành viên trong phương án không còn capacity profile hợp lệ.", baseline?.CapacityState ?? "missing", "missing", "Bổ sung capacity/availability thật trước khi giao thêm việc."));
+                continue;
+            }
+            var windowCapacity = profile.WeeklyCapacityHours * weeks;
+            var unavailable = CalculateAvailabilityReduction(profile, delivery.StartDate, delivery.EndDate, profile.WeeklyCapacityHours);
+            var currentCommitted = commitments.GetValueOrDefault(userId);
+            var expectedCommitted = baseline.ExistingCommittedHours + baseline.ProposedHours;
+            var currentEffectiveAvailable = windowCapacity - unavailable - currentCommitted - baseline.FocusReserveHours;
+            if (profile.WeeklyCapacityHours != baseline.WeeklyCapacityHours || currentCommitted > expectedCommitted + 0.01m || currentEffectiveAvailable < 0m)
+                changes.Add(new(
+                    "capacity_or_availability_changed",
+                    currentEffectiveAvailable < 0m ? "critical" : "warning",
+                    $"Capacity/lịch của {baseline.DisplayName} đã khác lúc duyệt phương án.",
+                    $"{baseline.WeeklyCapacityHours:0.##}h/tuần; tải dự kiến {expectedCommitted:0.##}h",
+                    $"{profile.WeeklyCapacityHours:0.##}h/tuần; tải hiện tại {currentCommitted:0.##}h; nghỉ/giảm {unavailable:0.##}h",
+                    "Tính lại allocation theo toàn bộ dự án và focus reserve; không dùng chỗ trống lịch như capacity."));
+        }
+        return changes;
+    }
+
+    private async Task DeferFailedMonitorAsync(Guid executionId, DateTimeOffset retryAt, CancellationToken ct)
+    {
+        if (_db.Database.IsRelational())
+        {
+            await _db.ProjectLaunchExecutions.IgnoreQueryFilters()
+                .Where(item => item.Id == executionId && item.Status == "executed" && item.MonitoringEnabled)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(item => item.NextMonitorAt, retryAt)
+                    .SetProperty(item => item.UpdatedAt, DateTimeOffset.UtcNow)
+                    .SetProperty(item => item.RowRevision, item => item.RowRevision + 1), ct);
+            return;
+        }
+
+        var execution = await _db.ProjectLaunchExecutions.IgnoreQueryFilters()
+            .SingleOrDefaultAsync(item => item.Id == executionId, ct);
+        if (execution == null || execution.Status != "executed" || !execution.MonitoringEnabled) return;
+        execution.NextMonitorAt = retryAt;
+        execution.UpdatedAt = DateTimeOffset.UtcNow;
+        execution.RowRevision++;
+        await _db.SaveChangesAsync(ct);
+    }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Project launch execution {ExecutionId} changed while a scheduled monitor was running; the newer state wins.")]
+    private static partial void MonitorExecutionChanged(ILogger logger, Guid executionId, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Project launch execution {ExecutionId} could not be monitored and was deferred for retry.")]
+    private static partial void MonitorExecutionFailed(ILogger logger, Guid executionId, Exception exception);
+
+    private static Dictionary<Guid, string> BuildExpectedMemberRoles(ProjectStaffingScenarioDto scenario, Guid ownerId)
+    {
+        var roles = new Dictionary<Guid, string> { [ownerId] = ProjectRoleRules.Owner };
+        if (scenario.ManagerUserId.HasValue && scenario.ManagerUserId.Value != ownerId)
+            roles[scenario.ManagerUserId.Value] = ProjectRoleRules.Manager;
+        foreach (var member in scenario.Members)
+        {
+            if (roles.ContainsKey(member.UserId)) continue;
+            roles[member.UserId] = ProjectRoleRules.TryNormalizeAssignableRole(member.ProposedRole, out var role)
+                ? role
+                : member.ProposedRole;
+        }
+        return roles;
+    }
+
+    private static bool SameSet<T>(IEnumerable<T> left, IEnumerable<T> right) where T : notnull
+        => new HashSet<T>(left).SetEquals(right);
+
+    private static string DescribeRoles(Dictionary<Guid, string> roles)
+        => string.Join(", ", roles.OrderBy(item => item.Key).Select(item => $"{item.Key}:{item.Value}"));
 
     private static ProjectReplanProposalDto MapReplan(ProjectReplanProposal entity)
         => new(
@@ -293,9 +501,26 @@ public sealed partial class ProjectLaunchOrchestratorService
         string Title,
         string Status,
         Guid? AssigneeId,
+        Guid? ReviewerId,
+        Guid? SprintId,
         DateTimeOffset? DueDate,
         int? EstimatedHours,
         int? ActualHours,
         bool IsDeleted,
-        DateTimeOffset? UpdatedAt);
+        DateTimeOffset? UpdatedAt,
+        string? TaskClientId,
+        string? SprintClientId,
+        string? FeatureId,
+        IReadOnlyList<string> ObjectiveMetricIds,
+        IReadOnlyList<string> SourceRefs,
+        IReadOnlyList<Guid> RequiredSkillIds,
+        IReadOnlyList<string> DependencyClientIds);
+
+    private sealed record MonitorSprintFact(
+        Guid Id,
+        string Name,
+        string? Goal,
+        DateTimeOffset StartDate,
+        DateTimeOffset EndDate,
+        string Status);
 }

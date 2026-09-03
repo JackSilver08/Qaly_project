@@ -10,6 +10,8 @@ const props = defineProps<{
   userRole: string | null
   userAvatarUrl: string | null
   userLoading: boolean
+  canAccessArchivedProjects: boolean
+  canAccessSettings: boolean
 }>()
 
 const emit = defineEmits<{
@@ -129,7 +131,7 @@ function formatRoleLabel(role: string | null | undefined) {
 
     <!-- Archive & Settings at the bottom -->
     <div class="sidebar-footer">
-      <RouterLink v-slot="{ href, navigate, isExactActive }" to="/projects/archived" custom>
+      <RouterLink v-if="canAccessArchivedProjects" v-slot="{ href, navigate, isExactActive }" to="/projects/archived" custom>
         <a
           :href="href"
           class="shell-archive-button"
@@ -141,7 +143,7 @@ function formatRoleLabel(role: string | null | undefined) {
         </a>
       </RouterLink>
 
-      <RouterLink v-slot="{ href, navigate, isExactActive }" to="/settings" custom>
+      <RouterLink v-if="canAccessSettings" v-slot="{ href, navigate, isExactActive }" to="/settings" custom>
         <a
           :href="href"
           class="shell-settings-button"

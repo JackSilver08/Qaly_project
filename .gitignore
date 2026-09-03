@@ -117,5 +117,14 @@ docker-compose.override.local.yml
 ## Uploads
 uploads/
 temp/
+## Local Codex / preview artifacts
+.tmp/
+scratch/
+dp-keys/
+**/dp-keys/
+src/Qaly.Web/logs.txt
+src/Qaly.Web/wwwroot/bug image/
+playwright-report/
+test-results/
 Qaly_300_TestCases_Report.xlsx
 artifacts/screenshots/SCREENSHOT_AUDIT.md

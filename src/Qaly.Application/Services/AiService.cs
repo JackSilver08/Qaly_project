@@ -351,7 +351,7 @@ Trả lời theo định dạng: [Priority] - [Lý do]";
     {
         if (!await CanAccessProjectAsync(projectId))
         {
-            return Result.Forbidden<TaskAssignmentInsightDto>("Báº¡n khÃ´ng cÃ³ quyá»n truy cáº­p dá»± Ã¡n nÃ y.");
+            return Result.Forbidden<TaskAssignmentInsightDto>("Bạn không có quyền truy cập dự án này.");
         }
 
         var task = await _taskRepo.GetQueryable()
@@ -365,7 +365,7 @@ Trả lời theo định dạng: [Priority] - [Lý do]";
 
         if (task == null)
         {
-            return Result.NotFound<TaskAssignmentInsightDto>("KhÃ´ng tÃ¬m tháº¥y cÃ´ng viá»‡c.");
+            return Result.NotFound<TaskAssignmentInsightDto>("Không tìm thấy công việc.");
         }
 
         var members = await _memberRepo.GetQueryable()
@@ -800,9 +800,22 @@ Tin nhắn: {userMessage}";
             return null;
         }
 
-        return await _projectRepo.GetQueryable()
-            .Include(p => p.Tasks)
+        var project = await _projectRepo.GetQueryable()
+            .AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == projectId);
+        if (project == null)
+        {
+            return null;
+        }
+
+        project.Tasks = await _taskAccessPolicy
+            .ApplyVisibilityFilter(_taskRepo.GetQueryable())
+            .AsNoTracking()
+            .Where(task => task.ProjectId == projectId)
+            .OrderBy(task => task.SortOrder)
+            .ThenBy(task => task.CreatedAt)
+            .ToListAsync();
+        return project;
     }
 
     public async Task<string> GenerateAnalyticsInsightsAsync(Guid projectId, string analyticsData)
@@ -856,7 +869,7 @@ Yêu cầu:
     }
 
     private static bool IsDone(TaskItem task)
-        => IsStatus(task, "Done");
+        => TaskStatusRules.IsDone(task.Status);
 
     private static bool IsStatus(TaskItem task, string status)
         => string.Equals(task.Status, status, StringComparison.OrdinalIgnoreCase);
@@ -874,9 +887,7 @@ Yêu cầu:
         => task.AssigneeId == userId || task.Assignees.Any(assignment => assignment.UserId == userId);
 
     private static bool IsClosedForAssignment(string? status)
-        => string.Equals(status, "Done", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(status, "Cancelled", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(status, "Canceled", StringComparison.OrdinalIgnoreCase);
+        => TaskStatusRules.IsClosed(status);
 
     private static int SkillLevelRank(string value)
         => value switch
@@ -893,7 +904,7 @@ Yêu cầu:
         => rowVersion.Length == 0 ? string.Empty : Convert.ToBase64String(rowVersion);
 
     private static bool IsTaskOverdue(TaskItem task)
-        => task.DueDate.HasValue && task.DueDate.Value < DateTimeOffset.UtcNow && !IsDone(task);
+        => TaskStatusRules.IsOverdue(task.Status, task.DueDate, DateTimeOffset.UtcNow);
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Warning, Message = "Unauthorized AI summary request for project {ProjectId} by user {UserId}")]
     private static partial void LogUnauthorizedSummaryRequest(ILogger logger, Guid projectId, Guid userId);
@@ -993,6 +1004,7 @@ Chỉ xuất ra đúng mảng JSON, tuyệt đối không giải thích.";
                 .AsNoTracking()
                 .Where(t => t.ProjectId == projectId.Value && !t.IsDeleted)
                 .OrderByDescending(t => t.CreatedAt)
+                .ThenBy(t => t.Id)
                 .Take(15)
                 .Select(t => new { t.Title, t.Status, t.Priority })
                 .ToListAsync(ct);

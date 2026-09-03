@@ -25,6 +25,7 @@ import { dashboardContextKey } from "./composables/dashboard-context";
 import { showError, showInfo, showSuccess } from "./composables/use-toast";
 import { confirmDialog } from "./composables/use-confirm-dialog";
 import { useDashboard } from "./composables/use-dashboard-state";
+import { usePermissions } from "./composables/use-permissions";
 import { useProjectActions } from "./composables/use-project-actions";
 import { useTaskActions } from "./composables/use-task-actions";
 import {
@@ -45,6 +46,7 @@ import {
   statusTone,
 } from "./utils/formatters";
 import { fallbackProjectPermissions } from "./utils/project-roles";
+import { taskStatusColumns } from "./utils/task-workspace";
 import type {
   ProjectCardModel,
   SummaryCardModel,
@@ -78,6 +80,8 @@ const {
   loadMe,
   loadUsers,
 } = useDashboard();
+
+const { canAccessModule, loadSystemPermissions, permissionLoadState } = usePermissions();
 
 const refreshDashboard = async () => {
   await loadDashboard();
@@ -160,34 +164,23 @@ const {
 );
 
 const navigation = computed<ShellNavItem[]>(() => {
-  const items: ShellNavItem[] = [
-    { label: "Thành viên tổ chức", to: "/organizations/users", icon: Building2 },
-    { label: "Tổng quan", to: "/dashboard", icon: LayoutDashboard },
-    { label: "Dự án", to: "/projects", icon: FolderKanban },
-    { label: "Nhiệm vụ", to: "/tasks", icon: ClipboardList },
-    { label: "Nhóm", to: "/teams", icon: Users },
-    { label: "Phân tích", to: "/analytics", icon: BarChart3 },
+  const candidates: Array<ShellNavItem & { moduleKey: string }> = [
+    { moduleKey: "OrganizationMembers", label: "Thành viên tổ chức", to: "/organizations/users", icon: Building2 },
+    { moduleKey: "Dashboard", label: "Tổng quan", to: "/dashboard", icon: LayoutDashboard },
+    { moduleKey: "Projects", label: "Dự án", to: "/projects", icon: FolderKanban },
+    { moduleKey: "Tasks", label: "Nhiệm vụ", to: "/tasks", icon: ClipboardList },
+    { moduleKey: "WorkGroups", label: "Nhóm", to: "/teams", icon: Users },
+    { moduleKey: "Analytics", label: "Phân tích", to: "/analytics", icon: BarChart3 },
+    { moduleKey: "OrganizationManagement", label: "Quản lý tổ chức", to: "/organizations", icon: Building2 },
+    { moduleKey: "ModeratorAssignments", label: "Ủy quyền Moderator", to: "/admin/moderators", icon: ShieldCheck },
+    { moduleKey: "UserManagement", label: "Quản lý người dùng", to: "/admin/users", icon: ShieldCheck },
   ];
-  const role = String(currentUser.value?.role || "").toLowerCase();
-  if (role === "admin") {
-    items.push({ label: "Quản lý tổ chức", to: "/organizations", icon: Building2 });
-    items.push({ label: "Ủy quyền Moderator", to: "/admin/moderators", icon: ShieldCheck });
-    items.push({ label: "Quản lý người dùng", to: "/admin/users", icon: ShieldCheck });
-  }
-  return items;
+  return candidates
+    .filter(item => canAccessModule(item.moduleKey))
+    .map(({ moduleKey: _moduleKey, ...item }) => item);
 });
 
-const statusColumns = computed(() => {
-  const cols = ["Todo", "InProgress"];
-  if (!selectedProject.value || selectedProject.value.enableOnHold !== false) {
-    cols.push("OnHold");
-  }
-  if (!selectedProject.value || selectedProject.value.enableInReview !== false) {
-    cols.push("InReview");
-  }
-  cols.push("Done");
-  return cols;
-});
+const statusColumns = computed(() => taskStatusColumns(selectedProject.value));
 const priorities = ["Low", "Medium", "High", "Critical"];
 
 const notifications = ref<NotificationDto[]>([]);
@@ -202,6 +195,8 @@ const notificationsOpen = ref(false);
 const globalSearchOpen = ref(false);
 const globalSearchQuery = ref("");
 const globalSearchInput = ref<HTMLInputElement | null>(null);
+const globalSearchPanel = ref<HTMLElement | null>(null);
+let globalSearchPreviousFocus: HTMLElement | null = null;
 const taskSearchQuery = ref("");
 const taskBeingQuickEditedId = ref<string | null>(null);
 const activeTaskMenu = ref<string | null>(null);
@@ -664,6 +659,9 @@ onMounted(async () => {
     loadUsers(),
     loadNotifications(),
   ]);
+  if (permissionLoadState.value !== "loaded") {
+    await loadSystemPermissions();
+  }
   await connectNotifications();
 });
 
@@ -703,7 +701,7 @@ async function loadAttachments(taskId: string) {
 async function loadTimeEntries(taskId: string) {
   timeEntriesError.value = "";
   try {
-    const entries = await apiJson<TimeEntryDto[]>(
+    const entries = await apiResult<TimeEntryDto[]>(
       `/api/tasks/${taskId}/time-entries`,
     );
     timeEntries.value = entries;
@@ -809,6 +807,7 @@ function selectProject(id: string) {
 }
 
 function openGlobalSearch() {
+  globalSearchPreviousFocus = document.activeElement as HTMLElement | null;
   globalSearchOpen.value = true;
   notificationsOpen.value = false;
   void nextTick(() => globalSearchInput.value?.focus());
@@ -816,6 +815,7 @@ function openGlobalSearch() {
 
 function closeGlobalSearch() {
   globalSearchOpen.value = false;
+  void nextTick(() => globalSearchPreviousFocus?.focus());
 }
 
 function goToProjectFromSearch(projectId: string, tab = "stats") {
@@ -868,7 +868,23 @@ function createTaskFromSearch() {
 
 function handleGlobalSearchKeydown(event: KeyboardEvent) {
   if (event.key === "Escape") {
+    event.preventDefault();
     closeGlobalSearch();
+    return;
+  }
+  if (event.key !== "Tab" || !globalSearchPanel.value) return;
+  const focusable = Array.from(globalSearchPanel.value.querySelectorAll<HTMLElement>(
+    'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+  ));
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
   }
 }
 
@@ -1389,6 +1405,10 @@ provide(dashboardContextKey, {
     :user-role="currentUser?.role ?? null"
     :user-avatar-url="currentUser?.avatarUrl ?? null"
     :user-loading="!currentUserLoaded"
+    :can-access-archived-projects="canAccessModule('Projects')"
+    :can-access-settings="canAccessModule('Settings')"
+    :can-start-simulation="String(currentUser?.role || '').toLowerCase() === 'admin'"
+    :simulation-users="users.map(user => ({ id: user.id, fullName: user.fullName, role: user.systemRole || 'Member' }))"
     @notifications="notificationsOpen = !notificationsOpen"
     @assistant="openChatWithPrompt()"
     @search="openGlobalSearch"
@@ -1404,13 +1424,14 @@ provide(dashboardContextKey, {
         @click.self="closeGlobalSearch"
         @keydown="handleGlobalSearchKeydown"
       >
-        <section class="global-search-panel" role="dialog" aria-modal="true" aria-label="Tìm kiếm">
+        <section ref="globalSearchPanel" class="global-search-panel" role="dialog" aria-modal="true" aria-label="Tìm kiếm">
           <div class="global-search-input">
             <Search :size="22" />
             <input
               ref="globalSearchInput"
               v-model="globalSearchQuery"
               type="search"
+              aria-label="Tìm dự án, nhiệm vụ hoặc thành viên"
               placeholder="Tìm dự án, nhiệm vụ, thành viên..."
             />
             <button type="button" aria-label="Đóng tìm kiếm" @click="closeGlobalSearch">
@@ -1515,6 +1536,7 @@ provide(dashboardContextKey, {
           <button
             class="icon-button icon-button--small"
             type="button"
+            aria-label="Đóng danh sách thông báo"
             @click="notificationsOpen = false"
           >
             <X :size="16" />
@@ -1529,6 +1551,7 @@ provide(dashboardContextKey, {
         :tabindex="notification.targetUrl ? 0 : undefined"
         @click="notification.targetUrl && openNotification(notification)"
         @keydown.enter="notification.targetUrl && openNotification(notification)"
+        @keydown.space.prevent="notification.targetUrl && openNotification(notification)"
       >
         <div class="notice__top">
           <strong>{{ notification.title }}</strong>
@@ -1551,6 +1574,7 @@ provide(dashboardContextKey, {
         :project-id="typeof route.params.projectId === 'string' ? route.params.projectId : null"
         :projects="aiActionProjectOptions"
         :open-request="aiAssistantOpenRequest"
+        :conversation-runtime-enabled="route.name !== 'analytics'"
         @completed="handleAiActionCompleted"
       />
     </template>
@@ -1576,10 +1600,11 @@ provide(dashboardContextKey, {
   overflow: hidden;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
-  border: 1px solid rgba(203, 213, 225, 0.92);
+  border: 1px solid var(--line);
   border-radius: var(--qaly-radius-lg);
-  background: #ffffff;
-  box-shadow: var(--qaly-shadow-md);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow-card);
 }
 
 .global-search-input {
@@ -1588,15 +1613,15 @@ provide(dashboardContextKey, {
   align-items: center;
   gap: 12px;
   padding: 16px 18px;
-  border-bottom: 1px solid #e2e8f0;
-  color: #64748b;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
 }
 
 .global-search-input input {
   width: 100%;
   border: 0;
   outline: 0;
-  color: #0f172a;
+  color: var(--text-strong);
   background: transparent;
   font-size: 18px;
   font-weight: 700;
@@ -1607,10 +1632,10 @@ provide(dashboardContextKey, {
   height: 34px;
   display: grid;
   place-items: center;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--border-strong);
   border-radius: var(--qaly-radius-lg);
-  color: #475569;
-  background: #f8fafc;
+  color: var(--text);
+  background: var(--panel-soft);
   cursor: pointer;
 }
 
@@ -1619,8 +1644,8 @@ provide(dashboardContextKey, {
   align-items: center;
   gap: 10px;
   padding: 12px 18px;
-  border-bottom: 1px solid #e2e8f0;
-  background: #f8fafc;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-soft);
 }
 
 .global-search-shortcuts button {
@@ -1638,7 +1663,7 @@ provide(dashboardContextKey, {
 
 .global-search-shortcuts span {
   margin-left: auto;
-  color: #64748b;
+  color: var(--muted);
   font-size: 12px;
   font-weight: 700;
 }
@@ -1660,7 +1685,7 @@ provide(dashboardContextKey, {
   align-items: center;
   gap: 8px;
   margin: 4px 4px 2px;
-  color: #475569;
+  color: var(--muted);
   font-size: 12px;
   font-weight: 900;
   text-transform: uppercase;
@@ -1683,7 +1708,7 @@ provide(dashboardContextKey, {
 .global-search-item:hover,
 .global-search-item:focus-visible {
   border-color: #bfdbfe;
-  background: #f8fafc;
+  background: var(--surface-hover);
   outline: none;
 }
 
@@ -1715,7 +1740,7 @@ provide(dashboardContextKey, {
 
 .global-search-item__body strong {
   overflow: hidden;
-  color: #0f172a;
+  color: var(--text-strong);
   font-size: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1723,7 +1748,7 @@ provide(dashboardContextKey, {
 
 .global-search-item__body small {
   overflow: hidden;
-  color: #64748b;
+  color: var(--muted);
   font-size: 12px;
   font-weight: 600;
   text-overflow: ellipsis;
@@ -1741,16 +1766,16 @@ provide(dashboardContextKey, {
 }
 
 .global-search-chip.is-danger {
-  color: #dc2626;
+  color: #b91c1c;
   background: #fee2e2;
 }
 
 .global-search-empty {
   padding: 34px 18px;
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--border-strong);
   border-radius: var(--qaly-radius-lg);
-  color: #64748b;
-  background: #f8fafc;
+  color: var(--muted);
+  background: var(--panel-soft);
   text-align: center;
   font-weight: 700;
 }

@@ -10,6 +10,7 @@ using Qaly.Application.DTOs.Project;
 using Qaly.Application.Services;
 using Qaly.Application.Services.Groups;
 using Qaly.Application.Services.Meetings;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Enums;
 using Qaly.Domain.Interfaces;
@@ -143,7 +144,8 @@ public class GroupsServiceTests : IDisposable
         await AddUserAsync(ownerId, "Owner", "owner@qaly.dev");
         _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
 
-        var service = CreateService();
+        var countingUnitOfWork = new CountingUnitOfWork(_context);
+        var service = CreateService(countingUnitOfWork);
 
         var result = await service.CreateAsync(new CreateGroupRequest("Planning Group"));
 
@@ -154,6 +156,41 @@ public class GroupsServiceTests : IDisposable
         var membership = await _context.WorkGroupMembers.SingleAsync();
         membership.UserId.Should().Be(ownerId);
         membership.Role.Should().Be(GroupRoleRules.Owner);
+        countingUnitOfWork.SaveCount.Should().Be(1,
+            "the Group and mandatory owner membership must commit as one graph");
+        _auditLogService.Verify(service => service.StageAsync(
+            "Create",
+            nameof(WorkGroup),
+            result.Data.Id.ToString(),
+            It.IsAny<object?>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WhenAuditStagingFails_DoesNotCommitGroupGraph()
+    {
+        var ownerId = Guid.NewGuid();
+        await AddUserAsync(ownerId, "Owner", "group-audit-failure@qaly.dev");
+        _currentUser.SetupGet(user => user.UserId).Returns(ownerId);
+        _auditLogService
+            .Setup(service => service.StageAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<object?>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("simulated audit staging failure"));
+        var countingUnitOfWork = new CountingUnitOfWork(_context);
+
+        var action = () => CreateService(countingUnitOfWork)
+            .CreateAsync(new CreateGroupRequest("Must Roll Back"));
+
+        await action.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("simulated audit staging failure");
+        countingUnitOfWork.SaveCount.Should().Be(0);
+        _context.ChangeTracker.Clear();
+        (await _context.WorkGroups.CountAsync()).Should().Be(0);
+        (await _context.WorkGroupMembers.CountAsync()).Should().Be(0);
     }
 
     [Fact]
@@ -419,6 +456,13 @@ public class GroupsServiceTests : IDisposable
         poll.AllowMultiple.Should().BeTrue();
         poll.Options.Should().HaveCount(3);
         poll.Options.OrderBy(option => option.SortOrder).Select(option => option.Content).Should().ContainInOrder("ASP.NET Core", "Spring Boot", "NestJS");
+
+        var pollMessage = await _context.GroupMessages.SingleAsync();
+        pollMessage.WorkGroupId.Should().Be(group.Id);
+        pollMessage.UserId.Should().Be(ownerId);
+        pollMessage.MessageType.Should().Be("Poll");
+        pollMessage.Content.Should().Contain($"[pollid] {poll.Id}");
+        pollMessage.Content.Should().Contain("[poll] Favorite framework?");
     }
 
     [Fact]
@@ -2036,7 +2080,8 @@ public class GroupsServiceTests : IDisposable
         await _memberRepo.AddAsync(new WorkGroupMember { WorkGroupId = groupId, UserId = userId, Role = GroupRoleRules.Owner });
         await _uow.SaveChangesAsync();
 
-        var result = await CreateService().StartMeetingSessionAsync(groupId);
+        var countingUnitOfWork = new CountingUnitOfWork(_context);
+        var result = await CreateService(countingUnitOfWork).StartMeetingSessionAsync(groupId);
 
         result.IsSuccess.Should().BeTrue();
         result.Data!.WorkGroupId.Should().Be(groupId);
@@ -2049,6 +2094,17 @@ public class GroupsServiceTests : IDisposable
         var saved = await _meetingSessionRepo.GetQueryable().FirstOrDefaultAsync(m => m.WorkGroupId == groupId);
         saved.Should().NotBeNull();
         saved!.RoomId.Should().Be(result.Data.RoomId);
+        (await _context.GroupMessages.SingleAsync(message =>
+            message.WorkGroupId == groupId && message.MessageType == "Meeting"))
+            .Content.Should().Contain($"[meetingid] {saved.Id}");
+        countingUnitOfWork.SaveCount.Should().Be(1,
+            "the Meeting session and its canonical Group message must commit as one graph");
+        _auditLogService.Verify(service => service.StageAsync(
+            "StartMeeting",
+            nameof(GroupMeetingSession),
+            saved.Id.ToString(),
+            It.IsAny<object?>(),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -2375,6 +2431,12 @@ public class GroupsServiceTests : IDisposable
         var saved = await _meetingSessionRepo.GetQueryable().FirstOrDefaultAsync(m => m.Id == meetingId);
         saved!.Status.Should().Be("Ended");
         saved.EndedAt.Should().NotBeNull();
+        _auditLogService.Verify(service => service.StageAsync(
+            "EndMeeting",
+            nameof(GroupMeetingSession),
+            meetingId.ToString(),
+            It.IsAny<object?>(),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -2440,7 +2502,7 @@ public class GroupsServiceTests : IDisposable
         result.StatusCode.Should().Be(403);
     }
 
-    private GroupsService CreateService()
+    private GroupsService CreateService(IUnitOfWork? unitOfWork = null)
         => new(
             _groupRepo,
             _memberRepo,
@@ -2465,8 +2527,36 @@ public class GroupsServiceTests : IDisposable
             _groupMeetingRealtimePublisher.Object,
             _liveKitTokenService.Object,
             _logger.Object,
-            _uow,
-            _currentUser.Object);
+            unitOfWork ?? _uow,
+            _currentUser.Object,
+            new TaskAccessPolicy(
+                _currentUser.Object,
+                _projectRepo,
+                _projectMemberRepo,
+                _organizationMemberRepo,
+            new ProjectRoleCatalog(new GenericRepository<ProjectRoleDefinition>(_context))));
+
+    private sealed class CountingUnitOfWork : IUnitOfWork
+    {
+        private readonly QalyDbContext _db;
+
+        public CountingUnitOfWork(QalyDbContext db)
+        {
+            _db = db;
+        }
+
+        public int SaveCount { get; private set; }
+
+        public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            SaveCount++;
+            return await _db.SaveChangesAsync(cancellationToken);
+        }
+
+        public void Dispose()
+        {
+        }
+    }
 
     private async Task AddUserAsync(Guid id, string fullName, string email)
     {

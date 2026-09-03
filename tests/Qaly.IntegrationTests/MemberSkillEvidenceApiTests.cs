@@ -164,10 +164,13 @@ public sealed class MemberSkillEvidenceApiTests : IClassFixture<IntegrationTestF
         var managerInsight = await GetResultAsync<TaskAssignmentInsightDto>(
             managerClient,
             $"/api/ai/tasks/{data.TargetTaskId}/assignment-insight?projectId={data.ProjectId}");
-        managerInsight.EvidenceState.Should().Be("insufficient_evidence");
-        managerInsight.RecommendedUserId.Should().BeNull();
-        managerInsight.Candidates.Should().OnlyContain(item => item.EvidenceSources == null || item.EvidenceSources.Count == 0);
-        managerInsight.RecommendationSummary.Should().Contain("chưa được gọi đó là skill-fit");
+        managerInsight.EvidenceState.Should().Be("ready");
+        managerInsight.RecommendedUserId.Should().Be(data.ContributorId);
+        managerInsight.Candidates.Single(item => item.UserId == data.ContributorId)
+            .EvidenceSources.Should().ContainSingle(source =>
+                source.TaskId == data.EvidenceTaskId &&
+                source.TaskUrl == $"/projects/{data.ProjectId}/tasks/{data.EvidenceTaskId}");
+        managerInsight.RecommendationSummary.Should().Contain("phủ 100% kỹ năng yêu cầu");
     }
 
     [Theory]

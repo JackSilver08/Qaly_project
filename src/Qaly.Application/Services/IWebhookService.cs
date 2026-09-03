@@ -9,5 +9,10 @@ public interface IWebhookService
     Task<Result<WebhookDto>> CreateAsync(CreateWebhookDto dto, CancellationToken ct = default);
     Task<Result<WebhookDto>> UpdateAsync(Guid projectId, Guid id, UpdateWebhookDto dto, CancellationToken ct = default);
     Task<Result> DeleteAsync(Guid projectId, Guid id, CancellationToken ct = default);
-    Task<Result> TriggerTestAsync(Guid projectId, Guid id, CancellationToken ct = default);
+    Task<Result<WebhookTestResultDto>> TriggerTestAsync(Guid projectId, Guid id, CancellationToken ct = default);
+    Task<Result<WebhookOperationsDto>> GetOperationsAsync(Guid projectId, CancellationToken ct = default);
+    Task<Result<WebhookOutboxReplayResultDto>> ReplayDeadLetterAsync(
+        Guid projectId,
+        Guid outboxId,
+        CancellationToken ct = default);
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CheckCircle2, Eye, FolderKanban, Pencil, Plus, Trash2 } from 'lucide-vue-next'
+import { Archive, CheckCircle2, Eye, FolderKanban, Pencil, Plus, Trash2 } from 'lucide-vue-next'
 import type { ProjectCardModel } from './dashboard-models'
 
 defineProps<{
@@ -11,6 +11,7 @@ defineProps<{
 defineEmits<{
   view: [projectId: string]
   edit: [projectId: string]
+  archive: [projectId: string]
   delete: [projectId: string]
   create: []
 }>()
@@ -23,12 +24,13 @@ defineEmits<{
       :key="project.id"
       class="project-grid-card"
       :class="{ 'is-active': project.id === activeProjectId }"
-      role="button"
-      tabindex="0"
-      @click="$emit('view', project.id)"
-      @keydown.enter="$emit('view', project.id)"
-      @keydown.space.prevent="$emit('view', project.id)"
     >
+      <button
+        type="button"
+        class="project-grid-card__open-surface"
+        :aria-label="`Mở dự án ${project.name}`"
+        @click="$emit('view', project.id)"
+      ></button>
       <div class="project-grid-card__accent" :class="`is-${project.statusTone}`" />
       <span :class="`project-grid-card__badge project-grid-card__badge--${project.statusTone}`">
         {{ project.statusLabel.toLowerCase() }}
@@ -91,6 +93,14 @@ defineEmits<{
             <button
               v-if="!readOnly"
               type="button"
+              aria-label="Lưu trữ dự án"
+              @click.stop="$emit('archive', project.id)"
+            >
+              <Archive :size="18" />
+            </button>
+            <button
+              v-if="!readOnly"
+              type="button"
               aria-label="Xóa dự án"
               @click.stop="$emit('delete', project.id)"
             >
@@ -145,7 +155,37 @@ defineEmits<{
     border-color 180ms ease;
 }
 
+.project-grid-card__open-surface {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.project-grid-card__open-surface:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.5);
+  outline-offset: 3px;
+}
+
+.project-grid-card__accent,
+.project-grid-card__badge,
+.project-grid-card__body {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.project-grid-card__actions,
+.project-grid-card__actions button {
+  pointer-events: auto;
+}
+
 .project-grid-card:hover,
+.project-grid-card:focus-within,
 .project-grid-card:focus-visible,
 .project-grid-card.is-active {
   transform: translateY(-3px);

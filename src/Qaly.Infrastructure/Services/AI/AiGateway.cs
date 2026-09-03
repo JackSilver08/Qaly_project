@@ -204,7 +204,12 @@ public class AiGateway : IAiGateway
                     OwnerId = request.UserId.Value
                 };
 
-                var results = await _vectorStorage.SearchAsync(vector, "qaly_context", filter, limit: 3);
+                var results = await _vectorStorage.SearchAsync(
+                    vector,
+                    "qaly_context",
+                    filter,
+                    limit: 3,
+                    ct: cancellationToken);
                 if (results.Count > 0)
                 {
                     var contextBuilder = new StringBuilder();
@@ -346,7 +351,6 @@ public class AiGateway : IAiGateway
                 continue;
             }
 
-            var hasFallbackProvider = providerIndex < availableProviderOrder.Count - 1;
             lastProviderName = providerName;
             request.Prompt = originalPrompt;
             finalResponse = null;
@@ -601,10 +605,12 @@ public class AiGateway : IAiGateway
                     _errorCallingAiProviderLogger(_logger, ex);
                     validationError = ex.Message;
                     await LogProviderRouteEventAsync(request, providerName, "AI_PROVIDER_FAILED", ex.Message, cancellationToken);
-                    if (hasFallbackProvider)
-                    {
-                        break;
-                    }
+                    // Schema repair attempts are only useful after a provider
+                    // returned an invalid payload. A timeout/transport/config
+                    // failure must move to the next provider (or deterministic
+                    // fallback) immediately; retrying the same unavailable
+                    // endpoint made a single assistant turn wait N x timeout.
+                    break;
                 }
 
                 attempt++;

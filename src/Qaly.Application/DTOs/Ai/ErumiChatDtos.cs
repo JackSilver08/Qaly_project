@@ -48,7 +48,12 @@ public sealed record ErumiTableDto(
     string Title,
     IReadOnlyList<ErumiTableColumnDto> Columns,
     IReadOnlyList<IReadOnlyDictionary<string, object?>> Rows,
-    string? Description = null);
+    string? Description = null,
+    ErumiTableRowActionDto? RowAction = null);
+
+public sealed record ErumiTableRowActionDto(
+    string Label,
+    string RouteKey = "route");
 
 public sealed record ErumiTableColumnDto(
     string Key,

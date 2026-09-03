@@ -18,14 +18,14 @@ import ProjectToolbar from '../components/ProjectToolbar.vue'
 import PageStatePanel from '../components/PageStatePanel.vue'
 import ImportModal from '../components/import/ImportModal.vue'
 import ImportUndoBanner from '../components/import/ImportUndoBanner.vue'
-import AiPlannerModal from '../components/AiPlannerModal.vue'
 import { useDashboardContext } from '../composables/dashboard-context'
-import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
-import { showError, showSuccess } from '../composables/use-toast'
-import type { PagedResult, ProjectDto, UserDto } from '../types'
+import { apiCommand, apiFetch, apiResult, errorMessage } from '../utils/api-client'
+import { showError, showSuccess, showWarning } from '../composables/use-toast'
+import type { PagedResult, ProjectDto, UserDirectoryDto } from '../types'
 
 const {
   activeProjectCards,
+  archiveProject,
   beginEditProject,
   createProjectOpen,
   deleteProject,
@@ -48,8 +48,8 @@ const {
 } = useDashboardContext()
 
 const isGridView = ref(true)
+const isCreatingProject = ref(false)
 const showImportModal = ref(false)
-const showAiPlanner = ref(false)
 const undoBannerData = ref<{
   importSessionId: string
   importedCount: number
@@ -65,9 +65,13 @@ const availableGroups = ref<
   { id: string; name: string; description: string | null; memberCount: number }[]
 >([])
 
-async function onPlannerCreated(newProjectId: string) {
-  await loadDashboard()
-  selectProject(newProjectId)
+function openNativeProjectPlanner() {
+  window.dispatchEvent(new CustomEvent('qaly:open-ai-assistant', {
+    detail: {
+      view: 'chat',
+      prompt: 'Hãy giúp tôi khởi chạy một dự án mới từ đầu đến cuối. Trước tiên hãy dùng Project Launch Brief, chỉ hỏi tối đa ba dữ kiện thực sự còn thiếu, sau đó lập staffing/delivery plan để tôi review và xác nhận một lần.',
+    },
+  }))
 }
 
 const activeProjectCount = computed(
@@ -79,8 +83,8 @@ const plannedProjectCount = computed(
 const archivedProjectCount = computed(
   () => projects.value.filter((p: any) => p.status === 'Archived').length,
 )
-const activeUsers = computed<UserDto[]>(() =>
-  (users.value ?? []).filter((user: UserDto) => user.isActive),
+const activeUsers = computed<UserDirectoryDto[]>(() =>
+  (users.value ?? []).filter((user: UserDirectoryDto) => user.isActive),
 )
 
 const featuredProject = computed(() => {
@@ -127,8 +131,13 @@ async function loadGroups() {
 
 async function createProjectWithSelection() {
   const name = projectName.value.trim()
-  if (!name) return
+  if (!name || isCreatingProject.value) return
+  if (createSourceMode.value === 'group' && !selectedGroupId.value) {
+    showError('Hãy chọn nhóm nguồn trước khi tạo dự án từ nhóm.')
+    return
+  }
 
+  isCreatingProject.value = true
   try {
     const createdOutsourceMap = autoCreateOutsourceMap.value
 
@@ -149,6 +158,15 @@ async function createProjectWithSelection() {
         },
       )
 
+      const projectId = result.project?.id ?? result.project?.Id
+      if (!projectId) {
+        throw new Error('Máy chủ không trả về Project vừa tạo từ nhóm.')
+      }
+      const canonical = await apiResult<ProjectDto>(`/api/projects/${projectId}`)
+      if (canonical.id !== projectId || canonical.name !== name) {
+        throw new Error('Máy chủ chưa xác nhận đúng Project vừa tạo từ nhóm.')
+      }
+
       createProjectOpen.value = false
       selectedGroupId.value = ''
       selectedMemberIds.value = []
@@ -157,8 +175,7 @@ async function createProjectWithSelection() {
       projectEndDate.value = ''
       await loadDashboard()
 
-      const projectId = result.project?.id ?? result.project?.Id
-      if (projectId) selectProject(projectId)
+      selectProject(projectId)
 
       showSuccess(
         `Tạo project từ nhóm thành công (${result.membersAdded ?? 0} thành viên)`,
@@ -178,11 +195,16 @@ async function createProjectWithSelection() {
       }),
     })
 
+    const partialFailures: string[] = []
     for (const userId of selectedMemberIds.value) {
-      await apiCommand(`/api/projects/${project.id}/members`, {
-        method: 'POST',
-        body: JSON.stringify({ userId, role: 'Member' }),
-      })
+      try {
+        await apiCommand(`/api/projects/${project.id}/members`, {
+          method: 'POST',
+          body: JSON.stringify({ userId, role: 'Member' }),
+        })
+      } catch {
+        partialFailures.push('một hoặc nhiều thành viên chưa được thêm')
+      }
     }
 
     if (createdOutsourceMap && project.id) {
@@ -254,8 +276,13 @@ async function createProjectWithSelection() {
           })
         }
       } catch {
-        // ignore sprint creation errors
+        partialFailures.push('sơ đồ mốc Outsource chưa được tạo đủ')
       }
+    }
+
+    const canonical = await apiResult<ProjectDto>(`/api/projects/${project.id}`)
+    if (canonical.id !== project.id || canonical.name !== name) {
+      throw new Error('Máy chủ chưa xác nhận đúng Project vừa tạo.')
     }
 
     createProjectOpen.value = false
@@ -266,13 +293,22 @@ async function createProjectWithSelection() {
     autoCreateOutsourceMap.value = false
     await loadDashboard()
     selectProject(project.id)
-    showSuccess(
-      `Tạo dự án "${project.name}" thành công${
-        createdOutsourceMap ? ' kèm sơ đồ mốc Outsource 6 bước' : ''
-      }`,
-    )
+    if (partialFailures.length > 0) {
+      showWarning(
+        `Project "${canonical.name}" đã được tạo; ${[...new Set(partialFailures)].join(' và ')}. Mở Project để bổ sung, không cần tạo lại.`,
+        { title: 'Đã tạo Project nhưng còn việc cần bổ sung', duration: 8000 },
+      )
+    } else {
+      showSuccess(
+        `Tạo dự án "${canonical.name}" thành công${
+          createdOutsourceMap ? ' kèm sơ đồ mốc Outsource 6 bước' : ''
+        }`,
+      )
+    }
   } catch (error) {
     showError(errorMessage(error, 'Không thể tạo dự án'))
+  } finally {
+    isCreatingProject.value = false
   }
 }
 
@@ -294,7 +330,7 @@ async function handleUndoFromBanner() {
   if (!undoBannerData.value) return
 
   try {
-    const res = await fetch(
+    const res = await apiFetch(
       `/api/import/sessions/${undoBannerData.value.importSessionId}`,
       { method: 'DELETE' },
     )
@@ -413,7 +449,7 @@ async function handleUndoFromBanner() {
             </div>
 
             <div class="projects-hero__title">
-              <h1>Không gian dự án rõ ràng hơn, nổi bật hơn</h1>
+              <h2>Không gian dự án rõ ràng hơn, nổi bật hơn</h2>
               <p>{{ heroSubtitle }}</p>
             </div>
 
@@ -422,7 +458,7 @@ async function handleUndoFromBanner() {
                 <FolderKanban :size="16" />
                 Tạo dự án mới
               </button>
-              <button class="btn-hero" type="button" @click="showAiPlanner = true">
+              <button class="btn-hero" type="button" @click="openNativeProjectPlanner">
                 <Sparkles :size="16" />
                 Lên kế hoạch AI
               </button>
@@ -550,7 +586,7 @@ async function handleUndoFromBanner() {
                 <FileUp :size="15" />
                 Nhập
               </button>
-              <button class="btn-toolbar btn-toolbar--accent" type="button" @click="showAiPlanner = true">
+              <button class="btn-toolbar btn-toolbar--accent" type="button" @click="openNativeProjectPlanner">
                 <Sparkles :size="15" />
                 Lên kế hoạch AI
               </button>
@@ -583,6 +619,7 @@ async function handleUndoFromBanner() {
               :active-project-id="selectedProject?.id ?? null"
               @view="selectProject"
               @edit="beginEditProject"
+              @archive="archiveProject"
               @delete="deleteProject"
               @create="openCreateProject"
             />
@@ -593,6 +630,7 @@ async function handleUndoFromBanner() {
               :active-project-id="selectedProject?.id ?? null"
               @view="selectProject"
               @edit="beginEditProject"
+              @archive="archiveProject"
               @delete="deleteProject"
               @create="openCreateProject"
             />
@@ -605,13 +643,6 @@ async function handleUndoFromBanner() {
       v-if="showImportModal"
       @close="showImportModal = false"
       @imported="onImported"
-    />
-
-    <AiPlannerModal
-      v-if="showAiPlanner"
-      :project-id="null"
-      @close="showAiPlanner = false"
-      @created="onPlannerCreated"
     />
 
     <ImportUndoBanner
@@ -630,14 +661,15 @@ async function handleUndoFromBanner() {
         v-if="createProjectOpen"
         class="project-modal-backdrop"
         @click.self="createProjectOpen = false"
+        @keydown.esc="createProjectOpen = false"
       >
-        <div class="project-modal glass-card">
+        <div class="project-modal glass-card" role="dialog" aria-modal="true" aria-labelledby="create-project-title">
           <div class="project-modal-header">
             <div class="project-modal-title">
               <FolderKanban :size="20" />
-              <h2>Tạo dự án mới</h2>
+              <h2 id="create-project-title">Tạo dự án mới</h2>
             </div>
-            <button class="icon-button" @click="createProjectOpen = false">
+            <button type="button" class="icon-button" aria-label="Đóng cửa sổ tạo dự án" title="Đóng" @click="createProjectOpen = false">
               <X :size="18" />
             </button>
           </div>
@@ -648,6 +680,7 @@ async function handleUndoFromBanner() {
               <input
                 v-model="projectName"
                 type="text"
+                aria-label="Tên dự án mới"
                 placeholder="Nhập tên dự án..."
                 required
                 class="modal-input"
@@ -658,6 +691,7 @@ async function handleUndoFromBanner() {
               <label>Mô tả ngắn</label>
                 <textarea
                   v-model="projectDescription"
+                  aria-label="Mô tả dự án mới"
                   placeholder="Nhập mô tả dự án (không bắt buộc)..."
                   rows="3"
                   class="modal-input"
@@ -666,7 +700,7 @@ async function handleUndoFromBanner() {
 
             <div class="form-group">
               <label>Ngày kết thúc dự kiến</label>
-              <input v-model="projectEndDate" type="date" class="modal-input" />
+              <input v-model="projectEndDate" type="date" aria-label="Ngày kết thúc dự kiến" class="modal-input" />
             </div>
 
             <div class="form-group">
@@ -675,6 +709,7 @@ async function handleUndoFromBanner() {
                 <button
                   type="button"
                   :class="{ active: createSourceMode === 'members' }"
+                  :aria-pressed="createSourceMode === 'members'"
                   @click="createSourceMode = 'members'"
                 >
                   Chọn từng người
@@ -682,6 +717,7 @@ async function handleUndoFromBanner() {
                 <button
                   type="button"
                   :class="{ active: createSourceMode === 'group' }"
+                  :aria-pressed="createSourceMode === 'group'"
                   @click="createSourceMode = 'group'"
                 >
                   Chọn nhóm
@@ -701,7 +737,7 @@ async function handleUndoFromBanner() {
 
             <div v-else class="form-group">
               <label>Nhóm nguồn</label>
-              <select v-model="selectedGroupId" class="modal-input">
+              <select v-model="selectedGroupId" aria-label="Nhóm nguồn" class="modal-input">
                 <option value="">Chọn nhóm</option>
                 <option v-for="group in availableGroups" :key="group.id" :value="group.id">
                   {{ group.name }} · {{ group.memberCount }} thành viên
@@ -723,8 +759,13 @@ async function handleUndoFromBanner() {
               <button class="btn btn--ghost" type="button" @click="createProjectOpen = false">
                 Hủy
               </button>
-              <button class="btn btn--primary" type="submit" :disabled="!projectName.trim()">
-                Tạo dự án
+              <button
+                class="btn btn--primary"
+                type="submit"
+                :disabled="isCreatingProject"
+                :title="isCreatingProject ? 'Đang tạo dự án và đọc lại dữ liệu đã lưu' : 'Nhập tên dự án; trình duyệt sẽ đưa bạn tới trường còn thiếu'"
+              >
+                {{ isCreatingProject ? 'Đang tạo...' : 'Tạo dự án' }}
               </button>
             </div>
           </form>
@@ -737,14 +778,15 @@ async function handleUndoFromBanner() {
         v-if="projectBeingEditedId"
         class="project-modal-backdrop"
         @click.self="projectBeingEditedId = null"
+        @keydown.esc="projectBeingEditedId = null"
       >
-        <div class="project-modal glass-card">
+        <div class="project-modal glass-card" role="dialog" aria-modal="true" aria-labelledby="edit-project-title">
           <div class="project-modal-header">
             <div class="project-modal-title">
               <Edit3 :size="20" />
-              <h2>Chỉnh sửa dự án</h2>
+              <h2 id="edit-project-title">Chỉnh sửa dự án</h2>
             </div>
-            <button class="icon-button" @click="projectBeingEditedId = null">
+            <button type="button" class="icon-button" aria-label="Đóng cửa sổ sửa dự án" title="Đóng" @click="projectBeingEditedId = null">
               <X :size="18" />
             </button>
           </div>
@@ -755,6 +797,7 @@ async function handleUndoFromBanner() {
               <input
                 v-model="editProjectName"
                 type="text"
+                aria-label="Tên dự án"
                 placeholder="Nhập tên dự án..."
                 required
                 class="modal-input"
@@ -765,6 +808,7 @@ async function handleUndoFromBanner() {
               <label>Mô tả ngắn</label>
                 <textarea
                   v-model="editProjectDescription"
+                  aria-label="Mô tả dự án"
                   placeholder="Nhập mô tả dự án (không bắt buộc)..."
                   rows="3"
                   class="modal-input"
@@ -775,7 +819,7 @@ async function handleUndoFromBanner() {
               <button class="btn btn--ghost" type="button" @click="projectBeingEditedId = null">
                 Hủy
               </button>
-              <button class="btn btn--primary" type="submit" :disabled="!editProjectName.trim()">
+              <button class="btn btn--primary" type="submit" title="Nhập tên dự án; trình duyệt sẽ đưa bạn tới trường còn thiếu">
                 Lưu thay đổi
               </button>
             </div>
@@ -1377,7 +1421,7 @@ textarea.modal-input {
   background: rgba(239, 246, 255, 0.86) !important;
 }
 
-.projects-hero__title h1,
+.projects-hero__title h2,
 .projects-spotlight strong,
 .project-workspace__header h2,
 .project-modal-title h2 {
@@ -1606,7 +1650,7 @@ textarea.modal-input {
   align-self: start;
 }
 
-.projects-hero__title h1 {
+.projects-hero__title h2 {
   max-width: 11ch;
   color: #0f172a;
   font-size: clamp(32px, 4vw, 56px);

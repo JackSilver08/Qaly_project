@@ -34,11 +34,13 @@ Trả lời theo định dạng: [Priority] - [Lý do]";
                 UserId = _currentUserService.UserId,
                 UseCache = true
             });
-            return response.Content ?? "Medium - Không thể xác định";
+            return response.IsSuccess && !string.IsNullOrWhiteSpace(response.Content)
+                ? response.Content
+                : "Medium - Model chưa phản hồi; dùng mức trung bình để bạn tiếp tục chỉnh.";
         }
         catch
         {
-            return "Medium - (AI suggestion unavailable)";
+            return "Medium - Model chưa phản hồi; dùng mức trung bình để bạn tiếp tục chỉnh.";
         }
     }
 }

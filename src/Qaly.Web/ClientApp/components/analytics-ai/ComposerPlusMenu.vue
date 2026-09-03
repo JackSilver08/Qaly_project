@@ -48,7 +48,7 @@ const panelTitle = computed(() => {
     case 'suggestions':
       return 'Câu hỏi gợi ý'
     case 'tools':
-      return 'Công cụ phân tích'
+      return 'Công cụ AI'
     case 'projects':
       return 'Chọn dự án'
     default:
@@ -158,8 +158,8 @@ onBeforeUnmount(() => {
       ref="triggerRef"
       class="composer-plus-trigger"
       type="button"
-      aria-label="Mở chức năng"
-      title="Thêm chức năng"
+      aria-label="Mở công cụ và nhập liệu"
+      title="Công cụ và nhập liệu"
       aria-haspopup="menu"
       :aria-expanded="isOpen"
       @click="toggleMenu"
@@ -213,7 +213,7 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="composer-plus-group">
-            <p class="composer-plus-label">Phân tích</p>
+            <p class="composer-plus-label">AI & phân tích</p>
             <button class="composer-plus-item" type="button" role="menuitem" @click="goto('suggestions')">
               <Lightbulb :size="16" aria-hidden="true" />
               <span>Câu hỏi gợi ý</span>
@@ -221,7 +221,7 @@ onBeforeUnmount(() => {
             </button>
             <button class="composer-plus-item" type="button" role="menuitem" @click="goto('tools')">
               <Wrench :size="16" aria-hidden="true" />
-              <span>Công cụ phân tích</span>
+              <span>Công cụ AI</span>
               <small class="composer-plus-chevron" aria-hidden="true">›</small>
             </button>
           </div>
@@ -230,7 +230,7 @@ onBeforeUnmount(() => {
             <p class="composer-plus-label">Hệ thống</p>
             <button class="composer-plus-item" type="button" role="menuitem" @click="onDrawer('history')">
               <Clock3 :size="16" aria-hidden="true" />
-              <span>Lịch sử</span>
+              <span>Lịch sử phiên</span>
             </button>
             <button class="composer-plus-item" type="button" role="menuitem" @click="onDrawer('sources')">
               <Database :size="16" aria-hidden="true" />
@@ -238,7 +238,7 @@ onBeforeUnmount(() => {
             </button>
             <button class="composer-plus-item" type="button" role="menuitem" @click="onDrawer('model')">
               <Settings2 :size="16" aria-hidden="true" />
-              <span>Thiết lập model</span>
+              <span>Model AI</span>
             </button>
           </div>
         </div>

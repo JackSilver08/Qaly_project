@@ -183,7 +183,17 @@ public static class MappingExtensions
             task.SortOrder,
             EncodeRowVersion(task.RowVersion),
             task.Number,
-            BuildTaskKey(task));
+            BuildTaskKey(task),
+            task.ParentTaskId,
+            task.Subtasks?.Count ?? 0,
+            task.Subtasks?.Count(item => string.Equals(item.Status, "Done", StringComparison.OrdinalIgnoreCase)) ?? 0,
+            task.Subtasks is { Count: > 0 }
+                ? (int)Math.Round(task.Subtasks.Count(item => string.Equals(item.Status, "Done", StringComparison.OrdinalIgnoreCase)) * 100d / task.Subtasks.Count,
+                    MidpointRounding.AwayFromZero)
+                : 0,
+            isRestricted ? null : task.ReviewerId,
+            isRestricted ? null : task.Reviewer?.FullName,
+            task.SprintId);
     }
 
     public static TaskItemDto ToDto(this TaskItem task)
@@ -254,7 +264,10 @@ public static class MappingExtensions
             task.SortOrder,
             EncodeRowVersion(task.RowVersion),
             task.Number,
-            BuildTaskKey(task));
+            BuildTaskKey(task),
+            ReviewerId: task.ReviewerId,
+            ReviewerName: task.Reviewer?.FullName,
+            SprintId: task.SprintId);
 
     public static TaskItem ToEntity(this CreateTaskDto dto)
         => new()

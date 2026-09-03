@@ -77,6 +77,14 @@ public class Result
         IReadOnlyDictionary<string, object?>? metadata = null)
         => new(false, default, error, statusCode, errorCode, metadata);
 
+    public static Result<T> Failure<T>(
+        T data,
+        string error,
+        int statusCode,
+        string? errorCode = null,
+        IReadOnlyDictionary<string, object?>? metadata = null)
+        => new(false, data, error, statusCode, errorCode, metadata);
+
     public static Result<T> Conflict<T>(T data, string message = "Resource was modified by another request.")
         => new(false, data, message, 409);
 

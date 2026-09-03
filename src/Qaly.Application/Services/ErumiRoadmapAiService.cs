@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Ai;
@@ -8,32 +9,28 @@ using Qaly.Domain.Interfaces;
 namespace Qaly.Application.Services;
 
 /// <summary>
-/// Production-grade implementation of Erumi AI Roadmap Suite.
-/// Provides intelligent WBS decomposition, expansion suggestions, workload impact auditing,
-/// simulation sandbox, and strict permission-guarded snapshot diff approval and rollback.
+/// Builds source-bound roadmap proposals and writes canonical Sprint/Task data only after approval.
 /// </summary>
 public class ErumiRoadmapAiService : IErumiRoadmapAiService
 {
+    private static readonly TimeSpan SnapshotRetention = TimeSpan.FromHours(72);
+    private static readonly JsonSerializerOptions RoadmapJsonOptions = new() { PropertyNameCaseInsensitive = true };
+    private static readonly string[] Priorities = ["Low", "Medium", "High", "Critical"];
+    private static readonly char[] RoleSeparators = [' ', '/', '-'];
+    private static readonly ConcurrentDictionary<Guid, ProposalScope> Proposals = new();
+    private static readonly ConcurrentDictionary<Guid, AppliedSnapshot> Snapshots = new();
+    private static readonly ConcurrentDictionary<Guid, byte> ApplyingSnapshots = new();
+
     private readonly IRepository<Project> _projectRepo;
     private readonly IRepository<Sprint> _sprintRepo;
     private readonly IRepository<TaskItem> _taskRepo;
     private readonly IRepository<ProjectMember> _memberRepo;
-    private readonly IRepository<SystemModulePermission> _systemPermRepo;
+    private readonly ISystemModuleAuthorizationService _systemAuthorization;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditLogService _auditLogService;
-
-    // Snapshot store supporting 72-hour 1-Click Rollback with thread-safety
-    private static readonly ConcurrentDictionary<Guid, RoadmapSnapshotRecord> _snapshots = new();
-    private static readonly TimeSpan SnapshotRetentionPeriod = TimeSpan.FromHours(72);
-
-    private record RoadmapSnapshotRecord(
-        Guid SnapshotId,
-        Guid ProjectId,
-        Guid SprintId,
-        List<Guid> CreatedTaskIds,
-        DateTimeOffset CreatedAt,
-        Guid ApprovedByUserId);
+    private readonly IAiGateway _aiGateway;
+    private readonly IAiNativeAuthorizationService _authorization;
 
     public ErumiRoadmapAiService(
         IRepository<Project> projectRepo,
@@ -43,612 +40,447 @@ public class ErumiRoadmapAiService : IErumiRoadmapAiService
         IRepository<SystemModulePermission> systemPermRepo,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
-        IAuditLogService auditLogService)
+        IAuditLogService auditLogService,
+        IAiGateway aiGateway,
+        IAiNativeAuthorizationService authorization,
+        ISystemModuleAuthorizationService? systemAuthorization = null)
     {
         _projectRepo = projectRepo;
         _sprintRepo = sprintRepo;
         _taskRepo = taskRepo;
         _memberRepo = memberRepo;
-        _systemPermRepo = systemPermRepo;
+        _systemAuthorization = systemAuthorization ?? new SystemModuleAuthorizationService(systemPermRepo);
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
         _auditLogService = auditLogService;
+        _aiGateway = aiGateway;
+        _authorization = authorization;
     }
-
-    #region 1. Chat & Proposal Generation
 
     public async Task<Result<ErumiRoadmapChatResponseDto>> ChatAndProposeRoadmapAsync(
         ErumiRoadmapChatRequestDto dto,
         CancellationToken ct = default)
     {
-        var authCheck = await ValidateUserAndAiPermissionAsync(dto.ProjectId, ct);
-        if (!authCheck.IsSuccess)
-        {
-            return Result.Failure<ErumiRoadmapChatResponseDto>(authCheck.Error ?? "Không có quyền truy cập.", authCheck.StatusCode);
-        }
+        RemoveExpiredSnapshots();
+        var userId = _currentUserService.UserId;
+        if (userId == null) return Result.Forbidden<ErumiRoadmapChatResponseDto>();
+        if (string.IsNullOrWhiteSpace(dto.UserMessage))
+            return Result.Failure<ErumiRoadmapChatResponseDto>("Hãy mô tả mục tiêu của phương án lộ trình.", 400);
 
+        var permission = await ValidateAiReadPermissionAsync(dto.ProjectId, userId.Value, ct);
+        if (!permission.IsSuccess)
+            return Result.Failure<ErumiRoadmapChatResponseDto>(permission.Error ?? "Không có quyền truy cập.", permission.StatusCode);
         var project = await _projectRepo.GetByIdAsync(dto.ProjectId, ct);
         if (project == null) return Result.NotFound<ErumiRoadmapChatResponseDto>("Không tìm thấy dự án.");
 
-        var members = await GetProjectMembersWithUsersAsync(dto.ProjectId, ct);
+        var members = await _memberRepo.GetQueryable().AsNoTracking().Include(x => x.User)
+            .Where(x => x.ProjectId == dto.ProjectId).ToListAsync(ct);
+        var currentTasks = await _taskRepo.GetQueryable().AsNoTracking()
+            .Where(x => x.ProjectId == dto.ProjectId && x.Status != "Cancelled")
+            .OrderBy(x => x.SortOrder).ThenBy(x => x.Id).Take(80).ToListAsync(ct);
+        var currentSprints = await _sprintRepo.GetQueryable().AsNoTracking()
+            .Where(x => x.ProjectId == dto.ProjectId).OrderBy(x => x.StartDate).ThenBy(x => x.Id).Take(30).ToListAsync(ct);
 
-        // Determine action context from chat message
-        var prompt = dto.UserMessage?.Trim() ?? string.Empty;
-        var actionType = DetermineActionTypeFromMessage(prompt);
+        var objective = string.IsNullOrWhiteSpace(dto.ContextSprintName)
+            ? dto.UserMessage.Trim()
+            : $"Trong Sprint/mốc '{dto.ContextSprintName.Trim()}': {dto.UserMessage.Trim()}";
+        var model = await GenerateRoadmapModelAsync(project, objective, currentTasks, currentSprints, userId.Value, ct);
+        var proposedTasks = MapProposedTasks(model.Tasks, members);
+        if (proposedTasks.Count == 0)
+            return Result.Failure<ErumiRoadmapChatResponseDto>("Không lập được task có thể duyệt từ mục tiêu này.", 422);
 
-        var (phaseName, tasks, risks, summary) = BuildRoadmapProposalForContext(
-            actionType,
-            prompt,
-            project.Name,
-            dto.ContextSprintName,
-            members);
-
-        var workloadImpacts = await CalculateMemberWorkloadImpactsAsync(dto.ProjectId, members, tasks, ct);
-
+        var workload = await CalculateWorkloadImpactsAsync(members, proposedTasks, ct);
+        var start = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(1), TimeSpan.Zero);
+        var end = start.AddDays(Math.Clamp(model.DurationDays, 7, 42));
         var snapshotId = Guid.NewGuid();
-        var startDate = DateTimeOffset.UtcNow.AddDays(1);
-        var endDate = startDate.AddDays(14);
-
+        var phase = string.IsNullOrWhiteSpace(model.PhaseName) ? "Giai đoạn đề xuất" : model.PhaseName.Trim();
+        var summary = string.IsNullOrWhiteSpace(model.Summary) ? $"Phương án cho mục tiêu: {objective}" : model.Summary.Trim();
+        var risks = model.Risks.Where(x => !string.IsNullOrWhiteSpace(x.Description)).Select(x =>
+            new ErumiRoadmapRiskDto(
+                x.RiskType?.Trim() ?? "PlanningRisk",
+                NormalizePriority(x.Severity),
+                x.Description.Trim(),
+                x.MitigationAdvice?.Trim() ?? "Cần người quản lý kiểm tra trước khi duyệt.",
+                x.BlockedItemTitle?.Trim())).ToList();
         var proposal = new ErumiRoadmapDiffProposalDto(
-            snapshotId,
-            dto.ProjectId,
-            phaseName,
-            startDate,
-            endDate,
-            tasks,
-            workloadImpacts,
-            summary,
-            ConfidenceScore: 0.94,
-            IdentifiedRisks: risks);
+            snapshotId, dto.ProjectId, phase, start, end, proposedTasks, workload, summary,
+            Math.Clamp(model.ConfidenceScore, 0.1, 1), risks);
+        Proposals[snapshotId] = new ProposalScope(dto.ProjectId, phase, start, end, DateTimeOffset.UtcNow);
 
-        var replyMessage = $"Dựa trên yêu cầu và bối cảnh dự án **{project.Name}**, Erumi AI đã sinh bản thảo đề xuất lộ trình chi tiết. Vui lòng mở **Diff Preview Modal** để kiểm tra và duyệt.";
-
-        return Result.Success(new ErumiRoadmapChatResponseDto(replyMessage, true, proposal));
+        var reply = $"Đã lập phương án cho {project.Name} từ {currentTasks.Count} task và {currentSprints.Count} Sprint hiện có. Bạn có thể chỉnh từng task trước khi xác nhận.";
+        return Result.Success(new ErumiRoadmapChatResponseDto(reply, true, proposal));
     }
-
-    #endregion
-
-    #region 2. 1-Click Fast Action Execution
 
     public async Task<Result<ErumiRoadmapDiffProposalDto>> ExecuteFastActionAsync(
         ErumiRoadmapActionRequestDto dto,
         CancellationToken ct = default)
     {
-        var authCheck = await ValidateUserAndAiPermissionAsync(dto.ProjectId, ct);
-        if (!authCheck.IsSuccess)
-        {
-            return Result.Failure<ErumiRoadmapDiffProposalDto>(authCheck.Error ?? "Không có quyền truy cập.", authCheck.StatusCode);
-        }
-
-        var project = await _projectRepo.GetByIdAsync(dto.ProjectId, ct);
-        if (project == null) return Result.NotFound<ErumiRoadmapDiffProposalDto>("Không tìm thấy dự án.");
-
-        var members = await GetProjectMembersWithUsersAsync(dto.ProjectId, ct);
-
-        var (phaseName, tasks, risks, summary) = BuildRoadmapProposalForContext(
-            dto.ActionType,
-            dto.UserPrompt ?? string.Empty,
-            project.Name,
-            dto.ContextSprintName,
-            members);
-
-        var workloadImpacts = await CalculateMemberWorkloadImpactsAsync(dto.ProjectId, members, tasks, ct);
-
-        var snapshotId = Guid.NewGuid();
-        var startDate = DateTimeOffset.UtcNow.AddDays(1);
-        var endDate = startDate.AddDays(14);
-
-        var proposal = new ErumiRoadmapDiffProposalDto(
-            snapshotId,
-            dto.ProjectId,
-            phaseName,
-            startDate,
-            endDate,
-            tasks,
-            workloadImpacts,
-            summary,
-            ConfidenceScore: 0.95,
-            IdentifiedRisks: risks);
-
-        return Result.Success(proposal);
+        var prompt = BuildFastActionPrompt(dto.ActionType, dto.UserPrompt);
+        if (prompt == null)
+            return Result.Failure<ErumiRoadmapDiffProposalDto>("Loại thao tác Roadmap không được hỗ trợ.", 400);
+        var result = await ChatAndProposeRoadmapAsync(
+            new ErumiRoadmapChatRequestDto(dto.ProjectId, prompt, dto.ContextSprintName), ct);
+        return result.IsSuccess && result.Data?.Proposal != null
+            ? Result.Success(result.Data.Proposal)
+            : Result.Failure<ErumiRoadmapDiffProposalDto>(result.Error ?? "Không lập được phương án Roadmap.", result.StatusCode);
     }
-
-    #endregion
-
-    #region 3. What-If Scenario Simulation Sandbox
 
     public async Task<Result<ErumiRoadmapSimulationResultDto>> SimulateScenarioAsync(
         ErumiRoadmapActionRequestDto dto,
         CancellationToken ct = default)
     {
-        var authCheck = await ValidateUserAndAiPermissionAsync(dto.ProjectId, ct);
-        if (!authCheck.IsSuccess)
+        var scenario = string.IsNullOrWhiteSpace(dto.UserPrompt) ? "Mô phỏng Roadmap" : dto.UserPrompt.Trim();
+        var proposalResult = await ChatAndProposeRoadmapAsync(
+            new ErumiRoadmapChatRequestDto(dto.ProjectId, $"Mô phỏng, không ghi dữ liệu: {scenario}", dto.ContextSprintName), ct);
+        if (!proposalResult.IsSuccess || proposalResult.Data?.Proposal == null)
+            return Result.Failure<ErumiRoadmapSimulationResultDto>(proposalResult.Error ?? "Không mô phỏng được kịch bản.", proposalResult.StatusCode);
+
+        var proposal = proposalResult.Data.Proposal;
+        var totalHours = proposal.ProposedTasks.Sum(x => x.EstimatedHours);
+        var availableCount = Math.Max(1, proposal.WorkloadImpacts.Count(x => !x.IsOverloaded));
+        var days = (int)Math.Ceiling(totalHours / (availableCount * 6d));
+        var overloaded = proposal.WorkloadImpacts.Count(x => x.IsOverloaded);
+        var tradeoffs = new List<string>
         {
-            return Result.Failure<ErumiRoadmapSimulationResultDto>(authCheck.Error ?? "Không có quyền truy cập.", authCheck.StatusCode);
-        }
-
-        var project = await _projectRepo.GetByIdAsync(dto.ProjectId, ct);
-        if (project == null) return Result.NotFound<ErumiRoadmapSimulationResultDto>("Không tìm thấy dự án.");
-
-        var members = await GetProjectMembersWithUsersAsync(dto.ProjectId, ct);
-
-        var (_, tasks, _, _) = BuildRoadmapProposalForContext(
-            dto.ActionType ?? ErumiRoadmapActionType.ExpandPhase,
-            dto.UserPrompt ?? "Mô phỏng mở rộng tính năng mới",
-            project.Name,
-            dto.ContextSprintName,
-            members);
-
-        var totalHours = tasks.Sum(t => t.EstimatedHours);
-        var deltaDays = (int)Math.Ceiling(totalHours / 16.0); // Assuming 2 devs working concurrently
-        var workloadImpacts = await CalculateMemberWorkloadImpactsAsync(dto.ProjectId, members, tasks, ct);
-
-        var tradeOffs = new List<string>
-        {
-            $"Yêu cầu tăng thêm {totalHours} giờ làm việc trong 2 tuần tới.",
-            deltaDays > 0 ? $"Có thể đẩy lùi ngày nghiệm thu cuối cùng thêm ~{deltaDays} ngày nếu không bổ sung nhân sự." : "Tiến độ hiện tại vẫn đáp ứng được trong khoảng an toàn.",
-            "Khuyến nghị bố trí code review và QA ngay song song để tránh tắc nghẽn ở khâu bàn giao."
+            $"Phạm vi đề xuất cần thêm khoảng {totalHours} giờ công.",
+            $"Ước tính khoảng {days} ngày làm việc với {availableCount} thành viên chưa vượt ngưỡng tải.",
+            overloaded > 0
+                ? $"Có {overloaded} thành viên vượt ngưỡng; cần đổi người hoặc giảm phạm vi trước khi giao."
+                : "Chưa vượt ngưỡng giờ công; vẫn phải đối chiếu lịch và tải đa dự án trước khi giao."
         };
-
-        var recommendation = $"Kịch bản '{dto.UserPrompt ?? "Mở rộng"}' có mức độ khả thi 88%. Phân bổ tối ưu cho {members.Count} thành viên hiện tại.";
-
-        var simulationResult = new ErumiRoadmapSimulationResultDto(
-            ScenarioName: dto.UserPrompt ?? "Kịch bản mở rộng dự án",
-            CompletionDateDeltaDays: deltaDays,
-            TotalAdditionalHours: totalHours,
-            ConfidencePercentage: 88.5,
-            KeyTradeoffs: tradeOffs,
-            MemberImpacts: workloadImpacts,
-            RecommendationSummary: recommendation);
-
-        return Result.Success(simulationResult);
+        return Result.Success(new ErumiRoadmapSimulationResultDto(
+            scenario, days, totalHours, Math.Round(proposal.ConfidenceScore * 100, 1),
+            tradeoffs, proposal.WorkloadImpacts, proposal.Summary));
     }
-
-    #endregion
-
-    #region 4. Executive Brief Generation
 
     public async Task<Result<ErumiRoadmapExecutiveBriefDto>> GenerateExecutiveBriefAsync(
         Guid projectId,
         CancellationToken ct = default)
     {
-        var authCheck = await ValidateUserAndAiPermissionAsync(projectId, ct);
-        if (!authCheck.IsSuccess)
-        {
-            return Result.Failure<ErumiRoadmapExecutiveBriefDto>(authCheck.Error ?? "Không có quyền truy cập.", authCheck.StatusCode);
-        }
-
+        var userId = _currentUserService.UserId;
+        if (userId == null) return Result.Forbidden<ErumiRoadmapExecutiveBriefDto>();
+        var permission = await ValidateAiReadPermissionAsync(projectId, userId.Value, ct);
+        if (!permission.IsSuccess)
+            return Result.Failure<ErumiRoadmapExecutiveBriefDto>(permission.Error ?? "Không có quyền truy cập.", permission.StatusCode);
         var project = await _projectRepo.GetByIdAsync(projectId, ct);
         if (project == null) return Result.NotFound<ErumiRoadmapExecutiveBriefDto>("Không tìm thấy dự án.");
 
-        var sprints = await _sprintRepo.GetQueryable()
-            .Where(s => s.ProjectId == projectId)
-            .OrderBy(s => s.StartDate)
-            .ToListAsync(ct);
-
-        var tasks = await _taskRepo.GetQueryable()
-            .Where(t => t.ProjectId == projectId)
-            .ToListAsync(ct);
-
-        var totalTasks = tasks.Count;
-        var completedTasks = tasks.Count(t => t.Status == "Done" || t.Status == "Completed");
-        var completionRate = totalTasks > 0 ? Math.Round((double)completedTasks / totalTasks * 100, 1) : 0.0;
-
-        var achievements = sprints.Where(s => s.Status == "Completed")
-            .Select(s => $"Hoàn thành mốc: {s.Name}")
-            .Take(3)
-            .ToList();
-        if (achievements.Count == 0) achievements.Add("Đã thiết lập khung kiến trúc và kế hoạch Sprint đầu tiên.");
-
-        var upcoming = sprints.Where(s => s.Status != "Completed")
-            .Select(s => $"{s.Name} (Dự kiến: {s.EndDate:dd/MM/yyyy})")
-            .Take(3)
-            .ToList();
-
-        var risks = new List<string>();
-        var overdueTasks = tasks.Where(t => t.Status != "Done" && t.DueDate.HasValue && t.DueDate.Value < DateTimeOffset.UtcNow).ToList();
-        if (overdueTasks.Count > 0)
-        {
-            risks.Add($"Phát hiện {overdueTasks.Count} công việc quá hạn cần can thiệp tái phân bổ.");
-        }
-        else
-        {
-            risks.Add("Tất cả mốc thời gian trọng yếu đang diễn ra đúng tiến độ.");
-        }
-
-        var healthStatus = overdueTasks.Count > 2 ? "NeedsAttention" : "Healthy";
-
-        var markdownSummary = $"""
-            # 📊 Báo Cáo Tiến Độ Dự Án: {project.Name}
-            *Ngày xuất báo cáo: {DateTimeOffset.UtcNow:dd/MM/yyyy HH:mm} (Erumi AI Executive Brief)*
-
-            ### 🎯 Tổng Quan Sức Khỏe Dự Án
-            - **Trạng thái:** {(healthStatus == "Healthy" ? "🟢 Tiến độ ổn định (On Track)" : "🟡 Cần lưu ý điều chỉnh")}
-            - **Tỷ lệ hoàn thành:** **{completionRate}%** ({completedTasks}/{totalTasks} tasks)
-            - **Tổng số Sprint/Phase:** {sprints.Count}
-
-            ### 🏆 Kết Quả Trọng Tâm Đã Đạt Được
-            {string.Join("\n", achievements.Select(a => $"- {a}"))}
-
-            ### 🚀 Cột Mốc Bàn Giao Kế Tiếp
-            {string.Join("\n", upcoming.Select(u => $"- {u}"))}
-
-            ### ⚠️ Đánh Giá Rủi Ro & Đề Xuất Quản Trị
-            {string.Join("\n", risks.Select(r => $"- {r}"))}
-            """;
-
-        var brief = new ErumiRoadmapExecutiveBriefDto(
-            projectId,
-            project.Name,
-            healthStatus,
-            completionRate,
-            achievements,
-            upcoming,
-            risks,
-            markdownSummary,
-            DateTimeOffset.UtcNow);
-
-        return Result.Success(brief);
+        var sprints = await _sprintRepo.GetQueryable().AsNoTracking().Where(x => x.ProjectId == projectId)
+            .OrderBy(x => x.StartDate).ToListAsync(ct);
+        var tasks = await _taskRepo.GetQueryable().AsNoTracking()
+            .Where(x => x.ProjectId == projectId && x.Status != "Cancelled").ToListAsync(ct);
+        var now = DateTimeOffset.UtcNow;
+        var completed = tasks.Count(IsTaskCompleted);
+        var completion = tasks.Count == 0 ? 0 : Math.Round(completed * 100d / tasks.Count, 1);
+        var overdue = tasks.Where(x => !IsTaskCompleted(x) && x.DueDate.HasValue && x.DueDate.Value < now).ToList();
+        var achievements = sprints.Where(x => x.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase))
+            .Select(x => $"Hoàn thành mốc: {x.Name}").Take(3).ToList();
+        if (achievements.Count == 0)
+            achievements.Add(completed > 0 ? $"Đã hoàn thành {completed}/{tasks.Count} task." : "Chưa có mốc hoàn thành được ghi nhận.");
+        var upcoming = sprints.Where(x => !x.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(x => x.EndDate).Select(x => $"{x.Name} — {x.EndDate:dd/MM/yyyy}").Take(3).ToList();
+        var risks = overdue.Count > 0
+            ? new List<string> { $"Có {overdue.Count} task quá hạn cần xử lý." }
+            : new List<string> { "Chưa phát hiện task quá hạn trong dữ liệu hiện tại." };
+        var health = overdue.Count > 0 ? "NeedsAttention" : "Healthy";
+        var markdown = $"# {project.Name}\n\n- Trạng thái: {health}\n- Hoàn thành: {completion}% ({completed}/{tasks.Count} task)\n- Sprint/mốc: {sprints.Count}\n- Task quá hạn: {overdue.Count}";
+        return Result.Success(new ErumiRoadmapExecutiveBriefDto(
+            projectId, project.Name, health, completion, achievements, upcoming, risks, markdown, now));
     }
-
-    #endregion
-
-    #region 5. Strict Permission-Guarded Approval & Rollback
 
     public async Task<Result> ApproveRoadmapProposalAsync(
         ApproveErumiRoadmapProposalDto dto,
         CancellationToken ct = default)
     {
-        var currentUserId = _currentUserService.UserId;
-        if (currentUserId == null) return Result.Forbidden();
-
+        RemoveExpiredSnapshots();
+        var userId = _currentUserService.UserId;
+        if (userId == null) return Result.Forbidden();
         var project = await _projectRepo.GetByIdAsync(dto.ProjectId, ct);
         if (project == null) return Result.NotFound("Không tìm thấy dự án.");
+        if (!await CanManageProjectAsync(project, userId.Value, ct)) return Result.Forbidden();
+        if (!Proposals.TryGetValue(dto.SnapshotId, out var proposal) || proposal.ProjectId != dto.ProjectId)
+            return Result.Failure("Phương án không còn hợp lệ; hãy tạo lại từ dữ liệu mới nhất.", 409);
+        if (Snapshots.ContainsKey(dto.SnapshotId) || !ApplyingSnapshots.TryAdd(dto.SnapshotId, 0))
+            return Result.Failure("Phương án này đã hoặc đang được áp dụng; không tạo lặp.", 409);
 
-        // Strict RBAC Verification: Only Project Owner or authorized Project Admin/Manager can approve
-        var isAuthorized = await ValidateApprovalAuthorityAsync(project, currentUserId.Value, ct);
-        if (!isAuthorized)
+        try
         {
-            return Result.Failure("Chỉ Project Owner hoặc người có thẩm quyền quản trị mới được phép duyệt và áp dụng đề xuất lộ trình từ AI.", 403);
-        }
+            if (dto.ApprovedTasks.Count is < 1 or > 20 || dto.ApprovedTasks.Any(x => string.IsNullOrWhiteSpace(x.Title)))
+                return Result.Failure("Hãy chọn từ 1 đến 20 task hợp lệ.", 400);
+            var allowedAssignees = await _memberRepo.GetQueryable().Where(x => x.ProjectId == dto.ProjectId)
+                .Select(x => x.UserId).ToHashSetAsync(ct);
+            if (dto.ApprovedTasks.Any(x => x.RecommendedAssigneeId.HasValue && !allowedAssignees.Contains(x.RecommendedAssigneeId.Value)))
+                return Result.Failure("Người được đề xuất không còn là thành viên dự án.", 409);
 
-        if (dto.ApprovedTasks == null || dto.ApprovedTasks.Count == 0)
-        {
-            return Result.Failure("Danh sách công việc phê duyệt không được để trống.", 400);
-        }
-
-        // 1. Tạo Sprint / Phase mới trong Database
-        var sprint = new Sprint
-        {
-            ProjectId = dto.ProjectId,
-            Name = "Phase: Security & Scope Expansion (Erumi AI)",
-            Goal = "Mở rộng tính năng và gia cố quy trình theo phê duyệt từ AI Roadmap",
-            StartDate = DateTimeOffset.UtcNow,
-            EndDate = DateTimeOffset.UtcNow.AddDays(14),
-            Status = "Planning"
-        };
-
-        await _sprintRepo.AddAsync(sprint, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-
-        // 2. Tạo các Tasks được duyệt với nhãn AI nhận diện
-        var createdTaskIds = new List<Guid>();
-        foreach (var taskDto in dto.ApprovedTasks)
-        {
-            var formattedTitle = taskDto.Title.StartsWith("🤖", StringComparison.OrdinalIgnoreCase)
-                ? taskDto.Title
-                : $"🤖 Generated by Erumi AI: {taskDto.Title}";
-
-            var task = new TaskItem
+            var sprint = new Sprint
             {
                 ProjectId = dto.ProjectId,
-                SprintId = sprint.Id,
-                Title = formattedTitle,
-                Description = taskDto.Description,
-                Priority = string.IsNullOrWhiteSpace(taskDto.Priority) ? "Medium" : taskDto.Priority,
-                EstimatedHours = taskDto.EstimatedHours > 0 ? taskDto.EstimatedHours : 8,
-                AssigneeId = taskDto.RecommendedAssigneeId,
-                ReporterId = currentUserId.Value,
-                Status = "Todo"
+                Name = proposal.PhaseName,
+                Goal = $"Phương án đã duyệt cho {project.Name}",
+                StartDate = proposal.StartDate,
+                EndDate = proposal.EndDate,
+                Status = "Planning"
             };
-
-            await _taskRepo.AddAsync(task, ct);
-            createdTaskIds.Add(task.Id);
-        }
-
-        await _unitOfWork.SaveChangesAsync(ct);
-
-        // 3. Ghi nhận Snapshot vào bộ nhớ an toàn phục vụ 72-hour 1-Click Rollback
-        _snapshots[dto.SnapshotId] = new RoadmapSnapshotRecord(
-            dto.SnapshotId,
-            dto.ProjectId,
-            sprint.Id,
-            createdTaskIds,
-            DateTimeOffset.UtcNow,
-            currentUserId.Value);
-
-        // Clean expired snapshots
-        CleanExpiredSnapshots();
-
-        // 4. Ghi Audit Log truy vết hành vi bảo mật
-        await _auditLogService.LogAsync(
-            "ApproveErumiRoadmapProposal",
-            nameof(Sprint),
-            sprint.Id.ToString(),
-            new
+            await _sprintRepo.AddAsync(sprint, ct);
+            var taskIds = new List<Guid>();
+            foreach (var source in dto.ApprovedTasks)
             {
-                dto.SnapshotId,
-                ApprovedBy = currentUserId.Value,
-                TaskCount = createdTaskIds.Count,
-                SprintName = sprint.Name
-            },
-            ct);
-
-        return Result.Success();
+                var task = new TaskItem
+                {
+                    ProjectId = dto.ProjectId,
+                    SprintId = sprint.Id,
+                    Title = source.Title.Trim(),
+                    Description = source.Description?.Trim(),
+                    Priority = NormalizePriority(source.Priority),
+                    EstimatedHours = Math.Clamp(source.EstimatedHours, 1, 80),
+                    AssigneeId = source.RecommendedAssigneeId,
+                    ReporterId = userId.Value,
+                    Status = "Todo"
+                };
+                await _taskRepo.AddAsync(task, ct);
+                taskIds.Add(task.Id);
+            }
+            await _unitOfWork.SaveChangesWithAuditAsync(
+                _auditLogService,
+                "ApproveErumiRoadmap",
+                nameof(Sprint),
+                sprint.Id.ToString(),
+                new { dto.SnapshotId, TaskCount = taskIds.Count, ApprovedBy = userId.Value },
+                ct);
+            Snapshots[dto.SnapshotId] = new AppliedSnapshot(dto.ProjectId, sprint.Id, taskIds, DateTimeOffset.UtcNow);
+            Proposals.TryRemove(dto.SnapshotId, out _);
+            return Result.Success();
+        }
+        finally
+        {
+            ApplyingSnapshots.TryRemove(dto.SnapshotId, out _);
+        }
     }
 
     public async Task<Result> RollbackRoadmapSnapshotAsync(
         RollbackErumiRoadmapSnapshotDto dto,
         CancellationToken ct = default)
     {
-        var currentUserId = _currentUserService.UserId;
-        if (currentUserId == null) return Result.Forbidden();
-
+        RemoveExpiredSnapshots();
+        var userId = _currentUserService.UserId;
+        if (userId == null) return Result.Forbidden();
         var project = await _projectRepo.GetByIdAsync(dto.ProjectId, ct);
         if (project == null) return Result.NotFound("Không tìm thấy dự án.");
+        if (!await CanManageProjectAsync(project, userId.Value, ct)) return Result.Forbidden();
+        if (!Snapshots.TryGetValue(dto.SnapshotId, out var snapshot) || snapshot.ProjectId != dto.ProjectId)
+            return Result.Failure("Không tìm thấy snapshot hoặc thời gian rollback đã hết hạn.", 404);
 
-        // Strict RBAC Verification
-        var isAuthorized = await ValidateApprovalAuthorityAsync(project, currentUserId.Value, ct);
-        if (!isAuthorized)
-        {
-            return Result.Failure("Chỉ Project Owner hoặc người có thẩm quyền quản trị mới được phép hoàn tác lộ trình AI.", 403);
-        }
-
-        if (!_snapshots.TryGetValue(dto.SnapshotId, out var snapshot))
-        {
-            return Result.Failure("Không tìm thấy bản ghi snapshot hoặc thời hạn hoàn tác 72 giờ đã hết hạn.", 404);
-        }
-
-        if (DateTimeOffset.UtcNow - snapshot.CreatedAt > SnapshotRetentionPeriod)
-        {
-            _snapshots.TryRemove(dto.SnapshotId, out _);
-            return Result.Failure("Snapshot này đã quá thời hạn lưu trữ 72 giờ và không thể hoàn tác tự động.", 400);
-        }
-
-        // Xóa các task đã sinh
-        foreach (var taskId in snapshot.CreatedTaskIds)
+        foreach (var taskId in snapshot.TaskIds)
         {
             var task = await _taskRepo.GetByIdAsync(taskId, ct);
-            if (task != null)
+            if (task != null) await _taskRepo.DeleteAsync(task, ct);
+        }
+        var sprint = await _sprintRepo.GetByIdAsync(snapshot.SprintId, ct);
+        if (sprint != null) await _sprintRepo.DeleteAsync(sprint, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "RollbackErumiRoadmap",
+            nameof(Sprint),
+            snapshot.SprintId.ToString(),
+            new { dto.SnapshotId, RolledBackBy = userId.Value },
+            ct);
+        Snapshots.TryRemove(dto.SnapshotId, out _);
+        return Result.Success();
+    }
+
+    private async Task<RoadmapModel> GenerateRoadmapModelAsync(
+        Project project, string objective, IReadOnlyList<TaskItem> tasks,
+        IReadOnlyList<Sprint> sprints, Guid userId, CancellationToken ct)
+    {
+        var facts = new
+        {
+            project = new { project.Name, project.Description, project.Status, project.StartDate, project.EndDate },
+            objective,
+            sprints = sprints.Select(x => new { x.Name, x.Goal, x.Status, x.StartDate, x.EndDate }),
+            tasks = tasks.Select(x => new { x.Title, x.Status, x.Priority, x.EstimatedHours, x.DueDate })
+        };
+        var response = await _aiGateway.ExecuteAsync(new AiRequest
+        {
+            JobType = "roadmap_proposal",
+            ProjectId = project.Id,
+            TenantId = project.OrganizationId,
+            UserId = userId,
+            SourceType = "project",
+            SourceEntityId = project.Id,
+            Purpose = "Create an editable roadmap proposal",
+            UseCache = false,
+            AllowMockFallback = false,
+            SystemPrompt = "Bạn là chuyên gia lập kế hoạch dự án. Chỉ dùng dữ kiện được cấp, không bịa lịch, kỹ năng, capacity hay tích hợp ngoài. Trả JSON thuần.",
+            Prompt = $$"""
+                Lập một giai đoạn Roadmap có thể chỉnh sửa và duyệt từ dữ liệu sau:
+                {{JsonSerializer.Serialize(facts)}}
+                Trả đúng JSON dạng:
+                {"phaseName":"...","summary":"...","durationDays":14,"confidenceScore":0.9,"risks":[{"riskType":"...","severity":"Low|Medium|High|Critical","description":"...","mitigationAdvice":"...","blockedItemTitle":null}],"tasks":[{"title":"...","description":"...","priority":"Low|Medium|High|Critical","estimatedHours":8,"recommendedRole":"...","dependencyNote":null}]}
+                Tạo 3-12 task không trùng task hiện có. Dùng tiếng Việt, nêu rõ đầu ra và tiêu chí nghiệm thu. Không gán đích danh thành viên.
+                """
+        }, ct);
+        if (response.IsSuccess && !response.IsMock)
+        {
+            try
             {
-                await _taskRepo.DeleteAsync(task, ct);
+                var parsed = JsonSerializer.Deserialize<RoadmapModel>(StripJsonFence(response.Content), RoadmapJsonOptions);
+                if (parsed is { Tasks.Count: > 0 }) return parsed;
+            }
+            catch (JsonException)
+            {
+                // Provider formatting must not dead-end the user flow.
             }
         }
 
-        // Xóa sprint đã tạo
-        var sprint = await _sprintRepo.GetByIdAsync(snapshot.SprintId, ct);
-        if (sprint != null)
+        var concise = objective.Length > 100 ? objective[..100].Trim() + "…" : objective;
+        return new RoadmapModel
         {
-            await _sprintRepo.DeleteAsync(sprint, ct);
-        }
-
-        await _unitOfWork.SaveChangesAsync(ct);
-        _snapshots.TryRemove(dto.SnapshotId, out _);
-
-        await _auditLogService.LogAsync(
-            "RollbackErumiRoadmapSnapshot",
-            nameof(Sprint),
-            snapshot.SprintId.ToString(),
-            new { dto.SnapshotId, RolledBackBy = currentUserId.Value },
-            ct);
-
-        return Result.Success();
-    }
-
-    #endregion
-
-    #region 6. Internal Helper Methods & Domain Logic
-
-    private async Task<Result> ValidateUserAndAiPermissionAsync(Guid projectId, CancellationToken ct)
-    {
-        var currentUserId = _currentUserService.UserId;
-        if (currentUserId == null) return Result.Forbidden();
-
-        // 1. Check System Module Permission for AiHub
-        var userRole = _currentUserService.Role ?? "User";
-        var systemPerm = await _systemPermRepo.GetQueryable()
-            .FirstOrDefaultAsync(p => p.SystemRole == userRole && p.ModuleKey == "AiHub", ct);
-
-        if (systemPerm != null && !systemPerm.IsAllowed)
-        {
-            return Result.Failure("Tài khoản của bạn đã bị System Admin giới hạn quyền sử dụng AI Hub.", 403);
-        }
-
-        // 2. Check if user is a member of the project or the owner
-        var project = await _projectRepo.GetByIdAsync(projectId, ct);
-        if (project == null) return Result.NotFound("Không tìm thấy dự án.");
-
-        var isMemberOrOwner = project.OwnerId == currentUserId ||
-            await _memberRepo.GetQueryable().AnyAsync(m => m.ProjectId == projectId && m.UserId == currentUserId, ct);
-
-        if (!isMemberOrOwner)
-        {
-            return Result.Forbidden();
-        }
-
-        return Result.Success();
-    }
-
-    private async Task<bool> ValidateApprovalAuthorityAsync(Project project, Guid currentUserId, CancellationToken ct)
-    {
-        // 1. Direct Project Owner
-        if (project.OwnerId == currentUserId) return true;
-
-        // 2. Project Member with administrative/management role
-        var memberRole = await _memberRepo.GetQueryable()
-            .Where(m => m.ProjectId == project.Id && m.UserId == currentUserId)
-            .Select(m => m.Role)
-            .FirstOrDefaultAsync(ct);
-
-        if (string.IsNullOrWhiteSpace(memberRole)) return false;
-
-        return memberRole.Equals("Owner", StringComparison.OrdinalIgnoreCase) ||
-               memberRole.Equals("ProjectAdmin", StringComparison.OrdinalIgnoreCase) ||
-               memberRole.Equals("Manager", StringComparison.OrdinalIgnoreCase) ||
-               memberRole.Equals("TechLead", StringComparison.OrdinalIgnoreCase) ||
-               memberRole.Contains("Admin", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private async Task<List<ProjectMember>> GetProjectMembersWithUsersAsync(Guid projectId, CancellationToken ct)
-    {
-        return await _memberRepo.GetQueryable()
-            .Include(m => m.User)
-            .Where(m => m.ProjectId == projectId)
-            .ToListAsync(ct);
-    }
-
-    private async Task<IReadOnlyList<ErumiWorkloadImpactDto>> CalculateMemberWorkloadImpactsAsync(
-        Guid projectId,
-        List<ProjectMember> members,
-        IReadOnlyList<ErumiTaskProposalDto> proposedTasks,
-        CancellationToken ct)
-    {
-        // Retrieve current active task hours for members in the current week
-        var activeTasks = await _taskRepo.GetQueryable()
-            .Where(t => t.ProjectId == projectId && t.Status != "Done" && t.Status != "Completed" && t.AssigneeId.HasValue)
-            .ToListAsync(ct);
-
-        var impacts = new List<ErumiWorkloadImpactDto>();
-
-        foreach (var member in members)
-        {
-            var currentHours = activeTasks
-                .Where(t => t.AssigneeId == member.UserId)
-                .Sum(t => t.EstimatedHours.GetValueOrDefault(6));
-
-            if (currentHours == 0) currentHours = 20; // Default baseline if newly onboarded
-
-            var additionalHours = proposedTasks
-                .Where(t => t.RecommendedAssigneeId == member.UserId)
-                .Sum(t => t.EstimatedHours);
-
-            var totalHours = currentHours + additionalHours;
-            var isOverloaded = totalHours > 40;
-
-            var warning = isOverloaded
-                ? $"⚠️ Nguy cơ quá tải ({totalHours}h/tuần > ngưỡng 40h)"
-                : $"✔️ Khả năng chịu tải an toàn ({totalHours}h/tuần)";
-
-            impacts.Add(new ErumiWorkloadImpactDto(
-                member.UserId,
-                member.User?.FullName ?? "Thành viên",
-                member.Role ?? "Member",
-                currentHours,
-                additionalHours,
-                isOverloaded,
-                warning));
-        }
-
-        return impacts;
-    }
-
-    private static string DetermineActionTypeFromMessage(string message)
-    {
-        var lower = message.ToLowerInvariant();
-        if (lower.Contains("mở rộng") || lower.Contains("thêm phase") || lower.Contains("scale"))
-            return ErumiRoadmapActionType.ExpandPhase;
-        if (lower.Contains("rủi ro") || lower.Contains("bottleneck") || lower.Contains("đường găng") || lower.Contains("trễ"))
-            return ErumiRoadmapActionType.AuditRisks;
-        if (lower.Contains("cân bằng") || lower.Contains("tải") || lower.Contains("workload"))
-            return ErumiRoadmapActionType.AutoBalance;
-        if (lower.Contains("bóc tách") || lower.Contains("tách nhỏ") || lower.Contains("wbs"))
-            return ErumiRoadmapActionType.BreakdownWBS;
-        if (lower.Contains("dự báo") || lower.Contains("forecast") || lower.Contains("monte carlo"))
-            return ErumiRoadmapActionType.Forecast;
-
-        return ErumiRoadmapActionType.ExpandPhase;
-    }
-
-    private static (string PhaseName, IReadOnlyList<ErumiTaskProposalDto> Tasks, IReadOnlyList<ErumiRoadmapRiskDto> Risks, string Summary)
-        BuildRoadmapProposalForContext(
-            string actionType,
-            string prompt,
-            string projectName,
-            string? contextSprintName,
-            List<ProjectMember> members)
-    {
-        var devBackend = members.FirstOrDefault(m => m.Role.Contains("Backend", StringComparison.OrdinalIgnoreCase) || m.Role.Contains("Dev", StringComparison.OrdinalIgnoreCase));
-        var devFrontend = members.FirstOrDefault(m => m.Role.Contains("Frontend", StringComparison.OrdinalIgnoreCase) || m.Role.Contains("UI", StringComparison.OrdinalIgnoreCase));
-        var qaLead = members.FirstOrDefault(m => m.Role.Contains("QA", StringComparison.OrdinalIgnoreCase) || m.Role.Contains("Tester", StringComparison.OrdinalIgnoreCase));
-
-        return actionType switch
-        {
-            ErumiRoadmapActionType.AuditRisks => (
-                PhaseName: "Phase Tối Ưu: Bottleneck Mitigation & Critical Path Hardening",
-                Tasks: new List<ErumiTaskProposalDto>
-                {
-                    new("🤖 Generated by Erumi AI: Tối ưu Bottleneck & Giải Phóng Dependencies Chặn", "Tập trung giải phóng các task đang chặn luồng triển khai chính.", "High", 12, "Backend Lead", devBackend?.UserId, devBackend?.User?.FullName ?? "Backend Lead"),
-                    new("🤖 Generated by Erumi AI: Bổ Sung Test Hồi Quy Cho Critical Path", "Đảm bảo không phát sinh lỗi hồi quy khi tái cấu trúc đường găng.", "High", 10, "QA Lead", qaLead?.UserId, qaLead?.User?.FullName ?? "QA Lead")
-                },
-                Risks: new List<ErumiRoadmapRiskDto>
-                {
-                    new("CriticalPathDelay", "High", "Có 2 task phụ thuộc đang chậm tiến độ so với kế hoạch mốc bàn giao.", "Tăng cường thêm 1 dev hỗ trợ xử lý dứt điểm trong 3 ngày tới.")
-                },
-                Summary: "Phát hiện nguy cơ tắc nghẽn đường găng. Đề xuất 2 công việc ưu tiên để giải tỏa tiến độ."
-            ),
-
-            ErumiRoadmapActionType.AutoBalance => (
-                PhaseName: "Phase Cân Bằng: Rebalancing & Workload Redistribution",
-                Tasks: new List<ErumiTaskProposalDto>
-                {
-                    new("🤖 Generated by Erumi AI: Tái phân bổ Task Frontend & Tối ưu Giao diện", "Phân chia lại các màn hình phức tạp để giảm tải cho Lead Frontend.", "Medium", 8, "Frontend Dev", devFrontend?.UserId, devFrontend?.User?.FullName ?? "Frontend Dev"),
-                    new("🤖 Generated by Erumi AI: San sẻ Module Viết Tài Liệu & API Docs", "Chuyển giao việc cập nhật Swagger API sang thành viên có độ tải thấp hơn.", "Low", 6, "Dev", devBackend?.UserId, devBackend?.User?.FullName ?? "Dev")
-                },
-                Risks: new List<ErumiRoadmapRiskDto>(),
-                Summary: "Cân bằng lại tải công việc giữa các thành viên, đưa tổng giờ làm về ngưỡng an toàn <40h/tuần."
-            ),
-
-            ErumiRoadmapActionType.BreakdownWBS => (
-                PhaseName: $"Phase WBS Decomposition: {contextSprintName ?? "Mục Tiêu Trọng Tâm"}",
-                Tasks: new List<ErumiTaskProposalDto>
-                {
-                    new("🤖 Generated by Erumi AI: Đặc tả Kiến trúc Dữ liệu & Schema Models", "Xác định các Entity, quan hệ và Migration cần thiết.", "High", 10, "Backend Dev", devBackend?.UserId, devBackend?.User?.FullName ?? "Backend Dev"),
-                    new("🤖 Generated by Erumi AI: Xây dựng REST API Endpoints & Validation Layer", "Triển khai Controller, DTOs và FluentValidation.", "High", 14, "Backend Dev", devBackend?.UserId, devBackend?.User?.FullName ?? "Backend Dev"),
-                    new("🤖 Generated by Erumi AI: Phát triển UI Components & State Management (Vue 3)", "Ghép API vào Pinia Store và hoàn thiện giao diện người dùng.", "Medium", 12, "Frontend Dev", devFrontend?.UserId, devFrontend?.User?.FullName ?? "Frontend Dev"),
-                    new("🤖 Generated by Erumi AI: Viết Bộ Test Kịch Bản E2E & Kiểm Thử Nghiệp Vụ", "Kiểm thử đầu cuối và xác thực Definition of Done (DoD).", "Medium", 8, "QA Lead", qaLead?.UserId, qaLead?.User?.FullName ?? "QA Lead")
-                },
-                Risks: new List<ErumiRoadmapRiskDto>(),
-                Summary: "Bóc tách mục tiêu thành 4 công việc SMART hoàn chỉnh theo đúng chuẩn Agile."
-            ),
-
-            _ => (
-                PhaseName: "Phase Mở Rộng: VNPay Integration & Security Hardening",
-                Tasks: new List<ErumiTaskProposalDto>
-                {
-                    new("🤖 Generated by Erumi AI: Triển khai Cổng Thanh Toán VNPay Merchant API", "Xử lý tích hợp webhook IPN, giải mã SHA256 và lưu vết giao dịch.", "High", 16, "Dev Backend", devBackend?.UserId, devBackend?.User?.FullName ?? "Dev Backend"),
-                    new("🤖 Generated by Erumi AI: Playwright Automated Security E2E Test Suite", "Xây dựng bộ test kiểm tra phân quyền đa tầng và dữ liệu nhạy cảm.", "High", 14, "QA Lead", qaLead?.UserId, qaLead?.User?.FullName ?? "QA Lead"),
-                    new("🤖 Generated by Erumi AI: Giao Diện Quét Mã QR Thanh Toán Động & Realtime SignalR", "Giao diện hiển thị hóa đơn và cập nhật trạng thái thanh toán thời gian thực.", "Medium", 10, "Dev Frontend", devFrontend?.UserId, devFrontend?.User?.FullName ?? "Dev Frontend")
-                },
-                Risks: new List<ErumiRoadmapRiskDto>
-                {
-                    new("ThirdPartyDependency", "Medium", "Cần cấu hình tài khoản Sandbox VNPay sớm để tránh nghẽn bước test.", "Đăng ký thông tin API key môi trường Sandbox trước ngày khởi chạy.")
-                },
-                Summary: "Đề xuất chèn Phase mới mở rộng tính năng mà không làm xáo trộn các mốc bàn giao hiện tại."
-            )
+            PhaseName = $"Giai đoạn: {concise}",
+            Summary = "Model chưa trả phương án hợp lệ; Qaly dùng khung bám theo mục tiêu để cuộc làm việc không bị dừng.",
+            DurationDays = 14,
+            ConfidenceScore = 0.55,
+            Tasks =
+            [
+                new() { Title = $"Làm rõ phạm vi và tiêu chí nghiệm thu: {concise}", Description = "Chốt phạm vi, đầu ra, rủi ro và tiêu chí nghiệm thu.", Priority = "High", EstimatedHours = 6, RecommendedRole = "Product" },
+                new() { Title = $"Triển khai phạm vi: {concise}", Description = "Thực hiện phạm vi đã duyệt và ghi lại bằng chứng có thể kiểm tra.", Priority = "High", EstimatedHours = 16, RecommendedRole = "Development" },
+                new() { Title = $"Kiểm thử và nghiệm thu: {concise}", Description = "Kiểm thử end-to-end và đối chiếu tiêu chí nghiệm thu.", Priority = "High", EstimatedHours = 8, RecommendedRole = "QA" }
+            ]
         };
     }
 
-    private static void CleanExpiredSnapshots()
+    private async Task<Result> ValidateAiReadPermissionAsync(Guid projectId, Guid userId, CancellationToken ct)
     {
-        var cutoff = DateTimeOffset.UtcNow - SnapshotRetentionPeriod;
-        foreach (var kvp in _snapshots)
-        {
-            if (kvp.Value.CreatedAt < cutoff)
-            {
-                _snapshots.TryRemove(kvp.Key, out _);
-            }
-        }
+        var permission = await _systemAuthorization.ResolveAsync(
+            userId,
+            _currentUserService.Role,
+            SystemModulePermissionRules.AiHub,
+            ct);
+        if (!permission.IsAllowed || permission.AiTier == AiNativeSystemTier.Restricted)
+            return Result.Failure("Tài khoản của bạn đã bị giới hạn quyền sử dụng AI Hub.", 403);
+        var project = await _projectRepo.GetByIdAsync(projectId, ct);
+        if (project == null) return Result.NotFound("Không tìm thấy dự án.");
+        return await CanReadProjectAsync(project, userId, ct) ? Result.Success() : Result.Forbidden();
     }
 
-    #endregion
+    private async Task<IReadOnlyList<ErumiWorkloadImpactDto>> CalculateWorkloadImpactsAsync(
+        IReadOnlyList<ProjectMember> members, IReadOnlyList<ErumiTaskProposalDto> tasks, CancellationToken ct)
+    {
+        var assigned = await _taskRepo.GetQueryable().AsNoTracking()
+            .Where(x => x.AssigneeId != null && x.Status != "Done" && x.Status != "Completed" && x.Status != "Cancelled")
+            .GroupBy(x => x.AssigneeId!.Value)
+            .Select(x => new { UserId = x.Key, Hours = x.Sum(task => task.EstimatedHours ?? 0) })
+            .ToDictionaryAsync(x => x.UserId, x => x.Hours, ct);
+        return members.Select(member =>
+        {
+            var current = assigned.GetValueOrDefault(member.UserId);
+            var added = tasks.Where(x => x.RecommendedAssigneeId == member.UserId).Sum(x => x.EstimatedHours);
+            var overloaded = current + added > 40;
+            return new ErumiWorkloadImpactDto(member.UserId, member.User?.FullName ?? "Thành viên", member.Role,
+                current, added, overloaded, overloaded
+                    ? "Vượt ngưỡng 40 giờ công đang mở; cần đổi người hoặc giảm phạm vi."
+                    : "Chưa vượt ngưỡng giờ công; vẫn cần kiểm tra lịch và tải đa dự án trước khi giao.");
+        }).ToList();
+    }
+
+    private static List<ErumiTaskProposalDto> MapProposedTasks(
+        IEnumerable<RoadmapModelTask> tasks, IReadOnlyList<ProjectMember> members) =>
+        tasks.Where(x => !string.IsNullOrWhiteSpace(x.Title)).Take(12).Select(task =>
+        {
+            var role = string.IsNullOrWhiteSpace(task.RecommendedRole) ? "Thành viên phù hợp" : task.RecommendedRole.Trim();
+            var assignee = members.FirstOrDefault(x => RoleMatches(x.Role, role));
+            return new ErumiTaskProposalDto(task.Title.Trim(), task.Description?.Trim() ?? string.Empty,
+                NormalizePriority(task.Priority), Math.Clamp(task.EstimatedHours, 1, 80), role,
+                assignee?.UserId, assignee?.User?.FullName, task.DependencyNote?.Trim());
+        }).ToList();
+
+    private async Task<bool> CanReadProjectAsync(Project project, Guid userId, CancellationToken ct)
+    {
+        var systemTier = await _authorization.ResolveSystemTierAsync(userId, _currentUserService.Role, ct);
+        return systemTier != AiNativeSystemTier.Restricted &&
+            (await _authorization.ResolveProjectAsync(project, userId, IsSystemAdmin(), ct)).CanRead;
+    }
+
+    private async Task<bool> CanManageProjectAsync(Project project, Guid userId, CancellationToken ct)
+    {
+        var systemTier = await _authorization.ResolveSystemTierAsync(userId, _currentUserService.Role, ct);
+        return systemTier == AiNativeSystemTier.Full &&
+            (await _authorization.ResolveProjectAsync(project, userId, IsSystemAdmin(), ct)).CanManage;
+    }
+
+    private bool IsSystemAdmin() => ProjectRoleRules.IsSystemAdmin(_currentUserService.Role);
+
+    private static string? BuildFastActionPrompt(string actionType, string? custom)
+    {
+        var suffix = string.IsNullOrWhiteSpace(custom) ? string.Empty : $" Yêu cầu bổ sung: {custom.Trim()}";
+        return actionType switch
+        {
+            ErumiRoadmapActionType.ExpandPhase => "Đề xuất phase mới phù hợp mục tiêu và trạng thái thực của dự án." + suffix,
+            ErumiRoadmapActionType.AuditRisks => "Phân tích task nghẽn, dependency, deadline và đề xuất task xử lý rủi ro từ dữ liệu hiện có." + suffix,
+            ErumiRoadmapActionType.AutoBalance => "Đề xuất điều chỉnh task để cân bằng tải đa dự án; không coi thời gian trống là capacity đã xác nhận." + suffix,
+            ErumiRoadmapActionType.BreakdownWBS => "Bóc tách mục tiêu thành WBS và task có đầu ra, estimate, vai trò và dependency rõ ràng." + suffix,
+            ErumiRoadmapActionType.Forecast => "Dự báo tiến độ từ Sprint, task, estimate và deadline; nêu rõ giả định và task giảm rủi ro." + suffix,
+            _ => null
+        };
+    }
+
+    private static string StripJsonFence(string content)
+    {
+        var json = content.Trim();
+        if (!json.StartsWith("```", StringComparison.Ordinal)) return json;
+        var firstLine = json.IndexOf('\n');
+        var lastFence = json.LastIndexOf("```", StringComparison.Ordinal);
+        return firstLine >= 0 && lastFence > firstLine ? json[(firstLine + 1)..lastFence].Trim() : json;
+    }
+
+    private static bool IsTaskCompleted(TaskItem task) =>
+        task.Status.Equals("Done", StringComparison.OrdinalIgnoreCase) || task.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase);
+
+    private static bool RoleMatches(string memberRole, string requestedRole)
+    {
+        var member = memberRole.ToLowerInvariant();
+        var tokens = requestedRole.ToLowerInvariant().Split(RoleSeparators, StringSplitOptions.RemoveEmptyEntries);
+        return tokens.Any(x => x.Length >= 2 && member.Contains(x, StringComparison.Ordinal));
+    }
+
+    private static string NormalizePriority(string? value) =>
+        Priorities.FirstOrDefault(x => x.Equals(value, StringComparison.OrdinalIgnoreCase)) ?? "Medium";
+
+    private static void RemoveExpiredSnapshots()
+    {
+        var cutoff = DateTimeOffset.UtcNow.Subtract(SnapshotRetention);
+        foreach (var item in Proposals.Where(x => x.Value.CreatedAt < cutoff)) Proposals.TryRemove(item.Key, out _);
+        foreach (var item in Snapshots.Where(x => x.Value.CreatedAt < cutoff)) Snapshots.TryRemove(item.Key, out _);
+    }
+
+    private sealed class RoadmapModel
+    {
+        public string PhaseName { get; set; } = string.Empty;
+        public string Summary { get; set; } = string.Empty;
+        public int DurationDays { get; set; } = 14;
+        public double ConfidenceScore { get; set; } = 0.9;
+        public List<RoadmapModelTask> Tasks { get; set; } = [];
+        public List<RoadmapModelRisk> Risks { get; set; } = [];
+    }
+
+    private sealed class RoadmapModelTask
+    {
+        public string Title { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public string Priority { get; set; } = "Medium";
+        public int EstimatedHours { get; set; } = 4;
+        public string RecommendedRole { get; set; } = "Thành viên phù hợp";
+        public string? DependencyNote { get; set; }
+    }
+
+    private sealed class RoadmapModelRisk
+    {
+        public string? RiskType { get; set; }
+        public string? Severity { get; set; }
+        public string Description { get; set; } = string.Empty;
+        public string? MitigationAdvice { get; set; }
+        public string? BlockedItemTitle { get; set; }
+    }
+
+    private sealed record ProposalScope(Guid ProjectId, string PhaseName, DateTimeOffset StartDate, DateTimeOffset EndDate, DateTimeOffset CreatedAt);
+    private sealed record AppliedSnapshot(Guid ProjectId, Guid SprintId, List<Guid> TaskIds, DateTimeOffset CreatedAt);
 }

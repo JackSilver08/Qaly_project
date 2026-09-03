@@ -15,4 +15,7 @@ public sealed class GitHubIntegrationOptions
     public int PollIntervalMilliseconds { get; set; } = 1000;
     public int BatchSize { get; set; } = 10;
     public int MaxAttempts { get; set; } = 5;
+    public int LeaseSeconds { get; set; } = 120;
+    public int HeartbeatSeconds { get; set; } = 30;
+    public int BaseRetrySeconds { get; set; } = 5;
 }

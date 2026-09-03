@@ -6,6 +6,7 @@ public static class AiAssistantTurnContract
     public const string GroundedReadIntent = "grounded.read.v1";
     public const string ResearchPlanIntent = AiAssistantResearchPlanContract.CapabilityId;
     public const string TaskCreateIntent = "task.create.v1";
+    public const string TaskAssignmentScheduleIntent = "task.assignment_schedule.v1";
     public const string ClarificationIntent = "clarification.v1";
     public const string GuidedAnswerIntent = "advisory.answer.v1";
     public const string UnsupportedIntent = "unsupported.v1";
@@ -95,7 +96,9 @@ public sealed record AiAssistantTurnResponseDto(
     ProjectLaunchBriefDto? ProjectLaunchBrief = null,
     ProjectLaunchPlanDto? ProjectLaunchPlan = null,
     AiSafeTestRunPreviewDto? SafeTestRunPreview = null,
-    AiSafeTestRunReportDto? SafeTestRunReport = null);
+    AiSafeTestRunReportDto? SafeTestRunReport = null,
+    AiNativeActionDraftDto? NativeActionDraft = null,
+    PortfolioScheduleProposalDto? PortfolioScheduleProposal = null);
 
 public sealed record CreateAiAssistantSessionRequestDto(
     AiAssistantClientContextDto? Context = null,
@@ -120,6 +123,10 @@ public sealed record UpdateAiAssistantClarificationDraftRequestDto(
 public sealed record UpdateAiAssistantSessionRequestDto(
     long ExpectedVersion,
     string Title);
+
+public sealed record UpdateAiAssistantSessionScopeRequestDto(
+    long ExpectedVersion,
+    Guid? ProjectId);
 
 public sealed record AiAssistantSessionControlRequestDto(long ExpectedVersion);
 

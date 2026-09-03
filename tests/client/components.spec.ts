@@ -3,7 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import PageStatePanel from '@/components/PageStatePanel.vue'
 import TaskItem from '@/components/TaskItem.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
-import type { TaskListItemModel } from '@/components/dashboard-models'
+import AnalyticsSideDrawer from '@/components/analytics-ai/AnalyticsSideDrawer.vue'
+import ProjectGrid from '@/components/ProjectGrid.vue'
+import ProjectList from '@/components/ProjectList.vue'
+import type { ProjectCardModel, TaskListItemModel } from '@/components/dashboard-models'
 import { dismissToast, showError, showSuccess, useToast } from '@/composables/use-toast'
 
 /** The toast queue is a module singleton shared with the app, so drain it between cases. */
@@ -142,6 +145,52 @@ describe('TaskItem', () => {
   })
 })
 
+describe('Project archive controls', () => {
+  const project: ProjectCardModel = {
+    id: 'project-archive-1',
+    name: 'Qaly Acceptance',
+    description: 'Dự án dùng để kiểm tra hợp đồng lưu trữ.',
+    status: 'Active',
+    statusLabel: 'Đang chạy',
+    statusTone: 'success',
+    ownerId: 'owner-1',
+    ownerName: 'Huỳnh Quốc Bảo',
+    dueDateLabel: '31/12/2026',
+    completedTaskCount: 2,
+    taskCount: 5,
+    overdueTaskCount: 0,
+    progressPercentage: 40,
+    memberInitials: ['QB'],
+  }
+
+  it.each([
+    ['grid', ProjectGrid],
+    ['list', ProjectList],
+  ])('emits the canonical archive request from %s view', async (_view, component) => {
+    const wrapper = mount(component, {
+      props: { projects: [project], activeProjectId: null },
+    })
+
+    await wrapper.get('button[aria-label="Lưu trữ dự án"]').trigger('click')
+
+    expect(wrapper.emitted('archive')).toEqual([['project-archive-1']])
+  })
+
+  it.each([
+    ['grid', ProjectGrid],
+    ['list', ProjectList],
+  ])('hides every mutation control in read-only %s view', (_view, component) => {
+    const wrapper = mount(component, {
+      props: { projects: [project], activeProjectId: null, readOnly: true },
+    })
+
+    expect(wrapper.find('button[aria-label="Sửa dự án"]').exists()).toBe(false)
+    expect(wrapper.find('button[aria-label="Lưu trữ dự án"]').exists()).toBe(false)
+    expect(wrapper.find('button[aria-label="Xóa dự án"]').exists()).toBe(false)
+    expect(wrapper.find('button[aria-label="Xem dự án"]').exists()).toBe(true)
+  })
+})
+
 describe('ToastContainer', () => {
   function mountToasts() {
     return mount(ToastContainer, { attachTo: document.body })
@@ -203,5 +252,35 @@ describe('ToastContainer', () => {
 
     const progress = document.querySelector<HTMLElement>('.toast-card__progress')
     expect(progress?.style.animationDuration).toBe('7000ms')
+  })
+})
+
+describe('AnalyticsSideDrawer keyboard contract', () => {
+  it('moves focus into the drawer, traps Tab, closes on Escape and restores focus', async () => {
+    const opener = document.createElement('button')
+    document.body.appendChild(opener)
+    opener.focus()
+
+    const wrapper = mount(AnalyticsSideDrawer, {
+      attachTo: document.body,
+      props: { open: false, title: 'Chi tiết phân tích' },
+      slots: { default: '<button class="drawer-last-action">Thực hiện</button>' },
+    })
+
+    await wrapper.setProps({ open: true })
+    await wrapper.vm.$nextTick()
+    const closeButton = wrapper.find<HTMLButtonElement>('.analytics-drawer-close')
+    const lastAction = wrapper.find<HTMLButtonElement>('.drawer-last-action')
+    expect(document.activeElement).toBe(closeButton.element)
+
+    lastAction.element.focus()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    expect(document.activeElement).toBe(closeButton.element)
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    await wrapper.setProps({ open: false })
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    expect(document.activeElement).toBe(opener)
   })
 })

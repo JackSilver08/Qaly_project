@@ -8,6 +8,7 @@ using Qaly.Web.Auth;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Project;
 using Qaly.Application.Services;
+using Qaly.Application.Services.Tasks;
 using System.Globalization;
 using System.Text.Json;
 
@@ -24,15 +25,18 @@ public partial class DashboardController : BaseApiController
     private readonly QalyDbContext _context;
     private readonly ILogger<DashboardController> _logger;
     private readonly IAiGateway _aiGateway;
+    private readonly ITaskAccessPolicy _taskAccessPolicy;
 
     public DashboardController(
         QalyDbContext context,
         ILogger<DashboardController> logger,
-        IAiGateway aiGateway)
+        IAiGateway aiGateway,
+        ITaskAccessPolicy taskAccessPolicy)
     {
         _context = context;
         _logger = logger;
         _aiGateway = aiGateway;
+        _taskAccessPolicy = taskAccessPolicy;
     }
 
     [HttpGet("overview")]
@@ -50,6 +54,8 @@ public partial class DashboardController : BaseApiController
                     .AsNoTracking()
                     .AsSplitQuery()
                     .Include(project => project.Owner)
+                    .Include(project => project.Organization)
+                        .ThenInclude(organization => organization!.Members)
                     .Include(project => project.Members)
                         .ThenInclude(member => member.User)
                     .Include(project => project.Tasks)
@@ -64,16 +70,9 @@ public partial class DashboardController : BaseApiController
                         .ThenInclude(task => task.Attachments)
                     .AsQueryable();
 
-                if (restrictToMembership && !isAdmin && currentUserId.HasValue)
+                if (restrictToMembership)
                 {
-                    query = query.Where(project =>
-                        (project.OwnerId == currentUserId ||
-                         project.Members.Any(member => member.UserId == currentUserId)) &&
-                        (project.OrganizationId == null ||
-                         (project.Organization != null &&
-                          project.Organization.IsActive &&
-                          (project.Organization.OwnerId == currentUserId ||
-                           project.Organization.Members.Any(member => member.UserId == currentUserId)))));
+                    query = ApplyProjectVisibility(query, currentUserId, isAdmin);
                 }
 
                 return query;
@@ -83,18 +82,7 @@ public partial class DashboardController : BaseApiController
                 .OrderByDescending(project => project.CreatedAt)
                 .ToListAsync(cancellationToken);
 
-            if (!isAdmin && currentUserId.HasValue)
-            {
-                foreach (var project in projects)
-                {
-                    project.Tasks = project.Tasks.Where(task =>
-                        !task.IsPrivate ||
-                        task.ReporterId == currentUserId ||
-                        task.AssigneeId == currentUserId ||
-                        task.Assignees.Any(assignment => assignment.UserId == currentUserId) ||
-                        project.OwnerId == currentUserId).ToList();
-                }
-            }
+            FilterPrivateTasks(projects, currentUserId, isAdmin);
 
             var accessibleUserIds = projects
                 .SelectMany(project => project.Members.Select(member => member.UserId))
@@ -138,6 +126,19 @@ public partial class DashboardController : BaseApiController
             .ThenBy(item => item.FullName)
             .FirstOrDefault();
 
+        var organizationIds = projects.Select(project => project.OrganizationId)
+            .OfType<Guid>()
+            .Distinct()
+            .ToList();
+        var customRoleRows = await _context.ProjectRoleDefinitions.AsNoTracking()
+            .Where(role => organizationIds.Contains(role.OrganizationId))
+            .Select(role => new { role.OrganizationId, role.Key, role.DisplayName, role.BaseRole })
+            .ToListAsync(cancellationToken);
+        var customRoles = customRoleRows.ToDictionary(
+            role => $"{role.OrganizationId:N}:{ProjectRoleCatalog.NormalizeKey(role.Key)}",
+            role => (role.DisplayName, BaseRole: ProjectRoleRules.NormalizeProjectRole(role.BaseRole)),
+            StringComparer.Ordinal);
+
         var projectResponses = projects
             .Select(project =>
             {
@@ -180,6 +181,32 @@ public partial class DashboardController : BaseApiController
                 var progressPercentage = progressTasks.Count == 0
                     ? 0
                     : (int)Math.Round(completedCount * 100d / progressTasks.Count, MidpointRounding.AwayFromZero);
+                var storedRole = projectMembers.FirstOrDefault(member => member.UserId == currentUserId)?.Role;
+                var effectiveRole = storedRole;
+                string? customRoleLabel = null;
+                if (project.OrganizationId.HasValue && !string.IsNullOrWhiteSpace(storedRole) &&
+                    customRoles.TryGetValue(
+                        $"{project.OrganizationId.Value:N}:{ProjectRoleCatalog.NormalizeKey(storedRole)}",
+                        out var customRole))
+                {
+                    effectiveRole = customRole.BaseRole;
+                    customRoleLabel = customRole.DisplayName;
+                }
+                var permissions = ProjectPermissionRules.Resolve(
+                    effectiveRole,
+                    isOwner: currentUserId.HasValue && project.OwnerId == currentUserId.Value,
+                    isSystemAdmin: isAdmin,
+                    isOrganizationManager: currentUserId.HasValue &&
+                        project.Organization != null &&
+                        project.Organization.IsActive &&
+                        (project.Organization.OwnerId == currentUserId.Value ||
+                         OrganizationRoleRules.CanManageOrganization(
+                             project.Organization.Members
+                                 .FirstOrDefault(member => member.UserId == currentUserId.Value)?.Role)));
+                if (customRoleLabel != null)
+                {
+                    permissions = permissions with { Role = storedRole!, RoleLabel = customRoleLabel };
+                }
 
                 return new DashboardProjectResponse(
                         project.Id,
@@ -229,10 +256,7 @@ public partial class DashboardController : BaseApiController
                     project.EnableInReview,
                     project.RequireEvidenceToDone,
                     project.RestrictTransitionsToAdmin,
-                    ProjectPermissionRules.Resolve(
-                        projectMembers.FirstOrDefault(member => member.UserId == currentUserId)?.Role,
-                        isOwner: currentUserId.HasValue && project.OwnerId == currentUserId.Value,
-                        isSystemAdmin: isAdmin));
+                    permissions);
             })
             .ToList();
 
@@ -276,6 +300,7 @@ public partial class DashboardController : BaseApiController
                 .AsNoTracking()
                 .Where(notification => notification.UserId == currentUserId.Value && !notification.IsRead)
                 .OrderByDescending(notification => notification.CreatedAt)
+                .ThenByDescending(notification => notification.Id)
                 .Take(6)
                 .Select(notification => new DashboardNotificationResponse(
                     notification.Id.ToString(),
@@ -288,6 +313,7 @@ public partial class DashboardController : BaseApiController
             notifications = storedNotifications
                 .Concat(notifications)
                 .OrderByDescending(notification => notification.CreatedAt)
+                .ThenBy(notification => notification.Id)
                 .Take(6)
                 .ToList();
         }
@@ -391,6 +417,62 @@ public partial class DashboardController : BaseApiController
     private static bool IsHighPriority(string? priority)
         => EqualsIgnoreCase(priority, "High") || EqualsIgnoreCase(priority, "Critical");
 
+    private static IQueryable<Project> ApplyProjectVisibility(
+        IQueryable<Project> query,
+        Guid? currentUserId,
+        bool isSystemAdmin)
+    {
+        if (isSystemAdmin)
+        {
+            return query;
+        }
+
+        if (!currentUserId.HasValue)
+        {
+            return query.Where(project => false);
+        }
+
+        var userId = currentUserId.Value;
+        return query.Where(project =>
+            project.OrganizationId == null
+                ? project.OwnerId == userId ||
+                  project.Members.Any(member => member.UserId == userId)
+                : project.Organization != null &&
+                  project.Organization.IsActive &&
+                  (project.Organization.OwnerId == userId ||
+                   project.Organization.Members.Any(member =>
+                       member.UserId == userId &&
+                       (member.Role == OrganizationRoleRules.OrganizationAdmin ||
+                        member.Role == "Admin" ||
+                        member.Role == "Manager")) ||
+                   ((project.OwnerId == userId ||
+                     project.Members.Any(member => member.UserId == userId)) &&
+                    project.Organization.Members.Any(member => member.UserId == userId))));
+    }
+
+    private static void FilterPrivateTasks(
+        IEnumerable<Project> projects,
+        Guid? currentUserId,
+        bool isSystemAdmin)
+    {
+        if (isSystemAdmin)
+        {
+            return;
+        }
+
+        foreach (var project in projects)
+        {
+            project.Tasks = currentUserId.HasValue
+                ? project.Tasks.Where(task =>
+                    !task.IsPrivate ||
+                    task.ReporterId == currentUserId.Value ||
+                    task.AssigneeId == currentUserId.Value ||
+                    task.Assignees.Any(assignment => assignment.UserId == currentUserId.Value) ||
+                    project.OwnerId == currentUserId.Value).ToList()
+                : [];
+        }
+    }
+
     private static bool IsTaskRestricted(
         TaskItem task,
         Guid projectOwnerId,
@@ -471,6 +553,9 @@ public partial class DashboardController : BaseApiController
     [LoggerMessage(EventId = 2002, Level = LogLevel.Warning, Message = "AI provider {Provider} returned an invalid workspace strategy payload.")]
     private static partial void LogInvalidWorkspaceStrategyPayload(ILogger logger, string? provider);
 
+    [LoggerMessage(EventId = 2003, Level = LogLevel.Debug, Message = "Audit log {AuditLogId} contains malformed ChangesJson; dashboard uses the safe fallback title.")]
+    private static partial void LogMalformedAuditChanges(ILogger logger, long auditLogId, Exception exception);
+
     [HttpGet("attention-summary")]
     public async Task<ActionResult<AttentionSummaryDto>> GetAttentionSummary(CancellationToken cancellationToken)
     {
@@ -478,18 +563,16 @@ public partial class DashboardController : BaseApiController
         var currentUserId = User.GetUserId();
         var isAdmin = User.IsInRole("Admin");
 
-        var projectQuery = _context.Projects.AsNoTracking().Include(p => p.Tasks).AsQueryable();
-
-        if (!isAdmin && currentUserId.HasValue)
-        {
-            projectQuery = projectQuery.Where(p =>
-                p.Organization != null &&
-                p.Organization.IsActive &&
-                (p.OwnerId == currentUserId ||
-                 p.Members.Any(m => m.UserId == currentUserId)));
-        }
+        var projectQuery = ApplyProjectVisibility(
+            _context.Projects.AsNoTracking()
+                .Include(project => project.Tasks)
+                    .ThenInclude(task => task.Assignees)
+                .AsQueryable(),
+            currentUserId,
+            isAdmin);
 
         var projects = await projectQuery.ToListAsync(cancellationToken);
+        FilterPrivateTasks(projects, currentUserId, isAdmin);
         var allTasks = projects.SelectMany(p => p.Tasks).ToList();
 
         var overdueTasksCount = allTasks.Count(t => IsOverdue(t, now));
@@ -545,6 +628,7 @@ public partial class DashboardController : BaseApiController
 
         var logs = await query
             .OrderByDescending(a => a.Timestamp)
+            .ThenByDescending(a => a.Id)
             .Take(200)
             .ToListAsync(cancellationToken);
 
@@ -607,7 +691,11 @@ public partial class DashboardController : BaseApiController
                         };
                     }
                 }
-            } catch {}
+            }
+            catch (JsonException exception)
+            {
+                LogMalformedAuditChanges(_logger, l.Id, exception);
+            }
 
             return new RecentActivityDto(
                 l.Action,
@@ -711,6 +799,18 @@ public partial class DashboardController : BaseApiController
             return false;
         }
 
+        var taskId = TryResolveTaskId(log);
+        if (taskId.HasValue)
+        {
+            var task = await _context.TaskItems.IgnoreQueryFilters()
+                .AsNoTracking()
+                .Include(item => item.Project)
+                    .ThenInclude(project => project.Organization)
+                .Include(item => item.Assignees)
+                .SingleOrDefaultAsync(item => item.Id == taskId.Value, ct);
+            return task != null && await _taskAccessPolicy.CanAccessTaskAsync(task, ct);
+        }
+
         if (log.UserId == currentUserId.Value)
         {
             return true;
@@ -725,6 +825,33 @@ public partial class DashboardController : BaseApiController
         return await CanAccessProjectAsync(projectId.Value, currentUserId.Value, ct);
     }
 
+    private static Guid? TryResolveTaskId(AuditLog log)
+    {
+        if (log.EntityType == nameof(TaskItem) && Guid.TryParse(log.EntityId, out var entityTaskId))
+        {
+            return entityTaskId;
+        }
+
+        if (log.EntityType is not (nameof(TaskComment) or nameof(TaskAttachment)) ||
+            string.IsNullOrWhiteSpace(log.ChangesJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(log.ChangesJson);
+            return TryReadGuid(document.RootElement, "taskItemId", out var taskId) ||
+                TryReadGuid(document.RootElement, "TaskItemId", out taskId)
+                ? taskId
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     private async Task<bool> CanAccessProjectAsync(Guid projectId, Guid currentUserId, CancellationToken ct)
     {
         var project = await _context.Projects
@@ -737,6 +864,27 @@ public partial class DashboardController : BaseApiController
         if (project == null)
         {
             return false;
+        }
+
+        if (project.Organization != null)
+        {
+            if (!project.Organization.IsActive)
+            {
+                return false;
+            }
+
+            var organizationRole = project.Organization.Members
+                .FirstOrDefault(member => member.UserId == currentUserId)?.Role;
+            if (project.Organization.OwnerId == currentUserId ||
+                OrganizationRoleRules.CanManageOrganization(organizationRole))
+            {
+                return true;
+            }
+
+            if (string.IsNullOrWhiteSpace(organizationRole))
+            {
+                return false;
+            }
         }
 
         if (project.OwnerId == currentUserId)
@@ -819,18 +967,17 @@ public partial class DashboardController : BaseApiController
         var currentUserId = User.GetUserId();
         var isAdmin = User.IsInRole("Admin");
 
-        var projectQuery = _context.Projects.AsNoTracking().Include(p => p.Tasks).AsQueryable();
-
-        if (!isAdmin && currentUserId.HasValue)
-        {
-            projectQuery = projectQuery.Where(p =>
-                p.Organization != null &&
-                p.Organization.IsActive &&
-                (p.OwnerId == currentUserId ||
-                 p.Members.Any(m => m.UserId == currentUserId)));
-        }
+        var projectQuery = ApplyProjectVisibility(
+            _context.Projects.AsNoTracking()
+                .Include(project => project.Members)
+                .Include(project => project.Tasks)
+                    .ThenInclude(task => task.Assignees)
+                .AsQueryable(),
+            currentUserId,
+            isAdmin);
 
         var projects = await projectQuery.ToListAsync(cancellationToken);
+        FilterPrivateTasks(projects, currentUserId, isAdmin);
         var allTasks = projects.SelectMany(p => p.Tasks).ToList();
 
         var activeProjects = projects.Count(p => !EqualsIgnoreCase(p.Status, "Archived"));

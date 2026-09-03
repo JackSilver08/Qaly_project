@@ -22,6 +22,8 @@ export function useTaskActions(
   const newTaskIsPinned = ref(false)
   const newTaskContributesToProgress = ref(true)
   const selectedTaskIds = ref(new Set<string>())
+  const isTaskMutationPending = ref(false)
+  const isBatchMutationPending = ref(false)
 
   function clearTaskForm() {
     newTaskTitle.value = ''
@@ -49,8 +51,9 @@ export function useTaskActions(
   }
 
   async function batchDeleteTasks() {
-    if (selectedTaskIds.value.size === 0) return
+    if (selectedTaskIds.value.size === 0 || isBatchMutationPending.value) return
     if (!await confirmDialog({ tone:'danger', title:`Xóa ${selectedTaskIds.value.size} nhiệm vụ?`, message:'Các nhiệm vụ đã chọn sẽ bị xóa khỏi dự án.', confirmLabel:'Xóa nhiệm vụ' })) return
+    isBatchMutationPending.value = true
     try {
       await apiCommand('/api/tasks/batch-delete', {
         method: 'POST',
@@ -61,12 +64,15 @@ export function useTaskActions(
       showSuccess('Đã xóa thành công')
     } catch (e) {
       showError(errorMessage(e, 'Lỗi khi xóa hàng loạt'))
+    } finally {
+      isBatchMutationPending.value = false
     }
   }
 
   async function batchUpdateTaskStatus(status: string) {
-    if (selectedTaskIds.value.size === 0) return
+    if (selectedTaskIds.value.size === 0 || isBatchMutationPending.value) return
     const ids = Array.from(selectedTaskIds.value)
+    isBatchMutationPending.value = true
     try {
       if (ids.length === 1) {
         await apiCommand(`/api/tasks/${ids[0]}/status`, {
@@ -88,20 +94,23 @@ export function useTaskActions(
       showSuccess(`Đã chuyển ${ids.length} sang ${displayStatus(status)}`)
     } catch (e) {
       showError(errorMessage(e, 'Lỗi khi cập nhật hàng loạt'))
+    } finally {
+      isBatchMutationPending.value = false
     }
   }
 
   async function createTask(projectId: string) {
     const title = newTaskTitle.value.trim()
-    if (!projectId || !title) return
+    if (!projectId || !title || isTaskMutationPending.value) return
 
     if (taskBeingEdited.value) {
       await saveTaskEdit()
       return
     }
 
+    isTaskMutationPending.value = true
     try {
-      const task = await apiResult<{ aiPrioritySuggestion: string | null }>('/api/tasks', {
+      const task = await apiResult<TaskItemDto>('/api/tasks', {
         method: 'POST',
         body: JSON.stringify({
           title,
@@ -117,13 +126,19 @@ export function useTaskActions(
           contributesToProgress: newTaskContributesToProgress.value,
         }),
       })
+      const canonical = await apiResult<TaskItemDto>(`/api/tasks/${task.id}`)
+      if (canonical.projectId !== projectId || canonical.title !== title) {
+        throw new Error('Máy chủ chưa xác nhận đúng nhiệm vụ vừa tạo. Vui lòng tải lại trước khi thử lại.')
+      }
 
       clearTaskForm()
       createTaskOpen.value = false
       await loadDashboard()
-      showSuccess(task.aiPrioritySuggestion ? `Thêm nhiệm vụ thành công. ${task.aiPrioritySuggestion}` : 'Thêm nhiệm vụ thành công')
+      showSuccess(canonical.aiPrioritySuggestion ? `Thêm nhiệm vụ thành công. ${canonical.aiPrioritySuggestion}` : 'Thêm nhiệm vụ thành công')
     } catch (error) {
       showError(errorMessage(error, 'Không thể thêm nhiệm vụ'))
+    } finally {
+      isTaskMutationPending.value = false
     }
   }
 
@@ -195,9 +210,18 @@ export function useTaskActions(
   }
 
   async function saveTaskEdit() {
-    if (!taskBeingEdited.value) return
+    if (!taskBeingEdited.value || isTaskMutationPending.value) return
 
+    isTaskMutationPending.value = true
     try {
+      // The edit sheet only exposes a subset of Task fields. Merge against a
+      // fresh canonical row so reassigning from Kanban cannot silently clear
+      // estimate, logged hours, labels or Sprint.
+      const current = await apiResult<TaskItemDto>(`/api/tasks/${taskBeingEdited.value.id}`)
+      const requestedAssigneeId = newTaskAssigneeId.value || null
+      const assigneeIds = requestedAssigneeId === current.assigneeId
+        ? current.assignees.map(assignee => assignee.userId)
+        : requestedAssigneeId ? [requestedAssigneeId] : []
       await apiResult<TaskItemDto>(`/api/tasks/${taskBeingEdited.value.id}`, {
         method: 'PUT',
         body: JSON.stringify({
@@ -206,16 +230,28 @@ export function useTaskActions(
           status: taskBeingEdited.value.status,
           priority: newTaskPriority.value,
           dueDate: newTaskDueDate.value ? new Date(newTaskDueDate.value).toISOString() : null,
-          estimatedHours: null,
-          actualHours: null,
-          assigneeId: newTaskAssigneeId.value || null,
-          assigneeIds: newTaskAssigneeId.value ? [newTaskAssigneeId.value] : [],
+          estimatedHours: current.estimatedHours,
+          actualHours: current.actualHours,
+          assigneeId: requestedAssigneeId,
+          assigneeIds,
+          labelIds: current.labels.map(label => label.id),
+          sprintId: current.sprintId,
           isPrivate: newTaskIsPrivate.value,
           isPinned: newTaskIsPinned.value,
           contributesToProgress: newTaskContributesToProgress.value,
-          rowVersion: taskBeingEdited.value.rowVersion || null,
+          rowVersion: current.rowVersion,
         }),
       })
+      const updated = await apiResult<TaskItemDto>(`/api/tasks/${taskBeingEdited.value.id}`)
+
+      const sameLabels = updated.labels.map(label => label.id).sort().join(',') ===
+        current.labels.map(label => label.id).sort().join(',')
+      if (updated.assigneeId !== requestedAssigneeId ||
+          updated.estimatedHours !== current.estimatedHours ||
+          updated.actualHours !== current.actualHours ||
+          updated.sprintId !== current.sprintId || !sameLabels) {
+        throw new Error('Máy chủ chưa xác nhận đầy đủ thay đổi hoặc đã làm lệch dữ liệu Task; vui lòng tải lại trước khi thử lại.')
+      }
 
       clearTaskForm()
       createTaskOpen.value = false
@@ -224,6 +260,8 @@ export function useTaskActions(
       showSuccess('Cập nhật nhiệm vụ thành công')
     } catch (error) {
       showError(errorMessage(error, 'Không thể cập nhật nhiệm vụ'))
+    } finally {
+      isTaskMutationPending.value = false
     }
   }
 
@@ -252,6 +290,8 @@ export function useTaskActions(
     newTaskIsPinned,
     newTaskContributesToProgress,
     selectedTaskIds,
+    isTaskMutationPending,
+    isBatchMutationPending,
     toggleTaskSelection,
     batchDeleteTasks,
     batchUpdateTaskStatus,

@@ -37,18 +37,18 @@ và toàn bộ hạ tầng kiểm thử.
 
 | Hạng mục | Kết quả | Ghi chú |
 | --- | --- | --- |
-| Backend unit | ✅ 596/596 pass | Có hồi quy tài khoản bị vô hiệu hóa |
-| Frontend unit | ✅ 168/168 pass | 10 file spec, gồm `github-api` và RBAC thành viên |
+| Backend unit | ✅ 822/822 pass | Bộ test sau hợp nhất; có hồi quy tài khoản bị vô hiệu hóa |
+| Frontend unit | ✅ 283/283 pass | 19 file spec, gồm `github-api` và RBAC thành viên |
 | Typecheck + Build FE | ✅ Pass | |
 | E2E `--workers=1` | ✅ Pass | Đã sửa 7 spec hỏng |
 | E2E 4 worker | ⚠️ 61 pass / 6 fail | **Cả 6 đều pass khi chạy tuần tự → flaky do song song, không phải lỗi chức năng** |
 | E2E `E2E_WORKERS=2` | ✅ 76/76 pass | Cấu hình CI chính thức, 0 fail / 0 skip |
 | Integration | ✅ 166/166 pass | Line coverage 49,79%, vượt ngưỡng 16% |
-| Web feature | ✅ 39/39 pass | Đã chạy 03/09 |
+| Web feature | ✅ 50/50 pass | Bộ test sau hợp nhất, đã chạy 03/09 |
 | Dark theme | ✅ 6/6 pass | 12 route + mobile + overlay + chi tiết dự án + họp/poll |
 | Console trình duyệt | ✅ 3/3 pass | Đã mở rộng từ 5 lên 12 route |
 | Responsive 1440/768/390 | ✅ 4/4 pass | Spec mới `responsive-audit.spec.ts`, không có tràn ngang |
-| Checklist QA theo module | ◐ 50/61 tick | 3.1, 3.2, 3.7 đã hoàn tất; còn 10 mục ☐ ngoài phạm vi Gia Long |
+| Checklist QA theo module | ◐ 56/61 tick | 3.1, 3.2, 3.7 đã hoàn tất; còn 5 mục ☐ ngoài phạm vi Gia Long |
 
 ### Lỗi đã sửa sẵn (không cần làm lại, chỉ cần verify)
 
@@ -204,7 +204,7 @@ Mã công việc: `CK` Chí Khang · `QB` Quốc Bảo · `VM` Viết Minh · `G
 | G-2 | Console trình duyệt phải sạch | Gia Long tổng hợp | 31/08 | ☑ **Xong 29/08** — đã mở rộng `browser-console.spec.ts` từ 5 lên **12 route**, chạy 3/3 pass |
 | G-3 | Rà responsive 1440 / 768 / 390px | Mỗi người khu vực mình | 31/08 | ☑ **Xong 29/08** — đã dựng `tests/e2e/responsive-audit.spec.ts` tự động hoá, 4/4 pass, không có tràn ngang |
 | G-4 | Cập nhật `QA_LOG.md` cho commit bàn giao | Gia Long | 01/09 | ☑ **Xong 29/08** — đã ghi baseline; cần cập nhật lại ở commit bàn giao cuối |
-| G-5 | Tick checklist mục 3 tài liệu 17; mục nào ⚠/✗ phải ghi lý do | Cả 4 | 01/09 sáng | ◐ **50/61 mục đã tick** bằng bằng chứng; còn 10 mục ☐ ngoài phạm vi Gia Long |
+| G-5 | Tick checklist mục 3 tài liệu 17; mục nào ⚠/✗ phải ghi lý do | Cả 4 | 01/09 sáng | ◐ **56/61 mục đã tick** bằng bằng chứng; còn 5 mục ☐ ngoài phạm vi Gia Long |
 | G-6 | Báo lỗi trang Dự án / Chi tiết dự án cho **Duy Hoàng** | Cả 4 | Liên tục | ☑ **Xong 29/08** — [`docs/19_Bao_loi_Trang_Du_an_gui_Duy_Hoang.md`](./19_Bao_loi_Trang_Du_an_gui_Duy_Hoang.md) |
 
 ### Đã bổ sung vào bộ kiểm thử khi làm việc chung
@@ -295,12 +295,12 @@ Cập nhật cuối mỗi ngày. Trạng thái: ☐ chưa làm · ◐ đang làm
 | CK-4 | Chí Khang | Unit test AI composable | 31/08 | | ☐ | ☐ | |
 | CK-5 | Chí Khang | Checklist 3.5 | 31/08 | | | ☐ | |
 | CK-6 | Chí Khang | Verify QALY-BE-01 | 01/09 | | | | ☐ |
-| QB-1 | Quốc Bảo | Dark theme Tasks/App | 30/08 | ☐ | ☐ | | |
-| QB-2 | Quốc Bảo | Unit test use-task-actions | 30/08 | ☐ | ☐ | | |
-| QB-3 | Quốc Bảo | Unit test dashboard/project actions | 31/08 | | ☐ | ☐ | |
-| QB-4 | Quốc Bảo | Verify QALY-UI-01 | 30/08 | ☐ | ☐ | | |
-| QB-5 | Quốc Bảo | A11y bàn phím | 31/08 | | | ☐ | |
-| QB-6 | Quốc Bảo | Checklist 3.3 | 31/08 | | | ☐ | |
+| QB-1 | Quốc Bảo | Dark theme Tasks/App | 30/08 | ☐ | ◐ | ☑ | |
+| QB-2 | Quốc Bảo | Unit test use-task-actions | 30/08 | ☐ | ◐ | ☑ | |
+| QB-3 | Quốc Bảo | Unit test dashboard/project actions | 31/08 | | ◐ | ☑ | |
+| QB-4 | Quốc Bảo | Verify QALY-UI-01 | 30/08 | ☐ | ◐ | ☑ | |
+| QB-5 | Quốc Bảo | A11y bàn phím | 31/08 | | | ☑ | |
+| QB-6 | Quốc Bảo | Checklist 3.3 | 31/08 | | | ☑ | |
 | VM-1 | Viết Minh | Dark theme TeamsPage | 30/08 | ☐ | ☐ | | |
 | VM-2 | Viết Minh | Dark theme chat/poll/import | 31/08 | | ☐ | ☐ | |
 | VM-3 | Viết Minh | Bỏ emoji import/meeting | 30/08 | ☐ | ☐ | | |

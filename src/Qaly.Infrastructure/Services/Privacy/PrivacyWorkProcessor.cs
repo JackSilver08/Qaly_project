@@ -48,7 +48,11 @@ public sealed partial class PrivacyWorkProcessor : IPrivacyWorkProcessor
         var action = await _db.PrivacyRetentionActions
             .Include(item => item.RetentionPolicy)
             .FirstOrDefaultAsync(item => item.Id == lease.WorkId, ct);
-        if (action == null || action.Status != PrivacyWorkerStatuses.Running || action.LeaseOwner != workerId)
+        if (action == null ||
+            action.Status != PrivacyWorkerStatuses.Running ||
+            action.LeaseOwner != workerId ||
+            action.LeaseExpiresAt is not { } leaseExpiresAt ||
+            leaseExpiresAt <= DateTimeOffset.UtcNow)
         {
             return;
         }
@@ -71,7 +75,7 @@ public sealed partial class PrivacyWorkProcessor : IPrivacyWorkProcessor
                 action.RetentionPolicy.Purpose,
                 "completed",
                 metadata: new Dictionary<string, string?> { ["actionType"] = action.ActionType });
-            await _db.SaveChangesAsync(ct);
+            await SaveIfLeaseOwnedAsync(lease, workerId, ct);
             return;
         }
 
@@ -103,7 +107,7 @@ public sealed partial class PrivacyWorkProcessor : IPrivacyWorkProcessor
                 "legal_hold",
                 PrivacyErrorCodes.LegalHold,
                 new Dictionary<string, string?> { ["actionType"] = action.ActionType });
-            await _db.SaveChangesAsync(ct);
+            await SaveIfLeaseOwnedAsync(lease, workerId, ct);
             return;
         }
 
@@ -123,11 +127,11 @@ public sealed partial class PrivacyWorkProcessor : IPrivacyWorkProcessor
                 action.RetentionPolicy.Purpose,
                 "review_required",
                 metadata: new Dictionary<string, string?> { ["actionType"] = action.ActionType });
-            await _db.SaveChangesAsync(ct);
+            await SaveIfLeaseOwnedAsync(lease, workerId, ct);
             return;
         }
 
-        await InvalidateVectorAsync(meeting.ProjectId, meeting.ImportedById);
+        await InvalidateVectorAsync(meeting.ProjectId, meeting.ImportedById, ct);
         await EraseMeetingAndDerivedContentAsync(
             meeting,
             action.ActionType == PrivacyExpiryActions.Delete,
@@ -146,7 +150,7 @@ public sealed partial class PrivacyWorkProcessor : IPrivacyWorkProcessor
             action.RetentionPolicy.Purpose,
             "completed",
             metadata: new Dictionary<string, string?> { ["actionType"] = action.ActionType });
-        await _db.SaveChangesAsync(ct);
+        await SaveIfLeaseOwnedAsync(lease, workerId, ct);
     }
 
     private async Task EraseMeetingAndDerivedContentAsync(
@@ -223,12 +227,12 @@ public sealed partial class PrivacyWorkProcessor : IPrivacyWorkProcessor
         }
     }
 
-    private Task InvalidateVectorAsync(Guid projectId, Guid ownerId)
+    private Task InvalidateVectorAsync(Guid projectId, Guid ownerId, CancellationToken ct)
         => _vectorStorage.DeleteByFilterAsync(new VectorFilter
         {
             ProjectId = projectId,
             OwnerId = ownerId
-        }, "qaly_context");
+        }, "qaly_context", ct);
 
     private Task<bool> HasActiveLegalHoldAsync(
         Guid tenantId,
@@ -257,6 +261,37 @@ public sealed partial class PrivacyWorkProcessor : IPrivacyWorkProcessor
         action.EvidenceJson = JsonSerializer.Serialize(new { outcome }, JsonOptions);
         action.LastErrorCode = null;
         action.LastErrorMessage = null;
+    }
+
+    private async Task<bool> SaveIfLeaseOwnedAsync(
+        PrivacyWorkLease lease,
+        string workerId,
+        CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var ownsLease = lease.Kind == PrivacyWorkKinds.Retention
+            ? await _db.PrivacyRetentionActions.AsNoTracking().AnyAsync(item =>
+                item.Id == lease.WorkId &&
+                item.Status == PrivacyWorkerStatuses.Running &&
+                item.LeaseOwner == workerId &&
+                item.LeaseExpiresAt != null &&
+                item.LeaseExpiresAt > now,
+                ct)
+            : await _db.DataSubjectRequests.AsNoTracking().AnyAsync(item =>
+                item.Id == lease.WorkId &&
+                item.Status == DataSubjectRequestStatuses.Collecting &&
+                item.LeaseOwner == workerId &&
+                item.LeaseExpiresAt != null &&
+                item.LeaseExpiresAt > now,
+                ct);
+        if (!ownsLease)
+        {
+            _db.ChangeTracker.Clear();
+            return false;
+        }
+
+        await _db.SaveChangesAsync(ct);
+        return true;
     }
 
     private void AddAudit(

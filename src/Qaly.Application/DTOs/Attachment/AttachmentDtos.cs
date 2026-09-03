@@ -31,7 +31,10 @@ public record DuplicateFileDto(
 public record DeduplicateResultDto(
     int TotalProcessed,
     int TotalMerged,
-    long BytesSaved);
+    long BytesSaved,
+    int ScanFailures = 0,
+    int CleanupFailures = 0,
+    IReadOnlyList<string>? Warnings = null);
 
 public record StorageStatsDto(
     long TotalBytes,

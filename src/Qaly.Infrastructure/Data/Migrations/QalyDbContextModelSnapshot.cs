@@ -22,6 +22,8 @@ namespace Qaly.Infrastructure.Data.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.HasSequence("VectorSyncOutboxSequence");
+
             modelBuilder.Entity("Qaly.Domain.Entities.AiAuditEvent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -829,6 +831,102 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.ToTable("AiJobSources");
                 });
 
+            modelBuilder.Entity("Qaly.Domain.Entities.AiNativeActionDraft", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<string>("CapabilityId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ConfirmationIdempotencyKey")
+                        .HasMaxLength(180)
+                        .HasColumnType("nvarchar(180)");
+
+                    b.Property<DateTimeOffset?>("ConfirmedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetimeoffset")
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET()");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ReceiptJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RendererId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("SchemaId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("SourceVersion")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<Guid>("TargetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TargetType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("Id", "ConfirmationIdempotencyKey");
+
+                    b.HasIndex("UserId", "Status", "UpdatedAt");
+
+                    b.ToTable("AiNativeActionDrafts");
+                });
+
             modelBuilder.Entity("Qaly.Domain.Entities.AiPromptCache", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1170,6 +1268,9 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("KeyHash")
+                        .IsUnique();
 
                     b.HasIndex("Prefix");
 
@@ -2159,6 +2260,19 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<DateTimeOffset?>("LeaseExpiresAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LeaseOwner")
+                        .IsConcurrencyToken()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset>("NextAttemptAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetimeoffset")
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET()");
+
                     b.Property<Guid?>("OrganizationId")
                         .HasColumnType("uniqueidentifier");
 
@@ -2190,7 +2304,7 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.HasIndex("DeliveryId")
                         .IsUnique();
 
-                    b.HasIndex("Status");
+                    b.HasIndex("Status", "NextAttemptAt", "LeaseExpiresAt", "ReceivedAt");
 
                     b.ToTable("GitHubWebhookInbox", (string)null);
                 });
@@ -3265,7 +3379,7 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.ToTable("OrganizationMemberCapacityProfiles");
                 });
 
-            modelBuilder.Entity("Qaly.Domain.Entities.OrganizationSkill", b =>
+            modelBuilder.Entity("Qaly.Domain.Entities.OrganizationMemberProfessionalProfile", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -3273,9 +3387,115 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .HasDefaultValueSql("NEWID()");
 
                     b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("EffectiveFrom")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("EffectiveTo")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProfessionalProfileDefinitionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Proficiency")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("VerificationStatus")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<DateTimeOffset?>("VerifiedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("VerifiedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProfessionalProfileDefinitionId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("VerifiedByUserId");
+
+                    b.HasIndex("OrganizationId", "UserId", "ProfessionalProfileDefinitionId")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "UserId", "VerificationStatus");
+
+                    b.ToTable("OrganizationMemberProfessionalProfiles", t =>
+                        {
+                            t.HasCheckConstraint("CK_OrganizationMemberProfessionalProfiles_EffectiveWindow", "[EffectiveTo] IS NULL OR [EffectiveTo] > [EffectiveFrom]");
+
+                            t.HasCheckConstraint("CK_OrganizationMemberProfessionalProfiles_Proficiency", "[Proficiency] IN (N'Foundation', N'Practitioner', N'Proficient', N'Expert')");
+
+                            t.HasCheckConstraint("CK_OrganizationMemberProfessionalProfiles_Source", "[Source] IN (N'MemberDeclared', N'ManagerConfirmed', N'Imported')");
+
+                            t.HasCheckConstraint("CK_OrganizationMemberProfessionalProfiles_VerificationStatus", "[VerificationStatus] IN (N'Declared', N'Verified', N'Rejected')");
+
+                            t.HasCheckConstraint("CK_OrganizationMemberProfessionalProfiles_Verifier", "([VerificationStatus] <> N'Verified') OR ([VerifiedByUserId] IS NOT NULL AND [VerifiedAt] IS NOT NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("Qaly.Domain.Entities.OrganizationSkill", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<string>("AliasesJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("nvarchar(max)")
+                        .HasDefaultValue("[]");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasDefaultValue("Chuyên môn");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetimeoffset")
                         .HasDefaultValueSql("SYSDATETIMEOFFSET()");
+
+                    b.Property<string>("DefaultRequiredLevel")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasDefaultValue("Intermediate");
 
                     b.Property<string>("Description")
                         .HasMaxLength(500)
@@ -3285,6 +3505,11 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
                         .HasDefaultValue(true);
+
+                    b.Property<bool>("IsSystemSeed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -3309,6 +3534,8 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .HasColumnType("datetimeoffset");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "Category");
 
                     b.HasIndex("OrganizationId", "IsActive");
 
@@ -3754,6 +3981,70 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.ToTable("PrivacyRetentionActions");
                 });
 
+            modelBuilder.Entity("Qaly.Domain.Entities.ProfessionalProfileDefinition", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(600)
+                        .HasColumnType("nvarchar(600)");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("IsSystemSeed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "Key")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "IsActive", "Category");
+
+                    b.ToTable("ProfessionalProfileDefinitions", t =>
+                        {
+                            t.HasCheckConstraint("CK_ProfessionalProfileDefinitions_KeyName", "LEN([Key]) >= 2 AND LEN([Name]) >= 2 AND LEN([Category]) >= 2");
+                        });
+                });
+
             modelBuilder.Entity("Qaly.Domain.Entities.Project", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3844,6 +4135,134 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.HasIndex("SourceGroupId");
 
                     b.ToTable("Projects");
+                });
+
+            modelBuilder.Entity("Qaly.Domain.Entities.ProjectCustomRole", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ColorCode")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<bool>("IsSystemDefault")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("PermissionMatrixJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId", "Name");
+
+                    b.ToTable("ProjectCustomRoles", (string)null);
+                });
+
+            modelBuilder.Entity("Qaly.Domain.Entities.ProjectDigestSubscription", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<string>("Cadence")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("ConsecutiveFailureCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetimeoffset")
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET()");
+
+                    b.Property<int>("DayOfWeek")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset?>("LastAttemptAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("LastDeliveryAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LastDeliveryKey")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<string>("LastDeliveryStatus")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("LocalTimeMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("NextDeliveryAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("TimeZoneId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("IsEnabled", "NextDeliveryAt");
+
+                    b.HasIndex("UserId", "ProjectId")
+                        .IsUnique();
+
+                    b.ToTable("ProjectDigestSubscriptions");
                 });
 
             modelBuilder.Entity("Qaly.Domain.Entities.ProjectLabel", b =>
@@ -4104,6 +4523,7 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .HasColumnType("int");
 
                     b.Property<long>("RowRevision")
+                        .IsConcurrencyToken()
                         .HasColumnType("bigint");
 
                     b.Property<Guid?>("RuleSetId")
@@ -4158,6 +4578,63 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("ProjectLaunchPlanArtifacts");
+                });
+
+            modelBuilder.Entity("Qaly.Domain.Entities.ProjectLaunchTaskTrace", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetimeoffset")
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET()");
+
+                    b.Property<string>("FeatureId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ObjectiveMetricIdsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("ProjectLaunchBriefId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SourceRefsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SprintClientId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("TaskClientId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("TaskItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TaskItemId")
+                        .IsUnique();
+
+                    b.HasIndex("ProjectLaunchBriefId", "FeatureId");
+
+                    b.HasIndex("ProjectLaunchBriefId", "TaskClientId")
+                        .IsUnique();
+
+                    b.ToTable("ProjectLaunchTaskTraces");
                 });
 
             modelBuilder.Entity("Qaly.Domain.Entities.ProjectMember", b =>
@@ -4217,6 +4694,54 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("ProjectMembers");
+                });
+
+            modelBuilder.Entity("Qaly.Domain.Entities.ProjectMemberRoleHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AssignedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("EndDate")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PhaseName")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<Guid>("ProjectMemberId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ReasonOrNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("StartDate")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignedByUserId");
+
+                    b.HasIndex("ProjectMemberId")
+                        .IsUnique()
+                        .HasFilter("[EndDate] IS NULL");
+
+                    b.HasIndex("RoleId");
+
+                    b.ToTable("ProjectMemberRoleHistories", (string)null);
                 });
 
             modelBuilder.Entity("Qaly.Domain.Entities.ProjectReplanProposal", b =>
@@ -4357,24 +4882,35 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Auth")
-                        .HasColumnType("nvarchar(max)");
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
                     b.Property<string>("Device")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("Endpoint")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<byte[]>("EndpointHash")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("binary(32)")
+                        .HasComputedColumnSql("CONVERT(binary(32), HASHBYTES('SHA2_256', [Endpoint]))", true);
 
                     b.Property<DateTimeOffset>("LastUsedAt")
                         .HasColumnType("datetimeoffset");
 
                     b.Property<string>("P256dh")
-                        .HasColumnType("nvarchar(max)");
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
 
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("datetimeoffset");
@@ -4383,6 +4919,9 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("EndpointHash")
+                        .IsUnique();
 
                     b.HasIndex("UserId");
 
@@ -4539,6 +5078,116 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.HasIndex("ProjectId", "Status");
 
                     b.ToTable("Sprint");
+                });
+
+            modelBuilder.Entity("Qaly.Domain.Entities.SystemModulePermission", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AiTier")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("Full");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsAllowed")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ModuleKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("SystemRole")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SystemRole", "ModuleKey")
+                        .IsUnique()
+                        .HasFilter("[SystemRole] IS NOT NULL AND [UserId] IS NULL");
+
+                    b.HasIndex("UserId", "ModuleKey")
+                        .IsUnique()
+                        .HasFilter("[UserId] IS NOT NULL AND [SystemRole] IS NULL");
+
+                    b.ToTable("SystemModulePermissions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_SystemModulePermissions_ExactlyOneScope", "([UserId] IS NOT NULL AND [SystemRole] IS NULL) OR ([UserId] IS NULL AND [SystemRole] IS NOT NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("Qaly.Domain.Entities.TaskAcceptanceChecklistItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetimeoffset")
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET()");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsCompleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasDefaultValue("acceptance");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("SourceDraftId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TaskId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("TaskId", "Kind");
+
+                    b.HasIndex("TaskId", "SortOrder")
+                        .IsUnique();
+
+                    b.ToTable("TaskAcceptanceChecklistItems");
                 });
 
             modelBuilder.Entity("Qaly.Domain.Entities.TaskAssignment", b =>
@@ -4960,6 +5609,9 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Property<int>("Number")
                         .HasColumnType("int");
 
+                    b.Property<Guid?>("ParentTaskId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("Priority")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -4971,6 +5623,9 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("ReporterId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ReviewerId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<byte[]>("RowVersion")
@@ -5018,9 +5673,13 @@ namespace Qaly.Infrastructure.Data.Migrations
 
                     b.HasIndex("IsPinned");
 
+                    b.HasIndex("ParentTaskId");
+
                     b.HasIndex("ProjectId");
 
                     b.HasIndex("ReporterId");
+
+                    b.HasIndex("ReviewerId");
 
                     b.HasIndex("SprintId");
 
@@ -5038,6 +5697,8 @@ namespace Qaly.Infrastructure.Data.Migrations
                     SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("ProjectId", "Status"), new[] { "Title", "Priority", "AssigneeId", "DueDate", "IsPinned", "ContributesToProgress" });
 
                     b.HasIndex("ProjectId", "AssigneeId", "Status");
+
+                    b.HasIndex("ProjectId", "ParentTaskId", "SortOrder");
 
                     b.HasIndex("ProjectId", "SprintId", "Status");
 
@@ -5274,17 +5935,46 @@ namespace Qaly.Infrastructure.Data.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<Guid>("AggregateId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("AggregateType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
                     b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetimeoffset")
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET()");
+
+                    b.Property<DateTimeOffset?>("DeadLetteredAt")
                         .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ErrorMessage")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<string>("EventType")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset?>("LeaseExpiresAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LeaseOwner")
+                        .IsConcurrencyToken()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset>("NextAttemptAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetimeoffset")
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET()");
 
                     b.Property<string>("Payload")
                         .IsRequired()
@@ -5296,12 +5986,24 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Property<int>("RetryCount")
                         .HasColumnType("int");
 
+                    b.Property<long>("SequenceNumber")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValueSql("NEXT VALUE FOR [VectorSyncOutboxSequence]");
+
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("datetimeoffset");
 
                     b.HasKey("Id");
 
-                    b.ToTable("VectorSyncOutbox");
+                    b.HasIndex("SequenceNumber")
+                        .IsUnique();
+
+                    b.HasIndex("AggregateType", "AggregateId", "SequenceNumber");
+
+                    b.HasIndex("ProcessedAt", "DeadLetteredAt", "NextAttemptAt", "LeaseExpiresAt", "SequenceNumber");
+
+                    b.ToTable("VectorSyncOutbox", (string)null);
                 });
 
             modelBuilder.Entity("Qaly.Domain.Entities.Vote", b =>
@@ -5400,6 +6102,63 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.HasIndex("WebhookId", "IdempotencyKey", "IsSuccess");
 
                     b.ToTable("WebhookDeliveryLogs");
+                });
+
+            modelBuilder.Entity("Qaly.Domain.Entities.WebhookOutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DeadLetteredAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("LeaseOwner")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset?>("LockedUntil")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("NextAttemptAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset?>("ProcessedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("RetryCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId", "CreatedAt");
+
+                    b.HasIndex("ProcessedAt", "DeadLetteredAt", "NextAttemptAt", "LockedUntil");
+
+                    b.ToTable("WebhookOutboxMessages");
                 });
 
             modelBuilder.Entity("Qaly.Domain.Entities.WebhookSubscription", b =>
@@ -5711,6 +6470,31 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("AiJob");
+                });
+
+            modelBuilder.Entity("Qaly.Domain.Entities.AiNativeActionDraft", b =>
+                {
+                    b.HasOne("Qaly.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Qaly.Domain.Entities.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Qaly.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("Project");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Qaly.Domain.Entities.AiProviderAttempt", b =>
@@ -6274,6 +7058,40 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Qaly.Domain.Entities.OrganizationMemberProfessionalProfile", b =>
+                {
+                    b.HasOne("Qaly.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Qaly.Domain.Entities.ProfessionalProfileDefinition", "ProfessionalProfileDefinition")
+                        .WithMany("MemberProfiles")
+                        .HasForeignKey("ProfessionalProfileDefinitionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Qaly.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Qaly.Domain.Entities.User", "VerifiedByUser")
+                        .WithMany()
+                        .HasForeignKey("VerifiedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("ProfessionalProfileDefinition");
+
+                    b.Navigation("User");
+
+                    b.Navigation("VerifiedByUser");
+                });
+
             modelBuilder.Entity("Qaly.Domain.Entities.OrganizationSkill", b =>
                 {
                     b.HasOne("Qaly.Domain.Entities.Organization", "Organization")
@@ -6328,6 +7146,17 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Navigation("RetentionPolicy");
                 });
 
+            modelBuilder.Entity("Qaly.Domain.Entities.ProfessionalProfileDefinition", b =>
+                {
+                    b.HasOne("Qaly.Domain.Entities.Organization", "Organization")
+                        .WithMany("ProfessionalProfiles")
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+                });
+
             modelBuilder.Entity("Qaly.Domain.Entities.Project", b =>
                 {
                     b.HasOne("Qaly.Domain.Entities.Organization", "Organization")
@@ -6351,6 +7180,36 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Navigation("Owner");
 
                     b.Navigation("SourceGroup");
+                });
+
+            modelBuilder.Entity("Qaly.Domain.Entities.ProjectCustomRole", b =>
+                {
+                    b.HasOne("Qaly.Domain.Entities.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("Qaly.Domain.Entities.ProjectDigestSubscription", b =>
+                {
+                    b.HasOne("Qaly.Domain.Entities.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Qaly.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Qaly.Domain.Entities.ProjectLabel", b =>
@@ -6467,6 +7326,25 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Navigation("RuleSet");
                 });
 
+            modelBuilder.Entity("Qaly.Domain.Entities.ProjectLaunchTaskTrace", b =>
+                {
+                    b.HasOne("Qaly.Domain.Entities.ProjectLaunchBrief", "ProjectLaunchBrief")
+                        .WithMany()
+                        .HasForeignKey("ProjectLaunchBriefId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Qaly.Domain.Entities.TaskItem", "TaskItem")
+                        .WithMany()
+                        .HasForeignKey("TaskItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ProjectLaunchBrief");
+
+                    b.Navigation("TaskItem");
+                });
+
             modelBuilder.Entity("Qaly.Domain.Entities.ProjectMember", b =>
                 {
                     b.HasOne("Qaly.Domain.Entities.Project", "Project")
@@ -6484,6 +7362,33 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Navigation("Project");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Qaly.Domain.Entities.ProjectMemberRoleHistory", b =>
+                {
+                    b.HasOne("Qaly.Domain.Entities.User", "AssignedByUser")
+                        .WithMany()
+                        .HasForeignKey("AssignedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Qaly.Domain.Entities.ProjectMember", "ProjectMember")
+                        .WithMany()
+                        .HasForeignKey("ProjectMemberId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Qaly.Domain.Entities.ProjectCustomRole", "Role")
+                        .WithMany("RoleHistories")
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AssignedByUser");
+
+                    b.Navigation("ProjectMember");
+
+                    b.Navigation("Role");
                 });
 
             modelBuilder.Entity("Qaly.Domain.Entities.ProjectReplanProposal", b =>
@@ -6570,6 +7475,35 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("Qaly.Domain.Entities.SystemModulePermission", b =>
+                {
+                    b.HasOne("Qaly.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Qaly.Domain.Entities.TaskAcceptanceChecklistItem", b =>
+                {
+                    b.HasOne("Qaly.Domain.Entities.User", "CreatedByUser")
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Qaly.Domain.Entities.TaskItem", "Task")
+                        .WithMany("AcceptanceChecklist")
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("CreatedByUser");
+
+                    b.Navigation("Task");
                 });
 
             modelBuilder.Entity("Qaly.Domain.Entities.TaskAssignment", b =>
@@ -6748,6 +7682,11 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .HasForeignKey("ImportSessionId")
                         .OnDelete(DeleteBehavior.NoAction);
 
+                    b.HasOne("Qaly.Domain.Entities.TaskItem", "ParentTask")
+                        .WithMany("Subtasks")
+                        .HasForeignKey("ParentTaskId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("Qaly.Domain.Entities.Project", "Project")
                         .WithMany("Tasks")
                         .HasForeignKey("ProjectId")
@@ -6760,6 +7699,11 @@ namespace Qaly.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Qaly.Domain.Entities.User", "Reviewer")
+                        .WithMany()
+                        .HasForeignKey("ReviewerId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Qaly.Domain.Entities.Sprint", "Sprint")
                         .WithMany("Tasks")
                         .HasForeignKey("SprintId");
@@ -6768,9 +7712,13 @@ namespace Qaly.Infrastructure.Data.Migrations
 
                     b.Navigation("ImportSession");
 
+                    b.Navigation("ParentTask");
+
                     b.Navigation("Project");
 
                     b.Navigation("Reporter");
+
+                    b.Navigation("Reviewer");
 
                     b.Navigation("Sprint");
                 });
@@ -7032,6 +7980,8 @@ namespace Qaly.Infrastructure.Data.Migrations
                 {
                     b.Navigation("Members");
 
+                    b.Navigation("ProfessionalProfiles");
+
                     b.Navigation("Projects");
 
                     b.Navigation("Skills");
@@ -7054,6 +8004,11 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Navigation("LaunchBriefs");
                 });
 
+            modelBuilder.Entity("Qaly.Domain.Entities.ProfessionalProfileDefinition", b =>
+                {
+                    b.Navigation("MemberProfiles");
+                });
+
             modelBuilder.Entity("Qaly.Domain.Entities.Project", b =>
                 {
                     b.Navigation("AiDrafts");
@@ -7069,6 +8024,11 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Navigation("Sprints");
 
                     b.Navigation("Tasks");
+                });
+
+            modelBuilder.Entity("Qaly.Domain.Entities.ProjectCustomRole", b =>
+                {
+                    b.Navigation("RoleHistories");
                 });
 
             modelBuilder.Entity("Qaly.Domain.Entities.ProjectLabel", b =>
@@ -7114,6 +8074,8 @@ namespace Qaly.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("Qaly.Domain.Entities.TaskItem", b =>
                 {
+                    b.Navigation("AcceptanceChecklist");
+
                     b.Navigation("Assignees");
 
                     b.Navigation("Attachments");
@@ -7127,6 +8089,8 @@ namespace Qaly.Infrastructure.Data.Migrations
                     b.Navigation("PredecessorDependencies");
 
                     b.Navigation("SkillRequirements");
+
+                    b.Navigation("Subtasks");
 
                     b.Navigation("SuccessorDependencies");
 

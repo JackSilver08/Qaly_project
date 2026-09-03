@@ -34,7 +34,10 @@ import type {
 const props = defineProps<{
   projectId: string
   tasks?: DashboardTask[]
+  compact?: boolean
+  initialTaskId?: string | null
 }>()
+const emit = defineEmits<{ applied: [] }>()
 
 const today = new Date()
 const defaultEnd = new Date(today)
@@ -54,7 +57,9 @@ const editingMember = ref<PortfolioMemberCapacityDto | null>(null)
 const capacityHours = ref(40)
 const availabilityWindows = ref<MemberAvailabilityWindowDto[]>([])
 
-const openTasks = computed(() => (props.tasks ?? []).filter(task => !['done', 'completed', 'cancelled', 'canceled'].includes(task.status.toLowerCase())))
+const openTasks = computed(() => (props.tasks ?? [])
+  .filter(task => !['done', 'completed', 'cancelled', 'canceled'].includes(task.status.toLowerCase()))
+  .filter(task => !props.compact || !props.initialTaskId || task.id === props.initialTaskId))
 const members = computed(() => workload.value?.membersWorkload ?? [])
 const totalTasks = computed(() => members.value.reduce((sum, item) => sum + item.taskCount, 0))
 const totalEstimated = computed(() => members.value.reduce((sum, item) => sum + item.estimatedHours, 0))
@@ -106,7 +111,7 @@ async function createProposal() {
   try {
     proposal.value = await apiResult<PortfolioScheduleProposalDto>(`/api/projects/${props.projectId}/schedule-proposals`, {
       method: 'POST',
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
+      headers: { 'Idempotency-Key': `portfolio-create:${props.projectId}:${selectedTaskIds.value.slice().sort().join(',')}:${windowStart.value}:${windowEnd.value}` },
       body: JSON.stringify({
         taskIds: selectedTaskIds.value,
         windowStart: toIso(windowStart.value),
@@ -150,7 +155,7 @@ async function confirmProposal() {
   }
   proposalBusy.value = true
   try {
-    const key = crypto.randomUUID()
+    const key = `portfolio-confirm:${proposal.value.draftId}`
     proposal.value = await apiResult<PortfolioScheduleProposalDto>(
       `/api/projects/${props.projectId}/schedule-proposals/${proposal.value.draftId}/confirm`,
       {
@@ -164,7 +169,10 @@ async function confirmProposal() {
         }),
       },
     )
-    showSuccess(`Đã áp dụng ${proposal.value.receipt?.appliedCount ?? selectedIds.length} thay đổi được chọn.`)
+    if (!proposal.value.receipt?.readBackVerified)
+      throw new Error('Máy chủ chưa đọc lại và xác minh Task sau khi ghi.')
+    showSuccess(`Đã áp dụng và đọc lại ${proposal.value.receipt.appliedCount} thay đổi được chọn.`)
+    emit('applied')
     await Promise.all([loadWorkload(), loadPortfolio()])
   } catch (error) {
     showError(errorMessage(error, 'Không thể xác nhận. Task có thể đã thay đổi; chưa có proposal nào được áp dụng dở dang.'))
@@ -280,6 +288,15 @@ function setProposedAssignee(item: PortfolioScheduleProposalItemDto, userId: str
   const option = optionMembers(item).find(candidate => candidate.userId === userId)
   item.proposedAssigneeId = userId
   item.proposedAssigneeName = option?.fullName ?? item.proposedAssigneeName
+  const alternative = item.alternatives.find(candidate => candidate.userId === userId)
+  if (alternative) {
+    const estimate = Math.max(0, item.loadAfterHours - item.loadBeforeHours)
+    item.skillCoveragePercent = alternative.skillCoveragePercent
+    item.evidenceConfidence = alternative.evidenceConfidence
+    item.loadBeforeHours = alternative.loadBeforeHours
+    item.loadAfterHours = alternative.loadBeforeHours + estimate
+    item.capacityHours = alternative.capacityHours
+  }
 }
 
 function taskDate(value: string) {
@@ -315,13 +332,13 @@ function toIso(value: string, endOfDay = false) {
 }
 
 function proposalStorageKey() {
-  return `qaly:portfolio-proposal:${props.projectId}`
+  return `qaly:portfolio-proposal:${props.projectId}:${props.initialTaskId ?? 'all'}`
 }
 
 watch(
-  () => props.projectId,
+  () => [props.projectId, props.initialTaskId],
   async () => {
-    selectedTaskIds.value = []
+    selectedTaskIds.value = props.initialTaskId ? [props.initialTaskId] : []
     proposal.value = null
     await Promise.all([loadWorkload(), loadPortfolio()])
   },
@@ -330,11 +347,11 @@ watch(
 </script>
 
 <template>
-  <section class="workload-tab glass-card reveal" data-testid="portfolio-capacity-copilot">
+  <section class="workload-tab glass-card reveal" :class="{ 'workload-tab--compact': compact }" data-testid="portfolio-capacity-copilot">
     <div class="workload-hero">
       <div>
         <div class="eyebrow"><Gauge :size="14" /> Capacity & Schedule Copilot</div>
-        <h2>Phân bổ nguồn lực đa dự án</h2>
+        <h2>{{ compact ? 'Phương án tự giao có kiểm soát' : 'Phân bổ nguồn lực đa dự án' }}</h2>
         <p>Đối soát capacity, lịch vắng mặt, skill evidence và tải công việc trước khi tạo bản nháp phân công. Không tự sửa task.</p>
       </div>
       <div class="window-controls">
@@ -347,7 +364,7 @@ watch(
     </div>
 
     <div v-if="isLoading" class="workload-empty"><Loader2 :size="20" class="spin" /><strong>Đang tải workload dự án</strong></div>
-    <div v-else class="workload-stats">
+    <div v-else-if="!compact" class="workload-stats">
       <article><span>Task trong dự án</span><strong>{{ totalTasks }}</strong></article>
       <article><span>Giờ ước lượng</span><strong>{{ totalEstimated }}h</strong></article>
       <article><span>Giờ thực tế</span><strong>{{ totalActual }}h</strong></article>
@@ -366,7 +383,7 @@ watch(
         <span>Không dùng LLM cho hard constraint</span>
       </div>
 
-      <div class="capacity-grid">
+      <div v-if="!compact" class="capacity-grid">
         <article v-for="member in portfolio.members" :key="member.userId" class="capacity-card" :data-tone="utilizationTone(member)">
           <header>
             <div class="capacity-person"><UserRound :size="18" /><div><strong>{{ member.fullName }}</strong><span>{{ member.capacityState === 'assumed_default' ? 'Đang dùng mặc định 40h/tuần' : 'Capacity đã khai báo' }}</span></div></div>
@@ -438,7 +455,7 @@ watch(
             <details v-if="item.alternatives.length"><summary>Phương án khác</summary><p v-for="alternative in item.alternatives" :key="alternative.userId"><strong>{{ alternative.fullName }}</strong> — {{ alternative.tradeOff }}</p></details>
             <div class="source-links">
               <template v-for="key in item.sourceRefs" :key="key">
-                <a v-if="sourceByKey.get(key)?.url" :href="sourceByKey.get(key)?.url ?? '#'" target="_blank"><Link2 :size="12" />{{ sourceByKey.get(key)?.label }}</a>
+                <a v-if="sourceByKey.get(key)?.url" :href="sourceByKey.get(key)?.url ?? '#'" target="_blank" rel="noopener noreferrer"><Link2 :size="12" />{{ sourceByKey.get(key)?.label }}</a>
                 <span v-else><ShieldCheck :size="12" />{{ sourceByKey.get(key)?.label ?? key }}</span>
               </template>
             </div>
@@ -454,17 +471,17 @@ watch(
       </section>
     </template>
 
-    <div v-if="editingMember" class="modal-backdrop" @click.self="editingMember = null">
+    <div v-if="editingMember" class="modal-backdrop" @click.self="editingMember = null" @keydown.esc="editingMember = null">
       <section class="capacity-modal" role="dialog" aria-modal="true" aria-label="Cập nhật capacity">
-        <header><div><span class="eyebrow">Capacity khai báo</span><h3>{{ editingMember.fullName }}</h3></div><button type="button" class="icon-button" @click="editingMember = null"><X :size="18" /></button></header>
+        <header><div><span class="eyebrow">Capacity khai báo</span><h3>{{ editingMember.fullName }}</h3></div><button type="button" class="icon-button" aria-label="Đóng cửa sổ capacity" @click="editingMember = null"><X :size="18" /></button></header>
         <label>Giờ làm việc mỗi tuần <input v-model.number="capacityHours" type="number" min="1" max="168" step="0.5" /></label>
         <div class="availability-heading"><strong>Khoảng không sẵn sàng / giảm capacity</strong><button type="button" class="text-button" @click="addAvailabilityWindow"><Plus :size="14" />Thêm khoảng</button></div>
         <article v-for="(item, index) in availabilityWindows" :key="item.id ?? index" class="availability-row">
-          <select v-model="item.kind"><option value="Unavailable">Không sẵn sàng</option><option value="ReducedCapacity">Giảm capacity</option></select>
-          <input type="datetime-local" :value="windowDateTime(item.startsAt)" @input="updateWindowDate(index, 'startsAt', ($event.target as HTMLInputElement).value)" />
-          <input type="datetime-local" :value="windowDateTime(item.endsAt)" @input="updateWindowDate(index, 'endsAt', ($event.target as HTMLInputElement).value)" />
-          <input v-if="item.kind === 'ReducedCapacity'" v-model.number="item.availableHours" type="number" min="0" placeholder="Giờ còn lại" />
-          <button type="button" class="icon-button danger" @click="availabilityWindows.splice(index, 1)"><Trash2 :size="15" /></button>
+          <select v-model="item.kind" :aria-label="`Loại điều chỉnh capacity ${index + 1}`"><option value="Unavailable">Không sẵn sàng</option><option value="ReducedCapacity">Giảm capacity</option></select>
+          <input type="datetime-local" :value="windowDateTime(item.startsAt)" :aria-label="`Bắt đầu khoảng ${index + 1}`" @input="updateWindowDate(index, 'startsAt', ($event.target as HTMLInputElement).value)" />
+          <input type="datetime-local" :value="windowDateTime(item.endsAt)" :aria-label="`Kết thúc khoảng ${index + 1}`" @input="updateWindowDate(index, 'endsAt', ($event.target as HTMLInputElement).value)" />
+          <input v-if="item.kind === 'ReducedCapacity'" v-model.number="item.availableHours" type="number" min="0" placeholder="Giờ còn lại" :aria-label="`Số giờ còn lại của khoảng ${index + 1}`" />
+          <button type="button" class="icon-button danger" :aria-label="`Xóa khoảng capacity ${index + 1}`" @click="availabilityWindows.splice(index, 1)"><Trash2 :size="15" /></button>
         </article>
         <p class="modal-note">Thông tin này chỉ dùng cho capacity. Không nhập lý do nghỉ hoặc dữ liệu nhạy cảm.</p>
         <footer><button type="button" class="ghost-button" @click="editingMember = null">Hủy</button><button type="button" class="primary-button" :disabled="proposalBusy" @click="saveCapacity"><Save :size="15" />Xác nhận lưu</button></footer>
@@ -475,6 +492,7 @@ watch(
 
 <style scoped>
 .workload-tab{padding:24px;display:grid;gap:20px;border:1px solid var(--line);border-radius:var(--radius-shell);background:var(--panel)}
+.workload-tab--compact{padding:14px;margin-top:12px;border-radius:14px}.workload-tab--compact .workload-hero{display:grid}.workload-tab--compact .workload-hero h2{font-size:18px}.workload-tab--compact .window-controls{width:100%}.workload-tab--compact .proposal-builder{padding-top:12px}.workload-tab--compact .task-selector{grid-template-columns:1fr}
 .workload-hero,.section-heading,.proposal-actions,.capacity-modal header,.capacity-modal footer{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
 .eyebrow{display:inline-flex;align-items:center;gap:7px;color:var(--primary);font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
 h2,h3,p{margin:0}.workload-hero h2{margin:8px 0 6px;color:var(--text-strong);font-size:24px}.workload-hero p{max-width:72ch;color:var(--muted)}

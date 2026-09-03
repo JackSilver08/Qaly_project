@@ -130,6 +130,38 @@ public static class AiAssistantGoalPlanningOutputContract
             selected = ToSelection(descriptor, ranked.FitReason, ranked.Confidence);
         }
 
+        // The model may mistake nouns such as "task" or "Project" in a read request for an
+        // action request. Never escalate a deterministic read-only intent into a mutation.
+        // Explicit requested capabilities and server-recognized actions retain their route.
+        var serverInferredCapabilityId = AiAssistantCapabilityIntentClassifier.Infer(context.Message);
+        var modelReadRouteWasCorrected = false;
+        var modelActionRouteWasCorrected = false;
+        if (string.IsNullOrWhiteSpace(context.RequestedCapabilityId) &&
+            IsServerOwnedActionCapability(serverInferredCapabilityId) &&
+            available.TryGetValue(serverInferredCapabilityId, out var serverActionDescriptor) &&
+            !string.Equals(selected?.SkillId, serverInferredCapabilityId, StringComparison.Ordinal))
+        {
+            selected = ToSelection(
+                serverActionDescriptor,
+                "Máy chủ nhận diện action target rõ ràng và giữ đúng capability đã đăng ký; model không được đổi Task Assignment thành tư vấn chung hoặc Project Launch.",
+                1);
+            modelActionRouteWasCorrected = true;
+        }
+        if (string.IsNullOrWhiteSpace(context.RequestedCapabilityId) &&
+            serverInferredCapabilityId is AiAssistantContextContract.GroundedReadCapability or
+                AiAssistantContextContract.ResearchPlanCapability &&
+            available.TryGetValue(serverInferredCapabilityId, out var serverReadDescriptor) &&
+            (selected == null ||
+             available.TryGetValue(selected.SkillId, out var selectedDescriptor) &&
+             selectedDescriptor.RiskClass.EndsWith("_mutation", StringComparison.Ordinal)))
+        {
+            selected = ToSelection(
+                serverReadDescriptor,
+                "Máy chủ giữ yêu cầu đọc/phân tích ở chế độ không ghi dữ liệu; model không được tự nâng thành thao tác mutation.",
+                1);
+            modelReadRouteWasCorrected = true;
+        }
+
         var knownButDenied = envelope.RankedSkills.FirstOrDefault(item =>
             AiAssistantCapabilityCatalog.TryGet(item.SkillId, out _) && !available.ContainsKey(item.SkillId));
         var missing = envelope.MissingSkills
@@ -161,6 +193,10 @@ public static class AiAssistantGoalPlanningOutputContract
             .Distinct(StringComparer.Ordinal)
             .Take(10)
             .ToList();
+        if (modelReadRouteWasCorrected)
+            warnings.Add("Model-selected or unavailable mutation route was replaced by the server-owned read-only route.");
+        if (modelActionRouteWasCorrected)
+            warnings.Add("Model-selected route was replaced by the server-owned registered action capability.");
         if (selected == null) warnings.Add("Không có skill đã authorize phù hợp; chưa thực hiện mutation hoặc tool call.");
 
         var analysis = new AiAssistantGoalAnalysisDto(
@@ -187,6 +223,24 @@ public static class AiAssistantGoalPlanningOutputContract
         result = new AiAssistantGoalPlanningResultDto(analysis, plan, selected?.SkillId, false);
         return true;
     }
+
+    private static bool IsServerOwnedActionCapability(string capabilityId)
+        => capabilityId is
+            AiAssistantContextContract.TaskCreateCapability or
+            AiAssistantContextContract.TaskAssignmentScheduleCapability or
+            AiAssistantContextContract.ProjectLaunchCapability or
+            AiAssistantContextContract.ProjectStaffingPlanCapability or
+            AiAssistantContextContract.ProjectLaunchExecuteCapability or
+            AiAssistantContextContract.ProjectOperationMonitorCapability or
+            AiAssistantContextContract.SafeTestRunCapability or
+            AiAssistantContextContract.AcceptanceChecklistCapability or
+            AiAssistantContextContract.TaskBreakdownCapability or
+            AiAssistantContextContract.WikiBriefTaskCapability or
+            AiAssistantContextContract.GroupPollCapability or
+            AiAssistantContextContract.ProjectDigestCapability or
+            AiAssistantContextContract.MeetingActionsCapability or
+            AiAssistantContextContract.RoadmapAdjustCapability or
+            AiAssistantContextContract.SkillEvidenceCapability;
 
     public static AiAssistantGoalPlanningResultDto CreateDeterministicFallback(
         AiAssistantTurnRequestDto request,
@@ -226,6 +280,11 @@ public static class AiAssistantGoalPlanningOutputContract
             // Do not let a project-purpose clause inside an explicit task request fall through
             // to the broader Project Launch keyword set below.
             selectedId = AiAssistantContextContract.TaskCreateCapability;
+        }
+        else if (AiNativeDomainActionContract.CapabilityIds.Contains(inferredCapabilityId) &&
+                 available.ContainsKey(inferredCapabilityId))
+        {
+            selectedId = inferredCapabilityId;
         }
         else if ((ContainsAny(
                      normalized,
@@ -345,7 +404,16 @@ public static class AiAssistantGoalPlanningOutputContract
                 AiAssistantContextContract.ProjectLaunchCapability or
                 AiAssistantContextContract.ProjectStaffingPlanCapability or
                 AiAssistantContextContract.ProjectLaunchExecuteCapability or
-                AiAssistantContextContract.ProjectOperationMonitorCapability) ||
+                AiAssistantContextContract.ProjectOperationMonitorCapability or
+                AiAssistantContextContract.TaskAssignmentScheduleCapability or
+                AiAssistantContextContract.AcceptanceChecklistCapability or
+                AiAssistantContextContract.TaskBreakdownCapability or
+                AiAssistantContextContract.WikiBriefTaskCapability or
+                AiAssistantContextContract.GroupPollCapability or
+                AiAssistantContextContract.ProjectDigestCapability or
+                AiAssistantContextContract.MeetingActionsCapability or
+                AiAssistantContextContract.RoadmapAdjustCapability or
+                AiAssistantContextContract.SkillEvidenceCapability) ||
             !discoveryContext.Capabilities.Any(item => item.CapabilityId == capabilityId) ||
             !AiAssistantCapabilityCatalog.TryGet(capabilityId, out var descriptor))
             return false;
@@ -371,7 +439,7 @@ public static class AiAssistantGoalPlanningOutputContract
             [],
             [selected],
             [],
-            descriptor.RiskClass == "project_mutation" ? "medium" : "low",
+            descriptor.RiskClass.EndsWith("_mutation", StringComparison.Ordinal) ? "medium" : "low",
             descriptor.ConfirmationPolicy != "none",
             "plannable",
             1,
