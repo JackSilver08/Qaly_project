@@ -72,7 +72,7 @@ async function createProject(page: Page, name: string) {
   }))
 }
 
-async function createTask(page: Page, projectId: string, title: string) {
+async function createTask(page: Page, projectId: string, title: string, assigneeId: string) {
   return apiResult<{ id: string; title: string }>(await browserApiRequest(page, 'POST', '/api/tasks', {
     data: {
       title,
@@ -81,11 +81,11 @@ async function createTask(page: Page, projectId: string, title: string) {
       dueDate: null,
       estimatedHours: null,
       projectId,
-      assigneeId: null,
+      assigneeId,
       isPrivate: false,
       isPinned: false,
       contributesToProgress: true,
-      assigneeIds: [],
+      assigneeIds: [assigneeId],
       labelIds: [],
     },
   }))
@@ -99,9 +99,12 @@ test('canonical task opens from project and tasks pages, refresh and back keep t
 
   try {
     await login(page)
+    const currentUser = await apiResult<{ id: string }>(
+      await browserApiRequest(page, 'GET', '/api/auth/me'),
+    )
     const project = await createProject(page, projectName)
     projectId = project.id
-    const task = await createTask(page, projectId, taskTitle)
+    const task = await createTask(page, projectId, taskTitle, currentUser.id)
     taskId = task.id
 
     await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' })
@@ -169,14 +172,14 @@ test('privacy policy writes through API and Settings stays truthful on partial f
 
     await page.getByLabel('Họ và tên').fill(renamedUser)
     await page.locator('.settings-nav-item').filter({ hasText: 'Quyền riêng tư & dữ liệu' }).click()
-    await page.getByRole('button', { name: /Retention/i }).click()
+    await page.getByRole('tab', { name: 'Retention' }).click()
     await page.locator('.privacy-editor input').first().fill(policyName)
     await page.getByRole('button', { name: /Tạo policy/i }).click()
 
     await expect(page.locator('.record-list')).toContainText(policyName)
     await page.reload({ waitUntil: 'domcontentloaded' })
     await page.locator('.settings-nav-item').filter({ hasText: 'Quyền riêng tư & dữ liệu' }).click()
-    await page.getByRole('button', { name: /Retention/i }).click()
+    await page.getByRole('tab', { name: 'Retention' }).click()
     await expect(page.locator('.record-list')).toContainText(policyName)
 
     await page.goto('/settings', { waitUntil: 'domcontentloaded' })

@@ -16,8 +16,10 @@ public static class SystemRoleRules
         => IsAdmin(role);
 
     /// <summary>
-    /// Normalizes roles already stored on a user. "User" is retained as a read-compatible alias
-    /// for databases created before the system role was renamed to Member. Unknown roles fail.
+    /// Normalizes roles already stored on a user. "User" and the legacy system-level "Manager"
+    /// value are retained as read-compatible aliases for Member. Project/organization management
+    /// authority is still resolved independently, so this compatibility path never grants system
+    /// administration privileges. Unknown roles fail closed.
     /// </summary>
     public static bool TryNormalizeKnownRole(string? role, out string normalized)
     {
@@ -34,7 +36,8 @@ public static class SystemRoleRules
         }
 
         if (string.Equals(role, Member, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(role, "User", StringComparison.OrdinalIgnoreCase))
+            string.Equals(role, "User", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase))
         {
             normalized = Member;
             return true;

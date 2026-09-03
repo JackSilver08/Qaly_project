@@ -434,6 +434,27 @@ function closeTaskDetails() {
   }
 }
 
+function openTaskAiNative(capability: "checklist" | "breakdown") {
+  const task = selectedTask.value;
+  const project = selectedProject.value;
+  if (!task || !project || !canManageTask(task)) return;
+
+  const prompt = capability === "checklist"
+    ? `Soạn acceptance checklist nghiệm thu cho task "${task.title}" để tôi review và xác nhận tạo.`
+    : `Tách task "${task.title}" thành các subtask theo thứ tự và dependency hợp lý để tôi review và xác nhận tạo.`;
+
+  window.dispatchEvent(new CustomEvent("qaly:open-ai-assistant", {
+    detail: {
+      view: "chat",
+      prompt,
+      projectId: project.id,
+      requestedCapabilityId: capability === "checklist"
+        ? "task.acceptance_checklist.v1"
+        : "task.breakdown.v1",
+    },
+  }));
+}
+
 function handleTaskCardClick(taskId: string) {
   if (isSuppressingTaskClick.value) return;
   selectTaskInProject(taskId);
@@ -1318,6 +1339,24 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                           selectedTask.key ?? "#" + selectedTask.id.slice(0, 4)
                         }}
                       </div>
+                      <button
+                        v-if="selectedTask && canManageTask(selectedTask)"
+                        type="button"
+                        class="ghost-pill"
+                        data-testid="task-ai-checklist-launcher"
+                        @click="openTaskAiNative('checklist')"
+                      >
+                        AI checklist
+                      </button>
+                      <button
+                        v-if="selectedTask && canManageTask(selectedTask)"
+                        type="button"
+                        class="ghost-pill"
+                        data-testid="task-ai-breakdown-launcher"
+                        @click="openTaskAiNative('breakdown')"
+                      >
+                        AI tách subtask
+                      </button>
                       <button
                         type="button"
                         class="task-detail-drawer__close"

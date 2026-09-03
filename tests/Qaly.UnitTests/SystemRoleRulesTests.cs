@@ -35,6 +35,7 @@ public class SystemRoleRulesTests
     [InlineData("Moderator", true, "Moderator")]
     [InlineData("Member", true, "Member")]
     [InlineData("User", true, "Member")]
+    [InlineData("Manager", true, "Member")]
     [InlineData("Owner", false, "")]
     [InlineData(null, false, "")]
     public void TryNormalizeKnownRole_FailsClosedForUnknownStoredRoles(
