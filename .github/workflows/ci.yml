@@ -261,14 +261,14 @@ jobs:
           cat qaly-e2e.log
           exit 1
 
-      # The suite shares one app/database instance. Two workers keep useful parallelism
-      # without the cross-spec resource starvation observed with four workers.
-      - name: Run Playwright smoke tests (2 workers)
+      # The suite shares one app/database instance and mutates canonical data.
+      # Run it serially so one scenario cannot invalidate another scenario's state.
+      - name: Run Playwright smoke tests (serial shared state)
         env:
           E2E_BASE_URL: http://127.0.0.1:5000
           E2E_ADMIN_EMAIL: admin@qaly.dev
           E2E_ADMIN_PASSWORD: "Qaly@E2E2026!"
-          E2E_WORKERS: "2"
+          E2E_WORKERS: "1"
         run: npm run test:e2e
 
       - name: Upload Playwright report
