@@ -534,6 +534,7 @@ watch(isOpen, async open => {
       class="erumi-bubble-trigger" 
       :class="{ 'is-active': isOpen }" 
       aria-label="Mở Trợ lý AI"
+      title="Mở Trợ lý AI"
       :aria-expanded="isOpen"
       @click="toggleDrawer"
     >
@@ -612,7 +613,7 @@ watch(isOpen, async open => {
             <button type="button" class="drawer-icon-btn" :class="{ active: activeView === 'activity' }" :aria-pressed="activeView === 'activity'" title="Hoạt động AI" aria-label="Mở hoạt động AI" @click="activeView = 'activity'"><Activity :size="17" /></button>
             <button type="button" class="drawer-icon-btn" title="Lịch sử phiên Trợ lý AI" aria-label="Lịch sử phiên Trợ lý AI" data-testid="assistant-session-history-toolbar" @click="openAssistantHistory"><Clock3 :size="17" /></button>
             <button type="button" class="drawer-icon-btn reset-layout-btn" title="Đặt lại kích thước" aria-label="Đặt lại kích thước Trợ lý AI" @click="resetAssistantLayout"><RotateCcw :size="17" /></button>
-            <button type="button" class="drawer-close-btn" @click="closeDrawer" aria-label="Đóng Trợ lý AI"><X :size="20" /></button>
+            <button type="button" class="drawer-close-btn" title="Đóng Trợ lý AI" @click="closeDrawer" aria-label="Đóng Trợ lý AI"><X :size="20" /></button>
           </div>
         </header>
         

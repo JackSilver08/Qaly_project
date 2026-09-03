@@ -66,9 +66,9 @@ const askWikiRAG = async () => {
       <div class="flex items-center justify-between border-b border-slate-800 pb-3">
         <div class="flex items-center gap-2 text-emerald-400 font-bold text-base">
           <Compass class="w-5 h-5" />
-          <span>🧭 Interactive AI Onboarding Guide • {{ roleTitle }}</span>
+          <span>Interactive AI Onboarding Guide • {{ roleTitle }}</span>
         </div>
-        <button type="button" aria-label="Đóng hướng dẫn" @click="emit('close')" class="text-slate-400 hover:text-white transition">
+        <button type="button" aria-label="Đóng hướng dẫn" title="Đóng hướng dẫn" @click="emit('close')" class="text-slate-400 hover:text-white transition">
           <X class="w-5 h-5" />
         </button>
       </div>
@@ -100,7 +100,7 @@ const askWikiRAG = async () => {
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2 text-purple-300 font-semibold">
             <Bot class="w-4 h-4 text-purple-400" />
-            <span>💬 Trợ Lý AI RAG Wiki Q&A (Hỏi Đáp Quy Trình Dự Án)</span>
+            <span>Trợ Lý AI RAG Wiki Q&A (Hỏi Đáp Quy Trình Dự Án)</span>
           </div>
           <span class="text-[10px] text-slate-500">Tìm kiếm trên Qdrant Vector DB Wiki</span>
         </div>

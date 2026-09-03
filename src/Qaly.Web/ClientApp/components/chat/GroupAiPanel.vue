@@ -1833,8 +1833,8 @@ function confidenceLabel(value: number) {
 }
 
 .draft-task-card {
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid rgba(193, 211, 232, 0.72);
+  background: var(--panel, #ffffff);
+  border: 1px solid var(--line, rgba(193, 211, 232, 0.72));
   border-radius: var(--qaly-radius-lg);
   padding: 12px;
   display: flex;
@@ -1845,8 +1845,8 @@ function confidenceLabel(value: number) {
 
 .draft-task-card--unchecked {
   opacity: 0.55;
-  border-color: rgba(148, 163, 184, 0.2);
-  background: rgba(248, 250, 252, 0.6);
+  border-color: var(--line, rgba(148, 163, 184, 0.2));
+  background: var(--bg-soft, rgba(248, 250, 252, 0.6));
 }
 
 .draft-task-card__header {
@@ -1877,8 +1877,8 @@ function confidenceLabel(value: number) {
   left: 0;
   height: 18px;
   width: 18px;
-  background-color: #ffffff;
-  border: 2px solid rgba(148, 163, 184, 0.4);
+  background-color: var(--panel, #ffffff);
+  border: 2px solid var(--line, rgba(148, 163, 184, 0.4));
   border-radius: 4px;
   transition: all 0.2s ease;
 }
@@ -1920,8 +1920,8 @@ function confidenceLabel(value: number) {
 }
 
 .task-title-input:focus {
-  border-color: rgba(148, 163, 184, 0.2);
-  background: #ffffff;
+  border-color: var(--primary, rgba(148, 163, 184, 0.2));
+  background: var(--panel, #ffffff);
   outline: none;
 }
 
@@ -1944,8 +1944,8 @@ function confidenceLabel(value: number) {
 }
 
 .task-desc-textarea:focus {
-  border-color: rgba(148, 163, 184, 0.2);
-  background: #ffffff;
+  border-color: var(--primary, rgba(148, 163, 184, 0.2));
+  background: var(--panel, #ffffff);
   outline: none;
 }
 
@@ -1973,20 +1973,20 @@ function confidenceLabel(value: number) {
 }
 
 .metadata-select {
-  border: 1px solid rgba(148, 163, 184, 0.24);
+  border: 1px solid var(--line, rgba(148, 163, 184, 0.24));
   border-radius: 6px;
   padding: 4px 8px;
   font-size: 0.72rem;
-  background: #ffffff;
+  background: var(--panel, #ffffff);
   color: var(--text-strong);
 }
 
 .metadata-number-input {
-  border: 1px solid rgba(148, 163, 184, 0.24);
+  border: 1px solid var(--line, rgba(148, 163, 184, 0.24));
   border-radius: 6px;
   padding: 4px 8px;
   font-size: 0.72rem;
-  background: #ffffff;
+  background: var(--panel, #ffffff);
   color: var(--text-strong);
   width: 100%;
 }
@@ -1997,7 +1997,7 @@ function confidenceLabel(value: number) {
   gap: 10px;
   margin-top: 8px;
   padding-top: 12px;
-  border-top: 1px dashed rgba(148, 163, 184, 0.2);
+  border-top: 1px dashed var(--line, rgba(148, 163, 184, 0.2));
 }
 
 .footer-confirm-btn {
@@ -2023,9 +2023,9 @@ function confidenceLabel(value: number) {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  border: 1px solid rgba(193, 211, 232, 0.72);
+  border: 1px solid var(--line, rgba(193, 211, 232, 0.72));
   border-radius: var(--qaly-radius-lg);
-  background: rgba(255, 255, 255, 0.82);
+  background: var(--panel, #ffffff);
   padding: 12px;
   box-shadow: var(--qaly-shadow-md);
 }
@@ -2057,7 +2057,7 @@ function confidenceLabel(value: number) {
   align-items: center;
   gap: 4px;
   border-radius: 6px;
-  background: rgba(234, 244, 255, 0.86);
+  background: color-mix(in srgb, var(--primary) 12%, var(--panel));
   color: var(--primary);
   padding: 4px 6px;
   font-size: 0.68rem;
@@ -2065,14 +2065,14 @@ function confidenceLabel(value: number) {
 }
 
 .confidence-tag {
-  background: rgba(241, 245, 249, 0.86);
-  color: #475569;
+  background: var(--bg-soft);
+  color: var(--muted);
 }
 
 .group-ai-item__source {
   font-size: 0.68rem;
-  color: #64748b;
-  border-left: 2px solid rgba(148, 163, 184, 0.2);
+  color: var(--muted, #64748b);
+  border-left: 2px solid var(--line, rgba(148, 163, 184, 0.2));
   padding-left: 6px;
   margin-top: 4px;
   line-height: 1.4;
@@ -2092,9 +2092,9 @@ function confidenceLabel(value: number) {
   font-size: 0.76rem;
   text-align: center;
   padding: 20px;
-  border: 2px dashed rgba(148, 163, 184, 0.16);
+  border: 2px dashed var(--line, rgba(148, 163, 184, 0.16));
   border-radius: var(--qaly-radius-lg);
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--bg-soft, rgba(255, 255, 255, 0.15));
 }
 
 .muted-icon {
@@ -2109,21 +2109,22 @@ function confidenceLabel(value: number) {
   display: grid;
   gap: 8px;
   padding: 10px 12px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
-  background: rgba(239, 246, 255, 0.9);
+  border-bottom: 1px solid var(--line, rgba(148, 163, 184, 0.22));
+  background: color-mix(in srgb, var(--primary) 10%, var(--panel));
 }
 
 .selected-ai-source strong {
-  color: #1e3a8a;
+  color: var(--text-strong);
   font-size: 0.78rem;
 }
 
 .selected-ai-source select {
   min-width: 0;
   padding: 8px;
-  border: 1px solid #bfdbfe;
+  border: 1px solid var(--line, #bfdbfe);
   border-radius: 6px;
-  background: #fff;
+  background: var(--panel, #fff);
+  color: var(--text-strong);
 }
 
 .native-task-review {
