@@ -160,23 +160,24 @@ test('DEMO-30M chạy xuyên suốt đúng kịch bản thuyết trình', async 
     await expect(assistant).toContainText(/Work Plan|Kế hoạch|nguồn|provider|mô hình|fallback|rủi ro/i, { timeout: 30_000 })
   })
 
-  await test.step('24:30 — AI Planner tạo bản nháp để con người review, không xác nhận mutation', async () => {
+  await test.step('24:30 — AI Native tạo Launch Brief để con người review, không xác nhận mutation', async () => {
     await page.goto('/projects', { waitUntil: 'domcontentloaded' })
     await page.getByRole('button', { name: /Lên kế hoạch AI/i }).click()
-    const planner = page.locator('.ai-planner-modal')
-    await expect(planner).toBeVisible()
-    await planner.locator('textarea.prompt-textarea').fill('Lập kế hoạch phát hành phiên bản Qaly tiếp theo trong 2 tuần, gồm frontend, backend, kiểm thử và triển khai.')
-    await planner.getByRole('button', { name: /Lên kế hoạch với AI/i }).click()
-    await expect(planner).toContainText(/AI đã lập xong kế hoạch|Danh sách công việc đề xuất/i, { timeout: 45_000 })
-    const taskInputs = planner.locator('.task-title-input')
-    await expect(taskInputs.first()).toBeVisible()
-    const originalTitle = await taskInputs.first().inputValue()
-    await taskInputs.first().fill(`${originalTitle} — đã review`)
-    if (await planner.locator('.task-delete-btn').count() > 1) {
-      await planner.locator('.task-delete-btn').last().click()
-    }
-    await expect(planner.getByRole('button', { name: /Chấp nhận.*Tạo thực tế/i })).toBeVisible()
-    // Cố ý không xác nhận: đúng nguyên tắc human-in-the-loop của kịch bản demo.
+    const assistant = page.getByRole('dialog', { name: 'Trợ lý AI' })
+    await expect(assistant).toBeVisible()
+    const prompt = assistant.getByRole('textbox', { name: /Nhập yêu cầu.*Trợ lý AI/i })
+    await expect(prompt).toHaveValue(/khởi chạy một dự án mới/i)
+    await prompt.fill('Khởi chạy Project Qaly Next trong 2 tuần, gồm frontend, backend, kiểm thử và triển khai. Chỉ tạo Launch Brief để tôi review, chưa ghi dữ liệu.')
+    await assistant.getByRole('button', { name: /Gửi câu hỏi/i }).click()
+
+    const brief = assistant.getByTestId('project-launch-brief').last()
+    await expect(brief).toBeVisible({ timeout: 45_000 })
+    await expect(brief).toContainText(/Tóm tắt trước khi xác nhận|Lưu và lập phương án/i)
+    const projectName = brief.getByLabel('Tên dự án')
+    const originalName = await projectName.inputValue()
+    await projectName.fill(`${originalName} — đã review`)
+    await expect(brief.getByTestId('project-launch-brief-save')).toBeVisible()
+    // Cố ý không lưu/lập phương án và không xác nhận mutation: đúng human-in-the-loop.
   })
 
   await testInfo.attach('browser-issues.json', {

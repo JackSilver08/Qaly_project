@@ -3700,7 +3700,8 @@ const handleRollbackErumiSnapshot = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  /* Business modals must remain operable while the global AI drawer is open. */
+  z-index: 10100;
   padding: 16px;
 }
 

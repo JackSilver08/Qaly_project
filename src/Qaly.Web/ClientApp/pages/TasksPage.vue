@@ -793,9 +793,9 @@ function resetTaskDrawer() {
 }
 
 function openTaskDrawer(task: TaskSummary) {
-  selectedTaskId.value = task.id
-  selectedTaskDetail.value = taskDetailCache.value.get(task.id) ?? null
-  void loadTaskDetail(task.id)
+  // Task detail has one canonical deep-link. Navigating instead of keeping a
+  // route-less local drawer makes refresh, Back and shared links deterministic.
+  openTask(task.projectId, task.id)
 }
 
 function closeTaskDrawer() {

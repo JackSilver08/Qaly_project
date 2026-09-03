@@ -158,7 +158,7 @@ test('TEST-CAND-007-E2E preserves exact selected-message grounding and reload re
     await message.hover()
     await message.locator('.team-message__more').click()
     await page.getByRole('button', { name: 'Chọn nhiều tin nhắn' }).click()
-    await page.getByTitle('Summarize selected messages').click()
+    await page.getByRole('button', { name: 'Tóm tắt các tin nhắn đã chọn' }).click()
 
     const review = page.getByTestId('group-selected-summary-review')
     await expect(review).toBeVisible()

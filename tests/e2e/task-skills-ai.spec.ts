@@ -431,7 +431,7 @@ test('task detail creates a canonical draft, supports selective review, confirms
   await expect.poll(() => state.aiCreateBodies.length).toBe(1)
   expect(state.aiCreateBodies[0]).toEqual({
     language: 'vi',
-    providerHint: 'auto',
+    providerHint: 'deepseek',
     maximumEstimatedCostUsd: 0.15,
     cacheMode: 'use',
   })

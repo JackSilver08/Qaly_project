@@ -251,14 +251,14 @@ test('TEST-TASK-DRAFT-E2E reload restores source-linked draft and selective conf
 
   await page.goto(`/groups/${group.id}`, { waitUntil: 'domcontentloaded' })
   const messageText = `Implement source-linked API review ${Date.now()}`
-  await page.getByRole('textbox', { name: 'Nhập tin nhắn...' }).fill(messageText)
+  await page.getByRole('textbox', { name: 'Nội dung tin nhắn' }).fill(messageText)
   await page.getByRole('button', { name: 'Gửi tin nhắn' }).click()
   const message = page.locator('.team-message').filter({ hasText: messageText })
   await expect(message).toBeVisible()
   await message.hover()
   await message.locator('.team-message__more').click()
   await page.getByRole('button', { name: 'Chọn nhiều tin nhắn' }).click()
-  await page.getByTitle('Create a task draft from selected messages').click()
+  await page.getByRole('button', { name: 'Tạo bản nháp task từ các tin nhắn đã chọn' }).click()
   const review = page.getByTestId('source-linked-task-draft-review')
   await expect(review).toBeVisible()
   expect(submittedSourceIds).toHaveLength(1)

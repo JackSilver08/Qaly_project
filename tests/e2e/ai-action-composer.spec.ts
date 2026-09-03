@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { adminEmail, adminPassword } from './support/credentials'
-import { resolveSeededProjectId } from './support/seeded-project'
+import { resolveSeededProjectId, seededDemoProjectName } from './support/seeded-project'
 
 async function login(page: Page) {
   await page.goto('/Account/Login', { waitUntil: 'domcontentloaded' })
@@ -354,10 +354,10 @@ test('TEST-ACTION-LIVE-WORKER-01 live worker claims Action Composer job and pers
 
 test('TEST-UA-E2E chat function call opens the canonical task composer without mutating data', async ({ page }) => {
   await login(page)
+  const clarifiedProjectId = await resolveSeededProjectId(page)
   await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
 
   const jobId = '99999999-9999-9999-9999-999999999999'
-  const clarifiedProjectId = '88888888-8888-8888-8888-888888888888'
   const assistantSessionId = '77777777-7777-7777-7777-777777777777'
   let assistantSessionVersion = 0
   let routedMessage = ''
@@ -386,6 +386,25 @@ test('TEST-UA-E2E chat function call opens the canonical task composer without m
       turns: [],
     }),
   }))
+  await page.route(`**/api/ai/assistant/sessions/${assistantSessionId}/scope`, async route => {
+    const request = route.request().postDataJSON()
+    expect(request.expectedVersion).toBe(assistantSessionVersion)
+    expect(request.projectId).toBe(clarifiedProjectId)
+    assistantSessionVersion += 1
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        sessionId: assistantSessionId,
+        title: 'Cuộc trò chuyện Trợ lý AI',
+        status: 'active',
+        version: assistantSessionVersion,
+        projectId: clarifiedProjectId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        turns: [],
+      }),
+    })
+  })
 
   await page.route('**/api/ai/assistant/turns', async route => {
     const request = route.request().postDataJSON()
@@ -407,7 +426,7 @@ test('TEST-UA-E2E chat function call opens the canonical task composer without m
             questionId: 'task-create-project',
             field: 'projectId',
             prompt: 'Bạn muốn tạo các task này trong dự án nào?',
-            choices: [{ id: clarifiedProjectId, label: 'Qaly Native AI', description: 'QALY-AI' }],
+            choices: [{ id: clarifiedProjectId, label: seededDemoProjectName, description: 'Dự án demo đã được seed' }],
             allowFreeText: false,
             turn: 1,
             maxTurns: 3,
@@ -505,7 +524,7 @@ test('TEST-UA-E2E chat function call opens the canonical task composer without m
   await page.getByRole('button', { name: 'Gửi câu hỏi' }).click()
 
   await expect(page.getByText('Bạn muốn tạo các task này trong dự án nào?')).toBeVisible()
-  await page.getByRole('button', { name: /Qaly Native AI/ }).click()
+  await page.getByRole('button', { name: new RegExp(seededDemoProjectName) }).click()
 
   const request = await composeRequest
   const body = request.postDataJSON()

@@ -936,11 +936,20 @@ const rulebookDrafts = ref<Record<string, OrganizationWorkRuleSet>>({})
 const rulebookReviewRules = ref<Record<string, OrganizationWorkRule[]>>({})
 const projectLaunchBriefDrafts = ref<Record<string, ProjectLaunchBriefDraft>>({})
 const projectLaunchPlanDrafts = ref<Record<string, ProjectLaunchPlanDraft>>({})
+const projectLaunchDraftsHydrated = ref(false)
 const PROJECT_LAUNCH_DRAFT_BACKUP_VERSION = 1
 
-function projectLaunchDraftBackupKey() {
+function legacyProjectLaunchDraftBackupKey() {
   const userId = String((currentUser.value as any)?.id || (currentUser.value as any)?.userId || 'current')
   return `qaly.ai-native.project-launch-working-drafts.v1:${userId}`
+}
+
+function projectLaunchDraftBackupKey() {
+  // The assistant session is restored before working drafts. Unlike currentUser,
+  // it is already stable during the first render after a reload and also keeps
+  // drafts isolated between conversations in a shared browser profile.
+  const scopeId = assistantSessionId.value || String((currentUser.value as any)?.id || (currentUser.value as any)?.userId || 'current')
+  return `qaly.ai-native.project-launch-working-drafts.v1:${scopeId}`
 }
 
 function normalizeLaunchBriefForEditing(draft: ProjectLaunchBriefDraft): ProjectLaunchBriefDraft {
@@ -983,8 +992,14 @@ function persistProjectLaunchWorkingDrafts() {
 }
 
 function restoreProjectLaunchWorkingDrafts() {
+  let restoredKey = projectLaunchDraftBackupKey()
   try {
-    const raw = window.localStorage.getItem(projectLaunchDraftBackupKey())
+    let raw = window.localStorage.getItem(restoredKey)
+    if (!raw) {
+      const legacyKey = legacyProjectLaunchDraftBackupKey()
+      raw = window.localStorage.getItem(legacyKey)
+      restoredKey = legacyKey
+    }
     if (!raw) return
     const saved = JSON.parse(raw) as {
       version?: number
@@ -998,8 +1013,11 @@ function restoreProjectLaunchWorkingDrafts() {
     projectLaunchPlanDrafts.value = saved.planDrafts && typeof saved.planDrafts === 'object'
       ? saved.planDrafts
       : {}
+    if (assistantSessionId.value && restoredKey !== projectLaunchDraftBackupKey()) {
+      persistProjectLaunchWorkingDrafts()
+    }
   } catch {
-    window.localStorage.removeItem(projectLaunchDraftBackupKey())
+    window.localStorage.removeItem(restoredKey)
   }
 }
 const launchAudienceOptions = ['Nội bộ', 'Khách hàng', 'Người dùng công khai', 'Đối tác']
@@ -4411,6 +4429,7 @@ onMounted(async () => {
   syncViewportFlag()
   await restoreAssistantSession()
   restoreProjectLaunchWorkingDrafts()
+  projectLaunchDraftsHydrated.value = true
   await loadConversationHistory()
   applyRoutePrompt()
   refreshAnalyticsContext()
@@ -4426,7 +4445,17 @@ watch(selectedAiModel, value => {
   window.localStorage.setItem(AI_MODEL_STORAGE_KEY, value)
 })
 
-watch([projectLaunchBriefDrafts, projectLaunchPlanDrafts], persistProjectLaunchWorkingDrafts, { deep: true })
+// A hard reload can happen immediately after the last form control changes.
+// Persist synchronously so the browser cannot navigate before Vue's default
+// pre-render watcher queue has flushed the reviewed Launch Brief.
+watch([projectLaunchBriefDrafts, projectLaunchPlanDrafts], () => {
+  // Restoring the server session can render a default card before local draft
+  // hydration resumes. Never let that transient default overwrite the backup.
+  if (projectLaunchDraftsHydrated.value) persistProjectLaunchWorkingDrafts()
+}, {
+  deep: true,
+  flush: 'sync',
+})
 
 let lastAppliedExternalPromptToken: number | null = null
 watch(

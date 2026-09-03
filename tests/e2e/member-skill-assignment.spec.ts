@@ -111,7 +111,7 @@ test('TEST-STAFFING-E2E evidence profile and grounded assignee draft remain huma
   await recommendation.getByRole('button', { name: 'Tải gợi ý' }).click()
   await expect(recommendation.getByText('Phủ skill: 100%')).toBeVisible()
   await expect(recommendation.getByText(task.title, { exact: false })).toBeVisible()
-  await recommendation.getByRole('button', { name: 'Mở form giao việc' }).click()
+  await recommendation.getByRole('button', { name: 'Chọn thủ công' }).click()
 
   const taskModal = page.locator('.task-modal')
   await expect(taskModal.getByRole('heading', { name: 'Chỉnh sửa nhiệm vụ' })).toBeVisible()

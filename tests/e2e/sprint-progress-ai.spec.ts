@@ -401,8 +401,9 @@ test('native sprint card creates a minimal request, renders grounded output, and
 
   await expect(page.getByText('Finish milestone B', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Sửa mốc' }).click()
-  await expect(page.getByRole('heading', { name: 'Chỉnh sửa Mốc Tiến Độ' })).toBeVisible()
-  await page.getByRole('button', { name: 'Hủy' }).click()
+  const editMilestoneDialog = page.getByRole('dialog', { name: 'Chỉnh sửa Mốc Tiến Độ' })
+  await expect(editMilestoneDialog).toBeVisible()
+  await editMilestoneDialog.getByRole('button', { name: 'Hủy' }).click()
 })
 
 test('native sprint card reports provider failure honestly and retries the same persisted job', async ({ page }) => {

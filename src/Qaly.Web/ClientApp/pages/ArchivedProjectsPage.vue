@@ -50,6 +50,8 @@ const duplicatesList = ref<any[]>([])
 const trashProjects = ref<any[]>([])
 const isLoadingTrash = ref(false)
 const isLoadingDuplicates = ref(false)
+const duplicateScanAttempted = ref(false)
+const duplicateScanError = ref('')
 
 // Load policies from localStorage
 function loadPolicies() {
@@ -210,6 +212,7 @@ async function loadTrash() {
 
 async function loadDuplicates() {
   isLoadingDuplicates.value = true
+  duplicateScanError.value = ''
   try {
     const res = await apiFetch('/api/storage/duplicates')
     const payload = await res.json().catch(() => null)
@@ -217,11 +220,14 @@ async function loadDuplicates() {
       duplicatesList.value = payload.data || []
     } else {
       duplicatesList.value = []
-      showError(payload?.error || 'Không thể kiểm tra đầy đủ tệp trùng lặp trong storage.')
+      duplicateScanError.value = payload?.error || 'Không thể kiểm tra đầy đủ tệp trùng lặp trong storage.'
+      showWarning(duplicateScanError.value)
     }
   } catch (e) {
-    showError('Lỗi kết nối khi kiểm tra tệp trùng lặp.')
+    duplicateScanError.value = 'Lỗi kết nối khi kiểm tra tệp trùng lặp.'
+    showWarning(duplicateScanError.value)
   } finally {
+    duplicateScanAttempted.value = true
     isLoadingDuplicates.value = false
   }
 }
@@ -322,7 +328,6 @@ onMounted(() => {
   loadArchivedProjects()
   loadStorageStats()
   loadTrash()
-  loadDuplicates()
 })
 </script>
 
@@ -446,15 +451,21 @@ onMounted(() => {
               <p>Phân tích content hash để phát hiện các tệp tin đính kèm trùng lặp trong hệ thống.</p>
             </div>
           </div>
-          <button type="button"
-            v-if="duplicatesList.length > 0" 
-            class="ai-btn" 
-            @click="runDeduplicator" 
-            :disabled="isDeduplicating"
-          >
-            <Scissors :size="15" />
-            <span>{{ isDeduplicating ? 'Đang dọn dẹp...' : 'Tối ưu hóa & hợp nhất' }}</span>
-          </button>
+          <div class="deduplicator-actions">
+            <button type="button" class="ai-btn" @click="loadDuplicates" :disabled="isLoadingDuplicates || isDeduplicating">
+              <RefreshCw :size="15" />
+              <span>{{ isLoadingDuplicates ? 'Đang quét...' : 'Quét tệp trùng lặp' }}</span>
+            </button>
+            <button type="button"
+              v-if="duplicatesList.length > 0"
+              class="ai-btn"
+              @click="runDeduplicator"
+              :disabled="isDeduplicating"
+            >
+              <Scissors :size="15" />
+              <span>{{ isDeduplicating ? 'Đang dọn dẹp...' : 'Tối ưu hóa & hợp nhất' }}</span>
+            </button>
+          </div>
         </div>
 
         <!-- Duplicates list -->
@@ -483,11 +494,24 @@ onMounted(() => {
           </table>
         </div>
         
-        <div v-else class="ai-clean-state">
+        <div v-else-if="duplicateScanError" class="ai-warning-banner" role="status">
+          <AlertTriangle :size="18" />
+          <span><strong>Chưa thể quét đầy đủ.</strong> {{ duplicateScanError }} Không có dữ liệu nào bị thay đổi.</span>
+        </div>
+
+        <div v-else-if="duplicateScanAttempted" class="ai-clean-state">
           <div class="success-icon-badge"><Check :size="22" /></div>
           <div>
             <strong>Hệ thống lưu trữ đã được tối ưu hóa.</strong>
             <p>Không phát hiện tệp đính kèm trùng lặp hoặc tệp rác nào trong không gian làm việc của các dự án đã lưu trữ.</p>
+          </div>
+        </div>
+
+        <div v-else class="ai-clean-state">
+          <div class="success-icon-badge"><HardDrive :size="22" /></div>
+          <div>
+            <strong>Sẵn sàng kiểm tra theo yêu cầu.</strong>
+            <p>Nhấn “Quét tệp trùng lặp” để đọc storage thật. Qaly không tự quét hoặc báo sạch khi chưa có bằng chứng.</p>
           </div>
         </div>
       </section>
@@ -946,6 +970,13 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
+}
+
+.deduplicator-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 @media (max-width: 640px) {

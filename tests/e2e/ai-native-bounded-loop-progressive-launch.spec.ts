@@ -132,7 +132,7 @@ function launchResponse(revision: number, includeDeadline: boolean, turnId: stri
   }
 }
 
-test('TEST-AI-NATIVE-LOOP-E2E reload renders verified launch brief and progressive reply creates revision', async ({ page }) => {
+test('TEST-AI-NATIVE-LOOP-E2E reload renders verified launch brief and preserves reviewed form fields', async ({ page }) => {
   const rendererErrors: string[] = []
   page.on('console', message => {
     if (message.type() === 'error') rendererErrors.push(message.text())
@@ -224,28 +224,25 @@ test('TEST-AI-NATIVE-LOOP-E2E reload renders verified launch brief and progressi
   await expect(historyDrawer.getByText('Đang mở')).toBeVisible()
   await historyDrawer.getByRole('button', { name: 'Đóng bảng phụ' }).click()
 
-  const deadlineQuestion = assistant.locator('.assistant-progressive-questions article').filter({
-    hasText: 'Mốc hoàn thành hoặc timebox mong muốn là khi nào?',
-  })
-  await deadlineQuestion.getByRole('button', { name: '8 tuần', exact: true }).click()
-  const teamAnswer = assistant.getByRole('textbox', { name: 'Trả lời: Quy mô nhóm mong muốn là bao nhiêu?' })
-  await teamAnswer.fill('')
-  await teamAnswer.pressSequentially('5 people', { delay: 25 })
-  await expect(teamAnswer).toBeVisible()
-  await expect(teamAnswer).toHaveValue('5 people')
-  await page.waitForTimeout(500)
-  await expect.poll(() => savedDraft?.answers?.length || 0).toBe(2)
+  const projectName = firstBrief.getByLabel('Tên dự án')
+  await projectName.fill('Customer Portal SPA — đã review')
+  await firstBrief.getByRole('combobox', { name: 'Chọn thời hạn' }).selectOption({ label: '8 tuần' })
+  await firstBrief.getByRole('combobox', { name: 'Chọn người dùng chính' }).selectOption({ label: 'Khách hàng' })
+  const savedWorkingDraft = await page.evaluate((activeSessionId) => {
+    const key = `qaly.ai-native.project-launch-working-drafts.v1:${activeSessionId}`
+    return { key, value: window.localStorage.getItem(key) }
+  }, sessionId)
+  expect(savedWorkingDraft.value, `Working draft phải được lưu theo session key ${savedWorkingDraft.key}`).toContain('Customer Portal SPA — đã review')
 
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.getByRole('button', { name: 'Mở Trợ lý AI' }).last().click()
   const restoredAssistant = page.getByRole('dialog', { name: 'Trợ lý AI' })
-  const restoredTeamAnswer = restoredAssistant.getByRole('textbox', { name: 'Trả lời: Quy mô nhóm mong muốn là bao nhiêu?' })
-  await expect(restoredTeamAnswer).toHaveValue('5 people')
-  await restoredAssistant.getByRole('button', { name: 'Gửi tất cả câu trả lời' }).click()
-  const revisedBrief = restoredAssistant.getByTestId('project-launch-brief').last()
-  await expect(revisedBrief).toContainText('Bản 2')
-  await expect(restoredAssistant.getByText('Đã cập nhật Project Launch Brief theo timebox 8 tuần')).toBeVisible()
-  await expect(restoredAssistant.getByText('Quy mô nhóm mong muốn là bao nhiêu?').last()).toBeVisible()
+  const restoredBrief = restoredAssistant.getByTestId('project-launch-brief').first()
+  await expect(restoredBrief.getByLabel('Tên dự án')).toHaveValue('Customer Portal SPA — đã review')
+  await expect(restoredBrief.getByRole('combobox', { name: 'Chọn thời hạn' })).toHaveValue('8 tuần')
+  await expect(restoredBrief.getByRole('combobox', { name: 'Chọn người dùng chính' })).toHaveValue('Khách hàng')
+  await expect(restoredAssistant.getByText('Mốc hoàn thành hoặc timebox mong muốn là khi nào?')).toHaveCount(0)
+  expect(savedDraft).toBeNull()
 })
 
 test('TEST-AI-NATIVE-RESUME-E2E canceled durable turn can be resumed after reload', async ({ page }) => {
